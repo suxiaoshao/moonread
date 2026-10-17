@@ -393,11 +393,13 @@ final class ReaderSession {
         guard !isLeaving, let id = readingID, let window else { return }
         annotationTask = Task {
             do {
+                let compatibilityNotice = try await service.readingCompatibilityNotice(id)
                 let values = try await service.annotations(id, start: min(selectionStart ?? window.start, window.start), end: max(selectionStart ?? window.end, window.end))
                 let positions = try await service.bookmarkPositions(id, start: window.start, end: window.end)
                 guard !isLeaving, !Task.isCancelled, readingID == id else { return }
                 annotations = values
                 bookmarkPositions = positions
+                if let compatibilityNotice { self.error = compatibilityNotice }
             } catch { if !Task.isCancelled { self.error = ReaderMessages.error(error) } }
         }
         refreshBookmark()

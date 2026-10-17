@@ -73,6 +73,7 @@ final class BookInformationModel {
         } catch {
             guard loadRevision == revision, requestedIdentity == identity, !Task.isCancelled else { return }
             self.error = ReaderMessages.error(error)
+            if error is UserSyncCompatibilityError { details = nil; draft = nil }
         }
     }
 
@@ -105,6 +106,7 @@ final class BookInformationModel {
                         let result = try await service.details(bookID: lease.id)
                         guard result.metadata.sha.count == 64 else { throw ReaderError.ImportBusy }
                         details = result
+                        try await service.userStore().requireMetadataReadable(key: result.metadata.sha)
                         draft = BookMetadataDraft(base: result.metadata)
                         break
                     }
@@ -366,6 +368,7 @@ struct BookInformationSections: View {
         if let details = model.details, !details.metadata.sha.isEmpty {
             Section("我的阅读") {
                 Picker("阅读状态", selection: Binding(get: { details.metadata.status }, set: { value in Task { await model.setStatus(value) } })) {
+                    if case .other = details.metadata.status { Text(details.metadata.status.label).tag(details.metadata.status) }
                     if details.metadata.status == .unread { Text("未读").tag(BookReadingStatus.unread) }
                     ForEach([BookReadingStatus.reading, .finished, .paused], id: \.self) { Text($0.label).tag($0) }
                 }

@@ -5,6 +5,21 @@ import XCTest
 @testable import Moonread
 
 @MainActor final class AIReadingToolsTests: XCTestCase {
+  func testUnsupportedReadingStatusCanBeFilteredWithoutChangingItsRawValue() async throws {
+    let (root, _, book, store, tools) = try await fixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let key = "metadata/" + book.contentSha256 + "/status"
+    try await store.put(key, value: "\"FutureReadingState\"", device: "remote")
+    let all = try await invoke(tools, "search_books", [:])
+    let other = try await invoke(tools, "search_books", ["readingStatus": .string("other")])
+    let unread = try await invoke(tools, "search_books", ["readingStatus": .string("unread")])
+    XCTAssertEqual(all.object["data"]?.object["items"]?.array?.count, 1)
+    XCTAssertEqual(other.object["data"]?.object["items"]?.array?.count, 1)
+    XCTAssertEqual(other.object["data"]?.object["items"]?.array?.first?.object["readingStatus"], .string("other"))
+    XCTAssertTrue(unread.object["data"]?.object["items"]?.array?.isEmpty == true)
+    let retained = try await store.value(key)
+    XCTAssertEqual(retained, "\"FutureReadingState\"")
+  }
   func testPreparationConfirmationIncludesEveryIncompleteBookOnce() async throws {
     var visited: [String] = []
     let prompt = try await AIReadingTools.preparationConfirmation(["a", "ready", "b", "a"]) { ref in

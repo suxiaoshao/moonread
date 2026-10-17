@@ -54,6 +54,13 @@ struct AnnotationCandidate: Codable, Equatable, Identifiable, Sendable {
     var bookmark: Bool
     var relatedMarks: Set<String> = []
     var mergedInto: String? = nil
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: UserSyncJSON.Key.self)
+        try c.encode(id, forKey: .init("id")); try c.encode(ancestors, forKey: .init("ancestors"))
+        try c.encode(content, forKey: .init("content")); try c.encode(created, forKey: .init("created"))
+        try c.encode(bookmark, forKey: .init("bookmark")); try c.encode(relatedMarks, forKey: .init("relatedMarks"))
+        try c.encode(mergedInto, forKey: .init("mergedInto"))
+    }
 }
 struct AnnotationEdit: Sendable {
     var id: String
@@ -86,6 +93,11 @@ struct ClearValue: Codable, Sendable {
     var session: String?
     var through: Int64
     var ids: Set<String>
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: UserSyncJSON.Key.self)
+        try c.encode(book, forKey: .init("book")); try c.encode(session, forKey: .init("session"))
+        try c.encode(through, forKey: .init("through")); try c.encode(ids, forKey: .init("ids"))
+    }
 }
 struct UserDataConflict: LocalizedError {
     let candidates: [AnnotationCandidate]
@@ -132,57 +144,94 @@ enum AnnotationReduction {
     func setRecording(generation: UInt64, enabled: Bool) { recordingGeneration = generation; recordingEnabled = enabled; invalidateProjection() }
 
     private func encode<T: Encodable>(_ value: T) throws -> String {
-        String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
+        try UserSyncJSON.encode(value, envelope: T.self == StoredValue.self || T.self == AnnotationCandidate.self || T.self == ClearValue.self)
     }
     private func decode<T: Decodable>(_ type: T.Type, _ value: String) throws -> T {
-        try JSONDecoder().decode(type, from: Data(value.utf8))
+        let shape: UserSyncJSON.Shape
+        let envelope: Bool
+        switch type {
+        case is StoredValue.Type: shape = UserSyncJSON.stored; envelope = true
+        case is AnnotationCandidate.Type: shape = UserSyncJSON.candidate; envelope = true
+        case is ClearValue.Type: shape = UserSyncJSON.clear; envelope = true
+        case is PositionValue.Type: shape = UserSyncJSON.position; envelope = false
+        case is ChapterValue.Type: shape = UserSyncJSON.chapter; envelope = false
+        default: throw UserSyncCompatibilityError()
+        }
+        return try UserSyncJSON.decode(type, value, as: shape, envelope: envelope)
     }
     private func transaction<T>(_ body: () throws -> T) throws -> T {
+        modelContext.autosaveEnabled = false
         do { let value = try body(); try modelContext.save(); invalidateProjection(); return value }
         catch { modelContext.rollback(); throw error }
     }
-    private func values(key: String? = nil) throws -> [String: StoredValue] {
-        var result: [String: StoredValue] = [:]
+    private struct ValueSnapshot {
+        var values: [String: StoredValue] = [:]
+        var blocked = Set<String>()
+        mutating func include(key: String, payload: String) {
+            guard UserSyncJSON.kind(key) != nil else { return }
+            do {
+                let value = try UserSyncJSON.storedValue(payload, key: key)
+                guard !blocked.contains(key) else { return }
+                if let old = values[key], (old.updated, old.token) >= (value.updated, value.token) { return }
+                values[key] = value
+            } catch {
+                blocked.insert(key); values.removeValue(forKey: key)
+                UserSyncJSON.quarantined("UserValue/UserPosition")
+            }
+        }
+    }
+    private func valueSnapshot(key: String? = nil, prefix: String? = nil) throws -> ValueSnapshot {
         let rows: [UserValue]
         if let key { rows = try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate { $0.key == key })) }
+        else if let prefix { rows = try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate { $0.key.starts(with: prefix) })) }
         else { rows = try modelContext.fetch(FetchDescriptor<UserValue>()) }
-        for row in rows {
-            let value = try decode(StoredValue.self, row.payload)
-            if let old = result[row.key], (old.updated, old.token) >= (value.updated, value.token) { continue }
-            result[row.key] = value
-        }
+        var result = ValueSnapshot()
+        for row in rows { result.include(key: row.key, payload: row.payload) }
         let positionRows: [UserPosition]
+        let includesPositions = prefix.map { $0.hasPrefix("position/") || "position/".hasPrefix($0) } ?? true
         if let key, key.hasPrefix("position/") {
             let contentKey = String(key.dropFirst(9))
             positionRows = try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { $0.contentKey == contentKey }))
-        } else if key == nil { positionRows = try modelContext.fetch(FetchDescriptor<UserPosition>()) }
-        else { positionRows = [] }
-        for row in positionRows {
-            let value = try decode(StoredValue.self, row.payload), positionKey = "position/" + row.contentKey
-            if let old = result[positionKey], (old.updated, old.token) >= (value.updated, value.token) { continue }
-            result[positionKey] = value
+        } else if key == nil, includesPositions {
+            positionRows = try modelContext.fetch(FetchDescriptor<UserPosition>())
+        } else { positionRows = [] }
+        for row in positionRows where prefix.map({ ("position/" + row.contentKey).hasPrefix($0) }) ?? true {
+            result.include(key: "position/" + row.contentKey, payload: row.payload)
         }
         return result
     }
+    private func values(key: String? = nil) throws -> [String: StoredValue] { try valueSnapshot(key: key).values }
+    private func requireValueReadable(_ key: String) throws {
+        guard try !valueSnapshot(key: key).blocked.contains(key) else { throw UserSyncCompatibilityError() }
+    }
     private func compactPositions(key: String) throws {
-        let winner = try values(key: "position/" + key)["position/" + key]?.token
+        let snapshot = try valueSnapshot(key: "position/" + key)
+        guard !snapshot.blocked.contains("position/" + key) else { return }
+        let winner = snapshot.values["position/" + key]?.token
         let rows = try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { $0.contentKey == key }))
-        let obsolete = rows.filter { (try? decode(StoredValue.self, $0.payload).token) != winner }
+        let obsolete = try rows.filter { try UserSyncJSON.storedValue($0.payload, key: "position/" + key).token != winner }
         if !obsolete.isEmpty { try transaction { for row in obsolete { modelContext.delete(row) } } }
     }
-    func value(_ key: String) throws -> String? { try values(key: key)[key]?.value }
+    func value(_ key: String) throws -> String? {
+        let snapshot = try valueSnapshot(key: key)
+        guard !snapshot.blocked.contains(key) else { throw UserSyncCompatibilityError() }
+        return snapshot.values[key]?.value
+    }
     func put(_ key: String, value: String, device: String) throws {
         try transaction { try putWithoutSave(key, value: value, device: device) }
     }
     private func putWithoutSave(_ key: String, value: String, device: String) throws {
+        try UserSyncJSON.validateValue(value, key: key)
+        try requireValueReadable(key)
         let rows = try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate { $0.key == key && $0.device == device }))
+        for row in rows { _ = try UserSyncJSON.storedValue(row.payload, key: key) }
         let latest = try values(key: key)[key]?.updated ?? 0
+        guard latest < Int64.max else { throw UserSyncCompatibilityError() }
         let payload = try encode(StoredValue(updated: max(Int64(Date().timeIntervalSince1970 * 1000), latest + 1), token: UUID().uuidString, value: value))
         if key.hasPrefix("position/") {
             let contentKey = String(key.dropFirst(9))
-            // Immutable update records are compacted to the final position. Deleting
-            // an older record cannot race an offline mutation of that same object.
             let old = try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { $0.contentKey == contentKey }))
+            for row in old { _ = try UserSyncJSON.storedValue(row.payload, key: key) }
             modelContext.insert(UserPosition(contentKey: contentKey, payload: payload))
             for row in old { modelContext.delete(row) }
         } else if let row = rows.first { row.payload = payload; for duplicate in rows.dropFirst() { modelContext.delete(duplicate) } }
@@ -192,51 +241,61 @@ enum AnnotationReduction {
         try transaction { for (key, value) in values { try putWithoutSave(key, value: value, device: device) } }
     }
     func allValues(prefix: String) throws -> [String: String] {
-        var result: [String: StoredValue] = [:]
-        let rows = try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate { $0.key.starts(with: prefix) }))
-        for row in rows {
-            let value = try decode(StoredValue.self, row.payload)
-            if let old = result[row.key], (old.updated, old.token) >= (value.updated, value.token) { continue }
-            result[row.key] = value
+        let snapshot = try valueSnapshot(prefix: prefix)
+        guard snapshot.blocked.isEmpty else { throw UserSyncCompatibilityError() }
+        return snapshot.values.mapValues(\.value)
+    }
+    private func blockedMarks(key: String) throws -> Set<String> {
+        let rows = try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.contentKey == key }))
+        return Set(rows.filter { (try? UserSyncJSON.annotation($0.payload, id: $0.id)) == nil }.map(\.markID))
+    }
+    private func requireMarksReadable(key: String, ids: Set<String>) throws {
+        guard try blockedMarks(key: key).isDisjoint(with: ids) else { throw UserSyncCompatibilityError() }
+    }
+    func requireMetadataReadable(key: String) throws {
+        guard try valueSnapshot(prefix: "metadata/" + key + "/").blocked.isEmpty else { throw UserSyncCompatibilityError() }
+    }
+    func compatibilityNotice(key: String) throws -> String? {
+        var snapshot = try valueSnapshot(key: "position/" + key)
+        for prefix in ["metadata/" + key + "/", "chapter/" + key + "/"] {
+            snapshot.blocked.formUnion(try valueSnapshot(prefix: prefix).blocked)
         }
-        if prefix.isEmpty || prefix.hasPrefix("position/") {
-            let contentPrefix = prefix.isEmpty ? "" : String(prefix.dropFirst(9))
-            let positions = try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { $0.contentKey.starts(with: contentPrefix) }))
-            for row in positions {
-                let key = "position/" + row.contentKey, value = try decode(StoredValue.self, row.payload)
-                if let old = result[key], (old.updated, old.token) >= (value.updated, value.token) { continue }
-                result[key] = value
-            }
-        }
-        return result.mapValues(\.value)
+        return try snapshot.blocked.isEmpty && blockedMarks(key: key).isEmpty ? nil : UserSyncCompatibilityError().localizedDescription
     }
     func candidates(key: String, markID: String? = nil) throws -> [String: [AnnotationCandidate]] {
         let rows = try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.contentKey == key }))
-        var groups: [String: [AnnotationCandidate]] = [:]
+        var groups: [String: [AnnotationCandidate]] = [:], blocked = Set<String>()
         for row in rows where markID == nil || row.markID == markID {
-            groups[row.markID, default: []].append(try decode(AnnotationCandidate.self, row.payload))
+            do { groups[row.markID, default: []].append(try UserSyncJSON.annotation(row.payload, id: row.id)) }
+            catch { blocked.insert(row.markID); UserSyncJSON.quarantined("AnnotationOperation") }
         }
+        for id in blocked { groups.removeValue(forKey: id) }
         let result = groups.mapValues(AnnotationReduction.heads)
         let kept = Set(result.values.flatMap { $0 }.map(\.id))
-        let obsolete = rows.filter { (markID == nil || $0.markID == markID) && !kept.contains($0.id) }
+        let obsolete = rows.filter { (markID == nil || $0.markID == markID) && !blocked.contains($0.markID) && !kept.contains($0.id) }
         if !obsolete.isEmpty { try transaction { for row in obsolete { modelContext.delete(row) } } }
         return result
     }
     func markCandidates(_ id: String) throws -> (String, [AnnotationCandidate]) {
         let rows = try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.markID == id }))
         guard let key = rows.first?.contentKey else { throw ReaderError.NotFound }
-        return (key, AnnotationReduction.heads(try rows.map { try decode(AnnotationCandidate.self, $0.payload) }))
+        guard rows.allSatisfy({ $0.contentKey == key }) else { throw UserSyncCompatibilityError() }
+        return (key, AnnotationReduction.heads(try rows.map { try UserSyncJSON.annotation($0.payload, id: $0.id) }))
     }
     // Only superseded CONTENT is removed. Causal identifiers in a head remain so
     // late offline siblings can still be distinguished from sequential edits.
     private func append(key: String, markID: String, baseline: [AnnotationCandidate], content: AnnotationContent?, bookmark: Bool, related: Set<String> = [], mergedInto: String? = nil) throws -> AnnotationCandidate {
+        try requireMarksReadable(key: key, ids: [markID])
         let ancestors = baseline.reduce(into: Set<String>()) { $0.insert($1.id); $0.formUnion($1.ancestors) }
         let candidate = AnnotationCandidate(id: UUID().uuidString, ancestors: ancestors, content: content,
             created: baseline.map(\.created).min() ?? UInt64(Date().timeIntervalSince1970 * 1000), bookmark: bookmark,
             relatedMarks: baseline.reduce(into: related) { $0.formUnion($1.relatedMarks) }, mergedInto: mergedInto)
         modelContext.insert(AnnotationOperation(id: candidate.id, contentKey: key, markID: markID, payload: try encode(candidate)))
-        let old = try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.markID == markID }))
-        for row in old where ancestors.contains(row.id) { modelContext.delete(row) }
+        let old = try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.markID == markID && $0.contentKey == key }))
+        for row in old where ancestors.contains(row.id) {
+            _ = try UserSyncJSON.annotation(row.payload, id: row.id)
+            modelContext.delete(row)
+        }
         return candidate
     }
     func saveAnnotation(key: String, edit: AnnotationEdit, content: AnnotationContent) throws -> AnnotationCandidate {
@@ -276,10 +335,12 @@ enum AnnotationReduction {
             }
             if previous == ids && previousFrom == from && previousTo == to { break }
         }
+        try requireMarksReadable(key: key, ids: ids)
         return Dictionary(uniqueKeysWithValues: ids.map { ($0, all[$0] ?? []) })
     }
     func resolveBundle(key: String, id: String, expected: [String: [AnnotationCandidate]], content: AnnotationContent?, edit: AnnotationEdit) throws {
         try transaction {
+            try requireMarksReadable(key: key, ids: Set(expected.keys).union([id]))
             let current = try editingBundle(key: key, edit: edit)
             if Set(current.keys) != Set(expected.keys) {
                 throw UserDataConflict(candidates: current.values.flatMap { $0 })
@@ -298,6 +359,7 @@ enum AnnotationReduction {
     }
     func resolve(key: String, id: String, expected: [AnnotationCandidate], content: AnnotationContent?) throws {
         try transaction {
+            try requireMarksReadable(key: key, ids: [id])
             let current = try candidates(key: key, markID: id)[id] ?? []
             guard Set(current.map(\.id)) == Set(expected.map(\.id)) else { throw UserDataConflict(candidates: current) }
             _ = try append(key: key, markID: id, baseline: current, content: content, bookmark: current.first?.bookmark ?? false)
@@ -338,19 +400,48 @@ enum AnnotationReduction {
         try transaction {
             for (id, key, payload) in facts {
                 let rows = try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.id == id }))
-                if rows.isEmpty { modelContext.insert(ReadingFact(id: id, contentKey: key, payload: payload)) }
+                try UserSyncJSON.validateFact(payload, id: id)
+                for row in rows { try UserSyncJSON.validateFact(row.payload, id: row.id) }
+                if rows.isEmpty { modelContext.insert(ReadingFact(id: id, contentKey: key, payload: try UserSyncJSON.versioned(payload))) }
             }
         }
     }
-    private func visibleFacts(key: String? = nil) throws -> [[String: Any]] {
-        let clears = try modelContext.fetch(FetchDescriptor<StatisticsClear>()).map { try decode(ClearValue.self, $0.payload) }
-        var seen = Set<String>(), facts: [[String: Any]] = []
+    func requireStatisticsReadable(book: String? = nil, session: String? = nil) throws {
+        for row in try modelContext.fetch(FetchDescriptor<StatisticsClear>()) {
+            do { _ = try decode(ClearValue.self, row.payload) }
+            catch {
+                let scope = try? JSONDecoder().decode(UserSyncClearScope.self, from: Data(row.payload.utf8))
+                if scope == nil || scope!.intersects(book: book, session: session) {
+                    UserSyncJSON.quarantined("StatisticsClear")
+                    throw UserSyncCompatibilityError(statistics: true)
+                }
+            }
+        }
+    }
+    func statisticsIncomplete(book: String? = nil) throws -> Bool {
+        try requireStatisticsReadable(book: book)
+        let rows: [ReadingFact]
+        if let book { rows = try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.contentKey == book })) }
+        else { rows = try modelContext.fetch(FetchDescriptor<ReadingFact>()) }
+        return rows.contains { (try? UserSyncJSON.validateFact($0.payload, id: $0.id)) == nil }
+    }
+    private func visibleFacts(key: String? = nil, session: String? = nil) throws -> [[String: Any]] {
+        try requireStatisticsReadable(book: key, session: session)
+        let clears = try modelContext.fetch(FetchDescriptor<StatisticsClear>()).compactMap { try? decode(ClearValue.self, $0.payload) }
+        var groups: [String: [ReadingFact]] = [:], facts: [[String: Any]] = []
         let rows: [ReadingFact]
         if let key { rows = try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.contentKey == key })) }
         else { rows = try modelContext.fetch(FetchDescriptor<ReadingFact>()) }
-        for row in rows where seen.insert(row.id).inserted {
-            guard var value = try JSONSerialization.jsonObject(with: Data(row.payload.utf8)) as? [String: Any],
-                  let slice = value["slice"] as? [String: Any], let start = slice["started_ms"] as? Int64 else { throw CocoaError(.coderReadCorrupt) }
+        for row in rows { groups[row.id, default: []].append(row) }
+        for copies in groups.values {
+            // An unknown sibling must not be hidden by the order CloudKit delivered duplicates.
+            guard copies.allSatisfy({ (try? UserSyncJSON.validateFact($0.payload, id: $0.id)) != nil }), let row = copies.first else {
+                UserSyncJSON.quarantined("ReadingFact"); continue
+            }
+            var value = try JSONSerialization.jsonObject(with: Data(row.payload.utf8)) as! [String: Any]
+            let slice = value["slice"] as! [String: Any]
+            if let session, slice["session_id"] as? String != session { continue }
+            let start = (slice["started_ms"] as! NSNumber).int64Value
             value["content_key"] = row.contentKey
             if clears.contains(where: { ($0.book == nil || $0.book == row.contentKey) && ($0.session == nil || $0.session == slice["session_id"] as? String) && ($0.ids.contains(row.id) || start <= $0.through) }) { continue }
             facts.append(value)
@@ -359,60 +450,46 @@ enum AnnotationReduction {
     }
     func clear(book: String?, session: String?, newGeneration: UInt64? = nil) throws {
         try transaction {
-            let facts = try visibleFacts()
+            try requireStatisticsReadable(book: book, session: session)
+            let facts = try visibleFacts(key: book, session: session)
             let ids = Set(facts.compactMap { value -> String? in
-                guard let slice = value["slice"] as? [String: Any], book == nil || book == value["content_key"] as? String,
-                      session == nil || session == slice["session_id"] as? String else { return nil }
-                return slice["id"] as? String
+                (value["slice"] as? [String: Any])?["id"] as? String
             })
             modelContext.insert(StatisticsClear(payload: try encode(ClearValue(book: book, session: session,
                 through: Int64(Date().timeIntervalSince1970 * 1000), ids: ids))))
         }
         if let newGeneration { recordingGeneration = newGeneration }
     }
-    private func scopedValues(_ contentKey: String) throws -> [String: StoredValue] {
-        let positionKey = "position/" + contentKey, metadataPrefix = "metadata/" + contentKey + "/", chapterPrefix = "chapter/" + contentKey + "/"
-        let rows = try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate {
-            $0.key == positionKey || $0.key.starts(with: metadataPrefix) || $0.key.starts(with: chapterPrefix)
-        }))
-        var result = try values(key: positionKey)
-        for row in rows {
-            let value = try decode(StoredValue.self, row.payload)
-            if let old = result[row.key], (old.updated, old.token) >= (value.updated, value.token) { continue }
-            result[row.key] = value
+    private func scopedValues(_ contentKey: String) throws -> ValueSnapshot {
+        var result = try valueSnapshot(key: "position/" + contentKey)
+        for prefix in ["metadata/" + contentKey + "/", "chapter/" + contentKey + "/"] {
+            let next = try valueSnapshot(prefix: prefix)
+            result.values.merge(next.values) { a, b in (a.updated, a.token) >= (b.updated, b.token) ? a : b }
+            result.blocked.formUnion(next.blocked)
         }
         return result
     }
-    func positionValues() throws -> [String: StoredValue] {
-        var result: [String: StoredValue] = [:]
-        let prefix = "position/"
-        let rows = try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate { $0.key.starts(with: prefix) }))
-        for row in rows {
-            let value = try decode(StoredValue.self, row.payload)
-            if let old = result[row.key], (old.updated, old.token) >= (value.updated, value.token) { continue }
-            result[row.key] = value
-        }
-        for row in try modelContext.fetch(FetchDescriptor<UserPosition>()) {
-            let key = "position/" + row.contentKey, value = try decode(StoredValue.self, row.payload)
-            if let old = result[key], (old.updated, old.token) >= (value.updated, value.token) { continue }
-            result[key] = value
-        }
-        return result
-    }
-    func projection(generation: UInt64, enabled: Bool, includeFacts: Bool, keys: [String]? = nil, positionsOnly: Bool = false, diagnostic: ReaderOpenTrace? = nil, diagnosticScope: String = "projection") throws -> String {
+    func positionValues() throws -> [String: StoredValue] { try valueSnapshot(prefix: "position/").values }
+    func projection(generation: UInt64, enabled: Bool, includeFacts: Bool, keys: [String]? = nil, positionsOnly: Bool = false, statisticsBook: String? = nil, diagnostic: ReaderOpenTrace? = nil, diagnosticScope: String = "projection") throws -> String {
         diagnostic?.mark(diagnosticScope + ".actor.begin")
         defer { diagnostic?.mark(diagnosticScope + ".actor.return") }
-        let cacheKey = "\(generation)-\(enabled)-\(includeFacts)-\(positionsOnly)-" + (keys?.sorted().joined(separator: ",") ?? "all")
+        let cacheKey = "\(generation)-\(enabled)-\(includeFacts)-\(positionsOnly)-\(statisticsBook ?? "all")-" + (keys?.sorted().joined(separator: ",") ?? "all")
+        if includeFacts { try requireStatisticsReadable(book: statisticsBook) }
         let version = projectionVersion
         if let cached = projectionCache[cacheKey], cached.0 == version { diagnostic?.mark(diagnosticScope + ".cacheHit"); return cached.1 }
         diagnostic?.mark(diagnosticScope + ".fetch.begin")
-        let all: [String: StoredValue]
-        if positionsOnly { all = try positionValues() }
+        let snapshot: ValueSnapshot
+        if positionsOnly { snapshot = try valueSnapshot(prefix: "position/") }
         else if let keys {
-            var scoped: [String: StoredValue] = [:]
-            for key in keys { scoped.merge(try scopedValues(key)) { a,b in (a.updated,a.token) >= (b.updated,b.token) ? a : b } }
-            all = scoped
-        } else { all = try values() }
+            var scoped = ValueSnapshot()
+            for key in keys {
+                let next = try scopedValues(key)
+                scoped.values.merge(next.values) { a,b in (a.updated,a.token) >= (b.updated,b.token) ? a : b }
+                scoped.blocked.formUnion(next.blocked)
+            }
+            snapshot = scoped
+        } else { snapshot = try valueSnapshot() }
+        let all = snapshot.values
         diagnostic?.mark(diagnosticScope + ".fetch.return")
         diagnostic?.mark(diagnosticScope + ".json.begin")
         var metadata: [String: [String: Any]] = [:]
@@ -434,7 +511,8 @@ enum AnnotationReduction {
         }
         let corrections = try all.filter { $0.key.hasPrefix("chapter/") && $0.value.value != "null" }.map { try JSONSerialization.jsonObject(with: Data($0.value.value.utf8)) }
         let result: [String: Any] = ["positions": positions, "metadata": Array(metadata.values), "corrections": corrections,
-            "facts": includeFacts ? try visibleFacts() : [], "generation": generation, "enabled": enabled]
+            "unsupportedPositions": snapshot.blocked.filter { $0.hasPrefix("position/") }.map { String($0.dropFirst(9)) },
+            "facts": includeFacts ? try visibleFacts(key: statisticsBook) : [], "generation": generation, "enabled": enabled]
         let json = String(decoding: try JSONSerialization.data(withJSONObject: result, options: .sortedKeys), as: UTF8.self)
         diagnostic?.mark(diagnosticScope + ".json.return")
         if projectionCache.count > 32 { projectionCache.removeAll() }
@@ -444,6 +522,7 @@ enum AnnotationReduction {
     func saveCover(id: String, bytes: Data) throws {
         try transaction {
             let rows = try modelContext.fetch(FetchDescriptor<UserCover>(predicate: #Predicate { $0.id == id }))
+            guard rows.allSatisfy({ $0.bytes == nil || $0.bytes == bytes }) else { throw UserSyncCompatibilityError() }
             if rows.isEmpty { modelContext.insert(UserCover(id: id, bytes: bytes)) }
         }
     }
@@ -464,9 +543,20 @@ extension UserDataStore {
         var result = Set(try modelContext.fetch(FetchDescriptor<AnnotationOperation>()).map(\.contentKey))
         result.formUnion(try modelContext.fetch(FetchDescriptor<ReadingFact>()).map(\.contentKey))
         result.formUnion(try modelContext.fetch(FetchDescriptor<UserPosition>()).map(\.contentKey))
+        for row in try modelContext.fetch(FetchDescriptor<StatisticsClear>()) where (try? decode(ClearValue.self, row.payload)) == nil {
+            if let scope = try? JSONDecoder().decode(UserSyncClearScope.self, from: Data(row.payload.utf8)), let book = scope.book { result.insert(book) }
+        }
         return result.filter { $0.hasPrefix("pending:") }
     }
+    func requirePendingReadable(key: String) throws {
+        try requireValueReadable("position/" + key)
+        guard try blockedMarks(key: key).isEmpty else { throw UserSyncCompatibilityError() }
+        try requireStatisticsReadable(book: key)
+        let facts = try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.contentKey == key }))
+        for row in facts { try UserSyncJSON.validateFact(row.payload, id: row.id) }
+    }
     func exportPending(key: String) throws -> UserDataTransfer {
+        try requirePendingReadable(key: key)
         let positions = try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { $0.contentKey == key })).map(\.payload)
         let operations = try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.contentKey == key }))
             .map { UserDataTransfer.Operation(id: $0.id, mark: $0.markID, payload: $0.payload) }
@@ -477,6 +567,11 @@ extension UserDataStore {
     }
     func importPending(_ transfer: UserDataTransfer, from: String, to: String) throws {
         try transaction {
+            try requirePendingReadable(key: to)
+            // Validate the complete snapshot before any insert. A failure rolls back all kinds.
+            for value in transfer.positions { _ = try UserSyncJSON.storedValue(value, key: "position/" + from) }
+            for value in transfer.operations { _ = try UserSyncJSON.annotation(value.payload, id: value.id) }
+            for value in transfer.facts { try UserSyncJSON.validateFact(value.payload, id: value.id) }
             for value in transfer.positions {
                 var payload = try decode(StoredValue.self, value)
                 var position = try decode(PositionValue.self, payload.value); position.content_key = to
@@ -485,28 +580,46 @@ extension UserDataStore {
                 let old = try values(key: key)[key]
                 if old == nil || (payload.updated, payload.token) > (old!.updated, old!.token) {
                     let rows = try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { $0.contentKey == to }))
+                    for row in rows { _ = try UserSyncJSON.storedValue(row.payload, key: key) }
                     for row in rows { modelContext.delete(row) }
                     modelContext.insert(UserPosition(contentKey: to, payload: try encode(payload)))
                 }
             }
             for value in transfer.operations {
                 let id = value.id
-                guard try modelContext.fetchCount(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.id == id })) == 0 else { continue }
                 let mark = value.mark.hasPrefix("bookmark/" + from + "/") ? "bookmark/" + to + "/" + value.mark.split(separator: "/").last! : value.mark
-                modelContext.insert(AnnotationOperation(id: id, contentKey: to, markID: mark, payload: value.payload))
+                let existing = try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.id == id }))
+                for row in existing {
+                    guard row.contentKey == to, row.markID == mark else { throw UserSyncCompatibilityError() }
+                    _ = try UserSyncJSON.annotation(row.payload, id: row.id)
+                }
+                guard existing.isEmpty else { continue }
+                modelContext.insert(AnnotationOperation(id: id, contentKey: to, markID: mark, payload: try UserSyncJSON.versioned(value.payload)))
             }
             for value in transfer.facts {
                 let id = value.id
-                guard try modelContext.fetchCount(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.id == id })) == 0 else { continue }
-                modelContext.insert(ReadingFact(id: id, contentKey: to, payload: value.payload))
+                let existing = try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.id == id }))
+                for row in existing {
+                    guard row.contentKey == to else { throw UserSyncCompatibilityError() }
+                    try UserSyncJSON.validateFact(row.payload, id: row.id)
+                }
+                guard existing.isEmpty else { continue }
+                modelContext.insert(ReadingFact(id: id, contentKey: to, payload: try UserSyncJSON.versioned(value.payload)))
             }
         }
     }
     func removePending(key: String) throws {
         try transaction {
-            for row in try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { $0.contentKey == key })) { modelContext.delete(row) }
-            for row in try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.contentKey == key })) { modelContext.delete(row) }
-            for row in try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.contentKey == key })) { modelContext.delete(row) }
+            try requirePendingReadable(key: key)
+            let positions = try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { $0.contentKey == key }))
+            let operations = try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.contentKey == key }))
+            let facts = try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.contentKey == key }))
+            for row in positions { _ = try UserSyncJSON.storedValue(row.payload, key: "position/" + key) }
+            for row in operations { _ = try UserSyncJSON.annotation(row.payload, id: row.id) }
+            for row in facts { try UserSyncJSON.validateFact(row.payload, id: row.id) }
+            for row in positions { modelContext.delete(row) }
+            for row in operations { modelContext.delete(row) }
+            for row in facts { modelContext.delete(row) }
         }
     }
 }

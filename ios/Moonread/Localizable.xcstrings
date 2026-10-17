@@ -1,6 +1,46 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+      "部分阅读数据当前版本无法理解，已保留并设为只读，请更新 App。": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Some reading data is not supported by this version. It has been kept read-only. Update the app."
+            }
+          }
+        }
+      },
+      "统计数据来自更新版本，请更新 App。": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Statistics data comes from a newer version. Update the app."
+            }
+          }
+        }
+      },
+      "统计不完整：部分记录当前版本无法理解，请更新 App。": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Statistics are incomplete: some records are not supported by this version. Update the app."
+            }
+          }
+        }
+      },
+      "其他（当前版本不支持）": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Other (not supported by this version)"
+            }
+          }
+        }
+      },
   "服务说明：%@": {
     "localizations": {
       "en": {

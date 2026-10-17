@@ -4,12 +4,66 @@ use serde::{Deserialize, Serialize};
 
 use std::collections::BTreeSet;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum BookReadingStatus {
     Unread,
     Reading,
     Finished,
     Paused,
+    Other { value: String },
+}
+
+impl Serialize for BookReadingStatus {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(match self {
+            Self::Unread => "Unread",
+            Self::Reading => "Reading",
+            Self::Finished => "Finished",
+            Self::Paused => "Paused",
+            Self::Other { value } => value,
+        })
+    }
+}
+impl<'de> Deserialize<'de> for BookReadingStatus {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        Ok(match value.as_str() {
+            "Unread" => Self::Unread,
+            "Reading" => Self::Reading,
+            "Finished" => Self::Finished,
+            "Paused" => Self::Paused,
+            _ => Self::Other { value },
+        })
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+
+    #[test]
+    fn unknown_status_round_trips_as_its_original_string() {
+        let raw = r#""FutureReadingState""#;
+        let value: BookReadingStatus = serde_json::from_str(raw).unwrap();
+        assert_eq!(
+            value,
+            BookReadingStatus::Other {
+                value: "FutureReadingState".into()
+            }
+        );
+        assert_eq!(serde_json::to_string(&value).unwrap(), raw);
+        assert_ne!(value, BookReadingStatus::Unread);
+        for known in ["Unread", "Reading", "Finished", "Paused"] {
+            let raw = serde_json::to_string(known).unwrap();
+            let value: BookReadingStatus = serde_json::from_str(&raw).unwrap();
+            assert_eq!(serde_json::to_string(&value).unwrap(), raw);
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
