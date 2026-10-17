@@ -340,13 +340,21 @@ struct StatisticsView: View {
             Button("下载并准备") { if let target { information.prepareEditing(target) } }
         }
         .overlay {
-            if information.preparing {
+            if information.preparing && !information.preparationPaused {
                 VStack(spacing: 16) {
                     ProgressView(value: information.progress)
                     Text(information.downloading ? "正在下载小说" : "正在准备正文")
                     Button("取消") { information.cancelPreparation() }
                 }.padding(24).frame(maxWidth: 270).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
             }
+        }
+        .alert("正文准备已暂停", isPresented: Binding(get: { information.preparationPaused }, set: { _ in })) {
+            // Actions transition the preparation task's state; dismissing the
+            // presentation binding must not cancel an explicit resume request.
+            Button("继续准备") { information.resumePreparation() }
+            Button("取消", role: .cancel) { information.cancelPreparation() }
+        } message: {
+            Text("编辑详情需要先完成正文准备。")
         }
         .alert("暂时无法完成", isPresented: Binding(get: { information.error != nil }, set: { if !$0 { information.error = nil } })) {
             Button("知道了", role: .cancel) { information.error = nil }

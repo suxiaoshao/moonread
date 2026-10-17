@@ -293,7 +293,7 @@ final class ReaderSession {
 
     func pause() {
         guard let id = readingID else { return }
-        Task { await service.pauseImport(id) }
+        Task { await service.pauseImport(id, reason: .user) }
     }
 
     func resume() {

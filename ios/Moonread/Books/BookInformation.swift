@@ -12,6 +12,9 @@ final class BookInformationModel {
     var downloading = false
     var progress: Double?
     var confirmDownload = false
+    private enum PreparationStep { case running, paused, resumeRequested }
+    private var preparationStep = PreparationStep.running
+    var preparationPaused: Bool { preparationStep == .paused }
     var draft: BookMetadataDraft?
     private var task: Task<Void, Never>?
     private var lease: ReadingLease?
@@ -28,14 +31,17 @@ final class BookInformationModel {
     private(set) var loadedIdentity: Identity?
     private var requestedIdentity: Identity?
     private var loadRevision = UUID()
+    @ObservationIgnored private let service: ReaderService
     @ObservationIgnored private let readInformation: @MainActor (StatisticsRoute) async throws -> (LibraryEntry?, BookDetails)
     @ObservationIgnored private let readChapters: @MainActor (String) async throws -> [ChapterEntry]
-    init(readInformation: @escaping @MainActor (StatisticsRoute) async throws -> (LibraryEntry?, BookDetails) = BookInformationModel.read,
-         readChapters: @escaping @MainActor (String) async throws -> [ChapterEntry] = { try await ReaderService.shared.chapters($0).items }) {
-        self.readInformation = readInformation; self.readChapters = readChapters
+    init(service: ReaderService = .shared,
+         readInformation: (@MainActor (StatisticsRoute) async throws -> (LibraryEntry?, BookDetails))? = nil,
+         readChapters: (@MainActor (String) async throws -> [ChapterEntry])? = nil) {
+        self.service = service
+        self.readInformation = readInformation ?? { try await Self.read($0, service: service) }
+        self.readChapters = readChapters ?? { try await service.chapters($0).items }
     }
-    private static func read(_ target: StatisticsRoute) async throws -> (LibraryEntry?, BookDetails) {
-        let service = ReaderService.shared
+    private static func read(_ target: StatisticsRoute, service: ReaderService) async throws -> (LibraryEntry?, BookDetails) {
         let entry: LibraryEntry?
         if let file = target.fileID { entry = try await service.libraryEntry(file) }
         else if let id = target.bookID, !target.fromReader {
@@ -83,11 +89,10 @@ final class BookInformationModel {
     }
     func prepareEditing(_ target: StatisticsRoute) {
         guard !preparing else { return }
-        preparing = true; downloading = entry?.needsDownload == true; progress = nil
+        preparing = true; preparationStep = .running; downloading = entry?.needsDownload == true; progress = nil
         task = Task { [self] in
-            defer { preparing = false; task = nil; lease = nil }
+            defer { preparing = false; preparationStep = .running; task = nil; lease = nil }
             do {
-                let service = ReaderService.shared
                 if let entry, !target.fromReader {
                     try await service.prepareSourceFile(entry.source) { [weak self] value in
                         Task { @MainActor in self?.progress = value }
@@ -111,7 +116,16 @@ final class BookInformationModel {
                         break
                     }
                     if snapshot.phase == .failed { throw CocoaError(.fileReadCorruptFile) }
-                    if snapshot.phase == .paused { try await service.resumeImport(lease.id) }
+                    if snapshot.phase == .paused {
+                        let userPaused = await service.isImportUserPaused(lease.id)
+                        try Task.checkCancellation()
+                        if userPaused && preparationStep != .resumeRequested {
+                            preparationStep = .paused
+                        } else {
+                            preparationStep = .running
+                            try await service.resumeImport(lease.id)
+                        }
+                    } else { preparationStep = .running }
                     progress = snapshot.sourceByteCount > 0 ? Double(snapshot.sourceBytesRead) / Double(snapshot.sourceByteCount) : nil
                     try await Task.sleep(for: .milliseconds(100))
                 }
@@ -119,13 +133,18 @@ final class BookInformationModel {
             catch { self.error = ReaderMessages.error(error) }
         }
     }
+    func resumePreparation() {
+        guard preparing, preparationPaused else { return }
+        // The existing preparation task owns the resume, including cancellation.
+        preparationStep = .resumeRequested
+    }
     func cancelPreparation() { task?.cancel() }
     func setStatus(_ status: BookReadingStatus) async {
         guard let base = details?.metadata, !base.sha.isEmpty else { return }
         var edited = base; edited.status = status
         do {
-            try await ReaderService.shared.saveMetadata(base: base, edited: edited)
-            details = try await ReaderService.shared.details(bookID: details?.book?.id, sha: base.sha)
+            try await service.saveMetadata(base: base, edited: edited)
+            details = try await service.details(bookID: details?.book?.id, sha: base.sha)
         } catch { self.error = ReaderMessages.error(error) }
     }
 }
