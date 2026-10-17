@@ -6,6 +6,45 @@ use unicode_segmentation::UnicodeSegmentation;
 pub(crate) const CHUNK_BYTES: usize = 12 * 1024;
 const MAX_GRAPHEME_BYTES: usize = 64 * 1024;
 
+/// Detection is shared by both import entry points. Decode/normalization stays in
+/// encoding_rs; never retry the whole book under a different encoding after publish.
+pub(crate) const ENCODING_PROBE_BYTES: usize = 64 * 1024;
+pub(crate) fn detect_encoding(reader: &mut impl Read) -> Result<&'static Encoding> {
+    let mut head = Vec::with_capacity(ENCODING_PROBE_BYTES + 1);
+    // One lookahead byte distinguishes EOF from a truncated sample for chardetng.
+    reader
+        .take((ENCODING_PROBE_BYTES + 1) as u64)
+        .read_to_end(&mut head)?;
+    let complete = head.len() <= ENCODING_PROBE_BYTES;
+    head.truncate(ENCODING_PROBE_BYTES);
+    if let Some((encoding, _)) = Encoding::for_bom(&head) {
+        return Ok(encoding);
+    }
+    // BOMless UTF-16 requires manual selection; do not add a competing heuristic.
+    let mut decoder = encoding_rs::UTF_8.new_decoder_without_bom_handling();
+    let mut output = vec![0; head.len() + 4];
+    // Only a capped sample may end inside a scalar. At real EOF validate strictly.
+    let (status, _, _) = decoder.decode_to_utf8_without_replacement(&head, &mut output, complete);
+    // Like Zed file_content, ESC must reach the ISO-2022-JP detector, even in ASCII.
+    if !matches!(status, DecoderResult::Malformed(..)) && !head.contains(&0x1b) {
+        return Ok(encoding_rs::UTF_8);
+    }
+    let mut detector = chardetng::EncodingDetector::new(chardetng::Iso2022JpDetection::Allow);
+    detector.feed(&head, complete);
+    let encoding = detector.guess(None, chardetng::Utf8Detection::Deny);
+    // Preserve the GB18030 decoder and recorded name of existing simplified books,
+    // including its four-byte extension. No TLD/language hint biases the detector.
+    Ok(if encoding == encoding_rs::GBK {
+        encoding_rs::GB18030
+    } else {
+        encoding
+    })
+}
+
+fn is_reading_character(c: char) -> bool {
+    c != '\0' && (!c.is_control() || matches!(c, '\n' | '\r' | '\t' | '\u{c}'))
+}
+
 /// Normalization v1: remove initial BOM, map CRLF/CR to LF, preserve all other text.
 /// Fixed-size buffers keep ingestion memory independent of book size.
 pub(crate) fn decode_chunks(
@@ -35,7 +74,7 @@ pub(crate) fn decode_chunks(
                     message: e.to_string(),
                 })?;
             for c in decoded.chars() {
-                if c == '\0' || (c.is_control() && !matches!(c, '\n' | '\r' | '\t' | '\u{c}')) {
+                if !is_reading_character(c) {
                     return Err(ReaderError::Decode {
                         message: "文件包含非文本控制字符".into(),
                     });
@@ -96,4 +135,43 @@ pub(crate) fn decode_chunks(
         emit(&pending)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod encoding_tests {
+    use super::*;
+    use std::io::Cursor;
+    #[test]
+    fn eof_is_strict_for_short_legacy_text() {
+        assert_eq!(
+            detect_encoding(&mut Cursor::new(b"Un caf\xe9")).unwrap(),
+            encoding_rs::WINDOWS_1252
+        );
+        assert_eq!(
+            detect_encoding(&mut Cursor::new(b"ASCII\n")).unwrap(),
+            encoding_rs::UTF_8
+        );
+    }
+
+    #[test]
+    fn probe_is_bounded_and_preserves_truncated_utf8_without_late_retry() {
+        let text = format!(
+            "{}中{}",
+            "A".repeat(ENCODING_PROBE_BYTES - 2),
+            "B".repeat(ENCODING_PROBE_BYTES)
+        );
+        let mut reader = Cursor::new(text.as_bytes());
+        assert_eq!(detect_encoding(&mut reader).unwrap(), encoding_rs::UTF_8);
+        assert_eq!(reader.position(), (ENCODING_PROBE_BYTES + 1) as u64);
+        let mut late = vec![b'A'; ENCODING_PROBE_BYTES + 20];
+        late.push(0xff);
+        let mut reader = Cursor::new(late.as_slice());
+        let encoding = detect_encoding(&mut reader).unwrap();
+        assert_eq!(encoding, encoding_rs::UTF_8);
+        assert_eq!(reader.position(), (ENCODING_PROBE_BYTES + 1) as u64);
+        assert!(matches!(
+            decode_chunks(&mut Cursor::new(&late), encoding, |_| Ok(())),
+            Err(ReaderError::Decode { .. })
+        ));
+    }
 }

@@ -292,6 +292,18 @@ Rust ego-tree-0.11.0/LICENSE
 Source: https://crates.io/crates/ego-tree/0.11.0
 Text: ddea4e94a1c35ed9
 
+Rust chardetng-1.0.0/COPYRIGHT
+Source: https://crates.io/crates/chardetng/1.0.0
+Text: 01a5b47e1a8a9a4d
+
+Rust chardetng-1.0.0/LICENSE-APACHE
+Source: https://crates.io/crates/chardetng/1.0.0
+Text: cfc7749b96f63bd3
+
+Rust chardetng-1.0.0/LICENSE-MIT
+Source: https://crates.io/crates/chardetng/1.0.0
+Text: 3fa4ca83dcc92378
+
 Rust encoding_rs-0.8.42/COPYRIGHT
 Source: https://crates.io/crates/encoding_rs/0.8.42
 Text: 11789f45bb180841
@@ -9874,3 +9886,15 @@ Important Recommendations
    to comprise the Work and, in such a case, the licensee would be
    entitled to make reasonable conjectures as to which files comprise
    the Work.
+
+===== 01a5b47e1a8a9a4d =====
+
+chardetng is copyright Mozilla Foundation.
+
+Licensed under the Apache License, Version 2.0
+<LICENSE-APACHE or
+https://www.apache.org/licenses/LICENSE-2.0> or the MIT
+license <LICENSE-MIT or https://opensource.org/licenses/MIT>,
+at your option. All files in the project carrying such
+notice may not be copied, modified, or distributed except
+according to those terms.

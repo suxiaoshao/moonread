@@ -65,6 +65,7 @@ MPL-2.0 部分保持原许可，包括 cssparser、cssparser-macros、dtoa-short
 | cargo_metadata | 0.23.1 | MIT | [源码包](https://crates.io/crates/cargo_metadata/0.23.1) |
 | cc | 1.8.0 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/cc/1.8.0) |
 | cfg-if | 1.0.5 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/cfg-if/1.0.5) |
+| chardetng | 1.0.0 | Apache-2.0 OR MIT | [源码包](https://crates.io/crates/chardetng/1.0.0) |
 | clap | 4.6.7 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/clap/4.6.7) |
 | clap_builder | 4.6.7 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/clap_builder/4.6.7) |
 | clap_derive | 4.6.7 | MIT OR Apache-2.0 | [源码包](https://crates.io/crates/clap_derive/4.6.7) |

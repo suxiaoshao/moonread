@@ -2,6 +2,32 @@
 
 更新：2026-10-17。本文按能力保存必要证据与未覆盖范围，不作逐轮修改日志。表中结果来自各次受影响回归，不能解释为当前版本在所有设备上完成了全量验收。
 
+## 2026-10-17 完成导入后的本书编码入口
+
+从正文进入阅读设置，“排版”顶部的“本书 → 文字编码”独立于全局设置，右侧用主题强调色显示当前编码（自动策略显示“自动 · UTF-8”等），配同页菜单的上下箭头；无障碍标签包含当前编码及“可更换”。“更多 → 更换编码”及暂停／失败入口复用同一分组菜单和确认框，可手选或切回自动识别。确认前不修改文件策略、不创建任务；确认后先保存旧位置，再重新读取，关闭设置页时一并释放原弹层的关闭状态，工具栏仍可正常打开。策略继续保存在本机文件行，不同步到其他设备。
+
+数据回归使用原创 UTF-8 文件，完成导入后切到能成功解码但文字不同的 windows-1252，再切回 UTF-8：不同 SHA 的新正文没有旧位置／批注；换回后相同正文 SHA 接回原位置、书签和批注；原件字节不变，重新建立 ReaderService 后仍按文件上保存的 UTF-8 策略打开。确认框因此明确“原文件未变时，换回原编码可找回”，不承诺原件已修改时仍能接回。
+
+模拟器 Debug 构建、4 项定向单测与 2 项 UI 回归通过：完成态成功但乱码的往返切换、完成任务回收重开、本机记忆、相同副本首选来源及手选分组；UI 覆盖确认／取消、从设置重新读取后再次打开工具栏、“更多”入口及暂停／失败菜单。初轮 UI 捕获到设置页退出仍保留旧 sheet gate，已修正且原断言复跑通过。深浅色取图在打开书籍前设定外观，6 张画面已人工核对。证据 `build/EncodingDetection/{change-final.log,change-final.xcresult,change-appearance.log,change-appearance.xcresult,change-screens/}`；失败现场保留在 `change-encoding.log`。未操作真机。 编码行的强调色／上下箭头及“可更换”无障碍标签由深浅色定向 UI 回归再次验证，通过；更新截图和日志为 `build/EncodingDetection/{menu-affordance-screens/,menu-affordance.log,menu-affordance.xcresult}`。
+
+来源元数据只用于可选编码控件，查询改为不抛错。记录缺失、JSON 损坏或刷新移除 fileID 时返回空值并写 ReaderSource 日志（仅缺失原因／错误域和代码，不含来源内容），不阻断已取得的 lease 和正文监测；重新准备后的标签也使用同一入口。新增 session 集成单测覆盖上述三种情况，验证 readingID 保留、window 发布可读正文、error 为空及 encodingLabel 为空（本书行／更多入口的共享显示条件）。模拟器 Debug 构建与 4 项定向测试通过，正常切换找回数据、回收重开和统计异步启动继续通过。证据 `build/EncodingDetection/{source-metadata.log,source-metadata.xcresult}`；日志已核对，未操作真机。
+
+编码重启采用会话内唯一 task，首次 await 前占用，重复选择忽略；忙碌状态由 task 派生并传给本书行、更多及暂停／失败菜单，显示“正在重新读取”并禁用。任务保持到对应 worker 结束，失败或取消统一释放。离页取消排队请求，服务在创建导入前检查取消；新 lease 在后续 await 前转交会话，编码策略回传时核对当前 ID/打开尝试，迟到结果不能覆盖离开的会话。服务已创建的来源关联及 worker 保留正常所有权，完成后回收未采用 lease 的导入，不另行删除用户的暂停／失败前缀。
+
+用可控 continuation 挂起创建前／创建后的返回，不用 sleep 制造重叠。连续 windows-1252、UTF-8 两次调用只有第一次获准，最终读取编码、本机策略及文件 book_id 一致；只读 SQLite 核对 import_jobs 仅剩当前任务。离页前已创建的迟到任务完成后没有残留 job／来源记录，未创建的取消请求不改策略；失败释放占用且不创建导入。模拟器 Debug 构建、5 项单测与 1 项深浅色菜单 UI 回归通过；正常数据找回和来源容错继续通过。证据 `build/EncodingDetection/{restart-final.log,restart-final.xcresult}`，未操作手机。
+
+## 2026-10-17 正文编码识别与手选分组
+
+直接导入与渐进导入共用 Rust 的 BOM → 不含 ESC 的合法 UTF-8 → chardetng 1.0.0 探测器，最多 64 KiB 样本加 1 字节 EOF 探查；真实 EOF 严格校验，仅 64 KiB 上限截断的 UTF-8 多字节前缀不算错；含 ESC 的输入交给 chardetng 识别 ISO-2022-JP。GBK 猜测统一用 gb18030，其他采用 encoding_rs 名称；不传 TLD/系统语言，不增加 fallback，严格解码及 normalization-v1 未改。原来直接导入失败后整书重试的路径已删除。38 项手选编码按六组展示，排除 replacement/x-user-defined 及其别名，固定原生菜单顺序，中英文文案同步；新依赖许可随 App 分发。
+
+14 个原创样本在测试运行时生成输入字节，两条真实导入路径均核对识别名称、规范正文、SHA 与原件不变；既有简体 GB18030 固定 SHA 回归仍通过。Nix Rust 测试 89 项通过，原有 1 项长书性能测试忽略；Clippy（all-targets/all-features，-D warnings）、fmt、`git diff --check` 通过。iOS 27 模拟器 Debug 构建与 6 项定向单测通过，覆盖全部手选项/英文文案、回收重开、暂停移动后恢复/重启、首选副本与许可。新增 UI 用例通过，实际经历失败页→分组纠正为 UTF-16LE→进入正文并推进有效阅读位置，兼容当前滚动/分页偏好；截图已人工核对。
+
+自动识别样本保留 EOF 短 windows-1252（以 é 结尾）与 ISO-2022-JP，共 16 个原创样本；删除手写无 BOM UTF-16 探测及其两个自动识别样本、专属启发式测试。原 14 项内容与预期、旧简体固定 SHA 不变。无 BOM UTF-16 需手动选择，识别能力以 chardetng 为准，不自建启发式。失败页 UI 夹具不再预设错误编码，直接验证自动导入失败后手选 UTF-16LE/BE。Nix 核心回归 90 项通过、1 项既有性能测试忽略；Clippy（all-targets/all-features，-D warnings）、fmt 与 diff 检查通过。iOS 27 模拟器 Debug 构建及 2 项定向单测、2 项 UI 恢复测试通过：两种字节序均在自动导入失败页看到更换入口，确认手选后显示正确正文并推进有效阅读位置；另覆盖全部分组与回收重开后的手选策略。失败页和恢复正文截图已核对。证据：`build/EncodingDetection/{no-heuristic-rust.log,no-heuristic-clippy.log,no-heuristic-fmt.log,no-heuristic-swift.log,no-heuristic.xcresult,no-heuristic-screens/}`。本轮未操作真机。
+
+额外尝试的旧 `testFirstImportReadsBeforeCompletionAndCanPauseResume` 未通过；干净 main `42548d1` 同用例也失败于等待 scrollText，本分支初次失败在封面上的进度断言，不能将两个断言处的失败称为同一已证实根因。旧用例保持不变、不计入通过，本轮不扩修其固定阅读模式/封面假设。基线工作树已移除，证据保留在 `build/EncodingDetection/{baseline-ui.log,baseline.xcresult,swift-tests.log}`。
+
+用户确认尚未发布，允许本次改变旧开发版结果；统计不足的极短 GBK 单字 D6 D0 按固定库识别为 windows-1252，已固定断言，用户可手选。发布后升级识别库须保持样本和已支持文件的正文身份不变。手选策略仅在本机文件行和任务描述保存，不经 CloudKit 同步，另一台设备可能需要手选相同编码才能得到相同正文 SHA；本轮只核对代码，未做跨设备或真机验证。日志与最终截图：`build/EncodingDetection/{rust-tests.log,clippy.log,fmt.log,menu-confirmed.log,screens/}`。
+
 ## 2026-10-17 发布持久化基线与逐条容错
 
 完成发布冻结第 2、3、4、5、9 项：连接、共享授权和用途默认值逐条读取，坏会话不影响其他会话；日志只含集合键/行序号，不含 JSON、凭据或正文。读取不回写，保存时保留不可识别条目并按稳定 ID/用途键更新可识别项，显式删除与清除字段仍有效。用途默认值读取此前键值数组与字符串键对象，保存为对象；JSON 整体损坏则拒绝覆盖。授权撤销的 generation 仍生效，未知授权不能恢复已撤销权限。

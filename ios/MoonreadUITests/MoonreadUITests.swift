@@ -3072,6 +3072,84 @@ final class MoonreadUITests: XCTestCase {
         XCTAssertFalse(text.exists)
     }
 
+    func testManualEncodingMenuGroupsAndRecoversImport() {
+        assertAutomaticEncodingFailureCanRecover(encodingName: "UTF-16LE", arguments: [])
+    }
+
+    func testAutomaticBomlessUTF16BEFailureCanRecover() {
+        assertAutomaticEncodingFailureCanRecover(encodingName: "UTF-16BE", arguments: ["--ui-test-encoding-be"])
+    }
+
+    private func assertAutomaticEncodingFailureCanRecover(encodingName: String, arguments: [String]) {
+        prepareApp(arguments: ["--ui-test-encoding"] + arguments)
+        let shelf = app.buttons["shelf-builtin"]
+        XCTAssertTrue(shelf.waitForExistence(timeout: 10)); shelf.tap()
+        let file = app.buttons["library-file-编码恢复样本.txt"]
+        XCTAssertTrue(file.waitForExistence(timeout: 5)); file.tap()
+        let menu = app.buttons["更换编码重新打开"]
+        recordScreenshot(encodingName + "-encoding-initial-state")
+        XCTAssertTrue(menu.waitForExistence(timeout: 10), app.debugDescription); menu.tap()
+        for label in ["简体中文", "繁体中文", "日文", "韩文", "西欧", "其他编码"] {
+            XCTAssertTrue(app.buttons[label].waitForExistence(timeout: 5), label)
+        }
+        recordScreenshot(encodingName + "-encoding-groups")
+        app.buttons["其他编码"].tap()
+        let encoding = app.buttons[encodingName]
+        recordScreenshot(encodingName + "-encoding-unicode-options")
+        XCTAssertTrue(encoding.waitForExistence(timeout: 5), app.debugDescription)
+        encoding.tap()
+        XCTAssertTrue(app.alerts["更换文字编码？"].waitForExistence(timeout: 5))
+        app.alerts.buttons["重新读取"].tap()
+        XCTAssertTrue(readingText().waitForExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<3 {
+            if anchor() > 0 && anchor() != UInt64.max { break }
+            if app.textViews["scrollText"].exists { readingText().swipeUp() }
+            else { readingText().swipeLeft() }
+        }
+        recordScreenshot(encodingName + "-encoding-recovered-body")
+        XCTAssertGreaterThan(anchor(), 0)
+        XCTAssertNotEqual(anchor(), UInt64.max)
+        XCTAssertFalse(app.buttons["更换编码重新打开"].exists)
+    }
+
+    func testCompletedBookEncodingSettingsAndConfirmation() {
+        for (name, mode) in [("light", "浅色"), ("dark", "深色")] {
+            prepareApp(); setTipJarAppearance(mode)
+            app.buttons["readerThemeSettings"].tap()
+            app.segmentedControls["readerThemeTabs"].buttons["配色"].tap()
+            app.buttons["readerAppearanceMode"].tap(); app.buttons[mode].tap()
+            leaveReadingSettings(); app.tabBars.buttons["书架"].tap()
+            openSample(); readingText().swipeUp()
+            revealControls(); openReadingSettings()
+            let encoding = app.buttons["bookTextEncoding"]
+            XCTAssertTrue(encoding.waitForExistence(timeout: 5), app.debugDescription)
+            XCTAssertTrue(app.staticTexts["本书"].exists)
+            XCTAssertTrue(encoding.label.contains("UTF-8"), encoding.label)
+            XCTAssertTrue(encoding.label.contains("可更换"), encoding.label)
+            recordScreenshot("encoding-book-settings-" + name)
+            encoding.tap()
+            XCTAssertTrue(app.buttons["自动识别"].waitForExistence(timeout: 5))
+            recordScreenshot("encoding-book-menu-" + name)
+            app.buttons["自动识别"].tap()
+            let confirmation = app.alerts["更换文字编码？"]
+            XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+            recordScreenshot("encoding-book-confirmation-" + name)
+            confirmation.buttons["取消"].tap()
+            XCTAssertTrue(encoding.exists, "Cancel leaves the current book/settings untouched")
+            encoding.tap(); app.buttons["自动识别"].tap()
+            app.alerts.buttons["重新读取"].tap()
+            XCTAssertTrue(app.navigationBars["阅读设置"].waitForNonExistence(timeout: 5))
+            XCTAssertTrue(readingText().waitForExistence(timeout: 10))
+            revealControls(); app.buttons["readerMore"].tap()
+            let more = app.buttons["moreTextEncoding"]
+            XCTAssertTrue(more.waitForExistence(timeout: 5)); more.tap()
+            XCTAssertTrue(app.buttons["自动识别"].waitForExistence(timeout: 5))
+            app.buttons["自动识别"].tap()
+            XCTAssertTrue(confirmation.waitForExistence(timeout: 5))
+            confirmation.buttons["取消"].tap()
+        }
+    }
+
     private func prepareApp(language: String = "zh-Hans", arguments: [String] = []) {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait

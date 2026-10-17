@@ -1,0 +1,114 @@
+[
+  {
+    "id": "utf8",
+    "encoding": "UTF-8",
+    "bom": false,
+    "text": "第一章 晨光\r\n这是原创编码样本。窗前一盏灯，照着新的一页。🌙\r结尾。\n",
+    "detected": "UTF-8"
+  },
+  {
+    "id": "utf8-bom",
+    "encoding": "UTF-8",
+    "bom": true,
+    "text": "第一章 微风\r\n月光沿着窗沿慢慢移动，纸上的文字清楚可见。\n",
+    "detected": "UTF-8"
+  },
+  {
+    "id": "utf16le",
+    "encoding": "UTF-16LE",
+    "bom": true,
+    "text": "第一章 晨光\r\n这是原创编码样本，包含中文、Latin 和 🌙。\n",
+    "detected": "UTF-16LE"
+  },
+  {
+    "id": "utf16be",
+    "encoding": "UTF-16BE",
+    "bom": true,
+    "text": "第一章 晨光\r\n这是原创编码样本，包含中文、Latin 和 🌙。\n",
+    "detected": "UTF-16BE"
+  },
+  {
+    "id": "gb18030",
+    "encoding": "gb18030",
+    "bom": false,
+    "text": "第一章 灯下\r\n清晨，小舟带着书和茶沿河前行。风吹过桥边的树，远处有人点灯。月亮🌙升起，他在纸上写下新的故事。\n",
+    "detected": "gb18030"
+  },
+  {
+    "id": "gbk",
+    "encoding": "GBK",
+    "bom": false,
+    "text": "第一章 灯下\r\n清晨，小舟带着书和茶沿河前行。风吹过桥边的树，远处有人点灯。他在纸上写下新的故事。\n",
+    "detected": "gb18030"
+  },
+  {
+    "id": "gb18030-short",
+    "encoding": "gb18030",
+    "bom": false,
+    "text": "中文",
+    "detected": "gb18030"
+  },
+  {
+    "id": "gbk-short",
+    "encoding": "GBK",
+    "bom": false,
+    "text": "中文小说",
+    "detected": "gb18030"
+  },
+  {
+    "id": "big5",
+    "encoding": "Big5",
+    "bom": false,
+    "text": "第一章 燈下\r\n清晨，小舟帶著書和茶沿河前行。風吹過橋邊的樹，遠處有人點燈。他在紙上寫下新的故事，讓每一位讀者都看得清楚。\n",
+    "detected": "Big5"
+  },
+  {
+    "id": "big5-short",
+    "encoding": "Big5",
+    "bom": false,
+    "text": "繁體中文",
+    "detected": "Big5"
+  },
+  {
+    "id": "shift-jis",
+    "encoding": "Shift_JIS",
+    "bom": false,
+    "text": "第一章 朝の窓\r\nこれは文字コードのために書いた短い物語です。朝の光が窓から入り、机の上の本を照らしました。彼女はお茶を飲みながら、新しいページをゆっくりと読み始めます。\n",
+    "detected": "Shift_JIS"
+  },
+  {
+    "id": "euc-jp",
+    "encoding": "EUC-JP",
+    "bom": false,
+    "text": "第一章 朝の窓\r\nこれは文字コードのために書いた短い物語です。朝の光が窓から入り、机の上の本を照らしました。彼女はお茶を飲みながら、新しいページをゆっくりと読み始めます。\n",
+    "detected": "EUC-JP"
+  },
+  {
+    "id": "euc-kr",
+    "encoding": "EUC-KR",
+    "bom": false,
+    "text": "첫 번째 아침\r\n이 글은 문자 인식 시험을 위해 새로 쓴 짧은 이야기입니다. 아침 햇살이 창문을 지나 책상 위에 내려앉았습니다. 그는 차를 마시며 새로운 책장을 천천히 넘겼습니다.\n",
+    "detected": "EUC-KR"
+  },
+  {
+    "id": "windows-1252",
+    "encoding": "windows-1252",
+    "bom": false,
+    "text": "Chapter One: A quiet café\r\nIn the café, Zoë wrote a fresh résumé. “A warm breeze,” she said, “costs €0.” The naïve traveller smiled at the façade, then ordered crème brûlée and a small cup of tea.\n",
+    "detected": "windows-1252"
+  },
+  {
+    "id": "windows-1252-eof",
+    "encoding": "windows-1252",
+    "bom": false,
+    "text": "Un café",
+    "detected": "windows-1252"
+  },
+  {
+    "id": "iso-2022-jp",
+    "encoding": "ISO-2022-JP",
+    "bom": false,
+    "text": "朝の光が窓から入り、机の上の本を照らしました。彼女は新しいページをゆっくりと読み始めます。\n",
+    "detected": "ISO-2022-JP"
+  }
+]

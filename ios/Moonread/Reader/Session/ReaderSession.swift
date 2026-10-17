@@ -13,6 +13,11 @@ final class ReaderSession {
     private(set) var displayAnchor: UInt64?
     var showingCover = true
     private var hasEnteredBody = false
+    private(set) var decodingPolicy: String?
+    var encodingLabel: String? {
+        guard let decodingPolicy, let encoding = book?.encoding else { return nil }
+        return decodingPolicy == "auto" ? String(localized: "自动 · \(encoding.uppercased())") : encoding.uppercased()
+    }
     var chapter: ChapterInfo?
     var error: String?
     private var hasPresentedCompatibilityNotice = false
@@ -53,9 +58,14 @@ final class ReaderSession {
     private(set) var isLeaving = false
     private var leavingProgress: (bookID: String, offset: UInt64)?
     private var leaveTask: Task<Void, Never>?
+    private var restartTask: Task<Void, Never>?
+    var restartingEncoding: Bool { restartTask != nil }
+    private let restartReading: @Sendable (String, String?) async throws -> ReadingLease
 
-    init(service: ReaderService = .shared, activity: ReadingActivityRecorder? = nil) {
+    init(service: ReaderService = .shared, activity: ReadingActivityRecorder? = nil,
+         restartReading: (@Sendable (String, String?) async throws -> ReadingLease)? = nil) {
         self.service = service; self.activity = activity ?? ReadingActivityRecorder()
+        self.restartReading = restartReading ?? { try await service.restartImport($0, encoding: $1) }
     }
 
     var preparing: Bool {
@@ -89,6 +99,7 @@ final class ReaderSession {
                 diagnostic?.mark("lease.mainResumed")
                 guard !isLeaving, !Task.isCancelled, opening.request?.id == attempt else { return }
                 readingLease = lease
+                decodingPolicy = await service.readingDecoding(lease.id)
             } catch { if !isLeaving, !Task.isCancelled, opening.request?.id == attempt { self.error = ReaderMessages.error(error); isLoading = false; updateOpening() }; return }
         }
         guard !isLeaving else { return }
@@ -295,13 +306,21 @@ final class ReaderSession {
     }
 
     func restart(encoding: String? = nil) {
-        guard !isLeaving, let id = readingID else { return }
-        let title = book?.title ?? ""
-        Task {
+        // Admission is synchronous, before flush/actor hops. No second import can
+        // be created until this task ends, including its worker-finish wait.
+        guard !isLeaving, restartTask == nil, let id = readingID else { return }
+        restartTask = Task {
+            defer { restartTask = nil }
             do {
-                let next = try await service.restartImport(id, encoding: encoding)
-                guard !isLeaving else { return }
+                await flush()
+                try Task.checkCancellation()
+                guard !isLeaving, readingID == id else { return }
+                let next = try await restartReading(id, encoding)
+                // A late unclaimed lease is released normally. Its service-owned,
+                // file-associated worker remains tracked through finish/reclaim.
+                guard !isLeaving, !Task.isCancelled, readingID == id else { return }
                 opening.begin(OpeningRequest(target: .book(next.id)), navigationSettled: true)
+                let attempt = opening.request?.id
                 monitorToken = UUID()
                 monitorTask?.cancel(); windowTask?.cancel(); saveTask?.cancel(); chapterTask?.cancel()
                 navigationTask?.cancel(); navigationTask = nil; navigationGeneration += 1; navigating = false
@@ -309,12 +328,19 @@ final class ReaderSession {
                 browseOrigin = nil; browseViewport = nil; navigation = nil
                 history = emptyReadingHistory(); chapterDraft = nil
                 focusRange = nil; selectionStart = nil; annotations = []; bookmarkPositions = []
-                readingLease = next; snapshot = nil; window = nil; chapter = nil; anchor = 0
+                // Transfer ownership and clear old projection before any more await.
+                readingLease = next; decodingPolicy = nil
+                snapshot = nil; window = nil; chapter = nil; anchor = 0
                 showingCover = true; hasEnteredBody = false
                 error = nil; isLoading = true; nearEdge = false; navigationRevision += 1
-                guard !isLeaving else { return }
-                startMonitoring(); startActivity(attempt: opening.request?.id)
-            } catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
+                startMonitoring(); startActivity(attempt: attempt)
+                let policy = await service.readingDecoding(next.id)
+                guard !isLeaving, !Task.isCancelled, readingID == next.id,
+                      opening.request?.id == attempt else { return }
+                decodingPolicy = policy
+                try await service.waitForImportFinish(next.id)
+            } catch is CancellationError { }
+            catch { if !isLeaving, !Task.isCancelled { self.error = ReaderMessages.error(error) } }
         }
     }
 
@@ -357,6 +383,7 @@ final class ReaderSession {
     @discardableResult
     func leave() -> Task<Void, Never> {
         if let leaveTask { return leaveTask }
+        restartTask?.cancel()
         activityStartTask?.cancel(); activityStartTask = nil
         activity.stop()
         leavingProgress = readingID.flatMap { id in
