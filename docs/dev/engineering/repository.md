@@ -58,4 +58,4 @@ cd docs/site && zola serve
 
 [Pages 工作流](../../../.github/workflows/pages.yml) 在 main 的网站源码、工作流或 Nix 配置变化时构建，也支持手动触发。两种触发方式均照常构建并上传 Pages artifact，仅在事件中的 `repository.private == false` 时执行 deploy，私有仓库跳过部署。仅 deploy job 授予 `pages:write` 与 `id-token:write`；checkout 不保留凭据，Actions 使用完整 SHA。不发布其余开发文档。
 
-当前仓库私有，本次只验证构建和工作流语法，不启用 Pages。开源切换时，先在新公开仓库启用 Pages 并将来源设为 GitHub Actions（`build_type=workflow`），再首次推送网站变更（或手动触发工作流），最后逐页验证新站；不能在 Pages 尚未配置时触发公开仓库的首次部署。旧 `suxiaoshao/moonread-site` 仓库在新站上线验证后由用户确认删除。在此之前旧站保留，App 的新链接需要等新站部署后才可在线验收。
+当前仓库私有，本次只验证构建和工作流语法，不启用 Pages。开源切换时，先在新公开仓库启用 Pages 并将来源设为 GitHub Actions（`build_type=workflow`），再首次推送网站变更（或手动触发工作流），最后逐页验证新站；不能在 Pages 尚未配置时触发公开仓库的首次部署。旧 `suxiaoshao/moonread-site` 仓库已于 2026-10-17 删除。App 的新链接需要等新站部署后才可在线验收。
