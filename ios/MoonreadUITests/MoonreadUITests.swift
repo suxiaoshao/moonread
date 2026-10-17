@@ -2842,7 +2842,7 @@ final class MoonreadUITests: XCTestCase {
     }
 
     func testTipJarPricesPurchaseAndRelaunch() throws {
-        let storeKit = try SKTestSession(configurationFileNamed: "TipJar")
+        let storeKit = try makeTipJarSession()
         storeKit.resetToDefaultState(); storeKit.clearTransactions(); storeKit.disableDialogs = true
         defer { storeKit.clearTransactions() }
         prepareApp(arguments: ["--ui-test-home"])
@@ -2866,7 +2866,7 @@ final class MoonreadUITests: XCTestCase {
     }
 
     func testLocalizedTipJarAdaptsPricesToTextSize() throws {
-        let storeKit = try SKTestSession(configurationFileNamed: "TipJar")
+        let storeKit = try makeTipJarSession()
         storeKit.resetToDefaultState(); storeKit.disableDialogs = true
         for (language, locale, light, dark) in [
             ("en", "en_US", "Light", "Dark"),
@@ -2927,7 +2927,7 @@ final class MoonreadUITests: XCTestCase {
     }
 
     func testTipJarDarkAndLargeAppearance() throws {
-        let storeKit = try SKTestSession(configurationFileNamed: "TipJar")
+        let storeKit = try makeTipJarSession()
         storeKit.resetToDefaultState(); storeKit.disableDialogs = true
         for large in [false, true] {
             prepareApp(arguments: ["--ui-test-home"] + (large ? ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"] : []))
@@ -2938,6 +2938,13 @@ final class MoonreadUITests: XCTestCase {
             app.swipeUp(); recordScreenshot(large ? "tip-jar-dark-ax-bottom" : "tip-jar-dark-bottom")
             app.terminate()
         }
+    }
+
+    private func makeTipJarSession() throws -> SKTestSession {
+        // Simulator tests read the source fixture without embedding it in any bundle.
+        let configuration = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Moonread/Settings/TipJar.storekit")
+        return try SKTestSession(contentsOf: configuration)
     }
 
     private func setTipJarAppearance(_ mode: String) {
@@ -5187,7 +5194,7 @@ final class MoonreadUITests: XCTestCase {
     }
 
     func testEnglishAndTraditionalChineseScreenAudit() throws {
-        let storeKit = try SKTestSession(configurationFileNamed: "TipJar")
+        let storeKit = try makeTipJarSession()
         storeKit.resetToDefaultState(); storeKit.disableDialogs = true
         for language in ["en", "zh-Hant"] {
             let english = language == "en", suffix = english ? "en" : "hant"

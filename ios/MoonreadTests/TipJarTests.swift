@@ -8,7 +8,10 @@ import StoreKitTest
 
 @MainActor final class TipJarTests: XCTestCase {
     private func makeSession() throws -> SKTestSession {
-        let session = try SKTestSession(configurationFileNamed: "TipJar")
+        // Keep the local StoreKit fixture out of every target's bundle resources.
+        let configuration = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("Moonread/Settings/TipJar.storekit")
+        let session = try SKTestSession(contentsOf: configuration)
         session.resetToDefaultState(); session.clearTransactions(); session.disableDialogs = true
         return session
     }
