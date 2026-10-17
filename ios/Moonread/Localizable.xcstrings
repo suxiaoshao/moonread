@@ -1,6 +1,86 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+  "本书": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This Book"
+        }
+      }
+    }
+  },
+  "文字编码": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Text Encoding"
+        }
+      }
+    }
+  },
+  "更换编码": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Change Encoding"
+        }
+      }
+    }
+  },
+  "自动识别": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Detect Automatically"
+        }
+      }
+    }
+  },
+  "更换文字编码？": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Change Text Encoding?"
+        }
+      }
+    }
+  },
+  "重新读取": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Read Again"
+        }
+      }
+    }
+  },
+  "正文会按新编码重新读取。当前编码下的阅读位置、书签和批注不会带到不同的新正文，原数据会保留。原文件未变时，换回原编码可找回。": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "The text will be read again using the new encoding. Your current position, bookmarks, and annotations will not transfer to different text. The original data is kept. If the file is unchanged, switching back restores it."
+        }
+      }
+    }
+  },
+  "自动 · %@": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Auto · %@"
+        }
+      }
+    }
+  },
   "其他编码": {
     "localizations": {
       "en": {

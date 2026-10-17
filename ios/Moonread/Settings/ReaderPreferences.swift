@@ -78,6 +78,8 @@ enum ReadingSettingsTab: String, CaseIterable {
 struct ReaderSettingsView: View {
     @Binding var settings: ReaderSettings
     let preview: ReadingPreviewSource
+    let encoding: String?
+    let changeEncoding: ((String?) -> Void)?
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
     @Environment(\.moonreadReduceMotion) private var reduceMotion
@@ -93,8 +95,8 @@ struct ReaderSettingsView: View {
     @State private var previewVisible = false
     @State private var appeared = false
 
-    init(settings: Binding<ReaderSettings>, preview: ReadingPreviewSource = .sample) {
-        _settings = settings; self.preview = preview
+    init(settings: Binding<ReaderSettings>, preview: ReadingPreviewSource = .sample, encoding: String? = nil, changeEncoding: ((String?) -> Void)? = nil) {
+        _settings = settings; self.preview = preview; self.encoding = encoding; self.changeEncoding = changeEncoding
     }
     private var appearance: ThemeAppearance { editedAppearance ?? themes.reader.plan.appearance }
     private var previewExpanded: Bool { verticalSizeClass == .compact || previewDetent == .large }
@@ -115,7 +117,7 @@ struct ReaderSettingsView: View {
             // bar above this page. Reserving half of just the content is too short.
             let frame = geometry.frame(in: .global)
             let mediumHeight = max(0, (frame.maxY + geometry.safeAreaInsets.bottom) / 2 - frame.minY - LayoutTokens.control)
-            ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editedAppearance,
+            ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editedAppearance, encoding: encoding, changeEncoding: changeEncoding,
                                  editPalette: { value in
                                      if previewPresented { previewDetent = .large }
                                      draft = value
@@ -226,6 +228,8 @@ private struct ReadingSettingsControls: View {
     @Binding var settings: ReaderSettings
     @Binding var tab: ReadingSettingsTab
     @Binding var editedAppearance: ThemeAppearance?
+    let encoding: String?
+    let changeEncoding: ((String?) -> Void)?
     let editPalette: (PaletteDraft) -> Void
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
@@ -274,6 +278,12 @@ private struct ReadingSettingsControls: View {
     }
     private var typography: some View {
         Form {
+            if let encoding, let changeEncoding {
+                Section("本书") {
+                    ReaderEncodingMenu(title: "文字编码", value: encoding, select: changeEncoding)
+                        .accessibilityIdentifier("bookTextEncoding")
+                }.listRowBackground(Color(uiColor: theme.surface))
+            }
             Section {
                 Picker("字体", selection: binding(\.font)) {
                     Text("系统").tag(ReaderFont.system)

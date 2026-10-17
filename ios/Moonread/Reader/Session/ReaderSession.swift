@@ -13,6 +13,11 @@ final class ReaderSession {
     private(set) var displayAnchor: UInt64?
     var showingCover = true
     private var hasEnteredBody = false
+    private(set) var decodingPolicy: String?
+    var encodingLabel: String? {
+        guard let decodingPolicy, let encoding = book?.encoding else { return nil }
+        return decodingPolicy == "auto" ? String(localized: "自动 · \(encoding.uppercased())") : encoding.uppercased()
+    }
     var chapter: ChapterInfo?
     var error: String?
     private var hasPresentedCompatibilityNotice = false
@@ -89,6 +94,7 @@ final class ReaderSession {
                 diagnostic?.mark("lease.mainResumed")
                 guard !isLeaving, !Task.isCancelled, opening.request?.id == attempt else { return }
                 readingLease = lease
+                decodingPolicy = try await service.readingDecoding(lease.id)
             } catch { if !isLeaving, !Task.isCancelled, opening.request?.id == attempt { self.error = ReaderMessages.error(error); isLoading = false; updateOpening() }; return }
         }
         guard !isLeaving else { return }
@@ -299,7 +305,10 @@ final class ReaderSession {
         let title = book?.title ?? ""
         Task {
             do {
+                await flush()
+                guard !isLeaving else { return }
                 let next = try await service.restartImport(id, encoding: encoding)
+                decodingPolicy = try await service.readingDecoding(next.id)
                 guard !isLeaving else { return }
                 opening.begin(OpeningRequest(target: .book(next.id)), navigationSettled: true)
                 monitorToken = UUID()

@@ -1243,6 +1243,55 @@ final class TextLayoutTests: XCTestCase {
         withExtendedLifetime(reopened) {}
     }
 
+    @MainActor func testCompletedBookEncodingChangeRestoresDataAndPersistsChoice() async throws {
+        let (root, service, core, formal, pending, _, _, suite) = try singleBookFixture()
+        defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let path = root.appendingPathComponent("a.txt")
+        let original = "Chapter 1\nUn caf\u{e9} original sample.\n" + String(repeating: "Another original paragraph.\n", count: 30)
+        try Data(original.utf8).write(to: path)
+        let file = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "a.txt" })
+        let entry = try await service.libraryEntry(file.id)
+        func complete(_ lease: ReadingLease) async throws -> ReadingSnapshot {
+            for _ in 0..<300 {
+                if !(await service.hasRunningImports) { break }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+            let snapshot = try await service.snapshot(lease.id)
+            XCTAssertEqual(snapshot.phase, .complete)
+            return snapshot
+        }
+        let first = try await service.openSourceFile(entry.source)
+        let initial = try await complete(first)
+        let auto = try await service.readingDecoding(first.id); XCTAssertEqual(auto, "auto")
+        try await service.savePosition(bookID: first.id, offset: 10)
+        _ = try await service.ensureBookmark(first.id, at: 10)
+        let edit = try await service.prepareAnnotation(first.id, start: 10, end: 16)
+        _ = try await service.saveNote(edit, text: "Original annotation")
+        // Both decoders succeed; the second is visibly wrong, so failure-only UI
+        // cannot solve this case. Completion must not prevent a new import.
+        let changed = try await service.restartImport(first.id, encoding: "windows-1252")
+        let changedBook = try await complete(changed)
+        XCTAssertNotEqual(changedBook.book.contentSha256, initial.book.contentSha256)
+        XCTAssertEqual(changedBook.book.positionUtf8, 0)
+        let newMarks = try await service.marks(changed.id, kind: .annotation, offset: 0)
+        XCTAssertTrue(newMarks.items.isEmpty)
+        let restored = try await service.restartImport(changed.id, encoding: "UTF-8")
+        let restoredBook = try await complete(restored)
+        XCTAssertEqual(restoredBook.book.contentSha256, initial.book.contentSha256)
+        XCTAssertEqual(restoredBook.book.positionUtf8, 10)
+        let bookmark = try await service.hasBookmark(restored.id, at: 10); XCTAssertTrue(bookmark)
+        let notes = try await service.marks(restored.id, kind: .annotation, offset: 0)
+        XCTAssertEqual(notes.items.map(\.note), ["Original annotation"])
+        XCTAssertEqual(try core.sourceDecoding(fileId: file.id), "UTF-8")
+        XCTAssertEqual(try Data(contentsOf: path), Data(original.utf8))
+        let reopenedService = ReaderService(core: core, libraryDirectory: root, sourceDefaultsSuite: suite, userStoreFactory: { name, _ in name == "pending-users.store" ? pending : formal })
+        let reopened = try await reopenedService.aiPrepare(entry.source)
+        let result = try await reopenedService.snapshot(reopened.id)
+        XCTAssertEqual(result.book.contentSha256, initial.book.contentSha256)
+        XCTAssertEqual(result.book.positionUtf8, 10)
+        withExtendedLifetime([first, changed, restored, reopened]) {}
+    }
+
     func testPreparedLocalLibraryRestoresCloudRootBeforeCachedEarlyReturn() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let cloud = root.appendingPathComponent("cloud"), suite = "LocalCloudRestore-" + UUID().uuidString

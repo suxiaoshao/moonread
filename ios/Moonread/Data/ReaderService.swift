@@ -575,6 +575,14 @@ actor ReaderService {
         launchImport(core: core, control: try core.resumeImport(bookId: id), descriptor: descriptor, encoding: descriptor.encoding)
     }
 
+    /// The active lease keeps its import descriptor alive, even after completion.
+    func readingDecoding(_ id: String) throws -> String? {
+        guard let data = sourceDefaults.data(forKey: importSourceKey(id)) else { return nil }
+        let source = try JSONDecoder().decode(ImportSource.self, from: data)
+        if let fileID = source.fileID { return try textCore().sourceDecoding(fileId: fileID) }
+        return source.encoding ?? "auto"
+    }
+
     func restartImport(_ id: String, encoding: String?) throws -> ReadingLease {
         guard let data = sourceDefaults.data(forKey: importSourceKey(id)) else { throw CocoaError(.fileReadNoPermission) }
         let descriptor = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))

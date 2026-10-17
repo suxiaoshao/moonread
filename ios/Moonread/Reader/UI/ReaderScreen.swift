@@ -195,7 +195,7 @@ struct ReaderScreen: View {
         .navigationDestination(isPresented: Binding(get: { panel == .settings && !session.isLeaving }, set: { shown in
             if !shown, panel == .settings { panel = searchActive ? .search : nil; sheetDismissRequested = false }
         })) {
-                ReaderSettingsView(settings: readingSettings, preview: settingsPreview)
+                ReaderSettingsView(settings: readingSettings, preview: settingsPreview, encoding: session.encodingLabel, changeEncoding: changeEncoding)
                 .themeScope(theme)
                 .preferredColorScheme(theme.scheme)
         }
@@ -761,7 +761,7 @@ struct ReaderScreen: View {
         }.accessibilityIdentifier(id).accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    /// 更多 replaces the dock content like quick settings. Its four actions use the same
+    /// 更多 replaces the dock content like quick settings. Its actions use the same
     /// label style, columns and targets as the tools below; at accessibility sizes the
     /// same labels stack as rows so they stay readable.
     private var moreContent: some View {
@@ -775,6 +775,9 @@ struct ReaderScreen: View {
                                 .frame(minHeight: 52)
                         }
                     }
+                    if session.encodingLabel != nil {
+                        moreEncodingMenu.frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
+                    }
                 }
             } else {
                 HStack(spacing: 0) {
@@ -784,12 +787,31 @@ struct ReaderScreen: View {
                                 .frame(maxWidth: .infinity, minHeight: 56)
                         }
                     }
+                    if session.encodingLabel != nil {
+                        moreEncodingMenu.labelStyle(ReaderToolLabelStyle())
+                            .frame(maxWidth: .infinity, minHeight: 56)
+                    }
                 }
             }
         }
         .padding(.horizontal, 24).padding(.top, LayoutTokens.content)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("readerMorePanel")
+    }
+
+    private func changeEncoding(_ encoding: String?) {
+        controlsVisible = false; dock = .progress
+        closeSearch()
+        // Leaving the pushed settings page programmatically does not run its
+        // binding's `panel == .settings` branch. Release the former sheet gate.
+        sheetDismissRequested = false
+        session.restart(encoding: encoding)
+    }
+
+    private var moreEncodingMenu: some View {
+        ReaderEncodingMenu(title: "更换编码", symbol: "character.bubble", select: changeEncoding)
+            .foregroundStyle(Color(uiColor: theme.ink))
+            .accessibilityIdentifier("moreTextEncoding")
     }
 
     private enum MoreAction: String, Identifiable {
@@ -946,7 +968,7 @@ struct ReaderScreen: View {
     }
 
     private var encodingMenu: some View {
-        ReaderEncodingMenu { session.restart(encoding: $0) }
+        ReaderEncodingMenu(select: changeEncoding)
     }
 
 }
@@ -1078,18 +1100,37 @@ enum ReadingEncodingGroup: String, CaseIterable, Identifiable {
 }
 
 struct ReaderEncodingMenu: View {
-    let select: (String) -> Void
+    var title: LocalizedStringKey = "更换编码重新打开"
+    var value: String? = nil
+    var symbol: String? = nil
+    let select: (String?) -> Void
+    @State private var pendingEncoding: String?
     var body: some View {
-        Menu("更换编码重新打开") {
+        Menu {
+            Button("自动识别") { pendingEncoding = "auto" }
             ForEach(ReadingEncodingGroup.allCases) { group in
                 Menu {
                     ForEach(group.encodings, id: \.self) { encoding in
-                        Button(encoding) { select(encoding) }
+                        Button(encoding) { pendingEncoding = encoding }
                     }
                 } label: { Text(group.title) }
             }
+        } label: {
+            HStack {
+                if let symbol { Label(title, systemImage: symbol) } else { Text(title) }
+                if let value {
+                    Spacer()
+                    Text(value).foregroundStyle(.secondary)
+                }
+            }.contentShape(.rect)
         }
         .menuOrder(.fixed)
         .accessibilityIdentifier("readerEncodingMenu")
+        .alert("更换文字编码？", isPresented: Binding(get: { pendingEncoding != nil }, set: { if !$0 { pendingEncoding = nil } }), presenting: pendingEncoding) { encoding in
+            Button("重新读取") { pendingEncoding = nil; select(encoding == "auto" ? nil : encoding) }
+            Button("取消", role: .cancel) { pendingEncoding = nil }
+        } message: { _ in
+            Text("正文会按新编码重新读取。当前编码下的阅读位置、书签和批注不会带到不同的新正文，原数据会保留。原文件未变时，换回原编码可找回。")
+        }
     }
 }
