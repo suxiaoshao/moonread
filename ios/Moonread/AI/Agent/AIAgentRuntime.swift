@@ -21,6 +21,9 @@ import SwiftAISDK
   private let settleToolAssets: @MainActor (AIAgentHead) async -> Void
   private(set) var head: AIAgentHead
   private var task: Task<Void, Never>?
+  // Only explicit input admission requests a successor; stop revokes that intent.
+  private var queuedRunRequested = false
+  private var stopGeneration = UUID()
   private var stopStream: (() -> Void)?
   private var configuration: AIAgentConfiguration?
   private var requestOutputLimit = 1
@@ -118,6 +121,7 @@ import SwiftAISDK
   func enqueue(_ text: String, mode: AIAgentQueueMode = .steering, attachments: [AIReadingAttachment] = [], selection: AIAgentSelection? = nil, listed: Bool? = nil) async throws {
     guard admission() else { throw CancellationError() }
     guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    let admittedBeforeStop = stopGeneration
     try await transact(listed: listed, sentAt: Date()) { next in
       guard self.admission() else { throw CancellationError() }
       if let selection { next.selection = selection }
@@ -125,12 +129,15 @@ import SwiftAISDK
       return []
     }
     observe(.init(status: head.status, text: partialText, reasoning: partialReasoning, reasoningActive: reasoningActive))
+    guard stopGeneration == admittedBeforeStop, !Task.isCancelled, admission() else { return }
+    queuedRunRequested = true
     if task == nil && admission() { resume() }
   }
   /// Explicit resume only; construction never starts a paid request.
   func resume() {
     guard task == nil, !Task.isCancelled, admission() else { return }
     generation = UUID()
+    queuedRunRequested = false
     stopped = false
     forceCompression = false
     overflowRetried = false
@@ -138,6 +145,8 @@ import SwiftAISDK
   }
   func wait() async { await task?.value }
   func stop() {
+    stopGeneration = UUID()
+    queuedRunRequested = false
     stopped = true
     guard task != nil else { return }
     stopStream?()
@@ -224,6 +233,16 @@ import SwiftAISDK
       stopStream = nil
       task = nil
       observe(.init(status: head.status, text: partialText, reasoning: partialReasoning, reasoningActive: reasoningActive))
+      if queuedRunRequested, !head.queue.isEmpty, admission() {
+        let retiredGeneration = generation
+        // The retiring task may be cancelled. Hand ownership to a fresh task,
+        // rechecking stop/admission and generation after this actor yields.
+        Task { [weak self] in
+          guard let self, self.generation == retiredGeneration,
+                self.queuedRunRequested, !self.head.queue.isEmpty else { return }
+          self.resume()
+        }
+      }
     }
     resetTurnExecution()
     do {

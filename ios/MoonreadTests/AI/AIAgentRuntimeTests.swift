@@ -125,6 +125,77 @@ private struct SessionImageOutput: Codable, Sendable { var attachment: AIImageAt
       XCTAssertTrue(storedHistory1.contains { $0.userText == "Unrelated text" })
     }
   }
+  func testStopThenImmediateEnqueueRunsPersistedInputOnce() async throws {
+    try await assertStoppedRunHandoff(toggleAvailability: false, disableBeforeExit: false)
+  }
+
+  func testDisableEnableThenImmediateEnqueueRunsPersistedInputOnce() async throws {
+    try await assertStoppedRunHandoff(toggleAvailability: true, disableBeforeExit: false)
+  }
+
+  func testDisabledAvailabilityPreventsStoppedRunHandoff() async throws {
+    try await assertStoppedRunHandoff(toggleAvailability: true, disableBeforeExit: true)
+  }
+
+  func testStopDuringEnqueuePublicationDoesNotRearmRun() async throws {
+    try await assertStoppedRunHandoff(toggleAvailability: false, disableBeforeExit: false, stopDuringPublication: true)
+  }
+
+  private func assertStoppedRunHandoff(toggleAvailability: Bool, disableBeforeExit: Bool, stopDuringPublication: Bool = false) async throws {
+    let owner = UUID().uuidString, repository = try await makeRepository(owner)
+    let suite = "RuntimeHandoff-" + owner
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let availability = AIAvailability(defaults: defaults), gate = StepPublicationGate()
+    let model = AgentModel([text("新输入已处理")]), configuration = config(model)
+    var resolutions = 0
+    let runtime = try await AIAgentRuntime(id: owner, store: AIAgentStore(repository: repository), tools: [], resolve: {
+      resolutions += 1
+      if resolutions == 1 { await gate.pause() }
+      return configuration
+    }, admission: { availability.isAvailable })
+    availability.didDisable = { runtime.stop() }
+    try await runtime.enqueue("旧输入")
+    let entered = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      MainActor.assumeIsolated { gate.entered }
+    }, object: nil)
+    await fulfillment(of: [entered], timeout: 5)
+    if toggleAvailability {
+      availability.setEnabled(false)
+      do { try await runtime.enqueue("关闭期间禁止发送"); XCTFail("Disabled admission") }
+      catch is CancellationError {} catch { XCTFail("Unexpected \(error)") }
+      availability.setEnabled(true)
+    } else { runtime.stop() }
+    XCTAssertTrue(runtime.isRunning, "The old cancelled task is deliberately still suspended")
+    if stopDuringPublication {
+      runtime.setObserver { _ in
+        if runtime.head.queue.contains(where: { $0.text == "新输入" }) { runtime.stop() }
+      }
+    }
+    try await runtime.enqueue("新输入")
+    let shouldRemainQueued = disableBeforeExit || stopDuringPublication
+    let persisted = try await repository.head(owner)
+    XCTAssertEqual(persisted.queue.map(\.text), ["新输入"])
+    if disableBeforeExit { availability.setEnabled(false) }
+    gate.release()
+    await runtime.wait()
+    let finished = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+      MainActor.assumeIsolated {
+        !runtime.isRunning && (shouldRemainQueued || runtime.head.status == .completed)
+      }
+    }, object: nil)
+    await fulfillment(of: [finished], timeout: 5)
+    let count = await model.count
+    XCTAssertEqual(count, shouldRemainQueued ? 0 : 1)
+    let history = try await runtime.history()
+    XCTAssertEqual(history.filter { $0.userText == "新输入" }.count, shouldRemainQueued ? 0 : 1)
+    XCTAssertEqual(runtime.head.queue.map(\.text), shouldRemainQueued ? ["新输入"] : [])
+    if disableBeforeExit {
+      availability.setEnabled(true)
+      XCTAssertFalse(runtime.isRunning, "Re-enabling alone must not resume the queue")
+    }
+  }
+
   func testToolLoopPersistsPairsAndCanReload() async throws {
     let repository = try await makeRepository("one")
     let counter = AgentCounter()

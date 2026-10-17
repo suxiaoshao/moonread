@@ -11,6 +11,7 @@
 - iPhone 18 Pro / iOS 27.0 模拟器两个完整 UI 用例通过：浅深色入口隐藏、重启后保持关闭、重新开启连接恢复；指南与 TipKit 无 AI 描述。`build/AIMasterSwitch/verified.log`、`verified.xcresult`。分别明确设置应用与阅读配色后重新运行浅深色主流程通过，最终截图来自 `appearance-final.log` / `appearance-final.xcresult`。
 - 截图在 `build/AIMasterSwitch/screens/`：`overview.png` 为六图总览；`ai-master-switch-{light,dark}.png`、`ai-disabled-detail-{light,dark}.png`、`ai-disabled-reader-{light,dark}.png`，另有 `ai-disabled-guide.png` 与 `ai-disabled-selection-tip.png`。均为原创合成 TXT。
 - 截图复核：详情页日期范围卡片下方露出的书本轮廓来自统计区 `ContentUnavailableView` 的 `book.closed` 图标（“暂无阅读记录”），不是 AI 入口；AI 开启／关闭时都存在。初始截图仅露出列表下一行上缘，向上滚动后图标、标题及说明均完整可见，因此未修改详情布局。设置页 AI 说明下方增加 16pt 间隔，避免紧贴“应用”分区标题。两项受影响 UI 用例浅深色回归通过，日志与结果包为 `build/AIMasterSwitch/review-layout.log` / `review-layout.xcresult`；补充对照图 `screens/ai-enabled-detail{,-statistics}-{light,dark}.png`、`screens/ai-disabled-detail-statistics-{light,dark}.png`，更新设置图 `screens/ai-master-switch-{light,dark}.png` 已目视核对。
+- 停止交接：runtime 在旧任务尚未退出时持久化的新输入会请求一次后继运行，旧任务退出后由新任务重新检查准入并消费队列；再次停止／关闭总开关撤销该请求，单纯重新开启不发送。可控挂起测试在修复前复现“新输入留在队列、零请求”（`build/AIMasterSwitch/handoff-before.log/.xcresult`）；最终 runtime 48 项与服务层停止／共享取消／总开关 3 项定向回归全部通过（共 51 项，`handoff-final.log/.xcresult`），含停止后立即入队、关开后立即入队、交接前再次关闭及入队发布时再次停止，检查持久化输入仅消费一次；停止代次同时阻止迟到的持久化返回重新请求运行。未请求真实服务，未操作手机。
 - 中英文帮助页 Zola 构建通过，日志 `build/AIMasterSwitch/site.log`；`git diff --check` 通过。
 - 附加的 `testAIReadingMoonCloseReopenAndConversationTab` 单项通过（`ui.log`）；同轮资料任务 UI 回归卡在 XCUITest 长按菜单 idle 等待，已中止，未计为通过。本次入口隐藏通过同一菜单现有的“…”按钮验证。未操作真机，未调用真实 AI 服务。
 
