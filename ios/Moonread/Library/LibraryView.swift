@@ -224,6 +224,7 @@ private struct RecentCoverTile<Actions: View>: View {
 struct LibraryFolderView: View {
     @Bindable var model: LibraryModel
     let location: LibraryLocation
+    @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     @State private var entries: [LibraryEntry] = []
     @State private var loaded = false
@@ -267,8 +268,10 @@ struct LibraryFolderView: View {
                         Button("选择项目", systemImage: "checkmark.circle") { editing = .active }
                         Button("新建文件夹", systemImage: "folder.badge.plus") { model.sheet = .create(location) }
                         if location.shelfID == "builtin" { Button("导入小说", systemImage: "square.and.arrow.down") { model.chooseFiles(.novels(location)) } }
-                        Button("整理…", systemImage: "folder.badge.gearshape") { model.aiRequest = .folder(location, title: title) }
-                            .accessibilityIdentifier("organizeFolder")
+                        if ai.availability.isAvailable {
+                            Button("整理…", systemImage: "folder.badge.gearshape") { model.aiRequest = .folder(location, title: title) }
+                                .accessibilityIdentifier("organizeFolder")
+                        }
                         Divider()
                         Picker("显示方式", selection: $model.layout) {
                             Label("列表", systemImage: "list.bullet").tag(LibraryLayout.list)
@@ -306,13 +309,15 @@ struct LibraryFolderView: View {
                     }
                     Button("移动", systemImage: "folder") { model.sheet = .move(selectedEntries) }
                         .disabled(selection.isEmpty || fileActionsDisabled)
-                    Menu {
-                        Button("完善资料", systemImage: "sparkles") { model.aiRequest = .library(selectedEntries, family: .metadata) }
-                            .disabled(!selectedEntries.contains { !$0.directory })
-                        Button("整理所选", systemImage: "folder.badge.gearshape") { model.aiRequest = .library(selectedEntries, family: .organization) }
-                            .disabled(!selectedEntries.contains { !$0.directory })
-                    } label: { Label("AI 助手", systemImage: "sparkles") }
-                        .disabled(selection.isEmpty || fileActionsDisabled).accessibilityIdentifier("libraryAISelection")
+                    if ai.availability.isAvailable {
+                        Menu {
+                            Button("完善资料", systemImage: "sparkles") { model.aiRequest = .library(selectedEntries, family: .metadata) }
+                                .disabled(!selectedEntries.contains { !$0.directory })
+                            Button("整理所选", systemImage: "folder.badge.gearshape") { model.aiRequest = .library(selectedEntries, family: .organization) }
+                                .disabled(!selectedEntries.contains { !$0.directory })
+                        } label: { Label("AI 助手", systemImage: "sparkles") }
+                            .disabled(selection.isEmpty || fileActionsDisabled).accessibilityIdentifier("libraryAISelection")
+                    }
                     Button("删除", systemImage: "trash", role: .destructive) { model.deletion = selectedEntries }
                         .disabled(selection.isEmpty || fileActionsDisabled)
                 }

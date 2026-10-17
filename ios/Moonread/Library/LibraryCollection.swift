@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 /// UIKit owns range selection, autoscroll, cell reuse and list swipe actions.
 /// SwiftUI still draws the same themed book covers and file rows.
 struct LibraryCollection: UIViewControllerRepresentable {
+    @Environment(AIService.self) private var ai
     let model: LibraryModel
     let location: LibraryLocation
     let entries: [LibraryEntry]
@@ -150,6 +151,7 @@ struct LibraryCollection: UIViewControllerRepresentable {
                 .disabled(config.disabled)
                 .allowsHitTesting(!selecting)
                 .contextMenu { if !selecting { LibraryItemMenu(model: config.model, entry: entry) } }
+                .environment(config.ai)
             }.margins(.vertical, 0).margins(.horizontal, config.layout == .list ? LayoutTokens.page : 0)
             // A selected cell is one accessible control; hosted buttons must not
             // compete with UIKit for the two-finger interaction or double-toggle.

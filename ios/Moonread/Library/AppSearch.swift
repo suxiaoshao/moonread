@@ -184,9 +184,9 @@ struct AppSearchView: View {
     @State private var loading = LoadingState()
     private var books: [LibraryEntry] { entries.filter { !$0.directory } }
     private var folders: [LibraryEntry] { host.showsFolders ? entries.filter(\.directory) : [] }
-    private var groupCount: Int { [!books.isEmpty, !folders.isEmpty, !conversations.isEmpty].filter { $0 }.count }
+    private var groupCount: Int { [!books.isEmpty, !folders.isEmpty, ai.availability.isAvailable && !conversations.isEmpty].filter { $0 }.count }
     private var key: SearchKey {
-        SearchKey(term: search.term, tokens: search.tokens, revision: model.revision, retry: retry)
+        SearchKey(term: search.term, tokens: search.tokens, revision: model.revision, retry: retry, aiAvailable: ai.availability.isAvailable)
     }
     var body: some View {
         List {
@@ -200,7 +200,7 @@ struct AppSearchView: View {
                 }
                 if !books.isEmpty { section("书籍", count: books.count) { rows(books) } }
                 if !folders.isEmpty { section("文件夹", count: folders.count) { rows(folders) } }
-                if !conversations.isEmpty {
+                if ai.availability.isAvailable, !conversations.isEmpty {
                     section("对话", count: conversations.count) {
                         ForEach(conversations) { hit in
                             // A Button, like the book rows: its tap still opens the chat while the
@@ -324,6 +324,7 @@ private struct SearchKey: Hashable {
     let tokens: [AppSearchToken]
     let revision: Int
     let retry: Int
+    let aiAvailable: Bool
 }
 
 /// A snapshot of what matched when searched: the title and one line from the newest

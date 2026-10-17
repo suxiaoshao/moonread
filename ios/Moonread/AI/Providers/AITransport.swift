@@ -5,14 +5,24 @@ import AISDKProviderUtils
 /// lifetime and does not inherit the SDK default's 16 KB streaming threshold.
 final class AITransport: @unchecked Sendable {
     private let session: URLSession
+    private var access: (AIAvailability, UUID)?
+    /// Install before handing this transport to any SDK fetch closure.
+    @MainActor func protect(using availability: AIAvailability) throws {
+        let token = try availability.register { [weak self] in self?.cancel() }
+        access = (availability, token)
+    }
     init(configuration: URLSessionConfiguration = .ephemeral) {
         configuration.timeoutIntervalForRequest = .infinity
         configuration.timeoutIntervalForResource = .infinity
         session = URLSession(configuration: configuration)
     }
     func cancel() { session.invalidateAndCancel() }
-    func finish() { session.finishTasksAndInvalidate() }
+    func finish() {
+        session.finishTasksAndInvalidate()
+        if let (availability, token) = access { Task { @MainActor in availability.finish(token) } }
+    }
     func fetch(_ request: URLRequest) async throws -> FetchResponse {
+        if let (availability, token) = access { try await availability.validate(token) }
         let (bytes, response) = try await session.bytes(for: request)
         let isSSE = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type")?.lowercased().contains("text/event-stream") == true
         let stream = AsyncThrowingStream<Data, Error> { continuation in

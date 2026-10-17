@@ -123,6 +123,204 @@ private final class AITestURLProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() { Self.state.stopped() }
 }
 @MainActor final class AIStageOneTests: XCTestCase {
+    func testMasterSwitchDefaultsLocalPersistenceAndInvalidatesOldLeases() async throws {
+        let suite = "AIAvailability-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let availability = AIAvailability(defaults: defaults)
+        XCTAssertTrue(availability.isAvailable)
+        let cancelled = expectation(description: "in-flight cancelled")
+        let lease = try availability.register { cancelled.fulfill() }
+        let generation = availability.generation
+        availability.setEnabled(false)
+        await fulfillment(of: [cancelled], timeout: 1)
+        XCTAssertFalse(AIAvailability(defaults: defaults).isAvailable)
+        XCTAssertThrowsError(try availability.requireAvailable())
+        availability.setEnabled(true)
+        XCTAssertTrue(AIAvailability(defaults: defaults).isAvailable)
+        XCTAssertThrowsError(try availability.validate(lease), "A rapid off/on cannot revive old work")
+        do {
+            try await availability.perform(generation: generation) { XCTFail("A delayed child task must not start") }
+            XCTFail("Old policy generation accepted")
+        } catch is CancellationError {} catch { XCTFail("Unexpected \(error)") }
+    }
+
+    func testMasterSwitchCancelsCredentialWorkAndRejectsExecution() async throws {
+        let (service, _, connection, suite) = try await fixture()
+        defer { cleanup(connection, suite: suite) }
+        var started = false
+        let work = Task {
+            try await service.availability.perform {
+                started = true
+                try await Task.sleep(for: .seconds(60))
+            }
+        }
+        await wait { started }
+        service.availability.setEnabled(false)
+        do { try await work.value; XCTFail("The active operation must be cancelled") }
+        catch is CancellationError {} catch { XCTFail("Unexpected \(error)") }
+        let unavailableDraft = await service.create()
+        XCTAssertNil(unavailableDraft)
+        service.providers.login(connection.id)
+        XCTAssertNil(service.providers.loginConnectionID)
+        await service.providers.refreshModels(connection.id)
+        XCTAssertTrue(service.providers.refreshingModels.isEmpty)
+        do { _ = try await service.providers.credential(connection); XCTFail("Disabled credential admission") }
+        catch is AIAvailability.Unavailable {} catch { XCTFail("Unexpected \(error)") }
+        let executor = AINativeExecutor(providers: service.providers, owner: "disabled", images: .shared, makeTransport: { AITransport() })
+        for purpose in AIModelPurpose.allCases {
+            do { _ = try await executor.perform(purpose, prompt: "must not send", refs: []); XCTFail("Disabled native execution") }
+            catch is AIAvailability.Unavailable {} catch { XCTFail("Unexpected \(error)") }
+        }
+        do {
+            _ = try await service.startTask(origin: AITaskOrigin(bookSHA: "fixture"), kind: .metadata, attachments: [], instruction: "blocked", selection: .init(connectionID: connection.id, modelID: connection.modelID))
+            XCTFail("Disabled task admission")
+        } catch is AIAvailability.Unavailable {} catch { XCTFail("Unexpected \(error)") }
+        XCTAssertEqual(AITestURLProtocol.state.counts.0, 0)
+    }
+
+    func testMasterSwitchStopsAgentAndRetainsHistoryCredentialsAndConsent() async throws {
+        let (service, repository, connection, suite) = try await fixture("text-wait")
+        defer { cleanup(connection, suite: suite); try? AIKeychain.remove(connection.credentialReference) }
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let credential = AICredential(accessToken: "synthetic-master-switch", refreshToken: "", expires: .distantFuture, accountID: "fixture")
+        try AIKeychain.save(credential, reference: connection.credentialReference)
+        service.providers.saveConnections()
+        let conversation = try await created(service)
+        service.updateDraft(conversation.id, text: "原创测试问题")
+        service.send(conversation.id)
+        await wait { conversation.running && !conversation.partialText.isEmpty }
+        let connections = defaults.data(forKey: "Moonread.ai.connections")
+        let consent = defaults.data(forKey: "Moonread.ai.sharing.grants")
+        XCTAssertNotNil(consent)
+        service.availability.setEnabled(false)
+        await wait { !conversation.running && !conversation.submitting }
+        XCTAssertGreaterThan(AITestURLProtocol.state.counts.1, 0)
+        XCTAssertEqual(conversation.turns.last?.outcome, .stopped)
+        let count = AITestURLProtocol.state.counts.0
+        service.send(conversation.id)
+        XCTAssertEqual(AITestURLProtocol.state.counts.0, count)
+        XCTAssertEqual(defaults.data(forKey: "Moonread.ai.connections"), connections)
+        XCTAssertEqual(defaults.data(forKey: "Moonread.ai.sharing.grants"), consent)
+        XCTAssertEqual(try AIKeychain.load(connection.credentialReference)?.accessToken, credential.accessToken)
+        let reopened = AIService(repository: repository, defaults: defaults)
+        await reopened.load()
+        XCTAssertTrue(reopened.loaded)
+        XCTAssertFalse(reopened.availability.isAvailable)
+        XCTAssertEqual(reopened.conversation(conversation.id)?.turns.last?.answer, "你好，**月读**。")
+        let hidden = try await reopened.searchConversations("原创测试问题")
+        XCTAssertTrue(hidden.isEmpty)
+        reopened.availability.setEnabled(true)
+        let restored = try await reopened.searchConversations("原创测试问题")
+        XCTAssertEqual(restored.first?.id, conversation.id)
+        XCTAssertEqual(AITestURLProtocol.state.counts.0, count, "Re-enabling does not resume a stopped request")
+        service.availability.setEnabled(true)
+        AITestURLProtocol.state.reset("complete")
+        service.updateDraft(conversation.id, text: "重新开启后发送")
+        service.send(conversation.id)
+        await wait { conversation.turns.last?.outcome == .completed && !conversation.submitting }
+        XCTAssertEqual(AITestURLProtocol.state.counts.0, 1)
+    }
+
+
+    func testMasterSwitchCancelsPendingSharingWithoutDiscardingDraft() async throws {
+        let (service, _, connection, suite) = try await fixture(approveSharing: false)
+        defer { cleanup(connection, suite: suite) }
+        let conversation = try await created(service)
+        service.updateDraft(conversation.id, text: "尚未同意发送的合成问题")
+        service.send(conversation.id)
+        await wait { !service.sharing.requests.isEmpty }
+        service.availability.setEnabled(false)
+        await wait { !conversation.submitting }
+        XCTAssertTrue(service.sharing.requests.isEmpty)
+        XCTAssertEqual(conversation.draft, "尚未同意发送的合成问题")
+        XCTAssertFalse(conversation.persisted)
+        XCTAssertEqual(AITestURLProtocol.state.counts.0, 0)
+    }
+
+    func testMasterSwitchCancelsSharedTokenRefreshWithoutClearingCredentials() async throws {
+        AITestURLProtocol.state.reset("headers-wait")
+        let suite = "MasterSwitchRefresh-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AITestURLProtocol.self]
+        let providers = AIConnectionService(defaults: defaults, auth: AIAuthentication(session: URLSession(configuration: config)))
+        var connection = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection()
+        connection.id = UUID().uuidString
+        defer { defaults.removePersistentDomain(forName: suite); try? AIKeychain.remove(connection.credentialReference) }
+        let account = AIChatGPTAccount(clientID: "oaiapp_fixture", subject: "synthetic", idToken: "synthetic", scopes: ["chatgpt.tokens.use.direct"])
+        let credential = AICredential(accessToken: "synthetic", refreshToken: "synthetic-refresh", expires: .distantPast, accountID: account.subject, chatGPT: account)
+        try AIKeychain.save(credential, reference: connection.credentialReference)
+        providers.connections = [connection]
+        let selected = connection
+        let task = Task { try await providers.credential(selected) }
+        await wait { AITestURLProtocol.state.counts.0 == 1 }
+        providers.availability.setEnabled(false)
+        do { _ = try await task.value; XCTFail("Refresh must be cancelled") } catch {}
+        await wait { AITestURLProtocol.state.counts.1 > 0 }
+        XCTAssertEqual(try AIKeychain.load(connection.credentialReference)?.refreshToken, credential.refreshToken)
+        XCTAssertFalse(providers.needsLogin.contains(connection.id))
+    }
+
+    func testMasterSwitchDiscardsLateAuthFailureAfterReenable() async throws {
+        let suite = "MasterSwitchLate-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let availability = AIAvailability(defaults: defaults)
+        var completion: CheckedContinuation<Void, Error>?
+        let task = Task {
+            try await availability.perform {
+                try await withCheckedThrowingContinuation { completion = $0 }
+            }
+        }
+        await wait { completion != nil }
+        availability.setEnabled(false); availability.setEnabled(true)
+        completion?.resume(throwing: AIChatGPTError.refreshExpired("invalid_grant"))
+        do { try await task.value; XCTFail("Old authentication failure escaped its lease") }
+        catch is CancellationError {} catch { XCTFail("Unexpected \(error)") }
+    }
+
+    func testMasterSwitchStopsCatalogBatchAcrossRapidReenable() async throws {
+        AITestURLProtocol.state.reset("headers-wait")
+        let suite = "MasterSwitchCatalog-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AITestURLProtocol.self]
+        let account = AIChatGPTAccount(clientID: "oaiapp_fixture", subject: "synthetic", idToken: "synthetic", scopes: ["chatgpt.tokens.use.direct"])
+        let credential = AICredential(accessToken: "synthetic", refreshToken: "synthetic", expires: .distantFuture, accountID: account.subject, chatGPT: account)
+        let auth = AIAuthentication(session: URLSession(configuration: config), credentialResolver: { _ in credential })
+        let providers = AIConnectionService(defaults: defaults, auth: auth)
+        var first = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection()
+        first.id = UUID().uuidString
+        var second = first; second.id = UUID().uuidString
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? AIKeychain.remove(first.credentialReference); try? AIKeychain.remove(second.credentialReference)
+        }
+        for connection in [first, second] { try AIKeychain.save(credential, reference: connection.credentialReference) }
+        providers.connections = [first, second]
+        let refresh = Task { await providers.refreshConnectionCatalogsIfNeeded() }
+        await wait { AITestURLProtocol.state.counts.0 == 1 }
+        providers.availability.setEnabled(false); providers.availability.setEnabled(true)
+        await refresh.value
+        await wait { AITestURLProtocol.state.counts.1 > 0 }
+        XCTAssertEqual(AITestURLProtocol.state.counts.0, 1, "Cancelled catalog work must not advance to another account after re-enabling")
+        XCTAssertTrue(providers.refreshingModels.isEmpty)
+    }
+
+    func testMasterSwitchCancelsQuickTaskBeforeConsentAndReenableDoesNotSend() async throws {
+        let (service, _, connection, suite) = try await fixture(approveSharing: false)
+        defer { cleanup(connection, suite: suite) }
+        let task = Task {
+            try await service.startTask(origin: AITaskOrigin(bookSHA: "synthetic"), kind: .metadata, attachments: [], instruction: "synthetic", selection: .init(connectionID: connection.id, modelID: connection.modelID))
+        }
+        await wait { !service.sharing.requests.isEmpty }
+        service.availability.setEnabled(false); service.availability.setEnabled(true)
+        do { _ = try await task.value; XCTFail("Cancelled quick task resumed") }
+        catch is CancellationError {} catch { XCTFail("Unexpected \(error)") }
+        XCTAssertTrue(service.sharing.requests.isEmpty)
+        XCTAssertTrue(service.sessions.isEmpty)
+        XCTAssertEqual(AITestURLProtocol.state.counts.0, 0)
+    }
+
     private func fixture(_ mode: String = "complete", approveSharing: Bool = true) async throws -> (AIService, AIRepository, AIConnection, String) {
         AITestURLProtocol.state.reset(mode)
         let suite = "AIStageOne-\(UUID().uuidString)"
@@ -1643,6 +1841,25 @@ extension AIStageOneTests {
         try await repository.commit(tools.owner, head: head, assets: stage, references: Array(refs))
         await tools.images.didCommit(owner: tools.owner, refs: refs)
     }
+    func testMasterSwitchCancelsNativeRequestAndRestoresPurposeDefaults() async throws {
+        let (providers, tools, connection, defaults) = try await fixture("headers-wait")
+        let purposes = defaults.data(forKey: "Moonread.ai.purposeDefaults")
+        let task = Task { try await tools.search(.init(query: "synthetic")) }
+        let request = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in AITestURLProtocol.state.counts.0 == 1 }, object: nil)
+        await fulfillment(of: [request], timeout: 5)
+        providers.availability.setEnabled(false)
+        do { _ = try await task.value; XCTFail("Expected cancellation") }
+        catch is CancellationError {} catch { XCTFail("Unexpected \(error)") }
+        let stopped = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in AITestURLProtocol.state.counts.1 > 0 }, object: nil)
+        await fulfillment(of: [stopped], timeout: 5)
+        XCTAssertGreaterThan(AITestURLProtocol.state.counts.1, 0)
+        XCTAssertNil(providers.purposeSelection(.search))
+        XCTAssertEqual(defaults.data(forKey: "Moonread.ai.purposeDefaults"), purposes)
+        providers.availability.setEnabled(true)
+        XCTAssertEqual(providers.purposeSelection(.search)?.connectionID, connection.id)
+        XCTAssertEqual(providers.purposeSelection(.image)?.connectionID, connection.id)
+    }
+
     func testPurposeDefaultsPersistWithoutChangingTextModel() async throws {
         let (providers, _, connection, defaults) = try await fixture("native-search")
         let restored = AIConnectionService(defaults: defaults, auth: providers.auth)

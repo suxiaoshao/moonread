@@ -3016,6 +3016,101 @@ final class MoonreadUITests: XCTestCase {
         }
     }
 
+    func testAIMasterSwitchHidesEntrypointsAndRestoresAfterRelaunch() {
+        for mode in ["浅色", "深色"] {
+            prepareApp(arguments: ["--ui-test-ai-model-picker"])
+            setTipJarAppearance(mode)
+            // Reader colors are independent of the app appearance; configure both.
+            let reading = app.buttons["readerThemeSettings"]
+            for _ in 0..<4 where !reading.isHittable { app.swipeDown() }
+            XCTAssertTrue(reading.waitForExistence(timeout: 5)); reading.tap()
+            app.segmentedControls["readerThemeTabs"].buttons["配色"].tap()
+            app.buttons["readerAppearanceMode"].tap(); app.buttons[mode].tap()
+            leaveReadingSettings()
+            let toggle = app.switches["aiMasterSwitch"]
+            for _ in 0..<4 where !toggle.isHittable { app.swipeDown() }
+            XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+            XCTAssertEqual(toggle.value as? String, "1")
+            XCTAssertTrue(app.buttons["aiSettings"].exists)
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+            XCTAssertEqual(toggle.value as? String, "0")
+            XCTAssertFalse(app.buttons["aiSettings"].exists)
+            XCTAssertFalse(app.tabBars.buttons["对话"].exists)
+            recordScreenshot("ai-master-switch-\(mode == "浅色" ? "light" : "dark")")
+            app.terminate(); app.launch()
+            XCTAssertFalse(app.tabBars.buttons["对话"].exists, "Local switch persists across launch")
+            app.tabBars.buttons["统计"].tap()
+            app.buttons["统计选项"].tap()
+            XCTAssertFalse(app.buttons["analyzeReading"].exists)
+            app.tap()
+            app.tabBars.buttons["书架"].tap()
+            let shelf = app.buttons["shelf-builtin"]
+            XCTAssertTrue(shelf.waitForExistence(timeout: 10)); shelf.tap()
+            let actions = app.buttons["folderActions"]
+            XCTAssertTrue(actions.waitForExistence(timeout: 5)); actions.tap()
+            XCTAssertFalse(app.buttons["organizeFolder"].exists)
+            app.buttons["选择项目"].tap()
+            XCTAssertFalse(app.buttons["libraryAISelection"].exists)
+            app.buttons["librarySelectionDone"].tap()
+            let book = app.buttons["library-file-月读 · 排版示例.txt"]
+            XCTAssertTrue(book.waitForExistence(timeout: 5))
+            app.buttons["月读 · 排版示例.txt的操作"].tap()
+            XCTAssertFalse(app.buttons["完善资料"].exists)
+            app.buttons["小说详情"].tap()
+            XCTAssertTrue(app.navigationBars["小说详情"].waitForExistence(timeout: 5))
+            XCTAssertFalse(taskRow("资料建议").exists)
+            XCTAssertFalse(taskRow("封面").exists)
+            recordScreenshot("ai-disabled-detail-\(mode == "浅色" ? "light" : "dark")")
+            app.buttons["开始阅读"].tap()
+            let opened = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+                self.element("readerCover").exists || self.app.textViews["scrollText"].exists || self.app.textViews["pageText"].exists
+            }, object: nil)
+            XCTAssertEqual(XCTWaiter.wait(for: [opened], timeout: 10), .completed)
+            enterBodyFromCover(); XCTAssertTrue(readerTextAppears()); revealControls()
+            XCTAssertFalse(app.buttons["readerAIMoon"].exists)
+            recordScreenshot("ai-disabled-reader-\(mode == "浅色" ? "light" : "dark")")
+            // The selection menu keeps ordinary reading tools; no assistant entry remains.
+            let text = readingText()
+            if text.exists { text.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.3)).press(forDuration: 1.2) }
+            XCTAssertFalse(app.buttons["问 AI"].exists)
+            text.tap(); revealControls(); readerBackButton.tap()
+            openSettingsPage()
+            let restored = app.switches["aiMasterSwitch"]
+            for _ in 0..<5 where !restored.isHittable { app.swipeDown() }
+            XCTAssertEqual(restored.value as? String, "0"); restored.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+            XCTAssertTrue(app.buttons["aiSettings"].exists)
+            XCTAssertTrue(app.tabBars.buttons["对话"].exists)
+            app.buttons["aiSettings"].tap()
+            XCTAssertTrue(app.staticTexts["测试连接甲"].waitForExistence(timeout: 5), "Saved connections remain after off/on")
+            app.terminate()
+        }
+    }
+
+    func testAIMasterSwitchRemovesAIGuideAndTipCopy() {
+        prepareApp()
+        openSettingsPage()
+        let toggle = app.switches["aiMasterSwitch"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+        toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+        let guide = app.buttons["usageGuideSettings"]
+        for _ in 0..<4 where !guide.isHittable { app.swipeUp() }
+        XCTAssertTrue(guide.isHittable); guide.tap()
+        XCTAssertTrue(element("usageGuide").waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["AI 助手"].exists)
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "问 AI")).firstMatch.exists)
+        recordScreenshot("ai-disabled-guide")
+        app.terminate()
+        app.launchArguments.removeAll { $0 == "--disable-tips" }
+        app.launchArguments.append("--ui-test-tips")
+        app.launch(); openSample()
+        XCTAssertTrue(app.staticTexts["轻点屏幕中间显示工具栏"].waitForExistence(timeout: 10))
+        revealControls()
+        XCTAssertTrue(app.staticTexts["长按文字可以标注、写批注或拷贝"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["长按文字可以标注、写批注、拷贝或问 AI"].exists)
+        XCTAssertFalse(app.buttons["readerAIMoon"].exists)
+        recordScreenshot("ai-disabled-selection-tip")
+    }
+
     func testAIDataSharingConsentLanguagesAppearanceAndAccessibleActions() {
         for (language, mode, large, suffix) in [("zh-Hans", "浅色", false, "light"), ("zh-Hans", "深色", false, "dark"), ("en", "", false, "en"), ("en", "", true, "en-ax")] {
             prepareApp(language: language, arguments: ["--ui-test-home", "--ui-test-ai-sharing"] + (large ? ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"] : []))

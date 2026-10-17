@@ -136,6 +136,12 @@ struct ReaderScreen: View {
             .onChange(of: panel == .ai) { _, open in
                 if open { aiPresence.chatOpened() } else { aiPresence.chatClosed(); revealAIMoonNotice() }
             }
+            .onChange(of: ai.availability.isAvailable) { _, available in
+                if !available {
+                    if panel == .ai { closeTask() }
+                    aiPresence.conceal()
+                }
+            }
             .onChange(of: aiNoticeAllowed) { _, allowed in
                 if allowed { revealAIMoonNotice() } else { aiPresence.conceal() }
             }
@@ -326,7 +332,7 @@ struct ReaderScreen: View {
 
     /// Where the Moon may appear at all: reading this book, with no task, panel or search on top.
     private var aiMoonAllowed: Bool {
-        guard let sha = session.book?.contentSha256, !sha.isEmpty, !session.isLeaving else { return false }
+        guard ai.availability.isAvailable, let sha = session.book?.contentSha256, !sha.isEmpty, !session.isLeaving else { return false }
         return taskID == nil && dock == .progress && !searchExpanded
     }
     /// Notices wait for a calm page: foreground, not navigating or selecting across pages.
@@ -348,7 +354,7 @@ struct ReaderScreen: View {
         }
     }
     private func openAI(selection: TextRange? = nil) {
-        guard !session.isLeaving else { return }
+        guard ai.availability.isAvailable, !session.isLeaving else { return }
         aiEntrySnapshot = aiContext(selection: selection)
         controlsVisible = false; sheetDismissRequested = false; panel = .ai
     }
@@ -444,7 +450,7 @@ struct ReaderScreen: View {
     }
 
     @ViewBuilder private var readerTask: some View {
-        if panel == .ai {
+        if panel == .ai, ai.availability.isAvailable {
             AIReadingConversation(context: aiEntrySnapshot ?? aiContext(), close: closeTask, selected: $aiConversationID, openingIsActive: { exitPhase == .reading && !session.isLeaving })
         } else if let mark = session.editor {
             NoteEditor(edit: mark, close: closeTask)
@@ -712,7 +718,7 @@ struct ReaderScreen: View {
     private var bottomDock: some View {
         VStack(spacing: LayoutTokens.compact) {
             if Onboarding.shared.enabled, Onboarding.shared.revealedControls, !Onboarding.shared.selectedText, controlsVisible {
-                TipView(Onboarding.shared.selection).tipViewStyle(ThemedTipStyle()).accessibilityIdentifier("readerSelectionTip")
+                TipView(Onboarding.shared.selection).tipViewStyle(ThemedTipStyle(titleOverride: ai.availability.isAvailable ? nil : Text("长按文字可以标注、写批注或拷贝"))).accessibilityIdentifier("readerSelectionTip")
             }
             if dock == .settings {
                 ReaderQuickSettings(settings: readingSettings) { presentPanel(.settings) }

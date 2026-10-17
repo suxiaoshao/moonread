@@ -1,6 +1,57 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "AI 功能": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI Features"
+          }
+        }
+      }
+    },
+    "关闭后隐藏所有 AI 功能，已有连接、会话和数据共享许可保留。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Turning this off hides all AI features. Existing connections, conversations, and data-sharing permissions are kept."
+          }
+        }
+      }
+    },
+    "AI 功能已关闭。请在设置中开启后重试。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI features are off. Turn them on in Settings to try again."
+          }
+        }
+      }
+    },
+    "长按文字可以标注、写批注或拷贝": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch and hold text to highlight, annotate, or copy"
+          }
+        }
+      }
+    },
+    "长按正文选中文字，可以标注、写批注、拷贝或全文搜索。跨页选取时，在起点选择“从这里跨页选取”，翻到终点再长按选字，然后选择拷贝或“批注到这里”。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Touch and hold to select text, then highlight, annotate, copy, or search the book. To select across pages, choose “Start Cross-Page Selection” at the beginning, turn to the end, select text again, then copy or choose “Annotate to Here”."
+          }
+        }
+      }
+    },
+
     "正文准备已暂停": {
       "localizations": {"en": {"stringUnit": {"state": "translated", "value": "Text preparation is paused"}}}
     },

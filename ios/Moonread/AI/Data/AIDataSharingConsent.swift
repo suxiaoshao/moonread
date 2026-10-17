@@ -140,6 +140,7 @@ import CryptoKit
     /// Match the selected endpoint and effective protocol, rather than a display name.
     func authorizeSharing(connection: AIConnection, model: AIModelOption, credential: AICredential,
                           owner: String, purpose: String, scopes: Set<AIDataSharingConsent.Scope>, accountGeneration: String) async throws {
+        try availability.requireAvailable()
         guard try sharing.destination(connection).accountGeneration == accountGeneration else { throw CancellationError() }
         var recipient = connection
         recipient.wireProtocol = model.wireProtocol ?? connection.wireProtocol

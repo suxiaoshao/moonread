@@ -2,6 +2,17 @@
 
 更新：2026-10-17。本文按能力保存必要证据与未覆盖范围，不作逐轮修改日志。表中结果来自各次受影响回归，不能解释为当前版本在所有设备上完成了全量验收。
 
+## 2026-10-17 本机 AI 功能总开关
+
+- 设置新增默认开启的“AI 功能”，独立本机键 `Moonread.ai.enabled.v1`，不进入 CloudKit。关闭时立即拒绝新请求、取消进行中的工作；连接、会话、Keychain 凭据、默认用途和已保存的数据共享许可保留，重新开启不自动复活已取消任务。
+- 入口清单：AI 设置/连接/ChatGPT 登录；对话 Tab 和统一搜索中的对话结果；阅读月亮（含选区提问）；详情资料/封面按钮及任务菜单；书架单项/多选资料、目录/多选整理；统计分析；联网搜索/图片生成用途。指南隐藏 AI 章节并替换选字说明，TipKit 保留一次性历史、关闭时改用不含 AI 的提示。当前原生选字菜单没有独立“问 AI”项，选区提问通过阅读月亮进入。
+- 执行层共用 `AIAvailability`：普通提交、快捷任务、agent、共享确认、登录、公共/账户目录、原生搜索/生图和封面下载均经同一可用性判断。执行租约与代次防止快速关闭/开启后旧任务续跑；共享令牌刷新也纳入取消，迟到的认证失败不会误清凭据。
+- Nix + Xcode 整 App 模拟器构建及 18 项定向单测通过（新增 9 项，含关闭拒绝、agent/原生请求/快捷任务/共享确认/共享令牌刷新取消、目录批次停止、迟到失败丢弃、数据保留和重新开启）。日志/结果包：`build/AIMasterSwitch/execution-final.log`、`execution-final.xcresult`。
+- iPhone 18 Pro / iOS 27.0 模拟器两个完整 UI 用例通过：浅深色入口隐藏、重启后保持关闭、重新开启连接恢复；指南与 TipKit 无 AI 描述。`build/AIMasterSwitch/verified.log`、`verified.xcresult`。分别明确设置应用与阅读配色后重新运行浅深色主流程通过，最终截图来自 `appearance-final.log` / `appearance-final.xcresult`。
+- 截图在 `build/AIMasterSwitch/screens/`：`overview.png` 为六图总览；`ai-master-switch-{light,dark}.png`、`ai-disabled-detail-{light,dark}.png`、`ai-disabled-reader-{light,dark}.png`，另有 `ai-disabled-guide.png` 与 `ai-disabled-selection-tip.png`。均为原创合成 TXT。
+- 中英文帮助页 Zola 构建通过，日志 `build/AIMasterSwitch/site.log`；`git diff --check` 通过。
+- 附加的 `testAIReadingMoonCloseReopenAndConversationTab` 单项通过（`ui.log`）；同轮资料任务 UI 回归卡在 XCUITest 长按菜单 idle 等待，已中止，未计为通过。本次入口隐藏通过同一菜单现有的“…”按钮验证。未操作真机，未调用真实 AI 服务。
+
 ## 2026-10-17 主动暂停意图与首次导入测试
 
 本机按任务 ID 在独立 UserDefaults v1 键中保存主动暂停意图；用户继续、编码重启、完成和回收时清理，不修改 SQLite schema 或同步记录。重开文件时主动暂停不自动恢复，系统中断造成的暂停自动恢复；失败任务（含编码错误、原件变化、存储失败）仍由用户显式重试或处理。首次导入 UI 测试确认封面再进入正文，开书前通过真实设置固定滚动模式，保留未完成可读、暂停／继续、分页前进和两次精确位置恢复断言；额外明确暂停状态的重开／重启保持与完成后位置不变。

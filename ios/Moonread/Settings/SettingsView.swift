@@ -40,9 +40,15 @@ struct SettingsView: View {
                 }
             }.listRowBackground(Color(uiColor: theme.surface))
             Section {
-                NavigationLink { AISettingsView() } label: {
-                    SettingsEntry(title: "AI 助手", symbol: "bubble.left.and.bubble.right", summary: aiSummary)
-                }.accessibilityIdentifier("aiSettings")
+                Toggle("AI 功能", isOn: Binding(get: { ai.availability.isEnabled }, set: { ai.availability.setEnabled($0) }))
+                    .tint(Color(uiColor: theme.accent)).accessibilityIdentifier("aiMasterSwitch")
+                if ai.availability.isAvailable {
+                    NavigationLink { AISettingsView() } label: {
+                        SettingsEntry(title: "AI 助手", symbol: "bubble.left.and.bubble.right", summary: aiSummary)
+                    }.accessibilityIdentifier("aiSettings")
+                }
+            } footer: {
+                Text("关闭后隐藏所有 AI 功能，已有连接、会话和数据共享许可保留。")
             }.listRowBackground(Color(uiColor: theme.surface))
             Section("应用") {
                 NavigationLink { UsageGuideView() } label: {

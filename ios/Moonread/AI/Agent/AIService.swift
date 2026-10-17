@@ -150,6 +150,7 @@ struct AISessionSummary: Identifiable {
 }
 @MainActor @Observable final class AIService {
     let proposals: AIProposalRegistry
+    let availability: AIAvailability
     let providers: AIConnectionService
     let sharing: AIDataSharingConsent
     private(set) var sessions: [AIConversation] = []
@@ -157,7 +158,7 @@ struct AISessionSummary: Identifiable {
     var selectedID: String?
     var error: String?
     func notify(_ error: Error, sessionID: String? = nil) {
-        guard !(error is CancellationError) else { return }
+        guard availability.isAvailable, !(error is CancellationError) else { return }
         NotificationCenter.default.post(name: .aiActionFailed, object: AIActionNotice(sessionID: sessionID, message: AIRequestError.message(error)))
     }
     var loaded = false
@@ -179,8 +180,15 @@ struct AISessionSummary: Identifiable {
         let defaults = suppliedDefaults ?? session.flatMap { UserDefaults(suiteName: "Moonread.AI.UITest-\($0)") } ?? .standard
         self.repository = repository; self.makeTransport = makeTransport; self.reader = reader
         proposals = AIProposalRegistry(reader: reader)
+        availability = AIAvailability(defaults: defaults)
         sharing = AIDataSharingConsent(defaults: defaults)
-        providers = AIConnectionService(defaults: defaults, auth: auth, sharing: sharing)
+        providers = AIConnectionService(defaults: defaults, auth: auth, sharing: sharing, availability: availability)
+        availability.didDisable = { [weak self] in
+            guard let self else { return }
+            for value in self.sessions { self.stop(value.id) }
+            self.coordinator?.stopAll()
+            self.providers.cancelAIWork()
+        }
         sharing.waitingChanged = { [weak self] owner, waiting in self?.coordinator?.setSharingWaiting(owner, waiting: waiting) }
         sharing.revoked = { [weak self] connectionID, owners in
             guard let self else { return }
@@ -199,7 +207,7 @@ struct AISessionSummary: Identifiable {
                 self.proposals.beginApplication = { [weak self] id in guard let self else { throw AIError.storage }; return try self.beginApplication(id) }
                 self.proposals.endApplication = { [weak self] id, token in self?.endApplication(id, token: token) }
                 self.proposals.attach = { [weak self] id, attachment, staged in try await self?.addReadingAttachment(id, attachment: attachment, staged: staged) }
-                self.coordinator = AIAgentCoordinator(repository: repository, providers: self.providers, reader: self.reader, proposals: self.proposals, isOpen: { [weak self] id in self?.admissionOpen(id) == true }, entriesCommitted: { [weak self] id, entries, head in
+                self.coordinator = AIAgentCoordinator(repository: repository, providers: self.providers, reader: self.reader, proposals: self.proposals, isOpen: { [weak self] id in self?.ownsSession(id) == true }, entriesCommitted: { [weak self] id, entries, head in
                     guard let value = self?.conversation(id) else { return }
                     value.head = head; value.mergeEntries(entries, insertingNew: !value.hasLater)
                 }, makeTransport: self.makeTransport)
@@ -250,8 +258,10 @@ struct AISessionSummary: Identifiable {
         try await connect(projection)
     }
     #endif
-    private func admissionOpen(_ id: String) -> Bool { !closedOwners.contains(id) && conversation(id) != nil }
+    private func ownsSession(_ id: String) -> Bool { !closedOwners.contains(id) && conversation(id) != nil }
+    private func admissionOpen(_ id: String) -> Bool { availability.isAvailable && ownsSession(id) }
     private func requireAdmission(_ id: String) throws {
+        try availability.requireAvailable()
         guard admissionOpen(id) else { throw AIToolError("not_found") }
     }
     private func beginApplication(_ id: String) throws -> UUID {
@@ -273,8 +283,10 @@ struct AISessionSummary: Identifiable {
     }
     func conversation(_ id: String) -> AIConversation? { sessions.first { $0.id == id } }
     @discardableResult func create(context: AIContext = .general, noticeOwner: String? = nil) async -> AIConversation? {
+        guard availability.isAvailable else { return nil }
         await load()
         do {
+            try availability.requireAvailable()
             guard let repository else { throw AIError.storage }
             let value = AISessionValue(title: context.title ?? String(localized: "新对话"), context: context, listed: false)
             let projection = AIConversation(value); projection.persisted = false
@@ -284,12 +296,20 @@ struct AISessionSummary: Identifiable {
         } catch { notify(error, sessionID: noticeOwner); return nil }
     }
     func openDraft(context: AIContext = .general) async -> AIConversation? {
+        guard availability.isAvailable else { return nil }
         await load()
         if let draft = sessions.last(where: { !$0.listed && $0.kind == nil && $0.context == context }) { return draft }
         return await create(context: context)
     }
     @discardableResult func startTask(origin: AITaskOrigin, kind: AITaskKind, attachments: [AIReadingAttachment], instruction: String, selection: AIModelSelection, consentOwner: String? = nil) async throws -> AIConversation {
+        try await availability.perform {
+            try await self.startAvailableTask(origin: origin, kind: kind, attachments: attachments, instruction: instruction, selection: selection, consentOwner: consentOwner)
+        }
+    }
+    private func startAvailableTask(origin: AITaskOrigin, kind: AITaskKind, attachments: [AIReadingAttachment], instruction: String, selection: AIModelSelection, consentOwner: String?) async throws -> AIConversation {
+        try availability.requireAvailable()
         await load()
+        try availability.requireAvailable()
         guard let repository, let coordinator else { throw AIError.storage }
         if let existing = session(origin: origin, family: AIQuickTaskRequest.family(kind)), let value = conversation(existing.id) { return value }
         let value = AISessionValue(title: attachments.first?.title ?? kind.purpose, origin: origin, kind: kind, listed: false)
@@ -307,7 +327,10 @@ struct AISessionSummary: Identifiable {
         } catch { await AIImageStore.shared.forget(value.id); throw error }
         let projection = AIConversation(value); projection.head = head; sessions.append(projection)
         try await connect(projection)
-        let runtime = try await coordinator.session(value.id); runtime.resume()
+        try availability.requireAvailable()
+        let runtime = try await coordinator.session(value.id)
+        try availability.requireAvailable()
+        runtime.resume()
         return projection
     }
     func transferTask(_ id: String) async throws -> String {
@@ -413,6 +436,7 @@ struct AISessionSummary: Identifiable {
     /// Listed conversations whose title or visible messages contain the text, newest first;
     /// each carries its newest matching message. Drafts and unlisted tasks are not searched.
     func searchConversations(_ text: String) async throws -> [AIConversationSearchHit] {
+        guard availability.isAvailable else { return [] }
         await load()
         let term = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else { return [] }

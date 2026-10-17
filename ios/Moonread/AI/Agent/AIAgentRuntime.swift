@@ -129,7 +129,7 @@ import SwiftAISDK
   }
   /// Explicit resume only; construction never starts a paid request.
   func resume() {
-    guard task == nil, admission() else { return }
+    guard task == nil, !Task.isCancelled, admission() else { return }
     generation = UUID()
     stopped = false
     forceCompression = false

@@ -54,6 +54,7 @@ struct ImportFailure: Identifiable {
 }
 
 struct LibraryPresentations: ViewModifier {
+    @Environment(AIService.self) private var ai
     @Bindable var model: LibraryModel
     @Environment(\.theme) private var theme
     func body(content: Content) -> some View {
@@ -63,7 +64,8 @@ struct LibraryPresentations: ViewModifier {
                           allowsMultipleSelection: model.filePicker?.multiple ?? false,
                           onCompletion: model.completeFilePicker,
                           onCancellation: model.cancelFilePicker)
-            .sheet(item: $model.aiRequest) { AIQuickTaskSheet(request: $0).themeScope(theme) }
+            .sheet(item: $model.aiRequest) { if ai.availability.isAvailable { AIQuickTaskSheet(request: $0).themeScope(theme) } }
+            .onChange(of: ai.availability.isAvailable) { _, available in if !available { model.aiRequest = nil } }
             .sheet(item: $model.sheet, onDismiss: model.sheetDidDismiss) { sheet in
                 switch sheet {
                 case .rename(let entry): LibraryNameEditor(model: model, entry: entry, location: entry.parent).themeScope(theme)
@@ -172,6 +174,7 @@ struct LibraryDecisionAlert: UIViewControllerRepresentable {
 }
 
 struct LibraryItemMenu: View {
+    @Environment(AIService.self) private var ai
     let model: LibraryModel
     let entry: LibraryEntry
     var body: some View {
@@ -182,7 +185,9 @@ struct LibraryItemMenu: View {
                 Button("小说详情", systemImage: "info.circle") {
                     model.path.append(.statistics(StatisticsRoute(bookID: entry.bookId, title: entry.title, fileID: entry.id)))
                 }
-                Button("完善资料", systemImage: "sparkles") { model.aiRequest = .library([entry], family: .metadata) }
+                if ai.availability.isAvailable {
+                    Button("完善资料", systemImage: "sparkles") { model.aiRequest = .library([entry], family: .metadata) }
+                }
                 if entry.shelfId != "builtin" { Button("复制到我的书架", systemImage: "doc.on.doc") { model.runBatch([.copy(entry)]) } }
                 Button("导出", systemImage: "square.and.arrow.up") { model.export([entry], sharing: false) }
                 Button("分享", systemImage: "square.and.arrow.up.on.square") { model.export([entry], sharing: true) }
