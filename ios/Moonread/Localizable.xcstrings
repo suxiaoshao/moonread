@@ -1,6 +1,7 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+  "正在重新读取": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading again"}}}},
   "文字编码，%@，可更换": {
     "localizations": {
       "en": {

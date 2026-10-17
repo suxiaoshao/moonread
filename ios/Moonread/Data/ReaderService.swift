@@ -175,6 +175,17 @@ actor ReaderService {
 
     private var imports: [String: SourceImportWork] = [:]
     var hasRunningImports: Bool { !imports.isEmpty }
+    /// Keep restart admission occupied until this worker stops, not merely until
+    /// its first readable chunk appears. Other imports do not delay this wait.
+    func waitForImportFinish(_ id: String) async throws {
+        while true {
+            try Task.checkCancellation()
+            let revision = readingChangeRevision(id)
+            guard imports[id] != nil else { return }
+            try await waitForChange(id, after: revision, timeout: .seconds(1))
+        }
+    }
+
     private var readers: [String: Int] = [:]
     var recoveredImports = false
     var pendingPromotionIDs = Set<String>()
@@ -597,6 +608,9 @@ actor ReaderService {
     }
 
     func restartImport(_ id: String, encoding: String?) throws -> ReadingLease {
+        // A cancelled reader queued behind this actor must not allocate an import
+        // or change the file's persisted decoding policy.
+        try Task.checkCancellation()
         guard let data = sourceDefaults.data(forKey: importSourceKey(id)) else { throw CocoaError(.fileReadNoPermission) }
         let descriptor = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))
         pauseImport(id)

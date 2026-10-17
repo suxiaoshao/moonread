@@ -79,6 +79,7 @@ struct ReaderSettingsView: View {
     @Binding var settings: ReaderSettings
     let preview: ReadingPreviewSource
     let encoding: String?
+    let isRestartingEncoding: Bool
     let changeEncoding: ((String?) -> Void)?
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
@@ -95,8 +96,8 @@ struct ReaderSettingsView: View {
     @State private var previewVisible = false
     @State private var appeared = false
 
-    init(settings: Binding<ReaderSettings>, preview: ReadingPreviewSource = .sample, encoding: String? = nil, changeEncoding: ((String?) -> Void)? = nil) {
-        _settings = settings; self.preview = preview; self.encoding = encoding; self.changeEncoding = changeEncoding
+    init(settings: Binding<ReaderSettings>, preview: ReadingPreviewSource = .sample, encoding: String? = nil, isRestartingEncoding: Bool = false, changeEncoding: ((String?) -> Void)? = nil) {
+        _settings = settings; self.preview = preview; self.encoding = encoding; self.isRestartingEncoding = isRestartingEncoding; self.changeEncoding = changeEncoding
     }
     private var appearance: ThemeAppearance { editedAppearance ?? themes.reader.plan.appearance }
     private var previewExpanded: Bool { verticalSizeClass == .compact || previewDetent == .large }
@@ -117,7 +118,7 @@ struct ReaderSettingsView: View {
             // bar above this page. Reserving half of just the content is too short.
             let frame = geometry.frame(in: .global)
             let mediumHeight = max(0, (frame.maxY + geometry.safeAreaInsets.bottom) / 2 - frame.minY - LayoutTokens.control)
-            ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editedAppearance, encoding: encoding, changeEncoding: changeEncoding,
+            ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editedAppearance, encoding: encoding, isRestartingEncoding: isRestartingEncoding, changeEncoding: changeEncoding,
                                  editPalette: { value in
                                      if previewPresented { previewDetent = .large }
                                      draft = value
@@ -229,6 +230,7 @@ private struct ReadingSettingsControls: View {
     @Binding var tab: ReadingSettingsTab
     @Binding var editedAppearance: ThemeAppearance?
     let encoding: String?
+    let isRestartingEncoding: Bool
     let changeEncoding: ((String?) -> Void)?
     let editPalette: (PaletteDraft) -> Void
     @Environment(ThemeStore.self) private var themes
@@ -280,7 +282,7 @@ private struct ReadingSettingsControls: View {
         Form {
             if let encoding, let changeEncoding {
                 Section("本书") {
-                    ReaderEncodingMenu(title: "文字编码", value: encoding, select: changeEncoding)
+                    ReaderEncodingMenu(title: "文字编码", value: encoding, isRestarting: isRestartingEncoding, select: changeEncoding)
                         .accessibilityIdentifier("bookTextEncoding")
                 }.listRowBackground(Color(uiColor: theme.surface))
             }

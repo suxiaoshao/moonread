@@ -12,6 +12,10 @@
 
 来源元数据只用于可选编码控件，查询改为不抛错。记录缺失、JSON 损坏或刷新移除 fileID 时返回空值并写 ReaderSource 日志（仅缺失原因／错误域和代码，不含来源内容），不阻断已取得的 lease 和正文监测；重新准备后的标签也使用同一入口。新增 session 集成单测覆盖上述三种情况，验证 readingID 保留、window 发布可读正文、error 为空及 encodingLabel 为空（本书行／更多入口的共享显示条件）。模拟器 Debug 构建与 4 项定向测试通过，正常切换找回数据、回收重开和统计异步启动继续通过。证据 `build/EncodingDetection/{source-metadata.log,source-metadata.xcresult}`；日志已核对，未操作真机。
 
+编码重启采用会话内唯一 task，首次 await 前占用，重复选择忽略；忙碌状态由 task 派生并传给本书行、更多及暂停／失败菜单，显示“正在重新读取”并禁用。任务保持到对应 worker 结束，失败或取消统一释放。离页取消排队请求，服务在创建导入前检查取消；新 lease 在后续 await 前转交会话，编码策略回传时核对当前 ID/打开尝试，迟到结果不能覆盖离开的会话。服务已创建的来源关联及 worker 保留正常所有权，完成后回收未采用 lease 的导入，不另行删除用户的暂停／失败前缀。
+
+用可控 continuation 挂起创建前／创建后的返回，不用 sleep 制造重叠。连续 windows-1252、UTF-8 两次调用只有第一次获准，最终读取编码、本机策略及文件 book_id 一致；只读 SQLite 核对 import_jobs 仅剩当前任务。离页前已创建的迟到任务完成后没有残留 job／来源记录，未创建的取消请求不改策略；失败释放占用且不创建导入。模拟器 Debug 构建、5 项单测与 1 项深浅色菜单 UI 回归通过；正常数据找回和来源容错继续通过。证据 `build/EncodingDetection/{restart-final.log,restart-final.xcresult}`，未操作手机。
+
 ## 2026-10-17 正文编码识别与手选分组
 
 直接导入与渐进导入共用 Rust 的 BOM → 无 BOM UTF-16 零字节奇偶位置与文本校验 → 不含 ESC 的合法 UTF-8 → chardetng 1.0.0 探测器，最多 64 KiB 样本加 1 字节 EOF 探查；真实 EOF 严格校验，仅 64 KiB 上限截断的 UTF-8 多字节前缀不算错；含 ESC 的输入交给 chardetng 识别 ISO-2022-JP。GBK 猜测统一用 gb18030，其他采用 encoding_rs 名称；不传 TLD/系统语言，不增加 fallback，严格解码及 normalization-v1 未改。原来直接导入失败后整书重试的路径已删除。38 项手选编码按六组展示，排除 replacement/x-user-defined 及其别名，固定原生菜单顺序，中英文文案同步；新依赖许可随 App 分发。

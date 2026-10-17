@@ -195,7 +195,7 @@ struct ReaderScreen: View {
         .navigationDestination(isPresented: Binding(get: { panel == .settings && !session.isLeaving }, set: { shown in
             if !shown, panel == .settings { panel = searchActive ? .search : nil; sheetDismissRequested = false }
         })) {
-                ReaderSettingsView(settings: readingSettings, preview: settingsPreview, encoding: session.encodingLabel, changeEncoding: changeEncoding)
+                ReaderSettingsView(settings: readingSettings, preview: settingsPreview, encoding: session.encodingLabel, isRestartingEncoding: session.restartingEncoding, changeEncoding: changeEncoding)
                 .themeScope(theme)
                 .preferredColorScheme(theme.scheme)
         }
@@ -809,7 +809,7 @@ struct ReaderScreen: View {
     }
 
     private var moreEncodingMenu: some View {
-        ReaderEncodingMenu(title: "更换编码", symbol: "character.bubble", select: changeEncoding)
+        ReaderEncodingMenu(title: "更换编码", symbol: "character.bubble", isRestarting: session.restartingEncoding, select: changeEncoding)
             .foregroundStyle(Color(uiColor: theme.ink))
             .accessibilityIdentifier("moreTextEncoding")
     }
@@ -968,7 +968,7 @@ struct ReaderScreen: View {
     }
 
     private var encodingMenu: some View {
-        ReaderEncodingMenu(select: changeEncoding)
+        ReaderEncodingMenu(isRestarting: session.restartingEncoding, select: changeEncoding)
     }
 
 }
@@ -1103,6 +1103,7 @@ struct ReaderEncodingMenu: View {
     var title: LocalizedStringKey = "更换编码重新打开"
     var value: String? = nil
     var symbol: String? = nil
+    var isRestarting = false
     let select: (String?) -> Void
     @State private var pendingEncoding: String?
     @Environment(\.theme) private var theme
@@ -1118,20 +1119,29 @@ struct ReaderEncodingMenu: View {
             }
         } label: {
             HStack {
-                if let symbol { Label(title, systemImage: symbol) } else { Text(title) }
+                if isRestarting, value == nil {
+                    Label("正在重新读取", systemImage: "hourglass")
+                } else if let symbol { Label(title, systemImage: symbol) } else { Text(title) }
                 if let value {
                     Spacer()
-                    HStack(spacing: 5) {
-                        Text(value)
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption.weight(.semibold))
-                            .accessibilityHidden(true)
-                    }.foregroundStyle(Color(uiColor: theme.accent))
+                    if isRestarting {
+                        ProgressView().controlSize(.small)
+                        Text("正在重新读取")
+                    } else {
+                        HStack(spacing: 5) {
+                            Text(value)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption.weight(.semibold))
+                                .accessibilityHidden(true)
+                        }.foregroundStyle(Color(uiColor: theme.accent))
+                    }
                 }
             }.contentShape(.rect)
         }
         .menuOrder(.fixed)
-        .accessibilityLabel(value.map { Text("文字编码，\($0)，可更换") } ?? Text(title))
+        .disabled(isRestarting)
+        .onChange(of: isRestarting) { _, busy in if busy { pendingEncoding = nil } }
+        .accessibilityLabel(isRestarting ? Text("正在重新读取") : value.map { Text("文字编码，\($0)，可更换") } ?? Text(title))
         .accessibilityIdentifier("readerEncodingMenu")
         .alert("更换文字编码？", isPresented: Binding(get: { pendingEncoding != nil }, set: { if !$0 { pendingEncoding = nil } }), presenting: pendingEncoding) { encoding in
             Button("重新读取") { pendingEncoding = nil; select(encoding == "auto" ? nil : encoding) }

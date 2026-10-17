@@ -3,6 +3,7 @@ import UIKit
 import SwiftUI
 import SwiftData
 import Observation
+import SQLite3
 @testable import Moonread
 
 @MainActor private final class DiscoverySourceStub: CloudDiscoverySource {
@@ -786,6 +787,24 @@ private actor SourceReadinessGate {
     func release() { continuation?.resume(); continuation = nil }
 }
 
+private actor EncodingRestartProbe {
+    let gate: SourceReadinessGate
+    let holdAfterCreation: Bool
+    private(set) var calls = 0
+    private(set) var createdIDs: [String] = []
+    init(gate: SourceReadinessGate, holdAfterCreation: Bool = false) {
+        self.gate = gate; self.holdAfterCreation = holdAfterCreation
+    }
+    func run(service: ReaderService, id: String, encoding: String?) async throws -> ReadingLease {
+        calls += 1
+        if !holdAfterCreation { await gate.wait() }
+        let lease = try await service.restartImport(id, encoding: encoding)
+        createdIDs.append(lease.id)
+        if holdAfterCreation { await gate.wait() }
+        return lease
+    }
+}
+
 private actor LibraryRefreshProbe {
     private(set) var passes = 0
     let gate: SourceReadinessGate
@@ -1241,6 +1260,114 @@ final class TextLayoutTests: XCTestCase {
         XCTAssertEqual(result.book.positionUtf8, 9)
         XCTAssertEqual(try core.sourceFileLocation(fileId: file.id).bookId, cached.id)
         withExtendedLifetime(reopened) {}
+    }
+
+    private func importJobIDs(_ root: URL) throws -> [String] {
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open_v2(root.appendingPathComponent("db/reader.sqlite3").path, &db, SQLITE_OPEN_READONLY, nil), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        var query: OpaquePointer?
+        XCTAssertEqual(sqlite3_prepare_v2(db, "SELECT book_id FROM import_jobs ORDER BY book_id", -1, &query, nil), SQLITE_OK)
+        defer { sqlite3_finalize(query) }
+        let statement = try XCTUnwrap(query)
+        var result: [String] = []
+        var status = sqlite3_step(statement)
+        while status == SQLITE_ROW {
+            result.append(String(cString: try XCTUnwrap(sqlite3_column_text(statement, 0))))
+            status = sqlite3_step(statement)
+        }
+        XCTAssertEqual(status, SQLITE_DONE)
+        return result
+    }
+
+    @MainActor func testEncodingRestartAdmitsOnlyOneTaskAndKeepsFilePolicyConsistent() async throws {
+        let (root, service, core, _, _, _, _, suite) = try singleBookFixture()
+        defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+        try Data("Chapter 1\nUn caf\u{e9} original sample.\n".utf8).write(to: root.appendingPathComponent("a.txt"))
+        let file = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "a.txt" })
+        let source = SourceFile(id: file.id, shelfID: "builtin", relativePath: "a.txt")
+        let entered = expectation(description: "restart held before allocation")
+        let gate = SourceReadinessGate(entered: entered), probe = EncodingRestartProbe(gate: gate)
+        let session = ReaderSession(service: service, activity: ReadingActivityRecorder { StatisticsPreferences(enabled: false, generation: 0) }, restartReading: { try await probe.run(service: service, id: $0, encoding: $1) })
+        await session.open(.source(source))
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in session.window != nil && session.snapshot?.phase == .complete }, object: nil)
+        await fulfillment(of: [ready], timeout: 5)
+        let previous = try XCTUnwrap(session.readingID)
+        session.restart(encoding: "windows-1252")
+        XCTAssertTrue(session.restartingEncoding, "Admission must precede the first actor hop")
+        session.restart(encoding: "UTF-8") // ignored, never allocated
+        await fulfillment(of: [entered], timeout: 2)
+        let calls = await probe.calls; XCTAssertEqual(calls, 1)
+        XCTAssertEqual(session.readingID, previous)
+        XCTAssertEqual(try core.sourceDecoding(fileId: file.id), "auto")
+        await gate.release()
+        let changed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !session.restartingEncoding && session.readingID != previous && session.snapshot?.phase == .complete }, object: nil)
+        await fulfillment(of: [changed], timeout: 5)
+        let current = try XCTUnwrap(session.readingID)
+        XCTAssertEqual(session.decodingPolicy, "windows-1252")
+        XCTAssertEqual(session.book?.encoding, "windows-1252")
+        XCTAssertEqual(try core.sourceDecoding(fileId: file.id), "windows-1252")
+        XCTAssertEqual(try core.sourceFileLocation(fileId: file.id).bookId, current)
+        let created = await probe.createdIDs; XCTAssertEqual(created, [current])
+        let noOrphans = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in (try? self.importJobIDs(root)) == [current] }, object: nil)
+        await fulfillment(of: [noOrphans], timeout: 5)
+        XCTAssertNil(session.error)
+        await session.leave().value
+    }
+
+    @MainActor func testFailedEncodingRestartReleasesAdmissionWithoutCreatingAnImport() async throws {
+        let (root, service, core, _, _, _, _, suite) = try singleBookFixture()
+        defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let file = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "a.txt" })
+        let session = ReaderSession(service: service, activity: ReadingActivityRecorder { StatisticsPreferences(enabled: false, generation: 0) }, restartReading: { _, _ in throw CocoaError(.fileReadNoPermission) })
+        await session.open(.source(SourceFile(id: file.id, shelfID: "builtin", relativePath: "a.txt")))
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in session.window != nil && session.snapshot?.phase == .complete }, object: nil)
+        await fulfillment(of: [ready], timeout: 5)
+        let previous = try XCTUnwrap(session.readingID)
+        session.restart(encoding: "UTF-8")
+        XCTAssertTrue(session.restartingEncoding)
+        let finished = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !session.restartingEncoding }, object: nil)
+        await fulfillment(of: [finished], timeout: 5)
+        XCTAssertNotNil(session.error)
+        XCTAssertEqual(session.readingID, previous)
+        XCTAssertEqual(try core.sourceDecoding(fileId: file.id), "auto")
+        XCTAssertEqual(try importJobIDs(root), [previous])
+        await session.leave().value
+    }
+
+    @MainActor func testLeavingDuringEncodingRestartRejectsLateResultsWithoutOrphanJobs() async throws {
+        for afterCreation in [false, true] {
+            let (root, service, core, _, _, _, _, suite) = try singleBookFixture()
+            let entered = expectation(description: "restart held \(afterCreation)")
+            let gate = SourceReadinessGate(entered: entered), probe = EncodingRestartProbe(gate: gate, holdAfterCreation: afterCreation)
+            let file = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "a.txt" })
+            let session = ReaderSession(service: service, activity: ReadingActivityRecorder { StatisticsPreferences(enabled: false, generation: 0) }, restartReading: { try await probe.run(service: service, id: $0, encoding: $1) })
+            await session.open(.source(SourceFile(id: file.id, shelfID: "builtin", relativePath: "a.txt")))
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in session.window != nil && session.snapshot?.phase == .complete }, object: nil)
+            await fulfillment(of: [ready], timeout: 5)
+            let previous = try XCTUnwrap(session.readingID), policy = session.decodingPolicy
+            session.restart(encoding: "UTF-8")
+            await fulfillment(of: [entered], timeout: 2)
+            await session.leave().value
+            await gate.release()
+            let finished = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !session.restartingEncoding }, object: nil)
+            await fulfillment(of: [finished], timeout: 5)
+            XCTAssertEqual(session.readingID, previous)
+            XCTAssertEqual(session.decodingPolicy, policy)
+            XCTAssertNil(session.error)
+            let created = await probe.createdIDs
+            XCTAssertEqual(created.count, afterCreation ? 1 : 0)
+            let noOrphans = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in (try? self.importJobIDs(root)) == [previous] }, object: nil)
+            await fulfillment(of: [noOrphans], timeout: 5)
+            for id in created {
+                let key = await service.importSourceKey(id)
+                XCTAssertNil(UserDefaults(suiteName: suite)?.data(forKey: key), "Released complete import descriptor must be reclaimed")
+            }
+            XCTAssertEqual(try core.sourceDecoding(fileId: file.id), afterCreation ? "UTF-8" : "auto")
+            withExtendedLifetime(session) {}
+            UserDefaults.standard.removePersistentDomain(forName: suite)
+            try FileManager.default.removeItem(at: root)
+        }
     }
 
     @MainActor func testUnavailableEncodingSourceDoesNotBlockReadingOrExposeControls() async throws {
