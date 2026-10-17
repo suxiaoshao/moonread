@@ -4,9 +4,11 @@
 
 ## 2026-10-17 正文编码识别与手选分组
 
-直接导入与渐进导入共用 Rust 的 BOM → 合法 UTF-8 → chardetng 1.0.0 探测器，最多 64 KiB 样本加 1 字节 EOF 探查；截断的 UTF-8 多字节前缀不算错。GBK 猜测统一用 gb18030，其他采用 encoding_rs 名称；不传 TLD/系统语言，不增加 fallback，严格解码及 normalization-v1 未改。原来直接导入失败后整书重试的路径已删除。38 项手选编码按六组展示，排除 replacement/x-user-defined 及其别名，固定原生菜单顺序，中英文文案同步；新依赖许可随 App 分发。
+直接导入与渐进导入共用 Rust 的 BOM → 无 BOM UTF-16 零字节奇偶位置与文本校验 → 不含 ESC 的合法 UTF-8 → chardetng 1.0.0 探测器，最多 64 KiB 样本加 1 字节 EOF 探查；真实 EOF 严格校验，仅 64 KiB 上限截断的 UTF-8 多字节前缀不算错；含 ESC 的输入交给 chardetng 识别 ISO-2022-JP。GBK 猜测统一用 gb18030，其他采用 encoding_rs 名称；不传 TLD/系统语言，不增加 fallback，严格解码及 normalization-v1 未改。原来直接导入失败后整书重试的路径已删除。38 项手选编码按六组展示，排除 replacement/x-user-defined 及其别名，固定原生菜单顺序，中英文文案同步；新依赖许可随 App 分发。
 
-14 个原创样本在测试运行时生成输入字节，两条真实导入路径均核对识别名称、规范正文、SHA 与原件不变；既有简体 GB18030 固定 SHA 回归仍通过。Nix Rust 测试 89 项通过，原有 1 项长书性能测试忽略；Clippy（all-targets/all-features，-D warnings）、fmt、`git diff --check` 通过。iOS 27 模拟器 Debug 构建与 6 项定向单测通过，覆盖全部手选项/英文文案、回收重开、暂停移动后恢复/重启、首选副本与许可。新增 UI 用例通过，实际经历无 BOM UTF-16 自动识别失败→分组手选 UTF-16LE→进入正文并推进有效阅读位置，兼容当前滚动/分页偏好；截图已人工核对。
+14 个原创样本在测试运行时生成输入字节，两条真实导入路径均核对识别名称、规范正文、SHA 与原件不变；既有简体 GB18030 固定 SHA 回归仍通过。Nix Rust 测试 89 项通过，原有 1 项长书性能测试忽略；Clippy（all-targets/all-features，-D warnings）、fmt、`git diff --check` 通过。iOS 27 模拟器 Debug 构建与 6 项定向单测通过，覆盖全部手选项/英文文案、回收重开、暂停移动后恢复/重启、首选副本与许可。新增 UI 用例通过，实际经历预设错误的 UTF-8 手选策略→分组纠正为 UTF-16LE→进入正文并推进有效阅读位置，兼容当前滚动/分页偏好；截图已人工核对。
+
+新增 EOF 短 windows-1252（以 é 结尾）、ISO-2022-JP、无 BOM UTF-16LE/BE 样本；修复前样本集首先在短 windows-1252 的严格解码处失败（`review-before.log`）。修复后 18 个原创样本均通过两条实际导入路径；原 14 项内容与预期、旧简体固定 SHA 均未改变。无 BOM UTF-16 规则参照 Zed/VS Code 的零字节奇偶位置思路独立实现，UTF-16 探测前缀内的代理对截断可继续；全零、双奇偶零字节、PCM 类小整数、非文本符号及非法代理项/奇数字节仍拒绝。Nix 核心回归 91 项通过、1 项既有性能测试忽略；Clippy 与 fmt 通过。iOS 27 模拟器 Debug 构建、6 项定向单测和编码菜单 UI 回归均通过；夹具预设错误的 UTF-8 策略后通过分组菜单纠正，自动识别两种无 BOM UTF-16 的正确性由双导入样本测试覆盖。对应证据：`build/EncodingDetection/{review-before.log,review-rust.log,review-clippy.log,review-fmt.log,review-swift.log,review-swift.xcresult,review-screens/}`。
 
 额外尝试的旧 `testFirstImportReadsBeforeCompletionAndCanPauseResume` 未通过；干净 main `42548d1` 同用例也失败于等待 scrollText，本分支初次失败在封面上的进度断言，不能将两个断言处的失败称为同一已证实根因。旧用例保持不变、不计入通过，本轮不扩修其固定阅读模式/封面假设。基线工作树已移除，证据保留在 `build/EncodingDetection/{baseline-ui.log,baseline.xcresult,swift-tests.log}`。
 

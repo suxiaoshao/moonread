@@ -1130,17 +1130,13 @@ mod tests {
     }
 
     #[test]
-    fn encoding_probe_handles_bom_and_truncated_utf8_scalar() {
+    fn encoding_probe_handles_bom_and_tiny_statistical_input() {
         assert_eq!(
             text::detect_encoding(&mut Cursor::new(&[0xff, 0xfe, 0x41, 0])).unwrap(),
             encoding_rs::UTF_16LE
         );
         assert_eq!(
             text::detect_encoding(&mut Cursor::new(&[0xef, 0xbb, 0xbf, b'A'])).unwrap(),
-            UTF_8
-        );
-        assert_eq!(
-            text::detect_encoding(&mut Cursor::new(&[b'A', 0xe4, 0xb8])).unwrap(),
             UTF_8
         );
         // Statistically insufficient tiny files use the detector's pinned result;
