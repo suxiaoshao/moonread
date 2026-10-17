@@ -61,6 +61,24 @@ CI、仓库权限、模板及依赖更新见[仓库与持续集成](repository.m
 
 App 的 `MARKETING_VERSION` 为 `1.0.0`（用户可见版本）；`CURRENT_PROJECT_VERSION` 使用单调递增的正整数，每次对外上传新构建时增加，不能因营销版本变化而回退或复用。Debug/Release 同步，当前构建号为 2。Cargo crate 版本独立，不作为 App Store 版本。提交前核对两种配置、已上传构建号与持久化兼容/迁移回归。
 
+### TestFlight 打包与上传
+
+使用干净提交和本机 `LocalSigning.xcconfig`，在 Nix 环境执行 Release archive，真机缓存统一为 `build/DeviceDerivedData`。自动签名的原始归档通常使用开发签名，导出时由 Xcode 重签为 App Store Connect 分发包，这是正常流程；不要给自动开发签名的归档强行指定 Apple Distribution 身份。
+
+```sh
+nix develop --no-update-lock-file -c xcodebuild \
+  -project ios/Moonread.xcodeproj -scheme Moonread -configuration Release \
+  -xcconfig ios/LocalSigning.xcconfig -destination 'generic/platform=iOS' \
+  -derivedDataPath build/DeviceDerivedData \
+  -archivePath build/TestFlight/Moonread.xcarchive -allowProvisioningUpdates archive
+```
+
+先用 `xcodebuild -exportArchive` 本地导出并核对分发包。ExportOptions 使用 `method=app-store-connect`、`signingStyle=automatic`、`iCloudContainerEnvironment=Production`、`manageAppVersionAndBuildNumber=false`；预检用 `destination=export`，上传时改为 `destination=upload`，两次均允许自动签名更新，并使用同一归档。每次新上传先按上一节递增构建号；遇账号登录或钥匙串授权，由用户本人处理。
+
+上传前检查 Bundle ID、版本/构建号、`ITSAppUsesNonExemptEncryption=NO`、隐私清单、无 DEBUG/诊断入口、无 `.storekit` 文件，以及签名完整性。生产权限应在**导出分发包**核对：`aps-environment=production`、CloudKit 环境 Production、`get-task-allow=false`，容器为 `iCloud.dev.moonread.Moonread`，服务同时包含 CloudKit 与 CloudDocuments。不要拿原始开发签名归档的权限代替分发包结论。
+
+`TipJar.storekit` 仅保留 Debug scheme 的 StoreKit Configuration 引用，不属于任何 target 的 Copy Bundle Resources；普通 Release 归档不需要资源排除参数。本地 StoreKitTest 自动化在模拟器通过源文件 URL 读取同一配置，不依赖 App 或测试 bundle 内的副本。上传成功与 ASC 处理完成／可测试分别记录；上传不等于提交审核或正式发布。归档、分发包核验和上传日志保存在 `build/TestFlight/`。
+
 ### 当前真机云能力构建
 
 现有开发者团队已支持 iCloud。使用默认云配置和自动签名，不再为当前手机构建覆盖 `MOONREAD_CLOUD_ENABLED=NO` 或清空 entitlements：

@@ -2,6 +2,12 @@
 
 更新：2026-10-18。本文按能力保存必要证据与未覆盖范围，不作逐轮修改日志。表中结果来自各次受影响回归，不能解释为当前版本在所有设备上完成了全量验收。
 
+## 2026-10-18 StoreKit 测试资源与发布归档
+
+`TipJar.storekit` 从 App、单元测试与 UI 测试三个 target 的 Copy Bundle Resources 中移除，仅保留 Debug scheme 的 StoreKit Configuration 引用。本地模拟器 StoreKitTest 改为通过源文件 URL 读取同一配置，不嵌入产品包或测试 bundle。
+
+普通 Release 自动签名归档通过，未传 `EXCLUDED_SOURCE_FILE_NAMES` 等资源排除参数；归档 App 内无 `.storekit` 文件，Bundle ID 与版本为 `dev.moonread.Moonread` / `1.0.0 (2)`。iOS 27 模拟器的 `testCatalogAndSuccessfulRepeatConsumable` 与 `testTipJarPricesPurchaseAndRelaunch` 两项通过，覆盖商品目录、重复消耗型购买、价格、感谢状态及重启。证据：`build/TestFlight/StoreKitResources/` 下 `archive.log`、`archive-audit.json`、`project-wiring.json`、`tests.log` 和 `Tests.xcresult`。本次归档用于验证，未再次上传、未操作手机。自动开发签名归档在导出时重签为分发包属于正常流程，发布步骤及核验项已写入开发环境文档。
+
 ## 2026-10-18 已有批注菜单的测试定位缺口
 
 用户在真机确认：点按已有批注会正常弹出“编辑批注／移除批注”菜单。iOS 27 模拟器的 `testReadingToolsPreviewBookmarkSearchAndNote` 在第 5525 行等待“编辑批注”超时，按已知测试定位缺口处理，不作为发布前产品缺陷修复；历史上该用例也曾因像素查找未找到已绘制批注而失败（下文目录验证限制）。一次原样定向重跑仍在同处失败（90.694 秒）；已导出的点击前截图显示，`tapRenderedAnnotation()` 将 Mixed text 行的黄色 🌙 emoji 误识别为高亮，阈值复算得到 (364.6667, 402.5)pt，与日志点击点 (364.7, 402.5)pt 一致，未有效点中批注。证据和一次定向重跑结果集中于 `build/iOS18A11y/report.md`、`smoke.log` 与 `annotation-rerun.log`；未修改产品实现或放宽测试断言，测试修复另行跟进。真机结论来自用户反馈，本轮没有操作真机。
