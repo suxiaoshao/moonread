@@ -1183,6 +1183,29 @@ final class TextLayoutTests: XCTestCase {
         XCTAssertEqual(model.recents.first?.positionUtf8, 6)
     }
 
+    @MainActor func testManualEncodingGroupsAreCompleteAndAcceptedByRust() async throws {
+        let (root, _, core, _, _, _, _, suite) = try singleBookFixture()
+        defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let file = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { !$0.directory })
+        let groups = ReadingEncodingGroup.allCases
+        XCTAssertEqual(groups.count, 6)
+        let choices = groups.flatMap(\.encodings)
+        XCTAssertEqual(choices.count, 38)
+        XCTAssertEqual(Set(choices).count, choices.count)
+        for encoding in choices {
+            try core.setSourceDecoding(fileId: file.id, decoding: encoding)
+            XCTAssertEqual(try core.sourceDecoding(fileId: file.id), encoding)
+        }
+        for invalid in ["replacement", "iso-2022-cn", "x-user-defined", "UTF-7"] {
+            XCTAssertThrowsError(try core.setSourceDecoding(fileId: file.id, decoding: invalid))
+        }
+        let bundle = try XCTUnwrap(Bundle(path: try XCTUnwrap(Bundle.main.path(forResource: "en", ofType: "lproj"))))
+        for (key, expected) in [("简体中文", "Simplified Chinese"), ("繁体中文", "Traditional Chinese"),
+                                ("日文", "Japanese"), ("韩文", "Korean"), ("西欧", "Western European"), ("其他编码", "Other Encodings")] {
+            XCTAssertEqual(bundle.localizedString(forKey: key, value: nil, table: nil), expected)
+        }
+    }
+
     @MainActor func testSelectedDecodingSurvivesReclaimAndServiceReopen() async throws {
         let (root, service, core, formal, pending, _, _, suite) = try singleBookFixture()
         defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }

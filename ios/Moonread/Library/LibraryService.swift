@@ -725,6 +725,13 @@ extension ReaderService {
         guard testSession != nil else { return }
         let core = try textCore(), root = try builtinLibraryURL()
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--ui-test-encoding") {
+            let text = "Chapter 1\n" + String(repeating: "An original sample for manual encoding recovery.\n", count: 80)
+            let bytes = text.utf16.flatMap { [UInt8($0 & 255), UInt8($0 >> 8)] }
+            try Data(bytes).write(to: root.appendingPathComponent("编码恢复样本.txt"))
+            try refreshLibraryShelf("builtin")
+            return
+        }
         if arguments.contains("--ui-test-blank-line-projection") {
             let gap = String(repeating:" \t　\n",count:15000)
             let prose = "用于验证真正翻阅的合成正文，正文前后的长空白不应形成空屏或空页。\n"

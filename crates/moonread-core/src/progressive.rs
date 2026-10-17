@@ -402,9 +402,7 @@ impl ReaderCore {
             } else if decoding != "auto" {
                 Encoding::for_label(decoding.as_bytes()).ok_or(ReaderError::InvalidSettings)?
             } else {
-                let mut head = Vec::with_capacity(32 * 1024);
-                file.by_ref().take(32 * 1024).read_to_end(&mut head)?;
-                detect_encoding(&head)
+                text::detect_encoding(&mut file)?
             };
             file.seek(SeekFrom::Start(0))?;
             {
@@ -737,21 +735,6 @@ impl ReaderCore {
     }
 }
 
-fn detect_encoding(head: &[u8]) -> &'static Encoding {
-    if let Some((encoding, _)) = Encoding::for_bom(head) {
-        return encoding;
-    }
-    // last=false: a multibyte character cut by the bounded probe is not invalid.
-    let mut decoder = UTF_8.new_decoder_without_bom_handling();
-    let mut output = vec![0u8; head.len().saturating_mul(3) + 4];
-    let (status, _, _) = decoder.decode_to_utf8_without_replacement(head, &mut output, false);
-    if matches!(status, encoding_rs::DecoderResult::Malformed(..)) {
-        GB18030
-    } else {
-        UTF_8
-    }
-}
-
 struct CountingReader<'a, R> {
     reader: &'a mut R,
     count: &'a AtomicU64,
@@ -773,6 +756,7 @@ impl<R: Read> Read for CountingReader<'_, R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use encoding_rs::GB18030;
     use std::sync::mpsc;
     use tempfile::TempDir;
     #[test]
@@ -1148,12 +1132,23 @@ mod tests {
     #[test]
     fn encoding_probe_handles_bom_and_truncated_utf8_scalar() {
         assert_eq!(
-            detect_encoding(&[0xff, 0xfe, 0x41, 0]),
+            text::detect_encoding(&mut Cursor::new(&[0xff, 0xfe, 0x41, 0])).unwrap(),
             encoding_rs::UTF_16LE
         );
-        assert_eq!(detect_encoding(&[0xef, 0xbb, 0xbf, b'A']), UTF_8);
-        assert_eq!(detect_encoding(&[b'A', 0xe4, 0xb8]), UTF_8);
-        assert_eq!(detect_encoding(&[0xd6, 0xd0]), GB18030);
+        assert_eq!(
+            text::detect_encoding(&mut Cursor::new(&[0xef, 0xbb, 0xbf, b'A'])).unwrap(),
+            UTF_8
+        );
+        assert_eq!(
+            text::detect_encoding(&mut Cursor::new(&[b'A', 0xe4, 0xb8])).unwrap(),
+            UTF_8
+        );
+        // Statistically insufficient tiny files use the detector's pinned result;
+        // users can select an encoding manually. No locale/TLD or fallback heuristic.
+        assert_eq!(
+            text::detect_encoding(&mut Cursor::new(&[0xd6, 0xd0])).unwrap(),
+            encoding_rs::WINDOWS_1252
+        );
     }
 
     #[test]

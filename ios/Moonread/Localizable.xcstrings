@@ -1,6 +1,66 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+  "其他编码": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Other Encodings"
+        }
+      }
+    }
+  },
+  "西欧": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Western European"
+        }
+      }
+    }
+  },
+  "韩文": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Korean"
+        }
+      }
+    }
+  },
+  "日文": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Japanese"
+        }
+      }
+    }
+  },
+  "繁体中文": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Traditional Chinese"
+        }
+      }
+    }
+  },
+  "简体中文": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Simplified Chinese"
+        }
+      }
+    }
+  },
       "部分阅读数据当前版本无法理解，已保留并设为只读，请更新 App。": {
         "localizations": {
           "en": {

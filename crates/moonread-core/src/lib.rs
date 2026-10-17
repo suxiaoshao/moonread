@@ -33,7 +33,7 @@ pub use progressive::{
 pub use reading_layout::*;
 pub use themes::*;
 
-use encoding_rs::{Encoding, GB18030, UTF_8};
+use encoding_rs::{Encoding, UTF_8};
 use rusqlite::{Connection, OptionalExtension, params};
 use sha2::{Digest, Sha256};
 use std::{
@@ -179,20 +179,9 @@ impl ReaderCore {
     /// Import is transactional; originals are never modified and no external paths persist.
     pub fn import_book(&self, file_path: String, title: String) -> Result<ImportText> {
         let mut file = File::open(file_path)?;
-        let mut prefix = Vec::with_capacity(4);
-        file.by_ref().take(4).read_to_end(&mut prefix)?;
+        let encoding = text::detect_encoding(&mut file)?;
         file.seek(SeekFrom::Start(0))?;
-        if let Some((encoding, _)) = Encoding::for_bom(&prefix) {
-            self.ingest(&mut file, title, encoding).map(Into::into)
-        } else {
-            match self.ingest(&mut file, title.clone(), UTF_8) {
-                Err(ReaderError::Decode { .. }) => {
-                    file.seek(SeekFrom::Start(0))?;
-                    self.ingest(&mut file, title, GB18030).map(Into::into)
-                }
-                result => result.map(Into::into),
-            }
-        }
+        self.ingest(&mut file, title, encoding).map(Into::into)
     }
 
     /// The caller hashes the coordinated source before consulting this cache.
@@ -367,7 +356,7 @@ fn decoding_policy(value: &str) -> Result<&'static str> {
         return Ok("auto");
     }
     Encoding::for_label(value.as_bytes())
-        .filter(|e| [UTF_8, GB18030, encoding_rs::UTF_16LE, encoding_rs::UTF_16BE].contains(e))
+        .filter(|e| ![encoding_rs::REPLACEMENT, encoding_rs::X_USER_DEFINED].contains(e))
         .map(|e| e.name())
         .ok_or(ReaderError::InvalidSettings)
 }
@@ -681,3 +670,68 @@ mod chapter_tests {
 }
 
 // Business projections are exported only by ReaderQuery.
+
+#[cfg(test)]
+mod decoding_policy_tests {
+    use super::*;
+    #[test]
+    fn manual_policy_accepts_all_text_decoders_and_rejects_unsuitable_labels() {
+        let labels = [
+            "Big5",
+            "EUC-JP",
+            "EUC-KR",
+            "GBK",
+            "IBM866",
+            "ISO-2022-JP",
+            "ISO-8859-10",
+            "ISO-8859-13",
+            "ISO-8859-14",
+            "ISO-8859-15",
+            "ISO-8859-16",
+            "ISO-8859-2",
+            "ISO-8859-3",
+            "ISO-8859-4",
+            "ISO-8859-5",
+            "ISO-8859-6",
+            "ISO-8859-7",
+            "ISO-8859-8",
+            "ISO-8859-8-I",
+            "KOI8-R",
+            "KOI8-U",
+            "Shift_JIS",
+            "UTF-16BE",
+            "UTF-16LE",
+            "UTF-8",
+            "gb18030",
+            "macintosh",
+            "windows-1250",
+            "windows-1251",
+            "windows-1252",
+            "windows-1253",
+            "windows-1254",
+            "windows-1255",
+            "windows-1256",
+            "windows-1257",
+            "windows-1258",
+            "windows-874",
+            "x-mac-cyrillic",
+        ];
+        for label in labels {
+            assert_eq!(decoding_policy(label).unwrap(), label);
+        }
+        assert_eq!(decoding_policy("latin1").unwrap(), "windows-1252");
+        assert_eq!(decoding_policy("shift-jis").unwrap(), "Shift_JIS");
+        for label in [
+            "replacement",
+            "x-user-defined",
+            "iso-2022-cn",
+            "utf-7",
+            "not-an-encoding",
+        ] {
+            assert!(matches!(
+                decoding_policy(label),
+                Err(ReaderError::InvalidSettings)
+            ));
+        }
+    }
+}

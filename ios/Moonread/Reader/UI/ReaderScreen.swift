@@ -946,12 +946,7 @@ struct ReaderScreen: View {
     }
 
     private var encodingMenu: some View {
-        Menu("更换编码重新打开") {
-            Button("UTF-8") { session.restart(encoding: "utf-8") }
-            Button("GB18030 / GBK") { session.restart(encoding: "gb18030") }
-            Button("UTF-16 LE") { session.restart(encoding: "utf-16le") }
-            Button("UTF-16 BE") { session.restart(encoding: "utf-16be") }
-        }
+        ReaderEncodingMenu { session.restart(encoding: $0) }
     }
 
 }
@@ -1047,5 +1042,54 @@ private struct ReaderImportDiagnosticStatus: ViewModifier {
         #else
         content
         #endif
+    }
+}
+
+
+/// Manual choices do not perform detection in Swift. Labels are encoding_rs names;
+/// the Rust decoding policy validates and canonicalizes every selected value.
+enum ReadingEncodingGroup: String, CaseIterable, Identifiable {
+    case simplifiedChinese, traditionalChinese, japanese, korean, westernEuropean, other
+    var id: String { rawValue }
+    var title: LocalizedStringResource {
+        switch self {
+        case .simplifiedChinese: "简体中文"
+        case .traditionalChinese: "繁体中文"
+        case .japanese: "日文"
+        case .korean: "韩文"
+        case .westernEuropean: "西欧"
+        case .other: "其他编码"
+        }
+    }
+    var encodings: [String] {
+        switch self {
+        case .simplifiedChinese: ["gb18030", "GBK"]
+        case .traditionalChinese: ["Big5"]
+        case .japanese: ["Shift_JIS", "EUC-JP", "ISO-2022-JP"]
+        case .korean: ["EUC-KR"]
+        case .westernEuropean: ["windows-1252", "ISO-8859-14", "ISO-8859-15", "macintosh"]
+        case .other: ["UTF-8", "UTF-16LE", "UTF-16BE", "IBM866", "ISO-8859-2", "ISO-8859-3", "ISO-8859-4",
+                      "ISO-8859-5", "ISO-8859-6", "ISO-8859-7", "ISO-8859-8", "ISO-8859-8-I", "ISO-8859-10",
+                      "ISO-8859-13", "ISO-8859-16", "KOI8-R", "KOI8-U", "windows-1250", "windows-1251",
+                      "windows-1253", "windows-1254", "windows-1255", "windows-1256", "windows-1257",
+                      "windows-1258", "windows-874", "x-mac-cyrillic"]
+        }
+    }
+}
+
+struct ReaderEncodingMenu: View {
+    let select: (String) -> Void
+    var body: some View {
+        Menu("更换编码重新打开") {
+            ForEach(ReadingEncodingGroup.allCases) { group in
+                Menu {
+                    ForEach(group.encodings, id: \.self) { encoding in
+                        Button(encoding) { select(encoding) }
+                    }
+                } label: { Text(group.title) }
+            }
+        }
+        .menuOrder(.fixed)
+        .accessibilityIdentifier("readerEncodingMenu")
     }
 }
