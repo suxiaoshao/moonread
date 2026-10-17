@@ -342,8 +342,14 @@ struct StatisticsView: View {
         .overlay {
             if information.preparing {
                 VStack(spacing: 16) {
-                    ProgressView(value: information.progress)
-                    Text(information.downloading ? "正在下载小说" : "正在准备正文")
+                    if information.preparationPaused {
+                        Text("正文准备已暂停，编辑详情需要先完成准备")
+                        Button("继续准备") { information.resumePreparation() }
+                            .buttonStyle(ThemedProminentButtonStyle())
+                    } else {
+                        ProgressView(value: information.progress)
+                        Text(information.downloading ? "正在下载小说" : "正在准备正文")
+                    }
                     Button("取消") { information.cancelPreparation() }
                 }.padding(24).frame(maxWidth: 270).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
             }

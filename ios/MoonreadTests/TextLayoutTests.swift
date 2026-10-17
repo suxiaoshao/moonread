@@ -2145,7 +2145,7 @@ final class TextLayoutTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: cloud.appendingPathComponent("book.txt")),Data("new unknown text".utf8))
     }
 
-    private func pausedSourceFixture() async throws -> (URL, ReaderService, ReaderCore, SourceFile, String, UserDefaults, String) {
+    private static func pausedSourceFixture() async throws -> (URL, ReaderService, ReaderCore, SourceFile, String, UserDefaults, String) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let local = root.appendingPathComponent("local")
         try FileManager.default.createDirectory(at: local, withIntermediateDirectories: true)
@@ -2170,8 +2170,67 @@ final class TextLayoutTests: XCTestCase {
         return (root, service, core, entry.source, id, defaults, suite)
     }
 
+    @MainActor private func waitForMetadataPreparation(_ model: BookInformationModel, until condition: () -> Bool) async throws {
+        for _ in 0..<500 {
+            if condition() { return }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTFail("Metadata preparation did not reach the expected state: \(model.error ?? "no error")")
+    }
+
+    @MainActor func testMetadataEditingPreservesUserPauseUntilResumePreparation() async throws {
+        for fromReader in [false, true] {
+            let (root, service, core, source, id, defaults, suite) = try await Self.pausedSourceFixture()
+            defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+            await service.pauseImport(id, reason: .user)
+            let target = StatisticsRoute(bookID: id, title: "暂停语义样本", fileID: source.id, fromReader: fromReader)
+            let model = BookInformationModel(service: service)
+            await model.load(target)
+            model.edit(target)
+            try await waitForMetadataPreparation(model) { model.preparationPaused || model.error != nil }
+            XCTAssertNil(model.error); XCTAssertTrue(model.preparationPaused); XCTAssertNil(model.draft)
+            XCTAssertEqual(try core.importStatus(bookId: id).phase, .paused)
+            XCTAssertTrue(defaults.bool(forKey: "Moonread.importUserPaused.v1.library." + id))
+            let running = await service.hasRunningImports; XCTAssertFalse(running)
+            model.resumePreparation()
+            try await waitForMetadataPreparation(model) { !model.preparing }
+            XCTAssertNil(model.error); XCTAssertNotNil(model.draft); XCTAssertFalse(model.preparationPaused)
+            XCTAssertEqual(try core.importStatus(bookId: id).phase, .complete)
+            XCTAssertNil(defaults.object(forKey: "Moonread.importUserPaused.v1.library." + id))
+        }
+    }
+
+    @MainActor func testMetadataEditingAutomaticallyResumesSystemPausedPreparation() async throws {
+        let (root, service, core, _, id, defaults, suite) = try await Self.pausedSourceFixture()
+        defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        let target = StatisticsRoute(bookID: id, title: "暂停语义样本", fromReader: true)
+        let model = BookInformationModel(service: service)
+        await model.load(target)
+        model.edit(target)
+        try await waitForMetadataPreparation(model) { !model.preparing }
+        XCTAssertNil(model.error); XCTAssertNotNil(model.draft); XCTAssertFalse(model.preparationPaused)
+        XCTAssertEqual(try core.importStatus(bookId: id).phase, .complete)
+    }
+
+    @MainActor func testCancellingMetadataPreparationKeepsUserPause() async throws {
+        let (root, service, core, _, id, defaults, suite) = try await Self.pausedSourceFixture()
+        defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        await service.pauseImport(id, reason: .user)
+        let target = StatisticsRoute(bookID: id, title: "暂停语义样本", fromReader: true)
+        let model = BookInformationModel(service: service)
+        await model.load(target)
+        model.edit(target)
+        try await waitForMetadataPreparation(model) { model.preparationPaused || model.error != nil }
+        XCTAssertTrue(model.preparationPaused); XCTAssertNil(model.error)
+        model.cancelPreparation()
+        try await waitForMetadataPreparation(model) { !model.preparing }
+        XCTAssertNil(model.draft); XCTAssertNil(model.error)
+        XCTAssertEqual(try core.importStatus(bookId: id).phase, .paused)
+        XCTAssertTrue(defaults.bool(forKey: "Moonread.importUserPaused.v1.library." + id))
+    }
+
     func testUserPausedImportStaysPausedAcrossReopenAndRestartUntilExplicitResume() async throws {
-        let (root, service, core, source, id, defaults, suite) = try await pausedSourceFixture()
+        let (root, service, core, source, id, defaults, suite) = try await Self.pausedSourceFixture()
         defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
         await service.pauseImport(id, reason: .user)
         XCTAssertTrue(defaults.bool(forKey: "Moonread.importUserPaused.v1.library." + id))
@@ -2194,7 +2253,7 @@ final class TextLayoutTests: XCTestCase {
 
     func testSystemInterruptedImportAutomaticallyResumesOnReopen() async throws {
         do {
-            let (root, _, _, source, id, defaults, suite) = try await pausedSourceFixture()
+            let (root, _, _, source, id, defaults, suite) = try await Self.pausedSourceFixture()
             defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
             let restartedCore = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
             let restarted = ReaderService(core: restartedCore, libraryDirectory: root.appendingPathComponent("local"), sourceDefaultsSuite: suite)
@@ -2208,7 +2267,7 @@ final class TextLayoutTests: XCTestCase {
     }
 
     func testUserPauseMarkerClearsOnEncodingRestartAndCompletedReclamation() async throws {
-        let (root, service, core, source, id, defaults, suite) = try await pausedSourceFixture()
+        let (root, service, core, source, id, defaults, suite) = try await Self.pausedSourceFixture()
         defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
         await service.pauseImport(id, reason: .user)
         let lease = try await service.restartImport(id, encoding: "UTF-8")

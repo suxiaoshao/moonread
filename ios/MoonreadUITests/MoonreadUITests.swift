@@ -1294,6 +1294,38 @@ final class MoonreadUITests: XCTestCase {
         }
     }
 
+    func testPausedBookInformationEditingRequiresExplicitPreparationResume() {
+        continueAfterFailure = false
+        app.launchArguments = ["--ui-testing", "--ui-test-session", UUID().uuidString, "--ui-test-progressive", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
+        app.launch()
+        let shelf = app.buttons.containing(.staticText, identifier: "渐进导入测试").firstMatch
+        XCTAssertTrue(shelf.waitForExistence(timeout: 15)); shelf.tap()
+        let file = app.buttons.containing(.staticText, identifier: "月光下的归途").firstMatch
+        XCTAssertTrue(file.waitForExistence(timeout: 15)); file.tap()
+        XCTAssertTrue(app.staticTexts["readingChapter"].waitForExistence(timeout: 8))
+        enterBodyFromCover()
+        XCTAssertTrue(readerTextAppears())
+        revealControls()
+        let pause = app.buttons["暂停"]
+        XCTAssertTrue(pause.waitForExistence(timeout: 5)); pause.tap()
+        XCTAssertTrue(app.buttons["继续"].waitForExistence(timeout: 5))
+        app.buttons["readerBookDetails"].tap()
+        XCTAssertTrue(app.navigationBars["小说详情"].waitForExistence(timeout: 5))
+        app.buttons["小说选项"].tap(); app.buttons["编辑小说信息"].tap()
+        let message = app.staticTexts["正文准备已暂停，编辑详情需要先完成准备"]
+        XCTAssertTrue(message.waitForExistence(timeout: 8))
+        recordScreenshot("metadata-user-paused")
+        let resume = app.buttons["继续准备"]
+        XCTAssertTrue(resume.waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(resume.isEnabled)
+        XCTAssertFalse(app.textFields["bookAuthorField"].exists)
+        resume.tap()
+        XCTAssertTrue(app.textFields["bookAuthorField"].waitForExistence(timeout: 60))
+        XCTAssertFalse(message.exists)
+        recordScreenshot("metadata-user-resumed")
+        app.buttons["取消"].tap()
+    }
+
     func testBookInformationEditingAndReaderReturn() {
         prepareApp(); openSample()
         let position = anchor()

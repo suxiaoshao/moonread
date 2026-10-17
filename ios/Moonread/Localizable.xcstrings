@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "正文准备已暂停，编辑详情需要先完成准备": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text preparation is paused. Finish preparing the book before editing its details."
+          }
+        }
+      }
+    },
   "正在重新读取": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading again"}}}},
   "文字编码，%@，可更换": {
     "localizations": {
