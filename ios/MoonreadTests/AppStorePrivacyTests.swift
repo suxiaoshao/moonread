@@ -28,7 +28,13 @@ final class AppStorePrivacyTests: XCTestCase {
             return result
         }
         XCTAssertEqual(try keys("zh-Hant", plain: tw), try keys("en", plain: en))
-        for (key, expected) in [("设置", "設定"), ("文件夹", "資料夾"), ("导入小说", "匯入小說"), ("拷贝", "複製"), ("阅读设置", "閱讀設定"), ("反馈这条回复", "回饋這則回覆")] {
+        for (key, expected) in [
+            ("设置", "設定"), ("文件夹", "資料夾"), ("导入小说", "匯入小說"), ("拷贝", "複製"),
+            ("阅读设置", "閱讀設定"), ("反馈这条回复", "回饋這則回覆"),
+            ("同名项目", "同名項目"), ("选择项目", "選擇項目"),
+            ("本批中有项目所在位置不支持最近删除，删除后无法恢复。", "本批中有項目所在位置不支援最近刪除，刪除後無法恢復。"),
+            ("永久删除这些项目", "永久刪除這些項目")
+        ] {
             XCTAssertEqual(tw[key], expected)
         }
         let pattern = try NSRegularExpression(pattern: #"%([0-9]+\$)?[-+0-9.]*([a-zA-Z@]+)"#)

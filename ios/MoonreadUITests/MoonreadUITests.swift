@@ -2865,7 +2865,7 @@ final class MoonreadUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["谢谢你的支持"].exists)
     }
 
-    func testLocalizedTipJarKeepsPricesBesideDescriptions() throws {
+    func testLocalizedTipJarAdaptsPricesToTextSize() throws {
         let storeKit = try SKTestSession(configurationFileNamed: "TipJar")
         storeKit.resetToDefaultState(); storeKit.disableDialogs = true
         for (language, locale, light, dark) in [
@@ -2889,8 +2889,19 @@ final class MoonreadUITests: XCTestCase {
                     let subtitle = app.staticTexts["tipJarDescription-" + id]
                     XCTAssertTrue(title.exists); XCTAssertTrue(subtitle.exists)
                     let description = title.frame.union(subtitle.frame)
-                    XCTAssertGreaterThanOrEqual(price.frame.minX, description.maxX)
-                    XCTAssertEqual(price.frame.midY, description.midY, accuracy: 1, "\(language) \(product) large=\(large)")
+                    if large {
+                        let text = element("tipJarText-" + id)
+                        let row = element("tipJarRow-" + id)
+                        XCTAssertTrue(text.exists); XCTAssertTrue(row.exists)
+                        XCTAssertGreaterThanOrEqual(price.frame.minY, description.maxY)
+                        XCTAssertEqual(price.frame.minX, text.frame.minX, accuracy: 1)
+                        // AX reports the laid-out text's tight bounds, not the full-width layout frame.
+                        XCTAssertGreaterThan(text.frame.width, row.frame.width * 0.5, "Accessibility text must span most of the card, not a narrow price-side column")
+                        if product == "snack" { recordScreenshot("tip-layout-\(language)-ax-dark-snack") }
+                    } else {
+                        XCTAssertGreaterThanOrEqual(price.frame.minX, description.maxX)
+                        XCTAssertEqual(price.frame.midY, description.midY, accuracy: 1, "\(language) \(product)")
+                    }
                 }
                 recordScreenshot("tip-layout-\(language)-\(large ? "ax-dark" : "light")-bottom")
                 app.terminate()

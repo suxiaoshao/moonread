@@ -12,7 +12,9 @@ InfoPlist 三语随包资源分别使用 Moonread／月讀／月读，覆盖 App
 
 Nix + Xcode 模拟器 Debug 构建、8 项 AppStorePrivacyTests 与 4 个受影响 UI 用例通过：英文／繁体主要页面，三语长按反馈与复制替代内容、英繁三条 TipKit 提示、既有过程整行展开。测试语言与地区参数为 en/en_US、zh-Hant/zh_TW，另覆盖简体反馈；书籍、会话正文和用户连接名称按内容保留，不转换。主回归 `build/Localization/verified.log/.xcresult`，提示与调整后的反馈页复跑 `tips-feedback.log/.xcresult`，网站 Zola 构建 `site.log`。截图已目视核对：`screens/overview-en.png`、`overview-hant.png`、`overview-onboarding.png`、`overview-feedback.png`，其余完整页面均在 `build/Localization/screens/`。`git diff --check` 与 plist 语法检查通过。未操作真机或账号凭据；模拟器无邮件账户，系统邮件实际编辑／投递与真实 iCloud Files 容器显示名未实测，不将随包资源核对当作这两项的真机验收。
 
-打赏商品行固定使用左右布局：左侧名称与说明自然换行，右侧价格保持固有宽度并垂直居中，取消放不下时把价格放到下方的布局。英文设置及相关导航／行标题统一 Title Case，说明句保持原文；智能首行缩进值缩短为 `Smart, 2 chars`。新增简繁英、标准字号与 AX XL 的四档商品横向位置／垂直居中断言，以及英文设置标题与缩进值断言。 三语两档字号共 24 组商品位置断言通过，价格与文字整体中心差不超过 1pt；英文设置标题／缩进值、购买完成与重启回归通过。最终几何证据为 `build/Localization/review-layout-final.log/.xcresult`，其余两项 UI 为 `review-layout.log/.xcresult`；首次几何用例的繁体导航标题查找错误已改用原生返回按钮，未放宽位置断言。最终英文资源构建与 8 项 AppStorePrivacyTests 通过，证据为 `build/Localization/review-catalog.log/.xcresult`。补充截图位于 `build/Localization/review-screens/`，总览为 `overview-review-tip-jar.png` 与 `overview-review-english.png`，已目视核对。
+打赏商品行按 Dynamic Type 分布局：标准字号保留左侧名称／说明、右侧垂直居中的价格；辅助功能字号改为上方全宽名称／说明、下方左对齐价格，不缩小字体。英文设置及相关导航／行标题统一 Title Case，说明句保持原文；智能首行缩进值缩短为 `Smart, 2 chars`。英文标题／缩进值与购买重启的前轮证据为 `build/Localization/review-layout.log/.xcresult`，最终英文资源构建与 8 项 AppStorePrivacyTests 为 `review-catalog.log/.xcresult`。标准字号总览与英文设置见 `build/Localization/review-screens/overview-review-english.png`。 三语标准字号与 AX XL 共 24 组商品位置断言通过：标准字号右侧居中，AX 价格在文字下方左对齐、文字字形包络占卡片多数宽度（无障碍字形包络与全宽布局框区分）。最终布局用例为 `build/Localization/review-ax-stacked-final.log/.xcresult`；本轮购买与重启回归通过，见 `review-ax-stacked.log/.xcresult`。AX 深色三语截图位于 `build/Localization/ax-stacked-screens/`，`overview-ax-dark.png` 已目视核对，夜宵名称与说明没有被价格挤成窄列。
+
+逐条核对繁体 `專案` 的使用处：AI 文件整理冲突标签“同名項目”、书架菜单“選擇項目”、永久删除警告“本批中有項目所在位置不支援最近刪除，刪除後無法恢復。”、批次按钮“永久刪除這些項目”。这四处均指文件／资料夹条目，已改为 `項目`，没有 project 语境需要保留；随包繁体资源测试增加四项精确用词断言；最终 Debug 构建与 8 项 AppStorePrivacyTests 通过，证据为 `build/Localization/review-taiwan-terms.log/.xcresult`。
 
 ## 2026-10-17 主页面统一设置入口
 
