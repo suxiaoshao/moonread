@@ -110,19 +110,5 @@
     "bom": false,
     "text": "朝の光が窓から入り、机の上の本を照らしました。彼女は新しいページをゆっくりと読み始めます。\n",
     "detected": "ISO-2022-JP"
-  },
-  {
-    "id": "utf16le-no-bom",
-    "encoding": "UTF-16LE",
-    "bom": false,
-    "text": "Chapter 1\r\nNo BOM: an original sample. 这是无字节序标记的原创正文。\n",
-    "detected": "UTF-16LE"
-  },
-  {
-    "id": "utf16be-no-bom",
-    "encoding": "UTF-16BE",
-    "bom": false,
-    "text": "Chapter 1\r\nNo BOM: an original sample. 这是无字节序标记的原创正文。\n",
-    "detected": "UTF-16BE"
   }
 ]

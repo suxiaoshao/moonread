@@ -3073,21 +3073,29 @@ final class MoonreadUITests: XCTestCase {
     }
 
     func testManualEncodingMenuGroupsAndRecoversImport() {
-        prepareApp(arguments: ["--ui-test-encoding"])
+        assertAutomaticEncodingFailureCanRecover(encodingName: "UTF-16LE", arguments: [])
+    }
+
+    func testAutomaticBomlessUTF16BEFailureCanRecover() {
+        assertAutomaticEncodingFailureCanRecover(encodingName: "UTF-16BE", arguments: ["--ui-test-encoding-be"])
+    }
+
+    private func assertAutomaticEncodingFailureCanRecover(encodingName: String, arguments: [String]) {
+        prepareApp(arguments: ["--ui-test-encoding"] + arguments)
         let shelf = app.buttons["shelf-builtin"]
         XCTAssertTrue(shelf.waitForExistence(timeout: 10)); shelf.tap()
         let file = app.buttons["library-file-编码恢复样本.txt"]
         XCTAssertTrue(file.waitForExistence(timeout: 5)); file.tap()
         let menu = app.buttons["更换编码重新打开"]
-        recordScreenshot("encoding-initial-state")
+        recordScreenshot(encodingName + "-encoding-initial-state")
         XCTAssertTrue(menu.waitForExistence(timeout: 10), app.debugDescription); menu.tap()
         for label in ["简体中文", "繁体中文", "日文", "韩文", "西欧", "其他编码"] {
             XCTAssertTrue(app.buttons[label].waitForExistence(timeout: 5), label)
         }
-        recordScreenshot("encoding-groups")
+        recordScreenshot(encodingName + "-encoding-groups")
         app.buttons["其他编码"].tap()
-        let encoding = app.buttons["UTF-16LE"]
-        recordScreenshot("encoding-unicode-options")
+        let encoding = app.buttons[encodingName]
+        recordScreenshot(encodingName + "-encoding-unicode-options")
         XCTAssertTrue(encoding.waitForExistence(timeout: 5), app.debugDescription)
         encoding.tap()
         XCTAssertTrue(app.alerts["更换文字编码？"].waitForExistence(timeout: 5))
@@ -3098,7 +3106,7 @@ final class MoonreadUITests: XCTestCase {
             if app.textViews["scrollText"].exists { readingText().swipeUp() }
             else { readingText().swipeLeft() }
         }
-        recordScreenshot("encoding-recovered-body")
+        recordScreenshot(encodingName + "-encoding-recovered-body")
         XCTAssertGreaterThan(anchor(), 0)
         XCTAssertNotEqual(anchor(), UInt64.max)
         XCTAssertFalse(app.buttons["更换编码重新打开"].exists)

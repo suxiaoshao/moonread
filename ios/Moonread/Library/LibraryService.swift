@@ -727,13 +727,12 @@ extension ReaderService {
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("--ui-test-encoding") {
             let text = "Chapter 1\n" + String(repeating: "An original sample for manual encoding recovery.\n", count: 80)
-            let bytes = text.utf16.flatMap { [UInt8($0 & 255), UInt8($0 >> 8)] }
+            let bigEndian = arguments.contains("--ui-test-encoding-be")
+            let bytes = text.utf16.flatMap { unit in
+                bigEndian ? [UInt8(unit >> 8), UInt8(unit & 255)] : [UInt8(unit & 255), UInt8(unit >> 8)]
+            }
             try Data(bytes).write(to: root.appendingPathComponent("编码恢复样本.txt"))
             try refreshLibraryShelf("builtin")
-            // Deliberately persist a wrong user choice: auto detection now handles
-            // BOMless UTF-16. Exercise correcting a previous selection via the menu.
-            guard let entry = try await libraryEntries(LibraryLocation(shelfID: "builtin")).first(where: { $0.name == "编码恢复样本.txt" }) else { throw ReaderError.NotFound }
-            try core.setSourceDecoding(fileId: entry.id, decoding: "UTF-8")
             return
         }
         if arguments.contains("--ui-test-blank-line-projection") {
