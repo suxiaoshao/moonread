@@ -16,6 +16,11 @@ import GoogleProvider
         self.providers = providers; self.owner = owner; self.images = images; self.makeTransport = makeTransport
     }
     func perform(_ purpose: AIModelPurpose, prompt: String, refs: [String]) async throws -> AINativeResult {
+        try await providers.availability.perform {
+            try await self.performAvailable(purpose, prompt: prompt, refs: refs)
+        }
+    }
+    private func performAvailable(_ purpose: AIModelPurpose, prompt: String, refs: [String]) async throws -> AINativeResult {
         let connection = providers.purposeSelection(purpose).flatMap { selection in
             providers.connections.first { $0.id == selection.connectionID }
         }
@@ -63,7 +68,8 @@ import GoogleProvider
         try Task.checkCancellation()
         guard providers.purposeSelection(purpose) == selection else { throw CancellationError() }
         let transport = makeTransport()
-        let token = providers.trackNativeRequest(connectionID: connection.id, cancel: { transport.cancel() })
+        try transport.protect(using: providers.availability)
+        let token = try providers.trackNativeRequest(connectionID: connection.id, cancel: { transport.cancel() })
         defer { providers.finishNativeRequest(token); transport.finish() }
         guard let route = AINativeCapabilities.route(purpose, connection: connection, model: model) else { throw AIToolError("unsupported") }
         if !refs.isEmpty, [.openAIImage, .googleImage, .xaiImage].contains(route), model.capabilities?.imageInput != true {

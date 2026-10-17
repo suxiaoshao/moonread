@@ -256,7 +256,7 @@ enum AIResolvedSource: Sendable, Identifiable {
                     let title = details.book?.title ?? input.bookRef
                     let native = try await AINativeTools(providers: providers, owner: owner, makeTransport: makeTransport).search(.init(query: input.query ?? (title + " " + details.metadata.author + " 小说")))
                     let fetcher = AICoverImageFetcher()
-                    let request = await providers.trackNativeRequest(connectionID: native.data.connectionID, cancel: { fetcher.cancel() })
+                    let request = try await providers.trackNativeRequest(connectionID: native.data.connectionID, cancel: { fetcher.cancel() })
                     do {
                         let report = try await fetcher.candidates(sources: native.sources, title: title, bookRef: input.bookRef,
                             save: { try await AIImageStore.shared.save($0, owner: owner) },

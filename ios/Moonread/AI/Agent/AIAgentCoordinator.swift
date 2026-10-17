@@ -39,6 +39,7 @@ import Foundation
                 tools: tools.definitions() + self.proposals.definitions(owner: id, providers: self.providers, makeTransport: self.makeTransport) + AINativeTools(providers: self.providers, owner: id, makeTransport: self.makeTransport).definitions(),
                 resolve: { [weak self] in
                     guard let self else { throw AIError.storage }
+                    try self.providers.availability.requireAvailable()
                     let head = try await self.store.head(id)
                     guard let selection = self.sessions[id]?.head.selection ?? head.selection,
                           let connection = self.providers.connections.first(where: { $0.id == selection.connectionID }),
@@ -61,6 +62,7 @@ import Foundation
                     }
                     try await authorize()
                     let transport = self.makeTransport()
+                    try transport.protect(using: self.providers.availability)
                     let request = try AIProviderRequest(connection: connection, model: model, credential: credential, thinking: selection.thinking, conversationID: id, instructions: instructions, transport: transport, onUnauthorized: {
                         try await self.providers.confirmLoginInvalid(connection, sessionID: credential.sessionID)
                     })
@@ -68,7 +70,10 @@ import Foundation
                         system: request.system ?? "", options: request.options, summaryOptions: request.options, contextWindow: capacity,
                         maxOutput: resolved.output ?? capacity, supportsTools: resolved.capabilities.tools == true,
                         authorize: authorize, cancel: { transport.cancel() }, finish: { transport.finish() })
-                }, admission: { [weak self] in self?.isOpen(id) == true }, observe: observe,
+                }, admission: { [weak self] in
+                    guard let self else { return false }
+                    return self.providers.availability.isAvailable && self.isOpen(id)
+                }, observe: observe,
                 committedEntries: { [weak self] entries, head in
                     self?.entriesCommitted(id, entries, head)
                 },
@@ -86,7 +91,10 @@ import Foundation
     }
     func setSharingWaiting(_ id: String, waiting: Bool) { sessions[id]?.setSharingWaiting(waiting) }
     func stop(_ id: String) { sessions[id]?.stop() }
-    func stopAll() { for runtime in sessions.values { runtime.stop() } }
+    func stopAll() {
+        for pending in constructing.values { pending.work.cancel() }
+        for runtime in sessions.values { runtime.stop() }
+    }
     func stopAndWait(_ id: String) async {
         let runtime: AIAgentRuntime?
         if let existing = sessions[id] { runtime = existing }

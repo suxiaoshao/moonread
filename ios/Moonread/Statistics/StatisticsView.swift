@@ -225,104 +225,7 @@ struct StatisticsView: View {
 
     var body: some View {
         ScrollViewReader { proxy in
-        List {
-            if let target {
-                BookInformationSections(model: information, target: target, library: library,
-                                        aiRequests: [bookRequest(.metadata), bookRequest(.cover)].compactMap { $0 },
-                                        openAI: { aiRequest = $0 })
-                    .listRowBackground(Color(uiColor: theme.surface))
-            }
-            if let overview = model.overview {
-                if let notice = model.compatibilityNotice {
-                    Section { Label(notice, systemImage: "exclamationmark.circle") }.listRowBackground(Color(uiColor: theme.surface))
-                }
-                if !overview.preferences.enabled {
-                    Section { Label("阅读统计已暂停", systemImage: "pause.circle").foregroundStyle(Color(uiColor: theme.secondary)) }
-                        .listRowBackground(Color(uiColor: theme.surface))
-                }
-                if let error = StatisticsWriter.shared.error {
-                    Section {
-                        Text("部分阅读记录尚未保存")
-                        Button("重试") { StatisticsWriter.shared.retry() }
-                        Text(error).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                    }.listRowBackground(Color(uiColor: theme.surface))
-                }
-                if target != nil { cumulativeSummary }
-                periodPicker
-                if overview.books.isEmpty {
-                    ContentUnavailableView {
-                        Label("暂无阅读记录", systemImage: "book.closed")
-                    } description: {
-                        Text(overview.preferences.enabled ? String(localized: "开始阅读后，这里会显示书籍、阅读时段和时长。") : String(localized: "开启阅读统计后记录新的阅读活动。"))
-                    }.listRowBackground(Color.clear)
-                } else {
-                    periodSummary(overview)
-                    if target == nil { bookSection } else { sessionsSection }
-                }
-                fileInformation
-            } else if let error = model.error {
-                ContentUnavailableView {
-                    Label("暂时无法读取统计", systemImage: "exclamationmark.circle")
-                } description: { Text(error) } actions: {
-                    Button("重试") { Task { await model.load(window, target: statisticsTarget) } }
-                }.listRowBackground(Color.clear)
-            } else {
-                HStack { Spacer(); LoadingActivity(size: 52, waitingLabel: "正在读取统计"); Spacer() }
-                    .frame(minHeight: 230).listRowBackground(Color.clear)
-            }
-        }
-        .themedPage()
-        .navigationTitle(target == nil ? String(localized: "统计") : String(localized: "小说详情"))
-        .navigationBarTitleDisplayMode(target == nil ? .large : .inline)
-        .toolbarVisibility(.visible, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    if let target {
-                        Button("编辑小说信息", systemImage: "pencil") { information.edit(target) }
-                            .disabled(information.preparing || (information.entry == nil && information.details?.book == nil))
-                        ForEach([AIQuickTaskRequest.Family.metadata, .cover], id: \.self) { family in
-                            if let request = bookRequest(family) {
-                                Button(family == .metadata ? "完善资料" : "封面…", systemImage: family == .metadata ? "sparkles" : "photo") { aiRequest = request }
-                                if let task = request.task(ai) {
-                                    Button(family == .metadata ? "移除资料任务" : "移除封面任务", systemImage: "trash", role: .destructive) {
-                                        removingTask = task
-                                    }.disabled(task.deleting)
-                                }
-                            }
-                        }
-                        if let entry = information.entry {
-                            Button("重命名文件", systemImage: "pencil.line") { library.sheet = .rename(entry) }
-                            Button("移动", systemImage: "folder") { library.sheet = .move([entry]) }
-                        }
-                        Divider()
-                    }
-                    Button("分析阅读", systemImage: "sparkles") { aiRequest = statisticsRequest }
-                        .disabled(statisticsRequest == nil).accessibilityIdentifier("analyzeReading")
-                    Button("统计设置", systemImage: "gearshape") { showSettings = true }
-                    if target != nil {
-                        Button("清除本书统计", systemImage: "trash", role: .destructive) { deleteBook = true }
-                    }
-                } label: { Image(systemName: "ellipsis") }.toolbarGlyph().accessibilityLabel(target == nil ? "统计选项" : "小说选项")
-            }
-        }
-        .sheet(item: $aiRequest) { AIQuickTaskSheet(request: $0).themeScope(theme) }
-        .confirmationDialog("移除这个任务？", isPresented: Binding(get: { removingTask != nil }, set: { if !$0 { removingTask = nil } }),
-                            titleVisibility: .visible, presenting: removingTask) { task in
-            Button("移除任务", role: .destructive) {
-                Task {
-                    do { try await ai.removeTask(task.id) }
-                    catch { information.error = AIRequestError.message(error) }
-                }
-            }
-        } message: { task in
-            Text(AIQuickTaskRemoval.message(task))
-        }
-        .navigationDestination(isPresented: $showSettings) { StatisticsSettingsView() }
-        .navigationDestination(item: $openedDay) { StatisticsDayView(route: $0) }
-        .navigationDestination(isPresented: $showAllBooks) {
-            StatisticsBookList(books: orderedBooks, maximum: orderedBooks.map(\.durationMs).max() ?? 1, window: window)
-        }
+        contentList
         .task(id: LoadRequest(window: window, target: target)) {
             if let target { await information.load(target) }
             guard !Task.isCancelled else { return }
@@ -399,6 +302,116 @@ struct StatisticsView: View {
         } message: { Text(model.error ?? "") }
         .accessibilityIdentifier(target == nil ? "statisticsOverview" : "statisticsBook")
         }
+    }
+
+    private var contentList: some View {
+        List {
+            if let target {
+                BookInformationSections(model: information, target: target, library: library,
+                                        aiRequests: ai.availability.isAvailable ? [bookRequest(.metadata), bookRequest(.cover)].compactMap { $0 } : [],
+                                        openAI: { aiRequest = $0 })
+                    .listRowBackground(Color(uiColor: theme.surface))
+            }
+            if let overview = model.overview {
+                if let notice = model.compatibilityNotice {
+                    Section { Label(notice, systemImage: "exclamationmark.circle") }.listRowBackground(Color(uiColor: theme.surface))
+                }
+                if !overview.preferences.enabled {
+                    Section { Label("阅读统计已暂停", systemImage: "pause.circle").foregroundStyle(Color(uiColor: theme.secondary)) }
+                        .listRowBackground(Color(uiColor: theme.surface))
+                }
+                if let error = StatisticsWriter.shared.error {
+                    Section {
+                        Text("部分阅读记录尚未保存")
+                        Button("重试") { StatisticsWriter.shared.retry() }
+                        Text(error).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                    }.listRowBackground(Color(uiColor: theme.surface))
+                }
+                if target != nil { cumulativeSummary }
+                periodPicker
+                if overview.books.isEmpty {
+                    ContentUnavailableView {
+                        Label("暂无阅读记录", systemImage: "book.closed")
+                    } description: {
+                        Text(overview.preferences.enabled ? String(localized: "开始阅读后，这里会显示书籍、阅读时段和时长。") : String(localized: "开启阅读统计后记录新的阅读活动。"))
+                    }.listRowBackground(Color.clear)
+                } else {
+                    periodSummary(overview)
+                    if target == nil { bookSection } else { sessionsSection }
+                }
+                fileInformation
+            } else if let error = model.error {
+                ContentUnavailableView {
+                    Label("暂时无法读取统计", systemImage: "exclamationmark.circle")
+                } description: { Text(error) } actions: {
+                    Button("重试") { Task { await model.load(window, target: statisticsTarget) } }
+                }.listRowBackground(Color.clear)
+            } else {
+                HStack { Spacer(); LoadingActivity(size: 52, waitingLabel: "正在读取统计"); Spacer() }
+                    .frame(minHeight: 230).listRowBackground(Color.clear)
+            }
+        }
+        .themedPage()
+        .navigationTitle(target == nil ? String(localized: "统计") : String(localized: "小说详情"))
+        .navigationBarTitleDisplayMode(target == nil ? .large : .inline)
+        .toolbarVisibility(.visible, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                optionsMenu
+            }
+        }
+        .sheet(item: $aiRequest) { if ai.availability.isAvailable { AIQuickTaskSheet(request: $0).themeScope(theme) } }
+        .onChange(of: ai.availability.isAvailable) { _, available in if !available { aiRequest = nil; removingTask = nil } }
+        .confirmationDialog("移除这个任务？", isPresented: Binding(get: { removingTask != nil }, set: { if !$0 { removingTask = nil } }),
+                            titleVisibility: .visible, presenting: removingTask) { task in
+            Button("移除任务", role: .destructive) {
+                Task {
+                    do { try await ai.removeTask(task.id) }
+                    catch { information.error = AIRequestError.message(error) }
+                }
+            }
+        } message: { task in
+            Text(AIQuickTaskRemoval.message(task))
+        }
+        .navigationDestination(isPresented: $showSettings) { StatisticsSettingsView() }
+        .navigationDestination(item: $openedDay) { StatisticsDayView(route: $0) }
+        .navigationDestination(isPresented: $showAllBooks) {
+            StatisticsBookList(books: orderedBooks, maximum: orderedBooks.map(\.durationMs).max() ?? 1, window: window)
+        }
+    }
+
+    private var optionsMenu: some View {
+        Menu {
+            if let target {
+                Button("编辑小说信息", systemImage: "pencil") { information.edit(target) }
+                    .disabled(information.preparing || (information.entry == nil && information.details?.book == nil))
+                if ai.availability.isAvailable {
+                    ForEach([AIQuickTaskRequest.Family.metadata, .cover], id: \.self) { family in
+                        if let request = bookRequest(family) {
+                            Button(family == .metadata ? "完善资料" : "封面…", systemImage: family == .metadata ? "sparkles" : "photo") { aiRequest = request }
+                            if let task = request.task(ai) {
+                                Button(family == .metadata ? "移除资料任务" : "移除封面任务", systemImage: "trash", role: .destructive) {
+                                    removingTask = task
+                                }.disabled(task.deleting)
+                            }
+                        }
+                    }
+                }
+                if let entry = information.entry {
+                    Button("重命名文件", systemImage: "pencil.line") { library.sheet = .rename(entry) }
+                    Button("移动", systemImage: "folder") { library.sheet = .move([entry]) }
+                }
+                Divider()
+            }
+            if ai.availability.isAvailable {
+                Button("分析阅读", systemImage: "sparkles") { aiRequest = statisticsRequest }
+                    .disabled(statisticsRequest == nil).accessibilityIdentifier("analyzeReading")
+            }
+            Button("统计设置", systemImage: "gearshape") { showSettings = true }
+            if target != nil {
+                Button("清除本书统计", systemImage: "trash", role: .destructive) { deleteBook = true }
+            }
+        } label: { Image(systemName: "ellipsis") }.toolbarGlyph().accessibilityLabel(target == nil ? "统计选项" : "小说选项")
     }
 
     /// One origin per library file, so the detail page and the library menu reopen the same task.

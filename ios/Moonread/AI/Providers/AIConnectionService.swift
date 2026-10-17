@@ -11,6 +11,7 @@ enum AIConnectionState: Equatable {
 
 /// Owns connection configuration, authorization and model catalog state.
 @MainActor @Observable final class AIConnectionService {
+    let availability: AIAvailability
     let catalog: AIModelCatalog
     private(set) var catalogActivated = false
     @ObservationIgnored private var accountCatalogAttempts: [String: Date] = [:]
@@ -43,7 +44,8 @@ enum AIConnectionState: Equatable {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var loginTask: Task<Void, Never>?
     @ObservationIgnored private var loginRevision = UUID()
-    init(defaults: UserDefaults, auth: AIAuthentication, catalog: AIModelCatalog? = nil, sharing: AIDataSharingConsent? = nil) {
+    init(defaults: UserDefaults, auth: AIAuthentication, catalog: AIModelCatalog? = nil, sharing: AIDataSharingConsent? = nil, availability: AIAvailability? = nil) {
+        self.availability = availability ?? AIAvailability(defaults: defaults)
         self.sharing = sharing ?? AIDataSharingConsent(defaults: defaults)
         self.catalog = catalog ?? AIModelCatalog()
         self.defaults = defaults; self.auth = auth
@@ -81,6 +83,7 @@ enum AIConnectionState: Equatable {
             connections = [connection]
         }
         #endif
+        self.availability.didDisable = { [weak self] in self?.cancelAIWork() }
     }
     #if DEBUG
     private func beginOfflineBrowserAuthorization(_ connection: AIConnection) {
@@ -152,8 +155,11 @@ enum AIConnectionState: Equatable {
     }
     func credential(_ connection: AIConnection) async throws -> AICredential {
         guard !needsLogin.contains(connection.id) else { throw AIError.loginRequired }
+        let generation = availability.generation
         do {
-            let value = try await auth.credential(connection)
+            let value = try await availability.perform {
+                try await self.auth.credential(connection, availability: self.availability, generation: generation)
+            }
             guard !needsLogin.contains(connection.id) else { throw AIError.loginRequired }
             return value
         }
@@ -163,6 +169,7 @@ enum AIConnectionState: Equatable {
         }
     }
     func confirmLoginInvalid(_ connection: AIConnection, sessionID: String?) async throws {
+        try availability.requireAvailable()
         guard connections.contains(where: { $0.id == connection.id }),
               try await auth.invalidateSession(connection, sessionID: sessionID),
               try AIKeychain.load(connection.credentialReference) == nil else { return }
@@ -191,6 +198,7 @@ enum AIConnectionState: Equatable {
         return isLoggedIn(connection) ? .connected : .signedOut
     }
     func login(_ id: String) {
+        guard availability.isAvailable else { return }
         guard let connection = connections.first(where: { $0.id == id }), loginConnectionID == nil else { return }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-testing"), ProcessInfo.processInfo.arguments.contains("--ui-test-ai-login-browser"), id == "fixture-browser" {
@@ -240,6 +248,7 @@ enum AIConnectionState: Equatable {
         loginStates[id] = .authorizing
     }
     func submitAuthorizationCode(_ code: String, connectionID id: String) {
+        guard availability.isAvailable else { return }
         guard let connection = connections.first(where: { $0.id == id }), connection.authMethod == .openrouter,
               case .browser(let request) = loginStates[id], loginConnectionID == id else { return }
         let revision = loginRevision
@@ -359,19 +368,26 @@ enum AIConnectionState: Equatable {
         connections.first(where: { $0.id == connectionID }).flatMap { model(modelID, in: $0) }
     }
     func refreshCatalogsIfNeeded() async {
-        catalogActivated = true
-        guard !ProcessInfo.processInfo.arguments.contains("--ui-testing"), ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
-        await catalog.refresh()
-        await refreshConnectionCatalogsIfNeeded()
+        try? await availability.perform {
+            self.catalogActivated = true
+            guard !ProcessInfo.processInfo.arguments.contains("--ui-testing"), ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+            await self.catalog.refresh()
+            try self.availability.requireAvailable()
+            await self.refreshConnectionCatalogsIfNeeded()
+        }
     }
     // Entry points read the persisted connection snapshots; only stale snapshots use IO.
     func refreshConnectionCatalogsIfNeeded(now: Date = Date()) async {
-        for connection in connections where isLoggedIn(connection) && !chatGPTPlanDisabled(connection) &&
-            now.timeIntervalSince(accountCatalogAttempts[connection.id] ?? connection.modelsChecked ?? .distantPast) >= 86400 {
-            await refreshModels(connection.id, refreshPublic: false)
+        try? await availability.perform {
+            for connection in self.connections where self.isLoggedIn(connection) && !self.chatGPTPlanDisabled(connection) &&
+                now.timeIntervalSince(self.accountCatalogAttempts[connection.id] ?? connection.modelsChecked ?? .distantPast) >= 86400 {
+                try self.availability.requireAvailable()
+                await self.refreshModels(connection.id, refreshPublic: false)
+            }
         }
     }
     func refreshModels(_ id: String, refreshPublic: Bool = true) async {
+        guard availability.isAvailable, !Task.isCancelled else { return }
         guard let connection = connections.first(where: { $0.id == id }), !refreshingModels.contains(id) else { return }
         accountCatalogAttempts[id] = Date()
         let revision = UUID(); modelRevisions[id] = revision
@@ -389,7 +405,7 @@ enum AIConnectionState: Equatable {
             let models: [AIModelOption]
             if connection.authMethod != .chatGPT, !catalog.models(for: connection).isEmpty {
                 models = catalog.models(for: connection)
-            } else { models = try await auth.models(connection, credential: token) }
+            } else { models = try await availability.perform { try await self.auth.models(connection, credential: token) } }
             guard modelRevisions[id] == revision, !needsLogin.contains(id),
                   let index = connections.firstIndex(where: { $0.id == id }) else { return }
             authenticatedConnections.insert(id); needsLogin.remove(id)
@@ -429,6 +445,7 @@ enum AIConnectionState: Equatable {
         }
     }
     func purposeSelection(_ purpose: AIModelPurpose) -> AIPurposeSelection? {
+        guard availability.isAvailable else { return nil }
         guard let value = purposeDefaults[purpose], let connection = connections.first(where: { $0.id == value.connectionID }),
               let model = model(value.modelID, in: connection), AINativeCapabilities.supports(purpose, connection: connection, model: model) else { return nil }
         return value
@@ -440,14 +457,24 @@ enum AIConnectionState: Equatable {
         }
         purposeDefaults[purpose] = selection; saveConnections(); return true
     }
-    func trackNativeRequest(connectionID: String, cancel: @escaping @Sendable () -> Void) -> UUID {
-        let id = UUID(); nativeRequests[id] = (connectionID, cancel); return id
+    func trackNativeRequest(connectionID: String, cancel: @escaping @Sendable () -> Void) throws -> UUID {
+        let id = try availability.register(cancel: cancel); nativeRequests[id] = (connectionID, cancel); return id
+    }
+    func cancelAIWork() {
+        cancelLogin()
+        catalog.cancelRefresh()
+        for id in refreshingModels { modelRevisions[id] = nil; accountCatalogAttempts[id] = nil }
+        refreshingModels.removeAll()
+        for request in nativeRequests.values { request.1() }
+        for request in sharing.requests { sharing.cancel(owner: request.owner) }
+        showingChatGPTWelcome = false
     }
     func cancelNativeRequests(connectionID: String) {
         for request in nativeRequests.values where request.0 == connectionID { request.1() }
     }
-    func finishNativeRequest(_ id: UUID) { nativeRequests[id] = nil }
+    func finishNativeRequest(_ id: UUID) { nativeRequests[id] = nil; availability.finish(id) }
     static func connectionError(_ error: Error) -> String {
+        if error is AIAvailability.Unavailable { return error.localizedDescription }
         if let error = AIChatGPTResponses.failure(error) { return error.localizedDescription }
         if let error = error as? AIError { return error.localizedDescription }
         if let error = error as? URLError {

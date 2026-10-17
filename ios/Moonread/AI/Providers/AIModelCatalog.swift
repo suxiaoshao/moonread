@@ -61,6 +61,10 @@ struct AIResolvedModel: Sendable {
         let job = Task { await self.fetch() }; task = job
         await job.value; task = nil
     }
+    func cancelRefresh() {
+        guard let task else { return }
+        task.cancel(); attempted = nil
+    }
     private func fetch() async {
         do {
             var request = URLRequest(url: URL(string: "https://models.dev/api.json")!)
@@ -69,6 +73,7 @@ struct AIResolvedModel: Sendable {
             request.setValue(cache?.etag, forHTTPHeaderField: "If-None-Match")
             request.setValue(cache?.modified, forHTTPHeaderField: "If-Modified-Since")
             let (data, response) = try await session.data(for: request)
+            try Task.checkCancellation()
             guard let response = response as? HTTPURLResponse else { return }
             var next: Cache
             if response.statusCode == 304, var stored = cache { stored.checked = Date(); next = stored }

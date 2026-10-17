@@ -19,6 +19,8 @@ Reopening the same book content attempts to resume your position. Editing the so
 
 ## Optional AI
 
+You can turn off AI Features in Settings to hide all AI entry points and stop ongoing requests. Existing connections, conversations, and data-sharing permissions are kept.
+
 Select a service, connection, and model in AI settings. The app explains the destination and data scope before initial sharing; separate search or image services may require separate permission. Declining does not affect reading. For connection problems, check the network, provider access, and quota. Never email API keys or tokens. AI output can be inaccurate, so check important information. You can withdraw permission for future sharing in connection settings.
 
 ## Support Moonread

@@ -89,7 +89,8 @@ actor AIAuthentication {
         if let credentialSaver { try credentialSaver(credential, reference) }
         else { try AIKeychain.save(credential, reference: reference) }
     }
-    func credential(_ connection: AIConnection) async throws -> AICredential {
+    func credential(_ connection: AIConnection, availability: AIAvailability? = nil, generation: UUID? = nil) async throws -> AICredential {
+        try Task.checkCancellation()
         guard !signingOut.contains(connection.credentialReference) else { throw AIError.loginRequired }
         if let credentialResolver { return try await credentialResolver(connection) }
         let reference = connection.credentialReference
@@ -105,7 +106,12 @@ actor AIAuthentication {
         }
         let task = Task {
             do {
-                let refreshed = try await self.refreshChatGPT(current)
+                let refreshed: AICredential
+                if let availability {
+                    // This shared refresh has its own task, independent of any one caller.
+                    refreshed = try await availability.perform(generation: generation) { try await self.refreshChatGPT(current) }
+                } else { refreshed = try await self.refreshChatGPT(current) }
+                try Task.checkCancellation()
                 guard try AIKeychain.load(reference)?.refreshToken == current.refreshToken else { throw CancellationError() }
                 try AIKeychain.save(refreshed, reference: reference)
                 return refreshed

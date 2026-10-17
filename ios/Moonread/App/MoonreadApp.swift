@@ -69,6 +69,7 @@ struct MoonreadApp: App {
 }
 
 private struct MoonreadRoot: View {
+    @Environment(AIService.self) private var ai
     @Bindable var library: LibraryModel
     let themes: ThemeStore
     @Environment(\.colorScheme) private var systemScheme
@@ -123,11 +124,16 @@ private struct MoonreadRoot: View {
     private var tabs: some View {
         TabView(selection: $library.selectedTab) {
             Tab("书架", systemImage: "books.vertical", value: AppTab.library) { libraryStack }
-            Tab("对话", systemImage: "bubble.left.and.bubble.right", value: AppTab.conversations) { AIConversationsView() }
+            if ai.availability.isAvailable {
+                Tab("对话", systemImage: "bubble.left.and.bubble.right", value: AppTab.conversations) { AIConversationsView() }
+            }
             Tab("统计", systemImage: "chart.bar.xaxis", value: AppTab.statistics) { statisticsStack }
             Tab("搜索", systemImage: "magnifyingglass", value: AppTab.search, role: .search) { searchStack }
         }
         .modifier(AppSearchActivation())
+        .onChange(of: ai.availability.isAvailable) { _, available in
+            if !available, library.selectedTab == .conversations { library.selectedTab = .library }
+        }
     }
     private var libraryStack: some View {
         NavigationStack(path: $library.libraryPath) {
@@ -150,6 +156,7 @@ private struct MoonreadRoot: View {
 /// The page for a library route. Every navigation stack, and the search pushed
 /// above an open book, builds its pages here from the shared environment.
 struct LibraryDestination: View {
+    @Environment(AIService.self) private var ai
     let route: LibraryRoute
     @Environment(LibraryModel.self) private var library
     @Environment(\.readerTheme) private var readerTheme
@@ -168,7 +175,8 @@ struct LibraryDestination: View {
         case .recent: RecentLibraryView(model: library)
         case .manage: LibraryManagementView(model: library)
         case .statistics(let target): StatisticsView(library: library, target: target)
-        case .conversation(let id, let anchor): AIChatView(conversationID: id, anchor: anchor)
+        case .conversation(let id, let anchor):
+            if ai.availability.isAvailable { AIChatView(conversationID: id, anchor: anchor) }
         case .settings: SettingsView(library: library)
         case .search(let scope): AppSearchPage(model: library, scope: scope)
         }
