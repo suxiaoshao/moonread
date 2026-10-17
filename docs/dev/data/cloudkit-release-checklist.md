@@ -7,6 +7,8 @@
 - DEBUG `--cloud-schema-report` 只打印同一 SwiftData 类型生成的 Core Data 实体／字段／类型／optional／external 标记，不连接云。生成实体名不代替 Console 实际记录名或系统字段。
 - 获得明确开发环境写入授权后，才使用 DEBUG `--initialize-cloudkit-development-schema`。它按 Apple 流程生成同一模型，独占 DEBUG 启动页，不启动普通 App 的持久栈／刷新任务；在全新的临时隔离 store 中同步加载 NSPersistentCloudKitContainer、初始化开发 schema、卸载 store 后释放；不打开用户 store，也不自动部署 production。结束后移除启动参数重新进入正常 App；Release 不编译此入口。
 
+结果确认：该 DEBUG 入口完成后界面不显示成功／失败，需通过设备控制台日志中初始化成功返回的记录，或 CloudKit Console 中实际出现的 `CD_` 记录类型，确认开发 schema 已初始化；不能仅凭入口页面出现判断成功。
+
 发布负责人逐项核对：
 
 1. 签名 App ID 的 iCloud 容器、CloudKit／CloudDocuments、推送与 remote-notification 授权；正式分发包使用 Production 环境，调试初始化仅 Development。

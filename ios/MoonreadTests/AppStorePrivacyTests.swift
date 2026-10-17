@@ -3,6 +3,60 @@ import SQLite3
 @testable import Moonread
 
 final class AppStorePrivacyTests: XCTestCase {
+    func testLocalizedAppAndContainerNamesAndEncryptionExemption() throws {
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "ITSAppUsesNonExemptEncryption") as? Bool, false)
+        for (language, name) in [("en", "Moonread"), ("zh-Hans", "月读"), ("zh-Hant", "月讀")] {
+            let path = try XCTUnwrap(Bundle.main.path(forResource: "InfoPlist", ofType: "strings", inDirectory: nil, forLocalization: language))
+            let values = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: URL(fileURLWithPath: path)), format: nil) as? [String: String])
+            XCTAssertEqual(values["CFBundleDisplayName"], name)
+            XCTAssertEqual(values["NSUbiquitousContainerName"], name)
+        }
+    }
+
+    func testTraditionalChineseCatalogMatchesEnglishAndUsesTaiwanTerms() throws {
+        func strings(_ language: String) throws -> [String: String] {
+            let path = try XCTUnwrap(Bundle.main.path(forResource: "Localizable", ofType: "strings", inDirectory: nil, forLocalization: language))
+            return try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: URL(fileURLWithPath: path)), format: nil) as? [String: String])
+        }
+        let en = try strings("en"), tw = try strings("zh-Hant")
+        func keys(_ language: String, plain: [String: String]) throws -> Set<String> {
+            var result = Set(plain.keys)
+            if let path = Bundle.main.path(forResource: "Localizable", ofType: "stringsdict", inDirectory: nil, forLocalization: language) {
+                let plural = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: URL(fileURLWithPath: path)), format: nil) as? [String: Any])
+                result.formUnion(plural.keys)
+            }
+            return result
+        }
+        XCTAssertEqual(try keys("zh-Hant", plain: tw), try keys("en", plain: en))
+        for (key, expected) in [("设置", "設定"), ("文件夹", "資料夾"), ("导入小说", "匯入小說"), ("拷贝", "複製"), ("阅读设置", "閱讀設定"), ("反馈这条回复", "回饋這則回覆")] {
+            XCTAssertEqual(tw[key], expected)
+        }
+        let pattern = try NSRegularExpression(pattern: #"%([0-9]+\$)?[-+0-9.]*([a-zA-Z@]+)"#)
+        func formats(_ text: String) -> [String] { pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)).map { (text as NSString).substring(with: $0.range(at: 2)) }.sorted() }
+        for (key, value) in en { XCTAssertEqual(formats(tw[key] ?? ""), formats(value), "Format mismatch: \(key)") }
+    }
+
+    @MainActor func testReplyFeedbackContainsOnlySelectedTextAndRequestIdentity() async throws {
+        let repository = try await AIRepository.open(inMemory: true)
+        let row = AISessionValue(title: "Private conversation title")
+        try await repository.create(row)
+        let conversation = AIConversation(row)
+        var connection = AIProviderPreset.all.first!.connection(); connection.name = "Selected Provider"
+        let turn = "selected-turn"
+        let old = AIAgentEntry(sequence: 0, turn: "other", provider: "other", model: "other-model", message: .object(["role": .string("assistant"), "content": .object(["value": .string("Do not include other replies")])]))
+        let answer = AIAgentEntry(sequence: 1, turn: turn, provider: connection.id + ":fixture", model: "selected-model", message: .object(["role": .string("assistant"), "content": .object(["value": .string("Selected reply")])]), outcome: .completed)
+        conversation.mergeEntries([old, answer])
+        let selected = AIMessageRow(id: turn + "/actions", turnID: turn, content: .actions("Selected reply", .completed))
+        let feedback = try XCTUnwrap(AIReplyFeedback(row: selected, conversation: conversation, connections: [connection]))
+        XCTAssertEqual(feedback.recipient, AppLinks.supportEmail)
+        XCTAssertEqual(feedback.provider, connection.name); XCTAssertEqual(feedback.model, answer.model)
+        XCTAssertEqual(feedback.text, "Selected reply"); XCTAssertFalse(feedback.version.isEmpty)
+        XCTAssertTrue(feedback.body.contains("Selected reply")); XCTAssertFalse(feedback.body.contains("Do not include other replies"))
+        XCTAssertFalse(feedback.body.contains(row.title)); XCTAssertFalse(feedback.body.contains(connection.credentialReference))
+        XCTAssertTrue(feedback.copyText.contains(AppLinks.supportEmail))
+        XCTAssertNil(AIReplyFeedback(row: .init(id: "user", turnID: turn, content: .user(answer)), conversation: conversation, connections: [connection]))
+    }
+
     func testThirdPartyNoticesAreBundledIncludingFontsAndMPL() throws {
         let url = try XCTUnwrap(Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "txt"))
         let text = try String(contentsOf: url, encoding: .utf8)
