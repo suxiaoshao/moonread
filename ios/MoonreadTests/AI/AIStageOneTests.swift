@@ -321,17 +321,81 @@ private final class AITestURLProtocol: URLProtocol, @unchecked Sendable {
         XCTAssertEqual(AITestURLProtocol.state.counts.0, 0)
     }
 
-    private func fixture(_ mode: String = "complete", approveSharing: Bool = true) async throws -> (AIService, AIRepository, AIConnection, String) {
+    func testReopeningQuickTaskCancelledAfterPersistenceResumesQueueOnce() async throws {
+        let (service, repository, connection, suite) = try await fixture()
+        defer { cleanup(connection, suite: suite) }
+        service.taskPersisted = { service.availability.setEnabled(false) }
+        let origin = AITaskOrigin(bookSHA: "cancelled-task")
+        let selection = AIModelSelection(connectionID: connection.id, modelID: connection.modelID)
+        do {
+            _ = try await service.startTask(origin: origin, kind: .metadata, attachments: [], instruction: "只处理一次", selection: selection)
+            XCTFail("Switch cancellation must prevent the first run")
+        } catch is CancellationError {} catch is AIAvailability.Unavailable {} catch { XCTFail("Unexpected \(error)") }
+        let value = try XCTUnwrap(service.sessions.first)
+        let persisted = try await repository.head(value.id)
+        XCTAssertEqual(persisted.queue.count, 1)
+        XCTAssertEqual(AITestURLProtocol.state.counts.0, 0)
+        do {
+            _ = try await service.startTask(origin: origin, kind: .metadata, attachments: [], instruction: "ignored", selection: selection)
+            XCTFail("Disabled reopen must not send")
+        } catch is AIAvailability.Unavailable {} catch { XCTFail("Unexpected \(error)") }
+        XCTAssertEqual(AITestURLProtocol.state.counts.0, 0)
+        service.availability.setEnabled(true)
+        try await assertQuickTaskReopensOnce(service, value: value, origin: origin, selection: selection)
+    }
+
+    func testReopeningQuickTaskPersistedBeforeProcessExitResumesQueueOnce() async throws {
+        let (original, repository, connection, suite) = try await fixture()
+        defer { cleanup(connection, suite: suite) }
+        let origin = AITaskOrigin(bookSHA: "persisted-task")
+        let selection = AIModelSelection(connectionID: connection.id, modelID: connection.modelID)
+        let row = AISessionValue(title: "Interrupted creation", origin: origin, kind: .metadata, listed: false)
+        var head = AIAgentHead()
+        head.selection = .init(connectionID: connection.id, modelID: connection.modelID)
+        head.queue = [.init(text: "已保存但尚未运行", mode: .steering)]
+        try await repository.create(row, head: head)
+        let (reloaded, _, _, _) = try await fixture(repository: repository, suite: suite, connection: connection)
+        let value = try XCTUnwrap(reloaded.conversation(row.id))
+        XCTAssertFalse(value.running, "Loading history alone must not send")
+        XCTAssertEqual(AITestURLProtocol.state.counts.0, 0)
+        reloaded.availability.setEnabled(false)
+        do {
+            _ = try await reloaded.startTask(origin: origin, kind: .metadata, attachments: [], instruction: "ignored", selection: selection)
+            XCTFail("Disabled restore must not send")
+        } catch is AIAvailability.Unavailable {} catch { XCTFail("Unexpected \(error)") }
+        XCTAssertEqual(AITestURLProtocol.state.counts.0, 0)
+        reloaded.availability.setEnabled(true)
+        try await assertQuickTaskReopensOnce(reloaded, value: value, origin: origin, selection: selection)
+        XCTAssertTrue(original.sessions.isEmpty)
+    }
+
+    private func assertQuickTaskReopensOnce(_ service: AIService, value: AIConversation, origin: AITaskOrigin, selection: AIModelSelection) async throws {
+        let first = Task { try await service.startTask(origin: origin, kind: .metadata, attachments: [], instruction: "不应追加输入", selection: selection) }
+        let second = Task { try await service.startTask(origin: origin, kind: .metadata, attachments: [], instruction: "不应追加输入", selection: selection) }
+        let firstValue = try await first.value, secondValue = try await second.value
+        XCTAssertTrue(firstValue === value); XCTAssertTrue(secondValue === value)
+        await wait { !value.running && value.head.status == .completed }
+        XCTAssertTrue(value.head.queue.isEmpty)
+        XCTAssertEqual(value.entries.filter { $0.userText != nil }.count, 1)
+        XCTAssertEqual(AITestURLProtocol.state.counts.0, 1)
+        let finished = try await service.startTask(origin: origin, kind: .metadata, attachments: [], instruction: "不重发", selection: selection)
+        XCTAssertTrue(finished === value)
+        XCTAssertFalse(value.running)
+        XCTAssertEqual(AITestURLProtocol.state.counts.0, 1)
+    }
+
+    private func fixture(_ mode: String = "complete", approveSharing: Bool = true, repository suppliedRepository: AIRepository? = nil, suite suppliedSuite: String? = nil, connection suppliedConnection: AIConnection? = nil) async throws -> (AIService, AIRepository, AIConnection, String) {
         AITestURLProtocol.state.reset(mode)
-        let suite = "AIStageOne-\(UUID().uuidString)"
-        let repository = try await AIRepository.open(inMemory: true)
+        let suite = suppliedSuite ?? "AIStageOne-\(UUID().uuidString)"
+        let repository: AIRepository
+        if let suppliedRepository { repository = suppliedRepository } else { repository = try await AIRepository.open(inMemory: true) }
         let service = AIService(repository: repository, defaults: UserDefaults(suiteName: suite)!, auth: AIAuthentication(credentialResolver: { _ in
             AICredential(accessToken: "test-only", refreshToken: "test-only", expires: Date().addingTimeInterval(600), accountID: "fixture")
         }), makeTransport: {
             let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AITestURLProtocol.self]
             return AITransport(configuration: config)
         })
-        var connection = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection()
+        var connection = suppliedConnection ?? AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection()
         if mode == "native-image" { connection.authMethod = .apiKey }
         connection.modelID = "fixture-model"
         connection.models = [AIModelOption(id: "fixture-model", name: "Fixture", contextWindow: 32000, thinking: [], defaultThinking: nil)]

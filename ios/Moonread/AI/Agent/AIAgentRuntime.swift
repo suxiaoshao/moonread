@@ -130,8 +130,13 @@ import SwiftAISDK
     }
     observe(.init(status: head.status, text: partialText, reasoning: partialReasoning, reasoningActive: reasoningActive))
     guard stopGeneration == admittedBeforeStop, !Task.isCancelled, admission() else { return }
+    resumeQueued()
+  }
+  /// Explicitly reopen persisted input, including while a stopped run is retiring.
+  func resumeQueued() {
+    guard !Task.isCancelled, admission(), !head.queue.isEmpty else { return }
     queuedRunRequested = true
-    if task == nil && admission() { resume() }
+    if task == nil { resume() }
   }
   /// Explicit resume only; construction never starts a paid request.
   func resume() {

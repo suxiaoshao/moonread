@@ -258,6 +258,9 @@ struct AISessionSummary: Identifiable {
         try await connect(projection)
     }
     #endif
+    #if DEBUG || AI_TESTING
+    @ObservationIgnored var taskPersisted: (@MainActor () -> Void)?
+    #endif
     private func ownsSession(_ id: String) -> Bool { !closedOwners.contains(id) && conversation(id) != nil }
     private func admissionOpen(_ id: String) -> Bool { availability.isAvailable && ownsSession(id) }
     private func requireAdmission(_ id: String) throws {
@@ -311,7 +314,12 @@ struct AISessionSummary: Identifiable {
         await load()
         try availability.requireAvailable()
         guard let repository, let coordinator else { throw AIError.storage }
-        if let existing = session(origin: origin, family: AIQuickTaskRequest.family(kind)), let value = conversation(existing.id) { return value }
+        if let existing = session(origin: origin, family: AIQuickTaskRequest.family(kind)), let value = conversation(existing.id) {
+            let runtime = try await coordinator.session(value.id)
+            try requireAdmission(value.id)
+            runtime.resumeQueued()
+            return value
+        }
         let value = AISessionValue(title: attachments.first?.title ?? kind.purpose, origin: origin, kind: kind, listed: false)
         try await authorizeSubmission(selection, owner: consentOwner ?? value.id, attachments: attachments,
                                       purpose: kind.purpose, webSources: kind == .cover(mode: .find))
@@ -326,11 +334,14 @@ struct AISessionSummary: Identifiable {
             await AIImageStore.shared.didCommit(owner: value.id, refs: refs)
         } catch { await AIImageStore.shared.forget(value.id); throw error }
         let projection = AIConversation(value); projection.head = head; sessions.append(projection)
+        #if DEBUG || AI_TESTING
+        taskPersisted?()
+        #endif
         try await connect(projection)
         try availability.requireAvailable()
         let runtime = try await coordinator.session(value.id)
         try availability.requireAvailable()
-        runtime.resume()
+        runtime.resumeQueued()
         return projection
     }
     func transferTask(_ id: String) async throws -> String {
