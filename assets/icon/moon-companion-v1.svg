@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" role="img" aria-labelledby="moon-title moon-description">
+  <title id="moon-title">月读 · 月亮伙伴</title>
+  <desc id="moon-description">完整的暖白圆月，带有淡蓝灰暗面、两处简化月面痕迹和一双安静注视的眼睛。背景透明。</desc>
+
+  <defs>
+    <linearGradient id="moon-surface" x1="296" y1="160" x2="734" y2="884" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF8E3" />
+      <stop offset="0.52" stop-color="#F1E6C7" />
+      <stop offset="1" stop-color="#D3CBB7" />
+    </linearGradient>
+    <linearGradient id="moon-night" x1="717" y1="228" x2="657" y2="873" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C6CEDC" />
+      <stop offset="1" stop-color="#A7B6D0" />
+    </linearGradient>
+    <clipPath id="moon-disc">
+      <circle cx="512" cy="512" r="384" />
+    </clipPath>
+  </defs>
+
+  <g id="moon-body">
+    <circle cx="512" cy="512" r="384" fill="url(#moon-surface)" />
+  </g>
+
+  <g id="moon-shade" clip-path="url(#moon-disc)">
+    <path d="M641 142C784 302 800 566 665 761C615 836 535 881 449 891C470 895 491 896 512 896C724 896 896 724 896 512C896 345 789 203 641 142Z" fill="url(#moon-night)" fill-opacity="0.6" />
+  </g>
+
+  <g id="moon-markings" fill="#C6BEA8">
+    <path d="M304 272C334 251 380 250 398 271C416 292 399 318 373 325C349 332 348 357 326 362C298 369 273 353 270 329C267 306 283 286 304 272Z" fill-opacity="0.38" />
+    <ellipse cx="300" cy="618" rx="40" ry="33" transform="rotate(-24 300 618)" fill-opacity="0.34" />
+  </g>
+
+  <g id="moon-face">
+    <g id="eye-left">
+      <ellipse cx="434" cy="495" rx="59" ry="70" fill="#776F77" fill-opacity="0.14" />
+      <ellipse cx="434" cy="488" rx="56" ry="66" fill="#FAFDFF" />
+      <ellipse id="pupil-left" cx="445" cy="499" rx="22" ry="30" fill="#30364B" />
+      <circle cx="437" cy="484" r="7" fill="#FFFFFF" />
+    </g>
+    <g id="eye-right">
+      <ellipse cx="591" cy="495" rx="59" ry="70" fill="#776F77" fill-opacity="0.14" />
+      <ellipse cx="591" cy="488" rx="56" ry="66" fill="#FAFDFF" />
+      <ellipse id="pupil-right" cx="602" cy="499" rx="22" ry="30" fill="#30364B" />
+      <circle cx="594" cy="484" r="7" fill="#FFFFFF" />
+    </g>
+  </g>
+</svg>

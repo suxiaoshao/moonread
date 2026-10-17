@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="24500" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="launch-controller">
+    <device id="retina6_12" orientation="portrait" appearance="light"/>
+    <dependencies><plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="24500"/><capability name="Named colors" minToolsVersion="9.0"/><capability name="Safe area layout guides" minToolsVersion="9.0"/></dependencies>
+    <scenes><scene sceneID="launch-scene"><objects>
+        <viewController id="launch-controller" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="launch-view">
+            <rect key="frame" x="0.0" y="0.0" width="393" height="852"/>
+            <subviews><imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" image="LaunchSeal" translatesAutoresizingMaskIntoConstraints="NO" id="launch-moon">
+                <rect key="frame" x="136.5" y="366" width="120" height="120"/>
+                <constraints><constraint firstAttribute="width" constant="120" id="moon-width"/><constraint firstAttribute="height" constant="120" id="moon-height"/></constraints>
+            </imageView></subviews>
+            <viewLayoutGuide key="safeArea" id="launch-safe"/>
+            <color key="backgroundColor" name="LaunchBackground"/>
+            <constraints><constraint firstItem="launch-moon" firstAttribute="centerX" secondItem="launch-view" secondAttribute="centerX" id="moon-x"/><constraint firstItem="launch-moon" firstAttribute="centerY" secondItem="launch-view" secondAttribute="centerY" id="moon-y"/></constraints>
+        </view></viewController>
+        <placeholder placeholderIdentifier="IBFirstResponder" id="launch-responder" userLabel="First Responder" sceneMemberID="firstResponder"/>
+    </objects></scene></scenes>
+    <resources><image name="LaunchSeal" width="120" height="120"/><namedColor name="LaunchBackground"><color red="0.969" green="0.937" blue="0.898" alpha="1" colorSpace="custom" customColorSpace="sRGB"/></namedColor></resources>
+</document>

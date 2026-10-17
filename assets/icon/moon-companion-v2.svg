@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" role="img" aria-labelledby="moon-title moon-description">
+  <title id="moon-title">月读 · 静月</title>
+  <desc id="moon-description">完整、不对称的盈凸月轮廓，使用低饱和灰银与夜蓝色，保留两处抽象月面痕迹。无眼睛、外框或裁切，背景透明。</desc>
+
+  <defs>
+    <linearGradient id="moon-surface" x1="284" y1="172" x2="716" y2="874" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B8B7AA" />
+      <stop offset="0.55" stop-color="#A09F94" />
+      <stop offset="1" stop-color="#787E89" />
+    </linearGradient>
+    <linearGradient id="moon-night" x1="718" y1="224" x2="602" y2="879" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#717D90" stop-opacity="0.32" />
+      <stop offset="1" stop-color="#53617C" stop-opacity="0.66" />
+    </linearGradient>
+  </defs>
+
+  <g id="moon-body">
+    <path d="M624 132C778 198 855 343 845 500C835 662 714 811 546 875C332 889 157 762 136 566C111 352 270 164 480 137C537 128 581 125 624 132Z" fill="url(#moon-surface)" />
+  </g>
+
+  <g id="moon-shade">
+    <path d="M624 132C778 198 855 343 845 500C835 662 714 811 546 875C664 723 722 534 706 360C694 267 665 188 624 132Z" fill="url(#moon-night)" />
+  </g>
+
+  <g id="moon-markings" fill="#687485">
+    <path d="M300 292C332 261 377 248 402 271C425 293 414 322 384 334C359 344 367 368 340 376C310 384 280 371 274 347C269 326 280 307 300 292Z" fill-opacity="0.23" />
+    <path d="M270 581C291 558 322 563 337 585C348 603 334 622 346 641C359 663 349 691 325 699C299 707 274 690 264 668C251 640 250 605 270 581Z" fill-opacity="0.2" />
+  </g>
+</svg>

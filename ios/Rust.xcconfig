@@ -1,0 +1,22 @@
+// Tool versions and installed Rust targets are owned by flake.nix / flake.lock.
+MOONREAD_NIX = /nix/var/nix/profiles/default/bin/nix
+
+MOONREAD_CARGO_PROFILE = dev
+MOONREAD_CARGO_PROFILE[config=Release] = release
+MOONREAD_CARGO_OUTPUT = debug
+MOONREAD_CARGO_OUTPUT[config=Release] = release
+
+MOONREAD_RUST_TARGET[sdk=iphoneos*][arch=arm64] = aarch64-apple-ios
+MOONREAD_RUST_TARGET[sdk=iphonesimulator*][arch=arm64] = aarch64-apple-ios-sim
+MOONREAD_RUST_TARGET[sdk=iphonesimulator*][arch=x86_64] = x86_64-apple-ios
+
+// Build both simulator slices so generic simulator builds also work.
+MOONREAD_RUST_TARGET_FLAGS[sdk=iphoneos*] = --target aarch64-apple-ios
+MOONREAD_RUST_TARGET_FLAGS[sdk=iphonesimulator*] = --target aarch64-apple-ios-sim --target x86_64-apple-ios
+MOONREAD_BINDGEN_TARGET[sdk=iphoneos*] = aarch64-apple-ios
+MOONREAD_BINDGEN_TARGET[sdk=iphonesimulator*] = aarch64-apple-ios-sim
+
+MOONREAD_CARGO_DIR = $(SRCROOT)/../build/cargo
+MOONREAD_BINDINGS_DIR = $(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)
+MOONREAD_BINDGEN_LIBRARY = $(MOONREAD_CARGO_DIR)/$(MOONREAD_BINDGEN_TARGET)/$(MOONREAD_CARGO_OUTPUT)/libmoonread_core.a
+LIBRARY_SEARCH_PATHS = $(inherited) "$(MOONREAD_CARGO_DIR)/$(MOONREAD_RUST_TARGET)/$(MOONREAD_CARGO_OUTPUT)"

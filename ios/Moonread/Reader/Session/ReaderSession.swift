@@ -1,0 +1,585 @@
+import SwiftUI
+import UIKit
+
+@MainActor @Observable
+final class ReaderSession {
+    let opening = ReaderOpeningState()
+    private var monitorToken = UUID()
+    var snapshot: ReadingSnapshot?
+    var book: BookInfo? { snapshot?.book }
+    var window: ReadingWindow?
+    var settings: ReaderSettings?
+    var anchor: UInt64 = 0
+    private(set) var displayAnchor: UInt64?
+    var showingCover = true
+    private var hasEnteredBody = false
+    var chapter: ChapterInfo?
+    var error: String?
+    var isLoading = true
+    var nearEdge = false
+    var navigationRevision = 0
+    var navigation: ReadingNavigation?
+    let viewportAccess = ReadingViewportAccess()
+    let activity: ReadingActivityRecorder
+    private var browseViewport: ReadingViewport?
+    var browseOrigin: UInt64?
+    var history = emptyReadingHistory()
+    var focusRange: TextRange?
+    var annotations: [ReaderMark] = []
+    var bookmarkPositions: [UInt64] = []
+    var bookmarked = false
+    private(set) var changingBookmark = false
+    var selectionStart: UInt64?
+    var editor: AnnotationEdit?
+    var chapterDraft: ChapterEditDraft?
+    var marksRevision = 0
+    private var annotationTask: Task<Void, Never>?
+    private var selectionTask: Task<Void, Never>?
+    private var navigationTask: Task<Void, Never>?
+    private var navigationGeneration = 0
+    private(set) var navigating = false
+    private var readingLease: ReadingLease?
+    var readingID: String? { readingLease?.id }
+    private let service: ReaderService
+    private var activityStartTask: Task<Void, Never>?
+    private var monitorTask: Task<Void, Never>?
+    private var saveTask: Task<Void, Never>?
+    private var windowTask: Task<Void, Never>?
+    private var settingsTask: Task<Void, Never>?
+    private var pendingSettings: ReaderSettings?
+    private var chapterTask: Task<Void, Never>?
+    private var pendingChapterAnchor: UInt64?
+    private(set) var isLeaving = false
+    private var leavingProgress: (bookID: String, offset: UInt64)?
+    private var leaveTask: Task<Void, Never>?
+
+    init(service: ReaderService = .shared, activity: ReadingActivityRecorder? = nil) {
+        self.service = service; self.activity = activity ?? ReadingActivityRecorder()
+    }
+
+    var preparing: Bool {
+        guard let snapshot else { return isLoading }
+        return [.preparing, .importing, .finalizing].contains(snapshot.phase)
+    }
+    var incomplete: Bool { snapshot.map { $0.phase != .complete } ?? true }
+    var atPreparedEdge: Bool { nearEdge && incomplete && window?.isPreparedTail == true }
+
+    func open(_ route: ReaderRoute, request: OpeningRequest? = nil) async {
+        guard !isLeaving else { return }
+        if opening.request == nil { opening.begin(request ?? OpeningRequest(target: route)) }
+        let attempt = opening.request?.id
+        ReaderOpenDiagnostics.mark(attempt, "sessionOpen")
+        if readingID == nil {
+            isLoading = true
+            do {
+                ReaderOpenDiagnostics.mark(attempt, "settingsRequested")
+                let value = try service.settings()
+                ReaderOpenDiagnostics.mark(attempt, "settingsLoaded")
+                guard !isLeaving, !Task.isCancelled, opening.request?.id == attempt else { return }
+                settings = value
+                ReaderOpenDiagnostics.mark(attempt, "leaseRequested")
+                let diagnostic = ReaderOpenDiagnostics.trace(attempt)
+                diagnostic?.mark("lease.queued")
+                let lease: ReadingLease
+                switch route {
+                case let .book(id): lease = try await service.openReading(id, diagnostic: diagnostic)
+                case let .source(file): lease = try await service.openSourceFile(file, diagnostic: diagnostic)
+                }
+                diagnostic?.mark("lease.mainResumed")
+                guard !isLeaving, !Task.isCancelled, opening.request?.id == attempt else { return }
+                readingLease = lease
+            } catch { if !isLeaving, !Task.isCancelled, opening.request?.id == attempt { self.error = ReaderMessages.error(error); isLoading = false; updateOpening() }; return }
+        }
+        guard !isLeaving else { return }
+        if let readingLease {
+            if let attempt = opening.request?.id { ReaderOpenDiagnostics.bind(readingLease.id, to: attempt) }
+            ReaderOpenDiagnostics.mark(opening.request?.id, "leaseCreated")
+            if ReaderOpenDiagnostics.serialStatistics, let attempt {
+                activity.prepareStart(attempt)
+                ReaderOpenDiagnostics.mark(attempt, "activityStart")
+                await activity.start(lease: readingLease, viewport: viewportAccess, attempt: attempt)
+                ReaderOpenDiagnostics.mark(attempt, "activityStarted")
+            }
+        }
+        guard !isLeaving, !Task.isCancelled, opening.request?.id == attempt else { return }
+        startMonitoring()
+        if !ReaderOpenDiagnostics.serialStatistics { startActivity(attempt: attempt) }
+    }
+
+    private func startActivity(attempt: UUID?) {
+        guard let attempt, let lease = readingLease, !isLeaving else { return }
+        activityStartTask?.cancel()
+        activity.prepareStart(attempt)
+        activityStartTask = Task { [weak self] in
+            guard let self, current(lease.id, attempt: attempt) else { return }
+            ReaderOpenDiagnostics.mark(attempt, "activityStart")
+            await activity.start(lease: lease, viewport: viewportAccess, attempt: attempt)
+            guard current(lease.id, attempt: attempt) else { return }
+            ReaderOpenDiagnostics.mark(attempt, "activityStarted")
+        }
+    }
+
+    private func updateOpening() {
+        opening.update(ready: settings != nil && window.map { $0.status != .awaiting && $0.projectionAnchor != nil } == true,
+                       terminal: error != nil || snapshot.map { [.paused, .failed].contains($0.phase) } == true)
+    }
+    func retry(_ route: ReaderRoute) async {
+        opening.begin(OpeningRequest(target: route), navigationSettled: true)
+        error = nil; await open(route)
+    }
+    private func current(_ id: String, attempt: UUID?, monitor: UUID? = nil) -> Bool {
+        !isLeaving && !Task.isCancelled && readingID == id && opening.request?.id == attempt
+            && (monitor == nil || monitor == monitorToken)
+    }
+    private func startMonitoring() {
+        guard !isLeaving else { return }
+        monitorTask?.cancel(); monitorToken = UUID()
+        let token = monitorToken, attempt = opening.request?.id
+        monitorTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                repeat {
+                    guard let id = readingID, current(id, attempt: attempt, monitor: token) else { return }
+                    ReaderOpenDiagnostics.mark(attempt, "revision.queued")
+                    let revision = await service.readingChangeRevision(id)
+                    ReaderOpenDiagnostics.mark(attempt, "revision.mainResumed")
+                    ReaderOpenDiagnostics.mark(attempt, "snapshotRequested")
+                    let diagnostic = ReaderOpenDiagnostics.trace(attempt)
+                    diagnostic?.mark("openingFrame.queued")
+                    let update = try await service.openingFrame(id, offset: window == nil ? nil : anchor, attempt: attempt, diagnostic: diagnostic)
+                    diagnostic?.mark("openingFrame.mainResumed")
+                    ReaderOpenDiagnostics.mark(attempt, "mainActorOpeningResumed")
+                    let value = update.0
+                    guard current(id, attempt: attempt, monitor: token) else { return }
+                    ReaderOpenDiagnostics.mark(attempt, "snapshotCompleted")
+                    snapshot = value
+                    isLoading = !value.canRead && preparing
+                    if value.canRead {
+                        let firstDisplay = window?.projectionAnchor == nil
+                        if firstDisplay {
+                            ReaderOpenDiagnostics.mark(attempt, "canRead")
+                            anchor = value.book.positionUtf8
+                            hasEnteredBody = value.hasStarted
+                            showingCover = !value.hasStarted
+                        }
+                        if let frame = update.1 { publishFrame(frame, id: id, attempt: attempt, monitor: token) }
+                        guard current(id, attempt: attempt, monitor: token) else { return }
+                        refreshChapter(at: anchor, bookID: id)
+                    }
+                    updateOpening()
+                    if value.phase == .complete { break }
+                    let timeout = Duration.milliseconds(preparing ? 150 : 1000)
+                    if ReaderOpenDiagnostics.wakes { try await service.waitForChange(id, after: revision, timeout: timeout) }
+                    else { try await Task.sleep(for: timeout) }
+                } while !Task.isCancelled
+            } catch is CancellationError { }
+            catch {
+                if !isLeaving, !Task.isCancelled, opening.request?.id == attempt, monitorToken == token {
+                    self.error = ReaderMessages.error(error); isLoading = false; updateOpening()
+                }
+            }
+        }
+    }
+
+    private func refreshWindow(_ id: String, at offset: UInt64, monitor: UUID? = nil) async {
+        let attempt = opening.request?.id
+        do {
+            ReaderOpenDiagnostics.mark(attempt, "frameRequested")
+            let frame = try await service.frame(id, offset: offset)
+            guard current(id, attempt: attempt, monitor: monitor) else { return }
+            publishFrame(frame, id: id, attempt: attempt, monitor: monitor)
+        } catch {
+            if current(id, attempt: attempt, monitor: monitor) { self.error = ReaderMessages.error(error); updateOpening() }
+        }
+    }
+
+    private func publishFrame(_ frame: ReadingFrame, id: String, attempt: UUID?, monitor: UUID?) {
+        guard current(id, attempt: attempt, monitor: monitor) else { return }
+        let value = ReadingWindow(frame: frame)
+        if window?.projectionAnchor == nil { displayAnchor = value.projectionAnchor }
+        if value.projectionAnchor == nil, window?.projectionAnchor != nil { return }
+        if window != value {
+            window = value; ReaderOpenDiagnostics.mark(attempt, "windowPublished")
+            updateOpening(); refreshAnnotations()
+        }
+    }
+
+    func moved(to offset: UInt64, settled: Bool) {
+        guard !isLeaving, let book, let id = readingID else { return }
+        guard !navigating else { return }
+        showingCover = false
+        if browseOrigin == nil { hasEnteredBody = true }
+        displayAnchor = nil
+        anchor = min(offset, book.byteCount)
+        refreshChapter(at: anchor, bookID: id)
+        saveTask?.cancel()
+        let position = anchor
+        saveTask = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .milliseconds(350))
+                try Task.checkCancellation()
+                guard self?.isLeaving == false, self?.browseOrigin == nil else { return }
+                try await self?.service.savePosition(bookID: id, offset: position)
+            } catch is CancellationError { } catch { self?.error = ReaderMessages.error(error) }
+        }
+        // Window requests are independent of reported/saved reading positions.
+    }
+
+    @discardableResult func requestWindow(_ direction: ReadingDirection, retaining: SourceSpan? = nil) -> Bool {
+        guard !isLeaving, !navigating, windowTask == nil, let window, let id = readingID else { return false }
+        let cursor = direction == .forward ? window.nextCursor : window.previousCursor
+        guard let cursor else { return false }
+        let keep = retaining ?? viewportAccess.controller?.protectedSourceRange() ?? SourceSpan(startUtf8:displayAnchor ?? anchor,endUtf8:(displayAnchor ?? anchor)+1)
+        let attempt = opening.request?.id
+        windowTask = Task { [weak self] in
+            guard let self else { return }
+            defer { windowTask = nil; viewportAccess.controller?.reevaluateWindowRequests() }
+            do {
+                let frame = try await service.extensionFrame(id,cursor:cursor,direction:direction,retaining:keep)
+                guard current(id, attempt: attempt) else { return }
+                acceptExtension(frame,direction:direction)
+            } catch { if current(id, attempt: attempt) { self.error = ReaderMessages.error(error) } }
+        }
+        return true
+    }
+
+    /// Availability never replaces a readable payload or turns prefetch into navigation.
+    func acceptExtension(_ frame: ReadingFrame, direction: ReadingDirection) {
+        guard !isLeaving, let previous = window else { return }
+        guard frame.status != .deferred else { return }
+        guard frame.status == .ready else {
+            var retained = previous
+            if direction == .forward {
+                retained.nextCursor = nil
+                retained.isPreparedTail = frame.status == .awaiting
+                retained.isEndOfBook = frame.status == .end && frame.snapshot.phase == .complete
+            } else { retained.previousCursor = nil }
+            window = retained
+            return
+        }
+        let visible = viewportAccess.capture()?.offset ?? displayAnchor ?? anchor
+        let protected = viewportAccess.controller?.protectedSourceRange()
+        guard frame.chunks.contains(where:{visible >= $0.startUtf8 && visible < $0.endUtf8}),
+              protected.map({frame.sourceStart <= $0.startUtf8 && frame.sourceEnd >= $0.endUtf8}) ?? true else { return }
+        let value = ReadingWindow(frame:frame)
+        if value != previous { window = value; refreshAnnotations() }
+    }
+
+    private func refreshChapter(at offset: UInt64, bookID: String) {
+        pendingChapterAnchor = offset
+        guard chapterTask == nil else { return }
+        chapterTask = Task { [weak self] in
+            guard let self else { return }
+            defer { chapterTask = nil }
+            while let position = pendingChapterAnchor {
+                pendingChapterAnchor = nil
+                let value = try? await service.chapter(bookID: bookID, offset: position)
+                if !isLeaving, !Task.isCancelled, anchor == position, readingID == bookID { chapter = value }
+            }
+        }
+    }
+
+    func pause() {
+        guard let id = readingID else { return }
+        Task { await service.pauseImport(id) }
+    }
+
+    func resume() {
+        guard !isLeaving, let id = readingID else { return }
+        error = nil
+        Task {
+            do { try await service.resumeImport(id); startMonitoring() }
+            catch { if !isLeaving { self.error = String(localized: "暂时无法继续准备。请确认原目录仍可访问。\n\(ReaderMessages.error(error))") } }
+        }
+    }
+
+    func restart(encoding: String? = nil) {
+        guard !isLeaving, let id = readingID else { return }
+        let title = book?.title ?? ""
+        Task {
+            do {
+                let next = try await service.restartImport(id, encoding: encoding)
+                guard !isLeaving else { return }
+                opening.begin(OpeningRequest(target: .book(next.id)), navigationSettled: true)
+                monitorToken = UUID()
+                monitorTask?.cancel(); windowTask?.cancel(); saveTask?.cancel(); chapterTask?.cancel()
+                navigationTask?.cancel(); navigationTask = nil; navigationGeneration += 1; navigating = false
+                windowTask = nil; chapterTask = nil; pendingChapterAnchor = nil
+                browseOrigin = nil; browseViewport = nil; navigation = nil
+                history = emptyReadingHistory(); chapterDraft = nil
+                focusRange = nil; selectionStart = nil; annotations = []; bookmarkPositions = []
+                readingLease = next; snapshot = nil; window = nil; chapter = nil; anchor = 0
+                showingCover = true; hasEnteredBody = false
+                error = nil; isLoading = true; nearEdge = false; navigationRevision += 1
+                guard !isLeaving else { return }
+                startMonitoring(); startActivity(attempt: opening.request?.id)
+            } catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
+        }
+    }
+
+    func update(mode: ReadingMode? = nil, fontSize: Double? = nil, lineSpacing: Double? = nil) {
+        guard var value = settings else { return }
+        if let mode { value.mode = mode }; if let fontSize { value.fontSize = fontSize }; if let lineSpacing { value.lineSpacing = lineSpacing }
+        updateSettings(value)
+    }
+
+    func updateSettings(_ value: ReaderSettings) {
+        guard !isLeaving, value != settings else { return }
+        self.settings = value
+        pendingSettings = value
+        guard settingsTask == nil else { return }
+        settingsTask = Task { [weak self] in
+            guard let self else { return }
+            defer { settingsTask = nil }
+            // Only one writer exists; rapid changes replace the pending snapshot.
+            // A previous write always finishes before the newest one begins.
+            while let next = pendingSettings {
+                pendingSettings = nil
+                do { try await service.saveSettings(next) } catch { self.error = ReaderMessages.error(error) }
+            }
+        }
+    }
+
+    func flush() async {
+        saveTask?.cancel()
+        // Capture before any suspension. Exit clears preview state, and settings
+        // writes may finish after the reader's UI has started disappearing.
+        let progress = leavingProgress ?? readingID.flatMap { id in
+            window == nil || !hasEnteredBody ? nil : (bookID: id, offset: browseOrigin ?? anchor)
+        }
+        await settingsTask?.value
+        guard let progress else { return }
+        do { try await service.savePosition(bookID: progress.bookID, offset: progress.offset) }
+        catch { self.error = ReaderMessages.error(error) }
+    }
+
+    @discardableResult
+    func leave() -> Task<Void, Never> {
+        if let leaveTask { return leaveTask }
+        activityStartTask?.cancel(); activityStartTask = nil
+        activity.stop()
+        leavingProgress = readingID.flatMap { id in
+            window == nil || !hasEnteredBody ? nil : (bookID: id, offset: browseOrigin ?? anchor)
+        }
+        isLeaving = true
+        opening.leave(); monitorToken = UUID()
+        saveTask?.cancel()
+        monitorTask?.cancel()
+        windowTask?.cancel()
+        chapterTask?.cancel()
+        annotationTask?.cancel()
+        selectionTask?.cancel(); selectionTask = nil
+        navigationTask?.cancel()
+        navigationGeneration += 1
+        pendingChapterAnchor = nil
+        navigating = false
+        error = nil
+        let task = Task { await flush(); await StatisticsWriter.shared.drain() }
+        leaveTask = task
+        return task
+    }
+
+    func clearTransientState() {
+        // Keep the presented panel's content stable until its dismissal ends.
+        // The exit flag hides reader overlays immediately and blocks late work.
+        browseOrigin = nil; browseViewport = nil; focusRange = nil
+        selectionStart = nil; editor = nil; navigation = nil
+        chapterDraft = nil
+        history = emptyReadingHistory()
+    }
+
+    func refreshAnnotations() {
+        annotationTask?.cancel()
+        guard !isLeaving, let id = readingID, let window else { return }
+        annotationTask = Task {
+            do {
+                let values = try await service.annotations(id, start: min(selectionStart ?? window.start, window.start), end: max(selectionStart ?? window.end, window.end))
+                let positions = try await service.bookmarkPositions(id, start: window.start, end: window.end)
+                guard !isLeaving, !Task.isCancelled, readingID == id else { return }
+                annotations = values
+                bookmarkPositions = positions
+            } catch { if !Task.isCancelled { self.error = ReaderMessages.error(error) } }
+        }
+        refreshBookmark()
+    }
+
+    func refreshBookmark() {
+        guard !isLeaving, let id = readingID else { return }
+        let position = anchor
+        Task { if let marked = try? await service.hasBookmark(id, at: position), !isLeaving, readingID == id, anchor == position { bookmarked = marked } }
+    }
+
+    /// True means the write succeeded, including removing an existing bookmark.
+    func toggleBookmark() async -> Bool {
+        guard !isLeaving, !showingCover, let id = readingID, !changingBookmark else { return false }
+        changingBookmark = true
+        defer { changingBookmark = false }
+        let position = anchor
+        do {
+            let added = try await service.toggleBookmark(id, at: position)
+            guard !isLeaving, readingID == id else { return false }
+            if anchor == position { bookmarked = added }
+            marksRevision += 1
+            refreshAnnotations()
+            return true
+        } catch {
+            if !isLeaving, readingID == id { self.error = ReaderMessages.error(error) }
+            return false
+        }
+    }
+
+    func browse(to start: UInt64, end: UInt64? = nil, placement: ReadingTargetPlacement = .context,
+                bottomObstruction: CGFloat = 0, restoring: ReadingViewport? = nil, historyID: String? = nil) {
+        guard !isLeaving, let id = readingID else { return }
+        activity.breakVisit()
+        saveTask?.cancel()
+        let origin = browseOrigin ?? anchor
+        let leaving = anchor
+        let leavingTitle = chapter?.title ?? book?.title ?? ""
+        let leavingWasCover = showingCover
+        let originalViewport = browseOrigin == nil ? viewportAccess.capture() : browseViewport
+        let visibleWindow = placement == .context && restoring == nil
+            ? viewportAccess.controller?.visibleWindow(containing: start, end: end, bottomObstruction: bottomObstruction) : nil
+        navigationGeneration += 1
+        let revision = navigationGeneration
+        navigationTask?.cancel()
+        navigating = true
+        navigationTask = Task {
+            defer { if revision == navigationGeneration { navigating = false } }
+            do {
+                // Persist the original reading point before displaying a preview.
+                if hasEnteredBody { try await service.savePosition(bookID: id, offset: origin) }
+                let frame = try await service.frame(id, offset: start)
+                guard !isLeaving, !Task.isCancelled, revision == navigationGeneration else { return }
+                let target = min(start, frame.snapshot.book.byteCount)
+                let heading = try await service.chapter(bookID: id, offset: target)
+                guard !isLeaving, !Task.isCancelled, revision == navigationGeneration else { return }
+                if let historyID {
+                    history = try selectReadingHistory(history: updateHistoryPosition(history: history, offsetUtf8: leaving, title: leavingTitle), id: historyID)
+                } else if restoring == nil && !leavingWasCover && placement != .cover {
+                    history = visitReadingPosition(history: history, fromUtf8: leaving, fromTitle: leavingTitle,
+                                                   toUtf8: target, toTitle: heading?.title ?? book?.title ?? "")
+                }
+                browseOrigin = origin
+                browseViewport = originalViewport
+                snapshot = frame.snapshot
+                windowTask?.cancel(); windowTask = nil
+                window = visibleWindow ?? ReadingWindow(frame: frame)
+                displayAnchor = frame.projectionAnchor
+                anchor = target
+                showingCover = placement == .cover || restoring?.isCover == true
+                focusRange = end.map { TextRange(startUtf8: start, endUtf8: $0, text: "") }
+                navigation = ReadingNavigation(placement: placement, bottomObstruction: bottomObstruction, restoring: restoring)
+                navigationRevision += 1
+                refreshChapter(at: target, bookID: id)
+                refreshAnnotations()
+            } catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
+        }
+    }
+
+    func returnFromBrowse() async {
+        guard !isLeaving, let original = browseOrigin else { return }
+        browse(to: original, placement: .start, restoring: browseViewport)
+        await navigationTask?.value
+        if !isLeaving, anchor == original { browseOrigin = nil; browseViewport = nil; focusRange = nil; history = emptyReadingHistory() }
+    }
+
+    func continueReading() async {
+        guard !isLeaving, !navigating, let id = readingID else { return }
+        do {
+            if !showingCover {
+                try await service.savePosition(bookID: id, offset: anchor)
+                hasEnteredBody = true
+            } else { hasEnteredBody = false }
+            guard !isLeaving else { return }
+            browseOrigin = nil; browseViewport = nil; navigation = nil; focusRange = nil
+            history = emptyReadingHistory()
+        } catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
+    }
+
+    /// Own the async selection read for copy, search and AI alike. The original
+    /// envelope survives page/window changes; no last-page excerpt is cached.
+    func readSelection(start: UInt64, end: UInt64, perform: @escaping (TextRange) async -> Void) {
+        selectionTask?.cancel()
+        guard !isLeaving, let id = readingID else { return }
+        let from = min(selectionStart ?? start, start), to = max(selectionStart ?? end, end)
+        selectionTask = Task {
+            do {
+                let range = try await service.displayTextRange(id, start: from, end: to)
+                guard !Task.isCancelled, !isLeaving, readingID == id else { return }
+                await perform(range)
+            } catch is CancellationError {
+                // Leaving or another selection replaces the consumer, not its data.
+            } catch {
+                if !Task.isCancelled, !isLeaving, readingID == id { self.error = ReaderMessages.error(error) }
+            }
+        }
+    }
+
+    func selectText(start: UInt64, end: UInt64, action: ReaderSelectionAction) {
+        guard !isLeaving, let id = readingID else { return }
+        if action == .beginRange { selectionStart = start; refreshAnnotations(); return }
+        Task {
+            do {
+                if action == .chapter {
+                    guard !incomplete else { return }
+                    let line = try await service.paragraph(id, at: start)
+                    guard !isLeaving, line.text.trimmingCharacters(in: .whitespacesAndNewlines).count <= 80 else {
+                        if !isLeaving { error = String(localized: "请选择单独的章节标题行。") }; return
+                    }
+                    chapterDraft = ChapterEditDraft(start: line.startUtf8, title: line.text.trimmingCharacters(in: .whitespacesAndNewlines), level: 1)
+                    return
+                }
+                let range: TextRange
+                if action == .paragraph {
+                    range = try await service.paragraph(id, at: start)
+                } else {
+                    let from = selectionStart.map { min($0, start) } ?? start
+                    let to = selectionStart.map { max($0, end) } ?? end
+                    range = try await service.textRange(id, start: from, end: to)
+                }
+                if action == .highlight {
+                    _ = try await service.annotate(id, start: range.startUtf8, end: range.endUtf8)
+                } else {
+                    let value = try await service.prepareAnnotation(id, start: range.startUtf8, end: range.endUtf8)
+                    guard !isLeaving else { return }
+                    editor = value
+                }
+                guard !isLeaving else { return }
+                selectionStart = nil
+                marksRevision += 1; refreshAnnotations()
+            } catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
+        }
+    }
+
+    func openAnnotation(_ id: String) {
+        guard !isLeaving else { return }
+        Task {
+            do {
+                let value = try await service.mark(id)
+                guard !isLeaving, let bookID = readingID else { return }
+                let edit = try await service.prepareAnnotation(bookID, start: value.startUtf8, end: value.endUtf8)
+                if !isLeaving { editor = edit }
+            }
+            catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
+        }
+    }
+
+    func notesChanged() { if !isLeaving { marksRevision += 1; refreshAnnotations() } }
+
+    func synchronizeHistory() {
+        guard !showingCover else { return }
+        history = updateHistoryPosition(history: history, offsetUtf8: anchor, title: chapter?.title ?? book?.title ?? "")
+    }
+
+    func refreshOutline() async {
+        guard !isLeaving, let id = readingID else { return }
+        await refreshWindow(id, at: anchor)
+        refreshChapter(at: anchor, bookID: id)
+    }
+
+    func foreground() {
+        guard !isLeaving, readingID != nil else { return }
+        startMonitoring()
+    }
+}

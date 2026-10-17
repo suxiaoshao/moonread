@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>MoonreadCloudEnabled</key><string>$(MOONREAD_CLOUD_ENABLED)</string>
+    <key>NSUbiquitousContainers</key><dict>
+        <key>iCloud.dev.moonread.Moonread</key><dict>
+            <key>NSUbiquitousContainerName</key><string>月读</string>
+            <key>NSUbiquitousContainerIsDocumentScopePublic</key><true/>
+            <key>NSUbiquitousContainerSupportedFolderLevels</key><string>Any</string>
+        </dict>
+    </dict>
+    <key>UIBackgroundModes</key><array><string>remote-notification</string></array>
+    <key>CFBundleDocumentTypes</key>
+    <array><dict>
+        <key>CFBundleTypeName</key><string>TXT Novel</string>
+        <key>CFBundleTypeRole</key><string>Viewer</string>
+        <key>LSHandlerRank</key><string>Alternate</string>
+        <key>LSItemContentTypes</key><array><string>public.plain-text</string></array>
+    </dict></array>
+    <key>LSSupportsOpeningDocumentsInPlace</key><true/>
+    <key>UIFileSharingEnabled</key><true/>
+    <key>UTExportedTypeDeclarations</key><array><dict>
+        <key>UTTypeIdentifier</key><string>dev.moonread.library-item</string>
+        <key>UTTypeDescription</key><string>Moonread Library Item Reference</string>
+        <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+    </dict></array>
+</dict>
+</plist>

@@ -1,0 +1,233 @@
+import SwiftUI
+import CloudKit
+import UIKit
+
+@main
+struct MoonreadApp: App {
+    @UIApplicationDelegateAdaptor(MoonreadDelegate.self) private var appDelegate
+    @State private var library = LibraryModel()
+    @State private var themes = ThemeStore()
+    @State private var cloud = CloudStore()
+    @State private var ai = AIService()
+    @State private var tipJar = TipJar()
+    @Environment(\.scenePhase) private var scenePhase
+
+    init() { _ = Onboarding.shared }
+
+    var body: some Scene {
+        WindowGroup {
+            #if DEBUG
+            if CloudSchemaPreparation.requested { CloudSchemaPreparationScreen() }
+            else { configuredAppContent }
+            #else
+            configuredAppContent
+            #endif
+        }
+    }
+    @ViewBuilder private var configuredAppContent: some View {
+        #if READER_OPEN_DIAGNOSTICS
+        if ReaderOpenDiagnostics.benchmark { ReaderOpenBenchmarkView().environment(ai).environment(themes) }
+        else { appContent }
+        #else
+        appContent
+        #endif
+    }
+    private var appContent: some View {
+        MoonreadRoot(library: library, themes: themes)
+            .environment(cloud).environment(ai).environment(tipJar)
+            .task { await tipJar.listenForTransactions() }
+            .task { await ai.load() }
+            .task { library.startCloudDiscovery(); if await library.load() { await cloud.refresh() } }
+            .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in
+                Task { await CloudSyncCoordinator.shared.localDataChanged() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .cloudStatusChanged).receive(on: DispatchQueue.main)) { _ in
+                Task { await cloud.updateStatus() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in
+                Task { await themes.load(); try? await library.reload() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .NSUbiquityIdentityDidChange).receive(on: DispatchQueue.main)) { _ in
+                Task { library.startCloudDiscovery(reset: true); await cloud.identityChanged(); await library.refresh(); await cloud.refresh() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .CKAccountChanged).receive(on: DispatchQueue.main)) { _ in
+                Task { await cloud.identityChanged() }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .background {
+                    BackgroundSave.perform(name: "保存显示偏好") { await themes.flushPreferences() }
+                    Task { await ReaderService.shared.pauseImports() }
+                }
+                if phase == .active { Task { if ai.providers.catalogActivated { await ai.providers.refreshCatalogsIfNeeded() } }; Task { await ReaderService.shared.resumePausedImports(); await library.refresh(); await cloud.refresh() } }
+            }
+            .onOpenURL { url in Task {
+                guard await library.load() else { return }
+                library.selectedTab = .library; library.receiveSystemURLs([url])
+            } }
+    }
+
+}
+
+private struct MoonreadRoot: View {
+    @Bindable var library: LibraryModel
+    let themes: ThemeStore
+    @Environment(\.colorScheme) private var systemScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @State private var localDeadlineReached = false
+    private var reduceMotion: Bool { systemReduceMotion || themes.snapshot.preferences.reduceMotion }
+    private var plans: ResolvedThemes {
+        // Resolve the very first frame from the parent's real system traits;
+        // onChange synchronizes the store for subsequent settings previews.
+        try! resolveThemes(value: themes.snapshot, system: systemScheme == .dark ? .dark : .light,
+                           highContrast: contrast == .increased)
+    }
+    private var appTheme: ThemeSurface { ThemeSurface(plan: plans.app) }
+    private var readerTheme: ThemeSurface { ThemeSurface(plan: plans.reader) }
+
+    var body: some View {
+        NativeThemeHost(theme: library.path.last?.isReader == true ? readerTheme : appTheme) {
+            tabs
+            // Library sheets read the app theme, so they are presented inside its scope.
+            .modifier(LibraryPresentations(model: library))
+            .themeScope(appTheme).environment(themes).environment(library)
+            .environment(\.moonreadReduceMotion, reduceMotion)
+            .environment(\.readerTheme, readerTheme)
+            .onChange(of: library.libraryPath) { _, _ in library.cancelOpening(); library.returnedToLibrary() }
+            .onChange(of: library.statisticsPath) { _, _ in library.cancelOpening() }
+            .onChange(of: library.searchPath) { _, _ in library.cancelOpening() }
+            .onChange(of: library.selectedTab) { _, _ in library.cancelOpening() }
+            .onReceive(NotificationCenter.default.publisher(for: .libraryFilesChanged).receive(on: DispatchQueue.main)) { _ in library.retryPendingCloudDiscovery(); library.scheduleRefresh() }
+            .alert("暂时无法完成", isPresented: Binding(get: { themes.error != nil }, set: { if !$0 { themes.error = nil } })) {
+                Button("知道了", role: .cancel) { themes.error = nil }
+                if !themes.loaded { Button("重试") { Task { await themes.load() } } }
+            } message: { Text(themes.error ?? "") }
+            .alert("阅读遇到问题", isPresented: Binding(get: { library.readerExitError != nil }, set: { if !$0 { library.readerExitError = nil } })) {
+                Button("知道了", role: .cancel) { library.readerExitError = nil }
+            } message: { Text(library.readerExitError ?? "") }
+        }
+        .ignoresSafeArea()
+        .overlay {
+            MoonLaunchCover(ready: localDeadlineReached || ((themes.loaded || themes.error != nil) && (library.homeReady || library.error != nil)))
+                .environment(\.moonreadReduceMotion, reduceMotion)
+                .ignoresSafeArea()
+        }
+        .onChange(of: systemScheme, initial: true) { _, value in themes.system = value == .dark ? .dark : .light }
+        .onChange(of: contrast, initial: true) { _, value in themes.highContrast = value == .increased }
+        .task { await themes.load() }
+        .task {
+            do { try await Task.sleep(for: .seconds(1)); localDeadlineReached = true } catch { }
+        }
+    }
+
+    private var tabs: some View {
+        TabView(selection: $library.selectedTab) {
+            Tab("书架", systemImage: "books.vertical", value: AppTab.library) { libraryStack }
+            Tab("对话", systemImage: "bubble.left.and.bubble.right", value: AppTab.conversations) { AIConversationsView() }
+            Tab("统计", systemImage: "chart.bar.xaxis", value: AppTab.statistics) { statisticsStack }
+            Tab("搜索", systemImage: "magnifyingglass", value: AppTab.search, role: .search) { searchStack }
+        }
+        .modifier(AppSearchActivation())
+    }
+    private var libraryStack: some View {
+        NavigationStack(path: $library.libraryPath) {
+            LibraryView(model: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
+        }
+    }
+    private var statisticsStack: some View {
+        NavigationStack(path: $library.statisticsPath) {
+            StatisticsView(library: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
+        }
+    }
+    private var searchStack: some View {
+        NavigationStack(path: $library.searchPath) {
+            AppSearchView(model: library, search: library.search).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
+        }
+        .modifier(AppSearchField(model: library, search: library.search, quickEntry: true))
+    }
+}
+
+/// The page for a library route. Every navigation stack, and the search pushed
+/// above an open book, builds its pages here from the shared environment.
+struct LibraryDestination: View {
+    let route: LibraryRoute
+    @Environment(LibraryModel.self) private var library
+    @Environment(\.readerTheme) private var readerTheme
+
+    var body: some View {
+        switch route {
+        case .reader(let reader):
+            ReaderScreen(route: reader.target, openingRequest: reader) {
+                library.readerExitError = $0
+                // The reader calls back after its final position is saved.
+                // A destination's onAppear can run before that write finishes.
+                Task { await library.reloadBook(reader.target) }
+            }.themeScope(readerTheme)
+        case .folder(let location): LibraryFolderView(model: library, location: location)
+        case .allBooks(let shelfID): LibraryAllBooksView(model: library, shelfID: shelfID)
+        case .recent: RecentLibraryView(model: library)
+        case .manage: LibraryManagementView(model: library)
+        case .statistics(let target): StatisticsView(library: library, target: target)
+        case .conversation(let id, let anchor): AIChatView(conversationID: id, anchor: anchor)
+        case .settings: SettingsView(library: library)
+        case .search(let scope): AppSearchPage(model: library, scope: scope)
+        }
+    }
+}
+
+/// Continue the system's static launch artwork in the first app frame. Keep
+/// this outside the themed host so its initial colors match the launch screen.
+private struct MoonLaunchCover: View {
+    let ready: Bool
+    @Environment(\.moonreadReduceMotion) private var reduceMotion
+    @State private var departing = false
+    @State private var finished = false
+
+    var body: some View {
+        ZStack {
+            if !finished {
+                ZStack {
+                    Color("LaunchBackground")
+                    // The rendered app icon at 120pt, exactly as in the storyboard,
+                    // so opening the app continues from the icon that was tapped.
+                    Image("LaunchSeal").resizable().scaledToFit()
+                        .frame(width: 120, height: 120)
+                }
+                .opacity(departing ? 0 : 1)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .accessibilityHidden(true)
+        .allowsHitTesting(!ready)
+        .onChange(of: ready, initial: true) { _, ready in
+            guard ready, !departing else { return }
+            // No timer or minimum display time: reveal the app as soon as its
+            // preferences are ready; only the launch artwork keeps animating.
+            withAnimation(.easeOut(duration: reduceMotion ? 0.12 : 0.25), completionCriteria: .removed) {
+                departing = true
+            } completion: {
+                finished = true
+            }
+        }
+    }
+}
+
+
+/// Acquire synchronously on the background transition; release after saving or system expiration.
+@MainActor enum BackgroundSave {
+    static func perform(name: String, operation: @escaping @MainActor () async -> Void) {
+        let assertion = Assertion(name: name)
+        Task { defer { assertion.end() }; await operation() }
+    }
+    @MainActor private final class Assertion {
+        private var identifier = UIBackgroundTaskIdentifier.invalid
+        init(name: String) {
+            identifier = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in self?.end() }
+        }
+        func end() {
+            guard identifier != .invalid else { return }
+            let active = identifier; identifier = .invalid
+            UIApplication.shared.endBackgroundTask(active)
+        }
+    }
+}

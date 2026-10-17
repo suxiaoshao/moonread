@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}{{ page.title }} · {% if page.lang == "zh" %}月读{% else %}Moonread{% endif %}{% endblock %}
+{% block description %}{% if page.extra.kind == "privacy" %}{{ trans(key="privacy_desc", lang=page.lang) }}{% else %}{{ trans(key="support_desc", lang=page.lang) }}{% endif %}{% endblock %}
+{% block sky %}
+<div class="wrap doc-head">
+  <h1>{{ page.title }}</h1>
+  <p class="meta">
+    {% if page.extra.kind == "privacy" %}{{ trans(key="effective", lang=page.lang) }}{% if page.lang == "zh" %}：{% else %}: {% endif %}{{ page.date | date(format="%Y-%m-%d") }} · {% endif %}{{ config.extra.holder }} · <a href="mailto:{{ config.extra.email }}" style="color: inherit">{{ config.extra.email }}</a>
+  </p>
+</div>
+{% endblock %}
+{% block content %}
+{% if page.toc | length > 2 %}
+<nav class="toc" aria-label="{{ trans(key='contents', lang=page.lang) }}">
+  <p>{{ trans(key="contents", lang=page.lang) }}</p>
+  <ol>{% for h in page.toc %}<li><a href="#{{ h.id }}">{{ h.title }}</a></li>{% endfor %}</ol>
+</nav>
+{% endif %}
+<article>
+{{ page.content | safe }}
+</article>
+{% endblock %}

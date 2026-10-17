@@ -1,0 +1,3 @@
+[bindings.swift]
+# Generate the conventional module map directly; no post-generation copy step.
+ffi_module_filename = "module"

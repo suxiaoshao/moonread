@@ -1,0 +1,16 @@
+name: 功能与体验建议
+description: 从实际阅读场景讨论改进
+labels: [enhancement]
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 想解决什么问题
+      description: 描述阅读或整理书架时遇到的具体困难。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议与参考
+      description: 可写期望的操作、参考产品或取舍，暂未确定的内容也可以直接标出。

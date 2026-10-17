@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" role="img" aria-labelledby="title description" overflow="hidden">
+  <title id="title">月读 · 圆月与书</title>
+  <desc id="description">深蓝夜色中，圆月越出左上边界，展开的书以两片简洁页形居中呈现。</desc>
+
+  <g id="background">
+    <rect width="1024" height="1024" fill="#182239" />
+  </g>
+
+  <g id="moon" fill="#E2D2B4">
+    <circle cx="164" cy="150" r="192" />
+  </g>
+
+  <g id="book" fill="#F6F0E5">
+    <path id="left-page" d="M254 346C347 336 432 369 500 414V706C421 659 341 638 254 650Q236 653 236 635V367Q236 348 254 346Z" />
+    <path id="right-page" d="M524 414C592 369 677 336 770 346Q788 348 788 367V635Q788 653 770 650C683 638 603 659 524 706V414Z" />
+  </g>
+</svg>

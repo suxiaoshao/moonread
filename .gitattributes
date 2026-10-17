@@ -1,0 +1,2 @@
+# Preserve upstream license formatting in the aggregated attribution resource.
+ios/Moonread/Resources/ThirdPartyNotices.txt whitespace=-blank-at-eol

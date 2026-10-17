@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="890" viewBox="0 0 1200 890" role="img" aria-labelledby="title desc">
+  <title id="title">月读：杏桃、薄荷、雾紫浅深配色草案</title>
+  <desc id="desc">六张相同结构的配色样卡。只比较背景、表面、纸色、正文、次要文字与强调色，尚非最终主题或应用布局。</desc>
+  <defs>
+    <g id="sample" font-size="20" fill="currentColor">
+      <text x="0" y="24">风从半开的窗里经过。</text>
+      <text x="0" y="62">她翻过一页，屋子安静下来。</text>
+      <text x="0" y="100">月光落在桌边，轻轻的。</text>
+    </g>
+  </defs>
+  <rect width="1200" height="890" fill="#EAE8E4"/>
+  <g font-family="PingFang SC, Hiragino Sans GB, sans-serif">
+    <text x="36" y="49" fill="#35343B" font-size="28" font-weight="600">月读 · 配色研究</text>
+    <text x="36" y="81" fill="#65636B" font-size="16">结构相同，浅深独立调色。颜色草案，尚未定稿。</text>
+    <text x="36" y="120" fill="#65574F" font-size="20" font-weight="600">杏桃</text>
+    <text x="420" y="120" fill="#426454" font-size="20" font-weight="600">薄荷</text>
+    <text x="804" y="120" fill="#665378" font-size="20" font-weight="600">雾紫</text>
+
+    <g transform="translate(36 140)">
+      <rect width="360" height="302" rx="20" fill="#F7EFE5"/>
+      <text x="20" y="35" fill="#403833" font-size="18" font-weight="600">浅色</text>
+      <text x="288" y="35" fill="#6F6057" font-size="13">17:43</text>
+      <rect x="16" y="53" width="328" height="175" rx="16" fill="#F5ECDA"/>
+      <text x="30" y="81" fill="#6F6057" font-size="12">月光下 · 第三章</text>
+      <use href="#sample" x="30" y="96" color="#403833"/>
+      <rect x="16" y="244" width="328" height="42" rx="12" fill="#FFF9F2"/>
+      <text x="30" y="271" fill="#6F6057" font-size="14">正文 / 工具 / 书架</text>
+      <text x="278" y="271" fill="#A94F3D" font-size="14" font-weight="600">继续</text>
+    </g>
+    <g transform="translate(420 140)">
+      <rect width="360" height="302" rx="20" fill="#EDF4EF"/>
+      <text x="20" y="35" fill="#2E4138" font-size="18" font-weight="600">浅色</text>
+      <text x="288" y="35" fill="#5F7368" font-size="13">17:43</text>
+      <rect x="16" y="53" width="328" height="175" rx="16" fill="#F4FAF5"/>
+      <text x="30" y="81" fill="#5F7368" font-size="12">月光下 · 第三章</text>
+      <use href="#sample" x="30" y="96" color="#2E4138"/>
+      <rect x="16" y="244" width="328" height="42" rx="12" fill="#F7FCF8"/>
+      <text x="30" y="271" fill="#5F7368" font-size="14">正文 / 工具 / 书架</text>
+      <text x="278" y="271" fill="#2F725E" font-size="14" font-weight="600">继续</text>
+    </g>
+    <g transform="translate(804 140)">
+      <rect width="360" height="302" rx="20" fill="#F1EFF8"/>
+      <text x="20" y="35" fill="#3B3649" font-size="18" font-weight="600">浅色</text>
+      <text x="288" y="35" fill="#71687F" font-size="13">17:43</text>
+      <rect x="16" y="53" width="328" height="175" rx="16" fill="#F8F5FC"/>
+      <text x="30" y="81" fill="#71687F" font-size="12">月光下 · 第三章</text>
+      <use href="#sample" x="30" y="96" color="#3B3649"/>
+      <rect x="16" y="244" width="328" height="42" rx="12" fill="#FAF8FE"/>
+      <text x="30" y="271" fill="#71687F" font-size="14">正文 / 工具 / 书架</text>
+      <text x="278" y="271" fill="#71549D" font-size="14" font-weight="600">继续</text>
+    </g>
+
+    <g transform="translate(36 466)">
+      <rect width="360" height="302" rx="20" fill="#201B19"/>
+      <text x="20" y="35" fill="#D6C8BA" font-size="18" font-weight="600">深色</text>
+      <text x="288" y="35" fill="#B8A69A" font-size="13">22:16</text>
+      <rect x="16" y="53" width="328" height="175" rx="16" fill="#241F1C"/>
+      <text x="30" y="81" fill="#B8A69A" font-size="12">月光下 · 第三章</text>
+      <use href="#sample" x="30" y="96" color="#D6C8BA"/>
+      <rect x="16" y="244" width="328" height="42" rx="12" fill="#2B2421"/>
+      <text x="30" y="271" fill="#B8A69A" font-size="14">正文 / 工具 / 书架</text>
+      <text x="278" y="271" fill="#E6A68E" font-size="14" font-weight="600">继续</text>
+    </g>
+    <g transform="translate(420 466)">
+      <rect width="360" height="302" rx="20" fill="#17231F"/>
+      <text x="20" y="35" fill="#C5D5CA" font-size="18" font-weight="600">深色</text>
+      <text x="288" y="35" fill="#9EB8A9" font-size="13">22:16</text>
+      <rect x="16" y="53" width="328" height="175" rx="16" fill="#1C2924"/>
+      <text x="30" y="81" fill="#9EB8A9" font-size="12">月光下 · 第三章</text>
+      <use href="#sample" x="30" y="96" color="#C5D5CA"/>
+      <rect x="16" y="244" width="328" height="42" rx="12" fill="#20312A"/>
+      <text x="30" y="271" fill="#9EB8A9" font-size="14">正文 / 工具 / 书架</text>
+      <text x="278" y="271" fill="#98CDB6" font-size="14" font-weight="600">继续</text>
+    </g>
+    <g transform="translate(804 466)">
+      <rect width="360" height="302" rx="20" fill="#211F2B"/>
+      <text x="20" y="35" fill="#D0C8DF" font-size="18" font-weight="600">深色</text>
+      <text x="288" y="35" fill="#B2A5C4" font-size="13">22:16</text>
+      <rect x="16" y="53" width="328" height="175" rx="16" fill="#262230"/>
+      <text x="30" y="81" fill="#B2A5C4" font-size="12">月光下 · 第三章</text>
+      <use href="#sample" x="30" y="96" color="#D0C8DF"/>
+      <rect x="16" y="244" width="328" height="42" rx="12" fill="#2C2839"/>
+      <text x="30" y="271" fill="#B2A5C4" font-size="14">正文 / 工具 / 书架</text>
+      <text x="278" y="271" fill="#C3A6E5" font-size="14" font-weight="600">继续</text>
+    </g>
+    <text x="36" y="816" fill="#4F4C55" font-size="17">柔和放在底色与表面；文字保持清晰，强调色只用于少量操作。</text>
+    <text x="36" y="846" fill="#747079" font-size="14">这六张样卡不定义 App 布局。最终还需补齐选择、标注、错误与高对比状态。</text>
+  </g>
+</svg>

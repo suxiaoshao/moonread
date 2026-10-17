@@ -1,0 +1,8 @@
+// Personal signing settings stay on this Mac and are ignored by Git.
+#include "Rust.xcconfig"
+MOONREAD_CLOUD_ENABLED = YES
+MOONREAD_ENTITLEMENTS = Moonread/Moonread.entitlements
+#include? "LocalSigning.xcconfig"
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_ENTITLEMENTS = $(MOONREAD_ENTITLEMENTS)
+INFOPLIST_FILE = Moonread/Info.plist

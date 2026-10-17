@@ -1,0 +1,1139 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+OS1000000000000000000001 = {isa = PBXBuildFile; fileRef = OS2000000000000000000001; };
+F01800000000000000000003 = {isa = PBXBuildFile; fileRef = F01800000000000000000004; };
+F01800000000000000000001 = {isa = PBXBuildFile; fileRef = F01800000000000000000002; };
+785244D6C1DB4AF6B15A8AA0 = {isa = PBXBuildFile; fileRef = F14BDB0397FE4C25963665F6; };
+0ADFA9A8F02748618B3B4BE9 = {isa = PBXBuildFile; fileRef = 34534F38185344C984C886C4; };
+01800FD10FB1423B93ABB34E = {isa = PBXBuildFile; fileRef = 3BE80CBCD8D744E1B33B2306; };
+CAA8B00EBC8041F6A299A6A5 = {isa = PBXBuildFile; fileRef = AAE9AA532FE14842BCFEA016; };
+B792EA92E8204EEDB7AA1450 = {isa = PBXBuildFile; fileRef = EC14CE0E00934BB682B83B4D; };
+0D6DDD171D15456388258FB6 = {isa = PBXBuildFile; fileRef = 5C7A519CEC4946EDB0957CC2; };
+5AEB90FA1BD147BDA6246668 = {isa = PBXBuildFile; fileRef = 8C23901BA4E14CF6AA3F4140; };
+AP1000000000000000000001 = {isa = PBXBuildFile; fileRef = AP2000000000000000000001; };
+        F01700000000000000000005 = {isa = PBXBuildFile; fileRef = F01700000000000000000006; };
+        F01700000000000000000007 = {isa = PBXBuildFile; fileRef = F01700000000000000000004; };
+        F01700000000000000000008 = {isa = PBXBuildFile; fileRef = F01700000000000000000004; };
+        F01700000000000000000003 = {isa = PBXBuildFile; fileRef = F01700000000000000000004; };
+        F01700000000000000000001 = {isa = PBXBuildFile; fileRef = F01700000000000000000002; };
+        F01600000000000000000001 = {isa = PBXBuildFile; fileRef = F01600000000000000000002; };
+        AF1000000000000000000004 /* LibraryDrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000004; };
+        AF1000000000000000000005 /* LibraryDropTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000005; };
+FB1000000000000000000001 = {isa = PBXBuildFile; fileRef = FB2000000000000000000001; };
+FB1000000000000000000002 = {isa = PBXBuildFile; productRef = FB4000000000000000000001; };
+FA1000000000000000000002 = {isa = PBXBuildFile; fileRef = FA2000000000000000000002; };
+FA1000000000000000000001 = {isa = PBXBuildFile; fileRef = FA2000000000000000000001; };
+E71000000000000000000001 = {isa = PBXBuildFile; fileRef = E72000000000000000000001; };
+E71000000000000000000077 /* AIReadingMoon.swift in Sources */ = {isa = PBXBuildFile; fileRef = E72000000000000000000077; };
+AC1000000000000000000077 /* MoonCharacter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC2000000000000000000077; };
+E61000000000000000000077 /* AIReadingMoonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62000000000000000000077; };
+E61000000000000000000007 = {isa = PBXBuildFile; fileRef = E62000000000000000000007; };
+E61000000000000000000006 = {isa = PBXBuildFile; fileRef = E62000000000000000000006; };
+E61000000000000000000005 = {isa = PBXBuildFile; fileRef = E62000000000000000000005; };
+E61000000000000000000004 = {isa = PBXBuildFile; fileRef = E62000000000000000000004; };
+E61000000000000000000003 = {isa = PBXBuildFile; fileRef = E62000000000000000000003; };
+E61000000000000000000002 = {isa = PBXBuildFile; fileRef = E62000000000000000000002; };
+E61000000000000000000001 = {isa = PBXBuildFile; fileRef = E62000000000000000000001; };
+E51000000000000000000009 = {isa = PBXBuildFile; fileRef = E52000000000000000000009; };
+E51000000000000000000008 = {isa = PBXBuildFile; fileRef = E52000000000000000000008; };
+E51000000000000000000007 = {isa = PBXBuildFile; fileRef = E52000000000000000000007; };
+E51000000000000000000006 = {isa = PBXBuildFile; fileRef = E52000000000000000000006; };
+E51000000000000000000005 = {isa = PBXBuildFile; fileRef = E52000000000000000000005; };
+E51000000000000000000004 = {isa = PBXBuildFile; fileRef = E52000000000000000000004; };
+E51000000000000000000003 = {isa = PBXBuildFile; fileRef = E52000000000000000000003; };
+E51000000000000000000002 = {isa = PBXBuildFile; fileRef = E52000000000000000000002; };
+E51000000000000000000001 = {isa = PBXBuildFile; fileRef = E52000000000000000000001; };
+ D41000000000000000000002 = {isa = PBXBuildFile; fileRef = D42000000000000000000002; };
+ D41000000000000000000001 = {isa = PBXBuildFile; fileRef = D42000000000000000000001; };
+D31000000000000000000007 = {isa = PBXBuildFile; fileRef = D32000000000000000000007; };
+C21000000000000000000004 = {isa = PBXBuildFile; fileRef = C22000000000000000000004; };
+C21000000000000000000003 = {isa = PBXBuildFile; fileRef = C22000000000000000000003; };
+C21000000000000000000002 = {isa = PBXBuildFile; fileRef = C22000000000000000000002; };
+C21000000000000000000001 = {isa = PBXBuildFile; fileRef = C22000000000000000000001; };
+        B13000000000000000000001 = {isa = PBXBuildFile; fileRef = B14000000000000000000001; };
+        B13000000000000000000002 = {isa = PBXBuildFile; fileRef = B14000000000000000000002; };
+        B13000000000000000000003 = {isa = PBXBuildFile; fileRef = B14000000000000000000003; };
+        B11000000000000000000001 = {isa = PBXBuildFile; fileRef = B12000000000000000000001; };
+        B11000000000000000000002 = {isa = PBXBuildFile; fileRef = B12000000000000000000002; };
+        B01000000000000000000001 = {isa = PBXBuildFile; fileRef = B02000000000000000000001; };
+        B01000000000000000000002 = {isa = PBXBuildFile; fileRef = B02000000000000000000002; };
+        AF1000000000000000000003 /* LibraryCollection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000003; };
+        AF1000000000000000000002 /* LibraryPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000002; };
+        AF1000000000000000000001 /* WelcomeStory.txt in Resources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000001; };
+        AE1000000000000000000001 = {isa = PBXBuildFile; fileRef = AE2000000000000000000001; };
+        AE1000000000000000000002 = {isa = PBXBuildFile; fileRef = AE2000000000000000000002; };
+        AD1000000000000000000008 = {isa = PBXBuildFile; fileRef = AD2000000000000000000008; };
+        AD1000000000000000000006 = {isa = PBXBuildFile; fileRef = AD2000000000000000000006; };
+        AD1000000000000000000007 = {isa = PBXBuildFile; fileRef = AD2000000000000000000007; };
+        AD1000000000000000000005 = {isa = PBXBuildFile; fileRef = AD2000000000000000000005; };
+        AD1000000000000000000004 = {isa = PBXBuildFile; fileRef = AD2000000000000000000004; };
+        AD1000000000000000000003 = {isa = PBXBuildFile; fileRef = AD2000000000000000000003; };
+        AD1000000000000000000002 = {isa = PBXBuildFile; fileRef = AD2000000000000000000002; };
+        AD1000000000000000000001 = {isa = PBXBuildFile; fileRef = AD2000000000000000000001; };
+        AC1000000000000000000001 = {isa = PBXBuildFile; fileRef = AC2000000000000000000001; };
+        AC1000000000000000000002 = {isa = PBXBuildFile; fileRef = AC2000000000000000000002; };
+        AC1000000000000000000003 = {isa = PBXBuildFile; fileRef = AC2000000000000000000003; };
+        AC1000000000000000000004 = {isa = PBXBuildFile; fileRef = AC2000000000000000000004; };
+        AC1000000000000000000005 = {isa = PBXBuildFile; fileRef = AC2000000000000000000005; };
+        AC1000000000000000000006 = {isa = PBXBuildFile; fileRef = AC2000000000000000000006; };
+		A10000000000000000000001 /* MoonreadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* MoonreadApp.swift */; };
+		A10000000000000000000002 /* ReaderService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* ReaderService.swift */; };
+		A10000000000000000000003 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* LibraryView.swift */; };
+		A10000000000000000000004 /* ReaderScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* ReaderScreen.swift */; };
+		A10000000000000000000005 /* ReadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* ReadingView.swift */; };
+		A10000000000000000000006 /* TextCoordinates.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000006 /* TextCoordinates.swift */; };
+		A10000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift */; };
+		A10000000000000000000008 /* ../assets/icon/Moonread.icon in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* ../assets/icon/Moonread.icon */; };
+		A10000000000000000000009 /* MoonreadUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* MoonreadUITests.swift */; };
+		A1000000000000000000000A /* TextLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* TextLayoutTests.swift */; };
+        AB1000000000000000000001 /* ReaderTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2000000000000000000001; };
+        AB1000000000000000000002 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = AB2000000000000000000002; };
+D31000000000000000000001 = {isa = PBXBuildFile; fileRef = D32000000000000000000001; };
+D31000000000000000000002 = {isa = PBXBuildFile; fileRef = D32000000000000000000002; };
+D31000000000000000000003 = {isa = PBXBuildFile; fileRef = D32000000000000000000003; };
+D31000000000000000000004 = {isa = PBXBuildFile; fileRef = D32000000000000000000004; };
+D31000000000000000000005 = {isa = PBXBuildFile; fileRef = D32000000000000000000005; };
+D35000000000000000000001 = {isa = PBXBuildFile; productRef = D34000000000000000000001;};
+D35000000000000000000002 = {isa = PBXBuildFile; productRef = D34000000000000000000002;};
+D35000000000000000000003 = {isa = PBXBuildFile; productRef = D34000000000000000000003;};
+D35000000000000000000004 = {isa = PBXBuildFile; productRef = D34000000000000000000004;};
+D31000000000000000000006 = {isa = PBXBuildFile; fileRef = D32000000000000000000006;};
+D35000000000000000000006 = {isa = PBXBuildFile; productRef = D34000000000000000000006;};
+D35000000000000000000007 = {isa = PBXBuildFile; productRef = D34000000000000000000007;};
+D35000000000000000000008 = {isa = PBXBuildFile; productRef = D34000000000000000000008;};
+F72000000000000000000001 = {isa = PBXBuildFile; fileRef = F71000000000000000000001; };
+F72000000000000000000002 = {isa = PBXBuildFile; fileRef = F71000000000000000000002; };
+F72000000000000000000003 = {isa = PBXBuildFile; fileRef = F71000000000000000000003; };
+F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F71000000000000000000004; };
+		3A96A876F24042AAA2FE29BC /* MoonreadDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A538254DAE463BA4801DAB /* MoonreadDelegate.swift */; };
+		9691E8B4840C4F38B899F26B /* LibraryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 487CD594A7CA40ABB7A8AB0B /* LibraryModel.swift */; };
+		D4FB0F4457504C4CA4DD4F73 /* ReaderSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 86D90F0376D344A3842137FB /* ReaderSession.swift */; };
+		7A042EE51D614A828562A191 /* ReaderTitlePage.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF76A57AADD0405FB7746D49 /* ReaderTitlePage.swift */; };
+		29B55EBD38D34117AE72E079 /* CloudSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42742C82EEF942DE87A817BA /* CloudSettingsView.swift */; };
+		DFA135AC4F9846958D6431FB /* CloudStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CD01275239A4B0EA525197E /* CloudStore.swift */; };
+		94D2EEC02FFF4BC08C9C7711 /* ReaderMessages.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD79BB2926E04FA788D5DBB3 /* ReaderMessages.swift */; };
+		B399C5AB3B2D4E7385E053AC /* AITaskSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 383CEB82D6324AC78C31EE40; };
+		DC581CB64D964BDC81C14C4B /* AIMetadataReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8D536F47E57410DBB38F97B; };
+		0BC015E32C5041118947402E /* AICoverTaskView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1F3068431DF421C9ADE8A3A; };
+		FD370AAFD7A2432A9A005DA7 /* AIOrganizationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6C0BCCFD8354FFBA6D75F2E; };
+		30F6A229000A407490C23F9F /* AIProposalCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = F105600A0A9D4A6FAE183AE9; };
+		FC214CA9EBE44016B1599D66 /* AITask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2991034104424226ACA621E7; };
+		E7470B2B8F69485A8E707336 /* AIQuickTaskEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D7959C9A0B549099FD007FB; };
+		8E2BEFD2EFA643EDB23DD5BB /* AIQuickTaskResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2117063F3A64081A7DB32FA; };
+		19EEE1FEFFC94415B88046FB /* AIProposals.swift in Sources */ = {isa = PBXBuildFile; fileRef = C140582B21A04A6588F553EA; };
+		D24559353FE44FAC9E198202 /* AIReadingReferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6D0F3ACE8DCE4518AA4A8178; };
+		6C0B92C59607479E88DB5F02 /* AIProposalReviews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C7DC58DBE7F4DDB8E6A4CEA; };
+		14F4DEFD709845FC8AAAEA7F /* AIProposalTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E617B7FF31E43C3A0B7C1AF; };
+		29E8AF36983F4CF9BE988DE0 /* AIOrganization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29CD035636154B598B211DC3; };
+		EB7E98AAB4874825854EC1ED /* AICoverImageFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 648898574D5A490398DF5331; };
+		B2B2CB5D001B4F72BFAEBD3F /* AIFollowUpTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E96BC33B1F24360B74F39AF; };
+		1E29F78A7797494D83F655FD /* AITaskFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 261A8A86E7F248BC959C51BC; };
+		19B30D2DE87E46ADA99B1F85 /* AIResults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97243FC88EB941CE8D7B8C5D; };
+		0824CF925F1146178BFD0FD1 /* AIRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7773498FC5E46E7B6D20EE9; };
+		941D8F146D7A436D97BC6909 /* AIReviewActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63157555C51A4D79A42A3D88; };
+		7A278708BAB942A99014C0D3 /* ReaderOpening.swift in Sources */ = {isa = PBXBuildFile; fileRef = 990DFFD80C6248E3A5BF832F /* ReaderOpening.swift */; };
+		267C2529F2B14483B0424293 /* ReaderOpenDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF08E0D9F8D042DA8E2DC265 /* ReaderOpenDiagnostics.swift */; };
+		338EBE51F11D4BDC98985D77 /* ReaderOpenBenchmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A44BEF4C3D4FE0A71CCB03; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A30000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A90000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A80000000000000000000001;
+			remoteInfo = Moonread;
+		};
+		A30000000000000000000003 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A90000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A80000000000000000000001;
+			remoteInfo = Moonread;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+OS2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text; path = Moonread/Resources/ThirdPartyNotices.txt; sourceTree = SOURCE_ROOT; };
+F01800000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/AI/AIChatGPTTests.swift; sourceTree = SOURCE_ROOT; };
+F01800000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Providers/AIChatGPTAuth.swift; sourceTree = SOURCE_ROOT; };
+F14BDB0397FE4C25963665F6 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/CloudSchemaPreparationTests.swift; sourceTree = SOURCE_ROOT; };
+34534F38185344C984C886C4 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/Data/CloudSchemaPreparation.swift; sourceTree = SOURCE_ROOT; };
+3BE80CBCD8D744E1B33B2306 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/AI/AIDataSharingConsentTests.swift; sourceTree = SOURCE_ROOT; };
+AAE9AA532FE14842BCFEA016 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/App/AppLinks.swift; sourceTree = SOURCE_ROOT; };
+EC14CE0E00934BB682B83B4D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AIDataSharingConsentView.swift; sourceTree = SOURCE_ROOT; };
+5C7A519CEC4946EDB0957CC2 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Data/AIDataSharingConsent.swift; sourceTree = SOURCE_ROOT; };
+8C23901BA4E14CF6AA3F4140 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/AppStorePrivacyTests.swift; sourceTree = SOURCE_ROOT; };
+AP2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Moonread/PrivacyInfo.xcprivacy; sourceTree = SOURCE_ROOT; };
+        F01700000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/TipJarTests.swift; sourceTree = SOURCE_ROOT; };
+        F01700000000000000000004 = {isa = PBXFileReference; lastKnownFileType = text; path = Moonread/Settings/TipJar.storekit; sourceTree = SOURCE_ROOT; };
+        F01700000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/Settings/TipJar.swift; sourceTree = SOURCE_ROOT; };
+        F01600000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Onboarding.swift; sourceTree = "<group>"; };
+        AF2000000000000000000004 /* LibraryDrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDrop.swift; sourceTree = "<group>"; };
+        AF2000000000000000000005 /* LibraryDropTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDropTests.swift; sourceTree = "<group>"; };
+FB2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AINativeMarkdown.swift; sourceTree = SOURCE_ROOT; };
+FA2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Data/AIMessageRow.swift; sourceTree = SOURCE_ROOT; };
+FA2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AIMessageList.swift; sourceTree = SOURCE_ROOT; };
+E72000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AITurnView.swift; sourceTree = SOURCE_ROOT; };
+E72000000000000000000077 /* AIReadingMoon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AIReadingMoon.swift; sourceTree = SOURCE_ROOT; };
+E62000000000000000000077 /* AIReadingMoonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/AI/AIReadingMoonTests.swift; sourceTree = SOURCE_ROOT; };
+E62000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/AI/AIReadingToolsTests.swift; sourceTree = SOURCE_ROOT; };
+E62000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Agent/AIAgentCoordinator.swift; sourceTree = SOURCE_ROOT; };
+E62000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Tools/AIReadingTools.swift; sourceTree = SOURCE_ROOT; };
+E62000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/AI/AIAgentRuntimeTests.swift; sourceTree = SOURCE_ROOT; };
+E62000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Data/AIAgentStore.swift; sourceTree = SOURCE_ROOT; };
+E62000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Agent/AIAgentRuntime.swift; sourceTree = SOURCE_ROOT; };
+E62000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Agent/AIAgentTypes.swift; sourceTree = SOURCE_ROOT; };
+E52000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = text; path = Moonread/AI/LOBE-ICONS-LICENSE.txt; sourceTree = SOURCE_ROOT; };
+E52000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AIReadingEntry.swift; sourceTree = SOURCE_ROOT; };
+E52000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AIConnectionView.swift; sourceTree = SOURCE_ROOT; };
+E52000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AISettingsView.swift; sourceTree = SOURCE_ROOT; };
+E52000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Agent/AIModelSelection.swift; sourceTree = SOURCE_ROOT; };
+E52000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Data/AIConversationContent.swift; sourceTree = SOURCE_ROOT; };
+E52000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Providers/AIConnection.swift; sourceTree = SOURCE_ROOT; };
+E52000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Providers/AIProviderRequest.swift; sourceTree = SOURCE_ROOT; };
+E52000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Providers/AIConnectionService.swift; sourceTree = SOURCE_ROOT; };
+ D42000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Providers/AIModelCatalog.swift; sourceTree = SOURCE_ROOT; };
+ D42000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text.json; path = Moonread/AI/Providers/AIModelCatalog.json; sourceTree = SOURCE_ROOT; };
+D32000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AIModelPicker.swift; sourceTree = SOURCE_ROOT; };
+C22000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDataTests.swift; sourceTree = "<group>"; };
+C22000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserThemes.swift; sourceTree = "<group>"; };
+C22000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDataService.swift; sourceTree = "<group>"; };
+C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserData.swift; sourceTree = "<group>"; };
+        B14000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookMetadata.swift; sourceTree = "<group>"; };
+        B14000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookInformation.swift; sourceTree = "<group>"; };
+        B14000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSearch.swift; sourceTree = "<group>"; };
+        B12000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingStatistics.swift; sourceTree = "<group>"; };
+        B12000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsView.swift; sourceTree = "<group>"; };
+        B02000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSync.swift; sourceTree = "<group>"; };
+        B02000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudLibrary.swift; sourceTree = "<group>"; };
+        AF2000000000000000000003 /* LibraryCollection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryCollection.swift; sourceTree = "<group>"; };
+        AF2000000000000000000002 /* LibraryPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryPresentation.swift; sourceTree = "<group>"; };
+        AF2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text; path = Resources/WelcomeStory.txt; sourceTree = "<group>"; };
+        AE2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryService.swift; sourceTree = "<group>"; };
+        AE2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryActions.swift; sourceTree = "<group>"; };
+        AD2000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderBottomPanel.swift; sourceTree = "<group>"; };
+        AD2000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderChapters.swift; sourceTree = "<group>"; };
+        AD2000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingPreview.swift; sourceTree = "<group>"; };
+        AD2000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderProgress.swift; sourceTree = "<group>"; };
+        AD2000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderDeviceControls.swift; sourceTree = "<group>"; };
+        AD2000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderPreferences.swift; sourceTree = "<group>"; };
+        AD2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingTypography.swift; sourceTree = "<group>"; };
+        AD2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderBackNavigation.swift; sourceTree = "<group>"; };
+        AC2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+        AC2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+        AC2000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonView.swift; sourceTree = "<group>"; };
+        AC2000000000000000000077 /* MoonCharacter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonCharacter.swift; sourceTree = "<group>"; };
+        AC2000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+        AC2000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
+        AC2000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputFocus.swift; sourceTree = "<group>"; };
+		A20000000000000000000001 /* MoonreadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadApp.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* ReaderService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderService.swift; sourceTree = "<group>"; };
+		A20000000000000000000003 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
+		A20000000000000000000004 /* ReaderScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderScreen.swift; sourceTree = "<group>"; };
+		A20000000000000000000005 /* ReadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingView.swift; sourceTree = "<group>"; };
+		A20000000000000000000006 /* TextCoordinates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextCoordinates.swift; sourceTree = "<group>"; };
+		A20000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift"; sourceTree = SOURCE_ROOT; };
+		A20000000000000000000008 /* ../assets/icon/Moonread.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = ../assets/icon/Moonread.icon; sourceTree = SOURCE_ROOT; };
+		A20000000000000000000009 /* MoonreadUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadUITests.swift; sourceTree = "<group>"; };
+		A2000000000000000000000A /* Moonread.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Moonread.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A2000000000000000000000B /* MoonreadUITests-Runner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "MoonreadUITests-Runner.app"; path = MoonreadUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A2000000000000000000000C /* TextLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextLayoutTests.swift; sourceTree = "<group>"; };
+		A2000000000000000000000D /* MoonreadTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MoonreadTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A2000000000000000000000E /* Configuration.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Configuration.xcconfig; sourceTree = SOURCE_ROOT; };
+        AB2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderTools.swift; sourceTree = "<group>"; };
+        AB2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+D32000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Data/AIRepository.swift; sourceTree = SOURCE_ROOT; };
+D32000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Providers/AIAuth.swift; sourceTree = SOURCE_ROOT; };
+D32000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Providers/AITransport.swift; sourceTree = SOURCE_ROOT; };
+D32000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Agent/AIService.swift; sourceTree = SOURCE_ROOT; };
+D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AIConversationsView.swift; sourceTree = SOURCE_ROOT; };
+D32000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIStageOneTests.swift; sourceTree = "<group>";};
+F71000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Providers/AINativeCapabilities.swift; sourceTree = SOURCE_ROOT; };
+F71000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Data/AIImageStore.swift; sourceTree = SOURCE_ROOT; };
+F71000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Tools/AINativeTools.swift; sourceTree = SOURCE_ROOT; };
+F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Providers/AINativeExecutor.swift; sourceTree = SOURCE_ROOT; };
+		C0A538254DAE463BA4801DAB /* MoonreadDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadDelegate.swift; sourceTree = "<group>"; };
+		487CD594A7CA40ABB7A8AB0B /* LibraryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryModel.swift; sourceTree = "<group>"; };
+		86D90F0376D344A3842137FB /* ReaderSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSession.swift; sourceTree = "<group>"; };
+		DF76A57AADD0405FB7746D49 /* ReaderTitlePage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderTitlePage.swift; sourceTree = "<group>"; };
+		42742C82EEF942DE87A817BA /* CloudSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudSettingsView.swift; sourceTree = "<group>"; };
+		5CD01275239A4B0EA525197E /* CloudStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CloudStore.swift; sourceTree = "<group>"; };
+		BD79BB2926E04FA788D5DBB3 /* ReaderMessages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderMessages.swift; sourceTree = "<group>"; };
+		383CEB82D6324AC78C31EE40 /* AITaskSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/UI/AITaskSheet.swift"; sourceTree = SOURCE_ROOT; };
+		E8D536F47E57410DBB38F97B /* AIMetadataReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/UI/AIMetadataReviewView.swift"; sourceTree = SOURCE_ROOT; };
+		C1F3068431DF421C9ADE8A3A /* AICoverTaskView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/UI/AICoverTaskView.swift"; sourceTree = SOURCE_ROOT; };
+		D6C0BCCFD8354FFBA6D75F2E /* AIOrganizationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/UI/AIOrganizationView.swift"; sourceTree = SOURCE_ROOT; };
+		F105600A0A9D4A6FAE183AE9 /* AIProposalCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/UI/AIProposalCards.swift"; sourceTree = SOURCE_ROOT; };
+		2991034104424226ACA621E7 /* AITask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/Agent/AITask.swift"; sourceTree = SOURCE_ROOT; };
+		7D7959C9A0B549099FD007FB /* AIQuickTaskEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/UI/AIQuickTaskEntry.swift"; sourceTree = SOURCE_ROOT; };
+		A2117063F3A64081A7DB32FA /* AIQuickTaskResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/UI/AIQuickTaskResult.swift"; sourceTree = SOURCE_ROOT; };
+		C140582B21A04A6588F553EA /* AIProposals.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/Data/AIProposals.swift"; sourceTree = SOURCE_ROOT; };
+		6D0F3ACE8DCE4518AA4A8178 /* AIReadingReferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/Tools/AIReadingReferences.swift"; sourceTree = SOURCE_ROOT; };
+		5C7DC58DBE7F4DDB8E6A4CEA /* AIProposalReviews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/Data/AIProposalReviews.swift"; sourceTree = SOURCE_ROOT; };
+		7E617B7FF31E43C3A0B7C1AF /* AIProposalTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/Tools/AIProposalTools.swift"; sourceTree = SOURCE_ROOT; };
+		29CD035636154B598B211DC3 /* AIOrganization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/Tools/AIOrganization.swift"; sourceTree = SOURCE_ROOT; };
+		648898574D5A490398DF5331 /* AICoverImageFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/Providers/AICoverImageFetcher.swift"; sourceTree = SOURCE_ROOT; };
+		6E96BC33B1F24360B74F39AF /* AIFollowUpTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIFollowUpTests.swift"; sourceTree = SOURCE_ROOT; };
+		261A8A86E7F248BC959C51BC /* AITaskFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/Agent/AITaskFixtures.swift"; sourceTree = SOURCE_ROOT; };
+		97243FC88EB941CE8D7B8C5D /* AIResults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/Data/AIResults.swift"; sourceTree = SOURCE_ROOT; };
+		F7773498FC5E46E7B6D20EE9 /* AIRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIRepositoryTests.swift"; sourceTree = SOURCE_ROOT; };
+		63157555C51A4D79A42A3D88 /* AIReviewActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/Tools/AIReviewActions.swift"; sourceTree = SOURCE_ROOT; };
+		990DFFD80C6248E3A5BF832F /* ReaderOpening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderOpening.swift; sourceTree = "<group>"; };
+		BF08E0D9F8D042DA8E2DC265 /* ReaderOpenDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderOpenDiagnostics.swift; sourceTree = "<group>"; };
+		23A44BEF4C3D4FE0A71CCB03 /* ReaderOpenBenchmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderOpenBenchmark.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A40000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+D35000000000000000000006,D35000000000000000000007,D35000000000000000000008,FB1000000000000000000002,
+D35000000000000000000004,
+D35000000000000000000003,
+D35000000000000000000002,
+D35000000000000000000001,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A40000000000000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A40000000000000000000003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A50000000000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000000E /* Configuration.xcconfig */,
+				A50000000000000000000002 /* Moonread */,
+				A50000000000000000000003 /* MoonreadUITests */,
+				A50000000000000000000006 /* MoonreadTests */,
+				A50000000000000000000004 /* App Icon */,
+				A50000000000000000000005 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A50000000000000000000002 /* Moonread */ = {
+			isa = PBXGroup;
+			children = (
+F14BDB0397FE4C25963665F6,
+                8C23901BA4E14CF6AA3F4140,
+                AP2000000000000000000001,
+                OS2000000000000000000001,
+				C69F370A1A8A46EDAB23B47D /* App */,
+				F3866779E63B481A9D1A3C35 /* Library */,
+				C3B3BAC4053B4812B36460C3 /* Reader */,
+				1A6B151942FF4599AC7E10FD /* Books */,
+				204EB727B33D4FF6B1F4A5B7 /* Statistics */,
+				3076A470656A4497AB8E9918 /* Settings */,
+				C60318128F8C4F59B3C2CFB2 /* Data */,
+				91084535AE4B47EC9267324A /* Shared */,
+9F6D1A66493346438625C489 /* AI */,
+                AF2000000000000000000001,
+                AC2000000000000000000004,
+                AC2000000000000000000005,
+                AB2000000000000000000002,
+				A20000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift */,
+			);
+			path = Moonread;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000003 /* MoonreadUITests */ = {
+			isa = PBXGroup;
+			children = (
+                AAE9AA532FE14842BCFEA016,
+                EC14CE0E00934BB682B83B4D,
+                5C7A519CEC4946EDB0957CC2,
+A20000000000000000000009 /* MoonreadUITests.swift */,
+			);
+			path = MoonreadUITests;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000004 /* App Icon */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000008 /* ../assets/icon/Moonread.icon */,
+			);
+			name = "App Icon";
+			sourceTree = "<group>";
+		};
+		A50000000000000000000005 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A2000000000000000000000A /* Moonread.app */,
+				A2000000000000000000000B /* MoonreadUITests-Runner.app */,
+				A2000000000000000000000D /* MoonreadTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A50000000000000000000006 /* MoonreadTests */ = {
+			isa = PBXGroup;
+			children = (
+9CD5D1790E1F4ABF94A8E63F /* AI */,
+				A2000000000000000000000C /* TextLayoutTests.swift */,
+                AF2000000000000000000005 /* LibraryDropTests.swift */,
+                C22000000000000000000004,
+                F01700000000000000000006,
+			);
+			path = MoonreadTests;
+			sourceTree = "<group>";
+		};
+9F6D1A66493346438625C489 /* AI */ = {
+    isa = PBXGroup;
+    children = (
+                3BE80CBCD8D744E1B33B2306,
+				261A8A86E7F248BC959C51BC /* AITaskFixtures.swift */,
+				648898574D5A490398DF5331 /* AICoverImageFetcher.swift */,
+				29CD035636154B598B211DC3 /* AIOrganization.swift */,
+				7E617B7FF31E43C3A0B7C1AF /* AIProposalTools.swift */,
+				63157555C51A4D79A42A3D88 /* AIReviewActions.swift */,
+				5C7DC58DBE7F4DDB8E6A4CEA /* AIProposalReviews.swift */,
+				6D0F3ACE8DCE4518AA4A8178 /* AIReadingReferences.swift */,
+				C140582B21A04A6588F553EA /* AIProposals.swift */,
+				97243FC88EB941CE8D7B8C5D /* AIResults.swift */,
+				A2117063F3A64081A7DB32FA /* AIQuickTaskResult.swift */,
+				383CEB82D6324AC78C31EE40 /* AITaskSheet.swift */,
+				E8D536F47E57410DBB38F97B /* AIMetadataReviewView.swift */,
+				7D7959C9A0B549099FD007FB /* AIQuickTaskEntry.swift */,
+				F105600A0A9D4A6FAE183AE9 /* AIProposalCards.swift */,
+				2991034104424226ACA621E7 /* AITask.swift */,
+				D6C0BCCFD8354FFBA6D75F2E /* AIOrganizationView.swift */,
+				C1F3068431DF421C9ADE8A3A /* AICoverTaskView.swift */,E52000000000000000000009,E52000000000000000000001,E52000000000000000000002,E52000000000000000000003,E52000000000000000000004,E52000000000000000000005,E52000000000000000000006,E52000000000000000000007,E52000000000000000000008,D32000000000000000000007,F01800000000000000000002,D32000000000000000000001, D32000000000000000000002, D32000000000000000000003, FA2000000000000000000002, FA2000000000000000000001, FB2000000000000000000001, E72000000000000000000001, E72000000000000000000077, E62000000000000000000001,
+E62000000000000000000002,
+E62000000000000000000003,
+E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F71000000000000000000002,F71000000000000000000001,E62000000000000000000006,D32000000000000000000004, D32000000000000000000005,);
+    path = AI;
+    sourceTree = "<group>";
+};
+9CD5D1790E1F4ABF94A8E63F /* AI */ = {
+    isa = PBXGroup;
+    children = (
+				F7773498FC5E46E7B6D20EE9 /* AIRepositoryTests.swift */,
+				6E96BC33B1F24360B74F39AF /* AIFollowUpTests.swift */,E62000000000000000000077,E62000000000000000000004,E62000000000000000000007,F01800000000000000000004,D32000000000000000000006,);
+    path = AI;
+    sourceTree = "<group>";
+};
+		C69F370A1A8A46EDAB23B47D /* App */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000001 /* MoonreadApp.swift */,
+				C0A538254DAE463BA4801DAB /* MoonreadDelegate.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		F3866779E63B481A9D1A3C35 /* Library */ = {
+			isa = PBXGroup;
+			children = (
+				AE2000000000000000000002 /* LibraryActions.swift */,
+				AF2000000000000000000003 /* LibraryCollection.swift */,
+                AF2000000000000000000004 /* LibraryDrop.swift */,
+				AF2000000000000000000002 /* LibraryPresentation.swift */,
+				AE2000000000000000000001 /* LibraryService.swift */,
+				B02000000000000000000002 /* CloudLibrary.swift */,
+				B14000000000000000000003 /* AppSearch.swift */,
+				A20000000000000000000003 /* LibraryView.swift */,
+				487CD594A7CA40ABB7A8AB0B /* LibraryModel.swift */,
+			);
+			path = Library;
+			sourceTree = "<group>";
+		};
+		C3B3BAC4053B4812B36460C3 /* Reader */ = {
+			isa = PBXGroup;
+			children = (
+				506BFCABB0094501A5DAE5B4 /* Session */,
+				3EDE228F349A40A1B6107D28 /* UI */,
+				77D959CA16854893807FBC08 /* Rendering */,
+			);
+			path = Reader;
+			sourceTree = "<group>";
+		};
+		506BFCABB0094501A5DAE5B4 /* Session */ = {
+			isa = PBXGroup;
+			children = (
+				86D90F0376D344A3842137FB /* ReaderSession.swift */,
+				23A44BEF4C3D4FE0A71CCB03 /* ReaderOpenBenchmark.swift */,
+				BF08E0D9F8D042DA8E2DC265 /* ReaderOpenDiagnostics.swift */,
+				990DFFD80C6248E3A5BF832F /* ReaderOpening.swift */,
+			);
+			path = Session;
+			sourceTree = "<group>";
+		};
+		3EDE228F349A40A1B6107D28 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000004 /* ReaderScreen.swift */,
+				AD2000000000000000000001 /* ReaderBackNavigation.swift */,
+				AD2000000000000000000008 /* ReaderBottomPanel.swift */,
+				AD2000000000000000000006 /* ReaderChapters.swift */,
+				AD2000000000000000000005 /* ReaderProgress.swift */,
+				AB2000000000000000000001 /* ReaderTools.swift */,
+				DF76A57AADD0405FB7746D49 /* ReaderTitlePage.swift */,
+			);
+			path = UI;
+			sourceTree = "<group>";
+		};
+		77D959CA16854893807FBC08 /* Rendering */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000005 /* ReadingView.swift */,
+				AD2000000000000000000002 /* ReadingTypography.swift */,
+				A20000000000000000000006 /* TextCoordinates.swift */,
+				AD2000000000000000000004 /* ReaderDeviceControls.swift */,
+			);
+			path = Rendering;
+			sourceTree = "<group>";
+		};
+		1A6B151942FF4599AC7E10FD /* Books */ = {
+			isa = PBXGroup;
+			children = (
+				B14000000000000000000002 /* BookInformation.swift */,
+				B14000000000000000000001 /* BookMetadata.swift */,
+			);
+			path = Books;
+			sourceTree = "<group>";
+		};
+		204EB727B33D4FF6B1F4A5B7 /* Statistics */ = {
+			isa = PBXGroup;
+			children = (
+				B12000000000000000000002 /* StatisticsView.swift */,
+				B12000000000000000000001 /* ReadingStatistics.swift */,
+			);
+			path = Statistics;
+			sourceTree = "<group>";
+		};
+		3076A470656A4497AB8E9918 /* Settings */ = {
+			isa = PBXGroup;
+			children = (
+				AC2000000000000000000002 /* SettingsView.swift */,
+                F01600000000000000000002,
+                F01700000000000000000004,
+                F01700000000000000000002,
+				AD2000000000000000000003 /* ReaderPreferences.swift */,
+				AD2000000000000000000007 /* ReadingPreview.swift */,
+				42742C82EEF942DE87A817BA /* CloudSettingsView.swift */,
+				5CD01275239A4B0EA525197E /* CloudStore.swift */,
+			);
+			path = Settings;
+			sourceTree = "<group>";
+		};
+		C60318128F8C4F59B3C2CFB2 /* Data */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000002 /* ReaderService.swift */,
+				C22000000000000000000001 /* UserData.swift */,
+				C22000000000000000000002 /* UserDataService.swift */,
+34534F38185344C984C886C4,
+				C22000000000000000000003 /* UserThemes.swift */,
+				B02000000000000000000001 /* CloudSync.swift */,
+			);
+			path = Data;
+			sourceTree = "<group>";
+		};
+		91084535AE4B47EC9267324A /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				BD79BB2926E04FA788D5DBB3 /* ReaderMessages.swift */,
+				8083CE54D16F4728AFD46C1D /* Theme */,
+				6690B829BEF0465DA1786DB9 /* Components */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		8083CE54D16F4728AFD46C1D /* Theme */ = {
+			isa = PBXGroup;
+			children = (
+				AC2000000000000000000001 /* Theme.swift */,
+			);
+			path = Theme;
+			sourceTree = "<group>";
+		};
+		6690B829BEF0465DA1786DB9 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				AC2000000000000000000003 /* MoonView.swift */,
+				AC2000000000000000000077 /* MoonCharacter.swift */,
+				AC2000000000000000000006 /* InputFocus.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A80000000000000000000001 /* Moonread */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A70000000000000000000001 /* Build configuration list for PBXNativeTarget "Moonread" */;
+			buildPhases = (
+				A60000000000000000000001 /* Build Rust core and UniFFI bindings */,
+				A60000000000000000000002 /* Sources */,
+				A40000000000000000000001 /* Frameworks */,
+				A60000000000000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			packageProductDependencies = (D34000000000000000000001,D34000000000000000000002,D34000000000000000000003,D34000000000000000000004,D34000000000000000000006,D34000000000000000000007,D34000000000000000000008,FB4000000000000000000001);
+			name = Moonread;
+			productName = Moonread;
+			productReference = A2000000000000000000000A /* Moonread.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A80000000000000000000002 /* MoonreadUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A70000000000000000000002 /* Build configuration list for PBXNativeTarget "MoonreadUITests" */;
+			buildPhases = (
+				A60000000000000000000004 /* Sources */,
+				A40000000000000000000002 /* Frameworks */,
+				A60000000000000000000005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A30000000000000000000002 /* PBXTargetDependency */,
+			);
+			name = MoonreadUITests;
+			productName = MoonreadUITests;
+			productReference = A2000000000000000000000B /* MoonreadUITests-Runner.app */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		A80000000000000000000003 /* MoonreadTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A70000000000000000000004 /* Build configuration list for PBXNativeTarget "MoonreadTests" */;
+			buildPhases = (
+				A60000000000000000000006 /* Sources */,
+				A40000000000000000000003 /* Frameworks */,
+				A60000000000000000000007 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A30000000000000000000004 /* PBXTargetDependency */,
+			);
+			name = MoonreadTests;
+			productName = MoonreadTests;
+			productReference = A2000000000000000000000D /* MoonreadTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A90000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					A80000000000000000000001 = {
+						CreatedOnToolsVersion = 27.0;
+                        SystemCapabilities = {
+                            com.apple.iCloud = {enabled = 1;};
+                            com.apple.Push = {enabled = 1;};
+                            com.apple.BackgroundModes = {enabled = 1;};
+                        };
+					};
+					A80000000000000000000002 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = A80000000000000000000001;
+					};
+					A80000000000000000000003 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = A80000000000000000000001;
+					};
+				};
+			};
+			buildConfigurationList = A70000000000000000000003 /* Build configuration list for PBXProject "Moonread" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = "zh-Hans";
+			hasScannedForEncodings = 0;
+			knownRegions = (
+                "zh-Hans",
+				en,
+				Base,
+				zh_Hans,
+			);
+			mainGroup = A50000000000000000000001;
+			productRefGroup = A50000000000000000000005 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+            packageReferences = (AP3000000000000000000001,D33000000000000000000001,FB3000000000000000000001);
+			targets = (
+				A80000000000000000000001 /* Moonread */,
+				A80000000000000000000002 /* MoonreadUITests */,
+				A80000000000000000000003 /* MoonreadTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A60000000000000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+AP1000000000000000000001,
+OS1000000000000000000001,
+E51000000000000000000009,D41000000000000000000001,
+                F01700000000000000000003,
+                AF1000000000000000000001,
+				A10000000000000000000008 /* ../assets/icon/Moonread.icon in Resources */,
+                AC1000000000000000000004,
+                AC1000000000000000000005,
+                AB1000000000000000000002,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A60000000000000000000005 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+                F01700000000000000000007,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A60000000000000000000007 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+                F01700000000000000000008,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		A60000000000000000000001 /* Build Rust core and UniFFI bindings */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Build Rust core and UniFFI bindings";
+			outputPaths = (
+				"$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift",
+				"$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)/module.h",
+				"$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)/module.modulemap",
+				"$(MOONREAD_BINDGEN_LIBRARY)",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -eu\ncd \"${SRCROOT}/..\"\nexport CARGO_TARGET_DIR=\"${MOONREAD_CARGO_DIR}\"\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command cargo build --locked --package moonread-core --lib --profile \"${MOONREAD_CARGO_PROFILE}\" ${MOONREAD_RUST_TARGET_FLAGS}\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command cargo run --locked --package moonread-core --features cli --bin uniffi-bindgen -- generate --library \"${MOONREAD_BINDGEN_LIBRARY}\" --language swift --no-format --out-dir \"${MOONREAD_BINDINGS_DIR}\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A60000000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+0ADFA9A8F02748618B3B4BE9,
+CAA8B00EBC8041F6A299A6A5,
+B792EA92E8204EEDB7AA1450,
+0D6DDD171D15456388258FB6,
+                F01700000000000000000001,
+				1E29F78A7797494D83F655FD /* AITaskFixtures.swift */,
+				EB7E98AAB4874825854EC1ED /* AICoverImageFetcher.swift */,
+				29E8AF36983F4CF9BE988DE0 /* AIOrganization.swift */,
+				14F4DEFD709845FC8AAAEA7F /* AIProposalTools.swift */,
+				941D8F146D7A436D97BC6909 /* AIReviewActions.swift */,
+				6C0B92C59607479E88DB5F02 /* AIProposalReviews.swift */,
+				D24559353FE44FAC9E198202 /* AIReadingReferences.swift */,
+				19EEE1FEFFC94415B88046FB /* AIProposals.swift */,
+				19B30D2DE87E46ADA99B1F85 /* AIResults.swift */,
+				8E2BEFD2EFA643EDB23DD5BB /* AIQuickTaskResult.swift */,
+				B399C5AB3B2D4E7385E053AC /* AITaskSheet.swift */,
+				DC581CB64D964BDC81C14C4B /* AIMetadataReviewView.swift */,
+				E7470B2B8F69485A8E707336 /* AIQuickTaskEntry.swift */,
+				30F6A229000A407490C23F9F /* AIProposalCards.swift */,
+				FC214CA9EBE44016B1599D66 /* AITask.swift */,
+				FD370AAFD7A2432A9A005DA7 /* AIOrganizationView.swift */,
+				0BC015E32C5041118947402E /* AICoverTaskView.swift */,
+				3A96A876F24042AAA2FE29BC /* MoonreadDelegate.swift in Sources */,
+				9691E8B4840C4F38B899F26B /* LibraryModel.swift in Sources */,
+				D4FB0F4457504C4CA4DD4F73 /* ReaderSession.swift in Sources */,
+				338EBE51F11D4BDC98985D77 /* ReaderOpenBenchmark.swift in Sources */,
+				267C2529F2B14483B0424293 /* ReaderOpenDiagnostics.swift in Sources */,
+				7A278708BAB942A99014C0D3 /* ReaderOpening.swift in Sources */,
+				7A042EE51D614A828562A191 /* ReaderTitlePage.swift in Sources */,
+				29B55EBD38D34117AE72E079 /* CloudSettingsView.swift in Sources */,
+				DFA135AC4F9846958D6431FB /* CloudStore.swift in Sources */,
+				94D2EEC02FFF4BC08C9C7711 /* ReaderMessages.swift in Sources */,
+ D41000000000000000000002,
+D31000000000000000000005,E51000000000000000000001,E51000000000000000000002,E51000000000000000000003,E51000000000000000000004,E51000000000000000000005,E51000000000000000000006,E51000000000000000000007,E51000000000000000000008,D31000000000000000000007,
+FA1000000000000000000002,
+FA1000000000000000000001, FB1000000000000000000001,
+E71000000000000000000001,
+E71000000000000000000077,
+E61000000000000000000001,
+E61000000000000000000002,
+E61000000000000000000003,
+E61000000000000000000005,F72000000000000000000003,F72000000000000000000004,F72000000000000000000002,F72000000000000000000001,E61000000000000000000006,D31000000000000000000004,
+D31000000000000000000003,
+F01800000000000000000001,D31000000000000000000002,
+D31000000000000000000001,
+                B01000000000000000000001,
+                C21000000000000000000001,
+                C21000000000000000000002,
+                C21000000000000000000003,
+                B11000000000000000000001,
+                B11000000000000000000002,
+                B13000000000000000000001,
+                B13000000000000000000002,
+                B13000000000000000000003,
+                B01000000000000000000002,
+				A10000000000000000000001 /* MoonreadApp.swift in Sources */,
+                AC1000000000000000000001,
+                AC1000000000000000000002,
+                F01600000000000000000001,
+                AC1000000000000000000003,
+                AC1000000000000000000077,
+                AC1000000000000000000006,
+				A10000000000000000000002 /* ReaderService.swift in Sources */,
+				A10000000000000000000003 /* LibraryView.swift in Sources */,
+                AF1000000000000000000002 /* LibraryPresentation.swift in Sources */,
+                AF1000000000000000000003 /* LibraryCollection.swift in Sources */,
+                AF1000000000000000000004 /* LibraryDrop.swift in Sources */,
+				A10000000000000000000004 /* ReaderScreen.swift in Sources */,
+                AD1000000000000000000001,
+                AD1000000000000000000002,
+                AD1000000000000000000003,
+                AD1000000000000000000004,
+                AD1000000000000000000005,
+                AD1000000000000000000006,
+                AD1000000000000000000007,
+                AD1000000000000000000008,
+                AE1000000000000000000001,
+                AE1000000000000000000002,
+				A10000000000000000000005 /* ReadingView.swift in Sources */,
+				A10000000000000000000006 /* TextCoordinates.swift in Sources */,
+                AB1000000000000000000001,
+				A10000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A60000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000009 /* MoonreadUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A60000000000000000000006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+785244D6C1DB4AF6B15A8AA0,
+01800FD10FB1423B93ABB34E,
+5AEB90FA1BD147BDA6246668,
+				0824CF925F1146178BFD0FD1 /* AIRepositoryTests.swift */,
+				B2B2CB5D001B4F72BFAEBD3F /* AIFollowUpTests.swift */,
+				E61000000000000000000077 /* AIReadingMoonTests.swift */,
+E61000000000000000000004,E61000000000000000000007,F01800000000000000000003,D31000000000000000000006,
+				A1000000000000000000000A /* TextLayoutTests.swift in Sources */,
+                AF1000000000000000000005 /* LibraryDropTests.swift in Sources */,
+                C21000000000000000000004,
+                F01700000000000000000005,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A30000000000000000000002 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A80000000000000000000001 /* Moonread */;
+			targetProxy = A30000000000000000000001 /* PBXContainerItemProxy */;
+		};
+		A30000000000000000000004 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A80000000000000000000001 /* Moonread */;
+			targetProxy = A30000000000000000000003 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+
+/* Begin XCRemoteSwiftPackageReference section */
+AP3000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/Lakr233/Litext"; requirement = {kind = revision; revision = c1d74fe65557534e01301a58a8617fddc0e88992;};};
+FB3000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/Lakr233/MarkdownView"; requirement = {kind = exactVersion; version = 4.8.3;};};
+D33000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/suxiaoshao/swift-ai-sdk"; requirement = {kind = revision; revision = 9843cba7de6c2a0f1a042a4f3b1facc8af910a82;};};
+/* End XCRemoteSwiftPackageReference section */
+/* Begin XCSwiftPackageProductDependency section */
+FB4000000000000000000001 = {isa = XCSwiftPackageProductDependency; package = FB3000000000000000000001; productName = MarkdownView;};
+D34000000000000000000001 = {isa = XCSwiftPackageProductDependency; package = D33000000000000000000001; productName = SwiftAISDK;};
+D34000000000000000000002 = {isa = XCSwiftPackageProductDependency; package = D33000000000000000000001; productName = AISDKProvider;};
+D34000000000000000000003 = {isa = XCSwiftPackageProductDependency; package = D33000000000000000000001; productName = AISDKProviderUtils;};
+D34000000000000000000004 = {isa = XCSwiftPackageProductDependency; package = D33000000000000000000001; productName = OpenAIProvider;};
+D34000000000000000000006 = {isa = XCSwiftPackageProductDependency; package = D33000000000000000000001; productName = OpenAICompatibleProvider;};
+D34000000000000000000007 = {isa = XCSwiftPackageProductDependency; package = D33000000000000000000001; productName = AnthropicProvider;};
+D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33000000000000000000001; productName = GoogleProvider;};
+/* End XCSwiftPackageProductDependency section */
+
+/* Begin XCBuildConfiguration section */
+		AA0000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AA0000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		AA0000000000000000000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = Moonread;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CURRENT_PROJECT_VERSION = 2;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "月读";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+                    "-lsqlite3",
+					"$(inherited)",
+					"$(MOONREAD_CARGO_DIR)/$(MOONREAD_RUST_TARGET)/$(MOONREAD_CARGO_OUTPUT)/libmoonread_core.a",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.Moonread;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AA0000000000000000000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = Moonread;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CURRENT_PROJECT_VERSION = 2;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "月读";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchStoryboardName = LaunchScreen;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+                    "-lsqlite3",
+					"$(inherited)",
+					"$(MOONREAD_CARGO_DIR)/$(MOONREAD_RUST_TARGET)/$(MOONREAD_CARGO_OUTPUT)/libmoonread_core.a",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.Moonread;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		AA0000000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.MoonreadUITests;
+				CODE_SIGN_ENTITLEMENTS = "";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Moonread;
+			};
+			name = Debug;
+		};
+		AA0000000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.MoonreadUITests;
+				CODE_SIGN_ENTITLEMENTS = "";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Moonread;
+			};
+			name = Release;
+		};
+		AA0000000000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.MoonreadTests;
+				CODE_SIGN_ENTITLEMENTS = "";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Moonread.app/Moonread";
+			};
+			name = Debug;
+		};
+		AA0000000000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.MoonreadTests;
+				CODE_SIGN_ENTITLEMENTS = "";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_INCLUDE_PATHS = "$(SRCROOT)/../build/ios/Generated/$(CONFIGURATION)";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Moonread.app/Moonread";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A70000000000000000000001 /* Build configuration list for PBXNativeTarget "Moonread" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000003 /* Debug */,
+				AA0000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A70000000000000000000002 /* Build configuration list for PBXNativeTarget "MoonreadUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000005 /* Debug */,
+				AA0000000000000000000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A70000000000000000000003 /* Build configuration list for PBXProject "Moonread" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000001 /* Debug */,
+				AA0000000000000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A70000000000000000000004 /* Build configuration list for PBXNativeTarget "MoonreadTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000007 /* Debug */,
+				AA0000000000000000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = A90000000000000000000001 /* Project object */;
+}

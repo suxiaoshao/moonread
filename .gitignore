@@ -1,0 +1,23 @@
+# macOS
+.DS_Store
+
+# Xcode and Swift Package Manager
+DerivedData/
+build/
+docs/site/public/
+.build/
+xcuserdata/
+*.xcuserstate
+ios/LocalSigning.xcconfig
+
+# Rust build output
+target/
+
+# Local credentials
+.env
+.env.*
+!.env.example
+
+# Python caches from skill helpers
+__pycache__/
+*.py[cod]

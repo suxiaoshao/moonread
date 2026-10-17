@@ -1,0 +1,163 @@
+{
+  "fill": {
+    "linear-gradient": [
+      "srgb:0.16863,0.23922,0.47059,1.00000",
+      "srgb:0.05882,0.09020,0.21176,1.00000"
+    ],
+    "orientation": {
+      "start": {
+        "x": 0.5,
+        "y": 0.0
+      },
+      "stop": {
+        "x": 0.5,
+        "y": 1.0
+      }
+    }
+  },
+  "fill-specializations": [
+    {
+      "appearance": "dark",
+      "value": {
+        "linear-gradient": [
+          "srgb:0.09412,0.13333,0.24706,1.00000",
+          "srgb:0.02745,0.03922,0.09020,1.00000"
+        ],
+        "orientation": {
+          "start": {
+            "x": 0.5,
+            "y": 0.0
+          },
+          "stop": {
+            "x": 0.5,
+            "y": 1.0
+          }
+        }
+      }
+    }
+  ],
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name-specializations": [
+            {
+              "value": "night-pages.svg"
+            },
+            {
+              "appearance": "dark",
+              "value": "night-pages-dark.svg"
+            },
+            {
+              "appearance": "tinted",
+              "value": "night-pages-mono.svg"
+            }
+          ],
+          "name": "night-pages"
+        }
+      ],
+      "name": "Pages",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.4
+      }
+    },
+    {
+      "layers": [
+        {
+          "image-name-specializations": [
+            {
+              "value": "night-stack.svg"
+            },
+            {
+              "appearance": "dark",
+              "value": "night-stack-dark.svg"
+            },
+            {
+              "appearance": "tinted",
+              "value": "night-stack-mono.svg"
+            }
+          ],
+          "name": "night-stack"
+        }
+      ],
+      "name": "Stack",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.4
+      }
+    },
+    {
+      "layers": [
+        {
+          "image-name-specializations": [
+            {
+              "value": "night-moon.svg"
+            },
+            {
+              "appearance": "dark",
+              "value": "night-moon-dark.svg"
+            },
+            {
+              "appearance": "tinted",
+              "value": "night-moon-mono.svg"
+            }
+          ],
+          "name": "night-moon"
+        }
+      ],
+      "name": "Moon",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.4
+      }
+    },
+    {
+      "layers": [
+        {
+          "image-name-specializations": [
+            {
+              "value": "night-stars.svg"
+            },
+            {
+              "appearance": "dark",
+              "value": "night-stars-dark.svg"
+            },
+            {
+              "appearance": "tinted",
+              "value": "night-stars-mono.svg"
+            }
+          ],
+          "name": "night-stars"
+        }
+      ],
+      "name": "Stars",
+      "shadow": {
+        "kind": "neutral",
+        "opacity": 0.5
+      },
+      "translucency": {
+        "enabled": false,
+        "value": 0.4
+      }
+    }
+  ],
+  "supported-platforms": {
+    "circles": [
+      "watchOS"
+    ],
+    "squares": "shared"
+  }
+}

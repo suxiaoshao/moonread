@@ -1,0 +1,62 @@
+{% set item = page | default(value=section) -%}
+{% set lang = item.lang -%}
+<!doctype html>
+<html lang="{% if lang == 'zh' %}zh-Hans{% else %}en{% endif %}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#0f1736">
+<title>{% block title %}{{ item.title }}{% endblock %}</title>
+<meta name="description" content="{% block description %}{{ config.extra.lede | default(value=config.description) }}{% endblock %}">
+<link rel="icon" href="{{ get_url(path='favicon.png') }}">
+<link rel="apple-touch-icon" href="{{ get_url(path='apple-touch-icon.png') }}">
+{% for t in item.translations -%}
+<link rel="alternate" hreflang="{% if t.lang == 'zh' %}zh-Hans{% else %}en{% endif %}" href="{{ t.permalink }}">
+{% endfor -%}
+{% if item.lang == "zh" and item.path == "/" -%}
+<script>
+/* First visit to the default (Chinese) home: follow the browser language unless the visitor chose one. */
+try {
+  var chosen = localStorage.getItem("lang");
+  var prefersZh = (navigator.languages || [navigator.language]).some(function (l) { return /^zh\b/i.test(l); });
+  if (chosen === "en" || (!chosen && !prefersZh)) location.replace("{{ get_url(path='@/_index.md', lang='en') }}");
+} catch (e) {}
+</script>
+{% endif -%}
+<style>
+{% include "style.html" %}
+</style>
+</head>
+<body>
+<header class="sky">
+  <div class="wrap bar">
+    <a class="brand" href="{{ get_url(path='@/_index.md', lang=lang) }}">
+      <img src="{{ get_url(path='icon.png') }}" alt="" width="32" height="32">
+      <span>{% if lang == "zh" %}月读{% else %}Moonread{% endif %}</span>
+    </a>
+    <nav class="nav" aria-label="{% if lang == 'zh' %}站点导航{% else %}Site{% endif %}">
+      {% set privacy = get_url(path='@/privacy.md', lang=lang) -%}
+      {% set support = get_url(path='@/support.md', lang=lang) -%}
+      <a class="opt" href="{{ privacy }}"{% if item.permalink == privacy %} aria-current="page"{% endif %}>{{ trans(key="privacy", lang=lang) }}</a>
+      <a class="opt" href="{{ support }}"{% if item.permalink == support %} aria-current="page"{% endif %}>{{ trans(key="support", lang=lang) }}</a>
+      {% for t in item.translations %}{% if t.lang != lang %}<a class="lang" href="{{ t.permalink }}" onclick="try{localStorage.setItem('lang','{{ t.lang }}')}catch(e){}" hreflang="{{ t.lang }}" lang="{% if t.lang == 'zh' %}zh-Hans{% else %}en{% endif %}">{{ trans(key="switch", lang=lang) }}</a>{% endif %}{% endfor %}
+    </nav>
+  </div>
+  {% block sky %}{% endblock %}
+</header>
+<main class="wrap">
+{% block content %}{% endblock %}
+</main>
+<footer class="wrap">
+  <div class="row">
+    <span>© 2026 {{ config.extra.holder }}</span>
+    <span>
+      <a href="{{ get_url(path='@/privacy.md', lang=lang) }}">{{ trans(key="privacy", lang=lang) }}</a> ·
+      <a href="{{ get_url(path='@/support.md', lang=lang) }}">{{ trans(key="support", lang=lang) }}</a> ·
+      <a href="mailto:{{ config.extra.email }}">{{ config.extra.email }}</a>
+    </span>
+  </div>
+</footer>
+</body>
+</html>

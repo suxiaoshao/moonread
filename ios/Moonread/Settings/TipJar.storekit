@@ -1,0 +1,99 @@
+{
+  "identifier": "D8501764-A46C-4C28-8D3F-7D5C94679245",
+  "nonRenewingSubscriptions": [],
+  "products": [
+    {
+      "displayPrice": "0.29",
+      "familyShareable": false,
+      "internalID": "1000",
+      "localizations": [
+        {
+          "description": "一点小小的心意",
+          "displayName": "一颗星",
+          "locale": "zh_CN"
+        },
+        {
+          "description": "A small token of appreciation",
+          "displayName": "A Star",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dev.moonread.tip.star",
+      "referenceName": "一颗星",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "0.99",
+      "familyShareable": false,
+      "internalID": "1001",
+      "localizations": [
+        {
+          "description": "谢谢你读到这里",
+          "displayName": "一杯茶",
+          "locale": "zh_CN"
+        },
+        {
+          "description": "Thank you for reading this far",
+          "displayName": "A cup of tea",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dev.moonread.tip.tea",
+      "referenceName": "一杯茶",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "2.99",
+      "familyShareable": false,
+      "internalID": "1002",
+      "localizations": [
+        {
+          "description": "陪作者熬一个晚上",
+          "displayName": "一份夜宵",
+          "locale": "zh_CN"
+        },
+        {
+          "description": "Keep the author company for a late night",
+          "displayName": "A late-night snack",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dev.moonread.tip.snack",
+      "referenceName": "一份夜宵",
+      "type": "Consumable"
+    },
+    {
+      "displayPrice": "6.99",
+      "familyShareable": false,
+      "internalID": "1003",
+      "localizations": [
+        {
+          "description": "让月读继续写下去",
+          "displayName": "一本书",
+          "locale": "zh_CN"
+        },
+        {
+          "description": "Help Moonread keep going",
+          "displayName": "A book",
+          "locale": "en_US"
+        }
+      ],
+      "productID": "dev.moonread.tip.book",
+      "referenceName": "一本书",
+      "type": "Consumable"
+    }
+  ],
+  "settings": {
+    "_applicationInternalID": "",
+    "_developerTeamID": "",
+    "_failTransactionsEnabled": false,
+    "_locale": "zh_CN",
+    "_storefront": "USA",
+    "_storeKitErrors": []
+  },
+  "subscriptionGroups": [],
+  "version": {
+    "major": 3,
+    "minor": 0
+  }
+}

@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}{% if section.lang == "zh" %}月读 · {{ section.extra.tagline }}{% else %}Moonread · {{ section.extra.tagline }}{% endif %}{% endblock %}
+{% block description %}{{ section.extra.lede }}{% endblock %}
+{% block sky %}
+{% set zh = section.lang == "zh" %}
+<div class="wrap hero">
+  <img class="icon" src="{{ get_url(path='icon.png') }}" alt="{% if zh %}月读图标{% else %}Moonread icon{% endif %}" width="128" height="128">
+  <h1>{{ section.title }}</h1>
+  <p class="tagline">{{ section.extra.tagline }}</p>
+  <p class="lede">{{ section.extra.lede }}</p>
+  <span class="badge">{{ trans(key="soon", lang=section.lang) }}</span>
+</div>
+{% endblock %}
+{% block content %}
+{% set zh = section.lang == "zh" %}
+<ul class="features">
+  <li>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C10 5 7 4.5 4 5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5V5c-3-.5-6 0-8 1.5Z"/><path d="M12 6.5v13"/></svg>
+    <h3>{% if zh %}连续阅读{% else %}Read without breaks{% endif %}</h3>
+    <p>{% if zh %}分页或滚动，大文件边准备边显示，退出后回到原处。{% else %}Paged or scrolling. Large files open as they load, and you return to where you left off.{% endif %}</p>
+  </li>
+  <li>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/></svg>
+    <h3>{% if zh %}书架就是你的文件夹{% else %}Your folders are the shelf{% endif %}</h3>
+    <p>{% if zh %}本地或 iCloud 中的真实文件，月读不改写小说原文。{% else %}Real files on device or in iCloud. Moonread never rewrites your books.{% endif %}</p>
+  </li>
+  <li>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/></svg>
+    <h3>{% if zh %}为夜读调好的排版{% else %}Type tuned for night reading{% endif %}</h3>
+    <p>{% if zh %}字号、行距、段距和配色随你调整，浅色深色各有预设。{% else %}Adjust size, line and paragraph spacing, and colors, with light and dark presets.{% endif %}</p>
+  </li>
+  <li>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 14 9l5.5 2-5.5 2-2 5.5L10 13l-5.5-2L10 9Z"/></svg>
+    <h3>{% if zh %}可选的 AI 助手{% else %}Optional AI assistant{% endif %}</h3>
+    <p>{% if zh %}连接你自己选择的服务，第一次发送前会告诉你发什么、发给谁。{% else %}Connect a service you choose. Before anything is first shared, you see what goes where.{% endif %}</p>
+  </li>
+  <li>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4.5h11l3 3v12H5Z"/><path d="M8.5 10h7M8.5 13.5h7M8.5 17h4"/></svg>
+    <h3>{% if zh %}目录、搜索与批注{% else %}Contents, search, and notes{% endif %}</h3>
+    <p>{% if zh %}自动识别章节，全文搜索，书签、标注和批注随手留下。{% else %}Chapters are detected automatically. Search the whole book and keep bookmarks, highlights, and notes.{% endif %}</p>
+  </li>
+  <li>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19.5V11M10 19.5V5M15 19.5v-6M20 19.5V8.5"/></svg>
+    <h3>{% if zh %}阅读统计{% else %}Reading statistics{% endif %}</h3>
+    <p>{% if zh %}每天读了多久、读了哪些书，随时回看；记录只保存在你自己的设备和 iCloud。{% else %}See how long and what you read each day. Records stay on your devices and in your iCloud.{% endif %}</p>
+  </li>
+</ul>
+
+<section class="promise" aria-labelledby="promise-title">
+  <h2 id="promise-title">{% if zh %}你的书，只属于你{% else %}Your books stay yours{% endif %}</h2>
+  <ul>
+    <li>{% if zh %}不需要注册账号{% else %}No account required{% endif %}</li>
+    <li>{% if zh %}没有广告，不做跨应用追踪{% else %}No ads, no cross-app tracking{% endif %}</li>
+    <li>{% if zh %}没有自己的服务器：书和阅读记录只在你的设备和 iCloud{% else %}No servers of our own: books and reading data stay on your devices and in your iCloud{% endif %}</li>
+    <li>{% if zh %}AI 完全可选，第一次发送前先征得你的同意{% else %}AI is optional and asks before anything is first shared{% endif %}</li>
+  </ul>
+  <a href="{{ get_url(path='@/privacy.md', lang=section.lang) }}">{% if zh %}阅读隐私政策{% else %}Read the privacy policy{% endif %} ›</a>
+</section>
+
+<section class="faq" aria-labelledby="faq-title">
+  <h2 id="faq-title">{% if zh %}常见问题{% else %}FAQ{% endif %}</h2>
+  {% if zh %}
+    <details><summary>支持哪些格式？</summary><p>目前只支持 TXT。月读会自动识别常见编码和章节，不改写原文件。</p></details>
+    <details><summary>收费吗？</summary><p>免费，没有订阅，所有功能都能用。设置里有完全自愿的打赏，打赏不会解锁任何东西。</p></details>
+    <details><summary>AI 要付费吗？</summary><p>AI 是可选功能，使用你自己选择的服务和账户，费用和额度由该服务决定。不用 AI 也能正常阅读。</p></details>
+    <details><summary>换手机后书和进度还在吗？</summary><p>把小说放在“我的书架”并开启 iCloud Drive，文件会同步；在设置中开启阅读数据 iCloud 同步后，进度、书签和批注也会同步。</p></details>
+    <details><summary>支持 iPad 吗？</summary><p>支持 iPhone 和 iPad，需要 iOS 18 或更新版本。</p></details>
+  {% else %}
+    <details><summary>Which formats are supported?</summary><p>TXT only for now. Moonread detects common encodings and chapters and never rewrites your files.</p></details>
+    <details><summary>Does it cost anything?</summary><p>It is free with no subscription, and every feature is available. Settings include completely optional tips that unlock nothing.</p></details>
+    <details><summary>Does AI cost money?</summary><p>AI is optional and uses the service and account you choose, so pricing and quota come from that service. Reading works fine without it.</p></details>
+    <details><summary>Will my books and progress move to a new phone?</summary><p>Keep books in My Bookshelf with iCloud Drive on and the files sync. Turn on reading-data iCloud sync in Settings to sync positions, bookmarks, and notes too.</p></details>
+    <details><summary>Does it work on iPad?</summary><p>Yes, on iPhone and iPad running iOS 18 or later.</p></details>
+  {% endif %}
+</section>
+
+<div class="links">
+  <a class="card" href="{{ get_url(path='@/privacy.md', lang=section.lang) }}">
+    <div class="text"><strong>{{ trans(key="privacy", lang=section.lang) }}</strong><span>{{ trans(key="privacy_desc", lang=section.lang) }}</span></div>
+    <span class="chev" aria-hidden="true">›</span>
+  </a>
+  <a class="card" href="{{ get_url(path='@/support.md', lang=section.lang) }}">
+    <div class="text"><strong>{{ trans(key="support", lang=section.lang) }}</strong><span>{{ trans(key="support_desc", lang=section.lang) }}</span></div>
+    <span class="chev" aria-hidden="true">›</span>
+  </a>
+</div>
+{% endblock %}

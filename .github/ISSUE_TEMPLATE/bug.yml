@@ -1,0 +1,25 @@
+name: 问题反馈
+description: 记录可复现的问题及实际阅读体验
+labels: [bug]
+body:
+  - type: input
+    id: environment
+    attributes:
+      label: 设备与版本
+      placeholder: iPhone 型号、iOS 版本、App 版本或提交号
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 按实际操作顺序描述；相关时注明阅读模式、主题、文件来源。
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 实际表现与期望
+      description: 可以附截图或录屏；不要上传私人小说、密钥或签名信息。
+    validations:
+      required: true

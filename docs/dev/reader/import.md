@@ -1,0 +1,164 @@
+# 首次开书与渐进正文准备
+
+现状核对：2026-10-13。已实现首次 TXT 的渐进阅读，覆盖书架获取源文件、阅读页首批正文发布、后台处理、阅读窗口交接、暂停恢复和完成去重。Rust 负责文本与数据规则，Swift 负责平台文件授权、原生排版与交互。原文件只读。
+
+本文及文本核心中的 `import` 指**正文准备**：解码、规范化并保存正文块。书架的“导入小说”另负责复制原始 TXT 到内置真实目录，随后复用本管线；用户授权的外部目录直接复用同一阅读管线。术语见[数据与来源](../data/README.md#先统一术语)。
+
+## 阅读体验
+
+点击小说先在书架获取原文件。云端下载留在对应书目项显示可取消转圈；本地快速访问不闪 loading。文件可读后进入阅读页，快开直接显示内容，仅慢准备显示扉页；首批可见正文提交后接入完整阅读流，首次阅读仍停在封面，续读恢复正文位置。剩余内容在独立队列继续准备，既不占住阅读查询，也不阻止保存位置。
+
+| 状态 | 用户看到的内容 |
+| --- | --- |
+| 系统获取原文件 | 书架、搜索或最近阅读行上的可取消转圈；失败留在原页面 |
+| 确认编码、准备正文 | 快开用纸色承接后直接显示；慢准备按下文 300/800ms 门槛显示扉页和原生进度，可随时返回 |
+| 已有可读正文 | 默认沉浸阅读；顶部只有章节/书名、时间和电量 |
+| 正在处理后续内容 | 不常驻显示进度；展开工具后可查看正文准备进度或暂停 |
+| 读到准备边缘 | 顶部细栏提示后续内容准备中；末行完整可读，不把临时尾部当作全书结束 |
+| 暂停或失败 | 已提交正文和阅读位置保留；工具提供继续、重试或重新选择编码 |
+| 准备完成 | 全书阅读百分比出现；当前行、页面与选区保持稳定 |
+| 识别出已有小说 | 按最终 SHA 归入同书数据，当前会话不自动跳走；正式位置取最后更新，不保留跨设备备用位置 |
+
+阅读百分比只在全文完成后显示。源文件处理百分比属于“正文准备进度”，不会当作阅读进度，也不会随着正文追加让阅读百分比倒退。
+
+正文准备过程遵循[正文交互](reading.md)：默认沉浸、工具覆盖正文、选区优先，不因后台处理改变正在读的行。配色见[外观设计](../design/appearance.md)。
+
+## 数据契约
+
+实现位于 `crates/moonread-core/src/progressive.rs`；SQLite 的 `import_jobs` 和 `import_chapters` 保存正文准备状态与自动章节；人工目录覆盖独立保存。schema 版本见[当前存储](../data/README.md#当前实际存储)。每个文件的任务描述携带自身根授权与相对路径，不再依赖一个全局目录授权。开发阶段格式变化通过重装处理，不保留旧格式迁移。
+
+| 类型/字段 | 当前含义 |
+| --- | --- |
+| `ImportControl` | 稳定书籍/任务 ID、代次和独立原子取消标记 |
+| `ReadingSnapshot.book` | 当前可用文本的元数据；`byteCount`、`chunkCount` 在完成前表示已提交前缀 |
+| `hasStarted` | Rust 根据正式阅读活动判断是否从正文续读，区分封面与正文位置 0；隐藏最近阅读不重置此状态 |
+| `generation` | 每次继续准备递增，旧 worker 不能发布到新代次 |
+| `phase` | `Preparing / Importing / Finalizing / Complete / Paused / Failed` |
+| `canRead` | 已有可见正文；与是否完成分开表达 |
+| `sourceBytesRead / sourceByteCount` | 源文件处理进度，与规范 UTF-8 位置区分 |
+| `ReadingFrame` | 同一个短读事务内取得快照、邻近正文块及 `isEndOfBook` |
+
+新任务提前分配 UUID；内部 `pending:` 内容标识不会作为 SHA 暴露。完成后新内容原地成为正式书籍；若 SHA 已存在，任务映射到正式书籍，当前阅读会话 ID 保持稳定。`isEndOfBook` 只有在完成且窗口包含真正尾部时才成立。
+
+任务有明确的持有期：Swift 阅读会话持有 `ReadingLease`，后台 worker 也独立持有任务。两者均释放后，Rust 在事务中把文件引用转到正式内容，删除已完成的临时别名及任务行；正式正文、SHA 阅读数据不删除。首次导入产生的正式书籍只删除任务行。任务完成和会话释放只回收当前已转正且无 lease 的任务；全局 pending 恢复与 reclaim 在本地首页建立后启动一次，不放在首次阅读查询中。恢复前 pending 仍可查询，用户数据转正成功后才回收。
+
+Swift 按回收后仍存在的任务 ID 清理 `importSource` 授权描述和 `sourceDraft` 索引；即使进程在 SQLite 提交后、UserDefaults 清理前退出，下次仍能收尾。暂停、失败任务及尚未完成用户数据归属的任务保留，不能当作无用缓存删除。阅读页上方打开设置不会结束阅读持有期。 用户选择的解码策略保存在 `library_files.decoding`，独立于任务生命周期；回收任务后重开仍用该策略建立原始 SHA 快开键，扫描及应用内移动、重命名保留选择。
+
+规范化、书籍身份与位置定义统一见[架构与数据](../engineering/architecture.md#内容身份与位置)。源文件处理进度不作为阅读位置。
+
+## 流式管线与并行
+
+1. `LibraryModel.open` 调用 `ReaderService.prepareSourceFile`：独立队列取得 security scope 和 `NSFileCoordinator` 协调读取，等待提供方完成文件落地并验证可打开句柄。此时不创建 Rust import、不读取全文、不改变阅读记录。取消或导航离开后不再进入阅读。
+2. 就绪后进入 `.source` 路由并创建正文处理任务。工作队列重新协调读访问；原始 SHA 读取、探测、流式读取与字节复核和完成提交都在 accessor 生命周期内进行，最后才释放权限。书架预取不替代读取过程中的权限和字节校验。
+3. Rust 使用有界缓冲完成解码、规范化、SHA 和章节扫描。约 12 KiB 一个块，优先换行并保留完整扩展字素簇（含组合重音和 emoji ZWJ 序列）；尾部保留 lookahead，单个字素簇可延伸至 64 KiB，超限明确报错。首个可见块立即短事务提交，后续按约 128 KiB 或 80ms 批量提交。
+4. SQLite WAL 的独立只读连接提供快照和正文；串行写连接只在提交时占用，解码与源 I/O 不持有写锁。进度保存可在批次间完成。
+5. Swift 先读变更代次，再查询 snapshot/frame，随后等待该代次变化；快开就绪立即唤醒，准备时 150ms、其他监测状态 1000ms 超时只作兜底。新增内容远离当前窗口时不重读正文、不触发布局；退出取消监测。首次 snapshot/frame 共用一次单书不可变用户投影。
+6. 初次读取的完整原始 SHA 作为任务期望值；解码那一遍对实际输入字节同时计算 SHA，一致才进入 `Finalizing` 并发布 `Complete`。最终正文 SHA 决定新书或归并；完成时原子保存“原始 SHA + 解码策略 → 正文”映射，后续打开仍先完整哈希源文件。
+
+章节索引和累计非空白字符计数在同一遍扫描中增量持久化，与块内容在同一事务提交。块保存前后累计计数，章节保存起点与标题行结束计数；目录据此相减得到正文字符数，不反复扫描全文。暂停恢复重放时同时重建扫描器计数，仅提交尚未发布的索引；内部完整示例导入、重新识别目录也使用同一计数规则。没有旧缓存按需补索引的兼容路径。目录导航见[阅读工具](tools.md)。
+
+### 有限窗口也要读得连续
+
+后台增长远离当前正文时仅更新元数据；临近已准备边缘时才请求新正文。窗口预取、三块/四块预算、滚动基线保留和分页复用的共同规则见[有限窗口与稳定位置](reading.md#有限窗口与稳定位置)。全书完成不发送导航请求，也不把临时尾部误判为全书结束。
+
+## 编码、恢复和失败
+
+- 有 BOM 时选对应 UTF-8/UTF-16；无 BOM 时探测最多 32 KiB 的完整前缀，严格 UTF-8 不成立则选 GB18030。采样末尾的半个字符不当作错误。
+- 发布正文后锁定编码。后段遇到非法字节，保留已提交正文并显示失败；不静默插入替换字符或重写已读内容。编码菜单支持 UTF-8、GB18030/GBK、UTF-16 LE/BE；更换编码创建独立任务，不套用旧坐标。手选编码随本地任务保存。
+- 返回书架不取消后台准备。主动暂停会取消 Rust token 和文件协调；迅速点继续会等待旧 worker 退出后接续，避免请求被丢掉。
+- 进入后台保存位置并暂停活动任务；回到前台继续这些任务。用户主动暂停的任务保持暂停。系统结束进程后，运行态恢复为可继续的暂停态，缓存仍可读。
+- 恢复会从源头重新流式读取，重建解码器、SHA 和章节扫描状态，并逐块校验已缓存前缀、跳过重复写入。用户同时可读原缓存；尚未采用任意原始字节位置的断点续传。
+- 期望原始 SHA 变化或前缀不一致时停止拼接，保留旧任务、已读前缀、位置与标记；由用户显式“重新准备”才另开任务，不自动切走会话。应用内移动后按 file id 立即重绑来源，重启续读从索引重新解析；外部移动造成旧行失效则报源缺失。
+- 存储写入失败只丢弃未提交批次。状态本身也写不进去时，进程内保存失败状态，继续允许读取已提交正文；重启将未完成任务视为暂停。存储恢复后可继续。
+- 文件提供者可能先完整下载云端文件才交出 URL；平台阻塞的单次 I/O 也未必立即响应取消。这里保证取得可读源之后的渐进处理，不承诺云端边下载边读。
+
+## 去重与位置归属
+
+正文 SHA 相同关联同一份用户数据。准备中按任务 ID 保存到设备 SwiftData；完成后转入正式 SHA。正式位置仅取最后更新，不提供重复导入的备用位置选择。换编码重启导入时，新阅读会话继承原文件 ID；后续正式阅读保存的位置同时更新首选副本，最近阅读继续打开用户实际阅读的来源。当前会话保持眼前正文，远端或身份归并不自动跳走；临时查阅仍保护正式原点，会话内主动跳转历史保留。
+
+用户数据转入成功后才回收已完成任务。稳定候选/事实 ID 使转入重试不产生另一份批注或统计；进程中断后的当前格式任务仍能继续。开发旧格式直接卸载重装，不增加迁移或备份。
+
+## 验证与边界
+
+首屏先于 EOF 可读、导入期间查询/保存、暂停恢复、后段失败、去重与窗口交接已有回归，结果集中于[验证记录](../engineering/verification.md)。用户最长小说、旧系统、第三方文件提供方仍有未覆盖场景。
+
+目录、搜索、书签和批注已经接入已提交正文，按[阅读工具](tools.md)处理部分内容与正式版本映射；主题选择器与 AI 阅读工具均已接入；SwiftData 云同步已接入，跨设备交付仍待验证。
+
+章节特殊标题支持“番外一 标题”“番外二：标题”等编号后带分隔符的写法，按普通章处理；不将“番外一般……”等正文短句当作标题。此规则同时用于首次导入与重新识别目录。已缓存的旧自动目录可在目录菜单选择“重新识别目录”，无需修改小说原文。
+
+## 慢开书展示与会话契约
+
+页面上同一时刻只有三种状态：`blank`（阅读纸色底，什么都不显示）、`titlePage`（准备扉页）、`body`（正文）。状态由 ReaderScreen 在主线程串行裁决，不在 body 里重算时间。
+
+| 条件 | 表现 |
+| --- | --- |
+| 正文就绪，扉页还没显示过 | 直接显示正文。不淡入，不等 push 结束 |
+| 未就绪，且 push 还在进行，或距 `routeRequested` 不足 300ms | `blank`：内容区只有纸色背景；导航栏和返回能力保持现状 |
+| push 已结束且距 `routeRequested` ≥ 300ms，仍未就绪 | 显示准备扉页，扉页本身没有入场动画 |
+| 距 `routeRequested` ≥ 800ms，仍未就绪 | 扉页上同时出现进度、“正在准备正文”和暂停按钮 |
+| 扉页确实显示过，然后正文就绪 | 只在这条路径上用 200ms opacity 交叉淡入，作用于正文和扉页的局部切换，不放在根视图 |
+| 失败、已暂停 | 立即显示错误或继续按钮，不等门槛 |
+| 减弱动态效果 | 门槛相同，正文直接替换，不淡入 |
+
+计时规则：
+
+- `routeRequested` 在 `LibraryModel.open` push 前记录，随路由传给 ReaderScreen，不从 body 或 snapshot 更新重置。云下载期间的反馈仍留在书架条目上。
+- push 结束用 `NavigationTransitionObserver` 提供“出现完成”回调（transition coordinator 完成时，或者没有过渡时在 `viewDidAppear` 触发）。如果回调始终没来，以 ReaderScreen 的 `onAppear` 后一个过渡时长兜底，不能让等待反馈永远出不来。
+- ready 和 timer 在同一轮到达时，ready 优先。只有扉页真正提交展示过才允许淡入；“timer 触发了”不算“用户看到了”。
+- 首次阅读的正式书籍封面（`showingCover`）是另一回事，产品行为不变，记录时也与准备扉页分开。
+
+搜索、最近阅读、AI 等其他入口同样传 `routeRequested`；没有时间戳的入口以 ReaderScreen 首次 `task` 时间代替。
+
+### 就绪通知与生命周期
+
+**等待**
+- `waitForChange` 在 ReaderService actor 内同一段无 await 代码中复核代次并登记 waiter。每个 waiter 有独立 UUID；change、timeout、cancel 三条路径共用 take-and-remove，只有取到 continuation 的一方 resume，并取消对应的 timeout 任务。
+- onCancel 投递到 actor 处理，不直接碰字典。登记时再查 `Task.isCancelled`，返回后 `checkCancellation`。超时是普通唤醒，不算状态变更。
+- 同一本书可以有多个 lease 和 waiter，互不取消。代次计数至少活到对应 lease 和 waiter 释放，`importFinished`、回前台时不清零。
+- 这个“变更代次”与 Rust `ImportControl.generation`、阅读页 `openingAttemptID` 是三个不同的东西。
+
+**worker 通知**
+- SourceImportWork 使用 Sendable 事件闭包，用 Task 投递到 service，不在 NSFileCoordinator accessor 内等待 actor 或 MainActor。
+  - `reuseImport` 成功，以及 `finishImport` 成功：发 ready；
+  - typed 失败写入后：发 failed；
+  - defer 中：照常发 finished。
+- 事件携带原始 `control.bookId` 和 worker 实例 token；service 对照当前 work，丢弃旧 worker 晚到的消息。不用 canonical book id 替代当前 lease id，不广播 `readingDataChanged`。
+- 暂停信号在 failImport 之后发，继续信号在新 control 和 work 建立之后发；只登记了恢复请求、还没真正恢复时，不报告已恢复。
+
+**ready 与显示**
+- ready（称 `readingContentReady`）指 settings、有效 ReadingWindow、恢复 anchor 都已安装，不能用 `canRead` 或 `phase == complete` 代替。
+- 已有 window 后，准备中、暂停、失败都继续显示正文，走现有导入状态和错误入口，不切回准备扉页。正式书籍封面是 ReadingView 内部内容，测试不得强制 `showingCover = false`。
+- 每个异步 snapshot、frame 和计时器返回后，都要核对 `openingAttemptID`、`readingID`、Task 取消和 `isLeaving`。`refreshWindow` catch 同样过滤取消，避免旧任务给新任务写 error。回前台或继续时重启 monitor，旧 monitor 的 token 失效。
+- 裁决：
+  - ready 设置处同步裁决，不再投递 UI Task；
+  - 计时器触发时先看当前 window 和 settings；
+  - 状态只用两个截止时间和一个 push 标记；
+  - 800ms 的进度反馈也受“扉页允许显示”约束，push 超过 800ms 时仍遵守 blank 规则。
+- `placeholderShown` 必须有可执行定义：页面 active、window 可见、扉页内容仍挂载，并且已经得到一次 display-link 机会。单纯 timer 或 onAppear 不算。
+- 不使用根部 `.animation(value: session.window != nil)`，只对“扉页→正文”做局部显式动画，错误和控制栏不带进动画。如果为预布局挂了隐藏 renderer，同时禁用 AX、hitTesting 和 statisticsReadable，避免画面还是 blank 时就开始统计阅读。
+- inactive 或离页时取消显示计时器；交互式 pop 取消后留在原会话，不重开、不清空状态。
+
+**push 完成**
+- `NavigationTransitionObserver` 的出现回调：
+  - 找到 navigation 的直接子控制器，核实 transition 的 `.to` 是本 reader 的 destination；
+  - 从设置返回、取消 pop 等 appearance 不算初次 push 完成；
+  - completion 核对 cancelled、attempt，以及 destination 仍在栈上，单次幂等；
+  - `viewDidAppear` 作为幂等兜底。
+- observer 挂在稳定的页面根上，不随 blank/title/body 分支重建。
+- 缺信号时的 watchdog 记为不同 reason 的 fallback 事件，不标成 pushCompleted；进后台或离页时取消。不替换 UINavigationController delegate。
+
+**routeRequested**
+- reader 路由携带 `OpeningRequest`（唯一 attemptID、target、单调时钟 routeRequested），与 SourceFile 身份分开。
+- 在 `LibraryModel.open` 两个 push 分支中、通过 isCurrent/path 校验之后当场取时间。tap 时间在 `open` 同步入口另记。搜索、书架、最近阅读、导入后自动打开都走这个函数。
+- `BookInformation.swift` 的 `.reader(.book(id))`；DEBUG 设置入口直接构造 ReaderScreen 的，在首次 task 中初始化一次。不在 `LibraryDestination.body` 或 ReaderScreen 重建时生成时间戳，不用全局变量。
+- 页面内重新准备或失败重试算新 attempt，标记 navigationSettled，并重新计 300/800ms。设置返回、回前台不重置原 attempt。
+
+**诊断**
+- 状态机单测注入时钟和 ready 事件，精确验证 299/301、799/801 和同一轮到达的情况。
+- 集成测试在 SourceImportWork 开始协调读取前放一个可取消的延迟 gate，不阻塞 ReaderService 和 MainActor，也不延长文件协调的持有时间。按实际 ready 相对 routeRequested 的时间判断落在哪一档。取消 gate 后仍要执行 finished 清理。
+- 不借用 `--ui-test-download-progress`。
+- Release 测量用显式的 `READER_OPEN_DIAGNOSTICS` 编译条件；四组对照使用相同的埋点并标明变体；正式包关闭诊断。
+
+
+
+300ms 沿用局部反馈防闪烁的体验门槛；800ms 区分短准备与需要进度/暂停的长等待，均非系统规定或性能承诺。准备期间仍持续工作，不设最短展示时长。诊断方法与后续优化见[性能设计](../engineering/performance.md)。
