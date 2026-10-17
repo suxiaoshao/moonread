@@ -418,7 +418,7 @@ actor ReaderService {
                                          encoding: old.encoding, sourceKey: key, fileID: file.id)
                 sourceDefaults.set(try JSONEncoder().encode(moved), forKey: importSourceKey(previous))
             }
-            if state.phase == .paused { try resumeImport(previous) }
+            try resumeSystemInterruptedImport(previous)
             if trackReadingSource { readingSourceIDs[previous] = file.id }
             return retainReading(previous)
         }
@@ -458,6 +458,7 @@ actor ReaderService {
         if let bytes = sourceDefaults.data(forKey: importSourceKey(id)), let source = try? JSONDecoder().decode(ImportSource.self, from: bytes),
            let key = source.sourceKey, sourceDefaults.string(forKey: key) == id { sourceDefaults.removeObject(forKey: key) }
         sourceDefaults.removeObject(forKey: importSourceKey(id))
+        clearUserPausedImport(id)
         queryCache = queryCache.filter { !$0.key.hasPrefix("book-" + id + "-") }
         changeRevisions[id] = nil
     }
@@ -466,9 +467,15 @@ actor ReaderService {
         let remaining = Set(try core.reclaimCompletedImports(retainedBookIds: Array(Set(readers.keys).union(imports.keys).union(pendingPromotionIDs))))
         for id in Array(changeRevisions.keys) where !remaining.contains(id) && readers[id] == nil && imports[id] == nil && changeWaiters[id] == nil { changeRevisions[id] = nil }
         let sourcePrefix = importSourceKey("")
+        let pausePrefix = userPausedImportKey("")
         let draftPrefix = "Moonread.sourceDraft.\(testSession ?? "library")."
         for (key, value) in sourceDefaults.dictionaryRepresentation() {
-            if key.hasPrefix(sourcePrefix), !remaining.contains(String(key.dropFirst(sourcePrefix.count))) {
+            if key.hasPrefix(pausePrefix) {
+                let id = String(key.dropFirst(pausePrefix.count))
+                if !remaining.contains(id) || (try? core.importStatus(bookId: id).phase) == .complete {
+                    sourceDefaults.removeObject(forKey: key)
+                }
+            } else if key.hasPrefix(sourcePrefix), !remaining.contains(String(key.dropFirst(sourcePrefix.count))) {
                 sourceDefaults.removeObject(forKey: key)
             } else if key.hasPrefix(draftPrefix), let id = value as? String, !remaining.contains(id) {
                 sourceDefaults.removeObject(forKey: key)
@@ -514,12 +521,13 @@ actor ReaderService {
         imports[id] = nil
         let requested = requestedResumes.remove(id) != nil
         let automatic = automaticallyPaused.remove(id) != nil
-        if requested || automatic {
+        if (requested || automatic) && !isImportUserPaused(id) {
             if appActive { try? resumeImport(id) }
             else { automaticallyPaused.insert(id) }
         }
         if let core {
             if (try? core.importStatus(bookId: id).phase) == .complete {
+                clearUserPausedImport(id)
                 do { try await promoteUserData(id) }
                 catch { pendingPromotionIDs.insert(id) }
             }
@@ -544,7 +552,25 @@ actor ReaderService {
         }
     }
 
-    func pauseImport(_ id: String) {
+    // Device-only intent, independent of the cache schema and synced reading data.
+    private func userPausedImportKey(_ id: String) -> String {
+        "Moonread.importUserPaused.v1.\(testSession ?? "library").\(id)"
+    }
+    func isImportUserPaused(_ id: String) -> Bool {
+        sourceDefaults.bool(forKey: userPausedImportKey(id))
+    }
+    private func clearUserPausedImport(_ id: String) {
+        sourceDefaults.removeObject(forKey: userPausedImportKey(id))
+    }
+    private func resumeSystemInterruptedImport(_ id: String) throws {
+        guard !isImportUserPaused(id) else { return }
+        if try textCore().importStatus(bookId: id).phase == .paused { try resumeImport(id) }
+    }
+    enum ImportPauseReason { case user, system }
+    func pauseImport(_ id: String, reason: ImportPauseReason) {
+        if reason == .user, let state = try? textCore().importStatus(bookId: id), state.phase != .complete {
+            sourceDefaults.set(true, forKey: userPausedImportKey(id))
+        }
         requestedResumes.remove(id)
         automaticallyPaused.remove(id)
         guard let work = imports[id] else { return }
@@ -553,14 +579,14 @@ actor ReaderService {
         readingChanged(id)
     }
     func pauseFileImports(_ fileIDs: Set<String>) {
-        for (id, work) in imports where work.source.fileID.map(fileIDs.contains) == true { pauseImport(id) }
+        for (id, work) in imports where work.source.fileID.map(fileIDs.contains) == true { pauseImport(id, reason: .system) }
     }
     func pauseImports() {
         appActive = false
         for id in imports.keys {
             // A manually paused book stays paused after foregrounding.
             let wasActive = (try? textCore().importStatus(bookId: id)).map { [.preparing, .importing, .finalizing].contains($0.phase) } ?? false
-            pauseImport(id)
+            pauseImport(id, reason: .system)
             if wasActive { automaticallyPaused.insert(id) }
         }
     }
@@ -568,11 +594,12 @@ actor ReaderService {
         appActive = true
         for id in Array(automaticallyPaused) where imports[id] == nil {
             automaticallyPaused.remove(id)
-            try? resumeImport(id)
+            if !isImportUserPaused(id) { try? resumeImport(id) }
         }
     }
 
     func resumeImport(_ id: String) throws {
+        clearUserPausedImport(id)
         guard imports[id] == nil else {
             // File-provider cancellation can outlive the button tap. Keep the
             // request until that accessor releases its scope and worker exits.
@@ -613,7 +640,8 @@ actor ReaderService {
         try Task.checkCancellation()
         guard let data = sourceDefaults.data(forKey: importSourceKey(id)) else { throw CocoaError(.fileReadNoPermission) }
         let descriptor = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))
-        pauseImport(id)
+        clearUserPausedImport(id)
+        pauseImport(id, reason: .system)
         let next = try startImport(title: textCore().importStatus(bookId: id).text.title, descriptor: descriptor, encoding: encoding)
         if let fileID = descriptor.fileID { readingSourceIDs[next] = fileID }
         return retainReading(next)

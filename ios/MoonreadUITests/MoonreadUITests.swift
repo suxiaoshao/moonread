@@ -4347,12 +4347,28 @@ final class MoonreadUITests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
         app.launchArguments = ["--ui-testing", "--ui-test-session", UUID().uuidString, "--ui-test-progressive", "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"]
         app.launch()
+        // Reader preferences outlive the isolated import session. Start in the
+        // mode exercised below, rather than inherit another test's paged mode.
+        openSettingsPage()
+        app.buttons["readerThemeSettings"].tap()
+        app.segmentedControls["readerThemeTabs"].buttons["阅读控制"].tap()
+        let scrollMode = app.segmentedControls["readingMode"].buttons["上下滚动"]
+        XCTAssertTrue(scrollMode.waitForExistence(timeout: 5)); scrollMode.tap()
+        XCTAssertTrue(scrollMode.isSelected)
+        leaveReadingSettings()
+        app.navigationBars["设置"].buttons.firstMatch.tap()
         let shelf = app.buttons.containing(.staticText, identifier: "渐进导入测试").firstMatch
         XCTAssertTrue(shelf.waitForExistence(timeout: 15)); shelf.tap()
         let file = app.buttons.containing(.staticText, identifier: "月光下的归途").firstMatch
         XCTAssertTrue(file.waitForExistence(timeout: 15))
         let started = Date()
         file.tap()
+        XCTAssertTrue(element("readerCover").waitForExistence(timeout: 8))
+        let chapter = app.staticTexts["readingChapter"]
+        XCTAssertTrue(chapter.waitForExistence(timeout: 8))
+        XCTAssertEqual(chapter.label, "封面", "A first import opens on the cover before entering the body")
+        recordScreenshot("progressive-first-cover")
+        enterBodyFromCover()
         XCTAssertTrue(app.textViews["scrollText"].waitForExistence(timeout: 8))
         let elapsed = Date().timeIntervalSince(started)
         let timing = XCTAttachment(string: "首次正文显示（含 XCTest 点击等待）: \(elapsed)s")
@@ -4373,6 +4389,11 @@ final class MoonreadUITests: XCTestCase {
         XCTAssertGreaterThan(saved, 0)
         revealControls()
         app.buttons["继续"].tap()
+        XCTAssertTrue(app.buttons["暂停"].waitForExistence(timeout: 5))
+        // Keep a genuinely interrupted task for the later reopen/relaunch checks.
+        // Settings navigation can otherwise outlast the remaining import work.
+        app.buttons["暂停"].tap()
+        XCTAssertTrue(app.buttons["继续"].waitForExistence(timeout: 5))
         openReadingSettings()
         XCTAssertTrue(app.navigationBars["阅读设置"].waitForExistence(timeout: 5))
         app.segmentedControls["readerThemeTabs"].buttons["阅读控制"].tap()
@@ -4387,7 +4408,7 @@ final class MoonreadUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [advanced], timeout: 5), .completed)
         recordScreenshot("progressive-paged-reading")
         revealControls()
-        if app.buttons["暂停"].exists { app.buttons["暂停"].tap() }
+        XCTAssertTrue(app.buttons["继续"].exists, "The deliberately paused import must remain resumable before exit")
         let beforeExit = anchor()
         readerBackButton.tap()
         let reading = app.cells.containing(.staticText, identifier: "月光下的归途").firstMatch
@@ -4396,6 +4417,8 @@ final class MoonreadUITests: XCTestCase {
         XCTAssertTrue(app.textViews["pageText"].firstMatch.waitForExistence(timeout: 5))
         XCTAssertEqual(anchor(), beforeExit)
         recordScreenshot("progressive-restored-position")
+        revealControls()
+        XCTAssertTrue(app.buttons["继续"].waitForExistence(timeout: 5), "Reopening must retain the explicit pause")
         app.terminate()
         app.launch()
         let restored = app.cells.containing(.staticText, identifier: "月光下的归途").firstMatch
@@ -4410,6 +4433,12 @@ final class MoonreadUITests: XCTestCase {
         app.buttons["暂停"].tap()
         XCTAssertTrue(app.buttons["继续"].waitForExistence(timeout: 5))
         recordScreenshot("progressive-relaunched-controls")
+        app.buttons["继续"].tap()
+        XCTAssertTrue(element("importStatus").waitForNonExistence(timeout: 60), "The explicitly resumed source must finish")
+        XCTAssertFalse(app.buttons["继续"].exists)
+        XCTAssertFalse(app.buttons["暂停"].exists)
+        XCTAssertEqual(anchor(), beforeExit, "Finishing the import must preserve the saved reading position")
+        recordScreenshot("progressive-completed-position")
     }
 
     func testBothModesReflowAndRelaunchPreservePosition() {

@@ -2145,6 +2145,95 @@ final class TextLayoutTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: cloud.appendingPathComponent("book.txt")),Data("new unknown text".utf8))
     }
 
+    private func pausedSourceFixture() async throws -> (URL, ReaderService, ReaderCore, SourceFile, String, UserDefaults, String) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let local = root.appendingPathComponent("local")
+        try FileManager.default.createDirectory(at: local, withIntermediateDirectories: true)
+        let source = local.appendingPathComponent("book.txt")
+        try "第一章 月光\n这是暂停语义的原创合成正文。\n".write(to: source, atomically: true, encoding: .utf8)
+        let suite = "PauseIntent-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+        let service = ReaderService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
+        try await service.prepareLibrary(); try await service.scanLibraryShelf("builtin")
+        let entry = try XCTUnwrap(core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin").first)
+        let control = try core.createImport(title: "暂停语义样本"), id = control.bookId()
+        try core.streamImport(control: control, filePath: source.path,
+                              expectedRawSha256: CloudDocumentHandoff.bytesHash(source), encodingOverride: "UTF-8")
+        control.pause(); try core.failImport(control: control, error: .Paused)
+        try core.linkLibraryFile(fileId: entry.id, bookId: id)
+        let sourceKey = "Moonread.sourceDraft.library." + entry.id
+        let bookmark = try local.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+        let descriptor = ImportSource(rootBookmark: bookmark, relativePath: "book.txt", encoding: "UTF-8", sourceKey: sourceKey, fileID: entry.id)
+        defaults.set(try JSONEncoder().encode(descriptor), forKey: "Moonread.importSource.library." + id)
+        defaults.set(id, forKey: sourceKey)
+        return (root, service, core, entry.source, id, defaults, suite)
+    }
+
+    func testUserPausedImportStaysPausedAcrossReopenAndRestartUntilExplicitResume() async throws {
+        let (root, service, core, source, id, defaults, suite) = try await pausedSourceFixture()
+        defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        await service.pauseImport(id, reason: .user)
+        XCTAssertTrue(defaults.bool(forKey: "Moonread.importUserPaused.v1.library." + id))
+        await service.pauseImports(); await service.resumePausedImports()
+        let first = try await service.openSourceFile(source)
+        XCTAssertEqual(first.id, id)
+        XCTAssertEqual(try core.importStatus(bookId: id).phase, .paused)
+        let restartedCore = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+        let restarted = ReaderService(core: restartedCore, libraryDirectory: root.appendingPathComponent("local"), sourceDefaultsSuite: suite)
+        let reopened = try await restarted.openSourceFile(source)
+        XCTAssertEqual(reopened.id, id)
+        XCTAssertEqual(try restartedCore.importStatus(bookId: id).phase, .paused)
+        let running = await restarted.hasRunningImports; XCTAssertFalse(running)
+        try await restarted.resumeImport(id)
+        XCTAssertNil(defaults.object(forKey: "Moonread.importUserPaused.v1.library." + id))
+        try await restarted.waitForImportFinish(id)
+        XCTAssertEqual(try restartedCore.importStatus(bookId: id).phase, .complete)
+        withExtendedLifetime((first, reopened)) {}
+    }
+
+    func testSystemInterruptedImportAutomaticallyResumesOnReopen() async throws {
+        do {
+            let (root, _, _, source, id, defaults, suite) = try await pausedSourceFixture()
+            defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+            let restartedCore = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+            let restarted = ReaderService(core: restartedCore, libraryDirectory: root.appendingPathComponent("local"), sourceDefaultsSuite: suite)
+            let lease = try await restarted.openSourceFile(source)
+            XCTAssertEqual(lease.id, id)
+            try await restarted.waitForImportFinish(id)
+            XCTAssertEqual(try restartedCore.importStatus(bookId: id).phase, .complete)
+            XCTAssertNil(defaults.object(forKey: "Moonread.importUserPaused.v1.library." + id))
+            withExtendedLifetime(lease) {}
+        }
+    }
+
+    func testUserPauseMarkerClearsOnEncodingRestartAndCompletedReclamation() async throws {
+        let (root, service, core, source, id, defaults, suite) = try await pausedSourceFixture()
+        defer { defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        await service.pauseImport(id, reason: .user)
+        let lease = try await service.restartImport(id, encoding: "UTF-8")
+        XCTAssertNotEqual(lease.id, id)
+        XCTAssertNil(defaults.object(forKey: "Moonread.importUserPaused.v1.library." + id))
+        try await service.waitForImportFinish(lease.id)
+        XCTAssertEqual(try core.importStatus(bookId: lease.id).phase, .complete)
+        // Simulate a crash between completing the cache transaction and clearing
+        // the device-only flag. Startup reclamation must repair that residue.
+        let completedKey = "Moonread.importUserPaused.v1.library." + lease.id
+        defaults.set(true, forKey: completedKey)
+        let discardedKey = "Moonread.importUserPaused.v1.library.discarded-task"
+        defaults.set(true, forKey: discardedKey)
+        let other = try core.createImport(title: "另一本暂停样本")
+        await service.pauseImport(other.bookId(), reason: .user)
+        try await service.reclaimImports(core)
+        XCTAssertNil(defaults.object(forKey: completedKey))
+        XCTAssertNil(defaults.object(forKey: discardedKey))
+        XCTAssertTrue(defaults.bool(forKey: "Moonread.importUserPaused.v1.library." + other.bookId()))
+        let current = try await service.openSourceFile(source)
+        XCTAssertNotEqual(current.id, id)
+        try await service.waitForImportFinish(current.id)
+        withExtendedLifetime((lease, current)) {}
+    }
+
     func testPausedImportHandoffResumesAndPromotesPendingReadingData() async throws {
         for preparedPrefix in [false,true] {
         let fm = FileManager.default, root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
