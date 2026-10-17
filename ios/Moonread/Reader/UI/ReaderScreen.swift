@@ -1105,6 +1105,7 @@ struct ReaderEncodingMenu: View {
     var symbol: String? = nil
     let select: (String?) -> Void
     @State private var pendingEncoding: String?
+    @Environment(\.theme) private var theme
     var body: some View {
         Menu {
             Button("自动识别") { pendingEncoding = "auto" }
@@ -1120,11 +1121,17 @@ struct ReaderEncodingMenu: View {
                 if let symbol { Label(title, systemImage: symbol) } else { Text(title) }
                 if let value {
                     Spacer()
-                    Text(value).foregroundStyle(.secondary)
+                    HStack(spacing: 5) {
+                        Text(value)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .accessibilityHidden(true)
+                    }.foregroundStyle(Color(uiColor: theme.accent))
                 }
             }.contentShape(.rect)
         }
         .menuOrder(.fixed)
+        .accessibilityLabel(value.map { Text("文字编码，\($0)，可更换") } ?? Text(title))
         .accessibilityIdentifier("readerEncodingMenu")
         .alert("更换文字编码？", isPresented: Binding(get: { pendingEncoding != nil }, set: { if !$0 { pendingEncoding = nil } }), presenting: pendingEncoding) { encoding in
             Button("重新读取") { pendingEncoding = nil; select(encoding == "auto" ? nil : encoding) }

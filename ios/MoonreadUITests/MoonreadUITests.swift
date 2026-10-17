@@ -3117,6 +3117,7 @@ final class MoonreadUITests: XCTestCase {
             XCTAssertTrue(encoding.waitForExistence(timeout: 5), app.debugDescription)
             XCTAssertTrue(app.staticTexts["本书"].exists)
             XCTAssertTrue(encoding.label.contains("UTF-8"), encoding.label)
+            XCTAssertTrue(encoding.label.contains("可更换"), encoding.label)
             recordScreenshot("encoding-book-settings-" + name)
             encoding.tap()
             XCTAssertTrue(app.buttons["自动识别"].waitForExistence(timeout: 5))

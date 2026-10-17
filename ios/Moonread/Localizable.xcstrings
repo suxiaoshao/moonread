@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+  "文字编码，%@，可更换": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Text encoding, %@, can be changed"
+        }
+      }
+    }
+  },
   "本书": {
     "localizations": {
       "en": {
