@@ -16,6 +16,11 @@
           "description": "A small token of appreciation",
           "displayName": "A Star",
           "locale": "en_US"
+        },
+        {
+          "description": "一點小小的心意",
+          "displayName": "一顆星",
+          "locale": "zh_TW"
         }
       ],
       "productID": "dev.moonread.tip.star",
@@ -36,6 +41,11 @@
           "description": "Thank you for reading this far",
           "displayName": "A cup of tea",
           "locale": "en_US"
+        },
+        {
+          "description": "謝謝你讀到這裡",
+          "displayName": "一杯茶",
+          "locale": "zh_TW"
         }
       ],
       "productID": "dev.moonread.tip.tea",
@@ -56,6 +66,11 @@
           "description": "Keep the author company for a late night",
           "displayName": "A late-night snack",
           "locale": "en_US"
+        },
+        {
+          "description": "陪作者熬一個晚上",
+          "displayName": "一份夜宵",
+          "locale": "zh_TW"
         }
       ],
       "productID": "dev.moonread.tip.snack",
@@ -76,6 +91,11 @@
           "description": "Help Moonread keep going",
           "displayName": "A book",
           "locale": "en_US"
+        },
+        {
+          "description": "讓月讀繼續寫下去",
+          "displayName": "一本書",
+          "locale": "zh_TW"
         }
       ],
       "productID": "dev.moonread.tip.book",

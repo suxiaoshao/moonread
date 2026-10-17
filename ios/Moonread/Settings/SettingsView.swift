@@ -43,7 +43,7 @@ struct SettingsView: View {
             }.listRowBackground(Color(uiColor: theme.surface))
             Section("书架与同步") {
                 NavigationLink(value: LibraryRoute.manage) {
-                    SettingsEntry(title: "书架管理", symbol: "books.vertical", summary: String(localized: "\(library.shelves.count) 个"))
+                    SettingsEntry(title: "书架管理", symbol: "books.vertical", summary: String(localized: "\(library.shelves.count) 个书架"))
                 }.accessibilityIdentifier("libraryManagementSettings")
                 if CloudConfiguration.availableInBuild {
                     NavigationLink { CloudSettingsView() } label: {

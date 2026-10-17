@@ -1,6 +1,6 @@
 +++
 title = "Moonread Privacy Policy"
-date = 2026-10-16
+date = 2026-10-17
 [extra]
 kind = "privacy"
 +++
@@ -31,7 +31,7 @@ Tips are voluntary and unlock no features. Apple StoreKit processes payments. Mo
 
 ## Support and retention
 
-If you email us, we receive your address and the message or attachments you choose to send, for responding to your request. Remove passwords, verification codes, API keys, tokens, and unrelated private information first. Support information is kept only as needed to resolve the request and meet applicable obligations, then deleted when no longer needed. Local content remains until removed through the relevant controls or system cleanup. Cloud services, backups, and AI providers have separate retention rules. Uninstalling Moonread does not delete all cloud or third-party copies.
+When you choose to send feedback about an AI reply, the email includes the selected reply, app version, provider, and model. You can edit or cancel it before sending. If you email us, we receive your address and the message or attachments you choose to send, for responding to your request. Remove passwords, verification codes, API keys, tokens, and unrelated private information first. Support information is kept only as needed to resolve the request and meet applicable obligations, then deleted when no longer needed. Local content remains until removed through the relevant controls or system cleanup. Cloud services, backups, and AI providers have separate retention rules. Uninstalling Moonread does not delete all cloud or third-party copies.
 
 ## Your choices
 

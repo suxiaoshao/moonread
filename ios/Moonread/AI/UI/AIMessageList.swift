@@ -21,6 +21,7 @@ struct AIMessageList: UIViewControllerRepresentable {
     @Binding var atBottom: Bool
     let dismissKeyboard: () -> Void
     let content: AIMessageRowRenderer
+    @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.moonreadReduceMotion) private var reduceMotion
@@ -28,6 +29,7 @@ struct AIMessageList: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> AIMessageListController { AIMessageListController() }
     func updateUIViewController(_ controller: AIMessageListController, context: Context) {
         controller.conversation = conversation
+        controller.replyFeedback = { row in AIReplyFeedback(row: row, conversation: conversation, connections: ai.providers.connections) }
         controller.reportBottom = { atBottom = $0 }
         controller.dismissKeyboard = dismissKeyboard
         controller.update(rows: rows, render: content, background: background, bottomInset: bottomInset,
@@ -109,6 +111,8 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
     private struct Anchor { let id: String; let offset: CGFloat }
     private var render: AIMessageRowRenderer?
     weak var conversation: AIConversation?
+    var replyFeedback: ((AIMessageRow) -> AIReplyFeedback?)?
+    private let feedbackPresenter = AIReplyFeedbackPresenter()
     var reportBottom: ((Bool) -> Void)?
     var dismissKeyboard: (() -> Void)?
     private(set) var following = true
@@ -196,6 +200,20 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
     }
 
     private var anchoredTable: AIAnchoredTableView { tableView as! AIAnchoredTableView }
+
+    override func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        guard let id = source.itemIdentifier(for: indexPath), let row = rows[id],
+              let feedback = replyFeedback?(row), let theme = appearance?.theme else { return nil }
+        return UIContextMenuConfiguration(identifier: id as NSString, previewProvider: nil) { [weak self] _ in
+            UIMenu(children: [
+                UIAction(title: String(localized: "复制回复"), image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = feedback.text },
+                UIAction(title: String(localized: "反馈这条回复"), image: UIImage(systemName: "envelope")) { [weak self] _ in
+                    guard let self else { return }
+                    self.feedbackPresenter.present(feedback, from: self, theme: theme)
+                }
+            ])
+        }
+    }
 
     override func loadView() { tableView = AIAnchoredTableView(frame: .zero, style: .plain) }
     override func viewDidLoad() {

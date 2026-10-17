@@ -3,6 +3,113 @@ import SQLite3
 @testable import Moonread
 
 final class AppStorePrivacyTests: XCTestCase {
+    func testLocalizedAppAndContainerNamesAndEncryptionExemption() throws {
+        XCTAssertEqual(Bundle.main.object(forInfoDictionaryKey: "ITSAppUsesNonExemptEncryption") as? Bool, false)
+        for (language, name) in [("en", "Moonread"), ("zh-Hans", "月读"), ("zh-Hant", "月讀")] {
+            let path = try XCTUnwrap(Bundle.main.path(forResource: "InfoPlist", ofType: "strings", inDirectory: nil, forLocalization: language))
+            let values = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: URL(fileURLWithPath: path)), format: nil) as? [String: String])
+            XCTAssertEqual(values["CFBundleDisplayName"], name)
+            XCTAssertEqual(values["NSUbiquitousContainerName"], name)
+        }
+    }
+
+    func testTraditionalChineseCatalogMatchesEnglishAndUsesTaiwanTerms() throws {
+        func strings(_ language: String) throws -> [String: String] {
+            let path = try XCTUnwrap(Bundle.main.path(forResource: "Localizable", ofType: "strings", inDirectory: nil, forLocalization: language))
+            return try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: URL(fileURLWithPath: path)), format: nil) as? [String: String])
+        }
+        let en = try strings("en"), tw = try strings("zh-Hant")
+        func keys(_ language: String, plain: [String: String]) throws -> Set<String> {
+            var result = Set(plain.keys)
+            if let path = Bundle.main.path(forResource: "Localizable", ofType: "stringsdict", inDirectory: nil, forLocalization: language) {
+                let plural = try XCTUnwrap(PropertyListSerialization.propertyList(from: Data(contentsOf: URL(fileURLWithPath: path)), format: nil) as? [String: Any])
+                result.formUnion(plural.keys)
+            }
+            return result
+        }
+        XCTAssertEqual(try keys("zh-Hant", plain: tw), try keys("en", plain: en))
+        for (key, expected) in [
+            ("设置", "設定"), ("文件夹", "資料夾"), ("导入小说", "匯入小說"), ("拷贝", "複製"),
+            ("阅读设置", "閱讀設定"), ("反馈这条回复", "回饋這則回覆"),
+            ("同名项目", "同名項目"), ("选择项目", "選擇項目"),
+            ("本批中有项目所在位置不支持最近删除，删除后无法恢复。", "本批中有項目所在位置不支援最近刪除，刪除後無法恢復。"),
+            ("永久删除这些项目", "永久刪除這些項目"),
+            ("查看并应用", "檢視並套用"), ("应用所选 (%lld)", "套用所選 (%lld)"),
+            ("确认应用", "確認套用"), ("应用外观", "應用程式外觀"),
+            ("应用 %lld 项更改", "套用 %lld 項更改"), ("已应用的修改会保留。", "已套用的修改會保留。"),
+            ("已应用", "已套用"), ("应用", "套用"), ("正在应用目录", "正在套用目錄"), ("应用目录", "套用目錄"),
+            ("跟随应用", "跟隨應用程式"),
+            ("ChatGPT 账户", "ChatGPT 帳戶"), ("账户登录", "帳戶登入"),
+            ("自定义", "自訂"), ("默认文本模型", "預設文字模型"), ("流式回复", "串流回覆"),
+            ("当前", "目前"), ("文件信息", "檔案資訊")
+        ] {
+            XCTAssertEqual(tw[key], expected)
+        }
+        for value in tw.values {
+            for forbidden in ["賬", "默認", "登錄", "網絡", "屏幕", "菜單", "緩存", "許可權", "自定義"] {
+                XCTAssertFalse(value.contains(forbidden), "Unexpected Taiwan term \(forbidden): \(value)")
+            }
+        }
+        let pattern = try NSRegularExpression(pattern: #"%([0-9]+\$)?[-+0-9.]*([a-zA-Z@]+)"#)
+        func formats(_ text: String) -> [String] { pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)).map { (text as NSString).substring(with: $0.range(at: 2)) }.sorted() }
+        for (key, value) in en { XCTAssertEqual(formats(tw[key] ?? ""), formats(value), "Format mismatch: \(key)") }
+    }
+
+    @MainActor func testReplyFeedbackContainsOnlySelectedTextAndRequestIdentity() async throws {
+        let repository = try await AIRepository.open(inMemory: true)
+        let row = AISessionValue(title: "Private conversation title")
+        try await repository.create(row)
+        let conversation = AIConversation(row)
+        var connection = AIProviderPreset.all.first!.connection(); connection.name = "Selected Provider"
+        connection.models = [AIModelOption(id: "selected-model", name: "Readable Model", thinking: [])]
+        let turn = "selected-turn"
+        let old = AIAgentEntry(sequence: 0, turn: "other", provider: "other", model: "other-model", message: .object(["role": .string("assistant"), "content": .object(["value": .string("Do not include other replies")])]))
+        let answer = AIAgentEntry(sequence: 1, turn: turn, provider: connection.id + ":fixture", model: "selected-model", message: .object(["role": .string("assistant"), "content": .object(["value": .string("Selected reply")])]), outcome: .completed)
+        conversation.mergeEntries([old, answer])
+        let selected = AIMessageRow(id: turn + "/actions", turnID: turn, content: .actions("Selected reply", .completed))
+        let feedback = try XCTUnwrap(AIReplyFeedback(row: selected, conversation: conversation, connections: [connection]))
+        XCTAssertEqual(feedback.recipient, AppLinks.supportEmail)
+        XCTAssertEqual(feedback.provider, connection.name); XCTAssertEqual(feedback.model, "Readable Model")
+        XCTAssertEqual(feedback.text, "Selected reply"); XCTAssertFalse(feedback.version.isEmpty)
+        XCTAssertTrue(feedback.body.contains("Selected reply")); XCTAssertFalse(feedback.body.contains("Do not include other replies"))
+        XCTAssertFalse(feedback.body.contains(row.title)); XCTAssertFalse(feedback.body.contains(connection.credentialReference))
+        XCTAssertTrue(feedback.copyText.contains(AppLinks.supportEmail))
+        let removed = try XCTUnwrap(AIReplyFeedback(row: selected, conversation: conversation, connections: []))
+        XCTAssertEqual(removed.provider, String(localized: "已删除的连接"))
+        XCTAssertEqual(removed.model, answer.model)
+        XCTAssertFalse(removed.body.contains(connection.id))
+        XCTAssertNil(AIReplyFeedback(row: .init(id: "user", turnID: turn, content: .user(answer)), conversation: conversation, connections: [connection]))
+    }
+
+    @MainActor func testReplyFeedbackPrefersSystemComposer() async {
+        let feedback = AIReplyFeedback(provider: "Provider", model: "Model", text: "Synthetic reply")
+        var opened = false
+        let route = await AIReplyFeedbackDelivery.route(feedback, canCompose: true) { _ in opened = true; return true }
+        XCTAssertEqual(route, .composer); XCTAssertFalse(opened)
+    }
+
+    @MainActor func testReplyFeedbackOpensDefaultMailAppWithEncodedFields() async throws {
+        let feedback = AIReplyFeedback(provider: "Provider", model: "Model", text: "Synthetic + & ? # 漢字\nnext line", version: "1.0 (2)")
+        var opened: [URL] = []
+        let route = await AIReplyFeedbackDelivery.route(feedback, canCompose: false) { opened.append($0); return true }
+        XCTAssertEqual(route, .defaultMailApp); XCTAssertEqual(opened.count, 1)
+        let url = try XCTUnwrap(opened.first)
+        let parts = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(parts.scheme, "mailto"); XCTAssertEqual(parts.path, feedback.recipient)
+        let query = Dictionary(uniqueKeysWithValues: (parts.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+        XCTAssertEqual(query["subject"], feedback.subject); XCTAssertEqual(query["body"], feedback.body)
+        XCTAssertTrue(url.absoluteString.contains("%2B")); XCTAssertTrue(url.absoluteString.contains("%26"))
+        XCTAssertTrue(url.absoluteString.contains("%0A")); XCTAssertFalse(url.absoluteString.contains("\n"))
+    }
+
+    @MainActor func testReplyFeedbackFallsBackOnlyAfterDefaultMailAppRefuses() async {
+        let feedback = AIReplyFeedback(provider: "Provider", model: "Model", text: "Synthetic reply")
+        var attempts = 0
+        let route = await AIReplyFeedbackDelivery.route(feedback, canCompose: false) { _ in attempts += 1; return false }
+        XCTAssertEqual(route, .copyFallback); XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(feedback.copyText, "\(feedback.recipient)\n\(feedback.subject)\n\n\(feedback.body)")
+    }
+
     func testThirdPartyNoticesAreBundledIncludingFontsAndMPL() throws {
         let url = try XCTUnwrap(Bundle.main.url(forResource: "ThirdPartyNotices", withExtension: "txt"))
         let text = try String(contentsOf: url, encoding: .utf8)

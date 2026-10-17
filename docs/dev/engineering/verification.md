@@ -2,6 +2,22 @@
 
 更新：2026-10-17。本文按能力保存必要证据与未覆盖范围，不作逐轮修改日志。表中结果来自各次受影响回归，不能解释为当前版本在所有设备上完成了全量验收。
 
+## 2026-10-17 台湾繁体、英文补齐与回复反馈
+
+`Localizable.xcstrings` 全部 1143 个条目具备英文与台湾繁体翻译。原有 1031 个条目以 OpenCC `s2twp` 转换，再抽查設定／檔案／資料夾／字型／匯入／複製／回饋等用语；巡检和编译器提取补齐 112 个键（含反馈、书架标题／数量、阅读工具、AI 连接及动态队列文案），保留英语数量单复数。移除“联网搜索”“图片生成”两处重复源键并保留原来实际生效的值，整理前后 JSON 语义一致。编译器提取只剩空串及 `full/half/compact` 测试诊断值未进入翻译目录，随包繁体资源与源目录逐项相同；核对摘要为 `build/Localization/catalog-audit.json`。
+
+InfoPlist 三语随包资源分别使用 Moonread／月讀／月读，覆盖 App 与 iCloud 容器显示名；清除重复的 `zh_Hans` 工程地区，新增 `zh-Hant`。`ITSAppUsesNonExemptEncryption` 为 false。本地 StoreKit 配置也补齐 `zh_TW` 商品名称与说明，未操作 App Store Connect 元数据。
+
+已结束回复的文本／操作栏提供长按菜单“反馈这条回复”。使用该块的持久化请求标识生成邮件，包含当前 App 版本、服务商、模型与所选回复，排除其他回复、会话标题和凭据；原生邮件撰写器可用时交给系统编辑／发送；否则先用编码后的 `mailto:` 打开默认邮件 App，打开失败才提供收件人／主题／正文三项可独立复制以及“复制全部”的备用页。没有自动发送，也不向 AI 服务发送反馈。隐私政策、帮助页中英文补充所选回复披露并更新日期为 2026-10-17。CloudKit 检查清单只补充 DEBUG 初始化结果的日志／Console 确认方法，无初始化代码改动。
+
+Nix + Xcode 模拟器 Debug 构建、8 项 AppStorePrivacyTests 与 4 个受影响 UI 用例通过：英文／繁体主要页面，三语长按反馈与复制替代内容、英繁三条 TipKit 提示、既有过程整行展开。测试语言与地区参数为 en/en_US、zh-Hant/zh_TW，另覆盖简体反馈；书籍、会话正文和用户连接名称按内容保留，不转换。主回归 `build/Localization/verified.log/.xcresult`，提示与调整后的反馈页复跑 `tips-feedback.log/.xcresult`，网站 Zola 构建 `site.log`。截图已目视核对：`screens/overview-en.png`、`overview-hant.png`、`overview-onboarding.png`、`overview-feedback.png`，其余完整页面均在 `build/Localization/screens/`。`git diff --check` 与 plist 语法检查通过。未操作真机或账号凭据；模拟器无邮件账户，系统邮件实际编辑／投递与真实 iCloud Files 容器显示名未实测，不将随包资源核对当作这两项的真机验收。
+
+打赏商品行按 Dynamic Type 分布局：标准字号保留左侧名称／说明、右侧垂直居中的价格；辅助功能字号改为上方全宽名称／说明、下方左对齐价格，不缩小字体。英文设置及相关导航／行标题统一 Title Case，说明句保持原文；智能首行缩进值缩短为 `Smart, 2 chars`。英文标题／缩进值与购买重启的前轮证据为 `build/Localization/review-layout.log/.xcresult`，最终英文资源构建与 8 项 AppStorePrivacyTests 为 `review-catalog.log/.xcresult`。标准字号总览与英文设置见 `build/Localization/review-screens/overview-review-english.png`。 三语标准字号与 AX XL 共 24 组商品位置断言通过：标准字号右侧居中，AX 价格在文字下方左对齐、文字字形包络占卡片多数宽度（无障碍字形包络与全宽布局框区分）。最终布局用例为 `build/Localization/review-ax-stacked-final.log/.xcresult`；本轮购买与重启回归通过，见 `review-ax-stacked.log/.xcresult`。AX 深色三语截图位于 `build/Localization/ax-stacked-screens/`，`overview-ax-dark.png` 已目视核对，夜宵名称与说明没有被价格挤成窄列。
+
+逐条核对繁体 `專案` 的使用处：AI 文件整理冲突标签“同名項目”、书架菜单“選擇項目”、永久删除警告“本批中有項目所在位置不支援最近刪除，刪除後無法恢復。”、批次按钮“永久刪除這些項目”。这四处均指文件／资料夹条目，已改为 `項目`，没有 project 语境需要保留；随包繁体资源测试增加四项精确用词断言；最终 Debug 构建与 8 项 AppStorePrivacyTests 通过，证据为 `build/Localization/review-taiwan-terms.log/.xcresult`。
+
+繁体系统清查覆盖应用动词与 App 名词、帐号字形及指定大陆词形，并按语境修正 86 个既有条目：9 处“套用”动词、帳戶／帳號，以及權限／設定／目前／自訂／文字／串流等。名词“應用程式”和 metadata 的“資訊”保留，聊天消息仍用“訊息”；逐条改动、未命中词形及保留理由见 `build/Localization/hant-terms.md`。 11 项 AppStorePrivacyTests 与三语反馈菜单／备用页 UI 用例通过，三条邮件路由采用可控的原生撰写器能力与 URL 打开结果注入覆盖，另验证 Unicode、换行及 `+ & ? #` 的 URL 编码往返；UI 用例覆盖三字段独立复制与复制全部，证据为 `build/Localization/feedback-mail-terms.log/.xcresult`。新增完整动词与名词对照断言后再跑资源单测，最终证据为 `feedback-mail-terms-final.log/.xcresult`。三语备用页及逐项已复制状态总览为 `build/Localization/feedback-mail-screens/overview-three-languages.png`，已目视核对。模拟器无真实邮件账户，路由注入测试不等同真实默认邮件 App 或系统邮件的投递验收。反馈中已删除连接显示本地化“已删除的连接”，不展示内部 UUID，不改持久化格式；连接存在时使用连接及模型可读名称。
+
 ## 2026-10-17 主页面统一设置入口
 
 书架、统计与 AI 开启时的对话首页，右上角共用 `AppSettingsLink`：同一 `gearshape` 图标、无障碍标签“设置”和 `LibraryRoute.settings` 目的地。书架原左上设置入口已移除；原有“＋”“统计选项”“新对话”保留在齿轮左侧。对话页左上“AI 助手”改为 `slider.horizontal.3`，只管理 AI；对话栈使用 `NavigationPath` 同时承载会话 ID 与现有设置／书架路由，不复制设置页。标签栏不新增项。

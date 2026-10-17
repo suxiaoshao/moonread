@@ -116,6 +116,7 @@ import OSLog
 }
 
 struct TipJarView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(TipJar.self) private var store
     @Environment(\.purchase) private var purchase
     @Environment(\.theme) private var theme
@@ -148,9 +149,16 @@ struct TipJarView: View {
     }
     private func row(_ product: Product) -> some View {
         VStack(alignment: .leading, spacing: LayoutTokens.compact) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: LayoutTokens.content) { description(product); price(product) }
-                VStack(alignment: .leading, spacing: LayoutTokens.control) { description(product); price(product) }
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: LayoutTokens.content) {
+                    description(product)
+                    price(product).fixedSize(horizontal: true, vertical: false)
+                }
+            } else {
+                HStack(alignment: .center, spacing: LayoutTokens.content) {
+                    description(product)
+                    price(product).fixedSize(horizontal: true, vertical: false)
+                }
             }
             if store.pending.contains(product.id) {
                 Text("已请求批准，批准后会自动完成").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
@@ -162,12 +170,16 @@ struct TipJarView: View {
             }
         }.padding(LayoutTokens.content).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: LayoutTokens.inputRadius))
             .overlay { RoundedRectangle(cornerRadius: LayoutTokens.inputRadius).stroke(Color(uiColor: theme.border), lineWidth: LayoutTokens.border) }
+            .accessibilityElement(children: .contain).accessibilityIdentifier("tipJarRow-" + product.id)
     }
     private func description(_ product: Product) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(product.displayName).font(.headline).foregroundStyle(Color(uiColor: theme.ink))
+                .accessibilityIdentifier("tipJarTitle-" + product.id)
             Text(product.description).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                .accessibilityIdentifier("tipJarDescription-" + product.id)
         }.frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .contain).accessibilityIdentifier("tipJarText-" + product.id)
     }
     private func price(_ product: Product) -> some View {
         Button {

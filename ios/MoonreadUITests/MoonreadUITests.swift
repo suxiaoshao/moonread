@@ -1760,7 +1760,7 @@ final class MoonreadUITests: XCTestCase {
 
     private func enterBodyFromCover() {
         for _ in 0..<3 {
-            guard app.staticTexts["readingChapter"].label == "封面" else { return }
+            guard ["封面", "Cover"].contains(app.staticTexts["readingChapter"].label) else { return }
             if app.textViews["scrollText"].exists { app.textViews["scrollText"].swipeUp() }
             else { app.swipeLeft() }
         }
@@ -2865,6 +2865,67 @@ final class MoonreadUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["谢谢你的支持"].exists)
     }
 
+    func testLocalizedTipJarAdaptsPricesToTextSize() throws {
+        let storeKit = try SKTestSession(configurationFileNamed: "TipJar")
+        storeKit.resetToDefaultState(); storeKit.disableDialogs = true
+        for (language, locale, light, dark) in [
+            ("en", "en_US", "Light", "Dark"),
+            ("zh-Hans", "zh_CN", "浅色", "深色"),
+            ("zh-Hant", "zh_TW", "淺色", "深色")
+        ] {
+            storeKit.locale = Locale(identifier: locale)
+            for large in [false, true] {
+                prepareApp(language: language, arguments: ["--ui-test-home"] + (large ? ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"] : []))
+                setTipJarAppearance(large ? dark : light)
+                openTipJar(fromHome: false)
+                XCTAssertTrue(app.buttons["tipJarBuy-dev.moonread.tip.star"].waitForExistence(timeout: 15))
+                recordScreenshot("tip-layout-\(language)-\(large ? "ax-dark" : "light")-top")
+                for product in ["star", "tea", "snack", "book"] {
+                    let id = "dev.moonread.tip." + product
+                    let price = app.buttons["tipJarBuy-" + id]
+                    for _ in 0..<6 where !price.isHittable { app.swipeUp() }
+                    XCTAssertTrue(price.isHittable)
+                    let title = app.staticTexts["tipJarTitle-" + id]
+                    let subtitle = app.staticTexts["tipJarDescription-" + id]
+                    XCTAssertTrue(title.exists); XCTAssertTrue(subtitle.exists)
+                    let description = title.frame.union(subtitle.frame)
+                    if large {
+                        let text = element("tipJarText-" + id)
+                        let row = element("tipJarRow-" + id)
+                        XCTAssertTrue(text.exists); XCTAssertTrue(row.exists)
+                        XCTAssertGreaterThanOrEqual(price.frame.minY, description.maxY)
+                        XCTAssertEqual(price.frame.minX, text.frame.minX, accuracy: 1)
+                        // AX reports the laid-out text's tight bounds, not the full-width layout frame.
+                        XCTAssertGreaterThan(text.frame.width, row.frame.width * 0.5, "Accessibility text must span most of the card, not a narrow price-side column")
+                        if product == "snack" { recordScreenshot("tip-layout-\(language)-ax-dark-snack") }
+                    } else {
+                        XCTAssertGreaterThanOrEqual(price.frame.minX, description.maxX)
+                        XCTAssertEqual(price.frame.midY, description.midY, accuracy: 1, "\(language) \(product)")
+                    }
+                }
+                recordScreenshot("tip-layout-\(language)-\(large ? "ax-dark" : "light")-bottom")
+                app.terminate()
+            }
+        }
+    }
+
+    func testEnglishSettingsTitlesAndCompactIndentValue() {
+        prepareApp(language: "en")
+        app.buttons["appSettings"].tap()
+        XCTAssertTrue(app.buttons["readerThemeSettings"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["readerThemeSettings"].label.contains("Reading Settings"))
+        XCTAssertTrue(app.buttons["usageGuideSettings"].label.contains("User Guide"))
+        recordScreenshot("english-settings-title-case")
+        app.buttons["readerThemeSettings"].tap()
+        let tabs = app.segmentedControls["readerThemeTabs"]
+        XCTAssertTrue(tabs.waitForExistence(timeout: 5)); tabs.buttons.element(boundBy: 0).tap()
+        let indent = app.buttons["readingIndent"]
+        XCTAssertTrue(indent.waitForExistence(timeout: 5))
+        XCTAssertTrue(indent.label.contains("First-Line Indent"))
+        XCTAssertTrue(indent.label.contains("Smart, 2 chars"))
+        recordScreenshot("english-reading-settings-compact-indent")
+    }
+
     func testTipJarDarkAndLargeAppearance() throws {
         let storeKit = try SKTestSession(configurationFileNamed: "TipJar")
         storeKit.resetToDefaultState(); storeKit.disableDialogs = true
@@ -2885,7 +2946,7 @@ final class MoonreadUITests: XCTestCase {
         for _ in 0..<5 { if appearance.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(appearance.waitForExistence(timeout: 5)); appearance.tap()
         app.buttons["appAppearanceMode"].tap(); app.buttons[mode].tap()
-        app.navigationBars["应用外观"].buttons.firstMatch.tap()
+        app.navigationBars.buttons.firstMatch.tap()
     }
 
     private func openTipJar(fromHome: Bool = true) {
@@ -3319,7 +3380,7 @@ final class MoonreadUITests: XCTestCase {
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
         // Each run starts independently; relaunches in this test retain its store.
-        app.launchArguments = ["--ui-testing", "--ui-test-session", UUID().uuidString, "-AppleLanguages", "(\(language))", "-AppleLocale", language == "en" ? "en_US" : "zh_CN"]
+        app.launchArguments = ["--ui-testing", "--ui-test-session", UUID().uuidString, "-AppleLanguages", "(\(language))", "-AppleLocale", language == "en" ? "en_US" : language == "zh-Hant" ? "zh_TW" : "zh_CN"]
         app.launchArguments += arguments
         if !arguments.contains("--ui-test-tips") { app.launchArguments.append("--disable-tips") }
         if !arguments.contains("--ui-test-bookshelf") && !arguments.contains("--ui-test-home") {
@@ -5123,6 +5184,123 @@ final class MoonreadUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["目录"].waitForExistence(timeout: 5))
         recordScreenshot("chapter-v2-light-rows")
         app.buttons["closeReaderLibrary"].tap()
+    }
+
+    func testEnglishAndTraditionalChineseScreenAudit() throws {
+        let storeKit = try SKTestSession(configurationFileNamed: "TipJar")
+        storeKit.resetToDefaultState(); storeKit.disableDialogs = true
+        for language in ["en", "zh-Hant"] {
+            let english = language == "en", suffix = english ? "en" : "hant"
+            storeKit.locale = Locale(identifier: english ? "en_US" : "zh_TW")
+            prepareApp(language: language, arguments: ["--ui-test-ai-tasks", "--ui-test-ai-model-picker"])
+            let library = app.tabBars.buttons[english ? "Library" : "書架"]
+            XCTAssertTrue(library.waitForExistence(timeout: 10))
+            recordScreenshot("localized-\(suffix)-library")
+            app.buttons["appSettings"].tap()
+            XCTAssertTrue(app.switches["aiMasterSwitch"].waitForExistence(timeout: 5))
+            recordScreenshot("localized-\(suffix)-settings")
+            app.buttons["readerThemeSettings"].tap()
+            let tabs = app.segmentedControls["readerThemeTabs"]
+            XCTAssertTrue(tabs.waitForExistence(timeout: 5))
+            for (index, name) in ["typography", "colors", "controls"].enumerated() {
+                tabs.buttons.element(boundBy: index).tap()
+                recordScreenshot("localized-\(suffix)-reader-settings-\(name)")
+            }
+            app.navigationBars.buttons.firstMatch.tap()
+            let guide = app.buttons["usageGuideSettings"]
+            for _ in 0..<4 where !guide.isHittable { app.swipeUp() }
+            guide.tap(); XCTAssertTrue(element("usageGuide").waitForExistence(timeout: 5))
+            recordScreenshot("localized-\(suffix)-guide")
+            app.swipeUp(); recordScreenshot("localized-\(suffix)-guide-lower")
+            app.navigationBars.buttons.firstMatch.tap()
+            let tip = app.buttons["tipJarSettings"]
+            for _ in 0..<4 where !tip.isHittable { app.swipeUp() }
+            tip.tap(); XCTAssertTrue(app.buttons["tipJarBuy-dev.moonread.tip.star"].waitForExistence(timeout: 15))
+            recordScreenshot("localized-\(suffix)-tip-jar")
+            app.tabBars.buttons[english ? "Conversations" : "對話"].tap()
+            XCTAssertTrue(app.buttons["newAIConversation"].waitForExistence(timeout: 10))
+            recordScreenshot("localized-\(suffix)-ai")
+            app.buttons["aiAssistantSettings"].tap()
+            XCTAssertTrue(app.navigationBars[english ? "AI Assistant" : "AI 助手"].waitForExistence(timeout: 5))
+            recordScreenshot("localized-\(suffix)-ai-settings")
+            app.tabBars.buttons[english ? "Statistics" : "統計"].tap()
+            XCTAssertTrue(app.buttons["appSettings"].waitForExistence(timeout: 5))
+            recordScreenshot("localized-\(suffix)-statistics")
+            library.tap()
+            if !app.buttons["appSettings"].waitForExistence(timeout: 2) { library.tap() }
+            openSample()
+            XCTAssertTrue(readerTextAppears())
+            recordScreenshot("localized-\(suffix)-reader")
+            revealControls(); recordScreenshot("localized-\(suffix)-reader-controls")
+            readerBackButton.tap()
+            library.tap()
+            if !app.buttons["appSettings"].waitForExistence(timeout: 2) { library.tap() }
+            app.buttons["appSettings"].tap()
+            let toggle = app.switches["aiMasterSwitch"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+            XCTAssertFalse(app.tabBars.buttons[english ? "Conversations" : "對話"].exists)
+            XCTAssertFalse(app.buttons["aiSettings"].exists)
+            recordScreenshot("localized-\(suffix)-ai-disabled-settings")
+            library.tap()
+            if !app.buttons["appSettings"].waitForExistence(timeout: 2) { library.tap() }
+            recordScreenshot("localized-\(suffix)-ai-disabled-library")
+            openSample(); revealControls()
+            XCTAssertFalse(app.buttons["readerAIMoon"].exists)
+            recordScreenshot("localized-\(suffix)-ai-disabled-reader")
+            app.terminate()
+        }
+    }
+
+    func testEnglishAndTraditionalChineseOnboardingTips() {
+        for language in ["en", "zh-Hant"] {
+            let suffix = language == "en" ? "en" : "hant"
+            prepareApp(language: language, arguments: ["--ui-test-home", "--ui-test-tips"])
+            XCTAssertTrue(element("libraryImportTip").waitForExistence(timeout: 10))
+            recordScreenshot("localized-\(suffix)-import-tip")
+            app.terminate()
+            prepareApp(language: language, arguments: ["--ui-test-tips"])
+            openSample()
+            XCTAssertTrue(element("readerControlsTip").waitForExistence(timeout: 10))
+            recordScreenshot("localized-\(suffix)-reader-controls-tip")
+            revealControls()
+            XCTAssertTrue(element("readerSelectionTip").waitForExistence(timeout: 5))
+            recordScreenshot("localized-\(suffix)-reader-selection-tip")
+            app.terminate()
+        }
+    }
+
+    func testReplyFeedbackContextMenuAndCopyFallbackInThreeLanguages() {
+        for (language, label) in [("zh-Hans", "反馈这条回复"), ("en", "Send Feedback About This Reply"), ("zh-Hant", "回饋這則回覆")] {
+            prepareApp(language: language, arguments: ["--ui-test-ai-tasks", "--ui-test-feedback-copy"])
+            app.tabBars.buttons[language == "en" ? "Conversations" : language == "zh-Hant" ? "對話" : "对话"].tap()
+            let conversation = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "aiConversation-ui-ai-long-")).firstMatch
+            XCTAssertTrue(conversation.waitForExistence(timeout: 15)); conversation.tap()
+            let answer = app.staticTexts["第59答"]
+            XCTAssertTrue(answer.waitForExistence(timeout: 10))
+            answer.press(forDuration: 1)
+            let feedback = app.buttons[label]
+            XCTAssertTrue(feedback.waitForExistence(timeout: 5), app.debugDescription)
+            recordScreenshot("feedback-\(language)-menu")
+            feedback.tap()
+            let body = app.staticTexts["aiFeedbackBody"]
+            XCTAssertTrue(body.waitForExistence(timeout: 5))
+            XCTAssertTrue(body.label.contains("第59答")); XCTAssertFalse(body.label.contains("第58答"))
+            XCTAssertTrue(body.label.contains("fixture"))
+            XCTAssertTrue(app.staticTexts["suxiaoshao@gmail.com"].exists)
+            recordScreenshot("feedback-\(language)-fallback")
+            for field in ["recipient", "subject", "body"] {
+                let fieldCopy = app.buttons["aiFeedbackCopy-" + field]
+                for _ in 0..<4 where !fieldCopy.isHittable { app.swipeUp() }
+                XCTAssertTrue(fieldCopy.isHittable); fieldCopy.tap()
+                XCTAssertEqual(fieldCopy.label, language == "en" ? "Copied" : language == "zh-Hant" ? "已複製" : "已复制")
+            }
+            recordScreenshot("feedback-\(language)-fallback-fields-copied")
+            let copy = app.buttons["aiFeedbackCopy"]
+            XCTAssertTrue(copy.isHittable); copy.tap()
+            XCTAssertEqual(copy.label, language == "en" ? "Copied" : language == "zh-Hant" ? "已複製" : "已复制")
+            app.terminate()
+        }
     }
 
     func testMainPagesShareSettingsEntryAndDistinctAIControls() {
