@@ -76,7 +76,7 @@
 
 ## 需要开发者本人在 App Store Connect 完成
 
-2026-10-16 用户确认：版权署名 suxiaoshao（App Store 字段 `© 2026 suxiaoshao`），公开支持邮箱改为 Gmail `suxiaoshao@gmail.com`，英文名 `Moonread: TXT Reader`。首发包含欧盟（DSA 商家声明审核中）、排除中国大陆；App 与 IAP 地区设置一致。政策与支持页已迁入 `docs/site/`，正式地址为 `https://suxiaoshao.github.io/moonread/`，待仓库公开并启用 Pages 后在线验证；旧 moonread-site 站点在新站验证前保留。欧盟 DSA 商家邮箱的修改另行处理。打赏说明中的设备／iCloud 存储指书与阅读记录；主动使用 AI 并授权后的第三方内容发送在隐私政策中独立披露，不声称所有功能均离线。
+2026-10-16 用户确认：版权署名 suxiaoshao（App Store 字段 `© 2026 suxiaoshao`），公开支持邮箱改为 Gmail `suxiaoshao@gmail.com`，英文名 `Moonread: TXT Reader`。首发包含欧盟（DSA 商家声明审核中）、排除中国大陆；App 与 IAP 地区设置一致。政策与支持页已迁入 `docs/site/`，正式地址为 `https://suxiaoshao.github.io/moonread/`，待仓库公开并启用 Pages 后在线验证；旧 moonread-site 仓库已于 2026-10-17 删除。欧盟 DSA 商家邮箱的修改另行处理。打赏说明中的设备／iCloud 存储指书与阅读记录；主动使用 AI 并授权后的第三方内容发送在隐私政策中独立披露，不声称所有功能均离线。
 
 这些步骤涉及账号、银行和税务信息，代理不进入、不读取、不记录 Apple 账号凭据：
 

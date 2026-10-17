@@ -8,7 +8,7 @@ AI 在现有 Swift target 内按职责组织，不另建包或实现第二套 SD
 
 | 目录 | 当前职责 |
 | --- | --- |
-| `ios/Moonread/AI/Providers/` | 连接定义、预设与品牌映射、Keychain/设备码认证、模型目录、请求适配、可取消网络传输、原生搜索/生图执行与能力筛选 |
+| `ios/Moonread/AI/Providers/` | 连接定义、预设与品牌映射、Keychain 凭据管理、API Key 与浏览器 OAuth 认证（ChatGPT SIWC／OpenRouter）、模型目录、请求适配、可取消网络传输、原生搜索/生图执行与能力筛选 |
 | `ios/Moonread/AI/Agent/` | 会话生命周期、任务、消息更新、保存时机、模型选择及阅读上下文 |
 | `ios/Moonread/AI/Data/` | 应用消息结构、SwiftData 实体与本机历史存储、按会话范围保存的图片附件 |
 | `ios/Moonread/AI/Tools/` | 10个读取工具、共享引用与正文准备、结果分页、原生搜索/生图和资料／笔记／书签／封面／整理 TypedTool |

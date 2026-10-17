@@ -63,34 +63,24 @@ Paid Apps 的 `New`、`Pending User Info`、`Processing`、`Active` 含义不同
 | TestFlight | 少量内部测试通过；有需要才外测，无真实收费测试 | 代理可做：测试计划及材料；用户本人完成账号操作，发送邀请另行授权 |
 | 最终提交与上线 | App + 首批 IAP 同一审核提交；用户核对发布地区/价格/声明 | **需用户本人**点击提交审核；建议手动发布，获批后由用户本人决定上线 |
 
-## 3. 商店身份与文案草案
+## 3. 商店身份与文案定稿
 
-**代理可做：**整理候选与校验；正式 App 记录暂不创建。
+三语名称与商店文案已在 App Store Connect（ASC）保存定稿。名称与副标题以该 App 的“App 信息”各语言本地化为准；描述、关键词与推广文本以当前 iOS 版本页面的简体中文／繁体中文／英文已保存内容为准。本计划不另维护待回填的文案草稿或名称备选。
 
-| 字段 | 建议草案 | 可用性/限制 |
+| 字段 | 定稿／现状 | 说明 |
 | --- | --- | --- |
-| 简中名称 | `月读`；冲突时备选 `月读 - TXT阅读器` | 未在 Connect 验证可用；公开搜索无可靠的精确同名结论，不代表可注册 |
-| 英文名称 | `Moonread: TXT Reader`（用户已确认） | 公开检索已命中另一项 [MoonRead](https://apps.apple.com/us/app/moonread/id6798511931)，不可假定纯 `Moonread` 可用；候选也待后台及权利核查 |
-| 简中副标题 | `安静阅读你的 TXT 小说` | 副标题不作为独占名称预留；只校验内容、字数及冲突风险 |
-| 英文副标题 | `A quiet place for TXT books` | 27 个字符；最终与真实功能一致 |
-| 主语言 | 简体中文，另提供英文元数据 | 现有主要本地化为简中/英文 |
+| 简中名称 | `月读：TXT 小说阅读器` | 已在 ASC 保存 |
+| 繁体名称 | `月讀：TXT 小說閱讀器` | 已在 ASC 保存 |
+| 英文名称 | `Moonread: TXT Reader` | 已在 ASC 保存 |
+| 副标题、描述、关键词与推广文本 | 三语定稿位于 ASC | 后续修改在 ASC 核对，避免回填过时草稿 |
+| 主语言与本地化 | 简体中文，另提供繁体中文与英文 | 应用与商店页面按语言核对 |
 | 主类别 | Books / 图书 | 按阅读主功能选择；次类别可先不填，不为绕开中国区资质改分类 |
-| Bundle ID / SKU | `dev.moonread.Moonread` / 候选 `moonread-ios` | 先核对团队及既有注册；SKU 创建后不能改 |
-| 价格/发布 | 本体免费；建议手动发布 | 中国大陆暂不发布已确认；其他地区、后台价格及发布方式仍待负责人确认 |
+| Bundle ID / SKU | `dev.moonread.Moonread` / 以 ASC 已保存值为准 | Bundle ID 上传构建后不可改；SKU 创建后不可改 |
+| 价格／发布 | 本体免费；发布方式以 ASC 设置为准 | 中国大陆暂不发布已确认 |
 
-名称 2–30 字符、副标题最多 30 字符；Bundle ID 上传构建后不可改。正式创建是名称可用性确认的一部分，公开检索不能代替后台校验或商标核查。[Apple App information](https://developer.apple.com/help/app-store-connect/reference/app-information/app-information/)
+名称 2–30 字符、副标题最多 30 字符；正式名称以 ASC 已保存记录为准，公开检索不能代替后台校验或商标核查。[Apple App information](https://developer.apple.com/help/app-store-connect/reference/app-information/app-information/)
 
-简中描述草案（待按最终包复核，不含未验收承诺）：
-
-> 月读是一款以连续、舒服阅读为中心的 TXT 阅读器。把自己的文本放进书架，调整字号、行距和配色，按习惯翻页或滚动阅读。
->
-> 管理本地文件夹和 iCloud 中的小说，使用目录、书签、搜索与批注接续阅读；通过阅读统计回看自己的阅读时光。
->
-> 需要讨论一段内容时，可连接自己选择的 AI 服务。问题和相关上下文会发送给该服务，服务权限、费用及隐私规则由对应服务商决定；不用 AI 也能正常阅读。
->
-> 月读不提供在线书城。阅读功能免费，设置中提供完全自愿的打赏；打赏不会解锁内容或功能，付款由 Apple 处理。
-
-关键词候选：`文本阅读,本地小说,电子书,阅读笔记,书签管理,阅读统计,iCloud`。以后台计数器及 UTF-8 字节数复核，不堆竞品名称；按最终名称去重。英文候选后续单独编写。描述上限 4000 字符；Apple 当前参考页的关键词上限为 100 bytes；推广文本可留空，首版无需填“此版本更新内容”。版权字段用用户确认的权利人名称，不能从 Git 身份猜填。[版本元数据说明](https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information)
+描述上限 4000 字符、关键词上限 100 bytes；以后调整文案仍须按最终包能力与后台计数器复核，不堆竞品名称、不加入未验收承诺。[版本元数据说明](https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information)
 
 ## 4. 年龄分级、内容与审核访问
 
@@ -366,7 +356,7 @@ Apple 2025-11-13 更新明确把第三方 AI 纳入发送前告知和明确许�
 
 #### 文件与托管方案
 
-政策与支持页源码现位于主仓库 `docs/site/`，通过 Zola 与 GitHub Pages 工作流发布至 `/moonread/`；仅发布网站构建产物，不发布开发文档。旧独立站 moonread-site 已迁移，待新站上线验证后由用户确认删除。站点中英页面无统计 SDK、第三方字体、广告、评论或登录。
+政策与支持页源码现位于主仓库 `docs/site/`，通过 Zola 与 GitHub Pages 工作流发布至 `/moonread/`；仅发布网站构建产物，不发布开发文档。旧独立站 moonread-site 已迁移，仓库已于 2026-10-17 删除。站点中英页面无统计 SDK、第三方字体、广告、评论或登录。
 
 App 中集中配置正式 URL：`https://suxiaoshao.github.io/moonread/privacy/`、`https://suxiaoshao.github.io/moonread/support/`、`https://suxiaoshao.github.io/moonread/en/privacy/`、`https://suxiaoshao.github.io/moonread/en/support/`。旧站四页曾逐页核对 HTTPS 200、中英互链与正文，无需账号；上述新 URL 待仓库公开后启用 Pages 并重新逐页核验；首发地区网络可达性与真实手机阅读仍需最终发布验收，HTTP 检查不等于可提交审核。生效日期为实际发布日 2026-10-16；App 联系入口显示公开邮箱 suxiaoshao@gmail.com。
 
@@ -487,4 +477,4 @@ Provided by suxiaoshao. Contact: suxiaoshao@gmail.com.
 - 英文名：Moonread: TXT Reader；首发包含欧盟、排除中国大陆，DSA 商家声明审核中。
 - 四档 USD 基准价：star 0.29、tea 0.99、snack 2.99、book 6.99；页面价格仍以 StoreKit 为准。
 - 打赏说明：月读没有广告，也没有自己的服务器，你的书和阅读记录只留在你的设备和 iCloud 里。可选 AI 仍经用户同意向所选第三方发送内容，政策单独说明此边界。
-- 政策／支持站已迁入 `docs/site/`；仓库公开后发布到 `/moonread/`，新站验证后再确认删除旧 moonread-site 仓库。
+- 政策／支持站已迁入 `docs/site/`；仓库公开后发布到 `/moonread/`；旧 moonread-site 仓库已于 2026-10-17 删除。
