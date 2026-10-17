@@ -10,6 +10,8 @@
 
 模拟器 Debug 构建、4 项定向单测与 2 项 UI 回归通过：完成态成功但乱码的往返切换、完成任务回收重开、本机记忆、相同副本首选来源及手选分组；UI 覆盖确认／取消、从设置重新读取后再次打开工具栏、“更多”入口及暂停／失败菜单。初轮 UI 捕获到设置页退出仍保留旧 sheet gate，已修正且原断言复跑通过。深浅色取图在打开书籍前设定外观，6 张画面已人工核对。证据 `build/EncodingDetection/{change-final.log,change-final.xcresult,change-appearance.log,change-appearance.xcresult,change-screens/}`；失败现场保留在 `change-encoding.log`。未操作真机。 编码行的强调色／上下箭头及“可更换”无障碍标签由深浅色定向 UI 回归再次验证，通过；更新截图和日志为 `build/EncodingDetection/{menu-affordance-screens/,menu-affordance.log,menu-affordance.xcresult}`。
 
+来源元数据只用于可选编码控件，查询改为不抛错。记录缺失、JSON 损坏或刷新移除 fileID 时返回空值并写 ReaderSource 日志（仅缺失原因／错误域和代码，不含来源内容），不阻断已取得的 lease 和正文监测；重新准备后的标签也使用同一入口。新增 session 集成单测覆盖上述三种情况，验证 readingID 保留、window 发布可读正文、error 为空及 encodingLabel 为空（本书行／更多入口的共享显示条件）。模拟器 Debug 构建与 4 项定向测试通过，正常切换找回数据、回收重开和统计异步启动继续通过。证据 `build/EncodingDetection/{source-metadata.log,source-metadata.xcresult}`；日志已核对，未操作真机。
+
 ## 2026-10-17 正文编码识别与手选分组
 
 直接导入与渐进导入共用 Rust 的 BOM → 无 BOM UTF-16 零字节奇偶位置与文本校验 → 不含 ESC 的合法 UTF-8 → chardetng 1.0.0 探测器，最多 64 KiB 样本加 1 字节 EOF 探查；真实 EOF 严格校验，仅 64 KiB 上限截断的 UTF-8 多字节前缀不算错；含 ESC 的输入交给 chardetng 识别 ISO-2022-JP。GBK 猜测统一用 gb18030，其他采用 encoding_rs 名称；不传 TLD/系统语言，不增加 fallback，严格解码及 normalization-v1 未改。原来直接导入失败后整书重试的路径已删除。38 项手选编码按六组展示，排除 replacement/x-user-defined 及其别名，固定原生菜单顺序，中英文文案同步；新依赖许可随 App 分发。

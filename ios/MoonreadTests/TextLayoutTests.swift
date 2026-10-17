@@ -1243,6 +1243,38 @@ final class TextLayoutTests: XCTestCase {
         withExtendedLifetime(reopened) {}
     }
 
+    @MainActor func testUnavailableEncodingSourceDoesNotBlockReadingOrExposeControls() async throws {
+        for scenario in ["missing", "corrupt", "removed-file"] {
+            let (root, service, core, _, _, book, _, suite) = try singleBookFixture()
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            let key = await service.importSourceKey(book.id)
+            if scenario == "corrupt" {
+                defaults.set(Data("{broken source".utf8), forKey: key)
+            } else if scenario == "removed-file" {
+                let file = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "a.txt" })
+                let bookmark = try root.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+                defaults.set(try JSONEncoder().encode(ImportSource(rootBookmark: bookmark, relativePath: "a.txt", fileID: file.id)), forKey: key)
+                try core.scanLibraryShelf(shelfId: "builtin", items: [])
+                XCTAssertThrowsError(try core.sourceFileLocation(fileId: file.id))
+            }
+            let activity = ReadingActivityRecorder { StatisticsPreferences(enabled: false, generation: 0) }
+            let session = ReaderSession(service: service, activity: activity)
+            await session.open(.book(book.id))
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in session.window?.projectionAnchor != nil }, object: nil)
+            await fulfillment(of: [ready], timeout: 5)
+            XCTAssertEqual(session.readingID, book.id, scenario)
+            XCTAssertNotNil(session.window, "Monitoring must publish prepared text: \(scenario)")
+            XCTAssertNil(session.error, scenario)
+            XCTAssertNil(session.decodingPolicy, scenario)
+            // Settings' This Book row and More's Change Encoding both use this gate.
+            XCTAssertNil(session.encodingLabel, "No actionable encoding control: \(scenario)")
+            XCTAssertTrue(session.window?.chunks.contains { !$0.text.isEmpty } == true, scenario)
+            await session.leave().value
+            defaults.removePersistentDomain(forName: suite)
+            try FileManager.default.removeItem(at: root)
+        }
+    }
+
     @MainActor func testCompletedBookEncodingChangeRestoresDataAndPersistsChoice() async throws {
         let (root, service, core, formal, pending, _, _, suite) = try singleBookFixture()
         defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
@@ -1262,7 +1294,7 @@ final class TextLayoutTests: XCTestCase {
         }
         let first = try await service.openSourceFile(entry.source)
         let initial = try await complete(first)
-        let auto = try await service.readingDecoding(first.id); XCTAssertEqual(auto, "auto")
+        let auto = await service.readingDecoding(first.id); XCTAssertEqual(auto, "auto")
         try await service.savePosition(bookID: first.id, offset: 10)
         _ = try await service.ensureBookmark(first.id, at: 10)
         let edit = try await service.prepareAnnotation(first.id, start: 10, end: 16)

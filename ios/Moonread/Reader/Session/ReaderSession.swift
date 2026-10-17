@@ -94,7 +94,7 @@ final class ReaderSession {
                 diagnostic?.mark("lease.mainResumed")
                 guard !isLeaving, !Task.isCancelled, opening.request?.id == attempt else { return }
                 readingLease = lease
-                decodingPolicy = try await service.readingDecoding(lease.id)
+                decodingPolicy = await service.readingDecoding(lease.id)
             } catch { if !isLeaving, !Task.isCancelled, opening.request?.id == attempt { self.error = ReaderMessages.error(error); isLoading = false; updateOpening() }; return }
         }
         guard !isLeaving else { return }
@@ -308,7 +308,7 @@ final class ReaderSession {
                 await flush()
                 guard !isLeaving else { return }
                 let next = try await service.restartImport(id, encoding: encoding)
-                decodingPolicy = try await service.readingDecoding(next.id)
+                decodingPolicy = await service.readingDecoding(next.id)
                 guard !isLeaving else { return }
                 opening.begin(OpeningRequest(target: .book(next.id)), navigationSettled: true)
                 monitorToken = UUID()

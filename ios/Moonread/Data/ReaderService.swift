@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import SwiftData
 
 struct SourceFile: Identifiable, Hashable, Sendable {
@@ -575,12 +576,24 @@ actor ReaderService {
         launchImport(core: core, control: try core.resumeImport(bookId: id), descriptor: descriptor, encoding: descriptor.encoding)
     }
 
-    /// The active lease keeps its import descriptor alive, even after completion.
-    func readingDecoding(_ id: String) throws -> String? {
-        guard let data = sourceDefaults.data(forKey: importSourceKey(id)) else { return nil }
-        let source = try JSONDecoder().decode(ImportSource.self, from: data)
-        if let fileID = source.fileID { return try textCore().sourceDecoding(fileId: fileID) }
-        return source.encoding ?? "auto"
+    /// Optional UI metadata must never prevent reading already prepared text.
+    /// The lease protects the text; it cannot guarantee a valid source descriptor.
+    func readingDecoding(_ id: String) -> String? {
+        let logger = Logger(subsystem: "dev.moonread.Moonread", category: "ReaderSource")
+        guard let data = sourceDefaults.data(forKey: importSourceKey(id)) else {
+            logger.notice("Encoding controls unavailable: source record missing")
+            return nil
+        }
+        do {
+            let source = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))
+            if let fileID = source.fileID { return try textCore().sourceDecoding(fileId: fileID) }
+            return source.encoding ?? "auto"
+        } catch {
+            // Do not log source JSON, bookmarks, paths, titles, or error descriptions.
+            let failure = error as NSError
+            logger.warning("Encoding controls unavailable: \(failure.domain, privacy: .public) / \(failure.code)")
+            return nil
+        }
     }
 
     func restartImport(_ id: String, encoding: String?) throws -> ReadingLease {
