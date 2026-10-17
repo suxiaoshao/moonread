@@ -5272,7 +5272,7 @@ final class MoonreadUITests: XCTestCase {
 
     func testReplyFeedbackContextMenuAndCopyFallbackInThreeLanguages() {
         for (language, label) in [("zh-Hans", "反馈这条回复"), ("en", "Send Feedback About This Reply"), ("zh-Hant", "回饋這則回覆")] {
-            prepareApp(language: language, arguments: ["--ui-test-ai-tasks"])
+            prepareApp(language: language, arguments: ["--ui-test-ai-tasks", "--ui-test-feedback-copy"])
             app.tabBars.buttons[language == "en" ? "Conversations" : language == "zh-Hant" ? "對話" : "对话"].tap()
             let conversation = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "aiConversation-ui-ai-long-")).firstMatch
             XCTAssertTrue(conversation.waitForExistence(timeout: 15)); conversation.tap()
@@ -5289,6 +5289,13 @@ final class MoonreadUITests: XCTestCase {
             XCTAssertTrue(body.label.contains("fixture"))
             XCTAssertTrue(app.staticTexts["suxiaoshao@gmail.com"].exists)
             recordScreenshot("feedback-\(language)-fallback")
+            for field in ["recipient", "subject", "body"] {
+                let fieldCopy = app.buttons["aiFeedbackCopy-" + field]
+                for _ in 0..<4 where !fieldCopy.isHittable { app.swipeUp() }
+                XCTAssertTrue(fieldCopy.isHittable); fieldCopy.tap()
+                XCTAssertEqual(fieldCopy.label, language == "en" ? "Copied" : language == "zh-Hant" ? "已複製" : "已复制")
+            }
+            recordScreenshot("feedback-\(language)-fallback-fields-copied")
             let copy = app.buttons["aiFeedbackCopy"]
             XCTAssertTrue(copy.isHittable); copy.tap()
             XCTAssertEqual(copy.label, language == "en" ? "Copied" : language == "zh-Hant" ? "已複製" : "已复制")

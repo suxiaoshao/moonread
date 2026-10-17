@@ -227,7 +227,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "正文會按新編碼重新讀取。當前編碼下的閱讀位置、書籤和批註不會帶到不同的新正文，原資料會保留。原檔案未變時，換回原編碼可找回。"
+          "value": "正文會按新編碼重新讀取。目前編碼下的閱讀位置、書籤和批註不會帶到不同的新正文，原資料會保留。原檔案未變時，換回原編碼可找回。"
         }
       }
     }
@@ -355,7 +355,7 @@
           "zh-Hant": {
             "stringUnit": {
               "state": "translated",
-              "value": "部分閱讀資料當前版本無法理解，已保留並設為只讀，請更新 App。"
+              "value": "部分閱讀資料目前版本無法理解，已保留並設為唯讀，請更新 App。"
             }
           }
         }
@@ -387,7 +387,7 @@
           "zh-Hant": {
             "stringUnit": {
               "state": "translated",
-              "value": "統計不完整：部分記錄當前版本無法理解，請更新 App。"
+              "value": "統計不完整：部分記錄目前版本無法理解，請更新 App。"
             }
           }
         }
@@ -403,7 +403,7 @@
           "zh-Hant": {
             "stringUnit": {
               "state": "translated",
-              "value": "其他（當前版本不支援）"
+              "value": "其他（目前版本不支援）"
             }
           }
         }
@@ -447,7 +447,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "ChatGPT 客戶端配置無效，請檢查連線配置。"
+          "value": "ChatGPT 用戶端設定無效，請檢查連線設定。"
         }
       }
     }
@@ -491,7 +491,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "此 ChatGPT 賬戶或工作區不允許套餐共享，請檢查賬戶許可權。"
+          "value": "此 ChatGPT 帳戶或工作區不允許方案共享，請檢查帳戶權限。"
         }
       }
     }
@@ -513,7 +513,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "暫時無法確認 ChatGPT 套餐用量，請稍後再試。"
+          "value": "暫時無法確認 ChatGPT 方案用量，請稍後再試。"
         }
       }
     }
@@ -535,7 +535,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "ChatGPT 套餐不支援此請求能力，請調整輸入、工具或模型後再試。"
+          "value": "ChatGPT 方案不支援此請求能力，請調整輸入、工具或模型後再試。"
         }
       }
     }
@@ -557,7 +557,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "ChatGPT 套餐不支援此請求介面，請檢查連線配置。"
+          "value": "ChatGPT 方案不支援此請求介面，請檢查連線設定。"
         }
       }
     }
@@ -579,7 +579,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "無法驗證 ChatGPT 賬戶，請檢查連線授權。"
+          "value": "無法驗證 ChatGPT 帳戶，請檢查連線授權。"
         }
       }
     }
@@ -601,7 +601,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "ChatGPT 套餐授權範圍不允許此操作，請檢查授權配置。"
+          "value": "ChatGPT 方案授權範圍不允許此操作，請檢查授權設定。"
         }
       }
     }
@@ -623,7 +623,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "ChatGPT 賬戶或工作區暫時不可用，請稍後再試。"
+          "value": "ChatGPT 帳戶或工作區暫時不可用，請稍後再試。"
         }
       }
     }
@@ -711,7 +711,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "你沒有允許月讀使用 ChatGPT 套餐"
+          "value": "你沒有允許月讀使用 ChatGPT 方案"
         }
       }
     }
@@ -871,7 +871,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "賬戶目錄已提供容量，現已改用目錄值。"
+          "value": "帳戶目錄已提供容量，現已改用目錄值。"
         }
       }
     }
@@ -893,7 +893,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "賬戶目錄未提供容量，請按服務說明填寫"
+          "value": "帳戶目錄未提供容量，請按服務說明填寫"
         }
       }
     }
@@ -915,7 +915,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "這是你配置的上下文預算，不代表服務端確認的模型上限。"
+          "value": "這是你設定的上下文預算，不代表伺服器端確認的模型上限。"
         }
       }
     }
@@ -1003,7 +1003,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "ChatGPT 賬戶"
+          "value": "ChatGPT 帳戶"
         }
       }
     }
@@ -1135,7 +1135,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "正在使用你的 ChatGPT 套餐"
+          "value": "正在使用你的 ChatGPT 方案"
         }
       }
     }
@@ -1157,7 +1157,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "此連線的 AI 請求使用你的 ChatGPT 套餐，用量與許可權由 ChatGPT 管理。"
+          "value": "此連線的 AI 請求使用你的 ChatGPT 方案，用量與權限由 ChatGPT 管理。"
         }
       }
     }
@@ -1179,7 +1179,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "正在使用 ChatGPT 套餐"
+          "value": "正在使用 ChatGPT 方案"
         }
       }
     }
@@ -1223,7 +1223,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "此賬戶尚未授權使用 ChatGPT 套餐，請重新登入並允許共享。"
+          "value": "此帳戶尚未授權使用 ChatGPT 方案，請重新登入並允許共享。"
         }
       }
     }
@@ -1267,7 +1267,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "ChatGPT 套餐用量已達上限，請在 ChatGPT 中管理用量。"
+          "value": "ChatGPT 方案用量已達上限，請在 ChatGPT 中管理用量。"
         }
       }
     }
@@ -1289,7 +1289,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "此賬戶暫時無法共享 ChatGPT 套餐，請在 ChatGPT 中檢查用量與許可權。"
+          "value": "此帳戶暫時無法共享 ChatGPT 方案，請在 ChatGPT 中檢查用量與權限。"
         }
       }
     }
@@ -1355,7 +1355,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "Kimi 會員可在 Kimi Code 控制台建立 API Key，然後貼上到這裡。會員權益與工具使用範圍以 Kimi 的說明為準；月讀不提供 Kimi 賬戶登入。"
+          "value": "Kimi 會員可在 Kimi Code 控制台建立 API Key，然後貼上到這裡。會員權益與工具使用範圍以 Kimi 的說明為準；月讀不提供 Kimi 帳戶登入。"
         }
       }
     }
@@ -1509,7 +1509,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "自定義端點或閘道器可能將請求轉發給其模型服務。"
+          "value": "自訂端點或閘道器可能將請求轉發給其模型服務。"
         }
       }
     }
@@ -1553,7 +1553,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "服務可能按其政策儲存和處理這些內容，並使用該賬戶的額度。你可以隨時在 AI 設定中撤銷許可；已傳送的資料無法追回。拒絕不會影響閱讀。"
+          "value": "服務可能按其政策儲存和處理這些內容，並使用該帳戶的額度。你可以隨時在 AI 設定中撤銷許可；已傳送的資料無法追回。拒絕不會影響閱讀。"
         }
       }
     }
@@ -2438,7 +2438,7 @@
     "zh-Hant": {
       "stringUnit": {
         "state": "translated",
-        "value": "應用程式 %lld 項更改"
+        "value": "套用 %lld 項更改"
       }
     }
   }
@@ -2571,8 +2571,8 @@
     "书签已保存": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "Bookmark Saved"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "書籤已儲存"}}}},
     "批注已保存": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "Annotation Saved"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "批註已儲存"}}}},
     "操作正在保存，请完成后再删除。": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "An operation is being saved. Delete after it finishes."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "操作正在儲存，請完成後再刪除。"}}}},
-    "当前资料已更新，请再次确认。": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "The current details have changed. Review them again."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "當前資料已更新，請再次確認。"}}}},
-    "与当前相同": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "Matches Current"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "與當前相同"}}}},
+    "当前资料已更新，请再次确认。": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "The current details have changed. Review them again."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目前資料已更新，請再次確認。"}}}},
+    "与当前相同": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "Matches Current"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "與目前相同"}}}},
     "已有": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "Already Exists"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已有"}}}},
     "暂不可用": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Unavailable for Now"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "暫不可用"}}}},
     "图片": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Image"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "圖片"}}}},
@@ -2622,9 +2622,9 @@
     "移除任务": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Remove Task"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "移除任務"}}}},
     "正在进行的请求会停止。": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "The request in progress will stop. "}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在進行的請求會停止。"}}}},
     "任务及其结果会删除。": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "The task and its results will be deleted. "}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "任務及其結果會刪除。"}}}},
-    "已应用的修改会保留。": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Applied changes are kept."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已應用程式的修改會保留。"}}}},
+    "已应用的修改会保留。": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Applied changes are kept."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已套用的修改會保留。"}}}},
     "网页来源": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Web Sources"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "網頁來源"}}}},
-    "当前范围": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Current Scope"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "當前範圍"}}}},
+    "当前范围": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Current Scope"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目前範圍"}}}},
     "书架根目录": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Shelf Root"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "書架根目錄"}}}},
     "名称不可用": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Name Not Allowed"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "名稱不可用"}}}},
     "超出整理范围": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Outside Scope"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "超出整理範圍"}}}},
@@ -2636,8 +2636,8 @@
     "未执行": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Not Run"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "未執行"}}}},
     "已移动，书架记录未更新": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Moved; Library Not Updated"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已移動，書架記錄未更新"}}}},
     "已复制，原文件仍在": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Copied; Original Remains"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已複製，原檔案仍在"}}}},
-    "以当前封面修改": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Edit Current Cover"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "以當前封面修改"}}}},
-    "查看并应用": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Review and Apply"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "檢視並應用程式"}}}},
+    "以当前封面修改": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Edit Current Cover"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "以目前封面修改"}}}},
+    "查看并应用": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Review and Apply"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "檢視並套用"}}}},
     "启用全部": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Enable All"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "啟用全部"}}}},
     "启用 %lld 个结果": {
   "localizations": {
@@ -2709,9 +2709,9 @@
     "补充要求（可选）": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Instructions (Optional)"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "補充要求（可選）"}}}},
     "开始": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Start"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "開始"}}}},
     "补充要求": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Add Instructions"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "補充要求"}}}},
-    "已应用": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Applied"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已應用程式"}}}},
-    "当前": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Current"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "當前"}}}},
-    "当前已更新": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Current Value Updated"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "當前已更新"}}}},
+    "已应用": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Applied"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已套用"}}}},
+    "当前": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Current"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目前"}}}},
+    "当前已更新": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Current Value Updated"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目前已更新"}}}},
     "建议": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Suggestion"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "建議"}}}},
     "清空": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Clear"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "清空"}}}},
     "新建议：%@": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "New suggestion: %@"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "新建議：%@"}}}},
@@ -2722,9 +2722,9 @@
     "未设置联网搜索": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Web Search Not Set"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "未設定聯網搜尋"}}}},
     "未设置图片生成": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Image Generation Not Set"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "未設定圖片生成"}}}},
     "方式": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Method"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "方式"}}}},
-    "当前封面": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Current Cover"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "當前封面"}}}},
+    "当前封面": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Current Cover"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目前封面"}}}},
     "封面候选": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Cover Candidate"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "封面候選"}}}},
-    "当前封面已更新": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Current Cover Updated"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "當前封面已更新"}}}},
+    "当前封面已更新": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Current Cover Updated"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目前封面已更新"}}}},
     "暂时无法设为封面": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Couldn't Set Cover"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "暫時無法設為封面"}}}},
     "已设为封面": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Set as Cover"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已設為封面"}}}},
     "设为封面": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Set as Cover"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "設為封面"}}}},
@@ -2843,7 +2843,7 @@
     "正在分析": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Analyzing"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在分析"}}}},
     "整理所选": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Organize Selected"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "整理所選"}}}},
     "整理…": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Organize…"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "整理…"}}}},
-    "应用所选 (%lld)": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Apply Selected (%lld)"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "應用程式所選 (%lld)"}}}},
+    "应用所选 (%lld)": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Apply Selected (%lld)"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "套用所選 (%lld)"}}}},
     "执行 %lld 项": {
   "localizations": {
     "en": {
@@ -2889,7 +2889,7 @@
   },
   "comment": "Apply the remaining number of file-operation suggestions."
 },
-    "确认应用": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Confirm"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "確認應用程式"}}}},
+    "确认应用": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Confirm"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "確認套用"}}}},
     "没有图片候选": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "No Image Candidates"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "沒有圖片候選"}}}},
     "准备以下书籍的正文，用于本次查询：%@": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Prepare the text of these books for this query: %@"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "準備以下書籍的正文，用於本次查詢：%@"}}}},
     "上下文容量（tokens，必填）": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Context capacity (tokens, required)"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "上下文容量（tokens，必填）"}}}},
@@ -2979,13 +2979,13 @@
     "正在回复": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Responding"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在回覆"}}}},
     "正在思考": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Reasoning"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在思考"}}}},
     "此处原文暂时不可用。": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "This source is currently unavailable."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "此處原文暫時不可用。"}}}},
-    "调整当前任务": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Steer current task"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "調整當前任務"}}}},
+    "调整当前任务": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Steer current task"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "調整目前任務"}}}},
     "完成后发送": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Send after completion"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "完成後傳送"}}}},
     "移除排队消息": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Remove queued message"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "移除排隊訊息"}}}},
     "发送方式": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Send mode"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "傳送方式"}}}},
     "网络连接中断": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Network connection lost"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "網路連線中斷"}}}},
     "等待回复超时": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Response timed out"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "等待回覆超時"}}}},
-    "当前连接认证失效": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Connection authentication expired"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "當前連線認證失效"}}}},
+    "当前连接认证失效": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Connection authentication expired"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目前連線認證失效"}}}},
     "请求受到限制或额度不足": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Request limit or insufficient quota"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "請求受到限制或額度不足"}}}},
     "服务暂时不可用": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Service temporarily unavailable"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "服務暫時不可用"}}}},
     "此次请求未被接受": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Request not accepted"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "此次請求未被接受"}}}},
@@ -3045,7 +3045,7 @@
     "在月读中": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"In Moonread"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "在月讀中"}}}},
     "文字对话": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Text Chat"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "文字對話"}}}},
     "深度思考": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reasoning"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "深度思考"}}}},
-    "流式回复": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Streaming"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "流式回覆"}}}},
+    "流式回复": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Streaming"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "串流回覆"}}}},
     "思考程度": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reasoning Effort"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "思考程度"}}}},
     "容量": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Capacity"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "容量"}}}},
     "连接目录": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Connection Directory"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "連線目錄"}}}},
@@ -3069,7 +3069,7 @@
     "选择模型": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Choose Model"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "選擇模型"}}}},
     "选择模型与思考强度": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Choose model and reasoning effort"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "選擇模型與思考強度"}}}},
     "还没有可用模型": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"No Models Available"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "還沒有可用模型"}}}},
-    "先连接一个 AI 账户并加载模型。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Connect an AI account and load its models first."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "先連線一個 AI 賬戶並載入模型。"}}}},
+    "先连接一个 AI 账户并加载模型。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Connect an AI account and load its models first."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "先連線一個 AI 帳戶並載入模型。"}}}},
     "需要登录此连接": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sign in to this connection"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "需要登入此連線"}}}},
     "本次选择将在下一次请求生效": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"This selection takes effect on the next request"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "本次選擇將在下一次請求生效"}}}},
     "模型目录已变化，请重新选择。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The model directory has changed. Choose again."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "模型目錄已變化，請重新選擇。"}}}},
@@ -3089,10 +3089,10 @@
     "默认连接": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Default Connection"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "預設連線"}}}},
     "修改连接名称": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Rename Connection"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "修改連線名稱"}}}},
     "更多连接操作": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"More Connection Actions"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "更多連線操作"}}}},
-    "Codex · 订阅账户": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Codex · Subscription Account"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "Codex · 訂閱賬戶"}}}},
+    "Codex · 订阅账户": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Codex · Subscription Account"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "Codex · 訂閱帳戶"}}}},
     "连接你的 Codex 订阅": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Connect Your Codex Subscription"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "連線你的 Codex 訂閱"}}}},
-    "使用自己的账户登录，在月读中讨论小说。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sign in with your account to discuss books in Moonread."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "使用自己的賬戶登入，在月讀中討論小說。"}}}},
-    "重新连接你的账户": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reconnect Your Account"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "重新連線你的賬戶"}}}},
+    "使用自己的账户登录，在月读中讨论小说。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sign in with your account to discuss books in Moonread."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "使用自己的帳戶登入，在月讀中討論小說。"}}}},
+    "重新连接你的账户": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reconnect Your Account"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "重新連線你的帳戶"}}}},
     "登录已失效，请重新授权。已有对话会保留。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Your sign-in has expired. Authorize again to reconnect. Your conversations are kept."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "登入已失效，請重新授權。已有對話會保留。"}}}},
     "正在获取登录码…": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Getting a sign-in code…"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在獲取登入碼…"}}}},
     "在 OpenAI 完成授权": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Authorize with OpenAI"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "在 OpenAI 完成授權"}}}},
@@ -3136,12 +3136,12 @@
     "正在生成": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Generating"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在生成"}}}},
     "回复已中断，可继续提问。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"This reply was interrupted. You can continue the conversation."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "回覆已中斷，可繼續提問。"}}}},
     "添加 Codex 连接": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Add Codex Connection"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "新增 Codex 連線"}}}},
-    "问题与有限阅读上下文发送给所选服务。Codex 使用你登录账户的权限；月读不提供额度，也不自动切换计费连接。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Your question and limited reading context are sent to the selected service. Codex uses your signed-in account permissions. Moonread provides no quota and never switches billing connections automatically."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "問題與有限閱讀上下文傳送給所選服務。Codex 使用你登入賬戶的許可權；月讀不提供額度，也不自動切換計費連線。"}}}},
-    "默认文本模型": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Default Text Model"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "預設文本模型"}}}},
+    "问题与有限阅读上下文发送给所选服务。Codex 使用你登录账户的权限；月读不提供额度，也不自动切换计费连接。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Your question and limited reading context are sent to the selected service. Codex uses your signed-in account permissions. Moonread provides no quota and never switches billing connections automatically."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "問題與有限閱讀上下文傳送給所選服務。Codex 使用你登入帳戶的權限；月讀不提供額度，也不自動切換計費連線。"}}}},
+    "默认文本模型": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Default Text Model"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "預設文字模型"}}}},
     "连接": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Connections"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "連線"}}}},
     "服务": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Service"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "服務"}}}},
     "额度来源": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Billing"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "額度來源"}}}},
-    "订阅账户": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Subscription Account"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "訂閱賬戶"}}}},
+    "订阅账户": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Subscription Account"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "訂閱帳戶"}}}},
     "退出登录": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sign Out"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "退出登入"}}}},
     "登录 Codex": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sign In to Codex"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "登入 Codex"}}}},
     "复制登录码": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Copy Login Code"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製登入碼"}}}},
@@ -3206,22 +3206,22 @@
     "AI 请求超时，请重试。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The AI request timed out. Please retry."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "AI 請求超時，請重試。"}}}},
     "AI 请求未完成，请检查连接或重新登录。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The AI request was not completed. Check your connection or sign in again."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "AI 請求未完成，請檢查連線或重新登入。"}}}},
     "此构建不支持 iCloud 阅读数据同步。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"This build does not support iCloud reading data sync."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "此構建不支援 iCloud 閱讀資料同步。"}}}},
-    "iCloud 账户已变化，阅读数据同步已暂停。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The iCloud account has changed. Reading data sync is paused."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "iCloud 賬戶已變化，閱讀資料同步已暫停。"}}}},
-    "账户已再次变化，请重新确认。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The account has changed again. Please confirm again."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "賬戶已再次變化，請重新確認。"}}}},
+    "iCloud 账户已变化，阅读数据同步已暂停。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The iCloud account has changed. Reading data sync is paused."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "iCloud 帳戶已變化，閱讀資料同步已暫停。"}}}},
+    "账户已再次变化，请重新确认。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The account has changed again. Please confirm again."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "帳戶已再次變化，請重新確認。"}}}},
     "暂时无法连接 iCloud，阅读数据同步未完成。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Unable to connect to iCloud. Reading data sync is incomplete."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "暫時無法連線 iCloud，閱讀資料同步未完成。"}}}},
     "iCloud 空间不足，阅读数据同步未完成。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"iCloud storage is full. Reading data sync is incomplete."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "iCloud 空間不足，閱讀資料同步未完成。"}}}},
     "阅读数据已暂停": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Data Paused"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀資料已暫停"}}}},
     "正在处理": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Processing"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在處理"}}}},
-    "已保留开启意愿，当前同步暂停。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sync remains enabled in your preferences, but is currently paused."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已保留開啟意願，當前同步暫停。"}}}},
-    "确认同步到此账户": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Confirm Sync to This Account"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "確認同步到此賬戶"}}}},
+    "已保留开启意愿，当前同步暂停。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sync remains enabled in your preferences, but is currently paused."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已保留開啟意願，目前同步暫停。"}}}},
+    "确认同步到此账户": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Confirm Sync to This Account"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "確認同步到此帳戶"}}}},
     "重试阅读数据同步": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Retry Reading Data Sync"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "重試閱讀資料同步"}}}},
-    "是否将本机阅读数据同步到此账户？": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sync Local Reading Data to This Account?"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "是否將本機閱讀資料同步到此賬戶？"}}}},
-    "同步到此账户": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sync to This Account"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "同步到此賬戶"}}}},
-    "仅同步当前本机仍存在的阅读数据，不移动小说文件。退出账户后的数据保留遵循系统规则。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sync only the reading data currently remaining on this device. Novel files are not moved. Data retention after signing out follows system behavior."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "僅同步當前本機仍存在的閱讀資料，不移動小說檔案。退出賬戶後的資料保留遵循系統規則。"}}}},
+    "是否将本机阅读数据同步到此账户？": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sync Local Reading Data to This Account?"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "是否將本機閱讀資料同步到此帳戶？"}}}},
+    "同步到此账户": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sync to This Account"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "同步到此帳戶"}}}},
+    "仅同步当前本机仍存在的阅读数据，不移动小说文件。退出账户后的数据保留遵循系统规则。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sync only the reading data currently remaining on this device. Novel files are not moved. Data retention after signing out follows system behavior."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "僅同步目前本機仍存在的閱讀資料，不移動小說檔案。退出帳戶後的資料保留遵循系統規則。"}}}},
     "阅读统计设置": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Statistics Settings"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀統計設定"}}}},
     "统计设置": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Statistics Settings"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "統計設定"}}}},
     "书架与同步": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Library & Sync"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "書架與同步"}}}},
-    "应用": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"App"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "應用程式"}}}},
+    "应用": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"App"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "套用"}}}},
     "应用外观": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"App Appearance"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "應用程式外觀"}}}},
     "记录中": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Recording"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "記錄中"}}}},
     "已暂停": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Paused"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已暫停"}}}},
@@ -3234,12 +3234,12 @@
     "清除阅读统计": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Clear Reading Statistics"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "清除閱讀統計"}}}},
     "清除阅读统计？": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Clear reading statistics?"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "清除閱讀統計？"}}}},
     "屏幕方向": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Screen Orientation"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "螢幕方向"}}}},
-    "当前无法切换屏幕方向，已恢复跟随系统。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Unable to change screen orientation. System orientation has been restored."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "當前無法切換螢幕方向，已恢復跟隨系統。"}}}},
+    "当前无法切换屏幕方向，已恢复跟随系统。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Unable to change screen orientation. System orientation has been restored."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目前無法切換螢幕方向，已恢復跟隨系統。"}}}},
     "阅读数据同步": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Data Sync"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀資料同步"}}}},
     "我的书架文件": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"My Library Files"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "我的書架檔案"}}}},
     "同步进度、书签、批注、小说信息、配色方案和阅读统计。显示与阅读偏好留在此设备；此开关不控制小说文件。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Syncs positions, bookmarks, annotations, book information, color palettes, and reading statistics. Display and reading preferences stay on this device. This switch does not control novel files."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "同步進度、書籤、批註、小說資訊、配色方案和閱讀統計。顯示與閱讀偏好留在此裝置；此開關不控制小說檔案。"}}}},
     "我的书架由应用管理固定的本机与 iCloud 目录，小说文件由 iCloud Drive 同步。外部文件夹仍在原位置管理。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The app manages fixed local and iCloud folders for My Library. iCloud Drive syncs novel files. External folders remain at their original locations."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "我的書架由應用程式管理固定的本機與 iCloud 目錄，小說檔案由 iCloud Drive 同步。外部資料夾仍在原位置管理。"}}}},
-    "小说保存在我的书架或你添加的目录；我的书架可接入应用固定的 iCloud 文件目录。阅读数据可选择通过 iCloud 同步，显示与阅读偏好保存在此设备。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Novels are stored in My Library or folders you add. My Library can use the app’s fixed iCloud folder. Reading data can optionally sync through iCloud; display and reading preferences stay on this device."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "小說儲存在我的書架或你新增的目錄；我的書架可接入應用程式固定的 iCloud 檔案目錄。閱讀資料可選擇通過 iCloud 同步，顯示與閱讀偏好儲存在此裝置。"}}}},
+    "小说保存在我的书架或你添加的目录；我的书架可接入应用固定的 iCloud 文件目录。阅读数据可选择通过 iCloud 同步，显示与阅读偏好保存在此设备。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Novels are stored in My Library or folders you add. My Library can use the app’s fixed iCloud folder. Reading data can optionally sync through iCloud; display and reading preferences stay on this device."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "小說儲存在我的書架或你新增的目錄；我的書架可接入應用程式固定的 iCloud 檔案目錄。閱讀資料可選擇透過 iCloud 同步，顯示與閱讀偏好儲存在此裝置。"}}}},
     "已选择删除，完成后移除批注": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Deletion selected. Done will remove the annotation."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已選擇刪除，完成後移除批註"}}}},
     "已选定结果，可继续编辑": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Result selected. Continue editing below."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已選定結果，可繼續編輯"}}}},
     "重新选择": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Choose Again"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "重新選擇"}}}},
@@ -3275,7 +3275,7 @@
     "读完": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Finished"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "讀完"}}}},
     "暂搁": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"On Hold"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "暫擱"}}}},
     "全书位置": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Book Position"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "全書位置"}}}},
-    "当前章覆盖": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Current Chapter Coverage"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "當前章覆蓋"}}}},
+    "当前章覆盖": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Current Chapter Coverage"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目前章覆蓋"}}}},
     "展开简介": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show Description"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "展開簡介"}}}},
     "返回阅读": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Return to Reading"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "返回閱讀"}}}},
     "文件信息": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"File Information"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "檔案資訊"}}}},
@@ -3474,7 +3474,7 @@
     "小说保存在 iCloud Drive": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Books are stored in iCloud Drive"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "小說儲存在 iCloud Drive"}}}},
     "未登录 iCloud，小说保存在本机。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Not signed in to iCloud. Books are stored on this device."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "未登入 iCloud，小說儲存在本機。"}}}},
     "iCloud Drive 暂时不可用。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"iCloud Drive is temporarily unavailable."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "iCloud Drive 暫時不可用。"}}}},
-    "iCloud 账户已变化，原账户的本机文件不会自动上传。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The iCloud account changed. Local files from the previous account will not upload automatically."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "iCloud 賬戶已變化，原賬戶的本機檔案不會自動上傳。"}}}},
+    "iCloud 账户已变化，原账户的本机文件不会自动上传。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The iCloud account changed. Local files from the previous account will not upload automatically."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "iCloud 帳戶已變化，原帳戶的本機檔案不會自動上傳。"}}}},
     "本机与 iCloud 有同名文件，原件已保留。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Local and iCloud files have the same name. Both originals have been kept."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "本機與 iCloud 有同名檔案，原件已保留。"}}}},
     "阅读数据 iCloud 同步": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sync Reading Data with iCloud"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀資料 iCloud 同步"}}}},
     "正在同步": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Syncing"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在同步"}}}},
@@ -3488,9 +3488,9 @@
     "正在加载": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Loading"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在載入"}}}},
     "正在加载书架": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Loading library"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在載入書架"}}}},
     "正在加载文件夹": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Loading folder"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在載入資料夾"}}}},
-    "正在应用目录": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Applying chapters"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在應用程式目錄"}}}},
+    "正在应用目录": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Applying chapters"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在套用目錄"}}}},
     "正在定位": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Finding position"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在定位"}}}},
-    "清除文本": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Clear Text"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "清除文本"}}}},
+    "清除文本": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Clear Text"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "清除文字"}}}},
     "显示方式": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Display Mode"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "顯示方式"}}}},
     "列表": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"List"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "列表"}}}},
     "网格": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Grid"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "網格"}}}},
@@ -3792,7 +3792,7 @@
 },
     "显示更多章节": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show more chapters"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "顯示更多章節"}}}},
     "目录预览": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Contents Preview"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目錄預覽"}}}},
-    "应用目录": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Apply contents"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "應用程式目錄"}}}},
+    "应用目录": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Apply contents"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "套用目錄"}}}},
     "恢复自动目录？": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Restore detected contents?"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "恢復自動目錄？"}}}},
     "清除人工修正": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Clear manual corrections"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "清除人工修正"}}}},
     "仅清除目录的人工修正，正文、书签和笔记保持不变。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Only manual contents corrections will be cleared. Text, bookmarks, and notes will stay the same."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "僅清除目錄的人工修正，正文、書籤和筆記保持不變。"}}}},
@@ -3825,7 +3825,7 @@
     "清除章节搜索": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Clear chapter search"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "清除章節搜尋"}}}},
     "%@ 字": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"%@ chars"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "%@ 字"}}}},
     "%@+ 字": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"%@+ chars"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "%@+ 字"}}}},
-    "当前章节，%@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Current chapter, %@"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "當前章節，%@"}}}},
+    "当前章节，%@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Current chapter, %@"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目前章節，%@"}}}},
     "设置": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Settings"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "設定"}}}},
     "书架": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Library"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "書架"}}}},
     "阅读主题": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reader theme"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀主題"}}}},
@@ -3845,7 +3845,7 @@
     "薄荷": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Mint"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "薄荷"}}}},
     "雾紫": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Lilac"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "霧紫"}}}},
     "预设": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Presets"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "預設"}}}},
-    "自定义": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Custom"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "自定義"}}}},
+    "自定义": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Custom"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "自訂"}}}},
     "减弱动态效果": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reduce Motion"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "減弱動態效果"}}}},
     "语言": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Language"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "語言"}}}},
     "系统设置": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"System settings"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "系統設定"}}}},
@@ -3886,7 +3886,7 @@
     "选中": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Selected"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "選中"}}}},
     "阅读标记": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Marks"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀標記"}}}},
     "搜索结果": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Search Results"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "搜尋結果"}}}},
-    "当前搜索结果": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Current Search Result"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "當前搜尋結果"}}}},
+    "当前搜索结果": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Current Search Result"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目前搜尋結果"}}}},
     "文字选区": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Text Selection"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "文字選區"}}}},
     "状态与月亮": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Status and Moon"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "狀態與月亮"}}}},
     "删除按钮文字": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Text on Delete"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "刪除按鈕文字"}}}},
@@ -4446,7 +4446,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "當前章節"
+            "value": "目前章節"
           }
         }
       }
@@ -4510,7 +4510,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "正則"
+            "value": "正規"
           }
         }
       }
@@ -4682,7 +4682,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "搜尋表示式無效，請檢查正則語法或改用普通文本。"
+            "value": "搜尋表示式無效，請檢查正規語法或改用一般文字。"
           }
         }
       }
@@ -5242,7 +5242,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "當前時間"
+            "value": "目前時間"
           }
         }
       }
@@ -5834,7 +5834,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "在書架右上角點“＋”，選擇“匯入小說”，或從“檔案”App 把 TXT 拖進“我的書架”。在書架資料夾裡匯入時，小說會留在當前資料夾。第一次開啟大檔案時，月讀會邊準備邊顯示正文。"
+          "value": "在書架右上角點“＋”，選擇“匯入小說”，或從“檔案”App 把 TXT 拖進“我的書架”。在書架資料夾裡匯入時，小說會留在目前資料夾。第一次開啟大檔案時，月讀會邊準備邊顯示正文。"
         }
       }
     }
@@ -5857,7 +5857,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "在設定的“AI 助手”中新增連線並選擇模型後，可以針對當前頁面或選中的文字提問。只有你主動使用 AI 時，才會傳送相應上下文。"
+          "value": "在設定的“AI 助手”中新增連線並選擇模型後，可以針對目前頁面或選中的文字提問。只有你主動使用 AI 時，才會傳送相應上下文。"
         }
       }
     }
@@ -5995,7 +5995,7 @@
       "zh-Hant": {
         "stringUnit": {
           "state": "translated",
-          "value": "開啟系統 iCloud Drive 後，“我的書架”的小說檔案由 iCloud Drive 同步。閱讀進度、書籤和批註由設定中的“閱讀資料 iCloud 同步”控制；更換賬戶時可能需要確認。"
+          "value": "開啟系統 iCloud Drive 後，“我的書架”的小說檔案由 iCloud Drive 同步。閱讀進度、書籤和批註由設定中的“閱讀資料 iCloud 同步”控制；更換帳戶時可能需要確認。"
         }
       }
     }
@@ -6434,38 +6434,8 @@
         }
       }
     },
-    "此设备尚未配置邮件账户。可复制以下内容，粘贴到你使用的邮件应用，检查并编辑后发送。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No mail account is configured on this device. Copy the contents below into your preferred email app, then review and edit them before sending."
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "此裝置尚未配置郵件賬戶。可複製以下內容，貼上到你使用的郵件應用程式，檢查並編輯後傳送。"
-          }
-        }
-      }
-    },
-    "复制邮件内容": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Copy Email Contents"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "複製郵件內容"
-          }
-        }
-      }
-    },
+
+
     "标注与笔记": {
       "localizations": {
         "en": {
@@ -6493,7 +6463,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "回到當前章"
+            "value": "回到目前章"
           }
         }
       }
@@ -6605,7 +6575,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "新增或移除當前位置的書籤"
+            "value": "新增或移除目前位置的書籤"
           }
         }
       }
@@ -6797,7 +6767,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "已配置"
+            "value": "已設定"
           }
         }
       }
@@ -6813,7 +6783,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "問題與相關閱讀上下文傳送給所選服務，使用該連線的賬戶許可權與額度。月讀不提供額度，也不自動切換計費連線。"
+            "value": "問題與相關閱讀上下文傳送給所選服務，使用該連線的帳戶權限與額度。月讀不提供額度，也不自動切換計費連線。"
           }
         }
       }
@@ -6861,7 +6831,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "賬戶登入"
+            "value": "帳戶登入"
           }
         }
       }
@@ -6877,7 +6847,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "自定義連線"
+            "value": "自訂連線"
           }
         }
       }
@@ -6925,7 +6895,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "連線賬戶"
+            "value": "連線帳戶"
           }
         }
       }
@@ -7133,7 +7103,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "排隊中，調整當前任務"
+            "value": "排隊中，調整目前任務"
           }
         }
       }
@@ -7213,7 +7183,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "移除配置和本機憑證，保留已有對話。"
+            "value": "移除設定和本機憑證，保留已有對話。"
           }
         }
       }
@@ -7245,7 +7215,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "賬戶"
+            "value": "帳戶"
           }
         }
       }
@@ -7325,7 +7295,7 @@
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "登入賬戶"
+            "value": "登入帳戶"
           }
         }
       }
@@ -8025,7 +7995,16 @@
           }
         }
       }
-    }
+    },
+    "已删除的连接": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Deleted Connection"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已刪除的連線"}}}},
+    "无法打开邮件应用。可分别复制收件人、主题和正文，粘贴到邮件应用，检查并编辑后发送。": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Unable to open a mail app. Copy the recipient, subject, and body separately into your mail app, then review and edit before sending."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "無法開啟郵件應用程式。可分別複製收件人、主旨和內文，貼上到郵件應用程式，檢查並編輯後傳送。"}}}},
+    "收件人": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Recipient"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "收件人"}}}},
+    "主题": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Subject"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "主旨"}}}},
+    "邮件正文": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Message Body"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "郵件內文"}}}},
+    "复制收件人": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Copy Recipient"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製收件人"}}}},
+    "复制主题": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Copy Subject"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製主旨"}}}},
+    "复制正文": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Copy Body"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製內文"}}}},
+    "复制全部": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Copy All"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製全部"}}}}
   },
   "version": "1.0"
 }
