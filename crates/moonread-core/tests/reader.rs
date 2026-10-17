@@ -266,10 +266,23 @@ fn chapter_lookup_recognizes_preface_but_ignores_prose_without_headings() {
 }
 
 #[test]
-fn development_store_requires_explicit_reset_on_schema_change() {
+fn unsupported_store_versions_are_rejected_without_reset() {
     let dir = TempDir::new().unwrap();
     drop(core(&dir));
     let db = rusqlite::Connection::open(dir.path().join("data/reader.sqlite3")).unwrap();
+    db.execute_batch("PRAGMA user_version=21").unwrap();
+    assert!(matches!(
+        ReaderCore::new(dir.path().join("data").to_string_lossy().into()),
+        Err(ReaderError::StoreTooNew {
+            version: 21,
+            current: 20
+        })
+    ));
+    assert_eq!(
+        db.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
+            .unwrap(),
+        21
+    );
     db.execute_batch("PRAGMA user_version=1").unwrap();
     assert!(matches!(
         ReaderCore::new(dir.path().join("data").to_string_lossy().into()),

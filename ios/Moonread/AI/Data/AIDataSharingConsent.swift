@@ -50,7 +50,7 @@ import CryptoKit
     @ObservationIgnored var revoked: (String, Set<String>) -> Void = { _, _ in }
     init(defaults: UserDefaults) {
         self.defaults = defaults
-        grants = defaults.data(forKey: "Moonread.ai.sharing.grants").flatMap { try? JSONDecoder().decode([Grant].self, from: $0) } ?? []
+        grants = AIPersistedJSON.readArray(Grant.self, data: defaults.data(forKey: "Moonread.ai.sharing.grants"), key: "Moonread.ai.sharing.grants")
         generations = defaults.dictionary(forKey: "Moonread.ai.sharing.generations") as? [String: String] ?? [:]
     }
     func destination(_ connection: AIConnection, accountFingerprint: String = "") throws -> Destination {
@@ -128,7 +128,10 @@ import CryptoKit
         revoked(connectionID, owners.removeValue(forKey: connectionID) ?? [])
     }
     private func save() {
-        defaults.set(try? JSONEncoder().encode(grants), forKey: "Moonread.ai.sharing.grants")
+        do {
+            let data = try AIPersistedJSON.encodeArray(grants, original: defaults.data(forKey: "Moonread.ai.sharing.grants"), id: \.destination)
+            defaults.set(data, forKey: "Moonread.ai.sharing.grants")
+        } catch { AIPersistedJSON.skipped("Moonread.ai.sharing.grants (write refused)", index: -1) }
         defaults.set(generations, forKey: "Moonread.ai.sharing.generations")
     }
 }

@@ -151,7 +151,7 @@ Swift 上报正文可见性、实际交互、场景状态、单调时间和墙�
 
 片段保存在 SwiftData `ReadingFact`，包含正文身份、会话、连续访问 `visit_id`、设备、UTC 起止、发生地自然日/时区、正式或查阅类型、可见范围停留证据。SHA 完成前按临时身份保存，正文完成后从设备存储转入 SHA 正式用户存储。覆盖查询根据连续范围和 3 秒门槛派生，不把原始可见范围直接作为已读。
 
-阅读记录设置用独立 generation 阻断清理前的迟到写入；失败保留原 ID 重试，有界队列积满时暂停新增记录，并在统计页显示错误。数据库版本统一见[数据结构](../data/README.md)，开发版不维护旧库迁移；本机测试应用可直接清空重装，外部及云目录原件不随开发重置修改。真实设备的锁屏/长时性能、辅助功能及跨设备验证边界见[验证记录](../engineering/verification.md)。
+阅读记录设置用独立 generation 阻断清理前的迟到写入；失败保留原 ID 重试，有界队列积满时暂停新增记录，并在统计页显示错误。数据库版本统一见[数据结构](../data/README.md)，后续持久化变更须带版本与迁移测试，不能清空统计代替升级；外部及云目录原件不随迁移改写。真实设备的锁屏/长时性能、辅助功能及跨设备验证边界见[验证记录](../engineering/verification.md)。
 
 计时平台依据：[ScenePhase](https://developer.apple.com/documentation/swiftui/scenephase)、[失活时暂停与保存](https://developer.apple.com/documentation/uikit/uiscenedelegate/scenewillresignactive(_:))、[ContinuousClock](https://developer.apple.com/documentation/swift/continuousclock)。Apple Books 提供阅读分钟和目标功能，但[公开说明](https://support.apple.com/guide/iphone/set-reading-goals-iph6013e96f4/ios)没有公布可照搬的闲置算法。
 

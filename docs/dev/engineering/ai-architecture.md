@@ -28,7 +28,7 @@ AI 在现有 Swift target 内按职责组织，不另建包或实现第二套 SD
 
 完整基础设计与工具参数见 [Agent 基础](../ai/agent.md)、[工具契约](../ai/tools.md)。`AIAgentCoordinator` 是页面共用的应用级入口，复用同一 `AIConnectionService`，按会话持有 `AIAgentRuntime`。运行器负责 SDK 多步执行、排队、确认、停止、模型切换和压缩；`AIAgentStore` 保存有序历史及检查点；`AIReadingTools` 调用 ReaderService 最终业务投影。页面关闭应只移除观察者，不调用 stop/remove。
 
-旧文本执行循环和 `AIMessageRecord` 已删除。历史只存入 `AIAgentEntry`，未发送文字和附件仅保存在内存投影中；UI 由历史、当前增量和运行状态生成轮次投影，不保存第二份可编辑消息。不保留旧开发版本的 schema 迁移或兼容路径。
+旧文本执行循环和 `AIMessageRecord` 已删除。历史只存入 `AIAgentEntry`，未发送文字和附件仅保存在内存投影中；UI 由历史、当前增量和运行状态生成轮次投影，不保存第二份可编辑消息。后续持久化结构按发布兼容规则演进，迁移须保留历史。
 
 ## 验证
 
@@ -39,7 +39,7 @@ AI 在现有 Swift target 内按职责组织，不另建包或实现第二套 SD
 - 连接显式保存 providerID、providerName、wireProtocol、authMethod 与计费方式；预设创建完整连接，自定义连接也必须完整填写。不保留早期 Codex 默认对象、kind 分类及覆盖字段。
 - 当前会话的模型选择仅存在 AgentHead.selection。ConversationRecord 保存标题、阅读关联和任务分类；界面从会话头读取连接、模型和思考档位。已经启动的请求保留当次选择快照，后续切换只影响下一请求。
 - AIContext 只保存对话与正文 SHA、书名、章节的关联。入口的 AIEntryContext 携带本次阅读附件，附件进入输入草稿并随用户消息保存；可移除的输入附件不写入会话头或固定上下文。
-- 删除未使用的 AIAttachmentRecord；不为旧开发版数据增加迁移、可选旧字段或双重读写路径。
+- 删除未使用的 AIAttachmentRecord；后续 schema 变更需版本迁移并验证历史读写。
 
 `AINativeExecutor` 按默认用途解析连接并复用 SDK 原生工具；`AINativeTools` 只定义应用工具参数和调度。每个工具有独立可取消传输，连接服务登记取消句柄，移除/退出连接能停止不同聊天模型委托的请求。`AIAssetRecord` 保存会话资产，`AIImageStore` 只准备私有图片值并按 owner/ref 读取，工具历史只携带范围内引用，页面不拥有生成任务。
 
@@ -49,11 +49,11 @@ AI 在现有 Swift target 内按职责组织，不另建包或实现第二套 SD
 
 ## 快捷任务与业务提案
 
-以下保持一个 Agent、现有 Swift target、SDK、ReaderService/ReaderQuery、Rust 正文及文件索引、SwiftData 用户数据。不新增包、供应商、依赖、通用任务引擎、旧开发数据兼容或全应用 owner 重构。工具只是业务服务适配；目录组织不等于职责已经解耦。
+以下保持一个 Agent、现有 Swift target、SDK、ReaderService/ReaderQuery、Rust 正文及文件索引、SwiftData 用户数据。不新增包、供应商、依赖、通用任务引擎或全应用 owner 重构。工具只是业务服务适配；目录组织不等于职责已经解耦。
 
 ### 模型启用与搜索
 
-[AIConnection](../../../ios/Moonread/AI/Providers/AIConnection.swift) 保存 `disabledModelIDs: Set<String>`，随本机连接配置保存。新连接为空，刷新不删除停用 ID，新出现模型默认启用，消失后重现保留偏好；手工添加与详情“使用此模型”显式启用。无需自动启用设置或旧配置迁移。
+[AIConnection](../../../ios/Moonread/AI/Providers/AIConnection.swift) 保存 `disabledModelIDs: Set<String>`，随本机连接配置保存。新连接为空，刷新不删除停用 ID，新出现模型默认启用，消失后重现保留偏好；手工添加与详情“使用此模型”显式启用。不增加自动启用设置；新增持久化字段按发布兼容规则给默认值。
 
 停用只限制新选择。默认、对话、搜索、生图的当前值继续显示“未启用”且可用；运行和历史不变。执行器的 `model/purposeSelection` 不能加停用过滤而拒绝已有选择。修改当前模型的思考档位不视为重新选择。真正缺失或能力不匹配仍报错，不换账户。目录刷新仅在默认 modelID 为空时选第一个已启用文本模型，没有则留空。
 

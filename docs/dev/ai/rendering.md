@@ -4,7 +4,7 @@
 
 ## 稳定身份与增量投影
 
-同一 text/reasoning 块从 live、工具开始、step 提交、完成到重开，ID 和父级归属保持一致。ID 采用 turn/s{step}/p{part}，part 只计 text/reasoning；工具沿用 toolCallId。assistant entry 持久保存 turn 内 step 序号，head 保存当前 step，不能从当前 50 条窗口推算序号。runtime 按真实出现顺序保留 pendingParts 与工具位置，provider span ID 只用于匹配增量，不作展示身份。中断按有序 parts 重建，开发格式不做兼容。
+同一 text/reasoning 块从 live、工具开始、step 提交、完成到重开，ID 和父级归属保持一致。ID 采用 turn/s{step}/p{part}，part 只计 text/reasoning；工具沿用 toolCallId。assistant entry 持久保存 turn 内 step 序号，head 保存当前 step，不能从当前 50 条窗口推算序号。runtime 按真实出现顺序保留 pendingParts 与工具位置，provider span ID 只用于匹配增量，不作展示身份。中断按有序 parts 重建，持久化格式演进须保留旧历史可读并验证迁移。
 
 单个 turn 输出按流式顺序的块列表，最终回答是最后一个 text；不在 answer/process/committed 容器之间迁移文本。已提交投影仅在 entries 改变时重算，流式 tick 只更新活动 turn；结构变化走完整投影。UI 的行值 Equatable，observer 仅在 head/running/confirmations 真正变化时发布；稳定 group 以首个 item ID 归属。
 

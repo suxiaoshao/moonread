@@ -2,6 +2,16 @@
 
 更新：2026-10-17。本文按能力保存必要证据与未覆盖范围，不作逐轮修改日志。表中结果来自各次受影响回归，不能解释为当前版本在所有设备上完成了全量验收。
 
+## 2026-10-17 发布持久化基线与逐条容错
+
+完成发布冻结第 2、3、4、5、9 项：连接、共享授权和用途默认值逐条读取，坏会话不影响其他会话；日志只含集合键/行序号，不含 JSON、凭据或正文。读取不回写，保存时保留不可识别条目并按稳定 ID/用途键更新可识别项，显式删除与清除字段仍有效。用途默认值读取此前键值数组与字符串键对象，保存为对象；JSON 整体损坏则拒绝覆盖。授权撤销的 generation 仍生效，未知授权不能恢复已撤销权限。
+
+SQLite 以 v20 为支持基线，逐级事务入口正式步骤为空；测试用模拟步骤验证顺序、失败回滚和继续升级，ReaderCore 入口验证高低版本拒绝且版本号/原库保留。无自动清库或删除重装提示。阅读设置 Tab 存储值为稳定英文，旧开发中文值按本轮决定不迁移；App Debug/Release 版本均为 1.0.0，构建号仍为 2（后续上传单调递增）。AGENTS 与相关专题改为发布兼容规则，正文算法和 normalization-v1 身份未改。
+
+Nix 中 3 项迁移单元测试、9 项 ReaderCore 回归通过，`cargo fmt --all -- --check` 与 Clippy（all-targets/all-features，`-D warnings`）通过。Xcode 27.1 / iOS 27.0 模拟器 Debug 构建通过，25 项不同 Swift 定向测试通过（首轮 24 项，补测 3 项含 2 项重复）：逐条容错/原始条目与未知字段保留/损坏容器拒绝覆盖、共享授权撤销、坏会话留存、Tab 标识、版本错误中英文、用途默认值、阅读预览及许可资源。实际构建产物的 CFBundleShortVersionString 已核对为 1.0.0。`git diff --check` 通过。
+
+证据在本机 `build/ReleaseFreeze/{rust-migrations.log,rust-reader.log,clippy.log,swift-tests.log,swift-final-tests.log}`。首次 Swift 尝试遇到 Xcode 更新后模拟器服务版本不匹配，系统组件初始化完成后重跑通过，环境失败留在 `swift-tests-environment.log`；未重置模拟器或操作真机。未部署 CloudKit 生产 schema；同步 payload 前向兼容仍待架构师审阅后另行实施，本轮不宣称冻结检查全部完成。
+
 ## 2026-10-17 政策与支持站迁入主仓库
 
 `build/SiteDesign` 的配置、content、templates、static 迁入 `docs/site/`；正文、样式和图片不改，仅将支持页两处旧站政策链接改为 Zola 内部链接。public、preview、空 sass 不纳入源码，构建产物已忽略。正式根地址改为 `https://suxiaoshao.github.io/moonread/`，App 中英政策／支持链接与现行文档同步；旧 moonread-site 记录标为历史迁移，注册 OAuth App 的地址待公开切换后在 GitHub 设置更新。

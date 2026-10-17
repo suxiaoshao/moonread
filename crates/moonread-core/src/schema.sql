@@ -1,3 +1,5 @@
+-- Frozen v20 baseline. Add future changes as ordered steps in migrations.rs;
+-- both new and existing databases must pass through the same upgrade steps.
 CREATE TABLE books (
  id TEXT PRIMARY KEY, title TEXT NOT NULL, content_sha256 TEXT NOT NULL UNIQUE,
  encoding TEXT NOT NULL, byte_count INTEGER NOT NULL DEFAULT 0,

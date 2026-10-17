@@ -3176,12 +3176,22 @@
         }
       }
     },
-    "开发数据格式已更新，请删除应用后重新安装。": {
+    "数据由更新版本的月读创建，请更新应用后再打开。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The development data format has changed. Delete and reinstall the app."
+            "value": "This data was created by a newer Moonread version. Update the app to open it."
+          }
+        }
+      }
+    },
+    "数据早于支持的版本，暂时无法打开；原数据已保留。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This data predates the supported version and cannot be opened. The original data has been kept."
           }
         }
       }
