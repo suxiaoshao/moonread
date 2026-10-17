@@ -105,7 +105,7 @@ PhotosPicker/系统文件选择器取得图片后，由 ImageIO 校正方向并�
 
 ## 数据、加载与职责
 
-文件名、路径和下载状态归真实来源；补充信息归完整正文 SHA，同正文多来源共用。SwiftData 保存小说信息；Rust 查询对象内的 TEMP `book_metadata` 仅为计算输入，阅读片段使用 `visit_id`，当前版本见[数据与来源](../data/README.md)，不提供旧开发版迁移。
+文件名、路径和下载状态归真实来源；补充信息归完整正文 SHA，同正文多来源共用。SwiftData 保存小说信息；Rust 查询对象内的 TEMP `book_metadata` 仅为计算输入，阅读片段使用 `visit_id`，当前版本见[数据与来源](../data/README.md)，后续格式演进保持旧数据可读并测试迁移。
 
 ### 编辑前的正文身份
 

@@ -49,9 +49,9 @@ enum AIConnectionState: Equatable {
         self.defaults = defaults; self.auth = auth
         let arguments = ProcessInfo.processInfo.arguments
         let session = arguments.firstIndex(of: "--ui-test-session").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
-        if let data = defaults.data(forKey: "Moonread.ai.connections") { connections = (try? JSONDecoder().decode([AIConnection].self, from: data)) ?? [] }
+        connections = AIPersistedJSON.readArray(AIConnection.self, data: defaults.data(forKey: "Moonread.ai.connections"), key: "Moonread.ai.connections")
         defaultTextConnectionID = defaults.string(forKey: "Moonread.ai.defaultTextConnection")
-        if let data = defaults.data(forKey: "Moonread.ai.purposeDefaults") { purposeDefaults = (try? JSONDecoder().decode([AIModelPurpose: AIPurposeSelection].self, from: data)) ?? [:] }
+        purposeDefaults = AIPersistedJSON.readDictionary(AIPurposeSelection.self, data: defaults.data(forKey: "Moonread.ai.purposeDefaults"), key: "Moonread.ai.purposeDefaults")
         if arguments.contains("--ui-testing"), session != nil, arguments.contains("--ui-test-ai-model-picker") {
             var first = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection(); first.id = "fixture-first"; first.name = "测试连接甲"
             first.models = [AIModelOption(id: "shared", name: "Same Model", thinking: ["low", "high"], defaultThinking: "low")]
@@ -130,9 +130,11 @@ enum AIConnectionState: Equatable {
     }
     func saveConnections() {
         do {
-            defaults.set(try JSONEncoder().encode(connections), forKey: "Moonread.ai.connections")
+            let connectionsData = try AIPersistedJSON.encodeArray(connections, original: defaults.data(forKey: "Moonread.ai.connections"), id: \.id)
+            let purposesData = try AIPersistedJSON.encodeDictionary(purposeDefaults, original: defaults.data(forKey: "Moonread.ai.purposeDefaults"))
+            defaults.set(connectionsData, forKey: "Moonread.ai.connections")
             defaults.set(defaultTextConnectionID, forKey: "Moonread.ai.defaultTextConnection")
-            defaults.set(try JSONEncoder().encode(purposeDefaults), forKey: "Moonread.ai.purposeDefaults")
+            defaults.set(purposesData, forKey: "Moonread.ai.purposeDefaults")
         } catch { self.error = String(localized: "无法保存 AI 设置。") }
     }
     func isLoggedIn(_ connection: AIConnection) -> Bool {

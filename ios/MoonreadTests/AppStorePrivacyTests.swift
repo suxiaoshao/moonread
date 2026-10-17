@@ -41,6 +41,12 @@ final class AppStorePrivacyTests: XCTestCase {
         XCTAssertEqual(AppLinks.support(language: "en").absoluteString, "https://suxiaoshao.github.io/moonread/en/support/")
         XCTAssertEqual(AppLinks.contact?.absoluteString, "mailto:suxiaoshao@gmail.com")
     }
+    func testReleaseSettingsUseStableIdentifiersAndStoreErrorsPreserveData() {
+        XCTAssertEqual(ReadingSettingsTab.allCases.map(\.rawValue), ["typography", "colors", "controls"])
+        XCTAssertNil(ReadingSettingsTab(rawValue: "排版"))
+        XCTAssertFalse(ReaderMessages.error(ReaderError.IncompatibleStore).contains("重新安装"))
+        XCTAssertEqual(ReaderMessages.error(ReaderError.StoreTooNew(version: 21, current: 20)), String(localized: "数据由更新版本的月读创建，请更新应用后再打开。"))
+    }
 
     func testSystemSQLiteWALForeignKeysReturningAndConcurrentRead() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

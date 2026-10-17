@@ -142,8 +142,14 @@ final class StatisticsModel {
     var key: String?
     var title: String?
     var error: String?
+    var compatibilityNotice: String?
     var loading = false
     private var revision = 0
+
+    func report(_ error: Error) {
+        self.error = ReaderMessages.error(error)
+        if error is UserSyncCompatibilityError { overview = nil; cumulative = nil; spans = []; compatibilityNotice = nil }
+    }
 
     func load(_ window: StatisticsWindow, target: StatisticsRoute?) async {
         revision += 1
@@ -157,6 +163,7 @@ final class StatisticsModel {
                 contentKey = try await ReaderService.shared.book(id).contentSha256
             }
             if target != nil, contentKey == nil { contentKey = "unprepared" }
+            let notice = try await ReaderService.shared.statisticsCompatibilityNotice(book: contentKey)
             let bounds = window.bounds
             let result = try await ReaderService.shared.statistics(first: bounds.lowerBound, last: bounds.upperBound, book: contentKey)
             let all = target == nil ? nil : try await ReaderService.shared.statistics(first: 0, last: StatisticsDates.day(Date()), book: contentKey).books.first
@@ -166,9 +173,13 @@ final class StatisticsModel {
                 spans = StatisticsSpan.merge(try await ReaderService.shared.activities(first: first, last: last, book: contentKey))
             }
             guard !Task.isCancelled, request == revision else { return }
-            key = contentKey; title = target?.title; overview = result; cumulative = all; self.spans = spans
+            key = contentKey; title = target?.title; overview = result; cumulative = all; self.spans = spans; compatibilityNotice = notice
         } catch is CancellationError { }
-        catch { if request == revision { self.error = ReaderMessages.error(error) } }
+        catch {
+            if request == revision {
+                report(error)
+            }
+        }
     }
 }
 
@@ -222,6 +233,9 @@ struct StatisticsView: View {
                     .listRowBackground(Color(uiColor: theme.surface))
             }
             if let overview = model.overview {
+                if let notice = model.compatibilityNotice {
+                    Section { Label(notice, systemImage: "exclamationmark.circle") }.listRowBackground(Color(uiColor: theme.surface))
+                }
                 if !overview.preferences.enabled {
                     Section { Label("阅读统计已暂停", systemImage: "pause.circle").foregroundStyle(Color(uiColor: theme.secondary)) }
                         .listRowBackground(Color(uiColor: theme.surface))
@@ -341,7 +355,10 @@ struct StatisticsView: View {
             Task { if let target { await information.load(target) }; await library.reloadBooks() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in
-            Task { if let target { await information.load(target) } }
+            Task {
+                if visible { await model.load(window, target: statisticsTarget) }
+                if let target { await information.load(target) }
+            }
         }
         .onChange(of: library.revision) { _, _ in
             if visible, let target { Task { await information.load(target) } }
@@ -366,7 +383,7 @@ struct StatisticsView: View {
         .confirmationDialog("清除本书的阅读统计？", isPresented: $deleteBook, titleVisibility: .visible) {
             Button("清除统计", role: .destructive) {
                 guard let key = model.key else { return }
-                Task { do { try await ReaderService.shared.deleteStatistics(book: key) } catch { model.error = ReaderMessages.error(error) } }
+                Task { do { try await ReaderService.shared.deleteStatistics(book: key) } catch { model.report(error) } }
             }
         } message: { Text("正文、续读位置、书签和笔记会保留。") }
         .alert("暂时无法完成", isPresented: Binding(get: { model.error != nil && model.overview != nil }, set: { if !$0 { model.error = nil } })) {
@@ -848,11 +865,13 @@ struct StatisticsDayView: View {
     let route: StatisticsDayRoute
     @Environment(\.theme) private var theme
     @State private var spans: [StatisticsSpan] = []
+    @State private var compatibilityNotice: String?
     @State private var loaded = false
     @State private var error: String?
     private var total: UInt64 { spans.reduce(0) { $0 + $1.milliseconds } }
     var body: some View {
         List {
+            if error == nil, let compatibilityNotice { Text(compatibilityNotice).listRowBackground(Color(uiColor: theme.surface)) }
             if let error {
                 Text(error).foregroundStyle(Color(uiColor: theme.destructive)).listRowBackground(Color(uiColor: theme.surface))
             } else if loaded && spans.isEmpty {
@@ -873,10 +892,12 @@ struct StatisticsDayView: View {
         .task { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .statisticsChanged).receive(on: DispatchQueue.main)) { _ in Task { await load() } }
         .accessibilityIdentifier("statisticsDay")
+        .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in Task { await load() } }
     }
     private func load() async {
         do {
             await StatisticsWriter.shared.drain()
+            compatibilityNotice = try await ReaderService.shared.statisticsCompatibilityNotice(book: route.book)
             spans = StatisticsSpan.merge(try await ReaderService.shared.activities(first: route.day, last: route.day, book: route.book))
             error = nil
         } catch { self.error = ReaderMessages.error(error) }

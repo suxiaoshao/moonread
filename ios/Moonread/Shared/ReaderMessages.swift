@@ -5,7 +5,8 @@ enum ReaderMessages {
     static func error(_ error: Error, bundle: Bundle = .main) -> String {
         guard let error = error as? ReaderError else { return error.localizedDescription }
         switch error {
-        case .IncompatibleStore: return String(localized: "开发数据格式已更新，请删除应用后重新安装。", bundle: bundle)
+        case .IncompatibleStore: return String(localized: "数据早于支持的版本，暂时无法打开；原数据已保留。", bundle: bundle)
+        case .StoreTooNew: return String(localized: "数据由更新版本的月读创建，请更新应用后再打开。", bundle: bundle)
         case .CloudAccountChanged: return String(localized: "账户已再次变化，请重新确认。", bundle: bundle)
         case .InvalidRange: return String(localized: "这段文字暂时无法操作，请重新选择较短的范围。", bundle: bundle)
         case .SearchPattern: return String(localized: "搜索表达式无效，请检查正则语法或改用普通文本。", bundle: bundle)

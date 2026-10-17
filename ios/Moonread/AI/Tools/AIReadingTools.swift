@@ -100,6 +100,10 @@ enum AISearchMode: String, Codable, CaseIterable, Sendable { case literal, regex
 enum AIReadingStatus: String, Codable, CaseIterable, Sendable {
   case unread, reading, finished, paused
 }
+/// A read filter can include unsupported states; mutation proposals still accept known states only.
+enum AIReadingStatusFilter: String, Codable, CaseIterable, Sendable {
+  case unread, reading, finished, paused, other
+}
 enum AIStatisticsView: String, Codable, CaseIterable, Sendable {
   case summary, days, books, sessions, chapters
 }
@@ -119,13 +123,13 @@ struct AISearchBooksInput: AIReadingInput {
   var scopeRef: String?
   var author: String?
   var tags: [String]?
-  var readingStatus: AIReadingStatus?
+  var readingStatus: AIReadingStatusFilter?
   var sort: AIToolSort?
   var limit: Int?
   var cursor: String?
   static var constraints: [String: [String: JSONValue]] {
     [
-      "sort": enumField(AIToolSort.self), "readingStatus": enumField(AIReadingStatus.self),
+      "sort": enumField(AIToolSort.self), "readingStatus": enumField(AIReadingStatusFilter.self),
 
       "tags": [
         "type": .string("array"),
@@ -581,6 +585,7 @@ actor AIReadingTools {
     case .reading: "reading"
     case .finished: "finished"
     case .paused: "paused"
+    case .other: "other"
     }
   }
   private func addMetadata(

@@ -95,7 +95,10 @@ struct AIStagedAsset: Sendable {
         return value
     }
     func sessions() throws -> [AISessionValue] {
-        try modelContext.fetch(FetchDescriptor<AIConversationRecord>(sortBy: [SortDescriptor(\AIConversationRecord.updated, order: .reverse)])).map(value)
+        try modelContext.fetch(FetchDescriptor<AIConversationRecord>(sortBy: [SortDescriptor(\AIConversationRecord.updated, order: .reverse)])).enumerated().compactMap { index, row in
+            do { return try value(row) }
+            catch { AIPersistedJSON.skipped("AIRepository.sessions", index: index); return nil }
+        }
     }
     func session(_ id: String) throws -> AISessionValue { try value(record(id)) }
     func create(_ value: AISessionValue, head: AIAgentHead = .init(), assets: [AIStagedAsset] = []) throws {

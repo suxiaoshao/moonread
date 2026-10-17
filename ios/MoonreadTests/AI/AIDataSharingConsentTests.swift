@@ -28,6 +28,25 @@ import XCTest
         XCTAssertTrue(AIDataSharingConsent(defaults: defaults).permits(connection, scopes: [.conversation]))
         XCTAssertEqual(sent, 1)
     }
+    func testGrantDecodeSkipsUnknownScopesWithoutErasingThemOnRevoke() throws {
+        let (consent, connection, defaults) = fixture()
+        let destination = try JSONSerialization.jsonObject(with: JSONEncoder().encode(consent.destination(connection)))
+        let known: [String: Any] = ["destination": destination, "scopes": ["conversation"]]
+        let future: [String: Any] = ["destination": destination, "scopes": ["futureScope"]]
+        let key = "Moonread.ai.sharing.grants"
+        let original = try JSONSerialization.data(withJSONObject: [future, known, false])
+        defaults.set(original, forKey: key)
+        let restored = AIDataSharingConsent(defaults: defaults)
+        XCTAssertTrue(restored.permits(connection, scopes: [.conversation]))
+        XCTAssertEqual(defaults.data(forKey: key), original)
+        restored.revoke(connection.id)
+        XCTAssertFalse(restored.permits(connection, scopes: [.conversation]))
+        let saved = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(defaults.data(forKey: key))) as? [Any])
+        XCTAssertEqual(saved.count, 2)
+        XCTAssertEqual(saved[0] as? NSDictionary, future as NSDictionary)
+        XCTAssertEqual(saved[1] as? Bool, false)
+        XCTAssertFalse(AIDataSharingConsent(defaults: defaults).permits(connection, scopes: [.conversation]))
+    }
     func testDeclineAndOwnerCancellationNeverSend() async throws {
         let (consent, connection, _) = fixture()
         var sent = 0

@@ -21,8 +21,11 @@ extension BookMetadata {
 
 extension ReaderService {
     func details(bookID: String? = nil, sha: String? = nil) async throws -> BookDetails {
-        if let bookID { return try await bookQuery(bookID).bookDetails(bookId: bookID, contentSha: sha) }
-        return try await effectiveQuery(keys: sha.map { [$0] }).bookDetails(bookId: bookID, contentSha: sha)
+        let result: BookDetails
+        if let bookID { result = try await bookQuery(bookID).bookDetails(bookId: bookID, contentSha: sha) }
+        else { result = try await effectiveQuery(keys: sha.map { [$0] }).bookDetails(bookId: bookID, contentSha: sha) }
+        if !result.metadata.sha.isEmpty { try await userStore().requireMetadataReadable(key: result.metadata.sha) }
+        return result
     }
     func metadataOptions(shelfID: String?) async throws -> BookFilterOptions { try await catalogueQuery(shelfID.map { LibraryLocation(shelfID: $0) }, recursive: true).bookFilterOptions(shelfId: shelfID) }
     func saveMetadata(base: BookMetadata, edited: BookMetadata) async throws {
@@ -235,6 +238,6 @@ struct BookCoverImage: View {
 
 extension BookReadingStatus {
     var label: LocalizedStringKey {
-        switch self { case .unread: "未读"; case .reading: "阅读中"; case .finished: "读完"; case .paused: "暂搁" }
+        switch self { case .unread: "未读"; case .reading: "阅读中"; case .finished: "读完"; case .paused: "暂搁"; case .other: "其他（当前版本不支持）" }
     }
 }

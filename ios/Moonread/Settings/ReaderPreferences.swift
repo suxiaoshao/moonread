@@ -64,8 +64,15 @@ struct ReaderQuickSettings: View {
     }
 }
 
-private enum ReadingSettingsTab: String, CaseIterable {
-    case typography = "排版", colors = "配色", controls = "阅读控制"
+enum ReadingSettingsTab: String, CaseIterable {
+    case typography, colors, controls
+    var title: LocalizedStringKey {
+        switch self {
+        case .typography: "排版"
+        case .colors: "配色"
+        case .controls: "阅读控制"
+        }
+    }
 }
 
 struct ReaderSettingsView: View {
@@ -227,7 +234,7 @@ private struct ReadingSettingsControls: View {
     var body: some View {
         VStack(spacing: 0) {
             Picker("阅读设置分类", selection: $tab) {
-                ForEach(ReadingSettingsTab.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                ForEach(ReadingSettingsTab.allCases, id: \.self) { Text($0.title).tag($0) }
             }.pickerStyle(.segmented)
                 .padding(.horizontal, LayoutTokens.content).padding(.vertical, LayoutTokens.compact)
                 .accessibilityIdentifier("readerThemeTabs")

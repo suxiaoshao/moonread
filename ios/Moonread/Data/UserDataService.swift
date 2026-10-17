@@ -44,9 +44,11 @@ extension ReaderService {
     func userStore(for key: String) async throws -> UserDataStore { try await userStore(pending: key.hasPrefix("pending:")) }
     func markStore(_ id: String) async throws -> UserDataStore {
         let formal = try await userStore()
-        if (try? await formal.markCandidates(id)) != nil { return formal }
+        do { _ = try await formal.markCandidates(id); return formal }
+        catch ReaderError.NotFound { }
         let pending = try await userStore(pending: true)
-        if (try? await pending.markCandidates(id)) != nil { return pending }
+        do { _ = try await pending.markCandidates(id); return pending }
+        catch ReaderError.NotFound { }
         throw ReaderError.NotFound
     }
     func configureUserCloud(_ enabled: Bool, account: String?, allowAccountChange: Bool = false) async throws {
@@ -102,7 +104,7 @@ extension ReaderService {
         diagnostic?.mark("effectiveQuery.resumed")
         return query
     }
-    func effectiveQuery(facts: Bool = false, keys: [String]? = nil, positionsOnly: Bool = false, scope: String = "batch", diagnostic: ReaderOpenTrace? = nil) async throws -> ReaderQuery {
+    func effectiveQuery(facts: Bool = false, keys: [String]? = nil, positionsOnly: Bool = false, statisticsBook: String? = nil, scope: String = "batch", diagnostic: ReaderOpenTrace? = nil) async throws -> ReaderQuery {
         diagnostic?.mark("effectiveQuery.actor.begin")
         defer { diagnostic?.mark("effectiveQuery.actor.return") }
         diagnostic?.mark("formalStore.queued")
@@ -126,15 +128,15 @@ extension ReaderService {
                 if item.key.hasPrefix(prefix), let file = item.value as? String { result[String(item.key.dropFirst(prefix.count))] = file }
             }
         }
-        let cacheKey = scope + "-\(facts)-\(positionsOnly)-" + (keys?.sorted().joined(separator: ",") ?? "all")
+        let cacheKey = scope + "-\(facts)-\(positionsOnly)-\(statisticsBook ?? "all")-" + (keys?.sorted().joined(separator: ",") ?? "all")
         let signature = "\(userCloudConfigurationRevision)-\(formalVersion)-\(pendingVersion)-\(preferences.generation)-\(preferences.enabled)-" + hidden.sorted().joined(separator: ",") + preferred.sorted { $0.key < $1.key }.map { $0.key + "=" + $0.value }.joined(separator: ",")
         diagnostic?.mark("inputSignature.return")
         if let cached = queryCache[cacheKey], cached.signature == signature { diagnostic?.mark("query.cacheHit"); return cached.query }
         diagnostic?.mark("formalProjection.queued")
-        let formalJSON = try await store.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: keys, positionsOnly: positionsOnly, diagnostic: diagnostic, diagnosticScope: "formalProjection")
+        let formalJSON = try await store.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: keys, positionsOnly: positionsOnly, statisticsBook: statisticsBook, diagnostic: diagnostic, diagnosticScope: "formalProjection")
         diagnostic?.mark("formalProjection.resumed")
         diagnostic?.mark("pendingProjection.queued")
-        let pendingJSON = try await pending.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: keys, positionsOnly: positionsOnly, diagnostic: diagnostic, diagnosticScope: "pendingProjection")
+        let pendingJSON = try await pending.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: keys, positionsOnly: positionsOnly, statisticsBook: statisticsBook, diagnostic: diagnostic, diagnosticScope: "pendingProjection")
         diagnostic?.mark("pendingProjection.resumed")
         // Full JSON/TEMP work runs independently, so an exiting reader's batch cannot occupy this actor.
         diagnostic?.mark("queryBuild.queued")
@@ -148,11 +150,17 @@ extension ReaderService {
             for key in hidden where key.hasPrefix("pending:") {
                 if let state = try? core.importStatus(bookId: String(key.dropFirst(8))), state.text.contentSha256.count == 64 { effectiveHidden.insert(state.text.contentSha256) }
             }
+            var blockedPositions = Set((combined["unsupportedPositions"] as? [String] ?? []) + (extra["unsupportedPositions"] as? [String] ?? []))
+            for key in Array(blockedPositions) where key.hasPrefix("pending:") {
+                if let state = try? core.importStatus(bookId: String(key.dropFirst(8))), state.text.contentSha256.count == 64 { blockedPositions.insert(state.text.contentSha256) }
+            }
+            combined.removeValue(forKey: "unsupportedPositions")
             var positions: [String: [String: Any]] = [:]
             for input in combined["positions"] as! [[String: Any]] {
                 var item = input; var key = item["content_key"] as! String
                 // Complete aliases are visible before asynchronous promotion persists their data.
                 if key.hasPrefix("pending:"), let state = try? core.importStatus(bookId: String(key.dropFirst(8))), state.text.contentSha256.count == 64 { key = state.text.contentSha256; item["content_key"] = key }
+                guard !blockedPositions.contains(key) else { continue }
                 item["visible"] = !effectiveHidden.contains(key)
                 item["preferred"] = preferred[key] ?? preferred[input["content_key"] as! String] ?? NSNull() as Any
                 if let previous = positions[key], (previous["updated"] as! NSNumber).int64Value > (item["updated"] as! NSNumber).int64Value { continue }
@@ -178,19 +186,34 @@ extension ReaderService {
     }
     func promoteUserData(_ id: String) async throws {
         let key = try userKey(id)
-        guard !key.hasPrefix("pending:"), !promotedUserKeys.contains(id) else { return }
+        guard !key.hasPrefix("pending:") else { return }
         let pending = try await userStore(pending: true)
-        let transfer = try await pending.exportPending(key: "pending:\(id)")
-        try await userStore().importPending(transfer, from: "pending:\(id)", to: key)
-        try await pending.removePending(key: "pending:\(id)")
-        let sourceKey = "Moonread.preferredFile.pending:" + id
-        if let file = sourceDefaults.string(forKey: sourceKey) {
-            sourceDefaults.set(file, forKey: "Moonread.preferredFile." + key); sourceDefaults.removeObject(forKey: sourceKey)
+        do {
+            // A late CloudKit/import arrival must not be bypassed by the promotion fast path.
+            try await pending.requirePendingReadable(key: "pending:" + id)
+            guard !promotedUserKeys.contains(id) else { return }
+            let transfer = try await pending.exportPending(key: "pending:\(id)")
+            try await userStore().importPending(transfer, from: "pending:\(id)", to: key)
+            try await pending.removePending(key: "pending:\(id)")
+            let sourceKey = "Moonread.preferredFile.pending:" + id
+            if let file = sourceDefaults.string(forKey: sourceKey) {
+                sourceDefaults.set(file, forKey: "Moonread.preferredFile." + key); sourceDefaults.removeObject(forKey: sourceKey)
+            }
+            var hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
+            if hidden.remove("pending:" + id) != nil { hidden.insert(key); sourceDefaults.set(Array(hidden), forKey: "Moonread.hiddenRecent") }
+            pendingPromotionIDs.remove(id)
+            promotedUserKeys.insert(id)
+        } catch {
+            // Keep the source identity/lease recovery path alive while raw pending data is protected.
+            pendingPromotionIDs.insert(id); promotedUserKeys.remove(id)
+            throw error
         }
-        var hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
-        if hidden.remove("pending:" + id) != nil { hidden.insert(key); sourceDefaults.set(Array(hidden), forKey: "Moonread.hiddenRecent") }
-        pendingPromotionIDs.remove(id)
-        promotedUserKeys.insert(id)
+    }
+    func readingCompatibilityNotice(_ id: String) async throws -> String? {
+        let key = try userKey(id)
+        if let notice = try await userStore(for: key).compatibilityNotice(key: key) { return notice }
+        if !key.hasPrefix("pending:") { return try await userStore(pending: true).compatibilityNotice(key: "pending:" + id) }
+        return nil
     }
     func writePosition(_ id: String, offset: UInt64) async throws {
         try await promoteUserData(id)

@@ -1369,6 +1369,13 @@ final class TextLayoutTests: XCTestCase {
         XCTAssertEqual(ReaderMessages.error(ReaderError.Decode(message: "opaque diagnostic"), bundle: bundle),
                        "The text encoding could not be read. Try opening it with another encoding.")
         XCTAssertFalse(ReaderMessages.error(ReaderError.Io(message: "opaque diagnostic"), bundle: bundle).contains("opaque diagnostic"))
+        XCTAssertEqual(ReaderMessages.error(ReaderError.StoreTooNew(version: 21, current: 20), bundle: bundle),
+                       "This data was created by a newer Moonread version. Update the app to open it.")
+        XCTAssertEqual(ReaderMessages.error(ReaderError.IncompatibleStore, bundle: bundle),
+                       "This data predates the supported version and cannot be opened. The original data has been kept.")
+        XCTAssertEqual(text("其他（当前版本不支持）"), "Other (not supported by this version)")
+        XCTAssertEqual(text("统计数据来自更新版本，请更新 App。"), "Statistics data comes from a newer version. Update the app.")
+        XCTAssertEqual(text("统计不完整：部分记录当前版本无法理解，请更新 App。"), "Statistics are incomplete: some records are not supported by this version. Update the app.")
         XCTAssertNotEqual(text("后续准备中"), "后续准备中")
         XCTAssertEqual(text("封面，%@", "Sample Title"), "Cover, Sample Title")
         XCTAssertEqual(text("移除标签 %@", "Fantasy"), "Remove tag Fantasy")

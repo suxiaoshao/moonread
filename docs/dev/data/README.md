@@ -87,13 +87,13 @@ Apple 官方设计指南明确支持先保存本地、iCloud 恢复后移入的�
 
 ## 当前实际存储
 
-更新：2026-10-06。用户数据已正式切换为 SwiftData；Rust SQLite 为正文、章节、来源索引和任务存储。没有旧用户表、CKSyncEngine、迁移或双写。
+更新：2026-10-17。用户数据已正式切换为 SwiftData；Rust SQLite 为正文、章节、来源索引和任务存储。没有旧用户表、CKSyncEngine 或双写；发布兼容以 SQLite v20 为基线。
 
 | 数据 | 权威存储与生命周期 |
 | --- | --- |
 | TXT 原件及目录树 | 固定本机 Documents、自身 iCloud Documents 或用户授权的外部目录；文件操作作用于实际原件 |
 | 授权与文件索引 | Rust SQLite `library_shelves` / `library_files`；设备数据，成功扫描更新，失败保护已知索引 |
-| 正文、自动章节与任务 | Rust `reader.sqlite3`，schema 18：`books`、`chunks`、`import_chapters`、`source_imports`、`import_jobs` |
+| 正文、自动章节与任务 | Rust `reader.sqlite3`，schema 20：`books`、`chunks`、`reading_blanks`、`import_chapters`、`source_imports`、`import_jobs` |
 | 小说信息、标签、状态、配色方案 | SwiftData `UserValue`；字段或成员最终快照，按 SHA 或配色 ID 关联 |
 | 正式位置 | SwiftData `UserPosition`；取最后更新并淘汰旧更新，不保留位置历史 |
 | 书签与批注 | SwiftData `AnnotationOperation`；完整内容候选和操作基线，正式保存后不维护内容历史 |
@@ -109,6 +109,8 @@ Apple 官方设计指南明确支持先保存本地、iCloud 恢复后移入的�
 | 临时查阅、搜索、会话跳转历史 | 内存；不改正式位置，原会话内跳转历史继续保留 |
 
 SwiftData 正式用户存储为 `Application Support/Moonread/user-data.store`，按照阅读数据同步开关使用 `.none` 或固定 CloudKit 私有容器。附件由框架管理；不存在应用自建上传队列。读取入口与账户边界见[同步设计](sync.md)，封面编辑见[小说详情](../design/book-details.md#封面如何保存)。
+
+SQLite 不是可整体删除的纯缓存。`books`、`chunks`、`reading_blanks`、自动 `import_chapters` 与 `source_imports` 是正文派生数据，在原文件和相同解码策略仍可访问时可重建；原件暂不可访问时不得自动丢弃唯一可读缓存。`library_files` 的目录元数据可重扫，但文件 ID、`book_id` 关联及用户选择的 `decoding` 不能随重建遗失。`library_shelves.bookmark`、书架名称/ID、外部根授权不可从小说正文恢复，必须迁移保留。`import_jobs` 含暂停/继续代次、来源映射和待交接状态，不能当作可随时删除的缓存；需与 SwiftData `pending-users.store` 一起保持中断恢复契约。SwiftData 中的进度、批注、书签、统计、主题、封面，以及 AI 会话/资产、UserDefaults 偏好/许可和 Keychain 凭据均非正文可重建数据。迁移入口与降级错误见[持久化演进](../engineering/architecture.md#持久化演进与发布兼容)。
 
 Rust `books` 不再保存正式位置或最近阅读时间。`user_projection.rs` 在各计算连接中建立临时位置、元信息、事实和目录修正视图；输入来自 SwiftData，可以随时重建。`effective_chapters` 同样是临时计算视图。用户记录不依赖文件索引或正文缓存的外键级联。
 
@@ -178,7 +180,7 @@ Rust `books` 不再保存正式位置或最近阅读时间。`user_projection.rs
 - 源文件暂不可用时保护唯一可读缓存；不要把缓存当作待恢复文件库，自动复活用户已删除的原件。
 - 替换或移动中断不得损坏原件；现存文件索引可以重新发现，原始文件与 SHA 阅读数据各自可靠保存。
 
-Rust 管理正文身份、计算与索引；SwiftData 管理用户数据，Swift 管理授权、文件协调、iCloud 文档状态与通知。物理数据格式按当前设计实现，不加旧开发版本兼容路径。
+Rust 管理正文身份、计算与索引；SwiftData 管理用户数据，Swift 管理授权、文件协调、iCloud 文档状态与通知。物理数据格式按发布兼容与迁移契约演进，不静默清空旧数据。
 
 ## 当前范围与验证
 

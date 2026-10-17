@@ -5,6 +5,7 @@ mod book_details;
 mod bookshelf;
 pub use book_details::*;
 mod library_tools;
+mod migrations;
 pub use bookshelf::*;
 mod cover_page;
 mod coverage;
@@ -69,8 +70,10 @@ pub enum ReaderError {
     ImportBusy,
     #[error("源文件已改变，请重新打开；之前的阅读位置仍保留")]
     SourceChanged,
-    #[error("Unsupported development database; reinstall the app")]
+    #[error("Database predates the supported v20 baseline; no migration is available")]
     IncompatibleStore,
+    #[error("Database version {version} is newer than supported version {current}; update the app")]
+    StoreTooNew { version: u32, current: u32 },
     #[error("Local reading data belongs to a different iCloud account")]
     CloudAccountChanged,
     #[error("Invalid text range")]
@@ -156,15 +159,7 @@ impl ReaderCore {
         let mut db = Connection::open(&database_path)?;
         db.busy_timeout(std::time::Duration::from_secs(5))?;
         db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;")?;
-        let version: u32 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version != 0 && version != 20 {
-            return Err(ReaderError::IncompatibleStore);
-        }
-        if version == 0 {
-            let tx = db.transaction()?;
-            tx.execute_batch(include_str!("schema.sql"))?;
-            tx.commit()?;
-        }
+        migrations::initialize(&mut db)?;
         user_projection::initialize(&db)?;
         progressive::recover(&db);
         let reader = Connection::open(&database_path)?;

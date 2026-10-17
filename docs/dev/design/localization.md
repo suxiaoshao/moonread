@@ -20,7 +20,7 @@
 
 错误本地化必须覆盖导入任务保存的失败状态和重新打开后的提示，不能只转换即时抛出的异常。内部诊断与用户说明分开：UI 根据错误类型给出原因和可执行的下一步，原始系统错误只作必要补充，不直接作为主要文案。
 
-`import_jobs.error` 保存带 `kind` 的 `ReaderError` JSON（schema 16），保留诊断参数。`ReadingSnapshot.error` 和 `failImport` 使用同一领域类型；即时和重新打开后的失败都经过 `ReaderMessages`，按当前 App 语言给出用户说明。文件协调错误保留系统 domain/code，不保存已本地化的说明。暂停不保存错误，重试清除旧错误。开发旧格式不迁移。
+`import_jobs.error` 保存带 `kind` 的 `ReaderError` JSON（当前 schema 版本见数据专题），保留诊断参数。`ReadingSnapshot.error` 和 `failImport` 使用同一领域类型；即时和重新打开后的失败都经过 `ReaderMessages`，按当前 App 语言给出用户说明。文件协调错误保留系统 domain/code，不保存已本地化的说明。暂停不保存错误，重试清除旧错误。后续持久化格式演进须提供版本与迁移测试。
 
 资源继续以简中文案为 key，保持 SwiftUI 字面量的自动提取，不做全量英文 ID 替换。同文不同义时使用语义 key 和明确的默认文案；易歧义的短标签、插值参数在 catalog 中写翻译注释。Swift 携带普通 `String` 时必须先本地化；带参数提示与无障碍标签使用完整插值句子。
 

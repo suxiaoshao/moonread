@@ -17,6 +17,26 @@ import AISDKProviderUtils
             UIColor.blue.setFill(); context.fill(CGRect(x: 0, y: 0, width: 2, height: 3))
         }
     }
+    func testSessionsSkipOnlyUnreadableRowsAndNeverRewriteThem() async throws {
+        let repository = try await fileRepository()
+        try await repository.create(.init(id: "known", title: "Known"))
+        let context = ModelContext(repository.modelContainer)
+        let corrupt = try AIConversationRecord(.init(id: "corrupt", title: "Corrupt"))
+        corrupt.context = Data("not-json".utf8)
+        let future = try AIConversationRecord(.init(id: "future", title: "Future"))
+        future.kind = Data("\"futureKind\"".utf8)
+        context.insert(corrupt); context.insert(future); try context.save()
+        let sessions = try await repository.sessions()
+        XCTAssertEqual(sessions.map(\.id), ["known"])
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<AIConversationRecord>()), 3)
+        XCTAssertEqual(corrupt.context, Data("not-json".utf8))
+        XCTAssertEqual(future.kind, Data("\"futureKind\"".utf8))
+        // Saving a different row must not remove the skipped rows either.
+        try await repository.create(.init(id: "another", title: "Another"))
+        let updated = try await repository.sessions()
+        XCTAssertEqual(Set(updated.map(\.id)), ["known", "another"])
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<AIConversationRecord>()), 4)
+    }
     private func toolEntry(sequence: Int, name: String, output: JSONValue) -> AIAgentEntry {
         .init(sequence: sequence, turn: "turn", provider: "fixture", model: "fixture", message: .object([
             "role": .string("tool"), "content": .array([.object([

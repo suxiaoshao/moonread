@@ -1,6 +1,46 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+      "部分阅读数据当前版本无法理解，已保留并设为只读，请更新 App。": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Some reading data is not supported by this version. It has been kept read-only. Update the app."
+            }
+          }
+        }
+      },
+      "统计数据来自更新版本，请更新 App。": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Statistics data comes from a newer version. Update the app."
+            }
+          }
+        }
+      },
+      "统计不完整：部分记录当前版本无法理解，请更新 App。": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Statistics are incomplete: some records are not supported by this version. Update the app."
+            }
+          }
+        }
+      },
+      "其他（当前版本不支持）": {
+        "localizations": {
+          "en": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "Other (not supported by this version)"
+            }
+          }
+        }
+      },
   "服务说明：%@": {
     "localizations": {
       "en": {
@@ -3176,12 +3216,22 @@
         }
       }
     },
-    "开发数据格式已更新，请删除应用后重新安装。": {
+    "数据由更新版本的月读创建，请更新应用后再打开。": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The development data format has changed. Delete and reinstall the app."
+            "value": "This data was created by a newer Moonread version. Update the app to open it."
+          }
+        }
+      }
+    },
+    "数据早于支持的版本，暂时无法打开；原数据已保留。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This data predates the supported version and cannot be opened. The original data has been kept."
           }
         }
       }

@@ -48,12 +48,34 @@ extension ReaderService {
         NotificationCenter.default.post(name: .statisticsChanged, object: nil)
     }
     func statistics(first: Int64, last: Int64, book: String? = nil) async throws -> StatisticsOverview {
-        try await effectiveQuery(facts: true).statisticsOverview(firstDay: first, lastDay: last, contentKey: book)
+        _ = try await statisticsCompatibilityNotice(book: book)
+        return try await effectiveQuery(facts: true, statisticsBook: book).statisticsOverview(firstDay: first, lastDay: last, contentKey: book)
     }
     func activities(first: Int64, last: Int64, book: String? = nil) async throws -> [ReadingActivity] {
-        try await effectiveQuery(facts: true).readingActivities(firstDay: first, lastDay: last, contentKey: book)
+        _ = try await statisticsCompatibilityNotice(book: book)
+        return try await effectiveQuery(facts: true, statisticsBook: book).readingActivities(firstDay: first, lastDay: last, contentKey: book)
+    }
+    func statisticsCompatibilityNotice(book: String? = nil) async throws -> String? {
+        let formal = try await userStore(), pending = try await userStore(pending: true)
+        // Check both barriers before any potentially partial display/clear operation.
+        try await formal.requireStatisticsReadable(book: book)
+        try await pending.requireStatisticsReadable(book: book)
+        let formalIncomplete = try await formal.statisticsIncomplete(book: book)
+        var pendingIncomplete = try await pending.statisticsIncomplete(book: book)
+        if let book, !book.hasPrefix("pending:") {
+            // Completed pending identities remain aliases until the transfer can be committed.
+            let core = try textCore()
+            for key in try await pending.pendingKeys() {
+                if let state = try? core.importStatus(bookId: String(key.dropFirst(8))), state.text.contentSha256 == book {
+                    try await pending.requireStatisticsReadable(book: key)
+                    if try await pending.statisticsIncomplete(book: key) { pendingIncomplete = true }
+                }
+            }
+        }
+        return formalIncomplete || pendingIncomplete ? String(localized: "统计不完整：部分记录当前版本无法理解，请更新 App。") : nil
     }
     func deleteStatistics(book: String? = nil, session: String? = nil) async throws {
+        _ = try await statisticsCompatibilityNotice(book: book)
         let generation = statisticsPreferences().generation + 1
         try await userStore().clear(book: book, session: session, newGeneration: generation)
         try await userStore(pending: true).clear(book: book, session: session, newGeneration: generation)
