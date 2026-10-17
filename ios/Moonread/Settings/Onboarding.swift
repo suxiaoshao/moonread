@@ -9,6 +9,7 @@ struct UsageGuideView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 section("开始读", "在书架右上角点“＋”，选择“导入小说”，或从“文件”App 把 TXT 拖进“我的书架”。在书架文件夹里导入时，小说会留在当前文件夹。第一次打开大文件时，月读会边准备边显示正文。")
+                section("设置", "在书架、统计等主页面点右上角的齿轮，即可进入设置。阅读、外观、书架与同步都在这里调整。")
                 section("翻页和工具栏", "轻点屏幕中间，显示或隐藏阅读工具。分页模式下，点左右两侧或左右滑动翻页；滚动模式下，上下滑动即可。")
                 if ai.availability.isAvailable {
                     section("选字", "长按正文选中文字，可以标注、写批注、拷贝、全文搜索或问 AI。跨页选取时，在起点选择“从这里跨页选取”，翻到终点再长按选字，然后选择拷贝或“批注到这里”。")
@@ -36,7 +37,7 @@ struct UsageGuideView: View {
 }
 
 struct ImportNovelTip: Tip {
-    var title: Text { Text("导入 TXT 小说，也可以从“文件”App 直接拖进来") }
+    var title: Text { Text("点右上角“＋”导入 TXT，也可从“文件”App 拖进来") }
     var options: [any TipOption] { Tips.MaxDisplayCount(1) }
 }
 struct ReaderControlsTip: Tip {

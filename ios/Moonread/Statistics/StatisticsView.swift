@@ -356,8 +356,9 @@ struct StatisticsView: View {
         .navigationBarTitleDisplayMode(target == nil ? .large : .inline)
         .toolbarVisibility(.visible, for: .navigationBar)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 optionsMenu
+                if target == nil { AppSettingsLink() }
             }
         }
         .sheet(item: $aiRequest) { if ai.availability.isAvailable { AIQuickTaskSheet(request: $0).themeScope(theme) } }

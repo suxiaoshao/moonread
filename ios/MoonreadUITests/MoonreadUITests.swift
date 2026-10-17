@@ -3183,7 +3183,7 @@ final class MoonreadUITests: XCTestCase {
             prepareApp(arguments: ["--ui-test-home"])
             setTipJarAppearance(mode)
             enableTipsOnRelaunch()
-            XCTAssertTrue(app.staticTexts["导入 TXT 小说，也可以从“文件”App 直接拖进来"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.staticTexts["点右上角“＋”导入 TXT，也可从“文件”App 拖进来"].waitForExistence(timeout: 10))
             recordScreenshot("onboarding-import-tip-\(suffix)")
             app.terminate()
             prepareApp()
@@ -3226,7 +3226,7 @@ final class MoonreadUITests: XCTestCase {
 
     func testOnboardingTipDismissalPersists() {
         prepareApp(arguments: ["--ui-test-home", "--ui-test-tips"])
-        let text = app.staticTexts["导入 TXT 小说，也可以从“文件”App 直接拖进来"]
+        let text = app.staticTexts["点右上角“＋”导入 TXT，也可从“文件”App 拖进来"]
         XCTAssertTrue(text.waitForExistence(timeout: 10))
         recordScreenshot("onboarding-import-tip")
         let close = app.buttons.matching(NSPredicate(format: "label CONTAINS %@ OR label CONTAINS[c] %@", "关闭", "close")).firstMatch
@@ -5123,6 +5123,55 @@ final class MoonreadUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["目录"].waitForExistence(timeout: 5))
         recordScreenshot("chapter-v2-light-rows")
         app.buttons["closeReaderLibrary"].tap()
+    }
+
+    func testMainPagesShareSettingsEntryAndDistinctAIControls() {
+        for mode in ["浅色", "深色"] {
+            prepareApp(arguments: ["--ui-test-home"])
+            setTipJarAppearance(mode)
+            app.navigationBars["设置"].buttons.firstMatch.tap()
+            for (tab, suffix, action) in [("书架", "library", "libraryActions"), ("统计", "statistics", "统计选项"), ("对话", "conversations", "newAIConversation")] {
+                app.tabBars.buttons[tab].tap()
+                let settings = app.buttons["appSettings"]
+                XCTAssertTrue(settings.waitForExistence(timeout: 10))
+                XCTAssertEqual(app.buttons.matching(identifier: "appSettings").count, 1)
+                XCTAssertEqual(settings.label, "设置")
+                XCTAssertGreaterThan(settings.frame.midX, app.windows.firstMatch.frame.midX)
+                let neighbor = app.buttons[action]
+                XCTAssertTrue(neighbor.isHittable)
+                XCTAssertGreaterThan(settings.frame.midX, neighbor.frame.midX, "Settings stays at the trailing end")
+                if tab == "对话" {
+                    let assistant = app.buttons["aiAssistantSettings"]
+                    XCTAssertTrue(assistant.isHittable); XCTAssertEqual(assistant.label, "AI 助手")
+                    assistant.tap()
+                    XCTAssertTrue(app.navigationBars["AI 助手"].waitForExistence(timeout: 5))
+                    app.navigationBars["AI 助手"].buttons.firstMatch.tap()
+                }
+                recordScreenshot("settings-entry-\(suffix)-\(mode == "浅色" ? "light" : "dark")")
+                settings.tap()
+                XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
+                XCTAssertTrue(app.switches["aiMasterSwitch"].exists)
+                app.buttons["libraryManagementSettings"].tap()
+                XCTAssertTrue(app.navigationBars["书架管理"].waitForExistence(timeout: 5))
+                app.navigationBars["书架管理"].buttons.firstMatch.tap()
+                XCTAssertTrue(app.navigationBars["设置"].waitForExistence(timeout: 5))
+                XCTAssertFalse(app.buttons["appSettings"].exists, "The destination must not repeat its own entry")
+                app.navigationBars["设置"].buttons.firstMatch.tap()
+                XCTAssertTrue(app.buttons["appSettings"].waitForExistence(timeout: 5))
+                XCTAssertTrue(app.tabBars.buttons[tab].isSelected)
+            }
+            // With AI disabled the remaining home pages retain the same entry.
+            app.buttons["appSettings"].tap()
+            let toggle = app.switches["aiMasterSwitch"]
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
+            XCTAssertFalse(app.tabBars.buttons["对话"].exists)
+            for tab in ["书架", "统计"] {
+                app.tabBars.buttons[tab].tap()
+                if app.navigationBars["设置"].exists { app.navigationBars["设置"].buttons.firstMatch.tap() }
+                XCTAssertTrue(app.buttons["appSettings"].waitForExistence(timeout: 5))
+            }
+            app.terminate()
+        }
     }
 
     func testToolbarGlyphsShareThemeInk() {

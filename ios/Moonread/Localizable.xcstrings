@@ -1,6 +1,16 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "在书架、统计等主页面点右上角的齿轮，即可进入设置。阅读、外观、书架与同步都在这里调整。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tap the gear at the top right of a home page, such as Library or Statistics, to open Settings. Adjust reading, appearance, bookshelves, and sync there."
+          }
+        }
+      }
+    },
     "AI 功能": {
       "localizations": {
         "en": {
@@ -4241,19 +4251,19 @@
       }
     }
   },
-  "导入 TXT 小说，也可以从“文件”App 直接拖进来": {
+  "点右上角“＋”导入 TXT，也可从“文件”App 拖进来": {
     "extractionState": "manual",
     "localizations": {
       "zh-Hans": {
         "stringUnit": {
           "state": "translated",
-          "value": "导入 TXT 小说，也可以从“文件”App 直接拖进来"
+          "value": "点右上角“＋”导入 TXT，也可从“文件”App 拖进来"
         }
       },
       "en": {
         "stringUnit": {
           "state": "translated",
-          "value": "Import TXT novels, or drag them directly from Files"
+          "value": "Tap + at the top right to import TXT, or drag it in from Files"
         }
       }
     }

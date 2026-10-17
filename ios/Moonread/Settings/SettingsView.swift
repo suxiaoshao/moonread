@@ -1,5 +1,17 @@
 import SwiftUI
 
+/// The same app settings destination and accessible toolbar control on every home page.
+struct AppSettingsLink: View {
+    var body: some View {
+        NavigationLink(value: LibraryRoute.settings) {
+            Label("设置", systemImage: "gearshape")
+        }
+        .toolbarGlyph()
+        .accessibilityLabel("设置")
+        .accessibilityIdentifier("appSettings")
+    }
+}
+
 struct SettingsView: View {
     @Environment(ThemeStore.self) private var themes
     @Environment(CloudStore.self) private var cloud
