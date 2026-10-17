@@ -15,6 +15,7 @@ final class ReaderSession {
     private var hasEnteredBody = false
     var chapter: ChapterInfo?
     var error: String?
+    private var hasPresentedCompatibilityNotice = false
     var isLoading = true
     var nearEdge = false
     var navigationRevision = 0
@@ -220,7 +221,7 @@ final class ReaderSession {
                 try Task.checkCancellation()
                 guard self?.isLeaving == false, self?.browseOrigin == nil else { return }
                 try await self?.service.savePosition(bookID: id, offset: position)
-            } catch is CancellationError { } catch { self?.error = ReaderMessages.error(error) }
+            } catch is CancellationError { } catch { self?.reportAutomaticReadingError(error) }
         }
         // Window requests are independent of reported/saved reading positions.
     }
@@ -350,7 +351,7 @@ final class ReaderSession {
         await settingsTask?.value
         guard let progress else { return }
         do { try await service.savePosition(bookID: progress.bookID, offset: progress.offset) }
-        catch { self.error = ReaderMessages.error(error) }
+        catch { reportAutomaticReadingError(error) }
     }
 
     @discardableResult
@@ -388,9 +389,23 @@ final class ReaderSession {
         history = emptyReadingHistory()
     }
 
-    func refreshAnnotations() {
+    /// Automatic refreshes/saves must not repeatedly interrupt a read-only session.
+    /// Explicit editing actions keep their normal operation-specific error paths.
+    private func presentCompatibilityNotice(_ notice: String) {
+        guard !isLeaving, !hasPresentedCompatibilityNotice, error == nil else { return }
+        hasPresentedCompatibilityNotice = true
+        error = notice
+    }
+
+    private func reportAutomaticReadingError(_ error: Error) {
+        if error is UserSyncCompatibilityError { presentCompatibilityNotice(ReaderMessages.error(error)) }
+        else { self.error = ReaderMessages.error(error) }
+    }
+
+    @discardableResult
+    func refreshAnnotations() -> Task<Void, Never>? {
         annotationTask?.cancel()
-        guard !isLeaving, let id = readingID, let window else { return }
+        guard !isLeaving, let id = readingID, let window else { return nil }
         annotationTask = Task {
             do {
                 let compatibilityNotice = try await service.readingCompatibilityNotice(id)
@@ -399,10 +414,11 @@ final class ReaderSession {
                 guard !isLeaving, !Task.isCancelled, readingID == id else { return }
                 annotations = values
                 bookmarkPositions = positions
-                if let compatibilityNotice { self.error = compatibilityNotice }
-            } catch { if !Task.isCancelled { self.error = ReaderMessages.error(error) } }
+                if let compatibilityNotice { presentCompatibilityNotice(compatibilityNotice) }
+            } catch { if !Task.isCancelled { reportAutomaticReadingError(error) } }
         }
         refreshBookmark()
+        return annotationTask
     }
 
     func refreshBookmark() {
@@ -450,7 +466,10 @@ final class ReaderSession {
             defer { if revision == navigationGeneration { navigating = false } }
             do {
                 // Persist the original reading point before displaying a preview.
-                if hasEnteredBody { try await service.savePosition(bookID: id, offset: origin) }
+                if hasEnteredBody {
+                    do { try await service.savePosition(bookID: id, offset: origin) }
+                    catch let error as UserSyncCompatibilityError { reportAutomaticReadingError(error) }
+                }
                 let frame = try await service.frame(id, offset: start)
                 guard !isLeaving, !Task.isCancelled, revision == navigationGeneration else { return }
                 let target = min(start, frame.snapshot.book.byteCount)

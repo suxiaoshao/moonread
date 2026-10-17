@@ -18,6 +18,8 @@ Swift 存储边界统一校验顶层整数 v、完整键集合和嵌套类型；
 
 Xcode 27.1 / iOS 27.0 模拟器 Debug 构建及 47 项定向测试通过（UserDataTests 33、AIReadingToolsTests 13、本地化 1）；另 1 项 pending 已转正后迟到未知记录的补测通过，验证不能绕过快速路径、泄露旧位置或释放待转移身份。矩阵覆盖两种到达次序、完整 null 与缺键区别、未知嵌套字段、错类型、大整数精度、真实保存服务入口、书目编辑和统计界面的旧内容隔离。首轮发现 resolve 把隔离误报成普通冲突，已提前检查并复跑通过。Nix 中 1 项状态往返和 8 项 user_projection 测试、Rust 格式检查与 Clippy（all-targets/all-features，-D warnings）通过。
 
+每次打开的兼容提醒只自动呈现一次；确认后刷新批注、翻页自动保存、后台/退出保存不再重弹，预览导航仍可继续；主动更改阅读位置失败仍说明原因，重新打开重新提醒。新增真实 ReaderSession 用例连同 UserDataTests 35 项及退出冻结回归 1 项通过（共 36 项），Debug 构建与 `git diff --check` 通过，证据 `build/ReleaseFreeze/Sync/notice-regression.log`。
+
 证据：`build/ReleaseFreeze/Sync/{final-regression.log,pending-alias-test.log,rust-checks.log}`。这些用例在本机模拟独立记录到达，不代表真实双设备 CloudKit 同步验收；未操作真机或部署生产 schema。发布前旧开发编码不兼容，按用户决定由开发者删除重装开发版并清理开发环境数据；应用不会自动清库，发布后的兼容规则不变。
 
 ## 2026-10-17 政策与支持站迁入主仓库

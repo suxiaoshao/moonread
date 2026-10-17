@@ -1037,4 +1037,45 @@ extension UserDataTests {
         await Self.rejectSync { try await service.statistics(first: 0, last: 20000, book: book.contentSha256) }
     }
 
+    @MainActor func testReaderCompatibilityNoticeIsOncePerOpeningAndExplicitWritesStillExplain() async throws {
+        let (root, service, book, store) = try await editorFixture()
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            UserDefaults(suiteName: "Review-\(root.lastPathComponent)")?.removePersistentDomain(forName: "Review-\(root.lastPathComponent)")
+        }
+        let future = try syncJSON(syncPosition(book.contentSha256)) { $0["v"] = 2 }
+        try await store.receiveSyncFixture("position", key: book.contentSha256, payload: future)
+        for _ in 0..<2 {
+            let session = ReaderSession(service: service, activity: ReadingActivityRecorder { StatisticsPreferences(enabled: false, generation: 0) })
+            await session.open(.book(book.id))
+            let loaded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in session.window != nil }, object: nil)
+            await fulfillment(of: [loaded], timeout: 5)
+            await session.refreshAnnotations()?.value
+            XCTAssertNotNil(session.error, "Each new opening explains the read-only scope once")
+            session.error = nil // The reader's 知道了 action.
+            for offset in [UInt64(10), 30, 60] {
+                session.moved(to: offset, settled: true)
+                await session.refreshAnnotations()?.value
+                await session.flush() // Includes the automatic position-save failure, without a timer.
+                XCTAssertNil(session.error, "Reading and automatic saves must not re-present the notice")
+                XCTAssertEqual(session.anchor, offset)
+                XCTAssertNotNil(session.window)
+            }
+            session.browse(to: 90)
+            let browsed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in !session.navigating && session.anchor == 90 }, object: nil)
+            await fulfillment(of: [browsed], timeout: 5)
+            XCTAssertNil(session.error, "A blocked automatic save must not prevent preview navigation")
+            XCTAssertEqual(session.browseOrigin, 60)
+            await session.continueReading() // Explicitly request a new saved reading point.
+            XCTAssertNotNil(session.error, "An explicit blocked write still explains the failure")
+            session.error = nil
+            await session.refreshAnnotations()?.value
+            XCTAssertNil(session.error)
+            await session.leave().value
+            XCTAssertNil(session.error, "Leaving must not resurrect the dismissed compatibility notice")
+        }
+        let retained = try await store.syncFixturePayloads("position", key: book.contentSha256)
+        XCTAssertEqual(retained, [future])
+    }
+
 }
