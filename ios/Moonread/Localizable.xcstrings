@@ -848,10 +848,10 @@
       }
     }
   },
-    "第三方许可": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Third-party Licenses"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "第三方许可"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "第三方許可"}}}},
-    "MPL 组件源码": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "MPL component source code"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "MPL 组件源码"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "MPL 元件原始碼"}}}},
+    "第三方许可": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Third-Party Licenses"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "第三方许可"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "第三方許可"}}}},
+    "MPL 组件源码": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "MPL Component Source Code"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "MPL 组件源码"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "MPL 元件原始碼"}}}},
     "以下组件使用 MPL-2.0。打开对应版本链接后，选择 Download 即可取得源码。月读使用这些组件的未修改上游版本；其他组件的许可和版权声明在下方全文列出。": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "These components use MPL 2.0. Open an exact-version link below and choose Download to obtain its source code. Moonread uses their unmodified upstream releases. Full licenses and copyright notices for other components follow below."}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "以下组件使用 MPL-2.0。打开对应版本链接后，选择 Download 即可取得源码。月读使用这些组件的未修改上游版本；其他组件的许可和版权声明在下方全文列出。"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "以下元件使用 MPL-2.0。開啟對應版本連結後，選擇 Download 即可取得原始碼。月讀使用這些元件的未修改上游版本；其他元件的許可和版權宣告在下方全文列出。"}}}},
-    "许可与版权全文": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Full licenses and copyright notices"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "许可与版权全文"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "許可與版權全文"}}}},
+    "许可与版权全文": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Full Licenses and Copyright Notices"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "许可与版权全文"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "許可與版權全文"}}}},
     "无法读取许可，请重新打开此页面。": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Unable to load the licenses. Please reopen this page."}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "无法读取许可，请重新打开此页面。"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "無法讀取許可，請重新開啟此頁面。"}}}},
     "正在读取许可…": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Loading licenses…"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "正在读取许可…"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在讀取許可…"}}}},
     "账户目录已提供容量，现已改用目录值。": {
@@ -947,7 +947,7 @@
       "en": {
         "stringUnit": {
           "state": "translated",
-          "value": "Context budget"
+          "value": "Context Budget"
         }
       },
       "zh-Hans": {
@@ -1387,7 +1387,7 @@
       "en": {
         "stringUnit": {
           "state": "translated",
-          "value": "Contact the developer"
+          "value": "Contact the Developer"
         }
       },
       "zh-Hans": {
@@ -1651,7 +1651,7 @@
       "en": {
         "stringUnit": {
           "state": "translated",
-          "value": "Data sharing permission"
+          "value": "Data Sharing Permission"
         }
       },
       "zh-Hans": {
@@ -2448,7 +2448,7 @@
     "en": {
       "stringUnit": {
         "state": "translated",
-        "value": "Choose a cover"
+        "value": "Choose a Cover"
       }
     },
     "zh-Hant": {
@@ -3018,7 +3018,7 @@
     }
   }
 },
-    "阅读附件": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Reading attachment"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀附件"}}}},
+    "阅读附件": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Reading Attachment"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀附件"}}}},
     "选中文字": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Selected text"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "選中文字"}}}},
     "移除阅读附件": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Remove reading attachment"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "移除閱讀附件"}}}},
     "添加阅读对象": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Add reading reference"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "新增閱讀物件"}}}},
@@ -3717,8 +3717,8 @@
     "书里写着一条通往山间的小路。雨刚停，石阶还湿着，路边的草叶托着细小的水珠。有人提着灯走在前面，走几步便停下来，回头等一等身后的同伴。远处的屋檐下，一盏旧灯还亮着。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The book described a path into the hills. The rain had stopped, leaving the stone steps wet and small drops resting on the grass. A traveler carried a lantern ahead, pausing every few steps to wait for a companion. Farther on, an old lamp still shone beneath the eaves."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "書裡寫著一條通往山間的小路。雨剛停，石階還溼著，路邊的草葉托著細小的水珠。有人提著燈走在前面，走幾步便停下來，回頭等一等身後的同伴。遠處的屋簷下，一盞舊燈還亮著。"}}}},
     "读到这里，她抬头看了看窗外。对面的灯已经熄了，只有楼下那棵树仍在风里轻轻摇动。杯中的水还有一点温度，她握了片刻，又把目光移回书页，接着读那段尚未说完的对话。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"She looked up from the page. The windows across the street were dark, and the tree below still moved gently in the breeze. Her cup held a little warmth. She held it for a moment, then returned to the conversation waiting on the page."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "讀到這裡，她抬頭看了看窗外。對面的燈已經熄了，只有樓下那棵樹仍在風裡輕輕搖動。杯中的水還有一點溫度，她握了片刻，又把目光移回書頁，接著讀那段尚未說完的對話。"}}}},
     "夜还很长，故事也没有结束。她把身体往椅背上靠了靠，换了个舒服的姿势。窗帘在身旁缓慢起落，纸页上的字一句接着一句，把那条陌生的小路，带到了离她很近的地方。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The night stretched ahead, and the story was not finished. She settled more comfortably into the chair. Beside her, the curtain rose and fell slowly. Sentence by sentence, the words brought that unfamiliar path a little closer."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "夜還很長，故事也沒有結束。她把身體往椅背上靠了靠，換了個舒服的姿勢。窗簾在身旁緩慢起落，紙頁上的字一句接著一句，把那條陌生的小路，帶到了離她很近的地方。"}}}},
-    "阅读控制": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading controls"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀控制"}}}},
-    "阅读预览": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading preview"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀預覽"}}}},
+    "阅读控制": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Controls"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀控制"}}}},
+    "阅读预览": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Preview"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀預覽"}}}},
     "段落": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Paragraphs"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "段落"}}}},
     "亮度": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Brightness"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "亮度"}}}},
     "第一章 月光入窗": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Chapter 1 · Moonlight"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "第一章 月光入窗"}}}},
@@ -3730,37 +3730,37 @@
     "排版": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Typography"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "排版"}}}},
     "显示": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Display"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "顯示"}}}},
     "控制": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Controls"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "控制"}}}},
-    "阅读设置分类": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading settings category"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀設定分類"}}}},
+    "阅读设置分类": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Settings Category"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀設定分類"}}}},
     "字体": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Font"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "字型"}}}},
     "系统": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"System"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "系統"}}}},
     "宋体": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Songti"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "宋體"}}}},
     "圆体": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Rounded"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "圓體"}}}},
     "段落与边距": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Paragraphs & margins"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "段落與邊距"}}}},
     "明暗与配色": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Appearance & colors"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "明暗與配色"}}}},
-    "亮度跟随系统": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Use system brightness"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "亮度跟隨系統"}}}},
-    "阅读亮度": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading brightness"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀亮度"}}}},
-    "阅读常亮": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Keep screen awake"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀常亮"}}}},
+    "亮度跟随系统": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Use System Brightness"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "亮度跟隨系統"}}}},
+    "阅读亮度": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Brightness"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀亮度"}}}},
+    "阅读常亮": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Keep Screen Awake"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀常亮"}}}},
     "竖屏": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Portrait"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "豎屏"}}}},
     "横屏": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Landscape"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "橫屏"}}}},
-    "首行缩进": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"First-line indent"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "首行縮排"}}}},
+    "首行缩进": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"First-Line Indent"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "首行縮排"}}}},
     "按原文": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Original text"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "按原文"}}}},
-    "智能两字": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Smart two-character indent"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "智慧兩字"}}}},
-    "段间距 · %lld pt": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Paragraph spacing · %lld pt"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "段間距 · %lld pt"}}}},
-    "左右边距 · %lld pt": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Side margins · %lld pt"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "左右邊距 · %lld pt"}}}},
-    "最大行宽 · %lld pt": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Maximum line width · %lld pt"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "最大行寬 · %lld pt"}}}},
+    "智能两字": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Smart, 2 chars"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "智慧兩字"}}}},
+    "段间距 · %lld pt": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Paragraph Spacing · %lld pt"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "段間距 · %lld pt"}}}},
+    "左右边距 · %lld pt": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Side Margins · %lld pt"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "左右邊距 · %lld pt"}}}},
+    "最大行宽 · %lld pt": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Maximum Line Width · %lld pt"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "最大行寬 · %lld pt"}}}},
     "百分比": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Percentage"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "百分比"}}}},
     "前往": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Go"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "前往"}}}},
     "上一章": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Previous chapter"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "上一章"}}}},
     "下一章": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Next chapter"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "下一章"}}}},
     "返回上个位置": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Go back"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "返回上個位置"}}}},
     "前进": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Go forward"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "前進"}}}},
-    "跳转历史": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Jump history"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "跳轉歷史"}}}},
+    "跳转历史": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Jump History"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "跳轉歷史"}}}},
     "请输入 0 到 100 之间的百分比。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Enter a percentage from 0 to 100."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "請輸入 0 到 100 之間的百分比。"}}}},
     "章节名称": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Chapter title"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "章節名稱"}}}},
     "层级": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Level"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "層級"}}}},
     "章": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Chapter"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "章"}}}},
     "卷": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Volume"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "卷"}}}},
-    "编辑目录项": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Edit contents entry"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "編輯目錄項"}}}},
+    "编辑目录项": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Edit Contents Entry"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "編輯目錄項"}}}},
     "保存": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Save"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "儲存"}}}},
     "已识别 %lld 章": {
   "localizations": {
@@ -3791,7 +3791,7 @@
   }
 },
     "显示更多章节": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show more chapters"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "顯示更多章節"}}}},
-    "目录预览": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Contents preview"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目錄預覽"}}}},
+    "目录预览": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Contents Preview"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目錄預覽"}}}},
     "应用目录": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Apply contents"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "應用程式目錄"}}}},
     "恢复自动目录？": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Restore detected contents?"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "恢復自動目錄？"}}}},
     "清除人工修正": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Clear manual corrections"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "清除人工修正"}}}},
@@ -3831,8 +3831,8 @@
     "阅读主题": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reader theme"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀主題"}}}},
     "通用": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"General"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "通用"}}}},
     "明暗模式": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Appearance"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "明暗模式"}}}},
-    "跟随应用": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Follow app"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "跟隨應用程式"}}}},
-    "跟随系统": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Follow system"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "跟隨系統"}}}},
+    "跟随应用": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Follow App"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "跟隨應用程式"}}}},
+    "跟随系统": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Follow System"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "跟隨系統"}}}},
     "浅色": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Light"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "淺色"}}}},
     "深色": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Dark"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "深色"}}}},
     "配色": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Palette"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "配色"}}}},
@@ -3840,22 +3840,22 @@
     "深色时": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"When Dark"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "深色時"}}}},
     "浅色时的配色": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Palette When Light"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "淺色時的配色"}}}},
     "深色时的配色": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Palette When Dark"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "深色時的配色"}}}},
-    "系统配色": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"System colors"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "系統配色"}}}},
+    "系统配色": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"System Colors"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "系統配色"}}}},
     "杏桃": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Apricot"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "杏桃"}}}},
     "薄荷": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Mint"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "薄荷"}}}},
     "雾紫": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Lilac"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "霧紫"}}}},
     "预设": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Presets"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "預設"}}}},
     "自定义": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Custom"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "自定義"}}}},
-    "减弱动态效果": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reduce motion"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "減弱動態效果"}}}},
+    "减弱动态效果": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reduce Motion"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "減弱動態效果"}}}},
     "语言": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Language"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "語言"}}}},
     "系统设置": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"System settings"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "系統設定"}}}},
     "小说目录": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Books folder"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "小說目錄"}}}},
     "未选择": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Not selected"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "未選擇"}}}},
     "关于月读": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"About Moonread"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "關於月讀"}}}},
     "编辑": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Edit"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "編輯"}}}},
-    "新建配色": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"New palette"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "新建配色"}}}},
-    "编辑配色": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Edit palette"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "編輯配色"}}}},
-    "配色名称": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Palette name"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "配色名稱"}}}},
+    "新建配色": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"New Palette"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "新建配色"}}}},
+    "编辑配色": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Edit Palette"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "編輯配色"}}}},
+    "配色名称": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Palette Name"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "配色名稱"}}}},
     "已选择": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Selected"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已選擇"}}}},
     "删除配色？": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Delete palette?"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "刪除配色？"}}}},
     "删除并恢复默认配色": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Delete and restore defaults"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "刪除並恢復預設配色"}}}},
@@ -3868,34 +3868,34 @@
     "文字与背景对比不足，请调整文字、强调色或背景。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Text contrast is too low. Adjust the text, accent or background colors."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "文字與背景對比不足，請調整文字、強調色或背景。"}}}},
     "背景": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Backgrounds"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "背景"}}}},
     "页面": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Page"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "頁面"}}}},
-    "分组与面板": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Groups and panels"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "分組與面板"}}}},
-    "浮层": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Raised surface"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "浮層"}}}},
+    "分组与面板": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Groups and Panels"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "分組與面板"}}}},
+    "浮层": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Raised Surface"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "浮層"}}}},
     "输入区": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Input"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "輸入區"}}}},
-    "阅读纸面": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading paper"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀紙面"}}}},
-    "文字与操作": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Text and controls"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "文字與操作"}}}},
+    "阅读纸面": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Paper"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀紙面"}}}},
+    "文字与操作": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Text and Controls"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "文字與操作"}}}},
     "文字": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Text"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "文字"}}}},
-    "次要文字": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Secondary text"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "次要文字"}}}},
-    "禁用文字": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Disabled text"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "停用文字"}}}},
+    "次要文字": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Secondary Text"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "次要文字"}}}},
+    "禁用文字": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Disabled Text"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "停用文字"}}}},
     "强调色": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Accent"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "強調色"}}}},
-    "强调色背景": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Accent surface"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "強調色背景"}}}},
-    "强调色上的文字": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Text on accent"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "強調色上的文字"}}}},
+    "强调色背景": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Accent Surface"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "強調色背景"}}}},
+    "强调色上的文字": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Text on Accent"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "強調色上的文字"}}}},
     "边框": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Border"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "邊框"}}}},
     "分隔线": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Separator"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "分隔線"}}}},
     "聚焦": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Focus"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "聚焦"}}}},
     "按压": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Pressed"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "按壓"}}}},
     "选中": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Selected"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "選中"}}}},
-    "阅读标记": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading marks"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀標記"}}}},
-    "搜索结果": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Search results"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "搜尋結果"}}}},
-    "当前搜索结果": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Current search result"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "當前搜尋結果"}}}},
-    "文字选区": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Text selection"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "文字選區"}}}},
-    "状态与月亮": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Status and moon"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "狀態與月亮"}}}},
-    "删除按钮文字": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Text on delete"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "刪除按鈕文字"}}}},
+    "阅读标记": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Marks"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀標記"}}}},
+    "搜索结果": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Search Results"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "搜尋結果"}}}},
+    "当前搜索结果": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Current Search Result"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "當前搜尋結果"}}}},
+    "文字选区": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Text Selection"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "文字選區"}}}},
+    "状态与月亮": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Status and Moon"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "狀態與月亮"}}}},
+    "删除按钮文字": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Text on Delete"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "刪除按鈕文字"}}}},
     "提醒": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Warning"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "提醒"}}}},
     "成功": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Success"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "成功"}}}},
-    "月体": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Moon body"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "月體"}}}},
-    "月海": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Lunar maria"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "月海"}}}},
-    "数据与隐私": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Data and privacy"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "資料與隱私"}}}},
-    "主要开源组件": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Key open-source components"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "主要開源元件"}}}},
+    "月体": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Moon Body"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "月體"}}}},
+    "月海": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Lunar Maria"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "月海"}}}},
+    "数据与隐私": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Data and Privacy"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "資料與隱私"}}}},
+    "主要开源组件": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Key Open-Source Components"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "主要開源元件"}}}},
     "从一段故事开始": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Begin with a story"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "從一段故事開始"}}}},
     "正在准备": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Preparing"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在準備"}}}},
     "关闭搜索": {
@@ -4392,7 +4392,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Search results"
+            "value": "Search Results"
           }
         },
         "zh-Hant": {
@@ -5076,7 +5076,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reading settings"
+            "value": "Reading Settings"
           }
         },
         "zh-Hant": {
@@ -5092,7 +5092,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Reading mode"
+            "value": "Reading Mode"
           }
         },
         "zh-Hant": {
@@ -5140,7 +5140,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Text size · %lld pt"
+            "value": "Text Size · %lld pt"
           }
         },
         "zh-Hant": {
@@ -5156,7 +5156,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Line spacing · %lld pt"
+            "value": "Line Spacing · %lld pt"
           }
         },
         "zh-Hant": {
@@ -5805,7 +5805,7 @@
       "en": {
         "stringUnit": {
           "state": "translated",
-          "value": "User guide"
+          "value": "User Guide"
         }
       },
       "zh-Hant": {
@@ -6081,7 +6081,7 @@
       "en": {
         "stringUnit": {
           "state": "translated",
-          "value": "Moonread user guide"
+          "value": "Moonread User Guide"
         }
       },
       "zh-Hant": {

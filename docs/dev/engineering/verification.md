@@ -12,6 +12,8 @@ InfoPlist 三语随包资源分别使用 Moonread／月讀／月读，覆盖 App
 
 Nix + Xcode 模拟器 Debug 构建、8 项 AppStorePrivacyTests 与 4 个受影响 UI 用例通过：英文／繁体主要页面，三语长按反馈与复制替代内容、英繁三条 TipKit 提示、既有过程整行展开。测试语言与地区参数为 en/en_US、zh-Hant/zh_TW，另覆盖简体反馈；书籍、会话正文和用户连接名称按内容保留，不转换。主回归 `build/Localization/verified.log/.xcresult`，提示与调整后的反馈页复跑 `tips-feedback.log/.xcresult`，网站 Zola 构建 `site.log`。截图已目视核对：`screens/overview-en.png`、`overview-hant.png`、`overview-onboarding.png`、`overview-feedback.png`，其余完整页面均在 `build/Localization/screens/`。`git diff --check` 与 plist 语法检查通过。未操作真机或账号凭据；模拟器无邮件账户，系统邮件实际编辑／投递与真实 iCloud Files 容器显示名未实测，不将随包资源核对当作这两项的真机验收。
 
+打赏商品行固定使用左右布局：左侧名称与说明自然换行，右侧价格保持固有宽度并垂直居中，取消放不下时把价格放到下方的布局。英文设置及相关导航／行标题统一 Title Case，说明句保持原文；智能首行缩进值缩短为 `Smart, 2 chars`。新增简繁英、标准字号与 AX XL 的四档商品横向位置／垂直居中断言，以及英文设置标题与缩进值断言。 三语两档字号共 24 组商品位置断言通过，价格与文字整体中心差不超过 1pt；英文设置标题／缩进值、购买完成与重启回归通过。最终几何证据为 `build/Localization/review-layout-final.log/.xcresult`，其余两项 UI 为 `review-layout.log/.xcresult`；首次几何用例的繁体导航标题查找错误已改用原生返回按钮，未放宽位置断言。最终英文资源构建与 8 项 AppStorePrivacyTests 通过，证据为 `build/Localization/review-catalog.log/.xcresult`。补充截图位于 `build/Localization/review-screens/`，总览为 `overview-review-tip-jar.png` 与 `overview-review-english.png`，已目视核对。
+
 ## 2026-10-17 主页面统一设置入口
 
 书架、统计与 AI 开启时的对话首页，右上角共用 `AppSettingsLink`：同一 `gearshape` 图标、无障碍标签“设置”和 `LibraryRoute.settings` 目的地。书架原左上设置入口已移除；原有“＋”“统计选项”“新对话”保留在齿轮左侧。对话页左上“AI 助手”改为 `slider.horizontal.3`，只管理 AI；对话栈使用 `NavigationPath` 同时承载会话 ID 与现有设置／书架路由，不复制设置页。标签栏不新增项。

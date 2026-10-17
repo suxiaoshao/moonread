@@ -2865,6 +2865,56 @@ final class MoonreadUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts["谢谢你的支持"].exists)
     }
 
+    func testLocalizedTipJarKeepsPricesBesideDescriptions() throws {
+        let storeKit = try SKTestSession(configurationFileNamed: "TipJar")
+        storeKit.resetToDefaultState(); storeKit.disableDialogs = true
+        for (language, locale, light, dark) in [
+            ("en", "en_US", "Light", "Dark"),
+            ("zh-Hans", "zh_CN", "浅色", "深色"),
+            ("zh-Hant", "zh_TW", "淺色", "深色")
+        ] {
+            storeKit.locale = Locale(identifier: locale)
+            for large in [false, true] {
+                prepareApp(language: language, arguments: ["--ui-test-home"] + (large ? ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"] : []))
+                setTipJarAppearance(large ? dark : light)
+                openTipJar(fromHome: false)
+                XCTAssertTrue(app.buttons["tipJarBuy-dev.moonread.tip.star"].waitForExistence(timeout: 15))
+                recordScreenshot("tip-layout-\(language)-\(large ? "ax-dark" : "light")-top")
+                for product in ["star", "tea", "snack", "book"] {
+                    let id = "dev.moonread.tip." + product
+                    let price = app.buttons["tipJarBuy-" + id]
+                    for _ in 0..<6 where !price.isHittable { app.swipeUp() }
+                    XCTAssertTrue(price.isHittable)
+                    let title = app.staticTexts["tipJarTitle-" + id]
+                    let subtitle = app.staticTexts["tipJarDescription-" + id]
+                    XCTAssertTrue(title.exists); XCTAssertTrue(subtitle.exists)
+                    let description = title.frame.union(subtitle.frame)
+                    XCTAssertGreaterThanOrEqual(price.frame.minX, description.maxX)
+                    XCTAssertEqual(price.frame.midY, description.midY, accuracy: 1, "\(language) \(product) large=\(large)")
+                }
+                recordScreenshot("tip-layout-\(language)-\(large ? "ax-dark" : "light")-bottom")
+                app.terminate()
+            }
+        }
+    }
+
+    func testEnglishSettingsTitlesAndCompactIndentValue() {
+        prepareApp(language: "en")
+        app.buttons["appSettings"].tap()
+        XCTAssertTrue(app.buttons["readerThemeSettings"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["readerThemeSettings"].label.contains("Reading Settings"))
+        XCTAssertTrue(app.buttons["usageGuideSettings"].label.contains("User Guide"))
+        recordScreenshot("english-settings-title-case")
+        app.buttons["readerThemeSettings"].tap()
+        let tabs = app.segmentedControls["readerThemeTabs"]
+        XCTAssertTrue(tabs.waitForExistence(timeout: 5)); tabs.buttons.element(boundBy: 0).tap()
+        let indent = app.buttons["readingIndent"]
+        XCTAssertTrue(indent.waitForExistence(timeout: 5))
+        XCTAssertTrue(indent.label.contains("First-Line Indent"))
+        XCTAssertTrue(indent.label.contains("Smart, 2 chars"))
+        recordScreenshot("english-reading-settings-compact-indent")
+    }
+
     func testTipJarDarkAndLargeAppearance() throws {
         let storeKit = try SKTestSession(configurationFileNamed: "TipJar")
         storeKit.resetToDefaultState(); storeKit.disableDialogs = true
@@ -2885,7 +2935,7 @@ final class MoonreadUITests: XCTestCase {
         for _ in 0..<5 { if appearance.isHittable { break }; app.swipeUp() }
         XCTAssertTrue(appearance.waitForExistence(timeout: 5)); appearance.tap()
         app.buttons["appAppearanceMode"].tap(); app.buttons[mode].tap()
-        app.navigationBars["应用外观"].buttons.firstMatch.tap()
+        app.navigationBars.buttons.firstMatch.tap()
     }
 
     private func openTipJar(fromHome: Bool = true) {
