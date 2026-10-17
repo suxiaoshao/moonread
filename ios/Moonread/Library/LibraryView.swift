@@ -21,17 +21,13 @@ struct LibraryView: View {
         }
         .navigationTitle("书架").navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // Settings are visited rarely; they live in the library stack, not a tab.
-            ToolbarItem(placement: .topBarLeading) {
-                NavigationLink(value: LibraryRoute.settings) { Label("设置", systemImage: "gearshape") }
-                    .toolbarGlyph().accessibilityIdentifier("appSettings")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 Menu {
                     Button("导入小说", systemImage: "square.and.arrow.down") { model.chooseFiles(.novels(LibraryLocation(shelfID: "builtin"))) }
                     Button("添加书架", systemImage: "folder.badge.plus") { model.chooseFiles(.folder(nil)) }
                         .accessibilityIdentifier("chooseFolder")
                 } label: { Label("书架操作", systemImage: "plus") }.toolbarGlyph().accessibilityIdentifier("libraryActions")
+                AppSettingsLink()
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {

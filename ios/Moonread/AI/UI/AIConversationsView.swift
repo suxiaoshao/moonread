@@ -5,7 +5,7 @@ import AISDKProviderUtils
 struct AIConversationsView: View {
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
-    @State private var path: [String] = []
+    @State private var path = NavigationPath()
     @State private var visible = false
     @State private var notice: AIActionNotice?
     var body: some View {
@@ -35,17 +35,21 @@ struct AIConversationsView: View {
                     }
                 }
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) { NavigationLink { AISettingsView() } label: { Label("AI 助手", systemImage: "gearshape") }.toolbarGlyph() }
-                    ToolbarItem(placement: .topBarTrailing) { Button("新对话", systemImage: "square.and.pencil") { Task { if let value = await ai.openDraft() { path.append(value.id) } } }.toolbarGlyph().accessibilityIdentifier("newAIConversation") }
+                    ToolbarItem(placement: .topBarLeading) { NavigationLink { AISettingsView() } label: { Label("AI 助手", systemImage: "slider.horizontal.3") }.toolbarGlyph().accessibilityIdentifier("aiAssistantSettings") }
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        Button("新对话", systemImage: "square.and.pencil") { Task { if let value = await ai.openDraft() { path.append(value.id) } } }.toolbarGlyph().accessibilityIdentifier("newAIConversation")
+                        AppSettingsLink()
+                    }
                 }
+                .navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
                 .navigationDestination(for: String.self) { id in
                     AIChatView(conversationID: id).toolbar {
                         ToolbarItem(placement: .principal) {
-                            AIConversationTitleMenu(currentID: id, create: { Task { if let value = await ai.create(noticeOwner: id) { path = [value.id] } } },
-                                                    select: { path = [$0] })
+                            AIConversationTitleMenu(currentID: id, create: { Task { if let value = await ai.create(noticeOwner: id) { path = NavigationPath([value.id]) } } },
+                                                    select: { path = NavigationPath([$0]) })
                         }
                         ToolbarItem(placement: .topBarTrailing) {
-                            Button("新对话", systemImage: "square.and.pencil") { Task { if let value = await ai.create(noticeOwner: id) { path = [value.id] } } }
+                            Button("新对话", systemImage: "square.and.pencil") { Task { if let value = await ai.create(noticeOwner: id) { path = NavigationPath([value.id]) } } }
                                 .toolbarGlyph()
                         }
                     }
