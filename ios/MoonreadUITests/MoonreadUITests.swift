@@ -3061,6 +3061,11 @@ final class MoonreadUITests: XCTestCase {
             XCTAssertFalse(taskRow("资料建议").exists)
             XCTAssertFalse(taskRow("封面").exists)
             recordScreenshot("ai-disabled-detail-\(mode == "浅色" ? "light" : "dark")")
+            // The book icon below the tab bar is the existing statistics empty state.
+            app.swipeUp()
+            XCTAssertTrue(app.staticTexts["暂无阅读记录"].isHittable)
+            recordScreenshot("ai-disabled-detail-statistics-\(mode == "浅色" ? "light" : "dark")")
+            app.swipeDown()
             app.buttons["开始阅读"].tap()
             let opened = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
                 self.element("readerCover").exists || self.app.textViews["scrollText"].exists || self.app.textViews["pageText"].exists
@@ -3082,6 +3087,26 @@ final class MoonreadUITests: XCTestCase {
             XCTAssertTrue(app.tabBars.buttons["对话"].exists)
             app.buttons["aiSettings"].tap()
             XCTAssertTrue(app.staticTexts["测试连接甲"].waitForExistence(timeout: 5), "Saved connections remain after off/on")
+            app.terminate()
+        }
+    }
+
+    func testAIEnabledDetailRetainsStatisticsEmptyState() {
+        for mode in ["浅色", "深色"] {
+            prepareApp(arguments: ["--ui-test-ai-model-picker"])
+            setTipJarAppearance(mode)
+            XCTAssertEqual(app.switches["aiMasterSwitch"].value as? String, "1")
+            app.tabBars.buttons["书架"].tap()
+            let shelf = app.buttons["shelf-builtin"]
+            XCTAssertTrue(shelf.waitForExistence(timeout: 10)); shelf.tap()
+            let menu = app.buttons["月读 · 排版示例.txt的操作"]
+            XCTAssertTrue(menu.waitForExistence(timeout: 5)); menu.tap()
+            app.buttons["小说详情"].tap()
+            XCTAssertTrue(app.navigationBars["小说详情"].waitForExistence(timeout: 5))
+            recordScreenshot("ai-enabled-detail-\(mode == "浅色" ? "light" : "dark")")
+            for _ in 0..<3 where !app.staticTexts["暂无阅读记录"].isHittable { app.swipeUp() }
+            XCTAssertTrue(app.staticTexts["暂无阅读记录"].isHittable)
+            recordScreenshot("ai-enabled-detail-statistics-\(mode == "浅色" ? "light" : "dark")")
             app.terminate()
         }
     }

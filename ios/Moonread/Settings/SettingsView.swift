@@ -49,6 +49,7 @@ struct SettingsView: View {
                 }
             } footer: {
                 Text("关闭后隐藏所有 AI 功能，已有连接、会话和数据共享许可保留。")
+                    .padding(.bottom, 16)
             }.listRowBackground(Color(uiColor: theme.surface))
             Section("应用") {
                 NavigationLink { UsageGuideView() } label: {

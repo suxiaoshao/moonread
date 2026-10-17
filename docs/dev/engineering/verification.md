@@ -10,6 +10,7 @@
 - Nix + Xcode 整 App 模拟器构建及 18 项定向单测通过（新增 9 项，含关闭拒绝、agent/原生请求/快捷任务/共享确认/共享令牌刷新取消、目录批次停止、迟到失败丢弃、数据保留和重新开启）。日志/结果包：`build/AIMasterSwitch/execution-final.log`、`execution-final.xcresult`。
 - iPhone 18 Pro / iOS 27.0 模拟器两个完整 UI 用例通过：浅深色入口隐藏、重启后保持关闭、重新开启连接恢复；指南与 TipKit 无 AI 描述。`build/AIMasterSwitch/verified.log`、`verified.xcresult`。分别明确设置应用与阅读配色后重新运行浅深色主流程通过，最终截图来自 `appearance-final.log` / `appearance-final.xcresult`。
 - 截图在 `build/AIMasterSwitch/screens/`：`overview.png` 为六图总览；`ai-master-switch-{light,dark}.png`、`ai-disabled-detail-{light,dark}.png`、`ai-disabled-reader-{light,dark}.png`，另有 `ai-disabled-guide.png` 与 `ai-disabled-selection-tip.png`。均为原创合成 TXT。
+- 截图复核：详情页日期范围卡片下方露出的书本轮廓来自统计区 `ContentUnavailableView` 的 `book.closed` 图标（“暂无阅读记录”），不是 AI 入口；AI 开启／关闭时都存在。初始截图仅露出列表下一行上缘，向上滚动后图标、标题及说明均完整可见，因此未修改详情布局。设置页 AI 说明下方增加 16pt 间隔，避免紧贴“应用”分区标题。两项受影响 UI 用例浅深色回归通过，日志与结果包为 `build/AIMasterSwitch/review-layout.log` / `review-layout.xcresult`；补充对照图 `screens/ai-enabled-detail{,-statistics}-{light,dark}.png`、`screens/ai-disabled-detail-statistics-{light,dark}.png`，更新设置图 `screens/ai-master-switch-{light,dark}.png` 已目视核对。
 - 中英文帮助页 Zola 构建通过，日志 `build/AIMasterSwitch/site.log`；`git diff --check` 通过。
 - 附加的 `testAIReadingMoonCloseReopenAndConversationTab` 单项通过（`ui.log`）；同轮资料任务 UI 回归卡在 XCUITest 长按菜单 idle 等待，已中止，未计为通过。本次入口隐藏通过同一菜单现有的“…”按钮验证。未操作真机，未调用真实 AI 服务。
 
