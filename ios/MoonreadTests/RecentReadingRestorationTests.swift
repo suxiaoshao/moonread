@@ -174,6 +174,36 @@ extension ReaderService {
         let retried = await reads.ids; XCTAssertEqual(retried.count, 2)
     }
 
+    func testManagedHintsMatchOnlyBuiltinAcrossLocalAndCloudLocations() {
+        func candidate(_ id: String, builtin: Bool, location: String) -> RecentRestorationPolicy.Candidate {
+            .init(file: .init(id: id, shelfId: id, relativePath: "sample.txt", size: 20, modified: 1, needsDownload: false, bookId: nil, decoding: "auto"),
+                  shelf: .init(id: id, name: "Synthetic", bookmark: Data(), location: location, builtin: builtin, error: nil, bookCount: 0))
+        }
+        let external = (0..<4).map { candidate("external-\($0)", builtin: false, location: "local") }
+        for kind: PositionSourceHint.Kind in [.managedLocal, .managedICloud] {
+            for location in ["local", "icloud"] {
+                var h = hint("sample.txt", size: 20); h.source_kind = kind
+                let builtin = candidate("builtin", builtin: true, location: location)
+                XCTAssertEqual(RecentRestorationPolicy.candidates(hint: h, files: external + [builtin]).map { $0.file.id }, ["builtin"], "\(kind) → \(location)")
+            }
+        }
+        var externalHint = hint("sample.txt", size: 20); externalHint.source_kind = .external
+        let builtin = candidate("builtin", builtin: true, location: "local")
+        XCTAssertEqual(RecentRestorationPolicy.candidates(hint: externalHint, files: [builtin, external[0]]).map { $0.file.id }, [external[0].file.id])
+    }
+
+    func testLocalHintCanAdmitUniqueBuiltinCloudDownloadDespiteExternalPaths() {
+        func candidate(_ id: String, builtin: Bool) -> RecentRestorationPolicy.Candidate {
+            .init(file: .init(id: id, shelfId: id, relativePath: "sample.txt", size: 20, modified: 1, needsDownload: true, bookId: nil, decoding: "auto"),
+                  shelf: .init(id: id, name: "Synthetic", bookmark: Data(), location: "icloud", builtin: builtin, error: nil, bookCount: 0))
+        }
+        let builtin = candidate("builtin", builtin: true)
+        let all = [builtin] + (0..<4).map { candidate("external-\($0)", builtin: false) }
+        let h = hint("sample.txt", size: 20)
+        XCTAssertTrue(RecentRestorationPolicy.canAutomaticallyDownload(hint: h, candidate: builtin, files: all))
+        XCTAssertEqual(RecentRestorationPolicy.candidates(hint: h, files: all).map { $0.file.id }, ["builtin"])
+    }
+
     func testPolicyBoundsAmbiguityDownloadSizeAndManualDecoding() {
         func candidate(_ id: String, path: String = "sample.txt", remote: Bool = true, policy: String = "auto", shelfID: String = "builtin", size: UInt64 = 20) -> RecentRestorationPolicy.Candidate {
             .init(file: .init(id: id, shelfId: shelfID, relativePath: path, size: size, modified: 1, needsDownload: remote, bookId: nil, decoding: policy),

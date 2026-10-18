@@ -21,8 +21,9 @@ enum RecentRestorationPolicy {
         let exact = files.filter { candidate in
             let scope: Bool
             switch hint.source_kind {
-            case .managedICloud: scope = candidate.shelf.builtin && candidate.shelf.location == "icloud"
-            case .managedLocal: scope = !candidate.shelf.builtin || candidate.shelf.location == "local"
+            // The managed shelf may switch between local and iCloud on a new
+            // device; external roots never participate in its exact-path match.
+            case .managedICloud, .managedLocal: scope = candidate.shelf.builtin
             case .external: scope = !candidate.shelf.builtin
             }
             return scope && candidate.file.relativePath == hint.relative_path

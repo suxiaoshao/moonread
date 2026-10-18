@@ -14,6 +14,8 @@ Nix 下 Rust 核心回归 95 项通过、1 项既有忽略，新增 4 项探测�
 
 最新 main 基线的模拟器构建与 15 项定向测试全部通过：9 项新增恢复测试、4 项同步格式／隔离回归、1 项原文件准备不导入／不记阅读的既有回归，以及 1 项真实 App 首页冒烟。覆盖两种到达顺序、pending 完整转移、原用户 payload／时间／偏好与原文件不变、同名同大小错书拒绝、10 key／3 候选／下载限额、重复触发去重、源替换／移除／根变化／隐藏／新 token／未知版本／取消／编码变化不提交、前台同文件准备抢占且无孤儿导入，以及真实读书后写回线索。证据为 `build/RecentRestore/LifecycleDelivery.xcresult`、`lifecycle-delivery.log`；保持恢复启用、只阻止后续重试的竞态断言另见 `RaceGuards.xcresult`，隐藏最新条目仍保留十个可见名额的复测见 `VisibleBudget.xcresult`。早期 Swift 编译与测试夹具错误保留在 `build.log`、`Initial.xcresult`，不记为通过。
 
+内置来源的精确路径匹配统一只认 builtin，不限定当前 local／icloud，避免旧设备本机线索在新设备接入 iCloud 后漏匹配，也不把外部书架同路径计入内置候选预算。恢复测试组 11 项通过（含新增的四个外部同路径干扰、两种内置来源跨本机／云位置组合、唯一云候选下载准入与 external 范围断言），证据为 `build/RecentRestore/ManagedScope.xcresult`、`managed-scope.log`。
+
 UI 夹具在隔离会话中先放入原创 TXT 和模拟已到达的位置，初始无 books 缓存；未逐本打开即出现首页“继续阅读”，点击后直接进入原进度正文。已人工核对 `build/RecentRestore/screens/overview.png`，单图为 `recent-restored-before-first-open.png`、`recent-restored-reading-position.png`。云候选准入测试使用本地文件注入 cloud metadata，只证明准入与实际读取范围，不证明 iCloud 网络下载。真实 CloudKit 到达顺序、iCloud 自动物化、跨设备与新格式 TestFlight 重装仍待用户验收；本轮未操作手机、未清理云端数据。中英文隐私说明已补充来源线索范围，日期为实际修改日。
 
 ## 2026-10-18 阅读器旁白本地化与装饰图标
