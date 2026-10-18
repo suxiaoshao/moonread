@@ -23,6 +23,15 @@ struct CloudSyncStatus: Sendable {
     var message: String?
 }
 
+/// Device-local intent is a tiny thread-safe UserDefaults write, independent of
+/// account lookup, store activation, and either service actor's work queue.
+final class CloudSyncIntent: @unchecked Sendable {
+    private let defaults: UserDefaults
+    init(defaults: UserDefaults) { self.defaults = defaults }
+    var requested: Bool { defaults.bool(forKey: "Moonread.userCloudEnabled") }
+    func set(_ enabled: Bool) { defaults.set(enabled, forKey: "Moonread.userCloudEnabled") }
+}
+
 /// Only account/configuration and framework event reporting live here. SwiftData
 /// owns upload, download and retries; there is no second record transport.
 actor CloudSyncCoordinator {
@@ -47,8 +56,9 @@ actor CloudSyncCoordinator {
     private func publish() { NotificationCenter.default.post(name: .cloudStatusChanged, object: nil) }
 
     /// Only an explicit user toggle persists intent; lifecycle and errors never do.
+    nonisolated func persistIntent(_ enabled: Bool) { service.cloudSyncIntent.set(enabled) }
     func setEnabled(_ enabled: Bool) async {
-        await service.setCloudSyncRequested(enabled)
+        persistIntent(enabled)
         await resume()
     }
     func identityChanged() async {
@@ -168,8 +178,8 @@ actor CloudSyncCoordinator {
     }
 }
 extension ReaderService {
-    func cloudSyncRequested() -> Bool { sourceDefaults.bool(forKey: "Moonread.userCloudEnabled") }
-    func setCloudSyncRequested(_ requested: Bool) { sourceDefaults.set(requested, forKey: "Moonread.userCloudEnabled") }
+    func cloudSyncRequested() -> Bool { cloudSyncIntent.requested }
+    func setCloudSyncRequested(_ requested: Bool) { cloudSyncIntent.set(requested) }
     func userCloudOwner() -> String? { sourceDefaults.string(forKey: "Moonread.userOwner") }
     func dataChanged() { NotificationCenter.default.post(name: .readingDataChanged, object: nil) }
 }

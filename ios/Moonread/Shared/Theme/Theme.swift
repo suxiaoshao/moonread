@@ -128,6 +128,13 @@ final class ThemeStore {
         let session = args.firstIndex(of: "--ui-test-session").flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil }
         cacheKey = "Moonread.appearanceCache.\(session ?? "library")"
         snapshot = UserDefaults.standard.string(forKey: cacheKey).flatMap { try? decodeThemeSnapshot(json: $0) } ?? defaultThemeSnapshot()
+        #if DEBUG
+        if args.contains("--ui-testing"), let index = args.firstIndex(of: "--ui-test-app-appearance"), args.indices.contains(index + 1) {
+            snapshot.preferences.appMode = args[index + 1] == "dark" ? .dark : .light
+            // Seed both the first frame and the normal asynchronous preferences load.
+            UserDefaults.standard.set(try? encodeThemePreferences(value: snapshot.preferences), forKey: "Moonread.themePreferences")
+        }
+        #endif
     }
 
     var resolved: ResolvedThemes {
@@ -233,6 +240,17 @@ struct ThemedProminentButtonStyle: PrimitiveButtonStyle {
             .buttonStyle(.borderedProminent)
             .tint(Color(uiColor: theme.accent))
             .foregroundStyle(Color(uiColor: theme.onAccent))
+    }
+}
+
+/// Use the native secondary control with the same sizing and shape rules as
+/// its prominent counterpart. Callers set controlSize on both actions together.
+struct ThemedSecondaryButtonStyle: PrimitiveButtonStyle {
+    @Environment(\.theme) private var theme
+    func makeBody(configuration: Configuration) -> some View {
+        Button(configuration)
+            .buttonStyle(.bordered)
+            .tint(Color(uiColor: theme.accent))
     }
 }
 

@@ -198,6 +198,40 @@ extension ReaderService {
         #endif
     }
 
+    /// Called only after the introduction has acknowledged initial discovery.
+    /// Recheck the root and real directory before copying; do not seed a newly
+    /// switched account or overwrite an existing file.
+    func welcomeStory(expectedRoot: URL?) async throws -> LibraryEntry? {
+        guard expectedRoot == cloudLibraryRoot else { throw LibraryFileError.missingShelf }
+        let core = try textCore()
+        let existing = try core.sourceFiles(shelfId: "builtin")
+        if let id = sourceDefaults.string(forKey: "Moonread.seededExampleFileID"),
+           existing.contains(where: { $0.id == id }) {
+            return try await libraryEntry(id)
+        }
+        guard existing.isEmpty else { return nil }
+        let root = try builtinLibraryURL()
+        let children = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
+        guard children.isEmpty else { return nil }
+        guard let source = Bundle.main.url(forResource: "WelcomeStory", withExtension: "txt") else { throw CocoaError(.fileNoSuchFile) }
+        try FileManager.default.copyItem(at: source, to: root.appendingPathComponent("月光下的归途.txt"))
+        if try await scanLibraryShelf("builtin") == false {
+            // A presenter/foreground scan may take ownership after the copy.
+            // Join each successor through publication, not just enumeration.
+            while let scan = libraryScanTasks["builtin"] {
+                _ = try await scan.task.value
+                try Task.checkCancellation()
+            }
+        }
+        try Task.checkCancellation()
+        guard expectedRoot == cloudLibraryRoot else { throw LibraryFileError.missingShelf }
+        guard let story = try core.sourceFiles(shelfId: "builtin").first(where: { $0.relativePath == "月光下的归途.txt" }) else {
+            throw LibraryFileError.missingShelf
+        }
+        sourceDefaults.set(story.id, forKey: "Moonread.seededExampleFileID")
+        return try await libraryEntry(story.id)
+    }
+
     func hasUserImportedBooks() throws -> Bool {
         let example = sourceDefaults.string(forKey: "Moonread.seededExampleFileID")
         return try textCore().sourceFiles(shelfId: "builtin").contains { !$0.directory && $0.id != example }
@@ -250,7 +284,12 @@ extension ReaderService {
     }
     /// One folder's children, or with `recursive` every entry in the location's shelf (all shelves for nil).
     func libraryEntries(_ location: LibraryLocation?, recursive: Bool = false, sort: LibrarySort = .reading) async throws -> [LibraryEntry] {
-        try await catalogueQuery(location, recursive: recursive).libraryEntries(shelfId: location?.shelfID, parentPath: recursive ? nil : location?.path, sort: sort)
+        #if DEBUG
+        if testSession != nil, ProcessInfo.processInfo.arguments.contains("--ui-test-introduction-directory-failure") {
+            throw CocoaError(.fileReadNoPermission)
+        }
+        #endif
+        return try await catalogueQuery(location, recursive: recursive).libraryEntries(shelfId: location?.shelfID, parentPath: recursive ? nil : location?.path, sort: sort)
     }
     func searchLibrary(shelfID: String?, query: String, author: String?, tag: String?) async throws -> [LibraryEntry] {
         try await catalogueQuery(shelfID.map { LibraryLocation(shelfID: $0) }, recursive: true).searchLibrary(shelfId: shelfID, query: query, author: author, tag: tag)
@@ -322,7 +361,16 @@ extension ReaderService {
     @discardableResult
     func scanLibraryShelf(_ id: String) async throws -> Bool {
         let request = UUID(); libraryScans[id] = request
-        defer { if libraryScans[id] == request { libraryScans[id] = nil } }
+        let task = Task { try await self.performLibraryScan(id, request: request) }
+        libraryScanTasks[id] = (request, task)
+        return try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+    }
+
+    private func performLibraryScan(_ id: String, request: UUID) async throws -> Bool {
+        defer {
+            if libraryScans[id] == request { libraryScans[id] = nil }
+            if libraryScanTasks[id]?.id == request { libraryScanTasks[id] = nil }
+        }
         do {
             let shelf = try libraryShelf(id), root = try resolveShelf(shelf)
             let cloudItems = shelf.builtin && root == cloudLibraryRoot ? cloudDocumentItems : []

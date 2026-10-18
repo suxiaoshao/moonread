@@ -39,10 +39,17 @@ final class CloudStore {
         }
     }
     func setEnabled(_ enabled: Bool) {
-        guard !busy else { return }; busy = true; status.requested = enabled
-        Task {
+        guard !busy else { return }
+        saveIntroductionChoice(enabled)
+    }
+    /// Persist before returning; activation must never hold the introduction open.
+    /// A chosen setup value is not dropped when unrelated cloud work is busy.
+    @discardableResult func saveIntroductionChoice(_ enabled: Bool) -> Task<Void, Never> {
+        coordinator.persistIntent(enabled)
+        busy = true; status.requested = enabled
+        return Task {
             defer { busy = false }
-            await coordinator.setEnabled(enabled)
+            await coordinator.resume()
             await updateStatus()
             if enabled { confirmationAccount = status.accountToConfirm }
         }

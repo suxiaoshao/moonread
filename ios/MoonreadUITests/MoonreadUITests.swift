@@ -2987,6 +2987,190 @@ final class MoonreadUITests: XCTestCase {
         XCTAssertTrue(entry.waitForExistence(timeout: 5)); entry.tap()
     }
 
+    func testFirstRunFourPagesAndCloudDiscoveryChoices() {
+        for scenario in ["local", "cloud-empty", "cloud-existing", "cloud-disabled"] {
+            var args = ["--ui-test-home", "--ui-test-introduction", "--ui-test-tips"]
+            if scenario != "local" { args.append("--ui-test-onboarding-cloud") }
+            if scenario == "cloud-existing" { args.append("--ui-test-onboarding-existing") }
+            prepareApp(arguments: args)
+            XCTAssertTrue(app.buttons["introductionContinue"].waitForExistence(timeout: 10), app.debugDescription)
+            XCTAssertFalse(app.otherElements["libraryImportTip"].exists)
+            app.buttons["introductionContinue"].tap()
+            let sync = app.switches["introductionReadingSync"]
+            if scenario == "local" { XCTAssertFalse(sync.exists) }
+            else {
+                XCTAssertTrue(sync.waitForExistence(timeout: 5)); XCTAssertEqual(sync.value as? String, "1")
+                if scenario == "cloud-disabled" { sync.tap() }
+            }
+            app.buttons["introductionContinue"].tap()
+            let ai = app.switches["introductionAI"]
+            XCTAssertTrue(ai.waitForExistence(timeout: 5)); XCTAssertEqual(ai.value as? String, "0")
+            let enabled = scenario == "cloud-existing" || scenario == "cloud-disabled"
+            if enabled { ai.tap() }
+            app.buttons["introductionContinue"].tap()
+            let sample = app.buttons["introductionSample"]
+            XCTAssertTrue(sample.waitForExistence(timeout: 5))
+            if scenario != "local" {
+                XCTAssertFalse(sample.isEnabled, "Never seed before first discovery")
+                XCTAssertTrue(element("introductionDiscoveryWait").waitForExistence(timeout: 3))
+                recordScreenshot("introduction-" + scenario + "-waiting")
+                app.buttons["introductionDeliverCloud"].tap()
+            }
+            let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: sample)
+            XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed, app.debugDescription)
+            XCTAssertFalse(element("introductionDiscoveryWait").exists)
+            XCTAssertEqual(sample.label, scenario == "cloud-existing" ? "打开书架" : "先读示例故事")
+            recordScreenshot("introduction-" + scenario + "-ready")
+            sample.tap()
+            if scenario == "cloud-existing" {
+                XCTAssertTrue(app.buttons["library-file-云端合成小说.txt"].waitForExistence(timeout: 10))
+                XCTAssertFalse(app.buttons["library-file-月光下的归途.txt"].exists)
+            } else {
+                XCTAssertTrue(element("readerCover").waitForExistence(timeout: 15), "Sample must actually open")
+            }
+            // Relaunch retains this session's local settings and completion marker.
+            app.terminate(); app.launch()
+            XCTAssertTrue(app.buttons["appSettings"].waitForExistence(timeout: 10))
+            XCTAssertFalse(app.buttons["introductionContinue"].exists)
+            XCTAssertEqual(app.tabBars.buttons["对话"].exists, enabled)
+            app.buttons["appSettings"].tap()
+            let master = app.switches["aiMasterSwitch"]
+            XCTAssertTrue(master.waitForExistence(timeout: 5))
+            XCTAssertEqual(master.value as? String, enabled ? "1" : "0")
+            app.terminate()
+        }
+    }
+
+    func testFirstRunOpensCachedBooksWithoutWaitingForCloudDiscovery() {
+        prepareApp(arguments: ["--ui-test-home", "--ui-test-introduction", "--ui-test-onboarding-cloud", "--ui-test-onboarding-local"])
+        XCTAssertTrue(app.buttons["introductionContinue"].waitForExistence(timeout: 10))
+        for _ in 0..<3 { app.buttons["introductionContinue"].tap() }
+        let open = app.buttons["introductionSample"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+        let available = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: open)
+        XCTAssertEqual(XCTWaiter.wait(for: [available], timeout: 5), .completed)
+        XCTAssertEqual(open.label, "打开书架")
+        // No injected cloud snapshot has been delivered. Existing readable files
+        // can be opened, but this path must never create a sample story.
+        open.tap()
+        XCTAssertTrue(app.buttons["library-file-本机已有合成.txt"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["library-file-月光下的归途.txt"].exists)
+        recordScreenshot("introduction-cached-books-pending-cloud")
+    }
+
+    func testFirstRunImportOpensExistingPicker() {
+        prepareApp(arguments: ["--ui-test-home", "--ui-test-introduction"])
+        XCTAssertTrue(app.buttons["introductionContinue"].waitForExistence(timeout: 10), app.debugDescription)
+        for _ in 0..<3 { app.buttons["introductionContinue"].tap() }
+        app.buttons["introductionImport"].tap()
+        // The system picker opens on Recents by default, not a Browse navigation bar.
+        XCTAssertTrue(app.tabBars["DOC.browsingModeTabBar"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.navigationBars["FullDocumentManagerViewControllerNavigationBar"].exists)
+        recordScreenshot("introduction-import-picker")
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["appSettings"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["introductionContinue"].exists)
+    }
+
+    func testFirstRunDirectoryFailureCanFinishWithoutSeeding() {
+        prepareApp(arguments: ["--ui-test-home", "--ui-test-introduction", "--ui-test-introduction-directory-failure"])
+        let alert = app.alerts.firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout: 10))
+        recordScreenshot("introduction-directory-failure")
+        alert.buttons["知道了"].tap()
+        for _ in 0..<3 {
+            let next = app.buttons["introductionContinue"]
+            XCTAssertTrue(next.waitForExistence(timeout: 5)); next.tap()
+        }
+        let open = app.buttons["introductionSample"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+        XCTAssertEqual(open.label, "打开书架")
+        XCTAssertTrue(open.isEnabled); XCTAssertTrue(open.isHittable)
+        recordScreenshot("introduction-directory-failure-open-library")
+        open.tap()
+        XCTAssertTrue(app.navigationBars["我的书架"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["introductionContinue"].exists)
+        XCTAssertFalse(element("readerCover").exists, "Failure fallback must not open a story")
+        recordScreenshot("introduction-directory-failure-library")
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["appSettings"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["introductionContinue"].exists)
+    }
+
+    func testFirstRunOnboardingLightAndLocalizedScreenshots() {
+        for language in ["zh-Hans", "en", "zh-Hant"] {
+            captureIntroduction(language: language, large: false, suffix: "light")
+        }
+    }
+    func testFirstRunOnboardingAccessibilityScreenshot() {
+        captureIntroduction(language: "zh-Hans", large: true, suffix: "light")
+    }
+    func testFirstRunOnboardingDarkScreenshots() {
+        captureIntroduction(language: "zh-Hans", large: false, suffix: "dark")
+    }
+    private func captureIntroduction(language: String, large: Bool, suffix: String) {
+        let dark = suffix == "dark"
+        var args = ["--ui-test-home", "--ui-test-onboarding-cloud", "--ui-test-introduction",
+                    "--ui-test-introduction-screenshots", "--ui-test-app-appearance", suffix]
+        if large { args += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
+        prepareApp(language: language, arguments: args)
+        let next = app.buttons["introductionContinue"]
+        XCTAssertTrue(next.waitForExistence(timeout: 10))
+        var titleY: CGFloat?
+        for page in 0..<4 {
+            let action = page == 3 ? app.buttons["introductionImport"] : next
+            XCTAssertTrue(action.waitForExistence(timeout: 5)); XCTAssertTrue(action.isHittable)
+            let frame = app.windows.firstMatch.frame
+            XCTAssertGreaterThanOrEqual(action.frame.minY, frame.minY)
+            XCTAssertLessThanOrEqual(action.frame.maxY, frame.maxY)
+            let progress = element("introductionProgress")
+            XCTAssertEqual(progress.label, language == "en" ? "Step \(page + 1) of 4" : "第 \(page + 1) 步，共 4 步")
+            if !large || page != 3 { XCTAssertLessThan(progress.frame.maxY, action.frame.minY) }
+            let heading = app.staticTexts["introductionTitle"]
+            if let titleY { XCTAssertEqual(heading.frame.minY, titleY, accuracy: 1, "Icons and title starts stay fixed between steps") }
+            else { titleY = heading.frame.minY }
+            let navigationBottom = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : frame.minY
+            XCTAssertGreaterThanOrEqual(heading.frame.minY, navigationBottom - 1,
+                                        "Each new step starts at the top, even after scrolling the previous step")
+            assertIntroductionAppearance(dark: dark)
+            if large && page == 3 {
+                let explanation = app.staticTexts["introductionReadingExplanation"]
+                XCTAssertGreaterThanOrEqual(explanation.frame.minY, app.scrollViews.firstMatch.frame.minY)
+                XCTAssertLessThan(explanation.frame.minY, app.scrollViews.firstMatch.frame.maxY)
+                XCTAssertEqual(app.buttons["introductionImport"].label, "导入第一本书")
+            }
+            recordScreenshot("introduction-\(language)-\(large ? "maxAX" : "standard")-\(suffix)-\(page + 1)")
+            if large {
+                app.scrollViews.firstMatch.swipeUp()
+                XCTAssertTrue(action.isHittable, "Bottom action stays visible while content scrolls")
+                recordScreenshot("introduction-\(language)-maxAX-\(suffix)-\(page + 1)-scrolled")
+                if page == 3 {
+                    let explanation = app.staticTexts["introductionReadingExplanation"]
+                    let viewport = app.scrollViews.firstMatch.frame
+                    XCTAssertTrue(app.scrollViews.firstMatch.staticTexts["introductionReadingExplanation"].exists)
+                    XCTAssertTrue(app.scrollViews.firstMatch.descendants(matching: .any).matching(identifier: "introductionProgress").firstMatch.exists)
+                    XCTAssertTrue(explanation.frame.intersects(viewport))
+                    XCTAssertLessThanOrEqual(explanation.frame.maxY, viewport.maxY + 1)
+                    XCTAssertEqual(progress.label, "第 4 步，共 4 步")
+                    XCTAssertGreaterThanOrEqual(progress.frame.minY, viewport.minY - 1)
+                    XCTAssertLessThanOrEqual(progress.frame.maxY, viewport.maxY + 1)
+                    XCTAssertLessThan(progress.frame.maxY, action.frame.minY)
+                }
+            }
+            if page < 3 { next.tap() }
+        }
+        app.terminate()
+    }
+
+    private func assertIntroductionAppearance(dark: Bool, file: StaticString = #filePath, line: UInt = #line) {
+        // The left margin is paper on every page, including accessibility sizes.
+        let rgb = pixel(XCUIScreen.main.screenshot(), at: CGPoint(x: app.frame.minX + 4, y: app.frame.midY))
+        guard rgb.count == 3 else { return }
+        let brightness = Double(rgb.reduce(0) { $0 + Int($1) }) / (3 * 255)
+        if dark { XCTAssertLessThan(brightness, 0.35, file: file, line: line) }
+        else { XCTAssertGreaterThan(brightness, 0.7, file: file, line: line) }
+    }
+
     func testOnboardingFreshLibrariesAndGuideAppearance() {
         for scenario in ["local", "empty", "existing", "local-pending"] {
             var args = ["--ui-test-home"]
@@ -3248,6 +3432,9 @@ final class MoonreadUITests: XCTestCase {
                 XCTAssertGreaterThanOrEqual(button.frame.minY, window.minY)
                 XCTAssertLessThanOrEqual(button.frame.maxY, window.maxY)
             }
+            XCTAssertEqual(allow.frame.height, decline.frame.height, accuracy: 1)
+            XCTAssertEqual(allow.frame.minX, decline.frame.minX, accuracy: 1)
+            XCTAssertEqual(allow.frame.maxX, decline.frame.maxX, accuracy: 1)
             let allowY = allow.frame.minY, declineY = decline.frame.minY
             app.scrollViews.firstMatch.swipeUp()
             XCTAssertTrue(allow.isHittable); XCTAssertTrue(decline.isHittable)

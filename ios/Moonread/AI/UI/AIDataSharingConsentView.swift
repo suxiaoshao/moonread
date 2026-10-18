@@ -47,12 +47,9 @@ struct AIDataSharingConsentView: View {
                 Text("同意并发送").frame(maxWidth: .infinity, minHeight: LayoutTokens.hit)
             }.buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("approveAIDataSharing")
             Button(role: .cancel) { ai.sharing.answer(request.id, approved: false) } label: {
-                Text("暂不发送").frame(maxWidth: .infinity, minHeight: LayoutTokens.hit).padding(.vertical, 8)
-                    .foregroundStyle(Color(uiColor: theme.ink))
-                    .background(Color(uiColor: theme.surface), in: RoundedRectangle(cornerRadius: LayoutTokens.control))
-                    .overlay(RoundedRectangle(cornerRadius: LayoutTokens.control).stroke(Color(uiColor: theme.border)))
-            }.buttonStyle(.plain).accessibilityIdentifier("declineAIDataSharing")
-        }.frame(maxWidth: 640).padding(LayoutTokens.page).frame(maxWidth: .infinity)
+                Text("暂不发送").frame(maxWidth: .infinity, minHeight: LayoutTokens.hit)
+            }.buttonStyle(ThemedSecondaryButtonStyle()).accessibilityIdentifier("declineAIDataSharing")
+        }.controlSize(.large).frame(maxWidth: 640).padding(LayoutTokens.page).frame(maxWidth: .infinity)
             .background(Color(uiColor: theme.surface))
             .overlay(alignment: .top) { ThemedDivider() }
     }

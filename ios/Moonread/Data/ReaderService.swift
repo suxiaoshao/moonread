@@ -100,6 +100,7 @@ actor ReaderService {
     var shownCandidates: [String: [AnnotationCandidate]] = [:]
     var undoCandidates: [String: ([AnnotationCandidate], AnnotationContent?)] = [:]
     let sourceDefaults: UserDefaults
+    nonisolated let cloudSyncIntent: CloudSyncIntent
     var cloudLibraryRoot: URL?
     var cloudDocumentItems: [CloudDocumentItem] = []
     var cloudLibraryMessage: String?
@@ -130,11 +131,14 @@ actor ReaderService {
         userDirectoryName = session.map { "Moonread-UITests-\($0)" } ?? sourceDefaultsSuite.map { "Moonread-\($0)" } ?? (core == nil ? "Moonread" : "Moonread-Tests-\(UUID().uuidString)")
         let defaults = sourceDefaultsSuite.flatMap(UserDefaults.init(suiteName:)) ?? .standard
         sourceDefaults = defaults
+        cloudSyncIntent = CloudSyncIntent(defaults: defaults)
         settingsCache = ReaderSettingsCache(defaults: defaults)
     }
     deinit { for observer in libraryObservers.values { observer.stop() } }
     var libraryObservers: [String: LibraryDirectoryObserver] = [:]
     var libraryScans: [String: UUID] = [:]
+    // Completion includes index publication; mutation-only invalidation tokens are not joinable scans.
+    var libraryScanTasks: [String: (id: UUID, task: Task<Bool, Error>)] = [:]
     var aiPreparationTokens: [String: UUID] = [:]
     var aiPreparationTasks: [String: Task<Void, Never>] = [:]
     var aiPreparationResults: [String: Result<ReadingLease, Error>] = [:]
