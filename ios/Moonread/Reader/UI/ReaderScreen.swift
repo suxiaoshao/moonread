@@ -1000,7 +1000,7 @@ private final class ReaderBattery {
     }
 
     var accessibilityLabel: String {
-        guard level >= 0 else { return "电量不可用" }
+        guard level >= 0 else { return String(localized: "电量不可用") }
         let percentage = Int((level * 100).rounded())
         return state == .charging ? String(localized: "电量百分之\(percentage)，正在充电") : String(localized: "电量百分之\(percentage)")
     }

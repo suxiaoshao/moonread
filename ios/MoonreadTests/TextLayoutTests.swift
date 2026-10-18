@@ -1652,6 +1652,25 @@ final class TextLayoutTests: XCTestCase {
     }
 
     @MainActor
+    func testPageAccessibilityActionsUseActiveLocalization() throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.windows.first(where: \.isKeyWindow)
+        let host = UIWindow(windowScene: scene)
+        let controller = ReadingController()
+        host.rootViewController = controller; host.makeKeyAndVisible()
+        defer { host.isHidden = true; previous?.makeKeyAndVisible() }
+        controller.configure(window: ReadingWindow(chunks: Array(readingChunks()[0...1])),
+                             settings: ReaderSettings(mode: .pages, fontSize: 20, lineSpacing: 8), anchor: 0,
+                             dark: false, typeSize: .large, compactHeaderHeight: 22,
+                             controlsVisible: false, toggleControls: {}, readingBegan: {}, changed: { _, _ in })
+        controller.view.layoutIfNeeded()
+        let text = try XCTUnwrap(findReadingText(in: controller.view))
+        let actions = text.accessibilityCustomActions?.map(\.name) ?? []
+        XCTAssertTrue(actions.contains(String(localized: "上一页")), "\(actions)")
+        XCTAssertTrue(actions.contains(String(localized: "下一页")), "\(actions)")
+    }
+
+    @MainActor
     func testAnnotationTapUsesFullNativeRangeWithoutShowingHandles() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previousKey = scene.windows.first(where: \.isKeyWindow)

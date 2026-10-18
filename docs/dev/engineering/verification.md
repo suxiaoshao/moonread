@@ -2,6 +2,12 @@
 
 更新：2026-10-18。本文按能力保存必要证据与未覆盖范围，不作逐轮修改日志。表中结果来自各次受影响回归，不能解释为当前版本在所有设备上完成了全量验收。
 
+## 2026-10-18 阅读器旁白本地化与装饰图标
+
+分页的上一页／下一页 `UIAccessibilityCustomAction`、未知电量标签改走 `String(localized:)`，复用字符串目录已有的英文与台湾繁体译文；章节值使用同一目录中的本地化插值格式，英文不再夹带中文逗号。亮度两侧太阳、搜索当前命中定位图标、跳转历史勾和提示卡配图对无障碍隐藏；阅读月亮拖动与分页进度 value 不变。
+
+iOS 27 模拟器的英文定向构建与 3 项测试通过：读取 UIKit 翻页动作名称、英／繁电量标签与章节 value、英／繁引导提示；繁体测试语言下单独复跑翻页动作 1 项通过。共 4 次通过；这是无障碍属性和动作名称验证，不替代 VoiceOver 真人连续朗读／焦点顺序验收。日志、结果包和截图位于 `build/Accessibility/Fixes/`，截图命名副本为 `screens/named/`。未打开前台检查器，未操作真机。
+
 ## 2026-10-18 StoreKit 测试资源与发布归档
 
 `TipJar.storekit` 从 App、单元测试与 UI 测试三个 target 的 Copy Bundle Resources 中移除，仅保留 Debug scheme 的 StoreKit Configuration 引用。本地模拟器 StoreKitTest 改为通过源文件 URL 读取同一配置，不嵌入产品包或测试 bundle。

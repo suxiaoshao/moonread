@@ -2909,6 +2909,30 @@ final class MoonreadUITests: XCTestCase {
         }
     }
 
+    func testLocalizedReaderAccessibilityLabelsAndChapterValues() {
+        for language in ["en", "zh-Hant"] {
+            prepareApp(language: language)
+            openSample()
+            let battery = app.images["readingBattery"]
+            XCTAssertTrue(battery.waitForExistence(timeout: 5))
+            XCTAssertEqual(battery.label, language == "en" ? "Battery unavailable" : "電量不可用")
+            recordScreenshot("accessibility-reader-\(language)")
+            revealControls(); app.buttons["showChapters"].tap()
+            let chapter = app.buttons["第 1 章 · 月下试读"]
+            XCTAssertTrue(chapter.waitForExistence(timeout: 5))
+            let value = chapter.value as? String ?? ""
+            XCTAssertFalse(value.isEmpty)
+            if language == "en" {
+                XCTAssertFalse(value.contains("，"), value)
+                XCTAssertTrue(value.contains(", "), value)
+            } else {
+                XCTAssertTrue(value.contains("，"), value)
+            }
+            recordScreenshot("accessibility-chapters-\(language)")
+            app.terminate()
+        }
+    }
+
     func testEnglishSettingsTitlesAndCompactIndentValue() {
         prepareApp(language: "en")
         app.buttons["appSettings"].tap()
@@ -4195,6 +4219,31 @@ final class MoonreadUITests: XCTestCase {
         awake.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
         app.segmentedControls["readingMode"].buttons["左右分页"].tap()
         XCTAssertEqual(awake.value as? String, "0", "Mode changes must not overwrite other newly edited preferences")
+    }
+
+    func testHistoryMarksOnlyCursorRowSelected() throws {
+        prepareApp(); openSample(); revealControls()
+        app.buttons["nextChapter"].tap()
+        XCTAssertTrue(app.buttons["returnFromBrowse"].waitForExistence(timeout: 5))
+        revealControls(); app.buttons["readingHistoryMenu"].tap(); app.buttons["跳转历史"].tap()
+        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "readingHistory-"))
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(rows.count, 2)
+        let selected = rows.allElementsBoundByIndex.filter(\.isSelected)
+        XCTAssertEqual(selected.count, 1, app.debugDescription)
+        let oldID = selected.first?.identifier
+        recordScreenshot("accessibility-history-current")
+        let other = try XCTUnwrap(rows.allElementsBoundByIndex.first { !$0.isSelected })
+        let otherID = other.identifier
+        other.tap()
+        XCTAssertTrue(app.buttons["closeReadingHistory"].waitForNonExistence(timeout: 5))
+        revealControls(); app.buttons["readingHistoryMenu"].tap(); app.buttons["跳转历史"].tap()
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5))
+        let moved = rows.allElementsBoundByIndex.filter(\.isSelected)
+        XCTAssertEqual(moved.count, 1)
+        XCTAssertEqual(moved.first?.identifier, otherID)
+        XCTAssertNotEqual(moved.first?.identifier, oldID)
+        recordScreenshot("accessibility-history-cursor-moved")
     }
 
     func testProgressHistoryAndPagedEdgeReturn() {

@@ -585,11 +585,11 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         }
         if settings?.mode == .pages {
             text.accessibilityCustomActions?.append(contentsOf: [
-                UIAccessibilityCustomAction(name: "上一页") { [weak self] _ in
+                UIAccessibilityCustomAction(name: String(localized: "上一页")) { [weak self] _ in
                     self?.movePage(-1)
                     return true
                 },
-                UIAccessibilityCustomAction(name: "下一页") { [weak self] _ in
+                UIAccessibilityCustomAction(name: String(localized: "下一页")) { [weak self] _ in
                     self?.movePage(1)
                     return true
                 }

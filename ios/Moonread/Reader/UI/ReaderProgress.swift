@@ -167,17 +167,21 @@ struct ReaderHistorySheet: View {
     var body: some View {
         NavigationStack {
             List(session.history.entries, id: \.id) { visit in
+                let current = session.history.entries.indices.contains(Int(session.history.cursor))
+                    && session.history.entries[Int(session.history.cursor)].id == visit.id
                 Button {
                     session.browse(to: visit.offsetUtf8, placement: .start, historyID: visit.id); close()
                 } label: {
                     HStack {
                         Text(visit.title).foregroundStyle(Color(uiColor: theme.ink))
                         Spacer()
-                        if session.history.entries.indices.contains(Int(session.history.cursor)), session.history.entries[Int(session.history.cursor)].id == visit.id {
-                            Image(systemName: "checkmark")
+                        if current {
+                            Image(systemName: "checkmark").accessibilityHidden(true)
                         }
                     }.frame(minHeight: 44)
                 }.listRowBackground(Color(uiColor: theme.surface))
+                    .accessibilityAddTraits(current ? .isSelected : [])
+                    .accessibilityIdentifier("readingHistory-\(visit.id)")
             }.themedPage().navigationTitle("跳转历史").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .topBarTrailing) {
                     Button("关闭", systemImage: "xmark", action: close).labelStyle(.iconOnly)
