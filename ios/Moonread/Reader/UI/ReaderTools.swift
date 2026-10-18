@@ -541,6 +541,8 @@ struct ReaderLibrarySheet: View {
     private func chapterRow(_ chapter: ChapterEntry) -> some View {
         let current = !session.showingCover && session.chapter?.startUtf8 == chapter.startUtf8
         let count = chapter.countComplete ? String(localized: "\(chapter.wordCount.formatted()) 字") : String(localized: "\(chapter.wordCount.formatted())+ 字")
+        let summary = current ? String(localized: "当前章节，\(count)") : count
+        let accessibilitySummary = chapter.level == 0 ? summary : String(localized: "\(summary)，\(chapter.coverageLabel)")
         return Button {
             chapterFilterFocused = false
             if editingOutline { chapterEdit = ChapterEditDraft(start: chapter.startUtf8, title: chapter.title, level: chapter.level) }
@@ -584,8 +586,7 @@ struct ReaderLibrarySheet: View {
             }
         }
         .accessibilityLabel(Text(verbatim: chapter.title))
-        .accessibilityValue((current ? String(localized: "当前章节，\(count)") : count)
-                           + (chapter.level == 0 ? "" : "，" + chapter.coverageLabel))
+        .accessibilityValue(accessibilitySummary)
         .accessibilityAddTraits(current ? .isSelected : [])
         .accessibilityIdentifier("chapter-\(chapter.startUtf8)")
     }
@@ -832,7 +833,7 @@ struct ReaderSearchContent: View {
                 HStack {
                     if let chapter = hit.chapter { Text(verbatim: chapter).font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
                     Spacer(minLength: 8)
-                    if selected { Image(systemName: "location.fill").font(.caption).foregroundStyle(Color(uiColor: theme.accent)) }
+                    if selected { Image(systemName: "location.fill").font(.caption).foregroundStyle(Color(uiColor: theme.accent)).accessibilityHidden(true) }
                 }
                 Text(searchExcerpt(hit)).font(.body).lineLimit(4)
                     .frame(maxWidth: .infinity, alignment: .leading)

@@ -336,11 +336,11 @@ private struct ReaderControlsForm: View {
                 })).accessibilityIdentifier("brightnessFollowsSystem")
                 if settings.brightness != nil {
                     HStack(spacing: LayoutTokens.content) {
-                        Image(systemName: "sun.min")
+                        Image(systemName: "sun.min").accessibilityHidden(true)
                         Slider(value: Binding(get: { settings.brightness ?? 0.5 }, set: { brightness in var value = settings; value.brightness = brightness; settings = value }), in: 0...1) {
                             Text("阅读亮度")
                         }.accessibilityIdentifier("readingBrightness")
-                        Image(systemName: "sun.max")
+                        Image(systemName: "sun.max").accessibilityHidden(true)
                     }.foregroundStyle(Color(uiColor: theme.secondary)).frame(minHeight: LayoutTokens.hit)
                 }
             }.listRowBackground(Color(uiColor: theme.surface))

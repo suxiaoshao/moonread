@@ -107,7 +107,7 @@ struct ThemedTipCard: View {
     @Environment(\.theme) private var theme
     var body: some View {
         HStack(alignment: .center, spacing: LayoutTokens.control) {
-            image.foregroundStyle(Color(uiColor: theme.secondary))
+            image.foregroundStyle(Color(uiColor: theme.secondary)).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: LayoutTokens.compact) {
                 title.font(.subheadline.weight(.semibold))
                 message.font(.subheadline)

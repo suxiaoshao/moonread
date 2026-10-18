@@ -2909,6 +2909,30 @@ final class MoonreadUITests: XCTestCase {
         }
     }
 
+    func testLocalizedReaderAccessibilityLabelsAndChapterValues() {
+        for language in ["en", "zh-Hant"] {
+            prepareApp(language: language)
+            openSample()
+            let battery = app.images["readingBattery"]
+            XCTAssertTrue(battery.waitForExistence(timeout: 5))
+            XCTAssertEqual(battery.label, language == "en" ? "Battery unavailable" : "電量不可用")
+            recordScreenshot("accessibility-reader-\(language)")
+            revealControls(); app.buttons["showChapters"].tap()
+            let chapter = app.buttons["第 1 章 · 月下试读"]
+            XCTAssertTrue(chapter.waitForExistence(timeout: 5))
+            let value = chapter.value as? String ?? ""
+            XCTAssertFalse(value.isEmpty)
+            if language == "en" {
+                XCTAssertFalse(value.contains("，"), value)
+                XCTAssertTrue(value.contains(", "), value)
+            } else {
+                XCTAssertTrue(value.contains("，"), value)
+            }
+            recordScreenshot("accessibility-chapters-\(language)")
+            app.terminate()
+        }
+    }
+
     func testEnglishSettingsTitlesAndCompactIndentValue() {
         prepareApp(language: "en")
         app.buttons["appSettings"].tap()

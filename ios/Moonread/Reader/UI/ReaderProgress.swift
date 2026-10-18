@@ -174,7 +174,7 @@ struct ReaderHistorySheet: View {
                         Text(visit.title).foregroundStyle(Color(uiColor: theme.ink))
                         Spacer()
                         if session.history.entries.indices.contains(Int(session.history.cursor)), session.history.entries[Int(session.history.cursor)].id == visit.id {
-                            Image(systemName: "checkmark")
+                            Image(systemName: "checkmark").accessibilityHidden(true)
                         }
                     }.frame(minHeight: 44)
                 }.listRowBackground(Color(uiColor: theme.surface))
