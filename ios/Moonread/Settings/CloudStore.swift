@@ -40,12 +40,16 @@ final class CloudStore {
     }
     func setEnabled(_ enabled: Bool) {
         guard !busy else { return }; busy = true; status.requested = enabled
-        Task {
-            defer { busy = false }
-            await coordinator.setEnabled(enabled)
-            await updateStatus()
-            if enabled { confirmationAccount = status.accountToConfirm }
-        }
+        Task { await setEnabledAndWait(enabled) }
+    }
+    /// First-run completion must await this operation before writing its marker.
+    /// Unlike an interactive toggle, an already chosen setup value cannot be dropped.
+    func setEnabledAndWait(_ enabled: Bool) async {
+        busy = true; status.requested = enabled
+        defer { busy = false }
+        await coordinator.setEnabled(enabled)
+        await updateStatus()
+        if enabled { confirmationAccount = status.accountToConfirm }
     }
     func identityChanged() async { await coordinator.identityChanged(); await updateStatus() }
     func requestConfirmation() { confirmationAccount = status.accountToConfirm }

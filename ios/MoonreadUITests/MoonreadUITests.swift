@@ -3073,27 +3073,25 @@ final class MoonreadUITests: XCTestCase {
     }
 
     func testFirstRunOnboardingLightAndLocalizedScreenshots() {
-        for (language, large) in [("zh-Hans", false), ("en", false), ("zh-Hant", false), ("zh-Hans", true)] {
-            captureIntroduction(language: language, large: large, suffix: "light")
+        for language in ["zh-Hans", "en", "zh-Hant"] {
+            captureIntroduction(language: language, large: false, suffix: "light")
         }
+    }
+    func testFirstRunOnboardingAccessibilityScreenshot() {
+        captureIntroduction(language: "zh-Hans", large: true, suffix: "light")
     }
     func testFirstRunOnboardingDarkScreenshots() {
         captureIntroduction(language: "zh-Hans", large: false, suffix: "dark")
     }
     private func captureIntroduction(language: String, large: Bool, suffix: String) {
-        // Set the real app preference first. The initial UI-test launch skips
-        // without writing the completion marker, so relaunch can show the guide.
         let dark = suffix == "dark"
-        let mode = language == "en" ? (dark ? "Dark" : "Light") : (dark ? "深色" : language == "zh-Hant" ? "淺色" : "浅色")
-        prepareApp(language: language, arguments: ["--ui-test-home", "--ui-test-onboarding-cloud"])
-        setTipJarAppearance(mode)
-        app.navigationBars.buttons.firstMatch.tap()
-        app.terminate()
-        app.launchArguments += ["--ui-test-introduction", "--ui-test-introduction-screenshots"]
-        if large { app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
-        app.launch()
+        var args = ["--ui-test-home", "--ui-test-onboarding-cloud", "--ui-test-introduction",
+                    "--ui-test-introduction-screenshots", "--ui-test-app-appearance", suffix]
+        if large { args += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"] }
+        prepareApp(language: language, arguments: args)
         let next = app.buttons["introductionContinue"]
         XCTAssertTrue(next.waitForExistence(timeout: 10))
+        var titleY: CGFloat?
         for page in 0..<4 {
             let action = page == 3 ? app.buttons["introductionImport"] : next
             XCTAssertTrue(action.waitForExistence(timeout: 5)); XCTAssertTrue(action.isHittable)
@@ -3102,20 +3100,50 @@ final class MoonreadUITests: XCTestCase {
             XCTAssertLessThanOrEqual(action.frame.maxY, frame.maxY)
             let progress = element("introductionProgress")
             XCTAssertEqual(progress.label, language == "en" ? "Step \(page + 1) of 4" : "第 \(page + 1) 步，共 4 步")
-            XCTAssertLessThan(progress.frame.maxY, action.frame.minY)
+            if !large || page != 3 { XCTAssertLessThan(progress.frame.maxY, action.frame.minY) }
             let heading = app.staticTexts["introductionTitle"]
+            if let titleY { XCTAssertEqual(heading.frame.minY, titleY, accuracy: 1, "Icons and title starts stay fixed between steps") }
+            else { titleY = heading.frame.minY }
             let navigationBottom = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : frame.minY
             XCTAssertGreaterThanOrEqual(heading.frame.minY, navigationBottom - 1,
                                         "Each new step starts at the top, even after scrolling the previous step")
+            assertIntroductionAppearance(dark: dark)
+            if large && page == 3 {
+                let explanation = app.staticTexts["introductionReadingExplanation"]
+                XCTAssertGreaterThanOrEqual(explanation.frame.minY, app.scrollViews.firstMatch.frame.minY)
+                XCTAssertLessThan(explanation.frame.minY, app.scrollViews.firstMatch.frame.maxY)
+                XCTAssertEqual(app.buttons["introductionImport"].label, "导入第一本书")
+            }
             recordScreenshot("introduction-\(language)-\(large ? "maxAX" : "standard")-\(suffix)-\(page + 1)")
             if large {
                 app.scrollViews.firstMatch.swipeUp()
                 XCTAssertTrue(action.isHittable, "Bottom action stays visible while content scrolls")
                 recordScreenshot("introduction-\(language)-maxAX-\(suffix)-\(page + 1)-scrolled")
+                if page == 3 {
+                    let explanation = app.staticTexts["introductionReadingExplanation"]
+                    let viewport = app.scrollViews.firstMatch.frame
+                    XCTAssertTrue(app.scrollViews.firstMatch.staticTexts["introductionReadingExplanation"].exists)
+                    XCTAssertTrue(app.scrollViews.firstMatch.descendants(matching: .any).matching(identifier: "introductionProgress").firstMatch.exists)
+                    XCTAssertTrue(explanation.frame.intersects(viewport))
+                    XCTAssertLessThanOrEqual(explanation.frame.maxY, viewport.maxY + 1)
+                    XCTAssertEqual(progress.label, "第 4 步，共 4 步")
+                    XCTAssertGreaterThanOrEqual(progress.frame.minY, viewport.minY - 1)
+                    XCTAssertLessThanOrEqual(progress.frame.maxY, viewport.maxY + 1)
+                    XCTAssertLessThan(progress.frame.maxY, action.frame.minY)
+                }
             }
             if page < 3 { next.tap() }
         }
         app.terminate()
+    }
+
+    private func assertIntroductionAppearance(dark: Bool, file: StaticString = #filePath, line: UInt = #line) {
+        // The left margin is paper on every page, including accessibility sizes.
+        let rgb = pixel(XCUIScreen.main.screenshot(), at: CGPoint(x: app.frame.minX + 4, y: app.frame.midY))
+        guard rgb.count == 3 else { return }
+        let brightness = Double(rgb.reduce(0) { $0 + Int($1) }) / (3 * 255)
+        if dark { XCTAssertLessThan(brightness, 0.35, file: file, line: line) }
+        else { XCTAssertGreaterThan(brightness, 0.7, file: file, line: line) }
     }
 
     func testOnboardingFreshLibrariesAndGuideAppearance() {
@@ -3379,6 +3407,9 @@ final class MoonreadUITests: XCTestCase {
                 XCTAssertGreaterThanOrEqual(button.frame.minY, window.minY)
                 XCTAssertLessThanOrEqual(button.frame.maxY, window.maxY)
             }
+            XCTAssertEqual(allow.frame.height, decline.frame.height, accuracy: 1)
+            XCTAssertEqual(allow.frame.minX, decline.frame.minX, accuracy: 1)
+            XCTAssertEqual(allow.frame.maxX, decline.frame.maxX, accuracy: 1)
             let allowY = allow.frame.minY, declineY = decline.frame.minY
             app.scrollViews.firstMatch.swipeUp()
             XCTAssertTrue(allow.isHittable); XCTAssertTrue(decline.isHittable)

@@ -90,7 +90,8 @@ struct ReaderSelectionTip: Tip {
             try Tips.configure(config)
         } catch { tipsEnabled = false }
     }
-    func completeIntroduction(destination: Destination? = nil) {
+    func completeIntroduction(destination: Destination? = nil, savingChoices: () async -> Void) async {
+        await savingChoices()
         self.destination = destination
         completed = true; defaults.set(true, forKey: Self.completionKey)
     }
@@ -143,7 +144,8 @@ struct FirstRunOnboarding: View {
     @Environment(LibraryModel.self) private var library
     @Environment(CloudStore.self) private var cloud
     @Environment(AIService.self) private var ai
-    @Environment(\.theme) private var theme
+    @Environment(ThemeStore.self) private var themes
+    private var theme: ThemeSurface { themes.app }
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var page = 0
     @State private var scrollPosition = ScrollPosition(edge: .top)
@@ -175,28 +177,31 @@ struct FirstRunOnboarding: View {
     private var waitingForDiscovery: Bool { page == 3 && !canFinishWithLibrary && library.builtinDiscovery != .unavailable && error == nil }
     var body: some View {
         NavigationStack {
-            GeometryReader { geometry in
+            VStack(spacing: 0) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
                         if page == 0 {
                             Image("LaunchSeal").resizable().scaledToFit().frame(width: 100, height: 100).accessibilityHidden(true)
                         } else {
-                            Image(systemName: symbol).font(.system(size: 76, weight: .light)).frame(width: 100, height: 100).foregroundStyle(Color(uiColor: theme.accent)).accessibilityHidden(true)
+                            Image(systemName: symbol).resizable().scaledToFit().frame(width: 100, height: 100, alignment: .topLeading).foregroundStyle(Color(uiColor: theme.accent)).accessibilityHidden(true)
                         }
                         Text(title).font(.largeTitle.bold()).accessibilityAddTraits(.isHeader).accessibilityIdentifier("introductionTitle")
                         pageContent
+                        if scrollsProgress { progress }
                     }
                     .foregroundStyle(Color(uiColor: theme.ink))
                     .padding(.horizontal, 24)
-                    .padding(.top, dynamicTypeSize.isAccessibilitySize ? 24 : max(24, geometry.size.height * 0.14))
+                    .padding(.top, dynamicTypeSize.isAccessibilitySize ? 24 : 64)
                     .padding(.bottom, 24)
                     .frame(maxWidth: 600, alignment: .leading).frame(maxWidth: .infinity)
                 }
                 .scrollPosition($scrollPosition)
+                actions
             }
             .onChange(of: page) { _, _ in scrollPosition.scrollTo(edge: .top) }
-            .safeAreaInset(edge: .bottom, spacing: 0) { actions }
             .themedPage()
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarVisibility(.visible, for: .navigationBar)
             .toolbar {
                 if page > 0 {
                     ToolbarItem(placement: .topBarLeading) {
@@ -204,6 +209,7 @@ struct FirstRunOnboarding: View {
                     }
                 }
             }
+            .task { if !themes.loaded { await themes.load() } }
             .task(id: directoryKey) { await loadDirectory() }
             .task(id: waitingForDiscovery) {
                 showDiscoveryWait = false
@@ -218,6 +224,8 @@ struct FirstRunOnboarding: View {
                 Button("知道了", role: .cancel) { error = nil }
             } message: { Text(error ?? "") }
         }
+        .themeScope(theme)
+        .preferredColorScheme(theme.scheme)
     }
     @ViewBuilder private var pageContent: some View {
         switch page {
@@ -237,6 +245,7 @@ struct FirstRunOnboarding: View {
             Text("以后可在设置中更改。").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
         default:
             Text("导入自己的 TXT，或先读一篇原创示例故事。")
+                .accessibilityIdentifier("introductionReadingExplanation")
             if !canFinishWithLibrary {
                 if library.builtinDiscovery == .unavailable || error != nil {
                     Text("暂未完成书架发现，可先导入小说或重试。").foregroundStyle(Color(uiColor: theme.secondary))
@@ -252,7 +261,8 @@ struct FirstRunOnboarding: View {
             }
         }
     }
-    private var actions: some View {
+    private var scrollsProgress: Bool { dynamicTypeSize.isAccessibilitySize && page == 3 }
+    private var progress: some View {
         VStack(spacing: 16) {
             if waitingForDiscovery && showDiscoveryWait {
                 HStack(spacing: 8) {
@@ -272,32 +282,40 @@ struct FirstRunOnboarding: View {
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(Text("第 \(page + 1) 步，共 4 步"))
             .accessibilityIdentifier("introductionProgress")
+        }
+    }
+    private var actions: some View {
+        VStack(spacing: 16) {
+            if !scrollsProgress { progress }
             if page < 3 {
-                Button(action: next) { Text(page == 0 ? "开始" : "onboarding.continue").frame(maxWidth: .infinity) }
+                Button(action: next) { Text(page == 0 ? "开始" : "onboarding.continue").frame(maxWidth: .infinity).fixedSize(horizontal: false, vertical: true) }
                     .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).frame(maxWidth: .infinity)
                     .accessibilityIdentifier("introductionContinue")
             } else {
-                Button { finishImport() } label: {
-                    Text("导入第一本书").frame(maxWidth: .infinity)
+                Button { Task { await finishImport() } } label: {
+                    Text("导入第一本书").frame(maxWidth: .infinity).fixedSize(horizontal: false, vertical: true)
                 }.buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).accessibilityIdentifier("introductionImport")
                 Button { Task { await finishSample() } } label: {
-                    Text(hasBooks ? "打开书架" : "先读示例故事").frame(maxWidth: .infinity)
-                }.buttonStyle(.bordered).controlSize(.large).disabled(!canFinishWithLibrary)
+                    Text(hasBooks ? "打开书架" : "先读示例故事").frame(maxWidth: .infinity).fixedSize(horizontal: false, vertical: true)
+                }.buttonStyle(ThemedSecondaryButtonStyle()).controlSize(.large).disabled(!canFinishWithLibrary)
                     .accessibilityIdentifier("introductionSample")
             }
-        }.disabled(working).tint(Color(uiColor: theme.accent))
+        }.fixedSize(horizontal: false, vertical: true).disabled(working).tint(Color(uiColor: theme.accent))
             .padding(24).frame(maxWidth: 600).frame(maxWidth: .infinity)
             .background(Color(uiColor: theme.canvas))
     }
     private func next() { page += 1 }
-    private func complete(destination: Onboarding.Destination) {
-        if hasCloudAccount { cloud.setEnabled(syncReadingData) }
-        ai.availability.setEnabled(enableAI)
-        Onboarding.shared.completeIntroduction(destination: destination)
+    private func complete(destination: Onboarding.Destination) async {
+        await Onboarding.shared.completeIntroduction(destination: destination) {
+            if hasCloudAccount { await cloud.setEnabledAndWait(syncReadingData) }
+            ai.availability.setEnabled(enableAI)
+        }
     }
-    private func finishImport() {
+    private func finishImport() async {
+        guard !working else { return }
+        working = true; defer { working = false }
+        await complete(destination: .importBook)
         library.selectedTab = .library
-        complete(destination: .importBook)
     }
     private func finishSample() async {
         guard canFinishWithLibrary, !working else { return }
@@ -305,7 +323,7 @@ struct FirstRunOnboarding: View {
         do {
             let entry = hasBooks ? nil : try await library.welcomeStoryForIntroduction()
             library.selectedTab = .library
-            complete(destination: entry.map { .story($0) } ?? .library)
+            await complete(destination: entry.map { .story($0) } ?? .library)
         } catch { self.error = ReaderMessages.error(error) }
     }
     private func loadDirectory() async {
