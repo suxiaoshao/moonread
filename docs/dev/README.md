@@ -8,7 +8,7 @@
 | --- | --- |
 | 现在数据存在哪里，多来源/复制导入遵循哪些规则 | [数据与来源](data/README.md) |
 | iCloud 文件与 CloudKit 阅读数据怎样分工 | [同步设计](data/sync.md) |
-| SwiftData 用户数据、冲突与 CloudKit 边界 | [同步设计](data/sync.md)、[验证记录](engineering/verification.md) |
+| SwiftData 用户数据、冲突与 CloudKit 边界 | [同步设计](data/sync.md)、[最近阅读恢复](data/recent-reading-restoration.md)、[验证记录](engineering/verification.md) |
 | iCloud 本次接入步骤、签名限制与验收 | [iCloud 接入实施](data/icloud-implementation.md) |
 | 首页与统一目录树怎样承载阅读及文件管理 | [首页与书架](design/library.md) |
 | 小说信息与 tags 如何编辑、封面怎样存储，以及详情入口与章节百分比 | [小说详情与章节阅读百分比](design/book-details.md) |

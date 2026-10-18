@@ -151,7 +151,7 @@ extension ReaderService {
         var usesFixture = false
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        usesFixture = testSession != nil && ["--ui-test-bookshelf", "--ui-test-progressive", "--ui-test-reader-fixture", "--ui-test-onboarding-cloud"].contains(where: arguments.contains)
+        usesFixture = testSession != nil && ["--ui-test-bookshelf", "--ui-test-progressive", "--ui-test-reader-fixture", "--ui-test-onboarding-cloud", "--ui-test-recent-restoration"].contains(where: arguments.contains)
         #endif
         // A new iCloud device must discover the existing library before
         // seeding a local story that could collide on the first handoff.
@@ -188,6 +188,7 @@ extension ReaderService {
         if arguments.contains("--ui-test-reader-fixture") { try await createReaderFixture() }
         if arguments.contains("--ui-test-statistics-fixture") { try await createStatisticsFixture() }
         if arguments.contains("--ui-test-chapter-catalogue") { try await createChapterCatalogueFixture() }
+        if arguments.contains("--ui-test-recent-restoration") { try await createRecentRestorationFixture() }
         #endif
         if !localOnly { scheduleCloudLibraryUpdate() }
         #if DEBUG
@@ -245,6 +246,27 @@ extension ReaderService {
             try "第一章 合成\n这份文字仅用于发现状态测试。".write(to: url, atomically: true, encoding: .utf8)
         }
         try await scanLibraryShelf("builtin")
+    }
+    #endif
+
+    #if DEBUG
+    /// Original text and a delivered-position stand-in in the isolated UI session.
+    /// No real cloud account, external files, or prior local books are used.
+    private func createRecentRestorationFixture() async throws {
+        guard testSession != nil else { return }
+        let root = try builtinLibraryURL(), file = root.appendingPathComponent("原创最近阅读恢复.txt")
+        guard !FileManager.default.fileExists(atPath: file.path) else { return }
+        let heading = "第一章 回到书页\n"
+        let paragraph = "这是一段原创合成文字，用来验证恢复最近阅读后可以回到原来的位置，不需要先逐本打开文件。\n"
+        let text = heading + String(repeating: paragraph, count: 80)
+        try Data(text.utf8).write(to: file)
+        let identity = try SourceIdentityProbe().identify(filePath: file.path, decoding: "auto")
+        let hint = PositionSourceHint(source_kind: .managedLocal, relative_path: file.lastPathComponent,
+            file_name: file.lastPathComponent, byte_size: UInt64(text.utf8.count), decoding: "auto")
+        let position = PositionValue(content_key: identity.contentSha256,
+            offset: UInt64(heading.utf8.count + paragraph.utf8.count * 12), source_hint: hint)
+        try await userStore().put("position/" + identity.contentSha256, value: UserSyncJSON.encode(position), device: "ui-fixture")
+        try refreshLibraryShelf("builtin")
     }
     #endif
 
@@ -476,6 +498,7 @@ extension ReaderService {
     func applyLibraryScan(_ id: String, root: URL, items: [ScannedLibraryItem], observe: Bool = true) throws {
         try textCore().scanLibraryShelf(shelfId: id, items: items)
         if observe { observeLibraryRoot(id, root: root) }
+        scheduleRecentRestoration()
     }
 
     func observeLibraryRoot(_ id: String, root: URL) {

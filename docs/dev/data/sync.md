@@ -58,7 +58,7 @@ SwiftData 的 `UserDataStore`（ModelActor）是用户数据持久化入口。`R
 | --- | --- |
 | 小说作者、简介、标签、手动状态 | SwiftData；字段独立、标签按成员保存，按 SHA 关联 |
 | 自定义配色方案本身 | SwiftData；当前使用的配色、明暗及动效留在本机 |
-| 正式位置 | SwiftData；完整更新不可变、按更新时间和稳定标识取最终结果，淘汰旧更新，不提供备选位置或恢复历史 |
+| 正式位置 | SwiftData；按更新时间与稳定标识取最终结果；同版本保存用于定位原文件的相对路径、文件名、大小和解码策略线索，详见[最近阅读恢复](recent-reading-restoration.md) |
 | 书签、批注及人工章节修正 | SwiftData；按 SHA 关联，不依赖本机有原件或正文缓存 |
 | 阅读事实与清理边界 | SwiftData；片段 ID 防止重试重复，各设备独立事实全部累加，时间重叠不扣除 |
 | 用户封面 | SwiftData `UserCover.bytes` 使用 `.externalStorage`，附件可能晚于引用到达，暂缺时显示文字封面 |

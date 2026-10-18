@@ -48,7 +48,9 @@ enum UserSyncJSON {
     }
 
     static let stored: Shape = .object(["updated": .int, "token": .string, "value": .string])
-    static let position: Shape = .object(["content_key": .string, "offset": .uint])
+    static let sourceHint: Shape = .object(["source_kind": .choice(["managed_icloud", "managed_local", "external"]),
+        "relative_path": .string, "file_name": .string, "byte_size": .nullable(.uint), "decoding": .string])
+    static let position: Shape = .object(["content_key": .string, "offset": .uint, "source_hint": .nullable(sourceHint)])
     static let chapter: Shape = .object(["content_key": .string, "offset": .uint, "title": .string, "level": .uint32, "excluded": .bool])
     static let content: Shape = .object(["start": .uint, "end": .uint, "excerpt": .string, "note": .string])
     static let candidate: Shape = .object(["id": .string, "ancestors": .array(.string), "content": .nullable(content), "created": .uint,
@@ -106,7 +108,11 @@ enum UserSyncJSON {
     }
     static func decode<T: Decodable>(_ type: T.Type, _ text: String, as shape: Shape, envelope: Bool = false) throws -> T {
         try validate(text, as: shape, envelope: envelope)
-        return try JSONDecoder().decode(type, from: Data(text.utf8))
+        let value = try JSONDecoder().decode(type, from: Data(text.utf8))
+        if let position = value as? PositionValue, let hint = position.source_hint {
+            guard hint.isValid, (try? normalizeSourceDecoding(decoding: hint.decoding)) == hint.decoding else { throw UserSyncCompatibilityError() }
+        }
+        return value
     }
     /// Add only a top-level version, without parsing/re-encoding integer payloads.
     static func envelope(_ object: String) throws -> String {

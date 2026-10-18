@@ -270,18 +270,18 @@ fn unsupported_store_versions_are_rejected_without_reset() {
     let dir = TempDir::new().unwrap();
     drop(core(&dir));
     let db = rusqlite::Connection::open(dir.path().join("data/reader.sqlite3")).unwrap();
-    db.execute_batch("PRAGMA user_version=21").unwrap();
+    db.execute_batch("PRAGMA user_version=22").unwrap();
     assert!(matches!(
         ReaderCore::new(dir.path().join("data").to_string_lossy().into()),
         Err(ReaderError::StoreTooNew {
-            version: 21,
-            current: 20
+            version: 22,
+            current: 21
         })
     ));
     assert_eq!(
         db.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
             .unwrap(),
-        21
+        22
     );
     db.execute_batch("PRAGMA user_version=1").unwrap();
     assert!(matches!(

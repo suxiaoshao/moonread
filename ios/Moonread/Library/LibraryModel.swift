@@ -379,6 +379,7 @@ final class LibraryModel {
     /// One library refresh at a time. A caller arriving while one runs asks for
     /// another pass and waits for the shared work, so a pull's spinner ends with it.
     func refresh(showIndicator: Bool = false, userInitiated: Bool = false) async {
+        if userInitiated { await service.scheduleRecentRestoration(retry: true) }
         guard !busy else { return }
         if !userInitiated, openingFileID != nil || path.contains(where: \.isReader) { automaticRefreshDeferred = true; return }
         guard initialized else { _ = await load(); return }

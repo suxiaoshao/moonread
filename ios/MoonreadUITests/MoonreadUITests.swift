@@ -3072,6 +3072,21 @@ final class MoonreadUITests: XCTestCase {
         XCTAssertFalse(app.buttons["introductionContinue"].exists)
     }
 
+    func testRecentReadingRestoresWithoutOpeningEachFile() {
+        prepareApp(arguments: ["--ui-test-home", "--ui-test-recent-restoration", "--ui-test-app-appearance", "light"])
+        XCTAssertTrue(app.buttons["appSettings"].waitForExistence(timeout: 10))
+        let restored = app.buttons["library-file-原创最近阅读恢复.txt"]
+        XCTAssertTrue(restored.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["继续阅读"].exists)
+        XCTAssertFalse(element("readerCover").exists)
+        recordScreenshot("recent-restored-before-first-open")
+        restored.tap()
+        let body = app.textViews.matching(NSPredicate(format: "identifier IN %@", ["scrollText", "pageText"])).firstMatch
+        XCTAssertTrue(body.waitForExistence(timeout: 15), "A restored position must open the body directly, not the cover")
+        XCTAssertGreaterThan(UInt64(body.value as? String ?? "") ?? 0, 0)
+        recordScreenshot("recent-restored-reading-position")
+    }
+
     func testFirstRunDirectoryFailureCanFinishWithoutSeeding() {
         prepareApp(arguments: ["--ui-test-home", "--ui-test-introduction", "--ui-test-introduction-directory-failure"])
         let alert = app.alerts.firstMatch

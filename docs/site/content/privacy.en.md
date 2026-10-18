@@ -1,6 +1,6 @@
 +++
 title = "Moonread Privacy Policy"
-date = 2026-10-17
+date = 2026-10-18
 [extra]
 kind = "privacy"
 +++
@@ -9,7 +9,7 @@ Moonread reads TXT files that you provide. No Moonread account is required. The 
 
 ## Files and reading data
 
-Books remain in the app's bookshelf or folders you explicitly select through the system. Reading positions, bookmarks, annotations, book information, covers, color schemes, and reading statistics support your reading experience. Without the corresponding cloud features, this data is processed on your device. Moonread does not operate its own servers. When you choose AI and grant permission, relevant content goes to your selected third-party service, as described below. Searches within a book are local.
+Books remain in the app's bookshelf or folders you explicitly select through the system. Reading positions and source-file hints (relative paths within a library, filenames, sizes, and decoding choices), bookmarks, annotations, book information, covers, color schemes, and reading statistics support your reading experience. Without the corresponding cloud features, this data is processed on your device. Moonread does not operate its own servers. When you choose AI and grant permission, relevant content goes to your selected third-party service, as described below. Searches within a book are local.
 
 ## Apple and file-provider services
 

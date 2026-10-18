@@ -77,9 +77,36 @@ struct StoredValue: Codable, Sendable {
     var token: String
     var value: String
 }
+struct PositionSourceHint: Codable, Equatable, Sendable {
+    enum Kind: String, Codable, Sendable { case managedICloud = "managed_icloud", managedLocal = "managed_local", external }
+    var source_kind: Kind
+    var relative_path: String
+    var file_name: String
+    var byte_size: UInt64?
+    var decoding: String
+    var isValid: Bool {
+        let components = relative_path.split(separator: "/", omittingEmptySubsequences: false)
+        return !relative_path.isEmpty && relative_path.utf8.count <= 4096 && !relative_path.contains("\0") &&
+            components.allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." } && components.last.map(String.init) == file_name &&
+            file_name.utf8.count <= 1024 && decoding.utf8.count <= 64 && file_name.lowercased().hasSuffix(".txt") &&
+            (byte_size.map { $0 <= UInt64(Int64.max) } ?? true)
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: UserSyncJSON.Key.self)
+        try c.encode(source_kind, forKey: .init("source_kind")); try c.encode(relative_path, forKey: .init("relative_path"))
+        try c.encode(file_name, forKey: .init("file_name")); try c.encode(byte_size, forKey: .init("byte_size"))
+        try c.encode(decoding, forKey: .init("decoding"))
+    }
+}
 struct PositionValue: Codable, Sendable {
     var content_key: String
     var offset: UInt64
+    var source_hint: PositionSourceHint? = nil
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: UserSyncJSON.Key.self)
+        try c.encode(content_key, forKey: .init("content_key")); try c.encode(offset, forKey: .init("offset"))
+        try c.encode(source_hint, forKey: .init("source_hint"))
+    }
 }
 struct ChapterValue: Codable, Sendable {
     var content_key: String
@@ -244,6 +271,22 @@ enum AnnotationReduction {
         let snapshot = try valueSnapshot(prefix: prefix)
         guard snapshot.blocked.isEmpty else { throw UserSyncCompatibilityError() }
         return snapshot.values.mapValues(\.value)
+    }
+
+    struct RecentPosition: Sendable, Equatable {
+        let contentKey: String
+        let token: String
+        let updated: Int64
+        let hint: PositionSourceHint?
+    }
+    /// Unsupported records are retained and excluded individually; they cannot
+    /// suppress recovery for unrelated keys or become editable through recovery.
+    func recentRestorationPositions(limit: Int, excluding: Set<String> = []) throws -> [RecentPosition] {
+        try valueSnapshot(prefix: "position/").values.compactMap { key, stored in
+            let value = try decode(PositionValue.self, stored.value)
+            guard !value.content_key.hasPrefix("pending:"), !excluding.contains(value.content_key) else { return nil }
+            return RecentPosition(contentKey: value.content_key, token: stored.token, updated: stored.updated, hint: value.source_hint)
+        }.sorted { ($0.updated, $0.contentKey) > ($1.updated, $1.contentKey) }.prefix(max(0, limit)).map { $0 }
     }
     private func blockedMarks(key: String) throws -> Set<String> {
         let rows = try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.contentKey == key }))

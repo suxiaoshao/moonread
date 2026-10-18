@@ -82,6 +82,37 @@ pub(super) struct ImportFailure {
 }
 
 impl ReaderCore {
+    // Kept private: callers cannot assign arbitrary persisted task purposes.
+    fn create_import_for_purpose(
+        &self,
+        title: String,
+        purpose: &str,
+    ) -> Result<Arc<ImportControl>> {
+        let id = Uuid::new_v4().to_string();
+        {
+            let mut db = self.lock()?;
+            let tx = db.transaction()?;
+            tx.execute(
+                "INSERT INTO books(id,title,content_sha256,encoding) VALUES(?1,?2,?3,'')",
+                params![
+                    id,
+                    if title.trim().is_empty() {
+                        "未命名文本"
+                    } else {
+                        &title
+                    },
+                    format!("pending:{id}")
+                ],
+            )?;
+            tx.execute(
+                "INSERT INTO import_jobs(book_id,purpose) VALUES(?1,?2)",
+                params![id, purpose],
+            )?;
+            tx.commit()?;
+        }
+        self.resume_import(id)
+    }
+
     fn reclaim_imports(
         &self,
         retained_book_ids: Vec<String>,
@@ -158,8 +189,14 @@ impl ImportControl {
     }
 }
 
-pub(super) fn recover(db: &Connection) {
-    let _ = db.execute("UPDATE import_jobs SET phase='paused' WHERE phase IN ('preparing','importing','finalizing')", []);
+pub(super) fn recover(db: &mut Connection) -> Result<()> {
+    let tx = db.transaction()?;
+    // No reading session or pending user data ever belongs to these drafts.
+    // Keep canonical/shared text and anything already linked to a source.
+    tx.execute("DELETE FROM books WHERE content_sha256 LIKE 'pending:%' AND NOT EXISTS(SELECT 1 FROM library_files WHERE book_id=books.id) AND EXISTS(SELECT 1 FROM import_jobs WHERE book_id=books.id AND purpose='restoration')", [])?;
+    tx.execute("UPDATE import_jobs SET phase='paused' WHERE phase IN ('preparing','importing','finalizing')", [])?;
+    tx.commit()?;
+    Ok(())
 }
 
 fn phase(value: &str) -> ImportPhase {
@@ -249,27 +286,29 @@ impl ReaderCore {
         Ok(self.reclaim_imports(Vec::new(), Some(book_id))?.is_empty())
     }
 
-    pub fn create_import(&self, title: String) -> Result<Arc<ImportControl>> {
-        let id = Uuid::new_v4().to_string();
-        {
-            let mut db = self.lock()?;
-            let tx = db.transaction()?;
-            tx.execute(
-                "INSERT INTO books(id,title,content_sha256,encoding) VALUES(?1,?2,?3,'')",
-                params![
-                    id,
-                    if title.trim().is_empty() {
-                        "未命名文本"
-                    } else {
-                        &title
-                    },
-                    format!("pending:{id}")
-                ],
-            )?;
-            tx.execute("INSERT INTO import_jobs(book_id) VALUES(?1)", [&id])?;
-            tx.commit()?;
+    /// Only the unpublished cache draft owned by a completed restoration worker
+    /// is disposable. Never remove canonical/shared text or any linked source.
+    pub fn discard_restoration_import(&self, control: Arc<ImportControl>) -> Result<()> {
+        if control.running.load(Ordering::Acquire) {
+            return Err(ReaderError::ImportBusy);
         }
-        self.resume_import(id)
+        let db = self.lock()?;
+        let owned = db.query_row("SELECT EXISTS(SELECT 1 FROM import_jobs WHERE book_id=?1 AND generation=?2 AND purpose='restoration')", params![control.id,control.generation as i64], |r| r.get::<_, bool>(0))?;
+        if !owned {
+            return Err(ReaderError::ImportBusy);
+        }
+        db.execute("DELETE FROM books WHERE id=?1 AND content_sha256 LIKE 'pending:%' AND NOT EXISTS(SELECT 1 FROM library_files WHERE book_id=?1) AND EXISTS(SELECT 1 FROM import_jobs WHERE book_id=?1 AND generation=?2)", params![control.id,control.generation as i64])?;
+        drop(db);
+        let _ = self.reclaim_completed_import(control.id.clone());
+        Ok(())
+    }
+
+    pub fn create_import(&self, title: String) -> Result<Arc<ImportControl>> {
+        self.create_import_for_purpose(title, "reading")
+    }
+
+    pub fn create_restoration_import(&self, title: String) -> Result<Arc<ImportControl>> {
+        self.create_import_for_purpose(title, "restoration")
     }
 
     pub fn resume_import(&self, book_id: String) -> Result<Arc<ImportControl>> {
@@ -1770,6 +1809,9 @@ impl ReaderCore {
             text: state.book.into(),
             phase: state.phase,
         })
+    }
+    pub fn import_source_byte_count(&self, book_id: String) -> Result<u64> {
+        Ok(self.reading_snapshot(book_id)?.source_byte_count)
     }
 }
 

@@ -84,6 +84,16 @@ actor ReaderService {
     struct CachedQuery { let signature: String; let query: ReaderQuery }
     var queryCache: [String: CachedQuery] = [:]
     var recoveryTask: Task<Void, Never>?
+    var recentRestorationTask: Task<Void, Never>?
+    var recentRestorationWork: RecentRestorationWork?
+    var recentRestorationRequested = false
+    var recentRestorationActive = true
+    var recentRestorationGeneration = UUID()
+    var recentRestorationAttempts: [String: String] = [:]
+    var recentRestorationBeforeRead: (@Sendable (String) async -> Void)?
+    var recentRestorationBeforeCommit: (@Sendable () async -> Void)?
+    var foregroundSourcePreparations: [String: Int] = [:]
+
     nonisolated let settingsCache: ReaderSettingsCache
     struct UserStoreInitialization {
         let id = UUID()
@@ -386,6 +396,12 @@ actor ReaderService {
     /// Materialize provider files before navigation. This does not create an
     /// import, read the full text, or change formal reading activity.
     func prepareSourceFile(_ file: SourceFile, progress: @escaping @Sendable (Double?) -> Void = { _ in }) async throws {
+        foregroundSourcePreparations[file.id, default: 0] += 1
+        defer {
+            if let count = foregroundSourcePreparations[file.id], count > 1 { foregroundSourcePreparations[file.id] = count - 1 }
+            else { foregroundSourcePreparations[file.id] = nil }
+        }
+        if recentRestorationWork?.fileID == file.id { recentRestorationWork?.cancel() }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-test-download-progress") {
             progress(0.25); try await Task.sleep(for: .seconds(4))
@@ -410,6 +426,8 @@ actor ReaderService {
     }
 
     func openSourceFile(_ file: SourceFile, trackReadingSource: Bool) throws -> ReadingLease {
+        if recentRestorationWork?.fileID == file.id { recentRestorationWork?.cancel() }
+
         let entry = try textCore().sourceFileLocation(fileId: file.id)
         let shelf = try libraryShelf(entry.shelfId)
         let root = Data(shelf.bookmark)
@@ -449,6 +467,7 @@ actor ReaderService {
         if let count = readers[id], count > 1 { readers[id] = count - 1 }
         else { readers[id] = nil; readingSourceIDs[id] = nil }
         reclaimReleasedImport(id)
+        scheduleRecentRestoration()
     }
 
     private func reclaimReleasedImport(_ id: String) {
@@ -586,6 +605,7 @@ actor ReaderService {
         for (id, work) in imports where work.source.fileID.map(fileIDs.contains) == true { pauseImport(id, reason: .system) }
     }
     func pauseImports() {
+        recentRestorationActive = false; cancelRecentRestoration()
         appActive = false
         for id in imports.keys {
             // A manually paused book stays paused after foregrounding.
@@ -596,6 +616,7 @@ actor ReaderService {
     }
     func resumePausedImports() {
         appActive = true
+        recentRestorationActive = true; scheduleRecentRestoration()
         for id in Array(automaticallyPaused) where imports[id] == nil {
             automaticallyPaused.remove(id)
             if !isImportUserPaused(id) { try? resumeImport(id) }

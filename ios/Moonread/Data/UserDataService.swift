@@ -59,6 +59,7 @@ extension ReaderService {
             sourceDefaults.set(account, forKey: "Moonread.userOwner")
         }
         if userCloudEnabled != enabled {
+            cancelRecentRestoration()
             userStoreTask = nil; userCloudEnabled = enabled
             userCloudConfigurationRevision = UUID()
             let revision = userCloudConfigurationRevision
@@ -68,6 +69,7 @@ extension ReaderService {
                 throw error
             }
             guard userCloudConfigurationRevision == revision else { return }
+            scheduleRecentRestoration()
         }
     }
     func startUserRecovery() {
@@ -77,7 +79,7 @@ extension ReaderService {
     private func recoverUserImports() async {
         ReaderOpenDiagnostics.background("recovery.begin")
         defer { ReaderOpenDiagnostics.background("recovery.return") }
-        defer { recoveryTask = nil }
+        defer { recoveryTask = nil; scheduleRecentRestoration() }
         do {
             let pending = try await userStore(pending: true)
             let keys = try await pending.pendingKeys()
@@ -87,6 +89,7 @@ extension ReaderService {
         } catch { /* Startup can retry; reads continue to include pending data. */ }
     }
     func receivedUserImport() async {
+        defer { scheduleRecentRestoration() }
         queryCache.removeAll()
         if let store = try? await userStore() { try? await store.importedChanges() }
         if let store = try? await userStore(pending: true) { try? await store.importedChanges() }
@@ -222,9 +225,14 @@ extension ReaderService {
         if let file = readingSourceIDs[id] { sourceDefaults.set(file, forKey: "Moonread.preferredFile." + key) }
         var hidden = sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []; hidden.removeAll { $0 == key }
         sourceDefaults.set(hidden, forKey: "Moonread.hiddenRecent")
-        let value = PositionValue(content_key: key, offset: normalized)
+        let store = try await userStore(for: key)
+        var hint = positionSourceHint(id)
+        if hint == nil, let old = try await store.value("position/" + key) {
+            hint = try UserSyncJSON.decode(PositionValue.self, old, as: UserSyncJSON.position).source_hint
+        }
+        let value = PositionValue(content_key: key, offset: normalized, source_hint: hint)
         let json = String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
-        try await userStore(for: key).put("position/\(key)", value: json, device: userDevice)
+        try await store.put("position/\(key)", value: json, device: userDevice)
         dataChanged()
     }
     func userMarks(_ id: String, kind: MarkKind? = nil) async throws -> [ReaderMark] {

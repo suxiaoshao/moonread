@@ -14,7 +14,9 @@ mod navigation;
 mod progressive;
 mod reading_layout;
 mod sha;
+mod source_identity;
 use sha::sha256_hex;
+pub use source_identity::*;
 mod statistics;
 mod user_projection;
 pub use statistics::*;
@@ -161,7 +163,7 @@ impl ReaderCore {
         db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;")?;
         migrations::initialize(&mut db)?;
         user_projection::initialize(&db)?;
-        progressive::recover(&db);
+        progressive::recover(&mut db)?;
         let reader = Connection::open(&database_path)?;
         reader.busy_timeout(std::time::Duration::from_secs(5))?;
         reader.execute_batch("PRAGMA foreign_keys=ON;")?;

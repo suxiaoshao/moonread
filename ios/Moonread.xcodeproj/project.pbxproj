@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+F01900000000000000000003 = {isa = PBXBuildFile; fileRef = F01900000000000000000004; };
+F01900000000000000000001 = {isa = PBXBuildFile; fileRef = F01900000000000000000002; };
         FC1100000000000000000001 = {isa = PBXBuildFile; fileRef = FC2100000000000000000001; };
         FC1100000000000000000002 = {isa = PBXBuildFile; fileRef = FC3100000000000000000001; };
 FF1000000000000000000001 = {isa = PBXBuildFile; fileRef = FF2000000000000000000001; };
@@ -163,6 +165,8 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+F01900000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentReadingRestorationTests.swift; sourceTree = "<group>"; };
+F01900000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentReadingRestoration.swift; sourceTree = "<group>"; };
         FC2100000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UI/AIReplyFeedback.swift; sourceTree = "<group>"; };
         FC2100000000000000000002 = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
         FC2100000000000000000003 = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
@@ -404,6 +408,7 @@ A20000000000000000000009 /* MoonreadUITests.swift */,
 				A2000000000000000000000C /* TextLayoutTests.swift */,
                 AF2000000000000000000005 /* LibraryDropTests.swift */,
                 C22000000000000000000004,
+F01900000000000000000004,
                 F01700000000000000000006,
 			);
 			path = MoonreadTests;
@@ -556,6 +561,7 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 				C22000000000000000000001 /* UserData.swift */,
                 FF2000000000000000000001,
 				C22000000000000000000002 /* UserDataService.swift */,
+F01900000000000000000002,
 34534F38185344C984C886C4,
 				C22000000000000000000003 /* UserThemes.swift */,
 				B02000000000000000000001 /* CloudSync.swift */,
@@ -812,6 +818,7 @@ D31000000000000000000001,
                 B01000000000000000000001,
                 C21000000000000000000001,
                 C21000000000000000000002,
+F01900000000000000000001,
                 C21000000000000000000003,
                 B11000000000000000000001,
                 B11000000000000000000002,
@@ -871,6 +878,7 @@ E61000000000000000000004,E61000000000000000000007,F01800000000000000000003,D3100
 				A1000000000000000000000A /* TextLayoutTests.swift in Sources */,
                 AF1000000000000000000005 /* LibraryDropTests.swift in Sources */,
                 C21000000000000000000004,
+F01900000000000000000003,
                 F01700000000000000000005,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
