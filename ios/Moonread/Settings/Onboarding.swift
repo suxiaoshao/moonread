@@ -90,8 +90,8 @@ struct ReaderSelectionTip: Tip {
             try Tips.configure(config)
         } catch { tipsEnabled = false }
     }
-    func completeIntroduction(destination: Destination? = nil, savingChoices: () async -> Void) async {
-        await savingChoices()
+    func completeIntroduction(destination: Destination? = nil, savingChoices: () -> Void) {
+        savingChoices()
         self.destination = destination
         completed = true; defaults.set(true, forKey: Self.completionKey)
     }
@@ -153,6 +153,7 @@ struct FirstRunOnboarding: View {
     @State private var enableAI = false
     @State private var contents: [LibraryEntry]?
     @State private var contentsKey: String?
+    @State private var directoryFailed = false
     @State private var working = false
     @State private var error: String?
     @State private var showDiscoveryWait = false
@@ -160,7 +161,7 @@ struct FirstRunOnboarding: View {
     private var directoryKey: String { "\(library.homeReady)-\(library.revision)-\(library.discoveryGeneration)-\(library.discoveryRevision)" }
     private var directoryLoaded: Bool { library.homeReady && contentsKey == directoryKey && contents != nil }
     private var canFinishWithLibrary: Bool {
-        directoryLoaded && (hasBooks || library.builtinDiscovery == .ready || library.builtinDiscovery == .notRequired)
+        directoryFailed || (directoryLoaded && (hasBooks || library.builtinDiscovery == .ready || library.builtinDiscovery == .notRequired))
     }
     private var hasBooks: Bool { library.hasUserImportedBooks || (contents?.contains(where: \.directory) ?? false) }
     private var title: LocalizedStringKey {
@@ -296,7 +297,7 @@ struct FirstRunOnboarding: View {
                     Text("导入第一本书").frame(maxWidth: .infinity).fixedSize(horizontal: false, vertical: true)
                 }.buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).accessibilityIdentifier("introductionImport")
                 Button { Task { await finishSample() } } label: {
-                    Text(hasBooks ? "打开书架" : "先读示例故事").frame(maxWidth: .infinity).fixedSize(horizontal: false, vertical: true)
+                    Text(hasBooks || directoryFailed ? "打开书架" : "先读示例故事").frame(maxWidth: .infinity).fixedSize(horizontal: false, vertical: true)
                 }.buttonStyle(ThemedSecondaryButtonStyle()).controlSize(.large).disabled(!canFinishWithLibrary)
                     .accessibilityIdentifier("introductionSample")
             }
@@ -305,25 +306,25 @@ struct FirstRunOnboarding: View {
             .background(Color(uiColor: theme.canvas))
     }
     private func next() { page += 1 }
-    private func complete(destination: Onboarding.Destination) async {
-        await Onboarding.shared.completeIntroduction(destination: destination) {
-            if hasCloudAccount { await cloud.setEnabledAndWait(syncReadingData) }
+    private func complete(destination: Onboarding.Destination) {
+        Onboarding.shared.completeIntroduction(destination: destination) {
+            if hasCloudAccount { cloud.saveIntroductionChoice(syncReadingData) }
             ai.availability.setEnabled(enableAI)
         }
     }
     private func finishImport() async {
         guard !working else { return }
         working = true; defer { working = false }
-        await complete(destination: .importBook)
+        complete(destination: .importBook)
         library.selectedTab = .library
     }
     private func finishSample() async {
         guard canFinishWithLibrary, !working else { return }
         working = true; defer { working = false }
         do {
-            let entry = hasBooks ? nil : try await library.welcomeStoryForIntroduction()
+            let entry = hasBooks || directoryFailed ? nil : try await library.welcomeStoryForIntroduction()
             library.selectedTab = .library
-            await complete(destination: entry.map { .story($0) } ?? .library)
+            complete(destination: entry.map { .story($0) } ?? .library)
         } catch { self.error = ReaderMessages.error(error) }
     }
     private func loadDirectory() async {
@@ -336,11 +337,11 @@ struct FirstRunOnboarding: View {
                 let entries = try await ReaderService.shared.libraryEntries(LibraryLocation(shelfID: "builtin"))
                 try Task.checkCancellation()
                 guard key == directoryKey else { continue }
-                contents = entries; contentsKey = key
+                contents = entries; contentsKey = key; directoryFailed = false
                 library.builtinDirectoryLoaded(generation: generation, snapshotRevision: revision)
                 return
             } catch is CancellationError { return }
-            catch { self.error = ReaderMessages.error(error); return }
+            catch { directoryFailed = true; self.error = ReaderMessages.error(error); return }
         }
     }
 }

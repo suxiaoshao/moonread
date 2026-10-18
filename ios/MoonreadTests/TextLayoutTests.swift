@@ -1156,7 +1156,7 @@ final class TextLayoutTests: XCTestCase {
         let first = Onboarding(defaults: defaults, enabled: false, showIntroduction: true)
         XCTAssertFalse(first.completed); XCTAssertFalse(first.enabled)
         availability.setEnabled(false)
-        await first.completeIntroduction(destination: .importBook, savingChoices: {})
+        first.completeIntroduction(destination: .importBook, savingChoices: {})
         if case .importBook = first.takeDestination() { } else { XCTFail("The import request must survive dismissal") }
         XCTAssertNil(first.takeDestination(), "Handle the post-dismiss action exactly once")
         let reloaded = Onboarding(defaults: defaults, enabled: false, showIntroduction: true)
@@ -1180,32 +1180,53 @@ final class TextLayoutTests: XCTestCase {
             await service.setCloudSyncRequested(!choice)
             let onboarding = Onboarding(defaults: defaults, enabled: false, showIntroduction: true)
             let cloud = CloudStore(coordinator: CloudSyncCoordinator(service: service, available: false, observeEvents: false))
-            let entered = expectation(description: "saving the chosen sync preference")
-            let gate = SourceReadinessGate(entered: entered)
-            let published = expectation(description: "completion is published after the sync choice is persisted")
+            let published = expectation(description: "completion is published after the sync intent is persisted")
             withObservationTracking { _ = onboarding.completed } onChange: {
                 XCTAssertEqual(UserDefaults(suiteName: suite)?.bool(forKey: "Moonread.userCloudEnabled"), choice)
                 published.fulfill()
             }
-            let completion = Task {
-                await onboarding.completeIntroduction(destination: .library) {
-                    await gate.wait()
-                    await cloud.setEnabledAndWait(choice)
-                }
+            var activation: Task<Void, Never>?
+            onboarding.completeIntroduction(destination: .library) {
+                activation = cloud.saveIntroductionChoice(choice)
             }
-            await fulfillment(of: [entered], timeout: 2)
-            XCTAssertFalse(onboarding.completed)
-            XCTAssertFalse(defaults.bool(forKey: Onboarding.completionKey), "Do not persist completion ahead of choices")
-            let previous = await service.cloudSyncRequested(); XCTAssertEqual(previous, !choice)
-            await gate.release()
-            await completion.value
-            await fulfillment(of: [published], timeout: 1)
             // No background-task wait after completion: model a relaunch now.
             let reloadedDefaults = try XCTUnwrap(UserDefaults(suiteName: suite))
             XCTAssertTrue(Onboarding(defaults: reloadedDefaults, enabled: false, showIntroduction: true).completed)
             XCTAssertEqual(reloadedDefaults.bool(forKey: "Moonread.userCloudEnabled"), choice)
             XCTAssertEqual(cloud.status.requested, choice)
+            await fulfillment(of: [published], timeout: 1)
+            await activation?.value
         }
+    }
+
+    @MainActor func testIntroductionCompletesWhileCloudActivationIsSlowOrUnavailable() async throws {
+        let (root, service, _, suite) = try introductionFixture()
+        defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        let entered = expectation(description: "cloud activation is still waiting for its account")
+        let gate = SourceReadinessGate(entered: entered)
+        let coordinator = CloudSyncCoordinator(service: service, available: true, observeEvents: false, account: {
+            await gate.wait()
+            throw CocoaError(.fileReadNoPermission)
+        })
+        let cloud = CloudStore(coordinator: coordinator)
+        let onboarding = Onboarding(defaults: defaults, enabled: false, showIntroduction: true)
+        var activation: Task<Void, Never>?
+        onboarding.completeIntroduction(destination: .library) { activation = cloud.saveIntroductionChoice(true) }
+        // These assertions run synchronously, before any account callback can finish.
+        XCTAssertTrue(onboarding.completed)
+        XCTAssertTrue(defaults.bool(forKey: Onboarding.completionKey))
+        XCTAssertTrue(defaults.bool(forKey: "Moonread.userCloudEnabled"))
+        XCTAssertTrue(Onboarding(defaults: defaults, enabled: false, showIntroduction: true).completed)
+        await fulfillment(of: [entered], timeout: 2)
+        XCTAssertTrue(cloud.busy)
+        XCTAssertTrue(onboarding.completed, "A hung CloudKit account request cannot hold the guide open")
+        await gate.release()
+        await activation?.value
+        XCTAssertFalse(cloud.busy)
+        XCTAssertFalse(cloud.status.enabled)
+        XCTAssertNotNil(cloud.status.message)
+        XCTAssertTrue(defaults.bool(forKey: "Moonread.userCloudEnabled"), "Activation failure must not overwrite the choice")
     }
 
     @MainActor private func introductionFixture(scan: (@Sendable (URL, [CloudDocumentItem]) throws -> [ScannedLibraryItem])? = nil) throws -> (URL, ReaderService, ReaderCore, String) {

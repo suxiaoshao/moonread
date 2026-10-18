@@ -3072,6 +3072,31 @@ final class MoonreadUITests: XCTestCase {
         XCTAssertFalse(app.buttons["introductionContinue"].exists)
     }
 
+    func testFirstRunDirectoryFailureCanFinishWithoutSeeding() {
+        prepareApp(arguments: ["--ui-test-home", "--ui-test-introduction", "--ui-test-introduction-directory-failure"])
+        let alert = app.alerts.firstMatch
+        XCTAssertTrue(alert.waitForExistence(timeout: 10))
+        recordScreenshot("introduction-directory-failure")
+        alert.buttons["知道了"].tap()
+        for _ in 0..<3 {
+            let next = app.buttons["introductionContinue"]
+            XCTAssertTrue(next.waitForExistence(timeout: 5)); next.tap()
+        }
+        let open = app.buttons["introductionSample"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+        XCTAssertEqual(open.label, "打开书架")
+        XCTAssertTrue(open.isEnabled); XCTAssertTrue(open.isHittable)
+        recordScreenshot("introduction-directory-failure-open-library")
+        open.tap()
+        XCTAssertTrue(app.navigationBars["我的书架"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.buttons["introductionContinue"].exists)
+        XCTAssertFalse(element("readerCover").exists, "Failure fallback must not open a story")
+        recordScreenshot("introduction-directory-failure-library")
+        app.terminate(); app.launch()
+        XCTAssertTrue(app.buttons["appSettings"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["introductionContinue"].exists)
+    }
+
     func testFirstRunOnboardingLightAndLocalizedScreenshots() {
         for language in ["zh-Hans", "en", "zh-Hant"] {
             captureIntroduction(language: language, large: false, suffix: "light")

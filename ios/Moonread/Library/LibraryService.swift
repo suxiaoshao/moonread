@@ -284,7 +284,12 @@ extension ReaderService {
     }
     /// One folder's children, or with `recursive` every entry in the location's shelf (all shelves for nil).
     func libraryEntries(_ location: LibraryLocation?, recursive: Bool = false, sort: LibrarySort = .reading) async throws -> [LibraryEntry] {
-        try await catalogueQuery(location, recursive: recursive).libraryEntries(shelfId: location?.shelfID, parentPath: recursive ? nil : location?.path, sort: sort)
+        #if DEBUG
+        if testSession != nil, ProcessInfo.processInfo.arguments.contains("--ui-test-introduction-directory-failure") {
+            throw CocoaError(.fileReadNoPermission)
+        }
+        #endif
+        return try await catalogueQuery(location, recursive: recursive).libraryEntries(shelfId: location?.shelfID, parentPath: recursive ? nil : location?.path, sort: sort)
     }
     func searchLibrary(shelfID: String?, query: String, author: String?, tag: String?) async throws -> [LibraryEntry] {
         try await catalogueQuery(shelfID.map { LibraryLocation(shelfID: $0) }, recursive: true).searchLibrary(shelfId: shelfID, query: query, author: author, tag: tag)
