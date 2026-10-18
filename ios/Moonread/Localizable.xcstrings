@@ -17,7 +17,7 @@
     "导入第一本书": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "Import Your First Book"}},"zh-Hans": {"stringUnit": {"state": "translated","value": "导入第一本书"}},"zh-Hant": {"stringUnit": {"state": "translated","value": "匯入第一本書"}}}},
     "先读示例故事": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "Read the Sample Story"}},"zh-Hans": {"stringUnit": {"state": "translated","value": "先读示例故事"}},"zh-Hant": {"stringUnit": {"state": "translated","value": "先讀範例故事"}}}},
     "打开书架": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "Open Library"}},"zh-Hans": {"stringUnit": {"state": "translated","value": "打开书架"}},"zh-Hant": {"stringUnit": {"state": "translated","value": "開啟書架"}}}},
-    "第 %lld / 4 步": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "Step %1$lld of 4"}},"zh-Hans": {"stringUnit": {"state": "translated","value": "第 %lld / 4 步"}},"zh-Hant": {"stringUnit": {"state": "translated","value": "第 %lld / 4 步"}}}},
+    "第 %lld 步，共 4 步": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "Step %1$lld of 4"}},"zh-Hans": {"stringUnit": {"state": "translated","value": "第 %lld 步，共 4 步"}},"zh-Hant": {"stringUnit": {"state": "translated","value": "第 %lld 步，共 4 步"}}}},
     "在书架、统计等主页面点右上角的齿轮，即可进入设置。阅读、外观、书架与同步都在这里调整。": {
       "localizations": {
         "en": {

@@ -1172,7 +1172,7 @@ final class TextLayoutTests: XCTestCase {
         let disabled = await service.cloudSyncRequested(); XCTAssertFalse(disabled)
     }
 
-    @MainActor private func introductionFixture() throws -> (URL, ReaderService, ReaderCore, String) {
+    @MainActor private func introductionFixture(scan: (@Sendable (URL, [CloudDocumentItem]) throws -> [ScannedLibraryItem])? = nil) throws -> (URL, ReaderService, ReaderCore, String) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let directory = root.appendingPathComponent("library")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -1180,7 +1180,7 @@ final class TextLayoutTests: XCTestCase {
         let schema = UserDataStore.schema
         let store = UserDataStore(modelContainer: try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)]))
         let suite = "Introduction-" + UUID().uuidString
-        let service = ReaderService(core: core, libraryDirectory: directory, sourceDefaultsSuite: suite, userStoreFactory: { _, _ in store })
+        let service = ReaderService(core: core, libraryDirectory: directory, sourceDefaultsSuite: suite, userStoreFactory: { _, _ in store }, libraryScan: scan)
         try core.saveLibraryShelf(id: "builtin", name: "我的书架", bookmark: directory.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil), location: "local", builtin: true)
         return (root, service, core, suite)
     }
@@ -1207,6 +1207,39 @@ final class TextLayoutTests: XCTestCase {
         XCTAssertEqual(again?.id, story?.id)
         XCTAssertEqual(try core.sourceFiles(shelfId: "builtin").count, 1)
         XCTAssertFalse(model.hasUserImportedBooks)
+    }
+
+    @MainActor func testIntroductionStoryJoinsSupersedingScanBeforeRecordingSample() async throws {
+        let probe = IntroductionScanProbe(first: expectation(description: "sample scan entered"),
+                                           second: expectation(description: "successor scan entered"))
+        let (root, service, core, suite) = try introductionFixture(scan: { root, _ in try probe.scan(root) })
+        defer {
+            probe.permits.forEach { $0.signal() }
+            try? FileManager.default.removeItem(at: root)
+            UserDefaults.standard.removePersistentDomain(forName: suite)
+        }
+        let finished = expectation(description: "sample must wait for successor publication")
+        finished.isInverted = true
+        let sample = Task {
+            let result = try await service.welcomeStory(expectedRoot: nil)
+            finished.fulfill()
+            return result
+        }
+        await fulfillment(of: [probe.entered[0]], timeout: 2)
+        let successor = Task { try await service.scanLibraryShelf("builtin") }
+        await fulfillment(of: [probe.entered[1]], timeout: 2)
+        probe.permits[0].signal()
+        await fulfillment(of: [finished], timeout: 0.15)
+        XCTAssertTrue(try core.sourceFiles(shelfId: "builtin").isEmpty)
+        probe.permits[1].signal()
+        let result = try await sample.value
+        let entry = try XCTUnwrap(result)
+        let published = try await successor.value; XCTAssertTrue(published)
+        XCTAssertEqual(entry.relativePath, "月光下的归途.txt")
+        XCTAssertEqual(UserDefaults(suiteName: suite)?.string(forKey: "Moonread.seededExampleFileID"), entry.id)
+        let imported = try await service.hasUserImportedBooks(); XCTAssertFalse(imported)
+        let repeated = try await service.welcomeStory(expectedRoot: nil)
+        XCTAssertEqual(repeated?.id, entry.id)
     }
 
     @MainActor func testIntroductionStoryNeverOverwritesExistingBooksOrChangedRoot() async throws {
@@ -4771,5 +4804,21 @@ private final class TrashScanProbe: @unchecked Sendable {
         let marks = try await service.marks(bookID, kind: .annotation, offset: 0).items
         XCTAssertTrue(marks.contains { $0.note == "删除后保留的笔记" })
         withExtendedLifetime([lease, reopened]) {}
+    }
+}
+
+private final class IntroductionScanProbe: @unchecked Sendable {
+    let entered: [XCTestExpectation]
+    let permits = [DispatchSemaphore(value: 0), DispatchSemaphore(value: 0)]
+    private let lock = NSLock()
+    private var count = 0
+    init(first: XCTestExpectation, second: XCTestExpectation) { entered = [first, second] }
+    func scan(_ root: URL) throws -> [ScannedLibraryItem] {
+        let index = lock.withLock { let value = count; count += 1; return value }
+        if index < 2 {
+            entered[index].fulfill()
+            guard permits[index].wait(timeout: .now() + 5) == .success else { throw CocoaError(.userCancelled) }
+        }
+        return try ReaderService.libraryDirectoryItems(root)
     }
 }

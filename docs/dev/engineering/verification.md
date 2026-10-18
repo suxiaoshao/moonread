@@ -23,6 +23,12 @@ iOS 27 模拟器的英文定向构建与 3 项测试通过：读取 UIKit 翻页
 
 云端场景全部是注入的发现状态与隔离合成文件，不代表真实 iCloud 账号／恢复／跨设备验收；本轮没有操作真机，也未修复仍在诊断的同步问题。
 
+引导内容组按可用高度放在中上部，第 2–4 页采用放大的图标；顶部步骤胶囊改为操作按钮上方的四点进度，旁白按三语读出步骤。底部背景与页面一致，发现等待约 1 秒后才显示同行转圈与次要色说明。最大辅助功能字号仍滚动正文、固定操作区。五组新总览位于 `build/FirstRunOnboarding/Review/screens/overview-{light,dark,en,zh-Hant,maxAX}.png`。
+
+示例复制后的旧扫描被接管时，等待当前及后续接管扫描完成索引发布，再按相对路径保存示例专用 ID；受控并发单测挂起两次扫描，确认接管完成前不返回，完成后仍不计作用户导入。补测还复现了目录读取期间版本连续推进、旧结果丢弃后未完成最新目录读取的等待；临时状态日志见 `Review/intro-state.log`，现改为有效读取任务继续读当前版本，取消即退出，仍只确认当前代次的目录。临时诊断代码未保留。首启期间切换账号不新增示例回滚，旧根可能留下一份可删除的示例，不涉及已有文件丢失。
+
+最终无诊断代码的 Nix＋xcodebuild 构建与 9 项定向测试全部通过（4 项单元、5 项 UI），见 `build/FirstRunOnboarding/Review/Accepted.xcresult` 与 `accepted.log`。覆盖接管扫描、扫描作废、云发现／缓存／导入流程、步骤旁白、发现提示显隐及五组外观截图。定位轮超时证据保留在 `Final.xcresult` 与 `FlowDiag.xcresult`，不将它们记为通过。
+
 ## 2026-10-18 StoreKit 测试资源与发布归档
 
 `TipJar.storekit` 从 App、单元测试与 UI 测试三个 target 的 Copy Bundle Resources 中移除，仅保留 Debug scheme 的 StoreKit Configuration 引用。本地模拟器 StoreKitTest 改为通过源文件 URL 读取同一配置，不嵌入产品包或测试 bundle。

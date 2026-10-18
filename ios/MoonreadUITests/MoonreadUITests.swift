@@ -3012,11 +3012,13 @@ final class MoonreadUITests: XCTestCase {
             XCTAssertTrue(sample.waitForExistence(timeout: 5))
             if scenario != "local" {
                 XCTAssertFalse(sample.isEnabled, "Never seed before first discovery")
+                XCTAssertTrue(element("introductionDiscoveryWait").waitForExistence(timeout: 3))
                 recordScreenshot("introduction-" + scenario + "-waiting")
                 app.buttons["introductionDeliverCloud"].tap()
             }
             let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "enabled == true"), object: sample)
             XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed, app.debugDescription)
+            XCTAssertFalse(element("introductionDiscoveryWait").exists)
             XCTAssertEqual(sample.label, scenario == "cloud-existing" ? "打开书架" : "先读示例故事")
             recordScreenshot("introduction-" + scenario + "-ready")
             sample.tap()
@@ -3098,8 +3100,12 @@ final class MoonreadUITests: XCTestCase {
             let frame = app.windows.firstMatch.frame
             XCTAssertGreaterThanOrEqual(action.frame.minY, frame.minY)
             XCTAssertLessThanOrEqual(action.frame.maxY, frame.maxY)
+            let progress = element("introductionProgress")
+            XCTAssertEqual(progress.label, language == "en" ? "Step \(page + 1) of 4" : "第 \(page + 1) 步，共 4 步")
+            XCTAssertLessThan(progress.frame.maxY, action.frame.minY)
             let heading = app.staticTexts["introductionTitle"]
-            XCTAssertGreaterThanOrEqual(heading.frame.minY, app.navigationBars.firstMatch.frame.maxY - 1,
+            let navigationBottom = app.navigationBars.firstMatch.exists ? app.navigationBars.firstMatch.frame.maxY : frame.minY
+            XCTAssertGreaterThanOrEqual(heading.frame.minY, navigationBottom - 1,
                                         "Each new step starts at the top, even after scrolling the previous step")
             recordScreenshot("introduction-\(language)-\(large ? "maxAX" : "standard")-\(suffix)-\(page + 1)")
             if large {

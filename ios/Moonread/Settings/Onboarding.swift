@@ -144,6 +144,7 @@ struct FirstRunOnboarding: View {
     @Environment(CloudStore.self) private var cloud
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var page = 0
     @State private var scrollPosition = ScrollPosition(edge: .top)
     @State private var syncReadingData = true
@@ -152,6 +153,7 @@ struct FirstRunOnboarding: View {
     @State private var contentsKey: String?
     @State private var working = false
     @State private var error: String?
+    @State private var showDiscoveryWait = false
     private var hasCloudAccount: Bool { library.builtinDiscovery != .notRequired }
     private var directoryKey: String { "\(library.homeReady)-\(library.revision)-\(library.discoveryGeneration)-\(library.discoveryRevision)" }
     private var directoryLoaded: Bool { library.homeReady && contentsKey == directoryKey && contents != nil }
@@ -170,22 +172,28 @@ struct FirstRunOnboarding: View {
     private var symbol: String {
         switch page { case 1: hasCloudAccount ? "icloud" : "iphone"; case 2: "sparkles"; default: "book.closed" }
     }
+    private var waitingForDiscovery: Bool { page == 3 && !canFinishWithLibrary && library.builtinDiscovery != .unavailable && error == nil }
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    if page == 0 {
-                        Image("LaunchSeal").resizable().scaledToFit().frame(width: 100, height: 100).accessibilityHidden(true)
-                    } else {
-                        Image(systemName: symbol).font(.largeTitle).foregroundStyle(Color(uiColor: theme.accent)).accessibilityHidden(true)
+            GeometryReader { geometry in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 24) {
+                        if page == 0 {
+                            Image("LaunchSeal").resizable().scaledToFit().frame(width: 100, height: 100).accessibilityHidden(true)
+                        } else {
+                            Image(systemName: symbol).font(.system(size: 76, weight: .light)).frame(width: 100, height: 100).foregroundStyle(Color(uiColor: theme.accent)).accessibilityHidden(true)
+                        }
+                        Text(title).font(.largeTitle.bold()).accessibilityAddTraits(.isHeader).accessibilityIdentifier("introductionTitle")
+                        pageContent
                     }
-                    Text(title).font(.largeTitle.bold()).accessibilityAddTraits(.isHeader).accessibilityIdentifier("introductionTitle")
-                    pageContent
+                    .foregroundStyle(Color(uiColor: theme.ink))
+                    .padding(.horizontal, 24)
+                    .padding(.top, dynamicTypeSize.isAccessibilitySize ? 24 : max(24, geometry.size.height * 0.14))
+                    .padding(.bottom, 24)
+                    .frame(maxWidth: 600, alignment: .leading).frame(maxWidth: .infinity)
                 }
-                .foregroundStyle(Color(uiColor: theme.ink))
-                .padding(24).frame(maxWidth: 600, alignment: .leading).frame(maxWidth: .infinity)
+                .scrollPosition($scrollPosition)
             }
-            .scrollPosition($scrollPosition)
             .onChange(of: page) { _, _ in scrollPosition.scrollTo(edge: .top) }
             .safeAreaInset(edge: .bottom, spacing: 0) { actions }
             .themedPage()
@@ -195,11 +203,17 @@ struct FirstRunOnboarding: View {
                         Button("返回", systemImage: "chevron.left") { page -= 1 }.accessibilityIdentifier("introductionBack").disabled(working)
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Text("第 \(page + 1) / 4 步").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                }
             }
             .task(id: directoryKey) { await loadDirectory() }
+            .task(id: waitingForDiscovery) {
+                showDiscoveryWait = false
+                guard waitingForDiscovery else { return }
+                do {
+                    try await Task.sleep(for: .seconds(1))
+                    try Task.checkCancellation()
+                    showDiscoveryWait = true
+                } catch { }
+            }
             .alert("暂时无法完成", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
                 Button("知道了", role: .cancel) { error = nil }
             } message: { Text(error ?? "") }
@@ -227,8 +241,6 @@ struct FirstRunOnboarding: View {
                 if library.builtinDiscovery == .unavailable || error != nil {
                     Text("暂未完成书架发现，可先导入小说或重试。").foregroundStyle(Color(uiColor: theme.secondary))
                     Button("重试") { library.retryCloudDiscovery() }
-                } else {
-                    ProgressView("正在发现书架").tint(Color(uiColor: theme.accent))
                 }
                 #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("--ui-test-onboarding-cloud"),
@@ -241,7 +253,25 @@ struct FirstRunOnboarding: View {
         }
     }
     private var actions: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
+            if waitingForDiscovery && showDiscoveryWait {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small).tint(Color(uiColor: theme.secondary))
+                    Text("正在发现书架").font(.footnote)
+                }
+                .foregroundStyle(Color(uiColor: theme.secondary))
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("introductionDiscoveryWait")
+            }
+            HStack(spacing: 8) {
+                ForEach(0..<4) { step in
+                    Circle().fill(Color(uiColor: step == page ? theme.accent : theme.secondary).opacity(step == page ? 1 : 0.3))
+                        .frame(width: 6, height: 6)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text("第 \(page + 1) 步，共 4 步"))
+            .accessibilityIdentifier("introductionProgress")
             if page < 3 {
                 Button(action: next) { Text(page == 0 ? "开始" : "onboarding.continue").frame(maxWidth: .infinity) }
                     .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).frame(maxWidth: .infinity)
@@ -257,7 +287,7 @@ struct FirstRunOnboarding: View {
             }
         }.disabled(working).tint(Color(uiColor: theme.accent))
             .padding(24).frame(maxWidth: 600).frame(maxWidth: .infinity)
-            .background(Color(uiColor: theme.paper))
+            .background(Color(uiColor: theme.canvas))
     }
     private func next() { page += 1 }
     private func complete(destination: Onboarding.Destination) {
@@ -280,14 +310,19 @@ struct FirstRunOnboarding: View {
     }
     private func loadDirectory() async {
         guard library.homeReady else { return }
-        let key = directoryKey, generation = library.discoveryGeneration, revision = library.discoveryRevision
-        do {
-            let entries = try await ReaderService.shared.libraryEntries(LibraryLocation(shelfID: "builtin"))
-            try Task.checkCancellation()
-            guard key == directoryKey else { return }
-            contents = entries; contentsKey = key
-            library.builtinDirectoryLoaded(generation: generation, snapshotRevision: revision)
-        } catch is CancellationError { }
-        catch { self.error = ReaderMessages.error(error) }
+        // A revision may advance while a directory read is suspended.
+        // Keep reading until a current snapshot can be acknowledged.
+        while !Task.isCancelled {
+            let key = directoryKey, generation = library.discoveryGeneration, revision = library.discoveryRevision
+            do {
+                let entries = try await ReaderService.shared.libraryEntries(LibraryLocation(shelfID: "builtin"))
+                try Task.checkCancellation()
+                guard key == directoryKey else { continue }
+                contents = entries; contentsKey = key
+                library.builtinDirectoryLoaded(generation: generation, snapshotRevision: revision)
+                return
+            } catch is CancellationError { return }
+            catch { self.error = ReaderMessages.error(error); return }
+        }
     }
 }

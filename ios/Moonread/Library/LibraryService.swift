@@ -215,7 +215,15 @@ extension ReaderService {
         guard children.isEmpty else { return nil }
         guard let source = Bundle.main.url(forResource: "WelcomeStory", withExtension: "txt") else { throw CocoaError(.fileNoSuchFile) }
         try FileManager.default.copyItem(at: source, to: root.appendingPathComponent("月光下的归途.txt"))
-        try await scanLibraryShelf("builtin")
+        if try await scanLibraryShelf("builtin") == false {
+            // A presenter/foreground scan may take ownership after the copy.
+            // Join each successor through publication, not just enumeration.
+            while let scan = libraryScanTasks["builtin"] {
+                _ = try await scan.task.value
+                try Task.checkCancellation()
+            }
+        }
+        try Task.checkCancellation()
         guard expectedRoot == cloudLibraryRoot else { throw LibraryFileError.missingShelf }
         guard let story = try core.sourceFiles(shelfId: "builtin").first(where: { $0.relativePath == "月光下的归途.txt" }) else {
             throw LibraryFileError.missingShelf
@@ -348,7 +356,16 @@ extension ReaderService {
     @discardableResult
     func scanLibraryShelf(_ id: String) async throws -> Bool {
         let request = UUID(); libraryScans[id] = request
-        defer { if libraryScans[id] == request { libraryScans[id] = nil } }
+        let task = Task { try await self.performLibraryScan(id, request: request) }
+        libraryScanTasks[id] = (request, task)
+        return try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+    }
+
+    private func performLibraryScan(_ id: String, request: UUID) async throws -> Bool {
+        defer {
+            if libraryScans[id] == request { libraryScans[id] = nil }
+            if libraryScanTasks[id]?.id == request { libraryScanTasks[id] = nil }
+        }
         do {
             let shelf = try libraryShelf(id), root = try resolveShelf(shelf)
             let cloudItems = shelf.builtin && root == cloudLibraryRoot ? cloudDocumentItems : []
