@@ -2,6 +2,20 @@
 
 更新：2026-10-18。本文按能力保存必要证据与未覆盖范围，不作逐轮修改日志。表中结果来自各次受影响回归，不能解释为当前版本在所有设备上完成了全量验收。
 
+## 2026-10-18 新安装的最近阅读关联恢复
+
+位置 v1 payload 新增显式 nullable `source_hint`，记录来源类别、书架内相对路径、文件名、nullable 原始大小与规范解码策略，pending 提升保留原时钟和 token。缺字段、未知结构／编码、非法路径不降级成 null，原文隔离且阻止同 key 写入；TestFlight build 2 的旧位置不做兼容，也未删除任何现有记录。未新增 CloudKit 字段、未部署 schema，正文 SHA 与 normalization-v1 未变。
+
+恢复仅处理最新 10 个可见兼容正文 key，隐藏条目不占预算；路径优先，未命中再按文件名＋大小找最多 3 个候选。已下载候选少量逐一验 SHA；未下载 iCloud 候选只有线索唯一、hint 有大小且不超过 50,000,000 字节、目录已知大小也未超限时才自动处理。并发为 1，网络遵循系统 iCloud 云盘设置，不加恢复状态页或下载按钮；未匹配依靠用户打开自然关联。元数据每轮取一份，提交前只重查对应文件；失败按目标 token 与文件快照缓存，不因刷新循环重读整库。
+
+纯 Rust 身份探测不写数据库，复用相同 decoder 流式算原始及规范 SHA。匹配后独立准备缓存并条件关联，不模拟阅读 lease、不调用正常开书及用户数据提升。真实文件、位置／事实／批注／清理边界／时间／首选来源保持不变。关联前复核根、源元数据、编码、目标 token、generation 与取消状态；前台准备／下载同文件就取消后台工作，准备期间不重新准入。退后台／账户配置切换取消旧任务。SQLite v20→v21 逐级迁移增加任务目的，旧任务保持 reading，恢复任务标记 restoration；回收接口拒绝普通导入，进程重启也仅清理恢复任务未关联的 pending 草稿，保留普通暂停任务与共享 canonical 正文。
+
+Nix 下 Rust 核心回归 95 项通过、1 项既有忽略，新增 4 项探测／条件关联／恢复任务所有权与崩溃回收测试、1 项 v20 迁移保留原任务及授权测试包含在内；Clippy `--all-targets -- -D warnings` 和 `cargo fmt --check` 通过，证据为 `build/RecentRestore/rust-lifecycle-final.log`、`clippy-lifecycle.log`、`fmt-lifecycle.log`。首次迁移回归暴露既有降级测试仍把 v21 当未来版本，已同步到 v22→v21 并重跑通过，早期失败保留在 `rust-lifecycle.log`。默认 Cargo target 指向不可用的外部软链，检查输出改用工作区 `build/DerivedData/RustChecks`，未修改环境配置或工具链。
+
+最新 main 基线的模拟器构建与 15 项定向测试全部通过：9 项新增恢复测试、4 项同步格式／隔离回归、1 项原文件准备不导入／不记阅读的既有回归，以及 1 项真实 App 首页冒烟。覆盖两种到达顺序、pending 完整转移、原用户 payload／时间／偏好与原文件不变、同名同大小错书拒绝、10 key／3 候选／下载限额、重复触发去重、源替换／移除／根变化／隐藏／新 token／未知版本／取消／编码变化不提交、前台同文件准备抢占且无孤儿导入，以及真实读书后写回线索。证据为 `build/RecentRestore/LifecycleDelivery.xcresult`、`lifecycle-delivery.log`；保持恢复启用、只阻止后续重试的竞态断言另见 `RaceGuards.xcresult`，隐藏最新条目仍保留十个可见名额的复测见 `VisibleBudget.xcresult`。早期 Swift 编译与测试夹具错误保留在 `build.log`、`Initial.xcresult`，不记为通过。
+
+UI 夹具在隔离会话中先放入原创 TXT 和模拟已到达的位置，初始无 books 缓存；未逐本打开即出现首页“继续阅读”，点击后直接进入原进度正文。已人工核对 `build/RecentRestore/screens/overview.png`，单图为 `recent-restored-before-first-open.png`、`recent-restored-reading-position.png`。云候选准入测试使用本地文件注入 cloud metadata，只证明准入与实际读取范围，不证明 iCloud 网络下载。真实 CloudKit 到达顺序、iCloud 自动物化、跨设备与新格式 TestFlight 重装仍待用户验收；本轮未操作手机、未清理云端数据。中英文隐私说明已补充来源线索范围，日期为实际修改日。
+
 ## 2026-10-18 阅读器旁白本地化与装饰图标
 
 分页的上一页／下一页 `UIAccessibilityCustomAction`、未知电量标签改走 `String(localized:)`，复用字符串目录已有的英文与台湾繁体译文；章节值使用同一目录中的本地化插值格式，英文不再夹带中文逗号。亮度两侧太阳、搜索当前命中定位图标、跳转历史勾和提示卡配图对无障碍隐藏；阅读月亮拖动与分页进度 value 不变。

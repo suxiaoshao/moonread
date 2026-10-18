@@ -35,6 +35,19 @@ pub struct ScannedLibraryItem {
     pub needs_download: bool,
 }
 
+/// File index only; no reading/user-data projection is needed to admit a source.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct SourceFileSnapshot {
+    pub id: String,
+    pub shelf_id: String,
+    pub relative_path: String,
+    pub size: u64,
+    pub modified: i64,
+    pub needs_download: bool,
+    pub book_id: Option<String>,
+    pub decoding: String,
+}
+
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct LibraryCoverPreview {
     pub file_id: String,
@@ -231,6 +244,23 @@ impl ReaderCore {
             params![file_id, book_id],
         )?;
         Ok(())
+    }
+
+    /// Background restoration never publishes a draft. A final verified text and
+    /// the exact admitted source row must still agree in this one transaction.
+    pub fn link_restored_library_file(
+        &self,
+        file: SourceFileSnapshot,
+        decoding: String,
+        book_id: String,
+        content_sha256: String,
+    ) -> Result<bool> {
+        let decoding = crate::decoding_policy(&decoding)?;
+        let db = self.lock()?;
+        Ok(db.execute(
+            "UPDATE library_files SET book_id=?1,decoding=?2 WHERE id=?3 AND directory=0 AND shelf_id=?4 AND relative_path=?5 AND size=?6 AND modified=?7 AND decoding=?8 AND book_id IS ?9 AND EXISTS(SELECT 1 FROM books b WHERE b.id=?1 AND b.content_sha256=?10)",
+            params![book_id,decoding,file.id,file.shelf_id,file.relative_path,file.size as i64,file.modified,file.decoding,file.book_id,content_sha256],
+        )? == 1)
     }
 
     /// Publish the journal and fixed root atomically. No raw mapping is created
@@ -621,6 +651,39 @@ pub struct SourceFileLocation {
 }
 #[uniffi::export]
 impl ReaderCore {
+    pub fn source_file_snapshots(
+        &self,
+        file_id: Option<String>,
+    ) -> Result<Vec<SourceFileSnapshot>> {
+        let db = self.lock()?;
+        let mut statement = db.prepare(if file_id.is_some() {
+            "SELECT id,shelf_id,relative_path,size,modified,needs_download,book_id,decoding FROM library_files WHERE id=?1 AND directory=0"
+        } else {
+            "SELECT id,shelf_id,relative_path,size,modified,needs_download,book_id,decoding FROM library_files WHERE directory=0 ORDER BY id"
+        })?;
+        let row = |r: &rusqlite::Row<'_>| -> rusqlite::Result<SourceFileSnapshot> {
+            Ok(SourceFileSnapshot {
+                id: r.get(0)?,
+                shelf_id: r.get(1)?,
+                relative_path: r.get(2)?,
+                size: r.get::<_, i64>(3)? as u64,
+                modified: r.get(4)?,
+                needs_download: r.get(5)?,
+                book_id: r.get(6)?,
+                decoding: r.get(7)?,
+            })
+        };
+        Ok(if let Some(id) = file_id {
+            statement
+                .query_map([id], row)?
+                .collect::<std::result::Result<_, _>>()?
+        } else {
+            statement
+                .query_map([], row)?
+                .collect::<std::result::Result<_, _>>()?
+        })
+    }
+
     pub fn source_decoding(&self, file_id: String) -> Result<String> {
         Ok(self.lock()?.query_row(
             "SELECT decoding FROM library_files WHERE id=?1 AND directory=0",

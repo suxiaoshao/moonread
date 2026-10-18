@@ -3,7 +3,8 @@ use crate::{ReaderError, Result};
 use rusqlite::Connection;
 
 const BASELINE: u32 = 20;
-const STEPS: &[&str] = &[];
+const STEPS: &[&str] =
+    &["ALTER TABLE import_jobs ADD COLUMN purpose TEXT NOT NULL DEFAULT 'reading';"];
 
 pub(crate) fn initialize(db: &mut Connection) -> Result<()> {
     migrate(db, STEPS)
@@ -54,7 +55,30 @@ mod tests {
         assert_eq!(
             db.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
                 .unwrap(),
-            20
+            21
+        );
+    }
+
+    #[test]
+    fn v20_imports_upgrade_as_reading_and_preserve_sources() {
+        let mut db = Connection::open_in_memory().unwrap();
+        db.execute_batch(include_str!("schema.sql")).unwrap();
+        db.execute_batch("INSERT INTO books(id,title,content_sha256,encoding) VALUES('draft','Original','pending:draft','UTF-8'); INSERT INTO import_jobs(book_id,generation) VALUES('draft',7); INSERT INTO library_shelves VALUES('s','Shelf',X'010203','local',0,NULL);").unwrap();
+        initialize(&mut db).unwrap();
+        initialize(&mut db).unwrap();
+        let task: (String, u32) = db
+            .query_row(
+                "SELECT purpose,generation FROM import_jobs WHERE book_id='draft'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(task, ("reading".into(), 7));
+        assert_eq!(
+            db.query_row("SELECT bookmark FROM library_shelves", [], |r| r
+                .get::<_, Vec<u8>>(0))
+                .unwrap(),
+            vec![1, 2, 3]
         );
     }
 
@@ -97,18 +121,18 @@ mod tests {
     fn future_and_prebaseline_versions_are_rejected_without_reset() {
         let mut db = Connection::open_in_memory().unwrap();
         initialize(&mut db).unwrap();
-        db.execute_batch("PRAGMA user_version=21").unwrap();
+        db.execute_batch("PRAGMA user_version=22").unwrap();
         assert!(matches!(
             initialize(&mut db),
             Err(ReaderError::StoreTooNew {
-                version: 21,
-                current: 20
+                version: 22,
+                current: 21
             })
         ));
         assert_eq!(
             db.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
                 .unwrap(),
-            21
+            22
         );
         db.execute_batch("PRAGMA user_version=19").unwrap();
         assert!(matches!(

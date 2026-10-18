@@ -44,6 +44,9 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .cloudStatusChanged).receive(on: DispatchQueue.main)) { _ in
                 Task { await cloud.updateStatus() }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .recentReadingRestored).receive(on: DispatchQueue.main)) { _ in
+                Task { try? await library.reload() }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in
                 Task { await themes.load(); try? await library.reload() }
             }
