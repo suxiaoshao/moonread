@@ -30,7 +30,7 @@ Paid Apps 的 `New`、`Pending User Info`、`Processing`、`Active` 含义不同
 
 ### 代码中已核对的事实
 
-- [工程设置](../../../ios/Moonread.xcodeproj/project.pbxproj)：Bundle ID `dev.moonread.Moonread`，最低 iOS 18，设备族 `1,2`（iPhone/iPad）；首次正式版本为 `1.0.0`，当前 build `2`。后续上传使用单调递增整数 build，规则见[开发环境](../engineering/development.md#发布版本与构建号)。
+- [工程设置](../../../ios/Moonread.xcodeproj/project.pbxproj)：Bundle ID `dev.moonread.Moonread`，最低 iOS 18，设备族 `1,2`（iPhone/iPad）；首次正式版本为 `1.0.0`，当前 build `3`。后续上传使用单调递增整数 build，规则见[开发环境](../engineering/development.md#发布版本与构建号)。
 - [Entitlements](../../../ios/Moonread/Moonread.entitlements)：固定容器 `iCloud.dev.moonread.Moonread`，CloudDocuments、CloudKit、推送；源码中的 `aps-environment` 为 development，**最终分发包实际授权须单独检查**。
 - [iCloud 接入](../data/icloud-implementation.md)仍要求发布前确认 production schema；开发签名/开发容器测试不能替代 TestFlight 的生产环境验证。
 - 当前 `ios/` 文件及工程引用中未找到 `PrivacyInfo.xcprivacy`；[Theme](../../../ios/Moonread/Shared/Theme/Theme.swift)、[ReadingStatistics](../../../ios/Moonread/Statistics/ReadingStatistics.swift)、[LibraryService](../../../ios/Moonread/Library/LibraryService.swift)分别涉及 UserDefaults、系统运行时长、文件修改时间。须按实际使用补隐私清单并检查最终 archive，不能只填写商店隐私标签。
