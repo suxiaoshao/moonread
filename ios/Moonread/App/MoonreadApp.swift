@@ -87,8 +87,14 @@ private struct MoonreadRoot: View {
     private var readerTheme: ThemeSurface { ThemeSurface(plan: plans.reader) }
 
     var body: some View {
+        // Observe outside the UIKit host's content closure. The app navigation
+        // stays mounted while the full-screen introduction is presented.
+        let introductionCompleted = Onboarding.shared.completed
         NativeThemeHost(theme: library.path.last?.isReader == true ? readerTheme : appTheme) {
             tabs
+            .fullScreenCover(isPresented: Binding(get: { !introductionCompleted }, set: { _ in }), onDismiss: finishIntroduction) {
+                FirstRunOnboarding().interactiveDismissDisabled()
+            }
             // Library sheets read the app theme, so they are presented inside its scope.
             .modifier(LibraryPresentations(model: library))
             .themeScope(appTheme).environment(themes).environment(library)
@@ -118,6 +124,17 @@ private struct MoonreadRoot: View {
         .task { await themes.load() }
         .task {
             do { try await Task.sleep(for: .seconds(1)); localDeadlineReached = true } catch { }
+        }
+    }
+
+    private func finishIntroduction() {
+        // Presenting the file importer (or pushing a reader) is safe only after
+        // the introduction's presentation has actually finished dismissing.
+        switch Onboarding.shared.takeDestination() {
+        case .importBook: library.chooseFiles(.novels(LibraryLocation(shelfID: "builtin")))
+        case .story(let entry): library.open(entry)
+        case .library: library.libraryPath.append(.folder(LibraryLocation(shelfID: "builtin")))
+        case nil: break
         }
     }
 

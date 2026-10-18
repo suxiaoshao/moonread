@@ -1146,6 +1146,83 @@ final class TextLayoutTests: XCTestCase {
         XCTAssertEqual(timed.builtinDiscovery, .unavailable)
     }
 
+    @MainActor func testIntroductionCompletionAndExistingSettingsPersistLocally() async throws {
+        let suite = "Introduction-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        // Existing installs have AI/settings already but no introduction marker.
+        let availability = AIAvailability(defaults: defaults)
+        XCTAssertTrue(availability.isEnabled)
+        let first = Onboarding(defaults: defaults, enabled: false, showIntroduction: true)
+        XCTAssertFalse(first.completed); XCTAssertFalse(first.enabled)
+        availability.setEnabled(false)
+        first.completeIntroduction(destination: .importBook)
+        if case .importBook = first.takeDestination() { } else { XCTFail("The import request must survive dismissal") }
+        XCTAssertNil(first.takeDestination(), "Handle the post-dismiss action exactly once")
+        let reloaded = Onboarding(defaults: defaults, enabled: false, showIntroduction: true)
+        XCTAssertTrue(reloaded.completed); XCTAssertNil(reloaded.takeDestination())
+        XCTAssertFalse(AIAvailability(defaults: defaults).isEnabled)
+        availability.setEnabled(true)
+        XCTAssertTrue(AIAvailability(defaults: defaults).isEnabled)
+        let service = ReaderService(sourceDefaultsSuite: suite)
+        let coordinator = CloudSyncCoordinator(service: service, available: false, observeEvents: false)
+        await coordinator.setEnabled(true)
+        let enabled = await service.cloudSyncRequested(); XCTAssertTrue(enabled)
+        await coordinator.setEnabled(false)
+        let disabled = await service.cloudSyncRequested(); XCTAssertFalse(disabled)
+    }
+
+    @MainActor private func introductionFixture() throws -> (URL, ReaderService, ReaderCore, String) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let directory = root.appendingPathComponent("library")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
+        let schema = UserDataStore.schema
+        let store = UserDataStore(modelContainer: try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)]))
+        let suite = "Introduction-" + UUID().uuidString
+        let service = ReaderService(core: core, libraryDirectory: directory, sourceDefaultsSuite: suite, userStoreFactory: { _, _ in store })
+        try core.saveLibraryShelf(id: "builtin", name: "我的书架", bookmark: directory.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil), location: "local", builtin: true)
+        return (root, service, core, suite)
+    }
+
+    @MainActor func testIntroductionStoryRequiresCloudDiscoveryAndEmptyDirectory() async throws {
+        let (root, service, core, suite) = try introductionFixture()
+        defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let model = LibraryModel(service: service, prepareLibrary: {}, cloudDiscoveryRequired: true, adoptCloudDocuments: { _ in })
+        let loaded = await model.load(); XCTAssertTrue(loaded)
+        do { _ = try await model.welcomeStoryForIntroduction(); XCTFail("Discovery must finish first") } catch { }
+        XCTAssertTrue(try core.sourceFiles(shelfId: "builtin").isEmpty)
+        XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.appendingPathComponent("library").path).isEmpty)
+        let adopted = expectation(description: "snapshot adopted")
+        withObservationTracking { _ = model.revision } onChange: { adopted.fulfill() }
+        model.receiveCloudDiscovery(.init(generation: model.discoveryGeneration, revision: 1, gathered: true, items: []))
+        await fulfillment(of: [adopted], timeout: 2)
+        XCTAssertEqual(model.builtinDiscovery, .discovering)
+        do { _ = try await model.welcomeStoryForIntroduction(); XCTFail("Directory acknowledgement must finish first") } catch { }
+        model.builtinDirectoryLoaded(generation: model.discoveryGeneration, snapshotRevision: 1)
+        let story = try await model.welcomeStoryForIntroduction()
+        XCTAssertEqual(story?.name, "月光下的归途.txt")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("library/月光下的归途.txt").path))
+        let again = try await model.welcomeStoryForIntroduction()
+        XCTAssertEqual(again?.id, story?.id)
+        XCTAssertEqual(try core.sourceFiles(shelfId: "builtin").count, 1)
+        XCTAssertFalse(model.hasUserImportedBooks)
+    }
+
+    @MainActor func testIntroductionStoryNeverOverwritesExistingBooksOrChangedRoot() async throws {
+        let (root, service, core, suite) = try introductionFixture()
+        defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let file = root.appendingPathComponent("library/原创合成.txt")
+        try "第一章 测试\n已有合成正文。".write(to: file, atomically: true, encoding: .utf8)
+        try await service.scanLibraryShelf("builtin")
+        let model = LibraryModel(service: service, prepareLibrary: {}, cloudDiscoveryRequired: false)
+        let loaded = await model.load(); XCTAssertTrue(loaded)
+        let story = try await model.welcomeStoryForIntroduction(); XCTAssertNil(story)
+        XCTAssertEqual(try core.sourceFiles(shelfId: "builtin").map(\.relativePath), ["原创合成.txt"])
+        do { _ = try await service.welcomeStory(expectedRoot: root); XCTFail("A changed root must be rejected") } catch { }
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "第一章 测试\n已有合成正文。")
+    }
+
     @MainActor func testOnboardingActionEligibilityPersistsWithoutChangingReadingData() throws {
         let suite = "OnboardingTest-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

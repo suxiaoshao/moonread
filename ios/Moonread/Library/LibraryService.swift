@@ -198,6 +198,32 @@ extension ReaderService {
         #endif
     }
 
+    /// Called only after the introduction has acknowledged initial discovery.
+    /// Recheck the root and real directory before copying; do not seed a newly
+    /// switched account or overwrite an existing file.
+    func welcomeStory(expectedRoot: URL?) async throws -> LibraryEntry? {
+        guard expectedRoot == cloudLibraryRoot else { throw LibraryFileError.missingShelf }
+        let core = try textCore()
+        let existing = try core.sourceFiles(shelfId: "builtin")
+        if let id = sourceDefaults.string(forKey: "Moonread.seededExampleFileID"),
+           existing.contains(where: { $0.id == id }) {
+            return try await libraryEntry(id)
+        }
+        guard existing.isEmpty else { return nil }
+        let root = try builtinLibraryURL()
+        let children = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil, options: .skipsHiddenFiles)
+        guard children.isEmpty else { return nil }
+        guard let source = Bundle.main.url(forResource: "WelcomeStory", withExtension: "txt") else { throw CocoaError(.fileNoSuchFile) }
+        try FileManager.default.copyItem(at: source, to: root.appendingPathComponent("月光下的归途.txt"))
+        try await scanLibraryShelf("builtin")
+        guard expectedRoot == cloudLibraryRoot else { throw LibraryFileError.missingShelf }
+        guard let story = try core.sourceFiles(shelfId: "builtin").first(where: { $0.relativePath == "月光下的归途.txt" }) else {
+            throw LibraryFileError.missingShelf
+        }
+        sourceDefaults.set(story.id, forKey: "Moonread.seededExampleFileID")
+        return try await libraryEntry(story.id)
+    }
+
     func hasUserImportedBooks() throws -> Bool {
         let example = sourceDefaults.string(forKey: "Moonread.seededExampleFileID")
         return try textCore().sourceFiles(shelfId: "builtin").contains { !$0.directory && $0.id != example }

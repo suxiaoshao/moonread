@@ -285,6 +285,22 @@ final class LibraryModel {
     }
     func retryCloudDiscovery() { startCloudDiscovery(reset: true) }
 
+    /// The introduction participates in the same directory acknowledgement as
+    /// LibraryFolderView. It never treats an unadopted metadata result as empty.
+    func welcomeStoryForIntroduction() async throws -> LibraryEntry? {
+        guard homeReady, builtinDiscovery == .ready || builtinDiscovery == .notRequired else {
+            throw LibraryFileError.missingShelf
+        }
+        let generation = discoveryGeneration
+        let root = await service.cloudDiscoveryRoot()
+        guard generation == discoveryGeneration,
+              builtinDiscovery == .ready || builtinDiscovery == .notRequired else { throw CancellationError() }
+        let entry = try await service.welcomeStory(expectedRoot: root)
+        guard generation == discoveryGeneration else { throw CancellationError() }
+        try await reload()
+        return entry
+    }
+
     @discardableResult
     func load() async -> Bool {
         if initialized { return true }
