@@ -4221,6 +4221,31 @@ final class MoonreadUITests: XCTestCase {
         XCTAssertEqual(awake.value as? String, "0", "Mode changes must not overwrite other newly edited preferences")
     }
 
+    func testHistoryMarksOnlyCursorRowSelected() throws {
+        prepareApp(); openSample(); revealControls()
+        app.buttons["nextChapter"].tap()
+        XCTAssertTrue(app.buttons["returnFromBrowse"].waitForExistence(timeout: 5))
+        revealControls(); app.buttons["readingHistoryMenu"].tap(); app.buttons["跳转历史"].tap()
+        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "readingHistory-"))
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(rows.count, 2)
+        let selected = rows.allElementsBoundByIndex.filter(\.isSelected)
+        XCTAssertEqual(selected.count, 1, app.debugDescription)
+        let oldID = selected.first?.identifier
+        recordScreenshot("accessibility-history-current")
+        let other = try XCTUnwrap(rows.allElementsBoundByIndex.first { !$0.isSelected })
+        let otherID = other.identifier
+        other.tap()
+        XCTAssertTrue(app.buttons["closeReadingHistory"].waitForNonExistence(timeout: 5))
+        revealControls(); app.buttons["readingHistoryMenu"].tap(); app.buttons["跳转历史"].tap()
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 5))
+        let moved = rows.allElementsBoundByIndex.filter(\.isSelected)
+        XCTAssertEqual(moved.count, 1)
+        XCTAssertEqual(moved.first?.identifier, otherID)
+        XCTAssertNotEqual(moved.first?.identifier, oldID)
+        recordScreenshot("accessibility-history-cursor-moved")
+    }
+
     func testProgressHistoryAndPagedEdgeReturn() {
         prepareApp(); openSample(); readingText().swipeUp()
         let original = anchor()
