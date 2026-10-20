@@ -60,6 +60,7 @@ final class LibraryModel {
     var error: String?
     /// A reader that closed with an error reports it here, after its position is saved.
     var readerExitError: String?
+    var reviewCandidate: ReadingReviewCandidate?
     var busy: Bool { fileWork != nil }
     let loading = LoadingState()
     let refreshing = LoadingState()

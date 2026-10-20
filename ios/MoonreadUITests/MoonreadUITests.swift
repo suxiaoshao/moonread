@@ -3267,6 +3267,53 @@ final class MoonreadUITests: XCTestCase {
         recordScreenshot("settings-cloud-schema-report")
     }
 
+    func testReadingReviewAppearsOnlyAfterNormalReturn() {
+        prepareApp(arguments: ["--ui-test-statistics-fixture", "--ui-test-review-prompt", "-Moonread.statisticsEnabled", "YES"])
+        openSample()
+        for _ in 0..<8 { app.textViews["scrollText"].swipeUp() }
+        let stars = app.buttons.matching(identifier: "star")
+        XCTAssertFalse(stars.firstMatch.exists, "Never request while reading")
+        revealControls(); app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(stars.firstMatch.waitForExistence(timeout: 15), app.debugDescription)
+        XCTAssertEqual(stars.count, 5, "The real StoreKit rating view has five stars")
+        recordScreenshot("review-system-prompt-after-return")
+        let later = app.buttons.matching(NSPredicate(format: "label IN %@", ["Not Now", "以后", "以后再说", "稍后再说", "稍後再說", "稍後再評分"])).firstMatch
+        XCTAssertTrue(later.exists, app.debugDescription); later.tap()
+        // Reload local history, without submitting a rating.
+        app.terminate(); app.launch()
+        openSample()
+        for _ in 0..<8 { app.textViews["scrollText"].swipeUp() }
+        revealControls(); app.navigationBars.buttons.firstMatch.tap()
+        let returned = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            self.app.buttons["shelf-builtin"].isHittable || self.app.buttons["folderActions"].isHittable
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 10), .completed)
+        XCTAssertFalse(stars.firstMatch.waitForExistence(timeout: 3), "The same version cannot request again")
+    }
+
+    func testSettingsRatingEntryTranslationsAndDestination() {
+        for (lang, title) in [("zh-Hans", "给月读评分"), ("zh-Hant", "為月讀評分"), ("en", "Rate Moonread")] {
+            prepareApp(language: lang, arguments: ["--ui-test-home"])
+            XCTAssertTrue(app.buttons["appSettings"].waitForExistence(timeout: 10)); app.buttons["appSettings"].tap()
+            let link = element("rateMoonread")
+            for _ in 0..<6 where !link.isHittable { app.swipeUp() }
+            XCTAssertTrue(link.isHittable); XCTAssertEqual(link.label, title)
+            recordScreenshot("review-settings-" + lang)
+            if lang == "en" {
+                link.tap()
+                let safari = XCUIApplication(bundleIdentifier: "com.apple.mobilesafari")
+                XCTAssertTrue(safari.wait(for: .runningForeground, timeout: 15), app.debugDescription)
+                let address = safari.textFields.firstMatch
+                XCTAssertTrue(address.waitForExistence(timeout: 10), safari.debugDescription)
+                address.tap()
+                let destination = address.value as? String ?? ""
+                XCTAssertTrue(destination.contains("id6823849812"), destination)
+                XCTAssertTrue(destination.contains("action=write-review"), destination)
+                let attachment = XCTAttachment(screenshot: safari.screenshot()); attachment.name = "review-store-destination"; attachment.lifetime = .keepAlways; add(attachment)
+            }
+        }
+    }
+
     func testAboutPolicyAndSupportLinksShowApprovedContact() {
         prepareApp(arguments: ["--ui-test-home"])
         XCTAssertTrue(app.buttons["appSettings"].waitForExistence(timeout: 10)); app.buttons["appSettings"].tap()

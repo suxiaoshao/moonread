@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+2E2559685C214716AEE5F325 /* ReadingReviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 025DA6C47C21404F889514D9; };
+344233D679E94ACDA4FA2A11 /* ReadingReview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10332C17C92A416A96E3B55A; };
 F01900000000000000000003 = {isa = PBXBuildFile; fileRef = F01900000000000000000004; };
 F01900000000000000000001 = {isa = PBXBuildFile; fileRef = F01900000000000000000002; };
         FC1100000000000000000001 = {isa = PBXBuildFile; fileRef = FC2100000000000000000001; };
@@ -165,6 +167,8 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+025DA6C47C21404F889514D9 /* ReadingReviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/ReadingReviewTests.swift; sourceTree = SOURCE_ROOT; };
+10332C17C92A416A96E3B55A /* ReadingReview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/App/ReadingReview.swift; sourceTree = SOURCE_ROOT; };
 F01900000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentReadingRestorationTests.swift; sourceTree = "<group>"; };
 F01900000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentReadingRestoration.swift; sourceTree = "<group>"; };
         FC2100000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UI/AIReplyFeedback.swift; sourceTree = "<group>"; };
@@ -351,6 +355,7 @@ D35000000000000000000001,
 			children = (
 F14BDB0397FE4C25963665F6,
                 8C23901BA4E14CF6AA3F4140,
+                025DA6C47C21404F889514D9,
                 AP2000000000000000000001,
                 OS2000000000000000000001,
 				C69F370A1A8A46EDAB23B47D /* App */,
@@ -376,6 +381,7 @@ F14BDB0397FE4C25963665F6,
 			isa = PBXGroup;
 			children = (
                 AAE9AA532FE14842BCFEA016,
+                10332C17C92A416A96E3B55A,
                 EC14CE0E00934BB682B83B4D,
                 5C7A519CEC4946EDB0957CC2,
 A20000000000000000000009 /* MoonreadUITests.swift */,
@@ -769,6 +775,7 @@ E51000000000000000000009,D41000000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                344233D679E94ACDA4FA2A11,
                 FC1100000000000000000001,
 0ADFA9A8F02748618B3B4BE9,
 CAA8B00EBC8041F6A299A6A5,
@@ -868,6 +875,7 @@ F01900000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                2E2559685C214716AEE5F325,
 785244D6C1DB4AF6B15A8AA0,
 01800FD10FB1423B93ABB34E,
 5AEB90FA1BD147BDA6246668,

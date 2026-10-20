@@ -1791,3 +1791,10 @@ C 线专用 `Moonread-LibraryTrash-C-iCloud`（iOS 27.0）与 B 分开；用户�
 本地内置根及尚未删除的文件夹没有在这次真机试用中验证，仍是缺口，用户接受；不能把未操作的文件夹记为失败或通过，也不将单文件恢复扩大为这些场景的验收。
 
 只运行 4 项受影响的模拟器单测，全部通过：任意 trash 错误映射与永久删除错误保留、非 3328 错误进入待决定并在本批复用／结束清空、跳过仍逐项尝试 trash、删除成功后刷新失败不重试。正常增量测试构建通过。日志与完整结果在 `build/LibraryTrashImplementation/policy-build.log`、`policy-tests.log`、`policy-tests.xcresult`；未跑全量或真机 XCTest。
+
+### 2026-10-20 阅读后评分与设置入口
+
+- iPhone 18 Pro / iOS 27.0 模拟器 Debug 构建通过；10 项评分条件、本机持久化、有效时长、计时生命周期及繁体本地化定向单测通过。三语设置入口 UI、系统评分与重启后同版本不重复 UI 两项通过。
+- 正向 UI 使用隔离合成统计与 DEBUG 60 倍测试时钟，仍走 ReadingClock 的前台／正文／闲置扣除与实际退出保存链路，不改系统时间；退出回书架出现真实 StoreKit 评分框，仅点“以后”，没有提交评分。普通运行和 Release 不加速。系统评分视图按五颗星定位；重启从“继续阅读”进入后返回首页也算正常书架落点。
+- 设置链接的实际 Safari 地址包含正确 App ID 和 `action=write-review`；当前网络的页面最终跳转到中国区“今日”，未验证商店内评分编辑页。Apple 美区公开 lookup 的 App ID、名称和 Bundle ID 与月读相符；未擅改 issue 的目标 URL、账号或发行地区，也未操作手机。
+- 日志与截图：`build/ReviewPrompt/build-final.log`、`final.log`（10 项单测与设置 UI）、`prompt-context.log`（评分 UI 修正定位后单独重跑通过）、`verification.json`（12 项最新结果）、`screens/overview.png`；页面响应见 `store-http.log`、`store-lookup-us.json`。

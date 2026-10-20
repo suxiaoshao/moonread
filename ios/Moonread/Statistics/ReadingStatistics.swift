@@ -124,12 +124,37 @@ final class StatisticsWriter {
     func drain() async { await task?.value }
 }
 
+/// Injectable time keeps effective-duration tests on the real Rust reading clock.
+struct ReadingActivityTime {
+    let uptime: TimeInterval
+    let date: Date
+    #if DEBUG
+    private static let fixtureStart = ProcessInfo.processInfo.systemUptime
+    private static let acceleratedFixture: Bool = {
+        let args = ProcessInfo.processInfo.arguments
+        return args.contains("--ui-testing") && args.contains("--ui-test-session") && args.contains("--ui-test-review-prompt")
+    }()
+    #endif
+    static func current() -> Self {
+        let uptime = ProcessInfo.processInfo.systemUptime, date = Date()
+        #if DEBUG
+        if acceleratedFixture {
+            // Only the isolated UI fixture advances time; it still obeys idle,
+            // foreground and body-readability rules and must leave normally.
+            return Self(uptime: uptime * 60, date: date.addingTimeInterval((uptime - fixtureStart) * 59))
+        }
+        #endif
+        return Self(uptime: uptime, date: date)
+    }
+}
+
 /// No timer state lives in a SwiftUI body. Only explicit body gestures refresh idle credit.
 @MainActor
 final class ReadingActivityRecorder {
     private static weak var owner: ReadingActivityRecorder?
     private let preferences: @MainActor () async throws -> StatisticsPreferences
     private let writer: StatisticsWriter
+    private let time: @MainActor () -> ReadingActivityTime
     private var startToken: UUID?
     private var clock: ReadingClock?
     private var lease: ReadingLease?
@@ -142,10 +167,16 @@ final class ReadingActivityRecorder {
     private var lastInteraction: TimeInterval = -.infinity
     private weak var viewport: ReadingViewportAccess?
     private var range: (UInt64, UInt64) = (0, 0)
+    private(set) var effectiveReadingMilliseconds: UInt64 = 0
 
-    init(writer: StatisticsWriter = .shared, preferences: @escaping @MainActor () async throws -> StatisticsPreferences = {
+    convenience init(writer: StatisticsWriter = .shared, preferences: @escaping @MainActor () async throws -> StatisticsPreferences = {
         await ReaderService.shared.statisticsPreferences()
-    }) { self.writer = writer; self.preferences = preferences }
+    }) { self.init(writer: writer, time: { .current() }, preferences: preferences) }
+
+    init(writer: StatisticsWriter, time: @escaping @MainActor () -> ReadingActivityTime,
+         preferences: @escaping @MainActor () async throws -> StatisticsPreferences) {
+        self.writer = writer; self.time = time; self.preferences = preferences
+    }
 
     /// Invalidates suspended starts before the next attempt is scheduled.
     func prepareStart(_ attempt: UUID) {
@@ -190,7 +221,7 @@ final class ReadingActivityRecorder {
 
     func interacted() {
         // Continuous drags can generate 120 callbacks/sec; these carry intent, not viewport samples.
-        let now = ProcessInfo.processInfo.systemUptime
+        let now = time().uptime
         guard now - lastInteraction >= 0.25 else { return }
         lastInteraction = now
         sample(interaction: true, capture: false)
@@ -199,14 +230,14 @@ final class ReadingActivityRecorder {
     func breakVisit() {
         sample()
         guard let clock, let lease else { return }
-        writer.enqueue(clock.breakVisit(), generation: generation, lease: lease)
+        enqueue(clock.breakVisit(), lease: lease)
     }
 
     func flush() async {
         sample()
         guard let clock, let lease else { return }
         // A tools panel has already paused the clock. Drain its final fact before querying coverage.
-        writer.enqueue(clock.breakVisit(), generation: generation, lease: lease)
+        enqueue(clock.breakVisit(), lease: lease)
         await writer.drain()
     }
 
@@ -215,13 +246,20 @@ final class ReadingActivityRecorder {
         let writer = self.writer
         let visible = capture ? viewport?.controller?.statisticsRange() : (range.1 > range.0 ? range : nil)
         if capture, let visible { range = visible }
-        let now = Date()
+        let instant = time(), now = instant.date
         let slices = clock.update(moment: ReadingMoment(
-            monotonicMs: UInt64(ProcessInfo.processInfo.systemUptime * 1000),
+            monotonicMs: UInt64(instant.uptime * 1000),
             unixMs: Int64(now.timeIntervalSince1970 * 1000),
             utcOffsetSeconds: Int32(TimeZone.current.secondsFromGMT(for: now)),
             readable: enabled && readable && visible != nil && !writer.isFull,
             interaction: interaction, preview: preview, startUtf8: range.0, endUtf8: range.1))
+        enqueue(slices, lease: lease)
+    }
+
+    private func enqueue(_ slices: [ReadingSlice], lease: ReadingLease) {
+        effectiveReadingMilliseconds += slices.reduce(0) { total, slice in
+            total + slice.exposures.reduce(0) { $0 + $1.durationMs }
+        }
         writer.enqueue(slices, generation: generation, lease: lease)
     }
 

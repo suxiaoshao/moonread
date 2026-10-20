@@ -1,6 +1,8 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "关于": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"关于"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"關於"}},"en":{"stringUnit":{"state":"translated","value":"About"}}}},
+    "给月读评分": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"给月读评分"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"為月讀評分"}},"en":{"stringUnit":{"state":"translated","value":"Rate Moonread"}}}},
     "onboarding.continue": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "Continue"}},"zh-Hans": {"stringUnit": {"state": "translated","value": "继续"}},"zh-Hant": {"stringUnit": {"state": "translated","value": "繼續"}}}},
     "启用 AI 功能": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "Enable AI Features"}},"zh-Hans": {"stringUnit": {"state": "translated","value": "启用 AI 功能"}},"zh-Hant": {"stringUnit": {"state": "translated","value": "啟用 AI 功能"}}}},
     "书和进度存在哪里": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "Where Your Books and Progress Live"}},"zh-Hans": {"stringUnit": {"state": "translated","value": "书和进度存在哪里"}},"zh-Hant": {"stringUnit": {"state": "translated","value": "書和進度存在哪裡"}}}},
