@@ -95,6 +95,7 @@ private struct MoonreadRoot: View {
         let introductionCompleted = Onboarding.shared.completed
         NativeThemeHost(theme: library.path.last?.isReader == true ? readerTheme : appTheme) {
             tabs
+            .modifier(ReadingReviewAfterReading(library: library))
             .fullScreenCover(isPresented: Binding(get: { !introductionCompleted }, set: { _ in }), onDismiss: finishIntroduction) {
                 FirstRunOnboarding().interactiveDismissDisabled()
             }
@@ -184,8 +185,9 @@ struct LibraryDestination: View {
     var body: some View {
         switch route {
         case .reader(let reader):
-            ReaderScreen(route: reader.target, openingRequest: reader) {
-                library.readerExitError = $0
+            ReaderScreen(route: reader.target, openingRequest: reader) { error, milliseconds in
+                library.readerExitError = error
+                if error == nil { library.reviewCandidate = ReadingReviewCandidate(milliseconds: milliseconds) }
                 // The reader calls back after its final position is saved.
                 // A destination's onAppear can run before that write finishes.
                 Task { await library.reloadBook(reader.target) }

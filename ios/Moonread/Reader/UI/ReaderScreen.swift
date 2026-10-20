@@ -9,7 +9,8 @@ struct ReaderScreen: View {
     var openingRequest: OpeningRequest? = nil
     @State private var contentVisible = false
     @State private var completedOpeningID: UUID?
-    let onExit: (String?) -> Void
+    let onExit: (String?, UInt64) -> Void
+    @State private var reviewExitIsNormal = false
     @State private var session = ReaderSession()
     @State private var panel: ReaderPanel?
     /// Which list the tool sheet opens on: chapters from the bottom bar, any list from More.
@@ -524,6 +525,7 @@ struct ReaderScreen: View {
         exitPhase = .saving
         pageAfterDismiss = nil; detailOrigin = nil; searchActive = false
         tools.leave()
+        reviewExitIsNormal = session.error == nil && session.book != nil
         let saved = session.leave()
         panel = nil
         Task {
@@ -538,7 +540,7 @@ struct ReaderScreen: View {
         aiConversationID = nil; aiEntrySnapshot = nil
         exitPhase = .returned
         session.clearTransientState()
-        onExit(session.error)
+        onExit(session.error, reviewExitIsNormal && StatisticsWriter.shared.error == nil ? session.activity.effectiveReadingMilliseconds : 0)
     }
 
     private var undoCapsuleVisible: Bool {

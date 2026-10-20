@@ -75,7 +75,10 @@ struct SettingsView: View {
                 }.accessibilityIdentifier("languageSettings")
                     .accessibilityHint("打开系统设置")
             }.listRowBackground(Color(uiColor: theme.surface))
-            Section {
+            Section("关于") {
+                Link(destination: AppLinks.writeReview) {
+                    SettingsEntry(title: "给月读评分", symbol: "star", summary: "")
+                }.accessibilityIdentifier("rateMoonread")
                 NavigationLink { AboutView() } label: {
                     SettingsEntry(title: "关于月读", symbol: "info.circle", summary: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
                 }.accessibilityIdentifier("aboutSettings")
@@ -169,7 +172,7 @@ private struct ReaderTestOrigin: View {
         VStack {
             if let book {
                 NavigationLink {
-                    ReaderScreen(route: .book(book.id)) { error = $0 }
+                    ReaderScreen(route: .book(book.id)) { result, _ in error = result }
                 } label: { Text("打开测试正文") }
                 .accessibilityIdentifier("originOpenReader")
             }
