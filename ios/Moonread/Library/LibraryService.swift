@@ -323,6 +323,9 @@ extension ReaderService {
     func allLibraryBooks(_ shelfID: String) async throws -> [LibraryEntry] {
         try await catalogueQuery(LibraryLocation(shelfID: shelfID), recursive: true).allLibraryBooks(shelfId: shelfID)
     }
+    func libraryTagGroups(_ shelfID: String) async throws -> LibraryTagCatalogue {
+        try await catalogueQuery(LibraryLocation(shelfID: shelfID), recursive: true).allLibraryTagGroups(shelfId: shelfID)
+    }
     func recentLibrary(_ limit: UInt32 = 1000, cold: Bool = false) async throws -> [LibraryEntry] {
         if cold { return try await effectiveQuery(scope: "home-cold").recentLibraryEntries(limit: limit) }
         let index = try await effectiveQuery(positionsOnly: true, scope: "recent-index").recentLibraryEntries(limit: limit)
@@ -911,6 +914,10 @@ extension ReaderService {
                 try "第一章\n网格高度测试 \(index)".write(to: root.appendingPathComponent("测试小说\(index).txt"), atomically: true, encoding: .utf8)
             }
         }
+        let tagGroupsFixture = ProcessInfo.processInfo.arguments.contains("--ui-test-tag-groups")
+        if tagGroupsFixture {
+            try "第一章\n尚未建立索引的原创验证样本。".write(to: root.appendingPathComponent("待索引.txt"), atomically: true, encoding: .utf8)
+        }
         let names = ["夜航", "山海之间", "长街来信"]
         for (index, name) in names.enumerated() {
             let parent = index == 1 ? root.appendingPathComponent("奇幻/东方") : root
@@ -933,9 +940,15 @@ extension ReaderService {
         try refreshLibraryShelf("builtin")
         for entry in try await libraryEntries(LibraryLocation(shelfID: "builtin"), recursive: true) where !entry.directory {
             if mixedOrder && !names.contains(entry.title) { continue }
+            if tagGroupsFixture && entry.title == "待索引" { continue }
             let file = root.appendingPathComponent(entry.relativePath)
             let book = try textCore().importBook(filePath: file.path, title: entry.title)
             try textCore().linkLibraryFile(fileId: entry.id, bookId: book.id)
+            if tagGroupsFixture && entry.title == "夜航" {
+                let base = try await details(bookID: book.id).metadata
+                var edited = base; edited.tags = ["奇幻", "旅行"]
+                try await saveMetadata(base: base, edited: edited)
+            }
             if !mixedOrder { try await writePosition(book.id, offset: min(160, book.byteCount)) }
         }
         if mixedOrder {

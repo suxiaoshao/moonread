@@ -2544,6 +2544,22 @@ final class MoonreadUITests: XCTestCase {
         checkScrollHeight("all-books", swipes: 8)
     }
 
+    func testAllBooksTagGrouping() {
+        prepareApp(arguments: ["--ui-test-bookshelf", "--ui-test-tag-groups"])
+        let mine = app.buttons["shelf-builtin"]
+        XCTAssertTrue(mine.waitForExistence(timeout: 10)); mine.tap()
+        let allBooks = app.buttons["library-all-books"]
+        XCTAssertTrue(allBooks.waitForExistence(timeout: 5)); allBooks.tap()
+        XCTAssertTrue(app.navigationBars["全部小说"].waitForExistence(timeout: 5))
+        app.buttons["folderActions"].tap()
+        app.buttons["分组方式"].tap()
+        app.buttons["标签"].tap()
+        XCTAssertTrue(app.scrollViews["libraryTagGrid"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["library-tag-奇幻"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["library-tag-旅行"].exists)
+        recordScreenshot("library-tag-groups")
+    }
+
     func testBookshelfNameIndexAndFolderGrid() {
         prepareApp(arguments: ["--ui-test-bookshelf", "--ui-test-bookshelf-index"])
         let mine = app.buttons["shelf-builtin"]

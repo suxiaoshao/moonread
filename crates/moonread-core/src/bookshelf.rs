@@ -79,6 +79,27 @@ pub struct LibraryEntry {
     pub content_sha256: Option<String>,
 }
 
+/// A virtual tag section in one shelf's file catalogue, never a filesystem folder.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum LibraryTagGroupKind {
+    Tag,
+    Untagged,
+    Unindexed,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct LibraryTagGroup {
+    pub kind: LibraryTagGroupKind,
+    pub tag: String,
+    pub entries: Vec<LibraryEntry>,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct LibraryTagCatalogue {
+    pub book_count: u64,
+    pub groups: Vec<LibraryTagGroup>,
+}
+
 #[derive(Clone, Copy, Debug, uniffi::Enum)]
 pub enum LibrarySort {
     Reading,
@@ -626,6 +647,55 @@ impl ReaderCore {
         });
         Ok(books)
     }
+    /// Identity and metadata are projected through file_identities by all_library_books.
+    /// A multi-tagged file is repeated in its sections, but counted only once.
+    pub(crate) fn all_library_tag_groups(&self, shelf_id: String) -> Result<LibraryTagCatalogue> {
+        let books = self.all_library_books(shelf_id)?;
+        let book_count = books.len() as u64;
+        let mut tagged = std::collections::BTreeMap::<String, Vec<LibraryEntry>>::new();
+        let mut untagged = Vec::new();
+        let mut unindexed = Vec::new();
+        for book in books {
+            if book.content_sha256.is_none() {
+                unindexed.push(book);
+                continue;
+            }
+            let tags: std::collections::BTreeSet<_> = book
+                .metadata
+                .as_ref()
+                .map(|m| m.tags.iter().collect())
+                .unwrap_or_default();
+            if tags.is_empty() {
+                untagged.push(book);
+            } else {
+                for tag in tags {
+                    tagged.entry(tag.clone()).or_default().push(book.clone());
+                }
+            }
+        }
+        let mut groups: Vec<_> = tagged
+            .into_iter()
+            .map(|(tag, entries)| LibraryTagGroup {
+                kind: LibraryTagGroupKind::Tag,
+                tag,
+                entries,
+            })
+            .collect();
+        groups.sort_by(|a, b| natural_cmp(&a.tag, &b.tag).then_with(|| a.tag.cmp(&b.tag)));
+        for (kind, entries) in [
+            (LibraryTagGroupKind::Untagged, untagged),
+            (LibraryTagGroupKind::Unindexed, unindexed),
+        ] {
+            if !entries.is_empty() {
+                groups.push(LibraryTagGroup {
+                    kind,
+                    tag: String::new(),
+                    entries,
+                });
+            }
+        }
+        Ok(LibraryTagCatalogue { book_count, groups })
+    }
     pub(crate) fn library_entry(&self, file_id: String) -> Result<LibraryEntry> {
         let db = self.read_lock()?;
         filtered_entries(&db, None, None, false, Some(&file_id), None)?
@@ -764,6 +834,71 @@ impl ReaderCore {
 #[cfg(test)]
 mod recent_tests {
     use super::*;
+
+    #[test]
+    fn tag_groups_repeat_multitagged_files_and_separate_identity_states_within_shelf() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = ReaderCore::new(dir.path().join("cache").to_string_lossy().into()).unwrap();
+        for shelf in ["s", "other"] {
+            core.save_library_shelf(shelf.into(), shelf.into(), vec![], "local".into(), false)
+                .unwrap();
+        }
+        {
+            let db = core.lock().unwrap();
+            db.execute_batch("INSERT INTO library_files VALUES('folder','s','folder','','folder',1,0,1,0,NULL,'auto');
+                INSERT INTO library_files VALUES('tagged','s','folder/tagged.txt','folder','tagged.txt',0,100,1,0,NULL,'auto');
+                INSERT INTO library_files VALUES('untagged','s','untagged.txt','','untagged.txt',0,100,1,0,NULL,'auto');
+                INSERT INTO library_files VALUES('unknown','s','unknown.txt','','unknown.txt',0,100,1,0,NULL,'auto');
+                INSERT INTO library_files VALUES('stale','s','stale.txt','','stale.txt',0,101,1,0,NULL,'auto');
+                INSERT INTO library_files VALUES('outside','other','outside.txt','','outside.txt',0,100,1,0,NULL,'auto');
+                INSERT INTO source_identities VALUES('raw','auto','tagged-sha','UTF-8',100,80);
+                INSERT INTO source_identities VALUES('raw-untagged','auto','untagged-sha','UTF-8',100,80);
+                INSERT INTO library_identities VALUES('tagged','raw','auto',100,1);
+                INSERT INTO library_identities VALUES('untagged','raw-untagged','auto',100,1);
+                INSERT INTO library_identities VALUES('stale','raw','auto',100,1);
+                INSERT INTO library_identities VALUES('outside','raw','auto',100,1);").unwrap();
+        }
+        let query = core.query_snapshot(serde_json::json!({"metadata": [{
+            "sha": "tagged-sha", "author": "", "synopsis": "", "tags": ["B", "A"], "cover": null, "status": "Unread"
+        }]}).to_string()).unwrap();
+        let catalogue = query.all_library_tag_groups("s".into()).unwrap();
+        assert_eq!(catalogue.book_count, 4);
+        assert_eq!(
+            catalogue.groups.iter().map(|g| g.kind).collect::<Vec<_>>(),
+            [
+                LibraryTagGroupKind::Tag,
+                LibraryTagGroupKind::Tag,
+                LibraryTagGroupKind::Untagged,
+                LibraryTagGroupKind::Unindexed
+            ]
+        );
+        assert_eq!(
+            catalogue
+                .groups
+                .iter()
+                .map(|g| g.tag.as_str())
+                .collect::<Vec<_>>(),
+            ["A", "B", "", ""]
+        );
+        let ids = |i: usize| {
+            catalogue.groups[i]
+                .entries
+                .iter()
+                .map(|e| e.id.as_str())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids(0), ["tagged"]);
+        assert_eq!(ids(1), ["tagged"]);
+        assert_eq!(ids(2), ["untagged"]);
+        assert_eq!(ids(3), ["stale", "unknown"]);
+        assert!(
+            catalogue
+                .groups
+                .iter()
+                .flat_map(|g| &g.entries)
+                .all(|e| e.shelf_id == "s" && !e.directory)
+        );
+    }
 
     #[test]
     fn folder_last_read_includes_index_only_child_with_synced_position() {

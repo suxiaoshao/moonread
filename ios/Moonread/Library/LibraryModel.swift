@@ -42,6 +42,10 @@ final class LibraryModel {
     var layout: LibraryLayout {
         didSet { defaults.set(layout.rawValue, forKey: layoutKey) }
     }
+    var grouping: LibraryGrouping {
+        didSet { defaults.set(grouping.rawValue, forKey: groupingKey) }
+    }
+    private let groupingKey: String
     private let layoutKey: String
     @ObservationIgnored private let defaults: UserDefaults
     /// Recents kept on the home page: the resume card plus a scrollable cover row in the grid.
@@ -225,6 +229,8 @@ final class LibraryModel {
         }
         layoutKey = "Moonread.libraryLayout.\(session ?? "device")"
         layout = defaults.string(forKey: layoutKey).flatMap(LibraryLayout.init(rawValue:)) ?? .grid
+        groupingKey = "Moonread.libraryGrouping.\(session ?? "device")"
+        grouping = defaults.string(forKey: groupingKey).flatMap(LibraryGrouping.init(rawValue:)) ?? .name
     }
 
     private static var deviceNeedsCloudDiscovery: Bool {
