@@ -147,6 +147,15 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		7A278708BAB942A99014C0D3 /* ReaderOpening.swift in Sources */ = {isa = PBXBuildFile; fileRef = 990DFFD80C6248E3A5BF832F /* ReaderOpening.swift */; };
 		267C2529F2B14483B0424293 /* ReaderOpenDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF08E0D9F8D042DA8E2DC265 /* ReaderOpenDiagnostics.swift */; };
 		338EBE51F11D4BDC98985D77 /* ReaderOpenBenchmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A44BEF4C3D4FE0A71CCB03; };
+		FD64F53149DE5DBFB6AA04F1 /* ShareInbox in App Sources */ = { isa = PBXBuildFile; fileRef = AF3B627D29215FAB93FC0C44;  };
+		83C1F3DE49DE5AC693D3E8E8 /* ShareReceive strings in App Resources */ = { isa = PBXBuildFile; fileRef = 5DA1E57CF521587EAF48FEFB;  };
+		1324E15761CF5ED68712722E /* ShareInboxTests in Sources */ = { isa = PBXBuildFile; fileRef = 2C3B5BE72B6F578DB4C13BA1;  };
+		906A74D1BD2A5FAD9BE897E1 /* ShareInbox in Extension Sources */ = { isa = PBXBuildFile; fileRef = AF3B627D29215FAB93FC0C44;  };
+		0804D0B539CB5AB19A9DB8FF /* ShareViewController in Sources */ = { isa = PBXBuildFile; fileRef = 29C2EBD521AF59B58F38BBE5;  };
+		395542A1DDDA57A6B2AC983D /* ShareReceive strings in Extension Resources */ = { isa = PBXBuildFile; fileRef = 5DA1E57CF521587EAF48FEFB;  };
+		E4FBAEE53BD05822ADA6F920 /* Share Privacy in Resources */ = { isa = PBXBuildFile; fileRef = 18807E292E245C3D81736D90;  };
+		5A465E51B64F5138BF6CF41C /* Embed MoonreadShare */ = { isa = PBXBuildFile; fileRef = 44920FD9D2A9541EA0D84A3B; settings = {ATTRIBUTES = (RemoveHeadersOnCopy,);}; };
+		C14A00000000000000000003 /* Share InfoPlist in Resources */ = {isa = PBXBuildFile; fileRef = C14A00000000000000000002; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -164,7 +173,12 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 			remoteGlobalIDString = A80000000000000000000001;
 			remoteInfo = Moonread;
 		};
+		72DACA4B8D1E5727AAF77721 /* Share Target Proxy */ = { isa = PBXContainerItemProxy; containerPortal = A90000000000000000000001; proxyType = 1; remoteGlobalIDString = 04C2476D974D589BB2C7513F; remoteInfo = MoonreadShare; };
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		6502577E2278509DB864FF63 /* Embed App Extensions */ = { isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (5A465E51B64F5138BF6CF41C,); name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 025DA6C47C21404F889514D9 /* ReadingReviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/ReadingReviewTests.swift; sourceTree = SOURCE_ROOT; };
@@ -306,6 +320,15 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		990DFFD80C6248E3A5BF832F /* ReaderOpening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderOpening.swift; sourceTree = "<group>"; };
 		BF08E0D9F8D042DA8E2DC265 /* ReaderOpenDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderOpenDiagnostics.swift; sourceTree = "<group>"; };
 		23A44BEF4C3D4FE0A71CCB03 /* ReaderOpenBenchmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderOpenBenchmark.swift; sourceTree = "<group>"; };
+		AF3B627D29215FAB93FC0C44 /* ShareInbox.swift */ = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ShareInbox.swift"; sourceTree = "<group>"; };
+		5DA1E57CF521587EAF48FEFB /* ShareReceive.xcstrings */ = { isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = "ShareReceive.xcstrings"; sourceTree = "<group>"; };
+		29C2EBD521AF59B58F38BBE5 /* ShareViewController.swift */ = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ShareViewController.swift"; sourceTree = "<group>"; };
+		EF379022E56E535FAC852A40 /* Share Info.plist */ = { isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info.plist"; sourceTree = "<group>"; };
+		31B552B86FFB5750A62F5D71 /* MoonreadShare.entitlements */ = { isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "MoonreadShare.entitlements"; sourceTree = "<group>"; };
+		18807E292E245C3D81736D90 /* Share PrivacyInfo.xcprivacy */ = { isa = PBXFileReference; lastKnownFileType = text.xml; path = "PrivacyInfo.xcprivacy"; sourceTree = "<group>"; };
+		2C3B5BE72B6F578DB4C13BA1 /* ShareInboxTests.swift */ = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ShareInboxTests.swift"; sourceTree = "<group>"; };
+		44920FD9D2A9541EA0D84A3B /* MoonreadShare.appex */ = { isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MoonreadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C14A00000000000000000002 /* Share InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -335,12 +358,15 @@ D35000000000000000000001,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C3E05493EB5F54BB9BFA12EA /* Share Frameworks */ = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		A50000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
+                C14A00000000000000000001,
+                F94762692B4A52B5A2524BF1,
 				A2000000000000000000000E /* Configuration.xcconfig */,
 				A50000000000000000000002 /* Moonread */,
 				A50000000000000000000003 /* MoonreadUITests */,
@@ -400,6 +426,7 @@ A20000000000000000000009 /* MoonreadUITests.swift */,
 		A50000000000000000000005 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+                44920FD9D2A9541EA0D84A3B,
 				A2000000000000000000000A /* Moonread.app */,
 				A2000000000000000000000B /* MoonreadUITests-Runner.app */,
 				A2000000000000000000000D /* MoonreadTests.xctest */,
@@ -410,6 +437,7 @@ A20000000000000000000009 /* MoonreadUITests.swift */,
 		A50000000000000000000006 /* MoonreadTests */ = {
 			isa = PBXGroup;
 			children = (
+                2C3B5BE72B6F578DB4C13BA1,
 9CD5D1790E1F4ABF94A8E63F /* AI */,
 				A2000000000000000000000C /* TextLayoutTests.swift */,
                 AF2000000000000000000005 /* LibraryDropTests.swift */,
@@ -603,6 +631,8 @@ F01900000000000000000002,
 			path = Components;
 			sourceTree = "<group>";
 		};
+		F94762692B4A52B5A2524BF1 /* ShareReceiveShared */ = { isa = PBXGroup; children = (AF3B627D29215FAB93FC0C44,5DA1E57CF521587EAF48FEFB,); path = ShareReceiveShared; sourceTree = "<group>"; };
+		C14A00000000000000000001 /* MoonreadShare */ = { isa = PBXGroup; children = (C14A00000000000000000002,29C2EBD521AF59B58F38BBE5,EF379022E56E535FAC852A40,31B552B86FFB5750A62F5D71,18807E292E245C3D81736D90,); path = MoonreadShare; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -610,6 +640,7 @@ F01900000000000000000002,
 			isa = PBXNativeTarget;
 			buildConfigurationList = A70000000000000000000001 /* Build configuration list for PBXNativeTarget "Moonread" */;
 			buildPhases = (
+                6502577E2278509DB864FF63,
 				A60000000000000000000001 /* Build Rust core and UniFFI bindings */,
 				A60000000000000000000002 /* Sources */,
 				A40000000000000000000001 /* Frameworks */,
@@ -618,6 +649,7 @@ F01900000000000000000002,
 			buildRules = (
 			);
 			dependencies = (
+                24EC65B9F10B59B19FF49005,
 			);
 			packageProductDependencies = (D34000000000000000000001,D34000000000000000000002,D34000000000000000000003,D34000000000000000000004,D34000000000000000000006,D34000000000000000000007,D34000000000000000000008,FB4000000000000000000001);
 			name = Moonread;
@@ -661,6 +693,7 @@ F01900000000000000000002,
 			productReference = A2000000000000000000000D /* MoonreadTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		04C2476D974D589BB2C7513F /* MoonreadShare */ = { isa = PBXNativeTarget; buildConfigurationList = B0A8488C9CD75E49AB087C16; buildPhases = (67F838CFAF2F527F8C8EE359,C3E05493EB5F54BB9BFA12EA,CA0C3527F96E5A318EE28FC7,); buildRules = (); dependencies = (); name = MoonreadShare; productName = MoonreadShare; productReference = 44920FD9D2A9541EA0D84A3B; productType = "com.apple.product-type.app-extension"; };
 /* End PBXNativeTarget section */
 
 /* Begin PBXVariantGroup section */
@@ -674,10 +707,12 @@ F01900000000000000000002,
 				BuildIndependentTargetsInParallel = 1;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
+                    04C2476D974D589BB2C7513F = { CreatedOnToolsVersion = 27.0; SystemCapabilities = {com.apple.ApplicationGroups.iOS = {enabled = 1;};}; };
 					A80000000000000000000001 = {
 						CreatedOnToolsVersion = 27.0;
                         SystemCapabilities = {
                             com.apple.iCloud = {enabled = 1;};
+                            com.apple.ApplicationGroups.iOS = {enabled = 1;};
                             com.apple.Push = {enabled = 1;};
                             com.apple.BackgroundModes = {enabled = 1;};
                         };
@@ -708,6 +743,7 @@ F01900000000000000000002,
 			projectRoot = "";
             packageReferences = (AP3000000000000000000001,D33000000000000000000001,FB3000000000000000000001);
 			targets = (
+                04C2476D974D589BB2C7513F,
 				A80000000000000000000001 /* Moonread */,
 				A80000000000000000000002 /* MoonreadUITests */,
 				A80000000000000000000003 /* MoonreadTests */,
@@ -720,6 +756,7 @@ F01900000000000000000002,
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                83C1F3DE49DE5AC693D3E8E8,
                 FC1100000000000000000002,
 AP1000000000000000000001,
 OS1000000000000000000001,
@@ -746,6 +783,7 @@ E51000000000000000000009,D41000000000000000000001,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CA0C3527F96E5A318EE28FC7 /* Share Resources */ = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (C14A00000000000000000003,395542A1DDDA57A6B2AC983D,E4FBAEE53BD05822ADA6F920,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -775,6 +813,7 @@ E51000000000000000000009,D41000000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                FD64F53149DE5DBFB6AA04F1,
                 344233D679E94ACDA4FA2A11,
                 FC1100000000000000000001,
 0ADFA9A8F02748618B3B4BE9,
@@ -875,6 +914,7 @@ F01900000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                1324E15761CF5ED68712722E,
                 2E2559685C214716AEE5F325,
 785244D6C1DB4AF6B15A8AA0,
 01800FD10FB1423B93ABB34E,
@@ -891,6 +931,7 @@ F01900000000000000000003,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		67F838CFAF2F527F8C8EE359 /* Share Sources */ = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (906A74D1BD2A5FAD9BE897E1,0804D0B539CB5AB19A9DB8FF,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -904,6 +945,7 @@ F01900000000000000000003,
 			target = A80000000000000000000001 /* Moonread */;
 			targetProxy = A30000000000000000000003 /* PBXContainerItemProxy */;
 		};
+		24EC65B9F10B59B19FF49005 /* Share Target Dependency */ = { isa = PBXTargetDependency; target = 04C2476D974D589BB2C7513F; targetProxy = 72DACA4B8D1E5727AAF77721; };
 /* End PBXTargetDependency section */
 
 
@@ -928,6 +970,8 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
+                CURRENT_PROJECT_VERSION = 4;
+                MARKETING_VERSION = 1.0.1;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -977,6 +1021,8 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
+                CURRENT_PROJECT_VERSION = 4;
+                MARKETING_VERSION = 1.0.1;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -999,7 +1045,6 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = Moonread;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				CURRENT_PROJECT_VERSION = 4;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1013,7 +1058,6 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
 				OTHER_LDFLAGS = (
                     "-lsqlite3",
 					"$(inherited)",
@@ -1035,7 +1079,6 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = Moonread;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				CURRENT_PROJECT_VERSION = 4;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "月读";
@@ -1048,7 +1091,6 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
 				OTHER_LDFLAGS = (
                     "-lsqlite3",
 					"$(inherited)",
@@ -1125,6 +1167,38 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			};
 			name = Release;
 		};
+		1FF0DD6CEC3B5A399A673FEA /* Share Debug */ = { isa = XCBuildConfiguration; buildSettings = {
+APPLICATION_EXTENSION_API_ONLY = YES;
+CODE_SIGN_STYLE = Automatic;
+CODE_SIGN_ENTITLEMENTS = MoonreadShare/MoonreadShare.entitlements;
+GENERATE_INFOPLIST_FILE = YES;
+INFOPLIST_FILE = MoonreadShare/Info.plist;
+LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks",);
+PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.Moonread.Share;
+PRODUCT_NAME = "$(TARGET_NAME)";
+SKIP_INSTALL = YES;
+SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+SWIFT_EMIT_LOC_STRINGS = YES;
+SWIFT_STRICT_CONCURRENCY = complete;
+SWIFT_VERSION = 6.0;
+TARGETED_DEVICE_FAMILY = "1,2";
+}; name = Debug; };
+		5F615DEDBAA3557AB5E6B48D /* Share Release */ = { isa = XCBuildConfiguration; buildSettings = {
+APPLICATION_EXTENSION_API_ONLY = YES;
+CODE_SIGN_STYLE = Automatic;
+CODE_SIGN_ENTITLEMENTS = MoonreadShare/MoonreadShare.entitlements;
+GENERATE_INFOPLIST_FILE = YES;
+INFOPLIST_FILE = MoonreadShare/Info.plist;
+LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks",);
+PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.Moonread.Share;
+PRODUCT_NAME = "$(TARGET_NAME)";
+SKIP_INSTALL = YES;
+SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+SWIFT_EMIT_LOC_STRINGS = YES;
+SWIFT_STRICT_CONCURRENCY = complete;
+SWIFT_VERSION = 6.0;
+TARGETED_DEVICE_FAMILY = "1,2";
+}; name = Release; };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1164,6 +1238,7 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		B0A8488C9CD75E49AB087C16 /* Share Build Configurations */ = { isa = XCConfigurationList; buildConfigurations = (1FF0DD6CEC3B5A399A673FEA,5F615DEDBAA3557AB5E6B48D,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 	};
 	rootObject = A90000000000000000000001 /* Project object */;

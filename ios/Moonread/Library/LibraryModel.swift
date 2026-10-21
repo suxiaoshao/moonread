@@ -117,6 +117,9 @@ final class LibraryModel {
     var deletion: [LibraryEntry]?
     var removingShelf: LibraryShelf?
     var importFailures: [ImportFailure] = []
+    var sharedImportResult: String?
+    private var scanningSharedInbox = false
+    private var enqueuedSharedBatches: Set<URL> = []
     private(set) var builtinDiscovery: BuiltinDiscoveryState
     private(set) var discoveryGeneration = UUID()
     private(set) var discoveryRevision = 0
@@ -140,6 +143,9 @@ final class LibraryModel {
         var imports: [(LibraryImportFile, LibraryLocation)] = []
         var imported: [LibraryEntry] = []
         var importCompletion: LibraryImportCompletion = .stayInFolder
+        var sharedInputCount = 0
+        var skippedSharedNames: [String] = []
+        var cancelledImports = 0
         var onSuccess: ((LibraryCommand) -> Void)?
         var trashChoice: LibraryTrashChoice?
         init(_ kind: Kind) { self.kind = kind }
@@ -420,7 +426,10 @@ final class LibraryModel {
         guard canAcceptFileWork else { _ = rejectFileWork(); return }
         filePicker = picker; filePickerPresented = true
     }
-    func cancelFilePicker() { filePickerPresented = false; filePicker = nil }
+    func cancelFilePicker() {
+        filePickerPresented = false; filePicker = nil
+        if Onboarding.shared.completed { Task { await receiveSharedInbox() } }
+    }
     func completeFilePicker(_ result: Result<[URL], Error>) {
         // The system may clear presentation before delivering the result.
         // Keep the request until completion/cancellation, independently of it.
@@ -557,7 +566,7 @@ final class LibraryModel {
         if !systemImports.isEmpty {
             let next = systemImports.removeFirst()
             startImport(next.files, at: next.location, completion: next.files.count == 1 ? .openSingle : .showFolder)
-        }
+        } else if Onboarding.shared.completed { Task { await receiveSharedInbox() } }
     }
     /// Observes the current runner; a paused decision keeps ownership but has no runner.
     func waitForFileWork() async {
@@ -641,9 +650,34 @@ final class LibraryModel {
         if canAcceptFileWork { startImport(files, at: location, completion: files.count == 1 ? .openSingle : .showFolder) }
         else { systemImports.append(SystemImport(files: files, location: location)) }
     }
-    private func startImport(_ files: [LibraryImportFile], at location: LibraryLocation, completion: LibraryImportCompletion) {
+    /// Foreground delivery shares the existing runner. The set only deduplicates
+    /// this process's retained files; there are no persistent claims or receipts.
+    func receiveSharedInbox(_ source: ShareInbox? = nil) async {
+        guard initialized, !scanningSharedInbox, canAcceptFileWork, sheet == nil, !filePickerPresented else { return }
+        scanningSharedInbox = true
+        defer { scanningSharedInbox = false }
+        do {
+            let inbox = try source ?? ShareInbox.shared()
+            let scan = try await Task.detached { try inbox.scan() }.value
+            guard canAcceptFileWork, sheet == nil, !filePickerPresented else { return }
+            let batches = scan.batches.filter { !enqueuedSharedBatches.contains($0.directory) }
+            let files = batches.flatMap { batch in batch.files.map { item in
+                LibraryImportFile(url: item.url(in: batch.directory), inbox: (batch, item))
+            } }
+            if !scan.errors.isEmpty { error = scan.errors.joined(separator: "\n") }
+            guard !files.isEmpty else { return }
+            enqueuedSharedBatches.formUnion(batches.map(\.directory))
+            selectedTab = .library
+            let skipped = batches.flatMap { $0.manifest.skippedNames }
+            startImport(files, at: .init(shelfID: "builtin"), completion: files.count + skipped.count == 1 ? .openSingle : .showFolder,
+                        shared: true, skippedNames: skipped)
+        } catch { self.error = ReaderMessages.error(error) }
+    }
+    private func startImport(_ files: [LibraryImportFile], at location: LibraryLocation, completion: LibraryImportCompletion,
+                             shared: Bool = false, skippedNames: [String] = []) {
         guard let work = acquire(.imports) else { preconditionFailure("Import continuation lost ownership") }
         work.imports = files.map { ($0, location) }; work.importCompletion = completion
+        work.sharedInputCount = shared ? files.count + skippedNames.count : 0; work.skippedSharedNames = skippedNames
         launch(work) { try await self.continueFileWork(work) }
     }
     func releaseImportFailures() {
@@ -686,7 +720,14 @@ final class LibraryModel {
                 case .stayInFolder: break
                 }
             }
-            if !importFailures.isEmpty { sheet = .importResults }
+            if work.sharedInputCount > 1 || !work.skippedSharedNames.isEmpty {
+                var result = String(localized: "已导入 \(work.imported.count) 本，取消 \(work.cancelledImports) 本", table: "ShareReceive")
+                if !work.skippedSharedNames.isEmpty {
+                    result += "\n" + String(localized: "跳过 \(work.skippedSharedNames.count) 个：\(work.skippedSharedNames.joined(separator: "、"))", table: "ShareReceive")
+                }
+                sharedImportResult = result
+            }
+            if !importFailures.isEmpty || sharedImportResult != nil { sheet = .importResults }
         }
     }
     /// A decision resumes the existing task, never re-enters admission.
@@ -697,7 +738,7 @@ final class LibraryModel {
             switch decision {
             case .replacement(let command, _):
                 if accepting { _ = await self.perform(command, work: work, replace: true) }
-                else if case .receive(let file, _) = command { file.finish() }
+                else if case .receive(let file, _) = command { file.finish(); work.cancelledImports += 1 }
             case .trashUnsupported(let entry, _):
                 work.trashChoice = accepting ? .permanentlyDelete : .skip
                 if accepting { _ = await self.perform(.delete(entry), work: work, permanently: true) }
@@ -708,8 +749,12 @@ final class LibraryModel {
     }
     func runAfterSheetDismiss(_ action: @escaping () -> Void) { afterSheetDismiss = action; sheet = nil }
     func sheetDidDismiss() {
+        sharedImportResult = nil
         let action = afterSheetDismiss; afterSheetDismiss = nil; action?()
-        if canAcceptFileWork, sheet == nil { releaseImportFailures() }
+        if canAcceptFileWork, sheet == nil {
+            releaseImportFailures()
+            if Onboarding.shared.completed { Task { await receiveSharedInbox() } }
+        }
     }
     /// Only an admitted runner may execute filesystem work.
     private func perform(_ command: LibraryCommand, work: FileWork, replace: Bool = false, permanently: Bool = false) async -> Bool {
@@ -742,7 +787,9 @@ final class LibraryModel {
                 else { try await reload() }
             } catch { self.error = ReaderMessages.error(error) }
             return true
-        } catch is CancellationError { }
+        } catch is CancellationError {
+            if case .receive(let file, _) = command { file.finish() }
+        }
         catch LibraryFileError.conflict { pendingDecision = .replacement(command) }
         catch {
             if case let .receive(file, location) = command {

@@ -40,6 +40,8 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | `Shared` | `Theme`、`MoonView`/`MoonCharacter`/`BrandSeal`、输入焦点及跨功能错误文案 `ReaderMessages` |
 | `AI` | 保持现有分层和路径；资源与签名配置路径保持原位 |
 
+`ios/MoonreadShare` 是独立分享扩展 target，只负责接收与取消。`ios/ShareReceiveShared` 同时编译进主 App 与扩展，提供版本化 ShareInbox、原字节复制和 provider 生命周期适配；不依赖主 App 的 Rust、SwiftData、AI 或阅读 UI。App Group 只共享待导入原件，主 App 继续独占书架写入和正文准备。
+
 拆分仅沿现有类型边界进行，未放宽 `private` / `fileprivate`。原有 Sources UUID 与 target membership 保留，新增拆分文件显式加入应用 target。
 
 ## 原文件与平台访问

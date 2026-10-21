@@ -124,11 +124,12 @@ enum LibraryDropRequest {
 final class LibraryImportFile: @unchecked Sendable {
     let url: URL
     private let staged: LibraryDropFile?
+    private let inbox: (ShareInbox.Batch, ShareInbox.Item)?
     private let lock = NSLock()
     private var finished = false
     private let accessed: Bool
-    init(url: URL, staged: LibraryDropFile? = nil) {
-        self.url = url; self.staged = staged
+    init(url: URL, staged: LibraryDropFile? = nil, inbox: (ShareInbox.Batch, ShareInbox.Item)? = nil) {
+        self.url = url; self.staged = staged; self.inbox = inbox
         accessed = url.startAccessingSecurityScopedResource()
     }
     func finish() {
@@ -136,8 +137,13 @@ final class LibraryImportFile: @unchecked Sendable {
         guard release else { return }
         if accessed { url.stopAccessingSecurityScopedResource() }
         staged?.finish()
+        if let (batch, item) = inbox { batch.discard(item) }
     }
-    deinit { finish() }
+    deinit {
+        // A process ending is not an explicit cancellation of durable shared input.
+        if !finished, accessed { url.stopAccessingSecurityScopedResource() }
+        staged?.finish()
+    }
 }
 
 /// Provider callbacks and cancellation race on arbitrary queues; lock protects all state.
