@@ -373,19 +373,21 @@ fn filtered_entries(
     book: Option<&str>,
 ) -> Result<Vec<LibraryEntry>> {
     let mut stmt=db.prepare("SELECT f.id,f.shelf_id,s.name,f.relative_path,f.parent_path,f.name,f.directory,f.size,f.modified,f.needs_download,
-       CASE WHEN si.content_sha256 IS NOT NULL AND si.content_sha256<>b.content_sha256 THEN NULL ELSE b.id END,COALESCE(p.position_utf8,0),COALESCE(si.utf8_bytes,b.byte_count,0),
-       (SELECT title FROM effective_chapters c WHERE c.book_id=b.id AND c.start_utf8<=b.position_utf8 ORDER BY c.start_utf8 DESC LIMIT 1),
+       b.id,COALESCE(p.position_utf8,0),COALESCE(si.utf8_bytes,b.byte_count,0),
+       (SELECT title FROM effective_chapters c WHERE c.book_id=b.id AND c.start_utf8<=p.position_utf8 ORDER BY c.start_utf8 DESC LIMIT 1),
        CASE WHEN f.directory=1 THEN (SELECT count(*) FROM library_files child WHERE child.shelf_id=f.shelf_id AND child.directory=0 AND substr(child.relative_path,1,length(f.relative_path)+1)=f.relative_path||'/') ELSE 0 END,
-       CASE WHEN f.directory=1 THEN COALESCE((SELECT max(cb.last_read) FROM library_files child
-           LEFT JOIN import_jobs cj ON cj.book_id=child.book_id LEFT JOIN reading_books cb ON cb.id=COALESCE(cj.canonical_id,child.book_id)
+       CASE WHEN f.directory=1 THEN COALESCE((SELECT max(cp.last_read) FROM library_files child
+           JOIN file_identities ci ON ci.file_id=child.id
+           JOIN user_positions cp ON cp.content_key=ci.content_sha256
            WHERE child.shelf_id=f.shelf_id AND child.directory=0 AND substr(child.relative_path,1,length(f.relative_path)+1)=f.relative_path||'/'),0)
-           ELSE COALESCE(p.last_read,0) END,COALESCE(p.preferred_file_id=f.id,0),m.value,COALESCE(si.content_sha256,b.content_sha256)
+           ELSE COALESCE(p.last_read,0) END,COALESCE(p.preferred_file_id=f.id,0),m.value,fi.content_sha256
        FROM library_files f JOIN library_shelves s ON s.id=f.shelf_id
-       LEFT JOIN import_jobs j ON j.book_id=f.book_id LEFT JOIN reading_books b ON b.id=COALESCE(j.canonical_id,f.book_id)
-       LEFT JOIN library_identities li ON li.file_id=f.id AND li.decoding=f.decoding AND li.indexed_size=f.size AND li.indexed_modified=f.modified
-       LEFT JOIN source_identities si ON si.raw_sha256=li.raw_sha256 AND si.decoding=li.decoding
-       LEFT JOIN user_positions p ON p.content_key=COALESCE(si.content_sha256,b.content_sha256)
-       LEFT JOIN book_metadata m ON m.content_sha=COALESCE(si.content_sha256,b.content_sha256)
+       LEFT JOIN file_identities fi ON fi.file_id=f.id
+       LEFT JOIN import_jobs j ON j.book_id=f.book_id
+       LEFT JOIN reading_books b ON b.id=COALESCE(j.canonical_id,f.book_id) AND b.content_sha256=fi.content_sha256
+       LEFT JOIN (SELECT content_sha256,MAX(utf8_bytes) utf8_bytes FROM source_identities GROUP BY content_sha256) si ON si.content_sha256=fi.content_sha256
+       LEFT JOIN user_positions p ON p.content_key=fi.content_sha256
+       LEFT JOIN book_metadata m ON m.content_sha=fi.content_sha256
        WHERE (?1 IS NULL OR f.shelf_id=?1) AND (?2 IS NULL OR f.parent_path=?2) AND (?3=0 OR f.directory=0) AND (?4 IS NULL OR f.id=?4) AND (?5 IS NULL OR b.id=?5)")?;
     Ok(stmt
         .query_map(
@@ -423,12 +425,9 @@ fn library_entry_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryEntry> {
 fn populate_cover_previews(db: &Connection, entries: &mut [LibraryEntry]) -> Result<()> {
     let mut stmt = db.prepare_cached(
         "SELECT f.id,f.name,m.value FROM library_files f
-        LEFT JOIN import_jobs j ON j.book_id=f.book_id
-        LEFT JOIN reading_books b ON b.id=COALESCE(j.canonical_id,f.book_id)
-        LEFT JOIN library_identities li ON li.file_id=f.id AND li.decoding=f.decoding AND li.indexed_size=f.size AND li.indexed_modified=f.modified
-       LEFT JOIN source_identities si ON si.raw_sha256=li.raw_sha256 AND si.decoding=li.decoding
-       LEFT JOIN user_positions p ON p.content_key=COALESCE(si.content_sha256,b.content_sha256)
-       LEFT JOIN book_metadata m ON m.content_sha=COALESCE(si.content_sha256,b.content_sha256)
+        LEFT JOIN file_identities fi ON fi.file_id=f.id
+        LEFT JOIN user_positions p ON p.content_key=fi.content_sha256
+        LEFT JOIN book_metadata m ON m.content_sha=fi.content_sha256
         WHERE f.shelf_id=?1 AND f.directory=0 AND f.relative_path>=?2 AND f.relative_path<?3
         ORDER BY COALESCE(p.last_read,0) DESC,f.modified DESC,f.name,f.id LIMIT 4",
     )?;
@@ -640,42 +639,24 @@ impl ReaderCore {
             "WITH recent_positions AS (
                 SELECT * FROM user_positions
                 WHERE last_read>0 AND COALESCE(recent_visible,1)=1
-            ), candidates AS (
-                SELECT f.id, p.content_key FROM recent_positions p
-                JOIN books b ON b.content_sha256=p.content_key
-                JOIN library_files f ON f.book_id=b.id AND f.directory=0
-                UNION
-                SELECT f.id, p.content_key FROM recent_positions p
-                JOIN books b ON b.content_sha256=p.content_key
-                JOIN import_jobs j ON j.canonical_id=b.id
-                JOIN library_files f ON f.book_id=j.book_id AND f.directory=0
-                UNION
-                SELECT f.id, p.content_key FROM recent_positions p
-                JOIN source_identities si ON si.content_sha256=p.content_key
-                JOIN library_identities li ON li.raw_sha256=si.raw_sha256 AND li.decoding=si.decoding
-                JOIN library_files f ON f.id=li.file_id AND f.directory=0
-                    AND f.decoding=li.decoding AND f.size=li.indexed_size AND f.modified=li.indexed_modified
             ), ranked AS (
                 SELECT f.id,f.shelf_id,s.name shelf_name,f.relative_path,f.parent_path,f.name,
                     f.directory,f.size,f.modified,f.needs_download,
-                    CASE WHEN si.content_sha256 IS NOT NULL AND si.content_sha256<>b.content_sha256 THEN NULL ELSE b.id END book_id,
+                    b.id book_id,
                     COALESCE(p.position_utf8,0) position_utf8,COALESCE(si.utf8_bytes,b.byte_count,0) byte_count,
                     (SELECT title FROM effective_chapters c WHERE c.book_id=b.id AND b.content_sha256=p.content_key
                         AND c.start_utf8<=p.position_utf8 ORDER BY c.start_utf8 DESC LIMIT 1) chapter_title,
                     0 child_book_count,p.last_read,COALESCE(p.preferred_file_id=f.id,0) preferred,
                     m.value,p.content_key,
                     ROW_NUMBER() OVER (PARTITION BY p.content_key ORDER BY COALESCE(p.preferred_file_id=f.id,0) DESC,f.id) chosen
-                FROM candidates candidate
-                JOIN library_files f ON f.id=candidate.id
+                FROM recent_positions p
+                JOIN file_identities fi ON fi.content_sha256=p.content_key
+                JOIN library_files f ON f.id=fi.file_id
                 JOIN library_shelves s ON s.id=f.shelf_id
-                JOIN recent_positions p ON p.content_key=candidate.content_key
                 LEFT JOIN import_jobs j ON j.book_id=f.book_id
-                LEFT JOIN books b ON b.id=COALESCE(j.canonical_id,f.book_id)
-                LEFT JOIN library_identities li ON li.file_id=f.id AND li.decoding=f.decoding
-                    AND li.indexed_size=f.size AND li.indexed_modified=f.modified
-                LEFT JOIN source_identities si ON si.raw_sha256=li.raw_sha256 AND si.decoding=li.decoding
-                LEFT JOIN book_metadata m ON m.content_sha=p.content_key
-                WHERE p.content_key=COALESCE(si.content_sha256,b.content_sha256)
+                LEFT JOIN books b ON b.id=COALESCE(j.canonical_id,f.book_id) AND b.content_sha256=fi.content_sha256
+                LEFT JOIN (SELECT content_sha256,MAX(utf8_bytes) utf8_bytes FROM source_identities GROUP BY content_sha256) si ON si.content_sha256=fi.content_sha256
+                LEFT JOIN book_metadata m ON m.content_sha=fi.content_sha256
             )
             SELECT * FROM ranked WHERE chosen=1
             ORDER BY last_read DESC,preferred DESC,id LIMIT ?1",
@@ -783,6 +764,38 @@ impl ReaderCore {
 #[cfg(test)]
 mod recent_tests {
     use super::*;
+
+    #[test]
+    fn folder_last_read_includes_index_only_child_with_synced_position() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = ReaderCore::new(dir.path().join("cache").to_string_lossy().into()).unwrap();
+        core.save_library_shelf("s".into(), "Shelf".into(), vec![], "local".into(), false)
+            .unwrap();
+        let sha = "a".repeat(64);
+        {
+            let db = core.lock().unwrap();
+            db.execute_batch("INSERT INTO library_files VALUES('folder','s','folder','','folder',1,0,1,0,NULL,'auto');
+                INSERT INTO library_files VALUES('indexed','s','folder/indexed.txt','folder','indexed.txt',0,100,1,0,NULL,'auto');
+                INSERT INTO library_identities VALUES('indexed','raw','auto',100,1);").unwrap();
+            db.execute(
+                "INSERT INTO source_identities VALUES('raw','auto',?1,'UTF-8',100,80)",
+                [&sha],
+            )
+            .unwrap();
+        }
+        let query = core.query_snapshot(serde_json::json!({"positions": [{
+            "content_key": sha, "offset": 50, "updated": 123456, "visible": true, "preferred": null
+        }]}).to_string()).unwrap();
+        let folder = query
+            .library_entries(Some("s".into()), Some("".into()), LibrarySort::Reading)
+            .unwrap()
+            .remove(0);
+        assert!(folder.directory);
+        assert_eq!(folder.last_read, 123456);
+        let child = query.library_entry("indexed".into()).unwrap();
+        assert!(child.book_id.is_none());
+        assert_eq!(child.last_read, folder.last_read);
+    }
 
     #[test]
     fn folder_previews_order_index_only_books_by_projected_last_read() {
