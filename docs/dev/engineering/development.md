@@ -59,7 +59,7 @@ CI、仓库权限、模板及依赖更新见[仓库与持续集成](repository.m
 
 ### 发布版本与构建号
 
-App 的 `MARKETING_VERSION` 为 `1.0.0`（用户可见版本）；`CURRENT_PROJECT_VERSION` 使用单调递增的正整数，每次对外上传新构建时增加，不能因营销版本变化而回退或复用。Debug/Release 同步，当前构建号为 3。Cargo crate 版本独立，不作为 App Store 版本。提交前核对两种配置、已上传构建号与持久化兼容/迁移回归。
+App 的 `MARKETING_VERSION` 为 `1.0.1`（用户可见版本）；`CURRENT_PROJECT_VERSION` 使用单调递增的正整数，每次对外上传新构建时增加，不能因营销版本变化而回退或复用。Debug/Release 同步，当前构建号为 4。Cargo crate 版本独立，不作为 App Store 版本。提交前核对两种配置、已上传构建号与持久化兼容/迁移回归。
 
 ### TestFlight 打包与上传
 

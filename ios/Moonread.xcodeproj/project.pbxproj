@@ -999,7 +999,7 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = Moonread;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -1013,7 +1013,7 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				OTHER_LDFLAGS = (
                     "-lsqlite3",
 					"$(inherited)",
@@ -1035,7 +1035,7 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = Moonread;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "月读";
@@ -1048,7 +1048,7 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.0.0;
+				MARKETING_VERSION = 1.0.1;
 				OTHER_LDFLAGS = (
                     "-lsqlite3",
 					"$(inherited)",
