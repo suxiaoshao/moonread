@@ -32,6 +32,7 @@ enum LibraryFilePicker {
 enum LibrarySheet: Identifiable {
     case rename(LibraryEntry), create(LibraryLocation)
     case move([LibraryEntry]), export(LibraryExport), share(LibraryExport), importResults
+    case fullIndex(String)
     var id: String {
         switch self {
         case .rename(let entry): "rename-" + entry.id
@@ -39,6 +40,7 @@ enum LibrarySheet: Identifiable {
         case .move: "move"
         case .export: "export"
         case .share: "share"
+        case .fullIndex(let shelf): "full-index-" + shelf
         case .importResults: "import-results"
         }
     }
@@ -73,6 +75,7 @@ struct LibraryPresentations: ViewModifier {
                 case .move(let entries): NavigationStack { LibraryMoveDestination(model: model, entries: entries, location: nil) }.themeScope(theme)
                 case .export(let files): LibraryExportPicker(files: files)
                 case .share(let files): LibraryShareSheet(files: files)
+                case .fullIndex(let shelf): FullIndexView(shelfID: shelf).themeScope(theme)
                 case .importResults:
                     NavigationStack {
                         List {
@@ -92,6 +95,15 @@ struct LibraryPresentations: ViewModifier {
                             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成", systemImage: "checkmark") { model.sheet = nil }.labelStyle(.titleOnly) } }
                     }.themeScope(theme)
                 }
+            }
+            .onChange(of: model.path) { _, _ in model.showDeferredIndexPrompt() }
+            .alert(String(localized: "建立索引", table: "FullIndex"), isPresented: Binding(get: { model.indexPrompt != nil }, set: { if !$0 { model.indexPrompt = nil } })) {
+                if let prompt = model.indexPrompt {
+                    Button { model.indexPrompt = nil; model.fullIndex.start(prompt.shelf.id, includeCloud: false, userInitiated: true) } label: {
+                        Text("现在建立索引（\(prompt.local.count) 本，约 \(ByteCountFormatter.string(fromByteCount: Int64(clamping: prompt.local.reduce(0) { $0 + $1.size }), countStyle: .file))）", tableName: "FullIndex")
+                    }.accessibilityIdentifier("fullIndexPromptStart")
+                }
+                Button(role: .cancel) { model.indexPrompt = nil } label: { Text("以后再说", tableName: "FullIndex") }
             }
             .alert("暂时无法完成", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
                 Button("知道了", role: .cancel) { model.error = nil }

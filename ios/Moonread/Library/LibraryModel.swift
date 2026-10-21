@@ -102,6 +102,19 @@ final class LibraryModel {
         guard searchPresented, !value, selectedTab == .search, searchPath.isEmpty else { return }
         selectedTab = searchOrigin
     }
+    let fullIndex = FullIndexController.shared
+    var indexPrompt: IdentityInventory?
+    var deferredIndexPrompt: IdentityInventory?
+    func offerIndex(_ shelfID: String) async {
+        guard let inventory = try? await service.identityInventory(shelfID), !inventory.local.isEmpty else { return }
+        if fullIndex.automatic { fullIndex.start(shelfID, includeCloud: false, userInitiated: false) }
+        else if path.last?.isReader == true || sheet != nil { deferredIndexPrompt = inventory }
+        else { indexPrompt = inventory }
+    }
+    func showDeferredIndexPrompt() {
+        if path.last?.isReader != true { fullIndex.scene(active: UIApplication.shared.applicationState == .active) }
+        if path.last?.isReader != true, sheet == nil, let prompt = deferredIndexPrompt { deferredIndexPrompt = nil; indexPrompt = prompt }
+    }
     var sheet: LibrarySheet?
     /// An AI quick task opened from the library; the session itself lives in AIService.
     var aiRequest: AIQuickTaskRequest?
@@ -462,7 +475,7 @@ final class LibraryModel {
             // Registration is owned; the subsequent scan has its existing page feedback.
             Task {
                 defer { if self.shelfScans[id] == request { self.shelfScans[id] = nil } }
-                do { try await self.scanShelf(id); try await self.reload() }
+                do { try await self.scanShelf(id); try await self.reload(); await self.offerIndex(id) }
                 catch { try? await self.reload(); self.error = ReaderMessages.error(error) }
             }
         }
@@ -653,6 +666,8 @@ final class LibraryModel {
     /// Foreground delivery shares the existing runner. The set only deduplicates
     /// this process's retained files; there are no persistent claims or receipts.
     func receiveSharedInbox(_ source: ShareInbox? = nil) async {
+        // Isolated UI-test libraries must never consume the real shared inbox.
+        if source == nil, await service.testSession != nil { return }
         guard initialized, !scanningSharedInbox, canAcceptFileWork, sheet == nil, !filePickerPresented else { return }
         scanningSharedInbox = true
         defer { scanningSharedInbox = false }
@@ -728,6 +743,7 @@ final class LibraryModel {
                 sharedImportResult = result
             }
             if !importFailures.isEmpty || sharedImportResult != nil { sheet = .importResults }
+            for id in Set(work.imported.map(\.shelfId)) { await offerIndex(id) }
         }
     }
     /// A decision resumes the existing task, never re-enters admission.
@@ -750,6 +766,7 @@ final class LibraryModel {
     func runAfterSheetDismiss(_ action: @escaping () -> Void) { afterSheetDismiss = action; sheet = nil }
     func sheetDidDismiss() {
         sharedImportResult = nil
+        showDeferredIndexPrompt()
         let action = afterSheetDismiss; afterSheetDismiss = nil; action?()
         if canAcceptFileWork, sheet == nil {
             releaseImportFailures()

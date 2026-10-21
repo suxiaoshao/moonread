@@ -107,7 +107,7 @@ extension ReaderService {
         let file = try textCore().sourceFileLocation(fileId: id)
         let query: ReaderQuery
         if let book = file.bookId { query = try await bookQuery(book) }
-        else { query = try await effectiveQuery(keys: [], scope: "unprepared-file") }
+        else { query = try await effectiveQuery(keys: try textCore().indexedSourceKeys(shelfId: nil, fileId: id), scope: "unprepared-file") }
         return try query.libraryEntry(fileId: id)
     }
     func catalogueQuery(_ location: LibraryLocation?, recursive: Bool) async throws -> ReaderQuery {
@@ -115,6 +115,7 @@ extension ReaderService {
         let shelves = try location.map { [$0.shelfID] } ?? core.libraryShelves().map(\.id)
         var keys = Set<String>()
         for shelf in shelves {
+            keys.formUnion(try core.indexedSourceKeys(shelfId: shelf, fileId: nil))
             for file in try core.sourceFiles(shelfId: shelf) where !file.directory {
                 if !recursive, let location, !location.path.isEmpty, !file.relativePath.hasPrefix(location.path + "/") { continue }
                 if let id = file.bookId, let key = try? userKey(id) { keys.insert(key); keys.insert("pending:" + id) }

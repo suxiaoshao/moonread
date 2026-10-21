@@ -42,6 +42,7 @@ struct SettingsView: View {
                 }.accessibilityIdentifier("statisticsSettings")
             }.listRowBackground(Color(uiColor: theme.surface))
             Section("书架与同步") {
+                Toggle(isOn: Binding(get: { library.fullIndex.automatic }, set: { library.fullIndex.automatic = $0 })) { Text("新加入的书自动建立索引", tableName: "FullIndex") }.accessibilityIdentifier("automaticFullIndex")
                 NavigationLink(value: LibraryRoute.manage) {
                     SettingsEntry(title: "书架管理", symbol: "books.vertical", summary: String(localized: "\(library.shelves.count) 个书架"))
                 }.accessibilityIdentifier("libraryManagementSettings")

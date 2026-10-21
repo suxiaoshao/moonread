@@ -201,6 +201,7 @@ actor ReaderService {
     }
 
     private var readers: [String: Int] = [:]
+    func identityMayRun() -> Bool { readers.isEmpty && foregroundSourcePreparations.isEmpty }
     var recoveredImports = false
     var pendingPromotionIDs = Set<String>()
     private var automaticallyPaused: Set<String> = []
@@ -396,6 +397,7 @@ actor ReaderService {
     /// Materialize provider files before navigation. This does not create an
     /// import, read the full text, or change formal reading activity.
     func prepareSourceFile(_ file: SourceFile, progress: @escaping @Sendable (Double?) -> Void = { _ in }) async throws {
+        await FullIndexController.shared.yieldToReader()
         foregroundSourcePreparations[file.id, default: 0] += 1
         defer {
             if let count = foregroundSourcePreparations[file.id], count > 1 { foregroundSourcePreparations[file.id] = count - 1 }

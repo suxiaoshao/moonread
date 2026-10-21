@@ -104,7 +104,7 @@ private final class CallbackURLProvider: NSItemProvider {
               parentPath: (path as NSString).deletingLastPathComponent, name: (path as NSString).lastPathComponent,
               directory: directory, size: 0, modified: 0, needsDownload: false, bookId: nil,
               positionUtf8: 0, byteCount: 0, chapterTitle: nil, childBookCount: 0, lastRead: 0,
-              preferred: false, coverPreviews: [], metadata: nil)
+              preferred: false, coverPreviews: [], metadata: nil, contentSha256: nil)
     }
     func testMovePolicyUsesPathSegments() {
         let folder = entry("a", directory: true)

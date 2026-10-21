@@ -76,6 +76,7 @@ pub struct LibraryEntry {
     pub preferred: bool,
     pub cover_previews: Vec<LibraryCoverPreview>,
     pub metadata: Option<crate::BookMetadata>,
+    pub content_sha256: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, uniffi::Enum)]
@@ -228,6 +229,10 @@ impl ReaderCore {
             "UPDATE library_shelves SET error=NULL WHERE id=?1",
             [shelf_id],
         )?;
+        tx.execute(
+            "DELETE FROM library_identities WHERE file_id NOT IN (SELECT id FROM library_files)",
+            [],
+        )?;
         tx.commit()?;
         Ok(())
     }
@@ -368,16 +373,19 @@ fn filtered_entries(
     book: Option<&str>,
 ) -> Result<Vec<LibraryEntry>> {
     let mut stmt=db.prepare("SELECT f.id,f.shelf_id,s.name,f.relative_path,f.parent_path,f.name,f.directory,f.size,f.modified,f.needs_download,
-       b.id,COALESCE(b.position_utf8,0),COALESCE(b.byte_count,0),
+       CASE WHEN si.content_sha256 IS NOT NULL AND si.content_sha256<>b.content_sha256 THEN NULL ELSE b.id END,COALESCE(p.position_utf8,0),COALESCE(si.utf8_bytes,b.byte_count,0),
        (SELECT title FROM effective_chapters c WHERE c.book_id=b.id AND c.start_utf8<=b.position_utf8 ORDER BY c.start_utf8 DESC LIMIT 1),
        CASE WHEN f.directory=1 THEN (SELECT count(*) FROM library_files child WHERE child.shelf_id=f.shelf_id AND child.directory=0 AND substr(child.relative_path,1,length(f.relative_path)+1)=f.relative_path||'/') ELSE 0 END,
        CASE WHEN f.directory=1 THEN COALESCE((SELECT max(cb.last_read) FROM library_files child
            LEFT JOIN import_jobs cj ON cj.book_id=child.book_id LEFT JOIN reading_books cb ON cb.id=COALESCE(cj.canonical_id,child.book_id)
            WHERE child.shelf_id=f.shelf_id AND child.directory=0 AND substr(child.relative_path,1,length(f.relative_path)+1)=f.relative_path||'/'),0)
-           ELSE COALESCE(b.last_read,0) END,COALESCE(b.preferred_file_id=f.id,0),m.value
+           ELSE COALESCE(p.last_read,0) END,COALESCE(p.preferred_file_id=f.id,0),m.value,COALESCE(si.content_sha256,b.content_sha256)
        FROM library_files f JOIN library_shelves s ON s.id=f.shelf_id
        LEFT JOIN import_jobs j ON j.book_id=f.book_id LEFT JOIN reading_books b ON b.id=COALESCE(j.canonical_id,f.book_id)
-       LEFT JOIN book_metadata m ON m.content_sha=b.content_sha256
+       LEFT JOIN library_identities li ON li.file_id=f.id AND li.decoding=f.decoding AND li.indexed_size=f.size AND li.indexed_modified=f.modified
+       LEFT JOIN source_identities si ON si.raw_sha256=li.raw_sha256 AND si.decoding=li.decoding
+       LEFT JOIN user_positions p ON p.content_key=COALESCE(si.content_sha256,b.content_sha256)
+       LEFT JOIN book_metadata m ON m.content_sha=COALESCE(si.content_sha256,b.content_sha256)
        WHERE (?1 IS NULL OR f.shelf_id=?1) AND (?2 IS NULL OR f.parent_path=?2) AND (?3=0 OR f.directory=0) AND (?4 IS NULL OR f.id=?4) AND (?5 IS NULL OR b.id=?5)")?;
     Ok(stmt
         .query_map(params![shelf, parent, books_only, file, book], |r| {
@@ -401,6 +409,7 @@ fn filtered_entries(
                 preferred: r.get(16)?,
                 cover_previews: Vec::new(),
                 metadata: metadata_column(r, 17)?,
+                content_sha256: r.get(18)?,
             })
         })?
         .collect::<std::result::Result<_, _>>()?)
@@ -411,7 +420,10 @@ fn populate_cover_previews(db: &Connection, entries: &mut [LibraryEntry]) -> Res
         "SELECT f.id,f.name,m.value FROM library_files f
         LEFT JOIN import_jobs j ON j.book_id=f.book_id
         LEFT JOIN reading_books b ON b.id=COALESCE(j.canonical_id,f.book_id)
-        LEFT JOIN book_metadata m ON m.content_sha=b.content_sha256
+        LEFT JOIN library_identities li ON li.file_id=f.id AND li.decoding=f.decoding AND li.indexed_size=f.size AND li.indexed_modified=f.modified
+       LEFT JOIN source_identities si ON si.raw_sha256=li.raw_sha256 AND si.decoding=li.decoding
+       LEFT JOIN user_positions p ON p.content_key=COALESCE(si.content_sha256,b.content_sha256)
+       LEFT JOIN book_metadata m ON m.content_sha=COALESCE(si.content_sha256,b.content_sha256)
         WHERE f.shelf_id=?1 AND f.directory=0 AND f.relative_path>=?2 AND f.relative_path<?3
         ORDER BY COALESCE(b.last_read,0) DESC,f.modified DESC,f.name,f.id LIMIT 4",
     )?;
@@ -619,14 +631,18 @@ impl ReaderCore {
     }
     pub(crate) fn recent_library_entries(&self, limit: u32) -> Result<Vec<LibraryEntry>> {
         let db = self.read_lock()?;
-        let ids = db
-            .prepare("SELECT id FROM reading_books WHERE recent_visible=1 AND last_read>0")?
-            .query_map([], |r| r.get::<_, String>(0))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        let mut entries = Vec::new();
-        for id in ids {
-            entries.extend(filtered_entries(&db, None, None, true, None, Some(&id))?);
-        }
+        let mut entries = entries(&db, None, None, true)?;
+        entries.retain(|e| {
+            e.last_read > 0
+                && e.content_sha256.as_ref().is_some_and(|key| {
+                    db.query_row(
+                        "SELECT recent_visible FROM user_positions WHERE content_key=?1",
+                        [key],
+                        |r| r.get::<_, bool>(0),
+                    )
+                    .unwrap_or(false)
+                })
+        });
         entries.sort_by(|a, b| {
             b.last_read
                 .cmp(&a.last_read)
@@ -634,7 +650,7 @@ impl ReaderCore {
                 .then_with(|| a.id.cmp(&b.id))
         });
         let mut books = HashSet::new();
-        entries.retain(|e| books.insert(e.book_id.clone()));
+        entries.retain(|e| books.insert(e.content_sha256.clone()));
         entries.truncate(limit.min(1000) as usize);
         Ok(entries)
     }
