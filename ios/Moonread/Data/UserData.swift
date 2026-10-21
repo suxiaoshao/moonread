@@ -108,6 +108,49 @@ struct PositionValue: Codable, Sendable {
         try c.encode(source_hint, forKey: .init("source_hint"))
     }
 }
+/// The only position candidate/reduction used before and after pending promotion.
+/// Keep the original StoredValue when it wins; reads must not rewrite sync payloads.
+struct PositionCandidate: Sendable {
+    let stored: StoredValue
+    let value: PositionValue
+    let sourceKey: String
+    init(_ stored: StoredValue) throws {
+        self.stored = stored
+        value = try UserSyncJSON.decode(PositionValue.self, stored.value, as: UserSyncJSON.position, envelope: false)
+        sourceKey = value.content_key
+    }
+    init(projection: [String: Any]) throws {
+        guard let updated = projection["updated"] as? NSNumber, let token = projection["token"] as? String else { throw UserSyncCompatibilityError() }
+        var body = projection; body.removeValue(forKey: "updated"); body.removeValue(forKey: "token")
+        try self.init(StoredValue(updated: updated.int64Value, token: token,
+            value: String(decoding: JSONSerialization.data(withJSONObject: body), as: UTF8.self)))
+    }
+    private init(stored: StoredValue, value: PositionValue, sourceKey: String) {
+        self.stored = stored; self.value = value; self.sourceKey = sourceKey
+    }
+    func rekeyed(to key: String) throws -> Self {
+        guard key != value.content_key else { return self }
+        var value = value; value.content_key = key
+        var stored = stored; stored.value = try UserSyncJSON.encode(value)
+        return Self(stored: stored, value: value, sourceKey: sourceKey)
+    }
+    static func winner(_ previous: Self?, _ incoming: Self) -> Self {
+        guard let previous else { return incoming }
+        return (previous.stored.updated, previous.stored.token) >= (incoming.stored.updated, incoming.stored.token) ? previous : incoming
+    }
+    static func reduce(_ candidates: [Self]) -> [String: Self] {
+        candidates.reduce(into: [:]) { result, candidate in
+            let key = candidate.value.content_key
+            result[key] = winner(result[key], candidate)
+        }
+    }
+    func projection() throws -> [String: Any] {
+        var row = try JSONSerialization.jsonObject(with: Data(stored.value.utf8)) as! [String: Any]
+        row["updated"] = stored.updated; row["token"] = stored.token
+        return row
+    }
+}
+
 struct ChapterValue: Codable, Sendable {
     var content_key: String
     var offset: UInt64
@@ -199,12 +242,23 @@ enum AnnotationReduction {
             do {
                 let value = try UserSyncJSON.storedValue(payload, key: key)
                 guard !blocked.contains(key) else { return }
-                if let old = values[key], (old.updated, old.token) >= (value.updated, value.token) { return }
-                values[key] = value
+                try select(key: key, value: value)
             } catch {
                 blocked.insert(key); values.removeValue(forKey: key)
                 UserSyncJSON.quarantined("UserValue/UserPosition")
             }
+        }
+        mutating func select(key: String, value: StoredValue) throws {
+            if key.hasPrefix("position/") {
+                values[key] = try PositionCandidate.winner(values[key].map(PositionCandidate.init), PositionCandidate(value)).stored
+            } else {
+                if let old = values[key], (old.updated, old.token) >= (value.updated, value.token) { return }
+                values[key] = value
+            }
+        }
+        mutating func merge(_ next: Self) throws {
+            for (key, value) in next.values { try select(key: key, value: value) }
+            blocked.formUnion(next.blocked)
         }
     }
     private func valueSnapshot(key: String? = nil, prefix: String? = nil) throws -> ValueSnapshot {
@@ -507,8 +561,7 @@ enum AnnotationReduction {
         var result = try valueSnapshot(key: "position/" + contentKey)
         for prefix in ["metadata/" + contentKey + "/", "chapter/" + contentKey + "/"] {
             let next = try valueSnapshot(prefix: prefix)
-            result.values.merge(next.values) { a, b in (a.updated, a.token) >= (b.updated, b.token) ? a : b }
-            result.blocked.formUnion(next.blocked)
+            try result.merge(next)
         }
         return result
     }
@@ -527,8 +580,7 @@ enum AnnotationReduction {
             var scoped = ValueSnapshot()
             for key in keys {
                 let next = try scopedValues(key)
-                scoped.values.merge(next.values) { a,b in (a.updated,a.token) >= (b.updated,b.token) ? a : b }
-                scoped.blocked.formUnion(next.blocked)
+                try scoped.merge(next)
             }
             snapshot = scoped
         } else { snapshot = try valueSnapshot() }
@@ -547,11 +599,7 @@ enum AnnotationReduction {
             } else { item[parts[2]] = try JSONSerialization.jsonObject(with: Data(stored.value.utf8), options: .fragmentsAllowed) }
             metadata[parts[1]] = item
         }
-        let positions = try all.filter { $0.key.hasPrefix("position/") }.map { entry -> [String: Any] in
-            var position = try JSONSerialization.jsonObject(with: Data(entry.value.value.utf8)) as! [String: Any]
-            position["updated"] = entry.value.updated
-            return position
-        }
+        let positions = try all.filter { $0.key.hasPrefix("position/") }.map { try PositionCandidate($0.value).projection() }
         let corrections = try all.filter { $0.key.hasPrefix("chapter/") && $0.value.value != "null" }.map { try JSONSerialization.jsonObject(with: Data($0.value.value.utf8)) }
         let result: [String: Any] = ["positions": positions, "metadata": Array(metadata.values), "corrections": corrections,
             "unsupportedPositions": snapshot.blocked.filter { $0.hasPrefix("position/") }.map { String($0.dropFirst(9)) },
@@ -616,18 +664,18 @@ extension UserDataStore {
             for value in transfer.operations { _ = try UserSyncJSON.annotation(value.payload, id: value.id) }
             for value in transfer.facts { try UserSyncJSON.validateFact(value.payload, id: value.id) }
             for value in transfer.positions {
-                var payload = try decode(StoredValue.self, value)
-                var position = try decode(PositionValue.self, payload.value); position.content_key = to
-                payload.value = try encode(position)
+                let incoming = try PositionCandidate(decode(StoredValue.self, value)).rekeyed(to: to)
                 let key = "position/" + to
                 let old = try values(key: key)[key]
-                if old == nil || (payload.updated, payload.token) > (old!.updated, old!.token) {
+                let winner = try PositionCandidate.winner(old.map(PositionCandidate.init), incoming).stored
+                if old == nil || old?.updated != winner.updated || old?.token != winner.token {
                     let rows = try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { $0.contentKey == to }))
                     for row in rows { _ = try UserSyncJSON.storedValue(row.payload, key: key) }
                     for row in rows { modelContext.delete(row) }
-                    modelContext.insert(UserPosition(contentKey: to, payload: try encode(payload)))
+                    modelContext.insert(UserPosition(contentKey: to, payload: try encode(winner)))
                 }
             }
+
             for value in transfer.operations {
                 let id = value.id
                 let mark = value.mark.hasPrefix("bookmark/" + from + "/") ? "bookmark/" + to + "/" + value.mark.split(separator: "/").last! : value.mark

@@ -75,7 +75,7 @@ fn apply(db: &mut Connection, value: &UserProjection) -> Result<()> {
     )?;
     for p in &value.positions {
         tx.execute(
-            "INSERT OR REPLACE INTO user_positions VALUES(?1,?2,?3,?4,?5)",
+            "INSERT INTO user_positions VALUES(?1,?2,?3,?4,?5)",
             params![
                 p.content_key,
                 p.offset as i64,
