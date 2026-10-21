@@ -883,6 +883,10 @@ iOS 27 模拟器的图片原生测试通过：降采样至最长边 1600px、草
 
 卷集识别的定向 Rust 回归与全 target Clippy 通过，覆盖“卷”接“集”、子章节归属和新一集内章号重启。证据：`build/chapter-series.log`、`build/chapter-series-clippy.log`。旧书的已生成目录需要使用现有“重新识别目录”刷新；iPhone 13 已对用户指定测试书应用新目录，并确认集标题成为可折叠上级、章节缩进显示，原文未改动。
 
+2026-10-21 扩充话/話、節、幕、篇、部、简繁大写数字及繁体特殊标题后，Rust 全部 100 项测试与全 target/feature Clippy（禁止警告）通过。新增回归覆盖各新单位与数字的正反例、“第三部分”“第一篇文章”等正文排除、每个 UTF-8 字符边界的跨块标题/偏移/字符计数，以及旧索引必须显式应用重建、改名/层级/排除修正和正文/SHA/续读位置保持。日志：`build/issue-48-rust-tests.log`、`build/issue-48-clippy.log`。
+
+iPhone 18 Pro / iOS 27 模拟器 Debug 构建通过，使用独立测试书架从真实文件行打开 `build/issue-48/` 下的原创《星港來信》样本。实际检查目录共 12 项（1 部、11 章）：“第壹部”可折叠，其后章节缩进；第一話、第兩話、第參節、幕、篇、間章、終章、尾聲、後記与外傳均出现，两句正文反例未入目录；点击第兩話跳至正确标题顶部。日志：`build/issue-48-simulator-build.log`；截图：`build/issue-48/catalogue-top.png`、`catalogue-bottom.png`、`chapter-jump.png`。样本与截图不提交，未进行真机或旧系统验证。
+
 首屏原生选字反向滚动已用真实拖杆复现：整屏封面放进 `contentInset` 或 `textContainerInset` 都会干扰 UIKit 自动滚动；后一种布局在拖向下沿时仍从正文滚回 `y=0`。相同手势在无封面视图中正常，证据：`build/reader-selection-edge-diagnostic.log`。当前用 `NSTextAttachment` 占显示文档空间，正文保留普通边距，附件前缀经原文坐标映射排除；复制与全选只包含原文。正文窗口更新在原生选区存在时暂缓，避免后台追加触发选区自动显露。
 
 选字菜单按常用、系统工具、批注和高级操作排列，保留系统箭头展开。lookup 原生分组完整保留后，实际纵向菜单已恢复“搜索网页”；其动作在系统展示阶段补充，不能将分组拆成最初的子项快照。不以菜单显示代替翻译或网页搜索服务的网络验收。详情首卡浅色主题的背景像素与其他卡片一致，信息编辑与阅读返回通过，证据为 `build/reader-selection-regression.log` 中 `testBookInformationEditingAndReaderReturn` 通过项。
