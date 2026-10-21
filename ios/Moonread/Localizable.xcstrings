@@ -1,6 +1,11 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "书名、作者或文件夹": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"书名、作者或文件夹"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"書名、作者或資料夾"}},"en":{"stringUnit":{"state":"translated","value":"Title, author, or folder"}}}},
+    "当前 App Store 地区不提供 AI 功能。": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"当前 App Store 地区不提供 AI 功能。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"目前 App Store 地區不提供 AI 功能。"}},"en":{"stringUnit":{"state":"translated","value":"AI features are unavailable in your current App Store region."}}}},
+    "暂无法确认 App Store 地区，AI 功能暂不可用。": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"暂无法确认 App Store 地区，AI 功能暂不可用。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"暫時無法確認 App Store 地區，AI 功能暫不可用。"}},"en":{"stringUnit":{"state":"translated","value":"AI features are unavailable until your App Store region can be confirmed."}}}},
+    "已有 AI 数据保留在本机，不会发送。": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"已有 AI 数据保留在本机，不会发送。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"現有 AI 資料保留在本機，不會傳送。"}},"en":{"stringUnit":{"state":"translated","value":"Existing AI data stays on this device and will not be sent."}}}},
+    "第 %lld 步，共 %lld 步": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"第 %lld 步，共 %lld 步"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"第 %lld 步，共 %lld 步"}},"en":{"stringUnit":{"state":"translated","value":"Step %lld of %lld"}}}},
     "关于": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"关于"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"關於"}},"en":{"stringUnit":{"state":"translated","value":"About"}}}},
     "给月读评分": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"给月读评分"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"為月讀評分"}},"en":{"stringUnit":{"state":"translated","value":"Rate Moonread"}}}},
     "onboarding.continue": {"localizations": {"en": {"stringUnit": {"state": "translated","value": "Continue"}},"zh-Hans": {"stringUnit": {"state": "translated","value": "继续"}},"zh-Hant": {"stringUnit": {"state": "translated","value": "繼續"}}}},

@@ -122,7 +122,111 @@ private final class AITestURLProtocol: URLProtocol, @unchecked Sendable {
     }
     override func stopLoading() { Self.state.stopped() }
 }
+private actor ChinaStorefrontLookup {
+    private var continuation: CheckedContinuation<String?, Never>?
+    private var result: String??
+    func current() async -> String? {
+        if let result { return result }
+        return await withCheckedContinuation { continuation = $0 }
+    }
+    func resolve(_ code: String?) { result = .some(code); continuation?.resume(returning: code); continuation = nil }
+}
+
 @MainActor final class AIStageOneTests: XCTestCase {
+    // One case per HTTP entry, each using the same CHN/unknown/switch contract.
+    func testChinaStorefrontTransportEntry() async throws {
+        try await assertStorefrontAdmission { gate, config in
+            let transport = AITransport(configuration: config)
+            do {
+                try transport.protect(using: gate)
+                defer { transport.finish() }
+                _ = try await transport.fetch(URLRequest(url: URL(string: "https://example.com/ai")!))
+            } catch { }
+        }
+    }
+    func testChinaStorefrontAuthEntry() async throws {
+        try await assertStorefrontAdmission { gate, config in
+            let auth = AIAuthentication(session: URLSession(configuration: config), availability: gate)
+            do {
+                _ = try await auth.beginOpenRouter()
+                _ = try await auth.requestData(URLRequest(url: URL(string: "https://example.com/oauth/token")!))
+            } catch { }
+        }
+    }
+    func testChinaStorefrontCatalogEntry() async throws {
+        try await assertStorefrontAdmission { gate, config in
+            let catalog = AIModelCatalog(cacheURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+                                         session: URLSession(configuration: config), bundled: Data("{}".utf8), availability: gate)
+            await catalog.refresh(force: true)
+        }
+    }
+    func testChinaStorefrontCoverEntry() async throws {
+        try await assertStorefrontAdmission { gate, config in
+            let fetcher = AICoverImageFetcher(configuration: config, availability: gate)
+            let source = AIWebSource.make(title: "Synthetic", url: "https://example.com/cover")!
+            _ = try? await fetcher.candidates(sources: [source], title: "Synthetic", bookRef: "test",
+                save: { _ in throw AIError.invalidResponse }, discard: { _ in })
+        }
+    }
+    private func assertStorefrontAdmission(_ request: @escaping @MainActor @Sendable (AIAvailability, URLSessionConfiguration) async -> Void) async throws {
+        let suite = "ChinaStorefront-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("retained-connections", forKey: "Moonread.ai.connections")
+        defaults.set("retained-consent", forKey: "Moonread.ai.sharing")
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AITestURLProtocol.self]
+        // Explicit CHN and never-known storefronts both deny all HTTP, even with AI enabled.
+        for country in ["CHN", nil] as [String?] {
+            defaults.removeObject(forKey: AIAvailability.storefrontKey)
+            let gate = AIAvailability(defaults: defaults, storefront: .fixed(country))
+            AITestURLProtocol.state.reset("complete"); await request(gate, config)
+            XCTAssertFalse(gate.isAvailable); XCTAssertTrue(gate.isEnabled)
+            XCTAssertEqual(AITestURLProtocol.state.counts.0, 0)
+        }
+        for cached in ["CHN", "USA"] {
+            defaults.set(cached, forKey: AIAvailability.storefrontKey)
+            let gate = AIAvailability(defaults: defaults, storefront: .fixed(nil))
+            AITestURLProtocol.state.reset("complete"); await request(gate, config)
+            XCTAssertEqual(AITestURLProtocol.state.counts.0, cached == "USA" ? 1 : 0)
+            XCTAssertEqual(defaults.string(forKey: AIAvailability.storefrontKey), cached)
+        }
+        // Cached UI stays available while the first HTTP waits for this launch's result.
+        defaults.set("USA", forKey: AIAvailability.storefrontKey)
+        let lookup = ChinaStorefrontLookup()
+        let checking = AIAvailability(defaults: defaults, storefront: .init(current: { await lookup.current() }, updates: { AsyncStream { $0.finish() } }))
+        AITestURLProtocol.state.reset("complete")
+        let pending = Task { await request(checking, config) }
+        await Task.yield()
+        XCTAssertTrue(checking.isAvailable); XCTAssertEqual(AITestURLProtocol.state.counts.0, 0)
+        await lookup.resolve("CHN"); await pending.value
+        XCTAssertFalse(checking.isAvailable); XCTAssertEqual(AITestURLProtocol.state.counts.0, 0)
+        // A short bounded wait falls back to cache; a nil result never erases it.
+        defaults.set("USA", forKey: AIAvailability.storefrontKey)
+        let slow = ChinaStorefrontLookup()
+        let timed = AIAvailability(defaults: defaults, storefront: .init(current: { await slow.current() }, updates: { AsyncStream { $0.finish() } }), initialTimeout: .milliseconds(20))
+        AITestURLProtocol.state.reset("complete"); await request(timed, config)
+        XCTAssertTrue(timed.isAvailable); XCTAssertEqual(AITestURLProtocol.state.counts.0, 1)
+        await slow.resolve(nil)
+        // A Storefront.updates event cancels the real HTTP and invalidates old leases.
+        let updates = AsyncStream<String>.makeStream()
+        let switching = AIAvailability(defaults: defaults, storefront: .init(resolved: true, countryCode: "USA", current: { "USA" }, updates: { updates.stream }))
+        let lease = try switching.register(cancel: {})
+        AITestURLProtocol.state.reset("headers-wait")
+        let running = Task { await request(switching, config) }
+        await wait { AITestURLProtocol.state.counts.0 == 1 }
+        updates.continuation.yield("CHN")
+        await wait { !switching.isAvailable }
+        await running.value
+        XCTAssertGreaterThan(AITestURLProtocol.state.counts.1, 0)
+        updates.continuation.yield("USA"); await wait { switching.isAvailable }
+        XCTAssertThrowsError(try switching.validate(lease))
+        XCTAssertEqual(AITestURLProtocol.state.counts.0, 1, "Returning to another storefront must not restart cancelled work")
+        XCTAssertEqual(defaults.string(forKey: "Moonread.ai.connections"), "retained-connections")
+        XCTAssertEqual(defaults.string(forKey: "Moonread.ai.sharing"), "retained-consent")
+        XCTAssertTrue(switching.isEnabled)
+        updates.continuation.finish()
+    }
+
     func testMasterSwitchDefaultsLocalPersistenceAndInvalidatesOldLeases() async throws {
         let suite = "AIAvailability-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))

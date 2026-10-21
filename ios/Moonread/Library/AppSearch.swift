@@ -53,6 +53,8 @@ struct AppSearchActivation: ViewModifier {
 /// to its navigation stack and reports presentation so Cancel returns to the origin tab;
 /// a contextual search attaches it to its own page and is left with Back.
 struct AppSearchField: ViewModifier {
+    @Environment(AIService.self) private var ai
+    private var searchPrompt: Text { ai.availability.isAvailable ? Text("书名、作者、文件夹或对话") : Text("书名、作者或文件夹") }
     let model: LibraryModel
     let search: AppSearch
     var quickEntry = false
@@ -64,11 +66,11 @@ struct AppSearchField: ViewModifier {
             if quickEntry {
                 content.searchable(text: text, tokens: tokens,
                                    isPresented: Binding(get: { model.searchPresented }, set: { model.setSearchPresented($0) }),
-                                   prompt: Text("书名、作者、文件夹或对话"), token: tokenLabel)
+                                   prompt: searchPrompt, token: tokenLabel)
             } else {
                 // A contextual search keeps its scope token in view.
                 content.searchable(text: text, tokens: tokens, placement: .navigationBarDrawer(displayMode: .always),
-                                   prompt: Text("书名、作者、文件夹或对话"), token: tokenLabel)
+                                   prompt: searchPrompt, token: tokenLabel)
             }
         }
         .onChange(of: search.keyboardDismissals) { _, _ in focused = false }

@@ -63,15 +63,20 @@ actor AIAuthentication {
     private var refreshes: [String: Task<AICredential, Error>] = [:]
     var signingOut = Set<String>()
     let session: URLSession
+    nonisolated let network: AINetworkAccess
     let chatGPTHostReference: String
     var chatGPTListeners: [String: AIChatGPTLoopback] = [:]
     var chatGPTAttempts: [String: (id: String, attempt: AIChatGPTProtocol.Attempt)] = [:]
     var chatGPTIssuedClients: [String: String] = [:]
     private let credentialResolver: (@Sendable (AIConnection) async throws -> AICredential)?
     private let credentialSaver: (@Sendable (AICredential, String) throws -> Void)?
-    init(session: URLSession = URLSession(configuration: .ephemeral), chatGPTHostReference: String = "chatgpt/host", credentialSaver: (@Sendable (AICredential, String) throws -> Void)? = nil, credentialResolver: (@Sendable (AIConnection) async throws -> AICredential)? = nil) {
+    init(session: URLSession = URLSession(configuration: .ephemeral), chatGPTHostReference: String = "chatgpt/host", credentialSaver: (@Sendable (AICredential, String) throws -> Void)? = nil, credentialResolver: (@Sendable (AIConnection) async throws -> AICredential)? = nil, availability: AIAvailability? = nil) {
+        network = AINetworkAccess(availability: availability)
         self.chatGPTHostReference = chatGPTHostReference
         self.session = session; self.credentialResolver = credentialResolver; self.credentialSaver = credentialSaver
+    }
+    func requestData(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        try await network.perform { [session] in try await session.data(for: request) }
     }
     func saveAPIKey(_ key: String, connection: AIConnection) throws {
         guard !signingOut.contains(connection.credentialReference) else { throw AIError.loginRequired }
@@ -170,7 +175,7 @@ actor AIAuthentication {
         var list: [[String: Any]] = []
         var seen = Set<String>()
         while true {
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await requestData(request)
             guard let response = response as? HTTPURLResponse else { throw AIError.invalidResponse }
             guard response.statusCode == 200 else { throw AIError.http(response.statusCode) }
             guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -217,7 +222,7 @@ actor AIAuthentication {
     }
 
     private func requestObject(_ request: URLRequest) async throws -> [String: Any] {
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await requestData(request)
         guard let response = response as? HTTPURLResponse else { throw AIError.invalidResponse }
         if response.statusCode == 401 || response.statusCode == 403 { throw AIError.loginRequired }
         guard (200..<300).contains(response.statusCode) else { throw AIError.http(response.statusCode) }
@@ -230,7 +235,9 @@ actor AIAuthentication {
         let expires: Date
     }
     private var browserVerifiers: [String: (verifier: String, expires: Date)] = [:]
-    func beginOpenRouter() throws -> BrowserAuthorization {
+    func beginOpenRouter() async throws -> BrowserAuthorization {
+        // Preparing a browser URL can itself initiate service traffic without URLSession.
+        try await network.perform {}
         var random = [UInt8](repeating: 0, count: 32)
         guard SecRandomCopyBytes(kSecRandomDefault, random.count, &random) == errSecSuccess else { throw AIError.storage }
         func base64(_ bytes: Data) -> String { bytes.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "") }

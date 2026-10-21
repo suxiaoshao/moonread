@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AISettingsView: View {
     @State private var adding = false
+    @Environment(\.dismiss) private var dismiss
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     var body: some View {
@@ -48,6 +49,7 @@ struct AISettingsView: View {
             if let error = ai.providers.error { Section { Text(error).foregroundStyle(Color(uiColor: theme.destructive)) }.listRowBackground(Color(uiColor: theme.surface)) }
         }.themedPage().navigationTitle("AI 助手")
             .aiAddConnectionFlow(isPresented: $adding)
+            .onChange(of: ai.availability.isAvailable) { _, available in if !available { adding = false; dismiss() } }
             .task { await ai.providers.refreshCatalogsIfNeeded() }
             .toolbar { ToolbarItem(placement: .topBarTrailing) { NavigationLink { AIUsageHelpView() } label: { Image(systemName: "questionmark.circle") }.toolbarGlyph().accessibilityLabel("AI 使用帮助") } }
     }
@@ -56,6 +58,7 @@ struct AISettingsView: View {
 /// Every entry adds a connection the same way: the add sheet, then the new
 /// connection's own page in the current navigation stack. Back returns to the entry.
 private struct AIAddConnectionFlow: ViewModifier {
+    @Environment(AIService.self) private var ai
     @Binding var isPresented: Bool
     @State private var createdConnectionID: String?
     @State private var destinationConnectionID: String?
@@ -65,6 +68,9 @@ private struct AIAddConnectionFlow: ViewModifier {
                 destinationConnectionID = createdConnectionID; createdConnectionID = nil
             }) { AIAddConnectionView(createdConnectionID: $createdConnectionID) }
             .navigationDestination(item: $destinationConnectionID) { AIConnectionView(connectionID: $0) }
+            .onChange(of: ai.availability.isAvailable) { _, available in
+                if !available { isPresented = false; createdConnectionID = nil; destinationConnectionID = nil }
+            }
     }
 }
 extension View {
