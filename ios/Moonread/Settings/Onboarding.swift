@@ -200,13 +200,14 @@ struct FirstRunOnboarding: View {
                 actions
             }
             .onChange(of: page) { _, _ in scrollPosition.scrollTo(edge: .top) }
+            .onChange(of: ai.availability.regionAllowsAI) { _, allowed in if !allowed && page == 2 { page = 3 } }
             .themedPage()
             .navigationBarTitleDisplayMode(.inline)
             .toolbarVisibility(.visible, for: .navigationBar)
             .toolbar {
                 if page > 0 {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button("返回", systemImage: "chevron.left") { page -= 1 }.accessibilityIdentifier("introductionBack").disabled(working)
+                        Button("返回", systemImage: "chevron.left") { page = page == 3 && !ai.availability.regionAllowsAI ? 1 : page - 1 }.accessibilityIdentifier("introductionBack").disabled(working)
                     }
                 }
             }
@@ -275,13 +276,13 @@ struct FirstRunOnboarding: View {
                 .accessibilityIdentifier("introductionDiscoveryWait")
             }
             HStack(spacing: 8) {
-                ForEach(0..<4) { step in
+                ForEach((0..<4).filter { ai.availability.regionAllowsAI || $0 != 2 }, id: \.self) { step in
                     Circle().fill(Color(uiColor: step == page ? theme.accent : theme.secondary).opacity(step == page ? 1 : 0.3))
                         .frame(width: 6, height: 6)
                 }
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(Text("第 \(page + 1) 步，共 4 步"))
+            .accessibilityLabel(Text("第 \(page + 1 - (!ai.availability.regionAllowsAI && page > 2 ? 1 : 0)) 步，共 \(ai.availability.regionAllowsAI ? 4 : 3) 步"))
             .accessibilityIdentifier("introductionProgress")
         }
     }
@@ -305,11 +306,11 @@ struct FirstRunOnboarding: View {
             .padding(24).frame(maxWidth: 600).frame(maxWidth: .infinity)
             .background(Color(uiColor: theme.canvas))
     }
-    private func next() { page += 1 }
+    private func next() { page += page == 1 && !ai.availability.regionAllowsAI ? 2 : 1 }
     private func complete(destination: Onboarding.Destination) {
         Onboarding.shared.completeIntroduction(destination: destination) {
             if hasCloudAccount { cloud.saveIntroductionChoice(syncReadingData) }
-            ai.availability.setEnabled(enableAI)
+            ai.availability.saveIntroductionChoice(enableAI)
         }
     }
     private func finishImport() async {

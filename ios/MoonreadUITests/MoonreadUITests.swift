@@ -3354,6 +3354,46 @@ final class MoonreadUITests: XCTestCase {
         }
     }
 
+    func testChinaStorefrontHidesAllAIEntrypoints() {
+        prepareApp(arguments: ["--ui-test-storefront", "CHN", "--ui-test-ai-model-picker", "--ui-test-ai-tasks"])
+        XCTAssertTrue(app.buttons["shelf-builtin"].waitForExistence(timeout: 20))
+        XCTAssertFalse(app.tabBars.buttons["对话"].exists)
+        app.tabBars.buttons["统计"].tap(); app.buttons["统计选项"].tap()
+        XCTAssertFalse(app.buttons["analyzeReading"].exists); app.tap()
+        app.tabBars.buttons["书架"].tap()
+        app.buttons["shelf-builtin"].tap()
+        app.buttons["folderActions"].tap()
+        XCTAssertFalse(app.buttons["organizeFolder"].exists)
+        app.buttons["选择项目"].tap()
+        XCTAssertFalse(app.buttons["libraryAISelection"].exists)
+        app.buttons["librarySelectionDone"].tap()
+        let book = app.buttons["library-file-月读 · 排版示例.txt"]
+        XCTAssertTrue(book.waitForExistence(timeout: 5))
+        app.buttons["月读 · 排版示例.txt的操作"].tap()
+        XCTAssertFalse(app.buttons["完善资料"].exists)
+        app.buttons["小说详情"].tap()
+        XCTAssertTrue(app.navigationBars["小说详情"].waitForExistence(timeout: 5))
+        XCTAssertFalse(taskRow("资料建议").exists); XCTAssertFalse(taskRow("封面").exists)
+        app.buttons["开始阅读"].tap()
+        enterBodyFromCover(); XCTAssertTrue(readerTextAppears()); revealControls()
+        XCTAssertFalse(app.buttons["readerAIMoon"].exists)
+        let text = readingText()
+        text.coordinate(withNormalizedOffset: CGVector(dx: 0.4, dy: 0.3)).press(forDuration: 1.2)
+        XCTAssertFalse(app.buttons["问 AI"].exists)
+        text.tap(); revealControls(); readerBackButton.tap()
+        readerBackButton.tap(); readerBackButton.tap()
+        openSettingsPage()
+        let note = app.staticTexts["aiRegionUnavailable"]
+        for _ in 0..<3 where !note.isHittable { app.swipeUp() }
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.switches["aiMasterSwitch"].exists)
+        XCTAssertFalse(app.buttons["aiSettings"].exists)
+        recordScreenshot("china-storefront-no-ai")
+        openSearchTab(); app.searchFields.firstMatch.tap(); app.searchFields.firstMatch.typeText("资料建议")
+        XCTAssertFalse(app.staticTexts["对话"].exists)
+        XCTAssertFalse(app.searchFields.firstMatch.label.contains("对话"))
+    }
+
     func testAIMasterSwitchHidesEntrypointsAndRestoresAfterRelaunch() {
         for mode in ["浅色", "深色"] {
             prepareApp(arguments: ["--ui-test-ai-model-picker"])

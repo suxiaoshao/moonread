@@ -172,7 +172,10 @@ private struct MoonreadRoot: View {
         }
         .modifier(AppSearchActivation())
         .onChange(of: ai.availability.isAvailable) { _, available in
-            if !available, library.selectedTab == .conversations { library.selectedTab = .library }
+            if !available {
+                if library.selectedTab == .conversations { library.selectedTab = .library }
+                library.dismissAIPaths()
+            }
         }
     }
     private var libraryStack: some View {

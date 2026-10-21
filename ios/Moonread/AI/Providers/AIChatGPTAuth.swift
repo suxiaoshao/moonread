@@ -244,6 +244,7 @@ final class AIChatGPTLoopback: @unchecked Sendable {
 
 extension AIAuthentication {
     func beginChatGPT(_ connection: AIConnection) async throws -> BrowserAuthorization {
+        try await network.perform {}
         guard connection.authMethod == .chatGPT else { throw AIError.unsupported }
         let reference = connection.credentialReference
         guard !signingOut.contains(reference) else { throw AIError.loginRequired }
@@ -328,7 +329,7 @@ extension AIAuthentication {
     }
     func exchangeChatGPT(_ values: [String: String], clientID: String, nonce: String?, previous: AIChatGPTAccount?) async throws -> AICredential {
         let request = form(values, url: URL(string: AIChatGPTProtocol.issuer + "/api/accounts/oauth/token")!)
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await requestData(request)
         guard let response = response as? HTTPURLResponse else { throw AIError.invalidResponse }
         if response.statusCode != 200 {
             let body = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -349,7 +350,7 @@ extension AIAuthentication {
         let scopes = scope.split(separator: " ").map(String.init)
         var account: AIChatGPTAccount
         if let token = body["id_token"] as? String {
-            let (jwks, keysResponse) = try await session.data(from: URL(string: AIChatGPTProtocol.issuer + "/.well-known/jwks.json")!)
+            let (jwks, keysResponse) = try await requestData(URLRequest(url: URL(string: AIChatGPTProtocol.issuer + "/.well-known/jwks.json")!))
             guard (keysResponse as? HTTPURLResponse)?.statusCode == 200 else { throw AIError.invalidResponse }
             let identity = try AIChatGPTProtocol.verifyIDToken(token, jwks: jwks, clientID: clientID, nonce: nonce, subject: previous?.subject)
             account = AIChatGPTAccount(clientID: clientID, subject: identity.subject, email: identity.email, idToken: token, scopes: scopes)
@@ -373,14 +374,14 @@ extension AIAuthentication {
         }
     }
     private func revokeChatGPTOnce(refreshToken: String, clientID: String) async throws {
-        let (data, response) = try await session.data(from: URL(string: AIChatGPTProtocol.issuer + "/.well-known/openid-configuration")!)
+        let (data, response) = try await requestData(URLRequest(url: URL(string: AIChatGPTProtocol.issuer + "/.well-known/openid-configuration")!))
         guard let status = (response as? HTTPURLResponse)?.statusCode else { throw AIError.invalidResponse }
         guard status == 200 else { throw AIError.http(status) }
         guard let discovery = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               discovery["issuer"] as? String == AIChatGPTProtocol.issuer,
               let endpoint = discovery["revocation_endpoint"] as? String, let url = URL(string: endpoint),
               url.scheme == "https", url.host == "auth.openai.com", url.user == nil, url.password == nil else { throw AIError.invalidResponse }
-        let (_, revoked) = try await session.data(for: form(["token": refreshToken, "token_type_hint": "refresh_token", "client_id": clientID], url: url))
+        let (_, revoked) = try await requestData(form(["token": refreshToken, "token_type_hint": "refresh_token", "client_id": clientID], url: url))
         guard let code = (revoked as? HTTPURLResponse)?.statusCode else { throw AIError.invalidResponse }
         guard code == 200 else { throw AIError.http(code) }
     }

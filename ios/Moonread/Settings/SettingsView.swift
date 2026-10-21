@@ -53,16 +53,26 @@ struct SettingsView: View {
                 }
             }.listRowBackground(Color(uiColor: theme.surface))
             Section {
-                Toggle("AI 功能", isOn: Binding(get: { ai.availability.isEnabled }, set: { ai.availability.setEnabled($0) }))
-                    .tint(Color(uiColor: theme.accent)).accessibilityIdentifier("aiMasterSwitch")
-                if ai.availability.isAvailable {
-                    NavigationLink { AISettingsView() } label: {
-                        SettingsEntry(title: "AI 助手", symbol: "bubble.left.and.bubble.right", summary: aiSummary)
-                    }.accessibilityIdentifier("aiSettings")
+                if ai.availability.regionAllowsAI {
+                    Toggle("AI 功能", isOn: Binding(get: { ai.availability.isEnabled }, set: { ai.availability.setEnabled($0) }))
+                        .tint(Color(uiColor: theme.accent)).accessibilityIdentifier("aiMasterSwitch")
+                    if ai.availability.isAvailable {
+                        NavigationLink {
+                            if ai.availability.isAvailable { AISettingsView() }
+                        } label: {
+                            SettingsEntry(title: "AI 助手", symbol: "bubble.left.and.bubble.right", summary: aiSummary)
+                        }.accessibilityIdentifier("aiSettings")
+                    }
+                } else {
+                    Text(verbatim: ai.availability.regionMessage).accessibilityIdentifier("aiRegionUnavailable")
                 }
             } footer: {
-                Text("关闭后隐藏所有 AI 功能，已有连接、会话和数据共享许可保留。")
-                    .padding(.bottom, 16)
+                if ai.availability.regionAllowsAI {
+                    Text("关闭后隐藏所有 AI 功能，已有连接、会话和数据共享许可保留。")
+                        .padding(.bottom, 16)
+                } else {
+                    Text("已有 AI 数据保留在本机，不会发送。").padding(.bottom, 16)
+                }
             }.listRowBackground(Color(uiColor: theme.surface))
             Section("应用") {
                 NavigationLink { UsageGuideView() } label: {

@@ -20,7 +20,7 @@ AI 在现有 Swift target 内按职责组织，不另建包或实现第二套 SD
 
 连接移除由会话服务协调：先停止对应请求，再由连接服务清理凭证和配置。对话历史保留；默认连接被移除后清空，不选择其他账户。对话 Tab 和阅读弹窗共同读取 Agent 会话头与有序消息投影。首次连接和用户向前分页读取历史；成功提交的增量按 ID 追加或更新，流式活动不重查历史，已加载旧页保持。
 
-`AIProviderRequest` 把连接、目录模型、凭证和请求参数转成 SDK 模型及选项。四种协议选择、ChatGPT 公共 Responses 流协议适配、OpenCode 会话头与思考参数都在此处；Agent 不分支判断供应商品牌。`AITransport` 只负责 URLSession 与流取消，不管理会话。
+`AIProviderRequest` 把连接、目录模型、凭证和请求参数转成 SDK 模型及选项。四种协议选择、ChatGPT 公共 Responses 流协议适配、OpenCode 会话头与思考参数都在此处；Agent 不分支判断供应商品牌。`AITransport` 负责 URLSession 与流取消，不管理会话；它与 auth、catalog、cover 的直接 URLSession 入口共用 `AINetworkAccess`，每次 HTTP 经 `AIAvailability.networkRequest` 等待启动店面结果并校验执行租约，地区判定只在 AIAvailability 实现。
 
 ## 扩展边界
 

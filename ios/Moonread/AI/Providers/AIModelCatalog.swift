@@ -44,7 +44,9 @@ struct AIResolvedModel: Sendable {
     @ObservationIgnored private var attempted: Date?
     @ObservationIgnored private let cacheURL: URL
     @ObservationIgnored private let session: URLSession
-    init(cacheURL: URL? = nil, session: URLSession = .shared, bundled: Data? = nil) {
+    @ObservationIgnored let network: AINetworkAccess
+    init(cacheURL: URL? = nil, session: URLSession = .shared, bundled: Data? = nil, availability: AIAvailability? = nil) {
+        network = AINetworkAccess(availability: availability)
         self.cacheURL = cacheURL ?? URL.cachesDirectory.appending(path: "ai-model-catalog.json")
         self.session = session
         let data = bundled ?? Bundle.main.url(forResource: "AIModelCatalog", withExtension: "json").flatMap { try? Data(contentsOf: $0) }
@@ -72,7 +74,7 @@ struct AIResolvedModel: Sendable {
             request.cachePolicy = .reloadIgnoringLocalCacheData
             request.setValue(cache?.etag, forHTTPHeaderField: "If-None-Match")
             request.setValue(cache?.modified, forHTTPHeaderField: "If-Modified-Since")
-            let (data, response) = try await session.data(for: request)
+            let (data, response) = try await network.perform { [session, request] in try await session.data(for: request) }
             try Task.checkCancellation()
             guard let response = response as? HTTPURLResponse else { return }
             var next: Cache

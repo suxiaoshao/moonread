@@ -111,6 +111,7 @@ struct AICoverFetchReport: Sendable {
 /// ATS, DNS and trust remain URLSession's responsibility. Bodies are capped before retaining each chunk.
 final class AICoverImageFetcher: @unchecked Sendable {
     private let session: URLSession
+    let network: AINetworkAccess
     private let downloader: AICoverDownloadDelegate
     private let cancellationLock = NSLock()
     private var wasCancelled = false
@@ -119,7 +120,8 @@ final class AICoverImageFetcher: @unchecked Sendable {
     private static let maximumCandidates = 8
     private static let minimumSide = 100
     private static let maximumAspect = 1.2
-    init(configuration: URLSessionConfiguration = .ephemeral) {
+    init(configuration: URLSessionConfiguration = .ephemeral, availability: AIAvailability? = nil) {
+        network = AINetworkAccess(availability: availability)
         configuration.httpCookieStorage = nil; configuration.httpShouldSetCookies = false
         configuration.urlCredentialStorage = nil; configuration.urlCache = nil
         configuration.timeoutIntervalForRequest = 30
@@ -149,18 +151,20 @@ final class AICoverImageFetcher: @unchecked Sendable {
         // Only the authorized response's extraction below creates these values.
     }
     private func download(_ url: URL, referer: URL? = nil) async throws -> Response {
-        let delegate = referer.map(AICoverRefererDelegate.init)
-        let request = delegate?.request(URLRequest(url: url)) ?? URLRequest(url: url)
-        let control = AICoverDownloadControl()
-        let response: Response = try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                let task = session.dataTask(with: request)
-                downloader.register(task, referer: delegate, continuation: continuation)
-                control.start(task)
-            }
-        } onCancel: { control.cancel() }
-        try checkCancellation()
-        return response
+        try await network.perform { [self] in
+            let delegate = referer.map(AICoverRefererDelegate.init)
+            let request = delegate?.request(URLRequest(url: url)) ?? URLRequest(url: url)
+            let control = AICoverDownloadControl()
+            let response: Response = try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    let task = session.dataTask(with: request)
+                    downloader.register(task, referer: delegate, continuation: continuation)
+                    control.start(task)
+                }
+            } onCancel: { control.cancel() }
+            try checkCancellation()
+            return response
+        }
     }
 
     private func authorized(_ source: AIWebSource, allowedSources: [AIWebSource]) throws -> URL {

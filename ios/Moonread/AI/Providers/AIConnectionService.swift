@@ -49,6 +49,8 @@ enum AIConnectionState: Equatable {
         self.sharing = sharing ?? AIDataSharingConsent(defaults: defaults)
         self.catalog = catalog ?? AIModelCatalog()
         self.defaults = defaults; self.auth = auth
+        auth.network.bind(self.availability)
+        self.catalog.network.bind(self.availability)
         let arguments = ProcessInfo.processInfo.arguments
         let session = arguments.firstIndex(of: "--ui-test-session").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
         connections = AIPersistedJSON.readArray(AIConnection.self, data: defaults.data(forKey: "Moonread.ai.connections"), key: "Moonread.ai.connections")

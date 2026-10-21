@@ -73,6 +73,13 @@ final class LibraryModel {
     }
     /// Search is a quick entry: leaving it returns to the tab it was entered from.
     private(set) var searchOrigin = AppTab.library
+    func dismissAIPaths() {
+        func withoutAI(_ path: [LibraryRoute]) -> [LibraryRoute] {
+            Array(path.prefix { if case .conversation = $0 { return false }; return true })
+        }
+        libraryPath = withoutAI(libraryPath); statisticsPath = withoutAI(statisticsPath); searchPath = withoutAI(searchPath)
+        aiRequest = nil
+    }
     var libraryPath: [LibraryRoute] = []
     var statisticsPath: [LibraryRoute] = []
     var searchPath: [LibraryRoute] = []
