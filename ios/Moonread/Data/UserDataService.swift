@@ -158,18 +158,22 @@ extension ReaderService {
                 if let state = try? core.importStatus(bookId: String(key.dropFirst(8))), state.text.contentSha256.count == 64 { blockedPositions.insert(state.text.contentSha256) }
             }
             combined.removeValue(forKey: "unsupportedPositions")
-            var positions: [String: [String: Any]] = [:]
-            for input in combined["positions"] as! [[String: Any]] {
-                var item = input; var key = item["content_key"] as! String
+            let candidates = try (combined["positions"] as! [[String: Any]]).compactMap { input -> PositionCandidate? in
+                let candidate = try PositionCandidate(projection: input)
+                var key = candidate.value.content_key
                 // Complete aliases are visible before asynchronous promotion persists their data.
-                if key.hasPrefix("pending:"), let state = try? core.importStatus(bookId: String(key.dropFirst(8))), state.text.contentSha256.count == 64 { key = state.text.contentSha256; item["content_key"] = key }
-                guard !blockedPositions.contains(key) else { continue }
-                item["visible"] = !effectiveHidden.contains(key)
-                item["preferred"] = preferred[key] ?? preferred[input["content_key"] as! String] ?? NSNull() as Any
-                if let previous = positions[key], (previous["updated"] as! NSNumber).int64Value > (item["updated"] as! NSNumber).int64Value { continue }
-                positions[key] = item
+                if key.hasPrefix("pending:"), let state = try? core.importStatus(bookId: String(key.dropFirst(8))), state.text.contentSha256.count == 64 { key = state.text.contentSha256 }
+                guard !blockedPositions.contains(key) else { return nil }
+                return try candidate.rekeyed(to: key)
             }
-            combined["positions"] = positions.values.sorted { ($0["content_key"] as! String) < ($1["content_key"] as! String) }
+            let positions = PositionCandidate.reduce(candidates)
+            combined["positions"] = try positions.keys.sorted().map { key -> [String: Any] in
+                let candidate = positions[key]!
+                var item = try candidate.projection()
+                item["visible"] = !effectiveHidden.contains(key)
+                item["preferred"] = preferred[key] ?? preferred[candidate.sourceKey] ?? NSNull() as Any
+                return item
+            }
             return try core.querySnapshot(json: String(decoding: JSONSerialization.data(withJSONObject: combined), as: UTF8.self))
         }.value
         diagnostic?.mark("queryBuild.resumed")

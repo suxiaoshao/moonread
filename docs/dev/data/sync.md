@@ -147,6 +147,6 @@ v1 key 白名单：`position/{contentKey}`、`chapter/{contentKey}/{offset}`、`
 
 ### 并发语义与验证边界
 
-UserValue 按 `(updated, token)` 做整值 LWW；位置候选写入与压缩也遵循这一顺序。并发位置或同一独立属性互相覆盖是允许的产品语义，`v` 不能保全离线设备从未看到的新信息。需要保全的新数据必须拆为独立 key、独立不可变记录或显式字段级合并，不能声称“保留未知字段”就解决跨版本 LWW。批注沿用因果候选而非整对象 LWW，统计事实/清除是不可变记录。
+UserValue 按 `(updated, token)` 做整值 LWW；位置候选写入与压缩也遵循这一顺序。Swift 用户事实层的 `PositionCandidate.winner` 是位置的唯一胜者函数，即时投影、scoped 合并和 pending 晋升共用；投影保留 token，pending 别名归并到正文 SHA 后，每个 content key 只交给 Rust 一条最终位置，Rust 装载时拒绝重复 key。并发位置或同一独立属性互相覆盖是允许的产品语义，`v` 不能保全离线设备从未看到的新信息。需要保全的新数据必须拆为独立 key、独立不可变记录或显式字段级合并，不能声称“保留未知字段”就解决跨版本 LWW。批注沿用因果候选而非整对象 LWW，统计事实/清除是不可变记录。
 
 隔离状态依据**仍存在的无法理解记录**计算，不依据哪个 v1 候选最后到达；后到或时间戳更高的旧版记录不能解除隔离。验证必须经 UserDataStore/ReaderService 的真实保存链路，覆盖 v1→v2 与 v2→离线 v1 两种到达顺序、压缩/append/清除/pending、未知嵌套字段、缺失/null/错类型、整数精度与明确修改状态；本机模拟导入不等同于真实双设备 CloudKit 验收。

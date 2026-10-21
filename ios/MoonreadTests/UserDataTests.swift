@@ -42,6 +42,94 @@ final class UserDataTests: XCTestCase {
         let config = ModelConfiguration(schema: UserDataStore.schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
         return UserDataStore(modelContainer: try ModelContainer(for: UserDataStore.schema, configurations: [config]))
     }
+    private struct PositionWinnerFixture {
+        let root: URL, core: ReaderCore, book: ImportText, aliases: [String]
+        let formal: UserDataStore, pending: UserDataStore, service: ReaderService, suite: String
+        func clean() { UserDefaults.standard.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    }
+    private func positionWinnerFixture() throws -> PositionWinnerFixture {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("synthetic.txt")
+        try Data("Chapter 1\nSynthetic position winner fixture.\n".utf8).write(to: file)
+        let core = try ReaderCore(dataDirectory: root.appendingPathComponent("cache").path)
+        let identity = try SourceIdentityProbe().identify(filePath: file.path, decoding: "auto")
+        var aliases: [String] = []
+        for _ in 0..<2 {
+            let control = try core.createImport(title: "Position fixture")
+            try core.validateImportSource(control: control, key: SourceContentKey(rawSha256: identity.rawSha256, decoding: "auto"))
+            try core.streamImport(control: control, filePath: file.path, expectedRawSha256: identity.rawSha256, encodingOverride: nil)
+            _ = try core.finishImport(control: control)
+            aliases.append(control.bookId())
+        }
+        let book = try core.importStatus(bookId: aliases[0]).text
+        let formal = try store(), pending = try store(), suite = "PositionWinner-" + UUID().uuidString
+        let service = ReaderService(core: core, sourceDefaultsSuite: suite,
+            userStoreFactory: { name, _ in name == "pending-users.store" ? pending : formal })
+        return PositionWinnerFixture(root: root, core: core, book: book, aliases: aliases,
+                                     formal: formal, pending: pending, service: service, suite: suite)
+    }
+    private func positionRecord(key: String, token: String, offset: UInt64) throws -> StoredValue {
+        StoredValue(updated: 123456, token: token, value: try UserSyncJSON.encode(PositionValue(content_key: key, offset: offset)))
+    }
+    private func receivePosition(_ record: StoredValue, key: String, store: UserDataStore) async throws {
+        try await store.receiveSyncFixture("position", key: key, payload: UserSyncJSON.encode(record, envelope: true))
+    }
+    func testEqualTimestampFormalAndPendingPositionWinnerSurvivesPromotion() async throws {
+        for formalWins in [true, false] {
+            let f = try positionWinnerFixture(); defer { f.clean() }
+            let sha = f.book.contentSha256, alias = "pending:" + f.aliases[1]
+            let formal = try positionRecord(key: sha, token: formalWins ? "z-formal" : "a-formal", offset: 7)
+            let pending = try positionRecord(key: alias, token: formalWins ? "a-pending" : "z-pending", offset: 19)
+            try await receivePosition(formal, key: sha, store: f.formal)
+            try await receivePosition(pending, key: alias, store: f.pending)
+            let keys = [sha, alias], expected: UInt64 = formalWins ? 7 : 19
+            let before = try await f.service.effectiveQuery(keys: keys).bookInfo(bookId: f.book.id)
+            XCTAssertEqual(before.positionUtf8, expected)
+            // Scoped projection must carry the exact token used by the reducer.
+            let scoped = try await f.formal.projection(generation: 0, enabled: true, includeFacts: false, keys: [sha, sha])
+            let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(scoped.utf8)) as? [String: Any])
+            let positions = try XCTUnwrap(json["positions"] as? [[String: Any]])
+            XCTAssertEqual(positions.count, 1); XCTAssertEqual(positions.first?["token"] as? String, formal.token)
+            let transfer = try await f.pending.exportPending(key: alias)
+            try await f.formal.importPending(transfer, from: alias, to: sha)
+            try await f.pending.removePending(key: alias)
+            let after = try await f.service.effectiveQuery(keys: keys).bookInfo(bookId: f.book.id)
+            XCTAssertEqual(after.positionUtf8, before.positionUtf8)
+            let winner = try await f.formal.positionValues()["position/" + sha]
+            XCTAssertEqual(winner?.token, formalWins ? formal.token : pending.token)
+        }
+    }
+    func testEqualTimestampPendingAliasesIgnoreTraversalOrder() async throws {
+        for reverse in [false, true] {
+            let f = try positionWinnerFixture(); defer { f.clean() }
+            let sha = f.book.contentSha256
+            let keys = f.aliases.map { "pending:" + $0 }
+            let a = try positionRecord(key: keys[0], token: "a-alias", offset: 7)
+            let z = try positionRecord(key: keys[1], token: "z-alias", offset: 19)
+            let records = reverse ? [z, a] : [a, z]
+            let candidates = try records.map { try PositionCandidate($0).rekeyed(to: sha) }
+            let reduced = PositionCandidate.reduce(candidates)
+            XCTAssertEqual(reduced.count, 1); XCTAssertEqual(reduced[sha]?.stored.token, "z-alias")
+            for record in records {
+                let key = try PositionCandidate(record).value.content_key
+                try await receivePosition(record, key: key, store: f.pending)
+            }
+            let scopedKeys = reverse ? Array(keys.reversed()) : keys
+            let before = try await f.service.effectiveQuery(keys: scopedKeys).bookInfo(bookId: f.book.id)
+            XCTAssertEqual(before.positionUtf8, 19, "Only the final SHA winner is loaded by Rust")
+            for key in scopedKeys {
+                let transfer = try await f.pending.exportPending(key: key)
+                try await f.formal.importPending(transfer, from: key, to: sha)
+                try await f.pending.removePending(key: key)
+            }
+            let after = try await f.service.effectiveQuery(keys: [sha]).bookInfo(bookId: f.book.id)
+            XCTAssertEqual(after.positionUtf8, before.positionUtf8)
+            let winner = try await f.formal.positionValues()["position/" + sha]
+            XCTAssertEqual(winner?.token, "z-alias")
+        }
+    }
+
     private func content(_ note: String, start: UInt64 = 0, end: UInt64 = 9) -> AnnotationContent {
         AnnotationContent(start: start, end: end, excerpt: "正文 \(start)…\(end)", note: note)
     }
