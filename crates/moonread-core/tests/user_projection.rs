@@ -154,6 +154,105 @@ fn chapter_corrections_are_inputs_and_rebuild_retains_text_integrity() {
         "第一章 月"
     );
 }
+
+#[test]
+fn expanded_headings_require_explicit_rebuild_and_preserve_manual_corrections() {
+    let root = TempDir::new().unwrap();
+    let data = root.path().join("db").to_string_lossy().into_owned();
+    let path = root.path().join("original.txt");
+    let text = "第壹部 星港\n第一話 月光\n原創正文。\n第三部分仍是正文\n第一篇文章仍是正文\n第三回合开始了\n第二节课开始了\n第一部电影\n第一部手机\n第四本书\n第一話題\n第二話 歸舟\n原創正文。\n尾聲\n燈火未眠。\n";
+    std::fs::write(&path, text).unwrap();
+    let core = ReaderCore::new(data.clone()).unwrap();
+    let book = core
+        .import_book(path.to_string_lossy().into(), "星港".into())
+        .unwrap();
+    let first = text.find("第一話").unwrap() as u64;
+    let second = text.find("第二話").unwrap() as u64;
+    let ending = text.find("尾聲").unwrap() as u64;
+    let imported = core
+        .query_snapshot("{}".into())
+        .unwrap()
+        .chapter_outline(book.id.clone())
+        .unwrap();
+    assert_eq!(
+        imported
+            .items
+            .iter()
+            .map(|c| (c.title.as_str(), c.level, c.parent_utf8))
+            .collect::<Vec<_>>(),
+        vec![
+            ("第壹部 星港", 0, None),
+            ("第一話 月光", 1, Some(0)),
+            ("第二話 歸舟", 1, Some(0)),
+            ("尾聲", 1, Some(0))
+        ]
+    );
+    drop(core);
+    // Represent an already cached book from before these rules existed.
+    let db = rusqlite::Connection::open(root.path().join("db/reader.sqlite3")).unwrap();
+    db.execute("DELETE FROM import_chapters WHERE book_id=?1", [&book.id])
+        .unwrap();
+    drop(db);
+    let core = ReaderCore::new(data).unwrap();
+    let input = json!({"positions":[{"content_key":book.content_sha256,"offset":first,"updated":99,"visible":true,"preferred":null}],
+        "corrections":[
+            {"content_key":book.content_sha256,"offset":first,"title":"手工分組","level":0,"excluded":false},
+            {"content_key":book.content_sha256,"offset":second,"title":"不顯示","level":1,"excluded":true},
+            {"content_key":book.content_sha256,"offset":ending,"title":"手工結語","level":1,"excluded":false}
+        ]}).to_string();
+    let before = core.query_snapshot(input.clone()).unwrap();
+    assert_eq!(
+        before.chapter_outline(book.id.clone()).unwrap().items.len(),
+        2
+    );
+    assert!(
+        core.query_snapshot("{}".into())
+            .unwrap()
+            .chapter_outline(book.id.clone())
+            .unwrap()
+            .items
+            .is_empty()
+    );
+    let job = core.rebuild_chapters(book.id.clone()).unwrap();
+    while !job.next_batch().unwrap().done {}
+    // Preparing a preview alone must not replace the old index.
+    assert_eq!(job.preview(0, 80).unwrap().len(), 4);
+    assert!(
+        core.query_snapshot("{}".into())
+            .unwrap()
+            .chapter_outline(book.id.clone())
+            .unwrap()
+            .items
+            .is_empty()
+    );
+    job.apply().unwrap();
+    let after = core.query_snapshot(input).unwrap();
+    let outline = after.chapter_outline(book.id.clone()).unwrap();
+    assert_eq!(
+        outline
+            .items
+            .iter()
+            .map(|c| (c.title.as_str(), c.level))
+            .collect::<Vec<_>>(),
+        vec![("第壹部 星港", 0), ("手工分組", 0), ("手工結語", 1)]
+    );
+    assert_eq!(
+        after.book_info(book.id.clone()).unwrap().position_utf8,
+        first
+    );
+    assert_eq!(
+        core.import_status(book.id.clone())
+            .unwrap()
+            .text
+            .content_sha256,
+        book.content_sha256
+    );
+    let rebuilt: String = (0..book.chunk_count)
+        .map(|i| core.read_chunk(book.id.clone(), i).unwrap().text)
+        .collect();
+    assert_eq!(rebuilt, text);
+    assert_eq!(std::fs::read_to_string(path).unwrap(), text);
+}
 #[test]
 fn positions_clamp_at_unicode_boundaries_without_writing() {
     let (_root, core, book) = fixture();
