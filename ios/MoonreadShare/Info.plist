@@ -17,7 +17,7 @@
 		<key>NSExtensionAttributes</key>
 		<dict>
 			<key>NSExtensionActivationRule</key>
-			<string>extensionItems.@count &gt; 0 AND SUBQUERY(extensionItems, $item, $item.attachments.@count &gt; 0 AND SUBQUERY($item.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.plain-text" OR ($attachment.registeredTypeIdentifiers.@count == 1 AND ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url")).@count == $item.attachments.@count).@count == extensionItems.@count</string>
+			<string>extensionItems.@count &gt; 0 AND SUBQUERY(extensionItems, $item, $item.attachments.@count &gt; 0 AND SUBQUERY($item.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.file-url" AND (ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.plain-text" OR $attachment.registeredTypeIdentifiers.@count == 1)).@count == $item.attachments.@count).@count == extensionItems.@count</string>
 		</dict>
 	</dict>
 </dict>

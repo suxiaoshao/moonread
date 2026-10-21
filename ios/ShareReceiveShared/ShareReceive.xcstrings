@@ -93,29 +93,6 @@
         }
       }
     },
-    "加入书架": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "加入书架"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Add to Bookshelf"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "加入書架"
-          }
-        }
-      }
-    },
     "导入结果": {
       "extractionState": "manual",
       "localizations": {
@@ -208,29 +185,6 @@
         }
       }
     },
-    "接收 %lld 个文件": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "接收 %lld 个文件"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Receive %lld Files"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "接收 %lld 個檔案"
-          }
-        }
-      }
-    },
     "已接收 %lld 本": {
       "extractionState": "manual",
       "localizations": {
@@ -296,29 +250,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "跳過 %lld 個：%@"
-          }
-        }
-      }
-    },
-    "TXT 将存入‘我的书架’根目录，来源文件会保留。": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "TXT 将存入‘我的书架’根目录，来源文件会保留。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "TXT files go into the root of My Bookshelf. Source files are kept."
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "TXT 將存入「我的書架」根目錄，來源檔案會保留。"
           }
         }
       }

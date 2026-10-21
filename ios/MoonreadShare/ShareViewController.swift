@@ -17,6 +17,7 @@ final class ShareViewController: UIViewController {
             host.view.topAnchor.constraint(equalTo: view.topAnchor), host.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
         host.didMove(toParent: self)
+        model.receive()
     }
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
@@ -26,12 +27,11 @@ final class ShareViewController: UIViewController {
 
 @MainActor @Observable
 private final class ShareReceiveModel {
-    enum State { case ready, receiving, received(Int, [String]), failed(String) }
-    private(set) var state: State = .ready
+    enum State { case receiving, received(Int, [String]), failed(String) }
+    private(set) var state: State = .receiving
     private let providers: [NSItemProvider]
     private let context: NSExtensionContext?
     private var task: Task<Void, Never>?
-    var count: Int { providers.count }
     var canCancel: Bool { if case .received = state { false } else { true } }
     init(providers: [NSItemProvider], context: NSExtensionContext?) { self.providers = providers; self.context = context }
     func receive() {
@@ -75,11 +75,6 @@ private struct ShareReceiveView: View {
             VStack(spacing: 20) {
                 Image(systemName: "books.vertical").font(.system(size: 48)).foregroundStyle(.tint).accessibilityHidden(true)
                 switch model.state {
-                case .ready:
-                    Text("接收 \(model.count) 个文件", tableName: "ShareReceive").font(.title2)
-                    Text("TXT 将存入‘我的书架’根目录，来源文件会保留。", tableName: "ShareReceive").foregroundStyle(.secondary)
-                    Button { model.receive() } label: { Text("加入书架", tableName: "ShareReceive") }
-                        .buttonStyle(.borderedProminent).accessibilityIdentifier("shareReceiveImport")
                 case .receiving:
                     ProgressView { Text("正在接收…", tableName: "ShareReceive") }
                 case .received(let count, let skipped):

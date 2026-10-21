@@ -6,7 +6,9 @@
 
 2026-10-21，固定现有 iPhone 18 Pro（iOS 27.0），SDK 27.1、部署下限 iOS 18。无扩展的旧 Release 1.0.1（4）对文件 App 单／多 TXT 都显示月读；安装二进制、无 `.appex` 和扩展注册为空均已核对。最初实现前的自动化尝试未能确认，最终用旧 Release 补查，证据为 `build/ShareReceive/DocumentTypesBaseline2.xcresult`，不把早期误装 Debug 的运行当作基线。
 
-新扩展的真实文件 App 分享覆盖 UTF-8 单本、UTF-8＋GBK 多本、同名取消后继续下一本、同名替换、扩展取消、PDF 单独及 PDF／TXT 混合时系统过滤。接收后结束主 App 再正常冷启动，仍能提示同名并导入；GBK 正文按正常阅读手势进入，核对实际汉字可读。所有主 App 启动均未加测试参数；UI harness 和原创样本位于 build/，仓库原有 UI 测试已恢复。
+新扩展的真实文件 App 分享覆盖 UTF-8 单本、UTF-8＋GBK 多本、同名取消后继续下一本、同名替换、PDF 单独及 PDF／TXT 混合时系统过滤。接收后结束主 App 再正常冷启动，仍能提示同名并导入；GBK 正文按正常阅读手势进入，核对实际汉字可读。所有主 App 启动均未加测试参数；UI harness 和原创样本位于 build/，仓库原有 UI 测试已恢复。
+
+分享扩展当前打开即自动接收，完成后仅显示「完成」。同一模拟器未安装备忘录，经确认改用 Safari 选中文字分享：原规则下列表出现月读，要求每个附件提供 file URL 后不再出现；文件 App 单个 TXT 自动显示「已接收 1 本」，无需「加入书架」。本次只验证这两个场景，各留一张最终截图于 `build/ShareReceive/screens/revision/`；证据为 `RevisionFinal.xcresult` 的 TXT 用例与 `SafariTextAfter.xcresult` 的文字分享用例。临时 UI harness 未提交。
 
 28 项受影响单测通过（11 项 ShareInbox、17 项既有拖入导入），覆盖清单 v1／未知／损坏／空数据保护、跨 owner 恢复、原字节、临时回调失效、取消与迟到回调、file URL 非 TXT 文件名和既有队列。两份导入副本及来源 SHA-256 相同，来源保留，ShareInbox 处理后为空。证据为 `Scenarios.xcresult`、`FinalChecks.xcresult`、`GBKReading.xcresult`、`byte-verification.json` 和 `screens/`，均位于 `build/ShareReceive/`。
 
