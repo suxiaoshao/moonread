@@ -46,6 +46,15 @@ struct ChapterInput {
 
 pub(crate) fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TEMP TABLE user_positions(content_key TEXT PRIMARY KEY,position_utf8 INTEGER,last_read INTEGER,recent_visible INTEGER,preferred_file_id TEXT);
+    CREATE TEMP VIEW file_identities(file_id,content_sha256) AS
+    SELECT f.id,COALESCE(si.content_sha256,b.content_sha256)
+    FROM main.library_files f
+    LEFT JOIN main.library_identities li ON li.file_id=f.id AND li.decoding=f.decoding
+        AND li.indexed_size=f.size AND li.indexed_modified=f.modified
+    LEFT JOIN main.source_identities si ON si.raw_sha256=li.raw_sha256 AND si.decoding=li.decoding
+    LEFT JOIN main.import_jobs j ON j.book_id=f.book_id
+    LEFT JOIN main.books b ON b.id=COALESCE(j.canonical_id,f.book_id)
+    WHERE f.directory=0 AND COALESCE(si.content_sha256,b.content_sha256) IS NOT NULL;
     CREATE TEMP VIEW reading_books AS SELECT b.*,COALESCE(p.position_utf8,0) position_utf8,COALESCE(p.last_read,0) last_read,COALESCE(p.recent_visible,1) recent_visible,p.preferred_file_id FROM main.books b LEFT JOIN user_positions p ON p.content_key=b.content_sha256;
     CREATE TEMP TABLE book_metadata(content_sha TEXT PRIMARY KEY,value TEXT);
     CREATE TEMP TABLE chapter_overrides(book_id TEXT,start_utf8 INTEGER,title TEXT,level INTEGER,excluded INTEGER,start_char_count INTEGER,body_char_count INTEGER,PRIMARY KEY(book_id,start_utf8));

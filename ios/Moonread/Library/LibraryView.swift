@@ -113,7 +113,7 @@ struct LibraryView: View {
     }
 
     @ViewBuilder private func recentMenu(_ entry: LibraryEntry) -> some View {
-        Button("小说详情", systemImage: "info.circle") { model.path.append(.statistics(StatisticsRoute(bookID: entry.bookId, title: entry.title, fileID: entry.id))) }
+        Button("小说详情", systemImage: "info.circle") { model.path.append(.statistics(StatisticsRoute(key: entry.readingKey, bookID: entry.bookId, title: entry.title, fileID: entry.id))) }
         Button("从最近移除", systemImage: "minus.circle") { Task { await model.hideRecent(entry) } }
     }
 }
@@ -261,6 +261,7 @@ struct LibraryFolderView: View {
                 }
                 else {
                     Menu {
+                        Button { model.sheet = .fullIndex(location.shelfID) } label: { Label { Text("建立索引", tableName: "FullIndex") } icon: { Image(systemName: "text.badge.checkmark") } }.accessibilityIdentifier("buildShelfIndex")
                         Button("选择项目", systemImage: "checkmark.circle") { editing = .active }
                         Button("新建文件夹", systemImage: "folder.badge.plus") { model.sheet = .create(location) }
                         if location.shelfID == "builtin" { Button("导入小说", systemImage: "square.and.arrow.down") { model.chooseFiles(.novels(location)) } }
@@ -587,7 +588,7 @@ struct RecentLibraryView: View {
         List(entries, id: \.id) { entry in
             RecentBookRow(model: model, entry: entry)
                 .contextMenu {
-                    Button("小说详情", systemImage: "info.circle") { model.path.append(.statistics(StatisticsRoute(bookID: entry.bookId, title: entry.title, fileID: entry.id))) }
+                    Button("小说详情", systemImage: "info.circle") { model.path.append(.statistics(StatisticsRoute(key: entry.readingKey, bookID: entry.bookId, title: entry.title, fileID: entry.id))) }
                     Button("从最近移除", systemImage: "minus.circle") { Task { await model.hideRecent(entry); await loadEntries() } }
                 }.listRowBackground(Color.clear)
         }.listStyle(.plain).themedPage().navigationTitle("最近阅读")
@@ -684,6 +685,7 @@ struct ShelfMenu: View {
     let shelf: LibraryShelf
     var body: some View {
         Group {
+            Button { model.sheet = .fullIndex(shelf.id) } label: { Text("建立索引", tableName: "FullIndex") }
             Button("刷新", systemImage: "arrow.clockwise") { Task { await model.refresh(userInitiated: true) } }
             if !shelf.builtin {
                 Button("重新连接", systemImage: "folder.badge.questionmark") { model.chooseFiles(.folder(shelf.id)) }

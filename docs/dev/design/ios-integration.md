@@ -2,6 +2,12 @@
 
 更新：2026-10-01。本轮仅研究与记录，尚未实现下列新增系统入口。最低系统继续为 iOS 18；具体 API 按部署版本检查可用性，不因最新文档提高系统下限。
 
+## 书架索引后台任务
+
+全量索引共用串行 worker；正文准备和阅读租约共用前台闸门，索引与最近阅读恢复在逐个文件处理前等待空闲；开书失败或取消也释放闸门并自动继续，不依赖页面或前后台切换唤醒。阅读准备优先，低电量或 serious／critical 热状态暂停。iOS 26+ 用户点按发起的索引用 `BGContinuedProcessingTask` 显示系统进度和取消；自动索引、iOS 18–25 前台运行，退后台保存暂停状态，由充电时的 `BGProcessingTask` 续跑，实际时间由系统决定。处理过期不丢已完成身份，未完成文件下次重算。
+
+固定任务标识为 `dev.moonread.Moonread.full-index.processing`；ContinuedProcessing 许可模式为 `dev.moonread.Moonread.full-index.continued.*`，实际注册／提交 `dev.moonread.Moonread.full-index.continued.<UUID>`。两项列入 `BGTaskSchedulerPermittedIdentifiers`，`UIBackgroundModes` 增加 `processing` 并保留原项；标识前缀发布后保持稳定。提交失败仍可前台执行，不承诺后台一定获调度。模拟器验证不能代表真实后台调度或 iCloud 下载释放已验收。
+
 ## 产品目标
 
 让读者在系统中更容易继续正在读的书、找到书和导入文件。所有入口共用现有开书、正文 SHA、位置恢复和统计规则，不另建一套阅读状态。优先展示书籍与续读动作，统计作为辅助。

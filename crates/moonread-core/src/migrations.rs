@@ -3,8 +3,10 @@ use crate::{ReaderError, Result};
 use rusqlite::Connection;
 
 const BASELINE: u32 = 20;
-const STEPS: &[&str] =
-    &["ALTER TABLE import_jobs ADD COLUMN purpose TEXT NOT NULL DEFAULT 'reading';"];
+const STEPS: &[&str] = &[
+    "ALTER TABLE import_jobs ADD COLUMN purpose TEXT NOT NULL DEFAULT 'reading';",
+    include_str!("full_index.sql"),
+];
 
 pub(crate) fn initialize(db: &mut Connection) -> Result<()> {
     migrate(db, STEPS)
@@ -55,7 +57,7 @@ mod tests {
         assert_eq!(
             db.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
                 .unwrap(),
-            21
+            22
         );
     }
 
@@ -121,18 +123,18 @@ mod tests {
     fn future_and_prebaseline_versions_are_rejected_without_reset() {
         let mut db = Connection::open_in_memory().unwrap();
         initialize(&mut db).unwrap();
-        db.execute_batch("PRAGMA user_version=22").unwrap();
+        db.execute_batch("PRAGMA user_version=23").unwrap();
         assert!(matches!(
             initialize(&mut db),
             Err(ReaderError::StoreTooNew {
-                version: 22,
-                current: 21
+                version: 23,
+                current: 22
             })
         ));
         assert_eq!(
             db.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
                 .unwrap(),
-            22
+            23
         );
         db.execute_batch("PRAGMA user_version=19").unwrap();
         assert!(matches!(

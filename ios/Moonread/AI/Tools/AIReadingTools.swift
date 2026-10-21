@@ -1088,8 +1088,8 @@ extension ReaderService {
   {
     var entries = try await libraryEntries(location, sort: sort)
     for index in entries.indices {
-      if let id = entries[index].bookId {
-        let value = try await details(bookID: id)
+      if let key = entries[index].readingKey {
+        let value = try await details(sha: key)
         if value.metadata.sha.count == 64 { entries[index].metadata = value.metadata }
       }
     }
@@ -1098,8 +1098,8 @@ extension ReaderService {
   func aiLibraryBooks(_ shelf: String) async throws -> [LibraryEntry] {
     var entries = try await allLibraryBooks(shelf)
     for index in entries.indices {
-      if let id = entries[index].bookId {
-        let value = try await details(bookID: id)
+      if let key = entries[index].readingKey {
+        let value = try await details(sha: key)
         if value.metadata.sha.count == 64 { entries[index].metadata = value.metadata }
       }
     }

@@ -45,9 +45,11 @@ final class BookInformationModel {
         let entry: LibraryEntry?
         if let file = target.fileID { entry = try await service.libraryEntry(file) }
         else if let id = target.bookID, !target.fromReader {
-            entry = try await service.libraryEntries(nil).first { $0.bookId == id && !$0.directory }
+            let key: String
+            if let known = target.key { key = known } else { key = try await service.userKey(id) }
+            entry = try await service.libraryEntries(nil).first { $0.readingKey == key && !$0.directory }
         } else { entry = nil }
-        let details = try await service.details(bookID: target.fromReader ? target.bookID : (entry?.bookId ?? target.bookID), sha: target.key)
+        let details = try await service.details(bookID: target.fromReader ? target.bookID : (entry?.bookId ?? target.bookID), sha: entry?.readingKey ?? target.key)
         return (entry, details)
     }
     static func validSHA(_ value: String?) -> String? {
@@ -380,7 +382,7 @@ struct BookInformationSections: View {
         .navigationDestination(item: $readerSearch) { scope in
             if let library {
                 ReaderContextSearch(model: library, scope: scope,
-                                    isOpenBook: { entry in entry.id == target.fileID || (target.bookID != nil && entry.bookId == target.bookID) },
+                                    isOpenBook: { entry in entry.id == target.fileID || (model.contentSHA(for: target) != nil && entry.readingKey == model.contentSHA(for: target)) },
                                     returnToBook: { if let returnToReading { returnToReading() } else { dismiss() } })
             }
         }
@@ -392,9 +394,11 @@ struct BookInformationSections: View {
                     ForEach([BookReadingStatus.reading, .finished, .paused], id: \.self) { Text($0.label).tag($0) }
                 }
                 .accessibilityIdentifier("bookReadingStatus")
-                if let book = details.book, book.positionUtf8 > 0 {
+                let position = model.entry?.positionUtf8 ?? details.book?.positionUtf8 ?? 0
+                let bytes = model.entry?.byteCount ?? details.book?.byteCount ?? 0
+                if position > 0 {
                     if let chapter = details.currentChapter { Text(verbatim: chapter).lineLimit(2) }
-                    LabeledContent("全书位置", value: (Double(book.positionUtf8) / Double(max(1,book.byteCount))).formatted(.percent.precision(.fractionLength(1))))
+                    LabeledContent("全书位置", value: (Double(position) / Double(max(1,bytes))).formatted(.percent.precision(.fractionLength(1))))
                 }
                 if let chapter = model.chapters.last(where: { $0.startUtf8 <= (details.book?.positionUtf8 ?? 0) }) {
                     LabeledContent("当前章覆盖", value: chapter.coverageLabel)

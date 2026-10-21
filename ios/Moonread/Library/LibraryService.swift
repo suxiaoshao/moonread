@@ -96,6 +96,8 @@ final class LibraryExport: Sendable {
 }
 
 extension LibraryEntry {
+    /// Reading data follows normalized text; unfinished imports retain their pending namespace.
+    var readingKey: String? { contentSha256 ?? bookId.map { "pending:" + $0 } }
     var source: SourceFile { SourceFile(id: id, shelfID: shelfId, relativePath: relativePath) }
     var location: LibraryLocation { LibraryLocation(shelfID: shelfId, path: relativePath) }
     var parent: LibraryLocation { LibraryLocation(shelfID: shelfId, path: parentPath) }
@@ -107,7 +109,7 @@ extension ReaderService {
         let file = try textCore().sourceFileLocation(fileId: id)
         let query: ReaderQuery
         if let book = file.bookId { query = try await bookQuery(book) }
-        else { query = try await effectiveQuery(keys: [], scope: "unprepared-file") }
+        else { query = try await effectiveQuery(keys: try textCore().indexedSourceKeys(shelfId: nil, fileId: id), scope: "unprepared-file") }
         return try query.libraryEntry(fileId: id)
     }
     func catalogueQuery(_ location: LibraryLocation?, recursive: Bool) async throws -> ReaderQuery {
@@ -115,6 +117,7 @@ extension ReaderService {
         let shelves = try location.map { [$0.shelfID] } ?? core.libraryShelves().map(\.id)
         var keys = Set<String>()
         for shelf in shelves {
+            keys.formUnion(try core.indexedSourceKeys(shelfId: shelf, fileId: nil))
             for file in try core.sourceFiles(shelfId: shelf) where !file.directory {
                 if !recursive, let location, !location.path.isEmpty, !file.relativePath.hasPrefix(location.path + "/") { continue }
                 if let id = file.bookId, let key = try? userKey(id) { keys.insert(key); keys.insert("pending:" + id) }
@@ -323,22 +326,21 @@ extension ReaderService {
     func recentLibrary(_ limit: UInt32 = 1000, cold: Bool = false) async throws -> [LibraryEntry] {
         if cold { return try await effectiveQuery(scope: "home-cold").recentLibraryEntries(limit: limit) }
         let index = try await effectiveQuery(positionsOnly: true, scope: "recent-index").recentLibraryEntries(limit: limit)
-        let keys = try index.compactMap(\.bookId).flatMap { id in [try userKey(id), "pending:" + id] }
+        let keys = index.compactMap(\.readingKey)
         guard !keys.isEmpty else { return [] }
         return try await effectiveQuery(keys: Array(Set(keys)), scope: "recent").recentLibraryEntries(limit: limit)
     }
     func recentBook(_ route: ReaderRoute) async throws -> LibraryEntry? {
-        let id: String
         switch route {
-        case let .book(book): id = book
+        case let .book(id): return try await bookQuery(id).recentLibraryEntries(limit: 1).first
         case let .source(file):
-            guard let book = try textCore().sourceFileLocation(fileId: file.id).bookId else { return nil }
-            id = book
+            let entry = try await libraryEntry(file.id)
+            guard let key = entry.readingKey else { return nil }
+            return try await effectiveQuery(keys: [key], scope: "recent-source").recentLibraryEntries(limit: 1000).first { $0.readingKey == key }
         }
-        return try await bookQuery(id).recentLibraryEntries(limit: 1).first
     }
-    func hideRecent(_ bookID: String) throws {
-        let key = try userKey(bookID)
+    func hideRecent(_ value: String) throws {
+        let key = value.hasPrefix("pending:") || value.count == 64 ? value : try userKey(value)
         var hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
         hidden.insert(key); sourceDefaults.set(Array(hidden), forKey: "Moonread.hiddenRecent"); dataChanged()
     }

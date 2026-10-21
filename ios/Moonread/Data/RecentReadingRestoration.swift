@@ -249,14 +249,14 @@ extension ReaderService {
             var interrupted = false
             for candidate in candidates {
                 try Task.checkCancellation()
-                if readingSourceIDs.values.contains(candidate.file.id) || foregroundSourcePreparations[candidate.file.id] != nil { interrupted = true; continue }
+                try await waitForReadingIdle()
                 let generation = recentRestorationGeneration
                 let work = RecentRestorationWork(core: core, candidate: candidate, hint: hint, contentKey: position.contentKey,
                     mayDownload: RecentRestorationPolicy.canAutomaticallyDownload(hint: hint, candidate: candidate, files: all))
                 recentRestorationWork = work
                 do {
                     if let recentRestorationBeforeRead { await recentRestorationBeforeRead(candidate.file.id) }
-                    let result = try await work.run()
+                    let result = try await withReadingIdleWork(cancel: { work.cancel() }) { try await work.run() }
                     try Task.checkCancellation(); try work.checkCancellation()
                     if let recentRestorationBeforeCommit { await recentRestorationBeforeCommit() }
                     try Task.checkCancellation(); try work.checkCancellation()
@@ -267,7 +267,7 @@ extension ReaderService {
                           current.contains(where: { $0.contentKey == position.contentKey && $0.token == position.token }),
                           !(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []).contains(position.contentKey),
                           !readingSourceIDs.values.contains(candidate.file.id),
-                          foregroundSourcePreparations[candidate.file.id] == nil,
+                          identityMayRun(),
                           let fresh = try restorationCandidate(candidate.file.id),
                           restorationFingerprint([fresh], position: position) == restorationFingerprint([candidate], position: position)
                     else { interrupted = true; break }
@@ -275,9 +275,15 @@ extension ReaderService {
                     queryCache.removeAll()
                     NotificationCenter.default.post(name: .recentReadingRestored, object: nil)
                     break
-                } catch is CancellationError { interrupted = true; break }
+                } catch is CancellationError {
+                    if !Task.isCancelled { recentRestorationRequested = true }
+                    interrupted = true; break
+                }
                 catch {
-                    if Task.isCancelled || work.isCancelled { interrupted = true; break }
+                    if Task.isCancelled || work.isCancelled {
+                        if !Task.isCancelled { recentRestorationRequested = true }
+                        interrupted = true; break
+                    }
                     // Wrong text/decoding/provider errors do not broaden the admitted set.
                 }
                 recentRestorationWork = nil

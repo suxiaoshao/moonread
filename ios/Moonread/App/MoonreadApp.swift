@@ -40,9 +40,13 @@ struct MoonreadApp: App {
             .task {
                 library.startCloudDiscovery()
                 if await library.load() {
+                    library.fullIndex.scene(active: scenePhase == .active)
                     if Onboarding.shared.completed { await library.receiveSharedInbox() }
                     await cloud.refresh()
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .libraryIdentityChanged).receive(on: DispatchQueue.main)) { note in
+                Task { await library.reloadBooks(); if let message = note.object as? String { library.error = message } }
             }
             .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in
                 Task { await CloudSyncCoordinator.shared.localDataChanged() }
@@ -63,6 +67,7 @@ struct MoonreadApp: App {
                 Task { await cloud.identityChanged() }
             }
             .onChange(of: scenePhase) { _, phase in
+                library.fullIndex.scene(active: phase == .active)
                 if phase == .background {
                     BackgroundSave.perform(name: "保存显示偏好") { await themes.flushPreferences() }
                     Task { await ReaderService.shared.pauseImports() }

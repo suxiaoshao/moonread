@@ -204,7 +204,12 @@ impl ReaderCore {
         shelf_id: Option<String>,
     ) -> Result<BookFilterOptions> {
         let db = self.read_lock()?;
-        let mut q = db.prepare("SELECT DISTINCT m.value FROM book_metadata m JOIN reading_books b ON b.content_sha256=m.content_sha JOIN library_files f ON f.book_id=b.id WHERE (?1 IS NULL OR f.shelf_id=?1)")?;
+        let mut q = db.prepare(
+            "SELECT DISTINCT m.value FROM library_files f
+        JOIN file_identities fi ON fi.file_id=f.id
+        JOIN book_metadata m ON m.content_sha=fi.content_sha256
+        WHERE (?1 IS NULL OR f.shelf_id=?1)",
+        )?;
         let mut authors = BTreeSet::new();
         let mut tags = BTreeSet::new();
         for row in q.query_map([shelf_id], |r| r.get::<_, String>(0))? {

@@ -92,7 +92,6 @@ actor ReaderService {
     var recentRestorationAttempts: [String: String] = [:]
     var recentRestorationBeforeRead: (@Sendable (String) async -> Void)?
     var recentRestorationBeforeCommit: (@Sendable () async -> Void)?
-    var foregroundSourcePreparations: [String: Int] = [:]
 
     nonisolated let settingsCache: ReaderSettingsCache
     struct UserStoreInitialization {
@@ -200,7 +199,58 @@ actor ReaderService {
         }
     }
 
-    private var readers: [String: Int] = [:]
+    // Preparation and reading leases hold the same foreground gate. Background
+    // workers register cancellation before leaving this actor, avoiding a check/start race.
+    private var foregroundHolds: [String: Int] = [:]
+    private var idleWaiters: [UUID: CheckedContinuation<Void, Error>] = [:]
+    private var backgroundReadCancellation: (@Sendable () -> Void)?
+    private var readers: [String: Int] {
+        Dictionary(uniqueKeysWithValues: foregroundHolds.filter { $0.key.hasPrefix("book:") }.map { (String($0.key.dropFirst(5)), $0.value) })
+    }
+    func identityMayRun() -> Bool { foregroundHolds.isEmpty }
+    private func holdForeground(_ key: String) {
+        foregroundHolds[key, default: 0] += 1
+        backgroundReadCancellation?()
+        recentRestorationWork?.cancel()
+    }
+    private func releaseForeground(_ key: String) {
+        if let count = foregroundHolds[key], count > 1 { foregroundHolds[key] = count - 1 }
+        else { foregroundHolds[key] = nil }
+        wakeIdleWaiters()
+    }
+    private func wakeIdleWaiters() {
+        let waiters = idleWaiters; idleWaiters.removeAll()
+        for waiter in waiters.values { waiter.resume() }
+    }
+    private func waitForGateChange() async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await withCheckedThrowingContinuation { idleWaiters[id] = $0 }
+        } onCancel: { Task { await self.cancelIdleWaiter(id) } }
+        try Task.checkCancellation()
+    }
+    private func cancelIdleWaiter(_ id: UUID) { idleWaiters.removeValue(forKey: id)?.resume(throwing: CancellationError()) }
+    func waitForReadingIdle() async throws {
+        while !foregroundHolds.isEmpty { try await waitForGateChange() }
+        try Task.checkCancellation()
+    }
+    func withReadingIdleWork<T: Sendable>(cancel: @escaping @Sendable () -> Void,
+                                         operation: @Sendable () async throws -> T) async throws -> T {
+        while !foregroundHolds.isEmpty || backgroundReadCancellation != nil { try await waitForGateChange() }
+        try Task.checkCancellation()
+        backgroundReadCancellation = cancel
+        defer { backgroundReadCancellation = nil; wakeIdleWaiters() }
+        return try await operation()
+    }
+    func withForegroundOpening<T: Sendable>(operation: @Sendable () async throws -> T) async throws -> T {
+        let key = "opening:" + UUID().uuidString
+        holdForeground(key)
+        defer { releaseForeground(key) }
+        while backgroundReadCancellation != nil { try await waitForGateChange() }
+        try Task.checkCancellation()
+        return try await operation()
+    }
     var recoveredImports = false
     var pendingPromotionIDs = Set<String>()
     private var automaticallyPaused: Set<String> = []
@@ -396,26 +446,22 @@ actor ReaderService {
     /// Materialize provider files before navigation. This does not create an
     /// import, read the full text, or change formal reading activity.
     func prepareSourceFile(_ file: SourceFile, progress: @escaping @Sendable (Double?) -> Void = { _ in }) async throws {
-        foregroundSourcePreparations[file.id, default: 0] += 1
-        defer {
-            if let count = foregroundSourcePreparations[file.id], count > 1 { foregroundSourcePreparations[file.id] = count - 1 }
-            else { foregroundSourcePreparations[file.id] = nil }
+        try await withForegroundOpening {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("--ui-test-download-progress") {
+                progress(0.25); try await Task.sleep(for: .seconds(4))
+                progress(0.75); try await Task.sleep(for: .seconds(4))
+            }
+            #endif
+            let entry = try await self.textCore().sourceFileLocation(fileId: file.id)
+            let shelf = try await self.libraryShelf(entry.shelfId)
+            let access = SourceFileAccess(bookmark: Data(shelf.bookmark), path: entry.relativePath, progress: progress)
+            try await withTaskCancellationHandler {
+                try Task.checkCancellation()
+                try await access.prepare()
+                try Task.checkCancellation()
+            } onCancel: { access.cancel() }
         }
-        if recentRestorationWork?.fileID == file.id { recentRestorationWork?.cancel() }
-        #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--ui-test-download-progress") {
-            progress(0.25); try await Task.sleep(for: .seconds(4))
-            progress(0.75); try await Task.sleep(for: .seconds(4))
-        }
-        #endif
-        let entry = try textCore().sourceFileLocation(fileId: file.id)
-        let shelf = try libraryShelf(entry.shelfId)
-        let access = SourceFileAccess(bookmark: Data(shelf.bookmark), path: entry.relativePath, progress: progress)
-        try await withTaskCancellationHandler {
-            try Task.checkCancellation()
-            try await access.prepare()
-            try Task.checkCancellation()
-        } onCancel: { access.cancel() }
     }
 
     // The source is locally available before navigation. Only small metadata work runs on this actor;
@@ -426,6 +472,8 @@ actor ReaderService {
     }
 
     func openSourceFile(_ file: SourceFile, trackReadingSource: Bool) throws -> ReadingLease {
+        let opening = "opening:" + UUID().uuidString
+        holdForeground(opening); defer { releaseForeground(opening) }
         if recentRestorationWork?.fileID == file.id { recentRestorationWork?.cancel() }
 
         let entry = try textCore().sourceFileLocation(fileId: file.id)
@@ -453,19 +501,21 @@ actor ReaderService {
     }
 
     func openReading(_ id: String, diagnostic: ReaderOpenTrace? = nil) throws -> ReadingLease {
+        let opening = "opening:" + UUID().uuidString
+        holdForeground(opening); defer { releaseForeground(opening) }
         diagnostic?.mark("lease.actor.begin"); defer { diagnostic?.mark("lease.actor.return") }
         _ = try textCore().importStatus(bookId: id)
         return retainReading(id)
     }
 
     private func retainReading(_ id: String) -> ReadingLease {
-        readers[id, default: 0] += 1
+        holdForeground("book:" + id)
         return ReadingLease(id: id, service: self)
     }
 
     fileprivate func releaseReading(_ id: String) {
-        if let count = readers[id], count > 1 { readers[id] = count - 1 }
-        else { readers[id] = nil; readingSourceIDs[id] = nil }
+        releaseForeground("book:" + id)
+        if readers[id] == nil { readingSourceIDs[id] = nil }
         reclaimReleasedImport(id)
         scheduleRecentRestoration()
     }

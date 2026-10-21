@@ -18,6 +18,8 @@ pub struct SourceTextIdentity {
     pub raw_sha256: String,
     pub encoding: String,
     pub source_bytes: u64,
+    pub utf8_bytes: u64,
+    pub char_count: u64,
 }
 #[derive(Default, uniffi::Object)]
 pub struct SourceIdentityProbe {
@@ -69,8 +71,12 @@ impl SourceIdentityProbe {
         };
         let mut content = Sha256::new();
         let mut has_text = false;
+        let mut utf8_bytes = 0;
+        let mut char_count = 0;
         text::decode_chunks(&mut input, encoding, |part| {
             content.update(part.as_bytes());
+            utf8_bytes += part.len() as u64;
+            char_count += part.chars().filter(|c| !c.is_whitespace()).count() as u64;
             has_text |= part.chars().any(|c| !c.is_whitespace());
             Ok(())
         })?;
@@ -85,6 +91,8 @@ impl SourceIdentityProbe {
             raw_sha256: sha256_hex(input.hash.finalize()),
             encoding: encoding.name().into(),
             source_bytes: input.bytes,
+            utf8_bytes,
+            char_count,
         })
     }
 }

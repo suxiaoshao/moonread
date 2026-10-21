@@ -76,6 +76,7 @@ pub struct LibraryEntry {
     pub preferred: bool,
     pub cover_previews: Vec<LibraryCoverPreview>,
     pub metadata: Option<crate::BookMetadata>,
+    pub content_sha256: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, uniffi::Enum)]
@@ -228,6 +229,10 @@ impl ReaderCore {
             "UPDATE library_shelves SET error=NULL WHERE id=?1",
             [shelf_id],
         )?;
+        tx.execute(
+            "DELETE FROM library_identities WHERE file_id NOT IN (SELECT id FROM library_files)",
+            [],
+        )?;
         tx.commit()?;
         Ok(())
     }
@@ -368,52 +373,63 @@ fn filtered_entries(
     book: Option<&str>,
 ) -> Result<Vec<LibraryEntry>> {
     let mut stmt=db.prepare("SELECT f.id,f.shelf_id,s.name,f.relative_path,f.parent_path,f.name,f.directory,f.size,f.modified,f.needs_download,
-       b.id,COALESCE(b.position_utf8,0),COALESCE(b.byte_count,0),
-       (SELECT title FROM effective_chapters c WHERE c.book_id=b.id AND c.start_utf8<=b.position_utf8 ORDER BY c.start_utf8 DESC LIMIT 1),
+       b.id,COALESCE(p.position_utf8,0),COALESCE(si.utf8_bytes,b.byte_count,0),
+       (SELECT title FROM effective_chapters c WHERE c.book_id=b.id AND c.start_utf8<=p.position_utf8 ORDER BY c.start_utf8 DESC LIMIT 1),
        CASE WHEN f.directory=1 THEN (SELECT count(*) FROM library_files child WHERE child.shelf_id=f.shelf_id AND child.directory=0 AND substr(child.relative_path,1,length(f.relative_path)+1)=f.relative_path||'/') ELSE 0 END,
-       CASE WHEN f.directory=1 THEN COALESCE((SELECT max(cb.last_read) FROM library_files child
-           LEFT JOIN import_jobs cj ON cj.book_id=child.book_id LEFT JOIN reading_books cb ON cb.id=COALESCE(cj.canonical_id,child.book_id)
+       CASE WHEN f.directory=1 THEN COALESCE((SELECT max(cp.last_read) FROM library_files child
+           JOIN file_identities ci ON ci.file_id=child.id
+           JOIN user_positions cp ON cp.content_key=ci.content_sha256
            WHERE child.shelf_id=f.shelf_id AND child.directory=0 AND substr(child.relative_path,1,length(f.relative_path)+1)=f.relative_path||'/'),0)
-           ELSE COALESCE(b.last_read,0) END,COALESCE(b.preferred_file_id=f.id,0),m.value
+           ELSE COALESCE(p.last_read,0) END,COALESCE(p.preferred_file_id=f.id,0),m.value,fi.content_sha256
        FROM library_files f JOIN library_shelves s ON s.id=f.shelf_id
-       LEFT JOIN import_jobs j ON j.book_id=f.book_id LEFT JOIN reading_books b ON b.id=COALESCE(j.canonical_id,f.book_id)
-       LEFT JOIN book_metadata m ON m.content_sha=b.content_sha256
+       LEFT JOIN file_identities fi ON fi.file_id=f.id
+       LEFT JOIN import_jobs j ON j.book_id=f.book_id
+       LEFT JOIN reading_books b ON b.id=COALESCE(j.canonical_id,f.book_id) AND b.content_sha256=fi.content_sha256
+       LEFT JOIN (SELECT content_sha256,MAX(utf8_bytes) utf8_bytes FROM source_identities GROUP BY content_sha256) si ON si.content_sha256=fi.content_sha256
+       LEFT JOIN user_positions p ON p.content_key=fi.content_sha256
+       LEFT JOIN book_metadata m ON m.content_sha=fi.content_sha256
        WHERE (?1 IS NULL OR f.shelf_id=?1) AND (?2 IS NULL OR f.parent_path=?2) AND (?3=0 OR f.directory=0) AND (?4 IS NULL OR f.id=?4) AND (?5 IS NULL OR b.id=?5)")?;
     Ok(stmt
-        .query_map(params![shelf, parent, books_only, file, book], |r| {
-            Ok(LibraryEntry {
-                id: r.get(0)?,
-                shelf_id: r.get(1)?,
-                shelf_name: r.get(2)?,
-                relative_path: r.get(3)?,
-                parent_path: r.get(4)?,
-                name: r.get(5)?,
-                directory: r.get(6)?,
-                size: r.get::<_, i64>(7)? as u64,
-                modified: r.get(8)?,
-                needs_download: r.get(9)?,
-                book_id: r.get(10)?,
-                position_utf8: r.get::<_, i64>(11)? as u64,
-                byte_count: r.get::<_, i64>(12)? as u64,
-                chapter_title: r.get(13)?,
-                child_book_count: r.get::<_, i64>(14)? as u64,
-                last_read: r.get(15)?,
-                preferred: r.get(16)?,
-                cover_previews: Vec::new(),
-                metadata: metadata_column(r, 17)?,
-            })
-        })?
+        .query_map(
+            params![shelf, parent, books_only, file, book],
+            library_entry_row,
+        )?
         .collect::<std::result::Result<_, _>>()?)
+}
+
+fn library_entry_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryEntry> {
+    Ok(LibraryEntry {
+        id: r.get(0)?,
+        shelf_id: r.get(1)?,
+        shelf_name: r.get(2)?,
+        relative_path: r.get(3)?,
+        parent_path: r.get(4)?,
+        name: r.get(5)?,
+        directory: r.get(6)?,
+        size: r.get::<_, i64>(7)? as u64,
+        modified: r.get(8)?,
+        needs_download: r.get(9)?,
+        book_id: r.get(10)?,
+        position_utf8: r.get::<_, i64>(11)? as u64,
+        byte_count: r.get::<_, i64>(12)? as u64,
+        chapter_title: r.get(13)?,
+        child_book_count: r.get::<_, i64>(14)? as u64,
+        last_read: r.get(15)?,
+        preferred: r.get(16)?,
+        cover_previews: Vec::new(),
+        metadata: metadata_column(r, 17)?,
+        content_sha256: r.get(18)?,
+    })
 }
 
 fn populate_cover_previews(db: &Connection, entries: &mut [LibraryEntry]) -> Result<()> {
     let mut stmt = db.prepare_cached(
         "SELECT f.id,f.name,m.value FROM library_files f
-        LEFT JOIN import_jobs j ON j.book_id=f.book_id
-        LEFT JOIN reading_books b ON b.id=COALESCE(j.canonical_id,f.book_id)
-        LEFT JOIN book_metadata m ON m.content_sha=b.content_sha256
+        LEFT JOIN file_identities fi ON fi.file_id=f.id
+        LEFT JOIN user_positions p ON p.content_key=fi.content_sha256
+        LEFT JOIN book_metadata m ON m.content_sha=fi.content_sha256
         WHERE f.shelf_id=?1 AND f.directory=0 AND f.relative_path>=?2 AND f.relative_path<?3
-        ORDER BY COALESCE(b.last_read,0) DESC,f.modified DESC,f.name,f.id LIMIT 4",
+        ORDER BY COALESCE(p.last_read,0) DESC,f.modified DESC,f.name,f.id LIMIT 4",
     )?;
     for folder in entries.iter_mut().filter(|e| e.directory) {
         // Literal path bounds also handle names containing SQL LIKE wildcards.
@@ -619,24 +635,35 @@ impl ReaderCore {
     }
     pub(crate) fn recent_library_entries(&self, limit: u32) -> Result<Vec<LibraryEntry>> {
         let db = self.read_lock()?;
-        let ids = db
-            .prepare("SELECT id FROM reading_books WHERE recent_visible=1 AND last_read>0")?
-            .query_map([], |r| r.get::<_, String>(0))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        let mut entries = Vec::new();
-        for id in ids {
-            entries.extend(filtered_entries(&db, None, None, true, None, Some(&id))?);
-        }
-        entries.sort_by(|a, b| {
-            b.last_read
-                .cmp(&a.last_read)
-                .then_with(|| b.preferred.cmp(&a.preferred))
-                .then_with(|| a.id.cmp(&b.id))
-        });
-        let mut books = HashSet::new();
-        entries.retain(|e| books.insert(e.book_id.clone()));
-        entries.truncate(limit.min(1000) as usize);
-        Ok(entries)
+        let mut statement = db.prepare(
+            "WITH recent_positions AS (
+                SELECT * FROM user_positions
+                WHERE last_read>0 AND COALESCE(recent_visible,1)=1
+            ), ranked AS (
+                SELECT f.id,f.shelf_id,s.name shelf_name,f.relative_path,f.parent_path,f.name,
+                    f.directory,f.size,f.modified,f.needs_download,
+                    b.id book_id,
+                    COALESCE(p.position_utf8,0) position_utf8,COALESCE(si.utf8_bytes,b.byte_count,0) byte_count,
+                    (SELECT title FROM effective_chapters c WHERE c.book_id=b.id AND b.content_sha256=p.content_key
+                        AND c.start_utf8<=p.position_utf8 ORDER BY c.start_utf8 DESC LIMIT 1) chapter_title,
+                    0 child_book_count,p.last_read,COALESCE(p.preferred_file_id=f.id,0) preferred,
+                    m.value,p.content_key,
+                    ROW_NUMBER() OVER (PARTITION BY p.content_key ORDER BY COALESCE(p.preferred_file_id=f.id,0) DESC,f.id) chosen
+                FROM recent_positions p
+                JOIN file_identities fi ON fi.content_sha256=p.content_key
+                JOIN library_files f ON f.id=fi.file_id
+                JOIN library_shelves s ON s.id=f.shelf_id
+                LEFT JOIN import_jobs j ON j.book_id=f.book_id
+                LEFT JOIN books b ON b.id=COALESCE(j.canonical_id,f.book_id) AND b.content_sha256=fi.content_sha256
+                LEFT JOIN (SELECT content_sha256,MAX(utf8_bytes) utf8_bytes FROM source_identities GROUP BY content_sha256) si ON si.content_sha256=fi.content_sha256
+                LEFT JOIN book_metadata m ON m.content_sha=fi.content_sha256
+            )
+            SELECT * FROM ranked WHERE chosen=1
+            ORDER BY last_read DESC,preferred DESC,id LIMIT ?1",
+        )?;
+        Ok(statement
+            .query_map([limit.min(1000)], library_entry_row)?
+            .collect::<std::result::Result<_, _>>()?)
     }
 }
 
@@ -731,5 +758,114 @@ impl ReaderCore {
                 book_id: entry.book_id,
             })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod recent_tests {
+    use super::*;
+
+    #[test]
+    fn folder_last_read_includes_index_only_child_with_synced_position() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = ReaderCore::new(dir.path().join("cache").to_string_lossy().into()).unwrap();
+        core.save_library_shelf("s".into(), "Shelf".into(), vec![], "local".into(), false)
+            .unwrap();
+        let sha = "a".repeat(64);
+        {
+            let db = core.lock().unwrap();
+            db.execute_batch("INSERT INTO library_files VALUES('folder','s','folder','','folder',1,0,1,0,NULL,'auto');
+                INSERT INTO library_files VALUES('indexed','s','folder/indexed.txt','folder','indexed.txt',0,100,1,0,NULL,'auto');
+                INSERT INTO library_identities VALUES('indexed','raw','auto',100,1);").unwrap();
+            db.execute(
+                "INSERT INTO source_identities VALUES('raw','auto',?1,'UTF-8',100,80)",
+                [&sha],
+            )
+            .unwrap();
+        }
+        let query = core.query_snapshot(serde_json::json!({"positions": [{
+            "content_key": sha, "offset": 50, "updated": 123456, "visible": true, "preferred": null
+        }]}).to_string()).unwrap();
+        let folder = query
+            .library_entries(Some("s".into()), Some("".into()), LibrarySort::Reading)
+            .unwrap()
+            .remove(0);
+        assert!(folder.directory);
+        assert_eq!(folder.last_read, 123456);
+        let child = query.library_entry("indexed".into()).unwrap();
+        assert!(child.book_id.is_none());
+        assert_eq!(child.last_read, folder.last_read);
+    }
+
+    #[test]
+    fn folder_previews_order_index_only_books_by_projected_last_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = ReaderCore::new(dir.path().join("cache").to_string_lossy().into()).unwrap();
+        core.save_library_shelf("s".into(), "Shelf".into(), vec![], "local".into(), false)
+            .unwrap();
+        {
+            let db = core.lock().unwrap();
+            db.execute_batch("INSERT INTO library_files VALUES('folder','s','folder','','folder',1,0,1,0,NULL,'auto');
+                INSERT INTO books(id,title,content_sha256,encoding,byte_count) VALUES('cached','Cached','cached-sha','UTF-8',100);
+                INSERT INTO library_files VALUES('cached-file','s','folder/cached.txt','folder','cached.txt',0,100,999,0,'cached','auto');
+                INSERT INTO library_files VALUES('indexed','s','folder/indexed.txt','folder','indexed.txt',0,100,1,0,NULL,'auto');
+                INSERT INTO source_identities VALUES('raw','auto','indexed-sha','UTF-8',100,80);
+                INSERT INTO library_identities VALUES('indexed','raw','auto',100,1);").unwrap();
+            for index in 0..4 {
+                db.execute("INSERT INTO library_files VALUES(?1,'s',?2,'folder',?3,0,100,999,0,NULL,'auto')",
+                    params![format!("unread{index}"), format!("folder/unread{index}.txt"), format!("unread{index}.txt")]).unwrap();
+            }
+        }
+        core.read_lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO user_positions VALUES('cached-sha',10,10,1,NULL);
+            INSERT INTO user_positions VALUES('indexed-sha',50,20,1,NULL);",
+            )
+            .unwrap();
+        let entries = core
+            .library_entries(Some("s".into()), Some("".into()), LibrarySort::Name)
+            .unwrap();
+        let previews = &entries[0].cover_previews;
+        assert_eq!(previews.len(), 4);
+        assert_eq!(previews[0].file_id, "indexed");
+        assert_eq!(previews[1].file_id, "cached-file");
+    }
+
+    #[test]
+    fn recent_entries_include_index_only_and_null_visibility() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = ReaderCore::new(dir.path().join("cache").to_string_lossy().into()).unwrap();
+        core.save_library_shelf("s".into(), "Shelf".into(), vec![], "local".into(), false)
+            .unwrap();
+        {
+            let db = core.lock().unwrap();
+            db.execute_batch("INSERT INTO books(id,title,content_sha256,encoding,byte_count) VALUES('prepared','Prepared','prepared-sha','UTF-8',100);
+                INSERT INTO library_files VALUES('prepared-file','s','prepared.txt','','prepared.txt',0,100,1,0,'prepared','auto');
+                INSERT INTO library_files VALUES('indexed-file','s','indexed.txt','','indexed.txt',0,100,1,0,NULL,'auto');
+                INSERT INTO library_files VALUES('indexed-copy','s','copy.txt','','copy.txt',0,100,1,0,NULL,'auto');
+                INSERT INTO library_files VALUES('hidden-file','s','hidden.txt','','hidden.txt',0,100,1,0,NULL,'auto');
+                INSERT INTO source_identities VALUES('raw-index','auto','indexed-sha','UTF-8',100,80);
+                INSERT INTO source_identities VALUES('raw-hidden','auto','hidden-sha','UTF-8',100,80);
+                INSERT INTO library_identities VALUES('indexed-file','raw-index','auto',100,1);
+                INSERT INTO library_identities VALUES('indexed-copy','raw-index','auto',100,1);
+                INSERT INTO library_identities VALUES('hidden-file','raw-hidden','auto',100,1);").unwrap();
+        }
+        core.read_lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO user_positions VALUES('prepared-sha',25,10,NULL,NULL);
+            INSERT INTO user_positions VALUES('indexed-sha',50,20,NULL,'indexed-file');
+            INSERT INTO user_positions VALUES('hidden-sha',50,30,0,NULL);",
+            )
+            .unwrap();
+        let recent = core.recent_library_entries(10).unwrap();
+        assert_eq!(
+            recent.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            ["indexed-file", "prepared-file"]
+        );
+        assert_eq!(recent[0].book_id, None);
+        assert_eq!(recent[0].content_sha256.as_deref(), Some("indexed-sha"));
+        assert_eq!(recent[0].position_utf8, 50);
     }
 }

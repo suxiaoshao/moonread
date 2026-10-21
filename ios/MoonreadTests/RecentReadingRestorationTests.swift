@@ -78,6 +78,98 @@ extension ReaderService {
     }
     private func sha(_ text: String) -> String { SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined() }
 
+    func testAutomaticIndexContinuesWithAnotherShelfRequestedWhileRunning() async throws {
+        let f = try await fixture(["first.txt": Data("第一話 星港\n原创首册。\n".utf8)]); defer { f.clean() }
+        try await scan(f)
+        let other = f.root.appendingPathComponent("other")
+        try FileManager.default.createDirectory(at: other, withIntermediateDirectories: true)
+        try Data("第二話 月台\n原创次册。\n".utf8).write(to: other.appendingPathComponent("second.txt"))
+        let secondID = try await f.service.registerLibraryShelf(other)
+        try await f.service.applyLibraryScan(secondID, root: other, items: ReaderService.libraryDirectoryItems(other), observe: false)
+        let entered = expectation(description: "foreground keeps first shelf pending"), release = RestorationGate(entered)
+        let foreground = Task { try await f.service.withForegroundOpening { await release.wait() } }
+        await fulfillment(of: [entered], timeout: 3)
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: f.suite))
+        let controller = FullIndexController(defaults: defaults, service: f.service, registerTasks: false)
+        controller.start("builtin", includeCloud: false, userInitiated: false)
+        XCTAssertTrue(controller.running)
+        controller.start(secondID, includeCloud: false, userInitiated: false)
+        let saved = try XCTUnwrap(defaults.data(forKey: "Moonread.fullIndex.request.v1"))
+        let request = try XCTUnwrap(JSONSerialization.jsonObject(with: saved) as? [String: Any])
+        XCTAssertEqual((request["queued"] as? [[String: Any]])?.first?["shelf"] as? String, secondID)
+        await release.release(); try await foreground.value
+        await controller.waitForCompletion()
+        XCTAssertTrue(try f.core.pendingIdentityFiles(shelfId: "builtin").isEmpty)
+        XCTAssertTrue(try f.core.pendingIdentityFiles(shelfId: secondID).isEmpty)
+        XCTAssertEqual(controller.shelfID, secondID)
+    }
+
+    func testIndexedOnlyRecentHideAndDetailsUseContentSHA() async throws {
+        let text = "第一話 星港\n只用于验证索引身份的原创正文。\n"
+        let f = try await fixture(["indexed.txt": Data(text.utf8)]); defer { f.clean() }
+        try await scan(f)
+        let file = try XCTUnwrap(f.core.pendingIdentityFiles(shelfId: "builtin").first)
+        let identity = try SourceIdentityProbe().identify(filePath: f.directory.appendingPathComponent(file.relativePath).path, decoding: file.decoding)
+        XCTAssertTrue(try f.core.publishSourceIdentity(file: file, identity: identity))
+        try await position(f, key: identity.contentSha256, hint: nil, offset: identity.utf8Bytes / 2)
+        let base = try await f.service.details(sha: identity.contentSha256).metadata
+        var edited = base; edited.author = "原创作者"; edited.tags = ["星港"]
+        try await f.service.saveMetadata(base: base, edited: edited)
+        let cold = try await f.service.recentLibrary(cold: true)
+        let warm = try await f.service.recentLibrary()
+        XCTAssertEqual(cold.map(\.readingKey), [identity.contentSha256])
+        XCTAssertEqual(warm.map(\.readingKey), [identity.contentSha256])
+        let entry = try XCTUnwrap(warm.first)
+        XCTAssertNil(entry.bookId)
+        let model = BookInformationModel(service: f.service)
+        await model.load(StatisticsRoute(key: entry.readingKey, bookID: entry.bookId, title: entry.title, fileID: entry.id))
+        XCTAssertNil(model.error)
+        XCTAssertEqual(model.entry?.positionUtf8, identity.utf8Bytes / 2)
+        XCTAssertEqual(model.details?.metadata.tags, ["星港"])
+        XCTAssertEqual(model.details?.metadata.author, "原创作者")
+        try await f.service.hideRecent(try XCTUnwrap(entry.readingKey))
+        let hidden = try await f.service.recentLibrary()
+        XCTAssertTrue(hidden.isEmpty)
+        XCTAssertNil(try f.core.sourceFileSnapshots(fileId: file.id).first?.bookId)
+    }
+
+    func testIndexAutomaticallyContinuesAfterOpeningFails() async throws {
+        let f = try await fixture(["sample.txt": Data("第一話 星港\n用于失败恢复验证的原创正文。\n".utf8)]); defer { f.clean() }
+        try await scan(f)
+        let entered = expectation(description: "opening holds gate"), release = RestorationGate(entered)
+        let failed = Task {
+            try await f.service.withForegroundOpening {
+                await release.wait()
+                try await f.service.prepareSourceFile(SourceFile(id: "missing-file", shelfID: "builtin", relativePath: "missing.txt"))
+            }
+        }
+        await fulfillment(of: [entered], timeout: 3)
+        let controller = FullIndexController(defaults: try XCTUnwrap(UserDefaults(suiteName: f.suite)), service: f.service, registerTasks: false)
+        controller.start("builtin", includeCloud: false, userInitiated: false)
+        await release.release()
+        do { try await failed.value; XCTFail("opening missing file should fail") } catch { }
+        await controller.waitForCompletion()
+        XCTAssertTrue(try f.core.pendingIdentityFiles(shelfId: "builtin").isEmpty)
+        let idle = await f.service.identityMayRun(); XCTAssertTrue(idle)
+    }
+
+    func testIndexWaitsThroughoutForegroundOpening() async throws {
+        let f = try await fixture(["sample.txt": Data("第一話 星港\n用于阅读闸门验证的原创正文。\n".utf8)]); defer { f.clean() }
+        try await scan(f)
+        let entered = expectation(description: "opening holds gate"), release = RestorationGate(entered)
+        let opened = Task { try await f.service.withForegroundOpening { await release.wait() } }
+        await fulfillment(of: [entered], timeout: 3)
+        let controller = FullIndexController(defaults: try XCTUnwrap(UserDefaults(suiteName: f.suite)), service: f.service, registerTasks: false)
+        controller.start("builtin", includeCloud: false, userInitiated: false)
+        // Let the real runner reach the gate; no source identity may be published.
+        let waiting = NSPredicate { _, _ in controller.message == String(localized: "阅读结束后继续建立索引", table: "FullIndex") }
+        await fulfillment(of: [expectation(for: waiting, evaluatedWith: nil)], timeout: 3)
+        XCTAssertEqual(try f.core.pendingIdentityFiles(shelfId: "builtin").count, 1)
+        await release.release(); try await opened.value
+        await controller.waitForCompletion()
+        XCTAssertTrue(try f.core.pendingIdentityFiles(shelfId: "builtin").isEmpty)
+    }
+
     func testExplicitHintShapeNullableFieldsAndPendingTransferPreserveOriginalClock() async throws {
         let f = try await fixture(); defer { f.clean() }
         let h = hint("原创/样本.txt", size: nil, decoding: "UTF-8")

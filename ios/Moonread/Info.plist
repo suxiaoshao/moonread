@@ -11,7 +11,8 @@
             <key>NSUbiquitousContainerSupportedFolderLevels</key><string>Any</string>
         </dict>
     </dict>
-    <key>UIBackgroundModes</key><array><string>remote-notification</string></array>
+    <key>UIBackgroundModes</key><array><string>remote-notification</string><string>processing</string></array>
+    <key>BGTaskSchedulerPermittedIdentifiers</key><array><string>dev.moonread.Moonread.full-index.processing</string><string>dev.moonread.Moonread.full-index.continued.*</string></array>
     <key>CFBundleDocumentTypes</key>
     <array><dict>
         <key>CFBundleTypeName</key><string>TXT Novel</string>

@@ -10,6 +10,7 @@ pub use bookshelf::*;
 mod cover_page;
 mod coverage;
 pub use cover_page::extract_page_images;
+mod full_index;
 mod navigation;
 mod progressive;
 mod reading_layout;

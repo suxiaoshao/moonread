@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        F14900000000000000000001 = {isa = PBXBuildFile; fileRef = F14900000000000000000002; };
+        F14900000000000000000003 = {isa = PBXBuildFile; fileRef = F14900000000000000000004; };
 2E2559685C214716AEE5F325 /* ReadingReviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 025DA6C47C21404F889514D9; };
 344233D679E94ACDA4FA2A11 /* ReadingReview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10332C17C92A416A96E3B55A; };
 F01900000000000000000003 = {isa = PBXBuildFile; fileRef = F01900000000000000000004; };
@@ -181,6 +183,8 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+        F14900000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullIndex.swift; sourceTree = "<group>"; };
+        F14900000000000000000004 = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = FullIndex.xcstrings; sourceTree = "<group>"; };
 025DA6C47C21404F889514D9 /* ReadingReviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/ReadingReviewTests.swift; sourceTree = SOURCE_ROOT; };
 10332C17C92A416A96E3B55A /* ReadingReview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/App/ReadingReview.swift; sourceTree = SOURCE_ROOT; };
 F01900000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentReadingRestorationTests.swift; sourceTree = "<group>"; };
@@ -499,6 +503,8 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 				AE2000000000000000000002 /* LibraryActions.swift */,
 				AF2000000000000000000003 /* LibraryCollection.swift */,
                 AF2000000000000000000004 /* LibraryDrop.swift */,
+                F14900000000000000000002,
+                F14900000000000000000004,
 				AF2000000000000000000002 /* LibraryPresentation.swift */,
 				AE2000000000000000000001 /* LibraryService.swift */,
 				B02000000000000000000002 /* CloudLibrary.swift */,
@@ -884,6 +890,7 @@ F01900000000000000000001,
                 AF1000000000000000000002 /* LibraryPresentation.swift in Sources */,
                 AF1000000000000000000003 /* LibraryCollection.swift in Sources */,
                 AF1000000000000000000004 /* LibraryDrop.swift in Sources */,
+                F14900000000000000000001,
 				A10000000000000000000004 /* ReaderScreen.swift in Sources */,
                 AD1000000000000000000001,
                 AD1000000000000000000002,
