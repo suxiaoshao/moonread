@@ -160,7 +160,7 @@ fn expanded_headings_require_explicit_rebuild_and_preserve_manual_corrections() 
     let root = TempDir::new().unwrap();
     let data = root.path().join("db").to_string_lossy().into_owned();
     let path = root.path().join("original.txt");
-    let text = "第壹部 星港\n第一話 月光\n原創正文。\n第三部分仍是正文\n第一篇文章仍是正文\n第二話 歸舟\n原創正文。\n尾聲\n燈火未眠。\n";
+    let text = "第壹部 星港\n第一話 月光\n原創正文。\n第三部分仍是正文\n第一篇文章仍是正文\n第三回合开始了\n第二节课开始了\n第一部电影\n第一部手机\n第四本书\n第一話題\n第二話 歸舟\n原創正文。\n尾聲\n燈火未眠。\n";
     std::fs::write(&path, text).unwrap();
     let core = ReaderCore::new(data.clone()).unwrap();
     let book = core

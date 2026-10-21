@@ -460,7 +460,7 @@ fn chapter_heading(line: &str) -> Option<String> {
     }
 }
 
-/// Recognize numbered Chinese headings, including compact titles without spaces.
+/// Only 章 allows a compact title; other units require a heading boundary.
 /// The number may use Arabic, simplified/traditional, or financial numerals.
 fn is_chinese_chapter_heading(line: &str) -> bool {
     let Some(rest) = line.strip_prefix('第') else {
@@ -469,7 +469,21 @@ fn is_chinese_chapter_heading(line: &str) -> bool {
     let Some((unit_index, unit)) = rest.char_indices().find(|(_, character)| {
         matches!(
             character,
-            '章' | '回' | '节' | '節' | '卷' | '集' | '话' | '話' | '幕' | '篇' | '部'
+            '章' | '回'
+                | '节'
+                | '節'
+                | '话'
+                | '話'
+                | '讲'
+                | '講'
+                | '篇'
+                | '幕'
+                | '卷'
+                | '集'
+                | '部'
+                | '本'
+                | '册'
+                | '冊'
         )
     }) else {
         return false;
@@ -479,35 +493,31 @@ fn is_chinese_chapter_heading(line: &str) -> bool {
         return false;
     }
     let suffix = &rest[unit_index + unit.len_utf8()..];
-    // These units also begin ordinary nouns. Keep compact heading titles, but
-    // don't turn “第三部分” or “第一篇文章” into a chapter at a prose line start.
-    let noun_suffixes: &[&str] = match unit {
-        '部' => &["分", "队", "隊", "门", "門"],
-        '篇' => &["文章", "论文", "論文", "作文", "报道", "報道", "報導"],
-        '幕' => &["布", "僚"],
-        '话' | '話' => &["题", "題"],
-        '节' | '節' => &["课", "課"],
-        _ => &[],
-    };
-    !noun_suffixes.iter().any(|s| suffix.starts_with(s))
-        && ![
-            "说过",
-            "說過",
-            "提到",
-            "讲过",
-            "講過",
-            "已经",
-            "已經",
-            "里面",
-            "裡面",
-            "裏面",
-            "的时候",
-            "的時候",
-            "的内容",
-            "的內容",
-        ]
-        .iter()
-        .any(|s| suffix.trim_start().starts_with(s))
+    if unit != '章' {
+        return has_heading_boundary(suffix);
+    }
+    // Preserve 1.0's compact 章 titles, with a bounded suffix to reject prose.
+    if !has_heading_boundary(suffix) && suffix.chars().count() > 30 {
+        return false;
+    }
+    ![
+        "说过",
+        "說過",
+        "提到",
+        "讲过",
+        "講過",
+        "已经",
+        "已經",
+        "里面",
+        "裡面",
+        "裏面",
+        "的时候",
+        "的時候",
+        "的内容",
+        "的內容",
+    ]
+    .iter()
+    .any(|s| suffix.trim_start().starts_with(s))
 }
 
 fn heading_level(title: &str) -> u32 {
@@ -515,7 +525,7 @@ fn heading_level(title: &str) -> u32 {
         matches!(
             rest.chars()
                 .find(|c| !c.is_whitespace() && !is_chapter_numeral(*c)),
-            Some('卷' | '集' | '部')
+            Some('卷' | '集' | '部' | '本' | '册' | '冊')
         )
     }) || title.to_ascii_lowercase().starts_with("volume ")
     {
@@ -675,11 +685,16 @@ mod chapter_tests {
             ("節", 1),
             ("话", 1),
             ("話", 1),
+            ("讲", 1),
+            ("講", 1),
             ("幕", 1),
             ("篇", 1),
             ("部", 0),
             ("卷", 0),
             ("集", 0),
+            ("本", 0),
+            ("册", 0),
+            ("冊", 0),
         ] {
             for number in [
                 "1",
@@ -704,20 +719,25 @@ mod chapter_tests {
                 "陆",
                 "壹仟貳佰參拾肆",
             ] {
-                for suffix in ["", " 月下歸舟", "：月下歸舟", "月下歸舟"] {
+                for suffix in ["", " 月下歸舟", "：月下歸舟"] {
                     let title = format!("第{number}{unit}{suffix}");
                     assert_eq!(chapter_heading(&title).as_deref(), Some(title.as_str()));
                     assert_eq!(heading_level(&title), level, "{title}");
                 }
                 let prose = format!("第{number}{unit}的內容還沒讀完");
                 assert!(chapter_heading(&prose).is_none(), "{prose}");
+                let compact = format!("第{number}{unit}月下歸舟");
+                assert_eq!(
+                    chapter_heading(&compact).is_some(),
+                    unit == "章",
+                    "{compact}"
+                );
             }
             for prose in [
                 format!("第{unit} 月下"),
                 format!("第幾{unit} 月下"),
                 format!("第1.5{unit} 月下"),
                 format!("他讀到第壹{unit}"),
-                format!("第壹{unit} 已經讀完"),
             ] {
                 assert!(chapter_heading(&prose).is_none(), "{prose}");
             }
@@ -728,8 +748,88 @@ mod chapter_tests {
     }
 
     #[test]
+    fn non_chapter_units_require_a_boundary_and_preserve_volume_levels() {
+        for (title, level) in [
+            ("第一章月下归舟", 1),
+            ("第一回 灵根育孕", 1),
+            ("第1話：月光", 1),
+            ("第壹部 星港", 0),
+            ("第三卷", 0),
+            ("第二講 開場", 1),
+            ("第一本", 0),
+        ] {
+            assert_eq!(chapter_heading(title).as_deref(), Some(title));
+            assert_eq!(heading_level(title), level);
+        }
+        for unit in [
+            "回", "节", "節", "话", "話", "讲", "講", "篇", "幕", "卷", "集", "部", "本", "册",
+            "冊",
+        ] {
+            for boundary in [
+                " ", "\t", "　", "：", ":", ".", "．", "、", "-", "—", "–", "(", ")", "（", "）",
+            ] {
+                let title = format!("第一{unit}{boundary}月下");
+                assert_eq!(chapter_heading(&title).as_deref(), Some(title.as_str()));
+            }
+            // Separated titles are decided by syntax, not a prose/noun list.
+            let title = format!("第一{unit} 已經讀完");
+            assert_eq!(chapter_heading(&title).as_deref(), Some(title.as_str()));
+            for suffix in ["月下", "，月下", "。月下", "；月下"] {
+                let prose = format!("第一{unit}{suffix}");
+                assert!(chapter_heading(&prose).is_none(), "{prose}");
+            }
+        }
+    }
+
+    #[test]
+    fn compact_chapter_titles_allow_30_characters_and_separated_lines_allow_80() {
+        let prose = "第一章那时月光已经漫过长长的石阶他仍然坐在窗边等着远方的朋友带回平安的消息";
+        assert!(prose.chars().count() > 33 && prose.chars().count() <= 80);
+        assert!(chapter_heading(prose).is_none());
+        for character in ['月', 'a', '🌙'] {
+            let title = format!("第一章{}", character.to_string().repeat(30));
+            assert_eq!(chapter_heading(&title).as_deref(), Some(title.as_str()));
+            let prose = format!("第一章{}", character.to_string().repeat(31));
+            assert!(chapter_heading(&prose).is_none());
+            for boundary in [" ", "：", ".", "（"] {
+                let title = format!("第一章{boundary}{}", character.to_string().repeat(76));
+                assert_eq!(title.chars().count(), 80);
+                assert_eq!(chapter_heading(&title).as_deref(), Some(title.as_str()));
+                assert!(chapter_heading(&format!("{title}{character}")).is_none());
+            }
+        }
+        for suffix in [
+            "说过",
+            "說過",
+            "提到",
+            "讲过",
+            "講過",
+            "已经",
+            "已經",
+            "里面",
+            "裡面",
+            "裏面",
+            "的时候",
+            "的時候",
+            "的内容",
+            "的內容",
+        ] {
+            for separator in ["", " "] {
+                let prose = format!("第一章{separator}{suffix}這件事");
+                assert!(chapter_heading(&prose).is_none(), "{prose}");
+            }
+        }
+    }
+
+    #[test]
     fn rejects_ordinary_nouns_and_numbered_prose() {
         for prose in [
+            "第三回合开始了",
+            "第一部电影",
+            "第一部手机",
+            "第四本书",
+            "第二册书",
+            "第二冊書",
             "第三部分",
             "第三部分還沒有寫完",
             "第一篇文章",
@@ -744,6 +844,7 @@ mod chapter_tests {
             "第一幕布落下了",
             "第一幕僚走進來",
             "第一话题",
+            "第一話題",
             "第一話題結束了",
             "第二节课开始了",
             "第二節課開始了",
@@ -754,7 +855,7 @@ mod chapter_tests {
             "第參部裡面有地圖",
             "第肆節的時候",
             "第五話的內容",
-            "第六幕 的内容还没看",
+            "第六章 的内容还没看",
         ] {
             assert!(chapter_heading(prose).is_none(), "{prose}");
         }
@@ -780,11 +881,16 @@ mod chapter_tests {
     fn new_headings_and_prose_are_stable_at_every_chunk_split() {
         let headings = [
             ("第壹部 星港", 0),
-            ("第兩百話月下歸舟", 1),
+            ("第兩百話：月下歸舟", 1),
+            ("第一章月下归舟", 1),
             ("第贰话：灯火", 1),
             ("第參節 風聲", 1),
             ("第肆幕 夜航", 1),
             ("第伍篇 返鄉", 1),
+            ("第二講 開場", 1),
+            ("第一本", 0),
+            ("第二冊 星河", 0),
+            ("第三册：歸途", 0),
             ("尾聲", 1),
             ("終章：歸舟", 1),
             ("後記壹 月下", 1),
@@ -793,6 +899,10 @@ mod chapter_tests {
             ("間章 星光", 1),
         ];
         let mut text = String::from("正文開場\n第三部分還沒寫完\n第一篇文章留在桌上\n");
+        text.push_str(
+            "第三回合开始了\n第二节课开始了\n第一部电影\n第一部手机\n第四本书\n第一話題\n",
+        );
+        text.push_str(&format!("第一章{}\n", "月".repeat(31)));
         let mut expected = Vec::new();
         for (title, level) in headings {
             expected.push((text.len() as u64, title, level));
