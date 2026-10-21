@@ -75,15 +75,20 @@ struct LibraryPresentations: ViewModifier {
                 case .share(let files): LibraryShareSheet(files: files)
                 case .importResults:
                     NavigationStack {
-                        List(model.importFailures) { failure in
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(verbatim: failure.url.lastPathComponent).font(.headline)
-                                Text(verbatim: failure.message).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                                Button("重试", systemImage: "arrow.clockwise") {
-                                    model.runAfterSheetDismiss { model.retryImport(failure) }
-                                }
-                            }.listRowBackground(Color(uiColor: theme.surface))
-                        }.themedPage().navigationTitle("未完成的导入")
+                        List {
+                            if let result = model.sharedImportResult {
+                                Text(verbatim: result).listRowBackground(Color(uiColor: theme.surface))
+                            }
+                            ForEach(model.importFailures) { failure in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Text(verbatim: failure.url.lastPathComponent).font(.headline)
+                                    Text(verbatim: failure.message).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                                    Button("重试", systemImage: "arrow.clockwise") {
+                                        model.runAfterSheetDismiss { model.retryImport(failure) }
+                                    }
+                                }.listRowBackground(Color(uiColor: theme.surface))
+                            }
+                        }.themedPage().navigationTitle(model.sharedImportResult == nil ? String(localized: "未完成的导入") : String(localized: "导入结果", table: "ShareReceive"))
                             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成", systemImage: "checkmark") { model.sheet = nil }.labelStyle(.titleOnly) } }
                     }.themeScope(theme)
                 }

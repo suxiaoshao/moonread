@@ -37,7 +37,13 @@ struct MoonreadApp: App {
             .environment(cloud).environment(ai).environment(tipJar)
             .task { await tipJar.listenForTransactions() }
             .task { await ai.load() }
-            .task { library.startCloudDiscovery(); if await library.load() { await cloud.refresh() } }
+            .task {
+                library.startCloudDiscovery()
+                if await library.load() {
+                    if Onboarding.shared.completed { await library.receiveSharedInbox() }
+                    await cloud.refresh()
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in
                 Task { await CloudSyncCoordinator.shared.localDataChanged() }
             }
@@ -61,7 +67,14 @@ struct MoonreadApp: App {
                     BackgroundSave.perform(name: "保存显示偏好") { await themes.flushPreferences() }
                     Task { await ReaderService.shared.pauseImports() }
                 }
-                if phase == .active { Task { if ai.providers.catalogActivated { await ai.providers.refreshCatalogsIfNeeded() } }; Task { await ReaderService.shared.resumePausedImports(); await library.refresh(); await cloud.refresh() } }
+                if phase == .active {
+                    Task { if ai.providers.catalogActivated { await ai.providers.refreshCatalogsIfNeeded() } }
+                    Task {
+                        await ReaderService.shared.resumePausedImports(); await library.refresh()
+                        if Onboarding.shared.completed { await library.receiveSharedInbox() }
+                        await cloud.refresh()
+                    }
+                }
             }
             .onOpenURL { url in Task {
                 guard await library.load() else { return }
@@ -132,6 +145,7 @@ private struct MoonreadRoot: View {
     }
 
     private func finishIntroduction() {
+        Task { await library.receiveSharedInbox() }
         // Presenting the file importer (or pushing a reader) is safe only after
         // the introduction's presentation has actually finished dismissing.
         switch Onboarding.shared.takeDestination() {

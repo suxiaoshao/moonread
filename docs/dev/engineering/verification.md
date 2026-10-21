@@ -2,6 +2,16 @@
 
 更新：2026-10-18。本文按能力保存必要证据与未覆盖范围，不作逐轮修改日志。表中结果来自各次受影响回归，不能解释为当前版本在所有设备上完成了全量验收。
 
+## TXT 分享接收
+
+2026-10-21，固定现有 iPhone 18 Pro（iOS 27.0），SDK 27.1、部署下限 iOS 18。无扩展的旧 Release 1.0.1（4）对文件 App 单／多 TXT 都显示月读；安装二进制、无 `.appex` 和扩展注册为空均已核对。最初实现前的自动化尝试未能确认，最终用旧 Release 补查，证据为 `build/ShareReceive/DocumentTypesBaseline2.xcresult`，不把早期误装 Debug 的运行当作基线。
+
+新扩展的真实文件 App 分享覆盖 UTF-8 单本、UTF-8＋GBK 多本、同名取消后继续下一本、同名替换、扩展取消、PDF 单独及 PDF／TXT 混合时系统过滤。接收后结束主 App 再正常冷启动，仍能提示同名并导入；GBK 正文按正常阅读手势进入，核对实际汉字可读。所有主 App 启动均未加测试参数；UI harness 和原创样本位于 build/，仓库原有 UI 测试已恢复。
+
+28 项受影响单测通过（11 项 ShareInbox、17 项既有拖入导入），覆盖清单 v1／未知／损坏／空数据保护、跨 owner 恢复、原字节、临时回调失效、取消与迟到回调、file URL 非 TXT 文件名和既有队列。两份导入副本及来源 SHA-256 相同，来源保留，ShareInbox 处理后为空。证据为 `Scenarios.xcresult`、`FinalChecks.xcresult`、`GBKReading.xcresult`、`byte-verification.json` 和 `screens/`，均位于 `build/ShareReceive/`。
+
+iOS 18 runtime、真实聊天／邮件宿主及 iCloud 提供方未覆盖；没有增加模拟器、下载 runtime 或操作手机。Xcode 自动签名设备 Debug 构建通过，主 App 与扩展签名、App Group 及隐私清单已核对，未安装手机。
+
 ## 2026-10-18 新安装的最近阅读关联恢复
 
 位置 v1 payload 新增显式 nullable `source_hint`，记录来源类别、书架内相对路径、文件名、nullable 原始大小与规范解码策略，pending 提升保留原时钟和 token。缺字段、未知结构／编码、非法路径不降级成 null，原文隔离且阻止同 key 写入；TestFlight build 2 的旧位置不做兼容，也未删除任何现有记录。未新增 CloudKit 字段、未部署 schema，正文 SHA 与 normalization-v1 未变。
