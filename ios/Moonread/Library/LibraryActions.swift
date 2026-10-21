@@ -200,7 +200,7 @@ struct LibraryItemMenu: View {
             Button("移动", systemImage: "folder") { model.sheet = .move([entry]) }
             if !entry.directory {
                 Button("小说详情", systemImage: "info.circle") {
-                    model.path.append(.statistics(StatisticsRoute(bookID: entry.bookId, title: entry.title, fileID: entry.id)))
+                    model.path.append(.statistics(StatisticsRoute(key: entry.readingKey, bookID: entry.bookId, title: entry.title, fileID: entry.id)))
                 }
                 if ai.availability.isAvailable {
                     Button("完善资料", systemImage: "sparkles") { model.aiRequest = .library([entry], family: .metadata) }

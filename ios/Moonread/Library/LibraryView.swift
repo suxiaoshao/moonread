@@ -113,7 +113,7 @@ struct LibraryView: View {
     }
 
     @ViewBuilder private func recentMenu(_ entry: LibraryEntry) -> some View {
-        Button("小说详情", systemImage: "info.circle") { model.path.append(.statistics(StatisticsRoute(bookID: entry.bookId, title: entry.title, fileID: entry.id))) }
+        Button("小说详情", systemImage: "info.circle") { model.path.append(.statistics(StatisticsRoute(key: entry.readingKey, bookID: entry.bookId, title: entry.title, fileID: entry.id))) }
         Button("从最近移除", systemImage: "minus.circle") { Task { await model.hideRecent(entry) } }
     }
 }
@@ -588,7 +588,7 @@ struct RecentLibraryView: View {
         List(entries, id: \.id) { entry in
             RecentBookRow(model: model, entry: entry)
                 .contextMenu {
-                    Button("小说详情", systemImage: "info.circle") { model.path.append(.statistics(StatisticsRoute(bookID: entry.bookId, title: entry.title, fileID: entry.id))) }
+                    Button("小说详情", systemImage: "info.circle") { model.path.append(.statistics(StatisticsRoute(key: entry.readingKey, bookID: entry.bookId, title: entry.title, fileID: entry.id))) }
                     Button("从最近移除", systemImage: "minus.circle") { Task { await model.hideRecent(entry); await loadEntries() } }
                 }.listRowBackground(Color.clear)
         }.listStyle(.plain).themedPage().navigationTitle("最近阅读")

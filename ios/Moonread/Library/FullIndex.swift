@@ -1,4 +1,5 @@
 import BackgroundTasks
+import os
 import SwiftUI
 
 extension Notification.Name { static let libraryIdentityChanged = Notification.Name("Moonread.libraryIdentityChanged") }
@@ -24,7 +25,9 @@ extension ReaderService {
 private final class IdentityFileWork: @unchecked Sendable {
     let probe = SourceIdentityProbe()
     let coordinator = NSFileCoordinator()
-    func cancel() { probe.cancel(); coordinator.cancel() }
+    private let cancellation = OSAllocatedUnfairLock(initialState: false)
+    var isCancelled: Bool { cancellation.withLock { $0 } }
+    func cancel() { cancellation.withLock { $0 = true }; probe.cancel(); coordinator.cancel() }
     func run(file: SourceFileSnapshot, shelf: LibraryShelf, core: ReaderCore, includeCloud: Bool) async throws {
         try await withTaskCancellationHandler {
             try await Task.detached(priority: .utility) { [self] in
@@ -74,15 +77,20 @@ final class FullIndexController {
     static let shared = FullIndexController()
     static let processingID = "dev.moonread.Moonread.full-index.processing"
     static let continuedPrefix = "dev.moonread.Moonread.full-index.continued."
-    private struct Request: Codable { var schemaVersion = 1; var shelf: String; var includeCloud: Bool; var resume: Bool }
-    @ObservationIgnored private let defaults = UserDefaults.standard
+    private struct QueuedRequest: Codable { var shelf: String; var includeCloud: Bool }
+    private struct Request: Codable {
+        var schemaVersion = 1; var shelf: String; var includeCloud: Bool; var resume: Bool
+        // Optional addition keeps saved v1 requests readable.
+        var queued: [QueuedRequest]?
+    }
+    @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let service: ReaderService
     @ObservationIgnored private var request: Request?
     @ObservationIgnored private var runner: Task<Void, Never>?
     @ObservationIgnored private var work: IdentityFileWork?
     @ObservationIgnored private var background: BGTask?
     @ObservationIgnored private var continuedID: String?
     @ObservationIgnored private var foreground = true
-    @ObservationIgnored private var yieldingToReader = false
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     private(set) var running = false
     private(set) var indexed = 0
@@ -92,9 +100,11 @@ final class FullIndexController {
     var automatic = false {
         didSet { defaults.set(automatic, forKey: "Moonread.fullIndex.automatic") }
     }
-    private init() {
+    init(defaults: UserDefaults = .standard, service: ReaderService = .shared, registerTasks: Bool = true) {
+        self.defaults = defaults; self.service = service
         automatic = defaults.bool(forKey: "Moonread.fullIndex.automatic")
         if let data = defaults.data(forKey: "Moonread.fullIndex.request.v1"), let saved = try? JSONDecoder().decode(Request.self, from: data), saved.schemaVersion == 1 { request = saved; shelfID = saved.shelf }
+        guard registerTasks else { return }
         BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.processingID, using: nil) { task in
             Task { @MainActor in self.attach(task) }
         }
@@ -107,8 +117,14 @@ final class FullIndexController {
     private var constrained: Bool { ProcessInfo.processInfo.isLowPowerModeEnabled || [.serious,.critical].contains(ProcessInfo.processInfo.thermalState) }
     private func save() { if let request, let data = try? JSONEncoder().encode(request) { defaults.set(data, forKey: "Moonread.fullIndex.request.v1") } }
     func start(_ shelf: String, includeCloud: Bool, userInitiated: Bool) {
-        guard runner == nil else { return }
         if userInitiated { foreground = true }
+        if runner != nil || request?.resume == true {
+            var queued = request?.queued ?? []
+            if let index = queued.firstIndex(where: { $0.shelf == shelf }) {
+                queued[index].includeCloud = queued[index].includeCloud || includeCloud
+            } else { queued.append(QueuedRequest(shelf: shelf, includeCloud: includeCloud)) }
+            request?.queued = queued; save(); resume(); return
+        }
         request = Request(shelf: shelf, includeCloud: includeCloud, resume: true); shelfID = shelf; message = nil; save()
         if #available(iOS 26.0, *), userInitiated {
             let identifier = Self.continuedPrefix + UUID().uuidString
@@ -134,16 +150,12 @@ final class FullIndexController {
         if active { resume() }
         else if background == nil { pause() }
     }
-    func yieldToReader() async {
-        yieldingToReader = true
-        work?.cancel(); runner?.cancel(); await runner?.value
-        yieldingToReader = false
-    }
     func cancel() {
         request?.resume = false; save(); pause()
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.processingID)
     }
-    func continueIndex() { guard let request else { return }; start(request.shelf, includeCloud: request.includeCloud, userInitiated: true) }
+    func continueIndex() { foreground = true; request?.resume = true; save(); resume() }
+    func waitForCompletion() async { while let task = runner { await task.value } }
     private func pause() {
         work?.cancel(); runner?.cancel()
         if constrained { message = String(localized: "已暂停：低电量模式或设备过热", table: "FullIndex") }
@@ -164,40 +176,50 @@ final class FullIndexController {
         running = true
         runner = Task {
             var completed = false
+            var finishedShelf = false
             defer {
                 work = nil; runner = nil; running = false
-                finishBackground(success: completed)
-                if !completed {
-                    if Task.isCancelled && foreground && !constrained && !yieldingToReader { resume() } else { schedule() }
+                if finishedShelf, var queued = self.request?.queued, !queued.isEmpty {
+                    let next = queued.removeFirst()
+                    self.request = Request(shelf: next.shelf, includeCloud: next.includeCloud, resume: true, queued: queued)
+                    shelfID = next.shelf; indexed = 0; total = 0; message = nil; save(); resume()
+                } else {
+                    finishBackground(success: completed)
+                    if !completed {
+                        if Task.isCancelled && foreground && !constrained { resume() } else { schedule() }
+                    }
                 }
             }
             do {
                 var attempted = Set<String>()
                 while !Task.isCancelled {
                     if constrained { break }
-                    let inventory = try await ReaderService.shared.identityInventory(request.shelf)
+                    let inventory = try await service.identityInventory(request.shelf)
                     total = inventory.total
                     indexed = total - inventory.pending.count
-                    if !(await ReaderService.shared.identityMayRun()) {
-                        message = String(localized: "阅读结束后继续建立索引", table: "FullIndex")
-                        try await Task.sleep(for: .seconds(1)); continue
-                    }
+                    if !(await service.identityMayRun()) { message = String(localized: "阅读结束后继续建立索引", table: "FullIndex") }
+                    try await service.waitForReadingIdle()
                     if message == String(localized: "阅读结束后继续建立索引", table: "FullIndex") { message = nil }
                     if #available(iOS 26.0, *), let task = background as? BGContinuedProcessingTask {
                         task.progress.totalUnitCount = Int64(max(total,1)); task.progress.completedUnitCount = Int64(indexed)
                     }
                     guard let next = inventory.pending.first(where: { (request.includeCloud || !$0.needsDownload) && !attempted.contains($0.id) }) else {
+                        finishedShelf = true
                         completed = inventory.pending.allSatisfy { !request.includeCloud && $0.needsDownload }
                         self.request?.resume = false; save(); break
                     }
                     attempted.insert(next.id)
                     let nextWork = IdentityFileWork(); work = nextWork
                     do {
-                        try await nextWork.run(file: next, shelf: inventory.shelf, core: ReaderService.shared.identityCore(), includeCloud: request.includeCloud)
+                        let core = try await service.identityCore()
+                        try await service.withReadingIdleWork(cancel: { nextWork.cancel() }) {
+                            try await nextWork.run(file: next, shelf: inventory.shelf, core: core, includeCloud: request.includeCloud)
+                        }
                         NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
                     } catch {
                         if Task.isCancelled { break }
-                        message = next.name + ": " + ReaderMessages.error(error)
+                        if nextWork.isCancelled { attempted.remove(next.id) }
+                        else { message = next.name + ": " + ReaderMessages.error(error) }
                     }
                     work = nil
                 }

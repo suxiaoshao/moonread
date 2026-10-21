@@ -32,7 +32,7 @@ struct HomeSnapshot: Equatable {
     private struct BookSurface: Equatable {
         let id: String, shelf: String, shelfName: String, path: String, name: String
         let book: String?, position: UInt64, bytes: UInt64, chapter: String?, metadata: BookMetadata?, download: Bool
-        init(_ v: LibraryEntry) { id = v.id; shelf = v.shelfId; shelfName = v.shelfName; path = v.relativePath; name = v.name; book = v.bookId; position = v.positionUtf8; bytes = v.byteCount; chapter = v.chapterTitle; metadata = v.metadata; download = v.needsDownload }
+        init(_ v: LibraryEntry) { id = v.id; shelf = v.shelfId; shelfName = v.shelfName; path = v.relativePath; name = v.name; book = v.readingKey; position = v.positionUtf8; bytes = v.byteCount; chapter = v.chapterTitle; metadata = v.metadata; download = v.needsDownload }
     }
 }
 
@@ -112,7 +112,6 @@ final class LibraryModel {
         else { indexPrompt = inventory }
     }
     func showDeferredIndexPrompt() {
-        if path.last?.isReader != true { fullIndex.scene(active: UIApplication.shared.applicationState == .active) }
         if path.last?.isReader != true, sheet == nil, let prompt = deferredIndexPrompt { deferredIndexPrompt = nil; indexPrompt = prompt }
     }
     var sheet: LibrarySheet?
@@ -384,7 +383,7 @@ final class LibraryModel {
         do {
             guard let entry = try await service.recentBook(route) else { return }
             var next = homeIndex
-            next.recents.removeAll { $0.id == entry.id || $0.bookId == entry.bookId }
+            next.recents.removeAll { $0.id == entry.id || (entry.readingKey != nil && $0.readingKey == entry.readingKey) }
             next.recents.append(entry)
             next.recents.sort { $0.lastRead == $1.lastRead ? $0.id < $1.id : $0.lastRead > $1.lastRead }
             next.recents = Array(next.recents.prefix(Self.homeRecentLimit))
@@ -544,7 +543,7 @@ final class LibraryModel {
         cancelOpening()
     }
     func hideRecent(_ entry: LibraryEntry) async {
-        guard let id = entry.bookId else { return }
+        guard let id = entry.readingKey else { return }
         do { try await service.hideRecent(id); try await reload() }
         catch { self.error = ReaderMessages.error(error) }
     }

@@ -96,6 +96,8 @@ final class LibraryExport: Sendable {
 }
 
 extension LibraryEntry {
+    /// Reading data follows normalized text; unfinished imports retain their pending namespace.
+    var readingKey: String? { contentSha256 ?? bookId.map { "pending:" + $0 } }
     var source: SourceFile { SourceFile(id: id, shelfID: shelfId, relativePath: relativePath) }
     var location: LibraryLocation { LibraryLocation(shelfID: shelfId, path: relativePath) }
     var parent: LibraryLocation { LibraryLocation(shelfID: shelfId, path: parentPath) }
@@ -324,22 +326,21 @@ extension ReaderService {
     func recentLibrary(_ limit: UInt32 = 1000, cold: Bool = false) async throws -> [LibraryEntry] {
         if cold { return try await effectiveQuery(scope: "home-cold").recentLibraryEntries(limit: limit) }
         let index = try await effectiveQuery(positionsOnly: true, scope: "recent-index").recentLibraryEntries(limit: limit)
-        let keys = try index.compactMap(\.bookId).flatMap { id in [try userKey(id), "pending:" + id] }
+        let keys = index.compactMap(\.readingKey)
         guard !keys.isEmpty else { return [] }
         return try await effectiveQuery(keys: Array(Set(keys)), scope: "recent").recentLibraryEntries(limit: limit)
     }
     func recentBook(_ route: ReaderRoute) async throws -> LibraryEntry? {
-        let id: String
         switch route {
-        case let .book(book): id = book
+        case let .book(id): return try await bookQuery(id).recentLibraryEntries(limit: 1).first
         case let .source(file):
-            guard let book = try textCore().sourceFileLocation(fileId: file.id).bookId else { return nil }
-            id = book
+            let entry = try await libraryEntry(file.id)
+            guard let key = entry.readingKey else { return nil }
+            return try await effectiveQuery(keys: [key], scope: "recent-source").recentLibraryEntries(limit: 1000).first { $0.readingKey == key }
         }
-        return try await bookQuery(id).recentLibraryEntries(limit: 1).first
     }
-    func hideRecent(_ bookID: String) throws {
-        let key = try userKey(bookID)
+    func hideRecent(_ value: String) throws {
+        let key = value.hasPrefix("pending:") || value.count == 64 ? value : try userKey(value)
         var hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
         hidden.insert(key); sourceDefaults.set(Array(hidden), forKey: "Moonread.hiddenRecent"); dataChanged()
     }

@@ -4,7 +4,7 @@
 
 ## 书架索引后台任务
 
-全量索引共用串行 worker；阅读准备优先，低电量或 serious／critical 热状态暂停。iOS 26+ 用户点按发起的索引用 `BGContinuedProcessingTask` 显示系统进度和取消；自动索引、iOS 18–25 前台运行，退后台保存暂停状态，由充电时的 `BGProcessingTask` 续跑，实际时间由系统决定。处理过期不丢已完成身份，未完成文件下次重算。
+全量索引共用串行 worker；正文准备和阅读租约共用前台闸门，索引与最近阅读恢复在逐个文件处理前等待空闲；开书失败或取消也释放闸门并自动继续，不依赖页面或前后台切换唤醒。阅读准备优先，低电量或 serious／critical 热状态暂停。iOS 26+ 用户点按发起的索引用 `BGContinuedProcessingTask` 显示系统进度和取消；自动索引、iOS 18–25 前台运行，退后台保存暂停状态，由充电时的 `BGProcessingTask` 续跑，实际时间由系统决定。处理过期不丢已完成身份，未完成文件下次重算。
 
 固定任务标识为 `dev.moonread.Moonread.full-index.processing`；ContinuedProcessing 许可模式为 `dev.moonread.Moonread.full-index.continued.*`，实际注册／提交 `dev.moonread.Moonread.full-index.continued.<UUID>`。两项列入 `BGTaskSchedulerPermittedIdentifiers`，`UIBackgroundModes` 增加 `processing` 并保留原项；标识前缀发布后保持稳定。提交失败仍可前台执行，不承诺后台一定获调度。模拟器验证不能代表真实后台调度或 iCloud 下载释放已验收。
 

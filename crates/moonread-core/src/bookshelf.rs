@@ -430,7 +430,7 @@ fn populate_cover_previews(db: &Connection, entries: &mut [LibraryEntry]) -> Res
        LEFT JOIN user_positions p ON p.content_key=COALESCE(si.content_sha256,b.content_sha256)
        LEFT JOIN book_metadata m ON m.content_sha=COALESCE(si.content_sha256,b.content_sha256)
         WHERE f.shelf_id=?1 AND f.directory=0 AND f.relative_path>=?2 AND f.relative_path<?3
-        ORDER BY COALESCE(b.last_read,0) DESC,f.modified DESC,f.name,f.id LIMIT 4",
+        ORDER BY COALESCE(p.last_read,0) DESC,f.modified DESC,f.name,f.id LIMIT 4",
     )?;
     for folder in entries.iter_mut().filter(|e| e.directory) {
         // Literal path bounds also handle names containing SQL LIKE wildcards.
@@ -783,6 +783,41 @@ impl ReaderCore {
 #[cfg(test)]
 mod recent_tests {
     use super::*;
+
+    #[test]
+    fn folder_previews_order_index_only_books_by_projected_last_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = ReaderCore::new(dir.path().join("cache").to_string_lossy().into()).unwrap();
+        core.save_library_shelf("s".into(), "Shelf".into(), vec![], "local".into(), false)
+            .unwrap();
+        {
+            let db = core.lock().unwrap();
+            db.execute_batch("INSERT INTO library_files VALUES('folder','s','folder','','folder',1,0,1,0,NULL,'auto');
+                INSERT INTO books(id,title,content_sha256,encoding,byte_count) VALUES('cached','Cached','cached-sha','UTF-8',100);
+                INSERT INTO library_files VALUES('cached-file','s','folder/cached.txt','folder','cached.txt',0,100,999,0,'cached','auto');
+                INSERT INTO library_files VALUES('indexed','s','folder/indexed.txt','folder','indexed.txt',0,100,1,0,NULL,'auto');
+                INSERT INTO source_identities VALUES('raw','auto','indexed-sha','UTF-8',100,80);
+                INSERT INTO library_identities VALUES('indexed','raw','auto',100,1);").unwrap();
+            for index in 0..4 {
+                db.execute("INSERT INTO library_files VALUES(?1,'s',?2,'folder',?3,0,100,999,0,NULL,'auto')",
+                    params![format!("unread{index}"), format!("folder/unread{index}.txt"), format!("unread{index}.txt")]).unwrap();
+            }
+        }
+        core.read_lock()
+            .unwrap()
+            .execute_batch(
+                "INSERT INTO user_positions VALUES('cached-sha',10,10,1,NULL);
+            INSERT INTO user_positions VALUES('indexed-sha',50,20,1,NULL);",
+            )
+            .unwrap();
+        let entries = core
+            .library_entries(Some("s".into()), Some("".into()), LibrarySort::Name)
+            .unwrap();
+        let previews = &entries[0].cover_previews;
+        assert_eq!(previews.len(), 4);
+        assert_eq!(previews[0].file_id, "indexed");
+        assert_eq!(previews[1].file_id, "cached-file");
+    }
 
     #[test]
     fn recent_entries_include_index_only_and_null_visibility() {
