@@ -416,3 +416,53 @@ fn search_batches_keep_the_directory_snapshot_with_which_the_job_started() {
             .all(|hit| hit.chapter.as_deref() == Some("旧目录"))
     );
 }
+
+#[test]
+fn filtered_fact_snapshots_update_overview_book_and_days_without_duplicate_ids() {
+    let (root, core, first) = fixture();
+    let path = root.path().join("second.txt");
+    std::fs::write(&path, "第一章 第二本\n保留另一部书的阅读记录。\n").unwrap();
+    let second = core
+        .import_book(path.to_string_lossy().into(), "Second".into())
+        .unwrap();
+    let a = fact(&first, "a", "device", "visit-a", 1000, 1000, (0, 12));
+    let mut b = fact(&first, "b", "device", "visit-b", 3000, 2000, (0, 12));
+    b["slice"]["local_day"] = json!(20001);
+    let mut c = fact(&second, "c", "device", "visit-c", 6000, 3000, (0, 12));
+    c["slice"]["local_day"] = json!(20001);
+    for (facts, total, first_total, days) in [
+        (
+            vec![a.clone(), b.clone(), c.clone(), a.clone()],
+            6000,
+            3000,
+            2,
+        ),
+        (vec![b.clone(), c.clone()], 5000, 2000, 1),
+        (vec![a.clone(), c.clone(), c.clone()], 4000, 1000, 2),
+    ] {
+        let query = core
+            .query_snapshot(json!({"facts": facts}).to_string())
+            .unwrap();
+        let overview = query.statistics_overview(20000, 20001, None).unwrap();
+        assert_eq!(
+            overview.books.iter().map(|b| b.duration_ms).sum::<u64>(),
+            total
+        );
+        assert_eq!(
+            overview.days.iter().map(|d| d.duration_ms).sum::<u64>(),
+            total
+        );
+        assert_eq!(overview.days.len(), days);
+        let book = query
+            .statistics_overview(20000, 20001, Some(first.content_sha256.clone()))
+            .unwrap();
+        assert_eq!(book.books[0].duration_ms, first_total);
+        assert_eq!(
+            query
+                .reading_activities(20000, 20001, Some(second.content_sha256.clone()))
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+}

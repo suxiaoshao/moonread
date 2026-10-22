@@ -356,3 +356,76 @@ fn search_ranks_titles_before_authors_and_filters_only_books() {
     );
     assert!(names(None, "  ", None, None).is_empty());
 }
+
+#[test]
+fn combined_search_scope_keeps_indexed_unopened_copies_and_excludes_other_shelves() {
+    let dir = TempDir::new().unwrap();
+    let core = core(&dir);
+    let text = "第一章 星灯\n仅用于组合搜索的合成正文。\n";
+    let source = dir.path().join("source.txt");
+    std::fs::write(&source, text).unwrap();
+    let identity = moonread_core::SourceIdentityProbe::new()
+        .identify(source.to_string_lossy().into(), "auto".into())
+        .unwrap();
+    let entry = |path: &str, directory: bool| ScannedLibraryItem {
+        relative_path: path.into(),
+        directory,
+        size: if directory { 0 } else { text.len() as u64 },
+        modified: 1,
+        needs_download: false,
+    };
+    core.scan_library_shelf(
+        "builtin".into(),
+        vec![
+            entry("星灯", true),
+            entry("星灯.txt", false),
+            entry("星灯/星灯副本.txt", false),
+        ],
+    )
+    .unwrap();
+    core.scan_library_shelf("external".into(), vec![entry("星灯.txt", false)])
+        .unwrap();
+    for file in core.source_file_snapshots(None).unwrap() {
+        assert!(file.book_id.is_none());
+        assert!(
+            core.publish_source_identity(file, identity.clone())
+                .unwrap()
+        );
+    }
+    let query = core.query_snapshot(serde_json::json!({"metadata":[{
+        "sha":identity.content_sha256,"author":"林澄","synopsis":"","tags":["旅途"],"cover":null,"status":"Unread"
+    }]}).to_string()).unwrap();
+    let books = query
+        .search_library(
+            Some("builtin".into()),
+            "星灯".into(),
+            Some("林澄".into()),
+            Some("旅途".into()),
+        )
+        .unwrap();
+    assert_eq!(books.len(), 2);
+    assert!(
+        books
+            .iter()
+            .all(|b| !b.directory && b.shelf_id == "builtin" && b.book_id.is_none())
+    );
+    assert_eq!(
+        books
+            .iter()
+            .map(|b| &b.id)
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        2
+    );
+    assert!(
+        query
+            .search_library(
+                Some("builtin".into()),
+                "星灯".into(),
+                Some("其他作者".into()),
+                Some("旅途".into())
+            )
+            .unwrap()
+            .is_empty()
+    );
+}

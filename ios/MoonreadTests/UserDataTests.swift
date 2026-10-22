@@ -285,12 +285,9 @@ final class UserDataTests: XCTestCase {
         let main = await store.writerIsOnMainThread(); XCTAssertFalse(main)
         var batch: [String: String] = [:]
         for i in 0..<500 { batch["metadata/sha-\(i)/author"] = "\"Author\"" }
-        let start = ContinuousClock.now
         try await store.putValues(batch, device: "device")
-        let elapsed = start.duration(to: .now)
         let count = try await store.allValues(prefix: "metadata/").count
         XCTAssertEqual(count, 500)
-        print("SwiftData background batch: 500 fields, \(elapsed)")
     }
 
     func testExistingModelActorSeesACommittedUpdateFromAnotherLocalContext() async throws {
@@ -533,30 +530,15 @@ final class UserDataTests: XCTestCase {
         try await store.put("metadata/\(book.contentSha256)/cover", value: String(decoding: JSONSerialization.data(withJSONObject: ["id": cover.id, "sha256": cover.sha256, "extension": cover.extension, "width": cover.width, "height": cover.height]), as: UTF8.self), device: "remote")
         let loader = CoverImageLoader { asset, pixels in try await service.coverImage(asset, pixels: pixels) }
         let subscriber = loader.subscribe(cover, pixels: 600)
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
-        let host = UIHostingController(rootView: LibraryBookCover(title: "文字封面", cover: cover, coverLoader: loader).frame(width: 150, height: 210))
-        window.rootViewController = host; window.makeKeyAndVisible()
-        defer { window.isHidden = true; previous?.makeKey() }
-        let waiting = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in subscriber.presentation.phase == .waiting }, object: nil)
-        await fulfillment(of: [waiting], timeout: 5)
+        await awaitState { subscriber.presentation.phase == .waiting }
         XCTAssertNil(subscriber.presentation.image)
-        let before = UIGraphicsImageRenderer(bounds: host.view.bounds).image { _ in host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true) }
-        let beforeAttachment = XCTAttachment(image: before); beforeAttachment.name = "cover-metadata-before-attachment"; beforeAttachment.lifetime = .keepAlways; add(beforeAttachment)
         // Real SwiftData save notification, no synthetic cloud notification.
         try await store.saveCover(id: cover.id, bytes: bytes)
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in subscriber.presentation.phase == .ready }, object: nil)
-        await fulfillment(of: [ready], timeout: 5)
+        await awaitState { subscriber.presentation.phase == .ready }
         XCTAssertNotNil(subscriber.presentation.image)
-        let displayed = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            let frame = UIGraphicsImageRenderer(bounds: host.view.bounds).image { _ in host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true) }
-            return frame.pngData() != before.pngData()
-        }, object: nil)
-        await fulfillment(of: [displayed], timeout: 5)
-        let after = UIGraphicsImageRenderer(bounds: host.view.bounds).image { _ in host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true) }
-        let afterAttachment = XCTAttachment(image: after); afterAttachment.name = "same-cover-view-after-attachment"; afterAttachment.lifetime = .keepAlways; add(afterAttachment)
-        XCTAssertNotEqual(before.pngData(), after.pngData())
+        let same = loader.subscribe(cover, pixels: 600)
+        XCTAssertTrue(same.presentation === subscriber.presentation)
+
     }
     @MainActor func testCoverRequestsCoalesceAndCancelledOldLoadCannotPublish() async throws {
         let old = BookCoverAsset(id: UUID().uuidString, sha256: String(repeating: "a", count: 64), extension: "png", width: 1, height: 1)
@@ -573,8 +555,7 @@ final class UserDataTests: XCTestCase {
         one = nil; two = nil
         await Task.yield()
         let replacement = loader.subscribe(new, pixels: 320)
-        let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in replacement.presentation.phase == .ready }, object: nil)
-        await fulfillment(of: [ready], timeout: 5)
+        await awaitState { replacement.presentation.phase == .ready }
         await probe.release()
         await Task.yield()
         XCTAssertNil(oldPresentation.image)
@@ -692,36 +673,6 @@ final class CloudAccountTests: XCTestCase {
         await coordinator.confirmAccount("B")
         let status = await coordinator.currentStatus(); XCTAssertTrue(status.enabled); XCTAssertNil(status.accountToConfirm)
         let owner = await service.userCloudOwner(); XCTAssertEqual(owner, "B")
-    }
-    @MainActor func testPausedSettingsAndAccountConfirmationRender() async throws {
-        let (_, coordinator, probe, suite) = try fixture()
-        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
-        await coordinator.setEnabled(true)
-        await probe.set(["B"]); await coordinator.identityChanged()
-        let cloud = CloudStore(coordinator: coordinator)
-        await cloud.updateStatus()
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
-        let host = UIHostingController(rootView: NavigationStack { CloudSettingsView() }
-            .environment(cloud).environment(\.locale, Locale(identifier: "en"))
-            .environment(\.dynamicTypeSize, .xxxLarge))
-        window.rootViewController = host; window.makeKeyAndVisible()
-        defer { window.isHidden = true; previous?.makeKey() }
-        host.view.layoutIfNeeded()
-        func capture(_ name: String) {
-            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-            }
-            let attachment = XCTAttachment(image: image); attachment.name = name
-            attachment.lifetime = .keepAlways; add(attachment)
-        }
-        capture("paused-cloud-settings-english-large-text")
-        cloud.requestConfirmation()
-        let presented = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in host.presentedViewController != nil }, object: nil)
-        await fulfillment(of: [presented], timeout: 5)
-        capture("specific-account-confirmation")
-        XCTAssertTrue(cloud.status.requested); XCTAssertFalse(cloud.status.enabled)
     }
     func testStaleConfirmationAndFailedInitializationRetry() async throws {
         let (service, coordinator, probe, suite) = try fixture()

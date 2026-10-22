@@ -223,3 +223,15 @@ extension AIConversation {
         }
     }
 }
+
+/// Snapshot-bound measurements; obsolete callbacks cannot resize a replacement row.
+struct DeferredRowMeasurements {
+    private var pending: [String: (version: Int, height: Double)] = [:]
+    mutating func record(id: String, version: Int, height: Double) { pending[id] = (version, height) }
+    mutating func drain(versions: [String: Int]) -> [(String, Double)] {
+        defer { pending.removeAll() }
+        return pending.sorted { $0.key < $1.key }.compactMap { id, value in
+            versions[id] == value.version ? (id, value.height) : nil
+        }
+    }
+}

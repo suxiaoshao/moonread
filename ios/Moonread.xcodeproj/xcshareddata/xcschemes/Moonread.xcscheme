@@ -87,6 +87,10 @@
             </BuildableReference>
          </TestableReference>
       </Testables>
+      <EnvironmentVariables>
+         <EnvironmentVariable key="MOONREAD_TEST_CREDENTIALS" value="memory" isEnabled="YES"/>
+      </EnvironmentVariables>
+      <StoreKitConfigurationFileReference identifier="../../Moonread/Settings/TipJar.storekit"/>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"

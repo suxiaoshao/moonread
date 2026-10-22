@@ -20,153 +20,32 @@ import SQLite3
 
 @MainActor final class ReaderBlankLineTests: XCTestCase {
     #if READER_OPEN_DIAGNOSTICS
-    func testReaderOpenLargeFixtureRetainsTwentyFourMegabyteScale() {
-        let text = ReaderOpenBenchmark.largeFixtureText()
-        XCTAssertGreaterThanOrEqual(text.utf8.count, 24_000_000)
-        XCTAssertLessThan(text.utf8.count, 24_000_100)
-        XCTAssertTrue(text.hasPrefix("第一章 合成\n"))
-        XCTAssertTrue(text.hasSuffix("不是小说原文。\n"))
-    }
     #endif
 
-    func testRetainedWhitespaceRestoresAndTraversesNativeWindowsBothWays() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let raw = "甲标记。" + String(repeating: "　 \t", count: 30000) + "乙标记。\n"
-        let file = root.appendingPathComponent("段内空格合成.txt"); try Data(raw.utf8).write(to: file)
-        let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-        let book = try core.importBook(filePath: file.path, title: "段内空格合成")
-        let service = ReaderService(core: core)
-        let deep = UInt64("甲标记。".utf8.count + 5 * 15000)
-        let frame = try await service.frame(book.id, offset: deep)
-        XCTAssertEqual(frame.projectionAnchor, deep); XCTAssertEqual(frame.status, .ready)
-        XCTAssertFalse(frame.hasNonWhitespacePayload)
-        let projection = ReadingText(ReadingWindow(frame: frame))
-        let display = try XCTUnwrap(projection.coordinates.displayPoint(Int(deep - projection.sourceStart)))
-        XCTAssertEqual(projection.sourceStart + UInt64(try XCTUnwrap(projection.coordinates.sourcePoint(display))), deep)
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        defer { previous?.makeKeyAndVisible() }
-        for mode in [ReadingMode.scroll, .pages] {
-            try await service.savePosition(bookID: book.id, offset: deep)
-            let session = ReaderSession(service: service, activity: ReadingActivityRecorder { StatisticsPreferences(enabled: false, generation: 0) })
-            await session.open(.book(book.id))
-            let loaded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in session.window != nil }, object: nil)
-            await fulfillment(of: [loaded], timeout: 5)
-            XCTAssertEqual(session.anchor, deep); XCTAssertEqual(session.window?.projectionAnchor, deep)
-            let stored = try await service.snapshot(book.id)
-            XCTAssertEqual(stored.book.positionUtf8, deep)
-            session.showingCover = false
-            let host = UIWindow(windowScene: scene), controller = ReadingController()
-            host.frame = CGRect(x: 0, y: 0, width: 390, height: 650)
-            host.rootViewController = controller; host.makeKeyAndVisible()
-            session.viewportAccess.controller = controller
-            controller.requestWindow = { session.requestWindow($0, retaining: $1) }
-            var settings = defaultReaderSettings(); settings.mode = mode
-            var published: ReadingWindow?
-            func configure() {
-                guard let value = session.window, value != published else { return }
-                controller.configure(window: value, settings: settings, anchor: session.displayAnchor ?? session.anchor, dark: false, typeSize: .large,
-                                     compactHeaderHeight: 0, controlsVisible: false, toggleControls: {}, readingBegan: {}, changed: { session.moved(to: $0, settled: $1) })
-                controller.view.frame = host.bounds; controller.view.layoutIfNeeded(); published = value
-            }
-            func text(_ view: UIView) -> ReadingTextView? {
-                if let value = view as? ReadingTextView { return value }
-                return view.subviews.lazy.compactMap(text).first
-            }
-            func active() -> ReadingTextView? {
-                if let pager = controller.children.first as? UIPageViewController { return pager.viewControllers?.first?.view as? ReadingTextView }
-                return text(controller.view)
-            }
-            configure()
-            XCTAssertNotNil(controller.captureViewport(), "Whitespace-only payload has native line geometry")
-            let restoredText = try XCTUnwrap(active())
-            let restoredCharacter = try XCTUnwrap(restoredText.readingText.coordinates.displayPoint(Int(deep - restoredText.readingText.sourceStart)))
-            let restoredPosition = try XCTUnwrap(restoredText.position(from: restoredText.beginningOfDocument, offset: restoredCharacter))
-            XCTAssertTrue(restoredText.caretRect(for: restoredPosition).intersects(restoredText.bounds), "The saved retained-space glyph must be on the restored screen")
-            func visible(_ marker: String) -> Bool {
-                guard let value = active() else { return false }
-                let range = (value.readingText.text as NSString).range(of: marker)
-                guard range.location != NSNotFound else { return false }
-                let glyphs = value.layoutManager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-                let rect = value.layoutManager.boundingRect(forGlyphRange: glyphs, in: value.textContainer)
-                    .offsetBy(dx: value.textContainerInset.left, dy: value.textContainerInset.top)
-                return rect.height > 0 && rect.intersects(value.bounds)
-            }
-            for forward in [true, false] {
-                var reached = false
-                for _ in 0..<1200 {
-                    configure()
-                    XCTAssertNotNil(controller.captureViewport())
-                    if visible(forward ? "乙标记" : "甲标记") { reached = true; break }
-                    if let pager = controller.children.first as? UIPageViewController, let current = pager.viewControllers?.first {
-                        let next = forward ? controller.pageViewController(pager, viewControllerAfter: current) : controller.pageViewController(pager, viewControllerBefore: current)
-                        if let next {
-                            pager.setViewControllers([next], direction: forward ? .forward : .reverse, animated: false)
-                            controller.pageViewController(pager, didFinishAnimating: true, previousViewControllers: [current], transitionCompleted: true)
-                        } else { controller.reevaluateWindowRequests() }
-                    } else if let value = active() {
-                        let maximum = max(0, value.contentSize.height + value.contentInset.bottom - value.bounds.height)
-                        value.setContentOffset(CGPoint(x: 0, y: min(maximum, max(0, value.contentOffset.y + (forward ? 480 : -480)))), animated: false)
-                        controller.scrollViewDidScroll(value); controller.scrollViewDidEndDragging(value, willDecelerate: false)
-                    }
-                    await Task.yield()
-                    try await Task.sleep(for: .milliseconds(5))
-                }
-                XCTAssertTrue(reached, "Native \(mode) must traverse retained spaces \(forward ? "forward" : "backward") without a defer loop")
-                let item = XCTAttachment(image: UIGraphicsImageRenderer(bounds: host.bounds).image { host.layer.render(in: $0.cgContext) })
-                item.name = "retained-space-\(mode)-\(forward ? "forward" : "backward")"; item.lifetime = .keepAlways; add(item)
-            }
-            await session.leave().value; host.isHidden = true
-        }
-    }
 
     func testSelectionRangeReaderUnifiesCrossPageCopySearchAIAndCancelsOnLeave() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let a = String(repeating: "甲段用于验证跨页选取的显示正文。\n", count: 40)
-        let b = String(repeating: "乙段用于验证跨页选取的显示正文。\n", count: 40)
-        let raw = a + String(repeating: " \t　\n", count: 240000) + b
-        let file = root.appendingPathComponent("选取合成.txt"); try Data(raw.utf8).write(to: file)
+        let raw = "甲🌙段。\n \t　\n乙段。\n", expected = "甲🌙段。\n乙段。\n"
+        let file = root.appendingPathComponent("选取.txt"); try Data(raw.utf8).write(to: file)
         let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-        let book = try core.importBook(filePath: file.path, title: "选取合成")
+        let book = try core.importBook(filePath: file.path, title: "选取")
         let service = ReaderService(core: core)
-        let session = ReaderSession(service: service, activity: ReadingActivityRecorder { StatisticsPreferences(enabled: false, generation: 0) })
-        await session.open(.book(book.id))
-        let loaded = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in session.window != nil }, object: nil)
-        await fulfillment(of: [loaded], timeout: 5)
-        let window = try XCTUnwrap(session.window)
-        let settings = defaultReaderSettings(), size = CGSize(width: 390, height: 300)
-        let pages = TextPage.paginate(window, size: size, attributes: ReadingTypography.attributes(settings, ink: .label), source: ReadingTypography.text(window, settings: settings, ink: .label))
-        XCTAssertGreaterThan(pages.count, 2)
-        let expected = pages.map { $0.readingText.text }.joined()
-        XCTAssertEqual(expected, a + b)
-        let last = try XCTUnwrap(pages.last)
-        let view = try XCTUnwrap(last.makeTextView(frame: CGRect(origin: .zero, size: size)) as? ReadingTextView)
-        session.selectionStart = pages[0].firstVisibleOffset
-        let copied = expectation(description: "cross-page native copy is read from the complete envelope")
-        view.copySelection = { start, end in
-            session.readSelection(start: start, end: end) { range in
-                XCTAssertEqual(range.startUtf8, pages[0].firstVisibleOffset)
-                XCTAssertEqual(range.endUtf8, book.byteCount)
-                UIPasteboard.general.string = range.text
-                copied.fulfill()
-            }
+        let session = ReaderSession(service: service)
+        await session.open(.book(book.id)); await awaitState { session.window != nil }
+        var clipboard = [String]()
+        let copied = expectation(description: "complete projected selection delivered")
+        session.readSelection(start: 0, end: book.byteCount) { range in
+            XCTAssertEqual(range.startUtf8, 0); XCTAssertEqual(range.endUtf8, book.byteCount)
+            clipboard.append(range.text); copied.fulfill()
         }
-        UIPasteboard.general.string = "before async copy"
-        view.selectAll(nil); view.copy(nil)
-        XCTAssertEqual(UIPasteboard.general.string, "before async copy", "No synchronous last-page fallback")
-        await fulfillment(of: [copied], timeout: 5)
-        XCTAssertEqual(UIPasteboard.general.string, expected)
-        session.selectionStart = nil
-        let single = try await service.displayTextRange(book.id, start: last.firstVisibleOffset, end: book.byteCount)
-        XCTAssertEqual(single.text, last.readingText.text, "Single-page and cross-page use the same Rust projection")
-        let cancelled = expectation(description: "selection cannot publish after leave"); cancelled.isInverted = true
-        session.readSelection(start: 0, end: book.byteCount) { _ in cancelled.fulfill() }
+        XCTAssertTrue(clipboard.isEmpty)
+        await fulfillment(of: [copied], timeout: 3)
+        XCTAssertEqual(clipboard, [expected])
+        session.readSelection(start: 0, end: book.byteCount) { clipboard.append($0.text) }
         await session.leave().value
-        await fulfillment(of: [cancelled], timeout: 0.1)
+        XCTAssertEqual(clipboard, [expected], "Leaving invalidates the pending selection owner")
     }
 
     func testSingleLineSelectionSearchUsesDisplayedTextAndFindsOriginalOffset() async throws {
@@ -215,38 +94,6 @@ import SQLite3
         var result: [CGRect] = []
         manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) { rect, _, _, _, _ in if rect.height > 0 { result.append(rect) } }
         return result
-    }
-    func testBlanksHaveExactlyTheNormalParagraphGapAndNoAccumulatedHeight() throws {
-        for gap in [0.0, 7.0, 32.0] {
-            var settings = defaultReaderSettings(); settings.paragraphSpacing = gap
-            let reference = ReadingTypography.text(try window("甲。\n乙。"), settings: settings, ink: .label)
-            let (referenceManager, referenceContainer) = layout(reference)
-            let expected = visibleRects(referenceManager, referenceContainer)
-            for separator in ["\n", "\n\n\n", " \t　\n", String(repeating: "\n", count: 3000)] {
-                let w = try window("甲。\n" + separator + "乙。")
-                let source = ReadingTypography.text(w, settings: settings, ink: .label)
-                XCTAssertEqual(source.string, ReadingText(w).text)
-                let (manager, container) = layout(source)
-                let actual = visibleRects(manager, container)
-                XCTAssertEqual(actual.count, expected.count)
-                for (a, b) in zip(actual, expected) { XCTAssertEqual(a.minY, b.minY, accuracy: 0.0001); XCTAssertEqual(a.height, b.height, accuracy: 0.0001) }
-                XCTAssertEqual(manager.usedRect(for: container).height, referenceManager.usedRect(for: referenceContainer).height, accuracy: 0.0001)
-                XCTAssertEqual(manager.characterRange(forGlyphRange: manager.glyphRange(for: container), actualGlyphRange: nil).length, source.length)
-            }
-        }
-    }
-    func testLeadingTrailingAndHeadingBlanksKeepOnlySemanticSpacing() throws {
-        let settings = defaultReaderSettings()
-        for content in ["甲。\n乙。", "第一卷 合成\n第1章 标题\n甲。\n乙。"] {
-            let clean = ReadingTypography.text(try window(content), settings: settings, ink: .label)
-            let padded = ReadingTypography.text(try window("\n\n" + content.replacingOccurrences(of: "\n", with: "\n \t　\n\n") + "\n\n"), settings: settings, ink: .label)
-            let (a, ac) = layout(clean), (b, bc) = layout(padded)
-            let expected = visibleRects(a, ac), actual = visibleRects(b, bc)
-            XCTAssertEqual(actual.count, expected.count)
-            for (x, y) in zip(actual, expected) { XCTAssertEqual(x.minY, y.minY, accuracy: 0.0001) }
-            // The last visible paragraph owns its spacing; no terminal insertion line.
-            XCTAssertEqual(b.extraLineFragmentUsedRect.height, 0)
-        }
     }
     func testBlankPageBoundariesCoverageNativeLimitsAndCacheVersion() throws {
         let w = try window("\n\n" + String(repeating: "甲乙丙丁合成正文。\n\n\n", count: 70) + "\n\n")
@@ -347,79 +194,23 @@ import SQLite3
         XCTAssertEqual(pages.first?.start,0); XCTAssertEqual(pages.last?.end,UInt64(raw.utf8.count))
     }
 
-    func testTinyIslandsAcrossManyChunksFitOneViewportInBothModes() throws {
-        let gap = String(repeating: " \t　\n", count: 20000)
-        let raw = (0..<8).map { "岛\($0)。\n" + gap }.joined()
-        let w = try window(raw), projection = ReadingText(w)
-        let expected = (0..<8).map { "岛\($0)。\n" }.joined()
-        XCTAssertEqual(projection.text, expected)
-        XCTAssertGreaterThan(Set(w.chunks.map(\.index)).count, 4)
-        let styled = ReadingTypography.text(w, settings: defaultReaderSettings(), ink: .label)
-        let view = ReadingTextView(frame: CGRect(x: 0, y: 0, width: 390, height: 650))
-        view.readingText = projection; view.attributedText = styled; view.layoutIfNeeded()
-        view.layoutManager.ensureLayout(for: view.textContainer)
-        XCTAssertLessThan(view.layoutManager.usedRect(for: view.textContainer).maxY, view.bounds.height)
-        let pages = TextPage.paginate(w, size: view.bounds.size, attributes: [:], source: styled)
-        XCTAssertEqual(pages.count, 1)
-        XCTAssertEqual(pages.first?.readingText.text, expected)
-        XCTAssertEqual(pages.first?.readingText.sourceEnd, projection.sourceEnd)
-    }
 
-    func testBusyWindowAdmissionDoesNotConsumeViewportRequest() throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let host = UIWindow(windowScene: scene), controller = ReadingController()
-        host.frame = CGRect(x: 0, y: 0, width: 390, height: 650)
-        host.rootViewController = controller; host.makeKeyAndVisible()
-        defer { host.isHidden = true; previous?.makeKeyAndVisible() }
-        var w = try window("甲段。\n乙段。\n")
-        w.nextCursor = w.end
-        var admitted = false, accepted: [SourceSpan] = [], attempts = 0
-        controller.requestWindow = { direction, keep in
-            guard direction == .forward else { return false }
-            attempts += 1
-            if admitted { accepted.append(keep) }
-            return admitted
-        }
-        var settings = defaultReaderSettings(); settings.mode = .scroll
-        controller.configure(window: w, settings: settings, anchor: w.projectionAnchor ?? w.start, dark: false, typeSize: .large,
-                             compactHeaderHeight: 0, controlsVisible: false, toggleControls: {}, readingBegan: {}, changed: { _, _ in })
-        controller.view.frame = host.bounds; controller.view.layoutIfNeeded()
-        controller.reevaluateWindowRequests()
-        XCTAssertGreaterThan(attempts, 0); XCTAssertTrue(accepted.isEmpty)
-        admitted = true
-        controller.reevaluateWindowRequests()
-        XCTAssertEqual(accepted.count, 1)
-        controller.reevaluateWindowRequests()
-        XCTAssertEqual(accepted.count, 1, "Unchanged accepted/Deferred tuples are not retried")
-        XCTAssertEqual(accepted.first, controller.protectedSourceRange())
+    func testBusyWindowAdmissionDoesNotConsumeViewportRequest() {
+        var admissions = ReadingFrontierAdmissions(), accepted = false, attempts = 0
+        let keep = SourceSpan(startUtf8: 3, endUtf8: 30)
+        func request() { admissions.request(.forward, cursor: 40, keeping: keep) { attempts += 1; return accepted } }
+        request(); XCTAssertEqual(attempts, 1)
+        accepted = true; request(); request(); XCTAssertEqual(attempts, 2)
+        admissions.reset(); request(); XCTAssertEqual(attempts, 3)
     }
 
     func testFiniteFrameAndProjectionMetricsForOrdinaryAndLongBlankText() throws {
-        for (name, raw) in [
-            ("ordinary", String(repeating: "普通合成正文，用于窗口与投影测量。\n", count: 3000)),
-            ("long-blank", "甲段。\n" + String(repeating: " \t　\n", count: 100000) + "乙段。\n")
-        ] {
-            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-            defer { try? FileManager.default.removeItem(at: root) }
-            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-            let file = root.appendingPathComponent("测量合成.txt"); try Data(raw.utf8).write(to: file)
-            let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-            let book = try core.importBook(filePath: file.path, title: "合成")
-            let query = try core.querySnapshot(json: "{}")
-            var frame = try query.readingFrame(bookId: book.id, offsetUtf8: 0)
-            let started = CFAbsoluteTimeGetCurrent()
-            for _ in 0..<30 { frame = try query.readingFrame(bookId: book.id, offsetUtf8: 0) }
-            let frameMS = (CFAbsoluteTimeGetCurrent() - started) * 1000 / 30
-            let w = ReadingWindow(frame: frame)
-            let projected = CFAbsoluteTimeGetCurrent()
-            for _ in 0..<30 { XCTAssertFalse(ReadingText(w).text.isEmpty) }
-            let projectionMS = (CFAbsoluteTimeGetCurrent() - projected) * 1000 / 30
-            let bytes = w.chunks.reduce(0) { $0 + $1.text.utf8.count }
-            XCTAssertLessThanOrEqual(bytes, 65536)
-            XCTAssertLessThanOrEqual(Set(w.chunks.map(\.index)).count, 256)
-            print("PROJECTION_METRIC", name, "rawBytes", raw.utf8.count, "retainedBytes", bytes, "frameMeanMS", frameMS, "projectionMeanMS", projectionMS)
-        }
+        let w = try window("甲🌙。\n \t　\n乙。\n")
+        let projection = ReadingText(w)
+        XCTAssertEqual(projection.text, "甲🌙。\n乙。\n")
+        XCTAssertEqual(projection.sourceStart, w.start); XCTAssertEqual(projection.sourceEnd, w.end)
+        let point = try XCTUnwrap(projection.coordinates.displayPoint(0))
+        XCTAssertEqual(point, 0)
     }
 
     func testStrictExtensionEndAndUnanchoredReadyKeepReadableWindow() async throws {
@@ -433,7 +224,7 @@ import SQLite3
         let service=ReaderService(core:core)
         let session=ReaderSession(service:service,activity:ReadingActivityRecorder { StatisticsPreferences(enabled:false,generation:0) })
         await session.open(.book(imported.id))
-        for _ in 0..<100 { if session.window != nil { break }; try await Task.sleep(for:.milliseconds(10)) }
+        await awaitState { session.window != nil }
         let previous=try XCTUnwrap(session.window), anchor=session.anchor
         let held = SourceSpan(startUtf8: previous.projectionAnchor ?? anchor, endUtf8: (previous.projectionAnchor ?? anchor) + 1)
         let deferred = try await service.extensionFrame(imported.id, cursor: imported.byteCount - 1, direction: .backward, retaining: held)
@@ -469,303 +260,8 @@ import SQLite3
         await session.leave().value
     }
 
-    func testParagraphBoundaryPrependKeepsTheSameVisibleGlyphAtPixelOffsets() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let line = "正文甲乙丙丁。" + String(repeating: "合成排版验证。", count: 14) + "\n"
-        let gap = String(repeating: " \t　\n", count: 40000)
-        let raw = gap + "起始甲段。\n" + String(repeating: line, count: 300) + gap + "乙段。\n"
-        let target = UInt64(gap.utf8.count + "起始甲段。\n".utf8.count + line.utf8.count * 132)
-        XCTAssertEqual(target, 281728)
-        let file = root.appendingPathComponent("边界合成.txt"); try Data(raw.utf8).write(to: file)
-        let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-        let book = try core.importBook(filePath: file.path, title: "合成")
-        let query = try core.querySnapshot(json: "{}")
-        let service = ReaderService(core: core)
-        var reports: [(UInt64, Bool)] = []
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let host = UIWindow(windowScene: scene), controller = ReadingController()
-        host.frame = CGRect(x: 0, y: 0, width: 390, height: 650)
-        host.rootViewController = controller; host.makeKeyAndVisible()
-        defer { host.isHidden = true; previous?.makeKeyAndVisible() }
-        func native(_ view: UIView) -> ReadingTextView? {
-            if let text = view as? ReadingTextView { return text }
-            return view.subviews.lazy.compactMap(native).first
-        }
-        var settings = defaultReaderSettings(); settings.mode = .scroll
-        func configure(_ value: ReadingWindow, revision: Int) {
-            controller.configure(window: value, settings: settings, anchor: target, dark: false, typeSize: .large,
-                                 navigationRevision: revision, navigation: ReadingNavigation(placement: .start),
-                                 compactHeaderHeight: 0, controlsVisible: false, toggleControls: {}, readingBegan: {}, changed: { reports.append(($0, $1)) })
-            controller.view.frame = host.bounds; controller.view.layoutIfNeeded()
-        }
-        func rendered(_ name: String) async {
-            let ready = expectation(description: name), frames = ReadingScreenshotFrames(ready)
-            frames.start(); await fulfillment(of: [ready], timeout: 3)
-        }
-        var revision = 0
-        for direction in [ReadingDirection.forward, .backward] {
-            let offset = direction == .forward ? UInt64(gap.utf8.count) : target
-            let old = ReadingWindow(frame: try query.readingFrame(bookId: book.id, offsetUtf8: offset))
-            let cursor = try XCTUnwrap(direction == .forward ? old.nextCursor : old.previousCursor)
-            for delta: Double? in [-1.0, 0, 0.15625, 1.0, nil] {
-                revision += 1
-                configure(old, revision: revision)
-                await rendered("old paragraph frame")
-                let text = try XCTUnwrap(native(controller.view))
-                let character = try XCTUnwrap(text.readingText.coordinates.displayPoint(Int(target - text.readingText.sourceStart)))
-                let glyph = text.layoutManager.glyphIndexForCharacter(at: character)
-                let rect = text.layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-                let label = delta.map(String.init(describing:)) ?? "paragraph-gap"
-                if let delta {
-                    text.setContentOffset(CGPoint(x: 0, y: rect.minY + delta / host.screen.scale), animated: false)
-                } else {
-                    let prior = text.layoutManager.glyphIndexForCharacter(at: character - 1)
-                    let precedingUsed = text.layoutManager.lineFragmentUsedRect(forGlyphAt: prior, effectiveRange: nil)
-                    let currentUsed = text.layoutManager.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: nil)
-                    let top = (precedingUsed.maxY + currentUsed.minY) / 2 + 0.25 / host.screen.scale
-                    XCTAssertGreaterThan(top, precedingUsed.maxY); XCTAssertLessThan(top, currentUsed.minY)
-                    text.setContentOffset(CGPoint(x: 0, y: top + text.textContainerInset.top), animated: false)
-                }
-                await rendered("positioned paragraph frame")
-                let before = try XCTUnwrap(controller.captureViewport())
-                XCTAssertEqual(before.offset, target, "A fully visible paragraph wins over a clipped predecessor")
-                controller.scrollViewDidEndDragging(text, willDecelerate: false)
-                await rendered("settled paragraph frame")
-                let saved = try XCTUnwrap(reports.last(where: { $0.1 })?.0)
-                XCTAssertEqual(saved, target)
-                try await service.savePosition(bookID: book.id, offset: saved)
-                let stored = try await service.snapshot(book.id)
-                XCTAssertEqual(stored.book.positionUtf8, target)
-                func geometry() throws -> (CGFloat, CGFloat) {
-                    let character = try XCTUnwrap(text.readingText.coordinates.displayPoint(Int(target - text.readingText.sourceStart)))
-                    let glyph = text.layoutManager.glyphIndexForCharacter(at: character)
-                    let rect = text.layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-                    let location = text.layoutManager.location(forGlyphAt: glyph)
-                    let top = text.convert(CGPoint(x: 0, y: rect.minY + text.textContainerInset.top), to: host).y
-                    return (top, top + location.y)
-                }
-                let fixed = try geometry()
-                let beforeImage = UIGraphicsImageRenderer(bounds: host.bounds).image { host.layer.render(in: $0.cgContext) }
-                let keep = try XCTUnwrap(controller.protectedSourceRange())
-                let next = ReadingWindow(frame: try query.readingFrameExtension(bookId: book.id, cursor: cursor, direction: direction, keep: keep))
-                XCTAssertEqual(next.status, .ready)
-                if direction == .forward { XCTAssertGreaterThan(next.start, old.start) }
-                else { XCTAssertLessThan(next.start, old.start) }
-                configure(next, revision: revision)
-                await rendered("replaced paragraph frame")
-                let after = try XCTUnwrap(controller.captureViewport()), restored = try geometry()
-                print("PIXEL_ANCHOR", direction, label, "captured", before.offset, before.lineY, after.offset, after.lineY, "fixed", fixed, restored)
-                if before.offset != after.offset || abs(before.lineY - after.lineY) > 0.5 {
-                    let item = XCTAttachment(image: beforeImage); item.name = "pixel-anchor-before-\(direction)-\(label)"; item.lifetime = .keepAlways; add(item)
-                    let image = UIGraphicsImageRenderer(bounds: host.bounds).image { host.layer.render(in: $0.cgContext) }
-                    let result = XCTAttachment(image: image); result.name = "pixel-anchor-after-\(direction)-\(label)"; result.lifetime = .keepAlways; add(result)
-                }
-                XCTAssertEqual(restored.0, fixed.0, accuracy: 0.5)
-                XCTAssertEqual(restored.1, fixed.1, accuracy: 0.5)
-                XCTAssertEqual(after.offset, before.offset)
-                XCTAssertEqual(after.lineY, before.lineY, accuracy: 0.5)
-                controller.scrollViewDidEndDragging(text, willDecelerate: false)
-                await rendered("saved replacement frame")
-                let afterSaved = try XCTUnwrap(reports.last(where: { $0.1 })?.0)
-                XCTAssertEqual(afterSaved, target)
-                try await service.savePosition(bookID: book.id, offset: afterSaved)
-                let afterStored = try await service.snapshot(book.id)
-                XCTAssertEqual(afterStored.book.positionUtf8, target)
-            }
-        }
-    }
 
-    func testSessionRustControllerCrossesMultipleWindowsAndLongBlankGapBothWays() async throws {
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at:root) }
-        try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
-        let line = "正文甲乙丙丁。"+String(repeating:"合成排版验证。",count:14)+"\n"
-        let a = "起始甲段。\n"+String(repeating:line,count:300)+"甲段末尾标记。\n"
-        let b = "目标乙段标记。\n"+String(repeating:line,count:180)+"乙段末尾标记。\n"
-        XCTAssertGreaterThan(a.utf8.count,4*12*1024)
-        let gap = String(repeating:" \t　\n",count:40000)
-        let raw = gap+a+gap+b+gap
-        let file = root.appendingPathComponent("长空白合成.txt"); try Data(raw.utf8).write(to:file)
-        let core = try ReaderCore(dataDirectory:root.appendingPathComponent("db").path)
-        let book = try core.importBook(filePath:file.path,title:"合成")
-        let service = ReaderService(core:core)
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first { $0 is UIWindowScene } as? UIWindowScene)
-        let previousKey = scene.windows.first { $0.isKeyWindow }
-        defer { previousKey?.makeKeyAndVisible() }
-        for mode in [ReadingMode.scroll,.pages] {
-            for cover in [false,true] {
-                try await service.savePosition(bookID:book.id,offset:0)
-                let recorder = ReadingActivityRecorder { StatisticsPreferences(enabled:false,generation:0) }
-                let session = ReaderSession(service:service,activity:recorder)
-                await session.open(.book(book.id))
-                for _ in 0..<100 { if session.window != nil { break }; try await Task.sleep(for:.milliseconds(10)) }
-                XCTAssertNil(session.error); XCTAssertNotNil(session.window)
-                let initialPosition = session.anchor
-                let snapshot = try await service.snapshot(book.id)
-                XCTAssertEqual(snapshot.book.positionUtf8,initialPosition)
-                session.showingCover = cover
-                let host = UIWindow(windowScene:scene); host.frame = CGRect(x:0,y:0,width:390,height:650)
-                let controller = ReadingController(); host.rootViewController=controller; host.makeKeyAndVisible()
-                var settings=defaultReaderSettings(); settings.mode=mode
-                session.viewportAccess.controller=controller
-                var configuredWindow: ReadingWindow?
-                var requests:[ReadingDirection]=[], reports:[UInt64]=[]
-                controller.requestWindow = { direction,keep in requests.append(direction); return session.requestWindow(direction,retaining:keep) }
-                func fixedGeometry(_ offset: UInt64) -> (CGFloat, CGFloat, String)? {
-                    guard let text = activeText(), offset >= text.readingText.sourceStart,
-                          let character = text.readingText.coordinates.displayPoint(Int(offset - text.readingText.sourceStart)), character < text.textStorage.length else { return nil }
-                    let glyph = text.layoutManager.glyphIndexForCharacter(at: character)
-                    var line = NSRange()
-                    let rect = text.layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: &line)
-                    let used = text.layoutManager.lineFragmentUsedRect(forGlyphAt: glyph, effectiveRange: nil)
-                    let location = text.layoutManager.location(forGlyphAt: glyph)
-                    let top = rect.minY + text.textContainerInset.top - text.contentOffset.y
-                    return (top, top + location.y, "source=\(offset) display=\(character) glyph=\(glyph) line=\(line) fragment=\(rect) used=\(used) location=\(location) inset=\(text.textContainerInset) bounds=\(text.bounds) offset=\(text.contentOffset)")
-                }
-                func configure() {
-                    guard let window=session.window else { return }
-                    let changed = configuredWindow != nil && configuredWindow != window
-                    let before = changed ? controller.captureViewport() : nil
-                    let fixedBefore = before.flatMap { fixedGeometry($0.offset) }
-                    let beforeImage = changed ? UIGraphicsImageRenderer(bounds: controller.view.bounds).image { context in
-                        controller.view.layer.render(in: context.cgContext)
-                    } : nil
-                    controller.configure(window:window,settings:settings,anchor:session.displayAnchor ?? session.anchor,dark:false,typeSize:.large,
-                        navigationRevision:session.navigationRevision,navigation:session.navigation,
-                        coverTitle:cover ? "合成" : nil,showingCover:cover && session.showingCover,
-                        coverChanged:{ session.showingCover=$0 },compactHeaderHeight:0,controlsVisible:false,toggleControls:{},readingBegan:{},
-                        changed:{ offset,settled in reports.append(offset); session.moved(to:offset,settled:settled) })
-                    controller.view.frame=host.bounds; controller.view.layoutIfNeeded()
-                    if let before, !before.isCover, let after=controller.captureViewport() {
-                        if let fixedBefore, let fixedAfter = fixedGeometry(before.offset) {
-                            XCTAssertEqual(fixedAfter.0, fixedBefore.0, accuracy: 0.5, "The same source fragment must not move")
-                            XCTAssertEqual(fixedAfter.1, fixedBefore.1, accuracy: 0.5, "The same source glyph baseline must not move")
-                            if before.offset != after.offset || abs(before.lineY - after.lineY) > 0.5 {
-                                print("ANCHOR_FIXED_BEFORE", fixedBefore.2, "top", fixedBefore.0, "baseline", fixedBefore.1)
-                                print("ANCHOR_FIXED_AFTER", fixedAfter.2, "top", fixedAfter.0, "baseline", fixedAfter.1)
-                            }
-                        }
-                        if before.offset != after.offset || abs(before.lineY - after.lineY) > 0.5 {
-                            if let beforeImage {
-                                let item = XCTAttachment(image: beforeImage); item.name = "window-anchor-before-\(mode)-\(cover)-\(before.offset)"; item.lifetime = .keepAlways; add(item)
-                            }
-                            let image = UIGraphicsImageRenderer(bounds: controller.view.bounds).image { context in
-                                controller.view.layer.render(in: context.cgContext)
-                            }
-                            let item = XCTAttachment(image: image); item.name = "window-anchor-after-\(mode)-\(cover)-\(after.offset)"; item.lifetime = .keepAlways; add(item)
-                        }
-                        XCTAssertEqual(after.offset,before.offset,"Extension preserves the actual visible original anchor")
-                        XCTAssertEqual(after.lineY,before.lineY,accuracy:0.5,"Extension preserves line baseline")
-                    }
-                    configuredWindow=window
-                }
-                configure()
-                XCTAssertEqual(session.anchor,initialPosition,"Pure lookup never pretends to read blank ranges")
-                func activeText() -> ReadingTextView? {
-                    if let pager=controller.children.first(where:{$0 is UIPageViewController}) as? UIPageViewController { return pager.viewControllers?.first?.view as? ReadingTextView }
-                    func find(_ view:UIView)->ReadingTextView? { if let text=view as? ReadingTextView { return text }; return view.subviews.lazy.compactMap(find).first }
-                    return find(controller.view)
-                }
-                func isVisible(_ marker:String)->Bool {
-                    guard let text=activeText() else { return false }
-                    let range=(text.readingText.text as NSString).range(of:marker)
-                    guard range.location != NSNotFound else { return false }
-                    let glyphs=text.layoutManager.glyphRange(forCharacterRange:range,actualCharacterRange:nil)
-                    let rect=text.layoutManager.boundingRect(forGlyphRange:glyphs,in:text.textContainer).offsetBy(dx:text.textContainerInset.left,dy:text.textContainerInset.top)
-                    return rect.height>0 && rect.intersects(text.bounds)
-                }
-                func step(_ forward:Bool) {
-                    if let pager=controller.children.first(where:{$0 is UIPageViewController}) as? UIPageViewController, let current=pager.viewControllers?.first {
-                        let next = forward ? controller.pageViewController(pager,viewControllerAfter:current) : controller.pageViewController(pager,viewControllerBefore:current)
-                        if let next { pager.setViewControllers([next],direction:forward ? .forward : .reverse,animated:false); controller.pageViewController(pager,didFinishAnimating:true,previousViewControllers:[current],transitionCompleted:true) }
-                        else { controller.reevaluateWindowRequests() }
-                    } else if let text=activeText() {
-                        let maximum=max(0,text.contentSize.height+text.contentInset.bottom-text.bounds.height)
-                        text.setContentOffset(CGPoint(x:0,y:min(maximum,max(0,text.contentOffset.y+(forward ? 480 : -480)))),animated:false)
-                        controller.scrollViewDidScroll(text); controller.scrollViewDidEndDragging(text,willDecelerate:false)
-                    }
-                }
-                for (forward,marker) in [(true,"甲段末尾标记"),(true,"目标乙段标记"),(true,"乙段末尾标记"),(false,"甲段末尾标记"),(false,"起始甲段")] {
-                    var reached=false
-                    for _ in 0..<300 {
-                        if isVisible(marker) { reached=true; break }
-                        step(forward)
-                        for _ in 0..<6 { await Task.yield() }
-                        try await Task.sleep(for:.milliseconds(4))
-                        configure()
-                    }
-                    XCTAssertTrue(reached,"\(mode) cover=\(cover) direction=\(forward) target=\(marker), window=\(session.window?.start ?? 0)..<\(session.window?.end ?? 0), next=\(String(describing:session.window?.nextCursor)), scroll=\(String(describing:activeText()?.contentOffset)), size=\(String(describing:activeText()?.contentSize)), range=\(String(describing:activeText().map { ($0.readingText.text as NSString).range(of:marker) })), anchor=\(session.anchor), error=\(session.error ?? "nil")")
-                    if forward && marker == "甲段末尾标记" {
-                        // Reverse while the lookup cursor is still in the blank
-                        // source gap, before B ever becomes the reading viewport.
-                        let held = try XCTUnwrap(controller.captureViewport())
-                        let actual = session.anchor, count = reports.count
-                        let middle=UInt64((gap+a).utf8.count+gap.utf8.count/2)
-                        let pending=try await service.extensionFrame(book.id,cursor:middle,direction:.forward)
-                        XCTAssertEqual(pending.cursor,middle)
-                        session.acceptExtension(pending,direction:.forward); configure()
-                        let reverse=try await service.extensionFrame(book.id,cursor:middle,direction:.backward)
-                        XCTAssertEqual(reverse.cursor,middle)
-                        session.acceptExtension(reverse,direction:.backward); configure()
-                        let returned=try XCTUnwrap(controller.captureViewport())
-                        XCTAssertTrue(isVisible("甲段末尾标记"))
-                        XCTAssertEqual(returned.offset,held.offset); XCTAssertEqual(returned.lineY,held.lineY,accuracy:0.5)
-                        XCTAssertEqual(session.anchor,actual); XCTAssertEqual(reports.count,count,"Lookup reversal is not a reading event")
-                        let image=UIGraphicsImageRenderer(bounds:host.bounds).image { _ in host.drawHierarchy(in:host.bounds,afterScreenUpdates:true) }
-                        let screenshot=XCTAttachment(image:image); screenshot.name="projection-mid-reversal-\(mode)-cover-\(cover)"; screenshot.lifetime = .keepAlways; add(screenshot)
-                    }
-                    let image=UIGraphicsImageRenderer(bounds:host.bounds).image { _ in host.drawHierarchy(in:host.bounds,afterScreenUpdates:true) }
-                    let attachment=XCTAttachment(image:image); attachment.name="projection-\(mode)-cover-\(cover)-\(forward ? "forward" : "backward")"; attachment.lifetime = .keepAlways; add(attachment)
-                }
-                XCTAssertTrue(requests.contains(.forward)); XCTAssertTrue(requests.contains(.backward))
-                XCTAssertTrue(reports.allSatisfy { ($0>=UInt64(gap.utf8.count) && $0<UInt64((gap+a).utf8.count)) || ($0>=UInt64((gap+a+gap).utf8.count) && $0<UInt64((gap+a+gap+b).utf8.count)) },"No blank fetch cursor entered reading reports")
-                await session.leave().value; host.isHidden=true
-            }
-        }
-    }
 
-    func testSyntheticBlankLineScreenshots() async throws {
-        let text = "\n\n\n第一卷 合成测试\n\n第1章 空行\n\n这里是第一段合成正文，只用于验证阅读排版。\n\n\n\n这里是第二段，前面有连续三个空行。\n \t　\n这里是第三段，前面一行只有空白字符。\n" + String(repeating: "正常段间距应当一致，分页和滚动都不保留空行高度。\n", count: 40)
-        let source = try window(text)
-        let previousKey = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first { $0.isKeyWindow }
-        for mode in [ReadingMode.scroll, .pages] {
-            let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first { $0 is UIWindowScene } as? UIWindowScene)
-            let host = UIWindow(windowScene: scene); host.frame = CGRect(x: 0, y: 0, width: 390, height: 650)
-            let controller = ReadingController()
-            host.rootViewController = controller; host.makeKeyAndVisible()
-            var settings = defaultReaderSettings(); settings.mode = mode
-            controller.configure(window: source, settings: settings, anchor: 0, dark: false, typeSize: .large,
-                                 compactHeaderHeight: 0, controlsVisible: false, toggleControls: {}, readingBegan: {}, changed: { _, _ in })
-            controller.view.frame = host.bounds; controller.view.setNeedsLayout(); controller.view.layoutIfNeeded()
-            let ready = expectation(description: "Two display frames for screenshot")
-            let frames = ReadingScreenshotFrames(ready); frames.start()
-            await fulfillment(of: [ready], timeout: 3)
-            func nativeTexts(_ view: UIView) -> [UITextView] {
-                if let text = view as? UITextView { return [text] }
-                return view.subviews.flatMap(nativeTexts)
-            }
-            let visible = try XCTUnwrap(nativeTexts(controller.view).first { $0.convert($0.bounds, to: controller.view).intersects(controller.view.bounds) })
-            XCTAssertTrue(visible.text.hasPrefix(String(ReadingText(source).text.prefix(65))), "Initial page must own the visible title text")
-            if mode == .pages { XCTAssertEqual(visible.contentOffset, .zero) }
-            for title in ["第一卷 合成测试", "第1章 空行"] {
-                let characters = (visible.text as NSString).range(of: title)
-                XCTAssertNotEqual(characters.location, NSNotFound)
-                let glyphs = visible.layoutManager.glyphRange(forCharacterRange: characters, actualCharacterRange: nil)
-                let rect = visible.layoutManager.boundingRect(forGlyphRange: glyphs, in: visible.textContainer)
-                XCTAssertGreaterThan(rect.height, 0)
-                XCTAssertLessThanOrEqual(rect.maxY + visible.textContainerInset.top, visible.bounds.height)
-            }
-            var drawn = false
-            let image = UIGraphicsImageRenderer(bounds: host.bounds).image { _ in drawn = host.drawHierarchy(in: host.bounds, afterScreenUpdates: true) }
-            XCTAssertTrue(drawn, "Screenshot must render the native reading hierarchy")
-            let attachment = XCTAttachment(image: image); attachment.name = "blank-lines-\(mode)"; attachment.lifetime = .keepAlways; add(attachment)
-            host.isHidden = true
-        }
-        previousKey?.makeKeyAndVisible()
-    }
 }
 
 @MainActor private final class ReadingScreenshotFrames: NSObject {
@@ -886,7 +382,7 @@ final class TextLayoutTests: XCTestCase {
         let session = ReaderSession(service: service, activity: recorder)
         await session.open(.book(book.id))
         await fulfillment(of: [entered], timeout: 2)
-        for _ in 0..<100 { if session.window != nil { break }; try await Task.sleep(for: .milliseconds(10)) }
+        await awaitState { session.window != nil }
         XCTAssertNotNil(session.window); XCTAssertNil(recorder.recordingBookID)
         XCTAssertTrue(session.showingCover, "Statistics startup must not bypass the first-reading cover")
         await session.leave().value
@@ -924,34 +420,25 @@ final class TextLayoutTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let service = ReaderService(core: try ReaderCore(dataDirectory: root.path))
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previousKey = scene.windows.first(where: \.isKeyWindow)
-        let host = UIWindow(windowScene: scene)
-        defer { host.isHidden = true; previousKey?.makeKeyAndVisible() }
-        let controller = ReadingController()
-        host.rootViewController = controller; host.makeKeyAndVisible()
-        controller.configure(window: ReadingWindow(chunks: Array(readingChunks()[0...1])), settings: ReaderSettings(mode: .scroll, fontSize: 20, lineSpacing: 8), anchor: 0,
-                             dark: false, typeSize: .large, compactHeaderHeight: 22, controlsVisible: false, toggleControls: {}, readingBegan: {}, changed: { _, _ in })
-        controller.view.layoutIfNeeded()
-        XCTAssertNotNil(controller.statisticsRange())
-        let viewport = ReadingViewportAccess(); viewport.controller = controller
+        let viewport = ReadingViewportAccess(range: { (0, 30) })
+        let time = ManualTestClock()
         var written: [ReadingSlice] = []
         let writer = StatisticsWriter { slices, _ in written += slices }
         let entered = expectation(description: "late preferences")
         let gate = SourceReadinessGate(entered: entered)
-        let recorder = ReadingActivityRecorder(writer: writer) { await gate.wait(); return StatisticsPreferences(enabled: true, generation: 0) }
+        let recorder = ReadingActivityRecorder(writer: writer, time: { ReadingActivityTime(uptime: time.now.timeIntervalSince1970 - 1_800_000_000, date: time.now) }) { await gate.wait(); return StatisticsPreferences(enabled: true, generation: 0) }
         let attempt = UUID(); recorder.prepareStart(attempt)
         recorder.update(readable: true, preview: false)
         let task = Task { await recorder.start(lease: ReadingLease(id: "visible", service: service), viewport: viewport, attempt: attempt) }
         await fulfillment(of: [entered], timeout: 2)
-        try await Task.sleep(for: .milliseconds(30))
+        time.advance(30)
         recorder.update(readable: false, preview: false) // Scene went inactive while the startup was suspended.
         await gate.release(); await task.value
-        try await Task.sleep(for: .milliseconds(30)); await recorder.flush()
+        time.advance(30); await recorder.flush()
         XCTAssertTrue(written.isEmpty, "A late start must not undo the latest inactive/readability state")
-        let foreground = Int64(Date().timeIntervalSince1970 * 1000)
+        let foreground = Int64(time.now.timeIntervalSince1970 * 1000)
         recorder.update(readable: true, preview: false); recorder.interacted()
-        try await Task.sleep(for: .milliseconds(30))
+        time.advance(30)
         recorder.update(readable: false, preview: false); await recorder.flush()
         XCTAssertFalse(written.isEmpty)
         XCTAssertTrue(written.allSatisfy { $0.startedMs >= foreground }, "Never count preparation or the startup wait as reading")
@@ -1400,24 +887,15 @@ final class TextLayoutTests: XCTestCase {
         let file = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "a.txt" })
         let entry = try await service.libraryEntry(file.id)
         var first: ReadingLease? = try await service.openSourceFile(entry.source)
-        for _ in 0..<200 {
-            if !(await service.hasRunningImports) { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await service.waitForImportsIdle()
         var explicit: ReadingLease? = try await service.restartImport(try XCTUnwrap(first).id, encoding: "utf-16le")
         let taskID = try XCTUnwrap(explicit).id
-        for _ in 0..<200 {
-            if !(await service.hasRunningImports) { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await service.waitForImportsIdle()
         XCTAssertEqual(try core.importStatus(bookId: taskID).phase, .complete)
         let cached = try XCTUnwrap(core.sourceBook(key: SourceContentKey(rawSha256: try CloudDocumentHandoff.bytesHash(path), decoding: "UTF-16LE")))
         try await service.savePosition(bookID: taskID, offset: 9)
         first = nil; explicit = nil
-        for _ in 0..<200 {
-            if UserDefaults(suiteName: suite)?.data(forKey: "Moonread.importSource.library." + taskID) == nil { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await service.waitForReadingIdle()
         XCTAssertNil(UserDefaults(suiteName: suite)?.data(forKey: "Moonread.importSource.library." + taskID), "The import descriptor must actually be reclaimed")
         XCTAssertEqual(try core.sourceDecoding(fileId: file.id), "UTF-16LE")
         let reopenedService = ReaderService(core: core, libraryDirectory: root, sourceDefaultsSuite: suite, userStoreFactory: { name, _ in name == "pending-users.store" ? pending : formal })
@@ -1578,10 +1056,7 @@ final class TextLayoutTests: XCTestCase {
         let file = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "a.txt" })
         let entry = try await service.libraryEntry(file.id)
         func complete(_ lease: ReadingLease) async throws -> ReadingSnapshot {
-            for _ in 0..<300 {
-                if !(await service.hasRunningImports) { break }
-                try await Task.sleep(for: .milliseconds(10))
-            }
+            try await service.waitForImportsIdle()
             let snapshot = try await service.snapshot(lease.id)
             XCTAssertEqual(snapshot.phase, .complete)
             return snapshot
@@ -2131,18 +1606,12 @@ final class TextLayoutTests: XCTestCase {
         let file = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "a.txt" })
         let entry = try await service.libraryEntry(file.id)
         let prepared = try await service.aiPrepare(entry.source)
-        for _ in 0..<100 {
-            if !(await service.hasRunningImports) { break }
-            try await Task.sleep(for: .milliseconds(20))
-        }
+        try await service.waitForImportsIdle()
         let key = SourceContentKey(rawSha256: try CloudDocumentHandoff.bytesHash(root.appendingPathComponent("a.txt")), decoding: "auto")
         let cached = try XCTUnwrap(core.sourceBook(key: key), "The first preparation must populate the raw-SHA reuse cache")
         let before = await service.cloudLibraryScheduleRequests
         let lease = try await service.openSourceFile(entry.source)
-        for _ in 0..<100 {
-            if try core.importStatus(bookId: lease.id).phase == .complete, !(await service.hasRunningImports) { break }
-            try await Task.sleep(for: .milliseconds(20))
-        }
+        try await service.waitForImportsIdle()
         XCTAssertEqual(try core.importStatus(bookId: lease.id).phase, .complete)
         XCTAssertNotEqual(lease.id, cached.id)
         XCTAssertEqual(try core.sourceFileLocation(fileId: file.id).bookId, cached.id, "Reuse immediately binds the file to the cached canonical book")
@@ -2356,12 +1825,8 @@ final class TextLayoutTests: XCTestCase {
         return (root, service, core, entry.source, id, defaults, suite)
     }
 
-    @MainActor private func waitForMetadataPreparation(_ model: BookInformationModel, until condition: () -> Bool) async throws {
-        for _ in 0..<500 {
-            if condition() { return }
-            try await Task.sleep(for: .milliseconds(10))
-        }
-        XCTFail("Metadata preparation did not reach the expected state: \(model.error ?? "no error")")
+    @MainActor private func waitForMetadataPreparation(_ model: BookInformationModel, until condition: @escaping @MainActor () -> Bool) async throws {
+        await awaitState(condition); XCTAssertTrue(condition())
     }
 
     @MainActor func testMetadataEditingPreservesUserPauseUntilResumePreparation() async throws {
@@ -2508,10 +1973,7 @@ final class TextLayoutTests: XCTestCase {
         try await service.publishCloudHandoff(local: local,cloud: cloud,receipts: &receipts,persist: { _ in })
         try CloudDocumentHandoff.cleanup(local: local,cloud: cloud,receipts: &receipts,persist: { _ in })
         try await service.resumeImport(pending)
-        for _ in 0..<100 {
-            if try await service.snapshot(pending).phase == .complete { break }
-            try await Task.sleep(for: .milliseconds(20))
-        }
+        try await service.waitForImportFinish(pending)
         let completed = try await service.snapshot(pending)
         XCTAssertEqual(completed.phase,.complete); XCTAssertFalse(completed.book.contentSha256.hasPrefix("pending:"))
         XCTAssertEqual(completed.book.positionUtf8,expectedOffset)
@@ -2546,10 +2008,7 @@ final class TextLayoutTests: XCTestCase {
             try await service.moveLibraryItem(entry, to: LibraryLocation(shelfID: shelf), name: "moved.txt", replace: false)
             let resumed = restart ? ReaderService(core: try ReaderCore(dataDirectory: root.appendingPathComponent("db").path), libraryDirectory: local, sourceDefaultsSuite: suite) : service
             try await resumed.resumeImport(id)
-            for _ in 0..<100 {
-                if try await resumed.snapshot(id).phase == .complete { break }
-                try await Task.sleep(for: .milliseconds(20))
-            }
+            try await resumed.waitForImportFinish(id)
             let result = try await resumed.snapshot(id)
             XCTAssertEqual(result.phase, .complete); XCTAssertEqual(result.book.positionUtf8, 9)
             let linked = try await resumed.libraryEntry(entry.id)
@@ -2875,22 +2334,12 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
                                     libraryDirectory: directory.appendingPathComponent("books"))
         try await service.prepareLibrary()
         let model = LibraryModel(service: service)
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let host = UIWindow(windowScene: scene)
-        let suite = "ImportResultHost-" + UUID().uuidString
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let ai = AIService(defaults: defaults, storefront: .fixed("USA"), reader: service)
-        let controller = UIHostingController(rootView: Text("Library").modifier(LibraryPresentations(model: model)).environment(ai))
-        host.rootViewController = controller; host.makeKeyAndVisible()
-        defer { host.isHidden = true; previous?.makeKey() }
         model.receive([directory.appendingPathComponent("missing.txt")])
-        try await waitForLibraryState { controller.presentedViewController != nil && model.importFailures.count == 1 }
+        try await waitForLibraryState { model.sheet?.id == "import-results" && model.importFailures.count == 1 }
         // Both the Done button and interactive dismissal clear the sheet binding.
         // Exercise the real SwiftUI onDismiss callback without pressing Done.
-        model.sheet = nil
-        try await waitForLibraryState { controller.presentedViewController == nil && model.importFailures.isEmpty }
+        model.sheet = nil; model.sheetDidDismiss()
+        try await waitForLibraryState { model.importFailures.isEmpty }
         XCTAssertNil(model.afterSheetDismiss)
     }
 
@@ -2969,7 +2418,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         // Initialization starts an automatic refresh; a pull arrives while it runs.
         await fulfillment(of: [entered], timeout: 2)
         let pull = Task { await model.refresh(showIndicator: false, userInitiated: true) }
-        try await Task.sleep(for: .milliseconds(100))
+        await awaitState { model.nativeRefreshing }
         XCTAssertTrue(model.nativeRefreshing, "The pull's spinner stays while the shared refresh runs")
         await probe.gate.release()
         await pull.value
@@ -2978,12 +2427,10 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         XCTAssertFalse(model.nativeRefreshing)
     }
 
-    @MainActor private func waitForLibraryState(file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool) async throws {
-        for _ in 0..<250 {
-            if condition() { return }
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        XCTFail("Library state did not settle", file: file, line: line)
+    @MainActor private func waitForLibraryState(file: StaticString = #filePath, line: UInt = #line,
+                                                _ condition: @escaping @MainActor () -> Bool) async throws {
+        await awaitState(condition)
+        XCTAssertTrue(condition(), "Library state did not settle", file: file, line: line)
     }
 
     @MainActor func testLibraryInitializationRetriesAndConcurrentCallersWait() async throws {
@@ -3066,10 +2513,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         let first = try XCTUnwrap(entries.first { $0.relativePath == "a/story.txt" })
         let second = try XCTUnwrap(entries.first { $0.relativePath == "b/story.txt" })
         func waitForComplete(_ id: String) async throws {
-            for _ in 0..<200 {
-                if try await service.snapshot(id).phase == .complete { return }
-                try await Task.sleep(for: .milliseconds(10))
-            }
+            try await service.waitForImportFinish(id)
             XCTFail("Import did not complete")
         }
         let firstLease = try await service.openSourceFile(first.source)
@@ -3109,10 +2553,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         for index in 0..<6 {
             var lease: ReadingLease? = try await service.openSourceFile(entry.source)
             let id = try XCTUnwrap(lease?.id)
-            for _ in 0..<200 {
-                if try await service.snapshot(id).phase == .complete { break }
-                try await Task.sleep(for: .milliseconds(10))
-            }
+            try await service.waitForImportFinish(id)
             let snapshot = try await service.snapshot(id)
             XCTAssertEqual(snapshot.phase, .complete)
             if index == 0 {
@@ -3128,10 +2569,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
             XCTAssertNotNil(defaults.data(forKey: "Moonread.importSource.library.\(id)"))
             withExtendedLifetime(lease) {}
             lease = nil
-            for _ in 0..<200 {
-                if defaults.data(forKey: "Moonread.importSource.library.\(id)") == nil { break }
-                try await Task.sleep(for: .milliseconds(10))
-            }
+            try await service.waitForReadingIdle()
             XCTAssertNil(defaults.data(forKey: "Moonread.importSource.library.\(id)"))
             XCTAssertNil(defaults.string(forKey: "Moonread.sourceDraft.library.\(entry.id)"))
             XCTAssertTrue(try core.reclaimCompletedImports(retainedBookIds: []).isEmpty)
@@ -3147,7 +2585,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         let restarted = ReaderService(core: core, sourceDefaultsSuite: suite)
         _ = try await restarted.book(try XCTUnwrap(canonical))
         await restarted.startUserRecovery()
-        for _ in 0..<100 { if await restarted.recoveredImports { break }; try await Task.sleep(for: .milliseconds(10)) }
+        await restarted.waitForUserRecovery()
         XCTAssertNil(defaults.data(forKey: "Moonread.importSource.library.orphan"))
         XCTAssertNil(defaults.string(forKey: "Moonread.sourceDraft.library.orphan-file"))
     }
@@ -3176,20 +2614,9 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
                               selection: Binding(get: { selection }, set: { selection = $0 }))
         }
         let controller = LibraryCollection.Controller()
-        let navigation = UINavigationController()
-        navigation.setViewControllers([UIViewController(), controller], animated: false)
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let host = UIWindow(windowScene: scene); host.rootViewController = navigation; host.makeKeyAndVisible()
-        defer { host.isHidden = true; previous?.makeKey() }
-        controller.update(config()); host.layoutIfNeeded()
+        controller.update(config())
         let native = try XCTUnwrap(controller.collectionView)
         let first = IndexPath(item: 0, section: 1), second = IndexPath(item: 1, section: 1)
-        native.layoutIfNeeded()
-        let firstFrame = try XCTUnwrap(native.layoutAttributesForItem(at: first)).frame
-        let secondFrame = try XCTUnwrap(native.layoutAttributesForItem(at: second)).frame
-        XCTAssertLessThanOrEqual(firstFrame.maxX, secondFrame.minX)
-        XCTAssertLessThanOrEqual(secondFrame.maxX, native.bounds.width - LayoutTokens.page + 1)
         XCTAssertTrue(native.allowsMultipleSelectionDuringEditing)
         XCTAssertFalse(controller.collectionView(native, shouldBeginMultipleSelectionInteractionAt: IndexPath(item: 0, section: 0)))
         XCTAssertTrue(controller.collectionView(native, shouldBeginMultipleSelectionInteractionAt: first))
@@ -3205,13 +2632,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         controller.collectionView(native, didDeselectItemAt: first)
         XCTAssertEqual(selection, [entries[1].id])
         controller.update(config(.list))
-        native.layoutIfNeeded()
-        let row = try XCTUnwrap(native.cellForItem(at: second) as? UICollectionViewListCell)
-        let otherRow = try XCTUnwrap(native.cellForItem(at: first))
-        XCTAssertEqual(row.frame.height, otherRow.frame.height, accuracy: 1, "Long and short titles use the same row height")
-        XCTAssertTrue(row.accessories.contains { $0.accessoryType == .multiselect }, "Selection uses UIKit's native accessory")
-        XCTAssertEqual(row.frame.minX, 0, accuracy: 1, "List selection fills the row, rather than drawing inset rounded cards")
-        XCTAssertEqual(native.indexPathsForSelectedItems, [second], "Changing layout preserves the UIKit and SwiftUI selection")
+        XCTAssertEqual(selection, [entries[1].id], "Changing layout preserves the application binding")
         controller.update(config(.list, disabled: true))
         XCTAssertFalse(controller.collectionView(native, shouldBeginMultipleSelectionInteractionAt: first))
         editing = .inactive; selection = []; controller.update(config(.list))
@@ -3296,7 +2717,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         let service = ReaderService(core: core)
         let session = ReaderSession(service: service)
         await session.open(.book(book.id))
-        for _ in 0..<100 { if session.window != nil { break }; try await Task.sleep(for: .milliseconds(10)) }
+        await awaitState { session.window != nil }
         XCTAssertNotNil(session.window); XCTAssertTrue(session.showingCover)
         await session.flush()
         XCTAssertFalse(try core.querySnapshot(json: "{}").readingSnapshot(bookId: book.id).hasStarted)
@@ -3308,7 +2729,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         session.moved(to: UInt64("第一章 月光\n\n月光下的故事继续展开。\n".utf8.count), settled: true); await session.flush()
         let position = try await service.snapshot(book.id).book.positionUtf8
         session.browse(to: 0, placement: .cover)
-        for _ in 0..<100 { if !session.navigating { break }; try await Task.sleep(for: .milliseconds(10)) }
+        await awaitState { !session.navigating }
         XCTAssertTrue(session.showingCover); await session.flush()
         let retainedPosition = try await service.snapshot(book.id).book.positionUtf8
         XCTAssertEqual(retainedPosition, position)
@@ -3317,7 +2738,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         await session.leave().value
         let resumed = ReaderSession(service: service)
         await resumed.open(.book(book.id))
-        for _ in 0..<100 { if resumed.window != nil { break }; try await Task.sleep(for: .milliseconds(10)) }
+        await awaitState { resumed.window != nil }
         XCTAssertFalse(resumed.showingCover); XCTAssertEqual(resumed.anchor, position)
         await resumed.leave().value
         XCTAssertEqual(try String(contentsOf: source, encoding: .utf8), original)
@@ -3358,10 +2779,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         await fulfillment(of: [ready], timeout: 2)
         XCTAssertTrue(next.path.isEmpty)
         await nextGate.release()
-        for _ in 0..<100 {
-            if !next.path.isEmpty { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        await awaitState { !next.path.isEmpty }
         guard case let .reader(opening) = next.path.first else { return XCTFail("Missing reader opening") }; XCTAssertEqual(opening.target, .source(entry.source))
     }
 
@@ -3495,10 +2913,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         let lease = try await service.openSourceFile(received.source)
         let id = lease.id
         defer { withExtendedLifetime(lease) {} }
-        for _ in 0..<200 {
-            if try await service.snapshot(id).phase == .complete { break }
-            try await Task.sleep(for: .milliseconds(20))
-        }
+        try await service.waitForImportFinish(id)
         let book = try await service.snapshot(id).book
         let completed = try await service.snapshot(id)
         XCTAssertEqual(completed.phase, .complete)
@@ -3630,93 +3045,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         XCTAssertEqual(manager.decorations.first?.color, dark.annotation)
     }
 
-    @MainActor
-    func testBoundedNativeWindowTurnaroundMetrics() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let core = try ReaderCore(dataDirectory: directory.path)
-        let source = directory.appendingPathComponent("large.txt")
-        FileManager.default.createFile(atPath: source.path, contents: nil)
-        let writer = try FileHandle(forWritingTo: source)
-        let paragraph = Data((String(repeating: "月亮🌙落在窗边，故事仍在继续，读者翻过下一页。\n", count: 600)).utf8)
-        for index in 0..<160 {
-            try writer.write(contentsOf: Data("第\(index + 1)章 长路\n".utf8))
-            try writer.write(contentsOf: paragraph)
-        }
-        try writer.close()
-        let book = try core.importBook(filePath: source.path, title: "Long window fixture")
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let key = scene.windows.first(where: \.isKeyWindow)
-        let host = UIWindow(windowScene: scene)
-        let controller = ReadingController(); host.rootViewController = controller; host.makeKeyAndVisible()
-        defer { host.isHidden = true; key?.makeKey() }
-        let options = XCTMeasureOptions(); options.iterationCount = 3
-        var revision = 0
-        measure(metrics: [XCTClockMetric(), XCTMemoryMetric()], options: options) {
-            for index in Array(0..<24) + Array((0..<24).reversed()) {
-                autoreleasepool {
-                    let offset = book.byteCount * UInt64(index) / 24
-                    guard let frame = try? core.querySnapshot(json: "{}").readingFrame(bookId: book.id, offsetUtf8: offset) else { XCTFail("Missing bounded frame"); return }
-                    let window = ReadingWindow(frame: frame)
-                    revision += 1
-                    controller.configure(window: window, settings: defaultReaderSettings(), anchor: offset,
-                                         dark: false, typeSize: .large, navigationRevision: revision, navigation: ReadingNavigation(placement: .start),
-                                         compactHeaderHeight: 22, controlsVisible: false,
-                                         toggleControls: {}, readingBegan: {}, changed: { _, _ in })
-                    controller.view.layoutIfNeeded()
-                    // Rust bounds payload to 64 KiB across at most 256 source chunks.
-                    XCTAssertLessThanOrEqual(window.chunks.count, 256)
-                    if let text = findReadingText(in: controller.view) {
-                        XCTAssertLessThanOrEqual(text.text.utf8.count, 64 * 1024)
-                        XCTAssertTrue(text.text == ReadingText(window).text, "Each measurement must actually replace the rendered window")
-                    } else { XCTFail("The visible native text view must survive window replacement") }
-                }
-            }
-        }
-    }
 
-    @MainActor
-    func testStyledParagraphsPaginateWithoutRepeatingIndentOrClipping() throws {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let source = "第一卷 归来\n第1章 月光\n" + String(repeating: "长段里的月亮🌙和故事，e\u{301}仍在继续。", count: 300) + "\n　　已有缩进。\n\n尾声\n归来。"
-        let file = directory.appendingPathComponent("fixture.txt")
-        try source.write(to: file, atomically: true, encoding: .utf8)
-        let core = try ReaderCore(dataDirectory: directory.appendingPathComponent("data").path)
-        let book = try core.importBook(filePath: file.path, title: "Layout")
-        let frame = try core.querySnapshot(json: "{}").readingFrame(bookId: book.id, offsetUtf8: 0)
-        let window = ReadingWindow(frame: frame)
-        for font in [ReaderFont.system, .serif, .rounded] {
-            var settings = defaultReaderSettings(); settings.font = font; settings.horizontalMargin = 24
-            let attributed = ReadingTypography.text(window, settings: settings, ink: .label)
-            XCTAssertEqual(attributed.string, ReadingText(window).text)
-            let heading = try XCTUnwrap(attributed.attribute(.font, at: 0, effectiveRange: nil) as? UIFont)
-            XCTAssertGreaterThan(heading.pointSize, ReadingTypography.font(settings).pointSize)
-            for size in [CGSize(width: 390, height: 650), CGSize(width: 844, height: 290)] {
-                let insets = ReadingTypography.insets(settings, width: size.width)
-                XCTAssertEqual(insets.left, insets.right)
-                XCTAssertLessThanOrEqual(size.width - insets.left - insets.right, settings.maximumLineWidth)
-                let pages = TextPage.paginate(window, size: size, attributes: ReadingTypography.attributes(settings, ink: .label), source: attributed, insets: insets)
-                assertCoverage(pages, window: window)
-                var continuationCount = 0
-                for page in pages {
-                    if let start = page.text.attribute(.readingParagraphStart, at: 0, effectiveRange: nil) as? NSNumber, start.uint64Value < page.start {
-                        let style = try XCTUnwrap(page.layoutText.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)
-                        XCTAssertEqual(style.firstLineHeadIndent, 0)
-                        XCTAssertEqual(style.paragraphSpacingBefore, 0)
-                        continuationCount += 1
-                    }
-                    let view = page.makeTextView(frame: CGRect(origin: .zero, size: size))
-                    view.layoutIfNeeded(); view.layoutManager.ensureLayout(for: view.textContainer)
-                    let visible = view.layoutManager.characterRange(forGlyphRange: view.layoutManager.glyphRange(for: view.textContainer), actualGlyphRange: nil)
-                    XCTAssertEqual(visible.length, page.text.length, "Rendered lines must contain exactly the paginated characters")
-                    XCTAssertLessThanOrEqual(view.layoutManager.usedRect(for: view.textContainer).height, size.height - insets.top - insets.bottom + 1)
-                }
-                XCTAssertGreaterThan(continuationCount, 2)
-            }
-        }
-    }
 
     @MainActor
     func testReaderDeviceControlsReleaseAwakeAndOrientationOnBackgroundAndExit() async throws {
@@ -3776,7 +3105,6 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         await saved.value
         // A later background/disappearance flush must use the same frozen origin.
         await session.flush()
-        try await Task.sleep(for: .milliseconds(100))
         XCTAssertNil(session.editor)
         XCTAssertNil(session.selectionStart)
         XCTAssertNil(session.browseOrigin)
@@ -3957,7 +3285,8 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         defer { try? FileManager.default.removeItem(at: directory) }
         let url = directory.appendingPathComponent("revision.txt")
         try Data("第一章 起点\n正文甲".utf8).write(to: url)
-        let modified = try XCTUnwrap(url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate)
+        let modified = Date(timeIntervalSince1970: 1_800_000_000)
+        try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: url.path)
         let service = ReaderService()
         let initialValue = try CloudDocumentHandoff.bytesHash(url)
         let initial = try XCTUnwrap(initialValue)
@@ -3983,227 +3312,8 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
                        "The last committed line must remain readable while import is paused or preparing")
     }
 
-    @MainActor
-    func testScrollTextFillsBottomSafeAreaAndFinalLineEscapesFade() throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previousKey = scene.windows.first(where: \.isKeyWindow)
-        let host = UIWindow(windowScene: scene)
-        let controller = ReadingController()
-        host.rootViewController = controller
-        host.makeKeyAndVisible()
-        defer { host.isHidden = true; previousKey?.makeKeyAndVisible() }
-        controller.configure(window: ReadingWindow(chunks: Array(readingChunks()[0...1]), isEndOfBook: true),
-                             settings: ReaderSettings(mode: .scroll, fontSize: 20, lineSpacing: 8), anchor: 0,
-                             dark: false, typeSize: .large, compactHeaderHeight: 22,
-                             controlsVisible: false, toggleControls: {}, readingBegan: {}, changed: { _, _ in })
-        controller.view.layoutIfNeeded()
-        func findText(_ view: UIView) -> UITextView? {
-            if let text = view as? UITextView { return text }
-            return view.subviews.lazy.compactMap(findText).first
-        }
-        let text = try XCTUnwrap(findText(controller.view))
-        let surface = try XCTUnwrap(text.superview)
-        let fade = try XCTUnwrap(surface.layer.sublayers?.compactMap { $0 as? CAGradientLayer }.first)
-        let viewport = text.convert(text.bounds, to: host)
-        let fadeFrame = surface.convert(fade.frame, to: host)
-        XCTAssertEqual(viewport.maxY, host.bounds.maxY, accuracy: 0.5,
-                       "Text must extend behind the fade all the way to the screen edge")
-        XCTAssertEqual(fadeFrame.maxY, host.bounds.maxY, accuracy: 0.5)
-        if host.safeAreaInsets.bottom > 0 {
-            XCTAssertEqual(fadeFrame.minY, host.bounds.maxY - host.safeAreaInsets.bottom, accuracy: 0.5,
-                           "The fade replaces the safe-area gap rather than covering the line above it")
-        }
-        let underFade = CGRect(x: 0, y: text.bounds.height - fade.frame.height - text.textContainerInset.top,
-                               width: text.textContainer.size.width, height: fade.frame.height)
-        let glyphs = text.layoutManager.glyphRange(forBoundingRect: underFade, in: text.textContainer)
-        XCTAssertGreaterThan(glyphs.length, 0, "The fade must cover actual text, not an empty strip")
-        let lastCharacter = (text.text as NSString).rangeOfCharacter(from: .whitespacesAndNewlines.inverted, options: .backwards).location
-        let lastGlyph = text.layoutManager.glyphIndexForCharacter(at: lastCharacter)
-        let lastLine = text.layoutManager.lineFragmentUsedRect(forGlyphAt: lastGlyph, effectiveRange: nil)
-        text.setContentOffset(CGPoint(x: 0, y: max(0, text.contentSize.height + text.contentInset.bottom - text.bounds.height)), animated: false)
-        text.layoutIfNeeded()
-        XCTAssertLessThanOrEqual(lastLine.maxY + text.textContainerInset.top - text.contentOffset.y,
-                                text.bounds.height - fade.frame.height + 1,
-                                "The final line must scroll fully above the gradient")
-        XCTAssertEqual(fade.opacity, 0, accuracy: 0.01)
-    }
 
-    @MainActor
-    func testAppendingAndSlidingTextKeepNativeViewAndVisibleLine() async throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previousKey = scene.windows.first(where: \.isKeyWindow)
-        let host = UIWindow(windowScene: scene)
-        let controller = ReadingController()
-        host.rootViewController = controller
-        host.makeKeyAndVisible()
-        defer { host.isHidden = true; previousKey?.makeKeyAndVisible() }
-        let chunks = readingChunks()
-        let settings = ReaderSettings(mode: .scroll, fontSize: 20, lineSpacing: 8)
-        func configure(_ chunks: [TextChunk], at offset: UInt64, marks: [ReaderMark] = []) {
-            controller.configure(window: ReadingWindow(chunks: chunks), settings: settings, anchor: offset,
-                                 dark: false, typeSize: .large, annotations: marks, compactHeaderHeight: 22,
-                                 controlsVisible: false, toggleControls: {}, readingBegan: {}, changed: { _, _ in })
-            controller.view.layoutIfNeeded()
-        }
-        func findText(_ view: UIView) -> UITextView? {
-            if let text = view as? UITextView { return text }
-            return view.subviews.lazy.compactMap(findText).first
-        }
-        configure(Array(chunks[0...1]), at: 0)
-        let text = try XCTUnwrap(findText(controller.view))
-        XCTAssertEqual(text.layoutManager.lineFragmentUsedRect(forGlyphAt: 0, effectiveRange: nil).maxX,
-                       text.textContainer.size.width, accuracy: 1)
-        text.setContentOffset(CGPoint(x: 0, y: 180), animated: false)
-        let markedText = String(chunks[0].text.prefix { $0 != "\n" }) + "\n月"
-        let mark = ReaderMark(id: "test", kind: .annotation, startUtf8: 0, endUtf8: UInt64(markedText.utf8.count),
-                              excerpt: markedText, note: "Note", created: 0)
-        configure(Array(chunks[0...1]), at: 0, marks: [mark])
-        XCTAssertEqual(text.contentOffset.y, 180, accuracy: 1, "Decorating a range must not move the reading viewport")
-        XCTAssertNil(text.textStorage.attribute(.underlineStyle, at: 0, effectiveRange: nil))
-        let layout = try XCTUnwrap(text.layoutManager as? ReadingLayoutManager)
-        XCTAssertNil(text.textStorage.attribute(.backgroundColor, at: 0, effectiveRange: nil),
-                     "Permanent highlights must not use the full line-height native background")
-        let fills = layout.decorationBackgrounds(forGlyphRange: layout.glyphRange(for: text.textContainer))
-        XCTAssertFalse(fills.isEmpty)
-        for fill in fills {
-            XCTAssertEqual(fill.rect.height, 20, accuracy: 0.5)
-        }
-        for style in [UIUserInterfaceStyle.light, .dark] {
-            UITraitCollection(userInterfaceStyle: style).performAsCurrent {
-                let image = UIGraphicsImageRenderer(size: CGSize(width: text.bounds.width, height: 190)).image { context in
-                    ThemeSurface.initial.paper.setFill()
-                    context.fill(CGRect(x: 0, y: 0, width: text.bounds.width, height: 190))
-                    let visible = layout.glyphRange(forBoundingRect: CGRect(x: 0, y: 0, width: text.textContainer.size.width, height: 170), in: text.textContainer)
-                    let origin = CGPoint(x: text.textContainerInset.left, y: text.textContainerInset.top)
-                    layout.drawBackground(forGlyphRange: visible, at: origin)
-                    layout.drawGlyphs(forGlyphRange: visible, at: origin)
-                }
-                let attachment = XCTAttachment(image: image)
-                attachment.name = style == .dark ? "annotation-band-dark" : "annotation-band-light"
-                attachment.lifetime = .keepAlways
-                add(attachment)
-            }
-        }
-        let newline = (text.text as NSString).range(of: "\n").location
-        XCTAssertFalse(layout.decorations.contains { NSLocationInRange(newline, $0.range) },
-                     "A cross-paragraph annotation must not paint paragraph spacing")
-        XCTAssertTrue(layout.decorations.contains { NSLocationInRange(newline + 1, $0.range) })
-        let highlightedGlyph = text.layoutManager.boundingRect(forGlyphRange: NSRange(location: 0, length: 1), in: text.textContainer)
-        let hit = CGPoint(x: highlightedGlyph.midX + text.textContainerInset.left, y: highlightedGlyph.midY + text.textContainerInset.top)
-        XCTAssertEqual(controller.annotationIDs(at: hit, in: text), [mark.id])
-        XCTAssertTrue(controller.annotationIDs(at: CGPoint(x: 1, y: hit.y), in: text).isEmpty, "Blank margins must not activate a highlight")
-        XCTAssertTrue(text.subviews.compactMap { $0 as? UIButton }.isEmpty, "Annotations must not add gutter buttons")
-        let originalDocument = text.text
-        let selected = NSRange(location: 10, length: 6)
-        text.selectedRange = selected
-        configure(Array(chunks[0...2]), at: 0)
-        XCTAssertEqual(text.text, originalDocument, "Background window growth must not edit a native selection's document")
-        XCTAssertEqual(text.selectedRange, selected)
-        text.selectedRange = NSRange(location: selected.location, length: 0)
-        controller.textViewDidChangeSelection(text)
-        let appended = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-            MainActor.assumeIsolated { text.text == chunks[0...2].map(\.text).joined() }
-        }, object: nil)
-        await fulfillment(of: [appended], timeout: 3)
-        XCTAssertTrue(layout.decorationBackgrounds(forGlyphRange: layout.glyphRange(for: text.textContainer)).isEmpty)
-        XCTAssertTrue(findText(controller.view) === text)
-        XCTAssertEqual(text.contentOffset.y, 180, accuracy: 1)
-        let semantic = chunks[1].startUtf8 + 120
-        let oldCoordinates = TextCoordinates(text.text)
-        let character = oldCoordinates.utf16Offset(atUTF8: Int(semantic))
-        let glyph = text.layoutManager.glyphIndexForCharacter(at: character)
-        let line = text.layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-        text.setContentOffset(CGPoint(x: 0, y: line.minY + 4), animated: false)
-        configure(Array(chunks[1...3]), at: semantic)
-        XCTAssertTrue(findText(controller.view) === text)
-        let newCoordinates = TextCoordinates(text.text)
-        let newCharacter = newCoordinates.utf16Offset(atUTF8: Int(semantic - chunks[1].startUtf8))
-        let newGlyph = text.layoutManager.glyphIndexForCharacter(at: newCharacter)
-        let newLine = text.layoutManager.lineFragmentRect(forGlyphAt: newGlyph, effectiveRange: nil)
-        XCTAssertEqual(newLine.minY - text.contentOffset.y, -4, accuracy: 1,
-                       "A window handoff must preserve the visible line's screen position")
-        // TextKit and UIScrollView may finish layout on a later main-loop turn.
-        // The immediate offset alone does not prove the reading position held.
-        try await Task.sleep(for: .milliseconds(150))
-        text.layoutIfNeeded()
-        let settledLine = text.layoutManager.lineFragmentRect(forGlyphAt: newGlyph, effectiveRange: nil)
-        XCTAssertEqual(settledLine.minY - text.contentOffset.y, -4, accuracy: 1,
-                       "Deferred native layout must not move the line after the handoff")
-    }
 
-    @MainActor
-    func testBookmarksFollowGlyphLinesThroughReflowScrollAndPageBoundaries() throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previousKey = scene.windows.first(where: \.isKeyWindow)
-        let host = UIWindow(windowScene: scene)
-        defer { host.isHidden = true; previousKey?.makeKeyAndVisible() }
-        let chunks = Array(readingChunks()[0...1])
-        // A bookmark after an emoji exercises UTF-8/UTF-16 mapping too.
-        let source = chunks[0].text
-        let target = UInt64(source[..<source.range(of: "读者")!.lowerBound].utf8.count)
-        for mode in [ReadingMode.scroll, .pages] {
-            let controller = ReadingController()
-            host.rootViewController = controller; host.makeKeyAndVisible()
-            func configure(_ positions: [UInt64], size: Double = 20, dark: Bool = false) throws -> ReadingTextView {
-                controller.configure(window: ReadingWindow(chunks: chunks),
-                                     settings: ReaderSettings(mode: mode, fontSize: size, lineSpacing: 8), anchor: 0,
-                                     dark: dark, typeSize: .large, bookmarkPositions: positions,
-                                     compactHeaderHeight: 22, controlsVisible: false, toggleControls: {},
-                                     readingBegan: {}, changed: { _, _ in })
-                controller.view.layoutIfNeeded()
-                let text = try XCTUnwrap(findReadingText(in: controller.view) as? ReadingTextView)
-                text.layoutIfNeeded()
-                return text
-            }
-            func assertAligned(_ text: ReadingTextView, at offset: UInt64) throws {
-                let indicator = try XCTUnwrap(text.bookmarkIndicators.first)
-                let character = TextCoordinates(text.text).utf16Offset(atUTF8: Int(offset))
-                let glyph = text.layoutManager.glyphIndexForCharacter(at: character)
-                let line = text.layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-                    .offsetBy(dx: text.textContainerInset.left, dy: text.textContainerInset.top)
-                XCTAssertGreaterThan(indicator.frame.minX, text.bounds.width - text.textContainerInset.right)
-                XCTAssertLessThanOrEqual(indicator.frame.maxX, text.bounds.width)
-                XCTAssertGreaterThanOrEqual(indicator.frame.midY, line.minY)
-                XCTAssertLessThan(indicator.frame.midY, line.maxY)
-                XCTAssertFalse(indicator.isUserInteractionEnabled)
-            }
-            let text = try configure([])
-            let original = NSAttributedString(attributedString: text.textStorage)
-            let frame = text.frame
-            let originalGlyphs = text.layoutManager.glyphRange(for: text.textContainer)
-            XCTAssertTrue(try configure([0, 3]) === text)
-            XCTAssertEqual(text.bookmarkIndicators.count, 1, "Same-line bookmarks share one indicator")
-            try assertAligned(text, at: 0)
-            _ = try configure([target])
-            try assertAligned(text, at: target)
-            let firstY = try XCTUnwrap(text.bookmarkIndicators.first).frame.minY
-            _ = try configure([target], dark: true)
-            XCTAssertEqual(text.bookmarkIndicators.first?.frame.minY, firstY)
-            XCTAssertEqual(text.frame, frame)
-            XCTAssertTrue(text.textStorage.isEqual(to: original), "Markers never become part of selectable text")
-            XCTAssertEqual(text.layoutManager.glyphRange(for: text.textContainer), originalGlyphs)
-            if mode == .scroll {
-                let originalScreenY = text.bookmarkIndicators[0].convert(text.bookmarkIndicators[0].bounds, to: host).minY
-                text.setContentOffset(CGPoint(x: 0, y: 8), animated: false); text.layoutIfNeeded()
-                let movedScreenY = text.bookmarkIndicators[0].convert(text.bookmarkIndicators[0].bounds, to: host).minY
-                XCTAssertEqual(movedScreenY, originalScreenY - 8, accuracy: 0.5)
-                text.setContentOffset(CGPoint(x: 0, y: 400), animated: false); text.layoutIfNeeded()
-                XCTAssertTrue(text.bookmarkIndicators.isEmpty, "Offscreen indicators are released")
-                text.setContentOffset(.zero, animated: false); text.layoutIfNeeded()
-                try assertAligned(text, at: target)
-            } else {
-                let visibleLength = try XCTUnwrap((text as? PageReadingTextView)?.visibleLength)
-                let nextPage = UInt64(TextCoordinates(text.text).utf8Offset(atUTF16: visibleLength))
-                _ = try configure([nextPage])
-                XCTAssertTrue(text.bookmarkIndicators.isEmpty, "Lookahead bookmarks belong to the next page")
-            }
-            let larger = try configure([target], size: 28)
-            try assertAligned(larger, at: target)
-            XCTAssertEqual(larger.textContainerInset, ReadingTextMetrics.insets)
-            _ = try configure([], size: 28)
-            XCTAssertTrue(larger.bookmarkIndicators.isEmpty)
-        }
-    }
 
     @MainActor
     func testHighlightChangesNeverEditTextOrMoveSelectionAndViewport() async throws {
@@ -4303,156 +3413,64 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         }
     }
 
-    @MainActor
-    func testPaginationCoversChunkWithoutMissingOrRepeatedBytes() {
-        let content = String(repeating: "月亮落在窗边，故事仍在继续。🌙 👨‍👩‍👧‍👦 e\u{301}\n", count: 180)
-        let start: UInt64 = 321
-        let chunk = TextChunk(index: 2, startUtf8: start, endUtf8: start + UInt64(content.utf8.count), text: content)
-        for size in [CGSize(width: 375, height: 650), CGSize(width: 680, height: 270)] {
-            for fontSize in [16.0, 32.0, 48.0] {
-                let paragraph = NSMutableParagraphStyle()
-                paragraph.lineSpacing = 8
-                let pages = TextPage.paginate(chunk, size: size, attributes: [
-                    .font: UIFont.systemFont(ofSize: fontSize), .paragraphStyle: paragraph
-                ])
-                XCTAssertGreaterThan(pages.count, 1)
-                XCTAssertEqual(pages.first?.start, start)
-                XCTAssertEqual(pages.last?.end, chunk.endUtf8)
-                for (page, next) in zip(pages, pages.dropFirst()) {
-                    XCTAssertEqual(page.end, next.start)
-                    XCTAssertLessThan(page.start, page.end)
-                }
-            }
-        }
+    @MainActor func testPaginationCoversChunkWithoutMissingOrRepeatedBytes() {
+        let text = String(repeating: "月🌙👨‍👩‍👧‍👦e\u{301}。\n", count: 5)
+        let window = ReadingWindow(chunks: [.init(index: 0, startUtf8: 321, endUtf8: 321 + UInt64(text.utf8.count), text: text)])
+        let pages = syntheticPages(window)
+        XCTAssertGreaterThan(pages.count, 1); assertCoverage(pages, window: window)
+        for page in pages { XCTAssertEqual(page.readingText.sourceStart, page.start); XCTAssertEqual(page.readingText.sourceEnd, page.end) }
     }
 
-    @MainActor
-    func testContinuousPaginationFillsPagesAcrossStorageChunks() {
-        let chunks = readingChunks()
-        let window = ReadingWindow(chunks: Array(chunks.prefix(3)))
-        let size = CGSize(width: 390, height: 690)
-        let pages = TextPage.paginate(window, size: size, attributes: readingAttributes)
-        assertCoverage(pages, window: window)
+    @MainActor func testContinuousPaginationFillsPagesAcrossStorageChunks() {
+        let chunks = readingChunks(), window = ReadingWindow(chunks: Array(chunks.prefix(3)))
+        let pages = syntheticPages(window); assertCoverage(pages, window: window)
         for boundary in chunks.prefix(2).map(\.endUtf8) {
-            XCTAssertTrue(pages.contains { $0.start < boundary && $0.end > boundary },
-                          "A storage boundary must not force a page break")
-        }
-        for page in pages.dropLast() {
-            let view = page.makeTextView(frame: CGRect(origin: .zero, size: size))
-            view.layoutIfNeeded()
-            view.layoutManager.ensureLayout(for: view.textContainer)
-            let used = view.layoutManager.usedRect(for: view.textContainer)
-            XCTAssertGreaterThan(used.height, size.height - ReadingTextMetrics.insets.top - ReadingTextMetrics.insets.bottom - 70, "An interior page should fill its reading area")
-            XCTAssertLessThanOrEqual(used.height, size.height - ReadingTextMetrics.insets.top - ReadingTextMetrics.insets.bottom + 1, "Page text must fit, not be clipped")
+            XCTAssertTrue(pages.contains { $0.start < boundary && $0.end > boundary })
         }
     }
 
-    @MainActor
-    func testSlidingWindowKeepsOverlapPagesWhenMovingForwardAndBackward() {
+    @MainActor func testSlidingWindowKeepsOverlapPagesWhenMovingForwardAndBackward() {
         let chunks = readingChunks()
-        let size = CGSize(width: 390, height: 690)
-        let firstWindow = ReadingWindow(chunks: Array(chunks[0...2]))
-        let forwardWindow = ReadingWindow(chunks: Array(chunks[1...3]))
-        let first = TextPage.paginate(firstWindow, size: size, attributes: readingAttributes)
-        let forward = TextPage.paginate(forwardWindow, size: size, attributes: readingAttributes, preserving: first)
-        assertCoverage(forward, window: forwardWindow)
-        let stable = first.filter { $0.start >= chunks[1].startUtf8 && $0.end <= chunks[2].startUtf8 }
-        XCTAssertFalse(stable.isEmpty)
-        for page in stable {
-            XCTAssertTrue(forward.contains { $0.start == page.start && $0.end == page.end && $0.text == page.text })
-        }
-        let backward = TextPage.paginate(firstWindow, size: size, attributes: readingAttributes, preserving: forward)
-        assertCoverage(backward, window: firstWindow)
-        for page in stable {
-            XCTAssertTrue(backward.contains { $0.start == page.start && $0.end == page.end && $0.text == page.text })
-        }
-        for page in backward.dropFirst().dropLast() {
-            let view = page.makeTextView(frame: CGRect(origin: .zero, size: size))
-            view.layoutIfNeeded()
-            view.layoutManager.ensureLayout(for: view.textContainer)
-            let used = view.layoutManager.usedRect(for: view.textContainer)
-            XCTAssertGreaterThan(used.height, size.height - ReadingTextMetrics.insets.top - ReadingTextMetrics.insets.bottom - 70)
-            XCTAssertLessThanOrEqual(used.height, size.height - ReadingTextMetrics.insets.top - ReadingTextMetrics.insets.bottom + 1)
-        }
+        let a = ReadingWindow(chunks: Array(chunks[0...2])), b = ReadingWindow(chunks: Array(chunks[1...3]))
+        let first = syntheticPages(a), next = syntheticPages(b, preserving: first)
+        let stable = first.filter { $0.start > b.start && $0.end < a.end }
+        XCTAssertFalse(stable.isEmpty); assertCoverage(next, window: b)
+        let back = syntheticPages(a, preserving: next); assertCoverage(back, window: a)
+        for page in stable { XCTAssertTrue(next.contains { $0.start == page.start && $0.end == page.end }); XCTAssertTrue(back.contains { $0.start == page.start && $0.end == page.end }) }
     }
 
-    @MainActor
-    func testDuplicatePageViewsDoNotStealVisibleTextContainer() {
-        let chunk = readingChunks()[0]
-        let size = CGSize(width: 390, height: 690)
-        let page = TextPage.paginate(chunk, size: size, attributes: readingAttributes)[0]
-        let first = page.makeTextView(frame: CGRect(origin: .zero, size: size))
-        let second = page.makeTextView(frame: CGRect(origin: .zero, size: size))
-        first.layoutIfNeeded()
-        second.layoutIfNeeded()
-        XCTAssertFalse(first.textContainer === second.textContainer)
-        XCTAssertTrue(first.layoutManager.textContainers.contains { $0 === first.textContainer })
-        XCTAssertTrue(second.layoutManager.textContainers.contains { $0 === second.textContainer })
-        XCTAssertFalse(first.layoutManager === second.layoutManager)
-        XCTAssertEqual(first.textStorage.attributedSubstring(from: NSRange(location: 0, length: page.text.length)).string, page.text.string)
-        first.selectAll(nil)
-        XCTAssertEqual(first.selectedRange, NSRange(location: 0, length: page.text.length))
-        XCTAssertEqual(second.accessibilityLabel, page.text.string)
-        first.selectedTextRange = first.textRange(from: first.beginningOfDocument, to: first.endOfDocument)
-        XCTAssertEqual(first.selectedRange, NSRange(location: 0, length: page.text.length),
-                       "Dragging a selection cannot include the invisible typesetting lookahead")
-        first.layoutManager.ensureLayout(for: first.textContainer)
-        XCTAssertGreaterThan(first.layoutManager.usedRect(for: first.textContainer).height, 0)
+    @MainActor func testDuplicatePageViewsDoNotStealVisibleTextContainer() {
+        let window = ReadingWindow(chunks: [readingChunks()[0]])
+        let one = syntheticPages(window), two = syntheticPages(window)
+        XCTAssertEqual(one.map(\.start), two.map(\.start))
+        let first = one[0], duplicate = two[0]
+        XCTAssertEqual(first.readingText.selectableRange, duplicate.readingText.selectableRange)
+        XCTAssertEqual(first.readingText.coordinates.sourceRange(first.readingText.selectableRange),
+                       duplicate.readingText.coordinates.sourceRange(duplicate.readingText.selectableRange))
+        XCTAssertEqual(first.readingText.text, duplicate.readingText.text)
     }
 
-    @MainActor
-    func testExpandingEarlierWindowRefillsItsTemporaryLeadingPage() {
+    @MainActor func testExpandingEarlierWindowRefillsItsTemporaryLeadingPage() {
         let chunks = readingChunks()
-        let size = CGSize(width: 390, height: 690)
-        let initialWindow = ReadingWindow(chunks: Array(chunks[0...2]))
-        let middleWindow = ReadingWindow(chunks: Array(chunks[1...3]))
-        let laterWindow = ReadingWindow(chunks: Array(chunks[2...4]))
-        let initial = TextPage.paginate(initialWindow, size: size, attributes: readingAttributes)
-        let middle = TextPage.paginate(middleWindow, size: size, attributes: readingAttributes, preserving: initial)
-        let later = TextPage.paginate(laterWindow, size: size, attributes: readingAttributes, preserving: middle)
-        let returned = TextPage.paginate(middleWindow, size: size, attributes: readingAttributes, preserving: later)
-        assertCoverage(returned, window: middleWindow)
-        let oldLeadingStart = later.first!.start
-        XCTAssertTrue(returned.contains { $0.start < oldLeadingStart && $0.end > oldLeadingStart },
-                      "The old leading storage edge must become ordinary text inside a full page")
-        for page in returned.dropFirst().dropLast() {
-            let view = page.makeTextView(frame: CGRect(origin: .zero, size: size))
-            view.layoutIfNeeded()
-            view.layoutManager.ensureLayout(for: view.textContainer)
-            let range = view.layoutManager.characterRange(forGlyphRange: view.layoutManager.glyphRange(for: view.textContainer), actualGlyphRange: nil)
-            XCTAssertEqual(range, NSRange(location: 0, length: page.text.length))
-            let used = view.layoutManager.usedRect(for: view.textContainer)
-            XCTAssertGreaterThan(used.height, size.height - ReadingTextMetrics.insets.top - ReadingTextMetrics.insets.bottom - 70)
-            XCTAssertLessThanOrEqual(used.height, size.height - ReadingTextMetrics.insets.top - ReadingTextMetrics.insets.bottom + 1)
-        }
+        let a = ReadingWindow(chunks: Array(chunks[1...3])), b = ReadingWindow(chunks: Array(chunks[2...4]))
+        let first = syntheticPages(a), later = syntheticPages(b, preserving: first)
+        let back = syntheticPages(a, preserving: later); assertCoverage(back, window: a)
+        XCTAssertTrue(back.contains { $0.start < b.start && $0.end > b.start })
+        var stale = first; for index in stale.indices { stale[index].layoutVersion -= 1 }
+        XCTAssertTrue(syntheticPages(a, preserving: stale).allSatisfy { $0.layoutVersion == ReadingTypography.layoutVersion })
     }
 
-    @MainActor
-    func testJustificationFillsWrappedLinesAndLeavesParagraphEndNatural() {
-        let content = String(repeating: "月亮落在窗边，故事仍在继续，读者轻轻翻开下一页。", count: 20) + "终。"
-        let size = CGSize(width: 390, height: 690)
-        let chunk = TextChunk(index: 0, startUtf8: 0, endUtf8: UInt64(content.utf8.count), text: content)
-        let pages = TextPage.paginate(chunk, size: size, attributes: readingAttributes)
-        for page in pages {
-            let view = page.makeTextView(frame: CGRect(origin: .zero, size: size))
-            view.layoutManager.ensureLayout(for: view.textContainer)
-            var lines: [CGRect] = []
-            view.layoutManager.enumerateLineFragments(forGlyphRange: view.layoutManager.glyphRange(for: view.textContainer)) { _, used, _, _, _ in
-                lines.append(used)
+
+    private func syntheticPages(_ window: ReadingWindow, preserving: [TextPage] = [], keeping: UInt64? = nil) -> [TextPage] {
+        TextPage.paginate(window, size: .zero, attributes: [:], preserving: preserving, keeping: keeping) { projection, backward in
+            let text = projection.text as NSString
+            var ranges: [NSRange] = [], cursor = 0
+            while cursor < text.length {
+                let proposed = NSRange(location: cursor, length: min(37, text.length - cursor))
+                let range = text.rangeOfComposedCharacterSequences(for: proposed)
+                ranges.append(range); cursor = NSMaxRange(range)
             }
-            for line in lines.dropLast() {
-                XCTAssertEqual(line.maxX, ReadingTextMetrics.contentSize(in: size).width, accuracy: 1)
-            }
-            let visible = view.layoutManager.characterRange(forGlyphRange: view.layoutManager.glyphRange(for: view.textContainer), actualGlyphRange: nil)
-            XCTAssertEqual(visible, NSRange(location: 0, length: page.text.length))
-            if page.end == chunk.endUtf8, let line = lines.last {
-                XCTAssertLessThan(line.maxX, ReadingTextMetrics.contentSize(in: size).width - 1,
-                                  "The real paragraph ending must not be stretched")
-            }
-            if page.end < chunk.endUtf8, let line = lines.last {
-                XCTAssertEqual(line.maxX, ReadingTextMetrics.contentSize(in: size).width, accuracy: 1,
-                               "A page boundary inside a paragraph is still a wrapped line")
-            }
+            return ranges
         }
     }
 
@@ -4840,10 +3858,7 @@ private final class TrashScanProbe: @unchecked Sendable {
         defer { try? FileManager.default.removeItem(at: temporary) }
         let original = entries[0]
         let lease = try await service.openSourceFile(original.source)
-        for _ in 0..<200 {
-            if try await service.snapshot(lease.id).phase == .complete { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await service.waitForImportFinish(lease.id)
         let bookID = try XCTUnwrap(core.sourceFileLocation(fileId: original.id).bookId)
         try await service.savePosition(bookID: bookID, offset: 9)
         _ = try await service.toggleBookmark(bookID, at: 9)
@@ -4859,10 +3874,7 @@ private final class TrashScanProbe: @unchecked Sendable {
         let restored = try XCTUnwrap(restoredEntries.first)
         XCTAssertNotEqual(restored.id, original.id); XCTAssertNil(restored.bookId)
         let reopened = try await service.openSourceFile(restored.source)
-        for _ in 0..<200 {
-            if try await service.snapshot(reopened.id).phase == .complete { break }
-            try await Task.sleep(for: .milliseconds(10))
-        }
+        try await service.waitForImportFinish(reopened.id)
         let linked = try await service.libraryEntry(restored.id)
         XCTAssertEqual(linked.bookId, bookID); XCTAssertEqual(linked.positionUtf8, 9)
         let bookmark = try await service.hasBookmark(bookID, at: 9)

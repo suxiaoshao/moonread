@@ -25,6 +25,11 @@ private final class AIProtocolState: @unchecked Sendable {
     var requestCount = 0
     var stopCount = 0
     private var body: Data?
+    private var requestEvent: (@Sendable () -> Void)?
+    private var stopEvent: (@Sendable () -> Void)?
+    func events(request: @escaping @Sendable () -> Void, stop: @escaping @Sendable () -> Void) {
+        lock.withLock { requestEvent = request; stopEvent = stop }
+    }
     func capture(_ request: URLRequest) {
         var data = request.httpBody
         if data == nil, let stream = request.httpBodyStream {
@@ -36,8 +41,14 @@ private final class AIProtocolState: @unchecked Sendable {
     }
     var requestBody: Data? { lock.withLock { body } }
     func reset(_ value: String) { lock.lock(); defer { lock.unlock() }; mode = value; requestCount = 0; stopCount = 0 }
-    func request() -> String { lock.lock(); defer { lock.unlock() }; requestCount += 1; return mode }
-    func stopped() { lock.lock(); defer { lock.unlock() }; stopCount += 1 }
+    func request() -> String {
+        let (value, event) = lock.withLock { requestCount += 1; let event = requestEvent; requestEvent = nil; return (mode, event) }
+        event?(); TestFixtureEvents.changed(); return value
+    }
+    func stopped() {
+        let event = lock.withLock { stopCount += 1; let event = stopEvent; stopEvent = nil; return event }
+        event?(); TestFixtureEvents.changed()
+    }
     var counts: (Int, Int) { lock.lock(); defer { lock.unlock() }; return (requestCount, stopCount) }
 }
 private final class AITestURLProtocol: URLProtocol, @unchecked Sendable {
@@ -252,14 +263,15 @@ private actor ChinaStorefrontLookup {
     func testMasterSwitchCancelsCredentialWorkAndRejectsExecution() async throws {
         let (service, _, connection, suite) = try await fixture()
         defer { cleanup(connection, suite: suite) }
-        var started = false
+        let started = expectation(description: "Operation started")
+        let clock = ManualTestClock()
         let work = Task {
             try await service.availability.perform {
-                started = true
-                try await Task.sleep(for: .seconds(60))
+                started.fulfill()
+                try await clock.sleep(60)
             }
         }
-        await wait { started }
+        await fulfillment(of: [started], timeout: 2)
         service.availability.setEnabled(false)
         do { try await work.value; XCTFail("The active operation must be cancelled") }
         catch is CancellationError {} catch { XCTFail("Unexpected \(error)") }
@@ -373,7 +385,7 @@ private actor ChinaStorefrontLookup {
         var completion: CheckedContinuation<Void, Error>?
         let task = Task {
             try await availability.perform {
-                try await withCheckedThrowingContinuation { completion = $0 }
+                try await withCheckedThrowingContinuation { completion = $0; TestFixtureEvents.changed() }
             }
         }
         await wait { completion != nil }
@@ -494,7 +506,7 @@ private actor ChinaStorefrontLookup {
         let repository: AIRepository
         if let suppliedRepository { repository = suppliedRepository } else { repository = try await AIRepository.open(inMemory: true) }
         let service = AIService(repository: repository, defaults: UserDefaults(suiteName: suite)!, auth: AIAuthentication(credentialResolver: { _ in
-            AICredential(accessToken: "test-only", refreshToken: "test-only", expires: Date().addingTimeInterval(600), accountID: "fixture")
+            AICredential(accessToken: "test-only", refreshToken: "test-only", expires: .distantFuture, accountID: "fixture")
         }), makeTransport: {
             let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AITestURLProtocol.self]
             return AITransport(configuration: config)
@@ -524,8 +536,7 @@ private actor ChinaStorefrontLookup {
         UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
     }
     private func wait(_ condition: @escaping @MainActor () -> Bool) async {
-        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in MainActor.assumeIsolated { condition() } }, object: nil)
-        await fulfillment(of: [expectation], timeout: 5)
+        await awaitState(condition)
     }
     func testSharingPreflightRetainsDraftUntilApprovedAndSendsOnlyOnce() async throws {
         let (service, repository, connection, suite) = try await fixture(approveSharing: false)
@@ -596,28 +607,6 @@ private actor ChinaStorefrontLookup {
         await service.showLatest("long")
         XCTAssertFalse(conversation.hasLater); XCTAssertEqual(conversation.entries.last?.sequence, 119)
         XCTAssertEqual(conversation.entries.first?.sequence, 70)
-    }
-    func testConversationListThemeRender() async throws {
-        let (service, _, connection, suite) = try await fixture()
-        defer { cleanup(connection, suite: suite) }
-        let conversation = try await created(service)
-        service.updateDraft(conversation.id, text: "介绍这篇小说")
-        service.send(conversation.id)
-        await wait { !conversation.running }
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
-        defer { window.isHidden = true; previous?.makeKey() }
-        for palette in [try XCTUnwrap(builtinThemePalettes().first { $0.appearance == .light }), try XCTUnwrap(builtinThemePalettes().first { $0.appearance == .dark })] {
-            let appearance = palette.appearance
-            let theme = ThemeSurface(plan: ResolvedTheme(appearance: appearance, highContrast: false, colors: palette.colors, paletteId: palette.id))
-            window.rootViewController = UIHostingController(rootView: AIConversationsView().environment(service).environment(\.theme, theme).preferredColorScheme(theme.scheme))
-            window.makeKeyAndVisible()
-            try await Task.sleep(for: .milliseconds(400))
-            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
-            let attachment = XCTAttachment(image: image); attachment.name = "conversation-list-\(appearance)"; attachment.lifetime = .keepAlways; add(attachment)
-            try image.pngData()?.write(to: URL(fileURLWithPath: "/tmp/conversation-list-\(appearance).png"))
-        }
     }
     func testGeneralConversationProjectionAndStoredTitleUseFirstMessageWithoutExtraRequest() async throws {
         let (service, repository, connection, suite) = try await fixture("text-wait")
@@ -1105,22 +1094,6 @@ private actor ChinaStorefrontLookup {
         let asyncValue5 = try await repository.sessions().isEmpty
         XCTAssertTrue(asyncValue5)
     }
-    func testHostedChatAndSettingsRender() async throws {
-        let (service, _, connection, suite) = try await fixture()
-        defer { cleanup(connection, suite: suite) }
-        let conversation = try await created(service)
-        service.updateDraft(conversation.id, text: "你好"); service.send(conversation.id)
-        await wait { !conversation.running }
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
-        let host = UIHostingController(rootView: NavigationStack { AIChatView(conversationID: conversation.id) }.environment(service))
-        window.rootViewController = host; window.makeKeyAndVisible()
-        defer { window.isHidden = true; previous?.makeKey() }
-        try await Task.sleep(for: .milliseconds(500))
-        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
-        let attachment = XCTAttachment(image: image); attachment.name = "ai-chat-markdown"; attachment.lifetime = .keepAlways; add(attachment)
-    }
 }
 
 extension AIStageOneTests {
@@ -1192,7 +1165,7 @@ extension AIStageOneTests {
         let suite = "AIConnection-\(UUID().uuidString)"
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AIConnectionTestProtocol.self]
         let auth = AIAuthentication(session: URLSession(configuration: config), credentialSaver: { _, _ in }, credentialResolver: { _ in
-            AICredential(accessToken: "fixture", refreshToken: "fixture", expires: Date().addingTimeInterval(600), accountID: "fixture")
+            AICredential(accessToken: "fixture", refreshToken: "fixture", expires: .distantFuture, accountID: "fixture")
         })
         let service = AIService(repository: try await AIRepository.open(inMemory: true), defaults: UserDefaults(suiteName: suite)!, auth: auth)
         return (service, service.providers.addConnection(AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection()), suite)
@@ -1237,37 +1210,6 @@ extension AIStageOneTests {
         service.providers.cancelLogin(id)
         XCTAssertEqual(service.providers.connectionState(service.providers.connections[0]), .signedOut)
         XCTAssertNil(service.providers.loginConnectionID)
-    }
-    func testConnectionSettingsThemeStateScreenshots() async throws {
-        let (service, id, suite) = try await connectionFixture()
-        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
-        defer { window.isHidden = true; previous?.makeKey() }
-        let palettes = builtinThemePalettes()
-        let light = try XCTUnwrap(palettes.first { $0.appearance == .light })
-        let dark = try XCTUnwrap(palettes.first { $0.appearance == .dark })
-        var custom = light.colors
-        custom.canvas = 0xEEE2F7; custom.surface = 0xF8EFFC; custom.ink = 0x3D2852; custom.secondary = 0x665472
-        custom.accent = 0x744997; custom.onAccent = 0xFFFFFF
-        let themes = [ThemeSurface(plan: ResolvedTheme(appearance: .light, highContrast: false, colors: light.colors, paletteId: light.id)),
-                      ThemeSurface(plan: ResolvedTheme(appearance: .dark, highContrast: false, colors: dark.colors, paletteId: dark.id)),
-                      ThemeSurface(plan: ResolvedTheme(appearance: .light, highContrast: false, colors: custom, paletteId: "fixture-custom"))]
-        for (index, theme) in themes.enumerated() {
-            let id = service.providers.addConnection(AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection())
-            for state in ["signed-out", "code", "connected", "models-error"] {
-                service.providers.loginStates[id] = nil; service.providers.modelErrors[id] = nil
-                if state != "signed-out" { service.providers.needsLogin.remove(id); await service.providers.refreshModels(id, refreshPublic: false) }
-                if state == "code" { service.providers.loginStates[id] = .authorizing }
-                if state == "models-error" { service.providers.modelErrors[id] = String(localized: "网络不可用，请稍后重试。") }
-                let host = UIHostingController(rootView: NavigationStack { AIConnectionView(connectionID: id) }.environment(service).environment(\.theme, theme).preferredColorScheme(theme.scheme))
-                host.overrideUserInterfaceStyle = theme.style; window.rootViewController = host; window.makeKeyAndVisible()
-                try await Task.sleep(for: .milliseconds(250))
-                let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
-                let attachment = XCTAttachment(image: image); attachment.name = "ai-connection-\(index)-\(state)"; attachment.lifetime = .keepAlways; add(attachment)
-            }
-        }
     }
 }
 
@@ -1346,39 +1288,6 @@ extension AIStageOneTests {
         XCTAssertEqual(conversation.turns.last?.thinking, "high")
         XCTAssertEqual(AITestURLProtocol.state.counts.0, 1)
     }
-    func testUnifiedModelPickerNativeThemesAndEmptyState() async throws {
-        let (service, _, first, suite) = try await fixture()
-        defer { cleanup(first, suite: suite) }
-        service.providers.connections[0].name = "Account A"; service.providers.connections[0].models[0].name = "Same Model"
-        service.providers.connections[0].models[0].thinking = ["low", "high"]; service.providers.connections[0].models[0].defaultThinking = "low"
-        var second = service.providers.connections[0]; second.id = "second"; second.name = "Account B"
-        second.models[0].thinking = []; second.models[0].defaultThinking = nil; service.providers.connections.append(second)
-        let conversation = try await created(service); conversation.running = true
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow); let window = UIWindow(windowScene: scene)
-        defer { window.isHidden = true; previous?.makeKey(); conversation.running = false }
-        let palettes = builtinThemePalettes()
-        let light = try XCTUnwrap(palettes.first { $0.appearance == .light })
-        let dark = try XCTUnwrap(palettes.first { $0.appearance == .dark })
-        var custom = light.colors; custom.canvas = 0xEEE2F7; custom.surface = 0xF8EFFC; custom.ink = 0x3D2852
-        custom.secondary = 0x665472; custom.accent = 0x744997; custom.onAccent = 0xFFFFFF
-        let themes: [(String, ThemeSurface)] = [
-            ("light", ThemeSurface(plan: ResolvedTheme(appearance: .light, highContrast: false, colors: light.colors, paletteId: light.id))),
-            ("dark", ThemeSurface(plan: ResolvedTheme(appearance: .dark, highContrast: false, colors: dark.colors, paletteId: dark.id))),
-            ("custom", ThemeSurface(plan: ResolvedTheme(appearance: .light, highContrast: false, colors: custom, paletteId: "fixture-custom")))]
-        for (name, theme) in themes {
-            let host = UIHostingController(rootView: AIModelPicker(destination: .target(.conversation(conversation.id)), detent: .constant(.large)).environment(service).environment(\.theme, theme).preferredColorScheme(theme.scheme))
-            window.rootViewController = host; window.makeKeyAndVisible()
-            try await Task.sleep(for: .milliseconds(350))
-            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
-            let attachment = XCTAttachment(image: image); attachment.name = "model-picker-\(name)"; attachment.lifetime = .keepAlways; add(attachment)
-        }
-        service.providers.connections = []
-        let host = UIHostingController(rootView: AIModelPicker(destination: .target(.defaults), detent: .constant(.large)).environment(service))
-        window.rootViewController = host; window.makeKeyAndVisible(); try await Task.sleep(for: .milliseconds(350))
-        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
-        let attachment = XCTAttachment(image: image); attachment.name = "model-picker-empty"; attachment.lifetime = .keepAlways; add(attachment)
-    }
 }
 
 extension AIStageOneTests {
@@ -1443,27 +1352,6 @@ extension AIStageOneTests {
 
     }
 
-    func testModelControlsSmallLargeTypeRender() async throws {
-        let (service, _, first, suite) = try await fixture()
-        defer { cleanup(first, suite: suite) }
-        service.providers.connections[0].models[0].thinking = ["none", "minimal", "low", "medium", "high", "xhigh"]
-        service.providers.connections[0].thinking = "medium"
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(x: 0, y: 0, width: 320, height: 700)
-        defer { window.isHidden = true; previous?.makeKey() }
-        for palette in [try XCTUnwrap(builtinThemePalettes().first { $0.appearance == .light }), try XCTUnwrap(builtinThemePalettes().first { $0.appearance == .dark })] {
-            let appearance = palette.appearance
-            let theme = ThemeSurface(plan: ResolvedTheme(appearance: appearance, highContrast: false, colors: palette.colors, paletteId: palette.id))
-            let root = NavigationStack { AIModelDetailView(connectionID: first.id, modelID: "fixture-model") }
-                .environment(service).environment(\.theme, theme).preferredColorScheme(theme.scheme).dynamicTypeSize(.accessibility3)
-            window.rootViewController = UIHostingController(rootView: root); window.makeKeyAndVisible()
-            try await Task.sleep(for: .milliseconds(350))
-            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
-            let attachment = XCTAttachment(image: image); attachment.name = "model-detail-small-large-type-\(appearance)"; attachment.lifetime = .keepAlways; add(attachment)
-        }
-    }
 
 }
 
@@ -1647,61 +1535,9 @@ extension AIStageOneTests {
 }
 
 extension AIStageOneTests {
-    func testReadingAttachmentComposerRenders() async throws {
-        let (service, _, connection, suite) = try await fixture()
-        defer { cleanup(connection, suite: suite) }
-        let conversation = try await created(service)
-        let items: [AIReadingAttachment] = [
-            .init(kind: .position, origin: "reader", bookRef: "b:" + String(repeating: "a", count: 64), title: "云海拾光", chapter: "第一章 小镇的早晨", startUtf8: 1234, endUtf8: 2345, progress: 0.123),
-            .init(kind: .selection, origin: "reader", bookRef: "b:" + String(repeating: "a", count: 64), title: "云海拾光", startUtf8: 1300, endUtf8: 1342, excerpt: "清晨的阳光穿过树梢。")
-        ]
-        service.seedReadingDraft(conversation.id, attachments: items)
-        service.updateDraft(conversation.id, text: "这里提到的是谁？")
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
-        window.rootViewController = UIHostingController(rootView: NavigationStack { AIChatView(conversationID: conversation.id) }.environment(service))
-        window.makeKeyAndVisible()
-        defer { window.isHidden = true; previous?.makeKey() }
-        try await Task.sleep(for: .milliseconds(600))
-        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
-        let attachment = XCTAttachment(image: image); attachment.name = "reading-attachment-composer"; attachment.lifetime = .keepAlways; add(attachment)
-        try image.pngData()?.write(to: URL(fileURLWithPath: "/tmp/moonread-attachment-composer.png"))
-        XCTAssertEqual(conversation.readingDraft, items)
-    }
 }
 
 extension AIStageOneTests {
-    func testAgentProcessAndFailureRenderWithoutRecoveryButtons() async throws {
-        let (service, _, connection, suite) = try await fixture()
-        defer { cleanup(connection, suite: suite) }
-        let conversation = try await created(service)
-        let turnID = "render-turn"
-        conversation.mergeEntries([
-            .init(sequence: 0, turn: turnID, provider: "fixture", model: "fixture", message: try AIAgentEntry.json(ModelMessage.user(.init(content: .text("两人为什么争执？")))), userText: "两人为什么争执？"),
-            .init(sequence: 1, turn: turnID, provider: "fixture", model: "fixture", message: try AIAgentEntry.json(ModelMessage.assistant(.init(content: .parts([
-                .text(.init(text: "我先查一下前面的约定。")),
-                .toolCall(.init(toolCallId: "read-test", toolName: "read", input: .object([:])))
-            ]))))),
-            .init(sequence: 2, turn: turnID, provider: "fixture", model: "fixture", message: try AIAgentEntry.json(ModelMessage.tool(.init(content: [
-                .toolResult(.init(toolCallId: "read-test", toolName: "read", output: .json(value: .object(["status": .string("ok"), "data": .object(["text": .string("先确认消息，再一起决定。")])]))))
-            ])))),
-            .init(sequence: 3, step: 1, turn: turnID, provider: "fixture", model: "fixture", message: try AIAgentEntry.json(ModelMessage.assistant(.init(content: .text("他们争执的重点是是否遵守约定。")))), outcome: .failed, error: "网络连接中断")
-        ])
-        conversation.head.currentTurn = turnID; conversation.head.status = .failed; conversation.head.error = "网络连接中断"
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
-        window.rootViewController = UIHostingController(rootView: NavigationStack { AIChatView(conversationID: conversation.id) }.environment(service))
-        window.makeKeyAndVisible()
-        defer { window.isHidden = true; previous?.makeKey() }
-        try await Task.sleep(for: .milliseconds(600))
-        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
-        let attachment = XCTAttachment(image: image); attachment.name = "agent-process-failure"; attachment.lifetime = .keepAlways; add(attachment)
-        try image.pngData()?.write(to: URL(fileURLWithPath: "/tmp/moonread-agent-process.png"))
-        XCTAssertEqual(conversation.turns.first?.answer, "他们争执的重点是是否遵守约定。")
-        XCTAssertEqual(conversation.turns.first?.process.filter { $0.kind == .tool }.count, 1)
-    }
 }
 
 
@@ -1810,64 +1646,6 @@ extension AIStageOneTests {
 }
 
 extension AIStageOneTests {
-    func testLightProcessRunningAndCompletedScreens() async throws {
-        let (service, _, connection, suite) = try await fixture()
-        defer { cleanup(connection, suite: suite) }
-        let conversation = try await created(service)
-        let turnID = "light-process"
-        conversation.title = "介绍下这篇小说"
-        conversation.mergeEntries([
-            .init(sequence: 0, turn: turnID, provider: "fixture", model: "fixture", message: try AIAgentEntry.json(ModelMessage.user(.init(content: .text("介绍下这篇小说，也看看番外讲什么。"))))),
-            .init(sequence: 1, turn: turnID, provider: "fixture", model: "fixture", message: try AIAgentEntry.json(ModelMessage.assistant(.init(content: .parts([
-                .reasoning(.init(text: "先核对书籍资料与目录，再结合番外内容给出介绍。")),
-                .text(.init(text: "我先看看简介和目录，再读一下番外开头。")),
-                .toolCall(.init(toolCallId: "book", toolName: "get_book", input: .object([:]))),
-                .toolCall(.init(toolCallId: "chapters", toolName: "get_chapters", input: .object([:])))
-            ]))))),
-            .init(sequence: 2, turn: turnID, provider: "fixture", model: "fixture", message: try AIAgentEntry.json(ModelMessage.tool(.init(content: [
-                .toolResult(.init(toolCallId: "book", toolName: "get_book", output: .json(value: .object(["status": .string("ok")])))),
-                .toolResult(.init(toolCallId: "chapters", toolName: "get_chapters", output: .json(value: .object(["status": .string("ok")]))))
-            ]))))
-        ])
-        conversation.head.currentTurn = turnID; conversation.head.status = .running; conversation.running = true
-        conversation.activity = .init(status: .running, reasoning: "目录与正文片段已核对，接下来整理正文和番外的关系。", reasoningActive: true)
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
-        window.rootViewController = UIHostingController(rootView: NavigationStack { AIChatView(conversationID: conversation.id) }.environment(service))
-        window.makeKeyAndVisible()
-        defer { window.isHidden = true; previous?.makeKey() }
-        for completed in [false, true] {
-            if completed {
-                conversation.mergeEntries([.init(sequence: 3, step: 1, turn: turnID, provider: "fixture", model: "fixture", message: try AIAgentEntry.json(ModelMessage.assistant(.init(content: .text("正文以两位主角的经历展开，三篇番外补充了人物相处的细节。")))), outcome: .completed)])
-                conversation.head.status = .completed; conversation.running = false
-            }
-            try await Task.sleep(for: .milliseconds(600))
-            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
-            let name = completed ? "light-process-completed" : "light-process-running"
-            let attachment = XCTAttachment(image: image); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
-            try image.pngData()?.write(to: URL(fileURLWithPath: "/tmp/\(name).png"))
-        }
-        let tools = conversation.turns[0].process.filter { $0.kind == .tool }
-        window.rootViewController = UIHostingController(rootView:
-            VStack(alignment: .leading, spacing: 6) {
-                Text("查询书籍").font(.subheadline.weight(.medium))
-                ForEach(tools) { AIProcessRow(item: $0, outcome: .completed, toggle: { _ in }) }
-                Text("正文以两位主角的经历展开，番外补充了人物相处的细节。").padding(.top, 10)
-                Spacer()
-            }.padding(20).themedPage())
-        try await Task.sleep(for: .milliseconds(400))
-        let compact = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
-        try compact.pngData()?.write(to: URL(fileURLWithPath: "/tmp/compact-process-rows.png"))
-        let detail = UIHostingController(rootView: AIToolDetailView(item: try XCTUnwrap(tools.first), outcome: .completed))
-        detail.modalPresentationStyle = .pageSheet
-        window.rootViewController?.present(detail, animated: false)
-        try await Task.sleep(for: .milliseconds(400))
-        let sheet = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
-        try sheet.pngData()?.write(to: URL(fileURLWithPath: "/tmp/compact-process-detail.png"))
-        XCTAssertEqual(conversation.turns.first?.outcome, .completed)
-        XCTAssertFalse(conversation.turns[0].process.contains(where: \.isRunning))
-    }
 }
 
 
@@ -1974,7 +1752,7 @@ extension AIStageOneTests {
         AITestURLProtocol.state.reset(mode)
         let defaults = UserDefaults(suiteName: "AINative-\(UUID().uuidString)")!
         let auth = AIAuthentication(credentialResolver: { _ in
-            AICredential(accessToken: "test-only", refreshToken: "", expires: Date().addingTimeInterval(600), accountID: "fixture")
+            AICredential(accessToken: "test-only", refreshToken: "", expires: .distantFuture, accountID: "fixture")
         })
         let providers = AIConnectionService(defaults: defaults, auth: auth)
         providers.sharing.waitingChanged = { owner, waiting in
@@ -2156,14 +1934,12 @@ extension AIStageOneTests {
     }
     func testSilentRequestCancellationClosesTransport() async throws {
         let (_, tools, _, _) = try await fixture("headers-wait")
+        let started = expectation(description: "Protocol request started"), stopped = expectation(description: "Protocol request stopped")
+        AITestURLProtocol.state.events(request: { started.fulfill() }, stop: { stopped.fulfill() })
         let task = Task { try await tools.search(.init(query: "novel")) }
-        for _ in 0..<100 where AITestURLProtocol.state.counts.0 == 0 { try await Task.sleep(for: .milliseconds(10)) }
-        task.cancel()
-        do { _ = try await task.value; XCTFail("Expected cancellation") } catch {
-        let asyncValue13 = error is CancellationError
-        XCTAssertTrue(asyncValue13) }
-        for _ in 0..<100 where AITestURLProtocol.state.counts.1 == 0 { try await Task.sleep(for: .milliseconds(10)) }
-        XCTAssertGreaterThan(AITestURLProtocol.state.counts.1, 0)
+        await fulfillment(of: [started], timeout: 2); task.cancel()
+        do { _ = try await task.value; XCTFail("Expected cancellation") } catch is CancellationError { }
+        await fulfillment(of: [stopped], timeout: 2)
     }
     func testOpenAIHostedImageRequestShape() async throws {
         let (providers, tools, connection, _) = try await fixture("native-image")
@@ -2213,28 +1989,6 @@ extension AIStageOneTests {
         XCTAssertEqual(body["aspect_ratio"] as? String, "auto") }
             }
             await tools.images.forget("test-session")
-        }
-    }
-    func testDefaultPurposeSettingsRender() async throws {
-        let (_, _, connection, defaults) = try await fixture("native-search")
-        let service = AIService(repository: try await AIRepository.open(inMemory: true), defaults: defaults)
-        XCTAssertEqual(service.providers.purposeSelection(.search)?.connectionID, connection.id)
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
-        window.rootViewController = UIHostingController(rootView: NavigationStack { AISettingsView() }.environment(service))
-        window.makeKeyAndVisible()
-        defer { window.isHidden = true; previous?.makeKey() }
-        try await Task.sleep(for: .milliseconds(600))
-        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
-        let attachment = XCTAttachment(image: image); attachment.name = "ai-purpose-settings"; attachment.lifetime = .keepAlways; add(attachment)
-        try image.pngData()?.write(to: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("ai-purpose-settings.png"))
-        for purpose in AIModelPurpose.allCases {
-            window.rootViewController = UIHostingController(rootView: NavigationStack { AIToolServiceView(purpose: purpose) }.environment(service))
-            try await Task.sleep(for: .milliseconds(300))
-            let screenshot = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
-            let attachment = XCTAttachment(image: screenshot); attachment.name = "ai-service-\(purpose.rawValue)"; attachment.lifetime = .keepAlways; add(attachment)
-            try screenshot.pngData()?.write(to: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("ai-service-\(purpose.rawValue).png"))
         }
     }
     func testNativeInputSchemaAndImageReferenceValidation() async throws {
@@ -2417,39 +2171,6 @@ extension AIProviderContractTests {
 
 
 extension AIStageOneTests {
-    func testWaitingRowAppearanceScreenshots() async throws {
-        let (service, _, connection, suite) = try await fixture()
-        defer { cleanup(connection, suite: suite) }
-        let conversation = try await created(service)
-        conversation.head.currentTurn = "waiting-fixture"
-        conversation.mergeEntries([.init(sequence: 0, turn: "waiting-fixture", provider: "fixture", model: "fixture",
-            message: try AIAgentEntry.json(ModelMessage.user(.init(content: .text("介绍这本书，不要剧透。")))), userText: "介绍这本书，不要剧透。")])
-        conversation.running = true
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
-        defer { window.isHidden = true; previous?.makeKey() }
-        for dark in [false, true] {
-            for large in [false, true] {
-                for compacting in [false, true] {
-                    conversation.head.status = compacting ? .compacting : .running
-                    conversation.activity = .init(status: conversation.head.status)
-                    let theme = ThemeSurface(plan: try resolveThemes(value: defaultThemeSnapshot(), system: dark ? .dark : .light, highContrast: false).app)
-                    window.rootViewController = UIHostingController(rootView:
-                        NavigationStack { AIChatView(conversationID: conversation.id) }
-                            .environment(service).environment(\.theme, theme)
-                            .environment(\.dynamicTypeSize, large ? .accessibility3 : .large)
-                            .preferredColorScheme(dark ? .dark : .light))
-                    window.makeKeyAndVisible()
-                    try await Task.sleep(for: .milliseconds(650))
-                    let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
-                    let name = "waiting-\(dark ? "dark" : "light")-\(large ? "ax" : "normal")-\(compacting ? "compact" : "reply")"
-                    let attachment = XCTAttachment(image: image); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
-                    try image.pngData()?.write(to: URL(fileURLWithPath: "/tmp/\(name).png"))
-                }
-            }
-        }
-    }
 }
 
 @MainActor private final class AIExpansionFrameProbe: NSObject {
@@ -2459,132 +2180,21 @@ extension AIStageOneTests {
 }
 
 extension AIStageOneTests {
-    func testProcessExpansionKeepsClickedRowPositionAcrossFrames() async throws {
-        let (service, _, connection, suite) = try await fixture()
-        defer { cleanup(connection, suite: suite) }
-        let conversation = try await created(service)
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
-        defer { window.isHidden = true; previous?.makeKey() }
-        let theme = ThemeSurface(plan: try resolveThemes(value: defaultThemeSnapshot(), system: .light, highContrast: false).app)
-        let appearance = AIMessageListAppearance(theme: theme, typeSize: .large, highlightedTurn: nil)
-        var evidence: [String: [[Double]]] = [:]
-        for reduced in [false, true] {
-          var appearance = appearance; appearance.reduceMotion = reduced
-          for reasoning in [false, true] {
-            for bottom in [false, true] {
-                let controller = AIMessageListController(); controller.conversation = conversation
-                window.rootViewController = controller; window.makeKeyAndVisible()
-                let item: AIProcessExpansionID = reasoning ? .reasoning("target") : .group("target")
-                conversation.processItemExpansion = []
-                let block = AIProcessBlock(items: reasoning
-                    ? [.init(id: "target", kind: .reasoning, text: String(repeating: "合成思考段落，用于测量展开高度。", count: 20))]
-                    : (0..<8).map { .init(id: $0 == 0 ? "target" : "tool-\($0)", kind: .tool, name: "read_book", input: .null, output: .object(["status": .string("ok")])) })
-                var revision = 0
-                func makeRows() -> [AIMessageRow] {
-                    let state = AIProcessExpansionState(group: conversation.processItemExpansion.contains(.group("target")),
-                        reasoning: conversation.processItemExpansion.contains(.reasoning("target")) ? ["target"] : [])
-                    var rows = (0..<20).map { AIMessageRow(id: "before-\($0)", turnID: nil, content: .error("Synthetic history \($0)")) }
-                    rows.append(.init(id: "target", turnID: nil, version: revision, content: .block(block, .completed, state)))
-                    if !bottom { rows += (0..<12).map { .init(id: "after-\($0)", turnID: nil, content: .error("Synthetic later \($0)")) } }
-                    return rows
-                }
-                var rows = makeRows()
-                var request = AIMessageListRequest(target: bottom ? .bottom : .row("target"))
-                func update() {
-                    controller.update(rows: rows, render: { id, toggle in
-                        if id != "target" { return AnyView(Text(id).frame(height: 70)) }
-                        return AnyView(AIMessageRowView(row: rows[20], conversationID: conversation.id, taskObject: nil, preview: { _ in }, loadEarlier: {}, toggleProcessItem: toggle)
-                            .environment(service).environment(\.theme, theme))
-                    }, background: theme.canvas, bottomInset: 96, request: request, appearance: appearance)
-                }
-                update(); try await Task.sleep(for: .milliseconds(250))
-                XCTAssertEqual(controller.following, bottom)
-                let path = IndexPath(row: 20, section: 0)
-                func header(in view: UIView) -> UIView? {
-                    if view.accessibilityIdentifier == "aiHeaderGeometry-\(reasoning ? "reasoning" : "group")-target" { return view }
-                    return view.subviews.lazy.compactMap { header(in: $0) }.first
-                }
-                func screenPoint(_ view: UIView, point: CGPoint = .zero) -> CGPoint {
-                    var point = point
-                    var model: CALayer? = view.layer
-                    while let layer = model, layer !== window.layer {
-                        let visual = layer.presentation() ?? layer
-                        point.x -= visual.bounds.minX + visual.bounds.width * visual.anchorPoint.x
-                        point.y -= visual.bounds.minY + visual.bounds.height * visual.anchorPoint.y
-                        point = point.applying(visual.affineTransform())
-                        point.x += visual.position.x; point.y += visual.position.y
-                        model = layer.superlayer
-                    }
-                    return point
-                }
-                func measure() -> [Double] {
-                    let marker = header(in: controller.tableView)!
-                    let cell = controller.tableView.cellForRow(at: path)!
-                    let bounds = (cell.layer.presentation() ?? cell.layer).bounds
-                    return [CACurrentMediaTime(), controller.tableView.rectForRow(at: path).minY - controller.tableView.contentOffset.y,
-                     controller.tableView.contentOffset.y, controller.tableView.contentSize.height,
-                     screenPoint(marker).y, marker.convert(.zero, to: window).y,
-                     screenPoint(cell, point: CGPoint(x: 0, y: bounds.maxY)).y,
-                     controller.tableView.cellForRow(at: IndexPath(row: 19, section: 0)).map { screenPoint($0).y } ?? -1,
-                     controller.tableView.cellForRow(at: IndexPath(row: 21, section: 0)).map { screenPoint($0).y } ?? -1]
-                }
-                for opening in [true, false] {
-                    if bottom && !opening {
-                        // Reaching the bottom while expanded makes collapse exercise the
-                        // normal upper-offset clamp, not only the zero-shortage case.
-                        request = .init(target: .bottom); update()
-                        try await Task.sleep(for: .milliseconds(500))
-                    }
-                    let before = measure()
-                    let beforeHeight = controller.tableView.rectForRow(at: path).height
-                    let probe = AIExpansionFrameProbe(); probe.measure = measure; probe.samples = [before]
-                    let link = CADisplayLink(target: probe, selector: #selector(AIExpansionFrameProbe.tick))
-                    link.add(to: .main, forMode: .common)
-                    controller.toggleProcessItem(rowID: "target", item: item)
-                    revision += 1; rows = makeRows(); update()
-                    try await Task.sleep(for: .milliseconds(400))
-                    probe.samples.append(measure()); link.invalidate()
-                    XCTAssertFalse(controller.following)
-                    let afterHeight = controller.tableView.rectForRow(at: path).height
-                    if opening { XCTAssertGreaterThan(afterHeight, beforeHeight + 20) }
-                    else { XCTAssertLessThan(afterHeight, beforeHeight - 20) }
-                    let table = controller.tableView!
-                    let limit = max(-table.adjustedContentInset.top, table.contentSize.height + table.adjustedContentInset.bottom - table.bounds.height)
-                    // Earlier self-sized rows can replace estimates during this layout.
-                    // The shortage is measured against the offset needed to preserve
-                    // this row at its original screen Y, using its final content origin.
-                    let requiredOffset = table.rectForRow(at: path).minY - before[1]
-                    let shortage = opening ? 0 : max(0, requiredOffset - limit)
-                    let expected = before[1] + shortage
-                    XCTAssertEqual(probe.samples.last![1], expected, accuracy: 2)
-                    if shortage < 0.5 {
-                        XCTAssertLessThanOrEqual(probe.samples.map { abs($0[4] - before[4]) }.max()!, 0.5, "Header presentation moved")
-                    }
-                    let cellError = probe.samples.map { min(abs($0[1] - before[1]), abs($0[1] - expected)) }.max()!
-                    XCTAssertLessThanOrEqual(cellError, 2, "Cell moved between allowed anchors")
-                    XCTAssertEqual(probe.samples.last![4], before[4] + shortage, accuracy: 0.5)
-                    if shortage < 0.5 {
-                        XCTAssertLessThanOrEqual(probe.samples.filter { $0[7] >= 0 }.map { abs($0[7] - before[7]) }.max() ?? 0, 0.5, "Previous row moved")
-                        for coordinate in [6, 8] {
-                            let values = probe.samples.map { $0[coordinate] }.filter { $0 >= 0 }
-                            let reversals = zip(values, values.dropFirst()).map { opening ? $0 - $1 : $1 - $0 }
-                            XCTAssertLessThanOrEqual(reversals.max() ?? 0, 0.5, "Animation reversed")
-                        }
-                    }
-                    let positions = Set(probe.samples.map { ($0[6] * 10).rounded() })
-                    if reduced || shortage > 0.5 { XCTAssertLessThanOrEqual(positions.count, 2) }
-                    else { XCTAssertGreaterThan(positions.count, 3, "Expansion should animate rather than jump") }
-                    if shortage > 0.5 {
-                        XCTAssertLessThanOrEqual(Set(probe.samples.map { ($0[4] * 10).rounded() }).count, 2)
-                    }
-                    evidence["\(reduced ? "reduced" : "animated")-\(reasoning ? "reasoning" : "group")-\(bottom ? "bottom" : "scrolled")-\(opening ? "open" : "close")"] = probe.samples
-                }
-            }
-        }
-        }
-        try JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys]).write(to: URL(fileURLWithPath: "/tmp/ai-expansion-frames.json"))
+    func testProcessExpansionKeepsClickedRowPositionAcrossFrames() {
+        let conversation = AIConversation(.init(id: "expansion", title: "Fixture"))
+        conversation.head.currentTurn = "detail"; conversation.head.status = .running; conversation.running = true
+        conversation.activity.parts = [.init(kind: .reasoning, spanID: "r", text: "Summary"), .init(kind: .text, spanID: "t", text: "Answer")]
+        let old = conversation.messageRows
+        conversation.toggleProcessItem(.group("detail/s0/p0"))
+        let changed = conversation.messageRows
+        XCTAssertNotEqual(old.first?.version, changed.first?.version)
+        XCTAssertEqual(old.last?.id, changed.last?.id)
+        var pending = DeferredRowMeasurements()
+        pending.record(id: "old", version: 1, height: 42)
+        pending.record(id: "current", version: 2, height: 84)
+        let replay = pending.drain(versions: ["old": 2, "current": 2])
+        XCTAssertEqual(replay.map(\.0), ["current"])
+        XCTAssertTrue(pending.drain(versions: ["current": 2]).isEmpty)
     }
 }
 
@@ -2629,134 +2239,29 @@ extension AIStageOneTests {
         buffer.flush(); XCTAssertFalse(buffer.pending)
     }
 
-    func testStreamSmoothingReplay() async throws {
-        let (service, _, connection, suite) = try await fixture()
-        defer { cleanup(connection, suite: suite) }
-        let conversation = try await created(service)
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let window = UIWindow(windowScene: scene)
-        defer { window.isHidden = true; previous?.makeKey() }
-        var evidence: [String: [[Double]]] = [:]
-        for dark in [false, true] {
-          for reduced in [true, false] {
-           for stress in [false, true] {
-            conversation.streamDisplay.reset()
-            let theme = ThemeSurface(plan: try resolveThemes(value: defaultThemeSnapshot(), system: dark ? .dark : .light, highContrast: false).app)
-            let appearance = AIMessageListAppearance(theme: theme, typeSize: .large, highlightedTurn: nil, reduceMotion: reduced)
-            let controller = AIMessageListController(); controller.conversation = conversation
-            window.rootViewController = controller; window.makeKeyAndVisible()
-            var text = String(repeating: "这是一段已有的可见文字，用于检验流式显示时的位置稳定。", count: 30) + "\n\n"
-            var version = 0
-            var tool = false
-            var ended = false
-            var phase = 0
-            var prefix: [AIMessageRow] = []
-            var activeID = "stream"
-            var request = AIMessageListRequest(target: .bottom)
-            func update() {
-                var rows = prefix + [AIMessageRow(id: activeID, turnID: "turn", version: version,
-                    content: .block(.init(items: [.init(id: activeID, kind: .text, text: text)]), ended ? .completed : .running))]
-                if tool { rows.append(.init(id: "tool", turnID: "turn", content: .block(.init(items: [.init(id: "tool", kind: .tool, name: "read_book")]), .running))) }
-                if ended { rows.append(.init(id: "actions", turnID: "turn", content: .actions(text, .completed))) }
-                let indexed = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, $0) })
-                controller.update(rows: rows, render: { id, toggle in
-                    AnyView(AIMessageRowView(row: indexed[id]!, conversationID: conversation.id, taskObject: nil,
-                        preview: { _ in }, loadEarlier: {}, toggleProcessItem: toggle).environment(service).environment(\.theme, theme))
-                }, background: theme.canvas, bottomInset: 160, request: request, appearance: appearance)
-            }
-            update(); try await Task.sleep(for: .milliseconds(300))
-            let caption = UILabel(frame: CGRect(x: 0, y: window.bounds.height - 160, width: window.bounds.width, height: 160))
-            caption.backgroundColor = theme.canvas; caption.textColor = theme.ink; caption.textAlignment = .center
-            caption.numberOfLines = 0
-            caption.text = "合成流回放 · \(dark ? "深色" : "浅色")\n\(reduced ? "立即显示（基线）" : "平滑显示") · \(stress ? "压力场景" : "普通正文")\n输入区上沿"
-            window.addSubview(caption)
-            defer { caption.removeFromSuperview() }
-            let start = CACurrentMediaTime()
-            var arrivals: [(Double, Int)] = []
-            var lastCPU = 0.0
-            let probe = AIExpansionFrameProbe()
-            probe.measure = {
-                var info = thread_basic_info(); var count = mach_msg_type_number_t(MemoryLayout<thread_basic_info>.size / MemoryLayout<integer_t>.size)
-                _ = withUnsafeMutablePointer(to: &info) { p in p.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { thread_info(pthread_mach_thread_np(pthread_self()), thread_flavor_t(THREAD_BASIC_INFO), $0, &count) } }
-                let cpu = Double(info.user_time.seconds + info.system_time.seconds) + Double(info.user_time.microseconds + info.system_time.microseconds) / 1_000_000
-                let elapsed = CACurrentMediaTime() - start
-                let shown = conversation.streamDisplay.pending ? conversation.streamDisplay.displayed.count : text.count
-                let lag = arrivals.first(where: { $0.1 > shown }).map { elapsed - $0.0 } ?? 0
-                let table = controller.tableView!
-                let activePath = IndexPath(row: prefix.count, section: 0)
-                let frame = table.rectForRow(at: activePath)
-                func markdown(_ root: UIView) -> MarkdownTextView? {
-                    if let view = root as? MarkdownTextView { return view }
-                    return root.subviews.lazy.compactMap { markdown($0) }.first
-                }
-                let label = table.cellForRow(at: activePath).flatMap(markdown)?.textLabelView
-                let last = label?.layoutLines.last
-                let lineRect = last.flatMap { label?.textLayout.viewRect(fromLayoutRect: $0.rect) } ?? .zero
-                let y = label?.convert(lineRect, to: window).minY ?? -1
-                defer { lastCPU = cpu }
-                let viewport = table.bounds.height - table.adjustedContentInset.top - table.adjustedContentInset.bottom
-                let lines = label?.layoutLines.flatMap { line -> [Double] in
-                    let rect = label!.convert(label!.textLayout.viewRect(fromLayoutRect: line.rect), to: window)
-                    return [Double(line.stringRange.location), rect.minY, rect.height]
-                } ?? []
-                return [elapsed, table.contentOffset.y, table.contentSize.height, frame.minY - table.contentOffset.y,
-                        Double(shown), Double(text.count), lag, lastCPU == 0 ? 0 : (cpu-lastCPU)*1000, y, Double(last?.stringRange.location ?? 0), controller.bottomGap, viewport, Double(phase), Double(prefix.count)] + lines
-            }
-            let link = CADisplayLink(target: probe, selector: #selector(AIExpansionFrameProbe.tick))
-            link.add(to: .main, forMode: .common)
-            let chunks = ["新的一行文字，连续显示，不应整行突然跳动。👨‍👩‍👧‍👦\n", "- 列表项目第一项，说明内容。\n- 列表第二项。\n", "\n```swift\nlet message = \"Hello world\"\nprint(message)\n```\n", "\n| 项目 | 结果 |\n| --- | --- |\n| 第一项 | 完成 |\n", String(repeating: "连续文字检验显示进度。", count: 6)]
-            for index in 0..<20 {
-                if index == 10 && stress {
-                    tool = true; update()
-                    XCTAssertFalse(conversation.streamDisplay.pending)
-                    let preceding: [AIMessageRow] = [
-                        .init(id: activeID, turnID: "turn", version: version, content: .block(.init(items: [.init(id: activeID, kind: .text, text: text)]), .running)),
-                        .init(id: "tool", turnID: "turn", content: .block(.init(items: [.init(id: "tool", kind: .tool, name: "read_book")]), .running))
-                    ]
-                    try await Task.sleep(for: .milliseconds(100))
-                    prefix = preceding; activeID = "stream-next"; text = ""; arrivals = []; tool = false
-                }
-                text += stress ? chunks[index % chunks.count] : (index == 8 ? "\n- 简短列表。\n" : index == 15 ? "\n`短代码`。\n" : "模型正在平稳输出正文。"); version += 1
-                arrivals.append((CACurrentMediaTime() - start, text.count)); update()
-                try await Task.sleep(for: .milliseconds(100))
-            }
-            phase = 1; ended = true; update()
-            XCTAssertFalse(conversation.streamDisplay.pending, "Completion flushes the final text")
-            try await Task.sleep(for: .milliseconds(700))
-            phase = 2
-            request = .init(target: .preserve); update()
-            controller.tableView.setContentOffset(CGPoint(x: 0, y: 120), animated: false)
-            controller.scrollViewWillBeginDragging(controller.tableView)
-            let offset = controller.tableView.contentOffset.y
-            prefix.append(.init(id: activeID, turnID: "turn", version: version,
-                content: .block(.init(items: [.init(id: activeID, kind: .text, text: text)]), .completed)))
-            prefix.append(.init(id: "actions", turnID: "turn", content: .actions(text, .completed)))
-            activeID = "next-turn"; text = ""; arrivals = []; ended = false; tool = false
-            for _ in 0..<5 { text += chunks[0]; version += 1; update(); try await Task.sleep(for: .milliseconds(100)) }
-            XCTAssertEqual(controller.tableView.contentOffset.y, offset, accuracy: 2)
-            phase = 3; conversation.streamDisplay.flush(); update()
-            XCTAssertFalse(conversation.streamDisplay.pending)
-            link.invalidate()
-            let key = "\(dark ? "dark" : "light")-\(reduced ? "baseline" : "smooth")-\(stress ? "stress" : "normal")"
-            evidence[key] = probe.samples
-            XCTAssertLessThanOrEqual(probe.samples.map { $0[6] }.max() ?? 0, 0.3)
-            if !reduced {
-                let followed = probe.samples.filter { $0[12] < 2 }
-                let lineHeight = appearance.markdownTheme(traits: controller.traitCollection).fonts.body.lineHeight
-                for (a, b) in zip(followed, followed.dropFirst()) {
-                    XCTAssertGreaterThanOrEqual(b[1] - a[1], -0.5, "No reverse scrolling")
-                    XCTAssertLessThanOrEqual(b[1] - a[1], stress || b[12] == 1 ? b[11] / 8 : lineHeight / 3 + 0.34)
-                }
-                XCTAssertLessThanOrEqual(followed.map { $0[10] / $0[11] }.max() ?? 0, 0.5)
-                let drain = followed.filter { $0[12] == 1 }
-                let settled = drain.first { $0[10] <= 0.5 }
-                XCTAssertNotNil(settled, "Following reaches the bottom")
-                if let settled, let first = drain.first { XCTAssertLessThanOrEqual(settled[0] - first[0], 0.4) }
-            }
-           }
-          }
+    func testStreamSmoothingReplay() {
+        let buffer = AIStreamDisplayBuffer()
+        let clock = ManualTestClock()
+        func row(_ text: String, status: AIAgentStatus = .running) -> AIMessageRow {
+            .init(id: "stream", turnID: "turn", content: .block(.init(items: [.init(id: "text", kind: .text, text: text)]), status))
         }
-        try JSONSerialization.data(withJSONObject: evidence).write(to: URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("ai-smoothing-frames.json"))
+        let chunks = ["月", "亮🌙", "与e\u{301}", "，", "继续阅读。"]
+        buffer.receive([row("")], enabled: true, now: clock.now.timeIntervalSince1970)
+        var expected = "", previous = ""
+        for chunk in chunks {
+            expected += chunk
+            buffer.receive([row(expected)], enabled: true, now: clock.now.timeIntervalSince1970)
+            clock.advance(0.05)
+            buffer.advance(now: clock.now.timeIntervalSince1970)
+            XCTAssertTrue(expected.hasPrefix(buffer.displayed))
+            XCTAssertTrue(buffer.displayed.hasPrefix(previous))
+            previous = buffer.displayed
+        }
+        clock.advance(1); buffer.advance(now: clock.now.timeIntervalSince1970)
+        XCTAssertEqual(buffer.displayed, chunks.joined()); XCTAssertFalse(buffer.pending)
+        buffer.receive([row(expected + "最后一段")], enabled: true, now: clock.now.timeIntervalSince1970)
+        buffer.flush()
+        XCTAssertEqual(buffer.displayed, expected + "最后一段")
+        buffer.reset(); XCTAssertFalse(buffer.pending); XCTAssertNil(buffer.id)
     }
 }

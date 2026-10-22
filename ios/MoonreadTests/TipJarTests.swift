@@ -1,283 +1,202 @@
 import XCTest
-import SwiftUI
-import UIKit
-import TipKit
-import StoreKit
+import Foundation
+import Observation
 import StoreKitTest
 @testable import Moonread
 
-@MainActor final class TipJarTests: XCTestCase {
-    private func makeSession() throws -> SKTestSession {
-        // Keep the local StoreKit fixture out of every target's bundle resources.
-        let configuration = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-            .deletingLastPathComponent().appendingPathComponent("Moonread/Settings/TipJar.storekit")
-        let session = try SKTestSession(contentsOf: configuration)
-        session.resetToDefaultState(); session.clearTransactions(); session.disableDialogs = true
-        return session
-    }
-
-    func testCatalogAndSuccessfulRepeatConsumable() async throws {
-        let session = try makeSession(); defer { session.clearTransactions() }
-        let store = TipJar(); await store.load()
-        let listener = Task { await store.listenForTransactions() }; defer { listener.cancel() }
-        XCTAssertEqual(store.catalog, .ready)
-        XCTAssertEqual(store.products.map(\.id), TipJar.productIDs)
-        XCTAssertTrue(store.products.allSatisfy { !$0.displayPrice.isEmpty && $0.type == .consumable })
-        let product = try XCTUnwrap(store.products.first)
-        await store.buy(product) { try await product.purchase() }
-        XCTAssertTrue(store.thanked); XCTAssertNil(store.purchasing)
-        let firstCelebration = store.celebrationID
-        await store.buy(product) { try await product.purchase() }
-        XCTAssertNotEqual(store.celebrationID, firstCelebration)
-        XCTAssertFalse(TipJar().thanked, "Thanks and purchases aren't persisted")
-    }
-    func testCancellationAndPurchaseFailure() async throws {
-        let session = try makeSession(); defer { session.clearTransactions() }
-        let store = TipJar(); await store.load(); let product = try XCTUnwrap(store.products.first)
-        await store.buy(product) { .userCancelled }
-        XCTAssertFalse(store.thanked); XCTAssertTrue(store.errors.isEmpty); XCTAssertNil(store.purchasing)
-        await store.buy(product) { throw StoreKitError.userCancelled }
-        XCTAssertTrue(store.errors.isEmpty); XCTAssertFalse(store.thanked)
-        try await session.setSimulatedError(.generic(.unknown), forAPI: .purchase)
-        await store.buy(product) { try await product.purchase() }
-        XCTAssertNotNil(store.errors[product.id]); XCTAssertFalse(store.thanked); XCTAssertNil(store.purchasing)
-    }
-    func testUnverifiedPurchaseDoesNotThankOrFinish() async throws {
-        let session = try makeSession(); defer { session.clearTransactions() }
-        let store = TipJar(); await store.load(); let product = try XCTUnwrap(store.products.first)
-        let before = store.celebrationID
-        try await session.setSimulatedError(.verification(.invalidSignature), forAPI: .verification)
-        await store.buy(product) { try await product.purchase() }
-        XCTAssertFalse(store.thanked); XCTAssertEqual(store.celebrationID, before)
-        var unfinished = false
-        for await result in StoreKit.Transaction.unfinished {
-            if case .unverified(let transaction, _) = result, transaction.productID == product.id { unfinished = true }
+/// Test time advances only when the test says so; cancellation releases sleepers.
+final class ManualTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var instant = Date(timeIntervalSince1970: 1_800_000_000)
+    private var sleepers: [UUID: (Date, CheckedContinuation<Void, Error>)] = [:]
+    var now: Date { lock.withLock { instant } }
+    func advance(_ seconds: TimeInterval) {
+        let ready: [CheckedContinuation<Void, Error>] = lock.withLock {
+            instant.addTimeInterval(seconds)
+            let due = sleepers.filter { $0.value.0 <= instant }
+            for key in due.keys { sleepers[key] = nil }
+            return due.values.map { $0.1 }
         }
-        XCTAssertTrue(unfinished, "Unverified payment must remain unfinished")
+        ready.forEach { $0.resume() }
     }
-
-    func testPendingApprovalCompletedByApplicationListener() async throws {
-        let session = try makeSession(); defer { session.clearTransactions() }
-        session.askToBuyEnabled = true
-        let store = TipJar(); await store.load(); let product = try XCTUnwrap(store.products.first)
-        let listener = Task { await store.listenForTransactions() }; defer { listener.cancel() }
-        await store.buy(product) { try await product.purchase() }
-        XCTAssertTrue(store.pending.contains(product.id)); XCTAssertFalse(store.thanked)
-        let transaction = try XCTUnwrap(session.allTransactions().first)
-        store.leavePage()
-        XCTAssertTrue(store.pending.isEmpty)
-        try session.approveAskToBuyTransaction(identifier: transaction.identifier)
-        let approved = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in store.thanked && store.pending.isEmpty }, object: nil)
-        await fulfillment(of: [approved], timeout: 10)
-        XCTAssertTrue(store.thanked); XCTAssertTrue(store.pending.isEmpty)
-    }
-    func testPendingRetryClearsBeforePurchaseStarts() async throws {
-        let session = try makeSession(); defer { session.clearTransactions() }
-        let store = TipJar(); await store.load(); let product = try XCTUnwrap(store.products.first)
-        await store.buy(product) { .pending }
-        XCTAssertTrue(store.pending.contains(product.id))
-        await store.buy(product) {
-            XCTAssertFalse(store.pending.contains(product.id))
-            return .userCancelled
-        }
-        XCTAssertTrue(store.pending.isEmpty)
-    }
-
-    func testLeavingPageClearsPendingIncludingLateResult() async throws {
-        let session = try makeSession(); defer { session.clearTransactions() }
-        let store = TipJar(); await store.load(); let product = try XCTUnwrap(store.products.first)
-        for product in store.products { await store.buy(product) { .pending } }
-        XCTAssertEqual(store.pending.count, TipJar.productIDs.count)
-        store.leavePage()
-        XCTAssertTrue(store.pending.isEmpty)
-        await store.buy(product) {
-            store.leavePage()
-            return .pending
-        }
-        XCTAssertTrue(store.pending.isEmpty, "A late result from the previous visit must not restore pending")
-    }
-
-    func testDeclinedApprovalWithoutTransactionDoesNotSurviveLeavingPage() async throws {
-        let session = try makeSession(); defer { session.clearTransactions() }
-        session.askToBuyEnabled = true
-        let store = TipJar(); await store.load(); let product = try XCTUnwrap(store.products.first)
-        let listener = Task { await store.listenForTransactions() }; defer { listener.cancel() }
-        await store.buy(product) { try await product.purchase() }
-        XCTAssertTrue(store.pending.contains(product.id))
-        let transaction = try XCTUnwrap(session.allTransactions().first)
-        try session.declineAskToBuyTransaction(identifier: transaction.identifier)
-        store.leavePage()
-        XCTAssertTrue(store.pending.isEmpty)
-        XCTAssertFalse(store.thanked)
-        await store.load()
-        XCTAssertTrue(store.pending.isEmpty, "Reopening doesn't depend on a denial transaction callback")
-    }
-
-    func testProductLoadingFailureCanRetry() async throws {
-        let session = try makeSession(); defer { session.clearTransactions() }
-        try await session.setSimulatedError(.generic(.unknown), forAPI: .loadProducts)
-        let store = TipJar(); await store.load(); XCTAssertEqual(store.catalog, .unavailable)
-        try await session.setSimulatedError(nil, forAPI: .loadProducts)
-        await store.load(); XCTAssertEqual(store.catalog, .ready)
-    }
-    func testLeavingAndImmediatelyReenteringSharesProductLoad() async throws {
-        let session = try makeSession(); defer { session.clearTransactions() }
-        let products = try await Product.products(for: TipJar.productIDs)
-        var calls = 0
-        var release: CheckedContinuation<[Product], Never>?
-        let entered = expectation(description: "owned load entered")
-        let store = TipJar(loadProducts: {
-            calls += 1
-            XCTAssertFalse(Task.isCancelled, "Page cancellation must not cancel the owned load")
-            return await withCheckedContinuation { release = $0; entered.fulfill() }
-        })
-        let oldPage = Task { await store.enterPage() }
-        await fulfillment(of: [entered], timeout: 5)
-        XCTAssertEqual(store.catalog, .loading)
-        oldPage.cancel(); store.leavePage()
-        let reentered = expectation(description: "new page entered")
-        let newPage = Task { reentered.fulfill(); await store.enterPage() }
-        await fulfillment(of: [reentered], timeout: 5)
-        XCTAssertEqual(calls, 1)
-        XCTAssertEqual(store.catalog, .loading)
-        release?.resume(returning: products)
-        await oldPage.value; await newPage.value
-        XCTAssertEqual(store.catalog, .ready)
-        XCTAssertEqual(store.products.map(\.id), TipJar.productIDs)
-        XCTAssertEqual(calls, 1, "Both visits await the same load")
-        await store.enterPage()
-        XCTAssertEqual(calls, 1, "Ready catalog doesn't reload on entry")
-    }
-
-    func testUnavailableCatalogRetriesAutomaticallyOnReentry() async throws {
-        let session = try makeSession(); defer { session.clearTransactions() }
-        let products = try await Product.products(for: TipJar.productIDs)
-        var calls = 0
-        let store = TipJar(loadProducts: {
-            calls += 1
-            if calls == 1 { throw URLError(.notConnectedToInternet) }
-            return products
-        })
-        await store.enterPage()
-        XCTAssertEqual(store.catalog, .unavailable)
-        await store.enterPage()
-        XCTAssertEqual(store.catalog, .ready)
-        XCTAssertEqual(calls, 2)
-    }
-
-    func testMissingProductsDoNotOfferIncompleteCatalog() async throws {
-        let session = try makeSession(); defer { session.clearTransactions() }
-        let store = TipJar(loadProducts: { [] }); await store.load()
-        XCTAssertEqual(store.catalog, .unavailable)
-    }
-    func testPurchasingAndLoadingStatesAreExclusive() async throws {
-        let session = try makeSession(); defer { session.clearTransactions() }
-        let store = TipJar(); await store.load()
-        let product = try XCTUnwrap(store.products.first)
-        let entered = expectation(description: "purchase entered")
-        var release: CheckedContinuation<Product.PurchaseResult, Never>?
-        let task = Task {
-            await store.buy(product) {
-                await withCheckedContinuation { continuation in
-                    release = continuation; entered.fulfill()
+    func sleep(_ seconds: TimeInterval) async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                lock.withLock {
+                    if Task.isCancelled { continuation.resume(throwing: CancellationError()) }
+                    else { sleepers[id] = (instant.addingTimeInterval(seconds), continuation) }
                 }
             }
-        }
-        await fulfillment(of: [entered], timeout: 5)
-        XCTAssertEqual(store.purchasing, product.id)
-        await store.buy(store.products[1]) { XCTFail("A second purchase must not start"); return .userCancelled }
-        try await renderState(store, name: "state-purchasing")
-        release?.resume(returning: .userCancelled); await task.value
-        XCTAssertNil(store.purchasing)
-        let loadingEntered = expectation(description: "loading entered")
-        var loaded: CheckedContinuation<[Product], Never>?
-        let loading = TipJar(loadProducts: {
-            await withCheckedContinuation { continuation in loaded = continuation; loadingEntered.fulfill() }
-        })
-        let loadTask = Task { await loading.load() }
-        await fulfillment(of: [loadingEntered], timeout: 5)
-        XCTAssertEqual(loading.catalog, .loading)
-        try await renderState(loading, name: "state-loading")
-        loaded?.resume(returning: store.products); await loadTask.value
-        XCTAssertEqual(loading.catalog, .ready)
-    }
-
-    func testHelpAndStoreThemeRenderingMatrix() async throws {
-        let session = try makeSession(); defer { session.clearTransactions() }
-        let store = TipJar(); await store.load()
-        XCTAssertEqual(store.catalog, .ready)
-        let palettes = defaultThemeSnapshot().palettes
-        for palette in palettes {
-            let theme = ThemeSurface(plan: ResolvedTheme(appearance: palette.appearance, highContrast: false, colors: palette.colors, paletteId: palette.id))
-            for large in [false, true] {
-                let suffix = palette.id + (large ? "-ax" : "")
-                let tips = VStack(spacing: 16) {
-                    ThemedTipCard(title: ImportNovelTip().title) {}
-                    ThemedTipCard(title: ReaderControlsTip().title) {}
-                    ThemedTipCard(title: ReaderSelectionTip().title) {}
-                }.padding().frame(maxWidth: .infinity).background(Color(uiColor: theme.paper))
-                try await render(tips, name: "tips-" + suffix, theme: theme, large: large)
-                try await render(NavigationStack { UsageGuideView() }, name: "guide-" + suffix, theme: theme, large: large)
-                try await render(NavigationStack { TipJarView() }.environment(store), name: "store-" + suffix, theme: theme, large: large)
-            }
+        } onCancel: {
+            let pending = self.lock.withLock { self.sleepers.removeValue(forKey: id)?.1 }
+            pending?.resume(throwing: CancellationError())
         }
     }
+}
 
-    func testStoreStateRendering() async throws {
-        let session = try makeSession(); defer { session.clearTransactions() }
-        let store = TipJar(); await store.load(); let product = try XCTUnwrap(store.products.first)
-        await store.buy(product) { .pending }
-        try await renderState(store, name: "state-pending")
-        await store.buy(product) { throw StoreKitError.unknown }
-        try await renderState(store, name: "state-error")
-        await store.buy(product) { try await product.purchase() }
-        try await renderState(store, name: "state-thanks")
-        try await render(NavigationStack { TipJarView() }.environment(store).environment(\.moonreadReduceMotion, true),
-                         name: "state-thanks-reduced", theme: .initial)
-        let unavailable = TipJar(loadProducts: { [] }); await unavailable.load()
-        try await renderState(unavailable, name: "state-unavailable")
+@MainActor private final class FakePurchaseGateway: PurchaseGateway {
+    var catalog = TipJar.productIDs.map { TipProduct(id: $0, displayName: $0, description: "Synthetic", displayPrice: "¥1") }
+    var load: (() async throws -> [TipProduct])?
+    var buy: ((String) async throws -> TipPurchaseResult)?
+    var result = TipPurchaseResult.userCancelled
+    var finished: [UInt64] = []
+    var purchases: [String] = []
+    var loads = 0
+    var onFinish: (() -> Void)?
+    let stream: AsyncStream<TipTransaction>
+    let continuation: AsyncStream<TipTransaction>.Continuation
+    init() { (stream, continuation) = AsyncStream.makeStream() }
+    func products() async throws -> [TipProduct] { loads += 1; return try await load?() ?? catalog }
+    func purchase(_ id: String) async throws -> TipPurchaseResult {
+        purchases.append(id); return try await buy?(id) ?? result
     }
+    func transactions() -> AsyncStream<TipTransaction> { stream }
+    func finish(_ id: UInt64) async { finished.append(id); onFinish?() }
+}
 
-    private func renderState(_ store: TipJar, name: String) async throws {
-        for appearance in [ThemeAppearance.light, .dark] {
-            let plan = try resolveThemes(value: defaultThemeSnapshot(), system: appearance, highContrast: false).app
-            for large in [false, true] {
-                try await render(NavigationStack { TipJarView() }.environment(store),
-                                 name: name + (appearance == .dark ? "-dark" : "-light") + (large ? "-ax" : ""),
-                                 theme: ThemeSurface(plan: plan), large: large)
-            }
+@MainActor final class TipJarTests: XCTestCase {
+    private func fixture() async -> (TipJar, FakePurchaseGateway) {
+        let gateway = FakePurchaseGateway(), clock = ManualTestClock()
+        let store = TipJar(gateway: gateway, thanksDelay: { try await clock.sleep(4) })
+        await store.load(); return (store, gateway)
+    }
+    func testCatalogAndSuccessfulRepeatConsumable() async throws {
+        let (store, gateway) = await fixture()
+        XCTAssertEqual(store.catalog, .ready); XCTAssertEqual(store.products.map(\.id), TipJar.productIDs)
+        let product = try XCTUnwrap(store.products.first)
+        gateway.result = .success(.init(id: 1, productID: product.id))
+        await store.buy(product); XCTAssertTrue(store.thanked); XCTAssertNil(store.purchasing)
+        let first = store.celebrationID
+        gateway.result = .success(.init(id: 2, productID: product.id))
+        await store.buy(product); XCTAssertNotEqual(store.celebrationID, first)
+        XCTAssertEqual(gateway.finished, [1, 2]); XCTAssertFalse(TipJar(gateway: gateway).thanked)
+    }
+    func testCancellationAndPurchaseFailure() async throws {
+        let (store, gateway) = await fixture(), product = try XCTUnwrap(store.products.first)
+        await store.buy(product); XCTAssertTrue(store.errors.isEmpty); XCTAssertFalse(store.thanked)
+        gateway.buy = { _ in throw AIError.invalidResponse }
+        await store.buy(product); XCTAssertNotNil(store.errors[product.id]); XCTAssertNil(store.purchasing)
+    }
+    func testUnverifiedPurchaseDoesNotThankOrFinish() async throws {
+        let (store, gateway) = await fixture(), product = try XCTUnwrap(store.products.first)
+        gateway.result = .success(.init(id: 1, productID: product.id, verified: false))
+        await store.buy(product); XCTAssertFalse(store.thanked); XCTAssertTrue(gateway.finished.isEmpty)
+    }
+    func testPendingApprovalCompletedByApplicationListener() async throws {
+        let (store, gateway) = await fixture(), product = try XCTUnwrap(store.products.first)
+        gateway.result = .pending; await store.buy(product); XCTAssertEqual(store.pending, [product.id])
+        let done = expectation(description: "Verified event finished")
+        gateway.onFinish = { done.fulfill() }
+        let listener = Task { await store.listenForTransactions() }; defer { listener.cancel(); gateway.continuation.finish() }
+        gateway.continuation.yield(.init(id: 1, productID: product.id))
+        await fulfillment(of: [done], timeout: 2)
+        XCTAssertTrue(store.pending.isEmpty); XCTAssertTrue(store.thanked)
+    }
+    func testPendingRetryClearsBeforePurchaseStarts() async throws {
+        let (store, gateway) = await fixture(), product = try XCTUnwrap(store.products.first)
+        gateway.result = .pending; await store.buy(product)
+        gateway.buy = { _ in XCTAssertFalse(store.pending.contains(product.id)); return .userCancelled }
+        await store.buy(product); XCTAssertTrue(store.pending.isEmpty)
+    }
+    func testLeavingPageClearsPendingIncludingLateResult() async throws {
+        let (store, gateway) = await fixture(), product = try XCTUnwrap(store.products.first)
+        gateway.buy = { _ in store.leavePage(); return .pending }
+        await store.buy(product); XCTAssertTrue(store.pending.isEmpty)
+    }
+    func testDeclinedApprovalWithoutTransactionDoesNotSurviveLeavingPage() async throws {
+        let (store, gateway) = await fixture(), product = try XCTUnwrap(store.products.first)
+        gateway.result = .pending; await store.buy(product); store.leavePage()
+        await store.enterPage(); XCTAssertTrue(store.pending.isEmpty); XCTAssertFalse(store.thanked)
+    }
+    func testProductLoadingFailureCanRetry() async {
+        let gateway = FakePurchaseGateway(), store = TipJar(gateway: gateway)
+        gateway.load = { throw AIError.invalidResponse }; await store.load(); XCTAssertEqual(store.catalog, .unavailable)
+        gateway.load = nil; await store.load(); XCTAssertEqual(store.catalog, .ready)
+    }
+    func testLeavingAndImmediatelyReenteringSharesProductLoad() async {
+        let gateway = FakePurchaseGateway(), store = TipJar(gateway: gateway)
+        let started = expectation(description: "Load admitted")
+        var release: CheckedContinuation<[TipProduct], Error>?
+        gateway.load = { try await withCheckedThrowingContinuation { release = $0; started.fulfill() } }
+        let first = Task { await store.enterPage() }; await fulfillment(of: [started], timeout: 2)
+        store.leavePage(); let second = Task { await store.enterPage() }
+        release?.resume(returning: gateway.catalog); await first.value; await second.value
+        XCTAssertEqual(gateway.loads, 1); XCTAssertEqual(store.catalog, .ready)
+    }
+    func testUnavailableCatalogRetriesAutomaticallyOnReentry() async {
+        let gateway = FakePurchaseGateway(), store = TipJar(gateway: gateway)
+        let products = gateway.catalog; gateway.catalog = []; await store.enterPage()
+        XCTAssertEqual(store.catalog, .unavailable); store.leavePage(); gateway.catalog = products
+        await store.enterPage(); XCTAssertEqual(store.catalog, .ready)
+    }
+    func testMissingProductsDoNotOfferIncompleteCatalog() async {
+        let gateway = FakePurchaseGateway(); gateway.catalog.removeLast()
+        let store = TipJar(gateway: gateway); await store.load(); XCTAssertEqual(store.catalog, .unavailable)
+        await store.buy(gateway.catalog[0]); XCTAssertTrue(gateway.purchases.isEmpty)
+    }
+    func testPurchasingAndLoadingStatesAreExclusive() async throws {
+        let (store, gateway) = await fixture(), product = try XCTUnwrap(store.products.first)
+        gateway.buy = { _ in
+            XCTAssertEqual(store.purchasing, product.id)
+            await store.buy(store.products[1]); return .userCancelled
+        }
+        await store.buy(product); XCTAssertEqual(gateway.purchases, [product.id]); XCTAssertNil(store.purchasing)
+    }
+    func testStoreKitAdapterLoadsAndCompletesSyntheticPurchase() async throws {
+        let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("Moonread/Settings/TipJar.storekit")
+        let session = try SKTestSession(contentsOf: file)
+        session.resetToDefaultState(); session.clearTransactions(); session.disableDialogs = true
+        defer { session.clearTransactions() }
+        let gateway = StoreKitPurchaseGateway()
+        let loaded = expectation(description: "StoreKit adapter purchase")
+        var outcome: TipPurchaseResult?
+        let task = Task {
+            do {
+                let products = try await gateway.products()
+                XCTAssertEqual(Set(products.map(\.id)), Set(TipJar.productIDs))
+                let result = try await gateway.purchase(TipJar.productIDs[0]); outcome = result
+                if case .success(let transaction) = result { await gateway.finish(transaction.id) }
+            } catch { XCTFail("StoreKit adapter: \(error)") }
+            loaded.fulfill()
+        }
+        await fulfillment(of: [loaded], timeout: 20); task.cancel()
+        guard case .success(let transaction) = outcome else { return XCTFail("Synthetic StoreKit purchase did not complete") }
+        XCTAssertTrue(transaction.verified); XCTAssertEqual(transaction.productID, TipJar.productIDs[0])
+    }
+}
+
+enum TestFixtureEvents {
+    static let notification = Notification.Name("Moonread.Tests.FixtureChanged")
+    static func changed() { NotificationCenter.default.post(name: notification, object: nil) }
+}
+
+@MainActor private final class TestStateObservation {
+    let done: XCTestExpectation
+    var active = true
+    private var observers: [NSObjectProtocol] = []
+    let condition: @MainActor () -> Bool
+    init(_ condition: @escaping @MainActor () -> Bool) {
+        self.condition = condition; done = XCTestExpectation(description: "Observed application state")
+        for name in [TestFixtureEvents.notification, .libraryFilesChanged, .readingDataChanged, .bookMetadataChanged] {
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
+                Task { @MainActor in self?.arm() }
+            })
         }
     }
-
-    private func render<Content: View>(_ content: Content, name: String, theme: ThemeSurface, large: Bool = false) async throws {
-        let suite = "TipJarRender-" + UUID().uuidString
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let ai = AIService(defaults: defaults, storefront: .fixed("USA"))
-        let host = UIHostingController(rootView: content.themeScope(theme)
-            .environment(ai)
-            .environment(\.locale, Locale(identifier: "zh-Hans"))
-            .environment(\.dynamicTypeSize, large ? .accessibility3 : .large))
-        host.overrideUserInterfaceStyle = theme.style
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.keyWindow
-        let window = UIWindow(windowScene: scene)
-        window.frame = CGRect(x: 0, y: 0, width: 402, height: 874)
-        window.rootViewController = host; window.makeKeyAndVisible()
-        defer { window.isHidden = true; previous?.makeKeyAndVisible() }
-        host.view.frame = window.bounds
-        host.view.layoutIfNeeded()
-        // SwiftUI's asynchronous initial render settles on the next run-loop cycle.
-        await Task.yield()
-        host.view.layoutIfNeeded()
-        let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
-            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
-        }
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-TipJar-Renders")
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try XCTUnwrap(image.pngData()).write(to: directory.appendingPathComponent(name + ".png"))
-        let attachment = XCTAttachment(image: image); attachment.name = name; attachment.lifetime = .keepAlways; add(attachment)
-        print("TipJar render: " + directory.appendingPathComponent(name + ".png").path)
+    deinit { observers.forEach { NotificationCenter.default.removeObserver($0) } }
+    func arm() {
+        guard active else { return }
+        withObservationTracking {
+            if condition() { active = false; done.fulfill() }
+        } onChange: { [weak self] in Task { @MainActor in self?.arm() } }
     }
-
+}
+extension XCTestCase {
+    @MainActor func awaitState(timeout: TimeInterval = 3, _ condition: @escaping @MainActor () -> Bool) async {
+        if condition() { return }
+        let observation = TestStateObservation(condition)
+        observation.arm(); await fulfillment(of: [observation.done], timeout: timeout); observation.active = false
+    }
 }

@@ -60,15 +60,8 @@ final class ReadingReviewTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let service = ReaderService(core: try ReaderCore(dataDirectory: root.path))
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let prior = scene.windows.first(where: \.isKeyWindow), window = UIWindow(windowScene: scene)
-        defer { window.isHidden = true; prior?.makeKeyAndVisible() }
-        let text = String(repeating: "原创评分测试正文，只有实际可读停留才计时。\n", count: 100)
-        let controller = ReadingController(); window.rootViewController = controller; window.makeKeyAndVisible()
-        controller.configure(window: ReadingWindow(chunks: [TextChunk(index: 0, startUtf8: 0, endUtf8: UInt64(text.utf8.count), text: text)]), settings: ReaderSettings(mode: .scroll, fontSize: 20, lineSpacing: 8), anchor: 0,
-            dark: false, typeSize: .large, compactHeaderHeight: 22, controlsVisible: false, toggleControls: {}, readingBegan: {}, changed: { _, _ in })
-        controller.view.layoutIfNeeded()
-        let viewport = ReadingViewportAccess(); viewport.controller = controller
+        let viewport = ReadingViewportAccess(capture: { ReadingViewport(offset: 0, lineY: 0, size: .zero,
+            settings: defaultReaderSettings(), typeSize: .large, pages: []) }, range: { (0, 30) })
         let clock = ReviewTestTime()
         let writer = StatisticsWriter { _, _ in }
         let recorder = ReadingActivityRecorder(writer: writer, time: { ReadingActivityTime(uptime: clock.elapsed, date: self.now.addingTimeInterval(clock.elapsed)) }) {

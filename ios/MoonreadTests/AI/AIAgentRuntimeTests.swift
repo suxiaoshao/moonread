@@ -10,7 +10,7 @@ import SwiftUI
   var entered = false
   private var continuation: CheckedContinuation<Void, Never>?
   func pause() async {
-    entered = true
+    entered = true; TestFixtureEvents.changed()
     await withCheckedContinuation { continuation = $0 }
   }
   func release() { continuation?.resume(); continuation = nil }
@@ -42,7 +42,15 @@ private actor AgentCounter {
 private actor SessionToolGate {
   var started = false
   private var continuation: CheckedContinuation<Void, Never>?
-  func park() async { started = true; await withCheckedContinuation { continuation = $0 } }
+  private var admissions: [CheckedContinuation<Void, Never>] = []
+  func whenStarted() async {
+    if started { return }
+    await withCheckedContinuation { admissions.append($0) }
+  }
+  func park() async {
+    started = true; admissions.forEach { $0.resume() }; admissions = []
+    await withCheckedContinuation { continuation = $0 }
+  }
   func release() { continuation?.resume(); continuation = nil }
 }
 private struct SessionImageOutput: Codable, Sendable { var attachment: AIImageAttachment }
@@ -231,9 +239,9 @@ private struct SessionImageOutput: Codable, Sendable { var attachment: AIImageAt
     let runtime = try await AIAgentRuntime(
       id: "deny", store: AIAgentStore(repository: repository),
       tools: [tool(counter: counter, confirmation: "Download?")], resolve: { configuration },
-      observe: { event in requestID = event.confirmation?.id ?? requestID })
+      observe: { event in defer { TestFixtureEvents.changed() };  requestID = event.confirmation?.id ?? requestID })
     try await runtime.enqueue("读正文")
-    for _ in 0..<200 where requestID == nil { try await Task.sleep(for: .milliseconds(10)) }
+    await awaitState { !(requestID == nil) }
     XCTAssertNotNil(requestID)
     // Presentation relies on this: awaiting approval is still a running task.
     XCTAssertTrue(runtime.isRunning)
@@ -265,13 +273,13 @@ private struct SessionImageOutput: Codable, Sendable { var attachment: AIImageAt
     let runtime = try await AIAgentRuntime(
       id: "repeat-confirmation", store: AIAgentStore(repository: repository),
       tools: [tool(counter: counter, confirmation: "Prepare?")], resolve: { configuration },
-      observe: { event in
+      observe: { event in defer { TestFixtureEvents.changed() };
         if let id = event.confirmation?.id, !confirmations.contains(id) { confirmations.append(id) }
       })
     try await runtime.enqueue("读取")
-    for _ in 0..<200 where confirmations.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+    await awaitState { !(confirmations.isEmpty) }
     runtime.answer(try XCTUnwrap(confirmations.first), approved: false)
-    for _ in 0..<200 where confirmations.count < 2 { try await Task.sleep(for: .milliseconds(10)) }
+    await awaitState { !(confirmations.count < 2) }
     guard confirmations.count == 2 else {
       runtime.stop(); await runtime.wait(); return XCTFail("Each operation needs its own decision")
     }
@@ -289,15 +297,15 @@ private struct SessionImageOutput: Codable, Sendable { var attachment: AIImageAt
     let runtime = try await AIAgentRuntime(
       id: "follow-denial", store: AIAgentStore(repository: repository),
       tools: [tool(counter: counter, confirmation: "Prepare?")], resolve: { configuration },
-      observe: { event in
+      observe: { event in defer { TestFixtureEvents.changed() };
         if let id = event.confirmation?.id, !confirmations.contains(id) { confirmations.append(id) }
       })
     try await runtime.enqueue("读正文")
-    for _ in 0..<200 where confirmations.isEmpty { try await Task.sleep(for: .milliseconds(10)) }
+    await awaitState { !(confirmations.isEmpty) }
     let first = try XCTUnwrap(confirmations.first)
     try await runtime.enqueue("现在准备正文", mode: .followUp)
     runtime.answer(first, approved: false)
-    for _ in 0..<200 where confirmations.count < 2 { try await Task.sleep(for: .milliseconds(10)) }
+    await awaitState { !(confirmations.count < 2) }
     guard confirmations.count == 2 else {
       runtime.stop(); await runtime.wait()
       XCTFail("Follow-up must request fresh confirmation")
@@ -322,9 +330,8 @@ private struct SessionImageOutput: Codable, Sendable { var attachment: AIImageAt
       id: "stop", store: AIAgentStore(repository: repository),
       tools: [tool(counter: counter, confirmation: "Download?")], resolve: { configuration })
     try await runtime.enqueue("读正文")
-    for _ in 0..<200 where runtime.head.status != .waitingConfirmation {
-      try await Task.sleep(for: .milliseconds(10))
-    }
+    runtime.setObserver { _ in TestFixtureEvents.changed() }
+    await awaitState { runtime.head.status == .waitingConfirmation }
     try await runtime.enqueue("随后再做", mode: .followUp)
     runtime.stop()
     await runtime.wait()
@@ -383,9 +390,9 @@ private struct SessionImageOutput: Codable, Sendable { var attachment: AIImageAt
     let runtime = try await AIAgentRuntime(
       id: "switch", store: AIAgentStore(repository: repository),
       tools: [tool(counter: AgentCounter(), confirmation: "Prepare?")], resolve: { selected },
-      observe: { requestID = $0.confirmation?.id ?? requestID })
+      observe: { defer { TestFixtureEvents.changed() };  requestID = $0.confirmation?.id ?? requestID })
     try await runtime.enqueue("初始")
-    for _ in 0..<200 where requestID == nil { try await Task.sleep(for: .milliseconds(10)) }
+    await awaitState { !(requestID == nil) }
     try await runtime.enqueue("新要求")
     selected = secondConfig
     runtime.answer(requestID ?? "", approved: true)
@@ -405,14 +412,14 @@ private struct SessionImageOutput: Codable, Sendable { var attachment: AIImageAt
     let configuration = config(AgentModel([text("Answer")]))
     var runtime: AIAgentRuntime?
     let created = try await AIAgentRuntime(id: owner, store: AIAgentStore(repository: repository), tools: [], resolve: { configuration },
-      observe: { activity in
+      observe: { activity in defer { TestFixtureEvents.changed() };
         projection.activity = activity; projection.partialText = activity.text
         if let runtime { projection.head = runtime.head; projection.running = runtime.isRunning }
       }, committedEntries: { entries, head in projection.head = head; projection.mergeEntries(entries) })
     runtime = created
     created.beforeStepPublication = { await gate.pause() }
     try await created.enqueue("Question")
-    for _ in 0..<200 where !gate.entered { try await Task.sleep(for: .milliseconds(10)) }
+    await awaitState { !(!gate.entered) }
     XCTAssertTrue(gate.entered)
     let durable = try await repository.history(owner, limit: nil)
     XCTAssertTrue(durable.contains { $0.message.object["role"]?.string == "assistant" })
@@ -508,9 +515,9 @@ extension AIAgentRuntimeTests {
     let runtime = try await AIAgentRuntime(
       id: "follow", store: AIAgentStore(repository: repository),
       tools: [tool(counter: AgentCounter(), confirmation: "Prepare?")], resolve: { configuration },
-      observe: { request = $0.confirmation?.id ?? request })
+      observe: { defer { TestFixtureEvents.changed() };  request = $0.confirmation?.id ?? request })
     try await runtime.enqueue("当前问题")
-    for _ in 0..<200 where request == nil { try await Task.sleep(for: .milliseconds(10)) }
+    await awaitState { !(request == nil) }
     try await runtime.enqueue("随后问题", mode: .followUp)
     runtime.answer(request ?? "", approved: true)
     await runtime.wait()
@@ -804,7 +811,7 @@ extension AIAgentRuntimeTests {
       connection.baseURL = "https://fixture.invalid/v1"
       let model = AIModelOption(id: "fixture", name: "Fixture", contextWindow: 32000, thinking: [])
       let credential = AICredential(
-        accessToken: "synthetic-only", refreshToken: "", expires: Date().addingTimeInterval(600),
+        accessToken: "synthetic-only", refreshToken: "", expires: .distantFuture,
         accountID: "")
       let session = URLSessionConfiguration.ephemeral
       session.protocolClasses = [AgentWireProtocol.self]
@@ -901,7 +908,7 @@ extension AIAgentRuntimeTests {
     let repository = try await makeRepository("typed")
     let runtime = try await AIAgentRuntime(id: "typed", store: AIAgentStore(repository: repository), tools: [definition], resolve: { self.config(model) })
     try await runtime.enqueue("查询")
-    for _ in 0..<500 { if !runtime.isRunning { break }; try await Task.sleep(for: .milliseconds(10)) }
+    await runtime.wait()
     XCTAssertEqual(runtime.head.status, .completed)
     let count = await counter.count; XCTAssertEqual(count, 1)
     let requests = await model.requests
@@ -976,7 +983,7 @@ extension AIAgentRuntimeTests {
     ]])
     let configuration = config(model)
     var updates: [AIAgentActivity] = []
-    let runtime = try await AIAgentRuntime(id: "reasoning-events", store: AIAgentStore(repository: repository), tools: [], resolve: { configuration }, observe: { updates.append($0) })
+    let runtime = try await AIAgentRuntime(id: "reasoning-events", store: AIAgentStore(repository: repository), tools: [], resolve: { configuration }, observe: { defer { TestFixtureEvents.changed() };  updates.append($0) })
     try await runtime.enqueue("测试")
     await runtime.wait()
     XCTAssertTrue(updates.contains { $0.reasoningActive && $0.reasoning.isEmpty })
@@ -992,7 +999,7 @@ extension AIAgentRuntimeTests {
     let model = AgentModel([first, text("最终回复")])
     let configuration = config(model)
     var observations: [AIAgentActivity] = []
-    let runtime = try await AIAgentRuntime(id: "intermediate-reply", store: AIAgentStore(repository: repository), tools: [tool(counter: AgentCounter())], resolve: { configuration }, observe: { observations.append($0) })
+    let runtime = try await AIAgentRuntime(id: "intermediate-reply", store: AIAgentStore(repository: repository), tools: [tool(counter: AgentCounter())], resolve: { configuration }, observe: { defer { TestFixtureEvents.changed() };  observations.append($0) })
     try await runtime.enqueue("查原文")
     await runtime.wait()
     let storedHistory9 = try await runtime.history()
@@ -1016,7 +1023,7 @@ extension AIAgentRuntimeTests {
     })
     let runtime = try await AIAgentRuntime(id: id, store: store, tools: [tool], resolve: { configuration })
     try await runtime.enqueue("first")
-    for _ in 0..<200 { if await gate.started { break }; try await Task.sleep(for: .milliseconds(10)) }
+    await gate.whenStarted()
     let started = await gate.started; XCTAssertTrue(started); XCTAssertTrue(runtime.isRunning)
     let originalIDs = try await store.all(id).map(\.id)
     try await runtime.enqueue("next", mode: .followUp)
@@ -1079,7 +1086,7 @@ extension AIAgentRuntimeTests {
     ]
     let configuration = config(AgentModel([events]))
     var snapshots: [AIAgentActivity] = []
-    let runtime = try await AIAgentRuntime(id: "ordered", store: AIAgentStore(repository: repository), tools: [], resolve: { configuration }, observe: { snapshots.append($0) })
+    let runtime = try await AIAgentRuntime(id: "ordered", store: AIAgentStore(repository: repository), tools: [], resolve: { configuration }, observe: { defer { TestFixtureEvents.changed() };  snapshots.append($0) })
     try await runtime.enqueue("开始"); await runtime.wait()
     let history = try await runtime.history()
     let assistant = try XCTUnwrap(history.first { $0.message.object["role"]?.string == "assistant" })
@@ -1125,12 +1132,10 @@ extension AIAgentRuntimeTests {
     }
     let configuration = config(AgentModel([call(), text("完成")]))
     var updates: [AIAgentActivity] = []
-    let runtime = try await AIAgentRuntime(id: "waiting-marker", store: AIAgentStore(repository: repository), tools: [definition], resolve: { configuration }, observe: { updates.append($0) })
+    let runtime = try await AIAgentRuntime(id: "waiting-marker", store: AIAgentStore(repository: repository), tools: [definition], resolve: { configuration }, observe: { defer { TestFixtureEvents.changed() };  updates.append($0) })
     try await runtime.enqueue("查询")
-    for _ in 0..<200 {
-      if await gate.started, updates.contains(where: { $0.parts.contains { $0.kind == .tool && $0.spanID == "call" } }) { break }
-      try await Task.sleep(for: .milliseconds(10))
-    }
+    await gate.whenStarted()
+    await awaitState { updates.contains { $0.parts.contains { $0.kind == .tool && $0.spanID == "call" } } }
     XCTAssertTrue(runtime.isRunning)
     XCTAssertTrue(updates.contains { $0.parts.contains { $0.kind == .tool && $0.spanID == "call" } })
     await gate.release(); await runtime.wait()
@@ -1248,14 +1253,14 @@ extension AIAgentRuntimeTests {
       let transport = AITransport(configuration: session)
       defer { transport.finish() }
       let request = try AIProviderRequest(connection: connection, model: model,
-        credential: .init(accessToken: "synthetic-only", refreshToken: "", expires: Date().addingTimeInterval(600), accountID: "fixture"),
+        credential: .init(accessToken: "synthetic-only", refreshToken: "", expires: .distantFuture, accountID: "fixture"),
         thinking: nil, conversationID: "phase", instructions: AIAgentCoordinator.instructions, transport: transport)
       let configuration = AIAgentConfiguration(provider: "fixture", modelID: model.id, model: request.model,
         system: request.system ?? "", options: request.options, contextWindow: 32000, supportsTools: true)
       let repository = try await makeRepository("phase"), store = AIAgentStore(repository: repository)
       var activities: [AIAgentActivity] = []
       let runtime = try await AIAgentRuntime(id: "phase", store: store, tools: [tool(counter: AgentCounter())],
-        resolve: { configuration }, observe: { activities.append($0) })
+        resolve: { configuration }, observe: { defer { TestFixtureEvents.changed() };  activities.append($0) })
       try await runtime.enqueue("Read"); await runtime.wait()
       XCTAssertEqual(runtime.head.status, .completed)
       XCTAssertTrue(activities.contains { $0.parts.contains { $0.kind == .reasoning && $0.text == "Check the reference first." } })

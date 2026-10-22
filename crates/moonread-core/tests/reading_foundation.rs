@@ -343,97 +343,6 @@ fn blank_paragraph_runs_preserve_every_source_byte_and_offset() {
 
 /// Run explicitly in release mode. Synthetic input never becomes a repo asset.
 #[test]
-#[ignore = "bounded long-book performance sample"]
-fn long_book_window_measurements() {
-    for mib in [5, 30, 100] {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("long.txt");
-        let mut writer = std::io::BufWriter::new(std::fs::File::create(&path).unwrap());
-        let block = "　　月光落在窗前。这是用来观察长书连续阅读的合成正文。🌙\n\n".repeat(100);
-        let mut bytes = 0;
-        while bytes < mib * 1024 * 1024 {
-            writer.write_all(block.as_bytes()).unwrap();
-            bytes += block.len();
-        }
-        writer.flush().unwrap();
-        drop(writer);
-        let core = ReaderCore::new(dir.path().join("data").to_string_lossy().into()).unwrap();
-        let started = std::time::Instant::now();
-        let book = core
-            .import_book(path.to_string_lossy().into(), "Synthetic".into())
-            .unwrap();
-        let import_ms = started.elapsed().as_millis();
-        let query = core.query_snapshot("{}".into()).unwrap();
-        let mut samples = Vec::new();
-        let mut peak_bytes = 0;
-        for step in 0..200 {
-            let offset = if step < 100 { step } else { 199 - step } as u64 * book.byte_count / 100;
-            let start = std::time::Instant::now();
-            let frame = query.reading_frame(book.id.clone(), offset).unwrap();
-            samples.push(start.elapsed().as_micros());
-            assert!(
-                frame
-                    .chunks
-                    .iter()
-                    .map(|c| c.index)
-                    .collect::<std::collections::HashSet<_>>()
-                    .len()
-                    <= 256
-            );
-            peak_bytes = peak_bytes.max(frame.chunks.iter().map(|c| c.text.len()).sum::<usize>());
-            assert!(peak_bytes <= 64 * 1024);
-        }
-        samples.sort_unstable();
-        println!(
-            "LONG_BOOK size_mib={mib} import_ms={import_ms} frame_median_us={} frame_p95_us={} max_window_bytes={peak_bytes}",
-            samples[100], samples[190]
-        );
-    }
-}
-
-fn assert_source_partition(frame: &ReadingFrame, source: &str) {
-    let mut ranges: Vec<(u64, u64)> = frame
-        .chunks
-        .iter()
-        .map(|c| {
-            assert_eq!(c.text, source[c.start_utf8 as usize..c.end_utf8 as usize]);
-            (c.start_utf8, c.end_utf8)
-        })
-        .collect();
-    ranges.extend(
-        frame
-            .omitted
-            .iter()
-            .map(|g| {
-                assert!(
-                    source[g.start_utf8 as usize..g.end_utf8 as usize]
-                        .trim()
-                        .is_empty()
-                );
-                (
-                    g.start_utf8.max(frame.source_start),
-                    g.end_utf8.min(frame.source_end),
-                )
-            })
-            .filter(|(a, b)| a < b),
-    );
-    ranges.sort_unstable();
-    assert_eq!(ranges.first().unwrap().0, frame.source_start);
-    assert_eq!(ranges.last().unwrap().1, frame.source_end);
-    for pair in ranges.windows(2) {
-        assert_eq!(pair[0].1, pair[1].0);
-    }
-    if let Some(anchor) = frame.projection_anchor {
-        assert!(
-            frame
-                .chunks
-                .iter()
-                .any(|c| c.start_utf8 <= anchor && anchor < c.end_utf8)
-        );
-    }
-}
-
-#[test]
 fn indexed_long_blank_windows_are_bounded_directional_and_preserve_source() {
     let blank = " \t　\n".repeat(100000);
     for leading in [false, true] {
@@ -511,4 +420,31 @@ fn whitespace_fragment_in_a_visible_cross_chunk_paragraph_is_retained() {
             .all(|p| p.kind != ParagraphKind::Blank)
     );
     assert_source_partition(&frame, &text);
+}
+
+#[test]
+fn percentage_locations_validate_inputs_and_normalize_unicode_boundaries() {
+    for text in ["", "甲🌙乙e\u{301}。"] {
+        let (_dir, core, book) = fixture(text);
+        let query = core.query_snapshot("{}".into()).unwrap();
+        for percent in [0.0, 1.0, 25.0, 50.0, 99.0, 100.0] {
+            let location = query.reading_location(book.id.clone(), percent).unwrap();
+            assert!(location.offset_utf8 <= text.len() as u64);
+            assert!(text.is_char_boundary(location.offset_utf8 as usize));
+            let expected = location.offset_utf8 as f64 / text.len().max(1) as f64 * 100.0;
+            assert_eq!(location.percentage, expected);
+            if percent == 0.0 {
+                assert_eq!(location.offset_utf8, 0);
+            }
+            if percent == 100.0 {
+                assert_eq!(location.offset_utf8, text.len() as u64);
+            }
+        }
+        for percent in [-1.0, 100.01, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(matches!(
+                query.reading_location(book.id.clone(), percent),
+                Err(ReaderError::InvalidRange)
+            ));
+        }
+    }
 }

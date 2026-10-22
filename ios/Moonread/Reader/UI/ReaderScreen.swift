@@ -162,6 +162,14 @@ struct ReaderScreen: View {
             }
         }
         .overlay { aiMoon }
+        #if DEBUG
+        .overlay(alignment: .bottomTrailing) {
+            if ReaderSmokeFixture.enabled {
+                Button("测试批注") { selectText(start: 0, end: 3, action: .comment) }
+                    .accessibilityIdentifier("smokeAddNote")
+            }
+        }
+        #endif
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { readerWidth = $0 }
         // The keyboard belongs to the presented tools, never to the reading page.
         .ignoresSafeArea(.keyboard)

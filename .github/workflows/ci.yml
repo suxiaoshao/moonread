@@ -104,9 +104,10 @@ jobs:
             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
             -derivedDataPath build/DerivedData -resultBundlePath build/CI/MoonreadTests.xcresult \
             -only-testing:MoonreadTests -parallel-testing-enabled NO \
+            -testLanguage zh-Hans -testRegion CN \
             -test-timeouts-enabled YES -default-test-execution-time-allowance 300 \
             -maximum-test-execution-time-allowance 300 \
-            CODE_SIGNING_ALLOWED=NO "MOONREAD_NIX=$(command -v nix)" test \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES "MOONREAD_NIX=$(command -v nix)" test \
             2>&1 | tee build/CI/MoonreadTests.log
       - name: Preserve test results
         if: always()

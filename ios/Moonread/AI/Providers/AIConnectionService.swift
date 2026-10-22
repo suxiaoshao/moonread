@@ -145,7 +145,7 @@ enum AIConnectionState: Equatable {
     func isLoggedIn(_ connection: AIConnection) -> Bool {
         _ = credentialRevision
         guard !needsLogin.contains(connection.id) else { return false }
-        return authenticatedConnections.contains(connection.id) || (try? AIKeychain.load(connection.credentialReference)) != nil
+        return authenticatedConnections.contains(connection.id) || (try? auth.credentials.load(connection.credentialReference)) != nil
     }
     func isUsingChatGPTPlan(_ connection: AIConnection) -> Bool {
         isLoggedIn(connection) && chatGPTPlanEnabled(connection)
@@ -153,7 +153,7 @@ enum AIConnectionState: Equatable {
     func chatGPTPlanEnabled(_ connection: AIConnection) -> Bool {
         _ = credentialRevision
         return connection.authMethod == .chatGPT &&
-            (try? AIKeychain.load(connection.credentialReference))?.chatGPT?.scopes.contains("chatgpt.tokens.use.direct") == true
+            (try? auth.credentials.load(connection.credentialReference))?.chatGPT?.scopes.contains("chatgpt.tokens.use.direct") == true
     }
     func credential(_ connection: AIConnection) async throws -> AICredential {
         guard !needsLogin.contains(connection.id) else { throw AIError.loginRequired }
@@ -174,14 +174,14 @@ enum AIConnectionState: Equatable {
         try availability.requireAvailable()
         guard connections.contains(where: { $0.id == connection.id }),
               try await auth.invalidateSession(connection, sessionID: sessionID),
-              try AIKeychain.load(connection.credentialReference) == nil else { return }
+              try auth.credentials.load(connection.credentialReference) == nil else { return }
         authenticatedConnections.remove(connection.id)
         if needsLogin.insert(connection.id).inserted { credentialRevision += 1 }
     }
     func chatGPTPlanDisabled(_ connection: AIConnection) -> Bool {
         _ = credentialRevision
         guard connection.authMethod == .chatGPT,
-              let account = (try? AIKeychain.load(connection.credentialReference))?.chatGPT else { return false }
+              let account = (try? auth.credentials.load(connection.credentialReference))?.chatGPT else { return false }
         return !account.scopes.contains("chatgpt.tokens.use.direct")
     }
     func connectionState(_ connection: AIConnection) -> AIConnectionState {
@@ -379,10 +379,11 @@ enum AIConnectionState: Equatable {
         }
     }
     // Entry points read the persisted connection snapshots; only stale snapshots use IO.
-    func refreshConnectionCatalogsIfNeeded(now: Date = Date()) async {
+    func refreshConnectionCatalogsIfNeeded(now: Date? = nil) async {
+        let instant = now ?? auth.now()
         try? await availability.perform {
             for connection in self.connections where self.isLoggedIn(connection) && !self.chatGPTPlanDisabled(connection) &&
-                now.timeIntervalSince(self.accountCatalogAttempts[connection.id] ?? connection.modelsChecked ?? .distantPast) >= 86400 {
+                instant.timeIntervalSince(self.accountCatalogAttempts[connection.id] ?? connection.modelsChecked ?? .distantPast) >= 86400 {
                 try self.availability.requireAvailable()
                 await self.refreshModels(connection.id, refreshPublic: false)
             }
@@ -391,7 +392,7 @@ enum AIConnectionState: Equatable {
     func refreshModels(_ id: String, refreshPublic: Bool = true) async {
         guard availability.isAvailable, !Task.isCancelled else { return }
         guard let connection = connections.first(where: { $0.id == id }), !refreshingModels.contains(id) else { return }
-        accountCatalogAttempts[id] = Date()
+        accountCatalogAttempts[id] = auth.now()
         let revision = UUID(); modelRevisions[id] = revision
         modelErrors[id] = nil; refreshingModels.insert(id)
         modelNotices[id] = nil
@@ -424,7 +425,7 @@ enum AIConnectionState: Equatable {
                 model.isManual = true
                 return model
             } + (connection.authMethod == .chatGPT ? [] : manualModels.filter { manual in !models.contains(where: { $0.id == manual.id }) })
-            connections[index].modelsChecked = Date()
+            connections[index].modelsChecked = auth.now()
             if connections[index].modelID.isEmpty {
                 let first = models.first {
                     $0.capabilities?.text != false && !connections[index].disabledModelIDs.contains($0.id)

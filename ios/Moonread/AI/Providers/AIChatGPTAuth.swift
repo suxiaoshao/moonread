@@ -81,8 +81,8 @@ enum AIChatGPTProtocol {
                   let code = values["code"], !code.isEmpty else { throw AIError.invalidResponse }
             return (code, clientID)
         }
-        func acceptsCallback(_ url: URL) -> Bool {
-            do { _ = try callback(url); return true }
+        func acceptsCallback(_ url: URL, now: Date = Date()) -> Bool {
+            do { _ = try callback(url, now: now); return true }
             catch AIChatGPTError.loginCancelled { return true }
             catch AIChatGPTError.authorizationFailed { return true } // Only state-validated OAuth errors end an attempt.
             catch { return false }
@@ -134,27 +134,60 @@ enum AIChatGPTProtocol {
     }
 }
 
-/// A one-attempt listener bound to loopback only. No request URLs, codes or tokens are logged.
-final class AIChatGPTLoopback: @unchecked Sendable {
+protocol AIChatGPTCallbackSource: AnyObject, Sendable {
+    var callbacks: AsyncThrowingStream<URL, Error> { get }
+    func start() async throws -> URL
+    func stop()
+    func validateCallbacks(_ validate: @escaping @Sendable (URL) -> Bool)
+}
+
+/// Shared by the network adapter and deterministic callback sources. One validated callback per attempt.
+final class AIChatGPTCallbackRouter: @unchecked Sendable {
     let callbacks: AsyncThrowingStream<URL, Error>
     private let continuation: AsyncThrowingStream<URL, Error>.Continuation
+    private let lock = NSLock()
+    private var stopped = false
+    private var consumed = false
+    private var validator: @Sendable (URL) -> Bool = { _ in false }
+    init() {
+        let pair = AsyncThrowingStream<URL, Error>.makeStream()
+        callbacks = pair.stream; continuation = pair.continuation
+    }
+    func validate(_ value: @escaping @Sendable (URL) -> Bool) { lock.withLock { validator = value } }
+    var isStopped: Bool { lock.withLock { stopped } }
+    func receive(_ url: URL) -> Bool {
+        lock.withLock {
+            guard !stopped, !consumed, url.path == "/auth/callback", validator(url) else { return false }
+            consumed = true; continuation.yield(url); continuation.finish(); return true
+        }
+    }
+    func stop(_ error: Error = CancellationError()) {
+        lock.withLock { stopped = true; continuation.finish(throwing: error) }
+    }
+    static func message(for url: URL, accepted: Bool) -> String {
+        guard accepted else { return "Not found." }
+        let error = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "error" }?.value
+        if error == "access_denied" { return String(localized: "已取消，可以返回月读") }
+        if error != nil { return String(localized: "授权失败，可以返回月读查看错误") }
+        return String(localized: "请返回月读完成登录。")
+    }
+}
+
+/// A one-attempt listener bound to loopback only. No request URLs, codes or tokens are logged.
+final class AIChatGPTLoopback: AIChatGPTCallbackSource, @unchecked Sendable {
+    private let router = AIChatGPTCallbackRouter()
+    var callbacks: AsyncThrowingStream<URL, Error> { router.callbacks }
     private let queue = DispatchQueue(label: "Moonread.ChatGPT.loopback")
     private var listener: NWListener?
     private var ready: CheckedContinuation<URL, Error>?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
     private var stopped = false
-    private var consumed = false
     #if DEBUG
     private var offlineConsentPage = false
     func enableOfflineConsentPage() { queue.async { self.offlineConsentPage = true } }
     #endif
-    private var validator: @Sendable (URL) -> Bool
-    init(validate: @escaping @Sendable (URL) -> Bool = { _ in true }) {
-        validator = validate
-        let pair = AsyncThrowingStream<URL, Error>.makeStream()
-        callbacks = pair.stream; continuation = pair.continuation
-    }
-    func validateCallbacks(_ validate: @escaping @Sendable (URL) -> Bool) { queue.async { self.validator = validate } }
+    init(validate: @escaping @Sendable (URL) -> Bool = { _ in true }) { router.validate(validate) }
+    func validateCallbacks(_ validate: @escaping @Sendable (URL) -> Bool) { router.validate(validate) }
     func start() async throws -> URL {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { ready in
@@ -192,7 +225,7 @@ final class AIChatGPTLoopback: @unchecked Sendable {
         listener?.cancel(); listener = nil
         for connection in connections.values { connection.cancel() }; connections.removeAll()
         let ready = ready; self.ready = nil; ready?.resume(throwing: error)
-        continuation.finish(throwing: error)
+        router.stop(error)
     }
     private func accept(_ connection: NWConnection) {
         guard !stopped, connections.count < 8 else { connection.cancel(); return }
@@ -225,19 +258,11 @@ final class AIChatGPTLoopback: @unchecked Sendable {
             }
             #endif
             let url = self.listener?.port.flatMap { URL(string: "http://127.0.0.1:\($0.rawValue)" + target) }
-            let accepted = !self.consumed && target.hasPrefix("/auth/callback?") && url?.path == "/auth/callback" && url.map(self.validator) == true
-            let message: String
-            if accepted {
-                let error = url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false) }?
-                    .queryItems?.first { $0.name == "error" }?.value
-                if error == "access_denied" { message = String(localized: "已取消，可以返回月读") }
-                else if error != nil { message = String(localized: "授权失败，可以返回月读查看错误") }
-                else { message = String(localized: "请返回月读完成登录。") }
-            } else { message = "Not found." }
+            let accepted = url.map(self.router.receive) == true
+            let message = url.map { AIChatGPTCallbackRouter.message(for: $0, accepted: accepted) } ?? "Not found."
             let response = "HTTP/1.1 \(accepted ? "200 OK" : "404 Not Found")\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: \(message.utf8.count)\r\nConnection: close\r\n\r\n" + message
             connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in connection.cancel() })
             self.connections[ObjectIdentifier(connection)] = nil
-            if accepted, let url { self.consumed = true; self.continuation.yield(url); self.continuation.finish() }
         }
     }
 }
@@ -249,22 +274,22 @@ extension AIAuthentication {
         let reference = connection.credentialReference
         guard !signingOut.contains(reference) else { throw AIError.loginRequired }
         cancelChatGPT(reference)
-        let current = try AIKeychain.load(reference)
-        let registration = try current?.chatGPT ?? AIKeychain.load(reference + "/registration", as: AIChatGPTAccount.self)
+        let current = try credentials.load(reference)
+        let registration = try current?.chatGPT ?? credentials.load(reference + "/registration", as: AIChatGPTAccount.self)
         let hostID: String
-        if let saved = try AIKeychain.load(chatGPTHostReference, as: String.self) { hostID = saved }
+        if let saved = try credentials.load(chatGPTHostReference, as: String.self) { hostID = saved }
         else {
             hostID = "urn:uuid:" + UUID().uuidString.lowercased()
-            try AIKeychain.save(hostID, reference: chatGPTHostReference)
+            try credentials.save(hostID, reference: chatGPTHostReference)
         }
-        let listener = AIChatGPTLoopback(validate: { _ in false })
+        let listener = makeCallbackSource()
         chatGPTListeners[reference] = listener
         do {
             let redirect = try await listener.start()
             try Task.checkCancellation()
             guard chatGPTListeners[reference] === listener else { throw CancellationError() }
-            let attempt = try AIChatGPTProtocol.Attempt(redirect: redirect, registration: registration, issuedClientID: chatGPTIssuedClients[reference])
-            listener.validateCallbacks { attempt.acceptsCallback($0) }
+            let attempt = try AIChatGPTProtocol.Attempt(redirect: redirect, registration: registration, issuedClientID: chatGPTIssuedClients[reference], now: now())
+            listener.validateCallbacks { [now] in attempt.acceptsCallback($0, now: now()) }
             let id = UUID().uuidString
             chatGPTAttempts[reference] = (id, attempt)
             return BrowserAuthorization(id: id, url: attempt.authorizationURL(hostID: hostID), expires: attempt.expires)
@@ -288,7 +313,7 @@ extension AIAuthentication {
         }
         try await withTaskCancellationHandler {
             for try await callback in listener.callbacks {
-                let received = try pending.attempt.callback(callback)
+                let received = try pending.attempt.callback(callback, now: now())
                 await onCallback()
                 try Task.checkCancellation()
                 guard chatGPTListeners[reference] === listener else { throw CancellationError() }
@@ -302,7 +327,7 @@ extension AIAuthentication {
                     clientID: received.clientID, nonce: pending.attempt.nonce, previous: pending.attempt.registration)
                 try Task.checkCancellation()
                 guard !signingOut.contains(reference), chatGPTListeners[reference] === listener, let account = value.chatGPT else { throw CancellationError() }
-                try AIKeychain.save(account.registration, reference: reference + "/registration")
+                try credentials.save(account.registration, reference: reference + "/registration")
                 try saveCredential(value, reference: reference)
                 chatGPTIssuedClients[reference] = nil
                 return
@@ -352,13 +377,13 @@ extension AIAuthentication {
         if let token = body["id_token"] as? String {
             let (jwks, keysResponse) = try await requestData(URLRequest(url: URL(string: AIChatGPTProtocol.issuer + "/.well-known/jwks.json")!))
             guard (keysResponse as? HTTPURLResponse)?.statusCode == 200 else { throw AIError.invalidResponse }
-            let identity = try AIChatGPTProtocol.verifyIDToken(token, jwks: jwks, clientID: clientID, nonce: nonce, subject: previous?.subject)
+            let identity = try AIChatGPTProtocol.verifyIDToken(token, jwks: jwks, clientID: clientID, nonce: nonce, subject: previous?.subject, now: now())
             account = AIChatGPTAccount(clientID: clientID, subject: identity.subject, email: identity.email, idToken: token, scopes: scopes)
         } else {
             guard nonce == nil, let previous else { throw AIError.invalidResponse }
             account = previous; account.scopes = scopes
         }
-        return AICredential(accessToken: access, refreshToken: refresh, expires: Date().addingTimeInterval(expires), accountID: account.subject, chatGPT: account)
+        return AICredential(accessToken: access, refreshToken: refresh, expires: now().addingTimeInterval(expires), accountID: account.subject, chatGPT: account)
     }
     func revokeChatGPT(refreshToken: String, clientID: String) async throws {
         for attempt in 0..<3 {

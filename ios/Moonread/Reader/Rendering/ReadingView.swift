@@ -55,7 +55,11 @@ struct ReadingNavigation {
 @MainActor
 final class ReadingViewportAccess {
     weak var controller: ReadingController?
-    func capture() -> ReadingViewport? { controller?.captureViewport() }
+    private let captureOverride: (() -> ReadingViewport?)?
+    private let rangeOverride: (() -> (UInt64, UInt64)?)?
+    init(capture: (() -> ReadingViewport?)? = nil, range: (() -> (UInt64, UInt64)?)? = nil) { captureOverride = capture; rangeOverride = range }
+    func statisticsRange() -> (UInt64, UInt64)? { rangeOverride.map { $0() } ?? controller?.statisticsRange() }
+    func capture() -> ReadingViewport? { captureOverride.map { $0() } ?? controller?.captureViewport() }
 }
 
 struct ReadingView: UIViewControllerRepresentable {
@@ -131,7 +135,7 @@ struct ReadingView: UIViewControllerRepresentable {
 final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewControllerDataSource, UIPageViewControllerDelegate, UIGestureRecognizerDelegate {
     var openingID: UUID?
     var requestWindow: (ReadingDirection, SourceSpan) -> Bool = { _,_ in false }
-    private var requestedFrontiers = Set<String>()
+    private var requestedFrontiers = ReadingFrontierAdmissions()
     private var diagnosedOpening: UUID?
     #if READER_OPEN_DIAGNOSTICS
     private var displayProbe: ReaderDisplayProbe?
@@ -272,7 +276,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
                    controlsVisible: Bool, toggleControls: @escaping () -> Void,
                    readingBegan: @escaping () -> Void, changed: @escaping (UInt64, Bool) -> Void) {
         let contentsChanged = self.window != window
-        if contentsChanged { requestedFrontiers.removeAll() }
+        if contentsChanged { requestedFrontiers.reset() }
         let oldWindow = self.window
         let navigating = self.navigationRevision != navigationRevision
         let layoutChanged = !settings.hasSameLayout(as: self.settings) || self.typeSize != typeSize
@@ -867,7 +871,8 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         return result
     }
 
-    private func paginate(_ window: ReadingWindow, preserving previous: [TextPage] = [], keeping anchor: UInt64? = nil) -> [TextPage] {
+    private func paginate(_ window: ReadingWindow, preserving previous: [TextPage] = [], keeping anchor: UInt64? = nil,
+                         layout: ((ReadingText, Bool) -> [NSRange])? = nil) -> [TextPage] {
         TextPage.paginate(window, size: readingSurface.bounds.size, attributes: attributes(), source: styledText(window),
                           insets: textInsets, preserving: previous, keeping: anchor)
     }
@@ -1282,11 +1287,9 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     private func requestMore(_ direction: ReadingDirection) {
         guard let window, let cursor=direction == .forward ? window.nextCursor : window.previousCursor,
               let keep=protectedSourceRange() else { return }
-        let key="\(direction)-\(cursor)-\(keep.startUtf8)-\(keep.endUtf8)"
-        guard !requestedFrontiers.contains(key) else { return }
-        // Consume only requests the model synchronously accepted. A busy worker
-        // leaves this exact viewport/frontier eligible for completion reevaluation.
-        if requestWindow(direction,keep) { requestedFrontiers.insert(key) }
+        let admit = requestWindow
+        requestedFrontiers.request(direction, cursor: cursor, keeping: keep) { admit(direction, keep) }
+
     }
 
     private func report(_ offset: UInt64, settled: Bool) {
@@ -1349,6 +1352,17 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
 }
 
 @MainActor
+/// Admission belongs to the application, independently of native viewport geometry.
+struct ReadingFrontierAdmissions {
+    private var accepted = Set<String>()
+    mutating func reset() { accepted.removeAll() }
+    mutating func request(_ direction: ReadingDirection, cursor: UInt64, keeping span: SourceSpan, admit: () -> Bool) {
+        let key = "\(direction)-\(cursor)-\(span.startUtf8)-\(span.endUtf8)"
+        guard !accepted.contains(key) else { return }
+        if admit() { accepted.insert(key) }
+    }
+}
+
 struct TextPage {
     // Page views own their text storage/container. UIPageViewController can ask
     // for the same page twice; sharing a container would detach visible text.
@@ -1411,7 +1425,8 @@ struct TextPage {
     static func paginate(_ window: ReadingWindow, size: CGSize,
                          attributes: [NSAttributedString.Key: Any], source styled: NSAttributedString? = nil,
                          insets: UIEdgeInsets = ReadingTextMetrics.insets,
-                         preserving previous: [TextPage] = [], keeping anchor: UInt64? = nil) -> [TextPage] {
+                         preserving previous: [TextPage] = [], keeping anchor: UInt64? = nil,
+                         layout: ((ReadingText, Bool) -> [NSRange])? = nil) -> [TextPage] {
         guard !window.chunks.isEmpty else { return [] }
         let projection = ReadingText(window)
         let coordinates = projection.coordinates
@@ -1430,11 +1445,11 @@ struct TextPage {
         if let oldEnd = previous.last?.end, window.end > oldEnd,
            retained.last?.end == oldEnd, retained.last?.firstVisibleOffset != anchor { retained.removeLast() }
         guard let first = retained.first, let last = retained.last else {
-            return paginate(source, projection: projection, size: size, insets: insets)
+            return paginate(source, projection: projection, size: size, insets: insets, layout: layout)
         }
         let earlier = slice(from: window.start, to: first.start), later = slice(from: last.end, to: window.end)
-        let prefix = paginateBackward(earlier.0, projection: earlier.1, size: size, insets: insets)
-        let suffix = paginate(later.0, projection: later.1, size: size, insets: insets)
+        let prefix = paginateBackward(earlier.0, projection: earlier.1, size: size, insets: insets, layout: layout)
+        let suffix = paginate(later.0, projection: later.1, size: size, insets: insets, layout: layout)
         return contextualized(prefix + retained + suffix, source: source, projection: projection)
     }
 
@@ -1442,7 +1457,8 @@ struct TextPage {
         paginate(NSAttributedString(string: chunk.text, attributes: attributes), projection: ReadingText(text: chunk.text, sourceStart: chunk.startUtf8), size: size, insets: ReadingTextMetrics.insets)
     }
 
-    private static func paginate(_ source: NSAttributedString, projection: ReadingText, size: CGSize, insets: UIEdgeInsets) -> [TextPage] {
+    private static func paginate(_ source: NSAttributedString, projection: ReadingText, size: CGSize, insets: UIEdgeInsets, layout: ((ReadingText, Bool) -> [NSRange])? = nil) -> [TextPage] {
+        if let layout { return contextualized(layout(projection, false).map { page(source, projection: projection, range: $0, lines: 1, insets: insets) }, source: source, projection: projection) }
         // A suffix can begin inside a paragraph. Apply the same continuation
         // style used by visible pages before asking TextKit for page boundaries.
         let storage = NSTextStorage(attributedString: TextPage(text: source, start: projection.sourceStart, end: projection.sourceEnd, lineCount: 0, projection: projection).layoutText)
@@ -1462,10 +1478,7 @@ struct TextPage {
             guard range.length > 0, NSMaxRange(range) > consumed else { break }
             var lineCount = 0
             manager.enumerateLineFragments(forGlyphRange: glyphRange) { _, _, _, _, _ in lineCount += 1 }
-            result.append(TextPage(text: storage.attributedSubstring(from: range),
-                                   start: projection.slice(range).sourceStart,
-                                   end: projection.slice(range).sourceEnd,
-                                   lineCount: lineCount, projection: projection.slice(range), insets: insets))
+            result.append(page(storage, projection: projection, range: range, lines: lineCount, insets: insets))
             consumed = NSMaxRange(range)
         }
         return contextualized(result, source: storage, projection: projection)
@@ -1475,7 +1488,8 @@ struct TextPage {
     /// Full lines are grouped from the end, keeping the join page full; only the
     /// temporary window's first page can be partial. Recentring happens before
     /// that edge is reached, and existing overlap pages keep identical ranges.
-    private static func paginateBackward(_ source: NSAttributedString, projection: ReadingText, size: CGSize, insets: UIEdgeInsets) -> [TextPage] {
+    private static func paginateBackward(_ source: NSAttributedString, projection: ReadingText, size: CGSize, insets: UIEdgeInsets, layout: ((ReadingText, Bool) -> [NSRange])? = nil) -> [TextPage] {
+        if let layout { return layout(projection, true).map { page(source, projection: projection, range: $0, lines: 1, insets: insets) } }
         guard source.length > 0 else { return [] }
         let storage = NSTextStorage(attributedString: TextPage(text: source, start: projection.sourceStart, end: projection.sourceEnd, lineCount: 0, projection: projection).layoutText)
         let manager = ReadingLayoutManager()
@@ -1504,13 +1518,16 @@ struct TextPage {
             while start > 0, lines[end - 1].rect.maxY - lines[start - 1].rect.minY + leadingSpace(start - 1) <= height { start -= 1 }
             let range = NSRange(location: lines[start].range.location,
                                 length: NSMaxRange(lines[end - 1].range) - lines[start].range.location)
-            result.append(TextPage(text: storage.attributedSubstring(from: range),
-                                   start: projection.slice(range).sourceStart,
-                                   end: projection.slice(range).sourceEnd,
-                                   lineCount: end-start, projection: projection.slice(range), insets: insets))
+            result.append(page(storage, projection: projection, range: range, lines: end-start, insets: insets))
             end = start
         }
         return Array(result.reversed())
+    }
+
+    private static func page(_ source: NSAttributedString, projection: ReadingText, range: NSRange, lines: Int, insets: UIEdgeInsets) -> TextPage {
+        let visible = projection.slice(range)
+        return TextPage(text: source.attributedSubstring(from: range), start: visible.sourceStart,
+                        end: visible.sourceEnd, lineCount: lines, projection: visible, insets: insets)
     }
 
     /// Keep real lookahead for the typesetter when a page ends inside a paragraph.

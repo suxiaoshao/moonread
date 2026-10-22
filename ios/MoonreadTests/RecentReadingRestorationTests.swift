@@ -249,6 +249,7 @@ extension ReaderService {
     func testWrongSameNameAndSizeIsNotLinkedAndFailuresDoNotLoop() async throws {
         let text = "Original sample A\n", wrong = "Original sample B\n"
         let f = try await fixture(["old/sample.txt": Data(wrong.utf8)]); defer { f.clean() }
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_800_000_000)], ofItemAtPath: f.directory.appendingPathComponent("old/sample.txt").path)
         try await scan(f)
         let reads = RestorationReads()
         await f.service.restorationFixture(active: true, beforeRead: { await reads.record($0) })
@@ -260,7 +261,7 @@ extension ReaderService {
         for _ in 0..<3 { await f.service.scheduleRecentRestoration(); await f.service.waitForRecentRestoration() }
         let failures = await reads.ids; XCTAssertEqual(failures.count, 1)
         try Data(text.utf8).write(to: f.directory.appendingPathComponent("old/sample.txt"))
-        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(5)], ofItemAtPath: f.directory.appendingPathComponent("old/sample.txt").path)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_800_000_005)], ofItemAtPath: f.directory.appendingPathComponent("old/sample.txt").path)
         try await scan(f); await f.service.waitForRecentRestoration()
         XCTAssertNotNil(try f.core.sourceFileSnapshots(fileId: nil).first?.bookId)
         let retried = await reads.ids; XCTAssertEqual(retried.count, 2)

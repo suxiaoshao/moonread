@@ -76,6 +76,7 @@ extension ReaderService {
         guard !recoveredImports, recoveryTask == nil else { return }
         recoveryTask = Task { [weak self] in await self?.recoverUserImports() }
     }
+    func waitForUserRecovery() async { await recoveryTask?.value }
     private func recoverUserImports() async {
         ReaderOpenDiagnostics.background("recovery.begin")
         defer { ReaderOpenDiagnostics.background("recovery.return") }

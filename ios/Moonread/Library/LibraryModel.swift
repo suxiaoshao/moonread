@@ -690,6 +690,29 @@ final class LibraryModel {
     }
     /// Foreground delivery shares the existing runner. The set only deduplicates
     /// this process's retained files; there are no persistent claims or receipts.
+    #if DEBUG
+    func receiveSmokeTXT(shared: Bool) async {
+        guard ReaderSmokeFixture.enabled else { return }
+        do {
+            let bytes = Data(ReaderSmokeFixture.text.utf8)
+            if shared {
+                let inbox = ShareInbox(root: FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Smoke-Inbox-" + UUID().uuidString))
+                let draft = try ShareInbox.Draft(in: inbox)
+                let provider = NSItemProvider(); provider.suggestedName = "分享样本.txt"
+                provider.registerDataRepresentation(forTypeIdentifier: UTType.plainText.identifier, visibility: .all) { completion in completion(bytes, nil); return nil }
+                let item = try await draft.load(provider)
+                try draft.publish(items: [item], skippedNames: [])
+                await receiveSharedInbox(inbox)
+            } else {
+                let root = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Smoke-Incoming-" + UUID().uuidString)
+                try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                let source = root.appendingPathComponent("导入样本.txt"); try bytes.write(to: source)
+                receive([source])
+            }
+        } catch { self.error = ReaderMessages.error(error) }
+    }
+    #endif
+
     func receiveSharedInbox(_ source: ShareInbox? = nil) async {
         // Isolated UI-test libraries must never consume the real shared inbox.
         if source == nil, await service.testSession != nil { return }
@@ -791,12 +814,14 @@ final class LibraryModel {
     func runAfterSheetDismiss(_ action: @escaping () -> Void) { afterSheetDismiss = action; sheet = nil }
     func sheetDidDismiss() {
         sharedImportResult = nil
-        showDeferredIndexPrompt()
         let action = afterSheetDismiss; afterSheetDismiss = nil; action?()
         if canAcceptFileWork, sheet == nil {
             releaseImportFailures()
             if Onboarding.shared.completed { Task { await receiveSharedInbox() } }
         }
+        // A deferred index prompt is a new presentation, not the old import
+        // result's owner. Clean up the dismissed result before presenting it.
+        showDeferredIndexPrompt()
     }
     /// Only an admitted runner may execute filesystem work.
     private func perform(_ command: LibraryCommand, work: FileWork, replace: Bool = false, permanently: Bool = false) async -> Bool {

@@ -301,3 +301,48 @@ fn text_context_skips_blank_lines_and_preserves_unicode_boundaries() {
     assert!(core.text_context(id.clone(), anchor + 1, 1, 1).is_err());
     assert!(core.text_context(id, size, 1, 1).is_err());
 }
+
+#[test]
+fn search_options_preserve_utf8_ranges_across_storage_boundaries() {
+    let text = format!("{}Moonread moonread Moonr.ad", "甲".repeat(4095));
+    let (_dir, core, id) = setup(&text);
+    for (pattern, regex, sensitive, expected) in [
+        ("Moonread", false, true, vec!["Moonread"]),
+        ("Moonread", false, false, vec!["Moonread", "moonread"]),
+        ("Moonr.ad", true, true, vec!["Moonread", "Moonr.ad"]),
+        (
+            "Moonr.ad",
+            true,
+            false,
+            vec!["Moonread", "moonread", "Moonr.ad"],
+        ),
+        ("Moonr.ad", false, false, vec!["Moonr.ad"]),
+        ("^|$", true, false, vec![]),
+    ] {
+        let job = core
+            .query_snapshot("{}".into())
+            .unwrap()
+            .start_search(id.clone(), pattern.into(), regex, sensitive, None)
+            .unwrap();
+        let mut hits = Vec::new();
+        loop {
+            let batch = job.next_batch().unwrap();
+            hits.extend(batch.hits);
+            if batch.done {
+                break;
+            }
+        }
+        let matches: Vec<_> = hits
+            .iter()
+            .map(|hit| {
+                assert!(text.is_char_boundary(hit.start_utf8 as usize));
+                assert!(text.is_char_boundary(hit.end_utf8 as usize));
+                &text[hit.start_utf8 as usize..hit.end_utf8 as usize]
+            })
+            .collect();
+        assert_eq!(
+            matches, expected,
+            "{pattern} regex={regex} sensitive={sensitive}"
+        );
+    }
+}

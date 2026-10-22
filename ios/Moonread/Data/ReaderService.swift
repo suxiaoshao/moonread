@@ -212,6 +212,10 @@ actor ReaderService {
         }
     }
 
+    func waitForImportsIdle() async throws {
+        while let id = imports.keys.first { try await waitForImportFinish(id) }
+    }
+
     // Preparation and reading leases hold the same foreground gate. Background
     // workers register cancellation before leaving this actor, avoiding a check/start race.
     private var foregroundHolds: [String: Int] = [:]

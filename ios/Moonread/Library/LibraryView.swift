@@ -29,6 +29,14 @@ struct LibraryView: View {
                         .accessibilityIdentifier("chooseFolder")
                 } label: { Label("书架操作", systemImage: "plus") }.toolbarGlyph().accessibilityIdentifier("libraryActions")
                 if ai.availability.isAvailable { AppSettingsLink() }
+                #if DEBUG
+                if ReaderSmokeFixture.enabled {
+                    Menu("测试接收") {
+                        Button("导入TXT") { Task { await model.receiveSmokeTXT(shared: false) } }.accessibilityIdentifier("smokeImportTXT")
+                        Button("分享TXT") { Task { await model.receiveSmokeTXT(shared: true) } }.accessibilityIdentifier("smokeShareTXT")
+                    }.accessibilityIdentifier("smokeReceive")
+                }
+                #endif
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {

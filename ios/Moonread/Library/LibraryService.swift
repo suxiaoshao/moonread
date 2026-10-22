@@ -2,6 +2,23 @@ import Foundation
 import CryptoKit
 import Darwin
 
+#if DEBUG
+enum ReaderSmokeFixture {
+    static var enabled: Bool {
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("--ui-testing"), args.contains("--ui-test-smoke"),
+              let index = args.firstIndex(of: "--ui-test-session"), args.indices.contains(index + 1) else { return false }
+        return UUID(uuidString: args[index + 1]) != nil
+    }
+    static let paragraph = "星灯照着归途，月光落在书页上。这是用于应用测试的合成文字。\n"
+    static var text: String {
+        "第一章 星灯\n" + String(repeating: paragraph, count: 14)
+        + "第二話 归途\n" + String(repeating: paragraph, count: 14)
+        + "終章\n" + paragraph
+    }
+}
+#endif
+
 extension Notification.Name {
     static let libraryFilesChanged = Notification.Name("Moonread.libraryFilesChanged")
 }
@@ -154,7 +171,7 @@ extension ReaderService {
         var usesFixture = false
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
-        usesFixture = testSession != nil && ["--ui-test-bookshelf", "--ui-test-progressive", "--ui-test-reader-fixture", "--ui-test-onboarding-cloud", "--ui-test-recent-restoration"].contains(where: arguments.contains)
+        usesFixture = testSession != nil && ["--ui-test-smoke", "--ui-test-bookshelf", "--ui-test-progressive", "--ui-test-reader-fixture", "--ui-test-onboarding-cloud", "--ui-test-recent-restoration"].contains(where: arguments.contains)
         #endif
         // A new iCloud device must discover the existing library before
         // seeding a local story that could collide on the first handoff.
@@ -182,6 +199,7 @@ extension ReaderService {
             sourceDefaults.set(file.id, forKey: "Moonread.seededExampleFileID")
         }
         #if DEBUG
+        if ReaderSmokeFixture.enabled { try await createSmokeFixture(); return }
         try importFixture()
         if arguments.contains("--ui-test-onboarding-local"), testSession != nil {
             try "第一章 合成\n已存在的本机测试内容。".write(to: url.appendingPathComponent("本机已有合成.txt"), atomically: true, encoding: .utf8)
@@ -797,6 +815,41 @@ extension ReaderService {
     }
 
     #if DEBUG
+    private func createSmokeFixture() async throws {
+        guard let testSession else { return }
+        let marker = "Moonread.smoke.seed.v1." + testSession
+        guard !sourceDefaults.bool(forKey: marker) else { return }
+        let root = try builtinLibraryURL(), core = try textCore()
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("目标"), withIntermediateDirectories: true)
+        try ReaderSmokeFixture.text.write(to: root.appendingPathComponent("月读 · 排版示例.txt"), atomically: true, encoding: .utf8)
+        try "第一章 同名\n保留原来的目标内容。".write(to: root.appendingPathComponent("同名.txt"), atomically: true, encoding: .utf8)
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-encoding") {
+            let text = "Chapter 1\n" + String(repeating: "An original encoding fixture.\n", count: 8)
+            let bytes = text.utf16.flatMap { [UInt8($0 & 255), UInt8($0 >> 8)] }
+            try Data(bytes).write(to: root.appendingPathComponent("编码恢复样本.txt"))
+        }
+        try refreshLibraryShelf("builtin")
+        let file = try core.sourceFileSnapshots(fileId: nil).first { $0.relativePath == "月读 · 排版示例.txt" && $0.shelfId == "builtin" }
+        if let file {
+            let identity = try SourceIdentityProbe().identify(filePath: root.appendingPathComponent(file.relativePath).path, decoding: file.decoding)
+            _ = try core.publishSourceIdentity(file: file, identity: identity)
+            let base = try await details(sha: identity.contentSha256).metadata
+            var edited = base; edited.tags = ["星灯"]
+            try await saveMetadata(base: base, edited: edited)
+            if ProcessInfo.processInfo.arguments.contains("--ui-test-smoke-restored") {
+                let position = PositionValue(content_key: identity.contentSha256, offset: 120, source_hint: nil)
+                try await userStore().put("position/" + identity.contentSha256, value: UserSyncJSON.encode(position), device: "smoke-fixture")
+            }
+        }
+        let external = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Smoke-External-" + testSession)
+        try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
+        try "第一章 复制\n保留来源文件。".write(to: external.appendingPathComponent("复制.txt"), atomically: true, encoding: .utf8)
+        try "第一章 冲突\n不要替换已有目标。".write(to: external.appendingPathComponent("同名.txt"), atomically: true, encoding: .utf8)
+        let shelf = try registerLibraryShelf(external)
+        try refreshLibraryShelf(shelf)
+        sourceDefaults.set(true, forKey: marker)
+    }
+
     private func createReaderFixture() async throws {
         guard testSession != nil else { return }
         let core = try textCore(), root = try builtinLibraryURL()

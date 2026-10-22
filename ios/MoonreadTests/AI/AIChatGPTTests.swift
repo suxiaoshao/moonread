@@ -9,6 +9,7 @@ import AISDKProvider
 @testable import Moonread
 
 private struct SignedIdentity {
+    static let now = Date(timeIntervalSince1970: 1_800_000_000)
     let key: SecKey
     let jwks: Data
     init() throws {
@@ -31,7 +32,7 @@ private struct SignedIdentity {
         jwks = try JSONSerialization.data(withJSONObject: ["keys": [["kid": "synthetic", "alg": "RS256", "kty": "RSA", "use": "sig", "n": AIChatGPTProtocol.base64url(Data(n)), "e": AIChatGPTProtocol.base64url(e)]]])
     }
     func token(_ changes: [String: Any] = [:], nonce: String = "nonce") throws -> String {
-        var claims: [String: Any] = ["iss": AIChatGPTProtocol.issuer, "sub": "synthetic-subject", "aud": "oaiapp_fixture", "iat": Date().timeIntervalSince1970 - 1, "exp": Date().timeIntervalSince1970 + 600, "nonce": nonce, "email": "fixture@example.com"]
+        var claims: [String: Any] = ["iss": AIChatGPTProtocol.issuer, "sub": "synthetic-subject", "aud": "oaiapp_fixture", "iat": SignedIdentity.now.timeIntervalSince1970 - 1, "exp": SignedIdentity.now.timeIntervalSince1970 + 600, "nonce": nonce, "email": "fixture@example.com"]
         claims.merge(changes) { _, new in new }
         let header = AIChatGPTProtocol.base64url(try JSONSerialization.data(withJSONObject: ["alg": "RS256", "kid": "synthetic"]))
         let body = AIChatGPTProtocol.base64url(try JSONSerialization.data(withJSONObject: claims))
@@ -93,18 +94,15 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
 @MainActor final class AIChatGPTTests: XCTestCase {
     func testEphemeralBrowserUsesAttachedWindowAndIgnoresCompletionAfterLoopbackStop() async throws {
         let stub = WebAuthenticationSessionStub()
-        let window = UIWindow()
+        let window = NSObject()
         let url = URL(string: "https://example.invalid/authorize")!
         let browser = AIWebAuthenticationBrowser.Coordinator(url: url, makeSession: { requested, completion in
             XCTAssertEqual(requested, url); stub.completion = completion; return stub
-        }, onFailure: { _ in XCTFail("Programmatic stop must not overwrite loopback success") })
+        }, makePresentation: { _ in BrowserAnchorStub() }, onFailure: { _ in XCTFail("Programmatic stop must not overwrite loopback success") })
         browser.start(in: window); browser.start(in: window)
         XCTAssertEqual(stub.starts, 1)
         XCTAssertTrue(stub.prefersEphemeralWebBrowserSession)
-        let presentation = try XCTUnwrap(stub.presentationContextProvider)
-        let session = ASWebAuthenticationSession(url: url, callback: AIWebAuthenticationBrowser.Coordinator.callback) { _, _ in }
-        XCTAssertTrue(presentation.presentationAnchor(for: session) === window)
-        XCTAssertFalse(AIWebAuthenticationBrowser.Coordinator.callback.matchesURL(URL(string: "http://127.0.0.1:12345/auth/callback?code=fixture")!))
+        XCTAssertTrue(stub.presentationContextProvider is BrowserAnchorStub)
         browser.stop()
         XCTAssertEqual(stub.cancels, 1)
         stub.completion?(nil, ASWebAuthenticationSessionError(.canceledLogin))
@@ -115,17 +113,17 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
         let stub = WebAuthenticationSessionStub()
         let browser = AIWebAuthenticationBrowser.Coordinator(url: URL(string: "https://example.invalid")!, makeSession: { _, completion in
             stub.completion = completion; return stub
-        }, onFailure: { error in
+        }, makePresentation: { _ in BrowserAnchorStub() }, onFailure: { error in
             XCTAssertEqual(AIConnectionService.connectionError(error), String(localized: "已取消登录"))
             cancelled.fulfill()
         })
-        browser.start(in: UIWindow())
+        browser.start(in: NSObject())
         stub.completion?(nil, ASWebAuthenticationSessionError(.canceledLogin))
         await fulfillment(of: [cancelled], timeout: 3)
         let failed = WebAuthenticationSessionStub(); failed.canStart = false
         var failure: String?
-        let unavailable = AIWebAuthenticationBrowser.Coordinator(url: URL(string: "https://example.invalid")!, makeSession: { _, _ in failed }, onFailure: { failure = AIConnectionService.connectionError($0) })
-        unavailable.start(in: UIWindow())
+        let unavailable = AIWebAuthenticationBrowser.Coordinator(url: URL(string: "https://example.invalid")!, makeSession: { _, _ in failed }, makePresentation: { _ in BrowserAnchorStub() }, onFailure: { failure = AIConnectionService.connectionError($0) })
+        unavailable.start(in: NSObject())
         XCTAssertNotNil(failure)
         XCTAssertEqual(failed.cancels, 1)
     }
@@ -133,7 +131,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
         let suite = "siwc-browser-" + UUID().uuidString
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        let providers = AIConnectionService(defaults: defaults, auth: AIAuthentication())
+        let providers = AIConnectionService(defaults: defaults, auth: AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }))
         let id = providers.addConnection(AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection())
         let current = AIAuthentication.BrowserAuthorization(id: "current", url: URL(string: "https://example.invalid/current")!, expires: .distantFuture)
         providers.loginConnectionID = id; providers.loginStates[id] = .browser(current)
@@ -181,28 +179,28 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
     func testIDTokenVerifiesSignatureIssuerAudienceExpiryNonceAndIdentity() throws {
         let identity = try SignedIdentity()
         let valid = try identity.token()
-        let verified = try AIChatGPTProtocol.verifyIDToken(valid, jwks: identity.jwks, clientID: "oaiapp_fixture", nonce: "nonce")
+        let verified = try AIChatGPTProtocol.verifyIDToken(valid, jwks: identity.jwks, clientID: "oaiapp_fixture", nonce: "nonce", now: SignedIdentity.now)
         XCTAssertEqual(verified.subject, "synthetic-subject"); XCTAssertEqual(verified.email, "fixture@example.com")
-        for change: [String: Any] in [["iss": "https://example.com"], ["aud": "wrong"], ["exp": 0], ["iat": Date().timeIntervalSince1970 + 600], ["nonce": "wrong"], ["sub": ""], ["azp": "wrong"], ["azp": 1]] {
-            XCTAssertThrowsError(try AIChatGPTProtocol.verifyIDToken(identity.token(change), jwks: identity.jwks, clientID: "oaiapp_fixture", nonce: "nonce"))
+        for change: [String: Any] in [["iss": "https://example.com"], ["aud": "wrong"], ["exp": 0], ["iat": SignedIdentity.now.timeIntervalSince1970 + 600], ["nonce": "wrong"], ["sub": ""], ["azp": "wrong"], ["azp": 1]] {
+            XCTAssertThrowsError(try AIChatGPTProtocol.verifyIDToken(identity.token(change), jwks: identity.jwks, clientID: "oaiapp_fixture", nonce: "nonce", now: SignedIdentity.now))
         }
-        XCTAssertThrowsError(try AIChatGPTProtocol.verifyIDToken(valid, jwks: SignedIdentity().jwks, clientID: "oaiapp_fixture", nonce: "nonce"))
-        XCTAssertThrowsError(try AIChatGPTProtocol.verifyIDToken(valid, jwks: identity.jwks, clientID: "oaiapp_fixture", nonce: "nonce", subject: "other-account"))
+        XCTAssertThrowsError(try AIChatGPTProtocol.verifyIDToken(valid, jwks: SignedIdentity().jwks, clientID: "oaiapp_fixture", nonce: "nonce", now: SignedIdentity.now))
+        XCTAssertThrowsError(try AIChatGPTProtocol.verifyIDToken(valid, jwks: identity.jwks, clientID: "oaiapp_fixture", nonce: "nonce", subject: "other-account", now: SignedIdentity.now))
     }
     func testLoopbackUsesRandomPortFixedPathAndSingleCallback() async throws {
-        let listener = AIChatGPTLoopback(); defer { listener.stop() }
+        let listener = CallbackFixture.make(); defer { listener.stop() }
         let redirect = try await listener.start()
-        XCTAssertEqual(redirect.host, "127.0.0.1"); XCTAssertEqual(redirect.path, "/auth/callback")
-        XCTAssertGreaterThan(redirect.port ?? 0, 0)
-        let callback = URL(string: redirect.absoluteString + "?state=synthetic&code=synthetic&client_id=oaiapp_fixture")!
-        let (_, response) = try await URLSession.shared.data(from: callback)
-        XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
+        let attempt = try AIChatGPTProtocol.Attempt(redirect: redirect, registration: nil, now: SignedIdentity.now)
+        listener.validateCallbacks { attempt.acceptsCallback($0, now: SignedIdentity.now) }
+        let callback = URL(string: redirect.absoluteString + "?state=" + attempt.state + "&code=synthetic&client_id=oaiapp_fixture")!
+        XCTAssertFalse(listener.router.receive(URL(string: redirect.absoluteString + "?state=wrong&code=synthetic")!))
+        XCTAssertFalse(listener.router.receive(URL(string: "http://127.0.0.1:12345/other?state=" + attempt.state)!))
+        XCTAssertTrue(listener.router.receive(callback))
         var values: [URL] = []
         for try await value in listener.callbacks { values.append(value) }
-        XCTAssertEqual(values, [callback])
-        let (_, duplicate) = try await URLSession.shared.data(from: callback)
-        XCTAssertEqual((duplicate as? HTTPURLResponse)?.statusCode, 404)
-        let cancelled = AIChatGPTLoopback(); cancelled.stop()
+        XCTAssertEqual(values, [callback]); XCTAssertFalse(listener.router.receive(callback))
+        listener.stop(); XCTAssertFalse(listener.router.receive(callback))
+        let cancelled = CallbackFixture.make(); cancelled.stop()
         do { _ = try await cancelled.start(); XCTFail("Cancelled listener started") } catch is CancellationError {}
     }
     func testFirstRegistrationOAuthErrorsFinishWithoutClientIDAndRejectWrongState() async throws {
@@ -217,17 +215,17 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
                 XCTFail("OAuth refusal must not exchange credentials")
                 throw AIError.invalidResponse
             }
-            let auth = AIAuthentication(session: URLSession(configuration: config), chatGPTHostReference: hostReference)
+            let auth = AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config), chatGPTHostReference: hostReference)
             let browser = try await auth.beginChatGPT(connection)
             let items = URLComponents(url: browser.url, resolvingAgainstBaseURL: false)!.queryItems!
             func query(_ key: String) -> String { items.first { $0.name == key }!.value! }
             XCTAssertEqual(query("client_id"), AIChatGPTProtocol.dynamicClient)
             let finish = Task { try await auth.finishChatGPT(browser.id, reference: reference) }
             let wrong = URL(string: query("redirect_uri") + "?state=wrong&error=" + oauthError)!
-            let (_, rejected) = try await URLSession.shared.data(from: wrong)
+            let (_, rejected) = try await CallbackFixture.deliver( wrong)
             XCTAssertEqual((rejected as? HTTPURLResponse)?.statusCode, 404)
             let callback = URL(string: query("redirect_uri") + "?state=" + query("state") + "&error=" + oauthError)!
-            let (data, response) = try await URLSession.shared.data(from: callback)
+            let (data, response) = try await CallbackFixture.deliver( callback)
             XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
             let cancelled = oauthError == "access_denied"
             XCTAssertEqual(String(decoding: data, as: UTF8.self), cancelled
@@ -247,7 +245,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
     func testTokenExchangeGrantedScopesAndRefreshRotation() async throws {
         let signed = try SignedIdentity(); let token = try signed.token(); let jwks = signed.jwks
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ChatGPTURLProtocol.self]
-        let auth = AIAuthentication(session: URLSession(configuration: config))
+        let auth = AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config))
         ChatGPTURLProtocol.fixture.set { request in
             if request.url?.path == "/.well-known/jwks.json" { return (200, jwks) }
             XCTAssertEqual(request.url?.path, "/api/accounts/oauth/token")
@@ -276,7 +274,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
         let hostReference = reference + "/host"
         defer { for key in [reference, reference + "/registration", hostReference] { try? AIKeychain.remove(key) } }
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ChatGPTURLProtocol.self]
-        let auth = AIAuthentication(session: URLSession(configuration: config), chatGPTHostReference: hostReference)
+        let auth = AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config), chatGPTHostReference: hostReference)
         let previousAttempt = try await auth.beginChatGPT(connection)
         let browser = try await auth.beginChatGPT(connection)
         do { try await auth.finishChatGPT(previousAttempt.id, reference: reference); XCTFail("Old attempt accepted") } catch AIError.invalidResponse {}
@@ -300,9 +298,9 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
         let finish = Task { try await auth.finishChatGPT(browser.id, reference: reference, onCallback: { callbackReceived.fulfill() }) }
         let callback = URL(string: query("redirect_uri") + "?state=" + query("state") + "&code=synthetic-code&client_id=oaiapp_fixture")!
         let wrong = URL(string: query("redirect_uri") + "?state=wrong&code=synthetic-code&client_id=oaiapp_fixture")!
-        let (_, rejected) = try await URLSession.shared.data(from: wrong)
+        let (_, rejected) = try await CallbackFixture.deliver( wrong)
         XCTAssertEqual((rejected as? HTTPURLResponse)?.statusCode, 404)
-        let (_, response) = try await URLSession.shared.data(from: callback)
+        let (_, response) = try await CallbackFixture.deliver( callback)
         XCTAssertEqual((response as? HTTPURLResponse)?.statusCode, 200)
         await fulfillment(of: [callbackReceived, tokenRequested], timeout: 3)
         XCTAssertNil(try AIKeychain.load(reference), "Browser closes before credentials are exchanged")
@@ -338,7 +336,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
             for key in [reference, reference + "/registration", hostReference] { try? AIKeychain.remove(key) }
         }
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ChatGPTURLProtocol.self]
-        let auth = AIAuthentication(session: URLSession(configuration: config), chatGPTHostReference: hostReference)
+        let auth = AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config), chatGPTHostReference: hostReference)
         let browser = try await auth.beginChatGPT(connection)
         let items = URLComponents(url: browser.url, resolvingAgainstBaseURL: false)!.queryItems!
         func query(_ key: String) -> String { items.first { $0.name == key }!.value! }
@@ -350,7 +348,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
         }
         let finish = Task { try await auth.finishChatGPT(browser.id, reference: reference) }
         let callback = URL(string: query("redirect_uri") + "?state=" + query("state") + "&code=synthetic&client_id=oaiapp_fixture")!
-        _ = try await URLSession.shared.data(from: callback)
+        _ = try await CallbackFixture.deliver( callback)
         try await finish.value
         XCTAssertEqual(try AIKeychain.load(reference)?.chatGPT?.subject, "synthetic-subject")
         XCTAssertEqual(try AIKeychain.load(reference + "/registration", as: AIChatGPTAccount.self)?.clientID, "oaiapp_fixture")
@@ -364,7 +362,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
         await providers.refreshConnectionCatalogsIfNeeded()
         XCTAssertEqual(ChatGPTURLProtocol.fixture.requestCount, 2, "Only token exchange and JWKS, no model/inference request")
         // Recreate the auth actor to prove recovery uses persisted identity, not attempt memory.
-        let reloaded = AIAuthentication(session: URLSession(configuration: config), chatGPTHostReference: hostReference)
+        let reloaded = AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config), chatGPTHostReference: hostReference)
         let retry = try await reloaded.beginChatGPT(connection)
         let retryItems = URLComponents(url: retry.url, resolvingAgainstBaseURL: false)!.queryItems!
         XCTAssertEqual(retryItems.first { $0.name == "client_id" }?.value, "oaiapp_fixture")
@@ -383,7 +381,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
         let account = AIChatGPTAccount(clientID: "oaiapp_fixture", subject: "synthetic", idToken: "synthetic", scopes: ["chatgpt.tokens.use.direct"])
         try AIKeychain.save(AICredential(accessToken: "synthetic", refreshToken: "synthetic", expires: .distantFuture, accountID: account.subject, chatGPT: account), reference: connection.credentialReference)
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ChatGPTURLProtocol.self]
-        let auth = AIAuthentication(session: URLSession(configuration: config))
+        let auth = AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config))
         let providers = AIConnectionService(defaults: defaults, auth: auth)
         let id = providers.addConnection(connection)
         let models = Data(#"{"models":[{"slug":"available","display_name":"Available","visibility":"list"}]}"#.utf8)
@@ -400,7 +398,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
         XCTAssertEqual(ChatGPTURLProtocol.fixture.requestCount, 1, "Repeated entry and reload read the saved snapshot")
         await reloaded.refreshModels(id)
         XCTAssertEqual(ChatGPTURLProtocol.fixture.requestCount, 2, "Manual refresh ignores the 24-hour age")
-        reloaded.connections[0].modelsChecked = Date().addingTimeInterval(-86401)
+        reloaded.connections[0].modelsChecked = SignedIdentity.now.addingTimeInterval(-86401)
         reloaded.saveConnections()
         let expired = AIConnectionService(defaults: defaults, auth: auth)
         let arrived = expectation(description: "Expired background model refresh")
@@ -437,7 +435,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
                 XCTAssertEqual(request.url?.path, "/api/accounts/oauth/token")
                 return (status, try JSONSerialization.data(withJSONObject: ["error": code]))
             }
-            let auth = AIAuthentication(session: URLSession(configuration: config), chatGPTHostReference: reference + "/host")
+            let auth = AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config), chatGPTHostReference: reference + "/host")
             let providers = AIConnectionService(defaults: defaults, auth: auth)
             let id = providers.addConnection(connection)
             if index.isMultiple(of: 2) {
@@ -467,7 +465,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
         let account = AIChatGPTAccount(clientID: "oaiapp_fixture", subject: "synthetic", idToken: "synthetic-hint", scopes: ["chatgpt.tokens.use.direct"])
         let current = AICredential(accessToken: "synthetic", refreshToken: "synthetic-old", expires: .distantPast, accountID: account.subject, chatGPT: account)
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ChatGPTURLProtocol.self]
-        let auth = AIAuthentication(session: URLSession(configuration: config))
+        let auth = AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config))
         for (status, code) in [(400, "invalid_client"), (500, "server_error")] {
             try AIKeychain.save(current, reference: reference)
             ChatGPTURLProtocol.fixture.set { _ in (status, try JSONSerialization.data(withJSONObject: ["error": code])) }
@@ -505,7 +503,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
                 if request.url?.path == "/.well-known/openid-configuration" { return (200, Data(#"{"issuer":"https://auth.openai.com","revocation_endpoint":"https://auth.openai.com/revoke"}"#.utf8)) }
                 XCTAssertEqual(request.url?.path, "/revoke"); return (200, Data())
             }
-            let auth = AIAuthentication(session: URLSession(configuration: config), chatGPTHostReference: reference + "/host")
+            let auth = AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config), chatGPTHostReference: reference + "/host")
             let providers = AIConnectionService(defaults: defaults, auth: auth)
             let id = providers.addConnection(connection)
             XCTAssertTrue(providers.isLoggedIn(connection))
@@ -537,7 +535,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
         let defaults = UserDefaults(suiteName: suite)!
         var connection = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection(); connection.id = suite
         defer { defaults.removePersistentDomain(forName: suite); try? AIKeychain.remove(connection.credentialReference) }
-        let providers = AIConnectionService(defaults: defaults, auth: AIAuthentication())
+        let providers = AIConnectionService(defaults: defaults, auth: AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }))
         _ = providers.addConnection(connection)
         XCTAssertFalse(providers.isUsingChatGPTPlan(connection), "Signed-out card and picker hide plan status")
         var account = AIChatGPTAccount(clientID: "oaiapp_fixture", subject: "synthetic", idToken: "synthetic-hint", scopes: ["openid"])
@@ -567,7 +565,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
         let account = AIChatGPTAccount(clientID: "oaiapp_fixture", subject: "synthetic", idToken: "synthetic-hint", scopes: ["chatgpt.tokens.use.direct"])
         try AIKeychain.save(AICredential(accessToken: "synthetic", refreshToken: "synthetic-refresh", expires: .distantFuture, accountID: account.subject, chatGPT: chatGPT ? account : nil), reference: connection.credentialReference)
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ChatGPTURLProtocol.self]
-        let providers = AIConnectionService(defaults: defaults, auth: AIAuthentication(session: URLSession(configuration: config)))
+        let providers = AIConnectionService(defaults: defaults, auth: AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config)))
         _ = providers.addConnection(connection)
         XCTAssertTrue(providers.setPurpose(.search, selection: .init(connectionID: connection.id, modelID: connection.modelID)))
         providers.sharing.waitingChanged = { owner, waiting in
@@ -685,7 +683,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
             let token = AICredential(accessToken: "synthetic", refreshToken: "synthetic-refresh", expires: .distantFuture, accountID: account.subject, chatGPT: account)
             try AIKeychain.save(token, reference: reference)
             let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ChatGPTURLProtocol.self]
-            let auth = AIAuthentication(session: URLSession(configuration: config))
+            let auth = AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config))
             let providers = AIConnectionService(defaults: defaults, auth: auth)
             let id = providers.addConnection(connection)
             ChatGPTURLProtocol.fixture.set { _ in
@@ -726,7 +724,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
         let old = AICredential(accessToken: "synthetic-old", refreshToken: "synthetic-old-refresh", expires: .distantFuture, accountID: account.subject, chatGPT: account)
         try AIKeychain.save(old, reference: reference)
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ChatGPTURLProtocol.self]
-        let auth = AIAuthentication(session: URLSession(configuration: config))
+        let auth = AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config))
         let providers = AIConnectionService(defaults: defaults, auth: auth)
         _ = providers.addConnection(connection)
         ChatGPTURLProtocol.fixture.set { _ in (401, Data("Unauthorized".utf8)) }
@@ -780,7 +778,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
         let account = AIChatGPTAccount(clientID: "oaiapp_fixture", subject: "synthetic", idToken: "synthetic", scopes: ["chatgpt.tokens.use.direct"])
         try AIKeychain.save(AICredential(accessToken: "synthetic", refreshToken: "synthetic", expires: .distantPast, accountID: account.subject, chatGPT: account), reference: selected.credentialReference)
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ChatGPTURLProtocol.self]
-        let auth = AIAuthentication(session: URLSession(configuration: config))
+        let auth = AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config))
         ChatGPTURLProtocol.fixture.set { request in
             if request.url?.path == "/.well-known/openid-configuration" { return (200, Data(#"{"issuer":"https://auth.openai.com","revocation_endpoint":"https://auth.openai.com/revoke"}"#.utf8)) }
             XCTAssertEqual(request.url?.path, "/revoke", "No new refresh may start while signing out")
@@ -802,7 +800,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ChatGPTURLProtocol.self]
-        let auth = AIAuthentication(session: URLSession(configuration: config), credentialResolver: { _ in
+        let auth = AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config), credentialResolver: { _ in
             .init(accessToken: "synthetic", refreshToken: "", expires: .distantFuture, accountID: "fixture")
         })
         let providers = AIConnectionService(defaults: defaults, auth: auth)
@@ -883,7 +881,7 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
     func testChatGPTCredentialsCannotBeRoutedToCustomEndpoints() async throws {
         var connection = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection()
         connection.baseURL = "https://example.com/v1"
-        let auth = AIAuthentication(credentialResolver: { _ in XCTFail("Invalid route must fail before resolving credentials"); throw AIError.storage })
+        let auth = AIAuthentication(now: { SignedIdentity.now }, makeCallbackSource: { CallbackFixture.make() }, credentialResolver: { _ in XCTFail("Invalid route must fail before resolving credentials"); throw AIError.storage })
         do { _ = try await auth.models(connection); XCTFail("Custom model endpoint accepted") } catch AIError.unsupported {}
         XCTAssertThrowsError(try AIProviderRequest(connection: connection, model: .init(id: "available", name: "Available", thinking: []), credential: .init(accessToken: "synthetic", refreshToken: "", expires: .distantFuture, accountID: "synthetic"), thinking: nil, conversationID: "synthetic", instructions: "Read", transport: AITransport()))
     }
@@ -899,5 +897,63 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
         var count = 0
         for try await _ in AIChatGPTResponses.checked(source(delta + "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"fixture\",\"status\":\"completed\"}}\n\n")) { count += 1 }
         XCTAssertEqual(count, 2)
+    }
+}
+
+final class CredentialStoreAdapterTests: XCTestCase {
+    func testKeychainAdapterRoundTripInIsolatedNamespace() throws {
+        let store = KeychainCredentialStore(service: "dev.moonread.tests." + UUID().uuidString)
+        let reference = "synthetic-credential"
+        defer { try? store.remove(reference) }
+        XCTAssertNil(try store.read(reference))
+        let first = AICredential(accessToken: "synthetic-first", refreshToken: "", expires: .distantFuture, accountID: "fixture")
+        try store.save(first, reference: reference)
+        XCTAssertEqual(try store.load(reference)?.accessToken, first.accessToken)
+        let next = AICredential(accessToken: "synthetic-replacement", refreshToken: "", expires: .distantFuture, accountID: "fixture")
+        try store.save(next, reference: reference)
+        XCTAssertEqual(try store.load(reference)?.accessToken, next.accessToken)
+        try store.remove(reference); XCTAssertNil(try store.read(reference))
+    }
+    func testBusinessFixturesUseMemoryAndRejectedWritesPreservePriorValue() throws {
+        XCTAssertTrue(AIKeychain.store is MemoryCredentialStore, "The test scheme must inject memory credentials")
+        let store = MemoryCredentialStore()
+        try store.write(Data([1]), reference: "current")
+        store.rejectWrites = true
+        XCTAssertThrowsError(try store.write(Data([2]), reference: "current"))
+        XCTAssertEqual(try store.read("current"), Data([1]))
+        try store.remove("current"); XCTAssertNil(try store.read("current"))
+    }
+}
+
+private final class CallbackFixture: AIChatGPTCallbackSource, @unchecked Sendable {
+    static let lock = NSLock()
+    private static var nextPort = 12345
+    private static var sources: [String: CallbackFixture] = [:]
+    let router = AIChatGPTCallbackRouter()
+    let redirect: URL
+    init() {
+        redirect = Self.lock.withLock { let port = Self.nextPort; Self.nextPort += 1; return URL(string: "http://127.0.0.1:\(port)/auth/callback")! }
+    }
+    var callbacks: AsyncThrowingStream<URL, Error> { router.callbacks }
+    static func make() -> CallbackFixture {
+        let source = CallbackFixture()
+        lock.withLock { sources[source.redirect.absoluteString] = source }; return source
+    }
+    func start() async throws -> URL {
+        guard !router.isStopped else { throw CancellationError() }; return redirect
+    }
+    func validateCallbacks(_ value: @escaping @Sendable (URL) -> Bool) { router.validate(value) }
+    func stop() { router.stop(); Self.lock.withLock { Self.sources[redirect.absoluteString] = nil } }
+    static func deliver(_ url: URL) async throws -> (Data, URLResponse) {
+        let source = lock.withLock { sources.values.first { $0.redirect.port == url.port } }
+        let accepted = source?.router.receive(url) == true
+        return (Data(AIChatGPTCallbackRouter.message(for: url, accepted: accepted).utf8),
+            HTTPURLResponse(url: url, statusCode: accepted ? 200 : 404, httpVersion: nil, headerFields: nil)!)
+    }
+}
+
+@MainActor private final class BrowserAnchorStub: NSObject, ASWebAuthenticationPresentationContextProviding {
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        preconditionFailure("Business tests must not request a native presentation anchor")
     }
 }
