@@ -52,3 +52,67 @@ jobs:
         run: nix develop --no-update-lock-file -c cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - name: Test Rust
         run: nix develop --no-update-lock-file -c cargo test --locked --workspace --all-features
+
+  ios-unit-tests:
+    name: iOS unit tests
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require Xcode 27.1 and the existing iOS 27 simulator
+        id: simulator
+        run: |
+          test "$(xcodebuild -version | head -n 1)" = 'Xcode 27.1'
+          xcrun simctl list devices available --json > "$RUNNER_TEMP/simulators.json"
+          python3 - <<'PY'
+          import json, os
+          with open(os.environ['RUNNER_TEMP'] + '/simulators.json') as source:
+              devices = json.load(source)['devices']
+          matches = [device['udid'] for runtime, entries in devices.items()
+                     if runtime.endswith('.iOS-27-0')
+                     for device in entries if device['name'] == 'iPhone 18 Pro' and device['isAvailable']]
+          if not matches:
+              raise SystemExit('Required iOS 27.0 iPhone 18 Pro simulator is unavailable; no fallback is allowed.')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('udid=' + matches[0] + '\n')
+          PY
+      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            build/cargo
+          key: ios-cargo-${{ runner.arch }}-xcode27.1-${{ hashFiles('flake.lock', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'Cargo.toml') }}
+          restore-keys: ios-cargo-${{ runner.arch }}-xcode27.1-${{ hashFiles('flake.lock', 'Cargo.lock') }}-
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: build/DerivedData
+          key: ios-derived-${{ runner.arch }}-xcode27.1-${{ hashFiles('flake.lock', 'Cargo.lock', 'ios/**/Package.resolved', 'ios/**/*.pbxproj') }}-${{ hashFiles('ios/**', 'crates/**') }}
+          restore-keys: ios-derived-${{ runner.arch }}-xcode27.1-${{ hashFiles('flake.lock', 'Cargo.lock', 'ios/**/Package.resolved', 'ios/**/*.pbxproj') }}-
+      - name: Run all MoonreadTests (Rust is built by the Nix Xcode phase)
+        env:
+          SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          mkdir -p build/CI
+          nix develop --no-update-lock-file -c xcodebuild \
+            -project ios/Moonread.xcodeproj -scheme Moonread -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+            -derivedDataPath build/DerivedData -resultBundlePath build/CI/MoonreadTests.xcresult \
+            -only-testing:MoonreadTests -parallel-testing-enabled NO \
+            -test-timeouts-enabled YES -default-test-execution-time-allowance 300 \
+            -maximum-test-execution-time-allowance 300 \
+            CODE_SIGNING_ALLOWED=NO "MOONREAD_NIX=$(command -v nix)" test \
+            2>&1 | tee build/CI/MoonreadTests.log
+      - name: Preserve test results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: MoonreadTests-${{ github.run_attempt }}
+          path: build/CI
+          if-no-files-found: ignore
+          retention-days: 7

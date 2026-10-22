@@ -6,18 +6,20 @@
 
 保留 `flake.nix` 和 `flake.lock`：前者声明 Rust、iOS targets、Clippy、rustfmt、nixfmt、actionlint、gitleaks 与 Zola，后者锁定实际版本。本机与 CI 都通过 `nix develop --no-update-lock-file` 进入同一环境，Cargo 命令使用 `--locked`。不再维护第二份 Rust 工具链配置，也不新增安装或构建脚本。
 
-Nix 不替代 Xcode。Apple SDK、Swift 编译器、模拟器和签名由本机 Xcode 管理；iOS 构建、定向测试、UI 与真机试用以本地验证为准，不在云端 CI 运行。工具链版本固定不等于整个 iOS 构建完全可复现。
+Nix 不替代 Xcode。Apple SDK、Swift 编译器、模拟器和签名由 Xcode 管理；iOS 全量单元测试在 GitHub 托管 macOS CI 运行，UI 与真机试用仍由本地按范围验证。工具链版本固定不等于整个 iOS 构建完全可复现。
 
 ## 自动检查
 
-[CI](../../../.github/workflows/ci.yml) 在发往 `main` 的 PR、`main` 更新及手动触发时运行单个 Ubuntu 24.04 的 `Linux checks`：
+[CI](../../../.github/workflows/ci.yml) 在发往 `main` 的 PR、`main` 更新及手动触发时运行 Ubuntu 24.04 的 `Linux checks`：
 
 - gitleaks 扫描当前 HEAD 可达的已提交历史，发现疑似密钥使检查失败；输出遮盖密钥，不扫描开发者本机 build/、签名配置或其他未提交文件。
 - Rust/Nix 格式与 actionlint 工作流语法检查。
 - Rust 工作区所有 target/feature 的 Clippy，禁止警告。
 - Rust 工作区测试，Cargo 命令均使用 `--locked`。
 
-文档改动也运行检查和密钥扫描，不再单独分类跳过。同一 PR 的新提交取消旧检查。Cargo 缓存按平台、工具链及依赖区分，不上传开发者本机数据或签名安装包。iOS、长时性能、全部 UI、最低系统和真实文件提供方按改动范围在本地验证；Linux CI 通过不替代这些验收。
+文档改动也运行检查和密钥扫描，不再单独分类跳过。同一 PR 的新提交取消旧检查。Cargo 缓存按平台、工具链及依赖区分，不上传开发者本机数据或签名安装包。
+
+`iOS unit tests` 使用官方 `xcode-27` arm64 镜像，显式选择 Xcode 27.1 与镜像已有的 iOS 27.0 iPhone 18 Pro；缺少时直接失败，不创建模拟器或替换工具链。Xcode 构建阶段通过 Nix 编译 Rust，xcodebuild 运行完整 MoonreadTests（不运行 MoonreadUITests），关闭测试并行及签名，单项最多五分钟。Cargo 与 DerivedData 分开缓存，日志及 xcresult 保留七天。本工作流没有 tag 发布或上传逻辑。长时性能、UI、最低系统和真实文件提供方仍按范围在本地验证，CI 不替代这些验收。
 
 CI 工作流只读仓库，checkout 不保留凭据，引用的 Actions 固定到完整提交 SHA。不使用 `pull_request_target`，也不让工作流自动批准或合并 PR。
 
