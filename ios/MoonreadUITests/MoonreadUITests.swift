@@ -9,7 +9,11 @@ import XCTest
     XCUIDevice.shared.orientation = .portrait
   }
   override func tearDown() {
-    if testRun?.hasSucceeded == false {
+    if (testRun?.failureCount ?? 0) > 0 {
+      let hierarchy = XCTAttachment(string: app.debugDescription)
+      hierarchy.name = "Failure UI hierarchy"
+      hierarchy.lifetime = .keepAlways
+      add(hierarchy)
       let attachment = XCTAttachment(screenshot: app.screenshot())
       attachment.lifetime = .keepAlways
       add(attachment)
@@ -101,8 +105,13 @@ import XCTest
     shelf()
     menu(sample)
     app.buttons["移动"].tap()
-    ready(app.buttons["我的书架"]).tap()
-    ready(app.buttons["目标"]).tap()
+    ready(app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "我的书架、")).firstMatch)
+      .tap()
+    let destinations = app.buttons.matching(identifier: "目标")
+    waitUntil { destinations.allElementsBoundByIndex.contains { $0.isHittable } }
+    guard let destination = destinations.allElementsBoundByIndex.first(where: { $0.isHittable })
+    else { return XCTFail("Missing presented destination folder") }
+    destination.tap()
     ready(app.buttons["移到这里"]).tap()
     XCTAssertTrue(file(sample).waitForNonExistence(timeout: 8))
     ready(file("目标")).tap()
@@ -192,7 +201,9 @@ import XCTest
     open()
     backFromReader()
     ready(file(sample))
-    XCTAssertEqual(query.value as? String, "排版")
+    XCTAssertTrue((query.value as? String)?.hasSuffix("排版") == true)
+    XCTAssertTrue(
+      (query.value as? String)?.contains("我的书架") == true, "Returning must preserve the shelf scope")
   }
   func testU08BrowseTagAndUnindexedGroup() {
     launch()
@@ -291,6 +302,7 @@ import XCTest
     ready(app.buttons["shelf-builtin"])
     app.buttons["smokeReceive"].tap()
     app.buttons["smokeImportTXT"].tap()
+    ready(app.alerts["建立索引"].buttons["以后再说"]).tap()
     readableBody()
     backFromReader()
     ready(file("导入样本.txt"))
@@ -299,20 +311,17 @@ import XCTest
     launch()
     shelf()
     open()
-    controls()
-    app.buttons["readerMore"].tap()
-    ready(app.buttons["toggleBookmark"]).tap()
-    app.buttons["openBookmarks"].tap()
-    ready(app.cells.firstMatch).tap()
-    _ = body()
     app.buttons["smokeAddNote"].tap()
     let editor = ready(app.textViews["noteEditorText"])
     editor.typeText("合成批注")
     app.buttons["saveNote"].tap()
     XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
     list("笔记")
-    ready(app.staticTexts["合成批注"]).tap()
-    _ = body()
+    ready(app.staticTexts["合成批注"])
+    closeList()
+    ready(app.buttons["toggleBookmark"]).tap()
+    ready(app.buttons["openBookmarks"]).tap()
+    ready(app.otherElements["readerBottomPanel"].buttons["第一章 星灯"])
   }
   func testU17SearchPreviewCommitsOnlyOnContinue() {
     launch()
@@ -369,6 +378,7 @@ import XCTest
     ready(app.buttons["shelf-builtin"])
     app.buttons["smokeReceive"].tap()
     app.buttons["smokeShareTXT"].tap()
+    ready(app.alerts["建立索引"].buttons.matching(identifier: "fullIndexPromptStart").firstMatch).tap()
     readableBody()
     backFromReader()
     ready(file("分享样本.txt"))

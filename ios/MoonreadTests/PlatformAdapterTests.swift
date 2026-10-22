@@ -35,21 +35,25 @@ final class PlatformAdapterCredentialStoreAdapterTests: CredentialStoreAdapterFi
 final class PlatformAdapterTipJarTests: TipJarFixture {
   // S456: 使用项目 StoreKit 配置验证真实购买适配器；业务测试使用假 PurchaseGateway。
   func testStoreKitAdapterLoadsAndCompletesSyntheticPurchase() async throws {
-    let file = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-      .deletingLastPathComponent()
-      .appendingPathComponent("Moonread/Settings/TipJar.storekit")
+    let file = try XCTUnwrap(
+      Bundle(for: Self.self).url(forResource: "TipJar", withExtension: "storekit"),
+      "The test bundle must contain the project StoreKit configuration")
     let session = try SKTestSession(contentsOf: file)
     session.resetToDefaultState()
     session.clearTransactions()
     session.disableDialogs = true
+    session.storefront = "USA"
+    session.locale = Locale(identifier: "zh_CN")
     defer { session.clearTransactions() }
     let gateway = StoreKitPurchaseGateway()
     let loaded = expectation(description: "StoreKit adapter purchase")
     var outcome: TipPurchaseResult?
+    var stage = "loading configured products"
     let task = Task {
       do {
         let products = try await gateway.products()
         XCTAssertEqual(Set(products.map(\.id)), Set(TipJar.productIDs))
+        stage = "purchasing configured product"
         let result = try await gateway.purchase(TipJar.productIDs[0])
         outcome = result
         if case .success(let transaction) = result { await gateway.finish(transaction.id) }
@@ -59,7 +63,7 @@ final class PlatformAdapterTipJarTests: TipJarFixture {
     await fulfillment(of: [loaded], timeout: 20)
     task.cancel()
     guard case .success(let transaction) = outcome else {
-      return XCTFail("Synthetic StoreKit purchase did not complete")
+      return XCTFail("Synthetic StoreKit purchase did not complete: \(stage)")
     }
     XCTAssertTrue(transaction.verified)
     XCTAssertEqual(transaction.productID, TipJar.productIDs[0])

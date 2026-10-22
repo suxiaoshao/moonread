@@ -208,6 +208,7 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		8708446F28EB929FDBF3DF5B /* TipJarTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AC33131D026ECD095CC101C; };
 		542E6B712E2CF6CEA71DD1E2 /* UserDataConflictTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED575D4FB40600C79376B30D; };
 		9F8DE62685C2F88403C6ECD7 /* UserPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DD6B800901BD6C290FD4CBA; };
+		714F48D3E479BA56DD626210 /* TipJar.storekit in Test Resources */ = {isa = PBXBuildFile; fileRef = F01700000000000000000004 /* TipJar.storekit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -935,6 +936,7 @@ E51000000000000000000009,D41000000000000000000001,
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                714F48D3E479BA56DD626210 /* TipJar.storekit in Test Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

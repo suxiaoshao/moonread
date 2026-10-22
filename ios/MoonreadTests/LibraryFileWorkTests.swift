@@ -92,6 +92,9 @@ final class LibraryFileWorkLibraryDropTests: LibraryDropFixture {
       gate.complete(try JSONEncoder().encode(LibraryDragPayload(fileID: source.id)))
       await model.waitForFileWork()
       XCTAssertNil(model.error)
+      XCTAssertNotNil(model.indexPrompt, "Single queued import waits for its index choice before opening")
+      XCTAssertFalse(model.canAcceptFileWork)
+      model.resolveIndexPrompt(start: false)
       XCTAssertTrue(model.canAcceptFileWork)
       XCTAssertTrue(
         FileManager.default.fileExists(atPath: f.books.appendingPathComponent("source.txt").path))

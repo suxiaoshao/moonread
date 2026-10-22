@@ -97,18 +97,10 @@ struct LibraryPresentations: ViewModifier {
                 }
             }
             .onChange(of: model.path) { _, _ in model.showDeferredIndexPrompt() }
-            .alert(String(localized: "建立索引", table: "FullIndex"), isPresented: Binding(get: { model.indexPrompt != nil }, set: { if !$0 { model.indexPrompt = nil } })) {
-                if let prompt = model.indexPrompt {
-                    Button { model.indexPrompt = nil; model.fullIndex.start(prompt.shelf.id, includeCloud: false, userInitiated: true) } label: {
-                        Text("现在建立索引（\(prompt.local.count) 本，约 \(ByteCountFormatter.string(fromByteCount: Int64(clamping: prompt.local.reduce(0) { $0 + $1.size }), countStyle: .file))）", tableName: "FullIndex")
-                    }.accessibilityIdentifier("fullIndexPromptStart")
-                }
-                Button(role: .cancel) { model.indexPrompt = nil } label: { Text("以后再说", tableName: "FullIndex") }
-            }
             .alert("暂时无法完成", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
                 Button("知道了", role: .cancel) { model.error = nil }
             } message: { Text(model.error ?? "") }
-            .background(LibraryDecisionAlert(model: model, decision: model.pendingDecision, theme: theme).frame(width: 0, height: 0))
+            .background(LibraryDecisionAlert(model: model, decision: model.pendingDecision, indexPrompt: model.indexPrompt, theme: theme).frame(width: 0, height: 0))
             .confirmationDialog("移到最近删除？", isPresented: Binding(get: { model.deletion != nil }, set: { if !$0 { model.deletion = nil } }), titleVisibility: .visible, presenting: model.deletion) { entries in
                 Button("移到最近删除", role: .destructive) {
                     model.deletion = nil; model.runBatch(entries.map { .delete($0) })
@@ -136,23 +128,42 @@ struct LibraryPresentations: ViewModifier {
 struct LibraryDecisionAlert: UIViewControllerRepresentable {
     let model: LibraryModel
     let decision: LibraryPendingDecision?
+    var indexPrompt: IdentityInventory? = nil
     let theme: ThemeSurface
     func makeUIViewController(context: Context) -> Controller { Controller() }
     func updateUIViewController(_ controller: Controller, context: Context) {
-        controller.model = model; controller.decision = decision
+        controller.model = model; controller.decision = decision; controller.indexPrompt = indexPrompt
         controller.view.tintColor = theme.accent; controller.overrideUserInterfaceStyle = theme.style
         controller.presentIfNeeded()
     }
     final class Controller: UIViewController {
         var model: LibraryModel?
         var decision: LibraryPendingDecision?
+        var indexPrompt: IdentityInventory?
         private weak var alert: UIAlertController?
         private var resolving = false
         override func loadView() { view = UIView(); view.isUserInteractionEnabled = false }
         override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); presentIfNeeded() }
         func presentIfNeeded() {
             guard isViewLoaded, view.window != nil, alert == nil, !resolving,
-                  presentedViewController == nil, let model, let decision else { return }
+                  presentedViewController == nil, let model else { return }
+            if decision == nil, let prompt = indexPrompt {
+                let alert = UIAlertController(title: String(localized: "建立索引", table: "FullIndex"), message: nil, preferredStyle: .alert)
+                alert.view.tintColor = view.tintColor
+                let size = ByteCountFormatter.string(fromByteCount: Int64(clamping: prompt.local.reduce(0) { $0 + $1.size }), countStyle: .file)
+                let start = UIAlertAction(title: String(localized: "现在建立索引（\(prompt.local.count) 本，约 \(size)）", table: "FullIndex"), style: .default) { [weak self, weak alert] _ in
+                    self?.finish(alert: alert) { model.resolveIndexPrompt(start: true) }
+                }
+                start.accessibilityIdentifier = "fullIndexPromptStart"
+                alert.addAction(start)
+                alert.addAction(UIAlertAction(title: String(localized: "以后再说", table: "FullIndex"), style: .cancel) { [weak self, weak alert] _ in
+                    self?.finish(alert: alert) { model.resolveIndexPrompt(start: false) }
+                })
+                self.alert = alert
+                present(alert, animated: true)
+                return
+            }
+            guard let decision else { return }
             let title: String, message: String, accept: String, cancel: String
             switch decision {
             case .replacement(let command, _):

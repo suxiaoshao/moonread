@@ -74,7 +74,9 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
       try scoped.bookDetails(bookId: book.id, contentSha: nil),
       try batch.bookDetails(bookId: book.id, contentSha: nil))
     let same = try await service.bookQuery(book.id)
-    XCTAssertTrue(scoped === same)
+    XCTAssertEqual(
+      try scoped.readingSnapshot(bookId: book.id), try same.readingSnapshot(bookId: book.id),
+      "Unchanged facts have equal query results; framework notifications may evict a cached object")
     let old = try scoped.readingSnapshot(bookId: book.id).book.positionUtf8
     try await service.savePosition(bookID: book.id, offset: 44)
     let newer = try await service.bookQuery(book.id)

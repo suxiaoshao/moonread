@@ -135,6 +135,8 @@ final class AIProviderAdapterConversationTests: ConversationFixture {
     for mode in ["headers-wait", "body-wait"] {
       let (service, _, connection, suite) = try await fixture(mode)
       defer { cleanup(connection, suite: suite) }
+      let stopped = expectation(description: "URLProtocol stopped: \(mode)")
+      AITestURLProtocol.state.events(request: {}, stop: { stopped.fulfill() })
       let conversation = try await created(service)
       service.updateDraft(conversation.id, text: "等待测试")
       service.send(conversation.id)
@@ -143,6 +145,7 @@ final class AIProviderAdapterConversationTests: ConversationFixture {
       await wait { !conversation.running }
       XCTAssertEqual(conversation.turns.last?.outcome, .stopped)
       XCTAssertNil(conversation.turns.last?.error)
+      await fulfillment(of: [stopped], timeout: 3)
       XCTAssertGreaterThan(AITestURLProtocol.state.counts.1, 0)
     }
   }

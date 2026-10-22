@@ -15,9 +15,6 @@
     ],
     "language": "zh-Hans",
     "region": "CN",
-    "storeKitConfigurationFileReference": {
-      "identifier": "../Moonread/Settings/TipJar.storekit"
-    },
     "targetForVariableExpansion": {
       "containerPath": "container:Moonread.xcodeproj",
       "identifier": "A80000000000000000000001",

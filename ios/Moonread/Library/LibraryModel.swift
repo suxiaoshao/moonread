@@ -129,14 +129,29 @@ final class LibraryModel {
     let fullIndex = FullIndexController.shared
     var indexPrompt: IdentityInventory?
     var deferredIndexPrompt: IdentityInventory?
+    private var importedBookToOpen: LibraryEntry?
+    /// Called by the presentation owner only after the index alert has closed.
+    func resolveIndexPrompt(start: Bool) {
+        guard let prompt = indexPrompt else { return }
+        indexPrompt = nil
+        if start { fullIndex.start(prompt.shelf.id, includeCloud: false, userInitiated: true) }
+        finishImportOpening()
+    }
+    private func finishImportOpening() {
+        guard indexPrompt == nil, deferredIndexPrompt == nil, sheet == nil,
+              let entry = importedBookToOpen else { return }
+        importedBookToOpen = nil
+        open(entry)
+        if let work = fileWork, work.task == nil { finish(work) }
+    }
     func offerIndex(_ shelfID: String) async {
         guard let inventory = try? await service.identityInventory(shelfID), !inventory.local.isEmpty else { return }
         if fullIndex.automatic { fullIndex.start(shelfID, includeCloud: false, userInitiated: false) }
-        else if path.last?.isReader == true || sheet != nil { deferredIndexPrompt = inventory }
+        else if (path.last?.isReader == true && importedBookToOpen == nil) || sheet != nil { deferredIndexPrompt = inventory }
         else { indexPrompt = inventory }
     }
     func showDeferredIndexPrompt() {
-        if path.last?.isReader != true, sheet == nil, let prompt = deferredIndexPrompt { deferredIndexPrompt = nil; indexPrompt = prompt }
+        if path.last?.isReader != true || importedBookToOpen != nil, sheet == nil, let prompt = deferredIndexPrompt { deferredIndexPrompt = nil; indexPrompt = prompt }
     }
     var sheet: LibrarySheet?
     /// An AI quick task opened from the library; the session itself lives in AIService.
@@ -146,7 +161,7 @@ final class LibraryModel {
     private(set) var shelfScans: [String: UUID] = [:]
     var explicitFileWork: Bool { fileWork != nil }
     var runningFileBatch: Bool { fileWork?.kind == .commands }
-    var processingFiles: Bool { pendingDecision == nil && explicitFileWork }
+    var processingFiles: Bool { pendingDecision == nil && importedBookToOpen == nil && explicitFileWork }
     var canAcceptFileWork: Bool { fileWork == nil }
     var afterSheetDismiss: (() -> Void)?
     private(set) var pendingDecision: LibraryPendingDecision?
@@ -597,7 +612,7 @@ final class LibraryModel {
         }
     }
     private func finish(_ work: FileWork) {
-        guard fileWork === work, pendingDecision == nil else { return }
+        guard fileWork === work, pendingDecision == nil, importedBookToOpen == nil else { return }
         for (file, _) in work.imports { file.finish() }; work.imports = []
         for command in work.commands { if case .receive(let file, _) = command { file.finish() } }
         work.commands = []; fileWork = nil
@@ -778,7 +793,7 @@ final class LibraryModel {
         if pendingDecision == nil, work.kind == .imports {
             if let entry = work.imported.first {
                 switch work.importCompletion {
-                case .openSingle: open(entry)
+                case .openSingle: importedBookToOpen = entry
                 case .showFolder: path.append(.folder(entry.parent))
                 case .stayInFolder: break
                 }
@@ -792,6 +807,8 @@ final class LibraryModel {
             }
             if !importFailures.isEmpty || sharedImportResult != nil { sheet = .importResults }
             for id in Set(work.imported.map(\.shelfId)) { await offerIndex(id) }
+            // Both ordinary and shared imports finish here: import → index choice → open.
+            finishImportOpening()
         }
     }
     /// A decision resumes the existing task, never re-enters admission.
@@ -822,6 +839,7 @@ final class LibraryModel {
         // A deferred index prompt is a new presentation, not the old import
         // result's owner. Clean up the dismissed result before presenting it.
         showDeferredIndexPrompt()
+        finishImportOpening()
     }
     /// Only an admitted runner may execute filesystem work.
     private func perform(_ command: LibraryCommand, work: FileWork, replace: Bool = false, permanently: Bool = false) async -> Bool {

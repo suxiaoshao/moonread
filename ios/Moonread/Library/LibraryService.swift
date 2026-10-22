@@ -822,7 +822,7 @@ extension ReaderService {
         let root = try builtinLibraryURL(), core = try textCore()
         try FileManager.default.createDirectory(at: root.appendingPathComponent("目标"), withIntermediateDirectories: true)
         try ReaderSmokeFixture.text.write(to: root.appendingPathComponent("月读 · 排版示例.txt"), atomically: true, encoding: .utf8)
-        try "第一章 同名\n保留原来的目标内容。".write(to: root.appendingPathComponent("同名.txt"), atomically: true, encoding: .utf8)
+        try ("第一章 同名\n" + String(repeating: "保留原来的目标内容。\n", count: 80)).write(to: root.appendingPathComponent("同名.txt"), atomically: true, encoding: .utf8)
         if ProcessInfo.processInfo.arguments.contains("--ui-test-encoding") {
             let text = "Chapter 1\n" + String(repeating: "An original encoding fixture.\n", count: 8)
             let bytes = text.utf16.flatMap { [UInt8($0 & 255), UInt8($0 >> 8)] }
@@ -844,7 +844,7 @@ extension ReaderService {
         let external = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Smoke-External-" + testSession)
         try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
         try "第一章 复制\n保留来源文件。".write(to: external.appendingPathComponent("复制.txt"), atomically: true, encoding: .utf8)
-        try "第一章 冲突\n不要替换已有目标。".write(to: external.appendingPathComponent("同名.txt"), atomically: true, encoding: .utf8)
+        try ("第一章 冲突\n" + String(repeating: "不要替换已有目标。\n", count: 80)).write(to: external.appendingPathComponent("同名.txt"), atomically: true, encoding: .utf8)
         let shelf = try registerLibraryShelf(external)
         try refreshLibraryShelf(shelf)
         sourceDefaults.set(true, forKey: marker)
