@@ -109,7 +109,7 @@ struct SettingsView: View {
             }
             catch { self.error = ReaderMessages.error(error) }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .statisticsPreferencesChanged)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .statisticsPreferencesChanged).receive(on: DispatchQueue.main)) { _ in
             Task { recording = await ReaderService.shared.statisticsPreferences().enabled }
         }
         .modifier(PageLoadingOverlay(request: loading.request, hasContent: true))

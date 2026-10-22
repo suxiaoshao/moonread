@@ -1087,7 +1087,7 @@ struct NoteEditor: View {
                 }
             }
             .task { await model.loadConflicts() }
-            .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived)) { _ in Task { await model.loadConflicts() } }
+            .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in Task { await model.loadConflicts() } }
             .onChange(of: model.text) { _, _ in model.error = nil }
             .interactiveDismissDisabled(saving)
             .alert("暂时无法保存", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {

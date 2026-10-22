@@ -69,7 +69,7 @@ struct AIQuickTaskSheet: View {
         }
         .presentationDetents([.medium, .large], selection: $detent).presentationDragIndicator(.visible)
         .onAppear { visible = true }.onDisappear { visible = false; notice = nil }
-        .onReceive(NotificationCenter.default.publisher(for: .aiActionFailed)) { notification in
+        .onReceive(NotificationCenter.default.publisher(for: .aiActionFailed).receive(on: DispatchQueue.main)) { notification in
             guard visible, let event = notification.object as? AIActionNotice, event.sessionID == nil else { return }
             notice = event
         }

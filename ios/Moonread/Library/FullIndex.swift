@@ -72,6 +72,27 @@ private final class IdentityFileWork: @unchecked Sendable {
     }
 }
 
+/// System callbacks have no executor guarantee. Only the delivered value crosses
+/// this boundary; it is retained here and is accessed exclusively on MainActor.
+enum FullIndexSystemCallback {
+    private struct Delivery<Value>: @unchecked Sendable { let value: Value }
+
+    nonisolated static func launch<Value>(
+        _ action: @escaping @MainActor @Sendable (Value) -> Void
+    ) -> @Sendable (Value) -> Void {
+        { value in
+            let delivery = Delivery(value: value)
+            Task { @MainActor in action(delivery.value) }
+        }
+    }
+
+    nonisolated static func expiration(
+        _ action: @escaping @MainActor @Sendable () -> Void
+    ) -> @Sendable () -> Void {
+        { Task { @MainActor in action() } }
+    }
+}
+
 @MainActor @Observable
 final class FullIndexController {
     static let shared = FullIndexController()
@@ -105,9 +126,8 @@ final class FullIndexController {
         automatic = defaults.bool(forKey: "Moonread.fullIndex.automatic")
         if let data = defaults.data(forKey: "Moonread.fullIndex.request.v1"), let saved = try? JSONDecoder().decode(Request.self, from: data), saved.schemaVersion == 1 { request = saved; shelfID = saved.shelf }
         guard registerTasks else { return }
-        BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.processingID, using: nil) { task in
-            Task { @MainActor in self.attach(task) }
-        }
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.processingID, using: nil,
+            launchHandler: FullIndexSystemCallback.launch { self.attach($0) })
         for name in [Notification.Name.NSProcessInfoPowerStateDidChange, ProcessInfo.thermalStateDidChangeNotification] {
             observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in Task { @MainActor in
                 if self.constrained { self.pause() } else if self.foreground { self.resume() }
@@ -128,7 +148,7 @@ final class FullIndexController {
         request = Request(shelf: shelf, includeCloud: includeCloud, resume: true); shelfID = shelf; message = nil; save()
         if #available(iOS 26.0, *), userInitiated {
             let identifier = Self.continuedPrefix + UUID().uuidString
-            if BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil, launchHandler: { task in Task { @MainActor in self.attach(task) } }) {
+            if BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil, launchHandler: FullIndexSystemCallback.launch { self.attach($0) }) {
                 let submission = BGContinuedProcessingTaskRequest(identifier: identifier, title: String(localized: "建立索引", table: "FullIndex"), subtitle: String(localized: "正在识别书架中的小说", table: "FullIndex"))
                 submission.strategy = .fail
                 do { try BGTaskScheduler.shared.submit(submission); continuedID = identifier } catch { continuedID = nil }
@@ -139,9 +159,9 @@ final class FullIndexController {
     private func attach(_ task: BGTask) {
         guard request?.resume == true, background == nil else { task.setTaskCompleted(success: false); return }
         background = task
-        task.expirationHandler = { Task { @MainActor in
+        task.expirationHandler = FullIndexSystemCallback.expiration {
             if #available(iOS 26.0, *), task is BGContinuedProcessingTask { self.cancel() } else { self.pause() }
-        } }
+        }
         resume()
         if runner == nil { task.setTaskCompleted(success: false); background = nil }
     }

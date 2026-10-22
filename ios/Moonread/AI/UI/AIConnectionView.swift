@@ -412,7 +412,7 @@ struct AIWebAuthenticationBrowser: UIViewRepresentable {
         }
         func start(in anchor: AnyObject) {
             guard session == nil, !stopped else { return }
-            let session = makeSession(url) { [weak self] _, error in
+            let session = makeSession(url) { @Sendable [weak self] _, error in
                 Task { @MainActor [weak self] in self?.finished(error) }
             }
             presentation = makePresentation(anchor)
