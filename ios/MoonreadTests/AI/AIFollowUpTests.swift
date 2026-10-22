@@ -462,6 +462,39 @@ private final class CredentialWriteFixture: @unchecked Sendable {
         XCTAssertTrue(turns.first?.process.isEmpty == true, "The earlier assistant call is not loaded")
         if case .metadata(let value) = result.body { XCTAssertEqual(value.author, "Page author") } else { XCTFail("Result missing") }
     }
+    func testNoteReviewReopenDiscardsDraftAndUsesSharedEditorOnce() async throws {
+        let (root, reader, book, _, _) = try await fixture(); defer { try? FileManager.default.removeItem(at: root) }
+        let repository = try await AIRepository.open(inMemory: true), owner = UUID().uuidString
+        try await repository.create(.init(id: owner, title: "Notes", listed: false))
+        let registry = await registry(repository, reader: reader, owner: owner)
+        let proposal = AINoteProposal(proposalRef: "note", bookRef: AIReadingTools.bookRef(book.contentSha256), kind: .note,
+            startUtf8: 0, endUtf8: 9, note: "Original suggestion", markRef: nil)
+        let original = entry(try AIAgentEntry.json(AIToolResponse(data: AIProposalSnapshot.notes(proposal))), name: "propose_note")
+        try await append(original, repository: repository, owner: owner)
+        let result = try XCTUnwrap(AICommittedResultDecoder.results(original, sessionID: owner).first)
+        await registry.openResult(result); registry.editNote(result.id, text: "Discarded draft")
+        registry.closeResult(result.id); await registry.openResult(result)
+        guard case .note(let review) = registry.review(result.id)?.body else { return XCTFail("Missing note review") }
+        XCTAssertEqual(review.draft, "Original suggestion")
+        let unchanged = try await reader.annotations(book.id, start: 0, end: 9); XCTAssertTrue(unchanged.isEmpty)
+        let baseline = try await reader.prepareAnnotation(book.id, start: 0, end: 9)
+        _ = try await reader.saveNote(baseline, text: "Existing note")
+        var applications = 0
+        registry.beginApplication = { _ in applications += 1; return UUID() }
+        let requested = await registry.saveNote(result.id)
+        let request = try XCTUnwrap(requested)
+        let beforeCommit = applications
+        XCTAssertEqual(request.edit.startUtf8, 0); XCTAssertEqual(request.edit.endUtf8, 9)
+        let editor = NoteEditorModel(edit: request.edit, service: reader, aiCommit: registry.annotationHooks(result))
+        await editor.loadConflicts(); editor.text = "Confirmed edit"
+        let saved = await editor.commit(); XCTAssertTrue(saved)
+        let repeated = await editor.commit(); XCTAssertTrue(repeated)
+        XCTAssertEqual(applications, beforeCommit + 1)
+        let marks = try await reader.annotations(book.id, start: 0, end: 9)
+        XCTAssertEqual(marks.count, 1); XCTAssertEqual(marks.first?.note, "Confirmed edit")
+        XCTAssertNotNil(registry.feedback[result.id])
+    }
+
     func testResultReopensFreshFromCanonicalProposalAndCurrentMetadata() async throws {
         let (root, reader, book, _, _) = try await fixture(); defer { try? FileManager.default.removeItem(at: root) }
         let repository = try await AIRepository.open(inMemory: true), owner = UUID().uuidString

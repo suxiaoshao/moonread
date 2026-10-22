@@ -1,7 +1,7 @@
 import XCTest
 
 /// Small, isolated user paths. Rules and state-machine permutations live below UI.
-final class MoonreadUITests: XCTestCase {
+@MainActor final class MoonreadUITests: XCTestCase {
     private let app = XCUIApplication()
     private let sample = "月读 · 排版示例.txt"
     override func setUp() { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
@@ -30,7 +30,15 @@ final class MoonreadUITests: XCTestCase {
         let query = app.textViews.matching(NSPredicate(format: "identifier IN %@", ["scrollText", "pageText"]))
         return ready(query.firstMatch)
     }
-    private func open(_ name: String? = nil) { ready(file(name ?? sample)).tap(); _ = body() }
+    private func readableBody() {
+        let text = body()
+        if text.label.hasPrefix("封面") {
+            text.swipeUp()
+            waitUntil { !self.body().label.hasPrefix("封面") }
+        }
+        XCTAssertFalse(body().label.isEmpty)
+    }
+    private func open(_ name: String? = nil) { ready(file(name ?? sample)).tap(); readableBody() }
     private func controls() { if !app.buttons["readingSettings"].exists { body().tap() }; ready(app.buttons["readingSettings"]) }
     private func backFromReader() { controls(); app.navigationBars.buttons.firstMatch.tap() }
     private func anchor() -> UInt64 { UInt64(body().value as? String ?? "") ?? UInt64.max }
@@ -40,7 +48,7 @@ final class MoonreadUITests: XCTestCase {
         XCTAssertEqual(XCTWaiter.wait(for: [condition], timeout: 8), .completed)
     }
     private func list(_ name: String) {
-        controls(); app.buttons["readerMore"].tap(); ready(app.buttons[name]).tap()
+        controls(); app.buttons["readerMore"].tap(); ready(app.buttons[name == "书签" ? "openBookmarks" : "openNotes"]).tap()
     }
     private func closeList() { ready(app.buttons["closeReaderLibrary"]).tap() }
     private func replace(_ field: XCUIElement, with value: String) {
@@ -156,12 +164,12 @@ final class MoonreadUITests: XCTestCase {
     }
     func testU15ImportSelectedTXTAndRead() {
         launch(); ready(app.buttons["shelf-builtin"])
-        app.buttons["smokeReceive"].tap(); app.buttons["smokeImportTXT"].tap(); _ = body()
+        app.buttons["smokeReceive"].tap(); app.buttons["smokeImportTXT"].tap(); readableBody()
         backFromReader(); ready(file("导入样本.txt"))
     }
     func testU16SaveBookmarkAndNote() {
         launch(); shelf(); open(); controls(); app.buttons["readerMore"].tap()
-        ready(app.buttons["toggleBookmark"]).tap(); app.buttons["书签"].tap()
+        ready(app.buttons["toggleBookmark"]).tap(); app.buttons["openBookmarks"].tap()
         ready(app.cells.firstMatch).tap(); _ = body()
         app.buttons["smokeAddNote"].tap(); let editor = ready(app.textViews["noteEditorText"])
         editor.typeText("合成批注"); app.buttons["saveNote"].tap()
@@ -187,7 +195,7 @@ final class MoonreadUITests: XCTestCase {
     }
     func testU19ShareInboxImportAndRead() {
         launch(); ready(app.buttons["shelf-builtin"])
-        app.buttons["smokeReceive"].tap(); app.buttons["smokeShareTXT"].tap(); _ = body()
+        app.buttons["smokeReceive"].tap(); app.buttons["smokeShareTXT"].tap(); readableBody()
         backFromReader(); ready(file("分享样本.txt"))
     }
 }

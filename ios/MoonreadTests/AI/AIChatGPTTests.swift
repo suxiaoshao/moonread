@@ -925,33 +925,6 @@ final class CredentialStoreAdapterTests: XCTestCase {
     }
 }
 
-private final class CallbackFixture: AIChatGPTCallbackSource, @unchecked Sendable {
-    static let lock = NSLock()
-    private static var nextPort = 12345
-    private static var sources: [String: CallbackFixture] = [:]
-    let router = AIChatGPTCallbackRouter()
-    let redirect: URL
-    init() {
-        redirect = Self.lock.withLock { let port = Self.nextPort; Self.nextPort += 1; return URL(string: "http://127.0.0.1:\(port)/auth/callback")! }
-    }
-    var callbacks: AsyncThrowingStream<URL, Error> { router.callbacks }
-    static func make() -> CallbackFixture {
-        let source = CallbackFixture()
-        lock.withLock { sources[source.redirect.absoluteString] = source }; return source
-    }
-    func start() async throws -> URL {
-        guard !router.isStopped else { throw CancellationError() }; return redirect
-    }
-    func validateCallbacks(_ value: @escaping @Sendable (URL) -> Bool) { router.validate(value) }
-    func stop() { router.stop(); Self.lock.withLock { Self.sources[redirect.absoluteString] = nil } }
-    static func deliver(_ url: URL) async throws -> (Data, URLResponse) {
-        let source = lock.withLock { sources.values.first { $0.redirect.port == url.port } }
-        let accepted = source?.router.receive(url) == true
-        return (Data(AIChatGPTCallbackRouter.message(for: url, accepted: accepted).utf8),
-            HTTPURLResponse(url: url, statusCode: accepted ? 200 : 404, httpVersion: nil, headerFields: nil)!)
-    }
-}
-
 @MainActor private final class BrowserAnchorStub: NSObject, ASWebAuthenticationPresentationContextProviding {
     func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         preconditionFailure("Business tests must not request a native presentation anchor")

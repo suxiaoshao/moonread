@@ -157,7 +157,7 @@ private actor ChinaStorefrontLookup {
     }
     func testChinaStorefrontAuthEntry() async throws {
         try await assertStorefrontAdmission { gate, config in
-            let auth = AIAuthentication(session: URLSession(configuration: config), availability: gate)
+            let auth = AIAuthentication(makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config), availability: gate)
             do {
                 _ = try await auth.beginOpenRouter()
                 _ = try await auth.requestData(URLRequest(url: URL(string: "https://example.com/oauth/token")!))
@@ -359,7 +359,7 @@ private actor ChinaStorefrontLookup {
         let suite = "MasterSwitchRefresh-" + UUID().uuidString
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AITestURLProtocol.self]
-        let providers = AIConnectionService(defaults: defaults, auth: AIAuthentication(session: URLSession(configuration: config)))
+        let providers = AIConnectionService(defaults: defaults, auth: AIAuthentication(makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config)))
         var connection = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection()
         connection.id = UUID().uuidString
         defer { defaults.removePersistentDomain(forName: suite); try? AIKeychain.remove(connection.credentialReference) }
@@ -402,7 +402,7 @@ private actor ChinaStorefrontLookup {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AITestURLProtocol.self]
         let account = AIChatGPTAccount(clientID: "oaiapp_fixture", subject: "synthetic", idToken: "synthetic", scopes: ["chatgpt.tokens.use.direct"])
         let credential = AICredential(accessToken: "synthetic", refreshToken: "synthetic", expires: .distantFuture, accountID: account.subject, chatGPT: account)
-        let auth = AIAuthentication(session: URLSession(configuration: config), credentialResolver: { _ in credential })
+        let auth = AIAuthentication(makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config), credentialResolver: { _ in credential })
         let providers = AIConnectionService(defaults: defaults, auth: auth)
         var first = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection()
         first.id = UUID().uuidString
@@ -505,7 +505,7 @@ private actor ChinaStorefrontLookup {
         let suite = suppliedSuite ?? "AIStageOne-\(UUID().uuidString)"
         let repository: AIRepository
         if let suppliedRepository { repository = suppliedRepository } else { repository = try await AIRepository.open(inMemory: true) }
-        let service = AIService(repository: repository, defaults: UserDefaults(suiteName: suite)!, auth: AIAuthentication(credentialResolver: { _ in
+        let service = AIService(repository: repository, defaults: UserDefaults(suiteName: suite)!, auth: AIAuthentication(makeCallbackSource: { CallbackFixture.make() }, credentialResolver: { _ in
             AICredential(accessToken: "test-only", refreshToken: "test-only", expires: .distantFuture, accountID: "fixture")
         }), makeTransport: {
             let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AITestURLProtocol.self]
@@ -826,11 +826,11 @@ private actor ChinaStorefrontLookup {
         let original = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection()
         defaults.set(try JSONEncoder().encode([original]), forKey: "Moonread.ai.connections")
         defaults.set(original.id, forKey: "Moonread.ai.defaultTextConnection")
-        let providers = AIConnectionService(defaults: defaults, auth: AIAuthentication())
+        let providers = AIConnectionService(defaults: defaults, auth: AIAuthentication(makeCallbackSource: { CallbackFixture.make() }))
         XCTAssertEqual(providers.connections.first?.id, original.id)
         let second = providers.addConnection(AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection())
         providers.saveConnections()
-        let restored = AIConnectionService(defaults: defaults, auth: AIAuthentication())
+        let restored = AIConnectionService(defaults: defaults, auth: AIAuthentication(makeCallbackSource: { CallbackFixture.make() }))
         XCTAssertEqual(restored.connections.count, 2)
         XCTAssertEqual(restored.defaultTextConnectionID, original.id)
         XCTAssertNotEqual(second, original.id)
@@ -848,7 +848,7 @@ private actor ChinaStorefrontLookup {
         var future = known; future["id"] = "future"; future["authMethod"] = "futureAuth"
         let original = try JSONSerialization.data(withJSONObject: [known, future, 42])
         defaults.set(original, forKey: key)
-        let service = AIConnectionService(defaults: defaults, auth: AIAuthentication())
+        let service = AIConnectionService(defaults: defaults, auth: AIAuthentication(makeCallbackSource: { CallbackFixture.make() }))
         XCTAssertEqual(service.connections.map(\.id), [connection.id])
         XCTAssertEqual(defaults.data(forKey: key), original, "Reading must never repair the stored collection")
         service.connections[0].name = "Edited"
@@ -866,7 +866,7 @@ private actor ChinaStorefrontLookup {
         XCTAssertEqual(remaining[0] as? NSDictionary, future as NSDictionary)
         let malformed = Data("not-json".utf8)
         defaults.set(malformed, forKey: key)
-        let unreadable = AIConnectionService(defaults: defaults, auth: AIAuthentication())
+        let unreadable = AIConnectionService(defaults: defaults, auth: AIAuthentication(makeCallbackSource: { CallbackFixture.make() }))
         unreadable.saveConnections()
         XCTAssertNotNil(unreadable.error)
         XCTAssertEqual(defaults.data(forKey: key), malformed, "A corrupt whole container must not be overwritten")
@@ -881,7 +881,7 @@ private actor ChinaStorefrontLookup {
         let value = try JSONSerialization.jsonObject(with: JSONEncoder().encode(selection))
         let original = try JSONSerialization.data(withJSONObject: ["search": value, "image": 42, "futurePurpose": ["mode": "future"]])
         defaults.set(original, forKey: key)
-        let service = AIConnectionService(defaults: defaults, auth: AIAuthentication())
+        let service = AIConnectionService(defaults: defaults, auth: AIAuthentication(makeCallbackSource: { CallbackFixture.make() }))
         XCTAssertEqual(service.purposeDefaults, [.search: selection])
         XCTAssertEqual(defaults.data(forKey: key), original)
         XCTAssertTrue(service.setPurpose(.search, selection: nil))
@@ -892,10 +892,10 @@ private actor ChinaStorefrontLookup {
         // Read the actual enum-keyed Codable format already stored by previous builds too.
         let pairs = try JSONSerialization.data(withJSONObject: ["futurePurpose", value, "search", value, "image", 42])
         defaults.set(pairs, forKey: key)
-        let restored = AIConnectionService(defaults: defaults, auth: AIAuthentication())
+        let restored = AIConnectionService(defaults: defaults, auth: AIAuthentication(makeCallbackSource: { CallbackFixture.make() }))
         XCTAssertEqual(restored.purposeDefaults, [.search: selection])
         restored.saveConnections()
-        let again = AIConnectionService(defaults: defaults, auth: AIAuthentication())
+        let again = AIConnectionService(defaults: defaults, auth: AIAuthentication(makeCallbackSource: { CallbackFixture.make() }))
         XCTAssertEqual(again.purposeDefaults, [.search: selection])
         let roundTrip = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(defaults.data(forKey: key))) as? [String: Any])
         XCTAssertEqual(roundTrip["futurePurpose"] as? NSDictionary, value as? NSDictionary)
@@ -933,7 +933,7 @@ private actor ChinaStorefrontLookup {
         }
     }
     func testChatGPTAuthorizationRejectsOtherConnectionMethods() async throws {
-        let auth = AIAuthentication()
+        let auth = AIAuthentication(makeCallbackSource: { CallbackFixture.make() })
         for method in [AIAuthenticationMethod.apiKey, .openrouter] {
             var connection = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection()
             connection.authMethod = method
@@ -1114,7 +1114,7 @@ extension AIStageOneTests {
     func testChatGPTDirectoryUsesAccountModelsOnly() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AIConnectionTestProtocol.self]
         AIConnectionTestProtocol.state.set("ready")
-        let authentication = AIAuthentication(session: URLSession(configuration: config), credentialResolver: { _ in
+        let authentication = AIAuthentication(makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config), credentialResolver: { _ in
             AICredential(accessToken: "synthetic-only", refreshToken: "", expires: .distantFuture, accountID: "fixture")
         })
         let models = try await authentication.models(AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection())
@@ -1164,7 +1164,7 @@ extension AIStageOneTests {
         AIConnectionTestProtocol.state.set("ready")
         let suite = "AIConnection-\(UUID().uuidString)"
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AIConnectionTestProtocol.self]
-        let auth = AIAuthentication(session: URLSession(configuration: config), credentialSaver: { _, _ in }, credentialResolver: { _ in
+        let auth = AIAuthentication(makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config), credentialSaver: { _, _ in }, credentialResolver: { _ in
             AICredential(accessToken: "fixture", refreshToken: "fixture", expires: .distantFuture, accountID: "fixture")
         })
         let service = AIService(repository: try await AIRepository.open(inMemory: true), defaults: UserDefaults(suiteName: suite)!, auth: auth)
@@ -1403,7 +1403,7 @@ private final class AICatalogProtocol: URLProtocol, @unchecked Sendable {
 extension AIStageOneTests {
     func testManualModelRequiresCapacityAndPreservesIt() throws {
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
-        let service = AIConnectionService(defaults: defaults, auth: AIAuthentication())
+        let service = AIConnectionService(defaults: defaults, auth: AIAuthentication(makeCallbackSource: { CallbackFixture.make() }))
         var connection = AIProviderPreset.all.first { $0.auth == .apiKey }!.connection()
         connection.providerID = "custom"; connection.baseURL = "https://example.com/v1"; connection.models = []
         let id = service.addConnection(connection)
@@ -1412,7 +1412,7 @@ extension AIStageOneTests {
         }
         XCTAssertTrue(service.addManualModel(connectionID: id, id: "manual", context: "8192", output: "1024"))
         XCTAssertTrue(service.addManualModel(connectionID: id, id: "manual", context: "8192", output: ""))
-        let restored = AIConnectionService(defaults: defaults, auth: AIAuthentication())
+        let restored = AIConnectionService(defaults: defaults, auth: AIAuthentication(makeCallbackSource: { CallbackFixture.make() }))
         let model = try XCTUnwrap(restored.connections.first?.models.first)
         let resolved = restored.catalog.resolve(model, providerID: "custom", authentication: .apiKey)
         XCTAssertEqual(resolved.context, 8192)
@@ -1423,7 +1423,7 @@ extension AIStageOneTests {
         AIConnectionTestProtocol.state.set("models-no-capacity")
         defer { AIConnectionTestProtocol.state.set("ready") }
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AIConnectionTestProtocol.self]
-        let auth = AIAuthentication(session: URLSession(configuration: config), credentialResolver: { _ in
+        let auth = AIAuthentication(makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config), credentialResolver: { _ in
             .init(accessToken: "fixture", refreshToken: "", expires: .distantFuture, accountID: "")
         })
         let defaults = UserDefaults(suiteName: UUID().uuidString)!
@@ -1453,7 +1453,7 @@ extension AIStageOneTests {
         defer { try? FileManager.default.removeItem(at: url) }
         let baseline = Data(#"{"openai":{"models":{"old":{"modalities":{"input":["text"],"output":["text"]},"reasoning":false,"tool_call":true,"limit":{"context":4096}}}}}"#.utf8)
         let catalog = AIModelCatalog(cacheURL: url, session: URLSession(configuration: config), bundled: baseline)
-        let auth = AIAuthentication(credentialResolver: { _ in .init(accessToken: "fixture", refreshToken: "", expires: .distantFuture, accountID: "") })
+        let auth = AIAuthentication(makeCallbackSource: { CallbackFixture.make() }, credentialResolver: { _ in .init(accessToken: "fixture", refreshToken: "", expires: .distantFuture, accountID: "") })
         let service = AIConnectionService(defaults: UserDefaults(suiteName: UUID().uuidString)!, auth: auth, catalog: catalog)
         var connection = AIProviderPreset.all.first { $0.id == "openai" && $0.auth == .apiKey }!.connection()
         connection.models = catalog.models(for: connection)
@@ -1675,7 +1675,7 @@ extension AIStageOneTests {
     func testOpenRouterAuthorizationIsSingleUseAndCancellationIsScoped() async throws {
         let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [AIExpandedAuthProtocol.self]
         let saved = expectation(description: "Router key stored")
-        let auth = AIAuthentication(session: URLSession(configuration: config), credentialSaver: { value, _ in
+        let auth = AIAuthentication(makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: config), credentialSaver: { value, _ in
             XCTAssertEqual(value.accessToken, "synthetic-router-key"); saved.fulfill()
         })
         let old = try await auth.beginOpenRouter()
@@ -1751,7 +1751,7 @@ extension AIStageOneTests {
     private func fixture(_ mode: String) async throws -> (AIConnectionService, AINativeTools, AIConnection, UserDefaults) {
         AITestURLProtocol.state.reset(mode)
         let defaults = UserDefaults(suiteName: "AINative-\(UUID().uuidString)")!
-        let auth = AIAuthentication(credentialResolver: { _ in
+        let auth = AIAuthentication(makeCallbackSource: { CallbackFixture.make() }, credentialResolver: { _ in
             AICredential(accessToken: "test-only", refreshToken: "", expires: .distantFuture, accountID: "fixture")
         })
         let providers = AIConnectionService(defaults: defaults, auth: auth)
@@ -1818,7 +1818,7 @@ extension AIStageOneTests {
     }
     func testToolServiceEligibilityDoesNotRequireLoadedModelsOrDefaultToChatGPT() throws {
         let defaults = UserDefaults(suiteName: "tool-services-\(UUID().uuidString)")!
-        let providers = AIConnectionService(defaults: defaults, auth: AIAuthentication())
+        let providers = AIConnectionService(defaults: defaults, auth: AIAuthentication(makeCallbackSource: { CallbackFixture.make() }))
         XCTAssertNil(providers.purposeSelection(.search))
         XCTAssertNil(providers.purposeSelection(.image))
         for preset in AIProviderPreset.all {
@@ -2157,7 +2157,7 @@ extension AIProviderContractTests {
 extension AIProviderContractTests {
     func testModelDirectoryPaginationUsesProtocolCursor() async throws {
         let configuration = URLSessionConfiguration.ephemeral; configuration.protocolClasses = [AIConnectionTestProtocol.self]
-        let auth = AIAuthentication(session: URLSession(configuration: configuration), credentialResolver: { _ in .init(accessToken: "fixture", refreshToken: "", expires: .distantFuture, accountID: "") })
+        let auth = AIAuthentication(makeCallbackSource: { CallbackFixture.make() }, session: URLSession(configuration: configuration), credentialResolver: { _ in .init(accessToken: "fixture", refreshToken: "", expires: .distantFuture, accountID: "") })
         for (wire, mode) in [(AIWireProtocol.gemini, "gemini-pages"), (.anthropic, "anthropic-pages")] {
             AIConnectionTestProtocol.state.set(mode)
             var connection = AIProviderPreset.all.first { $0.wire == wire }!.connection()
