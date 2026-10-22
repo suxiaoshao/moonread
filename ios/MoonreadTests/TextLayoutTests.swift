@@ -1175,7 +1175,7 @@ final class TextLayoutTests: XCTestCase {
         let remaining = await service.readingWaiterCount("book"); XCTAssertEqual(remaining, 0)
     }
 
-    func testReadingWaitCancellationBeforeRegistrationAndTimeoutRaceNeverLeaks() async throws {
+    @MainActor func testReadingWaitCancellationBeforeRegistrationAndTimeoutRaceNeverLeaks() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let service = ReaderService(core: try ReaderCore(dataDirectory: root.path))

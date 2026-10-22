@@ -195,7 +195,10 @@ private final class ChatGPTURLProtocol: URLProtocol, @unchecked Sendable {
         let callback = URL(string: redirect.absoluteString + "?state=" + attempt.state + "&code=synthetic&client_id=oaiapp_fixture")!
         XCTAssertFalse(listener.router.receive(URL(string: redirect.absoluteString + "?state=wrong&code=synthetic")!))
         XCTAssertFalse(listener.router.receive(URL(string: "http://127.0.0.1:12345/other?state=" + attempt.state)!))
-        XCTAssertTrue(listener.router.receive(callback))
+        XCTAssertTrue(listener.router.claim(callback))
+        XCTAssertFalse(listener.router.claim(callback), "Only one browser response may own the callback")
+        listener.router.publish(callback)
+        listener.router.publish(callback)
         var values: [URL] = []
         for try await value in listener.callbacks { values.append(value) }
         XCTAssertEqual(values, [callback]); XCTAssertFalse(listener.router.receive(callback))
