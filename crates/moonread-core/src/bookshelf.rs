@@ -911,16 +911,23 @@ mod recent_tests {
             let db = core.lock().unwrap();
             db.execute_batch("INSERT INTO library_files VALUES('folder','s','folder','','folder',1,0,1,0,NULL,'auto');
                 INSERT INTO library_files VALUES('indexed','s','folder/indexed.txt','folder','indexed.txt',0,100,1,0,NULL,'auto');
-                INSERT INTO library_identities VALUES('indexed','raw','auto',100,1);").unwrap();
+                INSERT INTO library_identities VALUES('indexed','raw','auto',100,1);
+                INSERT INTO books(id,title,content_sha256,encoding,byte_count) VALUES('cached','Cached','cached-sha','UTF-8',100);
+                INSERT INTO library_files VALUES('cached-file','s','folder/cached.txt','folder','cached.txt',0,100,999,0,'cached','auto');").unwrap();
             db.execute(
                 "INSERT INTO source_identities VALUES('raw','auto',?1,'UTF-8',100,80)",
                 [&sha],
             )
             .unwrap();
         }
-        let query = core.query_snapshot(serde_json::json!({"positions": [{
+        let query = core
+            .query_snapshot(
+                serde_json::json!({"positions": [{
             "content_key": sha, "offset": 50, "updated": 123456, "visible": true, "preferred": null
-        }]}).to_string()).unwrap();
+        },{"content_key":"cached-sha","offset":10,"updated":10,"visible":true,"preferred":null}]})
+                .to_string(),
+            )
+            .unwrap();
         let folder = query
             .library_entries(Some("s".into()), Some("".into()), LibrarySort::Reading)
             .unwrap()
@@ -930,41 +937,15 @@ mod recent_tests {
         let child = query.library_entry("indexed".into()).unwrap();
         assert!(child.book_id.is_none());
         assert_eq!(child.last_read, folder.last_read);
-    }
-
-    #[test]
-    fn folder_previews_order_index_only_books_by_projected_last_read() {
-        let dir = tempfile::tempdir().unwrap();
-        let core = ReaderCore::new(dir.path().join("cache").to_string_lossy().into()).unwrap();
-        core.save_library_shelf("s".into(), "Shelf".into(), vec![], "local".into(), false)
-            .unwrap();
-        {
-            let db = core.lock().unwrap();
-            db.execute_batch("INSERT INTO library_files VALUES('folder','s','folder','','folder',1,0,1,0,NULL,'auto');
-                INSERT INTO books(id,title,content_sha256,encoding,byte_count) VALUES('cached','Cached','cached-sha','UTF-8',100);
-                INSERT INTO library_files VALUES('cached-file','s','folder/cached.txt','folder','cached.txt',0,100,999,0,'cached','auto');
-                INSERT INTO library_files VALUES('indexed','s','folder/indexed.txt','folder','indexed.txt',0,100,1,0,NULL,'auto');
-                INSERT INTO source_identities VALUES('raw','auto','indexed-sha','UTF-8',100,80);
-                INSERT INTO library_identities VALUES('indexed','raw','auto',100,1);").unwrap();
-            for index in 0..4 {
-                db.execute("INSERT INTO library_files VALUES(?1,'s',?2,'folder',?3,0,100,999,0,NULL,'auto')",
-                    params![format!("unread{index}"), format!("folder/unread{index}.txt"), format!("unread{index}.txt")]).unwrap();
-            }
-        }
-        core.read_lock()
-            .unwrap()
-            .execute_batch(
-                "INSERT INTO user_positions VALUES('cached-sha',10,10,1,NULL);
-            INSERT INTO user_positions VALUES('indexed-sha',50,20,1,NULL);",
-            )
-            .unwrap();
-        let entries = core
-            .library_entries(Some("s".into()), Some("".into()), LibrarySort::Name)
-            .unwrap();
-        let previews = &entries[0].cover_previews;
-        assert_eq!(previews.len(), 4);
-        assert_eq!(previews[0].file_id, "indexed");
-        assert_eq!(previews[1].file_id, "cached-file");
+        assert_eq!(
+            folder
+                .cover_previews
+                .iter()
+                .map(|p| p.file_id.as_str())
+                .collect::<Vec<_>>(),
+            ["indexed", "cached-file"],
+            "preview order must follow the same projected reading times"
+        );
     }
 
     #[test]

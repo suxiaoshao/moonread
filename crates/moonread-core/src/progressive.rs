@@ -833,6 +833,26 @@ mod tests {
         assert!(matches!(result, Err(ReaderError::SourceChanged)));
         assert!(core.finish_import(token).is_err());
         assert!(core.source_book(key).unwrap().is_none());
+        let file = dir.path().join("preflight.txt");
+        std::fs::write(&file, "原文甲").unwrap();
+        let token = core.create_import("Preflight".into()).unwrap();
+        let raw = raw(&file);
+        let key = crate::SourceContentKey {
+            raw_sha256: raw.clone(),
+            decoding: "auto".into(),
+        };
+        core.validate_import_source(token.clone(), key.clone())
+            .unwrap();
+        std::fs::write(&file, "原文乙").unwrap();
+        assert!(
+            matches!(
+                core.stream_import(token.clone(), file.to_string_lossy().into(), raw, None),
+                Err(ReaderError::SourceChanged)
+            ),
+            "replacement after preflight"
+        );
+        assert!(core.finish_import(token).is_err());
+        assert!(core.source_book(key).unwrap().is_none());
     }
 
     fn raw(path: &std::path::Path) -> String {
@@ -1145,45 +1165,45 @@ mod tests {
 
     #[test]
     fn source_changed_during_pause_cannot_append_to_old_prefix() {
-        let (dir, core) = setup();
-        let text = story();
-        let (token, reached, proceed, worker) = gated(&core, &text);
-        reached.recv_timeout(Duration::from_secs(5)).unwrap();
-        token.pause();
-        proceed.send(()).unwrap();
-        assert!(worker.join().unwrap().is_err());
-        let original = core.reading_frame(token.id.clone(), 0).unwrap().chunks[0]
-            .text
-            .clone();
-        let file = dir.path().join("changed.txt");
-        std::fs::write(&file, format!("Changed\n{text}")).unwrap();
-        let retry = core.resume_import(token.id.clone()).unwrap();
-        assert!(matches!(
-            core.stream_import(retry, file.to_string_lossy().into(), raw(&file), None),
-            Err(ReaderError::SourceChanged)
-        ));
-        assert_eq!(
-            core.reading_frame(token.id.clone(), 0).unwrap().chunks[0].text,
-            original
-        );
-    }
-
-    #[test]
-    fn encoding_probe_handles_bom_and_tiny_statistical_input() {
-        assert_eq!(
-            text::detect_encoding(&mut Cursor::new(&[0xff, 0xfe, 0x41, 0])).unwrap(),
-            encoding_rs::UTF_16LE
-        );
-        assert_eq!(
-            text::detect_encoding(&mut Cursor::new(&[0xef, 0xbb, 0xbf, b'A'])).unwrap(),
-            UTF_8
-        );
-        // Statistically insufficient tiny files use the detector's pinned result;
-        // users can select an encoding manually. No locale/TLD or fallback heuristic.
-        assert_eq!(
-            text::detect_encoding(&mut Cursor::new(&[0xd6, 0xd0])).unwrap(),
-            encoding_rs::WINDOWS_1252
-        );
+        for change in ["prefix", "tail", "same size"] {
+            let (dir, core) = setup();
+            let text = "甲".repeat(5001);
+            let file = dir.path().join("paused.txt");
+            std::fs::write(&file, &text).unwrap();
+            let token = core.create_import("Paused".into()).unwrap();
+            let id = token.id.clone();
+            core.stream_import(
+                token.clone(),
+                file.to_string_lossy().into(),
+                raw(&file),
+                None,
+            )
+            .unwrap();
+            token.pause();
+            core.fail_import(token, ReaderError::Paused).unwrap();
+            let before = core.reading_frame(id.clone(), 0).unwrap().chunks[0]
+                .text
+                .clone();
+            let changed = match change {
+                "prefix" => format!("乙{}", "甲".repeat(5000)),
+                "tail" => format!("{}乙", "甲".repeat(5000)),
+                _ => "丙".repeat(5001),
+            };
+            std::fs::write(&file, changed).unwrap();
+            let next = core.resume_import(id.clone()).unwrap();
+            assert!(
+                matches!(
+                    core.stream_import(next, file.to_string_lossy().into(), raw(&file), None),
+                    Err(ReaderError::SourceChanged)
+                ),
+                "{change}"
+            );
+            assert_eq!(
+                core.reading_frame(id, 0).unwrap().chunks[0].text,
+                before,
+                "old prefix: {change}"
+            );
+        }
     }
 
     #[test]
@@ -1275,118 +1295,54 @@ mod tests {
 
     #[test]
     fn paused_prefix_survives_reopen_and_replay_continues_without_duplication() {
-        let (dir, core) = setup();
-        let text = story();
-        let file = dir.path().join("story.txt");
-        std::fs::write(&file, &text).unwrap();
-        let (token, reached, proceed, worker) = gated(&core, &text);
-        reached.recv_timeout(Duration::from_secs(5)).unwrap();
-        let id = token.id.clone();
-        assert_eq!(core.normalized_position(id.clone(), 120).unwrap(), 118);
-        let partial = core.chapter_outline(id.clone()).unwrap();
-        assert!(!partial.is_complete);
-        assert!(!partial.items.last().unwrap().count_complete);
-        let available = core.book_info(id.clone()).unwrap().byte_count as usize;
-        let body = text.find('\n').unwrap() + 1;
-        assert_eq!(
-            partial.items[0].word_count,
-            text[body..available]
-                .chars()
-                .filter(|c| !c.is_whitespace())
-                .count() as u64
-        );
-        let prefix = core.reading_frame(id.clone(), 0).unwrap().chunks[0]
-            .text
-            .clone();
-        token.pause();
-        proceed.send(()).unwrap();
-        assert!(matches!(worker.join().unwrap(), Err(ReaderError::Paused)));
-        drop(core);
-        let core = ReaderCore::new(dir.path().join("data").to_string_lossy().into()).unwrap();
-        assert_eq!(
-            core.reading_snapshot(id.clone()).unwrap().phase,
-            ImportPhase::Paused
-        );
-        let next = core.resume_import(id.clone()).unwrap();
-        core.stream_import(
-            next.clone(),
-            file.to_string_lossy().into(),
-            raw(&file),
-            None,
-        )
-        .unwrap();
-        core.finish_import(next).unwrap();
-        let state = core.reading_snapshot(id.clone()).unwrap();
-        assert_eq!(state.book.position_utf8, 0); // 120 is inside a UTF-8 scalar.
-        let outline = core.chapter_outline(id.clone()).unwrap();
-        let second = text.find("第二章").unwrap();
-        let second_body = second + text[second..].find('\n').unwrap() + 1;
-        assert!(outline.is_complete);
-        assert_eq!(
-            outline
-                .items
-                .iter()
-                .map(|c| c.word_count)
-                .collect::<Vec<_>>(),
-            [
-                text[body..second]
-                    .chars()
-                    .filter(|c| !c.is_whitespace())
-                    .count() as u64,
-                text[second_body..]
-                    .chars()
-                    .filter(|c| !c.is_whitespace())
-                    .count() as u64,
-            ]
-        );
-        assert_eq!(state.book.byte_count, text.len() as u64);
-        assert_eq!(
-            core.reading_frame(id.clone(), 0).unwrap().chunks[0].text,
-            prefix
-        );
-        let full = (0..state.book.chunk_count)
-            .map(|i| core.read_chunk(id.clone(), i).unwrap().text)
-            .collect::<String>();
-        assert_eq!(full, text);
-    }
-
-    #[test]
-    fn interrupted_finalization_reopens_as_readable_paused_content() {
-        let (dir, core) = setup();
-        let file = dir.path().join("interrupted.txt");
-        std::fs::write(&file, story()).unwrap();
-        let token = core.create_import("中断后继续".into()).unwrap();
-        core.stream_import(
-            token.clone(),
-            file.to_string_lossy().into(),
-            raw(&file),
-            None,
-        )
-        .unwrap();
-        let id = token.id.clone();
-        assert_eq!(core.normalized_position(id.clone(), 120).unwrap(), 118);
-        drop(core);
-        drop(token);
-        let core = ReaderCore::new(dir.path().join("data").to_string_lossy().into()).unwrap();
-        let state = core.reading_snapshot(id.clone()).unwrap();
-        assert_eq!(state.phase, ImportPhase::Paused);
-        assert!(state.can_read);
-        assert!(
-            !core
-                .reading_frame(id.clone(), u64::MAX)
-                .unwrap()
-                .is_end_of_book
-        );
-        let token = core.resume_import(id.clone()).unwrap();
-        core.stream_import(
-            token.clone(),
-            file.to_string_lossy().into(),
-            raw(&file),
-            None,
-        )
-        .unwrap();
-        core.finish_import(token).unwrap();
-        assert_eq!(core.reading_snapshot(id).unwrap().book.position_utf8, 0);
+        for interruption in ["partial decode", "before final commit"] {
+            let (dir, core) = setup();
+            let text = story();
+            let file = dir.path().join("story.txt");
+            std::fs::write(&file, &text).unwrap();
+            let id = if interruption == "partial decode" {
+                let (token, reached, proceed, worker) = gated(&core, &text);
+                reached.recv_timeout(Duration::from_secs(5)).unwrap();
+                let id = token.id.clone();
+                token.pause();
+                proceed.send(()).unwrap();
+                assert!(matches!(worker.join().unwrap(), Err(ReaderError::Paused)));
+                id
+            } else {
+                let token = core.create_import("Interrupted".into()).unwrap();
+                core.stream_import(
+                    token.clone(),
+                    file.to_string_lossy().into(),
+                    raw(&file),
+                    None,
+                )
+                .unwrap();
+                token.id.clone()
+            };
+            drop(core);
+            let core = ReaderCore::new(dir.path().join("data").to_string_lossy().into()).unwrap();
+            let state = core.reading_snapshot(id.clone()).unwrap();
+            assert_eq!(state.phase, ImportPhase::Paused, "{interruption}");
+            assert!(state.can_read, "{interruption}");
+            let next = core.resume_import(id.clone()).unwrap();
+            core.stream_import(
+                next.clone(),
+                file.to_string_lossy().into(),
+                raw(&file),
+                None,
+            )
+            .unwrap();
+            core.finish_import(next).unwrap();
+            let state = core.reading_snapshot(id.clone()).unwrap();
+            assert_eq!(state.phase, ImportPhase::Complete, "{interruption}");
+            assert_eq!(
+                (0..state.book.chunk_count)
+                    .map(|i| core.read_chunk(id.clone(), i).unwrap().text)
+                    .collect::<String>(),
+                text,
+                "replay must not duplicate: {interruption}"
+            );
+        }
     }
 }
 

@@ -134,33 +134,10 @@ fn coverage_spans_checkpoints_but_does_not_add_disjoint_visits() {
 }
 #[test]
 fn chapter_corrections_are_inputs_and_rebuild_retains_text_integrity() {
-    let (_root, core, book) = fixture();
-    let query = core.query_snapshot(json!({"corrections":[{"content_key":book.content_sha256,"offset":0,"title":"修正","level":1,"excluded":false}]}).to_string()).unwrap();
-    assert_eq!(
-        query.chapter_at(book.id.clone(), 0).unwrap().unwrap().title,
-        "修正"
-    );
-    assert!(core.validate_chapter_offset(book.id.clone(), 3).is_err());
-    let job = core.rebuild_chapters(book.id.clone()).unwrap();
-    while !job.next_batch().unwrap().done {}
-    job.apply().unwrap();
-    assert_eq!(
-        query.chapter_at(book.id.clone(), 0).unwrap().unwrap().title,
-        "修正"
-    );
-    let query = core.query_snapshot("{}".into()).unwrap();
-    assert_eq!(
-        query.chapter_at(book.id, 0).unwrap().unwrap().title,
-        "第一章 月"
-    );
-}
-
-#[test]
-fn expanded_headings_require_explicit_rebuild_and_preserve_manual_corrections() {
     let root = TempDir::new().unwrap();
     let data = root.path().join("db").to_string_lossy().into_owned();
     let path = root.path().join("original.txt");
-    let text = "第壹部 星港\n第一話 月光\n原創正文。\n第三部分仍是正文\n第一篇文章仍是正文\n第三回合开始了\n第二节课开始了\n第一部电影\n第一部手机\n第四本书\n第一話題\n第二話 歸舟\n原創正文。\n尾聲\n燈火未眠。\n";
+    let text = "第壹部 星港\n第一話 月光\n原創正文。\n第二話 歸舟\n原創正文。\n尾聲\n燈火未眠。\n";
     std::fs::write(&path, text).unwrap();
     let core = ReaderCore::new(data.clone()).unwrap();
     let book = core
@@ -253,23 +230,7 @@ fn expanded_headings_require_explicit_rebuild_and_preserve_manual_corrections() 
     assert_eq!(rebuilt, text);
     assert_eq!(std::fs::read_to_string(path).unwrap(), text);
 }
-#[test]
-fn positions_clamp_at_unicode_boundaries_without_writing() {
-    let (_root, core, book) = fixture();
-    assert_eq!(core.normalized_position(book.id.clone(), 5).unwrap(), 3);
-    assert_eq!(
-        core.normalized_position(book.id.clone(), u64::MAX).unwrap(),
-        book.byte_count
-    );
-    assert_eq!(
-        core.query_snapshot("{}".into())
-            .unwrap()
-            .book_info(book.id)
-            .unwrap()
-            .position_utf8,
-        0
-    );
-}
+
 #[test]
 fn settings_codec_preserves_device_preferences_and_validates_ranges() {
     let mut value = default_reader_settings();

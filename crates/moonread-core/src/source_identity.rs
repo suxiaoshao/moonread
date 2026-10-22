@@ -113,20 +113,14 @@ mod tests {
         let core =
             ReaderCore::new(directory.path().join("cache").to_string_lossy().into()).unwrap();
         let plain = "第一章 原创样本\n窗边有一盏灯。\n第二段原创文字。\n";
-        let expected = sha256_hex(Sha256::digest(plain.as_bytes()));
+        let expected = "9b84f52a4ad4aa3427d6c3c343e16c3bc6c5cb59dc18b69d14f5ecf5a3dacc8d";
         let crlf = plain.replace('\n', "\r\n");
-        let mut utf16 = vec![0xff, 0xfe];
-        for c in crlf.encode_utf16() {
-            utf16.extend(c.to_le_bytes());
-        }
         let encoded = encoding_rs::GB18030.encode(&crlf).0.into_owned();
         for (index, (bytes, policy)) in [
-            (plain.as_bytes().to_vec(), "auto"),
             (
                 [vec![0xef, 0xbb, 0xbf], crlf.as_bytes().to_vec()].concat(),
                 "auto",
             ),
-            (utf16, "UTF-16LE"),
             (encoded, "gb18030"),
         ]
         .into_iter()

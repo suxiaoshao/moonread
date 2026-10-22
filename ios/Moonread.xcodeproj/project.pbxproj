@@ -7,33 +7,33 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-        F02200000000000000000001 /* TestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02200000000000000000002; };
+		F02200000000000000000001 /* TestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02200000000000000000002 /* TestSupport.swift */; };
         F14900000000000000000001 = {isa = PBXBuildFile; fileRef = F14900000000000000000002; };
         F14900000000000000000003 = {isa = PBXBuildFile; fileRef = F14900000000000000000004; };
-2E2559685C214716AEE5F325 /* ReadingReviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 025DA6C47C21404F889514D9; };
+		2E2559685C214716AEE5F325 /* ReadingReviewTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 025DA6C47C21404F889514D9 /* ReadingReviewTestFixtures.swift */; };
 344233D679E94ACDA4FA2A11 /* ReadingReview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10332C17C92A416A96E3B55A; };
-F01900000000000000000003 = {isa = PBXBuildFile; fileRef = F01900000000000000000004; };
+		F01900000000000000000003 /* RecentReadingRestorationTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01900000000000000000004 /* RecentReadingRestorationTestFixtures.swift */; };
 F01900000000000000000001 = {isa = PBXBuildFile; fileRef = F01900000000000000000002; };
         FC1100000000000000000001 = {isa = PBXBuildFile; fileRef = FC2100000000000000000001; };
         FC1100000000000000000002 = {isa = PBXBuildFile; fileRef = FC3100000000000000000001; };
 FF1000000000000000000001 = {isa = PBXBuildFile; fileRef = FF2000000000000000000001; };
 FE1000000000000000000001 = {isa = PBXBuildFile; fileRef = FE2000000000000000000001; };
 OS1000000000000000000001 = {isa = PBXBuildFile; fileRef = OS2000000000000000000001; };
-F01800000000000000000003 = {isa = PBXBuildFile; fileRef = F01800000000000000000004; };
+		F01800000000000000000003 /* AIChatGPTTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01800000000000000000004 /* AIChatGPTTestFixtures.swift */; };
 F01800000000000000000001 = {isa = PBXBuildFile; fileRef = F01800000000000000000002; };
-785244D6C1DB4AF6B15A8AA0 = {isa = PBXBuildFile; fileRef = F14BDB0397FE4C25963665F6; };
+		785244D6C1DB4AF6B15A8AA0 /* CloudSchemaPreparationTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F14BDB0397FE4C25963665F6 /* CloudSchemaPreparationTestFixtures.swift */; };
 0ADFA9A8F02748618B3B4BE9 = {isa = PBXBuildFile; fileRef = 34534F38185344C984C886C4; };
-01800FD10FB1423B93ABB34E = {isa = PBXBuildFile; fileRef = 3BE80CBCD8D744E1B33B2306; };
+		01800FD10FB1423B93ABB34E /* AIDataSharingConsentTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BE80CBCD8D744E1B33B2306 /* AIDataSharingConsentTestFixtures.swift */; };
 CAA8B00EBC8041F6A299A6A5 = {isa = PBXBuildFile; fileRef = AAE9AA532FE14842BCFEA016; };
 B792EA92E8204EEDB7AA1450 = {isa = PBXBuildFile; fileRef = EC14CE0E00934BB682B83B4D; };
 0D6DDD171D15456388258FB6 = {isa = PBXBuildFile; fileRef = 5C7A519CEC4946EDB0957CC2; };
-5AEB90FA1BD147BDA6246668 = {isa = PBXBuildFile; fileRef = 8C23901BA4E14CF6AA3F4140; };
+		5AEB90FA1BD147BDA6246668 /* AppStorePrivacyTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C23901BA4E14CF6AA3F4140 /* AppStorePrivacyTestFixtures.swift */; };
 AP1000000000000000000001 = {isa = PBXBuildFile; fileRef = AP2000000000000000000001; };
-        F01700000000000000000005 = {isa = PBXBuildFile; fileRef = F01700000000000000000006; };
+		F01700000000000000000005 /* TipJarTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01700000000000000000006 /* TipJarTestFixtures.swift */; };
         F01700000000000000000001 = {isa = PBXBuildFile; fileRef = F01700000000000000000002; };
         F01600000000000000000001 = {isa = PBXBuildFile; fileRef = F01600000000000000000002; };
         AF1000000000000000000004 /* LibraryDrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000004; };
-        AF1000000000000000000005 /* LibraryDropTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000005; };
+		AF1000000000000000000005 /* LibraryDropTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000005 /* LibraryDropTestFixtures.swift */; };
 FB1000000000000000000001 = {isa = PBXBuildFile; fileRef = FB2000000000000000000001; };
 FB1000000000000000000002 = {isa = PBXBuildFile; productRef = FB4000000000000000000001; };
 FA1000000000000000000002 = {isa = PBXBuildFile; fileRef = FA2000000000000000000002; };
@@ -41,11 +41,11 @@ FA1000000000000000000001 = {isa = PBXBuildFile; fileRef = FA20000000000000000000
 E71000000000000000000001 = {isa = PBXBuildFile; fileRef = E72000000000000000000001; };
 E71000000000000000000077 /* AIReadingMoon.swift in Sources */ = {isa = PBXBuildFile; fileRef = E72000000000000000000077; };
 AC1000000000000000000077 /* MoonCharacter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC2000000000000000000077; };
-E61000000000000000000077 /* AIReadingMoonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62000000000000000000077; };
-E61000000000000000000007 = {isa = PBXBuildFile; fileRef = E62000000000000000000007; };
+		E61000000000000000000077 /* AIReadingMoonTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62000000000000000000077 /* AIReadingMoonTestFixtures.swift */; };
+		E61000000000000000000007 /* AIReadingToolsTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62000000000000000000007 /* AIReadingToolsTestFixtures.swift */; };
 E61000000000000000000006 = {isa = PBXBuildFile; fileRef = E62000000000000000000006; };
 E61000000000000000000005 = {isa = PBXBuildFile; fileRef = E62000000000000000000005; };
-E61000000000000000000004 = {isa = PBXBuildFile; fileRef = E62000000000000000000004; };
+		E61000000000000000000004 /* AIAgentRuntimeTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62000000000000000000004 /* AIAgentRuntimeTestFixtures.swift */; };
 E61000000000000000000003 = {isa = PBXBuildFile; fileRef = E62000000000000000000003; };
 E61000000000000000000002 = {isa = PBXBuildFile; fileRef = E62000000000000000000002; };
 E61000000000000000000001 = {isa = PBXBuildFile; fileRef = E62000000000000000000001; };
@@ -61,7 +61,7 @@ E51000000000000000000001 = {isa = PBXBuildFile; fileRef = E520000000000000000000
  D41000000000000000000002 = {isa = PBXBuildFile; fileRef = D42000000000000000000002; };
  D41000000000000000000001 = {isa = PBXBuildFile; fileRef = D42000000000000000000001; };
 D31000000000000000000007 = {isa = PBXBuildFile; fileRef = D32000000000000000000007; };
-C21000000000000000000004 = {isa = PBXBuildFile; fileRef = C22000000000000000000004; };
+		C21000000000000000000004 /* UserDataTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C22000000000000000000004 /* UserDataTestFixtures.swift */; };
 C21000000000000000000003 = {isa = PBXBuildFile; fileRef = C22000000000000000000003; };
 C21000000000000000000002 = {isa = PBXBuildFile; fileRef = C22000000000000000000002; };
 C21000000000000000000001 = {isa = PBXBuildFile; fileRef = C22000000000000000000001; };
@@ -100,7 +100,7 @@ C21000000000000000000001 = {isa = PBXBuildFile; fileRef = C220000000000000000000
 		A10000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000007 /* ../build/ios/Generated/$(CONFIGURATION)/moonread_core.swift */; };
 		A10000000000000000000008 /* ../assets/icon/Moonread.icon in Resources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000008 /* ../assets/icon/Moonread.icon */; };
 		A10000000000000000000009 /* MoonreadUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000009 /* MoonreadUITests.swift */; };
-		A1000000000000000000000A /* TextLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* TextLayoutTests.swift */; };
+		A1000000000000000000000A /* ReaderTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* ReaderTestFixtures.swift */; };
         AB1000000000000000000001 /* ReaderTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB2000000000000000000001; };
         AB1000000000000000000002 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = AB2000000000000000000002; };
 D31000000000000000000001 = {isa = PBXBuildFile; fileRef = D32000000000000000000001; };
@@ -113,7 +113,7 @@ D35000000000000000000001 = {isa = PBXBuildFile; productRef = D340000000000000000
 D35000000000000000000002 = {isa = PBXBuildFile; productRef = D34000000000000000000002;};
 D35000000000000000000003 = {isa = PBXBuildFile; productRef = D34000000000000000000003;};
 D35000000000000000000004 = {isa = PBXBuildFile; productRef = D34000000000000000000004;};
-D31000000000000000000006 = {isa = PBXBuildFile; fileRef = D32000000000000000000006;};
+		D31000000000000000000006 /* ConversationTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = D32000000000000000000006 /* ConversationTestFixtures.swift */; };
 D35000000000000000000006 = {isa = PBXBuildFile; productRef = D34000000000000000000006;};
 D35000000000000000000007 = {isa = PBXBuildFile; productRef = D34000000000000000000007;};
 D35000000000000000000008 = {isa = PBXBuildFile; productRef = D34000000000000000000008;};
@@ -142,23 +142,72 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		14F4DEFD709845FC8AAAEA7F /* AIProposalTools.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E617B7FF31E43C3A0B7C1AF; };
 		29E8AF36983F4CF9BE988DE0 /* AIOrganization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29CD035636154B598B211DC3; };
 		EB7E98AAB4874825854EC1ED /* AICoverImageFetcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 648898574D5A490398DF5331; };
-		B2B2CB5D001B4F72BFAEBD3F /* AIFollowUpTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E96BC33B1F24360B74F39AF; };
+		B2B2CB5D001B4F72BFAEBD3F /* BookAITestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E96BC33B1F24360B74F39AF /* BookAITestFixtures.swift */; };
 		1E29F78A7797494D83F655FD /* AITaskFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 261A8A86E7F248BC959C51BC; };
 		19B30D2DE87E46ADA99B1F85 /* AIResults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97243FC88EB941CE8D7B8C5D; };
-		0824CF925F1146178BFD0FD1 /* AIRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7773498FC5E46E7B6D20EE9; };
+		0824CF925F1146178BFD0FD1 /* AIRepositoryTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7773498FC5E46E7B6D20EE9 /* AIRepositoryTestFixtures.swift */; };
 		941D8F146D7A436D97BC6909 /* AIReviewActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63157555C51A4D79A42A3D88; };
 		7A278708BAB942A99014C0D3 /* ReaderOpening.swift in Sources */ = {isa = PBXBuildFile; fileRef = 990DFFD80C6248E3A5BF832F /* ReaderOpening.swift */; };
 		267C2529F2B14483B0424293 /* ReaderOpenDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF08E0D9F8D042DA8E2DC265 /* ReaderOpenDiagnostics.swift */; };
 		338EBE51F11D4BDC98985D77 /* ReaderOpenBenchmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A44BEF4C3D4FE0A71CCB03; };
 		FD64F53149DE5DBFB6AA04F1 /* ShareInbox in App Sources */ = { isa = PBXBuildFile; fileRef = AF3B627D29215FAB93FC0C44;  };
 		83C1F3DE49DE5AC693D3E8E8 /* ShareReceive strings in App Resources */ = { isa = PBXBuildFile; fileRef = 5DA1E57CF521587EAF48FEFB;  };
-		1324E15761CF5ED68712722E /* ShareInboxTests in Sources */ = { isa = PBXBuildFile; fileRef = 2C3B5BE72B6F578DB4C13BA1;  };
+		1324E15761CF5ED68712722E /* ShareInboxTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C3B5BE72B6F578DB4C13BA1 /* ShareInboxTestFixtures.swift */; };
 		906A74D1BD2A5FAD9BE897E1 /* ShareInbox in Extension Sources */ = { isa = PBXBuildFile; fileRef = AF3B627D29215FAB93FC0C44;  };
 		0804D0B539CB5AB19A9DB8FF /* ShareViewController in Sources */ = { isa = PBXBuildFile; fileRef = 29C2EBD521AF59B58F38BBE5;  };
 		395542A1DDDA57A6B2AC983D /* ShareReceive strings in Extension Resources */ = { isa = PBXBuildFile; fileRef = 5DA1E57CF521587EAF48FEFB;  };
 		E4FBAEE53BD05822ADA6F920 /* Share Privacy in Resources */ = { isa = PBXBuildFile; fileRef = 18807E292E245C3D81736D90;  };
 		5A465E51B64F5138BF6CF41C /* Embed MoonreadShare */ = { isa = PBXBuildFile; fileRef = 44920FD9D2A9541EA0D84A3B; settings = {ATTRIBUTES = (RemoveHeadersOnCopy,);}; };
 		C14A00000000000000000003 /* Share InfoPlist in Resources */ = {isa = PBXBuildFile; fileRef = C14A00000000000000000002; };
+		14EBF385EEB12E8854251B0C /* AIAgentPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FECAE1F1197902C7933F3209; };
+		8ECACDBA0D7E7C50A82DCB52 /* AIAgentQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9885E1115585BFC576D92B57; };
+		E4A6194DE08E299191611D3F /* AIAuthenticationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5B1F1DDF46216CE59BA4F14; };
+		5D839F8292B36707B3F44EDE /* AIAvailabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F93DDBA5E540729F4860E1A; };
+		EF9F15D1120F37D85EE8F10F /* AICompactionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B633ACC2BFB26FCE7339697A; };
+		BFB4D8321C6FC6CC2E84DF67 /* AIConnectionStorageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10AAE623C3B1DC1FC59DAED1; };
+		81DD9062D9B410471F40DC5D /* AIConversationProjectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 937C6A32791BD8B0E6407D6E; };
+		19BA9AC0468B112E989203A6 /* AICoverFetchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C924E516A986D14FDC657DB5; };
+		EB41A2879F6CB1DD80787829 /* AIDataSharingConsentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C3F02DF5EE306A431E8B4A8; };
+		62DA209640B00D364995AFFB /* AIImageToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A492DD12CE0AF234B210CF0; };
+		731E1EB84D9538A57B6C407B /* AIModelCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DFCC359F996547326EC87C4; };
+		8599C422EE9D8E84ED491CED /* AIModelSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E2E75C2CD1E7CA3ED2E854E; };
+		9F9D724053DE8ACEAEEC9480 /* AIOrganizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66B900FB4BCE784675F820E6; };
+		A42F5036E21C30DF0133F85D /* AIProposalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B2823E6565B64903C341816; };
+		12EBEEC4F22C0486610AA73C /* AIProviderAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C9D9D5ED487655CDCA50AB5; };
+		8CE6179419AE41997E869E71 /* AIReadingContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00996C5B9E6688C2AD00D2FD; };
+		8FB5248BDBC8632F5DE25847 /* AIReadingToolsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ADAE13E62F9B6DFCF7231CE; };
+		E9E42CAADE0F187D523B244C /* AIRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBC4FA70AD36EBBC6255CC2E; };
+		B655BB5D171526C03A6E8221 /* AIRequestPrivacyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146D6F8B3B559A05F45D37B2; };
+		E47B11B71F8C697D308B882B /* AIResultSourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92B2FA6BFFE8E4A18DDD1E6C; };
+		61F55FC302B85570703ADDB1 /* AIToolAuthorizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26B287A0524D3F1263977CC1; };
+		86AE89B8BFEF8406636166F1 /* AnnotationEditingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9DB797D2C3C5EB500E7790F3; };
+		8D269C69D9C73C8B6C4D2E12 /* BookCoverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 935BE5D3F950E5A945F22D53; };
+		5E8349A2AE852911802CBB0A /* CloudAccountTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B7347C8B711202E4F6D8DF4; };
+		90AB2CB84E3437C18A4570F2 /* CloudFileHandoffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E3F5C90A0A8FB0A54303016; };
+		87A1CC4BE68F5BE8C06EBF77 /* CloudSchemaPreparationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35D2425416C9B7E3AC350B0F; };
+		99036960B143B422F83F3200 /* FeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C993F2B6C1EC753DF08DFBDC; };
+		9696B225E2797B1846A146C2 /* FileAccessBoundaryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50AAD18542D47FB72AD40FD; };
+		573AAD00E77D340B932CE826 /* ImportCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC0934B199C61ED74B4090C8; };
+		482F88C28D6D45185E252651 /* LibraryDeletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47B357E081AF6DFD1F3ECB9A; };
+		0833189DEA77B883C4465567 /* LibraryDropTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B11BC06C7B83A44E9CEA4127; };
+		2C68CC29F050497ACCA30BAD /* LibraryFileWorkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 662C73122456F71FAB642658; };
+		A54FB3E548AECE5602B54F73 /* LibraryIdentityAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC5DE16B24ECF3351AF712A3; };
+		584066648F27FBAACC6C5E60 /* LibraryModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DA8169166A91E148036E2C1; };
+		35B4DB3E1E4C11FDCAB058C5 /* OnboardingStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A8102897A4484D5BA6F580A; };
+		7891AB4965911CD34494B49C /* PlatformAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81C513DD3B3547100726BEAA; };
+		CDB74E1096C129C2320BDFA6 /* ReaderQueryAdapterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC1A1EF9F7AACD391EAE39B1; };
+		9FF775D0B6877A398441A100 /* ReaderSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0332D3DCAB24BD0EBEEB7BB4; };
+		40E0B67600F95CF2A77449F3 /* ReaderSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4CDBFC36C71DF2FB746CA35; };
+		4DD3C6345D4E4CA57EDFC02D /* ReadingActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B92506C06C6ABDA44B30C8AE; };
+		2765FCAA8DAFFD989EB8DE8B /* ReadingReviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2615DD1F53E4572FD0DCCE8D; };
+		1C19EF83EFDDB13911FB0657 /* RecentReadingRestorationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92A0440947A91EDD1FD0BB84; };
+		B4D7E286664F1E77FD666099 /* ShareInboxTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8C0BA2669701DB256AD6C1E; };
+		B0A7A083928F00E06E35E879 /* StatisticsPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15D0125F4ECD43EA56E08E62; };
+		8A25D2AB32A8BB6602648C70 /* SyncCompatibilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A723932B98F96B1B0C890B9B; };
+		81DD4FE55F103B8987AA6C01 /* TextCoordinatesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 285C1ED4B1E1FD8BAF9996F5; };
+		8708446F28EB929FDBF3DF5B /* TipJarTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AC33131D026ECD095CC101C; };
+		542E6B712E2CF6CEA71DD1E2 /* UserDataConflictTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED575D4FB40600C79376B30D; };
+		9F8DE62685C2F88403C6ECD7 /* UserPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DD6B800901BD6C290FD4CBA; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -184,12 +233,12 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-        F02200000000000000000002 /* TestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/TestSupport.swift; sourceTree = SOURCE_ROOT; };
+		F02200000000000000000002 /* TestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/TestSupport.swift"; sourceTree = SOURCE_ROOT; };
         F14900000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullIndex.swift; sourceTree = "<group>"; };
         F14900000000000000000004 = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = FullIndex.xcstrings; sourceTree = "<group>"; };
-025DA6C47C21404F889514D9 /* ReadingReviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/ReadingReviewTests.swift; sourceTree = SOURCE_ROOT; };
+		025DA6C47C21404F889514D9 /* ReadingReviewTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/ReadingReviewTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 10332C17C92A416A96E3B55A /* ReadingReview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/App/ReadingReview.swift; sourceTree = SOURCE_ROOT; };
-F01900000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentReadingRestorationTests.swift; sourceTree = "<group>"; };
+		F01900000000000000000004 /* RecentReadingRestorationTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/RecentReadingRestorationTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 F01900000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecentReadingRestoration.swift; sourceTree = "<group>"; };
         FC2100000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UI/AIReplyFeedback.swift; sourceTree = "<group>"; };
         FC2100000000000000000002 = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -198,32 +247,32 @@ F01900000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourceco
 FF2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserSyncJSON.swift; sourceTree = "<group>"; };
 FE2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Data/AIPersistedJSON.swift; sourceTree = SOURCE_ROOT; };
 OS2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text; path = Moonread/Resources/ThirdPartyNotices.txt; sourceTree = SOURCE_ROOT; };
-F01800000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/AI/AIChatGPTTests.swift; sourceTree = SOURCE_ROOT; };
+		F01800000000000000000004 /* AIChatGPTTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/AIChatGPTTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 F01800000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Providers/AIChatGPTAuth.swift; sourceTree = SOURCE_ROOT; };
-F14BDB0397FE4C25963665F6 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/CloudSchemaPreparationTests.swift; sourceTree = SOURCE_ROOT; };
+		F14BDB0397FE4C25963665F6 /* CloudSchemaPreparationTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/CloudSchemaPreparationTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 34534F38185344C984C886C4 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/Data/CloudSchemaPreparation.swift; sourceTree = SOURCE_ROOT; };
-3BE80CBCD8D744E1B33B2306 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/AI/AIDataSharingConsentTests.swift; sourceTree = SOURCE_ROOT; };
+		3BE80CBCD8D744E1B33B2306 /* AIDataSharingConsentTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/AIDataSharingConsentTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 AAE9AA532FE14842BCFEA016 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/App/AppLinks.swift; sourceTree = SOURCE_ROOT; };
 EC14CE0E00934BB682B83B4D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AIDataSharingConsentView.swift; sourceTree = SOURCE_ROOT; };
 5C7A519CEC4946EDB0957CC2 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Data/AIDataSharingConsent.swift; sourceTree = SOURCE_ROOT; };
-8C23901BA4E14CF6AA3F4140 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/AppStorePrivacyTests.swift; sourceTree = SOURCE_ROOT; };
+		8C23901BA4E14CF6AA3F4140 /* AppStorePrivacyTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/AppStorePrivacyTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 AP2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text.xml; path = Moonread/PrivacyInfo.xcprivacy; sourceTree = SOURCE_ROOT; };
-        F01700000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/TipJarTests.swift; sourceTree = SOURCE_ROOT; };
+		F01700000000000000000006 /* TipJarTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/TipJarTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
         F01700000000000000000004 = {isa = PBXFileReference; lastKnownFileType = text; path = Moonread/Settings/TipJar.storekit; sourceTree = SOURCE_ROOT; };
         F01700000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/Settings/TipJar.swift; sourceTree = SOURCE_ROOT; };
         F01600000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Onboarding.swift; sourceTree = "<group>"; };
         AF2000000000000000000004 /* LibraryDrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDrop.swift; sourceTree = "<group>"; };
-        AF2000000000000000000005 /* LibraryDropTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDropTests.swift; sourceTree = "<group>"; };
+		AF2000000000000000000005 /* LibraryDropTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/LibraryDropTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 FB2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AINativeMarkdown.swift; sourceTree = SOURCE_ROOT; };
 FA2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Data/AIMessageRow.swift; sourceTree = SOURCE_ROOT; };
 FA2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AIMessageList.swift; sourceTree = SOURCE_ROOT; };
 E72000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AITurnView.swift; sourceTree = SOURCE_ROOT; };
 E72000000000000000000077 /* AIReadingMoon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AIReadingMoon.swift; sourceTree = SOURCE_ROOT; };
-E62000000000000000000077 /* AIReadingMoonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/AI/AIReadingMoonTests.swift; sourceTree = SOURCE_ROOT; };
-E62000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/AI/AIReadingToolsTests.swift; sourceTree = SOURCE_ROOT; };
+		E62000000000000000000077 /* AIReadingMoonTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/AIReadingMoonTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
+		E62000000000000000000007 /* AIReadingToolsTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/AIReadingToolsTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 E62000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Agent/AIAgentCoordinator.swift; sourceTree = SOURCE_ROOT; };
 E62000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Tools/AIReadingTools.swift; sourceTree = SOURCE_ROOT; };
-E62000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadTests/AI/AIAgentRuntimeTests.swift; sourceTree = SOURCE_ROOT; };
+		E62000000000000000000004 /* AIAgentRuntimeTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/AIAgentRuntimeTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 E62000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Data/AIAgentStore.swift; sourceTree = SOURCE_ROOT; };
 E62000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Agent/AIAgentRuntime.swift; sourceTree = SOURCE_ROOT; };
 E62000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Agent/AIAgentTypes.swift; sourceTree = SOURCE_ROOT; };
@@ -239,7 +288,7 @@ E52000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
  D42000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Providers/AIModelCatalog.swift; sourceTree = SOURCE_ROOT; };
  D42000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text.json; path = Moonread/AI/Providers/AIModelCatalog.json; sourceTree = SOURCE_ROOT; };
 D32000000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AIModelPicker.swift; sourceTree = SOURCE_ROOT; };
-C22000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDataTests.swift; sourceTree = "<group>"; };
+		C22000000000000000000004 /* UserDataTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/UserDataTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 C22000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserThemes.swift; sourceTree = "<group>"; };
 C22000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDataService.swift; sourceTree = "<group>"; };
 C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserData.swift; sourceTree = "<group>"; };
@@ -281,7 +330,7 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		A20000000000000000000009 /* MoonreadUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadUITests.swift; sourceTree = "<group>"; };
 		A2000000000000000000000A /* Moonread.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Moonread.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2000000000000000000000B /* MoonreadUITests-Runner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = "MoonreadUITests-Runner.app"; path = MoonreadUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		A2000000000000000000000C /* TextLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextLayoutTests.swift; sourceTree = "<group>"; };
+		A2000000000000000000000C /* ReaderTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/ReaderTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 		A2000000000000000000000D /* MoonreadTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MoonreadTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A2000000000000000000000E /* Configuration.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Configuration.xcconfig; sourceTree = SOURCE_ROOT; };
         AB2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderTools.swift; sourceTree = "<group>"; };
@@ -292,7 +341,7 @@ D32000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourceco
 FB1700000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Agent/AIAvailability.swift; sourceTree = SOURCE_ROOT; };
 D32000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Agent/AIService.swift; sourceTree = SOURCE_ROOT; };
 D32000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/UI/AIConversationsView.swift; sourceTree = SOURCE_ROOT; };
-D32000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIStageOneTests.swift; sourceTree = "<group>";};
+		D32000000000000000000006 /* ConversationTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/ConversationTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 F71000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Providers/AINativeCapabilities.swift; sourceTree = SOURCE_ROOT; };
 F71000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Data/AIImageStore.swift; sourceTree = SOURCE_ROOT; };
 F71000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/AI/Tools/AINativeTools.swift; sourceTree = SOURCE_ROOT; };
@@ -318,10 +367,10 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		7E617B7FF31E43C3A0B7C1AF /* AIProposalTools.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/Tools/AIProposalTools.swift"; sourceTree = SOURCE_ROOT; };
 		29CD035636154B598B211DC3 /* AIOrganization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/Tools/AIOrganization.swift"; sourceTree = SOURCE_ROOT; };
 		648898574D5A490398DF5331 /* AICoverImageFetcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/Providers/AICoverImageFetcher.swift"; sourceTree = SOURCE_ROOT; };
-		6E96BC33B1F24360B74F39AF /* AIFollowUpTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIFollowUpTests.swift"; sourceTree = SOURCE_ROOT; };
+		6E96BC33B1F24360B74F39AF /* BookAITestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/BookAITestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 		261A8A86E7F248BC959C51BC /* AITaskFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/Agent/AITaskFixtures.swift"; sourceTree = SOURCE_ROOT; };
 		97243FC88EB941CE8D7B8C5D /* AIResults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/Data/AIResults.swift"; sourceTree = SOURCE_ROOT; };
-		F7773498FC5E46E7B6D20EE9 /* AIRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIRepositoryTests.swift"; sourceTree = SOURCE_ROOT; };
+		F7773498FC5E46E7B6D20EE9 /* AIRepositoryTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/AIRepositoryTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 		63157555C51A4D79A42A3D88 /* AIReviewActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/AI/Tools/AIReviewActions.swift"; sourceTree = SOURCE_ROOT; };
 		990DFFD80C6248E3A5BF832F /* ReaderOpening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderOpening.swift; sourceTree = "<group>"; };
 		BF08E0D9F8D042DA8E2DC265 /* ReaderOpenDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderOpenDiagnostics.swift; sourceTree = "<group>"; };
@@ -332,9 +381,58 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		EF379022E56E535FAC852A40 /* Share Info.plist */ = { isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info.plist"; sourceTree = "<group>"; };
 		31B552B86FFB5750A62F5D71 /* MoonreadShare.entitlements */ = { isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "MoonreadShare.entitlements"; sourceTree = "<group>"; };
 		18807E292E245C3D81736D90 /* Share PrivacyInfo.xcprivacy */ = { isa = PBXFileReference; lastKnownFileType = text.xml; path = "PrivacyInfo.xcprivacy"; sourceTree = "<group>"; };
-		2C3B5BE72B6F578DB4C13BA1 /* ShareInboxTests.swift */ = { isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ShareInboxTests.swift"; sourceTree = "<group>"; };
+		2C3B5BE72B6F578DB4C13BA1 /* ShareInboxTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/ShareInboxTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
 		44920FD9D2A9541EA0D84A3B /* MoonreadShare.appex */ = { isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MoonreadShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C14A00000000000000000002 /* Share InfoPlist.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
+		FECAE1F1197902C7933F3209 /* AIAgentPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIAgentPersistenceTests.swift"; sourceTree = SOURCE_ROOT; };
+		9885E1115585BFC576D92B57 /* AIAgentQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIAgentQueueTests.swift"; sourceTree = SOURCE_ROOT; };
+		F5B1F1DDF46216CE59BA4F14 /* AIAuthenticationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIAuthenticationTests.swift"; sourceTree = SOURCE_ROOT; };
+		3F93DDBA5E540729F4860E1A /* AIAvailabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIAvailabilityTests.swift"; sourceTree = SOURCE_ROOT; };
+		B633ACC2BFB26FCE7339697A /* AICompactionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AICompactionTests.swift"; sourceTree = SOURCE_ROOT; };
+		10AAE623C3B1DC1FC59DAED1 /* AIConnectionStorageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIConnectionStorageTests.swift"; sourceTree = SOURCE_ROOT; };
+		937C6A32791BD8B0E6407D6E /* AIConversationProjectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIConversationProjectionTests.swift"; sourceTree = SOURCE_ROOT; };
+		C924E516A986D14FDC657DB5 /* AICoverFetchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AICoverFetchTests.swift"; sourceTree = SOURCE_ROOT; };
+		1C3F02DF5EE306A431E8B4A8 /* AIDataSharingConsentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIDataSharingConsentTests.swift"; sourceTree = SOURCE_ROOT; };
+		7A492DD12CE0AF234B210CF0 /* AIImageToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIImageToolsTests.swift"; sourceTree = SOURCE_ROOT; };
+		1DFCC359F996547326EC87C4 /* AIModelCatalogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIModelCatalogTests.swift"; sourceTree = SOURCE_ROOT; };
+		6E2E75C2CD1E7CA3ED2E854E /* AIModelSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIModelSelectionTests.swift"; sourceTree = SOURCE_ROOT; };
+		66B900FB4BCE784675F820E6 /* AIOrganizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIOrganizationTests.swift"; sourceTree = SOURCE_ROOT; };
+		9B2823E6565B64903C341816 /* AIProposalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIProposalTests.swift"; sourceTree = SOURCE_ROOT; };
+		9C9D9D5ED487655CDCA50AB5 /* AIProviderAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIProviderAdapterTests.swift"; sourceTree = SOURCE_ROOT; };
+		00996C5B9E6688C2AD00D2FD /* AIReadingContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIReadingContextTests.swift"; sourceTree = SOURCE_ROOT; };
+		4ADAE13E62F9B6DFCF7231CE /* AIReadingToolsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIReadingToolsTests.swift"; sourceTree = SOURCE_ROOT; };
+		BBC4FA70AD36EBBC6255CC2E /* AIRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIRepositoryTests.swift"; sourceTree = SOURCE_ROOT; };
+		146D6F8B3B559A05F45D37B2 /* AIRequestPrivacyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIRequestPrivacyTests.swift"; sourceTree = SOURCE_ROOT; };
+		92B2FA6BFFE8E4A18DDD1E6C /* AIResultSourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIResultSourceTests.swift"; sourceTree = SOURCE_ROOT; };
+		26B287A0524D3F1263977CC1 /* AIToolAuthorizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIToolAuthorizationTests.swift"; sourceTree = SOURCE_ROOT; };
+		9DB797D2C3C5EB500E7790F3 /* AnnotationEditingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AnnotationEditingTests.swift"; sourceTree = SOURCE_ROOT; };
+		935BE5D3F950E5A945F22D53 /* BookCoverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/BookCoverTests.swift"; sourceTree = SOURCE_ROOT; };
+		8B7347C8B711202E4F6D8DF4 /* CloudAccountTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/CloudAccountTests.swift"; sourceTree = SOURCE_ROOT; };
+		3E3F5C90A0A8FB0A54303016 /* CloudFileHandoffTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/CloudFileHandoffTests.swift"; sourceTree = SOURCE_ROOT; };
+		35D2425416C9B7E3AC350B0F /* CloudSchemaPreparationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/CloudSchemaPreparationTests.swift"; sourceTree = SOURCE_ROOT; };
+		C993F2B6C1EC753DF08DFBDC /* FeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/FeedbackTests.swift"; sourceTree = SOURCE_ROOT; };
+		F50AAD18542D47FB72AD40FD /* FileAccessBoundaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/FileAccessBoundaryTests.swift"; sourceTree = SOURCE_ROOT; };
+		DC0934B199C61ED74B4090C8 /* ImportCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/ImportCoordinatorTests.swift"; sourceTree = SOURCE_ROOT; };
+		47B357E081AF6DFD1F3ECB9A /* LibraryDeletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/LibraryDeletionTests.swift"; sourceTree = SOURCE_ROOT; };
+		B11BC06C7B83A44E9CEA4127 /* LibraryDropTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/LibraryDropTests.swift"; sourceTree = SOURCE_ROOT; };
+		662C73122456F71FAB642658 /* LibraryFileWorkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/LibraryFileWorkTests.swift"; sourceTree = SOURCE_ROOT; };
+		BC5DE16B24ECF3351AF712A3 /* LibraryIdentityAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/LibraryIdentityAdapterTests.swift"; sourceTree = SOURCE_ROOT; };
+		8DA8169166A91E148036E2C1 /* LibraryModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/LibraryModelTests.swift"; sourceTree = SOURCE_ROOT; };
+		6A8102897A4484D5BA6F580A /* OnboardingStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/OnboardingStateTests.swift"; sourceTree = SOURCE_ROOT; };
+		81C513DD3B3547100726BEAA /* PlatformAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/PlatformAdapterTests.swift"; sourceTree = SOURCE_ROOT; };
+		CC1A1EF9F7AACD391EAE39B1 /* ReaderQueryAdapterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/ReaderQueryAdapterTests.swift"; sourceTree = SOURCE_ROOT; };
+		0332D3DCAB24BD0EBEEB7BB4 /* ReaderSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/ReaderSessionTests.swift"; sourceTree = SOURCE_ROOT; };
+		A4CDBFC36C71DF2FB746CA35 /* ReaderSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/ReaderSettingsTests.swift"; sourceTree = SOURCE_ROOT; };
+		B92506C06C6ABDA44B30C8AE /* ReadingActivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/ReadingActivityTests.swift"; sourceTree = SOURCE_ROOT; };
+		2615DD1F53E4572FD0DCCE8D /* ReadingReviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/ReadingReviewTests.swift"; sourceTree = SOURCE_ROOT; };
+		92A0440947A91EDD1FD0BB84 /* RecentReadingRestorationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/RecentReadingRestorationTests.swift"; sourceTree = SOURCE_ROOT; };
+		E8C0BA2669701DB256AD6C1E /* ShareInboxTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/ShareInboxTests.swift"; sourceTree = SOURCE_ROOT; };
+		15D0125F4ECD43EA56E08E62 /* StatisticsPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/StatisticsPresentationTests.swift"; sourceTree = SOURCE_ROOT; };
+		A723932B98F96B1B0C890B9B /* SyncCompatibilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/SyncCompatibilityTests.swift"; sourceTree = SOURCE_ROOT; };
+		285C1ED4B1E1FD8BAF9996F5 /* TextCoordinatesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/TextCoordinatesTests.swift"; sourceTree = SOURCE_ROOT; };
+		1AC33131D026ECD095CC101C /* TipJarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/TipJarTests.swift"; sourceTree = SOURCE_ROOT; };
+		ED575D4FB40600C79376B30D /* UserDataConflictTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/UserDataConflictTests.swift"; sourceTree = SOURCE_ROOT; };
+		5DD6B800901BD6C290FD4CBA /* UserPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/UserPersistenceTests.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -385,9 +483,6 @@ D35000000000000000000001,
 		A50000000000000000000002 /* Moonread */ = {
 			isa = PBXGroup;
 			children = (
-F14BDB0397FE4C25963665F6,
-                8C23901BA4E14CF6AA3F4140,
-                025DA6C47C21404F889514D9,
                 AP2000000000000000000001,
                 OS2000000000000000000001,
 				C69F370A1A8A46EDAB23B47D /* App */,
@@ -440,26 +535,43 @@ A20000000000000000000009 /* MoonreadUITests.swift */,
 			name = Products;
 			sourceTree = "<group>";
 		};
-		A50000000000000000000006 /* MoonreadTests */ = {
-			isa = PBXGroup;
-			children = (
-                2C3B5BE72B6F578DB4C13BA1,
-9CD5D1790E1F4ABF94A8E63F /* AI */,
-				A2000000000000000000000C /* TextLayoutTests.swift */,
-                AF2000000000000000000005 /* LibraryDropTests.swift */,
-                C22000000000000000000004,
-F01900000000000000000004,
-                F01700000000000000000006,
+		A50000000000000000000006 /* MoonreadTests */ = {isa = PBXGroup; children = (
+                9CD5D1790E1F4ABF94A8E63F /* AI */,
+                F398589F111A211464165FBE /* Fixtures */,
+                9DB797D2C3C5EB500E7790F3 /* AnnotationEditingTests.swift */,
+                935BE5D3F950E5A945F22D53 /* BookCoverTests.swift */,
+                8B7347C8B711202E4F6D8DF4 /* CloudAccountTests.swift */,
+                3E3F5C90A0A8FB0A54303016 /* CloudFileHandoffTests.swift */,
+                35D2425416C9B7E3AC350B0F /* CloudSchemaPreparationTests.swift */,
+                C993F2B6C1EC753DF08DFBDC /* FeedbackTests.swift */,
+                F50AAD18542D47FB72AD40FD /* FileAccessBoundaryTests.swift */,
+                DC0934B199C61ED74B4090C8 /* ImportCoordinatorTests.swift */,
+                47B357E081AF6DFD1F3ECB9A /* LibraryDeletionTests.swift */,
+                B11BC06C7B83A44E9CEA4127 /* LibraryDropTests.swift */,
+                662C73122456F71FAB642658 /* LibraryFileWorkTests.swift */,
+                BC5DE16B24ECF3351AF712A3 /* LibraryIdentityAdapterTests.swift */,
+                8DA8169166A91E148036E2C1 /* LibraryModelTests.swift */,
+                6A8102897A4484D5BA6F580A /* OnboardingStateTests.swift */,
+                81C513DD3B3547100726BEAA /* PlatformAdapterTests.swift */,
+                CC1A1EF9F7AACD391EAE39B1 /* ReaderQueryAdapterTests.swift */,
+                0332D3DCAB24BD0EBEEB7BB4 /* ReaderSessionTests.swift */,
+                A4CDBFC36C71DF2FB746CA35 /* ReaderSettingsTests.swift */,
+                B92506C06C6ABDA44B30C8AE /* ReadingActivityTests.swift */,
+                2615DD1F53E4572FD0DCCE8D /* ReadingReviewTests.swift */,
+                92A0440947A91EDD1FD0BB84 /* RecentReadingRestorationTests.swift */,
+                E8C0BA2669701DB256AD6C1E /* ShareInboxTests.swift */,
+                15D0125F4ECD43EA56E08E62 /* StatisticsPresentationTests.swift */,
+                A723932B98F96B1B0C890B9B /* SyncCompatibilityTests.swift */,
                 F02200000000000000000002 /* TestSupport.swift */,
-			);
-			path = MoonreadTests;
-			sourceTree = "<group>";
-		};
+                285C1ED4B1E1FD8BAF9996F5 /* TextCoordinatesTests.swift */,
+                1AC33131D026ECD095CC101C /* TipJarTests.swift */,
+                ED575D4FB40600C79376B30D /* UserDataConflictTests.swift */,
+                5DD6B800901BD6C290FD4CBA /* UserPersistenceTests.swift */,
+            ); path = MoonreadTests; sourceTree = "<group>"; };
 9F6D1A66493346438625C489 /* AI */ = {
     isa = PBXGroup;
     children = (
                 FC2100000000000000000001,
-                3BE80CBCD8D744E1B33B2306,
 				261A8A86E7F248BC959C51BC /* AITaskFixtures.swift */,
 				648898574D5A490398DF5331 /* AICoverImageFetcher.swift */,
 				29CD035636154B598B211DC3 /* AIOrganization.swift */,
@@ -483,14 +595,29 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
     path = AI;
     sourceTree = "<group>";
 };
-9CD5D1790E1F4ABF94A8E63F /* AI */ = {
-    isa = PBXGroup;
-    children = (
-				F7773498FC5E46E7B6D20EE9 /* AIRepositoryTests.swift */,
-				6E96BC33B1F24360B74F39AF /* AIFollowUpTests.swift */,E62000000000000000000077,E62000000000000000000004,E62000000000000000000007,F01800000000000000000004,D32000000000000000000006,);
-    path = AI;
-    sourceTree = "<group>";
-};
+		9CD5D1790E1F4ABF94A8E63F /* AI */ = {isa = PBXGroup; children = (
+                FECAE1F1197902C7933F3209 /* AIAgentPersistenceTests.swift */,
+                9885E1115585BFC576D92B57 /* AIAgentQueueTests.swift */,
+                F5B1F1DDF46216CE59BA4F14 /* AIAuthenticationTests.swift */,
+                3F93DDBA5E540729F4860E1A /* AIAvailabilityTests.swift */,
+                B633ACC2BFB26FCE7339697A /* AICompactionTests.swift */,
+                10AAE623C3B1DC1FC59DAED1 /* AIConnectionStorageTests.swift */,
+                937C6A32791BD8B0E6407D6E /* AIConversationProjectionTests.swift */,
+                C924E516A986D14FDC657DB5 /* AICoverFetchTests.swift */,
+                1C3F02DF5EE306A431E8B4A8 /* AIDataSharingConsentTests.swift */,
+                7A492DD12CE0AF234B210CF0 /* AIImageToolsTests.swift */,
+                1DFCC359F996547326EC87C4 /* AIModelCatalogTests.swift */,
+                6E2E75C2CD1E7CA3ED2E854E /* AIModelSelectionTests.swift */,
+                66B900FB4BCE784675F820E6 /* AIOrganizationTests.swift */,
+                9B2823E6565B64903C341816 /* AIProposalTests.swift */,
+                9C9D9D5ED487655CDCA50AB5 /* AIProviderAdapterTests.swift */,
+                00996C5B9E6688C2AD00D2FD /* AIReadingContextTests.swift */,
+                4ADAE13E62F9B6DFCF7231CE /* AIReadingToolsTests.swift */,
+                BBC4FA70AD36EBBC6255CC2E /* AIRepositoryTests.swift */,
+                146D6F8B3B559A05F45D37B2 /* AIRequestPrivacyTests.swift */,
+                92B2FA6BFFE8E4A18DDD1E6C /* AIResultSourceTests.swift */,
+                26B287A0524D3F1263977CC1 /* AIToolAuthorizationTests.swift */,
+            ); path = AI; sourceTree = "<group>"; };
 		C69F370A1A8A46EDAB23B47D /* App */ = {
 			isa = PBXGroup;
 			children = (
@@ -642,6 +769,25 @@ F01900000000000000000002,
 		};
 		F94762692B4A52B5A2524BF1 /* ShareReceiveShared */ = { isa = PBXGroup; children = (AF3B627D29215FAB93FC0C44,5DA1E57CF521587EAF48FEFB,); path = ShareReceiveShared; sourceTree = "<group>"; };
 		C14A00000000000000000001 /* MoonreadShare */ = { isa = PBXGroup; children = (C14A00000000000000000002,29C2EBD521AF59B58F38BBE5,EF379022E56E535FAC852A40,31B552B86FFB5750A62F5D71,18807E292E245C3D81736D90,); path = MoonreadShare; sourceTree = "<group>"; };
+		F398589F111A211464165FBE /* Fixtures */ = {isa = PBXGroup; children = (
+                E62000000000000000000004 /* AIAgentRuntimeTestFixtures.swift */,
+                F01800000000000000000004 /* AIChatGPTTestFixtures.swift */,
+                3BE80CBCD8D744E1B33B2306 /* AIDataSharingConsentTestFixtures.swift */,
+                E62000000000000000000077 /* AIReadingMoonTestFixtures.swift */,
+                E62000000000000000000007 /* AIReadingToolsTestFixtures.swift */,
+                F7773498FC5E46E7B6D20EE9 /* AIRepositoryTestFixtures.swift */,
+                8C23901BA4E14CF6AA3F4140 /* AppStorePrivacyTestFixtures.swift */,
+                6E96BC33B1F24360B74F39AF /* BookAITestFixtures.swift */,
+                F14BDB0397FE4C25963665F6 /* CloudSchemaPreparationTestFixtures.swift */,
+                D32000000000000000000006 /* ConversationTestFixtures.swift */,
+                AF2000000000000000000005 /* LibraryDropTestFixtures.swift */,
+                A2000000000000000000000C /* ReaderTestFixtures.swift */,
+                025DA6C47C21404F889514D9 /* ReadingReviewTestFixtures.swift */,
+                F01900000000000000000004 /* RecentReadingRestorationTestFixtures.swift */,
+                2C3B5BE72B6F578DB4C13BA1 /* ShareInboxTestFixtures.swift */,
+                F01700000000000000000006 /* TipJarTestFixtures.swift */,
+                C22000000000000000000004 /* UserDataTestFixtures.swift */,
+            ); path = Fixtures; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -920,28 +1066,75 @@ F01900000000000000000001,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		A60000000000000000000006 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
+		A60000000000000000000006 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
                 1324E15761CF5ED68712722E,
                 2E2559685C214716AEE5F325,
-785244D6C1DB4AF6B15A8AA0,
-01800FD10FB1423B93ABB34E,
-5AEB90FA1BD147BDA6246668,
-				0824CF925F1146178BFD0FD1 /* AIRepositoryTests.swift */,
-				B2B2CB5D001B4F72BFAEBD3F /* AIFollowUpTests.swift */,
-				E61000000000000000000077 /* AIReadingMoonTests.swift */,
-E61000000000000000000004,E61000000000000000000007,F01800000000000000000003,D31000000000000000000006,
-				A1000000000000000000000A /* TextLayoutTests.swift in Sources */,
-                AF1000000000000000000005 /* LibraryDropTests.swift in Sources */,
+                785244D6C1DB4AF6B15A8AA0,
+                01800FD10FB1423B93ABB34E,
+                5AEB90FA1BD147BDA6246668,
+                0824CF925F1146178BFD0FD1,
+                B2B2CB5D001B4F72BFAEBD3F,
+                E61000000000000000000077,
+                E61000000000000000000004,
+                E61000000000000000000007,
+                F01800000000000000000003,
+                D31000000000000000000006,
+                A1000000000000000000000A,
+                AF1000000000000000000005,
                 C21000000000000000000004,
-F01900000000000000000003,
+                F01900000000000000000003,
                 F01700000000000000000005,
-                F02200000000000000000001 /* TestSupport.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
+                F02200000000000000000001,
+                14EBF385EEB12E8854251B0C,
+                8ECACDBA0D7E7C50A82DCB52,
+                E4A6194DE08E299191611D3F,
+                5D839F8292B36707B3F44EDE,
+                EF9F15D1120F37D85EE8F10F,
+                BFB4D8321C6FC6CC2E84DF67,
+                81DD9062D9B410471F40DC5D,
+                19BA9AC0468B112E989203A6,
+                EB41A2879F6CB1DD80787829,
+                62DA209640B00D364995AFFB,
+                731E1EB84D9538A57B6C407B,
+                8599C422EE9D8E84ED491CED,
+                9F9D724053DE8ACEAEEC9480,
+                A42F5036E21C30DF0133F85D,
+                12EBEEC4F22C0486610AA73C,
+                8CE6179419AE41997E869E71,
+                8FB5248BDBC8632F5DE25847,
+                E9E42CAADE0F187D523B244C,
+                B655BB5D171526C03A6E8221,
+                E47B11B71F8C697D308B882B,
+                61F55FC302B85570703ADDB1,
+                86AE89B8BFEF8406636166F1,
+                8D269C69D9C73C8B6C4D2E12,
+                5E8349A2AE852911802CBB0A,
+                90AB2CB84E3437C18A4570F2,
+                87A1CC4BE68F5BE8C06EBF77,
+                99036960B143B422F83F3200,
+                9696B225E2797B1846A146C2,
+                573AAD00E77D340B932CE826,
+                482F88C28D6D45185E252651,
+                0833189DEA77B883C4465567,
+                2C68CC29F050497ACCA30BAD,
+                A54FB3E548AECE5602B54F73,
+                584066648F27FBAACC6C5E60,
+                35B4DB3E1E4C11FDCAB058C5,
+                7891AB4965911CD34494B49C,
+                CDB74E1096C129C2320BDFA6,
+                9FF775D0B6877A398441A100,
+                40E0B67600F95CF2A77449F3,
+                4DD3C6345D4E4CA57EDFC02D,
+                2765FCAA8DAFFD989EB8DE8B,
+                1C19EF83EFDDB13911FB0657,
+                B4D7E286664F1E77FD666099,
+                B0A7A083928F00E06E35E879,
+                8A25D2AB32A8BB6602648C70,
+                81DD4FE55F103B8987AA6C01,
+                8708446F28EB929FDBF3DF5B,
+                542E6B712E2CF6CEA71DD1E2,
+                9F8DE62685C2F88403C6ECD7,
+            ); runOnlyForDeploymentPostprocessing = 0; };
 		67F838CFAF2F527F8C8EE359 /* Share Sources */ = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (906A74D1BD2A5FAD9BE897E1,0804D0B539CB5AB19A9DB8FF,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 

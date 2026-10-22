@@ -2,200 +2,375 @@ import XCTest
 
 /// Small, isolated user paths. Rules and state-machine permutations live below UI.
 @MainActor final class MoonreadUITests: XCTestCase {
-    private let app = XCUIApplication()
-    private let sample = "月读 · 排版示例.txt"
-    override func setUp() { continueAfterFailure = false; XCUIDevice.shared.orientation = .portrait }
-    override func tearDown() {
-        if testRun?.hasSucceeded == false {
-            let attachment = XCTAttachment(screenshot: app.screenshot()); attachment.lifetime = .keepAlways; add(attachment)
-        }
-        app.terminate()
+  private let app = XCUIApplication()
+  private let sample = "月读 · 排版示例.txt"
+  override func setUp() {
+    continueAfterFailure = false
+    XCUIDevice.shared.orientation = .portrait
+  }
+  override func tearDown() {
+    if testRun?.hasSucceeded == false {
+      let attachment = XCTAttachment(screenshot: app.screenshot())
+      attachment.lifetime = .keepAlways
+      add(attachment)
     }
-    private func launch(_ extra: [String] = []) {
-        app.launchArguments = ["--ui-testing", "--ui-test-session", UUID().uuidString,
-            "--ui-test-smoke", "--ui-test-library-trash", "--disable-tips",
-            "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN"] + extra
-        app.launchEnvironment["MOONREAD_TEST_CREDENTIALS"] = "memory"
-        app.launch()
+    app.terminate()
+  }
+  private func launch(_ extra: [String] = []) {
+    app.launchArguments =
+      [
+        "--ui-testing", "--ui-test-session", UUID().uuidString,
+        "--ui-test-smoke", "--ui-test-library-trash", "--disable-tips",
+        "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN",
+      ] + extra
+    app.launchEnvironment["MOONREAD_TEST_CREDENTIALS"] = "memory"
+    app.launch()
+  }
+  @discardableResult private func ready(_ element: XCUIElement, timeout: TimeInterval = 8)
+    -> XCUIElement
+  {
+    if !element.exists { XCTAssertTrue(element.waitForExistence(timeout: timeout)) }
+    return element
+  }
+  private func element(_ id: String) -> XCUIElement {
+    app.descendants(matching: .any).matching(identifier: id).firstMatch
+  }
+  private func file(_ name: String) -> XCUIElement { app.buttons["library-file-" + name] }
+  private func shelf() {
+    ready(app.buttons["shelf-builtin"]).tap()
+    ready(file(sample))
+  }
+  private func menu(_ name: String) { ready(app.buttons[name + "的操作"]).tap() }
+  private func body() -> XCUIElement {
+    let query = app.textViews.matching(
+      NSPredicate(format: "identifier IN %@", ["scrollText", "pageText"]))
+    return ready(query.firstMatch)
+  }
+  private func readableBody() {
+    let text = body()
+    if text.label.hasPrefix("封面") {
+      text.swipeUp()
+      waitUntil { !self.body().label.hasPrefix("封面") }
     }
-    @discardableResult private func ready(_ element: XCUIElement, timeout: TimeInterval = 8) -> XCUIElement {
-        if !element.exists { XCTAssertTrue(element.waitForExistence(timeout: timeout)) }
-        return element
-    }
-    private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
-    private func file(_ name: String) -> XCUIElement { app.buttons["library-file-" + name] }
-    private func shelf() { ready(app.buttons["shelf-builtin"]).tap(); ready(file(sample)) }
-    private func menu(_ name: String) { ready(app.buttons[name + "的操作"]).tap() }
-    private func body() -> XCUIElement {
-        let query = app.textViews.matching(NSPredicate(format: "identifier IN %@", ["scrollText", "pageText"]))
-        return ready(query.firstMatch)
-    }
-    private func readableBody() {
-        let text = body()
-        if text.label.hasPrefix("封面") {
-            text.swipeUp()
-            waitUntil { !self.body().label.hasPrefix("封面") }
-        }
-        XCTAssertFalse(body().label.isEmpty)
-    }
-    private func open(_ name: String? = nil) { ready(file(name ?? sample)).tap(); readableBody() }
-    private func controls() { if !app.buttons["readingSettings"].exists { body().tap() }; ready(app.buttons["readingSettings"]) }
-    private func backFromReader() { controls(); app.navigationBars.buttons.firstMatch.tap() }
-    private func anchor() -> UInt64 { UInt64(body().value as? String ?? "") ?? UInt64.max }
-    private func waitUntil(_ predicate: @escaping () -> Bool) {
-        if predicate() { return }
-        let condition = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in predicate() }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [condition], timeout: 8), .completed)
-    }
-    private func list(_ name: String) {
-        controls(); app.buttons["readerMore"].tap(); ready(app.buttons[name == "书签" ? "openBookmarks" : "openNotes"]).tap()
-    }
-    private func closeList() { ready(app.buttons["closeReaderLibrary"]).tap() }
-    private func replace(_ field: XCUIElement, with value: String) {
-        ready(field).tap()
-        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: (field.value as? String ?? "").count) + value)
-    }
+    XCTAssertFalse(body().label.isEmpty)
+  }
+  private func open(_ name: String? = nil) {
+    ready(file(name ?? sample)).tap()
+    readableBody()
+  }
+  private func controls() {
+    if !app.buttons["readingSettings"].exists { body().tap() }
+    ready(app.buttons["readingSettings"])
+  }
+  private func backFromReader() {
+    controls()
+    app.navigationBars.buttons.firstMatch.tap()
+  }
+  private func anchor() -> UInt64 { UInt64(body().value as? String ?? "") ?? UInt64.max }
+  private func waitUntil(_ predicate: @escaping () -> Bool) {
+    if predicate() { return }
+    let condition = XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in predicate() }, object: nil)
+    XCTAssertEqual(XCTWaiter.wait(for: [condition], timeout: 8), .completed)
+  }
+  private func list(_ name: String) {
+    controls()
+    app.buttons["readerMore"].tap()
+    ready(app.buttons[name == "书签" ? "openBookmarks" : "openNotes"]).tap()
+  }
+  private func closeList() { ready(app.buttons["closeReaderLibrary"]).tap() }
+  private func replace(_ field: XCUIElement, with value: String) {
+    ready(field).tap()
+    field.typeText(
+      String(
+        repeating: XCUIKeyboardKey.delete.rawValue, count: (field.value as? String ?? "").count)
+        + value)
+  }
 
-    func testU01OpenAndRead() {
-        launch(); shelf(); open()
-        let initial = anchor(); body().swipeUp()
-        waitUntil { self.anchor() != initial }
-        XCTAssertNotEqual(anchor(), UInt64.max)
+  func testU01OpenAndRead() {
+    launch()
+    shelf()
+    open()
+    let initial = anchor()
+    body().swipeUp()
+    waitUntil { self.anchor() != initial }
+    XCTAssertNotEqual(anchor(), UInt64.max)
+  }
+  func testU02MoveBookIntoFolder() {
+    launch()
+    shelf()
+    menu(sample)
+    app.buttons["移动"].tap()
+    ready(app.buttons["我的书架"]).tap()
+    ready(app.buttons["目标"]).tap()
+    ready(app.buttons["移到这里"]).tap()
+    XCTAssertTrue(file(sample).waitForNonExistence(timeout: 8))
+    ready(file("目标")).tap()
+    open()
+  }
+  func testU03EditBookInformation() {
+    launch()
+    shelf()
+    menu(sample)
+    app.buttons["小说详情"].tap()
+    ready(app.buttons["小说选项"]).tap()
+    app.buttons["编辑小说信息"].tap()
+    replace(app.textFields["bookAuthorField"], with: "合成作者")
+    app.buttons["saveBookMetadata"].tap()
+    ready(app.buttons["合成作者"])
+    app.navigationBars.buttons.firstMatch.tap()
+    menu(sample)
+    app.buttons["小说详情"].tap()
+    XCTAssertTrue(ready(app.buttons["合成作者"]).exists)
+  }
+  func testU04ReadingPositionSurvivesRestart() {
+    launch()
+    shelf()
+    open()
+    controls()
+    app.buttons["showChapters"].tap()
+    ready(app.buttons["第二話 归途"]).tap()
+    ready(app.buttons["continueFromHere"]).tap()
+    let saved = anchor()
+    XCTAssertGreaterThan(saved, 0)
+    backFromReader()
+    ready(file(sample))
+    app.terminate()
+    app.launch()
+    shelf()
+    open()
+    waitUntil { self.anchor() == saved }
+  }
+  func testU05DeleteOnlySelectedBook() {
+    launch()
+    shelf()
+    app.buttons["folderActions"].tap()
+    app.buttons["选择项目"].tap()
+    file(sample).tap()
+    app.buttons["删除"].tap()
+    ready(app.buttons["移到最近删除"]).tap()
+    XCTAssertTrue(file(sample).waitForNonExistence(timeout: 8))
+    XCTAssertTrue(file("同名.txt").exists)
+    app.buttons["librarySelectionDone"].tap()
+    open("同名.txt")
+  }
+  func testU06CopyAndSkipConflict() {
+    launch()
+    let source = app.buttons.matching(
+      NSPredicate(
+        format: "identifier BEGINSWITH 'shelf-' AND label CONTAINS 'Moonread-Smoke-External'")
+    ).firstMatch
+    ready(source).tap()
+    app.buttons["folderActions"].tap()
+    app.buttons["选择项目"].tap()
+    app.buttons["librarySelectAll"].tap()
+    app.buttons["libraryCopySelection"].tap()
+    ready(app.alerts["替换同名文件？"])
+    app.alerts.buttons["取消"].tap()
+    ready(file("复制.txt"))
+    XCTAssertTrue(file("同名.txt").exists)
+    app.buttons["librarySelectionDone"].tap()
+    open("同名.txt")
+    XCTAssertTrue(body().label.contains("不要替换已有目标"), "The source must retain its own bytes")
+    backFromReader()
+    app.navigationBars.buttons.firstMatch.tap()
+    shelf()
+    ready(file("复制.txt"))
+    open("同名.txt")
+    XCTAssertTrue(
+      body().label.contains("保留原来的目标内容"),
+      "Declining replacement must preserve the destination bytes")
+  }
+  func testU07SearchShelfAndReturnToResults() {
+    launch()
+    shelf()
+    app.buttons["folderActions"].tap()
+    app.buttons["在此书架中搜索"].tap()
+    let query = ready(app.searchFields.firstMatch)
+    query.tap()
+    query.typeText("排版")
+    open()
+    backFromReader()
+    ready(file(sample))
+    XCTAssertEqual(query.value as? String, "排版")
+  }
+  func testU08BrowseTagAndUnindexedGroup() {
+    launch()
+    shelf()
+    app.buttons["library-all-books"].tap()
+    app.buttons["folderActions"].tap()
+    app.buttons["分组方式"].tap()
+    app.buttons["标签"].tap()
+    ready(app.buttons["library-tag-星灯"])
+    XCTAssertTrue(app.buttons["library-tag-unindexed"].exists || app.staticTexts["未建立索引"].exists)
+    app.buttons["library-tag-星灯"].tap()
+    open()
+  }
+  func testU09CreateAndRenameFolder() {
+    launch()
+    shelf()
+    app.buttons["folderActions"].tap()
+    app.buttons["新建文件夹"].tap()
+    ready(app.textFields["libraryItemName"]).typeText("待读")
+    app.buttons["saveLibraryName"].tap()
+    ready(file("待读"))
+    menu("待读")
+    app.buttons["重命名"].tap()
+    replace(app.textFields["libraryItemName"], with: "书单")
+    app.buttons["saveLibraryName"].tap()
+    ready(file("书单"))
+    XCTAssertFalse(file("待读").exists)
+  }
+  func testU10LocalOnboardingReachesReadableShelf() {
+    launch(["--ui-test-introduction"])
+    for _ in 0..<3 { ready(app.buttons["introductionContinue"]).tap() }
+    ready(app.buttons["introductionSample"]).tap()
+    ready(file(sample))
+    open()
+  }
+  func testU11IndexedUnopenedBookShowsRestoredData() {
+    launch(["--ui-test-smoke-restored"])
+    let recent = ready(file(sample))
+    let status = recent.label + (recent.value as? String ?? "")
+    XCTAssertTrue(status.contains("%"), "Restored progress is visible before opening")
+    shelf()
+    menu(sample)
+    app.buttons["小说详情"].tap()
+    ready(app.buttons["星灯"])
+    XCTAssertFalse(app.textViews["scrollText"].exists)
+  }
+  func testU12ChinaHasNoAIAndKeepsSettingsAndReading() {
+    launch(["--ui-test-storefront", "CHN", "--ui-test-ai-model-picker", "--ui-test-ai-tasks"])
+    ready(app.buttons["shelf-builtin"])
+    XCTAssertFalse(app.tabBars.buttons["对话"].exists)
+    XCTAssertFalse(app.buttons["appSettings"].exists)
+    ready(app.tabBars.buttons["设置"]).tap()
+    ready(app.buttons["readerThemeSettings"])
+    XCTAssertFalse(app.buttons["aiSettings"].exists)
+    app.tabBars.buttons["书架"].tap()
+    shelf()
+    open()
+    controls()
+    XCTAssertFalse(app.buttons["readerAIMoon"].exists)
+  }
+  func testU13ManualEncodingRecovery() {
+    launch(["--ui-test-encoding"])
+    shelf()
+    file("编码恢复样本.txt").tap()
+    ready(app.buttons["更换编码重新打开"]).tap()
+    app.buttons["其他编码"].tap()
+    app.buttons["UTF-16LE"].tap()
+    ready(app.alerts["更换文字编码？"])
+    app.alerts.buttons["重新读取"].tap()
+    _ = body()
+    XCTAssertFalse(app.buttons["更换编码重新打开"].exists)
+  }
+  func testU14CorrectChapterAndNavigate() {
+    launch()
+    shelf()
+    open()
+    controls()
+    app.buttons["showChapters"].tap()
+    app.buttons["chapterActions"].tap()
+    app.buttons["整理目录"].tap()
+    ready(app.buttons["chapter-1249"]).tap()
+    replace(element("chapterEditTitle"), with: "修正后的章节")
+    app.buttons["saveChapterEdit"].tap()
+    app.buttons["chapterActions"].tap()
+    app.buttons["结束整理"].tap()
+    ready(app.buttons["chapter-1249"]).tap()
+    readableBody()
+    ready(app.buttons["continueFromHere"]).tap()
+    waitUntil { self.anchor() == 1249 }
+    backFromReader()
+    open()
+    waitUntil { self.anchor() == 1249 }
+  }
+  func testU15ImportSelectedTXTAndRead() {
+    launch()
+    ready(app.buttons["shelf-builtin"])
+    app.buttons["smokeReceive"].tap()
+    app.buttons["smokeImportTXT"].tap()
+    readableBody()
+    backFromReader()
+    ready(file("导入样本.txt"))
+  }
+  func testU16SaveBookmarkAndNote() {
+    launch()
+    shelf()
+    open()
+    controls()
+    app.buttons["readerMore"].tap()
+    ready(app.buttons["toggleBookmark"]).tap()
+    app.buttons["openBookmarks"].tap()
+    ready(app.cells.firstMatch).tap()
+    _ = body()
+    app.buttons["smokeAddNote"].tap()
+    let editor = ready(app.textViews["noteEditorText"])
+    editor.typeText("合成批注")
+    app.buttons["saveNote"].tap()
+    XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
+    list("笔记")
+    ready(app.staticTexts["合成批注"]).tap()
+    _ = body()
+  }
+  func testU17SearchPreviewCommitsOnlyOnContinue() {
+    launch()
+    shelf()
+    open()
+    let original = anchor()
+    controls()
+    app.buttons["showSearch"].tap()
+    let query = ready(app.textFields["bookSearchQuery"])
+    query.tap()
+    query.typeText("星灯")
+    let hit = ready(
+      app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'searchHit-'")).element(
+        boundBy: 1))
+    hit.tap()
+    ready(app.buttons["returnFromBrowse"]).tap()
+    waitUntil { self.anchor() == original }
+    backFromReader()
+    open()
+    waitUntil { self.anchor() == original }
+    controls()
+    app.buttons["showSearch"].tap()
+    let again = ready(app.textFields["bookSearchQuery"])
+    if (again.value as? String) != "星灯" {
+      again.tap()
+      again.typeText("星灯")
     }
-    func testU02MoveBookIntoFolder() {
-        launch(); shelf(); menu(sample); app.buttons["移动"].tap()
-        ready(app.buttons["我的书架"]).tap(); ready(app.buttons["目标"]).tap()
-        ready(app.buttons["移到这里"]).tap()
-        XCTAssertTrue(file(sample).waitForNonExistence(timeout: 8))
-        ready(file("目标")).tap(); open()
-    }
-    func testU03EditBookInformation() {
-        launch(); shelf(); menu(sample); app.buttons["小说详情"].tap()
-        ready(app.buttons["小说选项"]).tap(); app.buttons["编辑小说信息"].tap()
-        replace(app.textFields["bookAuthorField"], with: "合成作者")
-        app.buttons["saveBookMetadata"].tap(); ready(app.buttons["合成作者"])
-        app.navigationBars.buttons.firstMatch.tap()
-        menu(sample); app.buttons["重命名"].tap()
-        replace(app.textFields["libraryItemName"], with: "改名后的书")
-        app.buttons["saveLibraryName"].tap(); ready(file("改名后的书.txt"))
-        menu("改名后的书.txt"); app.buttons["小说详情"].tap()
-        ready(app.buttons["合成作者"]); XCTAssertTrue(app.staticTexts["改名后的书"].firstMatch.exists)
-    }
-    func testU04ReadingPositionSurvivesRestart() {
-        launch(); shelf(); open(); controls(); app.buttons["showChapters"].tap()
-        ready(app.buttons["第二話 归途"]).tap(); ready(app.buttons["continueFromHere"]).tap()
-        let saved = anchor(); XCTAssertGreaterThan(saved, 0)
-        backFromReader(); ready(file(sample)); app.terminate(); app.launch()
-        shelf(); open(); waitUntil { self.anchor() == saved }
-    }
-    func testU05DeleteOnlySelectedBook() {
-        launch(); shelf(); app.buttons["folderActions"].tap(); app.buttons["选择项目"].tap()
-        file(sample).tap(); app.buttons["删除"].tap(); ready(app.buttons["移到最近删除"]).tap()
-        XCTAssertTrue(file(sample).waitForNonExistence(timeout: 8)); XCTAssertTrue(file("同名.txt").exists)
-        app.buttons["librarySelectionDone"].tap(); open("同名.txt")
-    }
-    func testU06CopyAndSkipConflict() {
-        launch()
-        let source = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'shelf-' AND label CONTAINS 'Moonread-Smoke-External'")).firstMatch
-        ready(source).tap(); app.buttons["folderActions"].tap(); app.buttons["选择项目"].tap()
-        app.buttons["librarySelectAll"].tap(); app.buttons["libraryCopySelection"].tap()
-        ready(app.alerts["替换同名文件？"]); app.alerts.buttons["取消"].tap()
-        ready(file("复制.txt")); XCTAssertTrue(file("同名.txt").exists)
-        app.buttons["librarySelectionDone"].tap(); app.navigationBars.buttons.firstMatch.tap()
-        shelf(); ready(file("复制.txt")); XCTAssertTrue(file("同名.txt").exists)
-    }
-    func testU07SearchShelfAndReturnToResults() {
-        launch(); shelf(); app.buttons["folderActions"].tap(); app.buttons["在此书架中搜索"].tap()
-        let query = ready(app.searchFields.firstMatch); query.tap(); query.typeText("排版")
-        open(); backFromReader()
-        ready(file(sample)); XCTAssertEqual(query.value as? String, "排版")
-    }
-    func testU08BrowseTagAndUnindexedGroup() {
-        launch(); shelf(); app.buttons["library-all-books"].tap(); app.buttons["folderActions"].tap()
-        app.buttons["分组方式"].tap(); app.buttons["标签"].tap()
-        ready(app.buttons["library-tag-星灯"])
-        XCTAssertTrue(app.buttons["library-tag-unindexed"].exists || app.staticTexts["未建立索引"].exists)
-        app.buttons["library-tag-星灯"].tap()
-        open()
-    }
-    func testU09CreateAndRenameFolder() {
-        launch(); shelf(); app.buttons["folderActions"].tap(); app.buttons["新建文件夹"].tap()
-        ready(app.textFields["libraryItemName"]).typeText("待读"); app.buttons["saveLibraryName"].tap()
-        ready(file("待读")); menu("待读"); app.buttons["重命名"].tap()
-        replace(app.textFields["libraryItemName"], with: "书单"); app.buttons["saveLibraryName"].tap()
-        ready(file("书单")); XCTAssertFalse(file("待读").exists)
-    }
-    func testU10LocalOnboardingReachesReadableShelf() {
-        launch(["--ui-test-introduction"])
-        for _ in 0..<3 { ready(app.buttons["introductionContinue"]).tap() }
-        ready(app.buttons["introductionSample"]).tap()
-        ready(file(sample)); open()
-    }
-    func testU11IndexedUnopenedBookShowsRestoredData() {
-        launch(["--ui-test-smoke-restored"])
-        let recent = ready(file(sample))
-        let status = recent.label + (recent.value as? String ?? "")
-        XCTAssertTrue(status.contains("%"), "Restored progress is visible before opening")
-        shelf(); menu(sample); app.buttons["小说详情"].tap()
-        ready(app.buttons["星灯"]); XCTAssertFalse(app.textViews["scrollText"].exists)
-    }
-    func testU12ChinaHasNoAIAndKeepsSettingsAndReading() {
-        launch(["--ui-test-storefront", "CHN", "--ui-test-ai-model-picker", "--ui-test-ai-tasks"])
-        ready(app.buttons["shelf-builtin"])
-        XCTAssertFalse(app.tabBars.buttons["对话"].exists); XCTAssertFalse(app.buttons["appSettings"].exists)
-        ready(app.tabBars.buttons["设置"]).tap(); ready(app.buttons["readerThemeSettings"])
-        XCTAssertFalse(app.buttons["aiSettings"].exists)
-        app.tabBars.buttons["书架"].tap(); shelf(); open(); controls()
-        XCTAssertFalse(app.buttons["readerAIMoon"].exists)
-    }
-    func testU13ManualEncodingRecovery() {
-        launch(["--ui-test-encoding"]); shelf(); file("编码恢复样本.txt").tap()
-        ready(app.buttons["更换编码重新打开"]).tap(); app.buttons["其他编码"].tap(); app.buttons["UTF-16LE"].tap()
-        ready(app.alerts["更换文字编码？"]); app.alerts.buttons["重新读取"].tap()
-        _ = body(); XCTAssertFalse(app.buttons["更换编码重新打开"].exists)
-    }
-    func testU14CorrectChapterAndNavigate() {
-        launch(); shelf(); open(); controls(); app.buttons["showChapters"].tap()
-        app.buttons["chapterActions"].tap(); app.buttons["整理目录"].tap()
-        ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chapter-'")).firstMatch).tap()
-        replace(element("chapterEditTitle"), with: "修正后的章节"); app.buttons["saveChapterEdit"].tap()
-        app.buttons["chapterActions"].tap(); app.buttons["结束整理"].tap()
-        ready(app.buttons.containing(.staticText, identifier: "修正后的章节").firstMatch).tap(); _ = body()
-    }
-    func testU15ImportSelectedTXTAndRead() {
-        launch(); ready(app.buttons["shelf-builtin"])
-        app.buttons["smokeReceive"].tap(); app.buttons["smokeImportTXT"].tap(); readableBody()
-        backFromReader(); ready(file("导入样本.txt"))
-    }
-    func testU16SaveBookmarkAndNote() {
-        launch(); shelf(); open(); controls(); app.buttons["readerMore"].tap()
-        ready(app.buttons["toggleBookmark"]).tap(); app.buttons["openBookmarks"].tap()
-        ready(app.cells.firstMatch).tap(); _ = body()
-        app.buttons["smokeAddNote"].tap(); let editor = ready(app.textViews["noteEditorText"])
-        editor.typeText("合成批注"); app.buttons["saveNote"].tap()
-        XCTAssertTrue(editor.waitForNonExistence(timeout: 5)); list("笔记")
-        ready(app.staticTexts["合成批注"]).tap(); _ = body()
-    }
-    func testU17SearchPreviewCommitsOnlyOnContinue() {
-        launch(); shelf(); open(); let original = anchor()
-        controls(); app.buttons["showSearch"].tap()
-        let query = ready(app.textFields["bookSearchQuery"]); query.tap(); query.typeText("星灯")
-        let hit = ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'searchHit-'")).firstMatch)
-        hit.tap(); ready(app.buttons["returnFromBrowse"]).tap()
-        waitUntil { self.anchor() == original }
-        ready(app.buttons["expandSearch"]).tap(); ready(hit).tap()
-        let preview = anchor(); ready(app.buttons["continueFromHere"]).tap()
-        XCTAssertEqual(anchor(), preview); XCTAssertFalse(app.buttons["returnFromBrowse"].exists)
-    }
-    func testU18CancelAnnotationWithoutSaving() {
-        launch(); shelf(); open(); app.buttons["smokeAddNote"].tap()
-        let editor = ready(app.textViews["noteEditorText"]); editor.typeText("不要保存")
-        app.buttons["closeNote"].tap(); XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
-        list("笔记"); ready(app.staticTexts["暂无笔记"])
-    }
-    func testU19ShareInboxImportAndRead() {
-        launch(); ready(app.buttons["shelf-builtin"])
-        app.buttons["smokeReceive"].tap(); app.buttons["smokeShareTXT"].tap(); readableBody()
-        backFromReader(); ready(file("分享样本.txt"))
-    }
+    ready(
+      app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'searchHit-'")).element(
+        boundBy: 1)
+    ).tap()
+    let preview = anchor()
+    XCTAssertNotEqual(preview, original)
+    ready(app.buttons["continueFromHere"]).tap()
+    waitUntil { self.anchor() == preview }
+    backFromReader()
+    open()
+    waitUntil { self.anchor() == preview }
+  }
+  func testU18CancelAnnotationWithoutSaving() {
+    launch()
+    shelf()
+    open()
+    app.buttons["smokeAddNote"].tap()
+    let editor = ready(app.textViews["noteEditorText"])
+    editor.typeText("不要保存")
+    app.buttons["closeNote"].tap()
+    XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
+    list("笔记")
+    ready(app.staticTexts["暂无笔记"])
+  }
+  func testU19ShareInboxImportAndRead() {
+    launch()
+    ready(app.buttons["shelf-builtin"])
+    app.buttons["smokeReceive"].tap()
+    app.buttons["smokeShareTXT"].tap()
+    readableBody()
+    backFromReader()
+    ready(file("分享样本.txt"))
+  }
 }

@@ -121,7 +121,8 @@ mod tests {
 
     #[test]
     fn future_and_prebaseline_versions_are_rejected_without_reset() {
-        let mut db = Connection::open_in_memory().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Connection::open(dir.path().join("reader.sqlite3")).unwrap();
         initialize(&mut db).unwrap();
         db.execute_batch("PRAGMA user_version=23").unwrap();
         assert!(matches!(
@@ -135,6 +136,13 @@ mod tests {
             db.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
                 .unwrap(),
             23
+        );
+        assert!(
+            matches!(
+                crate::ReaderCore::new(dir.path().to_string_lossy().into()),
+                Err(ReaderError::StoreTooNew { .. })
+            ),
+            "public open must preserve the same too-new error"
         );
         db.execute_batch("PRAGMA user_version=19").unwrap();
         assert!(matches!(

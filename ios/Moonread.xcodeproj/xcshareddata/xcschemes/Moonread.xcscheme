@@ -54,7 +54,7 @@
       buildConfiguration = "Debug"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
-      shouldUseLaunchSchemeArgsEnv = "YES">
+      shouldUseLaunchSchemeArgsEnv = "NO">
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
@@ -64,33 +64,12 @@
             ReferencedContainer = "container:Moonread.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
-      <Testables>
-         <TestableReference
-            skipped = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "A80000000000000000000002"
-               BuildableName = "MoonreadUITests.xctest"
-               BlueprintName = "MoonreadUITests"
-               ReferencedContainer = "container:Moonread.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO"
-            parallelizable = "NO">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "A80000000000000000000003"
-               BuildableName = "MoonreadTests.xctest"
-               BlueprintName = "MoonreadTests"
-               ReferencedContainer = "container:Moonread.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-      </Testables>
+      <TestPlans>
+         <TestPlanReference reference="container:MoonreadTests/Moonread.xctestplan" default="YES"/>
+      </TestPlans>
       <EnvironmentVariables>
          <EnvironmentVariable key="MOONREAD_TEST_CREDENTIALS" value="memory" isEnabled="YES"/>
       </EnvironmentVariables>
-      <StoreKitConfigurationFileReference identifier="../../Moonread/Settings/TipJar.storekit"/>
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"

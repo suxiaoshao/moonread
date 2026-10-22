@@ -93,6 +93,26 @@ fn scope_tree_and_natural_order_use_only_metadata() {
             == 0,
         "Listing/search never ingests novels"
     );
+    core.scan_library_shelf(
+        "external".into(),
+        vec![
+            item("月.txt", false),
+            item("阿.txt", false),
+            item("10.txt", false),
+            item("2.txt", false),
+        ],
+    )
+    .unwrap();
+    let names = core
+        .query_snapshot("{}".into())
+        .unwrap()
+        .library_entries(Some("external".into()), Some("".into()), LibrarySort::Name)
+        .unwrap();
+    assert_eq!(
+        names.iter().map(|e| e.name.as_str()).collect::<Vec<_>>(),
+        ["2.txt", "10.txt", "月.txt", "阿.txt"],
+        "natural names including Chinese alphabet classes"
+    );
 }
 
 #[test]

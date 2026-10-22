@@ -4,22 +4,8 @@ import XCTest
 
 @testable import Moonread
 
-@MainActor final class AIReadingToolsTests: XCTestCase {
-  func testUnsupportedReadingStatusCanBeFilteredWithoutChangingItsRawValue() async throws {
-    let (root, _, book, store, tools) = try await fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let key = "metadata/" + book.contentSha256 + "/status"
-    try await store.put(key, value: "\"FutureReadingState\"", device: "remote")
-    let all = try await invoke(tools, "search_books", [:])
-    let other = try await invoke(tools, "search_books", ["readingStatus": .string("other")])
-    let unread = try await invoke(tools, "search_books", ["readingStatus": .string("unread")])
-    XCTAssertEqual(all.object["data"]?.object["items"]?.array?.count, 1)
-    XCTAssertEqual(other.object["data"]?.object["items"]?.array?.count, 1)
-    XCTAssertEqual(other.object["data"]?.object["items"]?.array?.first?.object["readingStatus"], .string("other"))
-    XCTAssertTrue(unread.object["data"]?.object["items"]?.array?.isEmpty == true)
-    let retained = try await store.value(key)
-    XCTAssertEqual(retained, "\"FutureReadingState\"")
-  }
+final class AIReadingToolsTests: AIReadingToolsFixture {
+  // S131: AI 准备未完整书籍必须列出准确确认对象，不遗漏或重复授权范围。
   func testPreparationConfirmationIncludesEveryIncompleteBookOnce() async throws {
     var visited: [String] = []
     let prompt = try await AIReadingTools.preparationConfirmation(["a", "ready", "b", "a"]) { ref in
@@ -31,184 +17,34 @@ import XCTest
     let unnecessary = try await AIReadingTools.preparationConfirmation(["ready"]) { _ in nil }
     XCTAssertNil(unnecessary)
   }
-  private func fixture(paragraphs: Int = 220) async throws -> (
-    URL, ReaderService, ImportText, UserDataStore, AIReadingTools
-  ) {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    let file = root.appendingPathComponent("book.txt")
-    try ("第一章 月\n\n" + String(repeating: "甲乙丙丁你好。\n", count: paragraphs) + "第二章 星\n再次阅读\n").write(
-      to: file, atomically: true, encoding: .utf8)
-    let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let book = try core.importBook(filePath: file.path, title: "Book")
-    let container = try ModelContainer(
-      for: UserDataStore.schema,
-      configurations: [
-        ModelConfiguration(
-          schema: UserDataStore.schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-      ])
-    let store = UserDataStore(modelContainer: container)
-    let reader = ReaderService(
-      core: core, sourceDefaultsSuite: "AI-\(root.lastPathComponent)",
-      userStoreFactory: { _, _ in store })
-    let shelf = try await reader.registerLibraryShelf(root)
-    try await reader.refreshLibraryShelf(shelf)
-    let fileEntry = try await reader.allLibraryBooks(shelf).first!
-    try core.linkLibraryFile(fileId: fileEntry.id, bookId: book.id)
-    return (root, reader, book, store, AIReadingTools(reader: reader))
-  }
-  private func invoke(_ tools: AIReadingTools, _ name: String, _ args: [String: JSONValue])
-    async throws -> JSONValue
-  {
-    let tool = try XCTUnwrap(tools.definitions().first { $0.name == name })
-    let value = JSONValue.object(args)
-    let validation = await tool.sdkTool.inputSchema.resolve().validate(try JSONSerialization.jsonObject(with: JSONEncoder().encode(value)))
-    if case .failure(let error) = validation { throw error }
-    guard let execute = tool.sdkTool.execute else { throw AIAgentFailure.invalidTool }
-    do { return try await execute(value, .init(toolCallId: UUID().uuidString, messages: [])).resolve() }
-    catch let error as AIToolError { return AIAgentRuntime.errorResult(error.code, field: error.field, message: error.message) }
-    catch ReaderError.InvalidRange { return AIAgentRuntime.errorResult("invalid_argument") }
 
-  }
-  func testPartialSearchPagesRemainUsableAsCommittedMetadataSources() async throws {
-    let (root, reader, book, _, tools) = try await fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let ref = AIReadingTools.bookRef(book.contentSha256), owner = "partial-search"
-    let first = try await invoke(tools, "rg", ["bookRefs": .array([.string(ref)]), "query": .string("甲")])
-    XCTAssertEqual(first.object["status"], .string("partial"))
-    let firstHits = try XCTUnwrap(first.object["data"]?.object["hits"]?.array)
-    XCTAssertEqual(firstHits.count, 100)
-    let cursor = try XCTUnwrap(first.object["page"]?.object["nextCursor"]?.string)
-    let second = try await invoke(tools, "rg", ["bookRefs": .array([.string(ref)]), "query": .string("甲"), "maxHits": .number(2), "cursor": .string(cursor)])
-    XCTAssertEqual(second.object["status"], .string("partial"))
-    let secondHits = try XCTUnwrap(second.object["data"]?.object["hits"]?.array); XCTAssertEqual(secondHits.count, 2)
-    let refs = [try XCTUnwrap(firstHits.first?.object["sourceRef"]?.string), try XCTUnwrap(secondHits.first?.object["sourceRef"]?.string)]
-    let url = root.appending(path: "ai-sources.store"), repository = try await AIRepository.open(url: url)
-    try await repository.create(.init(id: owner, title: "Search"))
-    let entries = [first, second].enumerated().map { sequence, output in
-      AIAgentEntry(sequence: sequence, turn: "search", provider: "fixture", model: "fixture", message: .object([
-        "role": .string("tool"), "content": .array([.object(["type": .string("tool-result"), "toolCallId": .string("rg-\(sequence)"), "toolName": .string("rg"), "output": .object(["type": .string("json"), "value": output])])])
-      ]))
-    }
-    var head = AIAgentHead(); head.nextSequence = entries.count
-    try await repository.commit(owner, head: head, entries: entries)
-    let reopened = try await AIRepository.open(url: url), registry = AIProposalRegistry(reader: reader)
-    registry.history = { try await reopened.history($0, limit: nil) }
-    let sources = try await registry.resolveSources(refs, owner: owner); XCTAssertEqual(sources.map(\.id), refs)
-    _ = try await registry.prepare(.metadata(.init(proposalRef: "partial", bookRef: ref, author: "Author", sourceRefs: refs)), owner: owner)
-  }
-  func testSearchBudgetHasNoDuplicateSourcesAndKeepsPagination() async throws {
-    let (root, _, book, _, tools) = try await fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let result = try await invoke(tools, "rg", ["bookRefs": .array([.string(AIReadingTools.bookRef(book.contentSha256))]), "query": .string("甲"), "maxHits": .number(50)])
-    XCTAssertLessThan(try JSONEncoder().encode(result).count, 51200)
-    XCTAssertTrue(result.object["sources"]?.array?.isEmpty ?? true)
-    XCTAssertNotNil(result.object["page"]?.object["nextCursor"]?.string)
-    let hit = try XCTUnwrap(result.object["data"]?.object["hits"]?.array?.first)
-    XCTAssertNotNil(AIResultSource(hit))
-    let next = try await invoke(tools, "read", ["bookRef": .string(AIReadingTools.bookRef(book.contentSha256)), "contextOffsetUtf8": hit.object["range"]!.object["startUtf8"]!, "beforeParagraphs": .number(1), "afterParagraphs": .number(1)])
-    XCTAssertEqual(next.object["status"], .string("ok"))
-    XCTAssertEqual(AIResultSource.all(in: next).count, 1)
-    XCTAssertNil(next.object["data"]?.object["requestedRange"])
-    XCTAssertNil(next.object["data"]?.object["textComplete"])
-  }
+  // S134: 保留一个 read 工具边界：传正确 book/scope 给 ReaderService，映射 UTF-8 结果且不产生阅读写入；删十工具成功矩阵和底层算法重测。
   func testAllTenToolsAndCorrectedSearchUTF8AndNoReadingSideEffects() async throws {
-    let (root, reader, book, _, tools) = try await fixture()
+    let (root, reader, book, _, tools) = try await fixture(paragraphs: 3)
     defer { try? FileManager.default.removeItem(at: root) }
-    XCTAssertEqual(tools.definitions().count, 10)
-    let ref = AIReadingTools.bookRef(book.contentSha256)
-    let r = JSONValue.string(ref)
-    let roots = try await invoke(tools, "ls", [:])
-    XCTAssertEqual(roots.object["status"], .string("ok"))
-    let books = try await invoke(tools, "search_books", ["query": .string("book")])
-    XCTAssertTrue(String(decoding: try JSONEncoder().encode(books), as: UTF8.self).contains(ref))
-    let details = try await invoke(tools, "get_book", ["bookRef": r])
-    XCTAssertEqual(details.object["data"]?.object["bookRef"], r)
-    try await reader.correctChapter(book.id, offset: 0, title: "已修正", level: 1)
-    let chapters = try await invoke(tools, "get_chapters", ["bookRef": r])
-    XCTAssertTrue(
-      String(decoding: try JSONEncoder().encode(chapters), as: UTF8.self).contains("已修正"))
-    let filtered = try await invoke(tools, "get_chapters", ["bookRef": r, "query": .string("已修正")])
-    XCTAssertEqual(filtered.object["data"]?.object["items"]?.array?.count, 1)
-    let absent = try await invoke(tools, "get_chapters", ["bookRef": r, "query": .string("无此章节")])
-    XCTAssertTrue(absent.object["data"]?.object["items"]?.array?.isEmpty ?? false)
-    let result = try await invoke(tools, "read", ["bookRef": r, "maxBytes": .number(1024)])
-    let text = try XCTUnwrap(result.object["data"]?.object["text"]?.string)
-    XCTAssertLessThanOrEqual(text.utf8.count, 1024)
-    let cursor = try XCTUnwrap(result.object["page"]?.object["nextCursor"]?.string)
-    let next = try await invoke(
-      tools, "read", ["bookRef": r, "maxBytes": .number(1024), "cursor": .string(cursor)])
+    let ref = JSONValue.string(AIReadingTools.bookRef(book.contentSha256))
+    let before = try await reader.book(book.id)
+    let result = try await invoke(tools, "read", ["bookRef": ref, "maxBytes": .number(32)])
+    XCTAssertEqual(result.object["status"], .string("ok"))
+    let value = try XCTUnwrap(result.object["data"]?.object["text"]?.string)
+    XCTAssertFalse(value.contains("�"))
+    XCTAssertFalse(value.isEmpty)
+    XCTAssertEqual(result.object["data"]?.object["bookRef"], ref)
+    let after = try await reader.book(book.id)
     XCTAssertEqual(
-      next.object["data"]?.object["range"]?.object["startUtf8"],
-      result.object["data"]?.object["range"]?.object["endUtf8"])
-    let invalid = try await invoke(
-      tools, "read", ["bookRef": r, "startUtf8": .number(1), "endUtf8": .number(10)])
-    XCTAssertEqual(invalid.object["status"], .string("error"))
-    let hits = try await invoke(
-      tools, "rg", ["bookRefs": .array([r]), "query": .string("甲"), "maxHits": .number(2)])
-    XCTAssertTrue(String(decoding: try JSONEncoder().encode(hits), as: UTF8.self).contains("已修正"))
-    let mark = try await reader.annotate(book.id, start: 0, end: 9)
-    let marks = try await invoke(tools, "get_marks", ["bookRef": r])
-    XCTAssertTrue(
-      String(decoding: try JSONEncoder().encode(marks), as: UTF8.self).contains("annotation"))
-    let full = try await invoke(
-      tools, "get_mark", ["bookRef": r, "markRef": .string(AIReadingTools.ref("mark", mark.id))])
-    XCTAssertEqual(full.object["status"], .string("ok"))
-    let stats = try await invoke(
-      tools, "get_reading_statistics",
-      ["fromDate": .string("2026-10-01"), "toDate": .string("2026-10-03")])
-    XCTAssertEqual(stats.object["data"]?.object["durationMs"], .number(0))
-    let env = try await invoke(tools, "get_environment", [:])
-    XCTAssertNotNil(env.object["data"]?.object["timeZone"])
-    let after = try await reader.book(book.id)
-    XCTAssertEqual(after.positionUtf8, 0)
-  }
-  func testScopedSearchAndContextReadUseToolBoundaries() async throws {
-    let (root, reader, book, _, tools) = try await fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let ref = AIReadingTools.bookRef(book.contentSha256)
-    let chapters = try await reader.chapters(book.id).items
-    let start = try XCTUnwrap(chapters.last).startUtf8
-    let chapterRef = AIReadingTools.ref("c", "\(ref):\(start)")
-    let result = try await invoke(tools, "rg", [
-      "bookRefs": .array([.string(ref)]), "query": .string("再次"),
-      "chapterRef": .string(chapterRef),
-    ])
-    let hit = try XCTUnwrap(result.object["data"]?.object["hits"]?.array?.first)
-    let offset = try XCTUnwrap(hit.object["range"]?.object["startUtf8"])
-    let context = try await invoke(tools, "read", [
-      "bookRef": .string(ref), "contextOffsetUtf8": offset,
-      "beforeParagraphs": .number(1), "afterParagraphs": .number(1),
-      "chapterRef": .string(chapterRef),
-    ])
-    let text = try XCTUnwrap(context.object["data"]?.object["text"]?.string)
-    XCTAssertTrue(text.contains("第二章"))
-    XCTAssertTrue(text.contains("再次阅读"))
-    XCTAssertFalse(text.contains("甲乙"))
-    let earlier = try await invoke(tools, "rg", [
-      "bookRefs": .array([.string(ref)]), "query": .string("再次"),
-      "endUtf8": .number(Double(start)),
-    ])
-    XCTAssertEqual(earlier.object["data"]?.object["hits"]?.array?.count, 0)
-    let invalid = try await invoke(tools, "read", [
-      "bookRef": .string(ref), "contextOffsetUtf8": offset, "startUtf8": .number(0),
-    ])
-    XCTAssertEqual(invalid.object["status"], .string("error"))
-    let tooLate = try await invoke(tools, "rg", [
-      "bookRefs": .array([.string(ref)]), "query": .string("再次"),
-      "chapterRef": .string(chapterRef), "startUtf8": .number(0),
-    ])
-    XCTAssertEqual(tooLate.object["status"], .string("error"))
-    let after = try await reader.book(book.id)
-    XCTAssertEqual(after.positionUtf8, 0)
+      after.positionUtf8, before.positionUtf8,
+      "tool reads must not change the user's reading position")
   }
 
+  // S136: 工具返回真实冲突/未知状态，不代用户选赢家；冲突算法只在用户事实测试保留。
   func testUnknownFieldsAndConflictingAnnotationsDoNotPickWinner() async throws {
     let (root, _, book, store, tools) = try await fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let ref = JSONValue.string(AIReadingTools.bookRef(book.contentSha256))
     let tool = tools.definitions().first { $0.name == "read" }!
-    let invalidSchema = await tool.sdkTool.inputSchema.resolve().validate(["bookRef": ref.string!, "path": "/tmp/file"])
+    let invalidSchema = await tool.sdkTool.inputSchema.resolve().validate([
+      "bookRef": ref.string!, "path": "/tmp/file",
+    ])
     guard case .failure = invalidSchema else { return XCTFail("SDK must reject unknown fields") }
     let a = AnnotationCandidate(
       id: "a", ancestors: [], content: .init(start: 0, end: 9, excerpt: "第一章", note: "甲"),
@@ -222,20 +58,50 @@ import XCTest
       tools, "get_mark", ["bookRef": ref, "markRef": .string(AIReadingTools.ref("mark", "m"))])
     XCTAssertEqual(result.object["data"]?.object["hasConflict"], .bool(true))
   }
+
+  // S137: 工具续页范围拼接不截断 Unicode，重建工具实例后仍续接；正文/笔记各一页边界，不跑 2500 行。
   func testReadLineBudgetContinuesAcrossToolInstances() async throws {
-    let (root, reader, book, _, tools) = try await fixture(paragraphs: 2500)
+    let (root, reader, book, users, _) = try await fixture(paragraphs: 3)
     defer { try? FileManager.default.removeItem(at: root) }
     let ref = JSONValue.string(AIReadingTools.bookRef(book.contentSha256))
+    let tools = AIReadingTools(reader: reader, lineLimit: 2)
     let first = try await invoke(tools, "read", ["bookRef": ref])
     let prefix = try XCTUnwrap(first.object["data"]?.object["text"]?.string)
-    XCTAssertEqual(prefix.filter { $0 == "\n" }.count, 2000)
     let cursor = try XCTUnwrap(first.object["page"]?.object["nextCursor"]?.string)
-    let next = try await invoke(AIReadingTools(reader: reader), "read", ["bookRef": ref, "cursor": .string(cursor)])
+    let next = try await invoke(
+      AIReadingTools(reader: reader, lineLimit: 2), "read",
+      ["bookRef": ref, "cursor": .string(cursor)])
     let suffix = try XCTUnwrap(next.object["data"]?.object["text"]?.string)
-    XCTAssertEqual(next.object["page"]?.object["complete"], .bool(true))
-    let full = try await reader.textRange(book.id, start: 0, end: book.byteCount)
-    XCTAssertEqual(prefix + suffix, full.text)
+    XCTAssertEqual(
+      next.object["data"]?.object["range"]?.object["startUtf8"],
+      first.object["data"]?.object["range"]?.object["endUtf8"])
+    XCTAssertFalse((prefix + suffix).contains("�"), "a page boundary cannot split Unicode")
+    XCTAssertFalse(suffix.isEmpty)
+    let note = "甲乙🙂第二段🌙"
+    let candidate = AnnotationCandidate(
+      id: "note-page", ancestors: [], content: .init(start: 0, end: 9, excerpt: "第一章", note: note),
+      created: 1, bookmark: false)
+    try await users.receiveFixture(key: book.contentSha256, mark: "paged", candidate: candidate)
+    let firstNote = try await invoke(
+      tools, "get_mark",
+      [
+        "bookRef": ref, "markRef": .string(AIReadingTools.ref("mark", "paged")),
+        "maxBytes": .number(8),
+      ])
+    let noteCursor = try XCTUnwrap(firstNote.object["page"]?.object["nextCursor"]?.string)
+    let rest = try await invoke(
+      AIReadingTools(reader: reader), "get_mark",
+      [
+        "bookRef": ref, "markRef": .string(AIReadingTools.ref("mark", "paged")),
+        "cursor": .string(noteCursor), "maxBytes": .number(32),
+      ])
+    XCTAssertEqual(
+      (firstNote.object["data"]?.object["noteText"]?.string ?? "")
+        + (rest.object["data"]?.object["noteText"]?.string ?? ""), note,
+      "note pagination must preserve UTF-8 when the byte budget changes")
   }
+
+  // S138: 工具准备共享工作但不写正式阅读状态/统计；只测 Swift lease 和写入边界。
   func testPreparationSharesLeaseAndDoesNotWriteReadingState() async throws {
     let (root, reader, book, _, tools) = try await fixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -260,97 +126,48 @@ import XCTest
     XCTAssertTrue(stats.books.isEmpty)
   }
 
-}
-
-extension AIReadingToolsTests {
+  // S139: 改为一条工具输入契约：空引用拒绝、null 可省略，非法调用零业务副作用；不验证 SDK 生成 schema 字段全集。
   func testRecordedEmptyReferencesAreRejectedBySDKAndNullMeansAbsent() async throws {
-    let (root, _, book, _, tools) = try await fixture()
+    let (root, reader, book, _, tools) = try await fixture(paragraphs: 1)
     defer { try? FileManager.default.removeItem(at: root) }
     let ref = JSONValue.string(AIReadingTools.bookRef(book.contentSha256))
-    let invalid: [(String, [String: JSONValue])] = [
-      ("get_book", ["bookRef": ref, "fileRef": .string("")]),
-      ("get_chapters", ["bookRef": ref, "cursor": .string("")]),
-      ("read", ["bookRef": ref, "chapterRef": .string(""), "cursor": .string("")]),
-      ("rg", ["bookRefs": .array([ref]), "query": .string("甲"), "maxHits": .number(0)]),
-      ("get_environment", ["fields": .array([.string("secrets")])]),
-    ]
-    for (name, args) in invalid {
-      do { _ = try await invoke(tools, name, args); XCTFail("SDK should reject \(name): \(args.keys)") }
-      catch { XCTAssertFalse(error.localizedDescription.isEmpty) }
-    }
-    let bookResult = try await invoke(tools, "get_book", ["bookRef": ref, "fileRef": .null])
-    XCTAssertEqual(bookResult.object["status"], .string("ok"))
-    let chapters = try await invoke(tools, "get_chapters", ["bookRef": ref, "cursor": .null])
-    XCTAssertEqual(chapters.object["status"], .string("ok"))
-    let text = try await invoke(tools, "read", ["bookRef": ref, "chapterRef": .null, "cursor": .null, "maxBytes": .number(1024)])
-    XCTAssertEqual(text.object["status"], .string("ok"))
-    let conflict = try await invoke(tools, "get_book", ["bookRef": ref, "fileRef": .string("f:unused")])
-    XCTAssertEqual(conflict.object["error"]?.object["field"], .string("bookRef/fileRef"))
-    XCTAssertNotNil(conflict.object["error"]?.object["message"]?.string)
+    let before = try await reader.book(book.id)
+    do {
+      _ = try await invoke(tools, "get_book", ["bookRef": ref, "fileRef": .string("")])
+      XCTFail("empty recorded references must be rejected")
+    } catch {}
+    let value = try await invoke(tools, "get_book", ["bookRef": ref, "fileRef": .null])
+    XCTAssertEqual(value.object["status"], .string("ok"))
+    let after = try await reader.book(book.id)
+    XCTAssertEqual(
+      after.positionUtf8, before.positionUtf8,
+      "invalid inputs must not produce reading side effects")
   }
 
+  // S140: 工具分页 cursor 绑定查询而非页大小，跨页无重复来源；两个页面且变更一次 query。
   func testSearchCursorAcceptsChangedPageSizeButRejectsChangedQuery() async throws {
     let (root, reader, book, _, tools) = try await fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let ref = JSONValue.string(AIReadingTools.bookRef(book.contentSha256))
-    let first = try await invoke(tools, "rg", ["bookRefs": .array([ref]), "query": .string("甲"), "maxHits": .number(8)])
+    let first = try await invoke(
+      tools, "rg", ["bookRefs": .array([ref]), "query": .string("甲"), "maxHits": .number(2)])
     let cursor = try XCTUnwrap(first.object["page"]?.object["nextCursor"]?.string)
-    let next = try await invoke(AIReadingTools(reader: reader), "rg", ["bookRefs": .array([ref]), "query": .string("甲"), "mode": .string("regex"), "caseSensitive": .bool(true), "maxHits": .number(22), "cursor": .string(cursor)])
+    let next = try await invoke(
+      AIReadingTools(reader: reader), "rg",
+      [
+        "bookRefs": .array([ref]), "query": .string("甲"), "mode": .string("regex"),
+        "caseSensitive": .bool(true), "maxHits": .number(3), "cursor": .string(cursor),
+      ])
     XCTAssertEqual(next.object["status"], .string("partial"))
     let firstHits = try XCTUnwrap(first.object["data"]?.object["hits"]?.array)
     let nextHits = try XCTUnwrap(next.object["data"]?.object["hits"]?.array)
-    XCTAssertEqual(firstHits.count, 8); XCTAssertEqual(nextHits.count, 22)
-    XCTAssertLessThan(try XCTUnwrap(firstHits.last?.object["range"]?.object["startUtf8"]?.int), try XCTUnwrap(nextHits.first?.object["range"]?.object["startUtf8"]?.int))
-    let changed = try await invoke(tools, "rg", ["bookRefs": .array([ref]), "query": .string("乙"), "cursor": .string(cursor)])
+    XCTAssertEqual(firstHits.count, 2)
+    XCTAssertEqual(nextHits.count, 3)
+    XCTAssertLessThan(
+      try XCTUnwrap(firstHits.last?.object["range"]?.object["startUtf8"]?.int),
+      try XCTUnwrap(nextHits.first?.object["range"]?.object["startUtf8"]?.int))
+    let changed = try await invoke(
+      tools, "rg", ["bookRefs": .array([ref]), "query": .string("乙"), "cursor": .string(cursor)])
     XCTAssertEqual(changed.object["error"]?.object["code"], .string("stale_cursor"))
-  }
-
-  func testSDKGeneratedSchemaKeepsEveryTypedFieldAndEnums() async throws {
-    let tools = AIReadingTools().definitions()
-    XCTAssertEqual(tools.count, 10)
-    let schema = try XCTUnwrap(tools.first { $0.name == "ls" }).schema.object
-    XCTAssertEqual(Set(schema["properties"]!.object.keys), ["parentRef", "kind", "sort", "limit", "cursor"])
-    XCTAssertTrue(String(decoding: try JSONEncoder().encode(schema["properties"]!.object["kind"]!), as: UTF8.self).contains("folders"))
-    XCTAssertEqual(schema["additionalProperties"], .bool(false))
-    let examples: [(String, JSONValue)] = [
-      ("ls", .object(["kind": .string("folders"), "sort": .string("name")])),
-      ("search_books", .object(["tags": .array([.string("奇幻")]), "readingStatus": .string("reading"), "sort": .string("recent")])),
-      ("get_marks", .object(["bookRef": .string("b:fixture"), "kind": .string("annotation")])),
-      ("get_reading_statistics", .object(["fromDate": .string("2026-10-01"), "toDate": .string("2026-10-04"), "view": .string("days")])),
-      ("get_environment", .object(["fields": .array([.string("time"), .string("locale")])])),
-    ]
-    for (name, input) in examples {
-      let definition = try XCTUnwrap(tools.first { $0.name == name })
-      let value = try JSONSerialization.jsonObject(with: JSONEncoder().encode(input))
-      guard case .success = await definition.sdkTool.inputSchema.resolve().validate(value) else { return XCTFail("Invalid generated schema for \(name)") }
-    }
-  }
-}
-
-
-extension AIReadingToolsTests {
-  func testNoteCursorUsesUTF8OffsetWhenPageSizeChanges() async throws {
-    let (root, _, book, store, tools) = try await fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let note = String(repeating: "甲乙🙂", count: 500)
-    let candidate = AnnotationCandidate(id: "long-note", ancestors: [], content: .init(start: 0, end: 9, excerpt: "第一章", note: note), created: 1, bookmark: false)
-    try await store.receiveFixture(key: book.contentSha256, mark: "long", candidate: candidate)
-    let listing = try await invoke(tools, "get_marks", ["bookRef": .string(AIReadingTools.bookRef(book.contentSha256))])
-    let preview = try XCTUnwrap(listing.object["data"]?.object["items"]?.array?.first)
-    XCTAssertEqual(preview.object["note"]?.string?.count, 500)
-    XCTAssertEqual(preview.object["noteTruncated"], .bool(true))
-    XCTAssertLessThan(try JSONEncoder().encode(listing).count, 8000)
-    XCTAssertEqual(AIResultSource.all(in: listing).count, 1)
-    var args: [String: JSONValue] = ["bookRef": .string(AIReadingTools.bookRef(book.contentSha256)), "markRef": .string(AIReadingTools.ref("mark", "long")), "maxBytes": .number(1024)]
-    var joined = ""
-    for _ in 0..<10 {
-      let result = try await invoke(tools, "get_mark", args)
-      XCTAssertEqual(result.object["status"], .string("ok"))
-      joined += try XCTUnwrap(result.object["data"]?.object["noteText"]?.string)
-      guard let cursor = result.object["page"]?.object["nextCursor"]?.string else { break }
-      args["cursor"] = .string(cursor)
-      args["maxBytes"] = .number(2048)
-    }
-    XCTAssertEqual(joined, note)
   }
 }
