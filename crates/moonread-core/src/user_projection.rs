@@ -301,6 +301,9 @@ impl ReaderQuery {
     pub fn all_library_books(&self, shelf_id: String) -> Result<Vec<LibraryEntry>> {
         self.core.all_library_books(shelf_id)
     }
+    pub fn all_library_tag_groups(&self, shelf_id: String) -> Result<LibraryTagCatalogue> {
+        self.core.all_library_tag_groups(shelf_id)
+    }
     pub fn library_entry(&self, file_id: String) -> Result<LibraryEntry> {
         self.core.library_entry(file_id)
     }

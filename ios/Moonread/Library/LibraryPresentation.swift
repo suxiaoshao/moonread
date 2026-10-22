@@ -1,5 +1,26 @@
 import SwiftUI
 
+enum LibraryGrouping: String {
+    case name, tags
+}
+
+extension LibraryTagGroup: Identifiable {
+    public var id: String {
+        switch kind {
+        case .tag: "tag:" + tag
+        case .untagged: "untagged"
+        case .unindexed: "unindexed"
+        }
+    }
+    var title: String {
+        switch kind {
+        case .tag: tag
+        case .untagged: String(localized: "未加标签")
+        case .unindexed: String(localized: "未建立索引")
+        }
+    }
+}
+
 enum LibraryLayout: String {
     case list, grid
 }
