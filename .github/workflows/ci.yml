@@ -143,6 +143,8 @@ jobs:
           SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
         run: |
           mkdir -p build/CI
+          # Xcode forwards TEST_RUNNER_* into the test process without the prefix.
+          export TEST_RUNNER_CI="${CI:-false}"
           nix develop --no-update-lock-file -c xcodebuild \
             -project ios/Moonread.xcodeproj -scheme Moonread -configuration Debug \
             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
