@@ -148,6 +148,8 @@ final class AIChatGPTCallbackRouter: @unchecked Sendable {
     private let lock = NSLock()
     private var stopped = false
     private var consumed = false
+    private var acceptedURL: URL?
+    private var published = false
     private var validator: @Sendable (URL) -> Bool = { _ in false }
     init() {
         let pair = AsyncThrowingStream<URL, Error>.makeStream()
@@ -155,11 +157,20 @@ final class AIChatGPTCallbackRouter: @unchecked Sendable {
     }
     func validate(_ value: @escaping @Sendable (URL) -> Bool) { lock.withLock { validator = value } }
     var isStopped: Bool { lock.withLock { stopped } }
-    func receive(_ url: URL) -> Bool {
+    func claim(_ url: URL) -> Bool {
         lock.withLock {
             guard !stopped, !consumed, url.path == "/auth/callback", validator(url) else { return false }
-            consumed = true; continuation.yield(url); continuation.finish(); return true
+            consumed = true; acceptedURL = url; return true
         }
+    }
+    func publish(_ url: URL) {
+        lock.withLock {
+            guard !stopped, !published, acceptedURL == url else { return }
+            published = true; continuation.yield(url); continuation.finish()
+        }
+    }
+    func receive(_ url: URL) -> Bool {
+        guard claim(url) else { return false }; publish(url); return true
     }
     func stop(_ error: Error = CancellationError()) {
         lock.withLock { stopped = true; continuation.finish(throwing: error) }
@@ -258,10 +269,14 @@ final class AIChatGPTLoopback: AIChatGPTCallbackSource, @unchecked Sendable {
             }
             #endif
             let url = self.listener?.port.flatMap { URL(string: "http://127.0.0.1:\($0.rawValue)" + target) }
-            let accepted = url.map(self.router.receive) == true
+            let accepted = url.map(self.router.claim) == true
             let message = url.map { AIChatGPTCallbackRouter.message(for: $0, accepted: accepted) } ?? "Not found."
             let response = "HTTP/1.1 \(accepted ? "200 OK" : "404 Not Found")\r\nContent-Type: text/plain; charset=utf-8\r\nCache-Control: no-store\r\nContent-Length: \(message.utf8.count)\r\nConnection: close\r\n\r\n" + message
-            connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in connection.cancel() })
+            connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
+                connection.cancel()
+                // Finish the browser response before sign-in completion can stop the listener.
+                if accepted, let url { self.router.publish(url) }
+            })
             self.connections[ObjectIdentifier(connection)] = nil
         }
     }

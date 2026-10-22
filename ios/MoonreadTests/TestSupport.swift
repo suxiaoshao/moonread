@@ -22,7 +22,7 @@ final class ManualTestClock: @unchecked Sendable {
     func sleep(_ seconds: TimeInterval) async throws {
         let id = UUID()
         try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 lock.withLock {
                     if Task.isCancelled { continuation.resume(throwing: CancellationError()) }
                     else { sleepers[id] = (instant.addingTimeInterval(seconds), continuation) }

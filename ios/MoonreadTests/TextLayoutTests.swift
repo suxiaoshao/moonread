@@ -1336,11 +1336,11 @@ final class TextLayoutTests: XCTestCase {
         XCTAssertEqual(tools.tab, .bookmarks, "A new book keeps the requested list")
     }
 
-    func testPageAccessibilityActionsUseActiveLocalization() {
+    @MainActor func testPageAccessibilityActionsUseActiveLocalization() {
         XCTAssertEqual(ReadingController.pageActionNames, [String(localized: "上一页"), String(localized: "下一页")])
     }
 
-    func testAnnotationTapUsesFullNativeRangeWithoutShowingHandles() throws {
+    @MainActor func testAnnotationTapUsesFullNativeRangeWithoutShowingHandles() throws {
         let mark = ReaderMark(id: "highlight", kind: .annotation, startUtf8: 0, endUtf8: 9, excerpt: "月亮落", note: "", created: 1)
         let context = AnnotationSelection(start: mark.startUtf8, end: mark.endUtf8, annotations: [mark])
         XCTAssertEqual(ReadingController.annotationRange(context, mapping: TextCoordinates("月亮落在窗边"), base: 0), NSRange(location: 0, length: 3))
@@ -2508,7 +2508,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         let second = try XCTUnwrap(entries.first { $0.relativePath == "b/story.txt" })
         func waitForComplete(_ id: String) async throws {
             try await service.waitForImportFinish(id)
-            XCTFail("Import did not complete")
+            XCTAssertEqual(try core.importStatus(bookId: id).phase, .complete)
         }
         let firstLease = try await service.openSourceFile(first.source)
         try await waitForComplete(firstLease.id)
@@ -2987,7 +2987,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
 
 
 
-    func testReaderDeviceControlsReleaseAwakeAndOrientationOnBackgroundAndExit() {
+    @MainActor func testReaderDeviceControlsReleaseAwakeAndOrientationOnBackgroundAndExit() {
         var awake = [Bool](), orientation = [ReadingOrientation?]()
         let controls = ReaderDeviceControls(effects: .init(awake: { awake.append($0) }, orientation: { orientation.append($0) }))
         var settings = defaultReaderSettings(); settings.keepAwake = true; settings.orientation = .portrait
@@ -3041,7 +3041,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         XCTAssertEqual(finalPosition, original)
     }
 
-    func testNavigationPlacesContextKeepsVisibleHitsAndRestoresExactScrollViewport() throws {
+    @MainActor func testNavigationPlacesContextKeepsVisibleHitsAndRestoresExactScrollViewport() throws {
         let settings = defaultReaderSettings(), size = CGSize(width: 390, height: 650)
         let saved = ReadingViewport(offset: 30, lineY: -4, size: size, settings: settings, typeSize: .large, pages: [])
         let restore = ReadingNavigation(restoring: saved)
@@ -3055,7 +3055,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         XCTAssertEqual(ReadingNavigation().scrollTarget(lineY: 500, textInset: 16, target: .zero, visible: .zero, keepVisible: false), 500)
     }
 
-    func testNavigationPreservesPageBoundariesAndReturnsAfterDistantJump() throws {
+    @MainActor func testNavigationPreservesPageBoundariesAndReturnsAfterDistantJump() throws {
         let chunks = readingChunks(), window = ReadingWindow(chunks: Array(chunks.prefix(3)))
         let pages = syntheticPages(window), saved = pages[3]
         let request = ReadingNavigation(placement: .context)
@@ -3258,7 +3258,7 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
     }
 
 
-    private func syntheticPages(_ window: ReadingWindow, preserving: [TextPage] = [], keeping: UInt64? = nil) -> [TextPage] {
+    @MainActor private func syntheticPages(_ window: ReadingWindow, preserving: [TextPage] = [], keeping: UInt64? = nil) -> [TextPage] {
         TextPage.paginate(window, size: .zero, attributes: [:], preserving: preserving, keeping: keeping) { projection, backward in
             let text = projection.text as NSString
             var ranges: [NSRange] = [], cursor = 0
