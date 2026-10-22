@@ -428,17 +428,21 @@ extension ReaderService {
         try await f.service.prepareSourceFile(source)
         let cancelledBeforeOpen = await f.service.restorationFixtureWasCancelled()
         XCTAssertTrue(cancelledBeforeOpen, "Foreground materialization must cancel recovery before opening a lease")
-        let lease = try await f.service.openSourceFile(source)
-        try await f.service.waitForImportFinish(lease.id)
-        await f.service.stopRestorationFixtureFollowUp()
-        await gate.release(); await f.service.waitForRecentRestoration()
+        var lease: ReadingLease? = try await f.service.openSourceFile(source)
+        let readingID = try XCTUnwrap(lease?.id)
+        try await f.service.waitForImportFinish(readingID)
         let canonical = try f.core.textIdForSha(sha: key)
         XCTAssertEqual(try f.core.sourceFileSnapshots(fileId: file.id).first?.bookId, canonical)
-        let remaining = try f.core.reclaimCompletedImports(retainedBookIds: [lease.id])
-        XCTAssertEqual(remaining, [lease.id], "The cancelled background task must not leave an import")
+        let remaining = try f.core.reclaimCompletedImports(retainedBookIds: [readingID])
+        XCTAssertEqual(remaining, [readingID], "The cancelled background task must not leave an import")
+        // Recovery waits for foreground reading to finish, even when its old work
+        // was cancelled. Release the lease before awaiting that task's completion.
+        lease = nil
+        try await f.service.waitForReadingIdle()
+        await f.service.stopRestorationFixtureFollowUp()
+        await gate.release(); await f.service.waitForRecentRestoration()
         let after = try await snapshot(f.store); XCTAssertEqual(before, after)
         await f.service.restorationFixture(active: false)
-        withExtendedLifetime(lease) {}
     }
 
     func testRealReadingWritesTheRestoredSourceHint() async throws {

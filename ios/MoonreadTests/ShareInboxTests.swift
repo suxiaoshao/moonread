@@ -111,8 +111,10 @@ private final class EphemeralShareProvider: NSItemProvider {
         func accepts(_ types: [[String]]) -> Bool {
             predicate.evaluate(with: ["extensionItems": [["attachments": types.map { ["registeredTypeIdentifiers": $0] }]]])
         }
-        XCTAssertTrue(accepts([["public.plain-text"]]))
-        XCTAssertTrue(accepts([["public.utf8-plain-text", "public.file-url"], ["public.plain-text"]]))
+        XCTAssertFalse(accepts([["public.plain-text"]]), "Selected text is not a shared file")
+        XCTAssertTrue(accepts([["public.plain-text", "public.file-url"]]))
+        XCTAssertTrue(accepts([["public.utf8-plain-text", "public.file-url"], ["public.plain-text", "public.file-url"]]))
+        XCTAssertFalse(accepts([["public.utf8-plain-text", "public.file-url"], ["public.plain-text"]]), "Every attachment must be a file")
         XCTAssertTrue(accepts([["public.file-url"]]), "File-URL-only hosts are checked at runtime")
         XCTAssertFalse(accepts([["com.adobe.pdf", "public.file-url"]]))
         XCTAssertFalse(accepts([["public.plain-text"], ["com.adobe.pdf", "public.file-url"]]))

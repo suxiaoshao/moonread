@@ -197,7 +197,7 @@ private struct MoonreadRoot: View {
     }
     private var settingsStack: some View {
         NavigationStack(path: $library.settingsPath) {
-            SettingsView().navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
+            SettingsView(library: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
         }
     }
 }

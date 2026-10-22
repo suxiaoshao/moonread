@@ -250,7 +250,12 @@ import StoreKitTest
     }
 
     private func render<Content: View>(_ content: Content, name: String, theme: ThemeSurface, large: Bool = false) async throws {
+        let suite = "TipJarRender-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let ai = AIService(defaults: defaults, storefront: .fixed("USA"))
         let host = UIHostingController(rootView: content.themeScope(theme)
+            .environment(ai)
             .environment(\.locale, Locale(identifier: "zh-Hans"))
             .environment(\.dynamicTypeSize, large ? .accessibility3 : .large))
         host.overrideUserInterfaceStyle = theme.style

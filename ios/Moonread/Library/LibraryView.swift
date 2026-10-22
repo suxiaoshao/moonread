@@ -363,7 +363,7 @@ struct LibraryFolderView: View {
     }
 
     private var browser: some View {
-        LibraryCollection(model: model, location: location, entries: entries, shelf: shelf,
+        LibraryCollection(ai: ai, model: model, location: location, entries: entries, shelf: shelf,
                           layout: model.layout, theme: theme, disabled: fileActionsDisabled,
                           showsEmpty: loaded && !loading.active && !model.refreshing.active && model.shelfScans[location.shelfID] == nil && entries.isEmpty && (shelf?.error == nil || (location.shelfID == "builtin" && location.path.isEmpty && model.builtinDiscovery == .unavailable)),
                           editing: $editing, selection: $selection)

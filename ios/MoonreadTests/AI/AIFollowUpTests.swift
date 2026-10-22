@@ -584,7 +584,12 @@ private final class CredentialWriteFixture: @unchecked Sendable {
     }
     func testCurrentCoverDraftOwnsStagedValueAndExplicitOccurrences() async throws {
         let repository = try await AIRepository.open(inMemory: true)
-        let service = AIService(repository: repository); await service.load()
+        let suite = "AIFollowUp-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: AIAvailability.defaultsKey)
+        let service = AIService(repository: repository, defaults: defaults, storefront: .fixed("USA")); await service.load()
+        XCTAssertTrue(service.availability.isAvailable)
         let made = await service.create(), value = try XCTUnwrap(made)
         let asset = try await AIImageStore.shared.prepareInput(pixels(), owner: value.id)
         await AIImageStore.shared.discardStaged(owner: value.id)
@@ -601,7 +606,12 @@ private final class CredentialWriteFixture: @unchecked Sendable {
     func testDeletingSessionKeepsAppliedBookMetadataAndCover() async throws {
         let (root, reader, book, _, _) = try await fixture(); defer { try? FileManager.default.removeItem(at: root) }
         let repository = try await AIRepository.open(inMemory: true)
-        let service = AIService(repository: repository, reader: reader); await service.load()
+        let suite = "AIFollowUp-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: AIAvailability.defaultsKey)
+        let service = AIService(repository: repository, defaults: defaults, storefront: .fixed("USA"), reader: reader); await service.load()
+        XCTAssertTrue(service.availability.isAvailable)
         let made = await service.create(context: .init(contentSHA: book.contentSha256)), session = try XCTUnwrap(made)
         let asset = try await AIImageStore.shared.prepareInput(pixels(), owner: session.id)
         try await service.addReadingAttachment(session.id, attachment: .init(kind: .image, origin: "fixture", title: "Image", attachmentRef: asset.attachment.id), staged: asset)

@@ -56,6 +56,19 @@ actor ReaderService {
     static let shared: ReaderService = {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--ui-testing"),
+           let index = arguments.firstIndex(of: "--ui-test-session"), arguments.indices.contains(index + 1),
+           let session = UUID(uuidString: arguments[index + 1])?.uuidString {
+            let defaults = UserDefaults.standard
+            let key = "Moonread.uiTest.readingSettingsSession.v1"
+            if defaults.string(forKey: key) != session {
+                // A new test starts at the product defaults. Relaunches within the
+                // same UUID retain changes so persistence remains testable.
+                defaults.removeObject(forKey: "Moonread.readerSettings")
+                defaults.removeObject(forKey: "readingSettingsTab")
+                defaults.set(session, forKey: key)
+            }
+        }
         if arguments.contains("--ui-test-library-trash"),
            let index = arguments.firstIndex(of: "--ui-test-session"), arguments.indices.contains(index + 1),
            UUID(uuidString: arguments[index + 1]) != nil {

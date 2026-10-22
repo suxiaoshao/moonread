@@ -2055,7 +2055,9 @@ final class MoonreadUITests: XCTestCase {
         }
         XCTAssertEqual(app.navigationBars.buttons.count, 2, "Only select-all and Done belong in selection navigation")
         let toolbar = app.toolbars.firstMatch
-        let actions = [app.buttons["libraryShareSelection"], copy, app.buttons["移动"], app.buttons["删除"]]
+        var actions = [app.buttons["libraryShareSelection"], copy, app.buttons["移动"]]
+        if app.buttons["libraryAISelection"].exists { actions.append(app.buttons["libraryAISelection"]) }
+        actions.append(app.buttons["删除"])
         for action in actions { XCTAssertTrue(action.isHittable); XCTAssertTrue(toolbar.frame.contains(action.frame)) }
         for pair in zip(actions, actions.dropFirst()) {
             XCTAssertLessThan(pair.0.frame.maxX, pair.1.frame.maxX)
@@ -2631,6 +2633,7 @@ final class MoonreadUITests: XCTestCase {
     func testPageLoadingWithReducedMotion() {
         prepareApp(arguments: ["--ui-test-bookshelf", "--ui-test-slow-library"])
         openSettingsPage()
+        app.buttons["appThemeSettings"].tap()
         let motion = app.switches["reduceMotion"]
         XCTAssertTrue(motion.waitForExistence(timeout: 5))
         if motion.value as? String == "0" { motion.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap() }
@@ -2759,17 +2762,15 @@ final class MoonreadUITests: XCTestCase {
         prepareApp(arguments: ["--ui-test-bookshelf", "--ui-test-slow-scan"])
         let mine = app.buttons["shelf-builtin"]
         XCTAssertTrue(mine.waitForExistence(timeout: 10))
-        let loading = app.otherElements["inline-loading"].firstMatch
-        XCTAssertTrue(loading.waitForExistence(timeout: 3))
-        XCTAssertFalse(app.otherElements["page-loading"].exists, "Cached content uses the inline indicator, not the page spinner")
-        XCTAssertTrue(app.navigationBars.otherElements["inline-loading"].exists, "Refresh status belongs in the navigation bar, clear of list headings and actions")
+        // Cached shelves refresh silently; do not race the initial scan's indicator.
+        XCTAssertFalse(element("page-loading").exists)
         recordScreenshot("library-home-native-refresh")
         mine.tap()
         XCTAssertTrue(app.buttons["library-file-夜航.txt"].waitForExistence(timeout: 2), "Cached entries must not queue behind a provider scan")
         recordScreenshot("library-content-during-scan")
         app.navigationBars.buttons.element(boundBy: 0).tap()
         XCTAssertTrue(mine.waitForExistence(timeout: 3))
-        XCTAssertTrue(loading.waitForNonExistence(timeout: 15))
+        XCTAssertFalse(element("page-loading").exists)
         XCTAssertFalse(app.alerts.firstMatch.exists, "Leaving the root must not cancel initialization or show a cancellation error")
     }
 
@@ -3914,6 +3915,7 @@ final class MoonreadUITests: XCTestCase {
                 app.navigationBars.buttons.element(boundBy: 0).tap()
                 XCTAssertTrue(app.tabBars.buttons["书架"].waitForExistence(timeout: 5))
                 openSettingsPage()
+                app.buttons["appThemeSettings"].tap()
                 let motion = app.switches["reduceMotion"]
                 XCTAssertTrue(motion.waitForExistence(timeout: 5))
                 motion.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
@@ -4145,6 +4147,8 @@ final class MoonreadUITests: XCTestCase {
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.tabBars.buttons["书架"].waitForExistence(timeout: 5))
 
+        openSettingsPage()
+        for _ in 0..<5 where !app.buttons["aboutSettings"].isHittable { app.swipeUp() }
         app.buttons["aboutSettings"].tap()
         XCTAssertTrue(app.navigationBars["关于月读"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.tabBars.buttons["书架"].isSelected)
@@ -4419,7 +4423,7 @@ final class MoonreadUITests: XCTestCase {
     func testReadingPaletteDraftKeepsPreviewVisibleAndCancels() throws {
         prepareApp(language: "en"); openSettingsPage(language: "en")
         app.buttons["readerThemeSettings"].tap()
-        app.segmentedControls["readerThemeTabs"].buttons["Colors"].tap()
+        app.segmentedControls["readerThemeTabs"].buttons["Palette"].tap()
         let handle = app.buttons["toggleReadingPreview"]
         XCTAssertTrue(handle.waitForExistence(timeout: 5)); handle.tap(); waitForStableFrame(handle)
         let preview = element("readingPreviewText")
@@ -4780,6 +4784,8 @@ final class MoonreadUITests: XCTestCase {
     }
 
     private func readingText() -> XCUIElement {
+        // Resolve the mode after async preparation has installed a body view.
+        XCTAssertTrue(readerTextAppears(), "Wait for either reading mode before resolving the body")
         let scroll = app.textViews["scrollText"]
         if scroll.exists { return scroll }
         return app.textViews.matching(identifier: "pageText").allElementsBoundByIndex.first(where: \.isHittable)
@@ -6290,6 +6296,7 @@ final class MoonreadUITests: XCTestCase {
         prepareApp()
         if reduced {
             openSettingsPage()
+            app.buttons["appThemeSettings"].tap()
             let motion = app.switches["reduceMotion"]
             XCTAssertTrue(motion.waitForExistence(timeout: 5))
             motion.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()

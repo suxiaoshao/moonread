@@ -5,7 +5,8 @@ import UniformTypeIdentifiers
 /// UIKit owns range selection, autoscroll, cell reuse and list swipe actions.
 /// SwiftUI still draws the same themed book covers and file rows.
 struct LibraryCollection: UIViewControllerRepresentable {
-    @Environment(AIService.self) private var ai
+    // Resolve this dependency in the SwiftUI parent, before UIKit retains the configuration.
+    let ai: AIService
     let model: LibraryModel
     let location: LibraryLocation
     let entries: [LibraryEntry]

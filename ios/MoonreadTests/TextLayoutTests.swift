@@ -2878,7 +2878,11 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.windows.first(where: \.isKeyWindow)
         let host = UIWindow(windowScene: scene)
-        let controller = UIHostingController(rootView: Text("Library").modifier(LibraryPresentations(model: model)))
+        let suite = "ImportResultHost-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let ai = AIService(defaults: defaults, storefront: .fixed("USA"), reader: service)
+        let controller = UIHostingController(rootView: Text("Library").modifier(LibraryPresentations(model: model)).environment(ai))
         host.rootViewController = controller; host.makeKeyAndVisible()
         defer { host.isHidden = true; previous?.makeKey() }
         model.receive([directory.appendingPathComponent("missing.txt")])
@@ -3162,8 +3166,12 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         var editing = EditMode.inactive
         var selection = Set<String>()
         let model = LibraryModel()
+        let suite = "LibrarySelectionHost-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let ai = AIService(defaults: defaults, storefront: .fixed("USA"), reader: service)
         func config(_ layout: LibraryLayout = .grid, disabled: Bool = false) -> LibraryCollection {
-            LibraryCollection(model: model, location: location, entries: entries, shelf: nil, layout: layout, theme: .initial,
+            LibraryCollection(ai: ai, model: model, location: location, entries: entries, shelf: nil, layout: layout, theme: .initial,
                               disabled: disabled, editing: Binding(get: { editing }, set: { editing = $0 }),
                               selection: Binding(get: { selection }, set: { selection = $0 }))
         }
@@ -3656,9 +3664,10 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
                                          compactHeaderHeight: 22, controlsVisible: false,
                                          toggleControls: {}, readingBegan: {}, changed: { _, _ in })
                     controller.view.layoutIfNeeded()
-                    XCTAssertLessThanOrEqual(window.chunks.count, 3)
+                    // Rust bounds payload to 64 KiB across at most 256 source chunks.
+                    XCTAssertLessThanOrEqual(window.chunks.count, 256)
                     if let text = findReadingText(in: controller.view) {
-                        XCTAssertLessThanOrEqual(text.text.utf8.count, 4 * 12288)
+                        XCTAssertLessThanOrEqual(text.text.utf8.count, 64 * 1024)
                         XCTAssertTrue(text.text == ReadingText(window).text, "Each measurement must actually replace the rendered window")
                     } else { XCTFail("The visible native text view must survive window replacement") }
                 }
