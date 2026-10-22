@@ -167,8 +167,7 @@ struct ReaderHistorySheet: View {
     var body: some View {
         NavigationStack {
             List(session.history.entries, id: \.id) { visit in
-                let current = session.history.entries.indices.contains(Int(session.history.cursor))
-                    && session.history.entries[Int(session.history.cursor)].id == visit.id
+                let current = session.history.isSelected(visit.id)
                 Button {
                     session.browse(to: visit.offsetUtf8, placement: .start, historyID: visit.id); close()
                 } label: {
@@ -188,5 +187,11 @@ struct ReaderHistorySheet: View {
                         .accessibilityIdentifier("closeReadingHistory")
                 } }
         }
+    }
+}
+
+extension ReadingHistory {
+    func isSelected(_ id: String) -> Bool {
+        entries.indices.contains(Int(cursor)) && entries[Int(cursor)].id == id
     }
 }

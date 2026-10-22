@@ -754,10 +754,10 @@ struct ReaderScreen: View {
                 toolButton("目录", symbol: "list.bullet", id: "showChapters") { openLibrary(.chapters) }
                 toolButton("搜索", symbol: "magnifyingglass", id: "showSearch") { presentPanel(.search) }
                 toolButton("设置", symbol: "textformat.size", id: "readingSettings", selected: dock == .settings) {
-                    dock = dock == .settings ? .progress : .settings
+                    dock.toggle(.settings)
                 }
                 toolButton("更多", symbol: "ellipsis", id: "readerMore", selected: dock == .more) {
-                    dock = dock == .more ? .progress : .more
+                    dock.toggle(.more)
                 }
             }
             .labelStyle(ReaderToolLabelStyle())
@@ -1041,7 +1041,10 @@ private final class ReaderBattery {
 }
 
 /// The content above the reader's anchored tools: progress (or search/browse), quick settings, or 更多.
-private enum ReaderDock { case progress, settings, more }
+enum ReaderDock {
+    case progress, settings, more
+    mutating func toggle(_ destination: Self) { self = self == destination ? .progress : destination }
+}
 
 private struct ReaderToolLabelStyle: LabelStyle {
     @ScaledMetric(relativeTo: .body) private var iconSize = 22.0

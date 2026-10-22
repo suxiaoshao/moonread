@@ -1,5 +1,4 @@
 use moonread_core::*;
-use std::io::Write;
 use tempfile::TempDir;
 
 fn fixture(text: &str) -> (TempDir, std::sync::Arc<ReaderCore>, ImportText) {
@@ -424,7 +423,16 @@ fn whitespace_fragment_in_a_visible_cross_chunk_paragraph_is_retained() {
 
 #[test]
 fn percentage_locations_validate_inputs_and_normalize_unicode_boundaries() {
-    for text in ["", "甲🌙乙e\u{301}。"] {
+    // Empty text has no persisted reading identity: import rejects it before location lookup.
+    let dir = TempDir::new().unwrap();
+    let core = ReaderCore::new(dir.path().join("data").to_string_lossy().into()).unwrap();
+    let empty = dir.path().join("empty.txt");
+    std::fs::write(&empty, "").unwrap();
+    assert!(matches!(
+        core.import_book(empty.to_string_lossy().into(), "Empty".into()),
+        Err(ReaderError::EmptyBook)
+    ));
+    for text in ["甲🌙乙e\u{301}。", "甲"] {
         let (_dir, core, book) = fixture(text);
         let query = core.query_snapshot("{}".into()).unwrap();
         for percent in [0.0, 1.0, 25.0, 50.0, 99.0, 100.0] {

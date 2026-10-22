@@ -306,6 +306,11 @@ fn text_context_skips_blank_lines_and_preserves_unicode_boundaries() {
 fn search_options_preserve_utf8_ranges_across_storage_boundaries() {
     let text = format!("{}Moonread moonread Moonr.ad", "甲".repeat(4095));
     let (_dir, core, id) = setup(&text);
+    let start = text.find("Moonread").unwrap() as u64;
+    assert_ne!(
+        core.find_chunk(id.clone(), start).unwrap(),
+        core.find_chunk(id.clone(), start + 7).unwrap()
+    );
     for (pattern, regex, sensitive, expected) in [
         ("Moonread", false, true, vec!["Moonread"]),
         ("Moonread", false, false, vec!["Moonread", "moonread"]),

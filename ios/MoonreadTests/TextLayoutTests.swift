@@ -478,6 +478,46 @@ final class TextLayoutTests: XCTestCase {
         return (root, service, core, formal, pending, first, second, suite)
     }
 
+    @MainActor func testPreviewCancelContinueBookmarkAndImmediateReopenUseFormalPosition() async throws {
+        let (root, service, _, _, _, book, _, suite) = try singleBookFixture()
+        defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let session = ReaderSession(service: service)
+        await session.open(.book(book.id)); await awaitState { session.window != nil }
+        let origin = UInt64("第一章 合成甲\n".utf8.count), target = origin + 6
+        session.showingCover = false; session.moved(to: origin, settled: true); await session.flush()
+        let added = await session.toggleBookmark(); XCTAssertTrue(added)
+        session.browse(to: target); await awaitState { !session.navigating }
+        XCTAssertEqual(session.browseOrigin, origin)
+        let preview = try await service.snapshot(book.id); XCTAssertEqual(preview.book.positionUtf8, origin)
+        XCTAssertEqual(session.history.entries.filter { session.history.isSelected($0.id) }.count, 1)
+        await session.returnFromBrowse(); XCTAssertEqual(session.anchor, origin); XCTAssertNil(session.browseOrigin)
+        session.browse(to: target); await awaitState { !session.navigating }; await session.continueReading()
+        XCTAssertNil(session.browseOrigin)
+        await session.leave().value
+        let reopened = ReaderSession(service: service)
+        await reopened.open(.book(book.id)); await awaitState { reopened.window != nil }
+        XCTAssertEqual(reopened.anchor, target)
+        await reopened.leave().value
+    }
+
+    @MainActor func testContextualResultUsesHostRouteAndPreservesSuspendedReaderPath() async throws {
+        let (root, service, core, _, _, _, _, suite) = try singleBookFixture()
+        defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let entry = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")[1]
+        let model = LibraryModel(service: service, prepareSource: { _, _ in })
+        model.path = [.folder(.init(shelfID: "builtin"))]
+        let origin = model.path
+        let pushed = expectation(description: "Context host receives actual source route")
+        var route: LibraryRoute?
+        model.open(entry, push: { route = $0; pushed.fulfill() })
+        await fulfillment(of: [pushed], timeout: 3)
+        XCTAssertEqual(model.path, origin)
+        guard case let .reader(request) = route else { return XCTFail("Missing source reader route") }
+        XCTAssertEqual(request.target, .source(entry.source))
+        let previousLayout = model.layout; model.layout = .list
+        XCTAssertEqual(model.path, origin); model.layout = previousLayout
+    }
+
     @MainActor func testSingleBookProjectionMatchesBatchAndInvalidatesWithoutMutatingOldSnapshot() async throws {
         let (root, service, _, formal, _, book, other, suite) = try singleBookFixture()
         defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
@@ -3671,6 +3711,26 @@ private final class IntroductionScanProbe: @unchecked Sendable {
         let loading = LoadingState(), old = loading.begin(), new = loading.begin()
         loading.finish(old); XCTAssertEqual(loading.request, new)
         loading.finish(new); XCTAssertFalse(loading.active)
+    }
+    func testOnboardingActionsEmitOnlyTheirOwnInvalidationAndCloseIsAnIntent() throws {
+        let name = "OnboardingIntent-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name)); defer { defaults.removePersistentDomain(forName: name) }
+        var targets = [Onboarding.TipTarget]()
+        let model = Onboarding(defaults: defaults, enabled: true, showIntroduction: false, invalidate: { targets.append($0) })
+        model.didImport(); model.didImport(); XCTAssertEqual(targets, [.imports])
+        model.didShowControls(); XCTAssertEqual(targets, [.imports, .controls])
+        model.didSelectText(); XCTAssertEqual(targets, [.imports, .controls, .selection])
+        var closed = 0; ThemedTipStyle.close { closed += 1 }; XCTAssertEqual(closed, 1)
+        XCTAssertTrue(Onboarding(defaults: defaults, enabled: false).selectedText)
+    }
+    func testQuickSettingsAndMoreHaveOneReversibleDockState() {
+        var dock = ReaderDock.progress
+        dock.toggle(.settings); XCTAssertEqual(dock, .settings)
+        dock.toggle(.settings); XCTAssertEqual(dock, .progress)
+        dock.toggle(.more); dock.toggle(.settings); XCTAssertEqual(dock, .settings)
+        dock.toggle(.more); XCTAssertEqual(dock, .more)
+        XCTAssertTrue(ReaderPanel.settings.isPage); XCTAssertTrue(ReaderPanel.details.isPage)
+        XCTAssertFalse(ReaderPanel.library.isPage)
     }
     func testUndoCountsOnlyVisibleTimeAndRejectsCancelledOldTimer() async {
         let clock = ManualTestClock()

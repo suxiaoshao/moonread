@@ -1381,6 +1381,7 @@ struct ReadingFrontierAdmissions {
     }
 }
 
+@MainActor
 struct TextPage {
     // Page views own their text storage/container. UIPageViewController can ask
     // for the same page twice; sharing a container would detach visible text.
