@@ -10,6 +10,7 @@ final class ManualTestClock: @unchecked Sendable {
     private var instant = Date(timeIntervalSince1970: 1_800_000_000)
     private var sleepers: [UUID: (Date, CheckedContinuation<Void, Error>)] = [:]
     var now: Date { lock.withLock { instant } }
+    var pendingSleeps: Int { lock.withLock { sleepers.count } }
     func advance(_ seconds: TimeInterval) {
         let ready: [CheckedContinuation<Void, Error>] = lock.withLock {
             instant.addTimeInterval(seconds)
@@ -27,6 +28,7 @@ final class ManualTestClock: @unchecked Sendable {
                     if Task.isCancelled { continuation.resume(throwing: CancellationError()) }
                     else { sleepers[id] = (instant.addingTimeInterval(seconds), continuation) }
                 }
+                TestFixtureEvents.changed()
             }
         } onCancel: {
             let pending = self.lock.withLock { self.sleepers.removeValue(forKey: id)?.1 }
@@ -185,7 +187,7 @@ enum TestFixtureEvents {
             })
         }
     }
-    deinit { observers.forEach { NotificationCenter.default.removeObserver($0) } }
+    func stop() { active = false; observers.forEach { NotificationCenter.default.removeObserver($0) }; observers = [] }
     func arm() {
         guard active else { return }
         withObservationTracking {
@@ -197,6 +199,6 @@ extension XCTestCase {
     @MainActor func awaitState(timeout: TimeInterval = 3, _ condition: @escaping @MainActor () -> Bool) async {
         if condition() { return }
         let observation = TestStateObservation(condition)
-        observation.arm(); await fulfillment(of: [observation.done], timeout: timeout); observation.active = false
+        observation.arm(); await fulfillment(of: [observation.done], timeout: timeout); observation.stop()
     }
 }

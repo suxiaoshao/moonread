@@ -175,13 +175,15 @@ struct LibraryDecisionAlert: UIViewControllerRepresentable {
             self.alert = alert
             present(alert, animated: true)
         }
+        var dismissPresentation: (((@escaping () -> Void)) -> Void)?
         func finish(alert: UIAlertController?, action: @escaping () -> Void) {
             guard !resolving else { return }; resolving = true
             let completed = { [weak self] in
                 self?.alert = nil; self?.resolving = false
                 action()
             }
-            if let alert, alert.isBeingDismissed, let transition = alert.transitionCoordinator {
+            if let dismissPresentation { dismissPresentation(completed) }
+            else if let alert, alert.isBeingDismissed, let transition = alert.transitionCoordinator {
                 transition.animate(alongsideTransition: nil) { _ in completed() }
             } else if let alert, alert.presentingViewController != nil {
                 alert.dismiss(animated: true, completion: completed)

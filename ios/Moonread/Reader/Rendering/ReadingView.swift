@@ -50,6 +50,19 @@ struct ReadingNavigation {
     var placement: ReadingTargetPlacement = .start
     var bottomObstruction: CGFloat = 0
     var restoring: ReadingViewport?
+    func restoration(size: CGSize, settings: ReaderSettings?, typeSize: DynamicTypeSize) -> ReadingViewport? {
+        guard let saved = restoring, saved.size == size, saved.settings == settings, saved.typeSize == typeSize else { return nil }
+        return saved
+    }
+    func pageIndex(in pages: [TextPage], anchor: UInt64) -> Int { pages.lastIndex { $0.start <= anchor } ?? 0 }
+    func scrollTarget(lineY: CGFloat, textInset: CGFloat, target: CGRect, visible: CGRect, keepVisible: Bool) -> CGFloat? {
+        if let restoring { return lineY + textInset - restoring.lineY }
+        if placement == .context {
+            if keepVisible && target.minY >= visible.minY + 8 && target.maxY <= visible.maxY - 8 { return nil }
+            return target.minY - ReadingTextMetrics.insets.top - visible.height / 3
+        }
+        return lineY
+    }
 }
 
 @MainActor
@@ -488,8 +501,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         let context = AnnotationSelection(start: mark.startUtf8, end: mark.endUtf8, annotations: annotations)
         guard !context.marks.isEmpty else { return }
         let mapping = textCoordinates(text), base = textBase(text)
-        guard context.end > base, context.start < base+UInt64(mapping.byteCount),
-              let range = mapping.displayRange(Int(max(base,context.start)-base)..<Int(min(base+UInt64(mapping.byteCount),context.end)-base)), range.length > 0 else { return }
+        guard let range = Self.annotationRange(context, mapping: mapping, base: base) else { return }
         let from = range.location, to = NSMaxRange(range)
         let offset = text.contentOffset
         preparingAnnotationMenu = true
@@ -502,6 +514,12 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         text.presentSelectionMenu(for: NSRange(location: from, length: to - from))
         setSelectionDisplay(text, active: false)
         text.setContentOffset(offset, animated: false)
+    }
+
+    static func annotationRange(_ context: AnnotationSelection, mapping: TextCoordinates, base: UInt64) -> NSRange? {
+        guard context.end > base, context.start < base + UInt64(mapping.byteCount),
+              let range = mapping.displayRange(Int(max(base, context.start) - base)..<Int(min(base + UInt64(mapping.byteCount), context.end) - base)), range.length > 0 else { return nil }
+        return range
     }
 
     private func setSelectionDisplay(_ text: UITextView, active: Bool) {
@@ -565,6 +583,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         return otherGestureRecognizer is UILongPressGestureRecognizer
     }
 
+    static var pageActionNames: [String] { [String(localized: "上一页"), String(localized: "下一页")] }
     private func configureAccessibility(_ text: UITextView) {
         (text as? ReadingTextView)?.copySelection = { [weak self] start, end in
             guard let self else { return }
@@ -589,11 +608,11 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         }
         if settings?.mode == .pages {
             text.accessibilityCustomActions?.append(contentsOf: [
-                UIAccessibilityCustomAction(name: String(localized: "上一页")) { [weak self] _ in
+                UIAccessibilityCustomAction(name: Self.pageActionNames[0]) { [weak self] _ in
                     self?.movePage(-1)
                     return true
                 },
-                UIAccessibilityCustomAction(name: String(localized: "下一页")) { [weak self] _ in
+                UIAccessibilityCustomAction(name: Self.pageActionNames[1]) { [weak self] _ in
                     self?.movePage(1)
                     return true
                 }
@@ -927,9 +946,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     }
 
     private var matchingRestoration: ReadingViewport? {
-        guard let saved = pendingNavigation?.request.restoring,
-              saved.size == readingSurface.bounds.size, saved.settings == settings, saved.typeSize == typeSize else { return nil }
-        return saved
+        pendingNavigation?.request.restoration(size: readingSurface.bounds.size, settings: settings, typeSize: typeSize)
     }
 
     private func replaceNavigationContents() {
@@ -1008,12 +1025,13 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
                 let character = text.readingText.coordinates.displayPoint(Int(target - text.readingText.sourceStart)) ?? 0
                 let glyph = text.layoutManager.glyphIndexForCharacter(at: character)
                 let line = text.layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
-                desired = line.minY + text.textContainerInset.top - restoration.lineY
+                desired = ReadingNavigation(restoring: restoration).scrollTarget(lineY: line.minY, textInset: text.textContainerInset.top, target: rect, visible: .zero, keepVisible: false)!
             } else if pending.request.placement == .context {
                 let visible = contextViewport(in: text, bottomObstruction: pending.request.bottomObstruction)
                 let match = targetRect(target, end: focusRange?.endUtf8, in: text) ?? rect
-                if pending.keepVisible && match.minY >= visible.minY + 8 && match.maxY <= visible.maxY - 8 { return }
-                desired = rect.minY - ReadingTextMetrics.insets.top - visible.height / 3
+                guard let destination = pending.request.scrollTarget(lineY: rect.minY, textInset: text.textContainerInset.top,
+                    target: match, visible: visible, keepVisible: pending.keepVisible) else { return }
+                desired = destination
             } else {
                 // Align the line, not the glyph's ascender, to the normal top inset.
                 let character = text.readingText.coordinates.displayPoint(Int(target - text.readingText.sourceStart)) ?? 0
@@ -1035,7 +1053,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             }
             guard !pages.isEmpty else { return }
             let target = restoration?.offset ?? anchor
-            let index = pages.lastIndex(where: { $0.start <= target }) ?? 0
+            let index = pending.request.pageIndex(in: pages, anchor: target)
             if let current = paging.viewControllers?.first as? PageController,
                current.page.start == pages[index].start, current.page.end == pages[index].end {
                 current.update(page: pages[index], index: index)
@@ -1564,13 +1582,15 @@ final class ReadingLayoutManager: NSLayoutManager {
         let color: UIColor
     }
     private(set) var decorations: [Decoration] = []
+    var invalidatePaint: ((NSRange) -> Void)?
 
     func setDecorations(_ decorations: [Decoration]) {
         guard self.decorations != decorations else { return }
         self.decorations = decorations
         // Paint-only state must never edit NSTextStorage, invalidate glyph layout,
         // change the selection, or restore a scroll offset after the fact.
-        invalidateDisplay(forCharacterRange: NSRange(location: 0, length: textStorage?.length ?? 0))
+        let range = NSRange(location: 0, length: textStorage?.length ?? 0)
+        if let invalidatePaint { invalidatePaint(range) } else { invalidateDisplay(forCharacterRange: range) }
     }
 
     override func drawBackground(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {

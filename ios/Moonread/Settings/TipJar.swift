@@ -101,7 +101,7 @@ enum TipPurchaseResult: Sendable { case success(TipTransaction), pending, userCa
          thanksDelay: @escaping @Sendable () async throws -> Void = { try await Task.sleep(for: .seconds(4)) }) {
         self.gateway = gateway ?? StoreKitPurchaseGateway(); self.thanksDelay = thanksDelay
     }
-    deinit { thanksTask?.cancel() }
+    isolated deinit { thanksTask?.cancel() }
     func enterPage() async { if catalog != .ready { await load() } }
     func load() async {
         if let loadTask { await loadTask.value; return }

@@ -448,3 +448,45 @@ fn percentage_locations_validate_inputs_and_normalize_unicode_boundaries() {
         }
     }
 }
+
+fn assert_source_partition(frame: &ReadingFrame, source: &str) {
+    let mut ranges: Vec<(u64, u64)> = frame
+        .chunks
+        .iter()
+        .map(|c| {
+            assert_eq!(c.text, source[c.start_utf8 as usize..c.end_utf8 as usize]);
+            (c.start_utf8, c.end_utf8)
+        })
+        .collect();
+    ranges.extend(
+        frame
+            .omitted
+            .iter()
+            .map(|g| {
+                assert!(
+                    source[g.start_utf8 as usize..g.end_utf8 as usize]
+                        .trim()
+                        .is_empty()
+                );
+                (
+                    g.start_utf8.max(frame.source_start),
+                    g.end_utf8.min(frame.source_end),
+                )
+            })
+            .filter(|(a, b)| a < b),
+    );
+    ranges.sort_unstable();
+    assert_eq!(ranges.first().unwrap().0, frame.source_start);
+    assert_eq!(ranges.last().unwrap().1, frame.source_end);
+    for pair in ranges.windows(2) {
+        assert_eq!(pair[0].1, pair[1].0);
+    }
+    if let Some(anchor) = frame.projection_anchor {
+        assert!(
+            frame
+                .chunks
+                .iter()
+                .any(|c| c.start_utf8 <= anchor && anchor < c.end_utf8)
+        );
+    }
+}

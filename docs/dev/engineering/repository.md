@@ -19,7 +19,7 @@ Nix 不替代 Xcode。Apple SDK、Swift 编译器、模拟器和签名由 Xcode 
 
 文档改动也运行检查和密钥扫描，不再单独分类跳过。同一 PR 的新提交取消旧检查。Cargo 缓存按平台、工具链及依赖区分，不上传开发者本机数据或签名安装包。
 
-`iOS unit tests` 使用官方 `xcode-27` arm64 镜像，显式选择 Xcode 27.1 与镜像已有的 iOS 27.0 iPhone 18 Pro；缺少时直接失败，不创建模拟器或替换工具链。Xcode 构建阶段通过 Nix 编译 Rust，xcodebuild 运行完整 MoonreadTests（不运行 MoonreadUITests），关闭测试并行及签名，单项最多五分钟。Cargo 与 DerivedData 分开缓存，日志及 xcresult 保留七天。本工作流没有 tag 发布或上传逻辑。长时性能、UI、最低系统和真实文件提供方仍按范围在本地验证，CI 不替代这些验收。
+`iOS unit tests` 使用官方 `xcode-27` arm64 镜像，显式选择 Xcode 27.1 与镜像已有的 iOS 27.0 iPhone 18 Pro；缺少时直接失败，不创建模拟器或替换工具链。Xcode 构建阶段通过 Nix 编译 Rust，xcodebuild 运行完整 MoonreadTests（不运行 MoonreadUITests），关闭测试并行，测试语言固定简体中文；模拟器使用 ad-hoc 签名以支持隔离命名空间的钥匙串适配器测试，单项最多五分钟。Cargo 与 DerivedData 分开缓存，日志及 xcresult 保留七天。本工作流没有 tag 发布或上传逻辑。长时性能、UI、最低系统和真实文件提供方仍按范围在本地验证，CI 不替代这些验收。
 
 CI 工作流只读仓库，checkout 不保留凭据，引用的 Actions 固定到完整提交 SHA。不使用 `pull_request_target`，也不让工作流自动批准或合并 PR。
 
@@ -61,3 +61,11 @@ cd docs/site && zola serve
 [Pages 工作流](../../../.github/workflows/pages.yml) 在 main 的网站源码、工作流或 Nix 配置变化时构建，也支持手动触发。两种触发方式均照常构建并上传 Pages artifact，仅在事件中的 `repository.private == false` 时执行 deploy，私有仓库跳过部署。仅 deploy job 授予 `pages:write` 与 `id-token:write`；checkout 不保留凭据，Actions 使用完整 SHA。不发布其余开发文档。
 
 当前仓库私有，本次只验证构建和工作流语法，不启用 Pages。开源切换时，先在新公开仓库启用 Pages 并将来源设为 GitHub Actions（`build_type=workflow`），再首次推送网站变更（或手动触发工作流），最后逐页验证新站；不能在 Pages 尚未配置时触发公开仓库的首次部署。旧 `suxiaoshao/moonread-site` 仓库已于 2026-10-17 删除。App 的新链接需要等新站部署后才可在线验收。
+
+## 测试边界
+
+Rust 保护正文、书架查询、身份、统计和迁移规则；Swift 保护适配、状态机、取消/代次与持久化映射。业务测试使用内存 CredentialStore、假 PurchaseGateway、固定时间和显式完成事件。仅各一条隔离的适配器集成测试访问真实钥匙串及项目 `TipJar.storekit`，不使用个人凭据或真实交易。
+
+MoonreadUITests 保留 U01–U19 十九条独立小样本主路径；U04 真实重启，其余不叠加重启、外观矩阵或系统选择器/菜单验证。U15 从已选文件接收边界导入；U19 经 NSItemProvider 测试适配器发布真实 ShareInbox 清单再由主 App 消费，不声称覆盖第三方宿主的分享面板。默认只附失败截图。原 008、009、105 删除，不另设每 PR 性能通道。
+
+UI 本轮由协调者安排在既有 iPhone 18 Pro 上跑一次并记录总时长；3–5 分钟是目标预算，必须以执行结果确认，不能由测试数量推断。Linux 与 iOS 单测以同一提交的 CI 结果为准。

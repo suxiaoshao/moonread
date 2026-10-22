@@ -73,10 +73,16 @@ final class ReaderToolsModel {
     private var isLeaving = false
     private var undoVisible = false
     private var undoRemaining: Duration = .seconds(6)
-    private var undoStarted: ContinuousClock.Instant?
+    private var undoStarted: Duration?
+    private let uptime: @Sendable () -> Duration
+    private let sleep: @Sendable (Duration) async throws -> Void
     private var undoTask: Task<Void, Never>?
 
-    init(service: ReaderService = .shared) { self.service = service }
+    init(service: ReaderService = .shared,
+         uptime: @escaping @Sendable () -> Duration = { .nanoseconds(Int64(DispatchTime.now().uptimeNanoseconds)) },
+         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+        self.service = service; self.uptime = uptime; self.sleep = sleep
+    }
 
     // Count only the time the reader can actually reach the undo capsule.
     // Moving it with the toolbar does not restart its lifetime.
@@ -90,18 +96,19 @@ final class ReaderToolsModel {
     private func pauseUndoCountdown() {
         undoTask?.cancel(); undoTask = nil
         if let started = undoStarted {
-            undoRemaining = max(.zero, undoRemaining - started.duration(to: .now))
+            undoRemaining = max(.zero, undoRemaining - (uptime() - started))
         }
         undoStarted = nil
     }
 
     private func resumeUndoCountdown() {
         guard undoVisible, !isLeaving, let ids = deletedIDs else { return }
-        undoStarted = .now
+        undoStarted = uptime()
         let remaining = undoRemaining
         undoTask = Task { [weak self] in
             do {
-                try await Task.sleep(for: remaining)
+                try await self?.sleep(remaining)
+                try Task.checkCancellation()
                 guard let self, self.deletedIDs == ids else { return }
                 self.deletedIDs = nil
             } catch { }

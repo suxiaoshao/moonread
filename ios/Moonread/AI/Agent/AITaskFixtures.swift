@@ -12,6 +12,10 @@ extension AIService {
               ProcessInfo.processInfo.arguments.contains("--ui-test-ai-tasks") else { return }
         if conversations.contains(where: { $0.id == "ui-ai-notes-" + session }) { fixtureSeeded = true; return }
         fixtureSeeding = true; defer { fixtureSeeding = false }
+        if ReaderSmokeFixture.enabled {
+            try await installFixtureSession(AISessionValue(id: "smoke-task-" + session, title: "合成任务", kind: .statistics, listed: false), entries: [])
+            fixtureSeeded = true; return
+        }
         let reader = ReaderService.shared
         let entries = try await reader.aiLibraryBooks("builtin")
         guard var sample = entries.first(where: { $0.name == "月读 · 排版示例.txt" }),

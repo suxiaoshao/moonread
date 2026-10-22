@@ -6,6 +6,13 @@ final class ReaderDeviceControls {
     private static var orientations: [String: UIInterfaceOrientationMask] = [:]
     private static var awakeLeases: Set<UUID> = []
     private static var previousIdleSetting = false
+    struct Effects {
+        var awake: (Bool) -> Void
+        var orientation: (ReadingOrientation?) -> Void
+    }
+    private let effects: Effects?
+    init(effects: Effects? = nil) { self.effects = effects }
+    func sceneActive(_ value: Bool) { if value { activate() } else { suspend() } }
     private let lease = UUID()
     private weak var scene: UIWindowScene?
     private var observers: [NSObjectProtocol] = []
@@ -66,6 +73,7 @@ final class ReaderDeviceControls {
         active = false
         setAwake(false)
         restoreBrightness()
+        effects?.orientation(nil)
         if let scene {
             Self.orientations.removeValue(forKey: scene.session.persistentIdentifier)
             scene.windows.forEach { $0.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations() }
@@ -73,6 +81,7 @@ final class ReaderDeviceControls {
     }
 
     private func setAwake(_ enabled: Bool) {
+        if let effects { effects.awake(enabled); return }
         if enabled {
             if Self.awakeLeases.isEmpty { Self.previousIdleSetting = UIApplication.shared.isIdleTimerDisabled }
             Self.awakeLeases.insert(lease)
@@ -112,6 +121,7 @@ final class ReaderDeviceControls {
     }
 
     private func applyOrientation() {
+        if let effects { effects.orientation(settings.orientation); return }
         guard let scene else { return }
         let mask: UIInterfaceOrientationMask
         switch settings.orientation {

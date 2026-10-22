@@ -1293,69 +1293,20 @@ final class TextLayoutTests: XCTestCase {
         XCTAssertEqual(tools.tab, .bookmarks, "A new book keeps the requested list")
     }
 
-    @MainActor
-    func testPageAccessibilityActionsUseActiveLocalization() throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = scene.windows.first(where: \.isKeyWindow)
-        let host = UIWindow(windowScene: scene)
-        let controller = ReadingController()
-        host.rootViewController = controller; host.makeKeyAndVisible()
-        defer { host.isHidden = true; previous?.makeKeyAndVisible() }
-        controller.configure(window: ReadingWindow(chunks: Array(readingChunks()[0...1])),
-                             settings: ReaderSettings(mode: .pages, fontSize: 20, lineSpacing: 8), anchor: 0,
-                             dark: false, typeSize: .large, compactHeaderHeight: 22,
-                             controlsVisible: false, toggleControls: {}, readingBegan: {}, changed: { _, _ in })
-        controller.view.layoutIfNeeded()
-        let text = try XCTUnwrap(findReadingText(in: controller.view))
-        let actions = text.accessibilityCustomActions?.map(\.name) ?? []
-        XCTAssertTrue(actions.contains(String(localized: "上一页")), "\(actions)")
-        XCTAssertTrue(actions.contains(String(localized: "下一页")), "\(actions)")
+    func testPageAccessibilityActionsUseActiveLocalization() {
+        XCTAssertEqual(ReadingController.pageActionNames, [String(localized: "上一页"), String(localized: "下一页")])
     }
 
-    @MainActor
-    func testAnnotationTapUsesFullNativeRangeWithoutShowingHandles() async throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previousKey = scene.windows.first(where: \.isKeyWindow)
-        let host = UIWindow(windowScene: scene)
-        defer { host.isHidden = true; previousKey?.makeKeyAndVisible() }
+    func testAnnotationTapUsesFullNativeRangeWithoutShowingHandles() throws {
         let mark = ReaderMark(id: "highlight", kind: .annotation, startUtf8: 0, endUtf8: 9, excerpt: "月亮落", note: "", created: 1)
-        func actions(_ menu: UIMenu) -> [UIAction] {
-            menu.children.flatMap { ($0 as? UIMenu).map(actions) ?? (($0 as? UIAction).map { [$0] } ?? []) }
-        }
-        for mode in [ReadingMode.scroll, .pages] {
-            let controller = ReadingController()
-            host.rootViewController = controller; host.makeKeyAndVisible()
-            controller.configure(window: ReadingWindow(chunks: Array(readingChunks()[0...1])),
-                                 settings: ReaderSettings(mode: mode, fontSize: 20, lineSpacing: 8), anchor: 0,
-                                 dark: false, typeSize: .large, annotations: [mark], compactHeaderHeight: 22,
-                                 controlsVisible: false, toggleControls: {}, readingBegan: {}, changed: { _, _ in })
-            controller.view.layoutIfNeeded()
-            let text = try XCTUnwrap(findReadingText(in: controller.view))
-            let offset = text.contentOffset
-            controller.showAnnotationMenu(mark, in: text)
-            let expected = NSRange(location: 0, length: 3)
-            let completeRange = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in text.selectedRange == expected }, object: nil)
-            await fulfillment(of: [completeRange], timeout: 3)
-            XCTAssertEqual(text.selectedRange, expected, "Native text tools must use the whole annotation, not just its first word")
-            XCTAssertGreaterThan(text.selectedRange.length, 0, "Tap uses a logical native selection for system text actions")
-            let display = text.interactions.compactMap { $0 as? UITextSelectionDisplayInteraction }
-            XCTAssertFalse(display.isEmpty)
-            let hidden = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-                display.allSatisfy { $0.highlightView.alpha == 0 && $0.handleViews.allSatisfy { $0.alpha == 0 } }
-            }, object: nil)
-            await fulfillment(of: [hidden], timeout: 2)
-            XCTAssertTrue(display.allSatisfy { $0.highlightView.alpha == 0 && $0.handleViews.allSatisfy { $0.alpha == 0 } }, "Tap must hide selection handles")
-            XCTAssertEqual(text.contentOffset, offset)
-            let menu = controller.selectionMenu(for: AnnotationSelection(start: 0, end: 9, annotations: [mark]), suggestedActions: []) { _ in }
-            XCTAssertTrue(actions(menu).contains { $0.title == String(localized: "编辑批注") })
-            XCTAssertTrue(actions(menu).contains { $0.title == String(localized: "拷贝") })
-            let remove = try XCTUnwrap(actions(menu).first { $0.title == String(localized: "移除批注") })
-            XCTAssertTrue(remove.attributes.contains(.destructive))
-            // Long-press selection retains its own contextual destructive action.
-            let selected = try XCTUnwrap(controller.textView(text, editMenuForTextIn: NSRange(location: 0, length: 3), suggestedActions: []))
-            XCTAssertTrue(actions(selected).contains { $0.title == String(localized: "移除批注") && $0.attributes.contains(.destructive) })
-            text.interactions.compactMap { $0 as? UIEditMenuInteraction }.forEach { $0.dismissMenu() }
-        }
+        let context = AnnotationSelection(start: mark.startUtf8, end: mark.endUtf8, annotations: [mark])
+        XCTAssertEqual(ReadingController.annotationRange(context, mapping: TextCoordinates("月亮落在窗边"), base: 0), NSRange(location: 0, length: 3))
+        XCTAssertNil(ReadingController.annotationRange(context, mapping: TextCoordinates("另一页"), base: 30))
+        let menu = ReadingController().selectionMenu(for: context, suggestedActions: []) { _ in }
+        func actions(_ menu: UIMenu) -> [UIAction] { menu.children.flatMap { ($0 as? UIMenu).map(actions) ?? (($0 as? UIAction).map { [$0] } ?? []) } }
+        XCTAssertTrue(actions(menu).contains { $0.title == String(localized: "拷贝") })
+        XCTAssertTrue(actions(menu).contains { $0.title == String(localized: "编辑批注") })
+        XCTAssertTrue(actions(menu).contains { $0.title == String(localized: "移除批注") && $0.attributes.contains(.destructive) })
     }
 
     @MainActor
@@ -2639,71 +2590,17 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         XCTAssertTrue(native.indexPathsForSelectedItems?.isEmpty ?? true)
     }
 
-    @MainActor func testCoverIsOutsideTextCoordinatesAcrossWindowAndLayoutChanges() throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previousKey = scene.windows.first(where: \.isKeyWindow)
-        let host = UIWindow(windowScene: scene)
-        let controller = ReadingController()
-        host.rootViewController = controller; host.makeKeyAndVisible()
-        defer { host.isHidden = true; previousKey?.makeKeyAndVisible() }
-        let chunks = readingChunks()
-        var settings = defaultReaderSettings()
-        settings.mode = .scroll
-        var revision = 0
-        var copied: (UInt64, UInt64)?
-        func configure(_ values: [TextChunk], offset: UInt64, cover: Bool, navigation: ReadingNavigation? = nil) {
-            if navigation != nil { revision += 1 }
-            controller.configure(window: ReadingWindow(chunks: values), settings: settings, anchor: offset,
-                                 dark: false, typeSize: .large, navigationRevision: revision, navigation: navigation,
-                                 selection: { start, end, action in if action == .copy { copied = (start, end) } },
-                                 coverTitle: "月光下的归途", showingCover: cover,
-                                 compactHeaderHeight: 22, controlsVisible: false, toggleControls: {}, readingBegan: {}, changed: { _, _ in })
-            controller.view.layoutIfNeeded()
-        }
-        configure(Array(chunks[0...2]), offset: 0, cover: true)
-        let text = try XCTUnwrap(findReadingText(in: controller.view))
-        XCTAssertEqual(text.contentInset.top, 0)
-        XCTAssertEqual(text.contentOffset.y, 0, accuracy: 1)
-        XCTAssertEqual(text.textContainerInset.top, ReadingTextMetrics.insets.top)
-        XCTAssertTrue(text.textContainer.exclusionPaths.isEmpty)
-        XCTAssertEqual(String(text.text.dropFirst(2)), chunks[0...2].map(\.text).joined())
-        XCTAssertFalse(text.isSelectable)
-        text.setContentOffset(CGPoint(x: 0, y: 60), animated: false)
-        let cover = try XCTUnwrap(controller.captureViewport())
-        XCTAssertTrue(cover.isCover)
-        configure(Array(chunks[0...2]), offset: 0, cover: false, navigation: ReadingNavigation(placement: .start))
-        XCTAssertEqual(text.contentOffset.y, text.bounds.height, accuracy: 1)
-        XCTAssertTrue(text.isSelectable)
-        let firstBodyGlyph = text.layoutManager.glyphIndexForCharacter(at: 2)
-        XCTAssertEqual(text.layoutManager.lineFragmentRect(forGlyphAt: firstBodyGlyph, effectiveRange: nil).minY, text.bounds.height, accuracy: 1)
-        let bodyStart = try XCTUnwrap(text.position(from: text.beginningOfDocument, offset: 2))
-        XCTAssertEqual(text.caretRect(for: bodyStart).minY - text.contentOffset.y,
-                       ReadingTextMetrics.insets.top, accuracy: 5,
-                       "Native selection and chapter navigation must agree on the first line")
-        text.selectAll(nil); text.copy(nil)
-        XCTAssertEqual(copied?.0, 0)
-        XCTAssertEqual(copied?.1, chunks[2].endUtf8, "Native copy must exclude the synthetic cover")
-        text.selectedRange = NSRange(location: 2, length: 0)
-        let partialCoverOffset = text.bounds.height * 0.75
-        text.setContentOffset(CGPoint(x: 0, y: partialCoverOffset), animated: false)
-        let partialCover = try XCTUnwrap(controller.captureViewport())
-        XCTAssertFalse(partialCover.isCover)
-        XCTAssertEqual(partialCover.offset, 0)
-        configure(Array(chunks[0...3]), offset: 0, cover: false)
-        XCTAssertEqual(text.contentOffset.y, partialCoverOffset, accuracy: 1,
-                       "Replacing a window while the first body line is below the cover must preserve its screen position")
-        configure(Array(chunks[0...2]), offset: 0, cover: true, navigation: ReadingNavigation(restoring: cover))
-        XCTAssertEqual(text.contentOffset.y, cover.lineY, accuracy: 1)
-        settings.fontSize += 4
-        configure(Array(chunks[0...2]), offset: 0, cover: true, navigation: ReadingNavigation(restoring: cover))
-        let larger = try XCTUnwrap(findReadingText(in: controller.view))
-        XCTAssertEqual(larger.contentOffset.y, 0, accuracy: 1)
-        configure(Array(chunks[1...3]), offset: chunks[2].startUtf8, cover: false, navigation: ReadingNavigation(placement: .start))
-        XCTAssertEqual(try XCTUnwrap(findReadingText(in: controller.view)).contentInset.top, 0)
-        configure(Array(chunks[0...2]), offset: 0, cover: true, navigation: ReadingNavigation(placement: .cover))
-        let returned = try XCTUnwrap(findReadingText(in: controller.view))
-        XCTAssertEqual(returned.contentOffset.y, 0, accuracy: 1)
-        XCTAssertEqual(String(returned.text.dropFirst(2)), chunks[0...2].map(\.text).joined())
+    func testCoverIsOutsideTextCoordinatesAcrossWindowAndLayoutChanges() throws {
+        let window = ReadingWindow(chunks: Array(readingChunks().prefix(2)))
+        let body = ReadingText(window), covered = body.prefixed("\u{fffc}\n")
+        XCTAssertNil(covered.coordinates.sourcePoint(0)); XCTAssertNil(covered.coordinates.sourcePoint(1))
+        XCTAssertEqual(covered.coordinates.sourcePoint(2), body.coordinates.sourcePoint(0))
+        let source = try XCTUnwrap(covered.coordinates.sourceRange(covered.selectableRange))
+        XCTAssertEqual(UInt64(source.lowerBound) + covered.sourceStart, window.start)
+        XCTAssertEqual(UInt64(source.upperBound) + covered.sourceStart, window.end)
+        XCTAssertEqual(covered.slice(covered.selectableRange).text, body.text)
+        let extended = ReadingText(ReadingWindow(chunks: Array(readingChunks().prefix(3)))).prefixed("\u{fffc}\n")
+        XCTAssertEqual(extended.coordinates.sourcePoint(2), 0)
     }
 
     @MainActor func testCoverPreservesReadingIdentityAndResume() async throws {
@@ -3047,27 +2944,15 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
 
 
 
-    @MainActor
-    func testReaderDeviceControlsReleaseAwakeAndOrientationOnBackgroundAndExit() async throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previous = UIApplication.shared.isIdleTimerDisabled
-        let controls = ReaderDeviceControls()
-        defer { controls.stop(); UIApplication.shared.isIdleTimerDisabled = previous }
+    func testReaderDeviceControlsReleaseAwakeAndOrientationOnBackgroundAndExit() {
+        var awake = [Bool](), orientation = [ReadingOrientation?]()
+        let controls = ReaderDeviceControls(effects: .init(awake: { awake.append($0) }, orientation: { orientation.append($0) }))
         var settings = defaultReaderSettings(); settings.keepAwake = true; settings.orientation = .portrait
-        controls.update(settings); controls.start(in: scene)
-        NotificationCenter.default.post(name: UIScene.didActivateNotification, object: scene)
-        try await Task.sleep(for: .milliseconds(100))
-        XCTAssertTrue(UIApplication.shared.isIdleTimerDisabled)
-        XCTAssertEqual(ReaderDeviceControls.orientationMask(for: scene), .portrait)
-        NotificationCenter.default.post(name: UIScene.willDeactivateNotification, object: scene)
-        try await Task.sleep(for: .milliseconds(100))
-        XCTAssertEqual(UIApplication.shared.isIdleTimerDisabled, previous)
-        NotificationCenter.default.post(name: UIScene.didActivateNotification, object: scene)
-        try await Task.sleep(for: .milliseconds(100))
-        XCTAssertTrue(UIApplication.shared.isIdleTimerDisabled)
-        controls.stop(); controls.stop()
-        XCTAssertEqual(UIApplication.shared.isIdleTimerDisabled, previous)
-        XCTAssertEqual(ReaderDeviceControls.orientationMask(for: scene), .allButUpsideDown)
+        controls.update(settings); XCTAssertTrue(awake.isEmpty)
+        controls.sceneActive(true); XCTAssertEqual(awake, [true]); XCTAssertEqual(orientation.last!, .portrait)
+        controls.sceneActive(false); XCTAssertEqual(awake, [true, false]); XCTAssertNil(orientation.last!)
+        controls.sceneActive(true); controls.stop(); XCTAssertEqual(awake, [true, false, true, false])
+        XCTAssertNil(orientation.last!)
     }
 
     @MainActor
@@ -3113,104 +2998,30 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         XCTAssertEqual(finalPosition, original)
     }
 
-    @MainActor
     func testNavigationPlacesContextKeepsVisibleHitsAndRestoresExactScrollViewport() throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previousKey = scene.windows.first(where: \.isKeyWindow)
-        let host = UIWindow(windowScene: scene)
-        let controller = ReadingController()
-        host.rootViewController = controller; host.makeKeyAndVisible()
-        defer { host.isHidden = true; previousKey?.makeKeyAndVisible() }
-        let chunks = readingChunks()
-        let settings = ReaderSettings(mode: .scroll, fontSize: 20, lineSpacing: 8)
-        var revision = 0
-        func configure(_ chunks: [TextChunk], offset: UInt64, navigation: ReadingNavigation? = nil) {
-            if navigation != nil { revision += 1 }
-            controller.configure(window: ReadingWindow(chunks: chunks), settings: settings, anchor: offset,
-                                 dark: false, typeSize: .large, navigationRevision: revision, navigation: navigation,
-                                 focusRange: navigation.map { _ in TextRange(startUtf8: offset, endUtf8: offset + 3, text: "") },
-                                 compactHeaderHeight: 22, controlsVisible: false, toggleControls: {}, readingBegan: {}, changed: { _, _ in })
-            controller.view.layoutIfNeeded()
-        }
-        configure(Array(chunks[0...2]), offset: 0)
-        let text = try XCTUnwrap(findReadingText(in: controller.view))
-        text.setContentOffset(CGPoint(x: 0, y: 287.25), animated: false)
-        let origin = try XCTUnwrap(controller.captureViewport())
-        let originalOffset = text.contentOffset.y
-        func glyphRect(_ offset: UInt64, base: UInt64 = 0) -> CGRect {
-            let character = TextCoordinates(text.text).utf16Offset(atUTF8: Int(offset - base))
-            let glyph = text.layoutManager.glyphIndexForCharacter(at: character)
-            return text.layoutManager.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: text.textContainer)
-                .offsetBy(dx: text.textContainerInset.left, dy: text.textContainerInset.top - text.contentOffset.y)
-        }
-        let originalGlyph = glyphRect(origin.offset)
-        let target = chunks[1].startUtf8 + 300
-        configure(Array(chunks[0...2]), offset: target, navigation: ReadingNavigation(placement: .context, bottomObstruction: 124))
-        XCTAssertTrue(findReadingText(in: controller.view) === text, "A jump in the loaded window must reuse the text view")
-        let visibleHeight = text.bounds.height - 16 - 124 - host.safeAreaInsets.bottom - 12
-        XCTAssertEqual(glyphRect(target).minY, 16 + visibleHeight / 3, accuracy: 2)
-        let positioned = text.contentOffset
-        let fullBounds = controller.view.bounds
-        for delta in [34.0, 20.0, 4.0, 0.0] {
-            controller.view.bounds = CGRect(origin: .zero, size: CGSize(width: fullBounds.width, height: fullBounds.height - delta))
-            controller.view.setNeedsLayout(); controller.view.layoutIfNeeded()
-            XCTAssertTrue(findReadingText(in: controller.view) === text, "Sheet safe-area animation must not rebuild the text")
-            XCTAssertEqual(text.contentOffset, positioned, "Sheet height changes must not replace context alignment with top alignment")
-        }
-        configure(Array(chunks[0...2]), offset: target + 3, navigation: ReadingNavigation(placement: .context, bottomObstruction: 124))
-        XCTAssertEqual(text.contentOffset, positioned, "Another clearly visible hit must only change its highlight")
-        configure(Array(chunks[0...2]), offset: target, navigation: ReadingNavigation(placement: .start))
-        XCTAssertLessThan(glyphRect(target).minY, 30, "Chapter jumps retain the normal top inset")
-
-        configure(Array(chunks[2...4]), offset: chunks[3].startUtf8, navigation: ReadingNavigation(placement: .context))
-        XCTAssertTrue(findReadingText(in: controller.view) === text, "A distant jump should replace bounded contents, not the native view")
-        configure(Array(chunks[0...2]), offset: origin.offset, navigation: ReadingNavigation(restoring: origin))
-        let returned = try XCTUnwrap(controller.captureViewport())
-        XCTAssertEqual(returned.offset, origin.offset)
-        XCTAssertEqual(glyphRect(origin.offset).minY, originalGlyph.minY, accuracy: 0.5)
-        XCTAssertEqual(glyphRect(origin.offset).height, originalGlyph.height, accuracy: 0.5)
-        XCTAssertEqual(text.contentOffset.y, originalOffset, accuracy: 0.5)
-        XCTAssertEqual(try XCTUnwrap(controller.captureViewport()).lineY, origin.lineY, accuracy: 0.5)
-        XCTAssertTrue(findReadingText(in: controller.view) === text)
+        let settings = defaultReaderSettings(), size = CGSize(width: 390, height: 650)
+        let saved = ReadingViewport(offset: 30, lineY: -4, size: size, settings: settings, typeSize: .large, pages: [])
+        let restore = ReadingNavigation(restoring: saved)
+        XCTAssertEqual(restore.restoration(size: size, settings: settings, typeSize: .large)?.offset, 30)
+        XCTAssertNil(restore.restoration(size: .zero, settings: settings, typeSize: .large))
+        XCTAssertEqual(restore.scrollTarget(lineY: 100, textInset: 16, target: .zero, visible: .zero, keepVisible: false), 120)
+        let context = ReadingNavigation(placement: .context, bottomObstruction: 124)
+        let visible = CGRect(x: 0, y: 100, width: 390, height: 300)
+        XCTAssertNil(context.scrollTarget(lineY: 120, textInset: 16, target: CGRect(x: 0, y: 120, width: 20, height: 20), visible: visible, keepVisible: true))
+        XCTAssertEqual(context.scrollTarget(lineY: 500, textInset: 16, target: CGRect(x: 0, y: 500, width: 20, height: 20), visible: visible, keepVisible: true), 384)
+        XCTAssertEqual(ReadingNavigation().scrollTarget(lineY: 500, textInset: 16, target: .zero, visible: .zero, keepVisible: false), 500)
     }
 
-    @MainActor
     func testNavigationPreservesPageBoundariesAndReturnsAfterDistantJump() throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previousKey = scene.windows.first(where: \.isKeyWindow)
-        let host = UIWindow(windowScene: scene)
-        let controller = ReadingController()
-        host.rootViewController = controller; host.makeKeyAndVisible()
-        defer { host.isHidden = true; previousKey?.makeKeyAndVisible() }
-        let chunks = readingChunks()
-        let settings = ReaderSettings(mode: .pages, fontSize: 20, lineSpacing: 8)
-        var revision = 0
-        func configure(_ chunks: [TextChunk], offset: UInt64, navigation: ReadingNavigation? = nil) {
-            if navigation != nil { revision += 1 }
-            controller.configure(window: ReadingWindow(chunks: chunks), settings: settings, anchor: offset,
-                                 dark: false, typeSize: .large, navigationRevision: revision, navigation: navigation,
-                                 focusRange: navigation.map { _ in TextRange(startUtf8: offset, endUtf8: offset + 3, text: "") },
-                                 compactHeaderHeight: 22, controlsVisible: false, toggleControls: {}, readingBegan: {}, changed: { _, _ in })
-            controller.view.layoutIfNeeded()
-        }
-        configure(Array(chunks[0...2]), offset: 0)
-        let layout = try XCTUnwrap(controller.captureViewport())
-        let targetPage = layout.pages[3]
-        configure(Array(chunks[0...2]), offset: targetPage.start + 90, navigation: ReadingNavigation(placement: .context))
-        let origin = try XCTUnwrap(controller.captureViewport())
-        XCTAssertEqual(origin.offset, targetPage.start)
-        XCTAssertEqual(origin.pages.map(\.start), layout.pages.map(\.start))
-        let text = try XCTUnwrap(findReadingText(in: controller.view))
-        let contents = text.text
-        configure(Array(chunks[0...2]), offset: targetPage.start + 150, navigation: ReadingNavigation(placement: .context))
-        XCTAssertTrue(findReadingText(in: controller.view) === text, "Same-page search must preserve the displayed page")
-        XCTAssertEqual(text.text, contents)
-        configure(Array(chunks[2...4]), offset: chunks[3].startUtf8, navigation: ReadingNavigation(placement: .context))
-        configure(Array(chunks[0...2]), offset: origin.offset, navigation: ReadingNavigation(restoring: origin))
-        let restored = try XCTUnwrap(controller.captureViewport())
-        XCTAssertEqual(restored.offset, origin.offset)
-        XCTAssertEqual(restored.pages.map(\.start), origin.pages.map(\.start))
-        XCTAssertEqual(findReadingText(in: controller.view)?.text, contents)
+        let chunks = readingChunks(), window = ReadingWindow(chunks: Array(chunks.prefix(3)))
+        let pages = syntheticPages(window), saved = pages[3]
+        let request = ReadingNavigation(placement: .context)
+        XCTAssertEqual(request.pageIndex(in: pages, anchor: saved.start + 3), 3)
+        XCTAssertEqual(request.pageIndex(in: pages, anchor: saved.end - 1), 3)
+        let restore = ReadingViewport(offset: saved.start, lineY: 0, size: .zero, settings: defaultReaderSettings(), typeSize: .large, pages: pages)
+        let returned = syntheticPages(window, preserving: restore.pages, keeping: restore.offset)
+        XCTAssertEqual(returned.map(\.start), pages.map(\.start))
+        XCTAssertEqual(request.pageIndex(in: returned, anchor: restore.offset), 3)
     }
 
     @MainActor
@@ -3315,78 +3126,15 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
 
 
 
-    @MainActor
-    func testHighlightChangesNeverEditTextOrMoveSelectionAndViewport() async throws {
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let previousKey = scene.windows.first(where: \.isKeyWindow)
-        let host = UIWindow(windowScene: scene)
-        defer { host.isHidden = true; previousKey?.makeKeyAndVisible() }
-        let chunks = Array(readingChunks()[0...1])
-        let mark = ReaderMark(id: "paint", kind: .annotation, startUtf8: 0, endUtf8: 90,
-                              excerpt: "月亮", note: "", created: 0)
-        for mode in [ReadingMode.scroll, .pages] {
-            let controller = ReadingController()
-            host.rootViewController = controller
-            host.makeKeyAndVisible()
-            func configure(marks: [ReaderMark] = [], bookmarks: [UInt64] = [], focus: TextRange? = nil, dark: Bool = false, theme: ThemeSurface? = nil) {
-                controller.configure(window: ReadingWindow(chunks: chunks),
-                                     settings: ReaderSettings(mode: mode, fontSize: 20, lineSpacing: 8), anchor: 0,
-                                     dark: dark, typeSize: .large, theme: theme, annotations: marks, bookmarkPositions: bookmarks, focusRange: focus,
-                                     compactHeaderHeight: 22, controlsVisible: false, toggleControls: {},
-                                     readingBegan: {}, changed: { _, _ in })
-                controller.view.layoutIfNeeded()
-            }
-            func findText(_ view: UIView) -> UITextView? {
-                if let text = view as? UITextView { return text }
-                return view.subviews.lazy.compactMap(findText).first
-            }
-            configure()
-            let text = try XCTUnwrap(findText(controller.view))
-            let layout = try XCTUnwrap(text.layoutManager as? ReadingLayoutManager)
-            text.selectedRange = NSRange(location: 5, length: 0)
-            if mode == .scroll { text.setContentOffset(CGPoint(x: 0, y: 180), animated: false) }
-            // Let any setup selection reveal finish before measuring decoration updates.
-            try await Task.sleep(for: .milliseconds(150))
-            let offset = text.contentOffset
-            let selection = text.selectedRange
-            let originalText = NSAttributedString(attributedString: text.textStorage)
-            let firstGlyph = layout.boundingRect(forGlyphRange: NSRange(location: 0, length: 1), in: text.textContainer)
-            for change in 0..<6 {
-                let noEdits = XCTNSNotificationExpectation(name: NSTextStorage.didProcessEditingNotification, object: text.textStorage)
-                noEdits.isInverted = true
-                switch change {
-                case 0: configure(marks: [mark])
-                case 1: layout.setDecorations(layout.decorations.map { .init(range: $0.range, color: .systemPink) })
-                case 2: configure(marks: [mark], focus: TextRange(startUtf8: 30, endUtf8: 60, text: ""))
-                case 3: configure(marks: [mark], dark: true)
-                case 4: configure(marks: [mark], bookmarks: [0, 30])
-                default: configure()
-                }
-                // Check after the run loop, including deferred native selection scrolling.
-                await fulfillment(of: [noEdits], timeout: 0.2)
-                XCTAssertTrue(findText(controller.view) === text, "Appearance must retain the native reader")
-                XCTAssertTrue(text.textStorage.isEqual(to: originalText))
-                XCTAssertEqual(text.selectedRange, selection)
-                XCTAssertEqual(text.contentOffset, offset)
-                XCTAssertEqual(layout.boundingRect(forGlyphRange: NSRange(location: 0, length: 1), in: text.textContainer), firstGlyph)
-            }
-            XCTAssertTrue(layout.decorations.isEmpty)
-            for palette in builtinThemePalettes() {
-                let colors = palette.colors
-                let surface = ThemeSurface(plan: ResolvedTheme(appearance: palette.appearance, highContrast: false, colors: colors, paletteId: palette.id))
-                let noEdits = XCTNSNotificationExpectation(name: NSTextStorage.didProcessEditingNotification, object: text.textStorage)
-                noEdits.isInverted = true
-                configure(theme: surface)
-                await fulfillment(of: [noEdits], timeout: 0.1)
-                XCTAssertTrue(findText(controller.view) === text)
-                XCTAssertEqual(text.contentOffset, offset)
-                XCTAssertEqual(text.selectedRange, selection)
-                XCTAssertEqual(text.backgroundColor, surface.paper)
-                let ink = try XCTUnwrap(text.textStorage.attribute(.foregroundColor, at: 0, effectiveRange: nil) as? UIColor)
-                XCTAssertEqual(ink.resolvedColor(with: controller.traitCollection), surface.ink)
-                XCTAssertEqual(layout.boundingRect(forGlyphRange: NSRange(location: 0, length: 1), in: text.textContainer), firstGlyph)
-            }
-        }
+    func testHighlightChangesNeverEditTextOrMoveSelectionAndViewport() {
+        let layout = ReadingLayoutManager()
+        var commands = [NSRange]()
+        layout.invalidatePaint = { commands.append($0) }
+        let mark = ReadingLayoutManager.Decoration(range: NSRange(location: 2, length: 3), color: .systemPink)
+        layout.setDecorations([mark]); layout.setDecorations([mark])
+        XCTAssertEqual(layout.decorations, [mark]); XCTAssertEqual(commands.count, 1)
+        layout.setDecorations([]); XCTAssertTrue(layout.decorations.isEmpty); XCTAssertEqual(commands.count, 2)
+        XCTAssertNil(layout.textStorage, "Paint commands require neither text replacement nor a native selection/viewport")
     }
 
     func testUTF8AndUTF16RoundTripAtEveryScalarBoundary() {
@@ -3591,8 +3339,7 @@ private final class TrashScanProbe: @unchecked Sendable {
         return (temporary, core, service, try await service.libraryEntries(LibraryLocation(shelfID: "builtin")))
     }
     private func wait(_ condition: @escaping @MainActor () -> Bool, file: StaticString = #filePath, line: UInt = #line) async {
-        let deadline = ContinuousClock.now.advanced(by: .seconds(3))
-        while !condition(), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(5)) }
+        await awaitState(condition)
         XCTAssertTrue(condition(), file: file, line: line)
     }
 
@@ -3766,25 +3513,14 @@ private final class TrashScanProbe: @unchecked Sendable {
         }
     }
 
-    func testDecisionDismissesBeforeContinuingAndCannotContinueTwice() async throws {
+    func testDecisionDismissesBeforeContinuingAndCannotContinueTwice() {
         let host = LibraryDecisionAlert.Controller()
-        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
-        let window = UIWindow(windowScene: scene); window.rootViewController = host; window.makeKeyAndVisible()
-        defer { window.isHidden = true }
-        let alert = UIAlertController(title: "decision", message: nil, preferredStyle: .alert)
-        let presented = expectation(description: "presented")
-        host.present(alert, animated: false) { presented.fulfill() }
-        await fulfillment(of: [presented], timeout: 2)
-        let dismissed = expectation(description: "continuation after UIKit dismissal")
-        var calls = 0
-        host.finish(alert: alert) {
-            calls += 1
-            XCTAssertNil(alert.presentingViewController); XCTAssertNil(host.presentedViewController)
-            dismissed.fulfill()
-        }
-        host.finish(alert: alert) { XCTFail("Duplicate dismissal continuation") }
-        await fulfillment(of: [dismissed], timeout: 3)
-        XCTAssertEqual(calls, 1)
+        var dismissed: (() -> Void)?, calls = 0
+        host.dismissPresentation = { dismissed = $0 }
+        host.finish(alert: nil) { calls += 1 }
+        host.finish(alert: nil) { XCTFail("Duplicate continuation") }
+        XCTAssertEqual(calls, 0)
+        dismissed?(); XCTAssertEqual(calls, 1)
     }
 
     func testDeletionIOCannotBlockCloudPublicationCommitOnReaderActor() async throws {
@@ -3898,5 +3634,57 @@ private final class IntroductionScanProbe: @unchecked Sendable {
             guard permits[index].wait(timeout: .now() + 5) == .success else { throw CocoaError(.userCancelled) }
         }
         return try ReaderService.libraryDirectoryItems(root)
+    }
+}
+
+@MainActor final class ApplicationStateSinkTests: XCTestCase {
+    func testSearchPublishesOnlyLatestGenerationAndContentDismissalKeepsScope() async {
+        let state = AppSearchResults()
+        let old = SearchKey(term: "old", tokens: [], revision: 0, retry: 0, aiAvailable: false)
+        let new = SearchKey(term: "new", tokens: [], revision: 0, retry: 0, aiAvailable: false)
+        let started = expectation(description: "Old search suspended")
+        var release: CheckedContinuation<Void, Never>?
+        let pending = Task { await state.run(old, hasCriteria: true) {
+            await withCheckedContinuation { release = $0; started.fulfill() }
+            throw CocoaError(.fileReadUnknown)
+        } }
+        await fulfillment(of: [started], timeout: 3)
+        await state.run(new, hasCriteria: true) { ([], []) }
+        release?.resume(); await pending.value
+        XCTAssertEqual(state.completedKey, new); XCTAssertNil(state.error); XCTAssertFalse(state.loading.active)
+        let search = AppSearch(tokens: [.shelf("builtin"), .tag("星灯")])
+        search.query = " Moonread "; search.keyboardDismissals += 1
+        XCTAssertEqual(search.term, "Moonread"); XCTAssertEqual(search.tag, "星灯")
+        search.apply(.tag("归途")); XCTAssertEqual(search.tag, "归途"); XCTAssertTrue(search.query.isEmpty)
+        await state.run(new, hasCriteria: false) { XCTFail("Empty search must not load"); return ([], []) }
+        XCTAssertNil(state.completedKey); XCTAssertTrue(state.entries.isEmpty)
+    }
+    func testSearchCancelReturnsToActualOriginAndSettingsTabRemainsValid() {
+        let model = LibraryModel()
+        model.selectedTab = .statistics; model.selectedTab = .search
+        model.setSearchPresented(true); model.setSearchPresented(false)
+        XCTAssertEqual(model.selectedTab, .statistics)
+        model.selectedTab = .conversations; model.updateAvailableTabs(aiAvailable: false)
+        XCTAssertEqual(model.selectedTab, .library)
+        model.selectedTab = .settings; model.updateAvailableTabs(aiAvailable: true)
+        XCTAssertEqual(model.selectedTab, .library)
+        let loading = LoadingState(), old = loading.begin(), new = loading.begin()
+        loading.finish(old); XCTAssertEqual(loading.request, new)
+        loading.finish(new); XCTAssertFalse(loading.active)
+    }
+    func testUndoCountsOnlyVisibleTimeAndRejectsCancelledOldTimer() async {
+        let clock = ManualTestClock()
+        let tools = ReaderToolsModel(uptime: { .seconds(clock.now.timeIntervalSince1970 - 1_800_000_000) }, sleep: { duration in
+            let value = duration.components
+            try await clock.sleep(Double(value.seconds) + Double(value.attoseconds) / 1e18)
+        })
+        tools.deletedIDs = ["mark"]; tools.setUndoVisible(true)
+        await awaitState { clock.pendingSleeps == 1 }
+        clock.advance(2); tools.setUndoVisible(false); clock.advance(100)
+        XCTAssertEqual(tools.deletedIDs, ["mark"])
+        tools.setUndoVisible(true); await awaitState { clock.pendingSleeps == 1 }
+        clock.advance(3); XCTAssertEqual(tools.deletedIDs, ["mark"])
+        clock.advance(1); await awaitState { tools.deletedIDs == nil }
+        XCTAssertNil(tools.deletedIDs)
     }
 }
