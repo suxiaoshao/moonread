@@ -35,10 +35,9 @@ final class PlatformAdapterCredentialStoreAdapterTests: CredentialStoreAdapterFi
 final class PlatformAdapterTipJarTests: TipJarFixture {
   // S456: 使用项目 StoreKit 配置验证真实购买适配器；业务测试使用假 PurchaseGateway。
   func testStoreKitAdapterLoadsAndCompletesSyntheticPurchase() async throws {
-    let file = try XCTUnwrap(
-      Bundle(for: Self.self).url(forResource: "TipJar", withExtension: "storekit"),
-      "The test bundle must contain the project StoreKit configuration")
-    let session = try SKTestSession(contentsOf: file)
+    // Load the test-bundle configuration explicitly; test-without-building must
+    // not depend on the Run action's StoreKit selection.
+    let session = try SKTestSession(configurationFileNamed: "TipJar")
     session.resetToDefaultState()
     session.clearTransactions()
     session.disableDialogs = true
