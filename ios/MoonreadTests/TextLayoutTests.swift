@@ -1179,14 +1179,17 @@ final class TextLayoutTests: XCTestCase {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }
         let service = ReaderService(core: try ReaderCore(dataDirectory: root.path))
+        let clock = ManualTestClock()
         for _ in 0..<30 {
             let revision = await service.readingChangeRevision("book")
-            let task = Task { try await service.waitForChange("book", after: revision, timeout: .milliseconds(1)) }
+            let task = Task { try await service.waitForChange("book", after: revision, timeout: .milliseconds(1), sleep: { _ in try await clock.sleep(1) }) }
             task.cancel(); await service.readingChanged("book")
             do { try await task.value; XCTFail("Cancelled waiter returned success") } catch is CancellationError {} catch { XCTFail("Unexpected error") }
         }
         let revision = await service.readingChangeRevision("book")
-        try await service.waitForChange("book", after: revision, timeout: .milliseconds(1))
+        let timeout = Task { try await service.waitForChange("book", after: revision, timeout: .milliseconds(1), sleep: { _ in try await clock.sleep(1) }) }
+        await awaitState { clock.pendingSleeps == 1 }; clock.advance(1)
+        try await timeout.value
         let after = await service.readingChangeRevision("book"); XCTAssertEqual(revision, after)
         let remaining = await service.readingWaiterCount("book"); XCTAssertEqual(remaining, 0)
     }
@@ -3227,15 +3230,21 @@ try core.linkLibraryFile(fileId: first.id,bookId: book.id)
         for page in stable { XCTAssertTrue(next.contains { $0.start == page.start && $0.end == page.end }); XCTAssertTrue(back.contains { $0.start == page.start && $0.end == page.end }) }
     }
 
-    @MainActor func testDuplicatePageViewsDoNotStealVisibleTextContainer() {
-        let window = ReadingWindow(chunks: [readingChunks()[0]])
-        let one = syntheticPages(window), two = syntheticPages(window)
-        XCTAssertEqual(one.map(\.start), two.map(\.start))
-        let first = one[0], duplicate = two[0]
-        XCTAssertEqual(first.readingText.selectableRange, duplicate.readingText.selectableRange)
-        XCTAssertEqual(first.readingText.coordinates.sourceRange(first.readingText.selectableRange),
-                       duplicate.readingText.coordinates.sourceRange(duplicate.readingText.selectableRange))
-        XCTAssertEqual(first.readingText.text, duplicate.readingText.text)
+    @MainActor func testDuplicatePageViewsDoNotStealVisibleTextContainer() throws {
+        let text = "甲🌙乙", projection = ReadingText(text: "甲🌙乙", sourceStart: 0)
+        var page = TextPage(text: NSAttributedString(string: text), start: 0, end: UInt64(text.utf8.count), lineCount: 1, projection: projection)
+        page.continuation = NSAttributedString(string: "下一页的lookahead")
+        let one = try XCTUnwrap(page.makeTextView(frame: .zero) as? PageReadingTextView)
+        let two = try XCTUnwrap(page.makeTextView(frame: .zero) as? PageReadingTextView)
+        XCTAssertFalse(one.textStorage === two.textStorage)
+        XCTAssertFalse(one.layoutManager === two.layoutManager)
+        XCTAssertFalse(one.textContainer === two.textContainer)
+        one.selectAll(nil)
+        XCTAssertEqual(one.selectedRange, NSRange(location: 0, length: text.utf16.count))
+        XCTAssertLessThan(NSMaxRange(one.selectedRange), one.textStorage.length)
+        XCTAssertEqual(two.selectedRange.length, 0)
+        XCTAssertEqual(one.readingText.coordinates.sourceRange(one.selectedRange), 0..<text.utf8.count)
+        XCTAssertEqual(one.accessibilityLabel, text)
     }
 
     @MainActor func testExpandingEarlierWindowRefillsItsTemporaryLeadingPage() {

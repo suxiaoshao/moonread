@@ -59,6 +59,7 @@ import StoreKitTest
         let listener = Task { await store.listenForTransactions() }; defer { listener.cancel(); gateway.continuation.finish() }
         gateway.continuation.yield(.init(id: 1, productID: product.id))
         await fulfillment(of: [done], timeout: 2)
+        await awaitState { store.pending.isEmpty && store.thanked }
         XCTAssertTrue(store.pending.isEmpty); XCTAssertTrue(store.thanked)
     }
     func testPendingRetryClearsBeforePurchaseStarts() async throws {

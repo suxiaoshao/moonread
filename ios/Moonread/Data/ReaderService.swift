@@ -176,14 +176,15 @@ actor ReaderService {
         changeRevisions[id, default: 0] += 1
         for token in changeWaiters[id].map({ Array($0.keys) }) ?? [] { finishReadingWait(id, token: token, cancelled: false) }
     }
-    func waitForChange(_ id: String, after: UInt64, timeout: Duration) async throws {
+    func waitForChange(_ id: String, after: UInt64, timeout: Duration,
+                       sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) async throws {
         let token = UUID()
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 if Task.isCancelled { continuation.resume(throwing: CancellationError()); return }
                 if readingChangeRevision(id) > after { continuation.resume(); return }
                 let task = Task { [weak self] in
-                    do { try await Task.sleep(for: timeout) } catch { return }
+                    do { try await sleep(timeout) } catch { return }
                     await self?.finishReadingWait(id, token: token, cancelled: false)
                 }
                 changeWaiters[id, default: [:]][token] = ChangeWaiter(continuation: continuation, timeout: task)

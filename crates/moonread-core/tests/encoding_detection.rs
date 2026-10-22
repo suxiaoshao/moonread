@@ -133,32 +133,37 @@ fn explicit_legacy_encoding_survives_reclaim_and_reopen() {
     let root = TempDir::new().unwrap();
     let core = ReaderCore::new(root.path().join("db").to_string_lossy().into()).unwrap();
     let original = "窓の外には静かな朝がありました。新しい本を読みます。\n";
-    let (bytes, _, errors) = encoding_rs::SHIFT_JIS.encode(original);
+    let (shift_jis, _, errors) = encoding_rs::SHIFT_JIS.encode(original);
     assert!(!errors);
-    let path = root.path().join("source.txt");
-    std::fs::write(&path, bytes.as_ref()).unwrap();
-    let token = core.create_import("Original".into()).unwrap();
-    let raw = core
-        .hash_import_source(token.clone(), path.to_string_lossy().into())
+    let utf16be: Vec<u8> = original.encode_utf16().flat_map(u16::to_be_bytes).collect();
+    for (encoding, bytes) in [("Shift_JIS", shift_jis.into_owned()), ("UTF-16BE", utf16be)] {
+        let core = ReaderCore::new(root.path().join(encoding).to_string_lossy().into()).unwrap();
+        let path = root.path().join("source.txt");
+        std::fs::write(&path, &bytes).unwrap();
+        let token = core.create_import("Original".into()).unwrap();
+        let raw = core
+            .hash_import_source(token.clone(), path.to_string_lossy().into())
+            .unwrap();
+        core.stream_import(
+            token.clone(),
+            path.to_string_lossy().into(),
+            raw.clone(),
+            Some(encoding.into()),
+        )
         .unwrap();
-    core.stream_import(
-        token.clone(),
-        path.to_string_lossy().into(),
-        raw.clone(),
-        Some("shift_jis".into()),
-    )
-    .unwrap();
-    core.finish_import(token.clone()).unwrap();
-    core.reclaim_completed_import(token.book_id()).unwrap();
-    let reopened = core
-        .source_book(SourceContentKey {
-            raw_sha256: raw,
-            decoding: "Shift_JIS".into(),
-        })
-        .unwrap()
-        .unwrap();
-    assert_eq!(body(&core, &reopened.id, reopened.chunk_count), original);
-    assert_eq!(reopened.encoding, "Shift_JIS");
+        core.finish_import(token.clone()).unwrap();
+        core.reclaim_completed_import(token.book_id()).unwrap();
+        let reopened = core
+            .source_book(SourceContentKey {
+                raw_sha256: raw,
+                decoding: encoding.into(),
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(body(&core, &reopened.id, reopened.chunk_count), original);
+        assert_eq!(reopened.encoding, encoding);
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+    }
     assert!(matches!(
         core.source_book(SourceContentKey {
             raw_sha256: "a".repeat(64),

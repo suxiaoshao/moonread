@@ -104,10 +104,10 @@ final class ReaderToolsModel {
     private func resumeUndoCountdown() {
         guard undoVisible, !isLeaving, let ids = deletedIDs else { return }
         undoStarted = uptime()
-        let remaining = undoRemaining
+        let remaining = undoRemaining, wait = sleep
         undoTask = Task { [weak self] in
             do {
-                try await self?.sleep(remaining)
+                try await wait(remaining)
                 try Task.checkCancellation()
                 guard let self, self.deletedIDs == ids else { return }
                 self.deletedIDs = nil
