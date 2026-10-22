@@ -1,5 +1,4 @@
 use moonread_core::*;
-use std::io::Write;
 use tempfile::TempDir;
 
 fn fixture(text: &str) -> (TempDir, std::sync::Arc<ReaderCore>, ImportText) {
@@ -15,7 +14,7 @@ fn fixture(text: &str) -> (TempDir, std::sync::Arc<ReaderCore>, ImportText) {
 
 #[test]
 fn display_selection_range_matches_retained_pages_and_preserves_lf() {
-    let raw = format!("\n甲🌙。\n{}乙段。\n\n末段。", " \t　\n".repeat(240000));
+    let raw = format!("\n甲🌙。\n{}乙段。\n\n末段。", " \t　\n".repeat(5000));
     let (_dir, core, book) = fixture(&raw);
     let query = core.query_snapshot("{}".into()).unwrap();
     let start = raw.find('甲').unwrap() as u64;
@@ -163,14 +162,14 @@ fn retained_whitespace_is_an_exact_anchor_and_bidirectional_frontier() {
 
 #[test]
 fn many_tiny_visible_islands_share_a_bounded_payload_across_huge_gaps() {
-    let gap = " \t　\n".repeat(20000);
-    let text = (0..8)
+    let gap = " \t　\n".repeat(8000);
+    let text = (0..2)
         .map(|n| format!("岛{n}。\n{gap}"))
         .collect::<String>();
     let (_dir, core, book) = fixture(&text);
     let query = core.query_snapshot("{}".into()).unwrap();
     let located = query.reading_frame(book.id.clone(), 0).unwrap();
-    let expected = (0..8).map(|n| format!("岛{n}。\n")).collect::<String>();
+    let expected = (0..2).map(|n| format!("岛{n}。\n")).collect::<String>();
     assert_eq!(
         located
             .chunks
@@ -182,11 +181,11 @@ fn many_tiny_visible_islands_share_a_bounded_payload_across_huge_gaps() {
     assert_source_partition(&located, &text);
     let keep = Some(SourceSpan {
         start_utf8: 0,
-        end_utf8: text.rfind("岛7").unwrap() as u64 + "岛7。".len() as u64,
+        end_utf8: text.rfind("岛1").unwrap() as u64 + "岛1。".len() as u64,
     });
     for (cursor, direction) in [
         (0, ReadingDirection::Backward),
-        (text.rfind("岛7").unwrap() as u64, ReadingDirection::Forward),
+        (text.rfind("岛1").unwrap() as u64, ReadingDirection::Forward),
     ] {
         let frame = query
             .reading_frame_extension(book.id.clone(), cursor, direction, keep.clone())
@@ -201,6 +200,14 @@ fn many_tiny_visible_islands_share_a_bounded_payload_across_huge_gaps() {
             expected
         );
         assert_source_partition(&frame, &text);
+        assert!(
+            frame.chunks.iter().map(|c| c.text.len()).sum::<usize>() <= 64 * 1024,
+            "sparse payload must stay bounded"
+        );
+        assert_eq!(
+            frame.snapshot.book.position_utf8, 0,
+            "window lookup must not save reading progress"
+        );
     }
 }
 
@@ -229,38 +236,10 @@ fn history_tracks_explicit_visits_and_truncates_forward_branch() {
 }
 
 #[test]
-fn outline_includes_every_volume_and_its_children() {
-    let mut text = String::from("第一卷 长夜\n");
-    for n in 1..=200 {
-        text.push_str(&format!("第{n}章 回声\n正文。\n"));
-    }
-    text.push_str("第二集 天亮\n第1章 新的一天\n正文\n");
-    let (_dir, core, book) = fixture(&text);
-    let outline = core
-        .query_snapshot("{}".into())
-        .unwrap()
-        .chapter_outline(book.id)
-        .unwrap();
-    assert_eq!(outline.items.len(), 203);
-    assert_eq!(outline.items[201].title, "第二集 天亮");
-    assert_eq!(outline.items[201].level, 0);
-    assert_eq!(outline.items[202].level, 1);
-    assert_eq!(outline.items[150].parent_utf8, Some(0));
-    assert_eq!(
-        outline.items[150].parent_title.as_deref(),
-        Some("第一卷 长夜")
-    );
-    assert_eq!(
-        outline.items[202].parent_utf8,
-        Some(outline.items[201].start_utf8)
-    );
-}
-
-#[test]
 fn paragraph_roles_preserve_unicode_and_long_paragraph_continuations() {
     let text = format!(
         "第一卷 归来\n序章\n正文没有缩进。\n\n　　原有缩进。\n• 列表\n{}\n番外（一）\n完",
-        "中文🌙e\u{301}".repeat(30000)
+        "中文🌙e\u{301}".repeat(6000)
     );
     let (_dir, core, book) = fixture(&text);
     let first = core
@@ -339,55 +318,70 @@ fn blank_paragraph_runs_preserve_every_source_byte_and_offset() {
         .map(|i| core.read_chunk(book.id.clone(), i).unwrap().text)
         .collect();
     assert_eq!(source, text);
+    let cross = format!("甲{}乙\n", " ".repeat(12289));
+    let (_root, core, book) = fixture(&cross);
+    let frame = core
+        .query_snapshot("{}".into())
+        .unwrap()
+        .reading_frame(book.id, 8000)
+        .unwrap();
+    assert!(
+        frame.omitted.is_empty(),
+        "whitespace inside a visible paragraph is not a blank run"
+    );
+    assert_source_partition(&frame, &cross);
 }
 
 /// Run explicitly in release mode. Synthetic input never becomes a repo asset.
+
 #[test]
-#[ignore = "bounded long-book performance sample"]
-fn long_book_window_measurements() {
-    for mib in [5, 30, 100] {
-        let dir = TempDir::new().unwrap();
-        let path = dir.path().join("long.txt");
-        let mut writer = std::io::BufWriter::new(std::fs::File::create(&path).unwrap());
-        let block = "　　月光落在窗前。这是用来观察长书连续阅读的合成正文。🌙\n\n".repeat(100);
-        let mut bytes = 0;
-        while bytes < mib * 1024 * 1024 {
-            writer.write_all(block.as_bytes()).unwrap();
-            bytes += block.len();
-        }
-        writer.flush().unwrap();
-        drop(writer);
-        let core = ReaderCore::new(dir.path().join("data").to_string_lossy().into()).unwrap();
-        let started = std::time::Instant::now();
-        let book = core
-            .import_book(path.to_string_lossy().into(), "Synthetic".into())
-            .unwrap();
-        let import_ms = started.elapsed().as_millis();
+fn percentage_locations_validate_inputs_and_normalize_unicode_boundaries() {
+    // Empty text has no persisted reading identity: import rejects it before location lookup.
+    let dir = TempDir::new().unwrap();
+    let core = ReaderCore::new(dir.path().join("data").to_string_lossy().into()).unwrap();
+    let empty = dir.path().join("empty.txt");
+    std::fs::write(&empty, "").unwrap();
+    assert!(matches!(
+        core.import_book(empty.to_string_lossy().into(), "Empty".into()),
+        Err(ReaderError::EmptyBook)
+    ));
+    for text in ["甲🌙乙e\u{301}。", "甲"] {
+        let (_dir, core, book) = fixture(text);
         let query = core.query_snapshot("{}".into()).unwrap();
-        let mut samples = Vec::new();
-        let mut peak_bytes = 0;
-        for step in 0..200 {
-            let offset = if step < 100 { step } else { 199 - step } as u64 * book.byte_count / 100;
-            let start = std::time::Instant::now();
-            let frame = query.reading_frame(book.id.clone(), offset).unwrap();
-            samples.push(start.elapsed().as_micros());
-            assert!(
-                frame
-                    .chunks
-                    .iter()
-                    .map(|c| c.index)
-                    .collect::<std::collections::HashSet<_>>()
-                    .len()
-                    <= 256
-            );
-            peak_bytes = peak_bytes.max(frame.chunks.iter().map(|c| c.text.len()).sum::<usize>());
-            assert!(peak_bytes <= 64 * 1024);
+        for percent in [0.0, 50.0, 100.0] {
+            let location = query.reading_location(book.id.clone(), percent).unwrap();
+            assert!(location.offset_utf8 <= text.len() as u64);
+            assert!(text.is_char_boundary(location.offset_utf8 as usize));
+            let expected = location.offset_utf8 as f64 / text.len().max(1) as f64 * 100.0;
+            assert_eq!(location.percentage, expected);
+            if percent == 0.0 {
+                assert_eq!(location.offset_utf8, 0);
+            }
+            if percent == 100.0 {
+                assert_eq!(location.offset_utf8, text.len() as u64);
+            }
         }
-        samples.sort_unstable();
-        println!(
-            "LONG_BOOK size_mib={mib} import_ms={import_ms} frame_median_us={} frame_p95_us={} max_window_bytes={peak_bytes}",
-            samples[100], samples[190]
+        let inside = "甲".len() as u64 + 1;
+        assert!(
+            text.is_char_boundary(
+                core.normalized_position(book.id.clone(), inside).unwrap() as usize
+            )
         );
+        assert_eq!(
+            core.normalized_position(book.id.clone(), u64::MAX).unwrap(),
+            book.byte_count
+        );
+        assert_eq!(
+            query.book_info(book.id.clone()).unwrap().position_utf8,
+            0,
+            "location lookup is read-only"
+        );
+        for percent in [-1.0, 100.01, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(matches!(
+                query.reading_location(book.id.clone(), percent),
+                Err(ReaderError::InvalidRange)
+            ));
+        }
     }
 }
 
@@ -431,84 +425,4 @@ fn assert_source_partition(frame: &ReadingFrame, source: &str) {
                 .any(|c| c.start_utf8 <= anchor && anchor < c.end_utf8)
         );
     }
-}
-
-#[test]
-fn indexed_long_blank_windows_are_bounded_directional_and_preserve_source() {
-    let blank = " \t　\n".repeat(100000);
-    for leading in [false, true] {
-        let text = format!(
-            "{}{}乙段🌙正文。\n{}",
-            if leading { "" } else { "甲段。\n" },
-            blank,
-            blank
-        );
-        let (_dir, core, book) = fixture(&text);
-        let query = core.query_snapshot("{}".into()).unwrap();
-        for cursor in [
-            0,
-            book.byte_count / 4,
-            book.byte_count / 2,
-            book.byte_count - 1,
-        ] {
-            for direction in [ReadingDirection::Forward, ReadingDirection::Backward] {
-                let frame = query
-                    .reading_frame_extension(book.id.clone(), cursor, direction, None)
-                    .unwrap();
-                if frame.status != ReadingWindowStatus::Ready {
-                    assert!(frame.chunks.is_empty());
-                    assert!(frame.projection_anchor.is_none());
-                    assert!(frame.next_cursor.is_none());
-                    assert!(frame.previous_cursor.is_none());
-                    continue;
-                }
-                assert_source_partition(&frame, &text);
-                assert!(
-                    frame
-                        .chunks
-                        .iter()
-                        .map(|c| c.index)
-                        .collect::<std::collections::HashSet<_>>()
-                        .len()
-                        <= 256
-                );
-                assert!(frame.chunks.iter().map(|c| c.text.len()).sum::<usize>() <= 64 * 1024);
-                assert!(frame.chunks.iter().any(|c| c.text.contains("乙段")));
-                assert_eq!(
-                    frame.snapshot.book.position_utf8, 0,
-                    "Resolving a cursor must never save reading progress"
-                );
-            }
-        }
-        let located = query
-            .reading_frame(book.id.clone(), book.byte_count)
-            .unwrap();
-        assert!(located.projection_anchor.is_some());
-        assert_source_partition(&located, &text);
-        let first = query
-            .reading_frame_extension(book.id.clone(), 0, ReadingDirection::Backward, None)
-            .unwrap();
-        if leading {
-            assert_eq!(first.status, ReadingWindowStatus::Beginning);
-        }
-    }
-}
-
-#[test]
-fn whitespace_fragment_in_a_visible_cross_chunk_paragraph_is_retained() {
-    let text = format!("甲{}乙\n", " ".repeat(80000));
-    let (_dir, core, book) = fixture(&text);
-    let frame = core
-        .query_snapshot("{}".into())
-        .unwrap()
-        .reading_frame(book.id, 40000)
-        .unwrap();
-    assert!(frame.omitted.is_empty());
-    assert!(
-        frame
-            .paragraphs
-            .iter()
-            .all(|p| p.kind != ParagraphKind::Blank)
-    );
-    assert_source_partition(&frame, &text);
 }

@@ -226,9 +226,7 @@ mod tests {
                 "https://cdn.test/b"
             ]
         );
-    }
-    #[test]
-    fn lazy_and_empty_title() {
+
         let html = r#"<img alt="星灯渡口" src="data:bad" data-src="/cover.jpg"><img id="cover" src="/placeholder" data-original="//cdn.test/real"><img class="cover" src="/third">"#;
         assert_eq!(
             extract(html),

@@ -56,6 +56,19 @@ actor ReaderService {
     static let shared: ReaderService = {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--ui-testing"),
+           let index = arguments.firstIndex(of: "--ui-test-session"), arguments.indices.contains(index + 1),
+           let session = UUID(uuidString: arguments[index + 1])?.uuidString {
+            let defaults = UserDefaults.standard
+            let key = "Moonread.uiTest.readingSettingsSession.v1"
+            if defaults.string(forKey: key) != session {
+                // A new test starts at the product defaults. Relaunches within the
+                // same UUID retain changes so persistence remains testable.
+                defaults.removeObject(forKey: "Moonread.readerSettings")
+                defaults.removeObject(forKey: "readingSettingsTab")
+                defaults.set(session, forKey: key)
+            }
+        }
         if arguments.contains("--ui-test-library-trash"),
            let index = arguments.firstIndex(of: "--ui-test-session"), arguments.indices.contains(index + 1),
            UUID(uuidString: arguments[index + 1]) != nil {
@@ -163,14 +176,15 @@ actor ReaderService {
         changeRevisions[id, default: 0] += 1
         for token in changeWaiters[id].map({ Array($0.keys) }) ?? [] { finishReadingWait(id, token: token, cancelled: false) }
     }
-    func waitForChange(_ id: String, after: UInt64, timeout: Duration) async throws {
+    func waitForChange(_ id: String, after: UInt64, timeout: Duration,
+                       sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) async throws {
         let token = UUID()
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 if Task.isCancelled { continuation.resume(throwing: CancellationError()); return }
                 if readingChangeRevision(id) > after { continuation.resume(); return }
                 let task = Task { [weak self] in
-                    do { try await Task.sleep(for: timeout) } catch { return }
+                    do { try await sleep(timeout) } catch { return }
                     await self?.finishReadingWait(id, token: token, cancelled: false)
                 }
                 changeWaiters[id, default: [:]][token] = ChangeWaiter(continuation: continuation, timeout: task)
@@ -197,6 +211,10 @@ actor ReaderService {
             guard imports[id] != nil else { return }
             try await waitForChange(id, after: revision, timeout: .seconds(1))
         }
+    }
+
+    func waitForImportsIdle() async throws {
+        while let id = imports.keys.first { try await waitForImportFinish(id) }
     }
 
     // Preparation and reading leases hold the same foreground gate. Background

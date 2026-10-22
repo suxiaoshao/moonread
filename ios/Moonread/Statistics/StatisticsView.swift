@@ -358,7 +358,7 @@ struct StatisticsView: View {
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 optionsMenu
-                if target == nil { AppSettingsLink() }
+                if target == nil && ai.availability.isAvailable { AppSettingsLink() }
             }
         }
         .sheet(item: $aiRequest) { if ai.availability.isAvailable { AIQuickTaskSheet(request: $0).themeScope(theme) } }

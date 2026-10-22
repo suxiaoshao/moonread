@@ -146,16 +146,14 @@ mod tests {
         v.observe(200, 300, 1000);
         v.observe(40, 140, 1000);
         assert_eq!(v.covered, BTreeMap::from([(40, 100)]));
-    }
-    #[test]
-    fn scrolling_must_not_accumulate_separate_quick_passes() {
-        let mut v = VisibleDwell::default();
-        for _ in 0..4 {
-            v.observe(0, 100, 1000);
-            v.observe(200, 300, 1000);
-        }
-        assert!(v.covered.is_empty());
-        v.observe(200, 300, 2000);
-        assert_eq!(v.covered, BTreeMap::from([(200, 300)]));
+        let mut separate = VisibleDwell::default();
+        separate.observe(0, 100, 1000);
+        separate.observe(200, 300, 1000);
+        assert!(
+            separate.covered.is_empty(),
+            "separate quick passes must not accumulate"
+        );
+        separate.observe(200, 300, 2000);
+        assert_eq!(separate.covered, BTreeMap::from([(200, 300)]));
     }
 }

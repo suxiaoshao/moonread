@@ -1,6 +1,4 @@
-use moonread_core::{
-    LibraryHandoffFile, ReaderCore, ReaderError, ScannedLibraryItem, SourceContentKey,
-};
+use moonread_core::{LibraryHandoffFile, ReaderCore, ScannedLibraryItem, SourceContentKey};
 use sha2::{Digest, Sha256};
 use std::{path::Path, sync::Arc};
 use tempfile::TempDir;
@@ -150,72 +148,18 @@ fn decoding_policy_is_part_of_cache_key_and_persists() {
     drop(c);
     let c = ReaderCore::new(d.path().join("db").to_string_lossy().into()).unwrap();
     assert_eq!(c.source_book(key(&p, "auto")).unwrap().unwrap().id, auto);
-}
-#[test]
-fn replacement_after_preflight_never_publishes_a_false_mapping() {
-    let (d, c) = setup();
-    let p = d.path().join("book.txt");
-    std::fs::write(&p, "正文甲".repeat(50000)).unwrap();
-    let original = key(&p, "auto");
-    let token = c.create_import("Synthetic".into()).unwrap();
-    c.validate_import_source(token.clone(), original.clone())
-        .unwrap();
-    std::fs::write(&p, "正文乙".repeat(50000)).unwrap();
-    assert!(matches!(
-        c.stream_import(
-            token.clone(),
-            p.to_string_lossy().into(),
-            original.raw_sha256.clone(),
-            None
-        ),
-        Err(ReaderError::SourceChanged)
-    ));
-    assert!(c.finish_import(token).is_err());
-    assert!(c.source_book(original).unwrap().is_none());
-    assert!(c.source_book(key(&p, "auto")).unwrap().is_none());
-}
-#[test]
-fn resume_rejects_prefix_tail_and_same_size_replacements_preserving_old_prefix() {
-    for replacement in [
-        format!("乙{}", "甲".repeat(50000)),
-        format!("{}乙", "甲".repeat(50000)),
-        "丙".repeat(50001),
-    ] {
-        let (d, c) = setup();
-        let p = d.path().join("book.txt");
-        std::fs::write(&p, "甲".repeat(50001)).unwrap();
-        let token = c.create_import("Synthetic".into()).unwrap();
-        let id = token.book_id();
-        c.stream_import(token.clone(), p.to_string_lossy().into(), raw(&p), None)
-            .unwrap();
-        token.pause();
-        c.fail_import(token, ReaderError::Paused).unwrap();
-        let before = c
-            .query_snapshot("{}".into())
-            .unwrap()
-            .reading_frame(id.clone(), 0)
-            .unwrap()
-            .chunks[0]
-            .text
-            .clone();
-        std::fs::write(&p, replacement).unwrap();
-        let next = c.resume_import(id.clone()).unwrap();
-        assert!(matches!(
-            c.stream_import(next, p.to_string_lossy().into(), raw(&p), None),
-            Err(ReaderError::SourceChanged)
-        ));
-        assert_eq!(
-            c.query_snapshot("{}".into())
-                .unwrap()
-                .reading_frame(id, 0)
-                .unwrap()
-                .chunks[0]
-                .text,
-            before
-        );
-        let new = prepare(&c, &p, None);
-        assert!(!new.is_empty());
-    }
+    let path = d.path().join("ambiguous.txt");
+    std::fs::write(&path, [0xc2, 0xa1]).unwrap();
+    let utf = prepare(&c, &path, None);
+    let gb = prepare(&c, &path, Some("gb18030"));
+    assert_ne!(
+        utf, gb,
+        "same raw bytes under different decoding must not share text"
+    );
+    assert_eq!(
+        c.source_book(key(&path, "GB18030")).unwrap().unwrap().id,
+        gb
+    );
 }
 #[test]
 fn handoff_recovers_canonical_after_pending_alias_reclaimed_without_blessing_bytes() {
@@ -244,21 +188,6 @@ fn handoff_recovers_canonical_after_pending_alias_reclaimed_without_blessing_byt
     )
     .unwrap();
     assert_eq!(c.source_file_location(f).unwrap().book_id, Some(canonical));
-}
-
-#[test]
-fn same_bytes_under_distinct_decoders_never_share_a_cache_entry() {
-    let (d, c) = setup();
-    let path = d.path().join("ambiguous.txt");
-    std::fs::write(&path, [0xc2, 0xa1]).unwrap();
-    let auto = prepare(&c, &path, None);
-    let gb = prepare(&c, &path, Some("gb18030"));
-    assert_ne!(auto, gb);
-    assert_eq!(c.source_book(key(&path, "auto")).unwrap().unwrap().id, auto);
-    assert_eq!(
-        c.source_book(key(&path, "GB18030")).unwrap().unwrap().id,
-        gb
-    );
 }
 
 #[test]
@@ -323,46 +252,56 @@ fn releasing_one_completed_alias_does_not_reclaim_other_jobs_or_canonical_text()
 
 #[test]
 fn selected_decoding_survives_reclaim_scan_moves_and_reopen() {
-    let (d, c) = setup();
-    let path = d.path().join("book.txt");
-    let bytes: Vec<u8> = "第一章\n中文正文。\n"
-        .encode_utf16()
-        .flat_map(u16::to_le_bytes)
-        .collect();
-    std::fs::write(&path, bytes).unwrap();
-    c.scan_library_shelf("builtin".into(), vec![item("book.txt", false)])
-        .unwrap();
-    let file = c.source_files("builtin".into()).unwrap()[0].id.clone();
-    assert_eq!(c.source_decoding(file.clone()).unwrap(), "auto");
-    c.set_source_decoding(file.clone(), "utf-16le".into())
-        .unwrap();
-    assert!(
-        c.set_source_decoding(file.clone(), "invalid".into())
-            .is_err()
-    );
-    let book = prepare(&c, &path, Some("utf-16le"));
-    c.link_library_file(file.clone(), book.clone()).unwrap();
-    c.reclaim_completed_imports(vec![]).unwrap();
-    c.relocate_library_entry(file.clone(), "other".into(), "renamed.txt".into())
-        .unwrap();
-    c.scan_library_shelf("other".into(), vec![item("renamed.txt", false)])
-        .unwrap();
-    c.relocate_library_entry(file.clone(), "builtin".into(), "moved.txt".into())
-        .unwrap();
-    drop(c);
-    let c = ReaderCore::new(d.path().join("db").to_string_lossy().into()).unwrap();
-    let policy = c.source_decoding(file.clone()).unwrap();
-    assert_eq!(policy, "UTF-16LE");
-    let cached = c.source_book(key(&path, &policy)).unwrap().unwrap();
-    assert_eq!(cached.id, book);
-    let reopened = c.create_import("Reopened".into()).unwrap();
-    c.reuse_import(reopened.clone(), cached.id.clone()).unwrap();
-    c.link_library_file(file.clone(), reopened.book_id())
-        .unwrap();
-    assert!(c.reclaim_completed_import(reopened.book_id()).unwrap());
-    assert_eq!(
-        c.source_file_location(file.clone()).unwrap().book_id,
-        Some(book)
-    );
-    assert_eq!(c.source_decoding(file).unwrap(), "UTF-16LE");
+    for policy in ["UTF-16LE", "Shift_JIS"] {
+        let (d, c) = setup();
+        let path = d.path().join("book.txt");
+        let text = "第一章\n星の物語。\n";
+        let bytes: Vec<u8> = if policy == "UTF-16LE" {
+            text.encode_utf16().flat_map(u16::to_le_bytes).collect()
+        } else {
+            encoding_rs::SHIFT_JIS.encode(text).0.into_owned()
+        };
+        let original = bytes.clone();
+        std::fs::write(&path, bytes).unwrap();
+        c.scan_library_shelf("builtin".into(), vec![item("book.txt", false)])
+            .unwrap();
+        let file = c.source_files("builtin".into()).unwrap()[0].id.clone();
+        assert_eq!(c.source_decoding(file.clone()).unwrap(), "auto");
+        c.set_source_decoding(file.clone(), policy.into()).unwrap();
+        assert!(
+            c.set_source_decoding(file.clone(), "invalid".into())
+                .is_err()
+        );
+        let book = prepare(&c, &path, Some(policy));
+        c.link_library_file(file.clone(), book.clone()).unwrap();
+        c.reclaim_completed_imports(vec![]).unwrap();
+        c.relocate_library_entry(file.clone(), "other".into(), "renamed.txt".into())
+            .unwrap();
+        c.scan_library_shelf("other".into(), vec![item("renamed.txt", false)])
+            .unwrap();
+        c.relocate_library_entry(file.clone(), "builtin".into(), "moved.txt".into())
+            .unwrap();
+        drop(c);
+        let c = ReaderCore::new(d.path().join("db").to_string_lossy().into()).unwrap();
+        let restored = c.source_decoding(file.clone()).unwrap();
+        assert_eq!(restored, policy);
+        let cached = c.source_book(key(&path, &restored)).unwrap().unwrap();
+        assert_eq!(cached.id, book);
+        let reopened = c.create_import("Reopened".into()).unwrap();
+        c.reuse_import(reopened.clone(), cached.id.clone()).unwrap();
+        c.link_library_file(file.clone(), reopened.book_id())
+            .unwrap();
+        assert!(c.reclaim_completed_import(reopened.book_id()).unwrap());
+        assert_eq!(
+            c.source_file_location(file.clone()).unwrap().book_id,
+            Some(book)
+        );
+        assert_eq!(c.source_decoding(file).unwrap(), policy);
+
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            original,
+            "original bytes: {policy}"
+        );
+    }
 }

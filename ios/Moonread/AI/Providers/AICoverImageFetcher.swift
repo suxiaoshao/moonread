@@ -117,10 +117,12 @@ final class AICoverImageFetcher: @unchecked Sendable {
     private var wasCancelled = false
     static let maximumDownloadBytes = 10 * 1024 * 1024
     private static let maximumPixelsPerSide = 4096
-    private static let maximumCandidates = 8
+    private let maximumCandidates: Int
     private static let minimumSide = 100
     private static let maximumAspect = 1.2
-    init(configuration: URLSessionConfiguration = .ephemeral, availability: AIAvailability? = nil) {
+    init(configuration: URLSessionConfiguration = .ephemeral, availability: AIAvailability? = nil, maximumCandidates: Int = 8) {
+        precondition((1...8).contains(maximumCandidates))
+        self.maximumCandidates = maximumCandidates
         network = AINetworkAccess(availability: availability)
         configuration.httpCookieStorage = nil; configuration.httpShouldSetCookies = false
         configuration.urlCredentialStorage = nil; configuration.urlCache = nil
@@ -211,7 +213,7 @@ final class AICoverImageFetcher: @unchecked Sendable {
         do {
             for source in sources {
                 try checkCancellation()
-                if report.candidates.count == Self.maximumCandidates { break }
+                if report.candidates.count == maximumCandidates { break }
                 let url = try authorized(source, allowedSources: sources)
                 guard visited.insert(url.absoluteString).inserted else { continue }
                 var record = AICoverFetchReport.Source(url: source.url)
@@ -229,7 +231,7 @@ final class AICoverImageFetcher: @unchecked Sendable {
                     record.extractedURLs = images.map { $0.url.absoluteString }
                     for image in images {
                         try checkCancellation()
-                        if report.candidates.count == Self.maximumCandidates { break }
+                        if report.candidates.count == maximumCandidates { break }
                         guard visited.insert(image.url.absoluteString).inserted else { continue }
                         let bytes: Data
                         do { bytes = try await download(image.url, referer: image.page).bytes }

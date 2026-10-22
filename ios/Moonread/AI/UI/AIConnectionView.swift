@@ -401,19 +401,21 @@ struct AIWebAuthenticationBrowser: UIViewRepresentable {
         private let makeSession: Factory
         private let onFailure: (Error) -> Void
         private var session: (any AIWebAuthenticationSession)?
-        private var presentation: Presentation?
+        private var presentation: (any ASWebAuthenticationPresentationContextProviding)?
+        private let makePresentation: (AnyObject) -> any ASWebAuthenticationPresentationContextProviding
         private var stopped = false
         init(url: URL, makeSession: @escaping Factory = { url, completion in
             ASWebAuthenticationSession(url: url, callback: Coordinator.callback, completionHandler: completion)
-        }, onFailure: @escaping (Error) -> Void) {
+        }, makePresentation: @escaping (AnyObject) -> any ASWebAuthenticationPresentationContextProviding = { Presentation(window: $0 as! UIWindow) }, onFailure: @escaping (Error) -> Void) {
+            self.makePresentation = makePresentation
             self.url = url; self.makeSession = makeSession; self.onFailure = onFailure
         }
-        func start(in window: UIWindow) {
+        func start(in anchor: AnyObject) {
             guard session == nil, !stopped else { return }
             let session = makeSession(url) { [weak self] _, error in
                 Task { @MainActor [weak self] in self?.finished(error) }
             }
-            presentation = Presentation(window: window)
+            presentation = makePresentation(anchor)
             session.presentationContextProvider = presentation
             session.prefersEphemeralWebBrowserSession = true
             self.session = session
@@ -434,7 +436,7 @@ struct AIWebAuthenticationBrowser: UIViewRepresentable {
                 onFailure(AIChatGPTError.loginCancelled)
             } else { onFailure(error ?? AIError.invalidResponse) }
         }
-        private final class Presentation: NSObject, ASWebAuthenticationPresentationContextProviding {
+        final class Presentation: NSObject, ASWebAuthenticationPresentationContextProviding {
             let window: UIWindow
             init(window: UIWindow) { self.window = window }
             func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor { window }

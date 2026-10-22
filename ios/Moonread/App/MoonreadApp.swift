@@ -124,6 +124,7 @@ private struct MoonreadRoot: View {
             .environment(\.readerTheme, readerTheme)
             .onChange(of: library.libraryPath) { _, _ in library.cancelOpening(); library.returnedToLibrary() }
             .onChange(of: library.statisticsPath) { _, _ in library.cancelOpening() }
+            .onChange(of: library.settingsPath) { _, _ in library.cancelOpening() }
             .onChange(of: library.searchPath) { _, _ in library.cancelOpening() }
             .onChange(of: library.selectedTab) { _, _ in library.cancelOpening() }
             .onReceive(NotificationCenter.default.publisher(for: .libraryFilesChanged).receive(on: DispatchQueue.main)) { _ in library.retryPendingCloudDiscovery(); library.scheduleRefresh() }
@@ -168,14 +169,14 @@ private struct MoonreadRoot: View {
                 Tab("对话", systemImage: "bubble.left.and.bubble.right", value: AppTab.conversations) { AIConversationsView() }
             }
             Tab("统计", systemImage: "chart.bar.xaxis", value: AppTab.statistics) { statisticsStack }
+            if !ai.availability.isAvailable {
+                Tab("设置", systemImage: "gearshape", value: AppTab.settings) { settingsStack }
+            }
             Tab("搜索", systemImage: "magnifyingglass", value: AppTab.search, role: .search) { searchStack }
         }
         .modifier(AppSearchActivation())
-        .onChange(of: ai.availability.isAvailable) { _, available in
-            if !available {
-                if library.selectedTab == .conversations { library.selectedTab = .library }
-                library.dismissAIPaths()
-            }
+        .onChange(of: ai.availability.isAvailable, initial: true) { _, available in
+            library.updateAvailableTabs(aiAvailable: available)
         }
     }
     private var libraryStack: some View {
@@ -193,6 +194,11 @@ private struct MoonreadRoot: View {
             AppSearchView(model: library, search: library.search).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
         }
         .modifier(AppSearchField(model: library, search: library.search, quickEntry: true))
+    }
+    private var settingsStack: some View {
+        NavigationStack(path: $library.settingsPath) {
+            SettingsView(library: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
+        }
     }
 }
 

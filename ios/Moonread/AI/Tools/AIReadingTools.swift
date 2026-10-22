@@ -447,7 +447,11 @@ actor AIReadingTools {
     var signature: String
     var offset: Int
   }
-  init(reader: ReaderService = .shared) { self.reader = reader }
+  private let lineLimit: Int
+  init(reader: ReaderService = .shared, lineLimit: Int = 2000) {
+    precondition((1...2000).contains(lineLimit))
+    self.reader = reader; self.lineLimit = lineLimit
+  }
   nonisolated func definitions() -> [AIAgentTool] {
     [
       .init(
@@ -809,7 +813,7 @@ actor AIReadingTools {
     var lines = 0
     if let boundary = content.indices.first(where: { index in
       if content[index] == "\n" { lines += 1 }
-      return lines == 2000
+      return lines == lineLimit
     }) {
       content = String(content[...boundary])
       end = start + UInt64(content.utf8.count)

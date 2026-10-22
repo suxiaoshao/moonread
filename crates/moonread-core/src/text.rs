@@ -142,14 +142,31 @@ mod encoding_tests {
     use super::*;
     use std::io::Cursor;
     #[test]
-    fn eof_is_strict_for_short_legacy_text() {
+    fn encoding_probe_handles_bom_and_tiny_statistical_input() {
         assert_eq!(
-            detect_encoding(&mut Cursor::new(b"Un caf\xe9")).unwrap(),
-            encoding_rs::WINDOWS_1252
+            detect_encoding(&mut Cursor::new(&[0xff, 0xfe, 0x41, 0])).unwrap(),
+            encoding_rs::UTF_16LE
         );
         assert_eq!(
-            detect_encoding(&mut Cursor::new(b"ASCII\n")).unwrap(),
+            detect_encoding(&mut Cursor::new(&[0xef, 0xbb, 0xbf, b'A'])).unwrap(),
             encoding_rs::UTF_8
+        );
+        // Statistically insufficient tiny files use the detector's pinned result;
+        // users can select an encoding manually. No locale/TLD or fallback heuristic.
+        assert_eq!(
+            detect_encoding(&mut Cursor::new(&[0xd6, 0xd0])).unwrap(),
+            encoding_rs::WINDOWS_1252
+        );
+        assert!(
+            matches!(
+                decode_chunks(
+                    &mut Cursor::new(&[0x81]),
+                    encoding_rs::SHIFT_JIS,
+                    |_| Ok(())
+                ),
+                Err(ReaderError::Decode { .. })
+            ),
+            "truncated legacy input must fail at EOF"
         );
     }
 

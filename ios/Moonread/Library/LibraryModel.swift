@@ -77,21 +77,33 @@ final class LibraryModel {
     }
     /// Search is a quick entry: leaving it returns to the tab it was entered from.
     private(set) var searchOrigin = AppTab.library
+    func updateAvailableTabs(aiAvailable: Bool) {
+        func existing(_ tab: AppTab) -> AppTab {
+            if tab == .conversations && !aiAvailable || tab == .settings && aiAvailable { return .library }
+            return tab
+        }
+        selectedTab = existing(selectedTab)
+        searchOrigin = existing(searchOrigin)
+        if !aiAvailable { dismissAIPaths() }
+    }
     func dismissAIPaths() {
         func withoutAI(_ path: [LibraryRoute]) -> [LibraryRoute] {
             Array(path.prefix { if case .conversation = $0 { return false }; return true })
         }
         libraryPath = withoutAI(libraryPath); statisticsPath = withoutAI(statisticsPath); searchPath = withoutAI(searchPath)
+        settingsPath = withoutAI(settingsPath)
         aiRequest = nil
     }
     var libraryPath: [LibraryRoute] = []
     var statisticsPath: [LibraryRoute] = []
+    var settingsPath: [LibraryRoute] = []
     var searchPath: [LibraryRoute] = []
     var path: [LibraryRoute] {
         get {
             switch selectedTab {
             case .library, .conversations: libraryPath
             case .statistics: statisticsPath
+            case .settings: settingsPath
             case .search: searchPath
             }
         }
@@ -99,6 +111,7 @@ final class LibraryModel {
             switch selectedTab {
             case .library, .conversations: libraryPath = newValue
             case .statistics: statisticsPath = newValue
+            case .settings: settingsPath = newValue
             case .search: searchPath = newValue
             }
         }
@@ -116,14 +129,29 @@ final class LibraryModel {
     let fullIndex = FullIndexController.shared
     var indexPrompt: IdentityInventory?
     var deferredIndexPrompt: IdentityInventory?
+    private var importedBookToOpen: LibraryEntry?
+    /// Called by the presentation owner only after the index alert has closed.
+    func resolveIndexPrompt(start: Bool) {
+        guard let prompt = indexPrompt else { return }
+        indexPrompt = nil
+        if start { fullIndex.start(prompt.shelf.id, includeCloud: false, userInitiated: true) }
+        finishImportOpening()
+    }
+    private func finishImportOpening() {
+        guard indexPrompt == nil, deferredIndexPrompt == nil, sheet == nil,
+              let entry = importedBookToOpen else { return }
+        importedBookToOpen = nil
+        open(entry)
+        if let work = fileWork, work.task == nil { finish(work) }
+    }
     func offerIndex(_ shelfID: String) async {
         guard let inventory = try? await service.identityInventory(shelfID), !inventory.local.isEmpty else { return }
         if fullIndex.automatic { fullIndex.start(shelfID, includeCloud: false, userInitiated: false) }
-        else if path.last?.isReader == true || sheet != nil { deferredIndexPrompt = inventory }
+        else if (path.last?.isReader == true && importedBookToOpen == nil) || sheet != nil { deferredIndexPrompt = inventory }
         else { indexPrompt = inventory }
     }
     func showDeferredIndexPrompt() {
-        if path.last?.isReader != true, sheet == nil, let prompt = deferredIndexPrompt { deferredIndexPrompt = nil; indexPrompt = prompt }
+        if path.last?.isReader != true || importedBookToOpen != nil, sheet == nil, let prompt = deferredIndexPrompt { deferredIndexPrompt = nil; indexPrompt = prompt }
     }
     var sheet: LibrarySheet?
     /// An AI quick task opened from the library; the session itself lives in AIService.
@@ -133,7 +161,7 @@ final class LibraryModel {
     private(set) var shelfScans: [String: UUID] = [:]
     var explicitFileWork: Bool { fileWork != nil }
     var runningFileBatch: Bool { fileWork?.kind == .commands }
-    var processingFiles: Bool { pendingDecision == nil && explicitFileWork }
+    var processingFiles: Bool { pendingDecision == nil && importedBookToOpen == nil && explicitFileWork }
     var canAcceptFileWork: Bool { fileWork == nil }
     var afterSheetDismiss: (() -> Void)?
     private(set) var pendingDecision: LibraryPendingDecision?
@@ -584,7 +612,7 @@ final class LibraryModel {
         }
     }
     private func finish(_ work: FileWork) {
-        guard fileWork === work, pendingDecision == nil else { return }
+        guard fileWork === work, pendingDecision == nil, importedBookToOpen == nil else { return }
         for (file, _) in work.imports { file.finish() }; work.imports = []
         for command in work.commands { if case .receive(let file, _) = command { file.finish() } }
         work.commands = []; fileWork = nil
@@ -677,6 +705,29 @@ final class LibraryModel {
     }
     /// Foreground delivery shares the existing runner. The set only deduplicates
     /// this process's retained files; there are no persistent claims or receipts.
+    #if DEBUG
+    func receiveSmokeTXT(shared: Bool) async {
+        guard ReaderSmokeFixture.enabled else { return }
+        do {
+            let bytes = Data(ReaderSmokeFixture.text.utf8)
+            if shared {
+                let inbox = ShareInbox(root: FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Smoke-Inbox-" + UUID().uuidString))
+                let draft = try ShareInbox.Draft(in: inbox)
+                let provider = NSItemProvider(); provider.suggestedName = "分享样本.txt"
+                provider.registerDataRepresentation(forTypeIdentifier: UTType.plainText.identifier, visibility: .all) { completion in completion(bytes, nil); return nil }
+                let item = try await draft.load(provider)
+                try draft.publish(items: [item], skippedNames: [])
+                await receiveSharedInbox(inbox)
+            } else {
+                let root = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Smoke-Incoming-" + UUID().uuidString)
+                try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+                let source = root.appendingPathComponent("导入样本.txt"); try bytes.write(to: source)
+                receive([source])
+            }
+        } catch { self.error = ReaderMessages.error(error) }
+    }
+    #endif
+
     func receiveSharedInbox(_ source: ShareInbox? = nil) async {
         // Isolated UI-test libraries must never consume the real shared inbox.
         if source == nil, await service.testSession != nil { return }
@@ -742,7 +793,7 @@ final class LibraryModel {
         if pendingDecision == nil, work.kind == .imports {
             if let entry = work.imported.first {
                 switch work.importCompletion {
-                case .openSingle: open(entry)
+                case .openSingle: importedBookToOpen = entry
                 case .showFolder: path.append(.folder(entry.parent))
                 case .stayInFolder: break
                 }
@@ -756,6 +807,8 @@ final class LibraryModel {
             }
             if !importFailures.isEmpty || sharedImportResult != nil { sheet = .importResults }
             for id in Set(work.imported.map(\.shelfId)) { await offerIndex(id) }
+            // Both ordinary and shared imports finish here: import → index choice → open.
+            finishImportOpening()
         }
     }
     /// A decision resumes the existing task, never re-enters admission.
@@ -778,12 +831,15 @@ final class LibraryModel {
     func runAfterSheetDismiss(_ action: @escaping () -> Void) { afterSheetDismiss = action; sheet = nil }
     func sheetDidDismiss() {
         sharedImportResult = nil
-        showDeferredIndexPrompt()
         let action = afterSheetDismiss; afterSheetDismiss = nil; action?()
         if canAcceptFileWork, sheet == nil {
             releaseImportFailures()
             if Onboarding.shared.completed { Task { await receiveSharedInbox() } }
         }
+        // A deferred index prompt is a new presentation, not the old import
+        // result's owner. Clean up the dismissed result before presenting it.
+        showDeferredIndexPrompt()
+        finishImportOpening()
     }
     /// Only an admitted runner may execute filesystem work.
     private func perform(_ command: LibraryCommand, work: FileWork, replace: Bool = false, permanently: Bool = false) async -> Bool {

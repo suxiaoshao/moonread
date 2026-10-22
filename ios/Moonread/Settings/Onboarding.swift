@@ -55,6 +55,8 @@ struct ReaderSelectionTip: Tip {
     let imports = ImportNovelTip()
     let controls = ReaderControlsTip()
     let selection = ReaderSelectionTip()
+    enum TipTarget: Equatable { case imports, controls, selection }
+    private let invalidation: ((TipTarget) -> Void)?
     private var tipsEnabled: Bool
     var enabled: Bool { completed && tipsEnabled }
     static let completionKey = "Moonread.onboarding.completed.v1"
@@ -70,7 +72,8 @@ struct ReaderSelectionTip: Tip {
     private(set) var imported: Bool
     private(set) var revealedControls: Bool
     private(set) var selectedText: Bool
-    init(defaults: UserDefaults = .standard, enabled: Bool? = nil, showIntroduction: Bool? = nil) {
+    init(defaults: UserDefaults = .standard, enabled: Bool? = nil, showIntroduction: Bool? = nil, invalidate: ((TipTarget) -> Void)? = nil) {
+        self.invalidation = invalidate
         let args = ProcessInfo.processInfo.arguments
         self.tipsEnabled = enabled ?? (!args.contains("--disable-tips") && (!args.contains("--ui-testing") || args.contains("--ui-test-tips")))
         let session = args.firstIndex(of: "--ui-test-session").flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil }
@@ -79,7 +82,7 @@ struct ReaderSelectionTip: Tip {
         imported = self.defaults.bool(forKey: Key.imported)
         revealedControls = self.defaults.bool(forKey: Key.controls)
         selectedText = self.defaults.bool(forKey: Key.selection)
-        guard tipsEnabled else { return }
+        guard tipsEnabled, invalidate == nil else { return }
         do {
             var config: [Tips.ConfigurationOption] = [.displayFrequency(.immediate)]
             if let session {
@@ -99,17 +102,28 @@ struct ReaderSelectionTip: Tip {
         defer { destination = nil }
         return destination
     }
-    func didImport() { guard !imported else { return }; imported = true; defaults.set(true, forKey: Key.imported); if enabled { imports.invalidate(reason: .actionPerformed) } }
-    func didShowControls() { guard !revealedControls else { return }; revealedControls = true; defaults.set(true, forKey: Key.controls); if enabled { controls.invalidate(reason: .actionPerformed) } }
-    func didSelectText() { guard !selectedText else { return }; selectedText = true; defaults.set(true, forKey: Key.selection); if enabled { selection.invalidate(reason: .actionPerformed) } }
+    func didImport() { guard !imported else { return }; imported = true; defaults.set(true, forKey: Key.imported); invalidate(.imports) }
+    func didShowControls() { guard !revealedControls else { return }; revealedControls = true; defaults.set(true, forKey: Key.controls); invalidate(.controls) }
+    func didSelectText() { guard !selectedText else { return }; selectedText = true; defaults.set(true, forKey: Key.selection); invalidate(.selection) }
+    private func invalidate(_ target: TipTarget) {
+        guard enabled else { return }
+        if let invalidation { invalidation(target); return }
+        switch target {
+        case .imports: imports.invalidate(reason: .actionPerformed)
+        case .controls: controls.invalidate(reason: .actionPerformed)
+        case .selection: selection.invalidate(reason: .actionPerformed)
+        }
+    }
+
 }
 
 /// Own the entire TipKit card so its close control follows the same palette.
 struct ThemedTipStyle: TipViewStyle {
     var titleOverride: Text? = nil
+    static func close(invalidate: () -> Void) { invalidate() }
     func makeBody(configuration: Configuration) -> some View {
         ThemedTipCard(title: titleOverride ?? configuration.title, message: configuration.message, image: configuration.image) {
-            configuration.tip.invalidate(reason: .tipClosed)
+            Self.close { configuration.tip.invalidate(reason: .tipClosed) }
         }
     }
 }

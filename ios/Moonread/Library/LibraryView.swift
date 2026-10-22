@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct LibraryView: View {
     @Bindable var model: LibraryModel
+    @Environment(AIService.self) private var ai
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
     /// The most recent formal reading resumes from its own row; the rest follow as recents:
@@ -27,7 +28,15 @@ struct LibraryView: View {
                     Button("添加书架", systemImage: "folder.badge.plus") { model.chooseFiles(.folder(nil)) }
                         .accessibilityIdentifier("chooseFolder")
                 } label: { Label("书架操作", systemImage: "plus") }.toolbarGlyph().accessibilityIdentifier("libraryActions")
-                AppSettingsLink()
+                if ai.availability.isAvailable { AppSettingsLink() }
+                #if DEBUG
+                if ReaderSmokeFixture.enabled {
+                    Menu("测试接收") {
+                        Button("导入TXT") { Task { await model.receiveSmokeTXT(shared: false) } }.accessibilityIdentifier("smokeImportTXT")
+                        Button("分享TXT") { Task { await model.receiveSmokeTXT(shared: true) } }.accessibilityIdentifier("smokeShareTXT")
+                    }.accessibilityIdentifier("smokeReceive")
+                }
+                #endif
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -362,7 +371,7 @@ struct LibraryFolderView: View {
     }
 
     private var browser: some View {
-        LibraryCollection(model: model, location: location, entries: entries, shelf: shelf,
+        LibraryCollection(ai: ai, model: model, location: location, entries: entries, shelf: shelf,
                           layout: model.layout, theme: theme, disabled: fileActionsDisabled,
                           showsEmpty: loaded && !loading.active && !model.refreshing.active && model.shelfScans[location.shelfID] == nil && entries.isEmpty && (shelf?.error == nil || (location.shelfID == "builtin" && location.path.isEmpty && model.builtinDiscovery == .unavailable)),
                           editing: $editing, selection: $selection)

@@ -244,7 +244,7 @@ final class ReadingActivityRecorder {
     private func sample(interaction: Bool = false, capture: Bool = true) {
         guard !stopped, let clock, let lease else { return }
         let writer = self.writer
-        let visible = capture ? viewport?.controller?.statisticsRange() : (range.1 > range.0 ? range : nil)
+        let visible = capture ? viewport?.statisticsRange() : (range.1 > range.0 ? range : nil)
         if capture, let visible { range = visible }
         let instant = time(), now = instant.date
         let slices = clock.update(moment: ReadingMoment(

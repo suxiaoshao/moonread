@@ -1,0 +1,43 @@
+{
+  "configurations": [
+    {
+      "id": "F0220000-0000-4000-8000-000000000001",
+      "name": "简体中文",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {
+    "environmentVariableEntries": [
+      {
+        "key": "MOONREAD_TEST_CREDENTIALS",
+        "value": "memory"
+      }
+    ],
+    "language": "zh-Hans",
+    "region": "CN",
+    "targetForVariableExpansion": {
+      "containerPath": "container:Moonread.xcodeproj",
+      "identifier": "A80000000000000000000001",
+      "name": "Moonread"
+    }
+  },
+  "testTargets": [
+    {
+      "parallelizable": false,
+      "target": {
+        "containerPath": "container:Moonread.xcodeproj",
+        "identifier": "A80000000000000000000003",
+        "name": "MoonreadTests"
+      }
+    },
+    {
+      "parallelizable": false,
+      "target": {
+        "containerPath": "container:Moonread.xcodeproj",
+        "identifier": "A80000000000000000000002",
+        "name": "MoonreadUITests"
+      }
+    }
+  ],
+  "version": 1
+}

@@ -128,7 +128,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
     private var expansionAnimationPending = false
     private var animatingExpansion = false
     private var expansionHeights: [String: CGFloat] = [:]
-    private var pendingResizes: [String: CGFloat] = [:]
+    private var pendingResizes = DeferredRowMeasurements()
     private var adjusting = false
     private var pendingUpdate: (() -> Void)?
     private var reportedBottom: Bool?
@@ -299,7 +299,7 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         // A process expansion owns its geometry. Keep the latest result-card
         // measurement until it finishes; SwiftUI may never send it again.
         guard !animatingExpansion, !expansionAnimationPending, !applying, expansionHeights.isEmpty else {
-            pendingResizes[id] = height; return
+            pendingResizes.record(id: id, version: row.version, height: Double(height)); return
         }
         let key = heightKey(row), height = ceil(height)
         guard let cached = conversation?.messageHeights[key], abs(cached - height) > 0.5 else { return }
@@ -309,8 +309,8 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         UIView.performWithoutAnimation { tableView.performBatchUpdates(nil) }
     }
     private func replayPendingResizes() {
-        let pending = pendingResizes; pendingResizes.removeAll()
-        for (id, height) in pending { hostedContentResized(id, height: height) }
+        let pending = pendingResizes.drain(versions: rows.mapValues(\.version))
+        for (id, height) in pending { hostedContentResized(id, height: CGFloat(height)) }
     }
     @objc private func tappedBackground() { dismissKeyboard?() }
     func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {

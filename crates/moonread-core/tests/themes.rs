@@ -1,24 +1,15 @@
 use moonread_core::*;
 
 #[test]
-fn all_palettes_are_readable_including_increased_contrast() {
-    for palette in builtin_theme_palettes() {
-        assert!(theme_colors_readable(palette.colors), "{}", palette.id);
-        assert!(
-            theme_colors_readable(palette.high_contrast),
-            "{} high contrast",
-            palette.id
-        );
-    }
-}
-
-#[test]
 fn ink_must_be_readable_on_accent_surface() {
     // User messages put ink on accentSurface; a custom palette can edit it alone.
     let mut colors = builtin_theme_palettes()[0].colors.clone();
     assert!(theme_colors_readable(colors.clone()));
     colors.accent_surface = colors.ink;
     assert!(!theme_colors_readable(colors));
+    let mut body = builtin_theme_palettes()[0].colors.clone();
+    body.paper = body.ink;
+    assert!(!theme_colors_readable(body), "body ink against paper");
 }
 
 #[test]

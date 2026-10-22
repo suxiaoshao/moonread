@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum AppTab: Hashable { case library, conversations, statistics, search }
+enum AppTab: Hashable { case library, conversations, statistics, settings, search }
 
 /// Author, tag and shelf narrow book results; each kind holds at most one value.
 enum AppSearchToken: Identifiable, Hashable {
@@ -178,12 +178,13 @@ struct AppSearchView: View {
     var host = AppSearchHost()
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
-    @State private var entries: [LibraryEntry] = []
-    @State private var conversations: [AIConversationSearchHit] = []
-    @State private var completedKey: SearchKey?
-    @State private var error: String?
+    @State private var results = AppSearchResults()
     @State private var retry = 0
-    @State private var loading = LoadingState()
+    private var entries: [LibraryEntry] { results.entries }
+    private var conversations: [AIConversationSearchHit] { results.conversations }
+    private var completedKey: SearchKey? { results.completedKey }
+    private var error: String? { results.error }
+    private var loading: LoadingState { results.loading }
     private var books: [LibraryEntry] { entries.filter { !$0.directory } }
     private var folders: [LibraryEntry] { host.showsFolders ? entries.filter(\.directory) : [] }
     private var groupCount: Int { [!books.isEmpty, !folders.isEmpty, ai.availability.isAvailable && !conversations.isEmpty].filter { $0 }.count }
@@ -243,20 +244,13 @@ struct AppSearchView: View {
     }
 
     private func run(_ key: SearchKey) async {
-        guard search.hasCriteria else { completedKey = nil; error = nil; entries = []; conversations = []; return }
-        let request = loading.begin(); defer { loading.finish(request) }
-        do {
+        await results.run(key, hasCriteria: search.hasCriteria) {
             try await Task.sleep(for: .milliseconds(120))
             try await ReaderService.libraryTestLatency()
             let found = try await ReaderService.shared.searchLibrary(shelfID: search.shelfID, query: key.term,
                                                                    author: search.author, tag: search.tag)
-            // Book filters describe books; conversations join only an unfiltered text search.
             let talks = search.tokens.isEmpty ? try await ai.searchConversations(key.term) : []
-            try Task.checkCancellation()
-            entries = found; conversations = talks; error = nil; completedKey = key
-        } catch is CancellationError {
-        } catch {
-            self.error = ReaderMessages.error(error); completedKey = key
+            return (found, talks)
         }
     }
 
@@ -321,7 +315,7 @@ private struct OptionsKey: Hashable {
     let revision: Int
 }
 
-private struct SearchKey: Hashable {
+struct SearchKey: Hashable {
     let term: String
     let tokens: [AppSearchToken]
     let revision: Int
@@ -354,5 +348,31 @@ private struct AIConversationSearchRow: View {
             text[range].backgroundColor = Color(uiColor: theme.search); text[range].foregroundColor = Color(uiColor: theme.accent)
         }
         return text
+    }
+}
+
+/// Owns publication independently of the SwiftUI task's cancellation timing.
+@MainActor @Observable final class AppSearchResults {
+    private(set) var entries: [LibraryEntry] = []
+    private(set) var conversations: [AIConversationSearchHit] = []
+    private(set) var completedKey: SearchKey?
+    private(set) var error: String?
+    let loading = LoadingState()
+    private var generation = UUID()
+    func run(_ key: SearchKey, hasCriteria: Bool,
+             operation: () async throws -> ([LibraryEntry], [AIConversationSearchHit])) async {
+        let token = UUID(); generation = token
+        guard hasCriteria else { if let request = loading.request { loading.finish(request) }; completedKey = nil; error = nil; entries = []; conversations = []; return }
+        let request = loading.begin(); defer { loading.finish(request) }
+        do {
+            let (books, talks) = try await operation()
+            try Task.checkCancellation()
+            guard generation == token else { return }
+            entries = books; conversations = talks; error = nil; completedKey = key
+        } catch is CancellationError { }
+        catch {
+            guard generation == token, !Task.isCancelled else { return }
+            self.error = ReaderMessages.error(error); completedKey = key
+        }
     }
 }

@@ -59,7 +59,7 @@ CI、仓库权限、模板及依赖更新见[仓库与持续集成](repository.m
 
 ### 发布版本与构建号
 
-App 的 `MARKETING_VERSION` 为 `1.0.1`（用户可见版本）；`CURRENT_PROJECT_VERSION` 使用单调递增的正整数，每次对外上传新构建时增加，不能因营销版本变化而回退或复用。Debug/Release 同步，当前构建号为 4。Cargo crate 版本独立，不作为 App Store 版本。提交前核对两种配置、已上传构建号与持久化兼容/迁移回归。
+App 的营销版本（`MARKETING_VERSION`，用户可见）和构建号（`CURRENT_PROJECT_VERSION`）以 `ios/Moonread.xcodeproj` 的工程设置为准，文档不记录具体数值。构建号使用单调递增的正整数，每次对外上传新构建时增加，不能因营销版本变化而回退或复用；Debug/Release 保持一致。Cargo crate 版本独立，不作为 App Store 版本。提交前核对两种配置、已上传构建号与持久化兼容/迁移回归。
 
 ### TestFlight 打包与上传
 
@@ -126,7 +126,7 @@ done
   -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO test
 ```
 
-按改动选受影响的核心测试、原生排版回归和必要交互流程；需要时使用 `-only-testing:` 限定测试，不因小修自动重复全部验收。UI 用例各自使用独立测试存储，同一用例重启仍复用该目录，不覆盖正常书库。
+按改动选受影响的核心测试、原生排版回归和必要交互流程；需要时使用 `-only-testing:` 限定测试，不因小修自动重复全部验收。UI 用例各自使用独立测试存储，同一用例重启仍复用该目录，不覆盖正常书库。DEBUG 下同时提供 `--ui-testing` 和有效 UUID `--ui-test-session` 时，新会话重置标准 defaults 的阅读设置及设置分类，从默认滚动模式、20 号字开始；相同 UUID 的重启保留修改以验证持久化，正常启动不重置。
 
 ## 试用入口
 
