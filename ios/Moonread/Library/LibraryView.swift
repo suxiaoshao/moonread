@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct LibraryView: View {
     @Bindable var model: LibraryModel
+    @Environment(AIService.self) private var ai
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
     /// The most recent formal reading resumes from its own row; the rest follow as recents:
@@ -27,7 +28,7 @@ struct LibraryView: View {
                     Button("添加书架", systemImage: "folder.badge.plus") { model.chooseFiles(.folder(nil)) }
                         .accessibilityIdentifier("chooseFolder")
                 } label: { Label("书架操作", systemImage: "plus") }.toolbarGlyph().accessibilityIdentifier("libraryActions")
-                AppSettingsLink()
+                if ai.availability.isAvailable { AppSettingsLink() }
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {

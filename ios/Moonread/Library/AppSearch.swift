@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum AppTab: Hashable { case library, conversations, statistics, search }
+enum AppTab: Hashable { case library, conversations, statistics, settings, search }
 
 /// Author, tag and shelf narrow book results; each kind holds at most one value.
 enum AppSearchToken: Identifiable, Hashable {

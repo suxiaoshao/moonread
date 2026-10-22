@@ -77,21 +77,33 @@ final class LibraryModel {
     }
     /// Search is a quick entry: leaving it returns to the tab it was entered from.
     private(set) var searchOrigin = AppTab.library
+    func updateAvailableTabs(aiAvailable: Bool) {
+        func existing(_ tab: AppTab) -> AppTab {
+            if tab == .conversations && !aiAvailable || tab == .settings && aiAvailable { return .library }
+            return tab
+        }
+        selectedTab = existing(selectedTab)
+        searchOrigin = existing(searchOrigin)
+        if !aiAvailable { dismissAIPaths() }
+    }
     func dismissAIPaths() {
         func withoutAI(_ path: [LibraryRoute]) -> [LibraryRoute] {
             Array(path.prefix { if case .conversation = $0 { return false }; return true })
         }
         libraryPath = withoutAI(libraryPath); statisticsPath = withoutAI(statisticsPath); searchPath = withoutAI(searchPath)
+        settingsPath = withoutAI(settingsPath)
         aiRequest = nil
     }
     var libraryPath: [LibraryRoute] = []
     var statisticsPath: [LibraryRoute] = []
+    var settingsPath: [LibraryRoute] = []
     var searchPath: [LibraryRoute] = []
     var path: [LibraryRoute] {
         get {
             switch selectedTab {
             case .library, .conversations: libraryPath
             case .statistics: statisticsPath
+            case .settings: settingsPath
             case .search: searchPath
             }
         }
@@ -99,6 +111,7 @@ final class LibraryModel {
             switch selectedTab {
             case .library, .conversations: libraryPath = newValue
             case .statistics: statisticsPath = newValue
+            case .settings: settingsPath = newValue
             case .search: searchPath = newValue
             }
         }

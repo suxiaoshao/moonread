@@ -2797,6 +2797,8 @@ final class MoonreadUITests: XCTestCase {
 
     /// Settings live in the library stack, opened from the home gear.
     private func openSettingsPage(language: String = "zh-Hans") {
+        let settings = app.tabBars.buttons[language == "en" ? "Settings" : "设置"]
+        if settings.exists { settings.tap(); return }
         let library = app.tabBars.buttons[language == "en" ? "Library" : "书架"]
         XCTAssertTrue(library.waitForExistence(timeout: 10), app.debugDescription); library.tap()
         let gear = app.buttons["appSettings"]
@@ -3370,6 +3372,20 @@ final class MoonreadUITests: XCTestCase {
         }
     }
 
+    func testChinaStorefrontUsesSettingsTab() {
+        prepareApp(arguments: ["--ui-test-storefront", "CHN", "--ui-test-home"])
+        XCTAssertTrue(app.buttons["shelf-builtin"].waitForExistence(timeout: 20))
+        let settings = app.tabBars.buttons["设置"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.tabBars.buttons["对话"].exists)
+        XCTAssertFalse(app.buttons["appSettings"].exists)
+        app.tabBars.buttons["统计"].tap()
+        XCTAssertFalse(app.buttons["appSettings"].exists)
+        settings.tap()
+        XCTAssertTrue(app.buttons["readerThemeSettings"].waitForExistence(timeout: 5))
+        recordScreenshot("settings-china-tab")
+    }
+
     func testChinaStorefrontHidesAllAIEntrypoints() {
         prepareApp(arguments: ["--ui-test-storefront", "CHN", "--ui-test-ai-model-picker", "--ui-test-ai-tasks"])
         XCTAssertTrue(app.buttons["shelf-builtin"].waitForExistence(timeout: 20))
@@ -3479,6 +3495,7 @@ final class MoonreadUITests: XCTestCase {
             XCTAssertEqual(restored.value as? String, "0"); restored.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.5)).tap()
             XCTAssertTrue(app.buttons["aiSettings"].exists)
             XCTAssertTrue(app.tabBars.buttons["对话"].exists)
+            openSettingsPage()
             app.buttons["aiSettings"].tap()
             XCTAssertTrue(app.staticTexts["测试连接甲"].waitForExistence(timeout: 5), "Saved connections remain after off/on")
             app.terminate()
