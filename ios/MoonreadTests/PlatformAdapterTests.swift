@@ -4,6 +4,7 @@ import AuthenticationServices
 import CryptoKit
 import Foundation
 import Security
+import StoreKit
 import StoreKitTest
 import UIKit
 import XCTest
@@ -33,7 +34,7 @@ final class PlatformAdapterCredentialStoreAdapterTests: CredentialStoreAdapterFi
 }
 
 final class PlatformAdapterTipJarTests: TipJarFixture {
-  // S456: 使用项目 StoreKit 配置验证真实购买适配器；业务测试使用假 PurchaseGateway。
+  // S456: 项目 StoreKit 配置生成外部交易，验证真实适配器的加载、更新映射和 finish；购买状态用假 gateway。
   func testStoreKitAdapterLoadsAndCompletesSyntheticPurchase() async throws {
     // Load the test-bundle configuration explicitly; test-without-building must
     // not depend on the Run action's StoreKit selection.
@@ -45,26 +46,34 @@ final class PlatformAdapterTipJarTests: TipJarFixture {
     session.locale = Locale(identifier: "zh_CN")
     defer { session.clearTransactions() }
     let gateway = StoreKitPurchaseGateway()
-    let loaded = expectation(description: "StoreKit adapter purchase")
-    var outcome: TipPurchaseResult?
-    var stage = "loading configured products"
-    let task = Task {
-      do {
-        let products = try await gateway.products()
-        XCTAssertEqual(Set(products.map(\.id)), Set(TipJar.productIDs))
-        stage = "purchasing configured product"
-        let result = try await gateway.purchase(TipJar.productIDs[0])
-        outcome = result
-        if case .success(let transaction) = result { await gateway.finish(transaction.id) }
-      } catch { XCTFail("StoreKit adapter: \(error)") }
-      loaded.fulfill()
+    // Subscribe before creating the external transaction. Loading the catalog
+    // suspends while the adapter installs its Transaction.updates listener.
+    let updates = gateway.transactions()
+    let products = try await gateway.products()
+    XCTAssertEqual(Set(products.map(\.id)), Set(TipJar.productIDs))
+    let received = expectation(description: "StoreKit adapter mapped and finished transaction")
+    var mapped: TipTransaction?
+    let listener = Task {
+      for await transaction in updates {
+        mapped = transaction
+        await gateway.finish(transaction.id)
+        received.fulfill()
+        break
+      }
     }
-    await fulfillment(of: [loaded], timeout: 20)
-    task.cancel()
-    guard case .success(let transaction) = outcome else {
-      return XCTFail("Synthetic StoreKit purchase did not complete: \(stage)")
-    }
+    defer { listener.cancel() }
+    let generated = try await session.buyProduct(identifier: TipJar.productIDs[0])
+    await fulfillment(of: [received], timeout: 20)
+    let transaction = try XCTUnwrap(mapped)
+    XCTAssertEqual(transaction.id, generated.id)
+    XCTAssertEqual(transaction.productID, generated.productID)
     XCTAssertTrue(transaction.verified)
-    XCTAssertEqual(transaction.productID, TipJar.productIDs[0])
+    XCTAssertTrue(transaction.consumable)
+    XCTAssertFalse(transaction.revoked)
+    var unfinished = Set<UInt64>()
+    for await result in StoreKit.Transaction.unfinished {
+      if case .verified(let value) = result { unfinished.insert(value.id) }
+    }
+    XCTAssertFalse(unfinished.contains(generated.id), "The adapter must finish the real transaction")
   }
 }
