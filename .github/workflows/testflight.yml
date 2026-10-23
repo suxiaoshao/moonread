@@ -132,6 +132,7 @@ jobs:
           set +x
           umask 077
           mkdir -p "$RUNNER_TEMP/testflight-private" "$RUNNER_TEMP/testflight-public"
+          printf '%s\n' prepare > "$RUNNER_TEMP/testflight-private/current-stage"
           python3 - <<'PY'
           import base64, os, pathlib, re, secrets, subprocess
           for name in ['ASC_API_KEY_BASE64', 'ASC_KEY_ID', 'ASC_ISSUER_ID', 'APPLE_TEAM_ID']:
@@ -239,13 +240,17 @@ jobs:
               category = ('agreement' if re.search(r'agreement|contracts.*(?:pending|expired)', log) else
                           'network' if re.search(r'timed out|network|could not resolve|connection.*(?:lost|failed)|ssl|tls', log) else
                           'permission' if re.search(r'permission|unauthorized|authentication (?:failed|error)|unable to authenticate|forbidden|access denied|\b40[13]\b', log) else
+                          'ASC API' if stage in ('number-gate', 'processing') else
                           'signing' if re.search(r'provision|certificate|signing|code.?sign', log) else
+                          'audit' if stage == 'audit' else
                           'export' if stage in ('upload', 'export') else 'build')
               result = {'stage': stage, 'category': category,
                         'action': 'Stop for user review. No automatic retry, certificate revocation or provisioning loop.'}
-              if stage == 'upload':
+              if stage in ('upload', 'processing'):
                   result['uploadOutcome'] = 'unconfirmed; user must check ASC before retrying'
-              (PUBLIC / 'failure.json').write_text(json.dumps(result) + '\n')
+              temporary = PUBLIC / 'failure.json.tmp'
+              temporary.write_text(json.dumps(result) + '\n')
+              temporary.replace(PUBLIC / 'failure.json')
               print(json.dumps(result))
           def poll():
               metadata = json.loads((ROOT / 'metadata.json').read_text())
@@ -274,6 +279,7 @@ jobs:
           umask 077
           private="$RUNNER_TEMP/testflight-private"
           export TF_PRIVATE="$private"
+          set_stage() { printf '%s\n' "$1" > "$private/current-stage"; }
           auth=(-allowProvisioningUpdates -authenticationKeyPath "$private/AuthKey.p8"
                 -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
           common=(-project ios/Moonread.xcodeproj -scheme Moonread -destination 'generic/platform=iOS'
@@ -283,6 +289,7 @@ jobs:
           # Full Xcode/signing output stays private. Publish only stage + error category.
           run_xcode() {
             local stage="$1"; shift
+            set_stage "$stage"
             if ! nix develop --no-update-lock-file -c xcodebuild "$@" > "$private/$stage.log" 2> "$private/$stage.stderr.log"; then
               python3 "$private/asc.py" failure "$stage"
               return 1
@@ -295,7 +302,8 @@ jobs:
                 -onlyUsePackageVersionsFromResolvedFile -showBuildSettings -json
             done
           done
-          python3 - <<'PY'
+          set_stage versions
+          python3 - > "$private/versions.log" 2> "$private/versions.stderr.log" <<'PY'
           import json, os, pathlib, re, subprocess
           root = pathlib.Path(os.environ['TF_PRIVATE'])
           versions = set()
@@ -323,9 +331,11 @@ jobs:
               (root / f'{destination}.plist').write_bytes(plistlib.dumps(options))
           print(f'Committed App + Share: {version} ({build}).')
           PY
-          python3 "$private/asc.py" number-gate
+          set_stage number-gate
+          python3 "$private/asc.py" number-gate > "$private/number-gate.log" 2> "$private/number-gate.stderr.log"
           run_xcode archive "${common[@]}" -configuration Release "${auth[@]}" -archivePath "$private/Moonread.xcarchive" archive
-          python3 - <<'PY'
+          set_stage archive-validation
+          python3 - > "$private/archive-validation.log" 2> "$private/archive-validation.stderr.log" <<'PY'
           import json, os, pathlib, plistlib
           root = pathlib.Path(os.environ['TF_PRIVATE'])
           meta = json.loads((root / 'metadata.json').read_text())
@@ -337,7 +347,8 @@ jobs:
           PY
           run_xcode export -exportArchive -archivePath "$private/Moonread.xcarchive" -exportPath "$private/export" \
             -exportOptionsPlist "$private/export.plist" "${auth[@]}"
-          python3 - <<'PY'
+          set_stage audit
+          python3 - > "$private/audit.log" 2> "$private/audit.stderr.log" <<'PY'
           import datetime, hashlib, json, os, pathlib, plistlib, subprocess, zipfile
           root = pathlib.Path(os.environ['TF_PRIVATE'])
           meta = json.loads((root / 'metadata.json').read_text())
@@ -381,7 +392,7 @@ jobs:
               require(not profile.get('ProvisionedDevices') and not profile.get('ProvisionsAllDevices'), 'not an App Store profile')
               require(profile['ExpirationDate'].replace(tzinfo=datetime.timezone.utc) > datetime.datetime.now(datetime.timezone.utc), 'expired profile')
               prefix = root / ('cert-' + bundle.name)
-              command('codesign', '-d', '--extract-certificates', str(prefix), str(bundle))
+              command('codesign', '-d', '--extract-certificates=' + str(prefix), str(bundle))
               require(pathlib.Path(str(prefix) + '0').read_bytes() in profile['DeveloperCertificates'], 'signer not in profile')
               archs = command('lipo', '-archs', str(bundle / info['CFBundleExecutable'])).decode().split()
               require(archs == ['arm64'], 'unexpected executable architecture')
@@ -430,8 +441,11 @@ jobs:
         run: |
           set +x
           private="$RUNNER_TEMP/testflight-private"
+          printf '%s\n' upload > "$private/current-stage"
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$SOURCE_BRANCH" --jq .object.sha)" = "$EXPECTED_SHA"
-          python3 "$private/asc.py" number-gate
+          printf '%s\n' number-gate > "$private/current-stage"
+          python3 "$private/asc.py" number-gate > "$private/number-gate.log" 2> "$private/number-gate.stderr.log"
+          printf '%s\n' upload > "$private/current-stage"
           python3 - <<'PY'
           import hashlib, os, pathlib
           root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'testflight-private'
@@ -456,7 +470,43 @@ jobs:
           else
             echo 'Xcode upload accepted; checking ASC processing separately.'
           fi
-          python3 "$private/asc.py" poll
+          printf '%s\n' processing > "$private/current-stage"
+          python3 "$private/asc.py" poll > "$private/processing.log" 2> "$private/processing.stderr.log"
+      - name: Preserve a sanitized failure for every failed packaging stage
+        if: ${{ failure() }}
+        run: |
+          set +x
+          umask 077
+          python3 - <<'PY'
+          import json, os, pathlib, re, subprocess, sys
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'testflight-private'
+          public = root.parent / 'testflight-public'
+          public.mkdir(parents=True, exist_ok=True)
+          failure = public / 'failure.json'
+          try:
+              stage = (root / 'current-stage').read_text().strip()
+          except (OSError, UnicodeError):
+              stage = 'prepare'
+          # Never publish arbitrary file contents, exception messages, paths or credentials.
+          if not re.fullmatch(r'prepare|versions|number-gate|archive|archive-validation|export|audit|upload|processing|settings-(?:Debug|Release)-(?:Moonread|MoonreadShare)', stage):
+              stage = 'prepare'
+          if not failure.exists():
+              try:
+                  subprocess.run([sys.executable, str(root / 'asc.py'), 'failure', stage],
+                                 check=True, capture_output=True)
+              except Exception:
+                  pass  # Even a broken/missing ASC helper must leave a public diagnosis.
+          if not failure.exists():
+              result = {'stage': stage, 'category': 'ASC API' if stage in ('number-gate', 'processing') else
+                        'audit' if stage == 'audit' else
+                        'export' if stage in ('upload', 'export') else 'build',
+                        'action': 'Stop for user review. No automatic retry, certificate revocation or provisioning loop.'}
+              if stage in ('upload', 'processing'):
+                  result['uploadOutcome'] = 'unconfirmed; user must check ASC before retrying'
+              temporary = public / 'failure.json.tmp'
+              temporary.write_text(json.dumps(result) + '\n')
+              temporary.replace(failure)
+          PY
       - name: Publish only allowlisted sanitized summaries
         if: ${{ always() }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
