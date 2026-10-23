@@ -243,7 +243,12 @@ enum AnnotationReduction {
                 guard !blocked.contains(key) else { return }
                 try select(key: key, value: value)
             } catch {
-                blocked.insert(key); values.removeValue(forKey: key)
+                // Shelf descriptions are independent hints. An unsupported
+                // record stays stored but cannot poison a readable sibling or
+                // replace it through LWW. Reading facts remain fail-closed.
+                if !key.hasPrefix("shelf-reference/") {
+                    blocked.insert(key); values.removeValue(forKey: key)
+                }
                 UserSyncJSON.quarantined("UserValue/UserPosition")
             }
         }

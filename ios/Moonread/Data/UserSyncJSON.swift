@@ -143,7 +143,7 @@ enum UserSyncJSON {
             let value = try decode(ChapterValue.self, text, as: chapter)
             guard "chapter/\(value.content_key)/\(value.offset)" == key else { throw UserSyncCompatibilityError() }
         case .shelfReference:
-            let value = try decode(ShelfReferenceValue.self, text, as: .object(["schemaVersion": .uint, "name": .string, "locationDescription": .string]))
+            let value = try decode(ShelfReferenceValue.self, text, as: .object(["schemaVersion": .uint, "name": .string, "locationDescription": .choice(["icloud-drive", "file-provider"])]))
             guard value.schemaVersion == 1 else { throw UserSyncCompatibilityError() }
         case .cover: try validate(text, as: .nullable(cover))
         case .tag: try validate(text, as: .nullable(.string))

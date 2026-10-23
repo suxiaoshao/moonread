@@ -27,7 +27,7 @@ CloudKit 不再重复保存一份藏书目录清单、文件夹树或 TXT 附件
 
 ## 外部书架的同步提示与本机授权
 
-`UserValue` 新增 `shelf-reference/<logical UUID>`，载荷为 `{schemaVersion: 1, name, locationDescription}`，沿现有 `StoredValue(updated, token, value)` 的 LWW 裁决；来源描述只为 `icloud-drive` 或 `file-provider`，不包含路径、bookmark、本机 ID 或文件清单。内置根不发布提示。不新增 SwiftData model 或 CloudKit 字段；旧版本保留不认识的原记录，新版本按条目隔离未知载荷，不阻断其他记录或改写未知版本。
+`UserValue` 新增 `shelf-reference/<logical UUID>`，载荷为 `{schemaVersion: 1, name, locationDescription}`，沿现有 `StoredValue(updated, token, value)` 的 LWW 裁决；来源描述仅接受 `icloud-drive` 或 `file-provider`；其他值的原记录保留并单条隔离，不参与 LWW，也不遮蔽同一逻辑 ID 的可用提示。不包含路径、bookmark、本机 ID 或文件清单。内置根不发布提示。不新增 SwiftData model 或 CloudKit 字段；旧版本保留不认识的原记录，新版本按条目隔离未知载荷，不阻断其他记录或改写未知版本。
 
 `ShelfReferenceBindings`（UserDefaults，schemaVersion 1）仅在本机保存逻辑 ID 与本机授权根的绑定、本机忽略、已处理整架引导及已发布描述。按用户存储/账户分域，首次从本机开启同步时沿用逻辑 ID，后续切换账户不复制旧账户绑定；未知版本只读拒绝覆盖。提示迟到不阻塞首页；目录选择成功后才绑定，不凭同名自动接入。已有设备须先升级并上传提示；重装不保证恢复从未同步过的根。
 

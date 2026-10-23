@@ -5,15 +5,24 @@ import XCTest
 @testable import Moonread
 
 actor RestorationGate {
-  let entered: XCTestExpectation
+  let entered: XCTestExpectation?
   var continuation: CheckedContinuation<Void, Never>?
   var released = false
-  init(_ entered: XCTestExpectation) { self.entered = entered }
+  private var arrived = false
+  private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+  init(_ entered: XCTestExpectation? = nil) { self.entered = entered }
+  func waitForEntry() async {
+    if arrived { return }
+    await withCheckedContinuation { entryWaiters.append($0) }
+  }
   func wait() async {
     if !released {
       await withCheckedContinuation {
         continuation = $0
-        entered.fulfill()
+        arrived = true
+        entered?.fulfill()
+        let waiters = entryWaiters; entryWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
       }
     }
   }

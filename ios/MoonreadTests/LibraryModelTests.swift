@@ -300,6 +300,28 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
     XCTAssertNil(UserSyncJSON.kind("shelf-reference/not-a-uuid"))
     let withBookmark = "{\"schemaVersion\":1,\"name\":\"Name\",\"locationDescription\":\"file-provider\",\"bookmark\":\"not-syncable\"}"
     XCTAssertThrowsError(try UserSyncJSON.validateValue(withBookmark, key: "shelf-reference/" + id))
+    // Newer unsupported locations must not win LWW or hide the usable hint.
+    for (index, location) in ["", "future-provider", "ICLOUD-DRIVE"].enumerated() {
+      let value = ShelfReferenceValue(name: "不可用提示", locationDescription: location)
+      let text = try UserSyncJSON.encode(value)
+      XCTAssertThrowsError(try UserSyncJSON.validateValue(text, key: "shelf-reference/" + id))
+      let invalid = try UserSyncJSON.encode(StoredValue(updated: 100 + Int64(index), token: "bad-\(index)", value: text), envelope: true)
+      try await f.store.receiveSyncFixture("value", key: "shelf-reference/" + id, id: "bad-\(index)", payload: invalid)
+    }
+    // Also cover an unsupported-only key and delivery before its valid sibling.
+    let lateID = UUID().uuidString, unsupportedID = UUID().uuidString
+    let invalid = try UserSyncJSON.encode(StoredValue(updated: 999, token: "future-location",
+      value: UserSyncJSON.encode(ShelfReferenceValue(name: "Future", locationDescription: "future-provider"))), envelope: true)
+    for key in [lateID, unsupportedID] {
+      try await f.store.receiveSyncFixture("value", key: "shelf-reference/" + key, id: "future", payload: invalid)
+    }
+    let late = try UserSyncJSON.encode(StoredValue(updated: 1, token: "known", value: UserSyncJSON.encode(old)), envelope: true)
+    try await f.store.receiveSyncFixture("value", key: "shelf-reference/" + lateID, payload: late)
+    let rawBefore = try await f.store.syncFixturePayloads("value")
+    let isolated = try await f.service.shelfRecoverySnapshot()
+    XCTAssertEqual(Dictionary(uniqueKeysWithValues: isolated.references.map { ($0.id, $0.value) }), [id: newer, lateID: old])
+    let rawAfter = try await f.store.syncFixturePayloads("value")
+    XCTAssertEqual(rawBefore, rawAfter, "Quarantined records are preserved byte-for-byte")
   }
 
   func testAuthorizationBindingsAreStableLocalAndDoNotCopyAcrossAccounts() async throws {
