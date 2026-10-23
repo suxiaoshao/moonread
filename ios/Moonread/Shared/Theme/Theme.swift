@@ -124,8 +124,12 @@ final class ThemeStore {
 
     init(persistPreferences: @escaping @MainActor (ThemePreferences) async throws -> ThemeSnapshot) {
         self.persistPreferences = persistPreferences
+        #if DEBUG
         let args = ProcessInfo.processInfo.arguments
         let session = args.firstIndex(of: "--ui-test-session").flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil }
+        #else
+        let session: String? = nil
+        #endif
         cacheKey = "Moonread.appearanceCache.\(session ?? "library")"
         snapshot = UserDefaults.standard.string(forKey: cacheKey).flatMap { try? decodeThemeSnapshot(json: $0) } ?? defaultThemeSnapshot()
         #if DEBUG

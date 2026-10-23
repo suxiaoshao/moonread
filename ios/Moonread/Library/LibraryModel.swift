@@ -252,10 +252,14 @@ final class LibraryModel {
         self.scanShelf = scanShelf ?? { try await service.scanLibraryShelf($0) }
         self.refreshLibrary = refreshLibrary ?? { try await service.refreshLibrary() }
         self.prepareSource = prepareSource
+        #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         let session = arguments.firstIndex(of: "--ui-test-session").flatMap {
             arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil
         }
+        #else
+        let session: String? = nil
+        #endif
         layoutKey = "Moonread.libraryLayout.\(session ?? "device")"
         layout = defaults.string(forKey: layoutKey).flatMap(LibraryLayout.init(rawValue:)) ?? .grid
         groupingKey = "Moonread.libraryGrouping.\(session ?? "device")"
@@ -738,8 +742,10 @@ final class LibraryModel {
     #endif
 
     func receiveSharedInbox(_ source: ShareInbox? = nil) async {
+        #if DEBUG
         // Isolated UI-test libraries must never consume the real shared inbox.
         if source == nil, await service.testSession != nil { return }
+        #endif
         guard initialized, !scanningSharedInbox, canAcceptFileWork, sheet == nil, !filePickerPresented else { return }
         scanningSharedInbox = true
         defer { scanningSharedInbox = false }

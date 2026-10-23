@@ -9,11 +9,15 @@ final class ReaderOpenBenchmark {
     private var leases: [ReadingLease] = []
     private var sizes: [String: Int] = [:]
     func prepare() async {
-        guard entries.isEmpty, await ReaderService.shared.testSession != nil else { return }
+        guard entries.isEmpty else { return }
+        guard let session = ReaderOpenDiagnostics.session else {
+            error = "请提供有效 UUID：--reader-open-session"
+            return
+        }
         do {
             let service = ReaderService.shared
             let core = try await service.textCore()
-            let root = FileManager.default.temporaryDirectory.appendingPathComponent("ReaderOpenFixture-" + (await service.testSession)!)
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("ReaderOpenFixture-" + session)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             let small = root.appendingPathComponent("small.txt")
             if !FileManager.default.fileExists(atPath: small.path) {

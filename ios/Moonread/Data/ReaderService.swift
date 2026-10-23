@@ -85,10 +85,11 @@ actor ReaderService {
         }
         #endif
         #if READER_OPEN_DIAGNOSTICS
-        if ReaderOpenDiagnostics.benchmark {
-            let suite = "Moonread.ReaderOpen." + (ReaderOpenDiagnostics.argument("--ui-test-session") ?? UUID().uuidString)
+        if ReaderOpenDiagnostics.benchmark, let session = ReaderOpenDiagnostics.session {
+            let suite = "Moonread.ReaderOpen." + session
             if let settings = UserDefaults.standard.string(forKey: "Moonread.readerSettings") { UserDefaults(suiteName: suite)?.set(settings, forKey: "Moonread.readerSettings") }
-            return ReaderService(sourceDefaultsSuite: suite)
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-ReaderOpen-" + session, isDirectory: true)
+            return ReaderService(libraryDirectory: directory, sourceDefaultsSuite: suite)
         }
         #endif
         return ReaderService()
@@ -147,10 +148,14 @@ actor ReaderService {
         self.core = core; libraryDirectoryOverride = libraryDirectory
         self.libraryDeletion = libraryDeletion; self.libraryScan = libraryScan
         self.userStoreFactory = userStoreFactory
+        #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         let sessionIndex = arguments.firstIndex(of: "--ui-test-session")
         let session = sessionIndex.flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
         userDirectoryName = session.map { "Moonread-UITests-\($0)" } ?? sourceDefaultsSuite.map { "Moonread-\($0)" } ?? (core == nil ? "Moonread" : "Moonread-Tests-\(UUID().uuidString)")
+        #else
+        userDirectoryName = sourceDefaultsSuite.map { "Moonread-\($0)" } ?? (core == nil ? "Moonread" : "Moonread-Tests-\(UUID().uuidString)")
+        #endif
         let defaults = sourceDefaultsSuite.flatMap(UserDefaults.init(suiteName:)) ?? .standard
         sourceDefaults = defaults
         cloudSyncIntent = CloudSyncIntent(defaults: defaults)
@@ -275,15 +280,22 @@ actor ReaderService {
     private var requestedResumes: Set<String> = []
     private var appActive = true
     var testSession: String? {
+        #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         guard arguments.contains("--ui-testing"),
               let index = arguments.firstIndex(of: "--ui-test-session"),
               arguments.indices.contains(index + 1),
               let id = UUID(uuidString: arguments[index + 1]) else { return nil }
         return id.uuidString
+        #else
+        return nil
+        #endif
     }
     var dataDirectoryName: String {
-        testSession.map { "Moonread-UITests-\($0)" } ?? "Moonread"
+        #if READER_OPEN_DIAGNOSTICS
+        if ReaderOpenDiagnostics.benchmark, ReaderOpenDiagnostics.session != nil { return userDirectoryName }
+        #endif
+        return testSession.map { "Moonread-UITests-\($0)" } ?? "Moonread"
     }
     // Internal text/file capability. UI-facing user data comes from domain
     // queries below; this core never receives shared mutable user projections.
@@ -346,6 +358,7 @@ actor ReaderService {
 
     // Synthetic fixture uses an isolated UI-test store and the real file import
     // path. It is never created during normal app use or bundled as a novel.
+    #if DEBUG
     func importFixture() throws {
         guard testSession != nil, ProcessInfo.processInfo.arguments.contains("--ui-test-progressive") else { return }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-\(testSession!)", isDirectory: true)
@@ -364,6 +377,7 @@ actor ReaderService {
         let shelfID = try registerLibraryShelf(directory)
         try refreshLibraryShelf(shelfID)
     }
+    #endif
 
     func snapshot(_ id: String) async throws -> ReadingSnapshot { try await bookQuery(id).readingSnapshot(bookId: id) }
 

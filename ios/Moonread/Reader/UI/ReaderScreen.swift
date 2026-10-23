@@ -704,9 +704,13 @@ struct ReaderScreen: View {
             .monospacedDigit()
             .accessibilityLabel("阅读进度")
             .accessibilityIdentifier("readingProgress")
+            #if DEBUG
             .accessibilityValue(ProcessInfo.processInfo.arguments.contains("--ui-testing")
                                 ? String(session.anchor)
                                 : fraction.formatted(.percent.precision(.fractionLength(1))))
+            #else
+            .accessibilityValue(fraction.formatted(.percent.precision(.fractionLength(1))))
+            #endif
     }
 
     private var readerNavigationVisible: Bool {
