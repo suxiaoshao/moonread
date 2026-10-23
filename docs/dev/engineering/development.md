@@ -40,6 +40,8 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 发版清单（分支）：
 
+- 新开 `release/x.y` 后第一件事：把所有 target 的 `MARKETING_VERSION` 改为 `x.y`，构建号 `CURRENT_PROJECT_VERSION` 递增到大于 ASC 已有最大号；Debug/Release 保持一致。
+
 - 新开 `release/x.y` 时，同步修改 [Dependabot](../../../.github/dependabot.yml) 两个更新项的 `target-branch`，让常规依赖版本更新 PR 指向当前版本分支。
 - Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 PR 的 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 `hotfix/x.y.z` 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。
 - 当前目标配置为 `release/1.2`，该分支在本流程 PR 合并后才创建；新目标分支的 CI 触发与 Dependabot 实际校验以合并并创建分支后为准，不能以本 PR 的 CI 通过代替。
