@@ -2,6 +2,7 @@ version: 2
 updates:
   - package-ecosystem: cargo
     directory: /
+    target-branch: release/1.2
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
@@ -10,6 +11,7 @@ updates:
         update-types: [minor, patch]
   - package-ecosystem: github-actions
     directory: /
+    target-branch: release/1.2
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
