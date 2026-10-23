@@ -8,6 +8,8 @@
 
 固定任务标识为 `dev.moonread.Moonread.full-index.processing`；ContinuedProcessing 许可模式为 `dev.moonread.Moonread.full-index.continued.*`，实际注册／提交 `dev.moonread.Moonread.full-index.continued.<UUID>`。两项列入 `BGTaskSchedulerPermittedIdentifiers`，`UIBackgroundModes` 增加 `processing` 并保留原项；标识前缀发布后保持稳定。提交失败仍可前台执行，不承诺后台一定获调度。模拟器验证不能代表真实后台调度或 iCloud 下载释放已验收。
 
+BGTask 的 launch／expiration 回调显式非隔离且 `@Sendable`，只在切到 MainActor 后接触索引状态；不能依赖闭包写在 `@MainActor` 类型内便由系统在主线程调用。通知进入界面之前同样明确投递到主队列。
+
 ## 产品目标
 
 让读者在系统中更容易继续正在读的书、找到书和导入文件。所有入口共用现有开书、正文 SHA、位置恢复和统计规则，不另建一套阅读状态。优先展示书籍与续读动作，统计作为辅助。

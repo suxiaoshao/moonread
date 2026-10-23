@@ -280,7 +280,9 @@ private struct MoonLaunchCover: View {
     @MainActor private final class Assertion {
         private var identifier = UIBackgroundTaskIdentifier.invalid
         init(name: String) {
-            identifier = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in self?.end() }
+            identifier = UIApplication.shared.beginBackgroundTask(withName: name) { @Sendable [weak self] in
+                Task { @MainActor [weak self] in self?.end() }
+            }
         }
         func end() {
             guard identifier != .invalid else { return }

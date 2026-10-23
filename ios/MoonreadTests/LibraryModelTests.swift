@@ -9,6 +9,28 @@ import XCTest
 @testable import Moonread
 
 final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationFixture {
+  @MainActor func testBackgroundTaskCallbacksHopToMainActor() async {
+    let launched = expectation(description: "launch delivered on MainActor")
+    let expired = expectation(description: "expiration delivered on MainActor")
+    // BGTask is system-created (init is unavailable). Exercise the exact callback
+    // factory used for both registrations with a stand-in payload instead.
+    let launch = FullIndexSystemCallback.launch { (value: String) in
+      MainActor.assertIsolated()
+      XCTAssertEqual(value, "processing")
+      launched.fulfill()
+    }
+    let expiration = FullIndexSystemCallback.expiration {
+      MainActor.assertIsolated()
+      expired.fulfill()
+    }
+    DispatchQueue.global().async {
+      dispatchPrecondition(condition: .notOnQueue(.main))
+      launch("processing")
+      expiration()
+    }
+    await fulfillment(of: [launched, expired], timeout: 3)
+  }
+
   // S275: 后台索引在前台开书期间让路，结束/失败后继续已排队书架；两个 gate，不测墙钟快慢。
   func testAutomaticIndexContinuesWithAnotherShelfRequestedWhileRunning() async throws {
     for openingFails in [false, true] {

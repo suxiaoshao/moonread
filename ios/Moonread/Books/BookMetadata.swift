@@ -165,7 +165,7 @@ private final class CoverObservationTokens: @unchecked Sendable {
     }) {
         self.load = load
         for name in [ModelContext.didSave, .NSPersistentStoreRemoteChange, .cloudDataReceived, .bookMetadataChanged] {
-            observers.values.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
+            observers.values.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { @Sendable [weak self] _ in
                 Task { @MainActor [weak self] in self?.attachmentsChanged() }
             })
         }
