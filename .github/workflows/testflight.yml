@@ -231,9 +231,14 @@ jobs:
           def report_failure(stage):
               log = ''.join(path.read_text(errors='replace') for path in
                             [ROOT / (stage + '.log'), ROOT / (stage + '.stderr.log')] if path.exists()).lower()
+              # Ignore echoed invocation/build settings: authenticationKeyPath and
+              # CODE_SIGN_STYLE are not evidence of an authentication/signing failure.
+              log = '\n'.join(line for line in log.splitlines()
+                              if re.search(r'error|failed|failure|could not|unable|expired|denied|timed out|agreement|contract', line)
+                              and not re.search(r'^\s*(?:/.*xcodebuild|command line invocation:|code_sign_style\s*=)', line))
               category = ('agreement' if re.search(r'agreement|contracts.*(?:pending|expired)', log) else
                           'network' if re.search(r'timed out|network|could not resolve|connection.*(?:lost|failed)|ssl|tls', log) else
-                          'permission' if re.search(r'permission|unauthorized|authentication|forbidden|access denied|\b40[13]\b', log) else
+                          'permission' if re.search(r'permission|unauthorized|authentication (?:failed|error)|unable to authenticate|forbidden|access denied|\b40[13]\b', log) else
                           'signing' if re.search(r'provision|certificate|signing|code.?sign', log) else
                           'export' if stage in ('upload', 'export') else 'build')
               result = {'stage': stage, 'category': category,
@@ -394,7 +399,7 @@ jobs:
           # Prefix rejection covers all current and future UI-test launch arguments,
           # including --ui-testing / --ui-test-session / --ui-test-tips /
           # --ui-test-introduction. Audit both executable owners, not just the App.
-          markers = [b'--ui-test', b'--initialize-cloudkit-development-schema', b'--reader-open-benchmark']
+          markers = [b'--ui-test', b'--disable-tips', b'--initialize-cloudkit-development-schema', b'--reader-open-benchmark']
           for bundle in [app, app / 'PlugIns/MoonreadShare.appex']:
               info = plistlib.loads((bundle / 'Info.plist').read_bytes())
               strings = command('strings', '-a', str(bundle / info['CFBundleExecutable']))
