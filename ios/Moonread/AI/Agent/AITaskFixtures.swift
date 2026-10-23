@@ -19,7 +19,7 @@ extension AIService {
         let reader = ReaderService.shared
         let entries = try await reader.aiLibraryBooks("builtin")
         guard var sample = entries.first(where: { $0.name == "月读 · 排版示例.txt" }),
-              let sha = sample.metadata?.sha, sha.count == 64,
+              let sha = sample.metadata?.sha, (try? parseSha256(value: sha)) != nil,
               let first = entries.first(where: { $0.name == "AI 待整理甲.txt" }),
               let second = entries.first(where: { $0.name == "AI 待整理乙.txt" }) else { return }
         let reviewFixture = ProcessInfo.processInfo.arguments.contains("--ui-test-ai-review")

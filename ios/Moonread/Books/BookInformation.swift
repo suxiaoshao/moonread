@@ -53,8 +53,7 @@ final class BookInformationModel {
         return (entry, details)
     }
     static func validSHA(_ value: String?) -> String? {
-        guard let value, value.utf8.count == 64, value.utf8.allSatisfy({ (48...57).contains($0) || (65...70).contains($0) || (97...102).contains($0) }) else { return nil }
-        return value
+        value.flatMap { try? parseSha256(value: $0) }
     }
     func contentSHA(for target: StatisticsRoute) -> String? {
         if let sha = Self.validSHA(target.key) { return sha }
@@ -111,7 +110,7 @@ final class BookInformationModel {
                     let snapshot = try await service.snapshot(lease.id)
                     if snapshot.phase == .complete {
                         let result = try await service.details(bookID: lease.id)
-                        guard result.metadata.sha.count == 64 else { throw ReaderError.ImportBusy }
+                        guard (try? parseSha256(value: result.metadata.sha)) != nil else { throw ReaderError.ImportBusy }
                         details = result
                         try await service.userStore().requireMetadataReadable(key: result.metadata.sha)
                         draft = BookMetadataDraft(base: result.metadata)

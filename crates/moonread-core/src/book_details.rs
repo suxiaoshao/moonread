@@ -100,12 +100,7 @@ pub struct BookFilterOptions {
     pub tags: Vec<String>,
 }
 
-pub(crate) fn valid_sha(sha: &str) -> bool {
-    sha.len() == 64
-        && sha
-            .bytes()
-            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
-}
+use crate::valid_sha;
 
 fn empty(sha: &str) -> BookMetadata {
     BookMetadata {
@@ -126,20 +121,27 @@ pub(crate) fn metadata(db: &Connection, sha: &str) -> Result<BookMetadata> {
             |r| r.get(0),
         )
         .optional()?;
-    let mut result = text
+    let stored = text
         .map(|v| serde_json::from_str(&v).map_err(|_| ReaderError::InvalidSettings))
-        .transpose()?
-        .unwrap_or_else(|| empty(sha));
-    if result.status == BookReadingStatus::Unread
-        && db.query_row(
-            "SELECT EXISTS(SELECT 1 FROM reading_books WHERE content_sha256=?1 AND last_read>0)",
-            [sha],
-            |r| r.get::<_, bool>(0),
-        )?
-    {
+        .transpose()?;
+    let has_reading = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM reading_books WHERE content_sha256=?1 AND last_read>0)",
+        [sha],
+        |r| r.get::<_, bool>(0),
+    )?;
+    Ok(project_metadata(sha, stored, has_reading))
+}
+/// Shared metadata defaults/status projection for details and catalogue batches.
+pub(crate) fn project_metadata(
+    sha: &str,
+    stored: Option<BookMetadata>,
+    has_reading: bool,
+) -> BookMetadata {
+    let mut result = stored.unwrap_or_else(|| empty(sha));
+    if result.status == BookReadingStatus::Unread && has_reading {
         result.status = BookReadingStatus::Reading;
     }
-    Ok(result)
+    result
 }
 
 // Business projections are exported only by ReaderQuery.

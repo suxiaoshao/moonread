@@ -71,6 +71,7 @@ final class LibraryModel {
     let summaries = LoadingState()
     private(set) var nativeRefreshing = false
     private(set) var explicitRefresh = false
+    private(set) var readingInputRevision: UInt64 = 0
     var revision = 0
     var selectedTab = AppTab.library {
         didSet { if selectedTab == .search && oldValue != .search { searchOrigin = oldValue } }
@@ -401,6 +402,7 @@ final class LibraryModel {
         hasUserImportedBooks = hasUserBooks
         if hasUserBooks { Onboarding.shared.didImport() }
         if structuralChange { revision += 1 }
+        readingInputRevision &+= 1
         publishHome(next)
         homeReady = true
     }
@@ -421,6 +423,7 @@ final class LibraryModel {
     }
     /// Called only after the reader's existing final-save contract completes.
     func reloadBook(_ route: ReaderRoute) async {
+        defer { readingInputRevision &+= 1 }
         do {
             guard let entry = try await service.recentBook(route) else { return }
             var next = homeIndex

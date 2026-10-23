@@ -214,7 +214,7 @@ enum AIResolvedSource: Sendable, Identifiable {
                     guard let ref = source["sourceRef"]?.string else { continue }
                     if let book = source["bookRef"]?.string ?? data.object["bookRef"]?.string,
                        let start = source["range"]?.object["startUtf8"]?.int, let end = source["range"]?.object["endUtf8"]?.int,
-                       book.hasPrefix("b:"), book.count == 66, start >= 0, end > start,
+                       (try? AIReadingReferences.parseBookReference(book)) != nil, start >= 0, end > start,
                        ref == AIReadingTools.ref("source", "\(book):\(start):\(end)") { produced[ref] = .text(bookRef: book, startUtf8: UInt64(start), endUtf8: UInt64(end), title: source["title"]?.string ?? source["chapterTitle"]?.string ?? "") }
                 }
             }

@@ -12,43 +12,28 @@ impl ReaderCore {
         file_id: Option<String>,
     ) -> Result<Vec<String>> {
         let db = self.lock()?;
-        let mut stmt = db.prepare("SELECT DISTINCT s.content_sha256 FROM library_files f JOIN library_identities l ON l.file_id=f.id AND l.decoding=f.decoding AND l.indexed_size=f.size AND l.indexed_modified=f.modified JOIN source_identities s ON s.raw_sha256=l.raw_sha256 AND s.decoding=l.decoding WHERE (?1 IS NULL OR f.shelf_id=?1) AND (?2 IS NULL OR f.id=?2)")?;
+        let mut stmt = db.prepare("SELECT DISTINCT s.content_sha256 FROM library_files f JOIN valid_indexed_identities s ON s.file_id=f.id WHERE (?1 IS NULL OR f.shelf_id=?1) AND (?2 IS NULL OR f.id=?2)")?;
         Ok(stmt
             .query_map(params![shelf_id, file_id], |r| r.get(0))?
             .collect::<std::result::Result<_, _>>()?)
     }
     pub fn pending_identity_files(&self, shelf_id: String) -> Result<Vec<SourceFileSnapshot>> {
-        let files = self.source_file_snapshots(None)?;
         let db = self.lock()?;
-        let mut valid = db.prepare("SELECT 1 FROM library_identities l JOIN source_identities s ON s.raw_sha256=l.raw_sha256 AND s.decoding=l.decoding WHERE l.file_id=?1 AND l.decoding=?2 AND l.indexed_size=?3 AND l.indexed_modified=?4")?;
-        let mut pending = Vec::new();
-        for file in files.into_iter().filter(|f| f.shelf_id == shelf_id) {
-            if valid
-                .query_row(
-                    params![file.id, file.decoding, file.size as i64, file.modified],
-                    |_| Ok(()),
-                )
-                .optional()?
-                .is_none()
-            {
-                pending.push(file);
-            }
-        }
-        Ok(pending)
+        crate::bookshelf::source_snapshots(
+            &db,
+            "WHERE f.directory=0 AND f.shelf_id=?1 AND NOT EXISTS(SELECT 1 FROM valid_indexed_identities v WHERE v.file_id=f.id) ORDER BY f.id",
+            [shelf_id],
+        )
     }
+
     pub fn publish_source_identity(
         &self,
         file: SourceFileSnapshot,
         identity: SourceTextIdentity,
     ) -> Result<bool> {
         let policy = decoding_policy(&file.decoding)?;
-        let hash_valid = |s: &str| {
-            s.len() == 64
-                && s.bytes()
-                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-        };
-        if !hash_valid(&identity.raw_sha256)
-            || !hash_valid(&identity.content_sha256)
+        if crate::parse_sha256(identity.raw_sha256.clone()).is_err()
+            || crate::parse_sha256(identity.content_sha256.clone()).is_err()
             || identity.source_bytes != file.size
             || identity.utf8_bytes > i64::MAX as u64
             || identity.char_count > i64::MAX as u64

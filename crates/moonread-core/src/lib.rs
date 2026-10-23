@@ -1,8 +1,13 @@
 //! Platform-independent text ingestion, normalized positions and reader state.
 //! The caller owns authorization and file coordination for source paths.
 
+mod identity;
+pub use identity::*;
+mod validation;
+pub use validation::*;
 mod book_details;
 mod bookshelf;
+mod library_order;
 pub use book_details::*;
 mod library_tools;
 mod migrations;
@@ -61,7 +66,7 @@ pub enum ReaderError {
     Decode { message: String },
     #[error("单个组合字符超过 64 KiB，无法安全分块")]
     GraphemeTooLong,
-    #[error("文件包含密集 NUL，可能是二进制或编码误判")]
+    #[error("文件具有二进制特征，或文字编码选择不正确")]
     BinaryContent,
     #[error("正文超过可存储的范围")]
     TextCapacityExceeded,
@@ -214,6 +219,7 @@ impl ReaderCore {
     }
 
     pub fn text_id_for_sha(&self, sha: String) -> Result<String> {
+        parse_sha256(sha.clone())?;
         self.lock()?
             .query_row("SELECT id FROM books WHERE content_sha256=?1", [sha], |r| {
                 r.get(0)
@@ -364,10 +370,7 @@ fn decoding_policy(value: &str) -> Result<&'static str> {
         .ok_or(ReaderError::InvalidSettings)
 }
 fn valid_sha(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    parse_sha256(value.into()).is_ok()
 }
 
 fn book(db: &Connection, id: &str) -> Result<BookInfo> {

@@ -77,6 +77,7 @@ pub struct LibraryEntry {
     pub cover_previews: Vec<LibraryCoverPreview>,
     pub metadata: Option<crate::BookMetadata>,
     pub content_sha256: Option<String>,
+    pub reading_identity: Option<crate::ReadingKey>,
 }
 
 /// A virtual tag section in one shelf's file catalogue, never a filesystem folder.
@@ -106,33 +107,8 @@ pub enum LibrarySort {
     Name,
 }
 
-pub(crate) fn validate_relative(path: &str, allow_root: bool) -> Result<()> {
-    if (path.is_empty() && !allow_root)
-        || path.starts_with('/')
-        || path.contains('\0')
-        || (!path.is_empty()
-            && path
-                .split('/')
-                .any(|p| p.is_empty() || p == "." || p == ".."))
-    {
-        return Err(ReaderError::InvalidSettings);
-    }
-    Ok(())
-}
-
-#[uniffi::export]
-pub fn library_child_path(parent: String, name: String) -> Result<String> {
-    validate_relative(&parent, true)?;
-    if name.trim().is_empty() || name.contains('/') || name.contains(':') || name.starts_with('.') {
-        return Err(ReaderError::InvalidSettings);
-    }
-    validate_relative(&name, false)?;
-    Ok(if parent.is_empty() {
-        name
-    } else {
-        format!("{parent}/{name}")
-    })
-}
+use crate::library_order::natural_cmp;
+pub(crate) use crate::validation::relative as validate_relative;
 
 #[uniffi::export]
 impl ReaderCore {
@@ -442,8 +418,7 @@ fn filtered_entries(
            ELSE COALESCE(p.last_read,0) END,COALESCE(p.preferred_file_id=f.id,0),m.value,fi.content_sha256
        FROM library_files f JOIN library_shelves s ON s.id=f.shelf_id
        LEFT JOIN file_identities fi ON fi.file_id=f.id
-       LEFT JOIN import_jobs j ON j.book_id=f.book_id
-       LEFT JOIN reading_books b ON b.id=COALESCE(j.canonical_id,f.book_id) AND b.content_sha256=fi.content_sha256
+       LEFT JOIN reading_books b ON b.id=fi.associated_book_id
        LEFT JOIN (SELECT content_sha256,MAX(utf8_bytes) utf8_bytes FROM source_identities GROUP BY content_sha256) si ON si.content_sha256=fi.content_sha256
        LEFT JOIN user_positions p ON p.content_key=fi.content_sha256
        LEFT JOIN book_metadata m ON m.content_sha=fi.content_sha256
@@ -478,10 +453,24 @@ fn library_entry_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryEntry> {
         cover_previews: Vec::new(),
         metadata: metadata_column(r, 17)?,
         content_sha256: r.get(18)?,
+        reading_identity: r
+            .get::<_, Option<String>>(18)?
+            .and_then(|s| crate::parse_reading_key(s).ok()),
     })
 }
 
-fn populate_cover_previews(db: &Connection, entries: &mut [LibraryEntry]) -> Result<()> {
+#[cfg(test)]
+thread_local! {
+    static FOLDER_COVER_QUERIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn folder_cover_previews(
+    db: &Connection,
+    shelf_id: &str,
+    relative_path: &str,
+) -> Result<Vec<LibraryCoverPreview>> {
+    #[cfg(test)]
+    FOLDER_COVER_QUERIES.with(|count| count.set(count.get() + 1));
     let mut stmt = db.prepare_cached(
         "SELECT f.id,f.name,m.value FROM library_files f
         LEFT JOIN file_identities fi ON fi.file_id=f.id
@@ -490,19 +479,23 @@ fn populate_cover_previews(db: &Connection, entries: &mut [LibraryEntry]) -> Res
         WHERE f.shelf_id=?1 AND f.directory=0 AND f.relative_path>=?2 AND f.relative_path<?3
         ORDER BY COALESCE(p.last_read,0) DESC,f.modified DESC,f.name,f.id LIMIT 4",
     )?;
+    // Literal path bounds also handle names containing SQL LIKE wildcards.
+    let prefix = format!("{relative_path}/");
+    let end = format!("{relative_path}0");
+    Ok(stmt
+        .query_map(params![shelf_id, prefix, end], |r| {
+            Ok(LibraryCoverPreview {
+                file_id: r.get(0)?,
+                name: r.get(1)?,
+                cover: metadata_column(r, 2)?.and_then(|m| m.cover),
+            })
+        })?
+        .collect::<std::result::Result<_, _>>()?)
+}
+
+fn populate_cover_previews(db: &Connection, entries: &mut [LibraryEntry]) -> Result<()> {
     for folder in entries.iter_mut().filter(|e| e.directory) {
-        // Literal path bounds also handle names containing SQL LIKE wildcards.
-        let prefix = format!("{}/", folder.relative_path);
-        let end = format!("{}0", folder.relative_path);
-        folder.cover_previews = stmt
-            .query_map(params![folder.shelf_id, prefix, end], |r| {
-                Ok(LibraryCoverPreview {
-                    file_id: r.get(0)?,
-                    name: r.get(1)?,
-                    cover: metadata_column(r, 2)?.and_then(|m| m.cover),
-                })
-            })?
-            .collect::<std::result::Result<_, _>>()?;
+        folder.cover_previews = folder_cover_previews(db, &folder.shelf_id, &folder.relative_path)?;
     }
     Ok(())
 }
@@ -524,76 +517,6 @@ fn metadata_column(
         .transpose()
 }
 
-fn search_rank(entry: &LibraryEntry, query: &str) -> Option<u8> {
-    if query.is_empty() {
-        return Some(0);
-    }
-    let title = if entry.directory {
-        entry.name.to_lowercase()
-    } else {
-        std::path::Path::new(&entry.name).file_stem().map_or_else(
-            || entry.name.to_lowercase(),
-            |s| s.to_string_lossy().to_lowercase(),
-        )
-    };
-    if title.starts_with(query) {
-        Some(0)
-    } else if title.contains(query) {
-        Some(1)
-    } else if !entry.directory
-        && entry
-            .metadata
-            .as_ref()
-            .is_some_and(|m| m.author.to_lowercase().contains(query))
-    {
-        Some(2)
-    } else {
-        None
-    }
-}
-
-fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
-    let a = a.to_lowercase();
-    let b = b.to_lowercase();
-    let mut a = a.chars().peekable();
-    let mut b = b.chars().peekable();
-    loop {
-        match (a.peek().copied(), b.peek().copied()) {
-            (Some(x), Some(y)) if x.is_ascii_digit() && y.is_ascii_digit() => {
-                let mut x = String::new();
-                let mut y = String::new();
-                while a.peek().is_some_and(char::is_ascii_digit) {
-                    x.push(a.next().unwrap());
-                }
-                while b.peek().is_some_and(char::is_ascii_digit) {
-                    y.push(b.next().unwrap());
-                }
-                let nx = x.trim_start_matches('0');
-                let ny = y.trim_start_matches('0');
-                let order = nx
-                    .len()
-                    .cmp(&ny.len())
-                    .then_with(|| nx.cmp(ny))
-                    .then_with(|| x.len().cmp(&y.len()));
-                if !order.is_eq() {
-                    return order;
-                }
-            }
-            (Some(x), Some(y)) => {
-                let order = x.cmp(&y);
-                if !order.is_eq() {
-                    return order;
-                }
-                a.next();
-                b.next();
-            }
-            (None, None) => return std::cmp::Ordering::Equal,
-            (None, _) => return std::cmp::Ordering::Less,
-            (_, None) => return std::cmp::Ordering::Greater,
-        }
-    }
-}
-
 // Business projections are exported only by ReaderQuery.
 impl ReaderCore {
     pub(crate) fn library_entries(
@@ -607,82 +530,80 @@ impl ReaderCore {
         }
         let db = self.read_lock()?;
         let mut entries = entries(&db, shelf_id.as_deref(), parent_path.as_deref(), false)?;
-        entries.sort_by(|a, b| {
-            match sort {
-                LibrarySort::Reading => (a.directory && a.child_book_count == 0)
-                    .cmp(&(b.directory && b.child_book_count == 0))
-                    .then_with(|| b.last_read.cmp(&a.last_read))
-                    .then_with(|| {
-                        if a.last_read == 0 && b.last_read == 0 {
-                            b.modified.cmp(&a.modified)
-                        } else {
-                            std::cmp::Ordering::Equal
-                        }
-                    })
-                    .then_with(|| natural_cmp(&a.name, &b.name)),
-                LibrarySort::Name => b
-                    .directory
-                    .cmp(&a.directory)
-                    .then_with(|| natural_cmp(&a.name, &b.name)),
-            }
-            .then_with(|| a.relative_path.cmp(&b.relative_path))
-            .then_with(|| a.id.cmp(&b.id))
-        });
+        entries.sort_by(|a, b| crate::library_order::directory_order(a, b, sort));
         populate_cover_previews(&db, &mut entries)?;
         Ok(entries)
     }
-    /// Finds books and folders by visible title (no extension), author and folder name.
-    /// Author/tag filters describe books, so they exclude folders. Books come first,
-    /// ranked title prefix > title contains > author, ties by recent reading.
-    pub(crate) fn search_library(
+    pub(crate) fn library_folder_cover_previews(
         &self,
-        shelf_id: Option<String>,
-        query: String,
-        author: Option<String>,
-        tag: Option<String>,
-    ) -> Result<Vec<LibraryEntry>> {
-        let query = query.trim().to_lowercase();
-        let filtered = author.is_some() || tag.is_some();
-        if query.is_empty() && !filtered {
-            return Ok(Vec::new());
+        shelf_id: String,
+        relative_path: String,
+    ) -> Result<Vec<LibraryCoverPreview>> {
+        validate_relative(&relative_path, false)?;
+        let db = self.read_lock()?;
+        folder_cover_previews(&db, &shelf_id, &relative_path)
+    }
+
+    pub(crate) fn library_search_candidates(
+        &self,
+        scope: crate::CatalogueScope,
+        books_only: bool,
+    ) -> Result<Vec<LibrarySearchCandidate>> {
+        if let Some(p) = &scope.parent_path {
+            validate_relative(p, true)?;
         }
         let db = self.read_lock()?;
-        let mut ranked = entries(&db, shelf_id.as_deref(), None, filtered)?
+        let mut values = entries(
+            &db,
+            scope.shelf_id.as_deref(),
+            if scope.recursive {
+                None
+            } else {
+                scope.parent_path.as_deref()
+            },
+            books_only,
+        )?;
+        if scope.recursive
+            && let Some(parent) = scope.parent_path.filter(|p| !p.is_empty())
+        {
+            let prefix = format!("{parent}/");
+            values.retain(|e| e.relative_path.starts_with(&prefix));
+        }
+        values.sort_by(crate::library_order::file_order);
+        let mut statement =
+            db.prepare("SELECT DISTINCT content_sha256 FROM reading_books WHERE last_read>0")?;
+        let reading: HashSet<String> = statement
+            .query_map([], |r| r.get(0))?
+            .collect::<std::result::Result<_, _>>()?;
+        values
             .into_iter()
-            .filter(|e| {
-                let metadata = e.metadata.as_ref();
-                author
+            .enumerate()
+            .map(|(i, entry)| {
+                let resolved_metadata = entry
+                    .content_sha256
                     .as_ref()
-                    .is_none_or(|a| metadata.is_some_and(|m| &m.author == a))
-                    && tag
-                        .as_ref()
-                        .is_none_or(|t| metadata.is_some_and(|m| m.tags.contains(t)))
+                    .filter(|sha| crate::valid_sha(sha))
+                    .map(|sha| {
+                        crate::book_details::project_metadata(
+                            sha,
+                            entry.metadata.clone(),
+                            reading.contains(sha),
+                        )
+                    });
+                Ok(LibrarySearchCandidate {
+                    entry,
+                    natural_order_ordinal: i as u64,
+                    resolved_metadata,
+                })
             })
-            .filter_map(|e| search_rank(&e, &query).map(|rank| (rank, e)))
-            .collect::<Vec<_>>();
-        ranked.sort_by(|(ra, a), (rb, b)| {
-            a.directory
-                .cmp(&b.directory)
-                .then(ra.cmp(rb))
-                .then_with(|| b.last_read.cmp(&a.last_read))
-                .then_with(|| natural_cmp(&a.name, &b.name))
-                .then_with(|| a.relative_path.cmp(&b.relative_path))
-                .then_with(|| a.id.cmp(&b.id))
-        });
-        let mut entries = ranked.into_iter().map(|(_, e)| e).collect::<Vec<_>>();
-        populate_cover_previews(&db, &mut entries)?;
-        Ok(entries)
+            .collect()
     }
     /// The complete file catalogue of one shelf, including nested directories.
     /// Copies remain separate file entries; no document is read or downloaded.
     pub(crate) fn all_library_books(&self, shelf_id: String) -> Result<Vec<LibraryEntry>> {
         let db = self.read_lock()?;
         let mut books = entries(&db, Some(&shelf_id), None, true)?;
-        books.sort_by(|a, b| {
-            natural_cmp(&a.name, &b.name)
-                .then_with(|| a.relative_path.cmp(&b.relative_path))
-                .then_with(|| a.id.cmp(&b.id))
-        });
+        books.sort_by(crate::library_order::file_order);
         Ok(books)
     }
     /// Identity and metadata are projected through file_identities by all_library_books.
@@ -761,8 +682,7 @@ impl ReaderCore {
                 JOIN file_identities fi ON fi.content_sha256=p.content_key
                 JOIN library_files f ON f.id=fi.file_id
                 JOIN library_shelves s ON s.id=f.shelf_id
-                LEFT JOIN import_jobs j ON j.book_id=f.book_id
-                LEFT JOIN books b ON b.id=COALESCE(j.canonical_id,f.book_id) AND b.content_sha256=fi.content_sha256
+                LEFT JOIN books b ON b.id=fi.associated_book_id
                 LEFT JOIN (SELECT content_sha256,MAX(utf8_bytes) utf8_bytes FROM source_identities GROUP BY content_sha256) si ON si.content_sha256=fi.content_sha256
                 LEFT JOIN book_metadata m ON m.content_sha=fi.content_sha256
             )
@@ -791,32 +711,11 @@ impl ReaderCore {
         file_id: Option<String>,
     ) -> Result<Vec<SourceFileSnapshot>> {
         let db = self.lock()?;
-        let mut statement = db.prepare(if file_id.is_some() {
-            "SELECT id,shelf_id,relative_path,size,modified,needs_download,book_id,decoding FROM library_files WHERE id=?1 AND directory=0"
+        if let Some(id) = file_id {
+            source_snapshots(&db, "WHERE f.id=?1 AND f.directory=0", [id])
         } else {
-            "SELECT id,shelf_id,relative_path,size,modified,needs_download,book_id,decoding FROM library_files WHERE directory=0 ORDER BY id"
-        })?;
-        let row = |r: &rusqlite::Row<'_>| -> rusqlite::Result<SourceFileSnapshot> {
-            Ok(SourceFileSnapshot {
-                id: r.get(0)?,
-                shelf_id: r.get(1)?,
-                relative_path: r.get(2)?,
-                size: r.get::<_, i64>(3)? as u64,
-                modified: r.get(4)?,
-                needs_download: r.get(5)?,
-                book_id: r.get(6)?,
-                decoding: r.get(7)?,
-            })
-        };
-        Ok(if let Some(id) = file_id {
-            statement
-                .query_map([id], row)?
-                .collect::<std::result::Result<_, _>>()?
-        } else {
-            statement
-                .query_map([], row)?
-                .collect::<std::result::Result<_, _>>()?
-        })
+            source_snapshots(&db, "WHERE f.directory=0 ORDER BY f.id", [])
+        }
     }
 
     pub fn source_decoding(&self, file_id: String) -> Result<String> {
@@ -913,6 +812,39 @@ mod recent_tests {
         assert!(after.iter().any(|f| f.relative_path == "new.txt"));
         core.scan_library_shelf("s".into(), vec![]).unwrap();
         assert!(core.source_files("s".into()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn search_candidates_leave_unmatched_folder_covers_unqueried() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = ReaderCore::new(dir.path().join("cache").to_string_lossy().into()).unwrap();
+        core.save_library_shelf("s".into(), "Shelf".into(), vec![], "local".into(), false)
+            .unwrap();
+        core.lock().unwrap().execute_batch(
+            "INSERT INTO library_files VALUES('folder','s','folder','','folder',1,0,1,0,NULL,'auto');
+             INSERT INTO library_files VALUES('book','s','folder/book.txt','folder','book.txt',0,100,1,0,NULL,'auto');"
+        ).unwrap();
+        let query = core.query_snapshot("{}".into()).unwrap();
+        let before = FOLDER_COVER_QUERIES.with(|count| count.get());
+        let candidates = query
+            .library_search_candidates(
+                crate::CatalogueScope {
+                    shelf_id: Some("s".into()),
+                    parent_path: None,
+                    recursive: true,
+                },
+                false,
+            )
+            .unwrap();
+        assert!(candidates.iter().any(|c| c.entry.directory));
+        assert!(candidates.iter().all(|c| c.entry.cover_previews.is_empty()));
+        // Matching happens in Swift; an unmatched search stops here without any cover SQL.
+        assert_eq!(FOLDER_COVER_QUERIES.with(|count| count.get()), before);
+        let covers = query
+            .library_folder_cover_previews("s".into(), "folder".into())
+            .unwrap();
+        assert_eq!(covers[0].file_id, "book");
+        assert_eq!(FOLDER_COVER_QUERIES.with(|count| count.get()), before + 1);
     }
 
     #[test]
@@ -1017,6 +949,15 @@ mod recent_tests {
         let child = query.library_entry("indexed".into()).unwrap();
         assert!(child.book_id.is_none());
         assert_eq!(child.last_read, folder.last_read);
+        // Two paths to one SHA both inherit it; replacing the input snapshot can
+        // lower a folder's time (no monotonically increasing UI-side max).
+        core.lock().unwrap().execute_batch("INSERT INTO library_files VALUES('second-folder','s','second','','second',1,0,1,0,NULL,'auto'); INSERT INTO library_files VALUES('second-copy','s','second/copy.txt','second','copy.txt',0,100,1,0,NULL,'auto'); INSERT INTO library_identities VALUES('second-copy','raw','auto',100,1);").unwrap();
+        let lower=core.query_snapshot(serde_json::json!({"positions":[{"content_key":sha,"offset":20,"updated":5,"visible":true,"preferred":null}]}).to_string()).unwrap();
+        let folders = lower
+            .library_entries(Some("s".into()), Some("".into()), LibrarySort::Reading)
+            .unwrap();
+        assert!(folders.iter().all(|f| f.last_read == 5));
+
         assert_eq!(
             folder
                 .cover_previews
@@ -1064,4 +1005,36 @@ mod recent_tests {
         assert_eq!(recent[0].content_sha256.as_deref(), Some("indexed-sha"));
         assert_eq!(recent[0].position_utf8, 50);
     }
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct LibrarySearchCandidate {
+    pub entry: LibraryEntry,
+    pub natural_order_ordinal: u64,
+    pub resolved_metadata: Option<crate::BookMetadata>,
+}
+
+pub(crate) fn source_snapshots<P: rusqlite::Params>(
+    db: &Connection,
+    condition: &str,
+    params: P,
+) -> Result<Vec<SourceFileSnapshot>> {
+    let sql = format!(
+        "SELECT f.id,f.shelf_id,f.relative_path,f.size,f.modified,f.needs_download,f.book_id,f.decoding FROM library_files f LEFT JOIN file_identities fi ON fi.file_id=f.id {condition}"
+    );
+    let mut stmt = db.prepare(&sql)?;
+    Ok(stmt
+        .query_map(params, |r| {
+            Ok(SourceFileSnapshot {
+                id: r.get(0)?,
+                shelf_id: r.get(1)?,
+                relative_path: r.get(2)?,
+                size: r.get::<_, i64>(3)? as u64,
+                modified: r.get(4)?,
+                needs_download: r.get(5)?,
+                book_id: r.get(6)?,
+                decoding: r.get(7)?,
+            })
+        })?
+        .collect::<std::result::Result<_, _>>()?)
 }

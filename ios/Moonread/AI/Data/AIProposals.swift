@@ -11,8 +11,9 @@ struct AIMetadataRenameProposal: Codable, Sendable {
     var source: AIFileSnapshot
     func filename(stem: String) throws -> String {
         let stem = stem.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !stem.contains("\\") else { throw AIToolError("invalid_argument", field: "rename.name") }
-        _ = try libraryChildPath(parent: "", name: stem)
+        do { try validateLibraryName(input: stem, profile: .aiRename) }
+        catch LibraryInputError.Backslash { throw AIToolError("invalid_argument", field: "rename.name") }
+        catch { throw ReaderError.InvalidSettings }
         let ext = (originalName as NSString).pathExtension
         return ext.isEmpty ? stem : stem + "." + ext
     }

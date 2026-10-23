@@ -277,9 +277,14 @@ final class SyncCompatibilityTests: UserDataFixture {
     try await store.put("metadata/sha/author", value: "\"Original author\"", device: "device")
     let projection = try await store.projection(generation: 0, enabled: true, includeFacts: false)
     XCTAssertFalse(projection.contains("future"))
+    try await store.requireMetadataReadable(keys: ["sha"]) // Unknown future keys remain opaque, as before.
+    try await store.receiveSyncFixture("value", key: "metadata/sha/synopsis", payload: unknown)
+    await Self.rejectSync { try await store.requireMetadataReadable(keys: ["sha"]) }
+    try await store.requireMetadataReadable(keys: ["unrelated"])
+
     try await store.removePending(key: "pending:book")
     let retained = try await store.syncFixturePayloads("value")
-    XCTAssertEqual(retained.filter { $0 == unknown }.count, 2)
+    XCTAssertEqual(retained.filter { $0 == unknown }.count, 3)
     do {
 
       let (root, service, book, formal) = try await editorFixture()

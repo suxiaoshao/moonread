@@ -1,0 +1,153 @@
+{
+  "schemaVersion": 1,
+  "names": [
+    {
+      "name": "星灯.txt",
+      "libraryName": true,
+      "shareInboxName": true,
+      "manualForm": true,
+      "aiPreview": true,
+      "aiRename": true
+    },
+    {
+      "name": "BOOK.TXT",
+      "libraryName": true,
+      "shareInboxName": true,
+      "manualForm": true,
+      "aiPreview": true,
+      "aiRename": true
+    },
+    {
+      "name": "a/b.txt",
+      "libraryName": false,
+      "shareInboxName": false,
+      "manualForm": false,
+      "aiPreview": false,
+      "aiRename": false
+    },
+    {
+      "name": "a\\b.txt",
+      "libraryName": true,
+      "shareInboxName": false,
+      "manualForm": true,
+      "aiPreview": false,
+      "aiRename": false
+    },
+    {
+      "name": "a:b.txt",
+      "libraryName": false,
+      "shareInboxName": false,
+      "manualForm": false,
+      "aiPreview": true,
+      "aiRename": false
+    },
+    {
+      "name": "a\u0000b.txt",
+      "libraryName": false,
+      "shareInboxName": false,
+      "manualForm": true,
+      "aiPreview": true,
+      "aiRename": false
+    },
+    {
+      "name": ".hidden.txt",
+      "libraryName": false,
+      "shareInboxName": false,
+      "manualForm": false,
+      "aiPreview": false,
+      "aiRename": false
+    },
+    {
+      "name": "",
+      "libraryName": false,
+      "shareInboxName": false,
+      "manualForm": false,
+      "aiPreview": false,
+      "aiRename": false
+    },
+    {
+      "name": "   ",
+      "libraryName": false,
+      "shareInboxName": true,
+      "manualForm": false,
+      "aiPreview": true,
+      "aiRename": false
+    },
+    {
+      "name": "..",
+      "libraryName": false,
+      "shareInboxName": false,
+      "manualForm": false,
+      "aiPreview": false,
+      "aiRename": false
+    },
+    {
+      "name": " a.txt",
+      "libraryName": true,
+      "shareInboxName": true,
+      "manualForm": true,
+      "aiPreview": true,
+      "aiRename": true
+    },
+    {
+      "name": "a\nb.txt",
+      "libraryName": true,
+      "shareInboxName": true,
+      "manualForm": true,
+      "aiPreview": true,
+      "aiRename": true
+    }
+  ],
+  "paths": [
+    {
+      "path": "",
+      "allowRoot": true,
+      "valid": true
+    },
+    {
+      "path": "",
+      "allowRoot": false,
+      "valid": false
+    },
+    {
+      "path": "/book",
+      "allowRoot": true,
+      "valid": false
+    },
+    {
+      "path": "a//b",
+      "allowRoot": false,
+      "valid": false
+    },
+    {
+      "path": "a/./b",
+      "allowRoot": false,
+      "valid": false
+    },
+    {
+      "path": "a/../b",
+      "allowRoot": false,
+      "valid": false
+    },
+    {
+      "path": "a/b",
+      "allowRoot": false,
+      "valid": true
+    },
+    {
+      "path": "a\\b",
+      "allowRoot": false,
+      "valid": true
+    },
+    {
+      "path": "a:b",
+      "allowRoot": false,
+      "valid": true
+    },
+    {
+      "path": "a\u0000b",
+      "allowRoot": false,
+      "valid": false
+    }
+  ]
+}

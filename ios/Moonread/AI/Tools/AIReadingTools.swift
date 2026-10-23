@@ -512,11 +512,7 @@ actor AIReadingTools {
     type + ":" + SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
   }
   static func bookRef(_ sha: String) -> String { "b:" + sha }
-  private func sha(_ ref: String) throws -> String {
-    let value = String(ref.dropFirst(2))
-    guard ref.hasPrefix("b:"), value.count == 64, value.allSatisfy(\.isHexDigit) else { throw AIToolError("invalid_argument", field: "bookRef") }
-    return value
-  }
+  private func sha(_ ref: String) throws -> String { try AIReadingReferences.parseBookReference(ref) }
   private func files() async throws -> [LibraryEntry] { try await AIReadingReferences(reader: reader).files() }
   private func location(_ ref: String) async throws -> LibraryLocation { try await AIReadingReferences(reader: reader).location(ref) }
   private func file(_ ref: String) async throws -> LibraryEntry { try await AIReadingReferences(reader: reader).file(ref) }
@@ -583,15 +579,7 @@ actor AIReadingTools {
       availability: availability(row), sizeBytes: row.size,
       bookRef: row.metadata.map { Self.bookRef($0.sha) })
   }
-  private func statusName(_ status: BookReadingStatus) -> String {
-    switch status {
-    case .unread: "unread"
-    case .reading: "reading"
-    case .finished: "finished"
-    case .paused: "paused"
-    case .other: "other"
-    }
-  }
+  private func statusName(_ status: BookReadingStatus) -> String { LibraryQueryRules.statusName(status) }
   private func addMetadata(
     _ metadata: BookMetadata, to result: inout AIBookResult, snippet: Bool = false
   ) {
@@ -644,32 +632,9 @@ actor AIReadingTools {
   private func searchBooks(_ input: AISearchBooksInput) async throws -> AIToolResponse<
     AIBooksResult
   > {
-    var rows = try await files()
-    if let scope = input.scopeRef {
-      let loc = try await location(scope)
-      rows = rows.filter {
-        $0.shelfId == loc.shelfID && (loc.path.isEmpty || $0.relativePath.hasPrefix(loc.path + "/"))
-      }
-    }
-    let query = input.query ?? ""
-    let author = input.author ?? ""
-    let tags = input.tags ?? []
-    rows = rows.filter { row in
-      let m = row.metadata
-      return
-        (query.isEmpty
-        || [row.title, m?.author ?? "", m?.synopsis ?? ""].contains {
-          $0.localizedCaseInsensitiveContains(query)
-        }) && (author.isEmpty || (m?.author.localizedCaseInsensitiveContains(author) ?? false))
-        && tags.allSatisfy { m?.tags.contains($0) ?? false }
-        && (input.readingStatus == nil
-          || m.map { statusName($0.status) } == input.readingStatus?.rawValue)
-    }
-    rows.sort {
-      input.sort == .name
-        ? ($0.name, $0.id) < ($1.name, $1.id)
-        : ($0.lastRead == $1.lastRead ? $0.id < $1.id : $0.lastRead > $1.lastRead)
-    }
+    let scope: LibraryLocation?
+    if let ref = input.scopeRef { scope = try await location(ref) } else { scope = nil }
+    let rows = try await reader.searchCatalogue(scope, spec: .init(profile: .ai, query: input.query ?? "", author: input.author, tags: input.tags ?? [], status: input.readingStatus?.rawValue, nameOrder: input.sort == .name))
     var items: [AIBookResult] = []
     for row in rows {
       var item = AIBookResult(
@@ -1049,7 +1014,7 @@ actor AIReadingTools {
       items = overview.books.map {
         .init(
           durationMs: $0.durationMs,
-          bookRef: $0.contentKey.count == 64 ? Self.bookRef($0.contentKey) : nil, title: $0.title,
+          bookRef: (try? parseSha256(value: $0.contentKey)) != nil ? Self.bookRef($0.contentKey) : nil, title: $0.title,
           firstReadAt: timestamp($0.firstReadMs), lastReadAt: timestamp($0.lastReadMs),
           readingDays: $0.readingDays)
       }
@@ -1057,7 +1022,7 @@ actor AIReadingTools {
       items = try await reader.activities(first: firstDay, last: lastDay, book: key).map {
         .init(
           durationMs: UInt64(max(0, $0.endedMs - $0.startedMs)),
-          bookRef: $0.contentKey.count == 64 ? Self.bookRef($0.contentKey) : nil, title: $0.title,
+          bookRef: (try? parseSha256(value: $0.contentKey)) != nil ? Self.bookRef($0.contentKey) : nil, title: $0.title,
           sessionRef: Self.ref("session", $0.id), startedAt: timestamp($0.startedMs),
           endedAt: timestamp($0.endedMs), recordedDate: date($0.localDay),
           utcOffsetSeconds: $0.utcOffsetSeconds, preview: $0.preview)
@@ -1090,24 +1055,21 @@ extension ReaderService {
   func aiLibraryEntries(_ location: LibraryLocation, sort: LibrarySort) async throws
     -> [LibraryEntry]
   {
-    var entries = try await libraryEntries(location, sort: sort)
-    for index in entries.indices {
-      if let key = entries[index].readingKey {
-        let value = try await details(sha: key)
-        if value.metadata.sha.count == 64 { entries[index].metadata = value.metadata }
-      }
+    let query = try await catalogueQuery(location, recursive: false)
+    let metadata = try query.librarySearchCandidates(scope: catalogueScope(location, recursive: false), booksOnly: false)
+    let byID = Dictionary(uniqueKeysWithValues: metadata.map { ($0.entry.id, $0.resolvedMetadata) })
+    try await requireAIMetadataReadable(location, recursive: false)
+    return try query.libraryEntries(shelfId: location.shelfID, parentPath: location.path, sort: sort).map { entry in
+      var entry = entry; entry.metadata = byID[entry.id] ?? nil; return entry
     }
-    return entries
   }
   func aiLibraryBooks(_ shelf: String) async throws -> [LibraryEntry] {
-    var entries = try await allLibraryBooks(shelf)
-    for index in entries.indices {
-      if let key = entries[index].readingKey {
-        let value = try await details(sha: key)
-        if value.metadata.sha.count == 64 { entries[index].metadata = value.metadata }
-      }
+    let location = LibraryLocation(shelfID: shelf)
+    let candidates = try await catalogueQuery(location, recursive: true).librarySearchCandidates(scope: catalogueScope(location, recursive: true), booksOnly: true)
+    try await requireAIMetadataReadable(location, recursive: true)
+    return candidates.map { candidate in
+      var entry = candidate.entry; entry.metadata = candidate.resolvedMetadata; return entry
     }
-    return entries
   }
   func aiBookID(sha: String) throws -> String {
     try textCore().textIdForSha(sha: sha)

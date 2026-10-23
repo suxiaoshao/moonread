@@ -616,7 +616,7 @@ private struct StatisticsBookList: View {
     @State private var query = ""
     @Environment(\.theme) private var theme
     var body: some View {
-        List(books.filter { query.isEmpty || $0.title.localizedStandardContains(query) }, id: \.contentKey) {
+        List(books.filter { LibraryQueryRules.selectionMatches($0.title, query: query) }, id: \.contentKey) {
             StatisticsBookRow(book: $0, maximum: maximum, window: window).listRowBackground(Color(uiColor: theme.surface))
         }.themedPage().navigationTitle("读过的书").searchable(text: $query, prompt: "搜索书名")
     }
