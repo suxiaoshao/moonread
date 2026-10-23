@@ -61,6 +61,7 @@ extension ReaderService {
             guard let account else { throw CocoaError(.userCancelled) }
             if let previous = sourceDefaults.string(forKey: "Moonread.userOwner"), previous != account, !allowAccountChange { throw ReaderError.CloudAccountChanged }
             // The verified user consent remains valid even if initialization fails.
+            if sourceDefaults.string(forKey: "Moonread.userOwner") == nil { try? adoptLocalShelfBindings(account: account) }
             sourceDefaults.set(account, forKey: "Moonread.userOwner")
         }
         if userCloudEnabled != enabled {

@@ -25,6 +25,14 @@ CloudKit 不再重复保存一份藏书目录清单、文件夹树或 TXT 附件
 
 应用内不提供重命名、移动、移除我的书架根入口或改变其位置的操作，内部文件与子目录仍可管理。容器确认可用而固定目录不存在时可以创建空根；绝不从阅读缓存重建用户已经删除的 TXT。
 
+## 外部书架的同步提示与本机授权
+
+`UserValue` 新增 `shelf-reference/<logical UUID>`，载荷为 `{schemaVersion: 1, name, locationDescription}`，沿现有 `StoredValue(updated, token, value)` 的 LWW 裁决；来源描述只为 `icloud-drive` 或 `file-provider`，不包含路径、bookmark、本机 ID 或文件清单。内置根不发布提示。不新增 SwiftData model 或 CloudKit 字段；旧版本保留不认识的原记录，新版本按条目隔离未知载荷，不阻断其他记录或改写未知版本。
+
+`ShelfReferenceBindings`（UserDefaults，schemaVersion 1）仅在本机保存逻辑 ID 与本机授权根的绑定、本机忽略、已处理整架引导及已发布描述。按用户存储/账户分域，首次从本机开启同步时沿用逻辑 ID，后续切换账户不复制旧账户绑定；未知版本只读拒绝覆盖。提示迟到不阻塞首页；目录选择成功后才绑定，不凭同名自动接入。已有设备须先升级并上传提示；重装不保证恢复从未同步过的根。
+
+重新授权或内置根首次可用后，可经现有全量索引重新关联 SHA 用户数据；未下载云文件仍需用户选择包含。同步提示并不授予目录访问权，也不改变[最近阅读逐本恢复](recent-reading-restoration.md)规则。真实跨设备提示与授权恢复的验收单独记录，不能用本地注入代替。
+
 ## 固定目录与同步控制
 
 **内置的本地目录和 iCloud 目录均由应用固定管理，用户不能配置位置。** 未启用 iCloud 时本地保存；启用后读取系统容器 URL 并使用固定相对目录。容器 API 返回空只说明云容器不可用，不阻止应用在自己的本地目录接收文件。[Apple：获取容器](https://developer.apple.com/documentation/foundation/filemanager/url%28forubiquitycontaineridentifier%3A%29)

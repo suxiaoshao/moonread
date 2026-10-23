@@ -24,7 +24,7 @@ enum UserSyncJSON {
         case string, uint, int, uint32, int32, bool
         case choice(Set<String>), nullable(Shape), array(Shape), object([String: Shape])
     }
-    enum ValueKind { case position, chapter, author, synopsis, status, cover, tag, palette }
+    enum ValueKind { case position, chapter, author, synopsis, status, cover, tag, palette, shelfReference }
     static func kind(_ key: String) -> ValueKind? {
         let parts = key.split(separator: "/", omittingEmptySubsequences: false)
         guard parts.count >= 2, !parts[1].isEmpty else { return nil }
@@ -32,6 +32,7 @@ enum UserSyncJSON {
             switch parts[0] {
             case "position": return .position
             case "palette": return .palette
+            case "shelf-reference": return UUID(uuidString: String(parts[1])) == nil ? nil : .shelfReference
             default: return nil
             }
         }
@@ -141,6 +142,9 @@ enum UserSyncJSON {
             if text == "null" { return }
             let value = try decode(ChapterValue.self, text, as: chapter)
             guard "chapter/\(value.content_key)/\(value.offset)" == key else { throw UserSyncCompatibilityError() }
+        case .shelfReference:
+            let value = try decode(ShelfReferenceValue.self, text, as: .object(["schemaVersion": .uint, "name": .string, "locationDescription": .string]))
+            guard value.schemaVersion == 1 else { throw UserSyncCompatibilityError() }
         case .cover: try validate(text, as: .nullable(cover))
         case .tag: try validate(text, as: .nullable(.string))
         case .author, .synopsis, .status: try validate(text, as: .string)

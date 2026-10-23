@@ -164,6 +164,9 @@ actor ReaderService {
     deinit { for observer in libraryObservers.values { observer.stop() } }
     var libraryObservers: [String: LibraryDirectoryObserver] = [:]
     var libraryScans: [String: UUID] = [:]
+    var indexScanFiles: [String: Set<String>] = [:]
+    var indexScanRoots: [String: URL] = [:]
+    var indexScanRevisions: [String: UUID] = [:]
     // Completion includes index publication; mutation-only invalidation tokens are not joinable scans.
     var libraryScanTasks: [String: (id: UUID, task: Task<Bool, Error>)] = [:]
     var aiPreparationTokens: [String: UUID] = [:]

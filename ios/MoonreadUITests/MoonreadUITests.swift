@@ -383,4 +383,29 @@ import XCTest
     backFromReader()
     ready(file("分享样本.txt"))
   }
+  func testU20ReauthorizeAndRestoreWholeShelf() {
+    launch(["--ui-test-shelf-recovery"])
+    let sessionIndex = app.launchArguments.firstIndex(of: "--ui-test-session")!
+    let referenceID = app.launchArguments[sessionIndex + 1]
+    ready(app.buttons["reauthorizeShelf-" + referenceID]).tap()
+    let indexButtons = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "recoverWholeShelf-"))
+    waitUntil { indexButtons.allElementsBoundByIndex.contains(where: \.isHittable) }
+    indexButtons.allElementsBoundByIndex.first(where: \.isHittable)!.tap()
+    ready(app.buttons["fullIndexStart"]).tap()
+    let progress = app.staticTexts["fullIndexProgress"]
+    waitUntil { progress.exists && progress.label.contains("1 / 1") }
+    app.buttons["完成"].firstMatch.tap()
+    ready(file("复原样本.txt"))
+    let restoredCard = app.cells.containing(.button, identifier: "library-file-复原样本.txt").firstMatch
+    XCTAssertTrue(ready(restoredCard.staticTexts["50.0%"]).exists)
+    menu("复原样本.txt")
+    app.buttons["小说详情"].tap()
+    ready(app.buttons["复原标签"])
+    XCTAssertFalse(app.textViews["scrollText"].exists, "Whole-shelf indexing must not open a book")
+    let screenshot = XCTAttachment(screenshot: app.screenshot())
+    screenshot.name = "U20-recovered-whole-shelf"
+    screenshot.lifetime = .keepAlways
+    add(screenshot)
+  }
+
 }

@@ -4,6 +4,20 @@ use crate::{
 };
 use rusqlite::{OptionalExtension, params};
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct LibraryIdentityInventory {
+    pub total: u64,
+    pub pending: Vec<SourceFileSnapshot>,
+}
+
+fn pending_files(db: &rusqlite::Connection, shelf_id: &str) -> Result<Vec<SourceFileSnapshot>> {
+    crate::bookshelf::source_snapshots(
+        db,
+        "WHERE f.directory=0 AND f.shelf_id=?1 AND NOT EXISTS(SELECT 1 FROM valid_indexed_identities v WHERE v.file_id=f.id) ORDER BY f.id",
+        [shelf_id],
+    )
+}
+
 #[uniffi::export]
 impl ReaderCore {
     pub fn indexed_source_keys(
@@ -19,11 +33,20 @@ impl ReaderCore {
     }
     pub fn pending_identity_files(&self, shelf_id: String) -> Result<Vec<SourceFileSnapshot>> {
         let db = self.lock()?;
-        crate::bookshelf::source_snapshots(
-            &db,
-            "WHERE f.directory=0 AND f.shelf_id=?1 AND NOT EXISTS(SELECT 1 FROM valid_indexed_identities v WHERE v.file_id=f.id) ORDER BY f.id",
-            [shelf_id],
-        )
+        pending_files(&db, &shelf_id)
+    }
+
+    pub fn library_identity_inventory(&self, shelf_id: String) -> Result<LibraryIdentityInventory> {
+        let db = self.lock()?;
+        let total = db.query_row(
+            "SELECT count(*) FROM library_files WHERE shelf_id=?1 AND directory=0",
+            [&shelf_id],
+            |row| row.get::<_, i64>(0),
+        )?;
+        Ok(LibraryIdentityInventory {
+            total: total as u64,
+            pending: pending_files(&db, &shelf_id)?,
+        })
     }
 
     pub fn publish_source_identity(
@@ -136,7 +159,9 @@ mod tests {
             .identify(path.to_string_lossy().into(), "auto".into())
             .unwrap();
         scan(&core, identity.source_bytes, 1);
-        let file = core.pending_identity_files("s".into()).unwrap().remove(0);
+        let inventory = core.library_identity_inventory("s".into()).unwrap();
+        assert_eq!(inventory.total, 1);
+        let file = inventory.pending.into_iter().next().unwrap();
         assert!(
             core.publish_source_identity(file.clone(), identity.clone())
                 .unwrap()
@@ -153,6 +178,31 @@ mod tests {
         let fresh = core.pending_identity_files("s".into()).unwrap().remove(0);
         assert!(core.publish_source_identity(fresh, identity).unwrap());
         assert!(core.pending_identity_files("s".into()).unwrap().is_empty());
+        core.save_library_shelf(
+            "other".into(),
+            "Other".into(),
+            vec![],
+            "local".into(),
+            false,
+        )
+        .unwrap();
+        core.scan_library_shelf(
+            "other".into(),
+            vec![ScannedLibraryItem {
+                relative_path: "outside.txt".into(),
+                directory: false,
+                size: 10,
+                modified: 1,
+                needs_download: false,
+            }],
+        )
+        .unwrap();
+        let inventory = core.library_identity_inventory("s".into()).unwrap();
+        assert_eq!(inventory.total, 1);
+        assert!(inventory.pending.is_empty());
+        let other = core.library_identity_inventory("other".into()).unwrap();
+        assert_eq!(other.total, 1);
+        assert_eq!(other.pending.len(), 1);
     }
     #[test]
     fn full_index_v21_to_v22_preserves_files() {

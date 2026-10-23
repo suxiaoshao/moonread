@@ -326,6 +326,13 @@ enum AnnotationReduction {
         return snapshot.values.mapValues(\.value)
     }
 
+    /// Unsupported descriptions remain stored, but do not block unrelated hints.
+    func shelfReferences() throws -> [ShelfReference] {
+        try valueSnapshot(prefix: "shelf-reference/").values.map { key, stored in
+            ShelfReference(id: String(key.dropFirst("shelf-reference/".count)), value: try JSONDecoder().decode(ShelfReferenceValue.self, from: Data(stored.value.utf8)))
+        }
+    }
+
     struct RecentPosition: Sendable, Equatable {
         let contentKey: String
         let token: String

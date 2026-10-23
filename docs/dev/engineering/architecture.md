@@ -30,6 +30,8 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | --- | --- | --- | --- |
 | 解码、normalization-v1、正文/原字节 SHA 计算 | Rust `text.rs`、`source_identity.rs` 及正文导入共用核心 | 和正文缓存/稳定内容身份一致；Swift 不重算规范正文 | 保持 |
 | fileId/bookId/canonical→正式或 pending 阅读键、索引有效性 | Rust `identity.rs`，供 user_projection/full_index/bookshelf 共用 | 数据库关联是事实，不能由 UI 看长度猜身份 | 收敛 |
+| 待索引集合与书架索引 inventory | Rust `full_index.rs` | 同一数据库快照返回总量/pending；Swift 不重复身份判定 | 单源扩展 |
+| 书架同步描述、本机授权绑定和扫描后准入 | Swift `ShelfRecovery.swift`、`UserSyncJSON.swift`、`FullIndex.swift` | SwiftData 裁决描述，本机 schemaVersion 1 绑定按账户隔离；平台扫描成功范围限制自动任务，不复制 Rust 查询 | 平台边界 |
 | SHA 格式 | Rust `identity.rs::parse_sha256` | 身份及资产校验共享严格语法，语义字段仍区分 | 收敛 |
 | AI b: 引用协议 | Swift `AI/Tools/AIReadingReferences.swift` | 工具协议只在 Swift；调用 Rust SHA 校验，不再复制 hex 判断 | 删除 AIReadingTools 第二 parser |
 | SwiftData LWW/候选裁决、未知 payload 隔离 | Swift `Data/UserData.swift`、`UserSyncJSON.swift` | 权威写入口；Rust 仅接最终唯一投影 | 保持已修复单源 |

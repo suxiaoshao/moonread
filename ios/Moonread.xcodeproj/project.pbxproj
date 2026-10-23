@@ -212,6 +212,8 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		542E6B712E2CF6CEA71DD1E2 /* UserDataConflictTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED575D4FB40600C79376B30D; };
 		9F8DE62685C2F88403C6ECD7 /* UserPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DD6B800901BD6C290FD4CBA; };
 		714F48D3E479BA56DD626210 /* TipJar.storekit in Test Resources */ = {isa = PBXBuildFile; fileRef = F01700000000000000000004 /* TipJar.storekit */; };
+        B39A10000000000000000001 /* ShelfRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B39A20000000000000000001; };
+        B39A10000000000000000002 /* ShelfRecovery.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B39A20000000000000000002; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -440,6 +442,8 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		1AC33131D026ECD095CC101C /* TipJarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/TipJarTests.swift"; sourceTree = SOURCE_ROOT; };
 		ED575D4FB40600C79376B30D /* UserDataConflictTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/UserDataConflictTests.swift"; sourceTree = SOURCE_ROOT; };
 		5DD6B800901BD6C290FD4CBA /* UserPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/UserPersistenceTests.swift"; sourceTree = SOURCE_ROOT; };
+        B39A20000000000000000001 /* ShelfRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShelfRecovery.swift; sourceTree = "<group>"; };
+        B39A20000000000000000002 /* ShelfRecovery.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = ShelfRecovery.xcstrings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -644,7 +648,9 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 				AF2000000000000000000003 /* LibraryCollection.swift */,
                 AF2000000000000000000004 /* LibraryDrop.swift */,
                 F14900000000000000000002,
+                B39A20000000000000000001 /* ShelfRecovery.swift */,
                 F14900000000000000000004,
+                B39A20000000000000000002 /* ShelfRecovery.xcstrings */,
 				AF2000000000000000000002 /* LibraryPresentation.swift */,
 				AE2000000000000000000001 /* LibraryService.swift */,
 				B02000000000000000000002 /* CloudLibrary.swift */,
@@ -921,6 +927,7 @@ F01900000000000000000002,
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                B39A10000000000000000002 /* ShelfRecovery.xcstrings in Resources */,
                 83C1F3DE49DE5AC693D3E8E8,
                 FC1100000000000000000002,
 AP1000000000000000000001,
@@ -1053,6 +1060,7 @@ F01900000000000000000001,
                 AF1000000000000000000003 /* LibraryCollection.swift in Sources */,
                 AF1000000000000000000004 /* LibraryDrop.swift in Sources */,
                 F14900000000000000000001,
+                B39A10000000000000000001 /* ShelfRecovery.swift in Sources */,
 				A10000000000000000000004 /* ReaderScreen.swift in Sources */,
                 AD1000000000000000000001,
                 AD1000000000000000000002,
