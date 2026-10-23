@@ -47,6 +47,7 @@ struct ChapterInput {
 pub(crate) fn initialize(db: &Connection) -> Result<()> {
     crate::identity::initialize(db)?;
     db.execute_batch("CREATE TEMP TABLE user_positions(content_key TEXT PRIMARY KEY,position_utf8 INTEGER,last_read INTEGER,recent_visible INTEGER,preferred_file_id TEXT);
+    CREATE TEMP VIEW reading_content_positions AS SELECT content_key content_sha256 FROM user_positions WHERE last_read>0;
     CREATE TEMP VIEW reading_books AS SELECT b.*,COALESCE(p.position_utf8,0) position_utf8,COALESCE(p.last_read,0) last_read,COALESCE(p.recent_visible,1) recent_visible,p.preferred_file_id FROM main.books b LEFT JOIN user_positions p ON p.content_key=b.content_sha256;
     CREATE TEMP TABLE book_metadata(content_sha TEXT PRIMARY KEY,value TEXT);
     CREATE TEMP TABLE chapter_overrides(book_id TEXT,start_utf8 INTEGER,title TEXT,level INTEGER,excluded INTEGER,start_char_count INTEGER,body_char_count INTEGER,PRIMARY KEY(book_id,start_utf8));

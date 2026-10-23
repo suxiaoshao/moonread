@@ -47,6 +47,81 @@ mod status_tests {
     use super::*;
 
     #[test]
+    fn indexed_only_reading_status_is_shared_by_details_and_search() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = ReaderCore::new(dir.path().join("cache").to_string_lossy().into()).unwrap();
+        let sha = "a".repeat(64);
+        core.save_library_shelf("s".into(), "Shelf".into(), vec![], "local".into(), false)
+            .unwrap();
+        {
+            let db = core.lock().unwrap();
+            db.execute_batch("INSERT INTO library_files VALUES('indexed','s','novel.txt','','novel.txt',0,100,1,0,NULL,'auto');
+                INSERT INTO library_identities VALUES('indexed','raw','auto',100,1);").unwrap();
+            db.execute(
+                "INSERT INTO source_identities VALUES('raw','auto',?1,'UTF-8',100,80)",
+                [&sha],
+            )
+            .unwrap();
+            assert_eq!(
+                db.query_row("SELECT count(*) FROM books", [], |r| r.get::<_, i64>(0))
+                    .unwrap(),
+                0
+            );
+        }
+        {
+            let db = core.read_lock().unwrap();
+            db.execute("INSERT INTO user_positions VALUES(?1,50,20,1,NULL)", [&sha])
+                .unwrap();
+        }
+        let assert_status = |expected| {
+            let details = core.book_details(None, Some(sha.clone())).unwrap();
+            assert!(details.book.is_none());
+            assert_eq!(details.metadata.status, expected);
+            let candidates = core
+                .library_search_candidates(
+                    CatalogueScope {
+                        shelf_id: Some("s".into()),
+                        parent_path: None,
+                        recursive: true,
+                    },
+                    true,
+                )
+                .unwrap();
+            assert_eq!(candidates.len(), 1);
+            assert_eq!(
+                candidates[0].entry.content_sha256.as_deref(),
+                Some(sha.as_str())
+            );
+            assert_eq!(candidates[0].entry.position_utf8, 50);
+            assert_eq!(
+                candidates[0].resolved_metadata.as_ref().unwrap().status,
+                expected
+            );
+        };
+        assert_status(BookReadingStatus::Reading);
+        // An explicit finished/paused status still wins over the default.
+        let mut stored = empty(&sha);
+        stored.status = BookReadingStatus::Finished;
+        core.read_lock()
+            .unwrap()
+            .execute(
+                "INSERT INTO book_metadata VALUES(?1,?2)",
+                rusqlite::params![sha, serde_json::to_string(&stored).unwrap()],
+            )
+            .unwrap();
+        assert_status(BookReadingStatus::Finished);
+        core.read_lock()
+            .unwrap()
+            .execute("DELETE FROM book_metadata", [])
+            .unwrap();
+        core.read_lock()
+            .unwrap()
+            .execute("UPDATE user_positions SET last_read=0", [])
+            .unwrap();
+        assert_status(BookReadingStatus::Unread);
+    }
+
+    #[test]
     fn unknown_status_round_trips_as_its_original_string() {
         let raw = r#""FutureReadingState""#;
         let value: BookReadingStatus = serde_json::from_str(raw).unwrap();
@@ -125,7 +200,7 @@ pub(crate) fn metadata(db: &Connection, sha: &str) -> Result<BookMetadata> {
         .map(|v| serde_json::from_str(&v).map_err(|_| ReaderError::InvalidSettings))
         .transpose()?;
     let has_reading = db.query_row(
-        "SELECT EXISTS(SELECT 1 FROM reading_books WHERE content_sha256=?1 AND last_read>0)",
+        "SELECT EXISTS(SELECT 1 FROM reading_content_positions WHERE content_sha256=?1)",
         [sha],
         |r| r.get::<_, bool>(0),
     )?;

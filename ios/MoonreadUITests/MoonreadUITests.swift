@@ -401,6 +401,7 @@ import XCTest
     menu("复原样本.txt")
     app.buttons["小说详情"].tap()
     ready(app.buttons["复原标签"])
+    XCTAssertTrue(ready(app.buttons["bookReadingStatus"].staticTexts["阅读中"]).exists)
     XCTAssertFalse(app.textViews["scrollText"].exists, "Whole-shelf indexing must not open a book")
     let screenshot = XCTAttachment(screenshot: app.screenshot())
     screenshot.name = "U20-recovered-whole-shelf"
