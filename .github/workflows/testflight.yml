@@ -161,7 +161,7 @@ jobs:
           PY
           # This helper exists only in the ephemeral runner, never as a repository script/artifact.
           cat > "$RUNNER_TEMP/testflight-private/asc.py" <<'PY'
-          import base64, json, os, pathlib, subprocess, time, urllib.error, urllib.parse, urllib.request
+          import base64, json, os, pathlib, re, subprocess, time, urllib.error, urllib.parse, urllib.request
           ROOT = pathlib.Path(os.environ['RUNNER_TEMP']) / 'testflight-private'
           PUBLIC = ROOT.parent / 'testflight-public'
           APP = '6823849812'
@@ -228,6 +228,20 @@ jobs:
               print(f'ASC maximum build: {maximum}; candidate: {metadata["build"]}; already used/older: {conflict}.')
               if os.environ['MODE'] == 'upload' and conflict:
                   raise SystemExit('Upload blocked: candidate must exceed the global ASC maximum.')
+          def report_failure(stage):
+              log = ''.join(path.read_text(errors='replace') for path in
+                            [ROOT / (stage + '.log'), ROOT / (stage + '.stderr.log')] if path.exists()).lower()
+              category = ('agreement' if re.search(r'agreement|contracts.*(?:pending|expired)', log) else
+                          'network' if re.search(r'timed out|network|could not resolve|connection.*(?:lost|failed)|ssl|tls', log) else
+                          'permission' if re.search(r'permission|unauthorized|authentication|forbidden|access denied|\b40[13]\b', log) else
+                          'signing' if re.search(r'provision|certificate|signing|code.?sign', log) else
+                          'export' if stage in ('upload', 'export') else 'build')
+              result = {'stage': stage, 'category': category,
+                        'action': 'Stop for user review. No automatic retry, certificate revocation or provisioning loop.'}
+              if stage == 'upload':
+                  result['uploadOutcome'] = 'unconfirmed; user must check ASC before retrying'
+              (PUBLIC / 'failure.json').write_text(json.dumps(result) + '\n')
+              print(json.dumps(result))
           def poll():
               metadata = json.loads((ROOT / 'metadata.json').read_text())
               deadline = time.monotonic() + 1200
@@ -246,7 +260,8 @@ jobs:
                   time.sleep(30)
           if __name__ == '__main__':
               import sys
-              {'number-gate': number_gate, 'poll': poll}[sys.argv[1]]()
+              if sys.argv[1] == 'failure': report_failure(sys.argv[2])
+              else: {'number-gate': number_gate, 'poll': poll}[sys.argv[1]]()
           PY
       - name: Read committed versions, archive, export and audit IPA
         run: |
@@ -264,20 +279,7 @@ jobs:
           run_xcode() {
             local stage="$1"; shift
             if ! nix develop --no-update-lock-file -c xcodebuild "$@" > "$private/$stage.log" 2> "$private/$stage.stderr.log"; then
-              STAGE="$stage" python3 - <<'PY'
-          import json, os, pathlib, re
-          root = pathlib.Path(os.environ['TF_PRIVATE'])
-          log = ''.join((root / (os.environ['STAGE'] + suffix)).read_text(errors='replace')
-                        for suffix in ['.log', '.stderr.log']).lower()
-          category = ('agreement' if re.search(r'agreement|contracts.*(?:pending|expired)', log) else
-                      'network' if re.search(r'timed out|network|could not resolve|connection.*(?:lost|failed)|ssl|tls', log) else
-                      'signing/permission' if re.search(r'provision|certificate|permission|unauthorized|authentication|signing', log) else
-                      'build/export')
-          result = {'stage': os.environ['STAGE'], 'category': category,
-                    'action': 'Stop; user review required. No certificate revocation or provisioning retry.'}
-          (root.parent / 'testflight-public' / 'failure.json').write_text(json.dumps(result))
-          print(json.dumps(result))
-          PY
+              python3 "$private/asc.py" failure "$stage"
               return 1
             fi
           }
@@ -389,16 +391,21 @@ jobs:
           for path in privacy: require(isinstance(plistlib.loads((app / path).read_bytes()), dict), 'invalid privacy plist')
           require(not any(p.suffix in ('.storekit', '.xctest') or p.name.endswith('.debug.dylib') or p.name == '__preview.dylib'
                           for p in app.rglob('*')), 'test/DEBUG resource in IPA')
-          strings = command('strings', '-a', str(app / 'Moonread'))
-          markers = ['--initialize-cloudkit-development-schema', '--reader-open-benchmark', '--ui-test-recent-restoration', '--ui-test-storefront']
-          require(not any(marker.encode() in strings for marker in markers), 'diagnostic entry in IPA')
+          # Prefix rejection covers all current and future UI-test launch arguments,
+          # including --ui-testing / --ui-test-session / --ui-test-tips /
+          # --ui-test-introduction. Audit both executable owners, not just the App.
+          markers = [b'--ui-test', b'--initialize-cloudkit-development-schema', b'--reader-open-benchmark']
+          for bundle in [app, app / 'PlugIns/MoonreadShare.appex']:
+              info = plistlib.loads((bundle / 'Info.plist').read_bytes())
+              strings = command('strings', '-a', str(bundle / info['CFBundleExecutable']))
+              require(not any(marker in strings for marker in markers), 'diagnostic/test entry in ' + info['CFBundleIdentifier'])
           require(not command('git', 'status', '--porcelain', '--untracked-files=no').strip(), 'source worktree changed')
           locks = ['flake.lock', 'Cargo.lock', 'ios/Moonread.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved']
           audit = {**meta, 'sourceBranch': os.environ['SOURCE_BRANCH'], 'sourceSHA': os.environ['EXPECTED_SHA'],
                    'ipaSHA256': digest(ipas[0]), 'lockSHA256': {p: digest(pathlib.Path(p)) for p in locks},
                    'xcode': command('xcodebuild', '-version').decode().strip(),
                    'sdk': command('xcrun', '--sdk', 'iphoneos', '--show-sdk-version').decode().strip(),
-                   'privacyManifests': privacy, 'signatureVerified': True, 'productionCapabilitiesVerified': True,
+                   'privacyManifests': privacy, 'signatureVerified': True, 'productionCapabilitiesVerified': True, 'releaseTestArgumentsAbsent': True,
                    'mode': os.environ['MODE']}
           (root.parent / 'testflight-public' / 'audit.json').write_text(json.dumps(audit, indent=2) + '\n')
           # Freeze every archive file (and symlink) before a possible second export.
@@ -429,7 +436,8 @@ jobs:
               elif p.is_file(): h.update(str(p.relative_to(root)).encode() + p.read_bytes())
           if h.hexdigest() != (root / 'archive.sha256').read_text(): raise SystemExit('Audited archive changed; upload blocked.')
           PY
-          # A failed/uncertain upload is never retried. Poll ASC once through a bounded loop.
+          # A nonzero upload stops immediately after preserving a sanitized diagnosis.
+          # Its outcome may be uncertain; the user must check ASC before any retry.
           status=0
           nix develop --no-update-lock-file -c xcodebuild -exportArchive \
             -archivePath "$private/Moonread.xcarchive" -exportPath "$private/upload" \
@@ -438,7 +446,8 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" CODE_SIGN_STYLE=Automatic \
             > "$private/upload.log" 2>&1 || status=$?
           if [ "$status" -ne 0 ]; then
-            echo 'Upload command failed or response uncertain. Querying ASC; do not upload again automatically.'
+            python3 "$private/asc.py" failure upload
+            exit "$status"
           else
             echo 'Xcode upload accepted; checking ASC processing separately.'
           fi
