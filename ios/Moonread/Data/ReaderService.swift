@@ -84,11 +84,12 @@ actor ReaderService {
             })
         }
         #endif
-        #if DEBUG && READER_OPEN_DIAGNOSTICS
-        if ReaderOpenDiagnostics.benchmark {
-            let suite = "Moonread.ReaderOpen." + (ReaderOpenDiagnostics.argument("--ui-test-session") ?? UUID().uuidString)
+        #if READER_OPEN_DIAGNOSTICS
+        if ReaderOpenDiagnostics.benchmark, let session = ReaderOpenDiagnostics.session {
+            let suite = "Moonread.ReaderOpen." + session
             if let settings = UserDefaults.standard.string(forKey: "Moonread.readerSettings") { UserDefaults(suiteName: suite)?.set(settings, forKey: "Moonread.readerSettings") }
-            return ReaderService(sourceDefaultsSuite: suite)
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-ReaderOpen-" + session, isDirectory: true)
+            return ReaderService(libraryDirectory: directory, sourceDefaultsSuite: suite)
         }
         #endif
         return ReaderService()
@@ -291,7 +292,10 @@ actor ReaderService {
         #endif
     }
     var dataDirectoryName: String {
-        testSession.map { "Moonread-UITests-\($0)" } ?? "Moonread"
+        #if READER_OPEN_DIAGNOSTICS
+        if ReaderOpenDiagnostics.benchmark, ReaderOpenDiagnostics.session != nil { return userDirectoryName }
+        #endif
+        return testSession.map { "Moonread-UITests-\($0)" } ?? "Moonread"
     }
     // Internal text/file capability. UI-facing user data comes from domain
     // queries below; this core never receives shared mutable user projections.

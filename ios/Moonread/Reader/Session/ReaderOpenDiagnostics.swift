@@ -11,7 +11,19 @@ enum ReaderOpenDiagnostics {
         false
         #endif
     }
-    static var benchmark: Bool { enabled && ProcessInfo.processInfo.arguments.contains("--reader-open-benchmark") }
+    static var benchmark: Bool {
+        #if READER_OPEN_DIAGNOSTICS
+        ProcessInfo.processInfo.arguments.contains("--reader-open-benchmark")
+        #else
+        false
+        #endif
+    }
+    #if READER_OPEN_DIAGNOSTICS
+    /// A diagnostic session is deliberately separate from every UI-test argument.
+    static var session: String? {
+        argument("--reader-open-session").flatMap { UUID(uuidString: $0)?.uuidString }
+    }
+    #endif
     #if READER_OPEN_DIAGNOSTICS
     private final class Variant: @unchecked Sendable {
         let lock = NSLock()
