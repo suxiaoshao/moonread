@@ -19,6 +19,11 @@
         <key>CFBundleTypeRole</key><string>Viewer</string>
         <key>LSHandlerRank</key><string>Alternate</string>
         <key>LSItemContentTypes</key><array><string>public.plain-text</string></array>
+    </dict><dict>
+        <key>CFBundleTypeName</key><string>Moonread Reading Data Backup</string>
+        <key>CFBundleTypeRole</key><string>Viewer</string>
+        <key>LSHandlerRank</key><string>Owner</string>
+        <key>LSItemContentTypes</key><array><string>dev.moonread.backup</string></array>
     </dict></array>
     <key>LSSupportsOpeningDocumentsInPlace</key><true/>
     <key>UIFileSharingEnabled</key><true/>
@@ -26,6 +31,14 @@
         <key>UTTypeIdentifier</key><string>dev.moonread.library-item</string>
         <key>UTTypeDescription</key><string>Moonread Library Item Reference</string>
         <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+    </dict><dict>
+        <key>UTTypeIdentifier</key><string>dev.moonread.backup</string>
+        <key>UTTypeDescription</key><string>Moonread Reading Data Backup</string>
+        <key>UTTypeConformsTo</key><array><string>public.zip-archive</string></array>
+        <key>UTTypeTagSpecification</key><dict>
+            <key>public.filename-extension</key><array><string>moonread-backup</string></array>
+            <key>public.mime-type</key><string>application/vnd.moonread.backup+zip</string>
+        </dict>
     </dict></array>
 </dict>
 </plist>

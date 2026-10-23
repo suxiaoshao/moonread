@@ -158,3 +158,11 @@ v1 key 白名单：`position/{contentKey}`、`chapter/{contentKey}/{offset}`、`
 UserValue 按 `(updated, token)` 做整值 LWW；位置候选写入与压缩也遵循这一顺序。Swift 用户事实层的 `PositionCandidate.winner` 是位置的唯一胜者函数，即时投影、scoped 合并和 pending 晋升共用；投影保留 token，pending 别名归并到正文 SHA 后，每个 content key 只交给 Rust 一条最终位置，Rust 装载时拒绝重复 key。并发位置或同一独立属性互相覆盖是允许的产品语义，`v` 不能保全离线设备从未看到的新信息。需要保全的新数据必须拆为独立 key、独立不可变记录或显式字段级合并，不能声称“保留未知字段”就解决跨版本 LWW。批注沿用因果候选而非整对象 LWW，统计事实/清除是不可变记录。
 
 隔离状态依据**仍存在的无法理解记录**计算，不依据哪个 v1 候选最后到达；后到或时间戳更高的旧版记录不能解除隔离。验证必须经 UserDataStore/ReaderService 的真实保存链路，覆盖 v1→v2 与 v2→离线 v1 两种到达顺序、压缩/append/清除/pending、未知嵌套字段、缺失/null/错类型、整数精度与明确修改状态；本机模拟导入不等同于真实双设备 CloudKit 验收。
+
+## 整书阅读数据删除与备份恢复
+
+整书清除删除当前 SwiftData 中所选正文 SHA 的全部物理候选/副本，由 CloudKit 镜像传播对象删除；不新增 book-reset、删除代次或同步 epoch，不要求所有设备升级。共享封面只有无剩余引用才删除，跨书/全局统计清除保留，配色和小说不动。本机保存成功不表示所有设备已完成删除；关闭同步时不承诺追溯删除未同步云记录。其他设备的新事实及主动导入旧备份允许保存，正常旧备份合并仍保留已有较新数据。
+
+本机仅串行收尾三处已知窗口：位置 flush 与清除；pending 先清再正式库清除；StatisticsWriter 的在途及失败重试批次。UserDefaults 的 `Moonread.readingDataDeletion.v1` 有限回执带 schemaVersion 1、账户作用域、选中 SHA/别名及原对象标识/载荷指纹，重启仅完成原对象清理，后来新建或已变化的对象保留。回执不参与同步或未来写入裁决，完成即移除；所选书旧统计批次丢弃，其他书保留。未知回执版本拒绝执行，账户切换前先完成原作用域操作。
+
+备份和 pending 晋升共用位置胜者及不可变批注/事实接入，保留 updated/token、ID 和因果，冲突 ID 拒绝并回滚。历史 pending 晋升可能留下内层 pending content_key 的事实：正式 ReadingFact.contentKey 为权威路由，与现有 visibleFacts 一样处理，备份保持原 payload；内外两个正式 SHA 不一致仍拒绝。未知必需 payload 保留原数据并阻止导入，不降级或重编码。

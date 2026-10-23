@@ -119,6 +119,9 @@ actor ReaderService {
     var userCloudEnabled = false
     let userDirectoryName: String
     var readingSourceIDs: [String: String] = [:]
+    var userDataOperationBusy = false
+    var userDataOperationWaiters: [CheckedContinuation<Void, Never>] = []
+    var localReadingWriteLeases: [String: UUID] = [:]
     var promotedUserKeys = Set<String>()
     var shownCandidates: [String: [AnnotationCandidate]] = [:]
     var undoCandidates: [String: ([AnnotationCandidate], AnnotationContent?)] = [:]
@@ -234,6 +237,11 @@ actor ReaderService {
         Dictionary(uniqueKeysWithValues: foregroundHolds.filter { $0.key.hasPrefix("book:") }.map { (String($0.key.dropFirst(5)), $0.value) })
     }
     func identityMayRun() -> Bool { foregroundHolds.isEmpty }
+    func cacheProtectedBookIDs() -> [String] { Array(Set(readers.keys).union(imports.keys).union(pendingPromotionIDs)) }
+    func readingDataIsBusy(_ keys: Set<String>) -> Bool {
+        if foregroundHolds.keys.contains(where: { !$0.hasPrefix("book:") }) { return true }
+        return readers.keys.contains { id in (try? userKey(id)).map(keys.contains) ?? true }
+    }
     private func holdForeground(_ key: String) {
         foregroundHolds[key, default: 0] += 1
         backgroundReadCancellation?()
@@ -294,12 +302,8 @@ actor ReaderService {
         return nil
         #endif
     }
-    var dataDirectoryName: String {
-        #if READER_OPEN_DIAGNOSTICS
-        if ReaderOpenDiagnostics.benchmark, ReaderOpenDiagnostics.session != nil { return userDirectoryName }
-        #endif
-        return testSession.map { "Moonread-UITests-\($0)" } ?? "Moonread"
-    }
+    // The normal app remains Moonread; injected stores and UI sessions own their caches.
+    var dataDirectoryName: String { userDirectoryName }
     // Internal text/file capability. UI-facing user data comes from domain
     // queries below; this core never receives shared mutable user projections.
     func textCore() throws -> ReaderCore {

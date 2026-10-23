@@ -73,3 +73,23 @@ pub(crate) fn directory_order(
     .then_with(|| a.relative_path.cmp(&b.relative_path))
     .then_with(|| a.id.cmp(&b.id))
 }
+
+#[derive(Debug, uniffi::Record)]
+pub struct ReadingDataSortEntry {
+    pub key: String,
+    pub title: String,
+    pub last_read: i64,
+}
+#[uniffi::export]
+pub fn reading_data_order(mut entries: Vec<ReadingDataSortEntry>, recent: bool) -> Vec<String> {
+    entries.sort_by(|a, b| {
+        (if recent {
+            b.last_read.cmp(&a.last_read)
+        } else {
+            std::cmp::Ordering::Equal
+        })
+        .then_with(|| natural_cmp(&a.title, &b.title))
+        .then_with(|| a.key.cmp(&b.key))
+    });
+    entries.into_iter().map(|v| v.key).collect()
+}

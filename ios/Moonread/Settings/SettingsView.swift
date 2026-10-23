@@ -75,6 +75,9 @@ struct SettingsView: View {
                 }
             }.listRowBackground(Color(uiColor: theme.surface))
             Section("应用") {
+                NavigationLink(value: LibraryRoute.dataManagement) {
+                    Label { Text("数据管理", tableName: "DataManagement") } icon: { Image(systemName: "externaldrive") }
+                }.accessibilityIdentifier("dataManagementSettings")
                 NavigationLink { UsageGuideView() } label: {
                     SettingsEntry(title: "使用指南", symbol: "questionmark.circle", summary: String(localized: "导入、阅读与同步"))
                 }.accessibilityIdentifier("usageGuideSettings")

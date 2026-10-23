@@ -36,13 +36,19 @@ extension ReaderService {
     func saveReading(_ slices: [ReadingSlice], generation: UInt64) async throws {
         let preferences = statisticsPreferences()
         var facts: [(String, String, String)] = [], pendingFacts: [(String, String, String)] = []
+        var leases: [String: UUID] = [:]
         for slice in slices {
-            let key = try userKey(slice.bookId), book = try await snapshot(slice.bookId).book
+            let key = try userKey(slice.bookId)
+            leases[key] = localReadingWriteLease(key)
+            let book = try await snapshot(slice.bookId).book
             let value: [String: Any] = ["content_key": key, "title": book.title, "device": userDevice,
                 "slice": try JSONSerialization.jsonObject(with: Data(encodeReadingSlice(value: slice).utf8))]
             let fact = (slice.id, key, String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self))
             switch try parseReadingKey(value: key) { case .pending: pendingFacts.append(fact); case .formal: facts.append(fact) }
         }
+        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        facts = facts.filter { leases[$0.1] == localReadingWriteLease($0.1) }
+        pendingFacts = pendingFacts.filter { leases[$0.1] == localReadingWriteLease($0.1) }
         try await userStore().saveFacts(facts, generation: generation, current: preferences.generation, enabled: preferences.enabled)
         try await userStore(pending: true).saveFacts(pendingFacts, generation: generation, current: preferences.generation, enabled: preferences.enabled)
         NotificationCenter.default.post(name: .statisticsChanged, object: nil)
@@ -122,6 +128,13 @@ final class StatisticsWriter {
         }
     }
     func drain() async { await task?.value }
+    func discardReadingData(bookIDs: Set<String>) async {
+        await drain()
+        queue = queue.compactMap { batch in
+            let slices = batch.slices.filter { !bookIDs.contains($0.bookId) }
+            return slices.isEmpty ? nil : Batch(slices: slices, generation: batch.generation, lease: batch.lease)
+        }
+    }
 }
 
 /// Injectable time keeps effective-duration tests on the real Rust reading clock.

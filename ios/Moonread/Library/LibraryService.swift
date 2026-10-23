@@ -921,8 +921,12 @@ extension ReaderService {
             let base = try await details(sha: identity.contentSha256).metadata
             var edited = base; edited.tags = ["星灯"]
             try await saveMetadata(base: base, edited: edited)
-            if ProcessInfo.processInfo.arguments.contains("--ui-test-smoke-restored") {
-                let position = PositionValue(content_key: identity.contentSha256, offset: 120, source_hint: nil)
+            if ProcessInfo.processInfo.arguments.contains("--ui-test-data-management") {
+                let chapter = ChapterValue(content_key: identity.contentSha256, offset: 0, title: "备份目录", level: 1, excluded: false)
+                try await userStore().put("chapter/" + identity.contentSha256 + "/0", value: UserSyncJSON.encode(chapter), device: "data-management-fixture")
+            }
+            if ProcessInfo.processInfo.arguments.contains("--ui-test-smoke-restored") || ProcessInfo.processInfo.arguments.contains("--ui-test-data-management") {
+                let position = PositionValue(content_key: identity.contentSha256, offset: ProcessInfo.processInfo.arguments.contains("--ui-test-data-management") ? identity.utf8Bytes / 2 : 120, source_hint: nil)
                 try await userStore().put("position/" + identity.contentSha256, value: UserSyncJSON.encode(position), device: "smoke-fixture")
             }
         }

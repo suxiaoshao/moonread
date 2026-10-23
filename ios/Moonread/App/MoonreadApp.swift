@@ -109,10 +109,21 @@ struct MoonreadApp: App {
                     }
                 }
             }
-            .onOpenURL { url in Task {
-                guard await library.load() else { return }
-                library.selectedTab = .library; library.receiveSystemURLs([url])
-            } }
+            .onOpenURL(perform: openURL)
+
+    }
+
+    private func openURL(_ url: URL) {
+        let access = LibraryImportFile(url: url)
+        Task {
+            defer { access.finish() }
+            guard await library.load() else { return }
+            library.selectedTab = .library
+            if url.pathExtension.lowercased() == "moonread-backup" {
+                library.libraryPath = [.settings, .dataManagement]
+                await library.dataManagement.prepareImport(url)
+            } else { library.receiveSystemURLs([url]) }
+        }
     }
 
 }
@@ -256,6 +267,7 @@ struct LibraryDestination: View {
         case .conversation(let id, let anchor):
             if ai.availability.isAvailable { AIChatView(conversationID: id, anchor: anchor) }
         case .settings: SettingsView(library: library)
+        case .dataManagement: DataManagementView(model: library.dataManagement)
         case .search(let scope): AppSearchPage(model: library, scope: scope)
         }
     }

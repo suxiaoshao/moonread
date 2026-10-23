@@ -1,6 +1,10 @@
 //! Platform-independent text ingestion, normalized positions and reader state.
 //! The caller owns authorization and file coordination for source paths.
 
+mod cache_management;
+pub use cache_management::*;
+mod backup_archive;
+pub use backup_archive::*;
 mod identity;
 pub use identity::*;
 mod validation;
@@ -9,6 +13,7 @@ mod book_details;
 mod bookshelf;
 mod library_order;
 pub use book_details::*;
+pub use library_order::{ReadingDataSortEntry, reading_data_order};
 mod library_tools;
 mod migrations;
 pub use bookshelf::*;
@@ -59,6 +64,8 @@ uniffi::setup_scaffolding!();
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, thiserror::Error, uniffi::Error)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ReaderError {
+    #[error("{message}")]
+    Backup { message: String },
     #[error("文件访问失败：{message}")]
     Io { message: String },
     #[error("数据存储失败：{message}")]

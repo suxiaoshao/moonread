@@ -139,6 +139,9 @@ final class BookInformationModel {
         // The existing preparation task owns the resume, including cancellation.
         preparationStep = .resumeRequested
     }
+    func finishPreparationForDataDeletion() async {
+        let current = task; current?.cancel(); await current?.value; lease = nil
+    }
     func cancelPreparation() { task?.cancel() }
     func setStatus(_ status: BookReadingStatus) async {
         guard let base = details?.metadata, !base.sha.isEmpty else { return }
@@ -403,6 +406,33 @@ struct BookInformationSections: View {
                     LabeledContent("当前章覆盖", value: chapter.coverageLabel)
                 }
             }.listRowBackground(Color(uiColor: theme.surface)).id("myReading")
+            if let library {
+                BookReadingDataClearSection(book: model, target: target, key: details.metadata.sha, manager: library.dataManagement)
+            }
         }
+    }
+}
+
+private struct BookReadingDataClearSection: View {
+    let book: BookInformationModel
+    let target: StatisticsRoute
+    let key: String
+    @Bindable var manager: DataManagementModel
+    var body: some View {
+        Section {
+            Button(role: .destructive) {
+                Task {
+                    if !target.fromReader { await book.finishPreparationForDataDeletion() }
+                    await manager.load()
+                    manager.deleting = [key]
+                }
+            } label: { Text("清除阅读数据", tableName: "DataManagement") }
+                .disabled(manager.busy).accessibilityIdentifier("clearBookReadingData")
+            if let message = manager.message { Text(verbatim: message).font(.footnote) }
+        }.modifier(ReadingDataDeletionPrompt(model: manager))
+            .onChange(of: manager.busy) { _, busy in if !busy { Task { await book.load(target) } } }
+            .alert("暂时无法完成", isPresented: Binding(get: { manager.error != nil }, set: { if !$0 { manager.error = nil } })) {
+                Button("知道了", role: .cancel) { manager.error = nil }
+            } message: { Text(manager.error ?? "") }
     }
 }
