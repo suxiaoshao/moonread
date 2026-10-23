@@ -500,11 +500,11 @@ impl ReaderCore {
             },
             books_only,
         )?;
-        if scope.recursive {
-            if let Some(parent) = scope.parent_path.filter(|p| !p.is_empty()) {
-                let prefix = format!("{parent}/");
-                values.retain(|e| e.relative_path.starts_with(&prefix));
-            }
+        if scope.recursive
+            && let Some(parent) = scope.parent_path.filter(|p| !p.is_empty())
+        {
+            let prefix = format!("{parent}/");
+            values.retain(|e| e.relative_path.starts_with(&prefix));
         }
         values.sort_by(crate::library_order::file_order);
         populate_cover_previews(&db, &mut values)?;
