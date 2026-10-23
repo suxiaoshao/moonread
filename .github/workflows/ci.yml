@@ -115,16 +115,16 @@ jobs:
 
   linux:
     name: Linux checks
-    needs: [changes, secrets]
-    # Scope failure falls back to full checks; secret failures remain blocking.
+    needs: [changes, secrets, workflows]
+    # Scope failure falls back to full checks; secret/workflow failures remain blocking.
     if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.secrets.result != 'success' || needs.changes.outputs.linux == 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - name: Require secret scan to pass
-        if: ${{ needs.secrets.result != 'success' }}
+      - name: Require secret and workflow checks to pass
+        if: ${{ needs.secrets.result != 'success' || (needs.workflows.result != 'success' && needs.workflows.result != 'skipped') }}
         run: |
-          echo 'Secret scanning did not pass.' >&2
+          echo 'Secret scanning or workflow validation did not pass.' >&2
           exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

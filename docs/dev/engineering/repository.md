@@ -21,7 +21,7 @@ Nix 不替代 Xcode。Apple SDK、Swift 编译器、模拟器和签名由 Xcode 
 | 其他文档等改动 | 密钥扫描；不相关的 job 跳过 |
 | push 到 `main`／`release/**`，或手动触发 | 全部检查 |
 
-`Secret scan` 对任何改动都运行：gitleaks 扫描当前 HEAD 可达的已提交历史，输出遮盖密钥，不扫描开发者本机 build/、签名配置或未提交文件。扫描失败会使必需的 `Linux checks` 直接失败，避免范围跳过绕过密钥检查。Linux 同时检查 Rust/Nix 格式、工作区所有 target/feature 的 Clippy（禁止警告）及 Rust 测试；Cargo 命令均使用 `--locked`。
+`Secret scan` 对任何改动都运行：gitleaks 扫描当前 HEAD 可达的已提交历史，输出遮盖密钥，不扫描开发者本机 build/、签名配置或未提交文件。密钥扫描或适用的 actionlint 失败会使必需的 `Linux checks` 直接失败，保留拆分前的合并阻断效果；正常按范围跳过 actionlint 不阻断 Linux。Linux 同时检查 Rust/Nix 格式、工作区所有 target/feature 的 Clippy（禁止警告）及 Rust 测试；Cargo 命令均使用 `--locked`。
 
 范围判断失败时退回全部检查。后续 job 以 job 级 `if` 跳过，保留 `Linux checks`／`iOS unit tests` 的检查名称；不相关的必需 job 显示 skipped（视为通过），不会因整个工作流未触发而一直 pending。同一 PR 的新提交取消旧检查。Cargo 缓存按平台、工具链及依赖区分，不上传本机数据或签名安装包。
 
