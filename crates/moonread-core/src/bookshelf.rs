@@ -421,7 +421,18 @@ fn library_entry_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryEntry> {
     })
 }
 
-fn populate_cover_previews(db: &Connection, entries: &mut [LibraryEntry]) -> Result<()> {
+#[cfg(test)]
+thread_local! {
+    static FOLDER_COVER_QUERIES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+fn folder_cover_previews(
+    db: &Connection,
+    shelf_id: &str,
+    relative_path: &str,
+) -> Result<Vec<LibraryCoverPreview>> {
+    #[cfg(test)]
+    FOLDER_COVER_QUERIES.with(|count| count.set(count.get() + 1));
     let mut stmt = db.prepare_cached(
         "SELECT f.id,f.name,m.value FROM library_files f
         LEFT JOIN file_identities fi ON fi.file_id=f.id
@@ -430,19 +441,23 @@ fn populate_cover_previews(db: &Connection, entries: &mut [LibraryEntry]) -> Res
         WHERE f.shelf_id=?1 AND f.directory=0 AND f.relative_path>=?2 AND f.relative_path<?3
         ORDER BY COALESCE(p.last_read,0) DESC,f.modified DESC,f.name,f.id LIMIT 4",
     )?;
+    // Literal path bounds also handle names containing SQL LIKE wildcards.
+    let prefix = format!("{relative_path}/");
+    let end = format!("{relative_path}0");
+    Ok(stmt
+        .query_map(params![shelf_id, prefix, end], |r| {
+            Ok(LibraryCoverPreview {
+                file_id: r.get(0)?,
+                name: r.get(1)?,
+                cover: metadata_column(r, 2)?.and_then(|m| m.cover),
+            })
+        })?
+        .collect::<std::result::Result<_, _>>()?)
+}
+
+fn populate_cover_previews(db: &Connection, entries: &mut [LibraryEntry]) -> Result<()> {
     for folder in entries.iter_mut().filter(|e| e.directory) {
-        // Literal path bounds also handle names containing SQL LIKE wildcards.
-        let prefix = format!("{}/", folder.relative_path);
-        let end = format!("{}0", folder.relative_path);
-        folder.cover_previews = stmt
-            .query_map(params![folder.shelf_id, prefix, end], |r| {
-                Ok(LibraryCoverPreview {
-                    file_id: r.get(0)?,
-                    name: r.get(1)?,
-                    cover: metadata_column(r, 2)?.and_then(|m| m.cover),
-                })
-            })?
-            .collect::<std::result::Result<_, _>>()?;
+        folder.cover_previews = folder_cover_previews(db, &folder.shelf_id, &folder.relative_path)?;
     }
     Ok(())
 }
@@ -481,6 +496,16 @@ impl ReaderCore {
         populate_cover_previews(&db, &mut entries)?;
         Ok(entries)
     }
+    pub(crate) fn library_folder_cover_previews(
+        &self,
+        shelf_id: String,
+        relative_path: String,
+    ) -> Result<Vec<LibraryCoverPreview>> {
+        validate_relative(&relative_path, false)?;
+        let db = self.read_lock()?;
+        folder_cover_previews(&db, &shelf_id, &relative_path)
+    }
+
     pub(crate) fn library_search_candidates(
         &self,
         scope: crate::CatalogueScope,
@@ -507,7 +532,6 @@ impl ReaderCore {
             values.retain(|e| e.relative_path.starts_with(&prefix));
         }
         values.sort_by(crate::library_order::file_order);
-        populate_cover_previews(&db, &mut values)?;
         let mut statement =
             db.prepare("SELECT DISTINCT content_sha256 FROM reading_books WHERE last_read>0")?;
         let reading: HashSet<String> = statement
@@ -709,6 +733,39 @@ impl ReaderCore {
 #[cfg(test)]
 mod recent_tests {
     use super::*;
+
+    #[test]
+    fn search_candidates_leave_unmatched_folder_covers_unqueried() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = ReaderCore::new(dir.path().join("cache").to_string_lossy().into()).unwrap();
+        core.save_library_shelf("s".into(), "Shelf".into(), vec![], "local".into(), false)
+            .unwrap();
+        core.lock().unwrap().execute_batch(
+            "INSERT INTO library_files VALUES('folder','s','folder','','folder',1,0,1,0,NULL,'auto');
+             INSERT INTO library_files VALUES('book','s','folder/book.txt','folder','book.txt',0,100,1,0,NULL,'auto');"
+        ).unwrap();
+        let query = core.query_snapshot("{}".into()).unwrap();
+        let before = FOLDER_COVER_QUERIES.with(|count| count.get());
+        let candidates = query
+            .library_search_candidates(
+                crate::CatalogueScope {
+                    shelf_id: Some("s".into()),
+                    parent_path: None,
+                    recursive: true,
+                },
+                false,
+            )
+            .unwrap();
+        assert!(candidates.iter().any(|c| c.entry.directory));
+        assert!(candidates.iter().all(|c| c.entry.cover_previews.is_empty()));
+        // Matching happens in Swift; an unmatched search stops here without any cover SQL.
+        assert_eq!(FOLDER_COVER_QUERIES.with(|count| count.get()), before);
+        let covers = query
+            .library_folder_cover_previews("s".into(), "folder".into())
+            .unwrap();
+        assert_eq!(covers[0].file_id, "book");
+        assert_eq!(FOLDER_COVER_QUERIES.with(|count| count.get()), before + 1);
+    }
 
     #[test]
     fn tag_groups_repeat_multitagged_files_and_separate_identity_states_within_shelf() {

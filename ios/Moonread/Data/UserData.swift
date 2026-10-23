@@ -349,15 +349,12 @@ enum AnnotationReduction {
         guard try blockedMarks(key: key).isDisjoint(with: ids) else { throw UserSyncCompatibilityError() }
     }
     func requireMetadataReadable(keys: Set<String>) throws {
-        guard !keys.isEmpty else { return }
-        let blocked = try valueSnapshot(prefix: "metadata/").blocked
-        guard !blocked.contains(where: { key in
-            let parts = key.split(separator: "/", maxSplits: 2)
-            return parts.count >= 2 && keys.contains(String(parts[1]))
-        }) else { throw UserSyncCompatibilityError() }
+        for key in keys { try requireMetadataReadable(key: key) }
     }
     func requireMetadataReadable(key: String) throws {
-        try requireMetadataReadable(keys: [key])
+        guard try valueSnapshot(prefix: "metadata/" + key + "/").blocked.isEmpty else {
+            throw UserSyncCompatibilityError()
+        }
     }
     func compatibilityNotice(key: String) throws -> String? {
         var snapshot = try valueSnapshot(key: "position/" + key)

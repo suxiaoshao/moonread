@@ -281,6 +281,14 @@ impl ReaderQuery {
     ) -> Result<Vec<LibraryEntry>> {
         self.core.library_entries(shelf_id, parent_path, sort)
     }
+    pub fn library_folder_cover_previews(
+        &self,
+        shelf_id: String,
+        relative_path: String,
+    ) -> Result<Vec<crate::LibraryCoverPreview>> {
+        self.core
+            .library_folder_cover_previews(shelf_id, relative_path)
+    }
     pub fn library_search_candidates(
         &self,
         scope: CatalogueScope,

@@ -343,9 +343,15 @@ extension ReaderService {
         try await userStore().requireMetadataReadable(keys: formal)
     }
     func searchCatalogue(_ location: LibraryLocation?, spec: LibraryQueryRules.SearchSpec) async throws -> [LibraryEntry] {
-        let candidates = try await catalogueQuery(location, recursive: true).librarySearchCandidates(scope: catalogueScope(location, recursive: true), booksOnly: spec.profile == .ai)
+        let query = try await catalogueQuery(location, recursive: true)
+        let candidates = try query.librarySearchCandidates(scope: catalogueScope(location, recursive: true), booksOnly: spec.profile == .ai)
         if spec.profile == .ai { try await requireAIMetadataReadable(nil, recursive: true) }
-        return LibraryQueryRules.filterAndRank(candidates, spec: spec)
+        var entries = LibraryQueryRules.filterAndRank(candidates, spec: spec)
+        for index in entries.indices where entries[index].directory {
+            entries[index].coverPreviews = try query.libraryFolderCoverPreviews(
+                shelfId: entries[index].shelfId, relativePath: entries[index].relativePath)
+        }
+        return entries
     }
 
     func allLibraryBooks(_ shelfID: String) async throws -> [LibraryEntry] {
