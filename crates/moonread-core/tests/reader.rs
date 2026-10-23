@@ -1,4 +1,4 @@
-use moonread_core::{ReaderCore, ReaderError};
+use moonread_core::ReaderCore;
 use tempfile::TempDir;
 use unicode_segmentation::UnicodeSegmentation;
 
