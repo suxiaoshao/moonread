@@ -29,7 +29,7 @@ extension ReaderService {
     }
     func metadataOptions(shelfID: String?) async throws -> BookFilterOptions { try await catalogueQuery(shelfID.map { LibraryLocation(shelfID: $0) }, recursive: true).bookFilterOptions(shelfId: shelfID) }
     func saveMetadata(base: BookMetadata, edited: BookMetadata) async throws {
-        guard base.sha == edited.sha, base.sha.count == 64, edited.author.utf8.count <= 1024,
+        guard base.sha == edited.sha, (try? parseSha256(value: base.sha)) != nil, edited.author.utf8.count <= 1024,
               edited.synopsis.utf8.count <= 64 * 1024, edited.tags.count <= 100 else { throw ReaderError.InvalidSettings }
         let store = try await userStore()
         let before = try JSONSerialization.jsonObject(with: Data(encodeBookMetadata(value: base).utf8)) as! [String: Any]
@@ -62,7 +62,7 @@ extension ReaderService {
     }
     func coverURL(_ cover: BookCoverAsset) throws -> URL {
         guard UUID(uuidString: cover.id) != nil, ["jpg", "png"].contains(cover.extension),
-              cover.sha256.count == 64, cover.sha256.allSatisfy({ "0123456789abcdef".contains($0) }) else { throw CocoaError(.fileReadCorruptFile) }
+              (try? parseSha256(value: cover.sha256)) != nil else { throw CocoaError(.fileReadCorruptFile) }
         return try coverDirectory().appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
     }
     private func coverDraftURL(_ cover: BookCoverAsset) -> URL {

@@ -41,7 +41,7 @@ extension ReaderService {
             let value: [String: Any] = ["content_key": key, "title": book.title, "device": userDevice,
                 "slice": try JSONSerialization.jsonObject(with: Data(encodeReadingSlice(value: slice).utf8))]
             let fact = (slice.id, key, String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self))
-            if key.hasPrefix("pending:") { pendingFacts.append(fact) } else { facts.append(fact) }
+            switch try parseReadingKey(value: key) { case .pending: pendingFacts.append(fact); case .formal: facts.append(fact) }
         }
         try await userStore().saveFacts(facts, generation: generation, current: preferences.generation, enabled: preferences.enabled)
         try await userStore(pending: true).saveFacts(pendingFacts, generation: generation, current: preferences.generation, enabled: preferences.enabled)
@@ -62,14 +62,14 @@ extension ReaderService {
         try await pending.requireStatisticsReadable(book: book)
         let formalIncomplete = try await formal.statisticsIncomplete(book: book)
         var pendingIncomplete = try await pending.statisticsIncomplete(book: book)
-        if let book, !book.hasPrefix("pending:") {
+        if let book, case .formal = try parseReadingKey(value: book) {
             // Completed pending identities remain aliases until the transfer can be committed.
             let core = try textCore()
-            for key in try await pending.pendingKeys() {
-                if let state = try? core.importStatus(bookId: String(key.dropFirst(8))), state.text.contentSha256 == book {
-                    try await pending.requireStatisticsReadable(book: key)
-                    if try await pending.statisticsIncomplete(book: key) { pendingIncomplete = true }
-                }
+            let keys = try await pending.pendingKeys().map { try parseReadingKey(value: $0) }
+            for resolution in try core.resolveReadingKeys(keys: keys) where serializeReadingKey(key: resolution.effective) == book {
+                let key = serializeReadingKey(key: resolution.original)
+                try await pending.requireStatisticsReadable(book: key)
+                if try await pending.statisticsIncomplete(book: key) { pendingIncomplete = true }
             }
         }
         return formalIncomplete || pendingIncomplete ? String(localized: "统计不完整：部分记录当前版本无法理解，请更新 App。") : nil

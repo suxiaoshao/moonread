@@ -85,9 +85,8 @@ struct PositionSourceHint: Codable, Equatable, Sendable {
     var byte_size: UInt64?
     var decoding: String
     var isValid: Bool {
-        let components = relative_path.split(separator: "/", omittingEmptySubsequences: false)
-        return !relative_path.isEmpty && relative_path.utf8.count <= 4096 && !relative_path.contains("\0") &&
-            components.allSatisfy { !$0.isEmpty && $0 != "." && $0 != ".." } && components.last.map(String.init) == file_name &&
+        return (try? validateRelativePath(path: relative_path, allowRoot: false)) != nil && relative_path.utf8.count <= 4096 &&
+            relative_path.split(separator: "/").last.map(String.init) == file_name &&
             file_name.utf8.count <= 1024 && decoding.utf8.count <= 64 && file_name.lowercased().hasSuffix(".txt") &&
             (byte_size.map { $0 <= UInt64(Int64.max) } ?? true)
     }
@@ -338,7 +337,7 @@ enum AnnotationReduction {
     func recentRestorationPositions(limit: Int, excluding: Set<String> = []) throws -> [RecentPosition] {
         try valueSnapshot(prefix: "position/").values.compactMap { key, stored in
             let value = try decode(PositionValue.self, stored.value)
-            guard !value.content_key.hasPrefix("pending:"), !excluding.contains(value.content_key) else { return nil }
+            guard let key = try? parseReadingKey(value: value.content_key), case .formal = key, !excluding.contains(value.content_key) else { return nil }
             return RecentPosition(contentKey: value.content_key, token: stored.token, updated: stored.updated, hint: value.source_hint)
         }.sorted { ($0.updated, $0.contentKey) > ($1.updated, $1.contentKey) }.prefix(max(0, limit)).map { $0 }
     }
@@ -349,8 +348,16 @@ enum AnnotationReduction {
     private func requireMarksReadable(key: String, ids: Set<String>) throws {
         guard try blockedMarks(key: key).isDisjoint(with: ids) else { throw UserSyncCompatibilityError() }
     }
+    func requireMetadataReadable(keys: Set<String>) throws {
+        guard !keys.isEmpty else { return }
+        let blocked = try valueSnapshot(prefix: "metadata/").blocked
+        guard !blocked.contains(where: { key in
+            let parts = key.split(separator: "/", maxSplits: 2)
+            return parts.count >= 2 && keys.contains(String(parts[1]))
+        }) else { throw UserSyncCompatibilityError() }
+    }
     func requireMetadataReadable(key: String) throws {
-        guard try valueSnapshot(prefix: "metadata/" + key + "/").blocked.isEmpty else { throw UserSyncCompatibilityError() }
+        try requireMetadataReadable(keys: [key])
     }
     func compatibilityNotice(key: String) throws -> String? {
         var snapshot = try valueSnapshot(key: "position/" + key)
@@ -637,7 +644,7 @@ extension UserDataStore {
         for row in try modelContext.fetch(FetchDescriptor<StatisticsClear>()) where (try? decode(ClearValue.self, row.payload)) == nil {
             if let scope = try? JSONDecoder().decode(UserSyncClearScope.self, from: Data(row.payload.utf8)), let book = scope.book { result.insert(book) }
         }
-        return result.filter { $0.hasPrefix("pending:") }
+        return result.filter { if let key = try? parseReadingKey(value: $0), case .pending = key { return true }; return false }
     }
     func requirePendingReadable(key: String) throws {
         try requireValueReadable("position/" + key)

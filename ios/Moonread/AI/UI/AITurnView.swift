@@ -407,7 +407,7 @@ struct AIResultSource: Identifiable {
     init?(_ value: JSONValue) {
         let object = value.object
         guard let id = object["sourceRef"]?.string, let book = object["bookRef"]?.string,
-              book.hasPrefix("b:"), book.count == 66,
+              (try? AIReadingReferences.parseBookReference(book)) != nil,
               let start = object["range"]?.object["startUtf8"]?.int,
               let end = object["range"]?.object["endUtf8"]?.int,
               start >= 0, end > start,

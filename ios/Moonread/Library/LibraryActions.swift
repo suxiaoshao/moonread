@@ -236,7 +236,7 @@ private struct LibraryNameEditor: View {
     @Environment(\.theme) private var theme
     @State private var name = ""
     @FocusState private var focused: Bool
-    private var isValid: Bool { !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !name.contains("/") && !name.contains(":") && !name.hasPrefix(".") }
+    private var isValid: Bool { (try? validateLibraryName(input: name, profile: .manualForm)) != nil }
     var body: some View {
         NavigationStack {
             Form {

@@ -4,6 +4,15 @@ import XCTest
 @testable import Moonread
 
 final class ShareInboxTests: ShareInboxFixture {
+  func testSharedFilenameContractPreservesExtensionSafetyBoundary() throws {
+    let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "library-input-contract-v1", withExtension: "json"))
+    let contract = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+    for row in contract["names"] as! [[String: Any]] {
+      let name = row["name"] as! String
+      XCTAssertEqual(ShareInbox.validName(name), row["shareInboxName"] as! Bool, name)
+    }
+  }
+
   // S290: 发布版本化清单后接收进程消失，主 App 仍能消费完整原字节且只消费一次；不启动扩展宿主。
   func testRawBytesPublishRecoverAndConsume() async throws {
     let (root, inbox) = try fixture()
