@@ -1,8 +1,13 @@
 //! Platform-independent text ingestion, normalized positions and reader state.
 //! The caller owns authorization and file coordination for source paths.
 
+mod identity;
+pub use identity::*;
+mod validation;
+pub use validation::*;
 mod book_details;
 mod bookshelf;
+mod library_order;
 pub use book_details::*;
 mod library_tools;
 mod migrations;
@@ -210,6 +215,7 @@ impl ReaderCore {
     }
 
     pub fn text_id_for_sha(&self, sha: String) -> Result<String> {
+        parse_sha256(sha.clone())?;
         self.lock()?
             .query_row("SELECT id FROM books WHERE content_sha256=?1", [sha], |r| {
                 r.get(0)
@@ -364,10 +370,7 @@ fn decoding_policy(value: &str) -> Result<&'static str> {
         .ok_or(ReaderError::InvalidSettings)
 }
 fn valid_sha(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    parse_sha256(value.into()).is_ok()
 }
 
 fn book(db: &Connection, id: &str) -> Result<BookInfo> {

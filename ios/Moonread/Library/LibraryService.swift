@@ -114,7 +114,7 @@ final class LibraryExport: Sendable {
 
 extension LibraryEntry {
     /// Reading data follows normalized text; unfinished imports retain their pending namespace.
-    var readingKey: String? { contentSha256 ?? bookId.map { "pending:" + $0 } }
+    var readingKey: String? { readingIdentity.map { serializeReadingKey(key: $0) } }
     var source: SourceFile { SourceFile(id: id, shelfID: shelfId, relativePath: relativePath) }
     var location: LibraryLocation { LibraryLocation(shelfID: shelfId, path: relativePath) }
     var parent: LibraryLocation { LibraryLocation(shelfID: shelfId, path: parentPath) }
@@ -123,24 +123,20 @@ extension LibraryEntry {
 
 extension ReaderService {
     func libraryEntry(_ id: String) async throws -> LibraryEntry {
-        let file = try textCore().sourceFileLocation(fileId: id)
-        let query: ReaderQuery
-        if let book = file.bookId { query = try await bookQuery(book) }
-        else { query = try await effectiveQuery(keys: try textCore().indexedSourceKeys(shelfId: nil, fileId: id), scope: "unprepared-file") }
-        return try query.libraryEntry(fileId: id)
+        let core = try textCore()
+        // Only this file and its original import alias are needed.
+        let identity = try core.fileIdentity(fileId: id)
+        var selected = identity.key.map { [$0] } ?? []
+        if let alias = identity.pendingAlias { selected.append(alias) }
+        return try await effectiveQuery(keys: selected.map { serializeReadingKey(key: $0) }, scope: "file-" + id).libraryEntry(fileId: id)
+    }
+    func catalogueScope(_ location: LibraryLocation?, recursive: Bool) -> CatalogueScope {
+        .init(shelfId: location?.shelfID, parentPath: location?.path, recursive: recursive)
     }
     func catalogueQuery(_ location: LibraryLocation?, recursive: Bool) async throws -> ReaderQuery {
-        let core = try textCore()
-        let shelves = try location.map { [$0.shelfID] } ?? core.libraryShelves().map(\.id)
-        var keys = Set<String>()
-        for shelf in shelves {
-            keys.formUnion(try core.indexedSourceKeys(shelfId: shelf, fileId: nil))
-            for file in try core.sourceFiles(shelfId: shelf) where !file.directory {
-                if !recursive, let location, !location.path.isEmpty, !file.relativePath.hasPrefix(location.path + "/") { continue }
-                if let id = file.bookId, let key = try? userKey(id) { keys.insert(key); keys.insert("pending:" + id) }
-            }
-        }
-        return try await effectiveQuery(keys: keys.sorted(), scope: "catalogue")
+        // A directory's last_read aggregates descendants even when only its children are returned.
+        let keys = try textCore().catalogueContentKeys(scope: catalogueScope(location, recursive: true))
+        return try await effectiveQuery(keys: keys.map { serializeReadingKey(key: $0) }, scope: "catalogue")
     }
 
     /// Deterministic latency for UI checks; release builds never delay queries.
@@ -335,7 +331,27 @@ extension ReaderService {
         return try await catalogueQuery(location, recursive: recursive).libraryEntries(shelfId: location?.shelfID, parentPath: recursive ? nil : location?.path, sort: sort)
     }
     func searchLibrary(shelfID: String?, query: String, author: String?, tag: String?) async throws -> [LibraryEntry] {
-        try await catalogueQuery(shelfID.map { LibraryLocation(shelfID: $0) }, recursive: true).searchLibrary(shelfId: shelfID, query: query, author: author, tag: tag)
+        try await searchCatalogue(shelfID.map { LibraryLocation(shelfID: $0) }, spec: .init(profile: .library, query: query, author: author, tags: tag.map { [$0] } ?? []))
+    }
+    /// AI previously read details before matching. Preserve its unknown-metadata
+    /// barrier in one store call, without doing a details lookup for each file.
+    func requireAIMetadataReadable(_ location: LibraryLocation?, recursive: Bool) async throws {
+        let keys = try textCore().catalogueContentKeys(scope: catalogueScope(location, recursive: recursive))
+        let formal = Set(keys.compactMap { key -> String? in
+            if case .formal = key { return serializeReadingKey(key: key) }; return nil
+        })
+        try await userStore().requireMetadataReadable(keys: formal)
+    }
+    func searchCatalogue(_ location: LibraryLocation?, spec: LibraryQueryRules.SearchSpec) async throws -> [LibraryEntry] {
+        let query = try await catalogueQuery(location, recursive: true)
+        let candidates = try query.librarySearchCandidates(scope: catalogueScope(location, recursive: true), booksOnly: spec.profile == .ai)
+        if spec.profile == .ai { try await requireAIMetadataReadable(nil, recursive: true) }
+        var entries = LibraryQueryRules.filterAndRank(candidates, spec: spec)
+        for index in entries.indices where entries[index].directory {
+            entries[index].coverPreviews = try query.libraryFolderCoverPreviews(
+                shelfId: entries[index].shelfId, relativePath: entries[index].relativePath)
+        }
+        return entries
     }
 
     func allLibraryBooks(_ shelfID: String) async throws -> [LibraryEntry] {
@@ -361,7 +377,9 @@ extension ReaderService {
         }
     }
     func hideRecent(_ value: String) throws {
-        let key = value.hasPrefix("pending:") || value.count == 64 ? value : try userKey(value)
+        let key: String
+        if let parsed = try? parseReadingKey(value: value) { key = serializeReadingKey(key: parsed) }
+        else { key = try userKey(value) }
         var hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
         hidden.insert(key); sourceDefaults.set(Array(hidden), forKey: "Moonread.hiddenRecent"); dataChanged()
     }
@@ -790,10 +808,11 @@ extension ReaderService {
     }
 
     nonisolated private static func libraryURL(_ location: LibraryLocation, root: URL) throws -> URL {
+        do { try validateRelativePath(path: location.path, allowRoot: true) }
+        catch { throw LibraryFileError.invalidDestination }
         var url = root
         if !location.path.isEmpty {
             for part in location.path.split(separator: "/", omittingEmptySubsequences: false) {
-                guard !part.isEmpty, part != ".", part != ".." else { throw LibraryFileError.invalidDestination }
                 url.appendPathComponent(String(part))
                 if try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == true { throw LibraryFileError.invalidDestination }
             }

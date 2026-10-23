@@ -236,6 +236,7 @@ struct LibraryFolderView: View {
     @State private var loading = LoadingState()
     @State private var selection = Set<String>()
     @State private var editing = EditMode.inactive
+    @State private var catalogue = LibraryCatalogueRequest()
     private var shelf: LibraryShelf? { model.shelves.first { $0.id == location.shelfID } }
     private var title: String { location.path.isEmpty ? model.shelfTitle(location.shelfID) : URL(fileURLWithPath: location.path).lastPathComponent }
     private var selectedEntries: [LibraryEntry] { entries.filter { selection.contains($0.id) } }
@@ -330,13 +331,15 @@ struct LibraryFolderView: View {
                 ToolbarItem(placement: .bottomBar) { Spacer() }
             }
         }
-        .task(id: model.revision) {
+        .task(id: LibraryCatalogueRequest.Input(location: location, libraryRevision: model.revision, readingRevision: model.readingInputRevision)) {
             let request = loading.begin(); defer { loading.finish(request) }
             let cloudGeneration = model.discoveryGeneration, cloudRevision = model.discoveryRevision
             do {
-                try await ReaderService.libraryTestLatency()
-                let value = try await ReaderService.shared.libraryEntries(location)
-                try Task.checkCancellation(); entries = value
+                guard let value = try await catalogue.read({
+                    try await ReaderService.libraryTestLatency()
+                    return try await ReaderService.shared.libraryEntries(location)
+                }) else { return }
+                entries = value
                 selection.formIntersection(Set(value.map(\.id))); loaded = true
                 if location.shelfID == "builtin", location.path.isEmpty {
                     model.builtinDirectoryLoaded(generation: cloudGeneration, snapshotRevision: cloudRevision)
@@ -347,24 +350,6 @@ struct LibraryFolderView: View {
             }
         }
 
-        .onChange(of: model.recents) { _, values in
-            let updates = Dictionary(uniqueKeysWithValues: values.map { ($0.id, $0) })
-            let next = entries.enumerated().map { index, original in
-                var entry = updates[original.id] ?? original
-                if entry.directory {
-                    let children = values.filter { $0.shelfId == entry.shelfId && $0.relativePath.hasPrefix(entry.relativePath + "/") }
-                    entry.lastRead = max(entry.lastRead, children.map(\.lastRead).max() ?? 0)
-                }
-                return (index, entry)
-            }.sorted { a, b in
-                let aEmpty = a.1.directory && a.1.childBookCount == 0
-                let bEmpty = b.1.directory && b.1.childBookCount == 0
-                if aEmpty != bEmpty { return !aEmpty }
-                if a.1.lastRead != b.1.lastRead { return a.1.lastRead > b.1.lastRead }
-                return a.0 < b.0 // Preserve the existing natural-name/modified tie order.
-            }.map { $0.1 }
-            if next != entries { entries = next }
-        }
         .onChange(of: editing) { _, value in if value.isEditing { model.cancelOpening() } }
         .modifier(PageLoadingOverlay(request: model.processingFiles || model.nativeRefreshing ? nil : model.shelfScans[location.shelfID] ?? loading.request ?? model.refreshing.request,
                                      hasContent: !entries.isEmpty, label: "正在加载书架", immediate: model.explicitRefresh || model.shelfScans[location.shelfID] != nil))

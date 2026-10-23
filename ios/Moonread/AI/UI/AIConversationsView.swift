@@ -502,7 +502,7 @@ private struct AIReadingObjectPicker: View {
                 if let error { Text(error); Button("重试") { Task { await load() } } }
                 if !loaded { ProgressView() }
                 if loaded && books.isEmpty && error == nil { ContentUnavailableView("暂无书籍", systemImage: "books.vertical") }
-                ForEach(books.filter { query.isEmpty || $0.title.localizedStandardContains(query) }) { book in
+                ForEach(books.filter { LibraryQueryRules.selectionMatches($0.title, query: query) }) { book in
                     if kind == .book {
                         Button { Task { try? await ai.addReadingAttachment(conversationID, attachment: book); dismiss() } } label: { Label(book.title, systemImage: "book") }
                     } else {
@@ -524,7 +524,7 @@ private struct AIReadingObjectPicker: View {
             var result: [AIReadingAttachment] = []; var seen = Set<String>()
             for shelf in try await ReaderService.shared.shelves() {
                 for row in try await ReaderService.shared.aiLibraryBooks(shelf.id) {
-                    let bookRef = (row.metadata?.sha).flatMap { $0.count == 64 ? AIReadingTools.bookRef($0) : nil }
+                    let bookRef = (row.metadata?.sha).flatMap { (try? parseSha256(value: $0)) != nil ? AIReadingTools.bookRef($0) : nil }
                     let fileRef = AIReadingTools.ref("f", row.id)
                     guard seen.insert(bookRef ?? fileRef).inserted else { continue }
                     result.append(.init(kind: .book, origin: "picker", bookRef: bookRef, fileRef: fileRef, title: row.title))

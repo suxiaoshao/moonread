@@ -9,13 +9,14 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
   func testExplicitHintShapeNullableFieldsAndPendingTransferPreserveOriginalClock() async throws {
     let f = try await fixture()
     defer { f.clean() }
+    let formalKey = String(repeating: "a", count: 64)
     let h = hint("原创/样本.txt", size: nil, decoding: "UTF-8")
     let value = PositionValue(content_key: "pending:sample", offset: 12, source_hint: h)
     let json = try UserSyncJSON.encode(value)
     let object = try XCTUnwrap(
       JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
     XCTAssertTrue((object["source_hint"] as? [String: Any])?["byte_size"] is NSNull)
-    let empty = try UserSyncJSON.encode(PositionValue(content_key: "sha", offset: 0))
+    let empty = try UserSyncJSON.encode(PositionValue(content_key: formalKey, offset: 0))
     XCTAssertTrue(
       try XCTUnwrap(JSONSerialization.jsonObject(with: Data(empty.utf8)) as? [String: Any])[
         "source_hint"] is NSNull)
@@ -23,7 +24,7 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
       StoredValue(updated: 123, token: "keep-token", value: json), envelope: true)
     try await f.pending.receiveSyncFixture("position", key: "pending:sample", payload: encoded)
     let transfer = try await f.pending.exportPending(key: "pending:sample")
-    try await f.store.importPending(transfer, from: "pending:sample", to: "sha")
+    try await f.store.importPending(transfer, from: "pending:sample", to: formalKey)
     let rows = try await f.store.recentRestorationPositions(limit: 10)
     XCTAssertEqual(rows.first?.hint, h)
     XCTAssertEqual(rows.first?.updated, 123)
