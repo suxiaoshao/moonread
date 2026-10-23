@@ -820,23 +820,28 @@ actor AIReadingTools {
         id, query: input.query, regex: (input.mode ?? .regex) == .regex,
         caseSensitive: input.caseSensitive ?? true, range: .init(startUtf8: start, endUtf8: end))
       defer { job.cancel() }
+      var skippedContent = false
       try await withTaskCancellationHandler {
         while true {
           try Task.checkCancellation()
           let batch = try await reader.aiSearchBatch(job)
+          // Coverage warnings never terminate a scan. Completion/cancellation
+          // and this tool's explicit pagination budget are independent signals.
+          skippedContent = skippedContent || batch.truncated
+          truncated = truncated || batch.truncated
           hits += batch.hits.prefix(max(0, target - hits.count)).map { hit in
             let range = AIToolRange(startUtf8: hit.startUtf8, endUtf8: hit.endUtf8)
             return .init(
               bookRef: ref, range: range, excerpt: String(hit.excerpt.prefix(500)),
               chapterTitle: hit.chapter, sourceRef: source(ref, range).sourceRef)
           }
-          if batch.done || batch.truncated || hits.count >= target {
-            truncated = truncated || batch.truncated || hits.count >= target
+          if batch.done || batch.cancelled || hits.count >= target {
+            truncated = truncated || batch.cancelled || hits.count >= target
             coverage.append(
               .init(
                 bookRef: ref, requestedRange: .init(startUtf8: start, endUtf8: end),
                 scannedUtf8: batch.scannedUtf8, availableUtf8: batch.availableUtf8,
-                complete: batch.done && !batch.truncated && !batch.partialBook))
+                complete: batch.done && !skippedContent && !batch.partialBook))
             break
           }
           await Task.yield()

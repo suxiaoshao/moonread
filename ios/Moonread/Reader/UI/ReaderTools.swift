@@ -278,9 +278,10 @@ final class ReaderToolsModel {
                     guard generation == searchGeneration, !Task.isCancelled else { return }
                     hits += batch.hits
                     partialSearch = batch.partialBook
+                    truncatedSearch = truncatedSearch || batch.truncated
                     searchProgress = Double(batch.scannedUtf8) / Double(max(1, batch.availableUtf8))
                     if batch.done || batch.cancelled {
-                        searchFinished = batch.done; truncatedSearch = batch.truncated; searching = false; return
+                        searchFinished = batch.done; searching = false; return
                     }
                     try await Task.sleep(for: .milliseconds(20))
                 }

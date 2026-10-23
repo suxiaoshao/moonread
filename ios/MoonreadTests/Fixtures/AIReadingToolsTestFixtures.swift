@@ -5,13 +5,13 @@ import XCTest
 @testable import Moonread
 
 @MainActor class AIReadingToolsFixture: XCTestCase {
-  func fixture(paragraphs: Int = 8) async throws -> (
+  func fixture(paragraphs: Int = 8, text: String? = nil) async throws -> (
     URL, ReaderService, ImportText, UserDataStore, AIReadingTools
   ) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let file = root.appendingPathComponent("book.txt")
-    try ("第一章 月\n\n" + String(repeating: "甲乙丙丁你好。\n", count: paragraphs) + "第二章 星\n再次阅读\n").write(
+    try (text ?? ("第一章 月\n\n" + String(repeating: "甲乙丙丁你好。\n", count: paragraphs) + "第二章 星\n再次阅读\n")).write(
       to: file, atomically: true, encoding: .utf8)
     let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
     let book = try core.importBook(filePath: file.path, title: "Book")

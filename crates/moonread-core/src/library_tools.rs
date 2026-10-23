@@ -66,6 +66,8 @@ pub struct SearchBatch {
     pub hits: Vec<SearchHit>,
     pub done: bool,
     pub cancelled: bool,
+    /// Coverage warning: a long regex line was skipped. This is independent of
+    /// `done`; callers must keep requesting batches until completion/cancellation.
     pub truncated: bool,
     pub partial_book: bool,
     pub scanned_utf8: u64,

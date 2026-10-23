@@ -5,6 +5,24 @@ import XCTest
 @testable import Moonread
 
 final class AIReadingToolsTests: AIReadingToolsFixture {
+  func testSearchContinuesAfterSkippedLongRegexLine() async throws {
+    let text = String(repeating: "a", count: 1024 * 1024 + 8192) + "\n"
+      + String(repeating: "b", count: 512 * 1024) + "\n后续命中🌙\n"
+    let (root, _, book, _, tools) = try await fixture(text: text)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let ref = JSONValue.string(AIReadingTools.bookRef(book.contentSha256))
+    let result = try await invoke(tools, "rg", ["bookRefs": .array([ref]), "query": .string("后续命中")])
+    let data = try XCTUnwrap(result.object["data"])
+    let hits = try XCTUnwrap(data.object["hits"]?.array)
+    XCTAssertEqual(hits.count, 1, "A skipped line must not terminate later batches")
+    XCTAssertTrue(hits.first?.object["excerpt"]?.string?.contains("后续命中") == true)
+    let coverage = try XCTUnwrap(data.object["coverage"]?.array?.first)
+    XCTAssertEqual(coverage.object["scannedUtf8"], .number(Double(book.byteCount)))
+    XCTAssertEqual(coverage.object["complete"], .bool(false))
+    XCTAssertEqual(data.object["truncated"], .bool(true))
+    XCTAssertEqual(result.object["status"], .string("partial"))
+  }
+
   // S131: AI 准备未完整书籍必须列出准确确认对象，不遗漏或重复授权范围。
   func testPreparationConfirmationIncludesEveryIncompleteBookOnce() async throws {
     var visited: [String] = []
