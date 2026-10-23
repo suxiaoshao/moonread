@@ -426,6 +426,7 @@ import XCTest
     XCTAssertTrue(ready(file(sample)).exists, "Clearing reading data must leave the original novel")
     app.buttons["设置"].tap()
     ready(app.buttons["importReadingBackup"]).tap()
+    ready(app.staticTexts["包含 1 本小说的阅读数据，其中 1 本在书架上"], timeout: 30)
     ready(app.buttons["confirmImportReadingBackup"].firstMatch, timeout: 30).tap()
     waitUntil { rows.count == 1 }
     app.buttons["书架"].tap()

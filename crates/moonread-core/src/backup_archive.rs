@@ -221,6 +221,14 @@ fn matches(a: &BackupMember, b: &BackupMember) -> Result<()> {
     if a.size != b.size || a.sha256 != b.sha256 || a.records != b.records {
         return Err(invalid("备份成员大小、摘要或记录数量不符"));
     }
+    if let Some(hash) = a
+        .path
+        .strip_prefix("assets/")
+        .and_then(|name| name.strip_suffix(".bin"))
+        && b.sha256 != hash
+    {
+        return Err(invalid("封面附件摘要与文件名不符"));
+    }
     Ok(())
 }
 #[derive(Debug, uniffi::Record)]
@@ -447,10 +455,13 @@ mod tests {
             "digest",
             "truncated",
             "link",
+            "asset-digest",
         ] {
             let archive = dir.path().join(format!("{case}.zip"));
             let mut manifest = good.clone();
+            let asset = format!("assets/{}.bin", "a".repeat(64));
             let extra = match case {
+                "asset-digest" => Some((asset.as_str(), b"cover".as_slice())),
                 "traversal" => Some(("../outside", b"replace".as_slice())),
                 "absolute" => Some(("/outside", b"replace".as_slice())),
                 "unlisted" => Some(("extensions/extra", b"extra".as_slice())),
@@ -462,6 +473,11 @@ mod tests {
             }
             if case == "digest" {
                 manifest["members"][0]["sha256"] = json!("a".repeat(64));
+            }
+            if case == "asset-digest" {
+                manifest["members"].as_array_mut().unwrap().push(json!({
+                    "path":asset,"size":5,"sha256":crate::sha256_hex(Sha256::digest(b"cover")),"records":0
+                }));
             }
             package(&archive, &manifest, extra);
             if case == "truncated" {

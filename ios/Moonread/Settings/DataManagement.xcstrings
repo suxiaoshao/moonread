@@ -645,29 +645,6 @@
         }
       }
     },
-    "未关联小说": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未关联小说"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "未關聯小說"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unlinked Book"
-          }
-        }
-      }
-    },
     "书签 %lld · 批注 %lld": {
       "extractionState": "manual",
       "localizations": {
@@ -825,75 +802,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Import Preview"
-          }
-        }
-      }
-    },
-    "涉及 %lld 本；已关联 %lld 本；未关联 %lld 本": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "涉及 %lld 本；已关联 %lld 本；未关联 %lld 本"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "涉及 %lld 本；已關聯 %lld 本；未關聯 %lld 本"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld books: %lld linked, %lld unlinked"
-          }
-        }
-      }
-    },
-    "本机较新记录：%lld；批注冲突：%lld": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "本机较新记录：%lld；批注冲突：%lld"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "本機較新記錄：%lld；註記衝突：%lld"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Newer local records: %lld; note conflicts: %lld"
-          }
-        }
-      }
-    },
-    "保留原时间和标识并合并，不强制覆盖较新数据。已有统计清除边界仍可能过滤部分统计；可选扩展不修改用户数据。": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保留原时间和标识并合并，不强制覆盖较新数据。已有统计清除边界仍可能过滤部分统计；可选扩展不修改用户数据。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "保留原時間和識別並合併，不強制覆蓋較新資料。既有統計清除邊界仍可能過濾部分統計；選用擴充不修改使用者資料。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Merges original timestamps and identifiers without overriding newer data. Existing statistics clears may still filter some activity. Optional extensions do not change user data."
           }
         }
       }
@@ -1722,6 +1630,144 @@
           "stringUnit": {
             "state": "translated",
             "value": "Some novels do not have a content identity yet. Finish preparing them before exporting."
+          }
+        }
+      }
+    },
+    "包含 %lld 本小说的阅读数据，其中 %lld 本在书架上": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包含 %lld 本小说的阅读数据，其中 %lld 本在书架上"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包含 %lld 本小說的閱讀資料，其中 %lld 本在書架上"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reading data for books: %lld total, %lld on your bookshelf."
+          }
+        }
+      }
+    },
+    "本机有 %lld 条更新的记录会保留": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本机有 %lld 条更新的记录会保留"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本機有 %lld 筆較新的紀錄會保留"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Newer records kept on this device: %lld."
+          }
+        }
+      }
+    },
+    "%lld 处批注有冲突": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 处批注有冲突"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 處註記有衝突"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annotation conflicts: %lld."
+          }
+        }
+      }
+    },
+    "书架上没有这本小说": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "书架上没有这本小说"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "書架上沒有這本小說"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This novel isn’t on your bookshelf"
+          }
+        }
+      }
+    },
+    "有阅读数据尚未保存，请重试后再导出": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有阅读数据尚未保存，请重试后再导出"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有閱讀資料尚未儲存，請重試後再匯出"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some reading data hasn’t been saved. Retry before exporting."
+          }
+        }
+      }
+    },
+    "封面附件摘要与文件名不符": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封面附件摘要与文件名不符"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封面附件摘要與檔名不符"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The cover attachment’s digest doesn’t match its filename."
           }
         }
       }

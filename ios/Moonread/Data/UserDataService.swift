@@ -96,6 +96,7 @@ extension ReaderService {
         defer { ReaderOpenDiagnostics.background("recovery.return") }
         defer { recoveryTask = nil; scheduleRecentRestoration() }
         do {
+            try cleanupOldBackupExports()
             try await finishReadingDataDeletion()
             let pending = try await userStore(pending: true)
             let keys = try await pending.pendingKeys()

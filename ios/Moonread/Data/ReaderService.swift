@@ -119,6 +119,10 @@ actor ReaderService {
     var userCloudEnabled = false
     let userDirectoryName: String
     var readingSourceIDs: [String: String] = [:]
+    let dataManagementWriter: StatisticsWriter?
+    var activeBackupExport: URL?
+    var inFlightBackupExports = Set<URL>()
+    var backupShareCopies: [URL: Int] = [:]
     var userDataOperationBusy = false
     var userDataOperationWaiters: [CheckedContinuation<Void, Never>] = []
     var localReadingWriteLeases: [String: UUID] = [:]
@@ -142,7 +146,7 @@ actor ReaderService {
     let libraryDirectoryOverride: URL?
     let libraryDeletion: @Sendable (URL, Bool) throws -> Void
     let libraryScan: (@Sendable (URL, [CloudDocumentItem]) throws -> [ScannedLibraryItem])?
-    init(core: ReaderCore? = nil, libraryDirectory: URL? = nil, sourceDefaultsSuite: String? = nil, userStoreFactory: (@Sendable (String, Bool) async throws -> UserDataStore)? = nil,
+    init(core: ReaderCore? = nil, libraryDirectory: URL? = nil, sourceDefaultsSuite: String? = nil, dataManagementWriter: StatisticsWriter? = nil, userStoreFactory: (@Sendable (String, Bool) async throws -> UserDataStore)? = nil,
          libraryDeletion: @escaping @Sendable (URL, Bool) throws -> Void = { url, permanently in
              if permanently { try FileManager.default.removeItem(at: url) }
              else { try FileManager.default.trashItem(at: url, resultingItemURL: nil) }
@@ -151,6 +155,7 @@ actor ReaderService {
         self.core = core; libraryDirectoryOverride = libraryDirectory
         self.libraryDeletion = libraryDeletion; self.libraryScan = libraryScan
         self.userStoreFactory = userStoreFactory
+        self.dataManagementWriter = dataManagementWriter
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         let sessionIndex = arguments.firstIndex(of: "--ui-test-session")

@@ -68,7 +68,7 @@ extension ReaderService {
         let core = try textCore()
         for i in value.items.indices {
             let key = value.items[i].id
-            if let source = try core.sourceFilesForSha(sha: key).first { value.items[i].title = source.title }
+            if let source = try core.sourceFilesForSha(sha: key).first { value.items[i].title = source.title; value.items[i].linked = true }
         }
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         value.configuration = configuration
@@ -89,9 +89,11 @@ extension ReaderService {
         let configuration = expected ?? userCloudConfigurationRevision
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         for key in keys { try BackupRows.formal(key) }
+        guard !readingDataIsBusy(keys) else { throw ReadingDataError.busy }
         let ids = try await readingDataBookIDs(keys)
+        guard !readingDataIsBusy(keys) else { throw ReadingDataError.busy }
         // Drain in-flight saves, discard only failed/retry batches for these books.
-        await StatisticsWriter.shared.discardReadingData(bookIDs: ids)
+        await managementStatisticsWriter().discardReadingData(bookIDs: ids)
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         try await finishReadingDataDeletionLocked()
@@ -119,20 +121,65 @@ extension ReaderService {
             return try clearDeletedReadingBodyCaches(keys)
         } catch { return false }
     }
+    private func managementStatisticsWriter() async -> StatisticsWriter {
+        if let dataManagementWriter { return dataManagementWriter }
+        return await StatisticsWriter.shared
+    }
+    private func backupRoot() throws -> URL {
+        try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent(userDirectoryName).appendingPathComponent("ReadingBackups", isDirectory: true)
+    }
+    func cleanupOldBackupExports() throws {
+        let root = try backupRoot()
+        let directories = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+        for directory in directories ?? [] where directory.lastPathComponent.hasPrefix("export-") {
+            guard directory != activeBackupExport, !inFlightBackupExports.contains(directory), backupShareCopies[directory, default: 0] == 0 else { continue }
+            let attributes = try directory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
+            guard attributes.isDirectory == true, attributes.isSymbolicLink != true else { continue }
+            try FileManager.default.removeItem(at: directory)
+        }
+    }
     private func backupDirectory(_ purpose: String) throws -> URL {
-        let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent(userDirectoryName).appendingPathComponent("ReadingBackups", isDirectory: true)
-        let directory = root.appendingPathComponent(purpose + "-" + UUID().uuidString, isDirectory: true)
+        let directory = try backupRoot().appendingPathComponent(purpose + "-" + UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
     }
+    private func snapshotReadingDataForBackup(directory: URL, writerVersion: String) async throws -> BackupManifest {
+        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        try await finishReadingDataDeletionLocked()
+        guard try await userStore(pending: true).pendingKeys().isEmpty else { throw ReadingDataError.pendingIdentity }
+        return try await userStore().snapshotForBackup(directory: directory, writerVersion: writerVersion)
+    }
+    func readingBackupShareCopy(_ url: URL) async throws -> LibraryExport {
+        let source = url.deletingLastPathComponent()
+        backupShareCopies[source, default: 0] += 1
+        defer {
+            backupShareCopies[source, default: 0] -= 1
+            if backupShareCopies[source] == 0 { backupShareCopies[source] = nil }
+        }
+        // Reuse the ordinary file share lifetime: the system consumes its own
+        // disposable copy, never an export directory that the next export cleans.
+        return try await Task.detached(priority: .utility) {
+            try LibraryExport { directory in
+                let copy = directory.appendingPathComponent(url.lastPathComponent)
+                try FileManager.default.copyItem(at: url, to: copy)
+                return [copy]
+            }
+        }.value
+    }
     func exportReadingData() async throws -> URL {
         let revision = userCloudConfigurationRevision
-        guard try await userStore(pending: true).pendingKeys().isEmpty else { throw ReadingDataError.pendingIdentity }
+        try cleanupOldBackupExports()
+        // Drain before acquiring the operation: the writer itself saves through
+        // that operation. Acquiring it first would deadlock an in-flight batch.
+        try await managementStatisticsWriter().flushForBackup()
         let directory = try backupDirectory("export")
+        inFlightBackupExports.insert(directory)
+        defer { inFlightBackupExports.remove(directory) }
         do {
             let stage = directory.appendingPathComponent("snapshot", isDirectory: true)
             let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2"
-            let manifest = try await userStore().snapshotForBackup(directory: stage, writerVersion: version)
+            let manifest = try await snapshotReadingDataForBackup(directory: stage, writerVersion: version)
             guard revision == userCloudConfigurationRevision else { throw ReadingDataError.changed }
             try JSONEncoder().encode(manifest).write(to: stage.appendingPathComponent("manifest.json"), options: .atomic)
             let output = directory.appendingPathComponent("Moonread.moonread-backup")
@@ -140,6 +187,7 @@ extension ReaderService {
             try Task.checkCancellation()
             guard revision == userCloudConfigurationRevision else { throw ReadingDataError.changed }
             try FileManager.default.removeItem(at: stage)
+            activeBackupExport = directory
             return output
         } catch { try? FileManager.default.removeItem(at: directory); throw error }
     }
@@ -178,7 +226,7 @@ extension ReaderService {
         try await finishReadingDataDeletionLocked()
         guard preview.staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         try Task.checkCancellation()
-        try await userStore().mergeBackup(directory: preview.staging.directory, manifest: preview.staging.manifest, expectedRevision: preview.preview.revision)
+        try await userStore().mergeBackup(directory: preview.staging.directory, manifest: preview.staging.manifest)
         queryCache.removeAll(); dataChanged()
         NotificationCenter.default.post(name: .statisticsChanged, object: nil)
     }

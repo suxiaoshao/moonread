@@ -36,6 +36,7 @@ struct ReadingDataItem: Identifiable, Sendable {
     var annotations = 0
     var cover = false
     var unsupported = false
+    var linked = false
 }
 struct ReadingDeletionTarget: Codable, Sendable {
     let id: PersistentIdentifier
@@ -48,11 +49,12 @@ struct ReadingDataInventory: Sendable {
     var configuration: UUID? = nil
 }
 enum ReadingDataError: LocalizedError {
-    case invalid, updateRequired, missingAsset, pendingIdentity, busy, changed, tooLarge
+    case invalid, updateRequired, missingAsset, pendingIdentity, unsavedReadingData, busy, changed, tooLarge
     var errorDescription: String? {
         switch self {
         case .invalid: String(localized: "备份数据无效或包含冲突的记录", table: "DataManagement")
         case .updateRequired: String(localized: "部分数据需要较新版本处理，请更新 App", table: "DataManagement")
+        case .unsavedReadingData: String(localized: "有阅读数据尚未保存，请重试后再导出", table: "DataManagement")
         case .pendingIdentity: String(localized: "部分小说身份尚未确定，请先完成正文准备后再导出", table: "DataManagement")
         case .missingAsset: String(localized: "封面附件尚未到达，暂时无法完整导出", table: "DataManagement")
         case .busy: String(localized: "请先关闭相关阅读和未保存的编辑，再清除数据", table: "DataManagement")
@@ -159,7 +161,7 @@ extension UserDataStore {
             do {
                 let values = try allValues(prefix: "metadata/" + key + "/")
                 let chapters = try allValues(prefix: "chapter/" + key + "/")
-                let heads = try candidates(key: key)
+                let heads = try candidates(key: key, compacting: false)
                 let facts = try visibleFacts(key: key)
                 let live = positions["position/" + key] != nil || values.values.contains { $0 != "null" } || chapters.values.contains { $0 != "null" }
                     || heads.values.contains { $0.contains { $0.content != nil } } || !facts.isEmpty
@@ -190,7 +192,8 @@ extension UserDataStore {
     func snapshotForBackup(directory: URL, writerVersion: String) throws -> BackupManifest {
         try FileManager.default.createDirectory(at: directory.appendingPathComponent("records"), withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: directory.appendingPathComponent("assets"), withIntermediateDirectories: true)
-        let revision = projectionVersion
+        // This actor-isolated synchronous snapshot never suspends. The process-
+        // wide projection cache epoch is not a consistency token for this store.
         var manifest = BackupManifest(createdAt: Int64(Date().timeIntervalSince1970 * 1000), writerVersion: writerVersion)
         var coverDigests: [String: String] = [:]
         for kind in BackupRows.files {
@@ -224,7 +227,6 @@ extension UserDataStore {
             }
             manifest.assets.append(.init(id: id, path: path))
         }
-        guard revision == projectionVersion else { throw ReadingDataError.changed }
         let inventory = try readingDataInventory()
         guard inventory.pending == 0, inventory.unsupported == 0 else { throw ReadingDataError.updateRequired }
         manifest.titles = Dictionary(uniqueKeysWithValues: inventory.items.filter { !$0.title.isEmpty }.map { ($0.id, $0.title) })
@@ -237,7 +239,6 @@ struct BackupPreview: Sendable {
     var keys: Set<String>
     var existingNewer: Int
     var conflicts: Int
-    var revision: String
 }
 extension UserDataStore {
     /// Validation is shared by preview and commit; preview makes no user writes.
@@ -268,7 +269,10 @@ extension UserDataStore {
                     _ = try value(valueKey) // Existing unknown siblings remain protected.
                     identity = kind + "/" + valueKey + "/" + incoming.token
                     if let old = winners[valueKey] {
-                        if old.token == incoming.token, old.updated != incoming.updated || old.value != incoming.value { throw ReadingDataError.invalid }
+                        if old.token == incoming.token {
+                            let same = valueKey.hasPrefix("position/") ? try PositionCandidate.sameUpdate(old, incoming) : old.updated == incoming.updated && old.value == incoming.value
+                            guard same else { throw ReadingDataError.invalid }
+                        }
                         if (old.updated, old.token) > (incoming.updated, incoming.token) { newer += 1 }
                     }
                 }
@@ -280,13 +284,14 @@ extension UserDataStore {
                 }
                 if kind != "statistics-clears" {
                     if let old = identities[identity] {
-                        guard old.key == row.key, old.mark == row.mark, Self.samePayload(old.payload, row.payload) else { throw ReadingDataError.invalid }
+                        let valueKey = kind == "positions" ? "position/" + row.key : (kind == "values" ? row.key : nil)
+                        guard old.key == row.key, old.mark == row.mark, Self.samePayload(old.payload, row.payload, valueKey: valueKey) else { throw ReadingDataError.invalid }
                     } else { identities[identity] = row }
                 }
                 if kind == "annotations" {
                     let candidate = try UserSyncJSON.annotation(row.payload, id: row.id)
                     let key = row.key + "/" + row.mark
-                    if annotations[key] == nil { annotations[key] = try candidates(key: row.key, markID: row.mark)[row.mark] ?? [] }
+                    if annotations[key] == nil { annotations[key] = try candidates(key: row.key, markID: row.mark, compacting: false)[row.mark] ?? [] }
                     annotations[key, default: []].append(candidate)
                 }
             }
@@ -310,18 +315,23 @@ extension UserDataStore {
             }
         }
         let conflicts = annotations.values.filter { AnnotationReduction.heads($0).count > 1 }.count
-        return .init(keys: keys, existingNewer: newer, conflicts: conflicts, revision: projectionVersion)
+        return .init(keys: keys, existingNewer: newer, conflicts: conflicts)
     }
-    static func samePayload(_ a: String, _ b: String) -> Bool {
+    static func samePayload(_ a: String, _ b: String, valueKey: String? = nil) -> Bool {
+        if let valueKey, valueKey.hasPrefix("position/") {
+            guard let left = try? UserSyncJSON.storedValue(a, key: valueKey),
+                  let right = try? UserSyncJSON.storedValue(b, key: valueKey) else { return false }
+            return left.token == right.token && ((try? PositionCandidate.sameUpdate(left, right)) == true)
+        }
         guard let a = try? UserSyncJSON.versioned(a), let b = try? UserSyncJSON.versioned(b),
               let left = try? JSONSerialization.jsonObject(with: Data(a.utf8)) as? NSDictionary,
               let right = try? JSONSerialization.jsonObject(with: Data(b.utf8)) as? NSDictionary else { return false }
         return left.isEqual(right)
     }
-    func mergeBackup(directory: URL, manifest: BackupManifest, expectedRevision: String) throws {
-        guard expectedRevision == projectionVersion else { throw ReadingDataError.changed }
-        let preview = try validateBackup(directory: directory, manifest: manifest)
+    func mergeBackup(directory: URL, manifest: BackupManifest, beforeSave: @Sendable () throws -> Void = {}) throws {
         try transaction {
+            // Final validation and every write/compaction share one save boundary.
+            let preview = try validateBackup(directory: directory, manifest: manifest)
             for kind in BackupRows.files {
                 try BackupRows.forEach(directory.appendingPathComponent("records/" + kind + ".jsonl")) { row in
                     switch kind {
@@ -333,7 +343,8 @@ extension UserDataStore {
                         for value in old {
                             let parsed = try UserSyncJSON.storedValue(value.payload, key: key)
                             if parsed.token == incoming.token {
-                                guard Self.samePayload(value.payload, row.payload) else { throw ReadingDataError.invalid }; exists = true
+                                let same = key.hasPrefix("position/") ? try PositionCandidate.sameUpdate(parsed, incoming) : Self.samePayload(value.payload, row.payload)
+                                guard same else { throw ReadingDataError.invalid }; exists = true
                             }
                         }
                         if !exists { modelContext.insert(UserValue(key: row.key, device: row.device, payload: row.payload)) }
@@ -351,7 +362,8 @@ extension UserDataStore {
                 let bytes = try Data(contentsOf: directory.appendingPathComponent(asset.path))
                 if try cover(asset.id) == nil { modelContext.insert(UserCover(id: asset.id, bytes: bytes)) }
             }
-            for key in preview.keys { try compactPositions(key: key) }
+            for key in preview.keys { try compactPositionsWithoutSave(key: key) }
+            try beforeSave()
         }
     }
     private func deletionFingerprint(_ payload: String) -> String {

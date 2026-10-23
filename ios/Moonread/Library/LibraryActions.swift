@@ -326,7 +326,7 @@ private struct LibraryExportPicker: UIViewControllerRepresentable {
     }
 }
 
-private struct LibraryShareSheet: UIViewControllerRepresentable {
+struct LibraryShareSheet: UIViewControllerRepresentable {
     let files: LibraryExport
     func makeUIViewController(context: Context) -> UIActivityViewController {
         let controller = UIActivityViewController(activityItems: files.urls, applicationActivities: nil)

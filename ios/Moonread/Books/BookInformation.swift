@@ -406,7 +406,7 @@ struct BookInformationSections: View {
                     LabeledContent("当前章覆盖", value: chapter.coverageLabel)
                 }
             }.listRowBackground(Color(uiColor: theme.surface)).id("myReading")
-            if let library {
+            if let library, !target.fromReader {
                 BookReadingDataClearSection(book: model, target: target, key: details.metadata.sha, manager: library.dataManagement)
             }
         }

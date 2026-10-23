@@ -51,9 +51,12 @@ extension UTType { static let moonreadBackup = UTType(exportedAs: "dev.moonread.
     func exportAll() async {
         await runCancellable {
             let next = try await self.service.exportReadingData()
-            if let exported = self.exported { try? FileManager.default.removeItem(at: exported.deletingLastPathComponent()) }
             self.exported = next
         }
+    }
+    func shareBackup() async throws -> LibraryExport {
+        guard let exported else { throw ReadingDataError.invalid }
+        return try await service.readingBackupShareCopy(exported)
     }
     func prepareImport(_ url: URL) async {
         await runCancellable { self.preview = try await self.service.previewReadingBackup(url) }
@@ -103,6 +106,7 @@ struct DataManagementView: View {
     @State private var picker = false
     @State private var exportConfirmation = false
     @State private var cacheConfirmation = false
+    @State private var sharing: LibraryExport?
     var body: some View {
         List {
             Section {
@@ -110,8 +114,11 @@ struct DataManagementView: View {
                     .accessibilityIdentifier("importReadingBackup")
                 Button { exportConfirmation = true } label: { Label { Text("导出全部", tableName: "DataManagement") } icon: { Image(systemName: "square.and.arrow.up") } }
                     .accessibilityIdentifier("exportAllReadingData")
-                if let url = model.exported {
-                    ShareLink(item: url) { Text("保存或分享备份", tableName: "DataManagement") }.accessibilityIdentifier("shareReadingBackup")
+                if model.exported != nil {
+                    Button { Task {
+                        do { sharing = try await model.shareBackup() }
+                        catch { model.error = ReaderMessages.error(error) }
+                    } } label: { Text("保存或分享备份", tableName: "DataManagement") }.accessibilityIdentifier("shareReadingBackup")
                 }
                 if model.inventory.pending > 0 { Text("有 \(model.inventory.pending) 本身份尚未确定，请先完成正文准备", tableName: "DataManagement").font(.caption).foregroundStyle(.secondary) }
                 if model.inventory.unsupported > 0 { Text("部分数据需要较新版本处理，请更新 App", tableName: "DataManagement").foregroundStyle(.secondary) }
@@ -159,6 +166,9 @@ struct DataManagementView: View {
             Button { Task { await model.clearCache() } } label: { Text("确认清理缓存", tableName: "DataManagement") }
         }
         .modifier(ReadingDataDeletionPrompt(model: model))
+        .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) {
+            if let sharing { LibraryShareSheet(files: sharing) }
+        }
         .sheet(isPresented: Binding(get: { model.preview != nil }, set: { if !$0 && !model.busy { model.preview = nil } })) { BackupImportPreviewView(model: model) }
         .alert(Text("暂时无法完成", tableName: "DataManagement"), isPresented: Binding(get: { model.error != nil && model.preview == nil }, set: { if !$0 { model.error = nil } })) {
             Button("知道了", role: .cancel) { model.error = nil }
@@ -175,8 +185,8 @@ private struct DataManagementRow: View {
             HStack {
                 if selecting { Image(systemName: selected ? "checkmark.circle.fill" : "circle") }
                 VStack(alignment: .leading, spacing: 4) {
-                    if item.title.isEmpty { Text("未关联小说", tableName: "DataManagement") } else { Text(verbatim: item.title) }
-                    Text(verbatim: String(item.id.prefix(8)) + (item.author.isEmpty ? "" : " · " + item.author)).font(.caption).foregroundStyle(.secondary)
+                    if item.linked { Text(verbatim: item.title) } else { Text("书架上没有这本小说", tableName: "DataManagement") }
+                    if !item.author.isEmpty { Text(verbatim: item.author).font(.caption).foregroundStyle(.secondary) }
                     Text("书签 \(item.bookmarks) · 批注 \(item.annotations)", tableName: "DataManagement").font(.caption).foregroundStyle(.secondary)
                     if item.lastRead > 0 { Text(Date(timeIntervalSince1970: Double(item.lastRead) / 1000), style: .date).font(.caption).foregroundStyle(.secondary) }
                     if item.cover { Text("自定义封面", tableName: "DataManagement").font(.caption) }
@@ -203,18 +213,30 @@ struct ReadingDataDeletionPrompt: ViewModifier {
     }
 }
 private struct BackupImportPreviewView: View {
+    @Environment(\.theme) private var theme
     @Bindable var model: DataManagementModel
     var body: some View {
         NavigationStack {
             Form {
                 if let error = model.error { Text(verbatim: error).foregroundStyle(.red) }
                 if let preview = model.preview {
-                    Text("涉及 \(preview.preview.keys.count) 本；已关联 \(preview.linked) 本；未关联 \(preview.preview.keys.count - preview.linked) 本", tableName: "DataManagement")
-                    Text("本机较新记录：\(preview.preview.existingNewer)；批注冲突：\(preview.preview.conflicts)", tableName: "DataManagement")
-                    Text("保留原时间和标识并合并，不强制覆盖较新数据。已有统计清除边界仍可能过滤部分统计；可选扩展不修改用户数据。", tableName: "DataManagement").font(.footnote)
-                    Button { Task { await model.importConfirmed() } } label: { Text("确认导入", tableName: "DataManagement") }.accessibilityIdentifier("confirmImportReadingBackup")
+                    Section {
+                        Text("包含 \(preview.preview.keys.count) 本小说的阅读数据，其中 \(preview.linked) 本在书架上", tableName: "DataManagement")
+                        if preview.preview.existingNewer > 0 {
+                            Text("本机有 \(preview.preview.existingNewer) 条更新的记录会保留", tableName: "DataManagement")
+                        }
+                        if preview.preview.conflicts > 0 {
+                            Text("\(preview.preview.conflicts) 处批注有冲突", tableName: "DataManagement")
+                        }
+                    }.listRowBackground(Color(uiColor: theme.surface))
+                    Section {
+                        Button { Task { await model.importConfirmed() } } label: {
+                            Text("确认导入", tableName: "DataManagement").frame(maxWidth: .infinity)
+                        }.buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
+                            .accessibilityIdentifier("confirmImportReadingBackup")
+                    }.listRowBackground(Color.clear)
                 }
-            }.disabled(model.busy).navigationTitle(Text("导入预览", tableName: "DataManagement"))
+            }.themedPage().tint(Color(uiColor: theme.accent)).disabled(model.busy).navigationTitle(Text("导入预览", tableName: "DataManagement"))
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { if !model.busy { model.preview = nil } }.disabled(model.busy) } }
                 .interactiveDismissDisabled(model.busy)
         }

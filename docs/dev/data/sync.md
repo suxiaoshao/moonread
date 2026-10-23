@@ -166,3 +166,5 @@ UserValue 按 `(updated, token)` 做整值 LWW；位置候选写入与压缩也�
 本机仅串行收尾三处已知窗口：位置 flush 与清除；pending 先清再正式库清除；StatisticsWriter 的在途及失败重试批次。UserDefaults 的 `Moonread.readingDataDeletion.v1` 有限回执带 schemaVersion 1、账户作用域、选中 SHA/别名及原对象标识/载荷指纹，重启仅完成原对象清理，后来新建或已变化的对象保留。回执不参与同步或未来写入裁决，完成即移除；所选书旧统计批次丢弃，其他书保留。未知回执版本拒绝执行，账户切换前先完成原作用域操作。
 
 备份和 pending 晋升共用位置胜者及不可变批注/事实接入，保留 updated/token、ID 和因果，冲突 ID 拒绝并回滚。历史 pending 晋升可能留下内层 pending content_key 的事实：正式 ReadingFact.contentKey 为权威路由，与现有 visibleFacts 一样处理，备份保持原 payload；内外两个正式 SHA 不一致仍拒绝。未知必需 payload 保留原数据并阻止导入，不降级或重编码。
+
+同 token 的位置重试按 updated 与解码后 PositionValue 的内容相等判断，不比较 JSON 键排列；pending 晋升和备份位置接入共用该判断。备份快照是 UserDataStore 上不挂起的同步调用；预览后的最终校验在导入事务中执行，保留账户/configuration 检查，不将全局投影缓存 epoch 当成该 store 的一致性凭据。

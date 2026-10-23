@@ -14,9 +14,11 @@
 
 ## 2026-10-23 阅读数据管理（#50 / #60）
 
-本地 Nix Rust 全量 94 项通过（17.5 秒）；iPhone 18 Pro `FFA6F448-E09C-4885-B59C-53C5E07185F5` 的 MoonreadTests 全量 271 项通过（用例 60.7 秒，含增量构建与启动共 120.9 秒）。新增覆盖完整权威备份/目录/附件往返、幂等及冲突回滚、pending 与账户准入、中断清理只处理原对象、位置 flush/转移/统计重试收尾，以及原件不可用时保留正文；Rust 覆盖受限包处理和缓存驱逐事务。未改变 SwiftData/CloudKit schema。
+本地 Nix Rust 全量 94 项通过（12.0 秒），Clippy 通过；iPhone 18 Pro `FFA6F448-E09C-4885-B59C-53C5E07185F5` 的 MoonreadTests 全量 272 项通过（用例 56.2 秒，含增量构建与启动共 98.9 秒）。覆盖完整权威备份/目录/附件往返、幂等及冲突回滚、pending 与账户准入、中断清理只处理原对象、位置 flush/转移/统计重试收尾，以及原件不可用时保留正文。新增 gate 断言导出包含在途位置和事实；保留陈旧位置候选并在最终保存前注入失败，验证整包回滚；busy 拒绝后统计仍可重试。原有 S467 和导入预览失败用例的业务断言保持不变并通过。
 
-唯一新增 U21 流程通过（用例 35.4 秒，含启动共 51.3 秒）：设置导出全部、删除该条、确认小说原件仍在、导入旧包恢复 50.0% 位置和手动目录。使用隔离合成 fixture 与应用级文件入口，不测试系统分享/选择器内部；UI 总数由 20 增至 21。证据：`build/DataManagement/rust-tests.log`、`MoonreadTests-Delivery.xcresult` / `swift-delivery.log`、`U21-Verified.xcresult` / `u21-verified.log`，截图在 `build/DataManagement/screens/`。早期定位失败不计为通过。
+备份预览以只读方式获取批注候选，导入最终校验与位置压缩处于同一事务，只有一次保存；快照与导入不再使用全局投影 epoch 拒绝，账户/configuration 校验保留。同 token 位置按解码后的内容比较，普通批注压缩和其余投影缓存机制保持原行为。Rust 表驱动验证新增「成员摘要正确但与资产文件名不符」的拒绝场景。没有改变 SwiftData/CloudKit schema。
+
+唯一新增 U21 流程通过（用例 34.2 秒）：设置导出全部、删除该条、确认小说原件仍在、导入旧包恢复 50.0% 位置和手动目录。预览为简明文案与主题主按钮，行内不显示 SHA 短码；仍是 21 条 UI 流程，没有增加截图矩阵。证据：`build/DataManagement/verified-review-rust.log`、`Verified-Review-MoonreadTests.xcresult` / `verified-review-swift.log`、`Verified-Review-U21.xcresult` / `verified-review-u21.log`。四张静止图在 `build/DataManagement/screens/`（列表、删除确认、导入预览、导入后的列表），来源与录屏见 `screenshot-evidence.txt`。早期定位失败不计为通过，同提交 CI 以 PR 检查为准。
 
 这些结果不代表真实 CloudKit 对象删除已传播到其他设备；离线回连、新事实保留、账户系统清理与 iCloud 原件不可访问仍需授权的真实环境验收。本轮没有操作真机、真实小说库、Apple 账号或云端 schema。
 

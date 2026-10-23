@@ -128,6 +128,11 @@ final class StatisticsWriter {
         }
     }
     func drain() async { await task?.value }
+    func flushForBackup() async throws {
+        retry()
+        await drain()
+        guard queue.isEmpty else { throw ReadingDataError.unsavedReadingData }
+    }
     func discardReadingData(bookIDs: Set<String>) async {
         await drain()
         queue = queue.compactMap { batch in

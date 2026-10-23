@@ -97,7 +97,7 @@ struct PositionSourceHint: Codable, Equatable, Sendable {
         try c.encode(decoding, forKey: .init("decoding"))
     }
 }
-struct PositionValue: Codable, Sendable {
+struct PositionValue: Codable, Equatable, Sendable {
     var content_key: String
     var offset: UInt64
     var source_hint: PositionSourceHint? = nil
@@ -132,6 +132,10 @@ struct PositionCandidate: Sendable {
         var value = value; value.content_key = key
         var stored = stored; stored.value = try UserSyncJSON.encode(value)
         return Self(stored: stored, value: value, sourceKey: sourceKey)
+    }
+    static func sameUpdate(_ previous: StoredValue, _ incoming: StoredValue) throws -> Bool {
+        guard previous.updated == incoming.updated else { return false }
+        return try Self(previous).value == Self(incoming).value
     }
     static func winner(_ previous: Self?, _ incoming: Self) -> Self {
         guard let previous else { return incoming }
@@ -289,13 +293,19 @@ enum AnnotationReduction {
     private func requireValueReadable(_ key: String) throws {
         guard try !valueSnapshot(key: key).blocked.contains(key) else { throw UserSyncCompatibilityError() }
     }
-    func compactPositions(key: String) throws {
+    private func obsoletePositionRows(key: String) throws -> [UserPosition] {
         let snapshot = try valueSnapshot(key: "position/" + key)
-        guard !snapshot.blocked.contains("position/" + key) else { return }
+        guard !snapshot.blocked.contains("position/" + key) else { return [] }
         let winner = snapshot.values["position/" + key]?.token
         let rows = try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { $0.contentKey == key }))
-        let obsolete = try rows.filter { try UserSyncJSON.storedValue($0.payload, key: "position/" + key).token != winner }
+        return try rows.filter { try UserSyncJSON.storedValue($0.payload, key: "position/" + key).token != winner }
+    }
+    func compactPositions(key: String) throws {
+        let obsolete = try obsoletePositionRows(key: key)
         if !obsolete.isEmpty { try transaction { for row in obsolete { modelContext.delete(row) } } }
+    }
+    func compactPositionsWithoutSave(key: String) throws {
+        for row in try obsoletePositionRows(key: key) { modelContext.delete(row) }
     }
     func value(_ key: String) throws -> String? {
         let snapshot = try valueSnapshot(key: key)
@@ -375,7 +385,7 @@ enum AnnotationReduction {
         }
         return try snapshot.blocked.isEmpty && blockedMarks(key: key).isEmpty ? nil : UserSyncCompatibilityError().localizedDescription
     }
-    func candidates(key: String, markID: String? = nil) throws -> [String: [AnnotationCandidate]] {
+    func candidates(key: String, markID: String? = nil, compacting: Bool = true) throws -> [String: [AnnotationCandidate]] {
         let rows = try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.contentKey == key }))
         var groups: [String: [AnnotationCandidate]] = [:], blocked = Set<String>()
         for row in rows where markID == nil || row.markID == markID {
@@ -384,6 +394,7 @@ enum AnnotationReduction {
         }
         for id in blocked { groups.removeValue(forKey: id) }
         let result = groups.mapValues(AnnotationReduction.heads)
+        guard compacting else { return result }
         let kept = Set(result.values.flatMap { $0 }.map(\.id))
         let obsolete = rows.filter { (markID == nil || $0.markID == markID) && !blocked.contains($0.markID) && !kept.contains($0.id) }
         if !obsolete.isEmpty { try transaction { for row in obsolete { modelContext.delete(row) } } }
@@ -679,7 +690,7 @@ extension UserDataStore {
         for row in rows {
             let old = try UserSyncJSON.storedValue(row.payload, key: "position/" + key)
             if old.token == incoming.stored.token {
-                guard old.updated == incoming.stored.updated, old.value == incoming.stored.value else { throw UserSyncCompatibilityError() }
+                guard try PositionCandidate.sameUpdate(old, incoming.stored) else { throw UserSyncCompatibilityError() }
             }
         }
         let old = try values(key: "position/" + key)["position/" + key]

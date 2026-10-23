@@ -56,13 +56,29 @@ import XCTest
         let target = try store()
         let preview = try await target.validateBackup(directory: directory, manifest: manifest)
         XCTAssertEqual(preview.keys, [key]); XCTAssertEqual(preview.conflicts, 1)
-        try await target.mergeBackup(directory: directory, manifest: manifest, expectedRevision: preview.revision)
+        try await target.mergeBackup(directory: directory, manifest: manifest)
         let after = try await snapshot(target), restoredCover = try await target.cover(coverID)
         XCTAssertEqual(after, before); XCTAssertEqual(restoredCover, bytes)
-        let previewAgain = try await target.validateBackup(directory: directory, manifest: manifest)
-        try await target.mergeBackup(directory: directory, manifest: manifest, expectedRevision: previewAgain.revision)
+        _ = try await target.validateBackup(directory: directory, manifest: manifest)
+        let previewOnly = try await snapshot(target)
+        XCTAssertEqual(previewOnly, after, "Preview must not compact or save annotation candidates")
+        try await target.mergeBackup(directory: directory, manifest: manifest)
         let repeated = try await snapshot(target), facts = try await target.backupTestFactCount(key)
         XCTAssertEqual(repeated, after); XCTAssertEqual(facts, 2)
+        // Keep a newer winner plus an obsolete physical candidate, so import
+        // must compact after inserting its other rows. A final failure rolls all
+        // those changes back, including the compaction and cover attachment.
+        let rollback = try store()
+        var newest = try positionRecord(key: key, token: "newest", offset: 18); newest.updated = Int64.max - 1
+        try await receiveBackupPosition(newest, key: key, store: rollback)
+        try await receiveBackupPosition(positionRecord(key: key, token: "obsolete", offset: 3), key: key, store: rollback)
+        let unchanged = try await snapshot(rollback)
+        do {
+            try await rollback.mergeBackup(directory: directory, manifest: manifest, beforeSave: { throw BackupTestFailure.beforeSave })
+            XCTFail("An interrupted merge must fail")
+        } catch BackupTestFailure.beforeSave { }
+        let rolledBack = try await snapshot(rollback), absentCover = try await rollback.cover(coverID)
+        XCTAssertEqual(rolledBack, unchanged); XCTAssertNil(absentCover)
     }
     func testImportPreviewRejectsConflictingIDsUnknownPayloadsAndMissingAssetsWithoutWrites() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
@@ -74,8 +90,7 @@ import XCTest
         let (directory, manifest) = try await package(source, at: f.root)
         let before = try await snapshot(target)
         do { _ = try await target.validateBackup(directory: directory, manifest: manifest); XCTFail("Conflicting ID must block preview") } catch { }
-        let revision = target.projectionVersion
-        do { try await target.mergeBackup(directory: directory, manifest: manifest, expectedRevision: revision); XCTFail("Must not partially merge") } catch { }
+        do { try await target.mergeBackup(directory: directory, manifest: manifest); XCTFail("Must not partially merge") } catch { }
         let after = try await snapshot(target); XCTAssertEqual(after, before)
         var future = manifest; future.requiredCapabilities.append("future-required")
         do { _ = try await target.validateBackup(directory: directory, manifest: future); XCTFail("Unknown required capability") } catch ReadingDataError.updateRequired { }
@@ -122,7 +137,7 @@ import XCTest
         let positions = try await f.formal.positionValues(), notes = try await f.formal.candidates(key: key), cover = try await f.formal.cover(id)
         XCTAssertEqual(positions["position/" + key]?.token, "v1"); XCTAssertTrue(notes.isEmpty); XCTAssertEqual(cover, bytes)
         let preview = try await f.formal.validateBackup(directory: directory, manifest: manifest)
-        try await f.formal.mergeBackup(directory: directory, manifest: manifest, expectedRevision: preview.revision)
+        try await f.formal.mergeBackup(directory: directory, manifest: manifest)
         let restored = try await f.formal.candidates(key: key), newer = try await f.formal.value("metadata/" + key + "/author")
         XCTAssertEqual(restored["m"]?.first?.content?.note, "Old"); XCTAssertEqual(newer, try UserSyncJSON.encode("New edit"))
         let pending = try await f.pending.pendingKeys(); XCTAssertTrue(pending.isEmpty)
@@ -154,6 +169,40 @@ import XCTest
         let current = try await f.formal.positionValues()
         XCTAssertNotNil(current["position/" + key], "No deletion epoch may forbid a new reading")
     }
+    func testExportWaitsForPositionFlushAndStatisticsBeforeTakingItsSnapshot() async throws {
+        let f = try positionWinnerFixture(); defer { f.clean() }
+        let key = f.book.contentSha256, alias = "pending:" + f.book.id
+        try await f.pending.receiveSyncFixture("position", key: alias, payload: UserSyncJSON.encode(positionRecord(key: alias, token: "pending", offset: 3), envelope: true))
+        let positionGate = RestorationGate(), statisticsGate = RestorationGate()
+        let writer = StatisticsWriter { slices, generation in
+            await statisticsGate.wait()
+            let values = slices.map { ($0.id, key, self.syncFact(key, id: $0.id)) }
+            try await f.formal.saveFacts(values, generation: generation, current: generation, enabled: true)
+        }
+        let service = ReaderService(core: f.core, sourceDefaultsSuite: f.suite, dataManagementWriter: writer, userStoreFactory: { name, _ in
+            if name == "pending-users.store" { return f.pending }
+            await positionGate.wait(); return f.formal
+        })
+        let lease = try await service.openReading(f.book.id)
+        let clock = ReadingClock(bookId: f.book.id)
+        var moment = ReadingMoment(monotonicMs: 0, unixMs: 0, utcOffsetSeconds: 0, readable: true, interaction: true, preview: false, startUtf8: 0, endUtf8: 9)
+        _ = clock.update(moment: moment); moment.monotonicMs = 1000; moment.unixMs = 1000; moment.readable = false
+        writer.enqueue(clock.update(moment: moment), generation: 0, lease: lease)
+        await statisticsGate.waitForEntry()
+        let flush = Task { try await service.writePosition(f.book.id, offset: 12) }
+        await positionGate.waitForEntry()
+        let exporting = Task { try await service.exportReadingData() }
+        await statisticsGate.release(); await writer.drain()
+        await positionGate.release(); try await flush.value
+        let archive = try await exporting.value
+        let inspected = try inspectBackup(archivePath: archive.path, stagingRoot: f.root.appendingPathComponent("export-inspection").path)
+        let manifest = try JSONDecoder().decode(BackupManifest.self, from: Data(inspected.manifestJson.utf8))
+        let restored = try store()
+        try await restored.mergeBackup(directory: URL(fileURLWithPath: inspected.directory), manifest: manifest)
+        let position = try await restored.value("position/" + key), count = try await restored.backupTestFactCount(key)
+        let decoded = try UserSyncJSON.decode(PositionValue.self, XCTUnwrap(position), as: UserSyncJSON.position)
+        XCTAssertEqual(decoded.offset, 12); XCTAssertEqual(count, 1)
+    }
     func testStatisticsDiscardDrainsInFlightAndKeepsOtherBooksRetryable() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
         let gate = RestorationGate()
@@ -176,9 +225,25 @@ import XCTest
         await gate.release(); await discard.value
         failed = false; writer.retry(); await writer.drain()
         XCTAssertEqual(calls, ["selected", "other"])
+        var rejectWrites = true, attemptedWrites = 0
+        let activeWriter = StatisticsWriter { _, _ in
+            attemptedWrites += 1
+            if rejectWrites { throw CocoaError(.fileWriteUnknown) }
+        }
+        let activeService = ReaderService(core: f.core, sourceDefaultsSuite: f.suite, dataManagementWriter: activeWriter,
+            userStoreFactory: { name, _ in name == "pending-users.store" ? f.pending : f.formal })
+        let activeLease = try await activeService.openReading(f.book.id)
+        activeWriter.enqueue(slices(f.book.id), generation: 0, lease: activeLease)
+        await activeWriter.drain()
+        do { _ = try await activeService.deleteReadingData([f.book.contentSha256]); XCTFail("The reader is still open") }
+        catch ReadingDataError.busy { }
+        rejectWrites = false; activeWriter.retry(); await activeWriter.drain()
+        XCTAssertEqual(attemptedWrites, 2, "A busy refusal must keep the failed statistics batch retryable")
     }
 }
 
 private extension UserDataStore {
     func backupTestFactCount(_ key: String) throws -> Int { try visibleFacts(key: key).count }
 }
+
+private enum BackupTestFailure: Error { case beforeSave }
