@@ -20,6 +20,8 @@ enum ReaderMessages {
         case .Paused: return String(localized: "准备已暂停，已读内容仍然保留。", bundle: bundle)
         case .ImportBusy: return String(localized: "正文仍在准备，请稍后再试。", bundle: bundle)
         case .InvalidSettings: return String(localized: "设置值无效，请重新选择。", bundle: bundle)
+        case .TextCapacityExceeded: return String(localized: "正文超过可存储的范围，原文件和已读内容仍保留。", bundle: bundle)
+        case .BinaryContent: return String(localized: "文件可能是二进制，或文字编码选择不正确；原文件已保留。", bundle: bundle)
         case .GraphemeTooLong: return String(localized: "文件中有过长的组合字符，无法安全读取。", bundle: bundle)
         }
     }

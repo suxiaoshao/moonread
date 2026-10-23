@@ -177,6 +177,45 @@ impl ReaderCore {
         shelf_id: String,
         items: Vec<ScannedLibraryItem>,
     ) -> Result<()> {
+        self.scan_library_shelf_partial(shelf_id, items, Vec::new())
+    }
+
+    /// Inaccessible paths retain their previous rows (including descendants),
+    /// while accessible portions still reconcile additions/removals normally.
+    pub fn scan_library_shelf_partial(
+        &self,
+        shelf_id: String,
+        mut items: Vec<ScannedLibraryItem>,
+        failed_paths: Vec<String>,
+    ) -> Result<()> {
+        for path in &failed_paths {
+            validate_relative(path, true)?;
+        }
+        let mut db = self.lock()?;
+        if !failed_paths.is_empty() {
+            let mut seen: HashSet<String> = items.iter().map(|i| i.relative_path.clone()).collect();
+            let mut statement = db.prepare("SELECT relative_path,directory,size,modified,needs_download FROM library_files WHERE shelf_id=?1")?;
+            let old = statement.query_map([&shelf_id], |r| {
+                Ok(ScannedLibraryItem {
+                    relative_path: r.get(0)?,
+                    directory: r.get(1)?,
+                    size: r.get::<_, i64>(2)? as u64,
+                    modified: r.get(3)?,
+                    needs_download: r.get(4)?,
+                })
+            })?;
+            for row in old {
+                let row = row?;
+                if failed_paths.iter().any(|p| {
+                    p.is_empty()
+                        || row.relative_path == *p
+                        || row.relative_path.starts_with(&format!("{p}/"))
+                }) && seen.insert(row.relative_path.clone())
+                {
+                    items.push(row);
+                }
+            }
+        }
         let mut paths = HashSet::new();
         for item in &items {
             validate_relative(&item.relative_path, false)?;
@@ -187,7 +226,6 @@ impl ReaderCore {
                 return Err(ReaderError::InvalidSettings);
             }
         }
-        let mut db = self.lock()?;
         let tx = db.transaction()?;
         let old = {
             let mut stmt = tx.prepare(
@@ -733,6 +771,48 @@ impl ReaderCore {
 #[cfg(test)]
 mod recent_tests {
     use super::*;
+
+    #[test]
+    fn partial_scan_preserves_only_inaccessible_paths_and_their_associations() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = ReaderCore::new(dir.path().join("cache").to_string_lossy().into()).unwrap();
+        core.save_library_shelf("s".into(), "Shelf".into(), vec![], "local".into(), false)
+            .unwrap();
+        let file = |path: &str| ScannedLibraryItem {
+            relative_path: path.into(),
+            directory: false,
+            size: 10,
+            modified: 1,
+            needs_download: false,
+        };
+        core.scan_library_shelf(
+            "s".into(),
+            vec![
+                file("bad/keep.txt"),
+                file("bad-sibling/gone.txt"),
+                file("deleted.txt"),
+            ],
+        )
+        .unwrap();
+        let before = core
+            .source_files("s".into())
+            .unwrap()
+            .into_iter()
+            .find(|f| f.relative_path == "bad/keep.txt")
+            .unwrap();
+        core.scan_library_shelf_partial("s".into(), vec![file("new.txt")], vec!["bad".into()])
+            .unwrap();
+        let after = core.source_files("s".into()).unwrap();
+        assert_eq!(after.len(), 2);
+        assert!(
+            after
+                .iter()
+                .any(|f| f.id == before.id && f.relative_path == "bad/keep.txt")
+        );
+        assert!(after.iter().any(|f| f.relative_path == "new.txt"));
+        core.scan_library_shelf("s".into(), vec![]).unwrap();
+        assert!(core.source_files("s".into()).unwrap().is_empty());
+    }
 
     #[test]
     fn search_candidates_leave_unmatched_folder_covers_unqueried() {

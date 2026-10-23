@@ -532,6 +532,12 @@ final class LibraryModel {
     }
     /// Opens a result in the current tab's stack, or through a host's own `push`
     /// (a reading context) once the file is ready and the host still shows the result.
+    func openIndexFailure(_ id: String) {
+        Task {
+            do { open(try await service.libraryEntry(id)) }
+            catch { self.error = ReaderMessages.error(error) }
+        }
+    }
     func open(_ entry: LibraryEntry, push: ((LibraryRoute) -> Void)? = nil, isCurrent: @escaping () -> Bool = { true }) {
         let tap = ProcessInfo.processInfo.systemUptime
         if entry.id == openingFileID { return }

@@ -625,7 +625,7 @@ impl ReaderCore {
         let mut batch: Vec<(TextChunk, u64, u64)> = Vec::new();
         let mut batch_bytes = 0usize;
         let mut last_commit = Instant::now();
-        text::decode_chunks(&mut input, encoding, |text| {
+        let mut consume = |text: &str| {
             if token.cancelled.load(Ordering::Acquire) {
                 return Err(ReaderError::Paused);
             }
@@ -639,10 +639,6 @@ impl ReaderCore {
             scanner.push_chunk(offset, text);
             blanks.push(text);
             if index < old.book.chunk_count {
-                let stored = chunk(&*self.read_lock()?, &token.id, index)?;
-                if stored.start_utf8 != offset || stored.text != text {
-                    return Err(ReaderError::SourceChanged);
-                }
                 scanner.chapters.clear();
                 blanks.discard_published_prefix();
             } else {
@@ -676,6 +672,52 @@ impl ReaderCore {
                 published_visible = visible;
                 batch_bytes = 0;
                 last_commit = Instant::now();
+            }
+            Ok(())
+        };
+        // Recovery-v1 can change decoder output/chunk boundaries around malformed
+        // input. Compare the old published prefix byte-for-byte and feed it back
+        // at its original boundaries, preserving chunks, offsets and pending data.
+        // No failed task or user facts are discarded and its recorded encoding stays fixed.
+        let mut replay_index = 0;
+        let mut replay_at = 0;
+        let mut replay_end = 0;
+        let mut replay = if old.book.chunk_count > 0 {
+            Some(chunk(&*self.read_lock()?, &token.id, 0)?)
+        } else {
+            None
+        };
+        text::decode_chunks(&mut input, encoding, |mut text| {
+            while !text.is_empty() {
+                if let Some(stored) = replay.as_ref() {
+                    if stored.start_utf8 != replay_end
+                        || stored.end_utf8 != stored.start_utf8 + stored.text.len() as u64
+                    {
+                        return Err(ReaderError::SourceChanged);
+                    }
+                    let length = text.len().min(stored.text.len() - replay_at);
+                    if text.as_bytes()[..length]
+                        != stored.text.as_bytes()[replay_at..replay_at + length]
+                    {
+                        return Err(ReaderError::SourceChanged);
+                    }
+                    replay_at += length;
+                    text = &text[length..];
+                    if replay_at == stored.text.len() {
+                        consume(&stored.text)?;
+                        replay_end = stored.end_utf8;
+                        replay_index += 1;
+                        replay_at = 0;
+                        replay = if replay_index < old.book.chunk_count {
+                            Some(chunk(&*self.read_lock()?, &token.id, replay_index)?)
+                        } else {
+                            None
+                        };
+                    }
+                } else {
+                    consume(text)?;
+                    break;
+                }
             }
             Ok(())
         })?;
@@ -795,7 +837,6 @@ impl<R: Read> Read for CountingReader<'_, R> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use encoding_rs::GB18030;
     use std::sync::mpsc;
     use tempfile::TempDir;
     #[test]
@@ -1121,46 +1162,77 @@ mod tests {
     }
 
     #[test]
-    fn late_encoding_error_preserves_published_text_and_explicit_retry_is_separate() {
+    fn tolerant_decode_resumes_old_failed_prefix_and_matches_index_identity() {
         let (dir, core) = setup();
-        let mut bytes = b"Chapter 1\nA long evening.\n".repeat(10000);
-        let (tail, _, _) = GB18030.encode("中文小说");
-        bytes.extend_from_slice(&tail);
-        let file = dir.path().join("encoded.txt");
-        std::fs::write(&file, bytes).unwrap();
-        let token = core.create_import("编码小说".into()).unwrap();
-        assert!(matches!(
-            core.stream_import(
-                token.clone(),
-                file.to_string_lossy().into(),
-                raw(&file),
-                None
-            ),
-            Err(ReaderError::Decode { .. })
-        ));
-        let state = core.reading_snapshot(token.id.clone()).unwrap();
-        assert!(state.can_read);
-        assert_eq!(state.phase, ImportPhase::Failed);
-        let old_text = core.reading_frame(token.id.clone(), 0).unwrap().chunks[0]
-            .text
-            .clone();
-        let retry = core.create_import("编码小说".into()).unwrap();
+        let mut bytes = "第一章 月光\n原创正文。\n".repeat(10000).into_bytes();
+        bytes.extend_from_slice(b"\x0b\x0c\0\xfftail\xe4\xb8");
+        let file = dir.path().join("recovery.txt");
+        std::fs::write(&file, &bytes).unwrap();
+        let token = core.create_import("恢复".into()).unwrap();
+        core.validate_import_source(
+            token.clone(),
+            crate::SourceContentKey {
+                raw_sha256: raw(&file),
+                decoding: "auto".into(),
+            },
+        )
+        .unwrap();
+        core.lock()
+            .unwrap()
+            .execute("UPDATE books SET encoding='UTF-8' WHERE id=?1", [&token.id])
+            .unwrap();
+        // Simulate a legacy failed task containing a valid, shorter published
+        // chunk. Recovery must respect that boundary instead of replacing it.
+        let prefix = "第一章 月光\n原创正文。\n";
+        let mut scanner = ChapterScanner::default();
+        scanner.push_chunk(0, prefix);
+        let mut blanks = reading_layout::BlankScanner::default();
+        blanks.push(prefix);
+        core.commit_prefix(
+            &token,
+            &mut vec![(
+                TextChunk {
+                    index: 0,
+                    start_utf8: 0,
+                    end_utf8: prefix.len() as u64,
+                    text: prefix.into(),
+                },
+                0,
+                scanner.char_count,
+            )],
+            &mut scanner.chapters,
+            &mut blanks,
+            true,
+            prefix.len() as u64,
+        )
+        .unwrap();
+        core.fail_import(
+            token.clone(),
+            ReaderError::Decode {
+                message: "legacy strict failure".into(),
+            },
+        )
+        .unwrap();
+        let retry = core.resume_import(token.id.clone()).unwrap();
         core.stream_import(
             retry.clone(),
             file.to_string_lossy().into(),
             raw(&file),
-            Some("gb18030".into()),
+            None,
         )
         .unwrap();
         core.finish_import(retry).unwrap();
-        assert_eq!(
-            core.reading_frame(token.id.clone(), 0).unwrap().chunks[0].text,
-            old_text
-        );
-        assert_eq!(
-            core.reading_snapshot(token.id.clone()).unwrap().phase,
-            ImportPhase::Failed
-        );
+        let state = core.reading_snapshot(token.id.clone()).unwrap();
+        assert_eq!(state.phase, ImportPhase::Complete);
+        assert_eq!(core.read_chunk(token.id.clone(), 0).unwrap().text, prefix);
+        let actual: String = (0..state.book.chunk_count)
+            .map(|i| core.read_chunk(token.id.clone(), i).unwrap().text)
+            .collect();
+        assert_eq!(actual, String::from_utf8_lossy(&bytes));
+        let identity = crate::SourceIdentityProbe::new()
+            .identify(file.to_string_lossy().into(), "auto".into())
+            .unwrap();
+        assert_eq!(identity.content_sha256, state.book.content_sha256);
     }
 
     #[test]

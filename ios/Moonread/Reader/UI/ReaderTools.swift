@@ -278,9 +278,10 @@ final class ReaderToolsModel {
                     guard generation == searchGeneration, !Task.isCancelled else { return }
                     hits += batch.hits
                     partialSearch = batch.partialBook
+                    truncatedSearch = truncatedSearch || batch.truncated
                     searchProgress = Double(batch.scannedUtf8) / Double(max(1, batch.availableUtf8))
                     if batch.done || batch.cancelled {
-                        searchFinished = batch.done; truncatedSearch = batch.truncated; searching = false; return
+                        searchFinished = batch.done; searching = false; return
                     }
                     try await Task.sleep(for: .milliseconds(20))
                 }
@@ -809,7 +810,7 @@ struct ReaderSearchContent: View {
                         .listRowSeparatorTint(Color(uiColor: theme.separator))
                 }
                 if model.truncatedSearch {
-                    Text("已显示前 2000 处匹配").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).padding(20)
+                    Text("部分超长段落未执行正则搜索，其他结果仍可查看。").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).padding(20)
                         .listRowBackground(Color(uiColor: theme.surface))
                 }
             }
