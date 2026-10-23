@@ -1,0 +1,486 @@
+name: TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_branch:
+        description: 'Approved source branch: release/x.y or hotfix/x.y.z'
+        required: true
+        type: string
+      expected_sha:
+        description: 'Full SHA at the branch HEAD, with successful push CI'
+        required: true
+        type: string
+      mode:
+        description: 'Upload requires explicit user authorization; verify never uploads'
+        type: choice
+        options: [verify, upload]
+        default: verify
+        required: true
+
+permissions:
+  contents: read
+
+# All versions share one build-number space. Do not queue multiple releases.
+concurrency:
+  group: moonread-testflight
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  prepare:
+    name: Validate approved source (no signing secrets)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+      branch: ${{ steps.source.outputs.branch }}
+      ci_run: ${{ steps.source.outputs.ci_run }}
+    steps:
+      - name: Require main dispatch and successful exact-SHA push CI
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, subprocess
+          def api(path):
+              return json.loads(subprocess.check_output(['gh', 'api', path]))
+          repo = os.environ['GITHUB_REPOSITORY']
+          branch, sha = os.environ['SOURCE_BRANCH'], os.environ['EXPECTED_SHA']
+          if (os.environ['GITHUB_EVENT_NAME'] != 'workflow_dispatch' or
+              os.environ['GITHUB_REF'] != 'refs/heads/main' or
+              os.environ['WORKFLOW_REF'] != repo + '/.github/workflows/testflight.yml@refs/heads/main'):
+              raise SystemExit('Only the reviewed workflow dispatched from main may sign.')
+          if not re.fullmatch(r'(release/\d+\.\d+|hotfix/\d+\.\d+\.\d+)', branch):
+              raise SystemExit('Invalid release/hotfix branch.')
+          if not re.fullmatch(r'[0-9a-f]{40}', sha):
+              raise SystemExit('A full lowercase commit SHA is required.')
+          if api(f'repos/{repo}/git/ref/heads/{branch}')['object']['sha'] != sha:
+              raise SystemExit('Branch HEAD differs from expected_sha.')
+          workflow = api(f'repos/{repo}/actions/workflows/ci.yml')
+          # Query the trusted workflow ID, not arbitrary checks with matching names.
+          runs = api(f'repos/{repo}/actions/workflows/{workflow["id"]}/runs?event=push&head_sha={sha}&per_page=100')['workflow_runs']
+          runs = [r for r in runs if r['head_sha'] == sha and r['head_branch'] == branch
+                  and r['head_repository']['full_name'] == repo and r['event'] == 'push']
+          if not runs:
+              raise SystemExit('No push CI run for this branch and SHA.')
+          run = max(runs, key=lambda r: r['id'])
+          if run['status'] != 'completed' or run['conclusion'] != 'success':
+              raise SystemExit('Latest exact-SHA push CI has not succeeded.')
+          jobs, page = [], 1
+          while True:
+              batch = api(f'repos/{repo}/actions/runs/{run["id"]}/jobs?filter=latest&per_page=100&page={page}')['jobs']
+              jobs.extend(batch)
+              if len(batch) < 100: break
+              page += 1
+          for name in ['Secret scan', 'Workflow syntax', 'Linux checks', 'iOS unit tests']:
+              matches = [j for j in jobs if j['name'] == name]
+              if len(matches) != 1 or matches[0]['conclusion'] != 'success':
+                  raise SystemExit(f'Required CI job must succeed (not skip): {name}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'sha={sha}\nbranch={branch}\nci_run={run["id"]}\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write(f'Approved source: `{branch}` / `{sha}`; push CI #{run["id"]}.\n')
+          PY
+
+  package:
+    name: Archive, audit and optionally upload
+    needs: prepare
+    runs-on: xcode-27
+    environment: testflight
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      CARGO_TARGET_DIR: ${{ github.workspace }}/build/cargo
+      SOURCE_BRANCH: ${{ needs.prepare.outputs.branch }}
+      EXPECTED_SHA: ${{ needs.prepare.outputs.sha }}
+      MODE: ${{ inputs.mode }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - name: Recheck branch after Environment approval and require exact Xcode
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$SOURCE_BRANCH" --jq .object.sha)" = "$EXPECTED_SHA"
+          test "$(xcodebuild -version | head -n 1)" = 'Xcode 27.1'
+          xcrun --sdk iphoneos --show-sdk-version
+      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - name: Prepare isolated signing context and read-only ASC client
+        env:
+          ASC_API_KEY_BASE64: ${{ secrets.ASC_API_KEY_BASE64 }}
+        run: |
+          set +x
+          umask 077
+          mkdir -p "$RUNNER_TEMP/testflight-private" "$RUNNER_TEMP/testflight-public"
+          python3 - <<'PY'
+          import base64, os, pathlib, re, secrets, subprocess
+          for name in ['ASC_API_KEY_BASE64', 'ASC_KEY_ID', 'ASC_ISSUER_ID', 'APPLE_TEAM_ID']:
+              if not os.environ.get(name): raise SystemExit('Missing Environment setting: ' + name)
+          for name in ['ASC_KEY_ID', 'APPLE_TEAM_ID']:
+              if not re.fullmatch(r'[A-Z0-9]{10}', os.environ[name]):
+                  raise SystemExit('Invalid setting format: ' + name)
+          if not re.fullmatch(r'[0-9a-fA-F-]{36}', os.environ['ASC_ISSUER_ID']):
+              raise SystemExit('Invalid ASC_ISSUER_ID format.')
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'testflight-private'
+          key = root / 'AuthKey.p8'
+          key.write_bytes(base64.b64decode(os.environ['ASC_API_KEY_BASE64'], validate=True))
+          key.chmod(0o600)
+          # Never print keychain passwords or key material, including in failure output.
+          password = secrets.token_urlsafe(32)
+          print('::add-mask::' + password)
+          keychain = str(root / 'signing.keychain-db')
+          (root / 'original-keychains.txt').write_bytes(subprocess.check_output(['security', 'list-keychains', '-d', 'user']))
+          (root / 'original-default.txt').write_bytes(subprocess.check_output(['security', 'default-keychain', '-d', 'user']))
+          subprocess.run(['security', 'create-keychain', '-p', password, keychain], check=True, capture_output=True)
+          subprocess.run(['security', 'set-keychain-settings', '-lut', '21600', keychain], check=True, capture_output=True)
+          subprocess.run(['security', 'unlock-keychain', '-p', password, keychain], check=True, capture_output=True)
+          import shlex
+          original = shlex.split((root / 'original-keychains.txt').read_text())
+          subprocess.run(['security', 'list-keychains', '-d', 'user', '-s', keychain, *original], check=True, capture_output=True)
+          subprocess.run(['security', 'default-keychain', '-d', 'user', '-s', keychain], check=True, capture_output=True)
+          PY
+          # This helper exists only in the ephemeral runner, never as a repository script/artifact.
+          cat > "$RUNNER_TEMP/testflight-private/asc.py" <<'PY'
+          import base64, json, os, pathlib, subprocess, time, urllib.error, urllib.parse, urllib.request
+          ROOT = pathlib.Path(os.environ['RUNNER_TEMP']) / 'testflight-private'
+          PUBLIC = ROOT.parent / 'testflight-public'
+          APP = '6823849812'
+          def b64(data): return base64.urlsafe_b64encode(data).rstrip(b'=')
+          def jwt():
+              now = int(time.time())
+              header = {'alg': 'ES256', 'kid': os.environ['ASC_KEY_ID'], 'typ': 'JWT'}
+              claims = {'iss': os.environ['ASC_ISSUER_ID'], 'iat': now - 10, 'exp': now + 300, 'aud': 'appstoreconnect-v1'}
+              data = b64(json.dumps(header).encode()) + b'.' + b64(json.dumps(claims).encode())
+              der = subprocess.run(['openssl', 'dgst', '-sha256', '-sign', str(ROOT / 'AuthKey.p8')],
+                                   input=data, capture_output=True, check=True).stdout
+              # OpenSSL emits DER ECDSA integers; JWT ES256 requires fixed-width r || s.
+              def tlv(offset):
+                  tag, length = der[offset], der[offset + 1]; offset += 2
+                  if length & 128:
+                      size = length & 127
+                      length = int.from_bytes(der[offset:offset + size], 'big'); offset += size
+                  return tag, offset, offset + length
+              tag, start, end = tlv(0)
+              if tag != 48 or end != len(der): raise SystemExit('Invalid ECDSA sequence.')
+              parts = []
+              for _ in range(2):
+                  tag, begin, end = tlv(start)
+                  if tag != 2: raise SystemExit('Invalid ECDSA integer.')
+                  parts.append(int.from_bytes(der[begin:end], 'big').to_bytes(32, 'big')); start = end
+              return (data + b'.' + b64(b''.join(parts))).decode()
+          def api(url):
+              if url.startswith('/'): url = 'https://api.appstoreconnect.apple.com' + url
+              parsed = urllib.parse.urlsplit(url)
+              if parsed.scheme != 'https' or parsed.netloc != 'api.appstoreconnect.apple.com':
+                  raise SystemExit('ASC pagination returned an untrusted URL.')
+              request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + jwt()})
+              try:
+                  with urllib.request.urlopen(request, timeout=40) as response: return json.load(response)
+              except urllib.error.HTTPError as error:
+                  # Do not print raw bodies/headers or auth tokens to public logs.
+                  try: codes = [e.get('code', '') for e in json.load(error).get('errors', [])]
+                  except (ValueError, KeyError): codes = []
+                  category = 'agreement' if any('AGREEMENT' in c for c in codes) else ('permission' if error.code in (401, 403) else 'ASC API')
+                  raise SystemExit(f'{category} failure (HTTP {error.code}); stop for user review.') from None
+              except (urllib.error.URLError, TimeoutError):
+                  raise SystemExit('Network failure contacting ASC; no upload/provisioning retry.') from None
+          def builds():
+              url = '/v1/builds?' + urllib.parse.urlencode({'filter[app]': APP, 'include': 'preReleaseVersion', 'limit': 200})
+              results = []
+              while url:
+                  page = api(url)
+                  versions = {v['id']: v['attributes']['version'] for v in page.get('included', []) if v['type'] == 'preReleaseVersions'}
+                  for build in page['data']:
+                      pre = build.get('relationships', {}).get('preReleaseVersion', {}).get('data')
+                      if pre and pre['id'] not in versions:
+                          versions[pre['id']] = api('/v1/preReleaseVersions/' + pre['id'])['data']['attributes']['version']
+                      results.append({'build': build['attributes']['version'], 'version': versions.get(pre['id']) if pre else None,
+                                      'state': build['attributes']['processingState']})
+                  url = page.get('links', {}).get('next')
+              return results
+          def number_gate():
+              metadata = json.loads((ROOT / 'metadata.json').read_text())
+              records = builds()
+              if any(not r['build'].isdigit() for r in records):
+                  raise SystemExit('ASC contains a non-integer build; manual build-number review required.')
+              maximum = max((int(r['build']) for r in records), default=0)
+              conflict = int(metadata['build']) <= maximum
+              print(f'ASC maximum build: {maximum}; candidate: {metadata["build"]}; already used/older: {conflict}.')
+              if os.environ['MODE'] == 'upload' and conflict:
+                  raise SystemExit('Upload blocked: candidate must exceed the global ASC maximum.')
+          def poll():
+              metadata = json.loads((ROOT / 'metadata.json').read_text())
+              deadline = time.monotonic() + 1200
+              while True:
+                  matches = [r for r in builds() if r['version'] == metadata['version'] and r['build'] == metadata['build']]
+                  if matches:
+                      state = matches[0]['state']
+                      print('ASC processing state: ' + state)
+                      if state in ('VALID', 'FAILED', 'INVALID'):
+                          (PUBLIC / 'processing.json').write_text(json.dumps({'version': metadata['version'], 'build': metadata['build'], 'state': state}))
+                          if state != 'VALID': raise SystemExit('ASC processing failed; user investigation required.')
+                          return
+                  if time.monotonic() >= deadline:
+                      (PUBLIC / 'processing.json').write_text(json.dumps({'version': metadata['version'], 'build': metadata['build'], 'state': 'UNCONFIRMED'}))
+                      raise SystemExit('Upload attempted; processing/result unconfirmed. Do not automatically upload again.')
+                  time.sleep(30)
+          if __name__ == '__main__':
+              import sys
+              {'number-gate': number_gate, 'poll': poll}[sys.argv[1]]()
+          PY
+      - name: Read committed versions, archive, export and audit IPA
+        run: |
+          set +x
+          umask 077
+          private="$RUNNER_TEMP/testflight-private"
+          export TF_PRIVATE="$private"
+          auth=(-allowProvisioningUpdates -authenticationKeyPath "$private/AuthKey.p8"
+                -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          common=(-project ios/Moonread.xcodeproj -scheme Moonread -destination 'generic/platform=iOS'
+                  -derivedDataPath build/DeviceDerivedData -disableAutomaticPackageResolution
+                  -onlyUsePackageVersionsFromResolvedFile CODE_SIGN_STYLE=Automatic "DEVELOPMENT_TEAM=$APPLE_TEAM_ID"
+                  "MOONREAD_NIX=$(command -v nix)")
+          # Full Xcode/signing output stays private. Publish only stage + error category.
+          run_xcode() {
+            local stage="$1"; shift
+            if ! nix develop --no-update-lock-file -c xcodebuild "$@" > "$private/$stage.log" 2> "$private/$stage.stderr.log"; then
+              STAGE="$stage" python3 - <<'PY'
+          import json, os, pathlib, re
+          root = pathlib.Path(os.environ['TF_PRIVATE'])
+          log = ''.join((root / (os.environ['STAGE'] + suffix)).read_text(errors='replace')
+                        for suffix in ['.log', '.stderr.log']).lower()
+          category = ('agreement' if re.search(r'agreement|contracts.*(?:pending|expired)', log) else
+                      'network' if re.search(r'timed out|network|could not resolve|connection.*(?:lost|failed)|ssl|tls', log) else
+                      'signing/permission' if re.search(r'provision|certificate|permission|unauthorized|authentication|signing', log) else
+                      'build/export')
+          result = {'stage': os.environ['STAGE'], 'category': category,
+                    'action': 'Stop; user review required. No certificate revocation or provisioning retry.'}
+          (root.parent / 'testflight-public' / 'failure.json').write_text(json.dumps(result))
+          print(json.dumps(result))
+          PY
+              return 1
+            fi
+          }
+          for config in Debug Release; do
+            for target in Moonread MoonreadShare; do
+              run_xcode "settings-$config-$target" -project ios/Moonread.xcodeproj -target "$target" \
+                -sdk iphoneos -configuration "$config" -disableAutomaticPackageResolution \
+                -onlyUsePackageVersionsFromResolvedFile -showBuildSettings -json
+            done
+          done
+          python3 - <<'PY'
+          import json, os, pathlib, re, subprocess
+          root = pathlib.Path(os.environ['TF_PRIVATE'])
+          versions = set()
+          expected = {'Moonread': 'dev.moonread.Moonread', 'MoonreadShare': 'dev.moonread.Moonread.Share'}
+          for config in ['Debug', 'Release']:
+              for name in expected:
+                  settings = json.loads((root / f'settings-{config}-{name}.log').read_text())
+                  matches = [s['buildSettings'] for s in settings if s['target'] == name]
+                  if len(matches) != 1: raise SystemExit('Missing or duplicate target build settings: ' + name)
+                  s = matches[0]
+                  if s['PRODUCT_BUNDLE_IDENTIFIER'] != expected[name]: raise SystemExit('Wrong Bundle ID.')
+                  versions.add((s['MARKETING_VERSION'], s['CURRENT_PROJECT_VERSION']))
+                  if config == 'Release' and 'DEBUG' in s.get('SWIFT_ACTIVE_COMPILATION_CONDITIONS', '').split():
+                      raise SystemExit('DEBUG is enabled in Release.')
+          if len(versions) != 1: raise SystemExit('Debug/Release and App/Share versions differ.')
+          version, build = versions.pop()
+          if version != os.environ['SOURCE_BRANCH'].split('/')[1]: raise SystemExit('Marketing version differs from branch version.')
+          if not re.fullmatch(r'[1-9][0-9]*', build): raise SystemExit('Build must be a positive integer.')
+          (root / 'metadata.json').write_text(json.dumps({'version': version, 'build': build}))
+          for destination in ['export', 'upload']:
+              import plistlib
+              options = {'method': 'app-store-connect', 'destination': destination, 'signingStyle': 'automatic',
+                         'teamID': os.environ['APPLE_TEAM_ID'], 'iCloudContainerEnvironment': 'Production',
+                         'manageAppVersionAndBuildNumber': False}
+              (root / f'{destination}.plist').write_bytes(plistlib.dumps(options))
+          print(f'Committed App + Share: {version} ({build}).')
+          PY
+          python3 "$private/asc.py" number-gate
+          run_xcode archive "${common[@]}" -configuration Release "${auth[@]}" -archivePath "$private/Moonread.xcarchive" archive
+          python3 - <<'PY'
+          import json, os, pathlib, plistlib
+          root = pathlib.Path(os.environ['TF_PRIVATE'])
+          meta = json.loads((root / 'metadata.json').read_text())
+          app = root / 'Moonread.xcarchive/Products/Applications/Moonread.app'
+          for bundle in [app, app / 'PlugIns/MoonreadShare.appex']:
+              info = plistlib.loads((bundle / 'Info.plist').read_bytes())
+              if (info['CFBundleShortVersionString'], info['CFBundleVersion']) != (meta['version'], meta['build']):
+                  raise SystemExit('Archive versions differ from committed settings.')
+          PY
+          run_xcode export -exportArchive -archivePath "$private/Moonread.xcarchive" -exportPath "$private/export" \
+            -exportOptionsPlist "$private/export.plist" "${auth[@]}"
+          python3 - <<'PY'
+          import datetime, hashlib, json, os, pathlib, plistlib, subprocess, zipfile
+          root = pathlib.Path(os.environ['TF_PRIVATE'])
+          meta = json.loads((root / 'metadata.json').read_text())
+          def require(ok, message):
+              if not ok: raise SystemExit('IPA audit: ' + message)
+          def command(*args): return subprocess.check_output(args, stderr=subprocess.PIPE)
+          def digest(path): return hashlib.sha256(path.read_bytes()).hexdigest()
+          ipas = list((root / 'export').glob('*.ipa'))
+          require(len(ipas) == 1, 'expected one IPA')
+          unpack = root / 'unpacked'
+          with zipfile.ZipFile(ipas[0]) as archive:
+              require(all(not pathlib.PurePosixPath(p).is_absolute() and '..' not in pathlib.PurePosixPath(p).parts for p in archive.namelist()), 'unsafe ZIP path')
+          command('ditto', '-x', '-k', str(ipas[0]), str(unpack))
+          apps = list((unpack / 'Payload').glob('*.app'))
+          require(len(apps) == 1, 'expected one app')
+          app = apps[0]
+          require([p.name for p in app.glob('PlugIns/*.appex')] == ['MoonreadShare.appex'], 'unexpected extensions')
+          team = os.environ['APPLE_TEAM_ID']
+          group = 'group.dev.moonread.Moonread'
+          container = 'iCloud.dev.moonread.Moonread'
+          for bundle, identifier in [(app, 'dev.moonread.Moonread'), (app / 'PlugIns/MoonreadShare.appex', 'dev.moonread.Moonread.Share')]:
+              info = plistlib.loads((bundle / 'Info.plist').read_bytes())
+              require((info['CFBundleIdentifier'], info['CFBundleShortVersionString'], info['CFBundleVersion']) ==
+                      (identifier, meta['version'], meta['build']), 'bundle identity/version mismatch')
+              command('codesign', '--verify', '--deep', '--strict', str(bundle))
+              ent = plistlib.loads(command('codesign', '-d', '--entitlements', ':-', str(bundle)))
+              require(ent.get('get-task-allow') is False, 'get-task-allow must be false')
+              require(ent.get('com.apple.developer.team-identifier') == team, 'wrong signing team')
+              require(ent.get('application-identifier') == team + '.' + identifier, 'wrong signed application identifier')
+              require(group in ent.get('com.apple.security.application-groups', []), 'missing App Group')
+              if bundle == app:
+                  require(info.get('ITSAppUsesNonExemptEncryption') is False, 'encryption declaration')
+                  require(ent.get('aps-environment') == 'production', 'push must be production')
+                  require(ent.get('com.apple.developer.icloud-container-environment') == 'Production', 'CloudKit must be Production')
+                  require(ent.get('com.apple.developer.icloud-container-identifiers') == [container], 'wrong CloudKit container')
+                  require(ent.get('com.apple.developer.ubiquity-container-identifiers') == [container], 'wrong Documents container')
+                  require(set(ent.get('com.apple.developer.icloud-services', [])) == {'CloudKit', 'CloudDocuments'}, 'missing cloud service')
+              profile = plistlib.loads(command('security', 'cms', '-D', '-i', str(bundle / 'embedded.mobileprovision')))
+              require(profile.get('TeamIdentifier') == [team], 'profile team')
+              require(profile['Entitlements'].get('application-identifier') == team + '.' + identifier, 'profile application identifier')
+              require(not profile.get('ProvisionedDevices') and not profile.get('ProvisionsAllDevices'), 'not an App Store profile')
+              require(profile['ExpirationDate'].replace(tzinfo=datetime.timezone.utc) > datetime.datetime.now(datetime.timezone.utc), 'expired profile')
+              prefix = root / ('cert-' + bundle.name)
+              command('codesign', '-d', '--extract-certificates', str(prefix), str(bundle))
+              require(pathlib.Path(str(prefix) + '0').read_bytes() in profile['DeveloperCertificates'], 'signer not in profile')
+              archs = command('lipo', '-archs', str(bundle / info['CFBundleExecutable'])).decode().split()
+              require(archs == ['arm64'], 'unexpected executable architecture')
+          # Verify embedded code independently, including libraries outside Frameworks.
+          for code in sorted(app.rglob('*')):
+              if code.suffix in ('.framework', '.dylib', '.appex'):
+                  command('codesign', '--verify', '--strict', str(code))
+          privacy = sorted(str(p.relative_to(app)) for p in app.rglob('PrivacyInfo.xcprivacy'))
+          expected_privacy = {'PrivacyInfo.xcprivacy', 'PlugIns/MoonreadShare.appex/PrivacyInfo.xcprivacy',
+                              'SwiftAISDK_SwiftAISDK.bundle/PrivacyInfo.xcprivacy', 'Litext_Litext.bundle/PrivacyInfo.xcprivacy'}
+          require(expected_privacy.issubset(privacy), 'missing expected privacy manifests')
+          for path in privacy: require(isinstance(plistlib.loads((app / path).read_bytes()), dict), 'invalid privacy plist')
+          require(not any(p.suffix in ('.storekit', '.xctest') or p.name.endswith('.debug.dylib') or p.name == '__preview.dylib'
+                          for p in app.rglob('*')), 'test/DEBUG resource in IPA')
+          strings = command('strings', '-a', str(app / 'Moonread'))
+          markers = ['--initialize-cloudkit-development-schema', '--reader-open-benchmark', '--ui-test-recent-restoration', '--ui-test-storefront']
+          require(not any(marker.encode() in strings for marker in markers), 'diagnostic entry in IPA')
+          require(not command('git', 'status', '--porcelain', '--untracked-files=no').strip(), 'source worktree changed')
+          locks = ['flake.lock', 'Cargo.lock', 'ios/Moonread.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved']
+          audit = {**meta, 'sourceBranch': os.environ['SOURCE_BRANCH'], 'sourceSHA': os.environ['EXPECTED_SHA'],
+                   'ipaSHA256': digest(ipas[0]), 'lockSHA256': {p: digest(pathlib.Path(p)) for p in locks},
+                   'xcode': command('xcodebuild', '-version').decode().strip(),
+                   'sdk': command('xcrun', '--sdk', 'iphoneos', '--show-sdk-version').decode().strip(),
+                   'privacyManifests': privacy, 'signatureVerified': True, 'productionCapabilitiesVerified': True,
+                   'mode': os.environ['MODE']}
+          (root.parent / 'testflight-public' / 'audit.json').write_text(json.dumps(audit, indent=2) + '\n')
+          # Freeze every archive file (and symlink) before a possible second export.
+          def archive_hash():
+              h = hashlib.sha256()
+              for p in sorted((root / 'Moonread.xcarchive').rglob('*')):
+                  if p.is_symlink(): h.update(str(p.relative_to(root)).encode() + os.readlink(p).encode())
+                  elif p.is_file(): h.update(str(p.relative_to(root)).encode() + p.read_bytes())
+              return h.hexdigest()
+          (root / 'archive.sha256').write_text(archive_hash())
+          print(f'IPA audit passed: {meta["version"]} ({meta["build"]}).')
+          PY
+      - name: Explicitly authorized upload of the same archive
+        if: ${{ inputs.mode == 'upload' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +x
+          private="$RUNNER_TEMP/testflight-private"
+          test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$SOURCE_BRANCH" --jq .object.sha)" = "$EXPECTED_SHA"
+          python3 "$private/asc.py" number-gate
+          python3 - <<'PY'
+          import hashlib, os, pathlib
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'testflight-private'
+          h = hashlib.sha256()
+          for p in sorted((root / 'Moonread.xcarchive').rglob('*')):
+              if p.is_symlink(): h.update(str(p.relative_to(root)).encode() + os.readlink(p).encode())
+              elif p.is_file(): h.update(str(p.relative_to(root)).encode() + p.read_bytes())
+          if h.hexdigest() != (root / 'archive.sha256').read_text(): raise SystemExit('Audited archive changed; upload blocked.')
+          PY
+          # A failed/uncertain upload is never retried. Poll ASC once through a bounded loop.
+          status=0
+          nix develop --no-update-lock-file -c xcodebuild -exportArchive \
+            -archivePath "$private/Moonread.xcarchive" -exportPath "$private/upload" \
+            -exportOptionsPlist "$private/upload.plist" -allowProvisioningUpdates \
+            -authenticationKeyPath "$private/AuthKey.p8" -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" CODE_SIGN_STYLE=Automatic \
+            > "$private/upload.log" 2>&1 || status=$?
+          if [ "$status" -ne 0 ]; then
+            echo 'Upload command failed or response uncertain. Querying ASC; do not upload again automatically.'
+          else
+            echo 'Xcode upload accepted; checking ASC processing separately.'
+          fi
+          python3 "$private/asc.py" poll
+      - name: Publish only allowlisted sanitized summaries
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: testflight-sanitized-summary
+          path: |
+            ${{ runner.temp }}/testflight-public/audit.json
+            ${{ runner.temp }}/testflight-public/processing.json
+            ${{ runner.temp }}/testflight-public/failure.json
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Summarize and remove private signing material
+        if: ${{ always() }}
+        run: |
+          set +x
+          python3 - <<'PY'
+          import json, os, pathlib, shlex, shutil, subprocess
+          root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'testflight-private'
+          try:
+              with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+                  for name in ['audit.json', 'processing.json', 'failure.json']:
+                      path = root.parent / 'testflight-public' / name
+                      if path.exists(): output.write(f'\n{name}:\n```json\n{path.read_text()}\n```\n')
+                  output.write('\nVerify never uploads. Local IPA hash is not a claim of byte identity with Apple re-export. No App Store submission or group changes performed.\n')
+          finally:
+              try:
+                  original = root / 'original-keychains.txt'
+                  if original.exists():
+                      subprocess.run(['security', 'list-keychains', '-d', 'user', '-s', *shlex.split(original.read_text())], check=True, capture_output=True)
+                  default = root / 'original-default.txt'
+                  if default.exists():
+                      subprocess.run(['security', 'default-keychain', '-d', 'user', '-s', *shlex.split(default.read_text())], check=True, capture_output=True)
+              finally:
+                  keychain = root / 'signing.keychain-db'
+                  if keychain.exists(): subprocess.run(['security', 'delete-keychain', str(keychain)], capture_output=True)
+                  shutil.rmtree(root, ignore_errors=True)
+                  # Profiles are private signing output on this disposable hosted runner.
+                  for directory in [pathlib.Path.home() / 'Library/MobileDevice/Provisioning Profiles',
+                                    pathlib.Path.home() / 'Library/Developer/Xcode/UserData/Provisioning Profiles']:
+                      shutil.rmtree(directory, ignore_errors=True)
+          PY
