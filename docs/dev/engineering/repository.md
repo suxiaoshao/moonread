@@ -10,16 +10,16 @@ Nix 不替代 Xcode。Apple SDK、Swift 编译器、模拟器和签名由 Xcode 
 
 ## 自动检查
 
-[CI](../../../.github/workflows/ci.yml) 在发往 `main` 或 `release/**` 的 PR、这些分支的 push 及手动触发时启动，不使用工作流级 paths 过滤。`changes` job 用完整 PR diff 决定后续 job 是否运行：
+[CI](../../../.github/workflows/ci.yml) 在发往 `main`、`release/**` 或 `hotfix/**` 的 PR、这些分支的 push 及手动触发时启动，不使用工作流级 paths 过滤。`changes` job 用完整 PR diff 决定后续 job 是否运行：
 
 | 改动范围 | PR 检查 |
 | --- | --- |
 | `crates/**`、根目录 `Cargo.*`、`flake.*` | Linux fmt／Clippy／Rust 测试，以及 iOS 单测 |
-| `ios/**` | iOS 单测 |
-| `docs/site/**` | `Website checks`：Nix 环境 `zola build`，不设为必需检查 |
+| `ios/**`、`assets/icon/**` | iOS 单测 |
+| `docs/site/**`、`flake.nix`、`flake.lock` | `Website checks`：Nix 环境 `zola build`，不设为必需检查 |
 | `.github/**` | actionlint，且全部检查都跑 |
 | 其他文档等改动 | 密钥扫描；不相关的 job 跳过 |
-| push 到 `main`／`release/**`，或手动触发 | 全部检查 |
+| push 到 `main`／`release/**`／`hotfix/**`，或手动触发 | 全部检查 |
 
 `Secret scan` 对任何改动都运行：gitleaks 扫描当前 HEAD 可达的已提交历史，输出遮盖密钥，不扫描开发者本机 build/、签名配置或未提交文件。密钥扫描或适用的 actionlint 失败会使必需的 `Linux checks` 直接失败，保留拆分前的合并阻断效果；正常按范围跳过 actionlint 不阻断 Linux。Linux 同时检查 Rust/Nix 格式、工作区所有 target/feature 的 Clippy（禁止警告）及 Rust 测试；Cargo 命令均使用 `--locked`。
 
@@ -34,7 +34,7 @@ CI 工作流只读仓库，checkout 不保留凭据，引用的 Actions 固定�
 - 仓库公开，默认分支 `main`；使用 Issues，关闭 Wiki、Projects 和 Discussions，避免与开发文档形成重复入口。
 - 开启 squash 与 merge commit，关闭 rebase merge。功能 PR 对当前 `release/x.y` 使用 squash；发布后的 `release/x.y` → `main` 使用普通 merge。线上 hotfix 从 `main` 开 `hotfix/x.y.z`，在分支上修复、打包和提审，上线后才普通 merge 回 `main` 并打 tag，再把 `main` 合进当前 release。合并后自动删除普通开发分支；受保护的 main 与 release 分支禁止删除。合并方式由维护者选择，仓库开关不会按 PR 来源自动限制。
 - Actions 允许范围设为全部允许；仍强制引用固定到完整 SHA，默认 token 只读，不允许其创建或批准 PR。当前工作流只使用 GitHub 官方 Actions 和 Nix 安装 action。
-- 启用 Dependabot 漏洞提醒与安全更新；Cargo 和 Actions 每周向当前 `release/x.y` 提出依赖更新 PR，同类兼容更新分组，不自动合并；每次新开版本分支同步修改两个 `target-branch`（当前配置 `release/1.2`，待流程 PR 合并后创建并验证）。Nix 输入由维护者显式更新锁文件并验证。
+- 启用 Dependabot 漏洞提醒与安全更新；Cargo 和 Actions 的常规版本更新每周向当前 `release/x.y` 提出 PR，同类兼容更新分组，不自动合并；每次新开版本分支同步修改两个 `target-branch`（当前配置 `release/1.2`，待流程 PR 合并后创建并验证）。Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 hotfix 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。Nix 输入由维护者显式更新锁文件并验证。
 
 `main` 的 App 代码始终对应 App Store 最新发布版本；每个版本在 `release/x.y` 开发，正式发布后普通 merge 回 main 并打 tag（如 `v1.1`）。完整流程见[分支与协作](development.md#分支与协作)。
 

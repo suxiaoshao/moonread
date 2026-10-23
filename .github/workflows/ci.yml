@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, 'release/**']
+    branches: [main, 'release/**', 'hotfix/**']
   push:
-    branches: [main, 'release/**']
+    branches: [main, 'release/**', 'hotfix/**']
   workflow_dispatch:
 
 permissions:
@@ -45,7 +45,7 @@ jobs:
         run: |
           python3 - <<'PYTHON'
           import os, subprocess
-          # Pushes to protected branches and manual runs always check everything.
+          # Pushes to main, release and hotfix branches and manual runs always check everything.
           all_checks = os.environ['EVENT_NAME'] != 'pull_request'
           paths = []
           if not all_checks:
@@ -59,8 +59,8 @@ jobs:
                      for path in paths)
           checks = {
               'linux': all_checks or github or rust,
-              'ios': all_checks or github or rust or any(path.startswith(b'ios/') for path in paths),
-              'site': all_checks or github or any(path.startswith(b'docs/site/') for path in paths),
+              'ios': all_checks or github or rust or any(path.startswith((b'ios/', b'assets/icon/')) for path in paths),
+              'site': all_checks or github or any(path.startswith(b'docs/site/') or path in (b'flake.nix', b'flake.lock') for path in paths),
               'workflows': all_checks or github,
           }
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
