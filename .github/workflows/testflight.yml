@@ -240,12 +240,13 @@ jobs:
               category = ('agreement' if re.search(r'agreement|contracts.*(?:pending|expired)', log) else
                           'network' if re.search(r'timed out|network|could not resolve|connection.*(?:lost|failed)|ssl|tls', log) else
                           'permission' if re.search(r'permission|unauthorized|authentication (?:failed|error)|unable to authenticate|forbidden|access denied|\b40[13]\b', log) else
+                          'ASC API' if stage in ('number-gate', 'processing') else
                           'signing' if re.search(r'provision|certificate|signing|code.?sign', log) else
                           'audit' if stage == 'audit' else
                           'export' if stage in ('upload', 'export') else 'build')
               result = {'stage': stage, 'category': category,
                         'action': 'Stop for user review. No automatic retry, certificate revocation or provisioning loop.'}
-              if stage == 'upload':
+              if stage in ('upload', 'processing'):
                   result['uploadOutcome'] = 'unconfirmed; user must check ASC before retrying'
               temporary = PUBLIC / 'failure.json.tmp'
               temporary.write_text(json.dumps(result) + '\n')
@@ -331,7 +332,7 @@ jobs:
           print(f'Committed App + Share: {version} ({build}).')
           PY
           set_stage number-gate
-          python3 "$private/asc.py" number-gate
+          python3 "$private/asc.py" number-gate > "$private/number-gate.log" 2> "$private/number-gate.stderr.log"
           run_xcode archive "${common[@]}" -configuration Release "${auth[@]}" -archivePath "$private/Moonread.xcarchive" archive
           set_stage archive-validation
           python3 - > "$private/archive-validation.log" 2> "$private/archive-validation.stderr.log" <<'PY'
@@ -442,7 +443,9 @@ jobs:
           private="$RUNNER_TEMP/testflight-private"
           printf '%s\n' upload > "$private/current-stage"
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$SOURCE_BRANCH" --jq .object.sha)" = "$EXPECTED_SHA"
-          python3 "$private/asc.py" number-gate
+          printf '%s\n' number-gate > "$private/current-stage"
+          python3 "$private/asc.py" number-gate > "$private/number-gate.log" 2> "$private/number-gate.stderr.log"
+          printf '%s\n' upload > "$private/current-stage"
           python3 - <<'PY'
           import hashlib, os, pathlib
           root = pathlib.Path(os.environ['RUNNER_TEMP']) / 'testflight-private'
@@ -467,7 +470,8 @@ jobs:
           else
             echo 'Xcode upload accepted; checking ASC processing separately.'
           fi
-          python3 "$private/asc.py" poll
+          printf '%s\n' processing > "$private/current-stage"
+          python3 "$private/asc.py" poll > "$private/processing.log" 2> "$private/processing.stderr.log"
       - name: Preserve a sanitized failure for every failed packaging stage
         if: ${{ failure() }}
         run: |
@@ -484,7 +488,7 @@ jobs:
           except (OSError, UnicodeError):
               stage = 'prepare'
           # Never publish arbitrary file contents, exception messages, paths or credentials.
-          if not re.fullmatch(r'prepare|versions|number-gate|archive|archive-validation|export|audit|upload|settings-(?:Debug|Release)-(?:Moonread|MoonreadShare)', stage):
+          if not re.fullmatch(r'prepare|versions|number-gate|archive|archive-validation|export|audit|upload|processing|settings-(?:Debug|Release)-(?:Moonread|MoonreadShare)', stage):
               stage = 'prepare'
           if not failure.exists():
               try:
@@ -493,10 +497,11 @@ jobs:
               except Exception:
                   pass  # Even a broken/missing ASC helper must leave a public diagnosis.
           if not failure.exists():
-              result = {'stage': stage, 'category': 'audit' if stage == 'audit' else
+              result = {'stage': stage, 'category': 'ASC API' if stage in ('number-gate', 'processing') else
+                        'audit' if stage == 'audit' else
                         'export' if stage in ('upload', 'export') else 'build',
                         'action': 'Stop for user review. No automatic retry, certificate revocation or provisioning loop.'}
-              if stage == 'upload':
+              if stage in ('upload', 'processing'):
                   result['uploadOutcome'] = 'unconfirmed; user must check ASC before retrying'
               temporary = public / 'failure.json.tmp'
               temporary.write_text(json.dumps(result) + '\n')
