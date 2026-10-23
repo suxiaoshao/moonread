@@ -172,9 +172,11 @@ final class ReadingPreviewTextView: UITextView {
             rendering = false
         }
         super.layoutSubviews()
+        #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-testing"), let settings {
             accessibilityValue = "\(Int(settings.fontSize))|\(Int(settings.lineSpacing))|\(Int(settings.horizontalMargin))|\(Int(settings.paragraphSpacing))|\(surface.plan.paletteId)|\(surface.plan.appearance)|\(projectionAnchor())"
         }
+        #endif
     }
 
     private func updateDecorations() {

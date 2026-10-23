@@ -597,7 +597,9 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             return true
         }]
         if isCoverVisible {
+            #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-testing") { text.accessibilityValue = String(anchor) }
+            #endif
             text.accessibilityCustomActions?.append(UIAccessibilityCustomAction(name: String(localized: "开始阅读")) { [weak self, weak text] _ in
                 guard let self, let text else { return false }
                 text.setContentOffset(CGPoint(x: 0, y: self.scrollCoverHeight), animated: !reduceMotion)
@@ -635,9 +637,11 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
                 return true
             })
         }
+        #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
             text.accessibilityValue = String(anchor)
         }
+        #endif
     }
 
     private func makePage(at index: Int) -> UIViewController {
@@ -1183,7 +1187,9 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             // for later window replacements (including fallback emoji fonts).
             storage.setAttributedString(styledScrollText(window))
             text.accessibilityIdentifier = "scrollText"
+            #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-testing") { text.accessibilityValue = String(anchor) }
+            #endif
             readingSurface.addSubview(text)
             updateScrollCover(in: text)
             readingSurface.layer.addSublayer(bottomFade)
@@ -1312,10 +1318,12 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
 
     private func report(_ offset: UInt64, settled: Bool) {
         anchor = offset
+        #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
             scrollText?.accessibilityValue = String(offset)
             pageController?.viewControllers?.first?.view.accessibilityValue = String(offset)
         }
+        #endif
         let generation = reportGeneration
         // Delegate callbacks may occur during a SwiftUI representable update.
         DispatchQueue.main.async { [weak self] in
@@ -1805,7 +1813,9 @@ private final class PageController: UIViewController {
     override func loadView() {
         let text = page.makeTextView(frame: .zero)
         text.accessibilityIdentifier = "pageText"
+        #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-testing") { text.accessibilityValue = String(page.start) }
+        #endif
         view = text
     }
     func update(page: TextPage, index: Int) {

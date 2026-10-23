@@ -184,8 +184,10 @@ struct ReaderSettingsView: View {
                     .foregroundStyle(Color(uiColor: previewTheme.secondary))
                     .accessibilityIdentifier("toggleReadingPreview")
                     .accessibilityLabel(previewExpanded ? "收起预览" : "展开预览")
+                    #if DEBUG
                     .accessibilityValue(ProcessInfo.processInfo.arguments.contains("--ui-testing")
                         ? (previewExpanded ? "full" : previewDetent == .medium ? "half" : "compact") : "")
+                    #endif
                     ReadingPreviewPane(source: preview, settings: settings, surface: previewTheme, position: previewPosition)
                         .opacity(previewCollapsed ? 0 : 1)
                         .accessibilityHidden(previewCollapsed)

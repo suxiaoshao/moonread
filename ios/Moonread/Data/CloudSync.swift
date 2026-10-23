@@ -5,8 +5,10 @@ import SwiftUI
 enum CloudConfiguration {
     static let containerID = "iCloud.dev.moonread.Moonread"
     static var availableInBuild: Bool {
-        Bundle.main.object(forInfoDictionaryKey: "MoonreadCloudEnabled") as? String == "YES"
-            && !ProcessInfo.processInfo.arguments.contains("--ui-testing")
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing") { return false }
+        #endif
+        return Bundle.main.object(forInfoDictionaryKey: "MoonreadCloudEnabled") as? String == "YES"
     }
 }
 extension Notification.Name {
