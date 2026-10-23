@@ -32,9 +32,14 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 - `main` 始终对应 App Store 最新发布版本，不承载下一版本的日常开发；正式发布后，在对应提交打版本 tag（如 `v1.1`）。TestFlight 上传不等于 App Store 发布。
 - 每个版本从 `main` 建立 `release/x.y`，在该分支开发。功能、修复与文档使用独立开发分支，PR 以当前 `release/x.y` 为目标，通过检查后 **squash** 合并。
-- App Store 发布后，`release/x.y` 通过 PR 以普通 **merge commit** 合回 `main`，保留版本开发历史；普通 merge 仅用于这条发布回合路径，不 squash 发布分支。
-- 线上问题从 `main` 建立 `hotfix/x.y.z`，PR 回 `main` 并 squash 合并；随后把 `main` 合进当前 `release/x.y`，同步线上修复。补丁发布后同样打 tag。
+- App Store 发布后，`release/x.y` 通过 PR 以普通 **merge commit** 合回 `main`，保留版本开发历史；发布回合使用普通 merge，不 squash 发布分支；下述已上线 hotfix 回合也使用普通 merge。
+- 线上问题从 `main` 建立 `hotfix/x.y.z`，在该分支修复、打包并提审；App Store 上线后才通过 PR 以普通 merge 回 `main` 并打补丁 tag（如 `v1.1.1`），随后把 `main` 合进当前 `release/x.y`。补丁审核及等待上线期间不提前合回 main，确保 main 始终对应线上版本。
 - `main` 与 `release/**` 必须经过 PR、`Linux checks` 和 `iOS unit tests`，解决所有讨论，禁止强推和删除；维护者决定何时合并，不由工具自动合并。
+
+发版清单（分支）：
+
+- 新开 `release/x.y` 时，同步修改 [Dependabot](../../../.github/dependabot.yml) 两个更新项的 `target-branch`，让依赖更新 PR 指向当前版本分支。
+- 当前目标配置为 `release/1.2`，该分支在本流程 PR 合并后才创建；新目标分支的 CI 触发与 Dependabot 实际校验以合并并创建分支后为准，不能以本 PR 的 CI 通过代替。
 
 签名配置、小说原件、构建产物与凭据不随代码推送。CI、仓库保护、模板及依赖更新见[仓库与持续集成](repository.md)，测试范围与推送前要求见[测试原则](verification.md#测试原则)。
 
