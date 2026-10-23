@@ -121,6 +121,12 @@ extension LibraryEntry {
     var title: String { directory ? name : URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent }
 }
 
+struct LibraryScanSnapshot: Sendable {
+    var items: [ScannedLibraryItem]
+    var failedPaths: [String] = []
+    var failures: [String] = []
+}
+
 extension ReaderService {
     func libraryEntry(_ id: String) async throws -> LibraryEntry {
         let file = try textCore().sourceFileLocation(fileId: id)
@@ -429,7 +435,7 @@ extension ReaderService {
             }.value
             try Task.checkCancellation()
             guard libraryScans[id] == request else { return false }
-            try applyLibraryScan(id, root: root, items: items)
+            try applyLibraryScan(id, root: root, scan: items)
             return true
         } catch is CancellationError { throw CancellationError() }
         catch {
@@ -458,18 +464,24 @@ extension ReaderService {
     func refreshLibraryShelf(_ id: String) throws {
         libraryScans[id] = UUID()
         let shelf = try libraryShelf(id), root = try resolveShelf(shelf)
-        try applyLibraryScan(id, root: root, items: scanLibraryDirectory(root, cloudItems: shelf.builtin && root == cloudLibraryRoot ? cloudDocumentItems : []))
+        try applyLibraryScan(id, root: root, scan: scanLibraryDirectory(root, cloudItems: shelf.builtin && root == cloudLibraryRoot ? cloudDocumentItems : []))
     }
 
-    nonisolated private func scanLibraryDirectory(_ root: URL, cloudItems: [CloudDocumentItem] = []) throws -> [ScannedLibraryItem] {
+    nonisolated private func scanLibraryDirectory(_ root: URL, cloudItems: [CloudDocumentItem] = []) throws -> LibraryScanSnapshot {
         let access = root.startAccessingSecurityScopedResource()
         defer { if access { root.stopAccessingSecurityScopedResource() } }
-        if let libraryScan { return try libraryScan(root, cloudItems) }
-        return try coordinatedRead(root) { directory in try Self.libraryDirectoryItems(directory, cloudItems: cloudItems) }
+        if let libraryScan { return try LibraryScanSnapshot(items: libraryScan(root, cloudItems)) }
+        return try coordinatedRead(root) { directory in try Self.libraryDirectoryScan(directory, cloudItems: cloudItems) }
     }
 
     /// The caller already holds a coordination claim (handoff publication).
     nonisolated static func libraryDirectoryItems(_ directory: URL, cloudItems: [CloudDocumentItem] = []) throws -> [ScannedLibraryItem] {
+        let scan = try libraryDirectoryScan(directory, cloudItems: cloudItems)
+        // Publication/handoff callers need a complete source inventory.
+        guard scan.failedPaths.isEmpty else { throw CocoaError(.fileReadUnknown) }
+        return scan.items
+    }
+    nonisolated static func libraryDirectoryScan(_ directory: URL, cloudItems: [CloudDocumentItem] = []) throws -> LibraryScanSnapshot {
         // FileManager can enumerate /private/var paths even when the
         // coordinated root uses /var. Compare the same filesystem spelling.
         let directory = directory.resolvingSymlinksInPath()
@@ -477,14 +489,22 @@ extension ReaderService {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .isPackageKey,
             .fileSizeKey, .contentModificationDateKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey]
         guard try directory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else { throw LibraryFileError.missingShelf }
-        var scanError: Error?
+        var failedPaths: [String] = [], failures: [String] = []
+        func record(_ url: URL, _ error: Error) {
+            let path = url.standardizedFileURL.path
+            let relative = path.hasPrefix(prefix) ? String(path.dropFirst(prefix.count)) : ""
+            failedPaths.append(relative)
+            failures.append(url.lastPathComponent + ": " + error.localizedDescription)
+        }
         guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: Array(keys),
-            options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { _, error in scanError = error; return false }) else {
+            options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { url, error in record(url, error); return true }) else {
             throw CocoaError(.fileReadNoPermission)
         }
         var result: [ScannedLibraryItem] = []
         for case let file as URL in enumerator {
-            let value = try file.resourceValues(forKeys: keys)
+            let value: URLResourceValues
+            do { value = try file.resourceValues(forKeys: keys) }
+            catch { record(file, error); enumerator.skipDescendants(); continue }
             if value.isSymbolicLink == true || value.isPackage == true { enumerator.skipDescendants(); continue }
             let folder = value.isDirectory == true
             guard folder || (value.isRegularFile == true && file.pathExtension.lowercased() == "txt") else { continue }
@@ -495,7 +515,6 @@ extension ReaderService {
                 size: UInt64(max(0, value.fileSize ?? 0)), modified: Int64((value.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1000),
                 needsDownload: value.isUbiquitousItem == true && value.ubiquitousItemDownloadingStatus == .notDownloaded))
         }
-        if let scanError { throw scanError }
         var paths = Set(result.map(\.relativePath))
         for item in cloudItems {
             let path = item.url.resolvingSymlinksInPath().path
@@ -515,7 +534,14 @@ extension ReaderService {
                 parent = (parent as NSString).deletingLastPathComponent
             }
         }
-        return result
+        return LibraryScanSnapshot(items: result, failedPaths: failedPaths, failures: failures)
+    }
+
+    private func applyLibraryScan(_ id: String, root: URL, scan: LibraryScanSnapshot) throws {
+        try textCore().scanLibraryShelfPartial(shelfId: id, items: scan.items, failedPaths: scan.failedPaths)
+        if !scan.failures.isEmpty { try textCore().setLibraryShelfError(shelfId: id, message: scan.failures.joined(separator: "\n")) }
+        observeLibraryRoot(id, root: root)
+        scheduleRecentRestoration()
     }
 
     func applyLibraryScan(_ id: String, root: URL, items: [ScannedLibraryItem], observe: Bool = true) throws {

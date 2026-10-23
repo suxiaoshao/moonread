@@ -93,6 +93,15 @@ enum FullIndexSystemCallback {
     }
 }
 
+struct IndexFailure: Identifiable {
+    let file: SourceFileSnapshot
+    let message: String
+    var id: String { file.id }
+    func matches(_ other: SourceFileSnapshot) -> Bool {
+        file.id == other.id && file.size == other.size && file.modified == other.modified && file.decoding == other.decoding
+    }
+}
+
 @MainActor @Observable
 final class FullIndexController {
     static let shared = FullIndexController()
@@ -114,6 +123,12 @@ final class FullIndexController {
     @ObservationIgnored private var foreground = true
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
     private(set) var running = false
+    private(set) var failures: [IndexFailure] = []
+    func canContinue(_ inventory: IdentityInventory, includeCloud: Bool) -> Bool {
+        inventory.pending.contains { file in
+            (includeCloud || !file.needsDownload) && !failures.contains { $0.matches(file) }
+        }
+    }
     private(set) var indexed = 0
     private(set) var total = 0
     private(set) var shelfID: String?
@@ -215,6 +230,9 @@ final class FullIndexController {
                 while !Task.isCancelled {
                     if constrained { break }
                     let inventory = try await service.identityInventory(request.shelf)
+                    failures.removeAll { failure in
+                        failure.file.shelfId == request.shelf && !inventory.pending.contains { failure.matches($0) }
+                    }
                     total = inventory.total
                     indexed = total - inventory.pending.count
                     if !(await service.identityMayRun()) { message = String(localized: "阅读结束后继续建立索引", table: "FullIndex") }
@@ -235,11 +253,15 @@ final class FullIndexController {
                         try await service.withReadingIdleWork(cancel: { nextWork.cancel() }) {
                             try await nextWork.run(file: next, shelf: inventory.shelf, core: core, includeCloud: request.includeCloud)
                         }
+                        failures.removeAll { $0.id == next.id }
                         NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
                     } catch {
                         if Task.isCancelled { break }
                         if nextWork.isCancelled { attempted.remove(next.id) }
-                        else { message = next.name + ": " + ReaderMessages.error(error) }
+                        else {
+                            failures.removeAll { $0.id == next.id }
+                            failures.append(IndexFailure(file: next, message: ReaderMessages.error(error)))
+                        }
                     }
                     work = nil
                 }
@@ -251,6 +273,7 @@ final class FullIndexController {
 struct FullIndexView: View {
     let controller = FullIndexController.shared
     let shelfID: String
+    let openFailure: (String) -> Void
     @State private var inventory: IdentityInventory?
     @State private var includeCloud = false
     @Environment(\.dismiss) private var dismiss
@@ -266,13 +289,29 @@ struct FullIndexView: View {
                     if let message = controller.message { Text(verbatim: message).foregroundStyle(.secondary) }
                     if controller.running {
                         Button(role: .cancel) { controller.cancel() } label: { Text("取消", tableName: "FullIndex") }
-                    } else {
-                        Button { controller.start(shelfID, includeCloud: includeCloud, userInitiated: true) } label: { Text(controller.shelfID == shelfID && controller.indexed < controller.total ? "继续" : "建立索引", tableName: "FullIndex") }.accessibilityIdentifier("fullIndexStart")
+                    } else if let inventory, controller.canContinue(inventory, includeCloud: includeCloud) {
+                        Button { controller.start(shelfID, includeCloud: includeCloud, userInitiated: true) } label: { Text(controller.shelfID == shelfID ? "继续" : "建立索引", tableName: "FullIndex") }.accessibilityIdentifier("fullIndexStart")
                     }
+                }
+                let failures = controller.failures.filter { $0.file.shelfId == shelfID }
+                if !failures.isEmpty {
+                    Section {
+                        ForEach(failures) { failure in
+                            Button { openFailure(failure.id) } label: {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(verbatim: failure.file.relativePath)
+                                    Text(verbatim: failure.message).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }.accessibilityIdentifier("fullIndexFailure-" + failure.id)
+                        }
+                        if !controller.running {
+                            Button { controller.start(shelfID, includeCloud: includeCloud, userInitiated: true) } label: { Text("重试失败项", tableName: "FullIndex") }
+                        }
+                    } header: { Text("未能建立索引", tableName: "FullIndex") }
                 }
             }.navigationTitle(Text("建立索引", tableName: "FullIndex"))
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button { dismiss() } label: { Text("完成") } } }
-                .task { inventory = try? await ReaderService.shared.identityInventory(shelfID) }
+                .task(id: controller.running) { inventory = try? await ReaderService.shared.identityInventory(shelfID) }
         }
     }
 }

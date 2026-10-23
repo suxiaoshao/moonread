@@ -75,7 +75,9 @@ struct LibraryPresentations: ViewModifier {
                 case .move(let entries): NavigationStack { LibraryMoveDestination(model: model, entries: entries, location: nil) }.themeScope(theme)
                 case .export(let files): LibraryExportPicker(files: files)
                 case .share(let files): LibraryShareSheet(files: files)
-                case .fullIndex(let shelf): FullIndexView(shelfID: shelf).themeScope(theme)
+                case .fullIndex(let shelf): FullIndexView(shelfID: shelf) { id in
+                    model.runAfterSheetDismiss { model.openIndexFailure(id) }
+                }.themeScope(theme)
                 case .importResults:
                     NavigationStack {
                         List {

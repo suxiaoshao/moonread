@@ -809,7 +809,7 @@ struct ReaderSearchContent: View {
                         .listRowSeparatorTint(Color(uiColor: theme.separator))
                 }
                 if model.truncatedSearch {
-                    Text("已显示前 2000 处匹配").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).padding(20)
+                    Text("部分超长段落未执行正则搜索，其他结果仍可查看。").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).padding(20)
                         .listRowBackground(Color(uiColor: theme.surface))
                 }
             }

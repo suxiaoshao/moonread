@@ -61,6 +61,10 @@ pub enum ReaderError {
     Decode { message: String },
     #[error("单个组合字符超过 64 KiB，无法安全分块")]
     GraphemeTooLong,
+    #[error("文件包含密集 NUL，可能是二进制或编码误判")]
+    BinaryContent,
+    #[error("正文超过可存储的范围")]
+    TextCapacityExceeded,
     #[error("未找到书籍或正文片段")]
     NotFound,
     #[error("文件没有正文")]
@@ -264,13 +268,9 @@ impl ReaderCore {
             has_visible_text |= text.chars().any(|c| !c.is_whitespace());
             let end = offset
                 .checked_add(text.len() as u64)
-                .ok_or_else(|| ReaderError::Decode {
-                    message: "正文过长".into(),
-                })?;
+                .ok_or(ReaderError::TextCapacityExceeded)?;
             if end > i64::MAX as u64 {
-                return Err(ReaderError::Decode {
-                    message: "正文过长".into(),
-                });
+                return Err(ReaderError::TextCapacityExceeded);
             }
             let start_count = scanner.char_count;
             scanner.push_chunk(offset, text);
@@ -294,9 +294,9 @@ impl ReaderCore {
             )?;
             hasher.update(text.as_bytes());
             offset = end;
-            index = index.checked_add(1).ok_or_else(|| ReaderError::Decode {
-                message: "正文片段过多".into(),
-            })?;
+            index = index
+                .checked_add(1)
+                .ok_or(ReaderError::TextCapacityExceeded)?;
             Ok(())
         })?;
         if !has_visible_text {

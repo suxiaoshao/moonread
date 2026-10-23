@@ -9,6 +9,33 @@ import XCTest
 @testable import Moonread
 
 final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationFixture {
+  func testIndexFailuresRemainActionableWithoutOfferingContinue() async throws {
+    let f = try await fixture(["readable.txt": Data("第一章 月光\n原创正文\u{b}\u{c}。".utf8), "binary.txt": Data(repeating: 0, count: 100)])
+    defer { f.clean() }
+    try await scan(f)
+    let controller = FullIndexController(defaults: try XCTUnwrap(UserDefaults(suiteName: f.suite)), service: f.service, registerTasks: false)
+    controller.start("builtin", includeCloud: false, userInitiated: false)
+    await controller.waitForCompletion()
+    let inventory = try await f.service.identityInventory("builtin")
+    XCTAssertEqual(inventory.pending.count, 1)
+    XCTAssertEqual(controller.failures.map(\.file.name), ["binary.txt"])
+    XCTAssertFalse(controller.canContinue(inventory, includeCloud: true))
+    XCTAssertFalse(controller.failures[0].message.contains("更换编码"))
+    let errors: [ReaderError] = [.Io(message: "synthetic"), .EmptyBook, .TextCapacityExceeded]
+    for error in errors {
+      XCTAssertFalse(ReaderMessages.error(error).contains("更换编码"))
+    }
+    XCTAssertTrue(ReaderMessages.error(ReaderError.Decode(message: "unknown")).contains("更换编码"))
+    try Data("修复后的原创正文。".utf8).write(to: f.directory.appendingPathComponent("binary.txt"))
+    try await scan(f)
+    let changed = try await f.service.identityInventory("builtin")
+    XCTAssertTrue(controller.canContinue(changed, includeCloud: false))
+    controller.start("builtin", includeCloud: false, userInitiated: false)
+    await controller.waitForCompletion()
+    XCTAssertTrue(controller.failures.isEmpty)
+    XCTAssertTrue(try f.core.pendingIdentityFiles(shelfId: "builtin").isEmpty)
+  }
+
   @MainActor func testBackgroundTaskCallbacksHopToMainActor() async {
     let launched = expectation(description: "launch delivered on MainActor")
     let expired = expectation(description: "expiration delivered on MainActor")

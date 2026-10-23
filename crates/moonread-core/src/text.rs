@@ -1,5 +1,5 @@
 use crate::{ReaderError, Result};
-use encoding_rs::{DecoderResult, Encoding};
+use encoding_rs::{CoderResult, DecoderResult, Encoding};
 use std::io::Read;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -41,8 +41,32 @@ pub(crate) fn detect_encoding(reader: &mut impl Read) -> Result<&'static Encodin
     })
 }
 
-fn is_reading_character(c: char) -> bool {
-    c != '\0' && (!c.is_control() || matches!(c, '\n' | '\r' | '\t' | '\u{c}'))
+// Recovery-v1 leaves all scalar values intact. Inspect fixed 4096-scalar windows,
+// independently of reader/decoder buffer boundaries: >= 10% NUL (at least 4)
+// is evidence of binary data or BOMless UTF-16 decoded as an 8-bit encoding.
+// One stray NUL, VT/FF, ESC, C1 and existing U+FFFD are ordinary text, not errors.
+#[derive(Default)]
+struct BinaryGuard {
+    scalars: usize,
+    nuls: usize,
+}
+impl BinaryGuard {
+    fn push(&mut self, c: char) -> Result<()> {
+        self.scalars += 1;
+        self.nuls += usize::from(c == '\0');
+        if self.scalars == 4096 {
+            self.finish()?;
+        }
+        Ok(())
+    }
+    fn finish(&mut self) -> Result<()> {
+        if self.nuls >= 4 && self.nuls * 10 >= self.scalars {
+            return Err(ReaderError::BinaryContent);
+        }
+        self.scalars = 0;
+        self.nuls = 0;
+        Ok(())
+    }
 }
 
 /// Normalization v1: remove initial BOM, map CRLF/CR to LF, preserve all other text.
@@ -57,16 +81,29 @@ pub(crate) fn decode_chunks(
     let mut output = [0u8; 32768];
     let mut pending = String::with_capacity(CHUNK_BYTES + output.len());
     let mut previous_cr = false;
+    let mut binary = BinaryGuard::default();
+    let mut header = Vec::with_capacity(16);
     loop {
         let count = reader.read(&mut input)?;
         let last = count == 0;
+        header.extend(input[..count].iter().take(16 - header.len()));
+        // These signatures contain controls rejected by the old strict reader;
+        // recognizing them does not change any previously successful text SHA.
+        if [
+            b"\x89PNG\r\n\x1a\n".as_slice(),
+            b"PK\x03\x04",
+            b"\x1f\x8b",
+            b"\xff\xd8\xff\xe0\x00\x10JFIF\x00",
+        ]
+        .iter()
+        .any(|magic| header.starts_with(magic))
+        {
+            return Err(ReaderError::BinaryContent);
+        }
         let mut consumed = 0;
         loop {
-            let (status, read, written) = decoder.decode_to_utf8_without_replacement(
-                &input[consumed..count],
-                &mut output,
-                last,
-            );
+            let (status, read, written, _) =
+                decoder.decode_to_utf8(&input[consumed..count], &mut output, last);
             consumed += read;
             // encoding_rs guarantees valid UTF-8 output, even before a malformed input.
             let decoded =
@@ -74,11 +111,7 @@ pub(crate) fn decode_chunks(
                     message: e.to_string(),
                 })?;
             for c in decoded.chars() {
-                if !is_reading_character(c) {
-                    return Err(ReaderError::Decode {
-                        message: "文件包含非文本控制字符".into(),
-                    });
-                }
+                binary.push(c)?;
                 if c == '\n' && previous_cr {
                     previous_cr = false;
                     continue;
@@ -89,17 +122,11 @@ pub(crate) fn decode_chunks(
             // Keep the trailing, potentially incomplete grapheme until more text or EOF.
             // This also handles a decoder buffer ending between a base and combining mark,
             // or between the scalars of a ZWJ emoji sequence.
-            if pending
-                .graphemes(true)
-                .any(|g| g.len() > MAX_GRAPHEME_BYTES)
-            {
-                return Err(ReaderError::GraphemeTooLong);
-            }
             while pending.len() >= CHUNK_BYTES {
                 let mut boundary = 0;
                 for (index, _) in pending.grapheme_indices(true).skip(1) {
                     if index > CHUNK_BYTES {
-                        if boundary == 0 {
+                        if boundary == 0 && index <= MAX_GRAPHEME_BYTES {
                             boundary = index;
                         }
                         break;
@@ -107,7 +134,15 @@ pub(crate) fn decode_chunks(
                     boundary = index;
                 }
                 if boundary == 0 {
-                    break;
+                    if pending.len() <= MAX_GRAPHEME_BYTES {
+                        break;
+                    }
+                    // A pathological extended grapheme may grow without bound.
+                    // Split only at scalar boundaries; never drop/rewrite codepoints.
+                    boundary = CHUNK_BYTES;
+                    while !pending.is_char_boundary(boundary) {
+                        boundary -= 1;
+                    }
                 }
                 if let Some(newline) = pending[..boundary].rfind('\n')
                     && newline >= CHUNK_BYTES / 2
@@ -118,19 +153,15 @@ pub(crate) fn decode_chunks(
                 pending.drain(..boundary);
             }
             match status {
-                DecoderResult::Malformed(..) => {
-                    return Err(ReaderError::Decode {
-                        message: format!("{} 中存在无法解码的字节", encoding.name()),
-                    });
-                }
-                DecoderResult::InputEmpty => break,
-                DecoderResult::OutputFull => continue,
+                CoderResult::InputEmpty => break,
+                CoderResult::OutputFull => continue,
             }
         }
         if last {
             break;
         }
     }
+    binary.finish()?;
     if !pending.is_empty() {
         emit(&pending)?;
     }
@@ -141,6 +172,47 @@ pub(crate) fn decode_chunks(
 mod encoding_tests {
     use super::*;
     use std::io::Cursor;
+    #[test]
+    fn recovery_preserves_controls_and_rejects_binary_evidence() {
+        let text = format!("{}\u{b}\u{c}\0\u{1a}\u{85}尾", "正文\r\n".repeat(20000));
+        let mut recovered = String::new();
+        decode_chunks(&mut Cursor::new(text.as_bytes()), encoding_rs::UTF_8, |s| {
+            recovered.push_str(s);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(recovered, text.replace("\r\n", "\n"));
+        for bytes in [
+            b"a\0b\0c\0d\0".as_slice(),
+            b"PK\x03\x04rest",
+            b"\x89PNG\r\n\x1a\nrest",
+        ] {
+            assert!(matches!(
+                decode_chunks(&mut Cursor::new(bytes), encoding_rs::UTF_8, |_| Ok(())),
+                Err(ReaderError::BinaryContent)
+            ));
+        }
+        // Three legacy characters can resemble a JPEG prefix; require the full
+        // JFIF header (with NUL), not just those previously readable bytes.
+        decode_chunks(
+            &mut Cursor::new([0xff, 0xd8, 0xff]),
+            encoding_rs::WINDOWS_1252,
+            |_| Ok(()),
+        )
+        .unwrap();
+        let mut recovered = String::new();
+        decode_chunks(
+            &mut Cursor::new([0xff, 0xfe, 0x41, 0, 0, 0xd8]),
+            encoding_rs::UTF_16LE,
+            |s| {
+                recovered.push_str(s);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(recovered, "A\u{fffd}");
+    }
+
     #[test]
     fn encoding_probe_handles_bom_and_tiny_statistical_input() {
         assert_eq!(
@@ -157,17 +229,13 @@ mod encoding_tests {
             detect_encoding(&mut Cursor::new(&[0xd6, 0xd0])).unwrap(),
             encoding_rs::WINDOWS_1252
         );
-        assert!(
-            matches!(
-                decode_chunks(
-                    &mut Cursor::new(&[0x81]),
-                    encoding_rs::SHIFT_JIS,
-                    |_| Ok(())
-                ),
-                Err(ReaderError::Decode { .. })
-            ),
-            "truncated legacy input must fail at EOF"
-        );
+        let mut recovered = String::new();
+        decode_chunks(&mut Cursor::new([0x81]), encoding_rs::SHIFT_JIS, |s| {
+            recovered.push_str(s);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(recovered, "\u{fffd}");
     }
 
     #[test]
@@ -186,9 +254,15 @@ mod encoding_tests {
         let encoding = detect_encoding(&mut reader).unwrap();
         assert_eq!(encoding, encoding_rs::UTF_8);
         assert_eq!(reader.position(), (ENCODING_PROBE_BYTES + 1) as u64);
-        assert!(matches!(
-            decode_chunks(&mut Cursor::new(&late), encoding, |_| Ok(())),
-            Err(ReaderError::Decode { .. })
-        ));
+        let mut recovered = String::new();
+        decode_chunks(&mut Cursor::new(&late), encoding, |s| {
+            recovered.push_str(s);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            recovered,
+            format!("{}\u{fffd}", "A".repeat(ENCODING_PROBE_BYTES + 20))
+        );
     }
 }

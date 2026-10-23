@@ -172,7 +172,7 @@ mod tests {
         }
     }
     #[test]
-    fn cancelled_and_wrong_decoding_probes_never_create_cache_rows() {
+    fn cancelled_probe_stops_and_explicit_wrong_encoding_uses_replacement() {
         let directory = tempfile::tempdir().unwrap();
         let mut file = tempfile::NamedTempFile::new_in(directory.path()).unwrap();
         file.write_all(&[0xff, 0xfe, 0, 0x4e]).unwrap();
@@ -182,11 +182,15 @@ mod tests {
             probe.identify(file.path().to_string_lossy().into(), "auto".into()),
             Err(ReaderError::Paused)
         ));
-        assert!(
-            SourceIdentityProbe::new()
-                .identify(file.path().to_string_lossy().into(), "UTF-8".into())
-                .is_err()
-        );
+        let recovered = SourceIdentityProbe::new()
+            .identify(file.path().to_string_lossy().into(), "UTF-8".into())
+            .unwrap();
+        let automatic = SourceIdentityProbe::new()
+            .identify(file.path().to_string_lossy().into(), "auto".into())
+            .unwrap();
+        assert_eq!(recovered.encoding, "UTF-8");
+        assert_eq!(recovered.raw_sha256, automatic.raw_sha256);
+        assert_ne!(recovered.content_sha256, automatic.content_sha256);
     }
     #[test]
     fn reopening_reclaims_only_unpublished_restoration_drafts() {

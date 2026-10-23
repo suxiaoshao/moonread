@@ -293,17 +293,30 @@ struct SearchState {
     line: String,
     hits: VecDeque<SearchHit>,
     done: bool,
+    literal_overlap: Option<usize>,
+    skipped_long_line: bool,
+    skipping_line: bool,
+    emitted_until: u64,
 }
 impl SearchState {
     fn scan_line(&mut self, cancelled: &AtomicBool) -> Result<()> {
+        self.scan_matches(cancelled, self.line.len())?;
+        self.line.clear();
+        Ok(())
+    }
+    fn scan_matches(&mut self, cancelled: &AtomicBool, before: usize) -> Result<()> {
         for found in self.matcher.find_iter(&self.line) {
             if cancelled.load(Ordering::Relaxed) {
                 break;
             }
-            if found.is_empty() {
-                continue;
+            if found.start() >= before {
+                break;
             }
             let start = self.line_start + found.start() as u64;
+            if found.is_empty() || start < self.emitted_until {
+                continue;
+            }
+            self.emitted_until = self.line_start + found.end() as u64;
             let mut left = found.start().saturating_sub(100);
             while !self.line.is_char_boundary(left) {
                 left += 1;
@@ -333,7 +346,6 @@ impl SearchState {
                     .map(|index| self.headings[index].title.clone()),
             });
         }
-        self.line.clear();
         Ok(())
     }
 }
@@ -378,10 +390,34 @@ impl SearchJob {
                 return Err(ReaderError::InvalidRange);
             }
             for piece in bytes.split_inclusive('\n') {
-                s.line.push_str(piece);
                 s.offset += piece.len() as u64;
+                if s.skipping_line {
+                    if piece.ends_with('\n') {
+                        s.skipping_line = false;
+                    }
+                    s.line_start = s.offset;
+                    continue;
+                }
+                s.line.push_str(piece);
                 if s.line.len() > 1024 * 1024 {
-                    return Err(ReaderError::SearchLineTooLong);
+                    if let Some(overlap) = s.literal_overlap {
+                        let mut cut = s.line.len().saturating_sub(overlap);
+                        while !s.line.is_char_boundary(cut) {
+                            cut -= 1;
+                        }
+                        s.scan_matches(&self.cancelled, cut)?;
+                        s.line.drain(..cut);
+                        s.line_start += cut as u64;
+                    } else {
+                        // Arbitrary regex can depend on the whole line ($, lookaround,
+                        // unbounded repetition). Do not invent segmented matches.
+                        // Skip only this line, report incomplete coverage and continue.
+                        s.skipped_long_line = true;
+                        s.skipping_line = !piece.ends_with('\n');
+                        s.line.clear();
+                        s.line_start = s.offset;
+                        continue;
+                    }
                 }
                 if piece.ends_with('\n') {
                     s.line.pop();
@@ -398,7 +434,7 @@ impl SearchJob {
             hits,
             done: s.done && s.hits.is_empty(),
             cancelled: self.cancelled.load(Ordering::Acquire),
-            truncated: false,
+            truncated: s.skipped_long_line,
             partial_book: s.partial,
             scanned_utf8: s.offset,
             available_utf8: s.limit,
@@ -484,6 +520,10 @@ impl ReaderCore {
                 message: "Enter a nonempty single-line query.".into(),
             });
         }
+        // Unicode simple case folding can expand each input scalar to four UTF-8
+        // bytes. Retain enough for a literal crossing the segment and its excerpt.
+        let literal_overlap =
+            (!regular_expression).then(|| query.len().saturating_mul(4).saturating_add(164));
         let source = if regular_expression {
             query
         } else {
@@ -525,11 +565,22 @@ impl ReaderCore {
         if start > end || end > snapshot.book.byte_count {
             return Err(ReaderError::InvalidRange);
         }
-        // Validate both boundaries without reading the selected range in full.
-        self.text_range(book_id.clone(), start, start)?;
-        for point in [start, end] {
-            if point < snapshot.book.byte_count {
-                self.paragraph_range(book_id.clone(), point)?;
+        // Boundary validation must not materialize a paragraph: a readable line
+        // may exceed the text-range API's 1 MiB output budget.
+        {
+            let mut reader = self.read_lock()?;
+            let tx = reader.transaction()?;
+            let id = content_key(&tx, &book_id)?;
+            for point in [start, end] {
+                if point < snapshot.book.byte_count {
+                    let chunk = chunk(&tx, &id, chunk_index(&tx, &id, point)?)?;
+                    if !chunk
+                        .text
+                        .is_char_boundary((point - chunk.start_utf8) as usize)
+                    {
+                        return Err(ReaderError::InvalidRange);
+                    }
+                }
             }
         }
         let db = Connection::open(&self.database_path)?;
@@ -550,6 +601,10 @@ impl ReaderCore {
                 line: String::new(),
                 hits: VecDeque::new(),
                 done: false,
+                literal_overlap,
+                skipped_long_line: false,
+                skipping_line: false,
+                emitted_until: start,
             }),
         }))
     }
