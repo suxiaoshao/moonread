@@ -92,11 +92,13 @@ struct LibraryView: View {
                     .listRowInsets(EdgeInsets(top: 2, leading: 24, bottom: 2, trailing: 24))
                 }
             }
+            ShelfReferenceHints(model: model)
             Section {
                 ForEach(model.shelves, id: \.id) { shelf in
                     NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: shelf.id))) { ShelfRow(shelf: shelf) }
                         .contextMenu { ShelfMenu(model: model, shelf: shelf) }.accessibilityIdentifier("shelf-\(shelf.id)")
                         .modifier(LibraryShelfDropTarget(model: model, shelf: shelf))
+                    ShelfIndexGuidance(model: model, shelfID: shelf.id)
                 }
             } header: {
                 homeHeader("书架与文件夹", showsAll: false)
@@ -248,6 +250,12 @@ struct LibraryFolderView: View {
     }
     var body: some View {
         browser
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if location.path.isEmpty {
+                ShelfIndexGuidance(model: model, shelfID: location.shelfID).padding(.horizontal)
+                    .background(Color(uiColor: theme.paper))
+            }
+        }
         .navigationTitle(editing.isEditing ? selectionTitle : title).navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(editing.isEditing)
         // Selection is a focused file task; its bottom toolbar takes the place
@@ -271,7 +279,7 @@ struct LibraryFolderView: View {
                 }
                 else {
                     Menu {
-                        Button { model.sheet = .fullIndex(location.shelfID) } label: { Label { Text("建立索引", tableName: "FullIndex") } icon: { Image(systemName: "text.badge.checkmark") } }.accessibilityIdentifier("buildShelfIndex")
+                        Button { Task { await model.openShelfIndex(location.shelfID) } } label: { Label { Text("建立索引", tableName: "FullIndex") } icon: { Image(systemName: "text.badge.checkmark") } }.accessibilityIdentifier("buildShelfIndex")
                         Button("选择项目", systemImage: "checkmark.circle") { editing = .active }
                         Button("新建文件夹", systemImage: "folder.badge.plus") { model.sheet = .create(location) }
                         if location.shelfID == "builtin" { Button("导入小说", systemImage: "square.and.arrow.down") { model.chooseFiles(.novels(location)) } }
@@ -684,6 +692,7 @@ struct LibraryManagementView: View {
     @Environment(\.theme) private var theme
     var body: some View {
         List {
+            ShelfReferenceHints(model: model)
             Section {
                 ForEach(model.shelves, id: \.id) { shelf in
                     NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: shelf.id))) {
@@ -755,7 +764,7 @@ struct ShelfMenu: View {
     let shelf: LibraryShelf
     var body: some View {
         Group {
-            Button { model.sheet = .fullIndex(shelf.id) } label: { Text("建立索引", tableName: "FullIndex") }
+            Button { Task { await model.openShelfIndex(shelf.id) } } label: { Text("建立索引", tableName: "FullIndex") }
             Button("刷新", systemImage: "arrow.clockwise") { Task { await model.refresh(userInitiated: true) } }
             if !shelf.builtin {
                 Button("重新连接", systemImage: "folder.badge.questionmark") { model.chooseFiles(.folder(shelf.id)) }

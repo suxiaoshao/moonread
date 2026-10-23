@@ -201,7 +201,11 @@ extension ReaderService {
             sourceDefaults.set(file.id, forKey: "Moonread.seededExampleFileID")
         }
         #if DEBUG
-        if ReaderSmokeFixture.enabled { try await createSmokeFixture(); return }
+        if ReaderSmokeFixture.enabled {
+            try await createSmokeFixture()
+            try await createShelfRecoveryFixture()
+            return
+        }
         try importFixture()
         if arguments.contains("--ui-test-onboarding-local"), testSession != nil {
             try "第一章 合成\n已存在的本机测试内容。".write(to: url.appendingPathComponent("本机已有合成.txt"), atomically: true, encoding: .utf8)
@@ -410,6 +414,8 @@ extension ReaderService {
 
     func removeLibraryShelf(_ id: String) throws {
         try textCore().removeLibraryShelf(shelfId: id)
+        try? forgetShelfReference(id)
+        indexScanFiles[id] = nil; indexScanRoots[id] = nil; indexScanRevisions[id] = nil
         libraryScans[id] = nil
         libraryObservers[id]?.stop()
         libraryObservers[id] = nil
@@ -458,6 +464,7 @@ extension ReaderService {
         } catch is CancellationError { throw CancellationError() }
         catch {
             if libraryScans[id] == request {
+                indexScanFiles[id] = nil; indexScanRoots[id] = nil; indexScanRevisions[id] = nil
                 try textCore().setLibraryShelfError(shelfId: id, message: ReaderMessages.error(error))
             }
             throw error
@@ -555,17 +562,29 @@ extension ReaderService {
         return LibraryScanSnapshot(items: result, failedPaths: failedPaths, failures: failures)
     }
 
-    private func applyLibraryScan(_ id: String, root: URL, scan: LibraryScanSnapshot) throws {
+    func applyLibraryScan(_ id: String, root: URL, scan: LibraryScanSnapshot) throws {
         try textCore().scanLibraryShelfPartial(shelfId: id, items: scan.items, failedPaths: scan.failedPaths)
         if !scan.failures.isEmpty { try textCore().setLibraryShelfError(shelfId: id, message: scan.failures.joined(separator: "\n")) }
         observeLibraryRoot(id, root: root)
         scheduleRecentRestoration()
+        publishIndexScan(id, root: root, items: scan.items)
     }
 
     func applyLibraryScan(_ id: String, root: URL, items: [ScannedLibraryItem], observe: Bool = true) throws {
         try textCore().scanLibraryShelf(shelfId: id, items: items)
         if observe { observeLibraryRoot(id, root: root) }
         scheduleRecentRestoration()
+        publishIndexScan(id, root: root, items: items)
+    }
+
+    func indexScanIsCurrent(_ id: String) -> Bool {
+        guard let shelf = try? libraryShelf(id), let root = try? resolveShelf(shelf) else { return false }
+        return indexScanRoots[id] == root.standardizedFileURL
+    }
+    private func publishIndexScan(_ id: String, root: URL, items: [ScannedLibraryItem]) {
+        let revision = UUID(), files = Set(items.filter { !$0.directory }.map(\.relativePath))
+        indexScanFiles[id] = files; indexScanRoots[id] = root.standardizedFileURL; indexScanRevisions[id] = revision
+        NotificationCenter.default.post(name: .libraryIndexScanCommitted, object: LibraryIndexScan(shelfID: id, revision: revision, files: files))
     }
 
     func observeLibraryRoot(_ id: String, root: URL) {
@@ -860,6 +879,27 @@ extension ReaderService {
     }
 
     #if DEBUG
+    private func createShelfRecoveryFixture() async throws {
+        guard let testSession, ProcessInfo.processInfo.arguments.contains("--ui-test-shelf-recovery") else { return }
+        let marker = "Moonread.shelfRecovery.fixture." + testSession
+        guard !sourceDefaults.bool(forKey: marker) else { return }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Recovery-" + testSession).appendingPathComponent("复原书架")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("复原样本.txt")
+        try ("第一話 星光来信\n" + String(repeating: "窗前的灯照着回家的路，这是原创的恢复验证正文。\n", count: 60)).write(to: file, atomically: true, encoding: .utf8)
+        let identity = try SourceIdentityProbe().identify(filePath: file.path, decoding: "auto")
+        let store = try await userStore()
+        try await store.put("shelf-reference/" + testSession, value: UserSyncJSON.encode(ShelfReferenceValue(name: "复原书架", locationDescription: "file-provider")), device: "recovery-fixture")
+        let position = PositionValue(content_key: identity.contentSha256, offset: identity.utf8Bytes / 2, source_hint: nil)
+        try await store.put("position/" + identity.contentSha256, value: UserSyncJSON.encode(position), device: "recovery-fixture")
+        try await store.put("metadata/" + identity.contentSha256 + "/tag-restored", value: UserSyncJSON.encode("复原标签"), device: "recovery-fixture")
+        sourceDefaults.set(true, forKey: marker)
+    }
+    func shelfRecoveryFixtureURL(_ reference: String) -> URL? {
+        guard let testSession, testSession == reference, ProcessInfo.processInfo.arguments.contains("--ui-test-shelf-recovery") else { return nil }
+        return FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Recovery-" + testSession).appendingPathComponent("复原书架")
+    }
+
     private func createSmokeFixture() async throws {
         guard let testSession else { return }
         let marker = "Moonread.smoke.seed.v1." + testSession

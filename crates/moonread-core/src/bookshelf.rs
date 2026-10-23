@@ -570,8 +570,7 @@ impl ReaderCore {
             values.retain(|e| e.relative_path.starts_with(&prefix));
         }
         values.sort_by(crate::library_order::file_order);
-        let mut statement =
-            db.prepare("SELECT DISTINCT content_sha256 FROM reading_books WHERE last_read>0")?;
+        let mut statement = db.prepare("SELECT content_sha256 FROM reading_content_positions")?;
         let reading: HashSet<String> = statement
             .query_map([], |r| r.get(0))?
             .collect::<std::result::Result<_, _>>()?;

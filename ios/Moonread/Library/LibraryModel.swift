@@ -127,7 +127,12 @@ final class LibraryModel {
         guard searchPresented, !value, selectedTab == .search, searchPath.isEmpty else { return }
         selectedTab = searchOrigin
     }
-    let fullIndex = FullIndexController.shared
+    let fullIndex: FullIndexController
+    var shelfRecovery = ShelfRecoverySnapshot()
+    var shelfRecoveryRequest = UUID()
+    var shelfIndexes: [String: ShelfIndexSummary] = [:]
+    var indexSummaryRequests: [String: UUID] = [:]
+    var pendingIndexScans = Set<String>()
     var indexPrompt: IdentityInventory?
     var deferredIndexPrompt: IdentityInventory?
     private var importedBookToOpen: LibraryEntry?
@@ -135,7 +140,7 @@ final class LibraryModel {
     func resolveIndexPrompt(start: Bool) {
         guard let prompt = indexPrompt else { return }
         indexPrompt = nil
-        if start { fullIndex.start(prompt.shelf.id, includeCloud: false, userInitiated: true) }
+        if start { fullIndex.start(prompt.shelf.id, includeCloud: false, userInitiated: true, files: prompt.local) }
         finishImportOpening()
     }
     private func finishImportOpening() {
@@ -147,7 +152,7 @@ final class LibraryModel {
     }
     func offerIndex(_ shelfID: String) async {
         guard let inventory = try? await service.identityInventory(shelfID), !inventory.local.isEmpty else { return }
-        if fullIndex.automatic { fullIndex.start(shelfID, includeCloud: false, userInitiated: false) }
+        if fullIndex.automatic { pendingIndexScans.insert(shelfID); await coordinatePendingIndexes() }
         else if (path.last?.isReader == true && importedBookToOpen == nil) || sheet != nil { deferredIndexPrompt = inventory }
         else { indexPrompt = inventory }
     }
@@ -184,7 +189,7 @@ final class LibraryModel {
     private let waitForDiscoveryTimeout: @Sendable () async throws -> Void
     private let requiresCloudDiscovery: @MainActor () -> Bool
     private let adoptCloudDocuments: @Sendable ([CloudDocumentItem]) async throws -> Void
-    private var initialized = false
+    private(set) var initialized = false
     private var initialization: Task<Bool, Never>?
     private var refreshTask: Task<Void, Never>?
     @MainActor private final class FileWork {
@@ -209,7 +214,7 @@ final class LibraryModel {
     private var fileWork: FileWork?
     private var systemImports: [SystemImport] = []
     private let lookupDropEntry: @MainActor (String) async throws -> LibraryEntry
-    private let service: ReaderService
+    let service: ReaderService
     private let fileMutationReload: (@Sendable () async throws -> Void)?
     private let prepareLibrary: @Sendable () async throws -> Void
     private let scanShelf: @Sendable (String) async throws -> Void
@@ -222,7 +227,7 @@ final class LibraryModel {
     private(set) var showsFileLoading = false
     private(set) var fileProgress: Double?
 
-    init(service: ReaderService = .shared,
+    init(service: ReaderService = .shared, fullIndex: FullIndexController? = nil,
          prepareLibrary: (@Sendable () async throws -> Void)? = nil,
          scanShelf: (@Sendable (String) async throws -> Void)? = nil,
          refreshLibrary: (@Sendable () async throws -> Void)? = nil,
@@ -245,6 +250,7 @@ final class LibraryModel {
             try await service.adoptCloudDiscovery(items)
         }
         self.service = service
+        self.fullIndex = fullIndex ?? .shared
         self.lookupDropEntry = lookupDropEntry ?? { try await service.libraryEntry($0) }
         self.fileMutationReload = fileMutationReload
         self.defaults = defaults
@@ -409,6 +415,12 @@ final class LibraryModel {
         readingInputRevision &+= 1
         publishHome(next)
         homeReady = true
+        let ids = Set(localShelves.map(\.id))
+        shelfIndexes = shelfIndexes.filter { ids.contains($0.key) }
+        Task {
+            await refreshShelfRecovery()
+            for shelf in localShelves where shelfIndexes[shelf.id] == nil { await refreshIndexSummary(shelf.id) }
+        }
     }
     private func warmHomeCovers(_ entries: [LibraryEntry]) async {
         // The resume card and the covers visible in the first screen of the recent row.
@@ -501,6 +513,9 @@ final class LibraryModel {
             case .folder(let id):
                 guard let url = urls.first else { return }
                 selectSource(url, replacing: id)
+            case .reauthorize(let reference, let scope):
+                guard let url = urls.first else { return }
+                selectSource(url, restoring: reference, scope: scope)
             case .novels(let location): receive(urls, at: location)
             }
         case .failure(let error):
@@ -508,13 +523,18 @@ final class LibraryModel {
         }
     }
     @discardableResult
-    func selectSource(_ url: URL, replacing: String? = nil) -> Bool {
+    func selectSource(_ url: URL, replacing: String? = nil, restoring reference: ShelfReference? = nil, scope: String? = nil) -> Bool {
         let access = LibraryImportFile(url: url)
         guard let work = acquire(.shelf) else { return rejectFileWork() }
         let origin = path, tab = selectedTab
         launch(work) {
             defer { access.finish() }
-            let id = try await self.service.registerLibraryShelf(url, replacing: replacing)
+            let id: String
+            if let reference, let scope { id = try await self.service.registerRecoveredShelf(url, reference: reference, scope: scope) }
+            else {
+                id = try await self.service.registerLibraryShelf(url, replacing: replacing)
+                if replacing != nil { try? await self.service.requestShelfRecoveryGuidance(id) }
+            }
             try await self.reload()
             if self.selectedTab == tab, self.path == origin { self.path.append(.folder(LibraryLocation(shelfID: id))) }
             let request = UUID(); self.shelfScans[id] = request
@@ -522,7 +542,10 @@ final class LibraryModel {
             // Registration is owned; the subsequent scan has its existing page feedback.
             Task {
                 defer { if self.shelfScans[id] == request { self.shelfScans[id] = nil } }
-                do { try await self.scanShelf(id); try await self.reload(); await self.offerIndex(id) }
+                do {
+                    try await self.scanShelf(id); try await self.reload()
+                    if reference == nil && replacing == nil { await self.offerIndex(id) }
+                }
                 catch { try? await self.reload(); self.error = ReaderMessages.error(error) }
             }
         }

@@ -286,11 +286,12 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
       try await scan(f)
       let key = sha(text)
       try await position(f, key: key, hint: hint("sample.txt", size: UInt64(text.utf8.count)))
-      let entered = expectation(description: "prepared but not linked: " + mutation)
-      let gate = RestorationGate(entered)
+      let gate = RestorationGate()
       await f.service.restorationFixture(active: true, beforeCommit: { await gate.wait() })
       await f.service.scheduleRecentRestoration()
-      await fulfillment(of: [entered], timeout: 5)
+      // Wait for preparation to reach the publication boundary before mutating
+      // the source. Runner speed must not select the order of these operations.
+      await gate.waitForEntry()
       let file = try XCTUnwrap(f.core.sourceFileSnapshots(fileId: nil).first)
       switch mutation {
       case "replace":
@@ -341,11 +342,10 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
       try await scan(f)
       let key = sha(text)
       try await position(f, key: key, hint: hint("sample.txt", size: UInt64(text.utf8.count)))
-      let entered = expectation(description: "background admitted, source not yet read")
-      let gate = RestorationGate(entered)
+      let gate = RestorationGate()
       await f.service.restorationFixture(active: true, beforeRead: { _ in await gate.wait() })
       await f.service.scheduleRecentRestoration()
-      await fulfillment(of: [entered], timeout: 5)
+      await gate.waitForEntry()
       let file = try XCTUnwrap(f.core.sourceFileSnapshots(fileId: nil).first)
       let before = try await snapshot(f.store)
       let source = SourceFile(id: file.id, shelfID: "builtin", relativePath: file.relativePath)

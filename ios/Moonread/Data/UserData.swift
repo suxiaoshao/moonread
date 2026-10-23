@@ -243,7 +243,12 @@ enum AnnotationReduction {
                 guard !blocked.contains(key) else { return }
                 try select(key: key, value: value)
             } catch {
-                blocked.insert(key); values.removeValue(forKey: key)
+                // Shelf descriptions are independent hints. An unsupported
+                // record stays stored but cannot poison a readable sibling or
+                // replace it through LWW. Reading facts remain fail-closed.
+                if !key.hasPrefix("shelf-reference/") {
+                    blocked.insert(key); values.removeValue(forKey: key)
+                }
                 UserSyncJSON.quarantined("UserValue/UserPosition")
             }
         }
@@ -324,6 +329,13 @@ enum AnnotationReduction {
         let snapshot = try valueSnapshot(prefix: prefix)
         guard snapshot.blocked.isEmpty else { throw UserSyncCompatibilityError() }
         return snapshot.values.mapValues(\.value)
+    }
+
+    /// Unsupported descriptions remain stored, but do not block unrelated hints.
+    func shelfReferences() throws -> [ShelfReference] {
+        try valueSnapshot(prefix: "shelf-reference/").values.map { key, stored in
+            ShelfReference(id: String(key.dropFirst("shelf-reference/".count)), value: try JSONDecoder().decode(ShelfReferenceValue.self, from: Data(stored.value.utf8)))
+        }
     }
 
     struct RecentPosition: Sendable, Equatable {

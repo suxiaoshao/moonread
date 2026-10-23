@@ -24,8 +24,8 @@ enum LibraryPendingDecision: Identifiable {
 enum LibraryTrashChoice { case permanentlyDelete, skip }
 
 enum LibraryFilePicker {
-    case folder(String?), novels(LibraryLocation)
-    var types: [UTType] { if case .folder = self { [.folder] } else { [.plainText] } }
+    case folder(String?), novels(LibraryLocation), reauthorize(ShelfReference, scope: String)
+    var types: [UTType] { if case .novels = self { [.plainText] } else { [.folder] } }
     var multiple: Bool { if case .novels = self { true } else { false } }
 }
 
