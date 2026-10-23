@@ -23,11 +23,109 @@ env:
   CARGO_TARGET_DIR: ${{ github.workspace }}/build/cargo
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-24.04
+    outputs:
+      linux: ${{ steps.scope.outputs.linux }}
+      ios: ${{ steps.scope.outputs.ios }}
+      site: ${{ steps.scope.outputs.site }}
+      workflows: ${{ steps.scope.outputs.workflows }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify the complete PR diff
+        id: scope
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'PYTHON'
+          import os, subprocess
+          # Pushes to protected branches and manual runs always check everything.
+          all_checks = os.environ['EVENT_NAME'] != 'pull_request'
+          paths = []
+          if not all_checks:
+              paths = subprocess.check_output([
+                  'git', 'diff', '--name-only', '--no-renames', '-z',
+                  os.environ['BASE_SHA'] + '...' + os.environ['HEAD_SHA'], '--',
+              ]).split(b'\0')
+          github = any(path.startswith(b'.github/') for path in paths)
+          rust = any(path.startswith(b'crates/') or
+                     (b'/' not in path and path.startswith((b'Cargo.', b'flake.')))
+                     for path in paths)
+          checks = {
+              'linux': all_checks or github or rust,
+              'ios': all_checks or github or rust or any(path.startswith(b'ios/') for path in paths),
+              'site': all_checks or github or any(path.startswith(b'docs/site/') for path in paths),
+              'workflows': all_checks or github,
+          }
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              for name, enabled in checks.items():
+                  output.write(f'{name}={str(enabled).lower()}\n')
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('Check scope: ' + ', '.join(f'{k}={str(v).lower()}' for k, v in checks.items()) + '\n')
+          PYTHON
+
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - name: Scan committed history for secrets
+        run: nix develop --no-update-lock-file -c gitleaks git --redact --no-banner --log-opts=HEAD .
+
+  workflows:
+    name: Workflow syntax
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.workflows == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - name: Check workflow syntax
+        run: nix develop --no-update-lock-file -c actionlint
+
+  site:
+    name: Website checks
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.site == 'true') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - name: Build site
+        working-directory: docs/site
+        run: nix develop --no-update-lock-file -c zola build
+
   linux:
     name: Linux checks
+    needs: [changes, secrets]
+    # Scope failure falls back to full checks; secret failures remain blocking.
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.secrets.result != 'success' || needs.changes.outputs.linux == 'true') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
+      - name: Require secret scan to pass
+        if: ${{ needs.secrets.result != 'success' }}
+        run: |
+          echo 'Secret scanning did not pass.' >&2
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -42,13 +140,10 @@ jobs:
             build/cargo
           key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'Cargo.toml') }}
           restore-keys: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', 'Cargo.lock') }}-
-      - name: Scan committed history for secrets
-        run: nix develop --no-update-lock-file -c gitleaks git --redact --no-banner --log-opts=HEAD .
-      - name: Check formatting and workflow syntax
+      - name: Check formatting
         run: |
           nix develop --no-update-lock-file -c cargo fmt --all -- --check
           nix develop --no-update-lock-file -c nixfmt --check flake.nix
-          nix develop --no-update-lock-file -c actionlint
       - name: Lint Rust
         id: rust-build
         run: nix develop --no-update-lock-file -c cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
@@ -66,6 +161,8 @@ jobs:
 
   ios-unit-tests:
     name: iOS unit tests
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.ios == 'true') }}
     runs-on: xcode-27
     timeout-minutes: 60
     env:

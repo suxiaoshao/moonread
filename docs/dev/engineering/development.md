@@ -30,10 +30,11 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 ## 分支与协作
 
-- `main` 始终对应 App Store 最新发布版本，不承载下一版本的日常开发；正式发布后，在对应提交打版本 tag（如 `v1.1`）。TestFlight 上传不等于 App Store 发布。
+- `main` 的 App 代码始终对应 App Store 最新发布版本，不承载下一版本 App 的日常开发；正式发布后，在对应提交打版本 tag（如 `v1.1`）。TestFlight 上传不等于 App Store 发布。
+- `docs/site/**` 是版本分支规则的例外：隐私政策、支持页等版本所需的网站改动，在提交 App Store 审核前用小 PR 直接合进 `main`，由 Pages 即时部署，不等待 App 版本上线。网站检查通过后再合并；“main 等于线上版本”只约束 App 代码。
 - 每个版本从 `main` 建立 `release/x.y`，在该分支开发。功能、修复与文档使用独立开发分支，PR 以当前 `release/x.y` 为目标，通过检查后 **squash** 合并。
 - App Store 发布后，`release/x.y` 通过 PR 以普通 **merge commit** 合回 `main`，保留版本开发历史；发布回合使用普通 merge，不 squash 发布分支；下述已上线 hotfix 回合也使用普通 merge。
-- 线上问题从 `main` 建立 `hotfix/x.y.z`，在该分支修复、打包并提审；App Store 上线后才通过 PR 以普通 merge 回 `main` 并打补丁 tag（如 `v1.1.1`），随后把 `main` 合进当前 `release/x.y`。补丁审核及等待上线期间不提前合回 main，确保 main 始终对应线上版本。
+- 线上问题从 `main` 建立 `hotfix/x.y.z`，在该分支修复、打包并提审；App Store 上线后才通过 PR 以普通 merge 回 `main` 并打补丁 tag（如 `v1.1.1`），随后把 `main` 合进当前 `release/x.y`。补丁审核及等待上线期间不提前合回 main，确保 main 的 App 代码始终对应线上版本。
 - `main` 与 `release/**` 必须经过 PR、`Linux checks` 和 `iOS unit tests`，解决所有讨论，禁止强推和删除；维护者决定何时合并，不由工具自动合并。
 
 发版清单（分支）：
