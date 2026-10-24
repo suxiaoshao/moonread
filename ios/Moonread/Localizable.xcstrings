@@ -8055,7 +8055,22 @@
     "复制收件人": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Copy Recipient"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製收件人"}}}},
     "复制主题": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Copy Subject"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製主旨"}}}},
     "复制正文": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Copy Body"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製內文"}}}},
-    "复制全部": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Copy All"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製全部"}}}}
+    "复制全部": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Copy All"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製全部"}}}},
+    "正在处理并同步": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Processing and syncing"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在處理並同步"}}}},
+    "需要确认同步账户": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Confirm your sync account"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "需要確認同步帳戶"}}}},
+    "阅读数据同步已暂停": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Reading data sync paused"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀資料同步已暫停"}}}},
+    "同步需要处理": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sync needs attention"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "同步需要處理"}}}},
+    "阅读数据同步已开启": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Reading data sync on"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀資料同步已開啟"}}}},
+    "阅读数据同步已关闭": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Reading data sync off"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀資料同步已關閉"}}}},
+    "查看我的书架": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Open My Bookshelf"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "查看我的書架"}}}},
+    "试试其他搜索词。": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Try another search term."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "試試其他搜尋詞。"}}}},
+    "正在读取书籍…": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Loading books…"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在讀取書籍⋯"}}}},
+    "暂时无法读取书籍": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Unable to Load Books"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "暫時無法讀取書籍"}}}},
+    "正在读取记录…": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Loading records…"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在讀取記錄⋯"}}}},
+    "暂时无法读取记录": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Unable to Load Records"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "暫時無法讀取記錄"}}}},
+    "搜索记录": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Search records"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "搜尋記錄"}}}},
+    "导入完成": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Import Complete"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "匯入完成"}}}},
+    "部分文件未导入": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Some Files Were Not Imported"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "部分檔案未匯入"}}}}
   },
   "version": "1.0"
 }

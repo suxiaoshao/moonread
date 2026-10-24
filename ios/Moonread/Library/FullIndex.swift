@@ -359,14 +359,12 @@ struct FullIndexView: View {
                     }
                     if let inventory, inventory.pending.contains(where: \.needsDownload) {
                         let cloud = inventory.pending.filter(\.needsDownload)
-                        GroupBox {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Toggle(isOn: $includeCloud) { Text("包含未下载的 iCloud 文件", tableName: "FullIndex") }.disabled(active)
-                                    .accessibilityIdentifier("fullIndexIncludeCloud")
-                                Text("\(cloud.count) 本，已知下载量 \(ByteCountFormatter.string(fromByteCount: Int64(clamping: inventory.cloudBytes), countStyle: .file))", tableName: "FullIndex").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
-                                if cloud.contains(where: { $0.size == 0 }) { Text("部分文件大小未知", tableName: "ShelfRecovery").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
-                            }
-                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            Toggle(isOn: $includeCloud) { Text("包含未下载的 iCloud 文件", tableName: "FullIndex") }.disabled(active)
+                                .accessibilityIdentifier("fullIndexIncludeCloud")
+                            Text("\(cloud.count) 本，已知下载量 \(ByteCountFormatter.string(fromByteCount: Int64(clamping: inventory.cloudBytes), countStyle: .file))", tableName: "FullIndex").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                            if cloud.contains(where: { $0.size == 0 }) { Text("部分文件大小未知", tableName: "ShelfRecovery").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
+                        }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
                     }
                     if controller.shelfID == shelfID, let message = controller.message { Label(message, systemImage: "info.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
                     if !failures.isEmpty {

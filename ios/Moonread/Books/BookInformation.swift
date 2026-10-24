@@ -413,6 +413,7 @@ struct BookInformationSections: View {
 }
 
 struct BookReadingDataClearSection: View {
+    @Environment(\.theme) private var theme
     let book: BookInformationModel
     let target: StatisticsRoute
     let key: String
@@ -426,10 +427,11 @@ struct BookReadingDataClearSection: View {
                     manager.deleting = [key]
                 }
             } label: { Text("清除阅读数据", tableName: "DataManagement") }
-                .disabled(manager.busy).accessibilityIdentifier("clearBookReadingData")
+                .foregroundStyle(Color(uiColor: theme.destructive)).disabled(manager.busy).accessibilityIdentifier("clearBookReadingData")
         } footer: {
             if let message = manager.message { Text(verbatim: message).font(.footnote) }
-        }.modifier(ReadingDataDeletionPrompt(model: manager))
+        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+            .modifier(ReadingDataDeletionPrompt(model: manager))
             .onChange(of: manager.busy) { _, busy in if !busy { Task { await book.load(target) } } }
             .alert("暂时无法完成", isPresented: Binding(get: { manager.error != nil }, set: { if !$0 { manager.error = nil } })) {
                 Button("知道了", role: .cancel) { manager.error = nil }
