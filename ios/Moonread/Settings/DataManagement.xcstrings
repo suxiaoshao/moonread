@@ -3311,7 +3311,12 @@
           }
         }
       }
-    }
+    },
+    "正在读取阅读数据…": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Loading reading data…"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在讀取閱讀資料⋯"}}}},
+    "暂时无法读取阅读数据": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Unable to Load Reading Data"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "暫時無法讀取閱讀資料"}}}},
+    "没有匹配的阅读数据": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "No Matching Reading Data"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "沒有符合的閱讀資料"}}}},
+    "试试其他筛选条件或搜索词。": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Try another filter or search term."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "試試其他篩選條件或搜尋詞。"}}}},
+    "正在检查阅读数据…": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Checking reading data…"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在檢查閱讀資料⋯"}}}}
   },
   "version": "1.0"
 }

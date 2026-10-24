@@ -18,6 +18,16 @@ final class CloudStore {
         if status.message != nil { return String(localized: "阅读数据同步异常") }
         return String(localized: "阅读数据已开启")
     }
+    /// Display existing facts together; this does not change coordinator state.
+    var syncTitle: String {
+        if busy && status.syncing { return String(localized: "正在处理并同步") }
+        if busy { return String(localized: "正在处理") }
+        if status.syncing { return String(localized: "正在同步") }
+        if status.accountToConfirm != nil { return String(localized: "需要确认同步账户") }
+        if status.requested && !status.enabled { return String(localized: "阅读数据同步已暂停") }
+        if status.message != nil { return String(localized: "同步需要处理") }
+        return String(localized: status.enabled ? "阅读数据同步已开启" : "阅读数据同步已关闭")
+    }
     func refresh() async { await coordinator.resume(); await updateStatus() }
     func updateStatus() async {
         status = await coordinator.currentStatus()

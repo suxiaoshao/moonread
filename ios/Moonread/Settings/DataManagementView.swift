@@ -8,6 +8,9 @@ extension UTType { static let moonreadBackup = UTType(exportedAs: "dev.moonread.
     var inventory = ReadingDataInventory(items: [], pending: 0, unsupported: 0)
     var cache = CacheSummary()
     var busy = false
+    private(set) var loading = false
+    private(set) var loaded = false
+    private var inventoryLoad: Task<Void, Never>?
     var working = ""
     var error: String?
     var message: String?
@@ -43,13 +46,21 @@ extension UTType { static let moonreadBackup = UTType(exportedAs: "dev.moonread.
         }
     }
     func load() async {
-        error = nil
-        do {
-            updateInventory(try await service.readingDataInventory())
-            cache = try await service.cacheSummary()
-        } catch { self.error = ReaderMessages.error(error) }
+        if let inventoryLoad { await inventoryLoad.value; return }
+        loading = true; error = nil
+        let task = Task { @MainActor in
+            defer { loading = false; loaded = true }
+            do {
+                updateInventory(try await service.readingDataInventory())
+                cache = try await service.cacheSummary()
+            } catch { self.error = ReaderMessages.error(error) }
+        }
+        inventoryLoad = task
+        await task.value
+        inventoryLoad = nil
     }
     func updateInventory(_ value: ReadingDataInventory) {
+            loaded = true
             inventory = value
             let entries = inventory.items.map { ReadingDataSortEntry(key: $0.id, title: $0.title, lastRead: $0.lastRead) }
             nameOrder = readingDataOrder(entries: entries, recent: false)
@@ -68,7 +79,7 @@ extension UTType { static let moonreadBackup = UTType(exportedAs: "dev.moonread.
     }
     func prepareIssues() async {
         await load()
-        guard !busy else { return }; busy = true; working = String(localized: "正在关联阅读数据…", table: "DataManagement")
+        guard !busy, error == nil else { return }; busy = true; working = String(localized: "正在关联阅读数据…", table: "DataManagement")
         defer { busy = false }
         // One attempt per completed task when this page is entered. Never loop
         // on a failed promotion or start an import merely to inspect inventory.
@@ -248,25 +259,45 @@ private struct ReadingDataListView: View {
                 } label: { Label { Text("排序", tableName: "DataManagement") } icon: { Image(systemName: "arrow.up.arrow.down") } }
                     .labelStyle(.iconOnly).accessibilityIdentifier("readingDataSort")
             }.padding(.horizontal).padding(.vertical, 8)
-            List {
-                Section {
-                    ForEach(model.visible) { item in
-                        Button {
-                            if model.selecting { if !model.selected.insert(item.id).inserted { model.selected.remove(item.id) } }
-                            else { detail = item }
-                        } label: {
-                            DataManagementRow(item: item, duplicate: model.duplicateNames[item.id], selected: model.selected.contains(item.id), selecting: model.selecting)
-                        }.buttonStyle(.plain).accessibilityIdentifier("reading-data-" + item.id)
-                            .swipeActions { Button(role: .destructive) { model.deleting = [item.id] } label: { Text("删除", tableName: "DataManagement") } }
-                    }
-                } footer: {
-                    Text("按此设备当前索引判断；未建立索引或尚未重新连接的小说也可能出现在这里。", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.secondary))
-                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-                if let message = model.message { Text(verbatim: message).font(.footnote).accessibilityIdentifier("readingDataResult").listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
-                if let error = model.error { Text(verbatim: error).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
+            if let error = model.error {
+                HStack(alignment: .top) {
+                    Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
+                    Spacer(minLength: 8)
+                    Button("重试") { Task { await model.load() } }
+                }.padding(.horizontal).padding(.vertical, 8).accessibilityIdentifier("readingDataError")
+            } else if let message = model.message {
+                Label(message, systemImage: "checkmark.circle").font(.footnote).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal).padding(.vertical, 8).accessibilityIdentifier("readingDataResult")
             }
-            .contentMargins(.top, 8, for: .scrollContent)
-            .overlay { if model.visible.isEmpty { ContentUnavailableView { Label { Text("暂无阅读数据", tableName: "DataManagement") } icon: { Image(systemName: "books.vertical") } } } }
+            if !model.visible.isEmpty {
+                List {
+                    Section {
+                        ForEach(model.visible) { item in
+                            Button {
+                                if model.selecting { if !model.selected.insert(item.id).inserted { model.selected.remove(item.id) } }
+                                else { detail = item }
+                            } label: {
+                                DataManagementRow(item: item, duplicate: model.duplicateNames[item.id], selected: model.selected.contains(item.id), selecting: model.selecting)
+                            }.buttonStyle(.plain).accessibilityIdentifier("reading-data-" + item.id)
+                                .swipeActions { Button(role: .destructive) { model.deleting = [item.id] } label: { Text("删除", tableName: "DataManagement") } }
+                        }
+                    } footer: {
+                        Text("按此设备当前索引判断；未建立索引或尚未重新连接的小说也可能出现在这里。", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.secondary))
+                    }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                }
+                .contentMargins(.top, 8, for: .scrollContent)
+            } else if model.loading || !model.loaded {
+                ProgressView { Text("正在读取阅读数据…", tableName: "DataManagement") }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.error != nil {
+                ContentUnavailableView { Label { Text("暂时无法读取阅读数据", tableName: "DataManagement") } icon: { Image(systemName: "exclamationmark.circle") } }
+            } else if model.inventory.items.isEmpty {
+                ContentUnavailableView { Label { Text("暂无阅读数据", tableName: "DataManagement") } icon: { Image(systemName: "books.vertical") } }
+                    .accessibilityIdentifier("readingDataEmpty")
+            } else {
+                ContentUnavailableView { Label { Text("没有匹配的阅读数据", tableName: "DataManagement") } icon: { Image(systemName: "magnifyingglass") } } description: {
+                    Text("试试其他筛选条件或搜索词。", tableName: "DataManagement")
+                }.accessibilityIdentifier("readingDataNoMatches")
+            }
         }.themedPage()
         .navigationTitle(model.selecting ? Text("已选 \(model.selected.count) 本", tableName: "DataManagement") : Text("阅读数据", tableName: "DataManagement"))
         .navigationBarTitleDisplayMode(model.selecting ? .inline : .large)
@@ -379,26 +410,44 @@ private struct ReadingDataIssuesView: View {
     private var pending: [PendingReadingData] { model.inventory.pendingItems.filter(\.readable) }
     private var unreadable: [ReadingDataDiagnostic] { model.inventory.diagnostics.filter { $0.reason != .pending } }
     var body: some View {
-        List {
-            if let error = model.error { Text(verbatim: error).foregroundStyle(Color(uiColor: theme.destructive)).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
-            pendingSection("正文没有准备完成", items: pending.filter { $0.phase != nil && $0.phase != .complete && $0.sourceState == .available })
-            pendingSection("阅读数据尚未关联", items: pending.filter { $0.phase == .complete })
-            pendingSection("需要重新连接书架", items: pending.filter { $0.phase != .complete && $0.sourceState == .reconnect })
-            pendingSection("找不到原文件", items: pending.filter { $0.phase != .complete && $0.sourceState == .missing })
-            if !unreadable.isEmpty {
-                Section {
-                    ForEach(unreadable) { diagnostic in
-                        VStack(alignment: .leading, spacing: 6) {
-                            if !diagnostic.title.isEmpty { Text(verbatim: diagnostic.title).font(.headline) }
-                            Text(recordName(diagnostic.recordType))
-                            Text(reasonName(diagnostic.reason), tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.secondary))
-                        }.accessibilityIdentifier("readingDataIssue-" + diagnostic.reason.rawValue)
-                    }
-                } header: { Text("暂时无法读取的记录", tableName: "DataManagement") }
-                    .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            }
-            if model.inventory.diagnostics.isEmpty {
+        Group {
+            if model.loading || !model.loaded || (model.busy && model.inventory.diagnostics.isEmpty) {
+                ProgressView { Text("正在检查阅读数据…", tableName: "DataManagement") }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = model.error, model.inventory.diagnostics.isEmpty {
+                ContentUnavailableView { Label { Text("暂时无法读取阅读数据", tableName: "DataManagement") } icon: { Image(systemName: "exclamationmark.circle") } } description: {
+                    Text(verbatim: error)
+                } actions: { Button("重试") { Task { await model.prepareIssues() } } }
+                .accessibilityIdentifier("readingDataIssuesError")
+            } else if model.inventory.diagnostics.isEmpty {
                 ContentUnavailableView { Label { Text("没有需要处理的记录", tableName: "DataManagement") } icon: { Image(systemName: "checkmark.circle") } }
+                    .accessibilityIdentifier("readingDataIssuesEmpty")
+            } else {
+                VStack(spacing: 0) {
+                    if let error = model.error {
+                        HStack {
+                            Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
+                            Button("重试") { Task { await model.prepareIssues() } }
+                        }.padding()
+                    }
+                    List {
+                        pendingSection("正文没有准备完成", items: pending.filter { $0.phase != nil && $0.phase != .complete && $0.sourceState == .available })
+                        pendingSection("阅读数据尚未关联", items: pending.filter { $0.phase == .complete })
+                        pendingSection("需要重新连接书架", items: pending.filter { $0.phase != .complete && $0.sourceState == .reconnect })
+                        pendingSection("找不到原文件", items: pending.filter { $0.phase != .complete && $0.sourceState == .missing })
+                        if !unreadable.isEmpty {
+                            Section {
+                                ForEach(unreadable) { diagnostic in
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        if !diagnostic.title.isEmpty { Text(verbatim: diagnostic.title).font(.headline) }
+                                        Text(recordName(diagnostic.recordType))
+                                        Text(reasonName(diagnostic.reason), tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.secondary))
+                                    }.accessibilityIdentifier("readingDataIssue-" + diagnostic.reason.rawValue)
+                                }
+                            } header: { Text("暂时无法读取的记录", tableName: "DataManagement") }
+                                .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                        }
+                    }
+                }
             }
         }.themedPage().navigationTitle(Text("需要处理", tableName: "DataManagement"))
         .task { await model.prepareIssues() }
