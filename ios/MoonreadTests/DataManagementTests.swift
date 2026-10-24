@@ -133,6 +133,18 @@ import XCTest
             XCTAssertEqual(ReadingDataDiagnostic.reason(for: error), .newerFormat)
         }
     }
+    func testReadingDataFilteringClearsHiddenSelectionsAndKeepsHistoricalTitles() {
+        let model = DataManagementModel()
+        model.updateInventory(.init(items: [.init(id: "a", title: "归途", lastRead: 20, linked: true), .init(id: "b", title: "星灯", lastRead: 10)], pending: 0, unsupported: 0))
+        model.selected = ["a", "b"]
+        model.unlinkedOnly = true
+        XCTAssertEqual(model.visible.map(\.id), ["b"]); XCTAssertTrue(model.selected.isEmpty)
+        XCTAssertEqual(model.visible.first?.title, "星灯", "An unlinked book keeps its known title")
+        model.selected = ["b"]; model.query = "归途"
+        XCTAssertTrue(model.selected.isEmpty); XCTAssertTrue(model.visible.isEmpty)
+        model.query = ""; model.unlinkedOnly = false; model.recent = false
+        XCTAssertEqual(model.visible.count, 2)
+    }
     func testImportPreviewRejectsConflictingIDsUnknownPayloadsAndMissingAssetsWithoutWrites() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
         let source = f.formal, target = try store(), key = f.book.contentSha256

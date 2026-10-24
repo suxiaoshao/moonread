@@ -349,6 +349,9 @@ struct StatisticsView: View {
                 HStack { Spacer(); LoadingActivity(size: 52, waitingLabel: "正在读取统计"); Spacer() }
                     .frame(minHeight: 230).listRowBackground(Color.clear)
             }
+            if let target, !target.fromReader, let details = information.details {
+                BookReadingDataClearSection(book: information, target: target, key: details.metadata.sha, manager: library.dataManagement)
+            }
         }
         .themedPage()
         .navigationTitle(target == nil ? String(localized: "统计") : String(localized: "小说详情"))

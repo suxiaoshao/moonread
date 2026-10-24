@@ -408,14 +408,11 @@ struct BookInformationSections: View {
                     LabeledContent("当前章覆盖", value: chapter.coverageLabel)
                 }
             }.listRowBackground(Color(uiColor: theme.surface)).id("myReading")
-            if let library, !target.fromReader {
-                BookReadingDataClearSection(book: model, target: target, key: details.metadata.sha, manager: library.dataManagement)
-            }
         }
     }
 }
 
-private struct BookReadingDataClearSection: View {
+struct BookReadingDataClearSection: View {
     let book: BookInformationModel
     let target: StatisticsRoute
     let key: String
@@ -430,6 +427,7 @@ private struct BookReadingDataClearSection: View {
                 }
             } label: { Text("清除阅读数据", tableName: "DataManagement") }
                 .disabled(manager.busy).accessibilityIdentifier("clearBookReadingData")
+        } footer: {
             if let message = manager.message { Text(verbatim: message).font(.footnote) }
         }.modifier(ReadingDataDeletionPrompt(model: manager))
             .onChange(of: manager.busy) { _, busy in if !busy { Task { await book.load(target) } } }
