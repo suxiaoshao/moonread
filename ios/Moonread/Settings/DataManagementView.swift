@@ -73,7 +73,7 @@ extension UTType { static let moonreadBackup = UTType(exportedAs: "dev.moonread.
         // One attempt per completed task when this page is entered. Never loop
         // on a failed promotion or start an import merely to inspect inventory.
         for item in inventory.pendingItems where item.readable && item.phase == .complete {
-            do { try await service.promoteUserData(item.bookID); issueErrors[item.id] = nil }
+            do { try await service.promoteUserData(item.bookID, retry: true); issueErrors[item.id] = nil }
             catch { issueErrors[item.id] = ReaderMessages.error(error) }
         }
         await load()

@@ -214,6 +214,12 @@ import XCTest
         XCTAssertFalse(model.inventory.pendingItems.contains { $0.id == completed })
         XCTAssertTrue(model.inventory.pendingItems.contains { $0.id == alias })
         XCTAssertNil(model.issueErrors[completed])
+        // A readable late arrival must not be hidden by the in-session fast path.
+        try await receiveBackupPosition(positionRecord(key: completed, token: "z-late", offset: 18), key: completed, store: f.pending)
+        await model.prepareIssues()
+        XCTAssertFalse(model.inventory.pendingItems.contains { $0.id == completed })
+        let winner = try await f.formal.positionValues()["position/" + f.book.contentSha256]
+        XCTAssertEqual(try winner.map(PositionCandidate.init)?.value.offset, 18)
     }
     func testImportPreviewRejectsConflictingIDsUnknownPayloadsAndMissingAssetsWithoutWrites() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
