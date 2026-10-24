@@ -119,6 +119,14 @@ actor ReaderService {
     var userCloudEnabled = false
     let userDirectoryName: String
     var readingSourceIDs: [String: String] = [:]
+    let dataManagementWriter: StatisticsWriter?
+    var activeBackupExport: URL?
+    weak var activeBackupImport: BackupStaging?
+    var inFlightBackupDirectories = Set<URL>()
+    var backupShareCopies: [URL: Int] = [:]
+    var userDataOperationBusy = false
+    var userDataOperationWaiters: [CheckedContinuation<Void, Never>] = []
+    var localReadingWriteLeases: [String: UUID] = [:]
     var promotedUserKeys = Set<String>()
     var shownCandidates: [String: [AnnotationCandidate]] = [:]
     var undoCandidates: [String: ([AnnotationCandidate], AnnotationContent?)] = [:]
@@ -139,7 +147,7 @@ actor ReaderService {
     let libraryDirectoryOverride: URL?
     let libraryDeletion: @Sendable (URL, Bool) throws -> Void
     let libraryScan: (@Sendable (URL, [CloudDocumentItem]) throws -> [ScannedLibraryItem])?
-    init(core: ReaderCore? = nil, libraryDirectory: URL? = nil, sourceDefaultsSuite: String? = nil, userStoreFactory: (@Sendable (String, Bool) async throws -> UserDataStore)? = nil,
+    init(core: ReaderCore? = nil, libraryDirectory: URL? = nil, sourceDefaultsSuite: String? = nil, dataManagementWriter: StatisticsWriter? = nil, userStoreFactory: (@Sendable (String, Bool) async throws -> UserDataStore)? = nil,
          libraryDeletion: @escaping @Sendable (URL, Bool) throws -> Void = { url, permanently in
              if permanently { try FileManager.default.removeItem(at: url) }
              else { try FileManager.default.trashItem(at: url, resultingItemURL: nil) }
@@ -148,6 +156,7 @@ actor ReaderService {
         self.core = core; libraryDirectoryOverride = libraryDirectory
         self.libraryDeletion = libraryDeletion; self.libraryScan = libraryScan
         self.userStoreFactory = userStoreFactory
+        self.dataManagementWriter = dataManagementWriter
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         let sessionIndex = arguments.firstIndex(of: "--ui-test-session")
@@ -234,6 +243,11 @@ actor ReaderService {
         Dictionary(uniqueKeysWithValues: foregroundHolds.filter { $0.key.hasPrefix("book:") }.map { (String($0.key.dropFirst(5)), $0.value) })
     }
     func identityMayRun() -> Bool { foregroundHolds.isEmpty }
+    func cacheProtectedBookIDs() -> [String] { Array(Set(readers.keys).union(imports.keys).union(pendingPromotionIDs)) }
+    func readingDataIsBusy(_ keys: Set<String>) -> Bool {
+        if foregroundHolds.keys.contains(where: { !$0.hasPrefix("book:") }) { return true }
+        return readers.keys.contains { id in (try? userKey(id)).map(keys.contains) ?? true }
+    }
     private func holdForeground(_ key: String) {
         foregroundHolds[key, default: 0] += 1
         backgroundReadCancellation?()
@@ -294,12 +308,8 @@ actor ReaderService {
         return nil
         #endif
     }
-    var dataDirectoryName: String {
-        #if READER_OPEN_DIAGNOSTICS
-        if ReaderOpenDiagnostics.benchmark, ReaderOpenDiagnostics.session != nil { return userDirectoryName }
-        #endif
-        return testSession.map { "Moonread-UITests-\($0)" } ?? "Moonread"
-    }
+    // The normal app remains Moonread; injected stores and UI sessions own their caches.
+    var dataDirectoryName: String { userDirectoryName }
     // Internal text/file capability. UI-facing user data comes from domain
     // queries below; this core never receives shared mutable user projections.
     func textCore() throws -> ReaderCore {

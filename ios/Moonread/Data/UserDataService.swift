@@ -57,6 +57,9 @@ extension ReaderService {
         throw ReaderError.NotFound
     }
     func configureUserCloud(_ enabled: Bool, account: String?, allowAccountChange: Bool = false) async throws {
+        await acquireUserDataOperation()
+        var holdsOperation = true
+        defer { if holdsOperation { releaseUserDataOperation() } }
         if enabled {
             guard let account else { throw CocoaError(.userCancelled) }
             if let previous = sourceDefaults.string(forKey: "Moonread.userOwner"), previous != account, !allowAccountChange { throw ReaderError.CloudAccountChanged }
@@ -69,6 +72,10 @@ extension ReaderService {
             userStoreTask = nil; userCloudEnabled = enabled
             userCloudConfigurationRevision = UUID()
             let revision = userCloudConfigurationRevision
+            // The configuration switch is serialized with deletion, not store
+            // bootstrap: a newer configuration must be able to replace a stuck
+            // initialization (the existing revision guard rejects its late result).
+            releaseUserDataOperation(); holdsOperation = false
             do { _ = try await userStore() }
             catch {
                 if userCloudConfigurationRevision == revision { userCloudEnabled = false }
@@ -88,6 +95,7 @@ extension ReaderService {
         defer { ReaderOpenDiagnostics.background("recovery.return") }
         defer { recoveryTask = nil; scheduleRecentRestoration() }
         do {
+            try cleanupOldBackupExports()
             let pending = try await userStore(pending: true)
             let keys = try await pending.pendingKeys()
             pendingPromotionIDs.formUnion(try keys.compactMap { if case let .pending(id) = try parseReadingKey(value: $0) { return id }; return nil })
@@ -194,6 +202,10 @@ extension ReaderService {
         serializeReadingKey(key: try textCore().resolveBookIdentity(bookId: id).key)
     }
     func promoteUserData(_ id: String) async throws {
+        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        try await promoteUserDataLocked(id)
+    }
+    func promoteUserDataLocked(_ id: String) async throws {
         let key = try userKey(id)
         guard case .formal = try parseReadingKey(value: key) else { return }
         let pending = try await userStore(pending: true)
@@ -225,7 +237,8 @@ extension ReaderService {
         return nil
     }
     func writePosition(_ id: String, offset: UInt64) async throws {
-        try await promoteUserData(id)
+        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        try await promoteUserDataLocked(id)
         let core = try textCore(), key = try userKey(id)
         let normalized = try core.normalizedPosition(bookId: id, offsetUtf8: offset)
         if let file = readingSourceIDs[id] { sourceDefaults.set(file, forKey: "Moonread.preferredFile." + key) }

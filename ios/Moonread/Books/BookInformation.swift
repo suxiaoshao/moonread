@@ -49,7 +49,9 @@ final class BookInformationModel {
             if let known = target.key { key = known } else { key = try await service.userKey(id) }
             entry = try await service.libraryEntries(nil).first { $0.readingKey == key && !$0.directory }
         } else { entry = nil }
-        let details = try await service.details(bookID: target.fromReader ? target.bookID : (entry?.bookId ?? target.bookID), sha: entry?.readingKey ?? target.key)
+        let key = entry?.readingKey ?? target.key
+        let bookID = entry?.bookId ?? (validSHA(key) == nil ? target.bookID : nil)
+        let details = try await service.details(bookID: target.fromReader ? target.bookID : bookID, sha: key)
         return (entry, details)
     }
     static func validSHA(_ value: String?) -> String? {
@@ -76,7 +78,7 @@ final class BookInformationModel {
                 let chapters = try await readChapters(book.id)
                 guard loadRevision == revision, requestedIdentity == identity, !Task.isCancelled else { return }
                 self.chapters = chapters
-            }
+            } else { self.chapters = [] }
         } catch {
             guard loadRevision == revision, requestedIdentity == identity, !Task.isCancelled else { return }
             self.error = ReaderMessages.error(error)
@@ -138,6 +140,9 @@ final class BookInformationModel {
         guard preparing, preparationPaused else { return }
         // The existing preparation task owns the resume, including cancellation.
         preparationStep = .resumeRequested
+    }
+    func finishPreparationForDataDeletion() async {
+        let current = task; current?.cancel(); await current?.value; lease = nil
     }
     func cancelPreparation() { task?.cancel() }
     func setStatus(_ status: BookReadingStatus) async {
@@ -403,6 +408,33 @@ struct BookInformationSections: View {
                     LabeledContent("当前章覆盖", value: chapter.coverageLabel)
                 }
             }.listRowBackground(Color(uiColor: theme.surface)).id("myReading")
+            if let library, !target.fromReader {
+                BookReadingDataClearSection(book: model, target: target, key: details.metadata.sha, manager: library.dataManagement)
+            }
         }
+    }
+}
+
+private struct BookReadingDataClearSection: View {
+    let book: BookInformationModel
+    let target: StatisticsRoute
+    let key: String
+    @Bindable var manager: DataManagementModel
+    var body: some View {
+        Section {
+            Button(role: .destructive) {
+                Task {
+                    if !target.fromReader { await book.finishPreparationForDataDeletion() }
+                    await manager.load()
+                    manager.deleting = [key]
+                }
+            } label: { Text("清除阅读数据", tableName: "DataManagement") }
+                .disabled(manager.busy).accessibilityIdentifier("clearBookReadingData")
+            if let message = manager.message { Text(verbatim: message).font(.footnote) }
+        }.modifier(ReadingDataDeletionPrompt(model: manager))
+            .onChange(of: manager.busy) { _, busy in if !busy { Task { await book.load(target) } } }
+            .alert("暂时无法完成", isPresented: Binding(get: { manager.error != nil }, set: { if !$0 { manager.error = nil } })) {
+                Button("知道了", role: .cancel) { manager.error = nil }
+            } message: { Text(manager.error ?? "") }
     }
 }

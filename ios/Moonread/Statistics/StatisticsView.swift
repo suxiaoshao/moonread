@@ -322,8 +322,7 @@ struct StatisticsView: View {
                 }
                 if let error = StatisticsWriter.shared.error {
                     Section {
-                        Text("部分阅读记录尚未保存")
-                        Button("重试") { StatisticsWriter.shared.retry() }
+                        Text("部分阅读记录未能保存")
                         Text(error).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                     }.listRowBackground(Color(uiColor: theme.surface))
                 }

@@ -10,7 +10,7 @@ enum ReaderRoute: Hashable, Sendable {
 enum LibraryRoute: Hashable {
     case folder(LibraryLocation), allBooks(String), reader(OpeningRequest), recent, manage
     case statistics(StatisticsRoute)
-    case settings
+    case settings, dataManagement
     /// A contextual search pushed on the current stack, with its own session.
     case search(AppSearchScope)
     /// A conversation opened from search, anchored at the matching message.
@@ -127,6 +127,7 @@ final class LibraryModel {
         guard searchPresented, !value, selectedTab == .search, searchPath.isEmpty else { return }
         selectedTab = searchOrigin
     }
+    let dataManagement: DataManagementModel
     let fullIndex: FullIndexController
     var shelfRecovery = ShelfRecoverySnapshot()
     var shelfRecoveryRequest = UUID()
@@ -251,6 +252,7 @@ final class LibraryModel {
         }
         self.service = service
         self.fullIndex = fullIndex ?? .shared
+        self.dataManagement = DataManagementModel(service: service)
         self.lookupDropEntry = lookupDropEntry ?? { try await service.libraryEntry($0) }
         self.fileMutationReload = fileMutationReload
         self.defaults = defaults

@@ -54,8 +54,14 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 阅读时长/有效天数/覆盖等统计数值 | Rust `statistics.rs`、`coverage.rs`（后续统一 summary） | 事实聚合按固定 local_day；Swift 不再另 reduce 同一总量 | #66 不迁；旧报告第11项仍登记 |
 | 统计事实保存/去重裁决、日历展示桶/连续行视觉合并、显示格式 | Swift `ReadingStatistics.swift`、`StatisticsView.swift`，按各自职责单源 | 写入/界面组织与 Rust 数值汇总是不同规则；展示合并应消费已算 duration | 保持平台/状态规则，数值副本后续删除 |
 
+| 备份 ZIP 布局、受限解包、路径/摘要与正文缓存 SQL 驱逐 | Rust `backup_archive.rs`、`cache_management.rs` | Swift 不另写 ZIP 或数据库清理规则，驱逐保留索引/授权/任务 | 新增单源 |
+| 用户备份 envelope、原 payload 接入、对象级删除 | Swift `UserDataBackup.swift`、`ReadingDataManagement.swift` | SwiftData 权威与既有裁决不迁到 Rust；本机回执不参与同步裁决 | 共用接入 |
+| 缓存来源协调/授权与可读性证明 | Swift `CacheManagement.swift` | 证明期内调用 Rust 重验事务；页面不判断可清性 | 平台边界 |
+
 维护约定：新增规则先查本表；已存在则调用 owner。新增或改变归属必须在同一 PR 更新表、实现入口及测试位置。两个策略若故意不同，命名其输入/输出契约；不能仅以语言或调用入口不同为理由再实现一份。
 
+
+备份容器布局、受限解包、路径/摘要验证与正文缓存 SQL 驱逐由 Rust `backup_archive.rs` / `cache_management.rs` 负责；用户备份 envelope、原 payload 接入与对象级删除仍由 Swift `UserDataStore` / `UserDataBackup.swift` 负责，调用既有裁决。`ReadingDataManagement.swift` 只编排本机事务交接，`CacheManagement.swift` 负责安全作用域、源文件协调与可读性证明；页面不实现另一份身份、排序或合并规则。数据管理列表的自然顺序调用 Rust `reading_data_order`，本地化文本匹配复用 `LibraryQueryRules`。
 
 ## Swift 源码目录
 

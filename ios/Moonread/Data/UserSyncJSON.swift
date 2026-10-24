@@ -13,6 +13,7 @@ struct UserSyncCompatibilityError: LocalizedError, Sendable {
 /// Wire validation belongs here, never in the UniFFI records. No floating-point JSON
 /// intermediate: JSONDecoder reads every integer directly into its declared width.
 enum UserSyncJSON {
+    struct CoverReference: Decodable { let id: String; let sha256: String }
     struct Key: CodingKey {
         let stringValue: String
         var intValue: Int? { nil }

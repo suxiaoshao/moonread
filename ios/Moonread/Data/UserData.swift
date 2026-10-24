@@ -97,7 +97,7 @@ struct PositionSourceHint: Codable, Equatable, Sendable {
         try c.encode(decoding, forKey: .init("decoding"))
     }
 }
-struct PositionValue: Codable, Sendable {
+struct PositionValue: Codable, Equatable, Sendable {
     var content_key: String
     var offset: UInt64
     var source_hint: PositionSourceHint? = nil
@@ -132,6 +132,10 @@ struct PositionCandidate: Sendable {
         var value = value; value.content_key = key
         var stored = stored; stored.value = try UserSyncJSON.encode(value)
         return Self(stored: stored, value: value, sourceKey: sourceKey)
+    }
+    static func sameUpdate(_ previous: StoredValue, _ incoming: StoredValue) throws -> Bool {
+        guard previous.updated == incoming.updated else { return false }
+        return try Self(previous).value == Self(incoming).value
     }
     static func winner(_ previous: Self?, _ incoming: Self) -> Self {
         guard let previous else { return incoming }
@@ -228,7 +232,7 @@ enum AnnotationReduction {
         }
         return try UserSyncJSON.decode(type, value, as: shape, envelope: envelope)
     }
-    private func transaction<T>(_ body: () throws -> T) throws -> T {
+    func transaction<T>(_ body: () throws -> T) throws -> T {
         modelContext.autosaveEnabled = false
         do { let value = try body(); try modelContext.save(); invalidateProjection(); return value }
         catch { modelContext.rollback(); throw error }
@@ -285,17 +289,23 @@ enum AnnotationReduction {
         }
         return result
     }
-    private func values(key: String? = nil) throws -> [String: StoredValue] { try valueSnapshot(key: key).values }
+    func values(key: String? = nil) throws -> [String: StoredValue] { try valueSnapshot(key: key).values }
     private func requireValueReadable(_ key: String) throws {
         guard try !valueSnapshot(key: key).blocked.contains(key) else { throw UserSyncCompatibilityError() }
     }
-    private func compactPositions(key: String) throws {
+    private func obsoletePositionRows(key: String) throws -> [UserPosition] {
         let snapshot = try valueSnapshot(key: "position/" + key)
-        guard !snapshot.blocked.contains("position/" + key) else { return }
+        guard !snapshot.blocked.contains("position/" + key) else { return [] }
         let winner = snapshot.values["position/" + key]?.token
         let rows = try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { $0.contentKey == key }))
-        let obsolete = try rows.filter { try UserSyncJSON.storedValue($0.payload, key: "position/" + key).token != winner }
+        return try rows.filter { try UserSyncJSON.storedValue($0.payload, key: "position/" + key).token != winner }
+    }
+    func compactPositions(key: String) throws {
+        let obsolete = try obsoletePositionRows(key: key)
         if !obsolete.isEmpty { try transaction { for row in obsolete { modelContext.delete(row) } } }
+    }
+    func compactPositionsWithoutSave(key: String) throws {
+        for row in try obsoletePositionRows(key: key) { modelContext.delete(row) }
     }
     func value(_ key: String) throws -> String? {
         let snapshot = try valueSnapshot(key: key)
@@ -375,7 +385,7 @@ enum AnnotationReduction {
         }
         return try snapshot.blocked.isEmpty && blockedMarks(key: key).isEmpty ? nil : UserSyncCompatibilityError().localizedDescription
     }
-    func candidates(key: String, markID: String? = nil) throws -> [String: [AnnotationCandidate]] {
+    func candidates(key: String, markID: String? = nil, compacting: Bool = true) throws -> [String: [AnnotationCandidate]] {
         let rows = try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.contentKey == key }))
         var groups: [String: [AnnotationCandidate]] = [:], blocked = Set<String>()
         for row in rows where markID == nil || row.markID == markID {
@@ -384,6 +394,7 @@ enum AnnotationReduction {
         }
         for id in blocked { groups.removeValue(forKey: id) }
         let result = groups.mapValues(AnnotationReduction.heads)
+        guard compacting else { return result }
         let kept = Set(result.values.flatMap { $0 }.map(\.id))
         let obsolete = rows.filter { (markID == nil || $0.markID == markID) && !blocked.contains($0.markID) && !kept.contains($0.id) }
         if !obsolete.isEmpty { try transaction { for row in obsolete { modelContext.delete(row) } } }
@@ -538,7 +549,7 @@ enum AnnotationReduction {
         else { rows = try modelContext.fetch(FetchDescriptor<ReadingFact>()) }
         return rows.contains { (try? UserSyncJSON.validateFact($0.payload, id: $0.id)) == nil }
     }
-    private func visibleFacts(key: String? = nil, session: String? = nil) throws -> [[String: Any]] {
+    func visibleFacts(key: String? = nil, session: String? = nil) throws -> [[String: Any]] {
         try requireStatisticsReadable(book: key, session: session)
         let clears = try modelContext.fetch(FetchDescriptor<StatisticsClear>()).compactMap { try? decode(ClearValue.self, $0.payload) }
         var groups: [String: [ReadingFact]] = [:], facts: [[String: Any]] = []
@@ -672,6 +683,41 @@ extension UserDataStore {
             .map { UserDataTransfer.Fact(id: $0.id, payload: $0.payload) }
         return UserDataTransfer(positions: positions, operations: operations, facts: facts)
     }
+    // Shared immutable-record intake for pending promotion and portable backup.
+    func mergePositionRecord(key: String, payload: String) throws {
+        let incoming = try PositionCandidate(UserSyncJSON.storedValue(payload, key: "position/" + key))
+        let rows = try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { $0.contentKey == key }))
+        for row in rows {
+            let old = try UserSyncJSON.storedValue(row.payload, key: "position/" + key)
+            if old.token == incoming.stored.token {
+                guard try PositionCandidate.sameUpdate(old, incoming.stored) else { throw UserSyncCompatibilityError() }
+            }
+        }
+        let old = try values(key: "position/" + key)["position/" + key]
+        let winner = try PositionCandidate.winner(old.map(PositionCandidate.init), incoming).stored
+        if old?.token != winner.token || old?.updated != winner.updated {
+            for row in rows { modelContext.delete(row) }
+            modelContext.insert(UserPosition(contentKey: key, payload: payload))
+        }
+    }
+    func mergeOperationRecord(key: String, id: String, mark: String, payload: String) throws {
+        _ = try UserSyncJSON.annotation(payload, id: id)
+        let rows = try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.id == id }))
+        for row in rows {
+            _ = try UserSyncJSON.annotation(row.payload, id: row.id)
+            guard row.contentKey == key, row.markID == mark, Self.samePayload(row.payload, payload) else { throw UserSyncCompatibilityError() }
+        }
+        if rows.isEmpty { modelContext.insert(AnnotationOperation(id: id, contentKey: key, markID: mark, payload: payload)) }
+    }
+    func mergeFactRecord(key: String, id: String, payload: String) throws {
+        try UserSyncJSON.validateFact(payload, id: id)
+        let rows = try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.id == id }))
+        for row in rows {
+            try UserSyncJSON.validateFact(row.payload, id: row.id)
+            guard row.contentKey == key, Self.samePayload(row.payload, payload) else { throw UserSyncCompatibilityError() }
+        }
+        if rows.isEmpty { modelContext.insert(ReadingFact(id: id, contentKey: key, payload: payload)) }
+    }
     func importPending(_ transfer: UserDataTransfer, from: String, to: String) throws {
         try transaction {
             try requirePendingReadable(key: to)
@@ -681,38 +727,14 @@ extension UserDataStore {
             for value in transfer.facts { try UserSyncJSON.validateFact(value.payload, id: value.id) }
             for value in transfer.positions {
                 let incoming = try PositionCandidate(decode(StoredValue.self, value)).rekeyed(to: to)
-                let key = "position/" + to
-                let old = try values(key: key)[key]
-                let winner = try PositionCandidate.winner(old.map(PositionCandidate.init), incoming).stored
-                if old == nil || old?.updated != winner.updated || old?.token != winner.token {
-                    let rows = try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { $0.contentKey == to }))
-                    for row in rows { _ = try UserSyncJSON.storedValue(row.payload, key: key) }
-                    for row in rows { modelContext.delete(row) }
-                    modelContext.insert(UserPosition(contentKey: to, payload: try encode(winner)))
-                }
+                try mergePositionRecord(key: to, payload: encode(incoming.stored))
             }
-
             for value in transfer.operations {
-                let id = value.id
                 let mark = value.mark.hasPrefix("bookmark/" + from + "/") ? "bookmark/" + to + "/" + value.mark.split(separator: "/").last! : value.mark
-                let existing = try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.id == id }))
-                for row in existing {
-                    guard row.contentKey == to, row.markID == mark else { throw UserSyncCompatibilityError() }
-                    _ = try UserSyncJSON.annotation(row.payload, id: row.id)
-                }
-                guard existing.isEmpty else { continue }
-                modelContext.insert(AnnotationOperation(id: id, contentKey: to, markID: mark, payload: try UserSyncJSON.versioned(value.payload)))
+                try mergeOperationRecord(key: to, id: value.id, mark: mark, payload: UserSyncJSON.versioned(value.payload))
             }
-            for value in transfer.facts {
-                let id = value.id
-                let existing = try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.id == id }))
-                for row in existing {
-                    guard row.contentKey == to else { throw UserSyncCompatibilityError() }
-                    try UserSyncJSON.validateFact(row.payload, id: row.id)
-                }
-                guard existing.isEmpty else { continue }
-                modelContext.insert(ReadingFact(id: id, contentKey: to, payload: try UserSyncJSON.versioned(value.payload)))
-            }
+            for value in transfer.facts { try mergeFactRecord(key: to, id: value.id, payload: UserSyncJSON.versioned(value.payload)) }
+
         }
     }
     func removePending(key: String) throws {

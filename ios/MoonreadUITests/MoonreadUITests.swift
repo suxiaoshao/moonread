@@ -409,4 +409,38 @@ import XCTest
     add(screenshot)
   }
 
+  func testU21ExportAllDeleteAndRestoreReadingData() {
+    launch(["--ui-test-data-management", "--ui-test-storefront", "CHN"])
+    ready(app.buttons["设置"]).tap()
+    ready(element("dataManagementSettings")).tap()
+    ready(app.buttons["exportAllReadingData"]).tap()
+    ready(app.buttons["confirmExportAllReadingData"].firstMatch).tap()
+    ready(app.buttons["shareReadingBackup"], timeout: 30)
+    let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reading-data-"))
+    XCTAssertEqual(rows.count, 1)
+    rows.firstMatch.tap()
+    ready(app.buttons["confirmDeleteReadingData"].firstMatch).tap()
+    waitUntil { rows.count == 0 && !self.app.otherElements["readingDataWorking"].exists }
+    app.buttons["书架"].tap()
+    shelf()
+    XCTAssertTrue(ready(file(sample)).exists, "Clearing reading data must leave the original novel")
+    app.buttons["设置"].tap()
+    ready(app.buttons["importReadingBackup"]).tap()
+    ready(app.staticTexts["包含 1 本小说的阅读数据，其中 1 本在书架上"], timeout: 30)
+    ready(app.buttons["confirmImportReadingBackup"].firstMatch, timeout: 30).tap()
+    waitUntil { rows.count == 1 }
+    app.buttons["书架"].tap()
+    menu(sample)
+    app.buttons["小说详情"].tap()
+    ready(app.buttons["星灯"])
+    ready(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "全书位置", "50.0%" )).firstMatch)
+    ready(app.buttons["继续阅读"]).tap()
+    readableBody()
+    controls()
+    app.buttons["showChapters"].tap()
+    XCTAssertTrue(ready(app.buttons["chapter-0"]).label.contains("备份目录"))
+    let shot = XCTAttachment(screenshot: app.screenshot())
+    shot.name = "U21-backup-delete-restore"; shot.lifetime = .keepAlways; add(shot)
+  }
+
 }
