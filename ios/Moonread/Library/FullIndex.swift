@@ -152,6 +152,19 @@ final class FullIndexController {
             (includeCloud || !file.needsDownload) && !failures.contains { $0.matches(file) }
         }
     }
+    enum SheetAction { case start, stop, retry, none }
+    func sheetAction(_ shelf: String, inventory: IdentityInventory?, includeCloud: Bool) -> SheetAction {
+        if running && shelfID == shelf { return .stop }
+        guard let inventory else { return .none }
+        if canContinue(inventory, includeCloud: includeCloud) { return .start }
+        if failures.contains(where: { $0.file.shelfId == shelf }) { return .retry }
+        return .none
+    }
+    func sheetProgress(_ shelf: String, inventory: IdentityInventory?) -> (indexed: Int, total: Int)? {
+        if running && shelfID == shelf && hasInventory { return (indexed, total) }
+        return inventory.map { ($0.total - $0.pending.count, $0.total) }
+    }
+    private(set) var hasInventory = false
     private(set) var indexed = 0
     private(set) var total = 0
     private(set) var shelfID: String?
@@ -194,7 +207,7 @@ final class FullIndexController {
             } else { queued.append(QueuedRequest(shelf: shelf, includeCloud: includeCloud, scannedOnly: scannedOnly ? true : nil)) }
             request?.queued = queued; save(); resume(); return
         }
-        request = Request(shelf: shelf, includeCloud: includeCloud, resume: true, scannedOnly: scannedOnly ? true : nil); shelfID = shelf; message = nil; save()
+        request = Request(shelf: shelf, includeCloud: includeCloud, resume: true, scannedOnly: scannedOnly ? true : nil); shelfID = shelf; hasInventory = false; indexed = 0; total = 0; message = nil; save()
         if #available(iOS 26.0, *), userInitiated {
             let identifier = Self.continuedPrefix + UUID().uuidString
             if BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil, launchHandler: FullIndexSystemCallback.launch { self.attach($0) }) {
@@ -251,7 +264,7 @@ final class FullIndexController {
                 if finishedShelf, var queued = self.request?.queued, !queued.isEmpty {
                     let next = queued.removeFirst()
                     self.request = Request(shelf: next.shelf, includeCloud: next.includeCloud, resume: true, queued: queued, scannedOnly: next.scannedOnly)
-                    shelfID = next.shelf; indexed = 0; total = 0; message = nil; save(); resume()
+                    shelfID = next.shelf; hasInventory = false; indexed = 0; total = 0; message = nil; save(); resume()
                 } else {
                     finishBackground(success: completed)
                     if !completed {
@@ -267,6 +280,7 @@ final class FullIndexController {
                     failures.removeAll { failure in
                         failure.file.shelfId == request.shelf && !inventory.pending.contains { failure.matches($0) }
                     }
+                    hasInventory = true
                     total = inventory.total
                     indexed = total - inventory.pending.count
                     if !(await service.identityMayRun()) { message = String(localized: "阅读结束后继续建立索引", table: "FullIndex") }
@@ -312,49 +326,83 @@ struct FullIndexView: View {
     let openFailure: (String) -> Void
     @State private var inventory: IdentityInventory?
     @State private var includeCloud = false
+    @State private var loadError: String?
     @Environment(\.dismiss) private var dismiss
+    private var active: Bool { controller.shelfID == shelfID && controller.running }
+    private var failures: [IndexFailure] { controller.failures.filter { $0.file.shelfId == shelfID } }
+    private var counts: (indexed: Int, total: Int)? { controller.sheetProgress(shelfID, inventory: inventory) }
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Text("已索引 \(controller.shelfID == shelfID ? controller.indexed : (inventory.map { $0.total - $0.pending.count } ?? 0)) / \(controller.shelfID == shelfID ? controller.total : (inventory?.total ?? 0))", tableName: "FullIndex")
-                        .accessibilityIdentifier("fullIndexProgress")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    if let inventory { Text(inventory.shelf.builtin ? String(localized: "我的书架") : inventory.shelf.name).font(.subheadline).foregroundStyle(.secondary) }
+                    if let counts {
+                        VStack(alignment: .leading, spacing: 12) {
+                            if counts.total == 0 { Text("书架中还没有小说", tableName: "FullIndex").font(.title2.bold()) }
+                            else {
+                                Text("已索引 \(counts.indexed) / \(counts.total) 本", tableName: "FullIndex").font(.title.bold()).accessibilityIdentifier("fullIndexProgress")
+                                ProgressView(value: Double(counts.indexed), total: Double(max(1, counts.total))).accessibilityLabel(Text("索引进度", tableName: "FullIndex"))
+                            }
+                        }
+                    } else if loadError == nil {
+                        ProgressView { Text("正在检查书架…", tableName: "FullIndex") }.accessibilityIdentifier("fullIndexChecking")
+                    }
+                    if let loadError {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Label(loadError, systemImage: "exclamationmark.circle")
+                            Button { Task { await loadInventory() } } label: { Text("重试", tableName: "FullIndex") }.buttonStyle(.bordered)
+                        }.accessibilityIdentifier("fullIndexLoadError")
+                    }
                     if let inventory, inventory.pending.contains(where: \.needsDownload) {
-                        Toggle(isOn: $includeCloud) {
-                            if inventory.pending.contains(where: { $0.needsDownload && $0.size == 0 }) {
-                                Text("包含未下载的 iCloud 文件（下载量待确认）", tableName: "ShelfRecovery")
-                            } else {
-                                Text("包含未下载的 iCloud 文件（需下载 \(ByteCountFormatter.string(fromByteCount: Int64(clamping: inventory.cloudBytes), countStyle: .file))）", tableName: "FullIndex")
+                        let cloud = inventory.pending.filter(\.needsDownload)
+                        GroupBox {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Toggle(isOn: $includeCloud) { Text("包含未下载的 iCloud 文件", tableName: "FullIndex") }.disabled(active)
+                                    .accessibilityIdentifier("fullIndexIncludeCloud")
+                                Text("\(cloud.count) 本，已知下载量 \(ByteCountFormatter.string(fromByteCount: Int64(clamping: inventory.cloudBytes), countStyle: .file))", tableName: "FullIndex").font(.footnote).foregroundStyle(.secondary)
+                                if cloud.contains(where: { $0.size == 0 }) { Text("部分文件大小未知", tableName: "ShelfRecovery").font(.footnote).foregroundStyle(.secondary) }
                             }
                         }
                     }
-                    if inventory?.pending.contains(where: { $0.needsDownload && $0.size == 0 }) == true { Text("部分文件大小未知", tableName: "ShelfRecovery").foregroundStyle(.secondary) }
-                    if let message = controller.message { Text(verbatim: message).foregroundStyle(.secondary) }
-                    if controller.running {
-                        Button(role: .cancel) { controller.cancel() } label: { Text("取消", tableName: "FullIndex") }
-                    } else if let inventory, controller.canContinue(inventory, includeCloud: includeCloud) {
-                        Button { controller.start(shelfID, includeCloud: includeCloud, userInitiated: true, files: inventory.pending) } label: { Text(controller.shelfID == shelfID ? "继续" : "建立索引", tableName: "FullIndex") }.accessibilityIdentifier("fullIndexStart")
+                    if controller.shelfID == shelfID, let message = controller.message { Label(message, systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary) }
+                    if !failures.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("未能建立索引", tableName: "FullIndex").font(.headline)
+                            Text("点开文件可以处理编码或查看原因。", tableName: "FullIndex").font(.footnote).foregroundStyle(.secondary)
+                            ForEach(failures) { failure in
+                                Button { openFailure(failure.id) } label: {
+                                    HStack {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(verbatim: failure.file.relativePath)
+                                            Text(verbatim: failure.message).font(.caption).foregroundStyle(.secondary)
+                                        }
+                                        Spacer(); Image(systemName: "chevron.right").font(.footnote)
+                                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
+                                }.accessibilityIdentifier("fullIndexFailure-" + failure.id)
+                            }
+                        }
                     }
-                }
-                let failures = controller.failures.filter { $0.file.shelfId == shelfID }
-                if !failures.isEmpty {
-                    Section {
-                        ForEach(failures) { failure in
-                            Button { openFailure(failure.id) } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(verbatim: failure.file.relativePath)
-                                    Text(verbatim: failure.message).font(.caption).foregroundStyle(.secondary)
-                                }
-                            }.accessibilityIdentifier("fullIndexFailure-" + failure.id)
-                        }
-                        if !controller.running {
-                            Button { controller.start(shelfID, includeCloud: includeCloud, userInitiated: true, files: inventory?.pending) } label: { Text("重试失败项", tableName: "FullIndex") }
-                        }
-                    } header: { Text("未能建立索引", tableName: "FullIndex") }
-                }
-            }.navigationTitle(Text("建立索引", tableName: "FullIndex"))
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button { dismiss() } label: { Text("完成") } } }
-                .task(id: controller.running) { inventory = try? await ReaderService.shared.identityInventory(shelfID) }
+                }.padding().frame(maxWidth: .infinity, alignment: .leading)
+            }.themedPage().navigationTitle(Text("建立索引", tableName: "FullIndex"))
+            .safeAreaInset(edge: .bottom) { primaryButton.padding().frame(maxWidth: .infinity).background(.bar) }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button { dismiss() } label: { Text("完成") } } }
+            .task(id: controller.running) { await loadInventory() }
         }
+    }
+    @ViewBuilder private var primaryButton: some View {
+        switch controller.sheetAction(shelfID, inventory: loadError == nil ? inventory : nil, includeCloud: includeCloud) {
+        case .stop:
+            Button { controller.cancel() } label: { Text("停止", tableName: "FullIndex").frame(maxWidth: .infinity) }.buttonStyle(.bordered).controlSize(.large).accessibilityIdentifier("fullIndexStop")
+        case .start:
+            Button { start() } label: { Text("开始建立索引", tableName: "FullIndex").frame(maxWidth: .infinity) }.buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).accessibilityIdentifier("fullIndexStart")
+        case .retry:
+            Button { start() } label: { Text("重试失败项", tableName: "FullIndex").frame(maxWidth: .infinity) }.buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).accessibilityIdentifier("fullIndexRetry")
+        case .none: EmptyView()
+        }
+    }
+    private func start() { controller.start(shelfID, includeCloud: includeCloud, userInitiated: true, files: inventory?.pending) }
+    private func loadInventory() async {
+        do { inventory = try await ReaderService.shared.identityInventory(shelfID); loadError = nil }
+        catch { loadError = ReaderMessages.error(error) }
     }
 }

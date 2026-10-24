@@ -20,6 +20,10 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
     XCTAssertEqual(inventory.pending.count, 1)
     XCTAssertEqual(controller.failures.map(\.file.name), ["binary.txt"])
     XCTAssertFalse(controller.canContinue(inventory, includeCloud: true))
+    XCTAssertEqual(controller.sheetAction("builtin", inventory: nil, includeCloud: true), .none)
+    XCTAssertEqual(controller.sheetAction("builtin", inventory: inventory, includeCloud: true), .retry)
+    XCTAssertTrue(controller.hasInventory)
+    XCTAssertEqual(controller.indexed, inventory.total - inventory.pending.count)
     XCTAssertFalse(controller.failures[0].message.contains("更换编码"))
     let errors: [ReaderError] = [.Io(message: "synthetic"), .EmptyBook, .TextCapacityExceeded]
     for error in errors {
@@ -30,10 +34,17 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
     try await scan(f)
     let changed = try await f.service.identityInventory("builtin")
     XCTAssertTrue(controller.canContinue(changed, includeCloud: false))
+    XCTAssertEqual(controller.sheetAction("builtin", inventory: changed, includeCloud: false), .start)
     controller.start("builtin", includeCloud: false, userInitiated: false)
     await controller.waitForCompletion()
     XCTAssertTrue(controller.failures.isEmpty)
     XCTAssertTrue(try f.core.pendingIdentityFiles(shelfId: "builtin").isEmpty)
+    try Data("第一章 新到的书\n原创新增正文。".utf8).write(to: f.directory.appendingPathComponent("new.txt"))
+    try await scan(f)
+    let refreshed = try await f.service.identityInventory("builtin")
+    XCTAssertNil(controller.sheetProgress("builtin", inventory: nil), "Unknown counts must not use a previous run's totals")
+    XCTAssertEqual(controller.sheetProgress("builtin", inventory: refreshed)?.total, 3)
+    XCTAssertEqual(controller.sheetProgress("builtin", inventory: refreshed)?.indexed, 2)
   }
 
   @MainActor func testBackgroundTaskCallbacksHopToMainActor() async {
@@ -85,6 +96,7 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
         defaults: defaults, service: f.service, registerTasks: false)
       controller.start("builtin", includeCloud: false, userInitiated: false)
       XCTAssertTrue(controller.running)
+      XCTAssertEqual(controller.sheetAction("builtin", inventory: nil, includeCloud: false), .stop)
       controller.start(secondID, includeCloud: false, userInitiated: false)
       let saved = try XCTUnwrap(defaults.data(forKey: "Moonread.fullIndex.request.v1"))
       let request = try XCTUnwrap(JSONSerialization.jsonObject(with: saved) as? [String: Any])
