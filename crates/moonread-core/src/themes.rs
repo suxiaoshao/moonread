@@ -96,12 +96,13 @@ pub fn reader_texture_alpha(paper: u32, ink: u32, strength: ReaderTextureStrengt
     };
     let paper = srgb_channels(paper);
     let ink = srgb_channels(ink);
-    let lightness = oklab_lightness(paper);
+    let lightness = texture_lightness(paper);
     // Match normal source-over compositing in the standard sRGB tile. Only
-    // the OKLab conversion linearizes the mixed RGB channels.
+    // the OKLab conversion linearizes the mixed RGB channels; strength is
+    // measured in toe-corrected Lr to avoid the steep near-black L curve.
     let delta = |alpha: f64| {
         let mixed = std::array::from_fn(|i| paper[i] + (ink[i] - paper[i]) * alpha);
-        (oklab_lightness(mixed) - lightness).abs()
+        (texture_lightness(mixed) - lightness).abs()
     };
     // Custom paper/ink may be too close to reach the requested change. Use
     // the available endpoint; this is not a palette-saving restriction.
@@ -138,6 +139,17 @@ fn oklab_lightness(srgb: [f64; 3]) -> f64 {
     let m = (0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b).cbrt();
     let s = (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b).cbrt();
     0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s
+}
+
+fn texture_lightness(srgb: [f64; 3]) -> f64 {
+    // Ottosson's Okhsl toe function: OKLab L → perceptual lightness Lr.
+    // https://bottosson.github.io/posts/colorpicker/#common-code
+    let lightness = oklab_lightness(srgb);
+    let k1 = 0.206;
+    let k2 = 0.03;
+    let k3 = (1.0 + k1) / (1.0 + k2);
+    let x = k3 * lightness - k1;
+    (x + (x * x + 4.0 * k2 * k3 * lightness).sqrt()) / 2.0
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
@@ -702,6 +714,21 @@ mod texture_tests {
         assert!((oklab_lightness([1.0; 3]) - 1.0).abs() < 1e-7);
         assert_eq!(oklab_lightness([0.0; 3]), 0.0);
         assert!((oklab_lightness([1.0, 0.0, 0.0]) - 0.6279553606).abs() < 1e-7);
+        assert_eq!(texture_lightness([0.0; 3]), 0.0);
+        assert!((texture_lightness([1.0; 3]) - 1.0).abs() < 1e-7);
+        let black = builtin_theme_palettes()
+            .into_iter()
+            .find(|p| p.id == "black-dark")
+            .unwrap();
+        let alpha = reader_texture_alpha(
+            black.colors.paper,
+            black.colors.ink,
+            ReaderTextureStrength::Strong,
+        );
+        assert!(
+            (0.02..0.03).contains(&alpha),
+            "pure-black strong alpha: {alpha}"
+        );
         for palette in builtin_theme_palettes() {
             for colors in [palette.colors, palette.high_contrast] {
                 let paper = srgb_channels(colors.paper);
@@ -717,10 +744,10 @@ mod texture_tests {
                         palette.id
                     );
                     let mixed = std::array::from_fn(|i| paper[i] * (1.0 - alpha) + ink[i] * alpha);
-                    let delta = (oklab_lightness(mixed) - oklab_lightness(paper)).abs();
+                    let delta = (texture_lightness(mixed) - texture_lightness(paper)).abs();
                     assert!(
                         (delta - target).abs() < 1e-7,
-                        "{} {strength:?}: ΔL={delta}",
+                        "{} {strength:?}: ΔLr={delta}",
                         palette.id
                     );
                 }
