@@ -136,12 +136,18 @@ fn reader_texture_preferences_migrate_and_unknown_choices_become_none() {
         strength: ReaderTextureStrength::Medium,
     });
     prefs.reader_dark_texture = Some(ReaderTextureChoice {
-        id: ReaderTextureId::Night,
+        id: ReaderTextureId::Grain,
         strength: ReaderTextureStrength::Strong,
     });
     let encoded = encode_theme_preferences(prefs.clone()).unwrap();
     assert_eq!(decode_theme_preferences(encoded.clone()).unwrap(), prefs);
     let mut fields: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    fields["reader_dark_texture"] = serde_json::json!({"id":"night-v1","strength":"strong"});
+    let migrated = decode_theme_preferences(fields.to_string()).unwrap();
+    assert_eq!(migrated, prefs);
+    let migrated = encode_theme_preferences(migrated).unwrap();
+    assert!(migrated.contains("grain-v1"));
+    assert!(!migrated.contains("night-v1"));
     fields["reader_light_texture"] = serde_json::json!({"id":"future-v9","strength":"light"});
     fields["reader_dark_texture"] = serde_json::json!({"id":"night-v1","strength":"future"});
     let decoded = decode_theme_preferences(fields.to_string()).unwrap();
@@ -172,37 +178,4 @@ fn reader_texture_preferences_migrate_and_unknown_choices_become_none() {
             .preferences,
         baseline
     );
-}
-
-#[test]
-fn reader_texture_ids_strengths_and_alpha_are_static() {
-    assert_eq!(
-        reader_texture_ids(ThemeAppearance::Light),
-        vec![
-            ReaderTextureId::Paper,
-            ReaderTextureId::Kraft,
-            ReaderTextureId::Linen
-        ]
-    );
-    assert_eq!(
-        reader_texture_ids(ThemeAppearance::Dark),
-        vec![ReaderTextureId::Night]
-    );
-    for id in reader_texture_ids(ThemeAppearance::Light)
-        .into_iter()
-        .chain(reader_texture_ids(ThemeAppearance::Dark))
-    {
-        assert_eq!(
-            reader_texture_choice(id).strength,
-            ReaderTextureStrength::Light
-        );
-        let expected = if id == ReaderTextureId::Night {
-            [3, 6, 9]
-        } else {
-            [6, 10, 14]
-        };
-        for (strength, alpha) in reader_texture_strengths().into_iter().zip(expected) {
-            assert_eq!(reader_texture_alpha(id, strength), f64::from(alpha) / 255.0);
-        }
-    }
 }

@@ -81,11 +81,12 @@ struct ThemeSurface: Equatable {
     }
     struct PaperInput: Equatable {
         let paper: UInt32
+        let ink: UInt32
         let choice: ReaderTextureChoice?
         let scale: CGFloat
     }
     func paperInput(scale: CGFloat) -> PaperInput {
-        PaperInput(paper: paper.opaqueRGB, choice: plan.colors == nil ? nil : readerTexture, scale: max(1, scale))
+        PaperInput(paper: paper.opaqueRGB, ink: ink.opaqueRGB, choice: plan.colors == nil ? nil : readerTexture, scale: max(1, scale))
     }
     static func paperBackground(_ input: PaperInput) -> UIColor {
         guard input.choice != nil else { return UIColor(rgb: input.paper) }
@@ -99,8 +100,9 @@ struct ThemeSurface: Equatable {
             paper.setFill(); context.fill(CGRect(x: 0, y: 0, width: 256, height: 256))
             context.cgContext.interpolationQuality = .none
             if let choice = input.choice, let source = UIImage(named: choice.id.assetName) {
-                source.draw(in: CGRect(x: 0, y: 0, width: 256, height: 256), blendMode: .normal,
-                            alpha: CGFloat(readerTextureAlpha(id: choice.id, strength: choice.strength)))
+                source.withTintColor(UIColor(rgb: input.ink), renderingMode: .alwaysOriginal)
+                    .draw(in: CGRect(x: 0, y: 0, width: 256, height: 256), blendMode: .normal,
+                          alpha: CGFloat(readerTextureAlpha(paper: input.paper, ink: input.ink, strength: choice.strength)))
             }
         }
     }
@@ -109,10 +111,10 @@ struct ThemeSurface: Equatable {
 
 extension ReaderTextureId {
     var label: LocalizedStringKey {
-        switch self { case .paper: "宣纸"; case .kraft: "牛皮纸"; case .linen: "细麻布"; case .night: "夜间细噪点" }
+        switch self { case .paper: "宣纸"; case .kraft: "牛皮纸"; case .linen: "细麻布"; case .grain: "颗粒" }
     }
     var assetName: String {
-        switch self { case .paper: "ReaderTexturePaper"; case .kraft: "ReaderTextureKraft"; case .linen: "ReaderTextureLinen"; case .night: "ReaderTextureNight" }
+        switch self { case .paper: "ReaderTexturePaper"; case .kraft: "ReaderTextureKraft"; case .linen: "ReaderTextureLinen"; case .grain: "ReaderTextureGrain" }
     }
 }
 extension ReaderTextureStrength {

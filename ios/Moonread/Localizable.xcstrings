@@ -3879,7 +3879,7 @@
     "宣纸": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Rice Paper"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "宣紙"}}}},
     "牛皮纸": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Kraft Paper"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "牛皮紙"}}}},
     "细麻布": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Fine Linen"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "細麻布"}}}},
-    "夜间细噪点": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Night Grain"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "夜間細噪點"}}}},
+    "颗粒": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Grain"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "顆粒"}}}},
     "淡": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Light"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "淡"}}}},
     "浓": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Strong"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "濃"}}}},
     "请选择具体配色后使用纹理": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Choose a specific palette to use textures."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "請選擇具體配色後使用紋理"}}}},

@@ -155,7 +155,11 @@ ThemeSnapshot 仅用于组合当前解析输入，以及可丢弃、可重建的
 
 ThemePreferences 的 reader_light_texture / reader_dark_texture 是可选本机槽位，默认无，与配色独立；选择无会清空该槽，再启用默认淡。旧 JSON 缺字段按无读取；未知纹理 ID 或强度也归无，未知值不保留，读取不回写。ThemePalette、同步协议和备份格式不变。更换配色保留纹理，系统来源暂不绘制，控件置灰并说明「请选择具体配色后使用纹理」；恢复具体配色时恢复所选槽位。高对比照常绘制，不检测或降低纹理对比度。
 
-浅槽为宣纸 paper-v1、牛皮纸 kraft-v1、细麻布 linen-v1；深槽为夜间细噪点 night-v1。Rust 提供 ID/强度枚举及档位 alpha：浅纹理淡/中/浓为 6/10/14 除以 255，夜间为 3/6/9 除以 255。四张 768×768 归一化 RGBA source PNG（每张对应 256pt）随 Asset Catalog 分发，平台按 256pt 周期及 displayScale 合成不透明 tile，仅保留当前输入和结果。
+浅色、深色槽都可以选择宣纸 paper-v1、牛皮纸 kraft-v1、细麻布 linen-v1、颗粒 grain-v1。旧值 night-v1 读取时映射为 grain-v1，下一次明确保存才输出新 ID；四种纹理共用强度规则。PNG 只提供 alpha mask，纹理颜色取当前解析配色的正文色 ink，不使用素材的黑白 RGB。
+
+淡／中／浓对应 mask 满值像素相对 paper 的 OKLab L 峰值变化 0.015／0.025／0.035。Rust 接收 paper、ink 和档位，沿 paper→ink 的正常 sRGB source-over 混合方向二分求 alpha，再将混合色线性化以计算 OKLab L；Swift 只以 mask alpha × 返回 alpha 合成 tile，不复制颜色计算。转换使用 [OKLab 原始实现的 2021 矩阵](https://bottosson.github.io/posts/oklab/#converting-from-linear-srgb-to-oklab)。若自定义 paper/ink 本身的亮度差不足目标，alpha 取 1，不阻止保存。近黑纸面不作特殊处理，8-bit 最终输出仍有量化，效果由设备实读判断。
+
+四张 768×768 归一化 RGBA source PNG（每张对应 256pt）随 Asset Catalog 分发。平台按 256pt 周期及 displayScale 合成不透明 tile，仅保留当前输入（paper、ink、纹理、档位、scale）和结果。颗粒素材名为 ReaderTextureGrain/grain-source.png，沿用原颗粒 mask。
 
 滚动时 pattern 放在不滚动的 readingSurface，正文和内层标题页透明；分页把 pattern 放在原 PageController 的正文 view 和封面 hosting view，随页移动。根外围和底部 fade 继续用纯 paper。纹理只换背景，不改字体、textStorage、排版、选区或导航位置；不新建背景层、缓存服务、随机运行时生成器或同步记录。
 

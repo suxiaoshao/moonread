@@ -60,7 +60,7 @@ final class ReaderSettingsReaderIntegrationTests: ReaderIntegrationFixture {
     await fulfillment(of: [firstWrite], timeout: 2)
     store.update {
       $0.readerMode = $0.readerMode == .dark ? .light : .dark
-      $0.readerDarkTexture = ReaderTextureChoice(id: .night, strength: .strong)
+      $0.readerDarkTexture = ReaderTextureChoice(id: .grain, strength: .strong)
     }
     let newer = store.snapshot.preferences
     writer.succeed()
@@ -96,7 +96,7 @@ final class ReaderSettingsUserDataTests: UserDataFixture {
     var preferences = defaultThemeSnapshot().preferences
     preferences.appLight = .palette(id: palette.id)
     preferences.readerLightTexture = ReaderTextureChoice(id: .linen, strength: .medium)
-    preferences.readerDarkTexture = ReaderTextureChoice(id: .night, strength: .strong)
+    preferences.readerDarkTexture = ReaderTextureChoice(id: .grain, strength: .strong)
     let selected = try await service.saveThemes(preferences)
     XCTAssertEqual(selected.preferences.appLight, .palette(id: palette.id))
     let reloaded = try await service.themes()

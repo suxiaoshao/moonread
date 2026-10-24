@@ -383,7 +383,7 @@ struct PalettePicker: View {
                 setTexture(choice)
             })) {
                 Text("无").tag(ReaderTextureId?.none)
-                ForEach(readerTextureIds(appearance: appearance), id: \.self) { id in Text(id.label).tag(Optional(id)) }
+                ForEach(readerTextureIds(), id: \.self) { id in Text(id.label).tag(Optional(id)) }
             }.accessibilityIdentifier("readerTexture")
             if let texture {
                 Picker("纹理强度", selection: Binding(get: { texture.strength }, set: { value in
