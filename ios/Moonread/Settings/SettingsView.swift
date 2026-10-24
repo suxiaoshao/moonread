@@ -268,9 +268,13 @@ struct AppThemePreferencesView: View {
 func paletteDisplayName(_ value: ThemePalette) -> String {
     if value.custom { return value.name }
     switch value.id.split(separator: "-").first {
+    case "apricot": return String(localized: "杏桃")
     case "mint": return String(localized: "薄荷")
     case "lilac": return String(localized: "雾紫")
-    default: return String(localized: "杏桃")
+    case "black": return String(localized: "纯黑夜间")
+    case "white": return String(localized: "素白")
+    case "bean": return String(localized: "豆沙绿")
+    default: return value.name
     }
 }
 

@@ -1,7 +1,48 @@
 use moonread_core::*;
 
 #[test]
-fn ink_must_be_readable_on_accent_surface() {
+fn builtin_palettes_are_readable_and_preserve_custom_capacity() {
+    let palettes = builtin_theme_palettes();
+    for palette in &palettes {
+        assert!(
+            theme_colors_readable(palette.colors.clone()),
+            "{} standard",
+            palette.id
+        );
+        assert!(
+            theme_colors_readable(palette.high_contrast.clone()),
+            "{} high contrast",
+            palette.id
+        );
+    }
+    for id in ["black-dark", "white-light", "bean-light"] {
+        assert!(palettes.iter().any(|palette| palette.id == id), "{id}");
+    }
+    assert_eq!(
+        palettes
+            .iter()
+            .find(|palette| palette.id == "black-dark")
+            .unwrap()
+            .colors
+            .paper,
+        0x000000
+    );
+    let mut snapshot = default_theme_snapshot();
+    for index in 0..64 {
+        let mut custom = palettes[0].clone();
+        custom.id = format!("custom-capacity-{index}");
+        custom.name = format!("Custom {index}");
+        custom.custom = true;
+        snapshot.palettes.push(custom);
+    }
+    let encoded = encode_theme_snapshot(snapshot.clone()).unwrap();
+    assert_eq!(decode_theme_snapshot(encoded).unwrap(), snapshot);
+    let mut extra = palettes[0].clone();
+    extra.id = "custom-over-capacity".into();
+    extra.custom = true;
+    snapshot.palettes.push(extra);
+    assert!(encode_theme_snapshot(snapshot).is_err());
+
     // User messages put ink on accentSurface; a custom palette can edit it alone.
     let mut colors = builtin_theme_palettes()[0].colors.clone();
     assert!(theme_colors_readable(colors.clone()));
