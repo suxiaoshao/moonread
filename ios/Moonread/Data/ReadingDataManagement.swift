@@ -32,12 +32,40 @@ extension ReaderService {
         let configuration = userCloudConfigurationRevision
         let store = try await userStore()
         var value = try await store.readingDataInventory()
-        value.pending += try await userStore(pending: true).pendingKeys().count
+        let pending = try await userStore(pending: true).readingDataInventory()
+        value.pending += pending.pending
+        value.unsupported += pending.unsupported
+        value.diagnostics += pending.diagnostics
         let core = try textCore()
         for i in value.items.indices {
             let key = value.items[i].id
-            if let source = try core.sourceFilesForSha(sha: key).first { value.items[i].title = source.title; value.items[i].linked = true }
+            do {
+                if let source = try core.sourceFilesForSha(sha: key).first { value.items[i].title = source.title; value.items[i].linked = true }
+            } catch { value.diagnostics.append(.init(bookKey: key, title: value.items[i].title, recordType: "source", reason: .readFailure)); value.unsupported += 1 }
         }
+        for i in value.diagnostics.indices {
+            guard let key = value.diagnostics[i].bookKey else { continue }
+            if let item = value.items.first(where: { $0.id == key }), !item.title.isEmpty { value.diagnostics[i].title = item.title; continue }
+            do {
+                switch try parseReadingKey(value: key) {
+                case .pending(let id):
+                    do { value.diagnostics[i].title = try core.importStatus(bookId: id).text.title }
+                    catch ReaderError.NotFound { /* The source is no longer available on this device. */ }
+                case .formal:
+                    if let source = try core.sourceFilesForSha(sha: key).first {
+                        value.diagnostics[i].title = source.title; value.diagnostics[i].source = source.relativePath
+                    }
+                }
+            } catch {
+                // Keep the original reason; the source lookup has its own diagnosis.
+                if !value.diagnostics.contains(where: { $0.bookKey == key && $0.recordType == "source" && $0.reason == .readFailure }) {
+                    value.diagnostics.append(.init(bookKey: key, recordType: "source", reason: .readFailure)); value.unsupported += 1
+                }
+            }
+        }
+        value.diagnostics = Dictionary(value.diagnostics.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }).values.sorted { $0.id < $1.id }
+        value.pending = Set(value.diagnostics.filter { $0.reason == .pending }.compactMap(\.bookKey)).count
+        value.unsupported = value.diagnostics.filter { $0.reason != .pending }.count
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         value.configuration = configuration
         return value
@@ -46,7 +74,7 @@ extension ReaderService {
     func deleteReadingData(_ keys: Set<String>, configuration expected: UUID? = nil) async throws -> Bool {
         let configuration = expected ?? userCloudConfigurationRevision
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-        for key in keys { try BackupRows.formal(key) }
+        for key in keys { _ = try parseReadingKey(value: key) }
         // Finish writes before checking live readers; completed/failed batches
         // no longer own reading leases or need a separate discard operation.
         await managementStatisticsWriter().drain()
@@ -54,12 +82,15 @@ extension ReaderService {
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         guard !readingDataIsBusy(keys) else { throw ReadingDataError.busy }
         let pending = try await userStore(pending: true)
-        let resolutions = try textCore().resolveReadingKeys(keys: try await pending.allReadingDataKeys().map { try parseReadingKey(value: $0) })
+        let formal = try await userStore()
+        let pendingKeys = try await pending.allReadingDataKeys()
+        let owned = try await formal.allReadingDataKeys().union(pendingKeys)
+        let resolutions = try textCore().resolveReadingKeys(keys: owned.map { try parseReadingKey(value: $0) })
         let aliases = Set(resolutions.filter { keys.contains(serializeReadingKey(key: $0.effective)) }.map { serializeReadingKey(key: $0.original) })
         // A stop between these commits leaves formal data visible and retryable.
         // No durable receipt can later delete data that has arrived since then.
         try await pending.deleteReadingData(keys: aliases)
-        try await userStore().deleteReadingData(keys: keys)
+        try await formal.deleteReadingData(keys: keys.union(aliases))
         for key in keys.union(aliases) { localReadingWriteLeases[key] = UUID() }
         for alias in aliases {
             if case let .pending(id) = try parseReadingKey(value: alias) { promotedUserKeys.remove(id); pendingPromotionIDs.remove(id) }

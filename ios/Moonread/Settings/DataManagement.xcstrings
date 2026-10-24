@@ -1748,6 +1748,28 @@
           }
         }
       }
+    },
+    "阅读数据无法读取，原始记录已保留。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reading data could not be read. The original records have been kept."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "阅读数据无法读取，原始记录已保留。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "閱讀資料無法讀取，原始紀錄已保留。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

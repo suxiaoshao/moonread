@@ -129,7 +129,7 @@ SwiftData 的 `UserDataStore`（ModelActor）是用户数据持久化入口。`R
 
 同步字符串 payload 的顶层 envelope 使用整数 `v`，缺失单独视为 1；非整数、非法版本或高于 1 不理解。版本覆盖内层 value，不在嵌套对象重复，也不在 SwiftData `@Model` 上添加版本属性。校验集中在 Swift `UserSyncJSON` 存储边界，不给 Rust/UniFFI 类型增加 serde Map；通过校验后才交给计算投影。整数字段按声明宽度直接解码，不先经过 Double。
 
-v1 写入所有字段，Optional 的 nil 显式写 `null`。读取同时检查**键集合与类型**：必需键缺失、null 用在非 Optional 上、错误类型、未声明字段（含嵌套对象）、解码失败都隔离。兼容字段默认值白名单当前为空，只有未来另行声明的新增字段可采用安全默认。开发期旧的省略 nil 编码不兼容；生产 CloudKit 为空，发布前由开发者删除重装开发版、清理开发环境数据，不增加旧编码读取分支或运行时自动清库。
+v1 写入所有字段，Optional 的 nil 显式写 `null`。读取同时检查**键集合与类型**：必需键缺失、null 用在非 Optional 上、错误类型、未声明字段（含嵌套对象）、解码失败都隔离。位置的 `source_hint` 是兼容例外：TestFlight 1.0.0(2) 未写此字段，缺失按 nil 读取；其他必需字段仍不能缺失。未分发开发版的其他省略 nil 编码不作为通用缺省例外；已发布数据按明确的兼容规则保留，不运行时自动清库。
 
 | 顶层记录 | v1 字段（除可缺失的 v 外，其余键必须存在） |
 | --- | --- |
@@ -138,7 +138,7 @@ v1 写入所有字段，Optional 的 nil 显式写 `null`。读取同时检查**
 | ReadingFact | content_key、title、device、slice |
 | StatisticsClear | book、session、through（Int64）、ids |
 
-批注 `content:null` 是删除 tombstone，`mergedInto:null` 是未合并；`relatedMarks` 总是数组。统计清除的 `book:null` / `session:null` 才表示不限定该维度，缺键不能解释为全局。位置内层字段为 content_key/offset；章节为 content_key/offset/title/level/excluded；批注 content 为 start/end/excerpt/note。slice、exposures、cover、调色板及颜色对象逐层使用当前声明的完整字段集合；UserCover 的 bytes 不加 envelope，约定同 id 字节不可变。不支持的封面格式显示占位并保留引用与原字节。
+批注 `content:null` 是删除 tombstone，`mergedInto:null` 是未合并；`relatedMarks` 总是数组。统计清除的 `book:null` / `session:null` 才表示不限定该维度，缺键不能解释为全局。位置内层字段为 content_key/offset/source_hint（历史缺失来源线索按 nil 读取）；章节为 content_key/offset/title/level/excluded；批注 content 为 start/end/excerpt/note。slice、exposures、cover、调色板及颜色对象逐层使用当前声明的完整字段集合；UserCover 的 bytes 不加 envelope，约定同 id 字节不可变。不支持的封面格式显示占位并保留引用与原字节。
 
 v1 key 白名单：`position/{contentKey}`、`chapter/{contentKey}/{offset}`、`palette/{id}`、`metadata/{sha}/{author,synopsis,status,cover,tag-*}`。遍历、投影、批量操作和 pending 转移不处理未知 key；保留其原始记录，metadata 只投影已知属性。内层 null 仅用于声明允许删除的章节、封面、标签、调色板；author/synopsis/status 必须是字符串。
 
@@ -170,3 +170,5 @@ UserValue 按 `(updated, token)` 做整值 LWW；位置候选写入与压缩也�
 备份和 pending 晋升共用位置胜者及不可变批注/事实接入，保留 updated/token、ID 和因果，冲突 ID 拒绝并回滚。历史 pending 晋升可能留下内层 pending content_key 的事实：正式 ReadingFact.contentKey 为权威路由，与现有 visibleFacts 一样处理，备份保持原 payload；内外两个正式 SHA 不一致仍拒绝。未知必需 payload 保留原数据并阻止导入，不降级或重编码。
 
 同 token 的位置重试按 updated 与解码后 PositionValue 的内容相等判断，不比较 JSON 键排列；pending 晋升和备份位置接入共用该判断。备份快照是 UserDataStore 上不挂起的同步调用；预览后的最终校验在导入事务中执行，保留账户/configuration 检查，不将全局投影缓存 epoch 当成该 store 的一致性凭据。
+
+库存诊断区分较新格式（高 v、未知类型或字段）、数据无法读取（坏结构）与读取失败（存储/查询异常）；只在确认为较新格式时建议更新。诊断只返回书键、可得书名/来源、记录类型和原因，不返回 payload。统计清除的 book 可以是正式 SHA 或非空 pending 键，旧作用域在库存、备份和整书删除中保持可读。

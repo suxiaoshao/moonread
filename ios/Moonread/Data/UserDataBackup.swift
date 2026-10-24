@@ -38,10 +38,30 @@ struct ReadingDataItem: Identifiable, Sendable {
     var unsupported = false
     var linked = false
 }
+/// A small, transient inventory explanation. Never contains a raw payload.
+struct ReadingDataDiagnostic: Identifiable, Sendable {
+    enum Reason: String, Sendable { case newerFormat, unreadable, readFailure, pending }
+    var bookKey: String?
+    var title = ""
+    var source = ""
+    var recordType: String
+    var reason: Reason
+    var id: String { (bookKey ?? "other") + "/" + recordType + "/" + reason.rawValue }
+    static func reason(for error: Error) -> Reason {
+        if let error = error as? UserSyncCompatibilityError { return error.reason == .newerFormat ? .newerFormat : .unreadable }
+        if let error = error as? ReadingDataError {
+            if case .updateRequired = error { return .newerFormat }
+            return .unreadable
+        }
+        if error is DecodingError || error is ReaderError { return .unreadable }
+        return .readFailure
+    }
+}
 struct ReadingDataInventory: Sendable {
     var items: [ReadingDataItem]
     var pending: Int
     var unsupported: Int
+    var diagnostics: [ReadingDataDiagnostic] = []
     var configuration: UUID? = nil
 }
 enum ReadingDataError: LocalizedError {
@@ -87,7 +107,8 @@ enum BackupRows {
         let parts = key.split(separator: "/")
         guard let type = parts.first else { throw ReadingDataError.invalid }
         if type == "palette" { return nil }
-        guard ["metadata", "chapter", "position"].contains(String(type)), parts.count >= 2 else { throw ReadingDataError.updateRequired }
+        guard ["metadata", "chapter", "position"].contains(String(type)) else { throw ReadingDataError.updateRequired }
+        guard parts.count >= 2 else { throw ReadingDataError.invalid }
         let book = String(parts[1]); _ = try parseReadingKey(value: book); return book
     }
     /// Whole-book deletion only needs a recognizable owner, not a v1 payload.
@@ -105,21 +126,24 @@ enum BackupRows {
         guard let key, (try? parseReadingKey(value: key)) != nil else { return nil }
         return key
     }
-    static func validate(_ record: BackupRecord, kind: String) throws {
+    static func validate(_ record: BackupRecord, kind: String, allowPending: Bool = false) throws {
+        func owner(_ key: String) throws {
+            if allowPending { _ = try parseReadingKey(value: key) } else { try formal(key) }
+        }
         switch kind {
         case "values":
             guard !record.key.hasPrefix("shelf-reference/") else { throw ReadingDataError.invalid }
-            if let key = try valueKey(record.key) { try formal(key) }
+            if let key = try valueKey(record.key) { try owner(key) }
             _ = try UserSyncJSON.storedValue(record.payload, key: record.key)
         case "positions":
-            try formal(record.key)
+            try owner(record.key)
             _ = try UserSyncJSON.storedValue(record.payload, key: "position/" + record.key)
         case "annotations":
-            try formal(record.key)
+            try owner(record.key)
             guard !record.mark.isEmpty else { throw ReadingDataError.invalid }
             _ = try UserSyncJSON.annotation(record.payload, id: record.id)
         case "facts":
-            try formal(record.key); try UserSyncJSON.validateFact(record.payload, id: record.id)
+            try owner(record.key); try UserSyncJSON.validateFact(record.payload, id: record.id)
             let value = try JSONSerialization.jsonObject(with: Data(record.payload.utf8)) as? [String: Any]
             guard let inner = value?["content_key"] as? String else { throw ReadingDataError.invalid }
             // Historical pending promotion keeps the original fact payload; the
@@ -130,7 +154,7 @@ enum BackupRows {
             }
         case "statistics-clears":
             let value = try UserSyncJSON.decode(ClearValue.self, record.payload, as: UserSyncJSON.clear, envelope: true)
-            if let key = value.book { try formal(key) }
+            if let key = value.book { _ = try parseReadingKey(value: key) }
         default: throw ReadingDataError.updateRequired
         }
     }
@@ -149,30 +173,55 @@ extension UserDataStore {
         }
     }
     func readingDataInventory() throws -> ReadingDataInventory {
-        var items: [String: ReadingDataItem] = [:], pending = Set<String>(), unsupported = 0
-        for kind in BackupRows.files {
-            for row in try backupRows(kind) {
-                let key: String?
-                do { key = kind == "values" ? try BackupRows.valueKey(row.key) : (kind == "statistics-clears" ? nil : row.key) }
-                catch { unsupported += 1; continue }
-                guard let key else {
-                    do { try BackupRows.validate(row, kind: kind) } catch { unsupported += 1 }
-                    continue
-                }
-                do { if case .pending = try parseReadingKey(value: key) { pending.insert(key); continue } }
-                catch { unsupported += 1; continue }
-                do { try BackupRows.validate(row, kind: kind) }
-                catch { var item = items[key] ?? .init(id: key); item.unsupported = true; items[key] = item; unsupported += 1; continue }
-                items[key] = items[key] ?? .init(id: key)
+        var items: [String: ReadingDataItem] = [:]
+        var diagnostics: [String: ReadingDataDiagnostic] = [:]
+        var pending = Set<String>()
+        func report(_ key: String?, _ kind: String, _ reason: ReadingDataDiagnostic.Reason) {
+            let diagnostic = ReadingDataDiagnostic(bookKey: key, recordType: kind, reason: reason)
+            diagnostics[diagnostic.id] = diagnostic
+            if reason != .pending, let key, (try? BackupRows.formal(key)) != nil {
+                var item = items[key] ?? .init(id: key); item.unsupported = true; items[key] = item
             }
         }
-        let positions = try positionValues()
+        for kind in BackupRows.files {
+            let rows: [BackupRecord]
+            do { rows = try backupRows(kind) }
+            catch { report(nil, kind, .readFailure); continue }
+            for row in rows {
+                let key: String?
+                do { key = kind == "values" ? try BackupRows.valueKey(row.key) : (kind == "statistics-clears" ? nil : row.key) }
+                catch { report(nil, kind, ReadingDataDiagnostic.reason(for: error)); continue }
+                if let key {
+                    do {
+                        if case .pending = try parseReadingKey(value: key) {
+                            pending.insert(key); report(key, kind, .pending)
+                            do { try BackupRows.validate(row, kind: kind, allowPending: true) }
+                            catch { report(key, kind, ReadingDataDiagnostic.reason(for: error)) }
+                            continue
+                        }
+                    } catch { report(nil, kind, .unreadable); continue }
+                }
+                do { try BackupRows.validate(row, kind: kind) }
+                catch {
+                    // Clears have no required book owner. Recover only their scope,
+                    // without guessing a missing scope or exposing their payload.
+                    let owner = key ?? BackupRows.deletionKey(row, kind: kind)
+                    report(owner, kind, ReadingDataDiagnostic.reason(for: error))
+                    if let owner, let parsed = try? parseReadingKey(value: owner), case .pending = parsed { pending.insert(owner); report(owner, kind, .pending) }
+                    continue
+                }
+                if let key { items[key] = items[key] ?? .init(id: key) }
+            }
+        }
+        var positions: [String: StoredValue] = [:]
+        do { positions = try positionValues() } catch { report(nil, "positions", .readFailure) }
         for key in Array(items.keys) {
             do {
+                let facts = try visibleFacts(key: key)
+                items[key]?.title = facts.first?["title"] as? String ?? ""
                 let values = try allValues(prefix: "metadata/" + key + "/")
                 let chapters = try allValues(prefix: "chapter/" + key + "/")
                 let heads = try candidates(key: key, compacting: false)
-                let facts = try visibleFacts(key: key)
                 let live = positions["position/" + key] != nil || values.values.contains { $0 != "null" } || chapters.values.contains { $0 != "null" }
                     || heads.values.contains { $0.contains { $0.content != nil } } || !facts.isEmpty
                 if !live, items[key]?.unsupported == false { items.removeValue(forKey: key); continue }
@@ -183,9 +232,16 @@ extension UserDataStore {
                 items[key]?.bookmarks = heads.values.filter { $0.contains { $0.bookmark && $0.content != nil } }.count
                 items[key]?.annotations = heads.values.filter { $0.contains { !$0.bookmark && $0.content != nil } }.count
                 items[key]?.title = facts.first?["title"] as? String ?? ""
-            } catch { items[key]?.unsupported = true; unsupported += 1 }
+            } catch {
+                // The raw pass already explained a malformed/future row. Do not
+                // relabel its generic projection barrier as another root cause.
+                if !(error is UserSyncCompatibilityError) || !diagnostics.values.contains(where: { $0.bookKey == key && $0.reason != .pending }) {
+                    report(key, "summary", ReadingDataDiagnostic.reason(for: error))
+                }
+            }
         }
-        return .init(items: Array(items.values), pending: pending.count, unsupported: unsupported)
+        let issues = diagnostics.values.sorted { $0.id < $1.id }
+        return .init(items: Array(items.values), pending: pending.count, unsupported: issues.filter { $0.reason != .pending }.count, diagnostics: issues)
     }
     func allReadingDataKeys() throws -> Set<String> {
         var keys = Set<String>()
@@ -235,7 +291,11 @@ extension UserDataStore {
             manifest.assets.append(.init(id: id, path: path))
         }
         let inventory = try readingDataInventory()
-        guard inventory.pending == 0, inventory.unsupported == 0 else { throw ReadingDataError.updateRequired }
+        guard inventory.pending == 0 else { throw ReadingDataError.pendingIdentity }
+        if inventory.unsupported > 0 {
+            if inventory.diagnostics.contains(where: { $0.reason == .newerFormat }) { throw ReadingDataError.updateRequired }
+            throw ReadingDataError.invalid
+        }
         manifest.titles = Dictionary(uniqueKeysWithValues: inventory.items.filter { !$0.title.isEmpty }.map { ($0.id, $0.title) })
         guard manifest.members.reduce(UInt64(0), { $0 + $1.size }) <= BackupRows.maxCommitBytes else { throw ReadingDataError.tooLarge }
         return manifest
