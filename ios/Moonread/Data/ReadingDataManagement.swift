@@ -40,7 +40,15 @@ extension ReaderService {
         for i in value.items.indices {
             let key = value.items[i].id
             do {
-                if let source = try core.sourceFilesForSha(sha: key).first { value.items[i].title = source.title; value.items[i].linked = true }
+                if let source = try core.sourceFilesForSha(sha: key).first {
+                    value.items[i].title = source.title; value.items[i].linked = true
+                    if value.items[i].sourceHint == nil {
+                        let shelf = try libraryShelf(source.shelfId)
+                        value.items[i].sourceHint = PositionSourceHint(source_kind: shelf.builtin ? (shelf.location == "icloud" ? .managedICloud : .managedLocal) : .external,
+                            relative_path: source.relativePath, file_name: source.name, byte_size: source.size, decoding: source.decoding)
+                    }
+                }
+                if let offset = value.items[i].positionUtf8 { value.items[i].percentage = try core.readingDataPercentage(sha: key, offset: offset) }
             } catch { value.diagnostics.append(.init(bookKey: key, title: value.items[i].title, recordType: "source", reason: .readFailure)); value.unsupported += 1 }
         }
         for i in value.diagnostics.indices {
@@ -66,11 +74,78 @@ extension ReaderService {
         value.diagnostics = Dictionary(value.diagnostics.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first }).values.sorted { $0.id < $1.id }
         value.pending = Set(value.diagnostics.filter { $0.reason == .pending }.compactMap(\.bookKey)).count
         value.unsupported = value.diagnostics.filter { $0.reason != .pending }.count
+        for key in Set(value.diagnostics.filter { $0.reason == .pending }.compactMap(\.bookKey)).sorted() {
+            let id: String
+            guard case let .pending(bookID) = try parseReadingKey(value: key) else { continue }; id = bookID
+            var item: PendingReadingData
+            do { item = try pendingReadingData(key) }
+            catch {
+                item = PendingReadingData(id: key, bookID: id)
+                let diagnostic = ReadingDataDiagnostic(bookKey: key, recordType: "source", reason: .readFailure)
+                if !value.diagnostics.contains(where: { $0.id == diagnostic.id }) { value.diagnostics.append(diagnostic) }
+            }
+            item.readable = !value.diagnostics.contains { $0.bookKey == key && $0.reason != .pending }
+            if item.title.isEmpty { item.title = value.diagnostics.first { $0.bookKey == key && !$0.title.isEmpty }?.title ?? "" }
+            value.pendingItems.append(item)
+        }
+        value.unsupported = value.diagnostics.filter { $0.reason != .pending }.count
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         value.configuration = configuration
         return value
     }
-    func allReadingDataKeys() async throws -> Set<String> { try await userStore().allReadingDataKeys() }
+    func allReadingDataKeys() async throws -> Set<String> {
+        let formal = try await userStore().allReadingDataKeys()
+        return try await userStore(pending: true).allReadingDataKeys().union(formal)
+    }
+    /// Inspect only task/source metadata; never materialize or open the original.
+    func pendingReadingData(_ key: String) throws -> PendingReadingData {
+        guard case let .pending(id) = try parseReadingKey(value: key) else { throw ReadingDataError.invalid }
+        var result = PendingReadingData(id: key, bookID: id)
+        do {
+            let status = try textCore().importStatus(bookId: id)
+            result.title = status.text.title; result.phase = status.phase
+        } catch ReaderError.NotFound { return result }
+        // A completed task can transfer its facts without the original file.
+        // Stale or missing source descriptors must not block that attempt.
+        if result.phase == .complete { return result }
+        guard let bytes = sourceDefaults.data(forKey: importSourceKey(id)) else { return result }
+        let source = try JSONDecoder().decode(ImportSource.self, from: bytes)
+        result.source = source.relativePath
+        let rootBookmark: Data
+        if let fileID = source.fileID {
+            do {
+                let file = try textCore().sourceFileLocation(fileId: fileID)
+                let shelf = try libraryShelf(file.shelfId)
+                result.shelfID = shelf.builtin ? nil : shelf.id; result.shelfName = shelf.name
+                result.source = file.relativePath; rootBookmark = Data(shelf.bookmark)
+            } catch ReaderError.NotFound { return result }
+        } else { rootBookmark = source.rootBookmark }
+        try validateRelativePath(path: result.source, allowRoot: false)
+        do {
+            var stale = false
+            let root = try URL(resolvingBookmarkData: rootBookmark, options: .withoutUI, bookmarkDataIsStale: &stale)
+            let access = root.startAccessingSecurityScopedResource()
+            defer { if access { root.stopAccessingSecurityScopedResource() } }
+            guard !root.pathComponents.contains(".Trash"), try root.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else {
+                result.sourceState = result.shelfID == nil ? .missing : .reconnect; return result
+            }
+            let file = root.appendingPathComponent(result.source)
+            do {
+                let metadata = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
+                result.sourceState = metadata.isRegularFile == true && metadata.isSymbolicLink != true ? .available : .missing
+            } catch { result.sourceState = .missing }
+        } catch {
+            result.sourceState = result.shelfID == nil ? .missing : .reconnect
+        }
+        return result
+    }
+    func continuePendingReadingData(_ key: String) async throws {
+        let item = try pendingReadingData(key)
+        try await userStore(pending: true).requirePendingReadable(key: key)
+        try await userStore().requirePendingReadable(key: key)
+        guard item.canResume else { throw ReadingDataError.changed }
+        try resumeImport(item.bookID)
+    }
     func deleteReadingData(_ keys: Set<String>, configuration expected: UUID? = nil) async throws -> Bool {
         let configuration = expected ?? userCloudConfigurationRevision
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
@@ -80,13 +155,15 @@ extension ReaderService {
         await managementStatisticsWriter().drain()
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-        guard !readingDataIsBusy(keys) else { throw ReadingDataError.busy }
+        let effective = try textCore().resolveReadingKeys(keys: keys.map { try parseReadingKey(value: $0) })
+        let busyKeys = keys.union(effective.map { serializeReadingKey(key: $0.effective) })
+        guard !readingDataIsBusy(busyKeys) else { throw ReadingDataError.busy }
         let pending = try await userStore(pending: true)
         let formal = try await userStore()
         let pendingKeys = try await pending.allReadingDataKeys()
         let owned = try await formal.allReadingDataKeys().union(pendingKeys)
         let resolutions = try textCore().resolveReadingKeys(keys: owned.map { try parseReadingKey(value: $0) })
-        let aliases = Set(resolutions.filter { keys.contains(serializeReadingKey(key: $0.effective)) }.map { serializeReadingKey(key: $0.original) })
+        let aliases = keys.union(resolutions.filter { keys.contains(serializeReadingKey(key: $0.effective)) }.map { serializeReadingKey(key: $0.original) })
         // A stop between these commits leaves formal data visible and retryable.
         // No durable receipt can later delete data that has arrived since then.
         try await pending.deleteReadingData(keys: aliases)

@@ -144,6 +144,76 @@ import XCTest
         XCTAssertTrue(model.selected.isEmpty); XCTAssertTrue(model.visible.isEmpty)
         model.query = ""; model.unlinkedOnly = false; model.recent = false
         XCTAssertEqual(model.visible.count, 2)
+        model.updateInventory(.init(items: [.init(id: "a", title: "同名", lastRead: 20), .init(id: "b", title: "同名", lastRead: 10)], pending: 0, unsupported: 0))
+        XCTAssertEqual(model.duplicateNames["a"]?.index, 1); XCTAssertEqual(model.duplicateNames["b"]?.count, 2)
+        model.toggleVisibleSelection(); XCTAssertEqual(model.selected, ["a", "b"])
+        model.toggleVisibleSelection(); XCTAssertTrue(model.selected.isEmpty)
+    }
+    func testInventoryShowsSourceHintAndRustProgressWithoutRequiringALocalFile() async throws {
+        let f = try positionWinnerFixture(); defer { f.clean() }
+        let key = f.book.contentSha256, unknown = String(repeating: "c", count: 64)
+        let hint = PositionSourceHint(source_kind: .external, relative_path: "已读/合成.txt", file_name: "合成.txt", byte_size: 200, decoding: "gb18030")
+        let position = StoredValue(updated: 123456, token: "hint", value: try UserSyncJSON.encode(PositionValue(content_key: key, offset: 12, source_hint: hint)))
+        try await receiveBackupPosition(position, key: key, store: f.formal)
+        try await receiveBackupPosition(positionRecord(key: unknown, token: "unknown", offset: 9), key: unknown, store: f.formal)
+        try await f.formal.receiveSyncFixture("fact", key: key, id: "fact", payload: syncFact(key))
+        let inventory = try await f.service.readingDataInventory()
+        let item = try XCTUnwrap(inventory.items.first { $0.id == key })
+        XCTAssertEqual(item.sourceHint, hint); XCTAssertTrue(item.hasPosition); XCTAssertTrue(item.hasStatistics)
+        XCTAssertFalse(item.linked)
+        XCTAssertEqual(item.percentage, try f.core.readingDataPercentage(sha: key, offset: 12))
+        XCTAssertNil(inventory.items.first { $0.id == unknown }?.percentage, "Unknown full length must not manufacture a percentage")
+    }
+    func testDiscardUsesOriginalPendingKeyAfterItAlreadyResolvesToFormalSha() async throws {
+        let f = try positionWinnerFixture(); defer { f.clean() }
+        let key = f.book.contentSha256, alias = "pending:" + f.aliases[0]
+        try await receiveBackupPosition(positionRecord(key: key, token: "formal", offset: 12), key: key, store: f.formal)
+        try await receiveBackupPosition(positionRecord(key: alias, token: "pending", offset: 3), key: alias, store: f.pending)
+        try await f.pending.receiveSyncFixture("fact", key: alias, id: "fact", payload: syncFact(alias))
+        let before = try await f.service.readingDataInventory()
+        let all = try await f.service.allReadingDataKeys()
+        XCTAssertEqual(all, [key, alias], "The overview's delete-all includes the local pending store")
+        XCTAssertEqual(before.pendingItems.first?.bookID, f.aliases[0]); XCTAssertEqual(before.pendingItems.first?.phase, .complete)
+        _ = try await f.service.deleteReadingData([alias], configuration: before.configuration)
+        let remaining = try await f.pending.allReadingDataKeys(), formal = try await f.formal.positionValues()
+        XCTAssertFalse(remaining.contains(alias)); XCTAssertNotNil(formal["position/" + key])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: f.root.appendingPathComponent("synthetic.txt").path))
+    }
+    func testPendingMetadataDistinguishesMissingFileFromLostShelfAndCompletedTasksPromote() async throws {
+        let f = try positionWinnerFixture(); defer { f.clean() }
+        let root = f.root.appendingPathComponent("originals")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("待准备.txt")
+        try Data("第一章\n原创元数据验证。".utf8).write(to: file)
+        let shelfID = try await f.service.registerLibraryShelf(root)
+        try await f.service.refreshLibraryShelf(shelfID)
+        let entry = try XCTUnwrap(f.core.sourceFiles(shelfId: shelfID).first { !$0.directory })
+        let control = try f.core.createImport(title: "待准备")
+        try f.core.linkLibraryFile(fileId: entry.id, bookId: control.bookId())
+        try f.core.failImport(control: control, error: .Paused)
+        let shelf = try await f.service.libraryShelf(shelfID)
+        let descriptor = ImportSource(rootBookmark: Data(shelf.bookmark), relativePath: entry.relativePath, fileID: entry.id)
+        let sourceKey = await f.service.importSourceKey(control.bookId())
+        UserDefaults(suiteName: f.suite)!.set(try JSONEncoder().encode(descriptor), forKey: sourceKey)
+        let alias = "pending:" + control.bookId()
+        try await receiveBackupPosition(positionRecord(key: alias, token: "pending", offset: 0), key: alias, store: f.pending)
+        var item = try await f.service.pendingReadingData(alias)
+        XCTAssertEqual(item.sourceState, .available); XCTAssertTrue(item.canResume); XCTAssertEqual(item.shelfID, shelfID)
+        try FileManager.default.removeItem(at: file)
+        item = try await f.service.pendingReadingData(alias)
+        XCTAssertEqual(item.sourceState, .missing); XCTAssertFalse(item.canResume)
+        try FileManager.default.removeItem(at: root)
+        item = try await f.service.pendingReadingData(alias)
+        XCTAssertEqual(item.sourceState, .reconnect); XCTAssertFalse(item.canResume)
+        let completed = "pending:" + f.aliases[0]
+        let completedSource = await f.service.importSourceKey(f.aliases[0])
+        UserDefaults(suiteName: f.suite)!.set(Data("obsolete source descriptor".utf8), forKey: completedSource)
+        try await receiveBackupPosition(positionRecord(key: completed, token: "completed", offset: 12), key: completed, store: f.pending)
+        let model = DataManagementModel(service: f.service)
+        await model.prepareIssues()
+        XCTAssertFalse(model.inventory.pendingItems.contains { $0.id == completed })
+        XCTAssertTrue(model.inventory.pendingItems.contains { $0.id == alias })
+        XCTAssertNil(model.issueErrors[completed])
     }
     func testImportPreviewRejectsConflictingIDsUnknownPayloadsAndMissingAssetsWithoutWrites() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }

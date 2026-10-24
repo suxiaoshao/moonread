@@ -87,6 +87,21 @@ fn resolve(db: &Connection, id: &str) -> Result<ResolvedBookIdentity> {
 }
 #[uniffi::export]
 impl ReaderCore {
+    /// Immutable normalized lengths remain useful even when no local file or
+    /// body cache is available. A partial import is never a full-book length.
+    pub fn reading_data_percentage(&self, sha: String, offset: u64) -> Result<Option<f64>> {
+        parse_sha256(sha.clone())?;
+        let db = self.lock()?;
+        let bytes: Option<i64> = db.query_row(
+            "SELECT MAX(bytes) FROM (
+                SELECT utf8_bytes bytes FROM source_identities WHERE content_sha256=?1
+                UNION ALL SELECT byte_count FROM books b WHERE content_sha256=?1
+                AND NOT EXISTS(SELECT 1 FROM import_jobs j WHERE j.book_id=b.id AND j.phase!='complete')
+            )", [&sha], |r| r.get(0))?;
+        Ok(bytes
+            .filter(|n| *n > 0)
+            .map(|n| crate::navigation::reading_percentage(offset, n as u64)))
+    }
     pub fn resolve_book_identity(&self, book_id: String) -> Result<ResolvedBookIdentity> {
         resolve(&*self.lock()?, &book_id)
     }
@@ -203,6 +218,7 @@ mod tests {
         }
         let dir = tempfile::tempdir().unwrap();
         let core = ReaderCore::new(dir.path().to_string_lossy().into()).unwrap();
+        assert_eq!(core.reading_data_percentage(sha.clone(), 2).unwrap(), None);
         core.save_library_shelf("s".into(), "Shelf".into(), vec![], "local".into(), false)
             .unwrap();
         let item = |path: &str| ScannedLibraryItem {
@@ -237,6 +253,20 @@ mod tests {
         assert!(
             core.publish_source_identity(file.clone(), identity)
                 .unwrap()
+        );
+        assert_eq!(
+            core.reading_data_percentage(sha.clone(), 2).unwrap(),
+            Some(25.0)
+        );
+        assert_eq!(
+            core.reading_data_percentage(sha.clone(), 99).unwrap(),
+            Some(100.0)
+        );
+        // A complete cached body also supplies its length without a file link.
+        assert_eq!(
+            core.reading_data_percentage(old.content_sha256.clone(), 0)
+                .unwrap(),
+            Some(0.0)
         );
         let found = core.file_identity(file.id.clone()).unwrap();
         assert_eq!(

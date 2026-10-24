@@ -1,6 +1,10 @@
 use super::*;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+pub(crate) fn reading_percentage(offset: u64, total: u64) -> f64 {
+    offset.min(total) as f64 / total.max(1) as f64 * 100.0
+}
+
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct ReadingVisit {
     pub id: String,
@@ -318,7 +322,7 @@ impl ReaderCore {
         }
         Ok(ReadingLocation {
             offset_utf8: offset,
-            percentage: offset as f64 / info.byte_count.max(1) as f64 * 100.0,
+            percentage: reading_percentage(offset, info.byte_count),
             chapter: library_tools::chapter(&db, &id, offset)?,
         })
     }
