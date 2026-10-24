@@ -487,6 +487,7 @@ struct AIReadingAttachmentPreview: View {
 }
 
 private struct AIReadingObjectPicker: View {
+    @Environment(\.theme) private var theme
     let kind: AIReadingAttachment.Kind
     let conversationID: String
     @Environment(AIService.self) private var ai
@@ -499,9 +500,9 @@ private struct AIReadingObjectPicker: View {
     var body: some View {
         NavigationStack {
             List {
-                if let error { Text(error); Button("重试") { Task { await load() } } }
-                if !loaded { ProgressView() }
-                if loaded && books.isEmpty && error == nil { ContentUnavailableView("暂无书籍", systemImage: "books.vertical") }
+                if let error { Text(error).foregroundStyle(Color(uiColor: theme.destructive)).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)); Button("重试") { Task { await load() } }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
+                if !loaded { ProgressView().listRowBackground(Color.clear) }
+                if loaded && books.isEmpty && error == nil { ContentUnavailableView("暂无书籍", systemImage: "books.vertical").listRowBackground(Color.clear) }
                 ForEach(books.filter { LibraryQueryRules.selectionMatches($0.title, query: query) }) { book in
                     if kind == .book {
                         Button { Task { try? await ai.addReadingAttachment(conversationID, attachment: book); dismiss() } } label: { Label(book.title, systemImage: "book") }
@@ -511,7 +512,7 @@ private struct AIReadingObjectPicker: View {
                         } } label: { Label(book.title, systemImage: "book") }
                         .disabled(book.bookRef == nil)
                     }
-                }
+                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }.themedPage().navigationTitle(title).navigationBarTitleDisplayMode(.inline)
                 .searchable(text: $query, prompt: "搜索书籍")
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
@@ -536,6 +537,7 @@ private struct AIReadingObjectPicker: View {
     }
 }
 private struct AIReadingMarkPicker: View {
+    @Environment(\.theme) private var theme
     let book: AIReadingAttachment
     let kind: AIReadingAttachment.Kind
     let select: (AIReadingAttachment) -> Void
@@ -544,9 +546,9 @@ private struct AIReadingMarkPicker: View {
     @State private var loaded = false
     var body: some View {
         List {
-            if let error { Text(error) }
-            if !loaded { ProgressView() }
-            if loaded && items.isEmpty && error == nil { ContentUnavailableView("暂无记录", systemImage: kind == .bookmark ? "bookmark" : "highlighter") }
+            if let error { Text(error).foregroundStyle(Color(uiColor: theme.destructive)).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
+            if !loaded { ProgressView().listRowBackground(Color.clear) }
+            if loaded && items.isEmpty && error == nil { ContentUnavailableView("暂无记录", systemImage: kind == .bookmark ? "bookmark" : "highlighter").listRowBackground(Color.clear) }
             ForEach(items) { item in
                 Button { select(item) } label: {
                     VStack(alignment: .leading, spacing: 5) {
@@ -555,7 +557,7 @@ private struct AIReadingMarkPicker: View {
                         else if let note = item.note, !note.isEmpty { Text(note).font(.caption).lineLimit(2) }
                     }
                 }
-            }
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
         }.themedPage().navigationTitle(book.title).task {
             do {
                 guard let ref = book.bookRef else { loaded = true; return }

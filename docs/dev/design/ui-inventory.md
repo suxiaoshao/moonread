@@ -27,6 +27,8 @@
 
 原生导航、菜单、键盘、控件内部和玻璃仍由系统绘制。搜索 Tab 的入口、输入框、token 和取消按钮由系统 `searchable` 绘制，不使用阅读搜索面板的自定义输入样式；结果文字和命中继续使用主题角色。`ThemeSurface` 内的系统语义色是“系统配色”的映射；透明绘制层/遮罩不是独立色板；主题编辑器中的色块展示被编辑配色的值；LaunchBackground 与桌面图标是静态平台资产。这些是明确的颜色来源，不是页面自行硬编码的 RGB。不能把系统材质某一帧的 RGB 当作固定色。
 
+阅读数据页的“全部 / 不在书架上”是主题色筛选胶囊，选中用 selected/accent、未选用 surface/secondary；搜索仍为原生 searchable。选择态保留返回和完成，暂隐藏 Tab，原位置显示 raised 悬浮胶囊操作栏；完成或离开页面恢复 Tab。普通内容行用 surface/separator，页内确认区用 canvas，需要处理摘要用 surface，处理中浮层复用 floatingBackground；不额外重绘系统导航或标签胶囊。
+
 ## 结构规则
 
 [LayoutTokens](../../../ios/Moonread/Shared/Theme/Theme.swift) 管理 8/12/16/20/24 间距角色、44pt 操作触区、16pt 输入圆角、20pt 浮层圆角和 1pt 边框。主题不能覆盖结构。

@@ -164,8 +164,8 @@ struct AIModelPicker: View {
         NavigationStack {
             List {
                 if ai.providers.connections.allSatisfy({ eligible($0).isEmpty }) {
-                    ContentUnavailableView("还没有可用模型", systemImage: "sparkles", description: Text("先连接一个 AI 账户并加载模型。"))
-                    Button("添加连接", systemImage: "plus") { adding = true }.accessibilityIdentifier("aiModelPickerSettings")
+                    ContentUnavailableView("还没有可用模型", systemImage: "sparkles", description: Text("先连接一个 AI 账户并加载模型。")).listRowBackground(Color.clear)
+                    Button("添加连接", systemImage: "plus") { adding = true }.accessibilityIdentifier("aiModelPickerSettings").listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                 } else if ai.providers.connections.allSatisfy({ offered($0).isEmpty }) {
                     ContentUnavailableView("没有启用的模型", systemImage: "sparkles").listRowBackground(Color.clear)
                     Section {

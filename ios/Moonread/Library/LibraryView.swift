@@ -689,7 +689,7 @@ struct LibraryManagementView: View {
             Section {
                 Toggle(isOn: Binding(get: { model.fullIndex.automatic }, set: { model.fullIndex.automatic = $0 })) { Text("新加入的书自动建立索引", tableName: "FullIndex") }.accessibilityIdentifier("automaticFullIndex")
             } header: { Text("索引", tableName: "FullIndex") }
-            ShelfReferenceHints(model: model)
+            ShelfReferenceHints(model: model, grouped: true)
             Section {
                 ForEach(model.shelves, id: \.id) { shelf in
                     NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: shelf.id))) {

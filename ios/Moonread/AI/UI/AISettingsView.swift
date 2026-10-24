@@ -194,7 +194,7 @@ struct AIToolServiceView: View {
                     }
                 }.listRowBackground(Color(uiColor: theme.surface))
             }
-            if saveFailed { Text("模型目录已变化，请重新选择。").foregroundStyle(Color(uiColor: theme.destructive)) }
+            if saveFailed { Text("模型目录已变化，请重新选择。").foregroundStyle(Color(uiColor: theme.destructive)).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
         }.themedPage().navigationTitle(purpose.title).navigationBarTitleDisplayMode(.inline)
             .aiAddConnectionFlow(isPresented: $adding)
             .toolbar {

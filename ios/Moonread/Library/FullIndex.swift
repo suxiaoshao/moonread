@@ -321,6 +321,7 @@ final class FullIndexController {
 }
 
 struct FullIndexView: View {
+    @Environment(\.theme) private var theme
     let controller = FullIndexController.shared
     let shelfID: String
     let openFailure: (String) -> Void
@@ -335,7 +336,7 @@ struct FullIndexView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    if let inventory { Text(inventory.shelf.builtin ? String(localized: "我的书架") : inventory.shelf.name).font(.subheadline).foregroundStyle(.secondary) }
+                    if let inventory { Text(inventory.shelf.builtin ? String(localized: "我的书架") : inventory.shelf.name).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary)) }
                     if let counts {
                         VStack(alignment: .leading, spacing: 12) {
                             if counts.total == 0 { Text("书架中还没有小说", tableName: "FullIndex").font(.title2.bold()) }
@@ -343,7 +344,7 @@ struct FullIndexView: View {
                                 Text("已索引 \(counts.indexed) / \(counts.total) 本", tableName: "FullIndex").font(.title.bold()).accessibilityIdentifier("fullIndexProgress")
                                 ProgressView(value: Double(counts.indexed), total: Double(max(1, counts.total))).accessibilityLabel(Text("索引进度", tableName: "FullIndex"))
                                 if !active && failures.isEmpty && counts.total > counts.indexed {
-                                    Text("还有 \(counts.total - counts.indexed) 本，建立后可以搜索全文、恢复进度和标签。", tableName: "FullIndex").font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("fullIndexRemaining")
+                                    Text("还有 \(counts.total - counts.indexed) 本，建立后可以搜索全文、恢复进度和标签。", tableName: "FullIndex").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)).accessibilityIdentifier("fullIndexRemaining")
                                 }
                             }
                         }
@@ -352,7 +353,7 @@ struct FullIndexView: View {
                     }
                     if let loadError {
                         VStack(alignment: .leading, spacing: 12) {
-                            Label(loadError, systemImage: "exclamationmark.circle")
+                            Label(loadError, systemImage: "exclamationmark.circle").foregroundStyle(Color(uiColor: theme.destructive))
                             Button { Task { await loadInventory() } } label: { Text("重试", tableName: "FullIndex") }.buttonStyle(.bordered)
                         }.accessibilityIdentifier("fullIndexLoadError")
                     }
@@ -362,22 +363,22 @@ struct FullIndexView: View {
                             VStack(alignment: .leading, spacing: 8) {
                                 Toggle(isOn: $includeCloud) { Text("包含未下载的 iCloud 文件", tableName: "FullIndex") }.disabled(active)
                                     .accessibilityIdentifier("fullIndexIncludeCloud")
-                                Text("\(cloud.count) 本，已知下载量 \(ByteCountFormatter.string(fromByteCount: Int64(clamping: inventory.cloudBytes), countStyle: .file))", tableName: "FullIndex").font(.footnote).foregroundStyle(.secondary)
-                                if cloud.contains(where: { $0.size == 0 }) { Text("部分文件大小未知", tableName: "ShelfRecovery").font(.footnote).foregroundStyle(.secondary) }
+                                Text("\(cloud.count) 本，已知下载量 \(ByteCountFormatter.string(fromByteCount: Int64(clamping: inventory.cloudBytes), countStyle: .file))", tableName: "FullIndex").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                                if cloud.contains(where: { $0.size == 0 }) { Text("部分文件大小未知", tableName: "ShelfRecovery").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
                             }
                         }
                     }
-                    if controller.shelfID == shelfID, let message = controller.message { Label(message, systemImage: "info.circle").font(.footnote).foregroundStyle(.secondary) }
+                    if controller.shelfID == shelfID, let message = controller.message { Label(message, systemImage: "info.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
                     if !failures.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("未能建立索引", tableName: "FullIndex").font(.headline)
-                            Text("点开文件可以处理编码或查看原因。", tableName: "FullIndex").font(.footnote).foregroundStyle(.secondary)
+                            Text("点开文件可以处理编码或查看原因。", tableName: "FullIndex").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                             ForEach(failures) { failure in
                                 Button { openFailure(failure.id) } label: {
                                     HStack {
                                         VStack(alignment: .leading, spacing: 4) {
                                             Text(verbatim: failure.file.relativePath)
-                                            Text(verbatim: failure.message).font(.caption).foregroundStyle(.secondary)
+                                            Text(verbatim: failure.message).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                                         }
                                         Spacer(); Image(systemName: "chevron.right").font(.footnote)
                                     }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 8)
@@ -387,7 +388,7 @@ struct FullIndexView: View {
                     }
                 }.padding().frame(maxWidth: .infinity, alignment: .leading)
             }.themedPage().navigationTitle(Text("建立索引", tableName: "FullIndex"))
-            .safeAreaInset(edge: .bottom) { primaryButton.padding().frame(maxWidth: .infinity).background(.bar) }
+            .safeAreaInset(edge: .bottom) { primaryButton.padding().frame(maxWidth: .infinity).background(Color(uiColor: theme.canvas)) }
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button { dismiss() } label: { Text("完成") } } }
             .task(id: controller.running) { await loadInventory() }
         }
