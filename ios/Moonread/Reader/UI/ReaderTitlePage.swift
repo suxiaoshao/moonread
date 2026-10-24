@@ -40,7 +40,6 @@ struct ReaderTitlePage: View {
                 Text("月读").font(.caption).tracking(4)
                     .foregroundStyle(Color(uiColor: theme.secondary)).padding(.bottom, 36)
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(uiColor: theme.paper))
         }.accessibilityElement(children: .contain)
             .accessibilityLabel(String(localized: "封面，\(title)"))
             .accessibilityIdentifier("readerCover")

@@ -32,6 +32,76 @@ pub enum ReaderPaletteSource {
     Palette { id: String },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+pub enum ReaderTextureId {
+    #[serde(rename = "paper-v1")]
+    Paper,
+    #[serde(rename = "kraft-v1")]
+    Kraft,
+    #[serde(rename = "linen-v1")]
+    Linen,
+    #[serde(rename = "night-v1")]
+    Night,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "lowercase")]
+pub enum ReaderTextureStrength {
+    #[default]
+    Light,
+    Medium,
+    Strong,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
+pub struct ReaderTextureChoice {
+    pub id: ReaderTextureId,
+    #[serde(default)]
+    pub strength: ReaderTextureStrength,
+}
+fn decode_texture_choice<'de, D: serde::Deserializer<'de>>(
+    decoder: D,
+) -> std::result::Result<Option<ReaderTextureChoice>, D::Error> {
+    Ok(Option::<serde_json::Value>::deserialize(decoder)?
+        .and_then(|value| serde_json::from_value(value).ok()))
+}
+#[uniffi::export]
+pub fn reader_texture_choice(id: ReaderTextureId) -> ReaderTextureChoice {
+    ReaderTextureChoice {
+        id,
+        strength: ReaderTextureStrength::default(),
+    }
+}
+#[uniffi::export]
+pub fn reader_texture_ids(appearance: ThemeAppearance) -> Vec<ReaderTextureId> {
+    match appearance {
+        ThemeAppearance::Light => vec![
+            ReaderTextureId::Paper,
+            ReaderTextureId::Kraft,
+            ReaderTextureId::Linen,
+        ],
+        ThemeAppearance::Dark => vec![ReaderTextureId::Night],
+    }
+}
+#[uniffi::export]
+pub fn reader_texture_strengths() -> Vec<ReaderTextureStrength> {
+    vec![
+        ReaderTextureStrength::Light,
+        ReaderTextureStrength::Medium,
+        ReaderTextureStrength::Strong,
+    ]
+}
+#[uniffi::export]
+pub fn reader_texture_alpha(id: ReaderTextureId, strength: ReaderTextureStrength) -> f64 {
+    let alpha = match (id == ReaderTextureId::Night, strength) {
+        (false, ReaderTextureStrength::Light) => 6,
+        (false, ReaderTextureStrength::Medium) => 10,
+        (false, ReaderTextureStrength::Strong) => 14,
+        (true, ReaderTextureStrength::Light) => 3,
+        (true, ReaderTextureStrength::Medium) => 6,
+        (true, ReaderTextureStrength::Strong) => 9,
+    };
+    f64::from(alpha) / 255.0
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct ThemePreferences {
     pub app_mode: AppAppearanceMode,
@@ -41,6 +111,10 @@ pub struct ThemePreferences {
     pub reader_light: ReaderPaletteSource,
     pub reader_dark: ReaderPaletteSource,
     pub reduce_motion: bool,
+    #[serde(default, deserialize_with = "decode_texture_choice")]
+    pub reader_light_texture: Option<ReaderTextureChoice>,
+    #[serde(default, deserialize_with = "decode_texture_choice")]
+    pub reader_dark_texture: Option<ReaderTextureChoice>,
 }
 
 impl Default for ThemePreferences {
@@ -57,6 +131,8 @@ impl Default for ThemePreferences {
             reader_light: ReaderPaletteSource::App,
             reader_dark: ReaderPaletteSource::App,
             reduce_motion: false,
+            reader_light_texture: None,
+            reader_dark_texture: None,
         }
     }
 }
@@ -178,8 +254,8 @@ fn validate_palette(palette: &ThemePalette) -> Result<()> {
     if palette.id.is_empty()
         || palette.name.trim().is_empty()
         || palette.name.chars().count() > 40
-        || !theme_colors_readable(palette.colors.clone())
-        || !theme_colors_readable(palette.high_contrast.clone())
+        || !theme_colors_valid(&palette.colors)
+        || !theme_colors_valid(&palette.high_contrast)
     {
         return Err(ReaderError::InvalidSettings);
     }
@@ -314,8 +390,7 @@ pub fn theme_color_contrast(foreground: u32, background: u32) -> f64 {
     (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
 
-#[uniffi::export]
-pub fn theme_colors_readable(c: ThemeColors) -> bool {
+fn theme_colors_valid(c: &ThemeColors) -> bool {
     let values = [
         c.canvas,
         c.surface,
@@ -345,6 +420,11 @@ pub fn theme_colors_readable(c: ThemeColors) -> bool {
         c.maria,
     ];
     values.iter().all(|v| *v <= 0xffffff)
+}
+
+#[uniffi::export]
+pub fn theme_colors_readable(c: ThemeColors) -> bool {
+    theme_colors_valid(&c)
         && [
             c.canvas,
             c.surface,
@@ -552,7 +632,7 @@ pub fn make_theme_palette(
     colors: ThemeColors,
 ) -> Result<ThemePalette> {
     let name = name.trim().to_owned();
-    if name.is_empty() || name.chars().count() > 40 || !theme_colors_readable(colors.clone()) {
+    if name.is_empty() || name.chars().count() > 40 || !theme_colors_valid(&colors) {
         return Err(ReaderError::InvalidSettings);
     }
     Ok(ThemePalette {

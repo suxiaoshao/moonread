@@ -51,10 +51,17 @@ final class ReaderSettingsReaderIntegrationTests: ReaderIntegrationFixture {
       if count == 1 { firstWrite.fulfill() }
       if count == 2 { nextWrite.fulfill() }
     }
-    store.update { $0.reduceMotion.toggle() }
+    store.update {
+      $0.reduceMotion.toggle()
+      $0.readerLightTexture = ReaderTextureChoice(id: .paper, strength: .medium)
+      $0.readerDarkTexture = nil
+    }
     let saved = store.snapshot.preferences
     await fulfillment(of: [firstWrite], timeout: 2)
-    store.update { $0.readerMode = $0.readerMode == .dark ? .light : .dark }
+    store.update {
+      $0.readerMode = $0.readerMode == .dark ? .light : .dark
+      $0.readerDarkTexture = ReaderTextureChoice(id: .night, strength: .strong)
+    }
     let newer = store.snapshot.preferences
     writer.succeed()
     await fulfillment(of: [nextWrite], timeout: 2)
@@ -62,6 +69,8 @@ final class ReaderSettingsReaderIntegrationTests: ReaderIntegrationFixture {
     writer.fail()
     await store.flushPreferences()
     XCTAssertEqual(store.snapshot.preferences, saved)
+    XCTAssertEqual(store.snapshot.preferences.readerLightTexture, ReaderTextureChoice(id: .paper, strength: .medium))
+    XCTAssertNil(store.snapshot.preferences.readerDarkTexture)
     XCTAssertNotNil(store.error)
     XCTAssertFalse(store.saving)
   }
@@ -74,6 +83,9 @@ final class ReaderSettingsUserDataTests: UserDataFixture {
     defer { try? FileManager.default.removeItem(at: root) }
     var template = defaultThemeSnapshot().palettes[0]
     template.name = "Independent"
+    template.colors.ink = template.colors.paper
+    XCTAssertFalse(themeColorsReadable(c: template.colors))
+    XCTAssertTrue(template.isValidDraft)
     let palette = try await service.savePalette(template, creating: true)
     let rows = try await store.allValues(prefix: "palette/")
     let json = try XCTUnwrap(rows["palette/\(palette.id)"])
@@ -83,10 +95,17 @@ final class ReaderSettingsUserDataTests: UserDataFixture {
     XCTAssertNil(stored["palettes"])
     var preferences = defaultThemeSnapshot().preferences
     preferences.appLight = .palette(id: palette.id)
+    preferences.readerLightTexture = ReaderTextureChoice(id: .linen, strength: .medium)
+    preferences.readerDarkTexture = ReaderTextureChoice(id: .night, strength: .strong)
     let selected = try await service.saveThemes(preferences)
     XCTAssertEqual(selected.preferences.appLight, .palette(id: palette.id))
+    let reloaded = try await service.themes()
+    XCTAssertEqual(reloaded.preferences.readerLightTexture, preferences.readerLightTexture)
+    XCTAssertEqual(reloaded.preferences.readerDarkTexture, preferences.readerDarkTexture)
     let deleted = try await service.deletePalette(palette.id)
     XCTAssertEqual(deleted.preferences.appLight, defaultThemeSnapshot().preferences.appLight)
     XCTAssertFalse(deleted.palettes.contains { $0.id == palette.id })
+    XCTAssertEqual(deleted.preferences.readerLightTexture, preferences.readerLightTexture)
+    XCTAssertEqual(deleted.preferences.readerDarkTexture, preferences.readerDarkTexture)
   }
 }

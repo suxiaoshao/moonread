@@ -90,6 +90,7 @@ final class ReadingPreviewTextView: UITextView {
     private var source: ReadingPreviewSource?
     private var settings: ReaderSettings?
     private var surface = ThemeSurface.initial
+    private var paperInput: ThemeSurface.PaperInput?
     private var typeSize: DynamicTypeSize?
     private var readingText = ReadingText(text: "")
     private var coordinates: TextCoordinates { readingText.coordinates }
@@ -128,6 +129,8 @@ final class ReadingPreviewTextView: UITextView {
             pendingAnchor = projectionAnchor(); needsTextLayout = true
         }
         self.source = source; self.settings = settings; self.surface = surface; self.typeSize = typeSize
+        let input = surface.paperInput(scale: traitCollection.displayScale)
+        if paperInput != input { paperInput = input; backgroundColor = ThemeSurface.paperBackground(input) }
         paint.set(surface.ink)
         overrideUserInterfaceStyle = surface.style
         updateDecorations()

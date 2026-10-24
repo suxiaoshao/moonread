@@ -102,15 +102,18 @@ struct ReaderSettingsView: View {
     private var appearance: ThemeAppearance { editedAppearance ?? themes.reader.plan.appearance }
     private var previewExpanded: Bool { verticalSizeClass == .compact || previewDetent == .large }
     private var previewCollapsed: Bool { verticalSizeClass != .compact && previewDetent == .height(60) }
+    private var texture: ReaderTextureChoice? {
+        appearance == .light ? themes.snapshot.preferences.readerLightTexture : themes.snapshot.preferences.readerDarkTexture
+    }
     private var previewTheme: ThemeSurface {
         if let draft {
             return ThemeSurface(plan: ResolvedTheme(appearance: draft.palette.appearance, highContrast: themes.highContrast,
-                                                   colors: draft.palette.colors, paletteId: draft.palette.id))
+                                                   colors: draft.palette.colors, paletteId: draft.palette.id), readerTexture: texture)
         }
         var snapshot = themes.snapshot
         snapshot.preferences.readerMode = appearance == .light ? .light : .dark
         guard let plan = try? resolveThemes(value: snapshot, system: themes.system, highContrast: themes.highContrast) else { return themes.reader }
-        return ThemeSurface(plan: plan.reader)
+        return ThemeSurface(plan: plan.reader, readerTexture: texture)
     }
     var body: some View {
         GeometryReader { geometry in
@@ -118,7 +121,7 @@ struct ReaderSettingsView: View {
             // bar above this page. Reserving half of just the content is too short.
             let frame = geometry.frame(in: .global)
             let mediumHeight = max(0, (frame.maxY + geometry.safeAreaInsets.bottom) / 2 - frame.minY - LayoutTokens.control)
-            ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editedAppearance, encoding: encoding, isRestartingEncoding: isRestartingEncoding, changeEncoding: changeEncoding,
+            ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editedAppearance, readerTheme: previewTheme, encoding: encoding, isRestartingEncoding: isRestartingEncoding, changeEncoding: changeEncoding,
                                  editPalette: { value in
                                      if previewPresented { previewDetent = .large }
                                      draft = value
@@ -231,6 +234,7 @@ private struct ReadingSettingsControls: View {
     @Binding var settings: ReaderSettings
     @Binding var tab: ReadingSettingsTab
     @Binding var editedAppearance: ThemeAppearance?
+    let readerTheme: ThemeSurface
     let encoding: String?
     let isRestartingEncoding: Bool
     let changeEncoding: ((String?) -> Void)?
@@ -273,6 +277,42 @@ private struct ReadingSettingsControls: View {
             }.pickerStyle(.segmented).padding(.horizontal, LayoutTokens.content).padding(.bottom, LayoutTokens.compact)
                 .accessibilityIdentifier("readerPaletteSlots")
             PalettePicker(reader: true, appearance: appearance, embedded: true, editPalette: editPalette)
+            VStack(spacing: LayoutTokens.compact) {
+                HStack {
+                    Text("纸张纹理"); Spacer()
+                    Picker("纸张纹理", selection: Binding(get: { texture?.id }, set: { id in
+                        var choice = id.map { readerTextureChoice(id: $0) }
+                        if let strength = texture?.strength { choice?.strength = strength }
+                        setTexture(choice)
+                    })) {
+                        Text("无").tag(ReaderTextureId?.none)
+                        ForEach(readerTextureIds(appearance: appearance), id: \.self) { id in Text(id.label).tag(Optional(id)) }
+                    }.labelsHidden().accessibilityIdentifier("readerTexture")
+                }
+                if let texture {
+                    HStack {
+                        Text("纹理强度"); Spacer()
+                        Picker("纹理强度", selection: Binding(get: { texture.strength }, set: { value in
+                            var choice = texture; choice.strength = value; setTexture(choice)
+                        })) {
+                            ForEach(readerTextureStrengths(), id: \.self) { value in Text(value.label).tag(value) }
+                        }.labelsHidden().accessibilityIdentifier("readerTextureStrength")
+                    }
+                }
+            }.disabled(readerTheme.plan.colors == nil)
+                .padding(.horizontal, LayoutTokens.page).padding(.vertical, LayoutTokens.compact)
+            if readerTheme.plan.colors == nil {
+                Text("请选择具体配色后使用纹理").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                    .accessibilityIdentifier("readerTextureUnavailable").padding(.horizontal, LayoutTokens.page)
+            }
+        }
+    }
+    private var texture: ReaderTextureChoice? {
+        appearance == .light ? themes.snapshot.preferences.readerLightTexture : themes.snapshot.preferences.readerDarkTexture
+    }
+    private func setTexture(_ choice: ReaderTextureChoice?) {
+        themes.update { value in
+            if appearance == .light { value.readerLightTexture = choice } else { value.readerDarkTexture = choice }
         }
     }
     private func binding<Value>(_ key: WritableKeyPath<ReaderSettings, Value>) -> Binding<Value> {

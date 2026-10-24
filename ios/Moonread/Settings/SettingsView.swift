@@ -465,7 +465,7 @@ struct PaletteEditor: View {
 
 extension ThemePalette {
     var isValidDraft: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && name.count <= 40 && themeColorsReadable(c: colors)
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && name.count <= 40
     }
 }
 
@@ -488,7 +488,7 @@ struct PaletteFields: View {
                 }
             }
             if !themeColorsReadable(c: palette.colors) {
-                Section { Text("文字与背景对比不足，请调整文字、强调色或背景。").foregroundStyle(Color(uiColor: theme.destructive)) }
+                Section { Text("对比度偏低，可能不易阅读").foregroundStyle(Color(uiColor: theme.destructive)) }
             }
             Section("背景") {
                 color("页面", \.canvas); color("分组与面板", \.surface); color("浮层", \.raised); color("输入区", \.input)

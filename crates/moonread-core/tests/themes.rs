@@ -50,7 +50,27 @@ fn builtin_palettes_are_readable_and_preserve_custom_capacity() {
     assert!(!theme_colors_readable(colors));
     let mut body = builtin_theme_palettes()[0].colors.clone();
     body.paper = body.ink;
-    assert!(!theme_colors_readable(body), "body ink against paper");
+    assert!(
+        !theme_colors_readable(body.clone()),
+        "body ink against paper"
+    );
+    let custom = make_theme_palette(
+        "custom-low".into(),
+        "Low contrast".into(),
+        ThemeAppearance::Light,
+        body,
+    )
+    .unwrap();
+    assert_eq!(
+        decode_theme_palette(encode_theme_palette(custom.clone()).unwrap()).unwrap(),
+        custom
+    );
+    let mut invalid = custom;
+    invalid.colors.ink = 0xff000000;
+    assert!(
+        encode_theme_palette(invalid).is_err(),
+        "RGB format limits still apply"
+    );
 }
 
 #[test]
@@ -93,4 +113,96 @@ fn stored_theme_preferences_and_palettes_are_independent() {
     restored.preferences = decode_theme_preferences(preferences).unwrap();
     restored.palettes.push(decoded);
     assert!(resolve_themes(restored, ThemeAppearance::Light, false).is_ok());
+}
+
+#[test]
+fn reader_texture_preferences_migrate_and_unknown_choices_become_none() {
+    let old = r#"{"app_mode":"Dark","app_light":{"Palette":{"id":"mint-light"}},"app_dark":"System","reader_mode":"Light","reader_light":"System","reader_dark":{"Palette":{"id":"lilac-dark"}},"reduce_motion":true}"#;
+    let mut prefs = decode_theme_preferences(old.into()).unwrap();
+    assert_eq!(prefs.reader_light_texture, None);
+    assert_eq!(prefs.reader_dark_texture, None);
+    assert_eq!(prefs.app_mode, AppAppearanceMode::Dark);
+    assert_eq!(
+        prefs.app_light,
+        AppPaletteSource::Palette {
+            id: "mint-light".into()
+        }
+    );
+    assert_eq!(prefs.reader_light, ReaderPaletteSource::System);
+    assert!(prefs.reduce_motion);
+    let baseline = prefs.clone();
+    prefs.reader_light_texture = Some(ReaderTextureChoice {
+        id: ReaderTextureId::Paper,
+        strength: ReaderTextureStrength::Medium,
+    });
+    prefs.reader_dark_texture = Some(ReaderTextureChoice {
+        id: ReaderTextureId::Night,
+        strength: ReaderTextureStrength::Strong,
+    });
+    let encoded = encode_theme_preferences(prefs.clone()).unwrap();
+    assert_eq!(decode_theme_preferences(encoded.clone()).unwrap(), prefs);
+    let mut fields: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+    fields["reader_light_texture"] = serde_json::json!({"id":"future-v9","strength":"light"});
+    fields["reader_dark_texture"] = serde_json::json!({"id":"night-v1","strength":"future"});
+    let decoded = decode_theme_preferences(fields.to_string()).unwrap();
+    assert_eq!(decoded, baseline);
+    assert!(
+        !encode_theme_preferences(decoded)
+            .unwrap()
+            .contains("future")
+    );
+    fields["reader_light_texture"] = serde_json::json!({"id":"paper-v1"});
+    fields
+        .as_object_mut()
+        .unwrap()
+        .remove("reader_dark_texture");
+    let decoded = decode_theme_preferences(fields.to_string()).unwrap();
+    assert_eq!(
+        decoded.reader_light_texture.unwrap().strength,
+        ReaderTextureStrength::Light
+    );
+    assert_eq!(decoded.reader_dark_texture, None);
+    assert!(decode_theme_preferences("{".into()).is_err());
+    // The disposable first-frame snapshot embeds the same backwards-compatible preferences.
+    let mut snapshot = serde_json::to_value(default_theme_snapshot()).unwrap();
+    snapshot["preferences"] = serde_json::from_str(old).unwrap();
+    assert_eq!(
+        decode_theme_snapshot(snapshot.to_string())
+            .unwrap()
+            .preferences,
+        baseline
+    );
+}
+
+#[test]
+fn reader_texture_ids_strengths_and_alpha_are_static() {
+    assert_eq!(
+        reader_texture_ids(ThemeAppearance::Light),
+        vec![
+            ReaderTextureId::Paper,
+            ReaderTextureId::Kraft,
+            ReaderTextureId::Linen
+        ]
+    );
+    assert_eq!(
+        reader_texture_ids(ThemeAppearance::Dark),
+        vec![ReaderTextureId::Night]
+    );
+    for id in reader_texture_ids(ThemeAppearance::Light)
+        .into_iter()
+        .chain(reader_texture_ids(ThemeAppearance::Dark))
+    {
+        assert_eq!(
+            reader_texture_choice(id).strength,
+            ReaderTextureStrength::Light
+        );
+        let expected = if id == ReaderTextureId::Night {
+            [3, 6, 9]
+        } else {
+            [6, 10, 14]
+        };
+        for (strength, alpha) in reader_texture_strengths().into_iter().zip(expected) {
+            assert_eq!(reader_texture_alpha(id, strength), f64::from(alpha) / 255.0);
+        }
+    }
 }

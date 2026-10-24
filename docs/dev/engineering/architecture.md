@@ -28,6 +28,9 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 
 | 独立规则 | 唯一归属方 / 文件 | 理由与其他层边界 | #66 动作 |
 | --- | --- | --- | --- |
+| 阅读纹理 ID/强度、alpha 与偏好兼容解码 | Rust `themes.rs` | 两个可选本机槽；未知值归无，不接收颜色或做纹理可读性检测 | 单源 |
+| 纹理槽本机保存/回滚、最终系统来源禁用 | Swift `UserThemes` / `ThemeStore` / 阅读设置 | 使用既有 UserDefaults；不改 Palette、CloudKit 或备份 | 平台边界 |
+| 纸面 tile 与滚动/分页背景 | Swift `ThemeSurface` / `ReadingView` / `ReaderTitlePage` | 当前输入与 tile；复用容器/页面，不动正文布局 | 平台绘制 |
 | 解码、normalization-v1、正文/原字节 SHA 计算 | Rust `text.rs`、`source_identity.rs` 及正文导入共用核心 | 和正文缓存/稳定内容身份一致；Swift 不重算规范正文 | 保持 |
 | fileId/bookId/canonical→正式或 pending 阅读键、索引有效性 | Rust `identity.rs`，供 user_projection/full_index/bookshelf 共用 | 数据库关联是事实，不能由 UI 看长度猜身份 | 收敛 |
 | 待索引集合与书架索引 inventory | Rust `full_index.rs` | 同一数据库快照返回总量/pending；Swift 不重复身份判定 | 单源扩展 |

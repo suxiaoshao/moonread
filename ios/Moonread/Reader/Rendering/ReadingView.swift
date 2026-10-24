@@ -232,6 +232,8 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     private var showBookDetails: () -> Void = {}
     private var isCoverVisible = false
     private var coverChanged: ((Bool) -> Void)?
+    private var paperInput: ThemeSurface.PaperInput?
+    private var paperBackground = UIColor.clear
     private var scrollCover: ReaderCoverController?
     private var hasCover: Bool { coverTitle != nil && window?.isStartOfBook == true }
 
@@ -302,7 +304,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             pendingNavigation = (navigation ?? ReadingNavigation(), !contentsChanged && !layoutChanged && !needsRebuild)
         }
         let nextTheme = theme ?? ThemeSurface(plan: try! resolveThemes(value: defaultThemeSnapshot(), system: dark ? .dark : .light, highContrast: false).reader)
-        let appearanceChanged = self.theme != nextTheme
+        let appearanceChanged = self.theme.plan != nextTheme.plan
         self.theme = nextTheme
         self.reduceMotion = reduceMotion
         ink.set(nextTheme.ink)
@@ -311,6 +313,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         if layoutChanged { preservePageBoundaries = false }
         else if contentsChanged { preservePageBoundaries = true }
         self.settings = settings
+        updatePaperSurface()
         self.anchor = anchor
         self.dark = dark
         self.typeSize = typeSize
@@ -325,8 +328,8 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         self.coverInformation = coverInformation; self.showBookDetails = showBookDetails
         self.coverChanged = coverChanged
         if !isInteracting { isCoverVisible = showingCover }
-        scrollCover?.update(title: coverTitle ?? "", information: coverInformation, showDetails: showBookDetails, theme: nextTheme)
-        for case let cover as ReaderCoverController in pageController?.children ?? [] { cover.update(title: coverTitle ?? "", information: coverInformation, showDetails: showBookDetails, theme: nextTheme) }
+        scrollCover?.update(title: coverTitle ?? "", information: coverInformation, showDetails: showBookDetails, theme: nextTheme, background: .clear)
+        for case let cover as ReaderCoverController in pageController?.children ?? [] { cover.update(title: coverTitle ?? "", information: coverInformation, showDetails: showBookDetails, theme: nextTheme, background: paperBackground) }
         // Note text and drafts do not change the visible highlight ranges.
         let sameRanges = self.annotations.count == annotations.count
             && zip(self.annotations, annotations).allSatisfy {
@@ -384,6 +387,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        updatePaperSurface()
         guard let window = view.window, view.bounds.width > 60, view.bounds.height > 60 else { return }
         // SwiftUI fills the window even when the status bar appears. Reserve the
         // hardware safe area here, independently of the overlay controls. Keep
@@ -652,7 +656,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     }
 
     private func makeCover() -> ReaderCoverController {
-        let cover = ReaderCoverController(title: coverTitle ?? "", information: coverInformation, showDetails: showBookDetails, theme: theme)
+        let cover = ReaderCoverController(title: coverTitle ?? "", information: coverInformation, showDetails: showBookDetails, theme: theme, background: settings?.mode == .scroll ? .clear : paperBackground)
         cover.view.accessibilityCustomActions = [
             UIAccessibilityCustomAction(name: String(localized: "显示阅读工具")) { [weak self] _ in self?.toggleControls?(); return true },
             UIAccessibilityCustomAction(name: String(localized: "开始阅读")) { [weak self] _ in
@@ -811,7 +815,8 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     }
     private func decorate(_ text: UITextView, base: UInt64) {
         guard let layout = text.layoutManager as? ReadingLayoutManager else { return }
-        text.backgroundColor = theme.paper
+        text.backgroundColor = text is ScrollReadingTextView ? .clear : paperBackground
+        text.isOpaque = !(text is ScrollReadingTextView)
         text.tintColor = theme.selection
         let mapping = textCoordinates(text)
         let end = base + UInt64(mapping.byteCount)
@@ -1179,7 +1184,8 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             text.alwaysBounceVertical = true
             text.showsVerticalScrollIndicator = false
             text.showsHorizontalScrollIndicator = false
-            text.backgroundColor = theme.paper
+            text.backgroundColor = .clear
+            text.isOpaque = false
             text.contentInsetAdjustmentBehavior = .never
             text.contentInset.bottom = ReadingTextMetrics.scrollFadeHeight(bottomSafeArea: stableInsets.bottom)
             text.textContainerInset = textInsets
@@ -1213,6 +1219,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             pages = paginate(window, preserving: previousPages)
             guard !pages.isEmpty else { return }
             let paging = UIPageViewController(transitionStyle: .scroll, navigationOrientation: .horizontal)
+            paging.view.backgroundColor = theme.paper
             paging.dataSource = self
             paging.delegate = self
             addChild(paging)
@@ -1227,6 +1234,22 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         decorateVisibleText()
         updateBottomFade()
 
+    }
+
+    private func updatePaperSurface() {
+        let input = theme.paperInput(scale: traitCollection.displayScale)
+        if input != paperInput {
+            paperInput = input
+            paperBackground = ThemeSurface.paperBackground(input)
+        }
+        readingSurface.backgroundColor = settings?.mode == .scroll ? paperBackground : theme.paper
+        pageController?.view.backgroundColor = theme.paper
+        for text in visibleTextViews {
+            text.backgroundColor = text is ScrollReadingTextView ? .clear : paperBackground
+            text.isOpaque = !(text is ScrollReadingTextView)
+        }
+        scrollCover?.view.backgroundColor = .clear
+        for case let cover as ReaderCoverController in pageController?.children ?? [] { cover.viewIfLoaded?.backgroundColor = paperBackground }
     }
 
     private func updateBottomFade() {
@@ -1785,21 +1808,21 @@ private final class ReaderCoverController: UIHostingController<AnyView> {
     private var currentTitle: String
     private var currentTheme: ThemeSurface
     private var information: BookDetails?
-    init(title: String, information: BookDetails?, showDetails: @escaping () -> Void, theme: ThemeSurface) {
+    init(title: String, information: BookDetails?, showDetails: @escaping () -> Void, theme: ThemeSurface, background: UIColor) {
         currentTitle = title; currentTheme = theme; self.information = information
         super.init(rootView: AnyView(ReaderTitlePage(title: title, information: information, showDetails: showDetails).themeScope(theme)))
         safeAreaRegions = []
-        view.backgroundColor = theme.paper
+        view.backgroundColor = background
         view.isAccessibilityElement = false
         view.accessibilityIdentifier = "readerCover"
         view.accessibilityLabel = String(localized: "封面，\(title)")
     }
     @MainActor required dynamic init?(coder aDecoder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    func update(title: String, information: BookDetails?, showDetails: @escaping () -> Void, theme: ThemeSurface) {
-        guard currentTitle != title || currentTheme != theme || self.information != information else { return }
+    func update(title: String, information: BookDetails?, showDetails: @escaping () -> Void, theme: ThemeSurface, background: UIColor) {
+        view.backgroundColor = background
+        guard currentTitle != title || currentTheme.plan != theme.plan || self.information != information else { return }
         currentTitle = title; currentTheme = theme; self.information = information
         rootView = AnyView(ReaderTitlePage(title: title, information: information, showDetails: showDetails).themeScope(theme))
-        view.backgroundColor = theme.paper
         view.accessibilityLabel = String(localized: "封面，\(title)")
     }
 }
