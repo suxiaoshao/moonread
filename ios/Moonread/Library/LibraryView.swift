@@ -250,12 +250,6 @@ struct LibraryFolderView: View {
     }
     var body: some View {
         browser
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if location.path.isEmpty {
-                ShelfIndexGuidance(model: model, shelfID: location.shelfID).padding(.horizontal)
-                    .background(Color(uiColor: theme.paper))
-            }
-        }
         .navigationTitle(editing.isEditing ? selectionTitle : title).navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(editing.isEditing)
         // Selection is a focused file task; its bottom toolbar takes the place

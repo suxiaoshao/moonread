@@ -431,6 +431,8 @@ import XCTest
     ready(app.buttons["reauthorizeShelf-" + referenceID]).tap()
     let indexButtons = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "recoverWholeShelf-"))
     waitUntil { indexButtons.allElementsBoundByIndex.contains(where: \.isHittable) }
+    XCTAssertTrue(app.staticTexts["建立索引以恢复进度与标签"].exists)
+    XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "已知下载量：")).firstMatch.exists)
     indexButtons.allElementsBoundByIndex.first(where: \.isHittable)!.tap()
     ready(app.buttons["fullIndexStart"]).tap()
     let progress = app.staticTexts["fullIndexProgress"]
