@@ -144,7 +144,10 @@ private struct MoonreadRoot: View {
                            highContrast: contrast == .increased)
     }
     private var appTheme: ThemeSurface { ThemeSurface(plan: plans.app) }
-    private var readerTheme: ThemeSurface { ThemeSurface(plan: plans.reader) }
+    private var readerTheme: ThemeSurface {
+        let plan = plans.reader
+        return ThemeSurface(plan: plan, readerTexture: plan.appearance == .light ? themes.snapshot.preferences.readerLightTexture : themes.snapshot.preferences.readerDarkTexture)
+    }
 
     var body: some View {
         // Observe outside the UIKit host's content closure. The app navigation
