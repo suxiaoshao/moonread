@@ -273,6 +273,7 @@ import XCTest
     element("paletteOptions").swipeUp()
     ready(app.buttons["palette-white-light"]).tap()
     element("readerAppearanceMode").tap(); app.buttons["浅色"].tap()
+    element("paletteOptions").swipeDown(); element("paletteOptions").swipeDown()
     element("readerTexture").tap(); app.buttons["宣纸"].tap()
     element("readerTextureStrength").tap(); app.buttons["中"].tap()
     element("paletteOptions").swipeDown(); element("paletteOptions").swipeDown()
@@ -281,6 +282,7 @@ import XCTest
     XCTAssertFalse(element("readerTexture").isEnabled)
     element("paletteOptions").swipeUp()
     ready(app.buttons["palette-white-light"]).tap()
+    element("paletteOptions").swipeDown(); element("paletteOptions").swipeDown()
     XCTAssertTrue(element("readerTexture").isEnabled)
     XCTAssertTrue(element("readerTexture").label.contains("宣纸"))
     XCTAssertTrue(element("readerTextureStrength").label.contains("中"))
@@ -291,6 +293,7 @@ import XCTest
     app.tabBars.buttons["设置"].tap()
     ready(app.buttons["readerThemeSettings"]).tap()
     app.segmentedControls["readerThemeTabs"].buttons["配色"].tap()
+    element("paletteOptions").swipeDown(); element("paletteOptions").swipeDown()
     element("readerTexture").tap(); app.buttons["无"].tap()
     XCTAssertFalse(element("readerTextureStrength").exists)
   }

@@ -155,6 +155,8 @@ ThemeSnapshot 仅用于组合当前解析输入，以及可丢弃、可重建的
 
 ThemePreferences 的 reader_light_texture / reader_dark_texture 是可选本机槽位，默认无，与配色独立；选择无会清空该槽，再启用默认淡。旧 JSON 缺字段按无读取；未知纹理 ID 或强度也归无，未知值不保留，读取不回写。ThemePalette、同步协议和备份格式不变。更换配色保留纹理，系统来源暂不绘制，控件置灰并说明「请选择具体配色后使用纹理」；恢复具体配色时恢复所选槽位。高对比照常绘制，不检测或降低纹理对比度。
 
-浅槽为宣纸 paper-v1、牛皮纸 kraft-v1、细麻布 linen-v1；深槽为夜间细噪点 night-v1。Rust 提供 ID/强度枚举及档位 alpha：浅纹理淡/中/浓为 6/10/14 除以 255，夜间为 3/6/9 除以 255。四张 256×256 归一化 RGBA source PNG 随 Asset Catalog 分发，平台按 256pt 周期及 displayScale 合成不透明 tile，仅保留当前输入和结果。
+浅槽为宣纸 paper-v1、牛皮纸 kraft-v1、细麻布 linen-v1；深槽为夜间细噪点 night-v1。Rust 提供 ID/强度枚举及档位 alpha：浅纹理淡/中/浓为 6/10/14 除以 255，夜间为 3/6/9 除以 255。四张 768×768 归一化 RGBA source PNG（每张对应 256pt）随 Asset Catalog 分发，平台按 256pt 周期及 displayScale 合成不透明 tile，仅保留当前输入和结果。
 
 滚动时 pattern 放在不滚动的 readingSurface，正文和内层标题页透明；分页把 pattern 放在原 PageController 的正文 view 和封面 hosting view，随页移动。根外围和底部 fade 继续用纯 paper。纹理只换背景，不改字体、textStorage、排版、选区或导航位置；不新建背景层、缓存服务、随机运行时生成器或同步记录。
+
+阅读设置的纹理与强度作为配色列表首个分组，位于明暗槽切换下方，随列表滚动。展开预览的标题和正文共享同一平铺背景；正文保持透明，不改变预览视口或位置恢复的几何。

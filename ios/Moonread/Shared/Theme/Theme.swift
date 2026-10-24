@@ -88,17 +88,21 @@ struct ThemeSurface: Equatable {
         PaperInput(paper: paper.opaqueRGB, choice: plan.colors == nil ? nil : readerTexture, scale: max(1, scale))
     }
     static func paperBackground(_ input: PaperInput) -> UIColor {
+        guard input.choice != nil else { return UIColor(rgb: input.paper) }
+        return UIColor(patternImage: paperTile(input))
+    }
+    static func paperTile(_ input: PaperInput) -> UIImage {
         let paper = UIColor(rgb: input.paper)
-        guard let choice = input.choice, let source = UIImage(named: choice.id.assetName) else { return paper }
         let format = UIGraphicsImageRendererFormat()
         format.scale = input.scale; format.opaque = true; format.preferredRange = .standard
-        let tile = UIGraphicsImageRenderer(size: CGSize(width: 256, height: 256), format: format).image { context in
+        return UIGraphicsImageRenderer(size: CGSize(width: 256, height: 256), format: format).image { context in
             paper.setFill(); context.fill(CGRect(x: 0, y: 0, width: 256, height: 256))
             context.cgContext.interpolationQuality = .none
-            source.draw(in: CGRect(x: 0, y: 0, width: 256, height: 256), blendMode: .normal,
-                        alpha: CGFloat(readerTextureAlpha(id: choice.id, strength: choice.strength)))
+            if let choice = input.choice, let source = UIImage(named: choice.id.assetName) {
+                source.draw(in: CGRect(x: 0, y: 0, width: 256, height: 256), blendMode: .normal,
+                            alpha: CGFloat(readerTextureAlpha(id: choice.id, strength: choice.strength)))
+            }
         }
-        return UIColor(patternImage: tile)
     }
     static let initial = ThemeSurface(plan: try! resolveThemes(value: defaultThemeSnapshot(), system: .light, highContrast: false).app)
 }

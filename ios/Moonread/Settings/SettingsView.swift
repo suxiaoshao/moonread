@@ -336,6 +336,7 @@ struct PalettePicker: View {
             if !embedded { Section {
                 PalettePreview(theme: previewTheme).listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
             } }
+            if reader && embedded { textureSection }
             Section {
                 if reader { sourceRow("跟随应用", id: "app", icon: "arrow.turn.down.right") }
                 sourceRow("系统配色", id: "system", icon: "circle.lefthalf.filled")
@@ -365,6 +366,39 @@ struct PalettePicker: View {
         .disabled(themes.saving).themedPage()
         .contentMargins(.top, embedded ? LayoutTokens.compact : LayoutTokens.content, for: .scrollContent)
         .accessibilityIdentifier("paletteOptions")
+    }
+    private var texture: ReaderTextureChoice? {
+        appearance == .light ? themes.snapshot.preferences.readerLightTexture : themes.snapshot.preferences.readerDarkTexture
+    }
+    private func setTexture(_ choice: ReaderTextureChoice?) {
+        themes.update { value in
+            if appearance == .light { value.readerLightTexture = choice } else { value.readerDarkTexture = choice }
+        }
+    }
+    private var textureSection: some View {
+        Section {
+            Picker("纸张纹理", selection: Binding(get: { texture?.id }, set: { id in
+                var choice = id.map { readerTextureChoice(id: $0) }
+                if let strength = texture?.strength { choice?.strength = strength }
+                setTexture(choice)
+            })) {
+                Text("无").tag(ReaderTextureId?.none)
+                ForEach(readerTextureIds(appearance: appearance), id: \.self) { id in Text(id.label).tag(Optional(id)) }
+            }.accessibilityIdentifier("readerTexture")
+            if let texture {
+                Picker("纹理强度", selection: Binding(get: { texture.strength }, set: { value in
+                    var choice = texture; choice.strength = value; setTexture(choice)
+                })) {
+                    ForEach(readerTextureStrengths(), id: \.self) { value in Text(value.label).tag(value) }
+                }.accessibilityIdentifier("readerTextureStrength")
+            }
+        } footer: {
+            if previewTheme.plan.colors == nil {
+                Text("请选择具体配色后使用纹理").accessibilityIdentifier("readerTextureUnavailable")
+            }
+        }
+        .disabled(previewTheme.plan.colors == nil)
+        .listRowBackground(Color(uiColor: theme.surface))
     }
     private func sourceRow(_ title: LocalizedStringKey, id: String, icon: String) -> some View {
         Button { choose(id) } label: {
