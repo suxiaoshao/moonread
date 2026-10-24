@@ -250,12 +250,6 @@ struct LibraryFolderView: View {
     }
     var body: some View {
         browser
-        .safeAreaInset(edge: .top, spacing: 0) {
-            if location.path.isEmpty {
-                ShelfIndexGuidance(model: model, shelfID: location.shelfID).padding(.horizontal)
-                    .background(Color(uiColor: theme.paper))
-            }
-        }
         .navigationTitle(editing.isEditing ? selectionTitle : title).navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(editing.isEditing)
         // Selection is a focused file task; its bottom toolbar takes the place
@@ -692,6 +686,9 @@ struct LibraryManagementView: View {
     @Environment(\.theme) private var theme
     var body: some View {
         List {
+            Section {
+                Toggle(isOn: Binding(get: { model.fullIndex.automatic }, set: { model.fullIndex.automatic = $0 })) { Text("新加入的书自动建立索引", tableName: "FullIndex") }.accessibilityIdentifier("automaticFullIndex")
+            } header: { Text("索引", tableName: "FullIndex") }
             ShelfReferenceHints(model: model)
             Section {
                 ForEach(model.shelves, id: \.id) { shelf in

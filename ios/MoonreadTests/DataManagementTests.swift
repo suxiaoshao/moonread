@@ -80,6 +80,71 @@ import XCTest
         let rolledBack = try await snapshot(rollback), absentCover = try await rollback.cover(coverID)
         XCTAssertEqual(rolledBack, unchanged); XCTAssertNil(absentCover)
     }
+    func testReleasedLegacyPositionAndPendingClearRoundtripWithoutUnsupported() async throws {
+        let f = try positionWinnerFixture(); defer { f.clean() }
+        let key = f.book.contentSha256, alias = "pending:" + f.aliases[0]
+        let legacy = "{\"content_key\":\"\(key)\",\"offset\":12}"
+        try await value(f.formal, "position/" + key, legacy, token: "build-2")
+        let other = String(repeating: "c", count: 64)
+        let oldPosition = StoredValue(updated: 10, token: "build-2-position", value: "{\"content_key\":\"\(other)\",\"offset\":3}")
+        try await receiveBackupPosition(oldPosition, key: other, store: f.formal)
+        let pendingPosition = StoredValue(updated: 10, token: "build-2-pending", value: "{\"content_key\":\"\(alias)\",\"offset\":3}")
+        try await receiveBackupPosition(pendingPosition, key: alias, store: f.pending)
+        try await f.pending.requirePendingReadable(key: alias)
+        let clear = ClearValue(book: alias, session: nil, through: 5, ids: [])
+        try await f.formal.receiveSyncFixture("clear", payload: UserSyncJSON.encode(clear, envelope: true))
+        let inventory = try await f.formal.readingDataInventory()
+        XCTAssertEqual(inventory.unsupported, 0); XCTAssertEqual(inventory.pending, 0)
+        let decoded = try UserSyncJSON.decode(PositionValue.self, legacy, as: UserSyncJSON.position)
+        XCTAssertNil(decoded.source_hint); XCTAssertEqual(decoded.offset, 12)
+        let (directory, manifest) = try await package(f.formal, at: f.root)
+        let restored = try store()
+        try await restored.mergeBackup(directory: directory, manifest: manifest)
+        let after = try await restored.readingDataInventory()
+        XCTAssertEqual(after.unsupported, 0); XCTAssertEqual(after.pending, 0)
+        let oldRows = try await snapshot(f.formal), newRows = try await snapshot(restored)
+        XCTAssertEqual(newRows, oldRows, "Compatibility reads must not rewrite historical payloads")
+        // Deleting the formal book also removes clears belonging to its pending aliases.
+        _ = try await f.service.deleteReadingData([key])
+        let clears = try await f.formal.syncFixturePayloads("clear")
+        XCTAssertTrue(clears.isEmpty)
+    }
+    func testInventorySeparatesFutureMalformedAndPendingWithoutPayloadDiagnostics() async throws {
+        let store = try store(), key = String(repeating: "a", count: 64)
+        try await store.receiveSyncFixture("position", key: key, payload: "{\"v\":2,\"updated\":1,\"token\":\"t\",\"value\":\"null\"}")
+        try await store.receiveSyncFixture("value", key: "metadata/" + key + "/author", payload: "broken")
+        try await store.receiveSyncFixture("clear", payload: "{\"v\":2,\"book\":null,\"session\":null,\"through\":0,\"ids\":[]}")
+        let alias = "pending:unfinished"
+        try await store.receiveSyncFixture("position", key: alias, payload: UserSyncJSON.encode(positionRecord(key: alias, token: "pending", offset: 0), envelope: true))
+        let inventory = try await store.readingDataInventory()
+        XCTAssertEqual(inventory.pending, 1)
+        XCTAssertTrue(inventory.diagnostics.contains { $0.bookKey == nil && $0.recordType == "statistics-clears" && $0.reason == .newerFormat })
+        XCTAssertTrue(inventory.diagnostics.contains { $0.bookKey == key && $0.reason == .newerFormat && $0.recordType == "positions" })
+        XCTAssertTrue(inventory.diagnostics.contains { $0.bookKey == key && $0.reason == .unreadable && $0.recordType == "values" })
+        XCTAssertTrue(inventory.diagnostics.contains { $0.bookKey == alias && $0.reason == .pending })
+        XCTAssertEqual(ReadingDataDiagnostic.reason(for: CocoaError(.fileReadNoPermission)), .readFailure)
+        for text in ["{\"updated\":1}", "{\"v\":0,\"updated\":1,\"token\":\"t\",\"value\":\"null\"}"] {
+            XCTAssertThrowsError(try UserSyncJSON.storedValue(text, key: "position/" + key)) { error in
+                XCTAssertEqual(ReadingDataDiagnostic.reason(for: error), .unreadable)
+            }
+        }
+        let extra = "{\"updated\":1,\"token\":\"t\",\"value\":\"null\",\"future\":true}"
+        XCTAssertThrowsError(try UserSyncJSON.storedValue(extra, key: "position/" + key)) { error in
+            XCTAssertEqual(ReadingDataDiagnostic.reason(for: error), .newerFormat)
+        }
+    }
+    func testReadingDataFilteringClearsHiddenSelectionsAndKeepsHistoricalTitles() {
+        let model = DataManagementModel()
+        model.updateInventory(.init(items: [.init(id: "a", title: "归途", lastRead: 20, linked: true), .init(id: "b", title: "星灯", lastRead: 10)], pending: 0, unsupported: 0))
+        model.selected = ["a", "b"]
+        model.unlinkedOnly = true
+        XCTAssertEqual(model.visible.map(\.id), ["b"]); XCTAssertTrue(model.selected.isEmpty)
+        XCTAssertEqual(model.visible.first?.title, "星灯", "An unlinked book keeps its known title")
+        model.selected = ["b"]; model.query = "归途"
+        XCTAssertTrue(model.selected.isEmpty); XCTAssertTrue(model.visible.isEmpty)
+        model.query = ""; model.unlinkedOnly = false; model.recent = false
+        XCTAssertEqual(model.visible.count, 2)
+    }
     func testImportPreviewRejectsConflictingIDsUnknownPayloadsAndMissingAssetsWithoutWrites() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
         let source = f.formal, target = try store(), key = f.book.contentSha256

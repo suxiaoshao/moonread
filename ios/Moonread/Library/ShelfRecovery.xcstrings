@@ -277,6 +277,52 @@
           }
         }
       }
+    },
+    "%lld 本还没建立索引": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 本还没建立索引"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld books not indexed yet"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 本還沒建立索引"
+          }
+        }
+      }
+    },
+    "建立索引以恢复进度与标签": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建立索引以恢复进度与标签"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Index to restore progress and tags"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建立索引以還原進度與標籤"
+          }
+        }
+      }
     }
   }
 }

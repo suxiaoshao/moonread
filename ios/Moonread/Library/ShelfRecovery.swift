@@ -267,26 +267,20 @@ struct ShelfIndexGuidance: View {
     private var recovery: Bool { model.shelfRecovery.guidance.contains(shelfID) }
     var body: some View {
         if let summary = model.shelfIndexes[shelfID], summary.pending > 0 {
-            VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 12) {
+                if recovery { Image(systemName: "arrow.clockwise.icloud").foregroundStyle(.secondary).accessibilityHidden(true) }
+                VStack(alignment: .leading, spacing: 4) {
+                    if recovery { Text("建立索引以恢复进度与标签", tableName: "ShelfRecovery").font(.subheadline).lineLimit(nil).fixedSize(horizontal: false, vertical: true) }
+                    else { Text("\(summary.pending) 本还没建立索引", tableName: "ShelfRecovery").font(.subheadline).foregroundStyle(.secondary) }
+                }
+                Spacer(minLength: 4)
+                Button { Task { await model.openShelfIndex(shelfID) } } label: { Text("建立索引", tableName: "FullIndex") }
+                    .buttonStyle(.bordered).controlSize(.small).accessibilityIdentifier("recoverWholeShelf-" + shelfID)
                 if recovery {
-                    Text("建立索引以恢复整个书架", tableName: "ShelfRecovery").font(.headline)
-                    Text("索引完成后，已有阅读进度和标签会重新显示。", tableName: "ShelfRecovery").font(.caption).foregroundStyle(.secondary)
+                    Button { Task { await model.deferShelfRecovery(shelfID) } } label: { Image(systemName: "xmark").frame(minWidth: 44, minHeight: 44) }
+                        .buttonStyle(.borderless).accessibilityLabel(Text("以后再说", tableName: "ShelfRecovery"))
                 }
-                Text("有 \(summary.pending) 本未索引", tableName: "ShelfRecovery").font(.subheadline)
-                if summary.cloudFiles > 0 {
-                    Text("包含 \(summary.cloudFiles) 本未下载的 iCloud 文件", tableName: "ShelfRecovery").font(.caption).foregroundStyle(.secondary)
-                }
-                if summary.cloudBytes > 0 {
-                    Text("已知下载量：\(ByteCountFormatter.string(fromByteCount: Int64(clamping: summary.cloudBytes), countStyle: .file))", tableName: "ShelfRecovery").font(.caption).foregroundStyle(.secondary)
-                }
-                HStack {
-                    Button { Task { await model.openShelfIndex(shelfID) } } label: { Text("建立索引", tableName: "FullIndex") }
-                        .accessibilityIdentifier("recoverWholeShelf-" + shelfID)
-                    if recovery {
-                        Button { Task { await model.deferShelfRecovery(shelfID) } } label: { Text("以后再说", tableName: "ShelfRecovery") }
-                    }
-                }
-            }.buttonStyle(.borderless).padding(.vertical, 8)
+            }.padding(.vertical, 6)
                 .disabled(!model.canAcceptFileWork)
         }
     }

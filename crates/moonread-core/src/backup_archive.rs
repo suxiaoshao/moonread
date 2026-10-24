@@ -405,6 +405,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("input");
         let mut manifest = snapshot(&root);
+        // Transport stays byte-exact for released SwiftData payloads. Their
+        // schema/compatibility is validated once, at the Swift persistence boundary.
+        let legacy = br#"{"key":"position/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","payload":"{\"updated\":1,\"token\":\"old\",\"value\":\"{\\\"content_key\\\":\\\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\\",\\\"offset\\\":12}\"}"}
+"#;
+        let clear = br#"{"key":"","payload":"{\"v\":1,\"book\":\"pending:old\",\"session\":null,\"through\":5,\"ids\":[]}"}
+"#;
+        for (path, bytes) in [
+            (RECORDS[0], legacy.as_slice()),
+            (RECORDS[4], clear.as_slice()),
+        ] {
+            fs::write(root.join(path), bytes).unwrap();
+            let member =
+                backup_member(path.into(), root.join(path).to_string_lossy().into()).unwrap();
+            let entries = manifest["members"].as_array_mut().unwrap();
+            let index = entries.iter().position(|m| m["path"] == path).unwrap();
+            entries[index] = serde_json::to_value(member).unwrap();
+        }
         fs::create_dir_all(root.join("extensions")).unwrap();
         fs::write(root.join("extensions/future.json"), b"{\"future\":true}").unwrap();
         let extension = backup_member(
@@ -435,7 +452,11 @@ mod tests {
         );
         assert_eq!(
             fs::read(Path::new(&restored.directory).join(RECORDS[0])).unwrap(),
-            b"{}\n"
+            legacy
+        );
+        assert_eq!(
+            fs::read(Path::new(&restored.directory).join(RECORDS[4])).unwrap(),
+            clear
         );
     }
     #[test]

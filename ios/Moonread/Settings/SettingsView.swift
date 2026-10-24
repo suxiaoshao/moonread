@@ -41,11 +41,13 @@ struct SettingsView: View {
                     SettingsEntry(title: "阅读统计设置", symbol: "chart.bar.xaxis", summary: recording.map { String(localized: $0 ? "记录中" : "已暂停") } ?? String(localized: "正在加载"))
                 }.accessibilityIdentifier("statisticsSettings")
             }.listRowBackground(Color(uiColor: theme.surface))
-            Section("书架与同步") {
-                Toggle(isOn: Binding(get: { library.fullIndex.automatic }, set: { library.fullIndex.automatic = $0 })) { Text("新加入的书自动建立索引", tableName: "FullIndex") }.accessibilityIdentifier("automaticFullIndex")
+            Section("书架与数据") {
                 NavigationLink(value: LibraryRoute.manage) {
                     SettingsEntry(title: "书架管理", symbol: "books.vertical", summary: String(localized: "\(library.shelves.count) 个书架"))
                 }.accessibilityIdentifier("libraryManagementSettings")
+                NavigationLink(value: LibraryRoute.dataManagement) {
+                    SettingsEntry(title: "数据管理", symbol: "externaldrive", summary: String(localized: "备份、恢复、清理"))
+                }.accessibilityIdentifier("dataManagementSettings")
                 if CloudConfiguration.availableInBuild {
                     NavigationLink { CloudSettingsView() } label: {
                         SettingsEntry(title: "iCloud", symbol: "icloud", summary: cloud.settingsSummary)
@@ -66,7 +68,7 @@ struct SettingsView: View {
                 } else {
                     Text(verbatim: ai.availability.regionMessage).accessibilityIdentifier("aiRegionUnavailable")
                 }
-            } footer: {
+            } header: { Text("AI 助手") } footer: {
                 if ai.availability.regionAllowsAI {
                     Text("关闭后隐藏所有 AI 功能，已有连接、会话和数据共享许可保留。")
                         .padding(.bottom, 16)
@@ -74,13 +76,7 @@ struct SettingsView: View {
                     Text("已有 AI 数据保留在本机，不会发送。").padding(.bottom, 16)
                 }
             }.listRowBackground(Color(uiColor: theme.surface))
-            Section("应用") {
-                NavigationLink(value: LibraryRoute.dataManagement) {
-                    Label { Text("数据管理", tableName: "DataManagement") } icon: { Image(systemName: "externaldrive") }
-                }.accessibilityIdentifier("dataManagementSettings")
-                NavigationLink { UsageGuideView() } label: {
-                    SettingsEntry(title: "使用指南", symbol: "questionmark.circle", summary: String(localized: "导入、阅读与同步"))
-                }.accessibilityIdentifier("usageGuideSettings")
+            Section("外观与语言") {
                 NavigationLink { AppThemePreferencesView() } label: {
                     SettingsEntry(title: "应用外观", symbol: "paintpalette", summary: appearanceSummary)
                 }.accessibilityIdentifier("appThemeSettings")
@@ -89,7 +85,10 @@ struct SettingsView: View {
                 }.accessibilityIdentifier("languageSettings")
                     .accessibilityHint("打开系统设置")
             }.listRowBackground(Color(uiColor: theme.surface))
-            Section("关于") {
+            Section("帮助与关于") {
+                NavigationLink { UsageGuideView() } label: {
+                    SettingsEntry(title: "使用指南", symbol: "questionmark.circle", summary: String(localized: "导入、阅读与同步"))
+                }.accessibilityIdentifier("usageGuideSettings")
                 Link(destination: AppLinks.writeReview) {
                     SettingsEntry(title: "给月读评分", symbol: "star", summary: "")
                 }.accessibilityIdentifier("rateMoonread")

@@ -3,9 +3,12 @@ import OSLog
 
 /// A read barrier, not a lossy repair. Quarantined records remain in SwiftData unchanged.
 struct UserSyncCompatibilityError: LocalizedError, Sendable {
+    enum Reason: Sendable { case newerFormat, unreadable }
     var statistics = false
+    var reason: Reason = .unreadable
     var errorDescription: String? {
-        statistics ? String(localized: "统计数据来自更新版本，请更新 App。") :
+        if reason == .unreadable { return String(localized: "阅读数据无法读取，原始记录已保留。", table: "DataManagement") }
+        return statistics ? String(localized: "统计数据来自更新版本，请更新 App。") :
             String(localized: "部分阅读数据当前版本无法理解，已保留并设为只读，请更新 App。")
     }
 }
@@ -23,7 +26,7 @@ enum UserSyncJSON {
     }
     indirect enum Shape: Sendable {
         case string, uint, int, uint32, int32, bool
-        case choice(Set<String>), nullable(Shape), array(Shape), object([String: Shape])
+        case choice(Set<String>), nullable(Shape), array(Shape), object([String: Shape], optional: Set<String> = [])
     }
     enum ValueKind { case position, chapter, author, synopsis, status, cover, tag, palette, shelfReference }
     static func kind(_ key: String) -> ValueKind? {
@@ -52,7 +55,7 @@ enum UserSyncJSON {
     static let stored: Shape = .object(["updated": .int, "token": .string, "value": .string])
     static let sourceHint: Shape = .object(["source_kind": .choice(["managed_icloud", "managed_local", "external"]),
         "relative_path": .string, "file_name": .string, "byte_size": .nullable(.uint), "decoding": .string])
-    static let position: Shape = .object(["content_key": .string, "offset": .uint, "source_hint": .nullable(sourceHint)])
+    static let position: Shape = .object(["content_key": .string, "offset": .uint, "source_hint": .nullable(sourceHint)], optional: ["source_hint"])
     static let chapter: Shape = .object(["content_key": .string, "offset": .uint, "title": .string, "level": .uint32, "excluded": .bool])
     static let content: Shape = .object(["start": .uint, "end": .uint, "excerpt": .string, "note": .string])
     static let candidate: Shape = .object(["id": .string, "ancestors": .array(.string), "content": .nullable(content), "created": .uint,
@@ -81,25 +84,28 @@ enum UserSyncJSON {
             let decoder = JSONDecoder()
             decoder.userInfo[schemaKey] = Configuration(shape: shape, envelope: envelope)
             _ = try decoder.decode(Validation.self, from: Data(text.utf8))
-        } catch { throw UserSyncCompatibilityError() }
+        } catch let error as UserSyncCompatibilityError { throw error }
+        catch { throw UserSyncCompatibilityError() }
     }
     private static func validate(_ decoder: Decoder, shape: Shape, envelope: Bool = false) throws {
         switch shape {
-        case .object(let fields):
+        case .object(let fields, let optional):
             let container = try decoder.container(keyedBy: Key.self)
             let actual = Set(container.allKeys.map(\.stringValue)), required = Set(fields.keys)
-            guard required.isSubset(of: actual), actual.isSubset(of: envelope ? required.union(["v"]) : required) else { throw UserSyncCompatibilityError() }
+            guard actual.isSubset(of: envelope ? required.union(["v"]) : required) else { throw UserSyncCompatibilityError(reason: .newerFormat) }
             if envelope, container.contains(Key("v")) {
-                guard try container.decode(Int.self, forKey: Key("v")) == 1 else { throw UserSyncCompatibilityError() }
+                let version = try container.decode(Int.self, forKey: Key("v"))
+                guard version == 1 else { throw UserSyncCompatibilityError(reason: version > 1 ? .newerFormat : .unreadable) }
             }
-            for (key, nested) in fields { try validate(container.superDecoder(forKey: Key(key)), shape: nested) }
+            guard required.subtracting(optional).isSubset(of: actual) else { throw UserSyncCompatibilityError() }
+            for (key, nested) in fields where actual.contains(key) { try validate(container.superDecoder(forKey: Key(key)), shape: nested) }
         case .array(let element):
             var container = try decoder.unkeyedContainer()
             while !container.isAtEnd { try validate(container.superDecoder(), shape: element) }
         case .nullable(let element):
             if !(try decoder.singleValueContainer().decodeNil()) { try validate(decoder, shape: element) }
         case .choice(let allowed):
-            guard try allowed.contains(decoder.singleValueContainer().decode(String.self)) else { throw UserSyncCompatibilityError() }
+            guard try allowed.contains(decoder.singleValueContainer().decode(String.self)) else { throw UserSyncCompatibilityError(reason: .newerFormat) }
         case .string: _ = try decoder.singleValueContainer().decode(String.self)
         case .bool: _ = try decoder.singleValueContainer().decode(Bool.self)
         case .uint: _ = try decoder.singleValueContainer().decode(UInt64.self)
@@ -134,7 +140,12 @@ enum UserSyncJSON {
         return envelope ? try Self.envelope(text) : text
     }
     static func validateValue(_ text: String, key: String) throws {
-        guard let kind = kind(key) else { throw UserSyncCompatibilityError() }
+        guard let kind = kind(key) else {
+            let parts = key.split(separator: "/", omittingEmptySubsequences: false)
+            let knownPrefix = parts.first.map { ["position", "chapter", "metadata", "palette", "shelf-reference"].contains(String($0)) } ?? false
+            let unknownField = parts.count == 3 && parts.first == "metadata" && !parts[2].isEmpty
+            throw UserSyncCompatibilityError(reason: !knownPrefix || unknownField ? .newerFormat : .unreadable)
+        }
         switch kind {
         case .position:
             let value = try decode(PositionValue.self, text, as: position)

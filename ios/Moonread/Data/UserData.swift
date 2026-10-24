@@ -537,7 +537,9 @@ enum AnnotationReduction {
                 let scope = try? JSONDecoder().decode(UserSyncClearScope.self, from: Data(row.payload.utf8))
                 if scope == nil || scope!.intersects(book: book, session: session) {
                     UserSyncJSON.quarantined("StatisticsClear")
-                    throw UserSyncCompatibilityError(statistics: true)
+                    var issue = (error as? UserSyncCompatibilityError) ?? UserSyncCompatibilityError()
+                    issue.statistics = true
+                    throw issue
                 }
             }
         }
