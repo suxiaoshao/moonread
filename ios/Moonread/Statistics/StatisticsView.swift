@@ -941,12 +941,12 @@ struct StatisticsSettingsView: View {
                     enabled = value
                     Task { do { await StatisticsWriter.shared.drain(); try await ReaderService.shared.setStatisticsEnabled(value) } catch { enabled = !value; self.error = ReaderMessages.error(error) } }
                 })).accessibilityIdentifier("statisticsEnabled")
-            } footer: { Text("只记录可见正文的阅读活动。锁屏、后台和工具面板中暂停；连续 2 分钟没有正文操作后暂停，再次操作恢复。") }
+            } footer: { Text("关闭后保留历史统计，只停止此设备的新记录。只记录可见正文活动；锁屏、后台、工具面板和闲置时暂停。") }
                 .listRowBackground(Color(uiColor: theme.surface))
             Section {
                 Button("清除阅读统计", role: .destructive) { clearing = true }.accessibilityIdentifier("clearStatistics")
                     .foregroundStyle(Color(uiColor: theme.destructive))
-            } footer: { Text("不影响小说文件、续读位置、书签和笔记。历史阅读时长无法由旧进度补算。") }
+            } footer: { Text("清除历史统计不改变记录开关，也不影响小说文件、续读位置、书签和笔记。历史时长无法由旧进度补算。") }
                 .listRowBackground(Color(uiColor: theme.surface))
         }.themedPage().navigationTitle("阅读统计设置").navigationBarTitleDisplayMode(.inline)
             .task { enabled = await ReaderService.shared.statisticsPreferences().enabled }

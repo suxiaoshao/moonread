@@ -692,6 +692,9 @@ struct LibraryManagementView: View {
     @Environment(\.theme) private var theme
     var body: some View {
         List {
+            Section {
+                Toggle(isOn: Binding(get: { model.fullIndex.automatic }, set: { model.fullIndex.automatic = $0 })) { Text("新加入的书自动建立索引", tableName: "FullIndex") }.accessibilityIdentifier("automaticFullIndex")
+            } header: { Text("索引", tableName: "FullIndex") }
             ShelfReferenceHints(model: model)
             Section {
                 ForEach(model.shelves, id: \.id) { shelf in
