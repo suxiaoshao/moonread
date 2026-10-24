@@ -166,3 +166,5 @@ Swift 上报正文可见性、实际交互、场景状态、单调时间和墙�
 本机 UserDefaults 独立键 `Moonread.readingReview.requests.v1` 保存已请求版本集合及最后请求时间，不进入 CloudKit。调用前先记请求，系统未显示也不反复请求；应用无法得知是否实际显示或评分。读取不了记录时保留原值并跳过。系统是否显示由 StoreKit 决定，TestFlight 不显示属于系统行为。参见 [Apple 的评分请求说明](https://developer.apple.com/documentation/storekit/requesting-app-store-reviews)。不显示自定义预弹窗。
 
 设置的“关于”区域始终提供“给月读评分”链接，打开 `https://apps.apple.com/app/id6823849812?action=write-review`，不受自动请求条件限制。
+
+暂停、保存失败和兼容说明合并为摘要区域外的紧凑状态；保存失败或兼容细节可展开，保留现有统计内容，并提供统计设置入口。

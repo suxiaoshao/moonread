@@ -711,7 +711,7 @@ struct ReaderSearchContent: View {
             }
             .padding(.horizontal, 12).padding(.top, 16)
             searchField.padding(.horizontal, 16).padding(.top, 4)
-            if !model.query.isEmpty {
+            if !model.query.isEmpty || model.error != nil {
                 searchStatus.padding(.horizontal, 20)
                 ThemedDivider().padding(.horizontal, 20)
             }
@@ -765,6 +765,7 @@ struct ReaderSearchContent: View {
     }
 
     private var searchStatus: some View {
+        VStack(alignment: .leading, spacing: 6) {
         HStack(spacing: 8) {
             if model.searching {
                 LoadingActivity(size: 18, fraction: model.searchProgress, progressLabel: "搜索进度")
@@ -780,21 +781,21 @@ struct ReaderSearchContent: View {
                 .accessibilityIdentifier("refreshSearch")
             }
         }
-        .font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).frame(minHeight: 44)
+        .frame(minHeight: 44)
+        if model.partialSearch || model.truncatedSearch {
+            VStack(alignment: .leading, spacing: 4) {
+                if model.partialSearch { Text("搜索范围：已准备的正文") }
+                if model.truncatedSearch { Text("部分超长段落未执行正则搜索，其他结果仍可查看。") }
+            }.accessibilityIdentifier("searchCoverageNotice")
+        }
+        if let error = model.error { Label(error, systemImage: "exclamationmark.circle").foregroundStyle(Color(uiColor: theme.destructive)) }
+        }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).padding(.bottom, 8).accessibilityIdentifier("searchStatus")
     }
 
     private var searchList: some View {
         let restorePosition = model.searchListPosition
         return ScrollViewReader { proxy in
             List {
-                if let error = model.error {
-                    Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)).padding(20)
-                        .listRowBackground(Color(uiColor: theme.surface))
-                }
-                if model.partialSearch {
-                    Text("搜索范围：已准备的正文").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).padding(20)
-                        .listRowBackground(Color(uiColor: theme.surface))
-                }
                 ForEach(model.hits, id: \.startUtf8) { hit in
                     resultRow(hit).id(hit.startUtf8)
                         .onGeometryChange(for: Bool.self) { geometry in
@@ -808,10 +809,6 @@ struct ReaderSearchContent: View {
                         .listRowInsets(EdgeInsets(top: 12, leading: 20, bottom: 12, trailing: 20))
                         .listRowBackground(Color(uiColor: isCurrent(hit) ? theme.selected : theme.surface))
                         .listRowSeparatorTint(Color(uiColor: theme.separator))
-                }
-                if model.truncatedSearch {
-                    Text("部分超长段落未执行正则搜索，其他结果仍可查看。").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).padding(20)
-                        .listRowBackground(Color(uiColor: theme.surface))
                 }
             }
             .listStyle(.plain)

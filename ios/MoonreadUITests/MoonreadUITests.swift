@@ -77,6 +77,10 @@ import XCTest
       predicate: NSPredicate { _, _ in predicate() }, object: nil)
     XCTAssertEqual(XCTWaiter.wait(for: [condition], timeout: 8), .completed)
   }
+  private func snapshot(_ name: String) {
+    let image = XCTAttachment(screenshot: app.screenshot())
+    image.name = name; image.lifetime = .keepAlways; add(image)
+  }
   private func list(_ name: String) {
     controls()
     app.buttons["readerMore"].tap()
@@ -257,12 +261,20 @@ import XCTest
     XCTAssertFalse(app.buttons["appSettings"].exists)
     ready(app.tabBars.buttons["设置"]).tap()
     ready(app.buttons["readerThemeSettings"])
+    snapshot("settings-home")
     XCTAssertFalse(app.buttons["aiSettings"].exists)
     XCTAssertFalse(element("automaticFullIndex").exists)
     ready(app.buttons["statisticsSettings"]).tap()
     ready(element("statisticsEnabled"))
     XCTAssertTrue(app.staticTexts["关闭后保留历史统计，只停止此设备的新记录。只记录可见正文活动；锁屏、后台、工具面板和闲置时暂停。"].exists)
+    element("statisticsEnabled").tap()
     app.navigationBars.buttons.firstMatch.tap()
+    app.tabBars.buttons["统计"].tap()
+    ready(app.staticTexts["阅读统计已暂停"])
+    ready(app.buttons["统计设置"]).tap()
+    ready(element("statisticsEnabled")).tap()
+    app.navigationBars.buttons.firstMatch.tap()
+    app.tabBars.buttons["设置"].tap()
     ready(app.buttons["libraryManagementSettings"]).tap()
     ready(element("automaticFullIndex"))
     app.navigationBars.buttons.firstMatch.tap()
@@ -374,6 +386,7 @@ import XCTest
     let query = ready(app.textFields["bookSearchQuery"])
     query.tap()
     query.typeText("星灯")
+    ready(element("searchStatus"))
     let hit = ready(
       app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'searchHit-'")).element(
         boundBy: 1))
@@ -432,9 +445,12 @@ import XCTest
     let indexButtons = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "recoverWholeShelf-"))
     waitUntil { indexButtons.allElementsBoundByIndex.contains(where: \.isHittable) }
     XCTAssertTrue(app.staticTexts["建立索引以恢复进度与标签"].exists)
+    snapshot("shelf-recovery")
     XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "已知下载量：")).firstMatch.exists)
     indexButtons.allElementsBoundByIndex.first(where: \.isHittable)!.tap()
-    ready(app.buttons["fullIndexStart"]).tap()
+    ready(app.buttons["fullIndexStart"])
+    snapshot("index-ready")
+    app.buttons["fullIndexStart"].tap()
     let progress = app.staticTexts["fullIndexProgress"]
     waitUntil { progress.exists && progress.label.contains("1 / 1") }
     app.buttons["完成"].firstMatch.tap()
@@ -456,6 +472,12 @@ import XCTest
     launch(["--ui-test-data-management", "--ui-test-storefront", "CHN"])
     ready(app.buttons["设置"]).tap()
     ready(element("dataManagementSettings")).tap()
+    ready(app.buttons["readingDataCaches"])
+    snapshot("data-overview")
+    app.buttons["readingDataCaches"].tap()
+    ready(app.buttons["clearRebuildableCaches"])
+    snapshot("data-cache")
+    app.navigationBars.buttons.firstMatch.tap()
     ready(app.buttons["exportAllReadingData"]).tap()
     ready(app.buttons["confirmExportAllReadingData"].firstMatch).tap()
     let closeShare = app.buttons.matching(NSPredicate(format: "label IN %@", ["关闭", "Close"])).firstMatch
@@ -464,6 +486,11 @@ import XCTest
     let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reading-data-"))
     XCTAssertEqual(rows.count, 1)
     ready(app.buttons["selectReadingData"]).tap()
+    ready(app.buttons["selectAllReadingData"]).tap()
+    app.segmentedControls["readingDataFilter"].buttons["不在书架上"].tap()
+    XCTAssertFalse(app.buttons["deleteSelectedReadingData"].isEnabled)
+    snapshot("reading-data-unlinked-selection")
+    app.segmentedControls["readingDataFilter"].buttons["全部"].tap()
     rows.firstMatch.tap()
     ready(app.buttons["deleteSelectedReadingData"]).tap()
     ready(app.buttons["confirmDeleteReadingData"].firstMatch).tap()
@@ -475,7 +502,9 @@ import XCTest
     app.navigationBars.buttons.element(boundBy: 0).tap()
     ready(app.buttons["importReadingBackup"]).tap()
     ready(app.staticTexts["包含 1 本小说的阅读数据，其中 1 本在书架上"], timeout: 30)
-    ready(app.buttons["confirmImportReadingBackup"].firstMatch, timeout: 30).tap()
+    ready(app.buttons["confirmImportReadingBackup"].firstMatch, timeout: 30)
+    snapshot("data-import-preview")
+    app.buttons["confirmImportReadingBackup"].firstMatch.tap()
     ready(app.staticTexts["阅读数据已导入"], timeout: 30)
     ready(app.buttons["readingDataList"]).tap()
     waitUntil { rows.count == 1 }

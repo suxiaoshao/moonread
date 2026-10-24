@@ -313,19 +313,6 @@ struct StatisticsView: View {
                     .listRowBackground(Color(uiColor: theme.surface))
             }
             if let overview = model.overview {
-                if let notice = model.compatibilityNotice {
-                    Section { Label(notice, systemImage: "exclamationmark.circle") }.listRowBackground(Color(uiColor: theme.surface))
-                }
-                if !overview.preferences.enabled {
-                    Section { Label("阅读统计已暂停", systemImage: "pause.circle").foregroundStyle(Color(uiColor: theme.secondary)) }
-                        .listRowBackground(Color(uiColor: theme.surface))
-                }
-                if let error = StatisticsWriter.shared.error {
-                    Section {
-                        Text("部分阅读记录未能保存")
-                        Text(error).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                    }.listRowBackground(Color(uiColor: theme.surface))
-                }
                 if target != nil { cumulativeSummary }
                 periodPicker
                 if overview.books.isEmpty {
@@ -354,6 +341,7 @@ struct StatisticsView: View {
             }
         }
         .themedPage()
+        .safeAreaInset(edge: .top, spacing: 0) { statisticsStatus }
         .navigationTitle(target == nil ? String(localized: "统计") : String(localized: "小说详情"))
         .navigationBarTitleDisplayMode(target == nil ? .large : .inline)
         .toolbarVisibility(.visible, for: .navigationBar)
@@ -380,6 +368,28 @@ struct StatisticsView: View {
         .navigationDestination(item: $openedDay) { StatisticsDayView(route: $0) }
         .navigationDestination(isPresented: $showAllBooks) {
             StatisticsBookList(books: orderedBooks, maximum: orderedBooks.map(\.durationMs).max() ?? 1, window: window)
+        }
+    }
+
+    @ViewBuilder private var statisticsStatus: some View {
+        if let overview = model.overview,
+           !overview.preferences.enabled || model.compatibilityNotice != nil || StatisticsWriter.shared.error != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    if !overview.preferences.enabled { Label("阅读统计已暂停", systemImage: "pause.circle") }
+                    Spacer()
+                    Button("统计设置") { showSettings = true }
+                }
+                if model.compatibilityNotice != nil || StatisticsWriter.shared.error != nil {
+                    DisclosureGroup {
+                        if let notice = model.compatibilityNotice { Text(verbatim: notice) }
+                        if let error = StatisticsWriter.shared.error { Text(verbatim: error) }
+                    } label: {
+                        Label(StatisticsWriter.shared.error != nil ? String(localized: "部分阅读记录未能保存") : String(localized: "部分统计暂不可用"), systemImage: "exclamationmark.circle")
+                    }
+                }
+            }.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                .padding(.horizontal).padding(.vertical, 8).background(.bar).accessibilityIdentifier("statisticsStatus")
         }
     }
 
