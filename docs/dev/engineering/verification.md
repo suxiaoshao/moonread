@@ -18,6 +18,8 @@
 
 原只测 discard／重试的用例改为顺序单次写入断言：失败不阻塞下一批、不重试、保留 error，真实阅读器仍阻止删除，关闭后 lease 释放且可正常删除。原写入期间保留 lease、导出等待在途写入的断言保留。本地 Rust 全量 94 项通过（real 4.2 秒）；固定 iPhone 18 Pro 的 MoonreadTests 全量 272 项通过（用例 62.9 秒，含增量构建／启动 real 123.1 秒），既有 U21 单跑通过（用例 37.7 秒，real 56.2 秒），不新增 UI 用例。证据：`build/DataManagement/once-rust.log`、`Once-MoonreadTests.xcresult` / `once-swift.log`、`Once-U21.xcresult` / `once-u21.log`。
 
+导入成功复用已有 received-data 通知刷新 ThemeStore snapshot；原临时目录清理同时覆盖 export-* / import-*，生产调用点不变，保护当前预览及进行中的解包／导出。通知和遗留暂存／当前预览保护断言并入原导出测试，没有新增测试方法。追加验证：Rust 全量 94 项通过（real 5.5 秒），MoonreadTests 全量 272 项通过（用例 58.3 秒，含增量构建／启动 113.3 秒），U21 单跑通过（用例 40.5 秒，real 56.9 秒）。证据：`build/DataManagement/finalize-rust.log`、`Finalize-MoonreadTests.xcresult` / `finalize-swift.log`、`Finalize-U21.xcresult` / `finalize-u21.log`。
+
 ## 2026-10-24 整书删除边界调整（#88）
 
 删除回执及启动补删已移除，pending 库先提交、正式库后提交；中途退出可从仍可见的正式记录再次删除。现有删除测试改为保护按键归属：未知 chapter/metadata、位置、批注、事实与可归属的统计清除随整书删除，未知前缀与无法归属的统计清除保留；未知封面引用保守保留资产。unsupported 条目允许选择和删除，编辑／合并／导入的兼容隔离不变。原位置 flush 与统计收尾断言保留。

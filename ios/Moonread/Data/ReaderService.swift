@@ -121,7 +121,8 @@ actor ReaderService {
     var readingSourceIDs: [String: String] = [:]
     let dataManagementWriter: StatisticsWriter?
     var activeBackupExport: URL?
-    var inFlightBackupExports = Set<URL>()
+    weak var activeBackupImport: BackupStaging?
+    var inFlightBackupDirectories = Set<URL>()
     var backupShareCopies: [URL: Int] = [:]
     var userDataOperationBusy = false
     var userDataOperationWaiters: [CheckedContinuation<Void, Never>] = []

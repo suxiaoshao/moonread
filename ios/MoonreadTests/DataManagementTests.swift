@@ -218,6 +218,15 @@ import XCTest
         let position = try await restored.value("position/" + key), count = try await restored.backupTestFactCount(key)
         let decoded = try UserSyncJSON.decode(PositionValue.self, XCTUnwrap(position), as: UserSyncJSON.position)
         XCTAssertEqual(decoded.offset, 12); XCTAssertEqual(count, 1)
+        let preview = try await service.previewReadingBackup(archive)
+        let stale = preview.staging.ownedRoot.deletingLastPathComponent().appendingPathComponent("import-abandoned-fixture", isDirectory: true)
+        try FileManager.default.createDirectory(at: stale, withIntermediateDirectories: true)
+        try await service.cleanupOldBackupExports()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: preview.staging.directory.path), "Keep the current preview staging")
+        let refreshed = expectation(forNotification: .cloudDataReceived, object: nil)
+        try await service.importReadingBackup(preview)
+        await fulfillment(of: [refreshed], timeout: 2)
     }
     func testStatisticsFailureDropsBatchReleasesLeaseAndAllowsDeletionAfterClosing() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }

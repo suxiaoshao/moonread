@@ -89,8 +89,8 @@ extension ReaderService {
     func cleanupOldBackupExports() throws {
         let root = try backupRoot()
         let directories = try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-        for directory in directories ?? [] where directory.lastPathComponent.hasPrefix("export-") {
-            guard directory != activeBackupExport, !inFlightBackupExports.contains(directory), backupShareCopies[directory, default: 0] == 0 else { continue }
+        for directory in directories ?? [] where directory.lastPathComponent.hasPrefix("export-") || directory.lastPathComponent.hasPrefix("import-") {
+            guard directory != activeBackupExport, directory != activeBackupImport?.ownedRoot, !inFlightBackupDirectories.contains(directory), backupShareCopies[directory, default: 0] == 0 else { continue }
             let attributes = try directory.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             guard attributes.isDirectory == true, attributes.isSymbolicLink != true else { continue }
             try FileManager.default.removeItem(at: directory)
@@ -131,8 +131,8 @@ extension ReaderService {
         // that operation. Acquiring it first would deadlock an in-flight batch.
         await managementStatisticsWriter().drain()
         let directory = try backupDirectory("export")
-        inFlightBackupExports.insert(directory)
-        defer { inFlightBackupExports.remove(directory) }
+        inFlightBackupDirectories.insert(directory)
+        defer { inFlightBackupDirectories.remove(directory) }
         do {
             let stage = directory.appendingPathComponent("snapshot", isDirectory: true)
             let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2"
@@ -152,6 +152,8 @@ extension ReaderService {
         let revision = userCloudConfigurationRevision
         let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
         let directory = try backupDirectory("import")
+        inFlightBackupDirectories.insert(directory)
+        defer { inFlightBackupDirectories.remove(directory) }
         do {
             let info = try await Task.detached(priority: .utility) {
                 let coordinator = NSFileCoordinator(); var coordinationError: NSError?
@@ -167,6 +169,7 @@ extension ReaderService {
             let staging = BackupStaging(directory: URL(fileURLWithPath: info.directory), manifest: manifest, configuration: revision, ownedRoot: directory)
             let preview = try await refreshReadingBackupPreview(staging)
             try Task.checkCancellation()
+            activeBackupImport = staging
             return preview
         } catch { try? FileManager.default.removeItem(at: directory); throw error }
     }
@@ -185,5 +188,7 @@ extension ReaderService {
         try await userStore().mergeBackup(directory: preview.staging.directory, manifest: preview.staging.manifest)
         queryCache.removeAll(); dataChanged()
         NotificationCenter.default.post(name: .statisticsChanged, object: nil)
+        // Reuse the existing received-data refresh (including ThemeStore.load).
+        NotificationCenter.default.post(name: .cloudDataReceived, object: nil)
     }
 }
