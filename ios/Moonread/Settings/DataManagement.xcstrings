@@ -277,29 +277,6 @@
         }
       }
     },
-    "完成选择": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "完成选择"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "完成選取"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Done Selecting"
-          }
-        }
-      }
-    },
     "选择阅读数据": {
       "extractionState": "manual",
       "localizations": {
@@ -392,29 +369,6 @@
         }
       }
     },
-    "%lld 本因正在使用或原件不可用而保留": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 本因正在使用或原件不可用而保留"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld 本因正在使用或原件無法使用而保留"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld books kept because they are in use or their originals are unavailable"
-          }
-        }
-      }
-    },
     "清理可重建缓存": {
       "extractionState": "manual",
       "localizations": {
@@ -457,29 +411,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Rebuildable Cache"
-          }
-        }
-      }
-    },
-    "执行时重新验证来源；不会删除阅读数据、小说或 iCloud 下载。清理量不等于立即释放的磁盘空间。": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "执行时重新验证来源；不会删除阅读数据、小说或 iCloud 下载。清理量不等于立即释放的磁盘空间。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "執行時重新驗證來源；不會刪除閱讀資料、小說或 iCloud 下載。清理量不等於立即釋放的磁碟空間。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sources are checked again before clearing. Reading data, novels, and iCloud downloads stay intact. Removed cache size may differ from immediately freed disk space."
           }
         }
       }
@@ -2572,6 +2503,75 @@
           "stringUnit": {
             "state": "translated",
             "value": "正在清理快取…"
+          }
+        }
+      }
+    },
+    "正文缓存可以随时重新生成，清理后再打开小说会稍慢一些。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正文缓存可以随时重新生成，清理后再打开小说会稍慢一些。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Text caches can be rebuilt at any time. Opening a book again will take a little longer after clearing them."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正文快取可以隨時重新產生，清理後再開啟小說會稍慢一些。"
+          }
+        }
+      }
+    },
+    "有 %lld 本正在使用或找不到原文件，暂不清理": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有 %lld 本正在使用或找不到原文件，暂不清理"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld books are in use or their original files cannot be found, so their caches will be kept."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有 %lld 本正在使用或找不到原始檔案，暫不清理"
+          }
+        }
+      }
+    },
+    "完成": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成"
           }
         }
       }

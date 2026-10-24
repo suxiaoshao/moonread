@@ -342,6 +342,9 @@ struct FullIndexView: View {
                             else {
                                 Text("已索引 \(counts.indexed) / \(counts.total) 本", tableName: "FullIndex").font(.title.bold()).accessibilityIdentifier("fullIndexProgress")
                                 ProgressView(value: Double(counts.indexed), total: Double(max(1, counts.total))).accessibilityLabel(Text("索引进度", tableName: "FullIndex"))
+                                if !active && failures.isEmpty && counts.total > counts.indexed {
+                                    Text("还有 \(counts.total - counts.indexed) 本，建立后可以搜索全文、恢复进度和标签。", tableName: "FullIndex").font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("fullIndexRemaining")
+                                }
                             }
                         }
                     } else if loadError == nil {

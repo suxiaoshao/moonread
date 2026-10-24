@@ -576,6 +576,29 @@
           }
         }
       }
+    },
+    "还有 %lld 本，建立后可以搜索全文、恢复进度和标签。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "还有 %lld 本，建立后可以搜索全文、恢复进度和标签。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld books remain. Index them to search their full text and restore progress and tags."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "還有 %lld 本，建立後可以搜尋全文、還原進度與標籤。"
+          }
+        }
+      }
     }
   }
 }
