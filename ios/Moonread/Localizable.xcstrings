@@ -3487,7 +3487,7 @@
     "开启阅读统计后记录新的阅读活动。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Turn on reading statistics to record new activity."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "開啟閱讀統計後記錄新的閱讀活動。"}}}},
     "正在读取统计": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Loading Statistics"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在讀取統計"}}}},
     "暂时无法读取统计": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Unable to Load Statistics"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "暫時無法讀取統計"}}}},
-    "部分阅读记录尚未保存": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Some reading activity has not been saved."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "部分閱讀記錄尚未儲存"}}}},
+    "部分阅读记录未能保存": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Some reading activity could not be saved."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "部分閱讀記錄未能儲存"}}}},
     "阅读统计已暂停": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Statistics Paused"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀統計已暫停"}}}},
     "清除本书统计": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Clear Book Statistics"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "清除本書統計"}}}},
     "清除本书的阅读统计？": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Clear this book’s reading statistics?"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "清除本書的閱讀統計？"}}}},

@@ -1726,29 +1726,6 @@
         }
       }
     },
-    "有阅读数据尚未保存，请重试后再导出": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "有阅读数据尚未保存，请重试后再导出"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "有閱讀資料尚未儲存，請重試後再匯出"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Some reading data hasn’t been saved. Retry before exporting."
-          }
-        }
-      }
-    },
     "封面附件摘要与文件名不符": {
       "extractionState": "manual",
       "localizations": {

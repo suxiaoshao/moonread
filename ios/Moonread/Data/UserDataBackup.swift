@@ -45,12 +45,11 @@ struct ReadingDataInventory: Sendable {
     var configuration: UUID? = nil
 }
 enum ReadingDataError: LocalizedError {
-    case invalid, updateRequired, missingAsset, pendingIdentity, unsavedReadingData, busy, changed, tooLarge
+    case invalid, updateRequired, missingAsset, pendingIdentity, busy, changed, tooLarge
     var errorDescription: String? {
         switch self {
         case .invalid: String(localized: "备份数据无效或包含冲突的记录", table: "DataManagement")
         case .updateRequired: String(localized: "部分数据需要较新版本处理，请更新 App", table: "DataManagement")
-        case .unsavedReadingData: String(localized: "有阅读数据尚未保存，请重试后再导出", table: "DataManagement")
         case .pendingIdentity: String(localized: "部分小说身份尚未确定，请先完成正文准备后再导出", table: "DataManagement")
         case .missingAsset: String(localized: "封面附件尚未到达，暂时无法完整导出", table: "DataManagement")
         case .busy: String(localized: "请先关闭相关阅读和未保存的编辑，再清除数据", table: "DataManagement")

@@ -219,43 +219,43 @@ import XCTest
         let decoded = try UserSyncJSON.decode(PositionValue.self, XCTUnwrap(position), as: UserSyncJSON.position)
         XCTAssertEqual(decoded.offset, 12); XCTAssertEqual(count, 1)
     }
-    func testStatisticsDiscardDrainsInFlightAndKeepsOtherBooksRetryable() async throws {
+    func testStatisticsFailureDropsBatchReleasesLeaseAndAllowsDeletionAfterClosing() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
         let gate = RestorationGate()
-        var failed = true, calls: [String] = []
+        var calls: [String] = []
         let writer = StatisticsWriter { slices, _ in
             calls += slices.map(\.bookId)
-            if failed { await gate.wait(); throw CocoaError(.fileWriteUnknown) }
+            if calls.count == 1 { await gate.wait(); throw CocoaError(.fileWriteUnknown) }
         }
+        let service = ReaderService(core: f.core, sourceDefaultsSuite: f.suite, dataManagementWriter: writer,
+            userStoreFactory: { name, _ in name == "pending-users.store" ? f.pending : f.formal })
+        try await receiveBackupPosition(positionRecord(key: f.book.contentSha256, token: "old", offset: 12), key: f.book.contentSha256, store: f.formal)
         func slices(_ book: String) -> [ReadingSlice] {
             let clock = ReadingClock(bookId: book)
             var moment = ReadingMoment(monotonicMs: 0, unixMs: 0, utcOffsetSeconds: 0, readable: true, interaction: true, preview: false, startUtf8: 0, endUtf8: 9)
             _ = clock.update(moment: moment); moment.monotonicMs = 1000; moment.unixMs = 1000; moment.readable = false
             return clock.update(moment: moment)
         }
-        let lease = ReadingLease(id: "selected", service: f.service)
-        writer.enqueue(slices("selected"), generation: 0, lease: lease)
-        writer.enqueue(slices("other"), generation: 0, lease: ReadingLease(id: "other", service: f.service))
+        var lease: ReadingLease? = try await service.openReading(f.book.id)
+        weak var retained = lease
+        writer.enqueue(slices(f.book.id), generation: 0, lease: try XCTUnwrap(lease))
         await gate.waitForEntry()
-        let discard = Task { await writer.discardReadingData(bookIDs: ["selected"]) }
-        await gate.release(); await discard.value
-        failed = false; writer.retry(); await writer.drain()
-        XCTAssertEqual(calls, ["selected", "other"])
-        var rejectWrites = true, attemptedWrites = 0
-        let activeWriter = StatisticsWriter { _, _ in
-            attemptedWrites += 1
-            if rejectWrites { throw CocoaError(.fileWriteUnknown) }
-        }
-        let activeService = ReaderService(core: f.core, sourceDefaultsSuite: f.suite, dataManagementWriter: activeWriter,
-            userStoreFactory: { name, _ in name == "pending-users.store" ? f.pending : f.formal })
-        let activeLease = try await activeService.openReading(f.book.id)
-        activeWriter.enqueue(slices(f.book.id), generation: 0, lease: activeLease)
-        await activeWriter.drain()
-        do { _ = try await activeService.deleteReadingData([f.book.contentSha256]); XCTFail("The reader is still open") }
+        writer.enqueue(slices("later"), generation: 0, lease: ReadingLease(id: "later", service: service))
+        XCTAssertEqual(calls, [f.book.id], "Writes remain sequential while the first attempt is suspended")
+        await gate.release(); await writer.drain()
+        XCTAssertEqual(calls, [f.book.id, "later"], "Failure drops the batch and does not prevent the next write")
+        XCTAssertNotNil(writer.error, "Keep the failed write visible even if a later batch succeeds")
+        do { _ = try await service.deleteReadingData([f.book.contentSha256]); XCTFail("The reader is still open") }
         catch ReadingDataError.busy { }
-        rejectWrites = false; activeWriter.retry(); await activeWriter.drain()
-        XCTAssertEqual(attemptedWrites, 2, "A busy refusal must keep the failed statistics batch retryable")
+        lease = nil // The reader closes; a failed batch must not keep this lease alive.
+        _ = try await service.deleteReadingData([f.book.contentSha256])
+        XCTAssertNil(retained)
+        let remaining = try await f.formal.positionValues()
+        XCTAssertTrue(remaining.isEmpty)
+        await writer.drain()
+        XCTAssertEqual(calls, [f.book.id, "later"], "Draining never retries a failed batch")
     }
+
 }
 
 private extension UserDataStore {

@@ -43,25 +43,13 @@ extension ReaderService {
         return value
     }
     func allReadingDataKeys() async throws -> Set<String> { try await userStore().allReadingDataKeys() }
-    func readingDataBookIDs(_ keys: Set<String>) async throws -> Set<String> {
-        let core = try textCore(); var result = Set<String>()
-        for key in keys { if let id = try? core.textIdForSha(sha: key) { result.insert(id) } }
-        var pending = try await userStore(pending: true).allReadingDataKeys()
-        pending.formUnion(cacheProtectedBookIDs().map { serializeReadingKey(key: .pending(bookId: $0)) })
-        for resolution in try core.resolveReadingKeys(keys: pending.map { try parseReadingKey(value: $0) }) where keys.contains(serializeReadingKey(key: resolution.effective)) {
-            if case let .pending(id) = resolution.original { result.insert(id) }
-        }
-        return result
-    }
     func deleteReadingData(_ keys: Set<String>, configuration expected: UUID? = nil) async throws -> Bool {
         let configuration = expected ?? userCloudConfigurationRevision
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         for key in keys { try BackupRows.formal(key) }
-        guard !readingDataIsBusy(keys) else { throw ReadingDataError.busy }
-        let ids = try await readingDataBookIDs(keys)
-        guard !readingDataIsBusy(keys) else { throw ReadingDataError.busy }
-        // Drain in-flight saves, discard only failed/retry batches for these books.
-        await managementStatisticsWriter().discardReadingData(bookIDs: ids)
+        // Finish writes before checking live readers; completed/failed batches
+        // no longer own reading leases or need a separate discard operation.
+        await managementStatisticsWriter().drain()
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         guard !readingDataIsBusy(keys) else { throw ReadingDataError.busy }
@@ -141,7 +129,7 @@ extension ReaderService {
         try cleanupOldBackupExports()
         // Drain before acquiring the operation: the writer itself saves through
         // that operation. Acquiring it first would deadlock an in-flight batch.
-        try await managementStatisticsWriter().flushForBackup()
+        await managementStatisticsWriter().drain()
         let directory = try backupDirectory("export")
         inFlightBackupExports.insert(directory)
         defer { inFlightBackupExports.remove(directory) }

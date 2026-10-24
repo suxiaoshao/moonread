@@ -91,55 +91,31 @@ extension ReaderService {
     }
 }
 
-/// One bounded writer for all reader instances. Retries keep the same immutable slice IDs.
+/// Serialize writes once; failed batches are discarded, never retried.
 @MainActor @Observable
 final class StatisticsWriter {
     static let shared = StatisticsWriter()
-    private struct Batch {
-        let slices: [ReadingSlice]
-        let generation: UInt64
-        let lease: ReadingLease // Keep a progressive identity alive until its final write.
-    }
     private let save: @MainActor ([ReadingSlice], UInt64) async throws -> Void
     init(save: @escaping @MainActor ([ReadingSlice], UInt64) async throws -> Void = { slices, generation in
         try await ReaderService.shared.saveReading(slices, generation: generation)
     }) { self.save = save }
-    private var queue: [Batch] = []
     private var task: Task<Void, Never>?
     private(set) var error: String?
-    var isFull: Bool { queue.count >= 256 }
     func report(_ error: Error) { self.error = ReaderMessages.error(error) }
 
     func enqueue(_ slices: [ReadingSlice], generation: UInt64, lease: ReadingLease) {
         guard !slices.isEmpty else { return }
-        queue.append(Batch(slices: slices, generation: generation, lease: lease))
-        retry()
-    }
-    func retry() {
-        guard task == nil else { return }
+        let previous = task
         task = Task { [self] in
-            defer { task = nil }
-            while let batch = queue.first {
-                do {
-                    try await save(batch.slices, batch.generation)
-                    queue.removeFirst(); error = nil
-                } catch { self.error = ReaderMessages.error(error); return }
-            }
+            await previous?.value
+            do { try await save(slices, generation) }
+            catch { report(error) }
+            // Keep the identity alive only through this attempt. Task completion
+            // releases its captures on both success and failure.
+            withExtendedLifetime(lease) { }
         }
     }
     func drain() async { await task?.value }
-    func flushForBackup() async throws {
-        retry()
-        await drain()
-        guard queue.isEmpty else { throw ReadingDataError.unsavedReadingData }
-    }
-    func discardReadingData(bookIDs: Set<String>) async {
-        await drain()
-        queue = queue.compactMap { batch in
-            let slices = batch.slices.filter { !bookIDs.contains($0.bookId) }
-            return slices.isEmpty ? nil : Batch(slices: slices, generation: batch.generation, lease: batch.lease)
-        }
-    }
 }
 
 /// Injectable time keeps effective-duration tests on the real Rust reading clock.
@@ -261,7 +237,6 @@ final class ReadingActivityRecorder {
 
     private func sample(interaction: Bool = false, capture: Bool = true) {
         guard !stopped, let clock, let lease else { return }
-        let writer = self.writer
         let visible = capture ? viewport?.statisticsRange() : (range.1 > range.0 ? range : nil)
         if capture, let visible { range = visible }
         let instant = time(), now = instant.date
@@ -269,7 +244,7 @@ final class ReadingActivityRecorder {
             monotonicMs: UInt64(instant.uptime * 1000),
             unixMs: Int64(now.timeIntervalSince1970 * 1000),
             utcOffsetSeconds: Int32(TimeZone.current.secondsFromGMT(for: now)),
-            readable: enabled && readable && visible != nil && !writer.isFull,
+            readable: enabled && readable && visible != nil,
             interaction: interaction, preview: preview, startUtf8: range.0, endUtf8: range.1))
         enqueue(slices, lease: lease)
     }
