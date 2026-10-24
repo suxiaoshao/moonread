@@ -109,42 +109,58 @@ import XCTest
         try await value(missing, "metadata/" + key + "/cover", asset, token: "cover")
         do { _ = try await missing.snapshotForBackup(directory: f.root.appendingPathComponent("missing"), writerVersion: "1.2"); XCTFail("Complete export requires cover bytes") } catch ReadingDataError.missingAsset { }
     }
-    func testInterruptedDeletionOnlyFinishesOriginalObjectsAndOldBackupCanRestore() async throws {
+    func testWholeBookDeletionUsesOwnershipPreservesUnknownOwnersAndConservesCovers() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
         let key = f.book.contentSha256, other = String(repeating: "b", count: 64)
         try await receiveBackupPosition(positionRecord(key: key, token: "old", offset: 12), key: key, store: f.formal)
         try await value(f.formal, "metadata/" + key + "/author", UserSyncJSON.encode("Old"), token: "old-author")
-        let op = AnnotationCandidate(id: "old-note", ancestors: [], content: .init(start: 0, end: 9, excerpt: "Old", note: "Old"), created: 1, bookmark: false)
-        try await f.formal.receiveSyncFixture("mark", key: key, id: op.id, payload: UserSyncJSON.encode(op, envelope: true))
-        let alias = "pending:" + f.aliases[0]
-        try await f.pending.receiveSyncFixture("position", key: alias, payload: UserSyncJSON.encode(positionRecord(key: alias, token: "pending", offset: 9), envelope: true))
         let bytes = Data("shared immutable cover".utf8), id = UUID().uuidString
         let sha = SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
         try await f.formal.saveCover(id: id, bytes: bytes)
-        for book in [key, other] { try await value(f.formal, "metadata/" + book + "/cover", "{\"id\":\"\(id)\",\"sha256\":\"\(sha)\",\"extension\":\"png\",\"width\":1,\"height\":1}", token: "cover-" + book) }
+        let reference = "{\"id\":\"\(id)\",\"sha256\":\"\(sha)\",\"extension\":\"png\",\"width\":1,\"height\":1}"
+        for book in [key, other] { try await value(f.formal, "metadata/" + book + "/cover", reference, token: "cover-" + book) }
         let (directory, manifest) = try await package(f.formal, at: f.root)
-        let pendingTargets = try await f.pending.readingDeletionTargets(keys: [alias]), formalTargets = try await f.formal.readingDeletionTargets(keys: [key])
-        let scope = await f.service.userDirectoryName + "/local"
-        let receipt = ReadingDataDeletion(scope: scope, keys: [key], aliases: [alias], pendingTargets: pendingTargets, formalTargets: formalTargets)
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: f.suite))
-        defaults.set(try JSONEncoder().encode(receipt), forKey: ReadingDataDeletion.defaultsKey)
-        // Simulate a process stopping after pending removal, before formal removal.
-        try await f.pending.deleteReadingData(keys: [alias], targets: pendingTargets)
-        try await f.formal.receiveSyncFixture("position", key: key, payload: syncPosition(key, offset: 21, updated: 999999))
-        try await f.formal.put("metadata/" + key + "/author", value: UserSyncJSON.encode("New edit"), device: "owner")
-        try await f.service.finishReadingDataDeletion()
-        XCTAssertNil(defaults.data(forKey: ReadingDataDeletion.defaultsKey))
-        let positions = try await f.formal.positionValues(), notes = try await f.formal.candidates(key: key), cover = try await f.formal.cover(id)
-        XCTAssertEqual(positions["position/" + key]?.token, "v1"); XCTAssertTrue(notes.isEmpty); XCTAssertEqual(cover, bytes)
-        let preview = try await f.formal.validateBackup(directory: directory, manifest: manifest)
+        let alias = "pending:" + f.aliases[0], future = "{\"v\":999,\"future\":true}"
+        // Ownership survives unknown schemas, missing fields and unreadable payloads.
+        for path in ["chapter/" + key + "/12", "metadata/" + key + "/future"] {
+            try await f.formal.receiveSyncFixture("value", key: path, id: "future", payload: future)
+        }
+        try await f.pending.receiveSyncFixture("value", key: "metadata/" + alias + "/future", id: "future", payload: future)
+        for kind in ["position", "mark", "fact"] {
+            try await f.formal.receiveSyncFixture(kind, key: key, id: "future", payload: future)
+        }
+        let ownedClear = "{\"v\":999,\"book\":\"\(key)\"}"
+        let unknownClear = "{\"v\":999,\"book\":42}"
+        try await f.formal.receiveSyncFixture("clear", payload: ownedClear)
+        try await f.formal.receiveSyncFixture("clear", payload: unknownClear)
+        try await f.formal.receiveSyncFixture("value", key: "future/" + key + "/data", id: "future", payload: future)
+        let inventory = try await f.formal.readingDataInventory(), allKeys = try await f.formal.allReadingDataKeys()
+        XCTAssertEqual(inventory.items.first { $0.id == key }?.unsupported, true)
+        XCTAssertTrue(allKeys.contains(key), "Unsupported books remain selectable for whole-book deletion")
+        _ = try await f.service.deleteReadingData([key])
+        let rows = try await snapshot(f.formal), pendingRows = try await snapshot(f.pending)
+        XCTAssertEqual(rows[0].filter { $0 == future }.count, 1, "Only the unassignable namespace survives")
+        XCTAssertTrue(rows[1].isEmpty); XCTAssertTrue(rows[2].isEmpty); XCTAssertTrue(rows[3].isEmpty)
+        XCTAssertEqual(rows[4], [unknownClear]); XCTAssertTrue(pendingRows.allSatisfy(\.isEmpty))
+        let shared = try await f.formal.cover(id); XCTAssertEqual(shared, bytes)
+        // Importing an old backup deliberately restores the deleted book.
         try await f.formal.mergeBackup(directory: directory, manifest: manifest)
-        let restored = try await f.formal.candidates(key: key), newer = try await f.formal.value("metadata/" + key + "/author")
-        XCTAssertEqual(restored["m"]?.first?.content?.note, "Old"); XCTAssertEqual(newer, try UserSyncJSON.encode("New edit"))
-        let pending = try await f.pending.pendingKeys(); XCTAssertTrue(pending.isEmpty)
-        var unknown = receipt; unknown.schemaVersion = 2
-        let futureBytes = try JSONEncoder().encode(unknown); defaults.set(futureBytes, forKey: ReadingDataDeletion.defaultsKey)
-        do { try await f.service.finishReadingDataDeletion(); XCTFail("Unknown local receipt is not overwritten") } catch ReadingDataError.updateRequired { }
-        XCTAssertEqual(defaults.data(forKey: ReadingDataDeletion.defaultsKey), futureBytes)
+        let restored = try await f.formal.value("position/" + key)
+        XCTAssertNotNil(restored)
+        // Unknown remaining references prevent reclaiming an otherwise eligible asset.
+        try await f.formal.deleteReadingData(keys: [other])
+        try await f.formal.receiveSyncFixture("value", key: "metadata/" + other + "/cover", id: "future", payload: future)
+        try await f.formal.deleteReadingData(keys: [key])
+        let protected = try await f.formal.cover(id); XCTAssertEqual(protected, bytes)
+        // Even a deleted unreadable reference prevents guessing which assets it used.
+        try await f.formal.deleteReadingData(keys: [other])
+        try await value(f.formal, "metadata/" + key + "/cover", reference, token: "known-cover")
+        try await f.formal.receiveSyncFixture("value", key: "metadata/" + key + "/cover", id: "future", payload: future)
+        try await f.formal.deleteReadingData(keys: [key])
+        let protectedByDeleted = try await f.formal.cover(id); XCTAssertEqual(protectedByDeleted, bytes)
+        try await value(f.formal, "metadata/" + key + "/cover", reference, token: "last-known-cover")
+        try await f.formal.deleteReadingData(keys: [key])
+        let reclaimed = try await f.formal.cover(id); XCTAssertNil(reclaimed)
     }
     func testDeletionWaitsForPositionFlushAndPendingTransferThenAllowsNewReading() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }

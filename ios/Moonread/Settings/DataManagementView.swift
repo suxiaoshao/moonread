@@ -133,14 +133,14 @@ struct DataManagementView: View {
                         if model.selecting {
                             if !model.selected.insert(item.id).inserted { model.selected.remove(item.id) }
                         } else { model.deleting = [item.id] }
-                    }.disabled(item.unsupported).accessibilityIdentifier("reading-data-" + item.id)
+                    }.accessibilityIdentifier("reading-data-" + item.id)
                 }
                 if model.selecting {
-                    Button { model.selected = Set(model.visible.filter { !$0.unsupported }.map(\.id)) } label: { Text("全选当前结果", tableName: "DataManagement") }
+                    Button { model.selected = Set(model.visible.map(\.id)) } label: { Text("全选当前结果", tableName: "DataManagement") }
                     Button(role: .destructive) { model.deleting = model.selected } label: { Text("删除所选阅读数据", tableName: "DataManagement") }.disabled(model.selected.isEmpty).accessibilityIdentifier("deleteSelectedReadingData")
                 }
                 Button { model.selecting.toggle() } label: { Text(model.selecting ? "完成选择" : "选择阅读数据", tableName: "DataManagement") }
-                Button(role: .destructive) { Task { await model.requestDeleteAll() } } label: { Text("删除全部阅读数据", tableName: "DataManagement") }.disabled(model.inventory.items.isEmpty || model.inventory.unsupported > 0)
+                Button(role: .destructive) { Task { await model.requestDeleteAll() } } label: { Text("删除全部阅读数据", tableName: "DataManagement") }.disabled(model.inventory.items.isEmpty)
             } header: { Text("阅读数据（\(model.inventory.items.count) 本）", tableName: "DataManagement") }
             Section {
                 Text("预计可重建缓存：\(ByteCountFormatter.string(fromByteCount: Int64(clamping: model.cache.bytes), countStyle: .file))", tableName: "DataManagement")

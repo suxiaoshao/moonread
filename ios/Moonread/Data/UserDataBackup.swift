@@ -38,10 +38,6 @@ struct ReadingDataItem: Identifiable, Sendable {
     var unsupported = false
     var linked = false
 }
-struct ReadingDeletionTarget: Codable, Sendable {
-    let id: PersistentIdentifier
-    let fingerprint: String
-}
 struct ReadingDataInventory: Sendable {
     var items: [ReadingDataItem]
     var pending: Int
@@ -94,6 +90,21 @@ enum BackupRows {
         if type == "palette" { return nil }
         guard ["metadata", "chapter", "position"].contains(String(type)), parts.count >= 2 else { throw ReadingDataError.updateRequired }
         let book = String(parts[1]); _ = try parseReadingKey(value: book); return book
+    }
+    /// Whole-book deletion only needs a recognizable owner, not a v1 payload.
+    /// Unknown namespaces and clears without a readable book stay untouched.
+    static func deletionKey(_ record: BackupRecord, kind: String) -> String? {
+        let key: String?
+        switch kind {
+        case "values": key = try? valueKey(record.key)
+        case "statistics-clears":
+            struct Scope: Decodable { let book: String? }
+            key = (try? JSONDecoder().decode(Scope.self, from: Data(record.payload.utf8)))?.book
+        case "positions", "annotations", "facts": key = record.key
+        default: return nil
+        }
+        guard let key, (try? parseReadingKey(value: key)) != nil else { return nil }
+        return key
     }
     static func validate(_ record: BackupRecord, kind: String) throws {
         switch kind {
@@ -181,10 +192,7 @@ extension UserDataStore {
         var keys = Set<String>()
         for kind in BackupRows.files {
             for row in try backupRows(kind) {
-                try BackupRows.validate(row, kind: kind)
-                if kind == "statistics-clears" {
-                    if let key = try UserSyncJSON.decode(ClearValue.self, row.payload, as: UserSyncJSON.clear, envelope: true).book { keys.insert(key) }
-                } else if let key = kind == "values" ? try BackupRows.valueKey(row.key) : row.key { keys.insert(key) }
+                if let key = BackupRows.deletionKey(row, kind: kind) { keys.insert(key) }
             }
         }
         return keys
@@ -366,69 +374,40 @@ extension UserDataStore {
             try beforeSave()
         }
     }
-    private func deletionFingerprint(_ payload: String) -> String {
-        SHA256.hash(data: Data(payload.utf8)).map { String(format: "%02x", $0) }.joined()
-    }
-    func readingDeletionTargets(keys: Set<String>) throws -> [ReadingDeletionTarget] {
-        for key in keys { try requirePendingReadable(key: key); try requireMetadataReadable(key: key) }
-        var result: [ReadingDeletionTarget] = []
-        func add(_ id: PersistentIdentifier, _ payload: String) { result.append(.init(id: id, fingerprint: deletionFingerprint(payload))) }
-        for row in try modelContext.fetch(FetchDescriptor<UserValue>()) {
-            if let key = try? BackupRows.valueKey(row.key), keys.contains(key) { add(row.persistentModelID, row.payload) }
-        }
-        for row in try modelContext.fetch(FetchDescriptor<UserPosition>()) where keys.contains(row.contentKey) { add(row.persistentModelID, row.payload) }
-        for row in try modelContext.fetch(FetchDescriptor<AnnotationOperation>()) where keys.contains(row.contentKey) { add(row.persistentModelID, row.payload) }
-        for row in try modelContext.fetch(FetchDescriptor<ReadingFact>()) where keys.contains(row.contentKey) { add(row.persistentModelID, row.payload) }
-        for row in try modelContext.fetch(FetchDescriptor<StatisticsClear>()) {
-            if let scope = try? UserSyncJSON.decode(ClearValue.self, row.payload, as: UserSyncJSON.clear, envelope: true), let book = scope.book, keys.contains(book) { add(row.persistentModelID, row.payload) }
-        }
-        return result
-    }
-    func deleteReadingData(keys: Set<String>, targets: [ReadingDeletionTarget]? = nil) throws {
+    func deleteReadingData(keys: Set<String>) throws {
         guard !keys.isEmpty else { return }
-        // Every physical candidate is removed, not merely the rendered winner.
-        for key in keys { _ = try parseReadingKey(value: key); try requirePendingReadable(key: key); try requireMetadataReadable(key: key) }
-        let selected = try targets ?? readingDeletionTargets(keys: keys)
-        // Codable identifiers can have SwiftData/Core Data backing variants.
-        // Match their canonical persisted representation, not the hash of a live
-        // backing object against one reconstructed from the local receipt.
-        func identity(_ id: PersistentIdentifier) throws -> Data {
-            let encoder = JSONEncoder(); encoder.outputFormatting = .sortedKeys
-            return try encoder.encode(id)
-        }
-        let entries = try selected.map { (try identity($0.id), $0.fingerprint) }
-        guard Set(entries.map(\.0)).count == entries.count else { throw ReadingDataError.invalid }
-        let fingerprints = Dictionary(uniqueKeysWithValues: entries)
-        func matches(_ id: PersistentIdentifier, _ payload: String) throws -> Bool { fingerprints[try identity(id)] == deletionFingerprint(payload) }
+        for key in keys { _ = try parseReadingKey(value: key) }
+        // Explicit whole-book deletion uses ownership, never payload readability.
+        // Editing, promotion and backup intake retain their compatibility guards.
         try transaction {
-            var coverIDs = Set<String>()
+            var coverIDs = Set<String>(), assetsSafe = true
             let values = try modelContext.fetch(FetchDescriptor<UserValue>())
             for row in values {
-                guard try matches(row.persistentModelID, row.payload), let key = try? BackupRows.valueKey(row.key), keys.contains(key) else { continue }
-                let value = try UserSyncJSON.storedValue(row.payload, key: row.key)
-                if row.key.hasSuffix("/cover"), value.value != "null" {
-                    coverIDs.insert(try JSONDecoder().decode(UserSyncJSON.CoverReference.self, from: Data(value.value.utf8)).id)
+                guard let key = try? BackupRows.valueKey(row.key), keys.contains(key) else { continue }
+                if row.key.hasSuffix("/cover") {
+                    if let value = try? UserSyncJSON.storedValue(row.payload, key: row.key) {
+                        if value.value != "null" {
+                            if let asset = try? JSONDecoder().decode(UserSyncJSON.CoverReference.self, from: Data(value.value.utf8)) { coverIDs.insert(asset.id) }
+                            else { assetsSafe = false }
+                        }
+                    } else { assetsSafe = false }
                 }
                 modelContext.delete(row)
             }
-            for row in try modelContext.fetch(FetchDescriptor<UserPosition>()) {
-                if keys.contains(row.contentKey), try matches(row.persistentModelID, row.payload) { modelContext.delete(row) }
-            }
-            for row in try modelContext.fetch(FetchDescriptor<AnnotationOperation>()) {
-                if keys.contains(row.contentKey), try matches(row.persistentModelID, row.payload) { modelContext.delete(row) }
-            }
-            for row in try modelContext.fetch(FetchDescriptor<ReadingFact>()) {
-                if keys.contains(row.contentKey), try matches(row.persistentModelID, row.payload) { modelContext.delete(row) }
-            }
+            for row in try modelContext.fetch(FetchDescriptor<UserPosition>()) where keys.contains(row.contentKey) { modelContext.delete(row) }
+            for row in try modelContext.fetch(FetchDescriptor<AnnotationOperation>()) where keys.contains(row.contentKey) { modelContext.delete(row) }
+            for row in try modelContext.fetch(FetchDescriptor<ReadingFact>()) where keys.contains(row.contentKey) { modelContext.delete(row) }
             for row in try modelContext.fetch(FetchDescriptor<StatisticsClear>()) {
-                guard let scope = try? UserSyncJSON.decode(ClearValue.self, row.payload, as: UserSyncJSON.clear, envelope: true) else { continue }
-                if let key = scope.book, keys.contains(key), try matches(row.persistentModelID, row.payload) { modelContext.delete(row) }
+                if let key = BackupRows.deletionKey(.init(key: "", payload: row.payload), kind: "statistics-clears"), keys.contains(key) { modelContext.delete(row) }
             }
-            // An unknown remaining cover reference prevents asset reclamation.
-            var assetsSafe = true
+            // Unknown references, including deleted ones, cannot prove an asset
+            // is unreferenced. Keep assets rather than guess at their ownership.
             for row in values where !row.isDeleted && row.key.hasSuffix("/cover") {
                 guard let stored = try? UserSyncJSON.storedValue(row.payload, key: row.key) else { assetsSafe = false; break }
-                if stored.value != "null", let asset = try? JSONDecoder().decode(UserSyncJSON.CoverReference.self, from: Data(stored.value.utf8)) { coverIDs.remove(asset.id) }
+                if stored.value != "null" {
+                    guard let asset = try? JSONDecoder().decode(UserSyncJSON.CoverReference.self, from: Data(stored.value.utf8)) else { assetsSafe = false; break }
+                    coverIDs.remove(asset.id)
+                }
             }
             if assetsSafe {
                 for cover in try modelContext.fetch(FetchDescriptor<UserCover>()) where coverIDs.contains(cover.id) { modelContext.delete(cover) }

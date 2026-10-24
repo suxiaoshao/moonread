@@ -60,7 +60,6 @@ extension ReaderService {
         await acquireUserDataOperation()
         var holdsOperation = true
         defer { if holdsOperation { releaseUserDataOperation() } }
-        try await finishReadingDataDeletionLocked()
         if enabled {
             guard let account else { throw CocoaError(.userCancelled) }
             if let previous = sourceDefaults.string(forKey: "Moonread.userOwner"), previous != account, !allowAccountChange { throw ReaderError.CloudAccountChanged }
@@ -97,7 +96,6 @@ extension ReaderService {
         defer { recoveryTask = nil; scheduleRecentRestoration() }
         do {
             try cleanupOldBackupExports()
-            try await finishReadingDataDeletion()
             let pending = try await userStore(pending: true)
             let keys = try await pending.pendingKeys()
             pendingPromotionIDs.formUnion(try keys.compactMap { if case let .pending(id) = try parseReadingKey(value: $0) { return id }; return nil })
@@ -205,7 +203,6 @@ extension ReaderService {
     }
     func promoteUserData(_ id: String) async throws {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
-        try await finishReadingDataDeletionLocked()
         try await promoteUserDataLocked(id)
     }
     func promoteUserDataLocked(_ id: String) async throws {
@@ -241,7 +238,6 @@ extension ReaderService {
     }
     func writePosition(_ id: String, offset: UInt64) async throws {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
-        try await finishReadingDataDeletionLocked()
         try await promoteUserDataLocked(id)
         let core = try textCore(), key = try userKey(id)
         let normalized = try core.normalizedPosition(bookId: id, offsetUtf8: offset)
