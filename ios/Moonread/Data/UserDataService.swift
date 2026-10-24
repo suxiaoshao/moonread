@@ -201,8 +201,9 @@ extension ReaderService {
     func userKey(_ id: String) throws -> String {
         serializeReadingKey(key: try textCore().resolveBookIdentity(bookId: id).key)
     }
-    func promoteUserData(_ id: String) async throws {
+    func promoteUserData(_ id: String, retry: Bool = false) async throws {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        if retry { promotedUserKeys.remove(id) }
         try await promoteUserDataLocked(id)
     }
     func promoteUserDataLocked(_ id: String) async throws {

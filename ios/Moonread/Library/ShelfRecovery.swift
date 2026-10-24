@@ -262,16 +262,17 @@ extension LibraryModel {
 
 /// Non-modal guidance; FullIndex remains the sole task/progress/download UI.
 struct ShelfIndexGuidance: View {
+    @Environment(\.theme) private var theme
     let model: LibraryModel
     let shelfID: String
     private var recovery: Bool { model.shelfRecovery.guidance.contains(shelfID) }
     var body: some View {
         if let summary = model.shelfIndexes[shelfID], summary.pending > 0 {
             HStack(alignment: .center, spacing: 12) {
-                if recovery { Image(systemName: "arrow.clockwise.icloud").foregroundStyle(.secondary).accessibilityHidden(true) }
+                if recovery { Image(systemName: "arrow.clockwise.icloud").foregroundStyle(Color(uiColor: theme.secondary)).accessibilityHidden(true) }
                 VStack(alignment: .leading, spacing: 4) {
                     if recovery { Text("建立索引以恢复进度与标签", tableName: "ShelfRecovery").font(.subheadline).lineLimit(nil).fixedSize(horizontal: false, vertical: true) }
-                    else { Text("\(summary.pending) 本还没建立索引", tableName: "ShelfRecovery").font(.subheadline).foregroundStyle(.secondary) }
+                    else { Text("\(summary.pending) 本还没建立索引", tableName: "ShelfRecovery").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary)) }
                 }
                 Spacer(minLength: 4)
                 Button { Task { await model.openShelfIndex(shelfID) } } label: { Text("建立索引", tableName: "FullIndex") }
@@ -287,21 +288,25 @@ struct ShelfIndexGuidance: View {
 }
 
 struct ShelfReferenceHints: View {
+    @Environment(\.theme) private var theme
     let model: LibraryModel
+    var grouped = false
     var body: some View {
         if !model.shelfRecovery.references.isEmpty {
             Section {
                 ForEach(model.shelfRecovery.references) { reference in
                     VStack(alignment: .leading, spacing: 6) {
                         Text(verbatim: reference.value.name).font(.headline)
-                        Text(reference.locationLabel).font(.caption).foregroundStyle(.secondary)
-                        Text("需要重新授权", tableName: "ShelfRecovery").font(.caption).foregroundStyle(.secondary)
+                        Text(reference.locationLabel).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                        Text("需要重新授权", tableName: "ShelfRecovery").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                         Button { model.reauthorizeShelf(reference) } label: { Text("重新授权", tableName: "ShelfRecovery") }
                             .accessibilityIdentifier("reauthorizeShelf-" + reference.id)
                             .disabled(!model.canAcceptFileWork)
                     }.padding(.vertical, 6)
                 }
             } header: { Text("你之前添加过这些书架", tableName: "ShelfRecovery") }
+                .listRowBackground(grouped ? Color(uiColor: theme.surface) : Color.clear)
+                .listRowSeparatorTint(Color(uiColor: theme.separator))
         }
     }
 }

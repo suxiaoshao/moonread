@@ -37,6 +37,25 @@ struct ReadingDataItem: Identifiable, Sendable {
     var cover = false
     var unsupported = false
     var linked = false
+    var sourceHint: PositionSourceHint?
+    var positionUtf8: UInt64?
+    var hasPosition: Bool { positionUtf8 != nil }
+    var hasStatistics = false
+    var percentage: Double?
+}
+/// Transient diagnostics only; no new persistent format or source binding.
+struct PendingReadingData: Identifiable, Sendable {
+    enum SourceState: Equatable, Sendable { case available, reconnect, missing }
+    var id: String
+    var bookID: String
+    var title = ""
+    var phase: ImportPhase?
+    var source = ""
+    var shelfID: String?
+    var shelfName = ""
+    var sourceState = SourceState.missing
+    var readable = true
+    var canResume: Bool { readable && sourceState == .available && (phase == .paused || phase == .failed) }
 }
 /// A small, transient inventory explanation. Never contains a raw payload.
 struct ReadingDataDiagnostic: Identifiable, Sendable {
@@ -60,6 +79,7 @@ struct ReadingDataDiagnostic: Identifiable, Sendable {
 struct ReadingDataInventory: Sendable {
     var items: [ReadingDataItem]
     var pending: Int
+    var pendingItems: [PendingReadingData] = []
     var unsupported: Int
     var diagnostics: [ReadingDataDiagnostic] = []
     var configuration: UUID? = nil
@@ -229,6 +249,12 @@ extension UserDataStore {
                 items[key]?.tags = values.filter { $0.key.hasPrefix("metadata/" + key + "/tag-") }.values.compactMap { try? JSONDecoder().decode(String.self, from: Data($0.utf8)) }
                 items[key]?.cover = values["metadata/" + key + "/cover"].map { $0 != "null" } ?? false
                 items[key]?.lastRead = positions["position/" + key]?.updated ?? 0
+                if let stored = positions["position/" + key] {
+                    let position = try PositionCandidate(stored).value
+                    items[key]?.sourceHint = position.source_hint
+                    items[key]?.positionUtf8 = position.offset
+                }
+                items[key]?.hasStatistics = !facts.isEmpty
                 items[key]?.bookmarks = heads.values.filter { $0.contains { $0.bookmark && $0.content != nil } }.count
                 items[key]?.annotations = heads.values.filter { $0.contains { !$0.bookmark && $0.content != nil } }.count
                 items[key]?.title = facts.first?["title"] as? String ?? ""

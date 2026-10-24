@@ -52,7 +52,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 多标签分组/未标注/未索引分区 | Rust `bookshelf.rs::all_library_tag_groups` | 已单源，依赖索引身份 | 保持 |
 | 目录四封面选择 | Rust `bookshelf.rs::populate_cover_previews` | 独立 top-4 策略，不等于目录列表顺序 | 保持 |
 | 字数定义与 UTF-8 前缀累计字数 | Rust 文本计数共用 helper（后续）；当前 lib/source_identity/navigation/coverage | 与导入字数、章节/覆盖分母一致 | 不在 #66 改写；旧报告第8项仍待收敛 |
-| 字节位置→进度比例、百分比跳转 | Rust `navigation.rs` 公共位置计算（后续） | 分母/零长度/边界须一处；Swift 只本地化格式化 | #66 不迁；旧报告第9项 Swift 比例副本仍待处理 |
+| 字节位置→进度比例、百分比跳转 | Rust `navigation.rs::reading_percentage`，阅读数据通过 `identity.rs::reading_data_percentage` 查询可信全文长度 | 阅读数据与跳转共用比例/边界计算；Swift 只本地化格式化 | 其余旧报告第9项 Swift 比例副本仍待处理 |
 | 有效章节/位置归属 | Rust `library_tools.rs` 与有效章节关系（后续统一 SQL） | 手动目录需一致；Swift 展开/滚动目标不是同一规则 | #66 不迁；旧报告第10项仍登记 |
 | 阅读时长/有效天数/覆盖等统计数值 | Rust `statistics.rs`、`coverage.rs`（后续统一 summary） | 事实聚合按固定 local_day；Swift 不再另 reduce 同一总量 | #66 不迁；旧报告第11项仍登记 |
 | 统计事实保存/去重裁决、日历展示桶/连续行视觉合并、显示格式 | Swift `ReadingStatistics.swift`、`StatisticsView.swift`，按各自职责单源 | 写入/界面组织与 Rust 数值汇总是不同规则；展示合并应消费已算 duration | 保持平台/状态规则，数值副本后续删除 |

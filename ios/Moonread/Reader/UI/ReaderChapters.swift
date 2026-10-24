@@ -158,7 +158,7 @@ struct ChapterRebuildView: View {
                     }.listRowBackground(Color(uiColor: theme.surface))
                 }
             }
-            if let error = model.rebuildError ?? model.actionError { Text(error).foregroundStyle(Color(uiColor: theme.destructive)) }
+            if let error = model.rebuildError ?? model.actionError { Text(error).foregroundStyle(Color(uiColor: theme.destructive)).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
         }
         .themedPage().navigationTitle("目录预览").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) {

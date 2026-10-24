@@ -19,6 +19,8 @@ extension UTType { static let moonreadBackup = UTType(exportedAs: "dev.moonread.
     var recent = true
     var selecting = false
     var deleting: Set<String>?
+    var issueErrors: [String: String] = [:]
+    private(set) var duplicateNames: [String: (index: Int, count: Int)] = [:]
     private var operation: Task<Void, Never>?
     var canCancel: Bool { operation != nil }
     func cancel() { operation?.cancel() }
@@ -52,7 +54,36 @@ extension UTType { static let moonreadBackup = UTType(exportedAs: "dev.moonread.
             let entries = inventory.items.map { ReadingDataSortEntry(key: $0.id, title: $0.title, lastRead: $0.lastRead) }
             nameOrder = readingDataOrder(entries: entries, recent: false)
             recentOrder = readingDataOrder(entries: entries, recent: true)
+            duplicateNames = [:]
+            let byID = Dictionary(uniqueKeysWithValues: value.items.map { ($0.id, $0) })
+            let groups = Dictionary(grouping: recentOrder.compactMap { byID[$0] }.filter { !$0.title.isEmpty }, by: \.title)
+            for group in groups.values where group.count > 1 {
+                for (index, item) in group.enumerated() { duplicateNames[item.id] = (index + 1, group.count) }
+            }
             selected.formIntersection(visible.map(\.id))
+    }
+    var allVisibleSelected: Bool { !visible.isEmpty && Set(visible.map(\.id)).isSubset(of: selected) }
+    func toggleVisibleSelection() {
+        if allVisibleSelected { selected.subtract(visible.map(\.id)) } else { selected.formUnion(visible.map(\.id)) }
+    }
+    func prepareIssues() async {
+        await load()
+        guard !busy else { return }; busy = true; working = String(localized: "正在关联阅读数据…", table: "DataManagement")
+        defer { busy = false }
+        // One attempt per completed task when this page is entered. Never loop
+        // on a failed promotion or start an import merely to inspect inventory.
+        for item in inventory.pendingItems where item.readable && item.phase == .complete {
+            do { try await service.promoteUserData(item.bookID, retry: true); issueErrors[item.id] = nil }
+            catch { issueErrors[item.id] = ReaderMessages.error(error) }
+        }
+        await load()
+    }
+    func continuePending(_ item: PendingReadingData) async {
+        guard !busy else { return }; busy = true; working = String(localized: "正在准备正文", table: "DataManagement")
+        defer { busy = false }
+        do { try await service.continuePendingReadingData(item.id); issueErrors[item.id] = nil }
+        catch { issueErrors[item.id] = ReaderMessages.error(error) }
+        await load()
     }
     func exportAll() async {
         working = String(localized: "正在生成备份…", table: "DataManagement"); exported = nil
@@ -122,13 +153,13 @@ struct DataManagementView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Label { Text("备份", tableName: "DataManagement") } icon: { Image(systemName: "externaldrive") }.font(.headline)
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("备份包含全部阅读数据和配色，不包含小说原文、AI 或授权。", tableName: "DataManagement").font(.footnote).foregroundStyle(.secondary)
+                        Text("备份包含全部阅读数据和配色，不包含小说原文、AI 或授权。", tableName: "DataManagement").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                         ViewThatFits(in: .horizontal) {
                             HStack { backupButtons }
                             VStack { backupButtons }
                         }
                         if let message = model.message { Text(verbatim: message).font(.footnote).accessibilityIdentifier("readingDataResult") }
-                        if let error = model.error { Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(.red).accessibilityIdentifier("readingDataError") }
+                        if let error = model.error { Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)).accessibilityIdentifier("readingDataError") }
                     }.frame(maxWidth: .infinity, alignment: .leading)
                 }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
                 if !model.inventory.diagnostics.isEmpty {
@@ -136,25 +167,29 @@ struct DataManagementView: View {
                         Image(systemName: "exclamationmark.circle")
                         Text("\(model.inventory.diagnostics.count) 项需要处理", tableName: "DataManagement")
                         Spacer()
-                        NavigationLink { ReadingDataIssuesView(inventory: model.inventory) } label: { Text("查看", tableName: "DataManagement") }
+                        NavigationLink { ReadingDataIssuesView(model: model) } label: { Text("查看", tableName: "DataManagement") }
                             .accessibilityIdentifier("readingDataIssues")
-                    }.padding().background(.quaternary, in: .rect(cornerRadius: 12))
+                    }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
                 }
                 VStack {
                     VStack(spacing: 16) {
                         NavigationLink { ReadingDataListView(model: model) } label: {
-                            HStack { Label { Text("阅读数据", tableName: "DataManagement") } icon: { Image(systemName: "books.vertical") }; Spacer(); Text("\(model.inventory.items.count) 本", tableName: "DataManagement").foregroundStyle(.secondary); Image(systemName: "chevron.right").font(.footnote) }
+                            HStack { Label { Text("阅读数据", tableName: "DataManagement") } icon: { Image(systemName: "books.vertical") }; Spacer(); Text("\(model.inventory.items.count) 本", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.secondary)); Image(systemName: "chevron.right").font(.footnote) }
                         }.accessibilityIdentifier("readingDataList")
-                        Divider()
+                        ThemedDivider()
                         NavigationLink { ReadingDataCacheView(model: model) } label: {
-                            HStack { Label { Text("可重建缓存", tableName: "DataManagement") } icon: { Image(systemName: "internaldrive") }; Spacer(); Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: model.cache.bytes), countStyle: .file)).foregroundStyle(.secondary); Image(systemName: "chevron.right").font(.footnote) }
+                            HStack { Label { Text("可重建缓存", tableName: "DataManagement") } icon: { Image(systemName: "internaldrive") }; Spacer(); Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: model.cache.bytes), countStyle: .file)).foregroundStyle(Color(uiColor: theme.secondary)); Image(systemName: "chevron.right").font(.footnote) }
                         }.accessibilityIdentifier("readingDataCaches")
                     }.padding(.vertical, 8)
                 }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
+                Button(role: .destructive) { Task { await model.requestDeleteAll() } } label: {
+                    Text("删除全部阅读数据", tableName: "DataManagement").frame(maxWidth: .infinity, minHeight: 44)
+                }.buttonStyle(.bordered).tint(Color(uiColor: theme.destructive)).accessibilityIdentifier("deleteAllReadingData")
             }.padding()
         }
         .themedPage().navigationTitle(Text("数据管理", tableName: "DataManagement"))
         .modifier(ReadingDataWorking(model: model))
+        .modifier(ReadingDataDeletionPrompt(model: model))
         .refreshable { await model.load() }
         .task { await model.load() }
         .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in if !model.busy { Task { await model.load() } } }
@@ -182,6 +217,7 @@ struct DataManagementView: View {
     }
 }
 private struct ReadingDataWorking: ViewModifier {
+    @Environment(\.theme) private var theme
     @Bindable var model: DataManagementModel
     func body(content: Content) -> some View {
         content.disabled(model.busy).overlay {
@@ -189,7 +225,7 @@ private struct ReadingDataWorking: ViewModifier {
                 VStack(spacing: 12) {
                     ProgressView(model.working)
                     if model.canCancel { Button("取消") { model.cancel() } }
-                }.padding().background(.regularMaterial, in: .rect(cornerRadius: 12)).accessibilityIdentifier("readingDataWorking")
+                }.padding().background(theme.floatingBackground(), in: .rect(cornerRadius: 12)).accessibilityIdentifier("readingDataWorking")
             }
         }
     }
@@ -200,150 +236,259 @@ private struct ReadingDataListView: View {
     @State private var detail: ReadingDataItem?
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                Picker(selection: $model.unlinkedOnly) {
-                    Text("全部", tableName: "DataManagement").tag(false)
-                    Text("不在书架上", tableName: "DataManagement").tag(true)
-                } label: { Text("筛选", tableName: "DataManagement") }.pickerStyle(.segmented).accessibilityIdentifier("readingDataFilter")
-                if model.unlinkedOnly { Text("按此设备当前索引判断；未建立索引或尚未重新连接的小说也可能出现在这里。", tableName: "DataManagement").font(.caption).foregroundStyle(.secondary) }
-                if let message = model.message { Text(verbatim: message).font(.footnote).accessibilityIdentifier("readingDataResult") }
-                if let error = model.error { Text(verbatim: error).font(.footnote).foregroundStyle(.red) }
+            HStack(spacing: 8) {
+                filterButton(false)
+                filterButton(true)
+                Spacer(minLength: 0)
+                Menu {
+                    Picker(selection: $model.recent) {
+                        Text("最近阅读", tableName: "DataManagement").tag(true)
+                        Text("名称", tableName: "DataManagement").tag(false)
+                    } label: { Text("排序", tableName: "DataManagement") }
+                } label: { Label { Text("排序", tableName: "DataManagement") } icon: { Image(systemName: "arrow.up.arrow.down") } }
+                    .labelStyle(.iconOnly).accessibilityIdentifier("readingDataSort")
             }.padding(.horizontal).padding(.vertical, 8)
-            List(model.visible) { item in
-                Button {
-                    if model.selecting { if !model.selected.insert(item.id).inserted { model.selected.remove(item.id) } }
-                    else { detail = item }
-                } label: { DataManagementRow(item: item, selected: model.selected.contains(item.id), selecting: model.selecting) }
-                    .buttonStyle(.plain).accessibilityIdentifier("reading-data-" + item.id)
-                    .swipeActions { Button(role: .destructive) { model.deleting = [item.id] } label: { Text("删除", tableName: "DataManagement") } }
+            List {
+                Section {
+                    ForEach(model.visible) { item in
+                        Button {
+                            if model.selecting { if !model.selected.insert(item.id).inserted { model.selected.remove(item.id) } }
+                            else { detail = item }
+                        } label: {
+                            DataManagementRow(item: item, duplicate: model.duplicateNames[item.id], selected: model.selected.contains(item.id), selecting: model.selecting)
+                        }.buttonStyle(.plain).accessibilityIdentifier("reading-data-" + item.id)
+                            .swipeActions { Button(role: .destructive) { model.deleting = [item.id] } label: { Text("删除", tableName: "DataManagement") } }
+                    }
+                } footer: {
+                    Text("按此设备当前索引判断；未建立索引或尚未重新连接的小说也可能出现在这里。", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.secondary))
+                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                if let message = model.message { Text(verbatim: message).font(.footnote).accessibilityIdentifier("readingDataResult").listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
+                if let error = model.error { Text(verbatim: error).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
             }
+            .contentMargins(.top, 8, for: .scrollContent)
             .overlay { if model.visible.isEmpty { ContentUnavailableView { Label { Text("暂无阅读数据", tableName: "DataManagement") } icon: { Image(systemName: "books.vertical") } } } }
-        }.themedPage().navigationTitle(Text("阅读数据", tableName: "DataManagement"))
+        }.themedPage()
+        .navigationTitle(model.selecting ? Text("已选 \(model.selected.count) 本", tableName: "DataManagement") : Text("阅读数据", tableName: "DataManagement"))
+        .navigationBarTitleDisplayMode(model.selecting ? .inline : .large)
         .searchable(text: $model.query, prompt: Text("搜索书名、作者或标签", tableName: "DataManagement"))
         .toolbar {
-            if !model.selecting {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Picker(selection: $model.recent) {
-                            Text("最近阅读", tableName: "DataManagement").tag(true)
-                            Text("名称", tableName: "DataManagement").tag(false)
-                        } label: { Text("排序", tableName: "DataManagement") }
-                    } label: { Label { Text("排序", tableName: "DataManagement") } icon: { Image(systemName: "arrow.up.arrow.down") } }
-                        .accessibilityIdentifier("readingDataSort")
-                }
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { model.selecting.toggle(); model.selected.removeAll() } label: { Text(model.selecting ? "完成" : "选择", tableName: "DataManagement") }.accessibilityIdentifier("selectReadingData")
             }
         }
+        .toolbar(model.selecting ? .hidden : .automatic, for: .tabBar)
         .safeAreaInset(edge: .bottom) {
-            if model.selecting {
-                HStack {
-                    Button { model.selected = Set(model.visible.map(\.id)) } label: { Text("全选当前结果", tableName: "DataManagement") }.accessibilityIdentifier("selectAllReadingData")
-                    Menu {
-                        Button(role: .destructive) { Task { await model.requestDeleteAll() } } label: { Text("删除全部阅读数据", tableName: "DataManagement") }
-                    } label: { Label { Text("更多", tableName: "DataManagement") } icon: { Image(systemName: "ellipsis") }.frame(minWidth: 44, minHeight: 44) }
-                        .accessibilityIdentifier("readingDataSelectionMenu")
-                    Spacer()
-                    Button(role: .destructive) { model.deleting = model.selected } label: { Text("删除 \(model.selected.count) 本", tableName: "DataManagement") }
-                        .buttonStyle(.bordered).tint(Color(uiColor: theme.destructive)).foregroundStyle(Color(uiColor: theme.destructive)).disabled(model.selected.isEmpty).accessibilityIdentifier("deleteSelectedReadingData")
-                }.padding().background(.bar)
-            }
+            if model.selecting { selectionBar }
         }
+        .onDisappear { model.selecting = false; model.selected.removeAll() }
         .modifier(ReadingDataWorking(model: model)).modifier(ReadingDataDeletionPrompt(model: model))
         .sheet(item: $detail) { item in
             NavigationStack {
                 VStack(alignment: .leading, spacing: 20) {
-                    DataManagementRow(item: item, selected: false, selecting: false)
+                    DataManagementRow(item: item, duplicate: model.duplicateNames[item.id], selected: false, selecting: false)
+                    Text("书签 \(item.bookmarks) · 批注 \(item.annotations)", tableName: "DataManagement").font(.footnote)
                     Spacer()
-                }.padding().navigationTitle(Text("阅读数据", tableName: "DataManagement"))
+                }.padding().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).themedPage()
+                    .navigationTitle(Text("阅读数据", tableName: "DataManagement"))
                     .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { detail = nil } } }
             }
         }
     }
+    private func filterButton(_ unlinked: Bool) -> some View {
+        let selected = model.unlinkedOnly == unlinked
+        return Button { model.unlinkedOnly = unlinked } label: {
+            Group {
+                if unlinked { Text("不在书架上 \(model.inventory.items.filter { !$0.linked }.count)", tableName: "DataManagement") }
+                else { Text("全部 \(model.inventory.items.count)", tableName: "DataManagement") }
+            }.font(.subheadline).padding(.horizontal, 12).padding(.vertical, 8)
+                .foregroundStyle(Color(uiColor: selected ? theme.accent : theme.secondary))
+                .background(Color(uiColor: selected ? theme.selected : theme.surface), in: .capsule)
+        }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityIdentifier(unlinked ? "readingDataFilterUnlinked" : "readingDataFilterAll")
+    }
+    private var selectionBar: some View {
+        HStack(spacing: 8) {
+            Button { model.toggleVisibleSelection() } label: { Text(model.allVisibleSelected ? "取消全选" : "全选", tableName: "DataManagement") }
+                .foregroundStyle(Color(uiColor: theme.accent))
+                .accessibilityIdentifier("selectAllReadingData")
+            Spacer(minLength: 0)
+            VStack(spacing: 0) {
+                Text(model.unlinkedOnly ? "不在书架上" : "全部", tableName: "DataManagement")
+                Text("\(model.visible.count) 本", tableName: "DataManagement")
+            }.font(.caption2).foregroundStyle(Color(uiColor: theme.secondary))
+            Spacer(minLength: 0)
+            Button(role: .destructive) { model.deleting = model.selected } label: { Text("删除 \(model.selected.count) 本", tableName: "DataManagement") }
+                .buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color(uiColor: theme.destructive))
+                .foregroundStyle(Color(uiColor: model.selected.isEmpty ? theme.secondary : theme.onAccent))
+                .disabled(model.selected.isEmpty).accessibilityIdentifier("deleteSelectedReadingData")
+        }.frame(minHeight: 58).padding(.horizontal, 16)
+            .background(Color(uiColor: theme.raised), in: .capsule).padding(.horizontal, 14).padding(.bottom, 8)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("readingDataSelectionBar")
+    }
 }
 private struct DataManagementRow: View {
+    @Environment(\.theme) private var theme
     let item: ReadingDataItem
+    var duplicate: (index: Int, count: Int)? = nil
     let selected: Bool
     let selecting: Bool
+    private var sourceLabel: String {
+        guard let hint = item.sourceHint else { return String(localized: "来源未知", table: "DataManagement") }
+        var parts = [hint.relative_path]
+        if let bytes = hint.byte_size { parts.append(ByteCountFormatter.string(fromByteCount: Int64(clamping: bytes), countStyle: .file)) }
+        parts.append(hint.decoding == "auto" ? String(localized: "自动识别", table: "DataManagement") : hint.decoding.uppercased())
+        return String(localized: "上次来源：", table: "DataManagement") + parts.joined(separator: " · ")
+    }
+    private var readingLabel: String {
+        var parts: [String] = []
+        if item.lastRead > 0 {
+            let date = Date(timeIntervalSince1970: Double(item.lastRead) / 1000).formatted(.dateTime.year().month().day().hour().minute())
+            parts.append(String(localized: "最后阅读", table: "DataManagement") + " " + date)
+        }
+        if let percentage = item.percentage {
+            parts.append(String(localized: "读到", table: "DataManagement") + " " + percentage.formatted(.number.precision(.fractionLength(0))) + "%")
+        } else if item.hasPosition { parts.append(String(localized: "只有阅读进度", table: "DataManagement")) }
+        if item.hasStatistics { parts.append(String(localized: "有统计", table: "DataManagement")) }
+        return parts.joined(separator: " · ")
+    }
     var body: some View {
         HStack {
-            if selecting { Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(.tint) }
+            if selecting { Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(Color(uiColor: selected ? theme.accent : theme.secondary)) }
             VStack(alignment: .leading, spacing: 4) {
-                if !item.title.isEmpty { Text(verbatim: item.title) } else { Text("书架上没有这本小说", tableName: "DataManagement") }
-                if !item.linked { Text("未关联到书架", tableName: "DataManagement").font(.caption).foregroundStyle(.secondary) }
-                if !item.author.isEmpty { Text(verbatim: item.author).font(.caption).foregroundStyle(.secondary) }
-                Text("书签 \(item.bookmarks) · 批注 \(item.annotations)", tableName: "DataManagement").font(.caption).foregroundStyle(.secondary)
-                if item.lastRead > 0 { Text(Date(timeIntervalSince1970: Double(item.lastRead) / 1000), style: .date).font(.caption).foregroundStyle(.secondary) }
-                if item.cover { Text("自定义封面", tableName: "DataManagement").font(.caption) }
-                if item.unsupported { Text("需要处理", tableName: "DataManagement").font(.caption).foregroundStyle(.secondary) }
+                HStack(alignment: .firstTextBaseline) {
+                    if !item.title.isEmpty { Text(verbatim: item.title) } else { Text("书架上没有这本小说", tableName: "DataManagement") }
+                    if let duplicate {
+                        Text("同名 \(duplicate.index)/\(duplicate.count)", tableName: "DataManagement")
+                            .font(.caption2).foregroundStyle(Color(uiColor: theme.secondary)).padding(.horizontal, 6).padding(.vertical, 2).background(Color(uiColor: theme.raised), in: .capsule)
+                    }
+                }
+                Text(verbatim: sourceLabel).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                if !readingLabel.isEmpty { Text(verbatim: readingLabel).font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
+                if item.unsupported { Text("需要处理", tableName: "DataManagement").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
             }
-            Spacer()
+            Spacer(minLength: 0)
         }.frame(maxWidth: .infinity, alignment: .leading).contentShape(.rect)
     }
 }
 private struct ReadingDataIssuesView: View {
-    let inventory: ReadingDataInventory
-    private var groups: [String] { Set(inventory.diagnostics.compactMap(\.bookKey)).sorted() }
+    @Environment(\.theme) private var theme
+    @Environment(LibraryModel.self) private var library
+    @Bindable var model: DataManagementModel
+    @State private var discarding: PendingReadingData?
+    private var pending: [PendingReadingData] { model.inventory.pendingItems.filter(\.readable) }
+    private var unreadable: [ReadingDataDiagnostic] { model.inventory.diagnostics.filter { $0.reason != .pending } }
     var body: some View {
         List {
-            ForEach(groups, id: \.self) { key in
-                let issues = inventory.diagnostics.filter { $0.bookKey == key }
+            if let error = model.error { Text(verbatim: error).foregroundStyle(Color(uiColor: theme.destructive)).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
+            pendingSection("正文没有准备完成", items: pending.filter { $0.phase != nil && $0.phase != .complete && $0.sourceState == .available })
+            pendingSection("阅读数据尚未关联", items: pending.filter { $0.phase == .complete })
+            pendingSection("需要重新连接书架", items: pending.filter { $0.phase != .complete && $0.sourceState == .reconnect })
+            pendingSection("找不到原文件", items: pending.filter { $0.phase != .complete && $0.sourceState == .missing })
+            if !unreadable.isEmpty {
                 Section {
-                    ForEach(issues) { diagnostic in issue(diagnostic) }
-                } header: {
-                    if let title = issues.first(where: { !$0.title.isEmpty })?.title { Text(verbatim: title) }
-                    else { Text("未关联的阅读数据", tableName: "DataManagement") }
-                }
+                    ForEach(unreadable) { diagnostic in
+                        VStack(alignment: .leading, spacing: 6) {
+                            if !diagnostic.title.isEmpty { Text(verbatim: diagnostic.title).font(.headline) }
+                            Text(recordName(diagnostic.recordType))
+                            Text(reasonName(diagnostic.reason), tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.secondary))
+                        }.accessibilityIdentifier("readingDataIssue-" + diagnostic.reason.rawValue)
+                    }
+                } header: { Text("暂时无法读取的记录", tableName: "DataManagement") }
+                    .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
-            let other = inventory.diagnostics.filter { $0.bookKey == nil }
-            if !other.isEmpty { Section { ForEach(other) { diagnostic in issue(diagnostic) } } header: { Text("其他记录", tableName: "DataManagement") } }
+            if model.inventory.diagnostics.isEmpty {
+                ContentUnavailableView { Label { Text("没有需要处理的记录", tableName: "DataManagement") } icon: { Image(systemName: "checkmark.circle") } }
+            }
         }.themedPage().navigationTitle(Text("需要处理", tableName: "DataManagement"))
-    }
-    private func issue(_ diagnostic: ReadingDataDiagnostic) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(recordName(diagnostic.recordType), tableName: "DataManagement").font(.headline)
-            Text(reasonName(diagnostic.reason), tableName: "DataManagement")
-            if !diagnostic.source.isEmpty { Text(verbatim: diagnostic.source).font(.caption).foregroundStyle(.secondary) }
-            if diagnostic.reason == .pending {
-                NavigationLink(value: LibraryRoute.manage) { Text("前往书架管理", tableName: "DataManagement") }
+        .task { await model.prepareIssues() }
+        .refreshable { await model.load() }
+        .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in Task { await model.load() } }
+        .onReceive(NotificationCenter.default.publisher(for: .libraryIndexScanCommitted).receive(on: DispatchQueue.main)) { _ in Task { await model.load() } }
+        .confirmationDialog(Text("丢弃这本书的待关联记录？", tableName: "DataManagement"), isPresented: Binding(get: { discarding != nil }, set: { if !$0 { discarding = nil } }), titleVisibility: .visible) {
+            if let item = discarding {
+                Button(role: .destructive) { discarding = nil; Task { await model.deleteConfirmed([item.id]) } } label: { Text("丢弃记录", tableName: "DataManagement") }
+                    .accessibilityIdentifier("confirmDiscardPending")
             }
-        }.accessibilityIdentifier("readingDataIssue-" + diagnostic.reason.rawValue)
+        } message: { Text("只删除这条待关联的阅读进度、统计及其他阅读数据，不删除小说文件，也不删除已经关联的正式记录。", tableName: "DataManagement") }
+    }
+    @ViewBuilder private func pendingSection(_ title: LocalizedStringKey, items: [PendingReadingData]) -> some View {
+        if !items.isEmpty {
+            Section {
+                ForEach(items) { item in
+                    VStack(alignment: .leading, spacing: 10) {
+                        if item.title.isEmpty { Text("未关联的阅读数据", tableName: "DataManagement").font(.headline) }
+                        else { Text(verbatim: item.title).font(.headline) }
+                        if !item.source.isEmpty { Text(verbatim: item.source).font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
+                        pendingExplanation(item)
+                        if let error = model.issueErrors[item.id] { Text(verbatim: error).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
+                        HStack {
+                            if item.canResume {
+                                Button { Task { await model.continuePending(item) } } label: { Text("继续准备", tableName: "DataManagement") }
+                                    .buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("resumePending-" + item.id)
+                            } else if item.phase != .complete, item.sourceState == .reconnect, let shelf = item.shelfID {
+                                Button { library.chooseFiles(.folder(shelf)) } label: { Text("重新连接书架", tableName: "DataManagement") }
+                                    .buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("reconnectPending-" + item.id)
+                            }
+                            Button(role: .destructive) { discarding = item } label: { Text("丢弃记录", tableName: "DataManagement") }
+                                .buttonStyle(.bordered).tint(Color(uiColor: theme.destructive)).foregroundStyle(Color(uiColor: theme.destructive)).accessibilityIdentifier("discardPending-" + item.id)
+                        }.disabled(model.busy)
+                    }.padding(.vertical, 4)
+                }
+            } header: { Text(title, tableName: "DataManagement") }
+                .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+        }
+    }
+    @ViewBuilder private func pendingExplanation(_ item: PendingReadingData) -> some View {
+        if item.phase == .complete {
+            Text("正文已准备完成，但阅读数据尚未关联。", tableName: "DataManagement")
+        } else if item.sourceState == .reconnect {
+            Text("原书架「\(item.shelfName)」需要重新授权，才能读取原文件。", tableName: "DataManagement")
+        } else if item.phase == nil {
+            Text("原导入任务已不在此设备，无法继续准备。", tableName: "DataManagement")
+        } else if item.sourceState == .missing {
+            Text("找不到原文件或来源信息，暂时无法继续准备。", tableName: "DataManagement")
+        } else if item.canResume {
+            Text("正文准备曾中断，阅读进度和统计会在准备完成后接上。", tableName: "DataManagement")
+        } else {
+            Label { Text("正在准备正文，完成后会自动关联阅读数据。", tableName: "DataManagement") } icon: { ProgressView() }
+        }
     }
     private func reasonName(_ reason: ReadingDataDiagnostic.Reason) -> LocalizedStringKey {
         switch reason {
         case .newerFormat: "较新版本格式，请更新 App"
         case .unreadable: "数据无法读取，原始记录已保留"
         case .readFailure: "读取失败，请稍后重试"
-        case .pending: "正文尚未准备完成；来源不可用时，请重新连接书架或找到原文件。"
+        case .pending: "阅读数据尚未关联"
         }
     }
-    private func recordName(_ kind: String) -> LocalizedStringKey {
+    private func recordName(_ kind: String) -> String {
         switch kind {
-        case "values": "小说信息与设置"
-        case "positions": "阅读进度"
-        case "annotations": "书签与批注"
-        case "facts": "阅读统计"
-        case "statistics-clears": "统计清除记录"
-        case "source": "书架来源"
-        default: "阅读数据"
+        case "values": String(localized: "小说信息与设置", table: "DataManagement")
+        case "positions": String(localized: "阅读进度", table: "DataManagement")
+        case "annotations": String(localized: "书签与批注", table: "DataManagement")
+        case "facts": String(localized: "阅读统计", table: "DataManagement")
+        case "statistics-clears": String(localized: "统计清除记录", table: "DataManagement")
+        case "source": String(localized: "书架来源", table: "DataManagement")
+        default: String(localized: "阅读数据", table: "DataManagement")
         }
     }
 }
 private struct ReadingDataCacheView: View {
+    @Environment(\.theme) private var theme
     @Bindable var model: DataManagementModel
     @State private var confirmation = false
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: model.cache.bytes), countStyle: .file)).font(.largeTitle.bold())
-                Text("正文缓存可以随时重新生成，清理后再打开小说会稍慢一些。", tableName: "DataManagement").foregroundStyle(.secondary)
+                Text("正文缓存可以随时重新生成，清理后再打开小说会稍慢一些。", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.secondary))
                 if model.cache.protected > 0 {
-                    Text("有 \(model.cache.protected) 本正在使用或找不到原文件，暂不清理", tableName: "DataManagement").font(.footnote).foregroundStyle(.secondary)
+                    Text("有 \(model.cache.protected) 本正在使用或找不到原文件，暂不清理", tableName: "DataManagement").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                 }
                 Button { confirmation = true } label: { Text("清理可重建缓存", tableName: "DataManagement").frame(maxWidth: .infinity) }.buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).accessibilityIdentifier("clearRebuildableCaches")
                 if let message = model.message { Text(verbatim: message).font(.footnote).accessibilityIdentifier("readingDataResult") }
-                if let error = model.error { Text(verbatim: error).foregroundStyle(.red) }
+                if let error = model.error { Text(verbatim: error).foregroundStyle(Color(uiColor: theme.destructive)) }
                 Spacer()
             }.padding()
         }.themedPage().navigationTitle(Text("可重建缓存", tableName: "DataManagement"))
@@ -368,6 +513,7 @@ struct ReadingDataDeletionPrompt: ViewModifier {
     }
 }
 private struct BackupImportPreviewView: View {
+    @Environment(\.theme) private var theme
     @Bindable var model: DataManagementModel
     var body: some View {
         NavigationStack {
@@ -382,10 +528,10 @@ private struct BackupImportPreviewView: View {
             }.themedPage().navigationTitle(Text("导入预览", tableName: "DataManagement"))
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 12) {
-                    if let error = model.error { Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(.red) }
+                    if let error = model.error { Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
                     Button { Task { await model.importConfirmed() } } label: { Text("确认导入", tableName: "DataManagement").frame(maxWidth: .infinity) }
                         .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).accessibilityIdentifier("confirmImportReadingBackup")
-                }.padding().background(.bar)
+                }.padding().background(Color(uiColor: theme.canvas))
             }
             .modifier(ReadingDataWorking(model: model))
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { if !model.busy { model.preview = nil } }.disabled(model.busy) } }

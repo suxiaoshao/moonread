@@ -105,6 +105,8 @@ xcodebuild -project ios/Moonread.xcodeproj -scheme Moonread \
 
 2026-10-02 已验证描述文件和应用签名包含云容器及推送权限。以下无云签名流程仅适用于没有相应权限的 Personal Team。
 
+需要让本机真机试用包读取用户现有的正式 iCloud 数据时，在 PR CI 通过后使用 Release 配置，复制主 App 的 entitlements 到忽略的 `build/`，仅在该副本加入 `com.apple.developer.icloud-container-environment=Production`，通过现有的主 App 参数 `MOONREAD_ENTITLEMENTS` 指向该副本（绝对路径），扩展沿用自己的权限文件；不修改或提交普通 Debug 的权限配置。覆盖安装前用 `codesign -d --entitlements :-` 检查实际签名的环境确为 Production、容器为 `iCloud.dev.moonread.Moonread`，并确认 `get-task-allow` 与本次使用的开发/分发描述文件一致（本机开发调试签名为 true，分发签名为 false）。自动签名如不允许该组合，停止报告，不改用 Development 云数据。核验后用 `devicectl` 覆盖安装并启动，保留 App 和数据，不卸载；连接、解锁或人工授权由用户处理。试用安装不等于发版或合并。
+
 ### Personal Team 本地试用包
 
 默认工程声明 iCloud 能力，Personal Team 无法为其自动签名。本地试用沿用 `MOONREAD_CLOUD_ENABLED=NO`、`CODE_SIGN_ENTITLEMENTS=`、`CODE_SIGNING_ALLOWED=NO` 构建，再使用本机已有有效证书、描述文件及匹配的本地应用权限签名；不修改公共工程的云能力声明。

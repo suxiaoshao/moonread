@@ -640,7 +640,7 @@ struct ReaderLibrarySheet: View {
                             .tint(Color(uiColor: theme.destructive))
                         }
                 }
-                if model.moreNotes { LoadingActivity().task(id: model.notes.count) { await model.loadNotes(reset: false) } }
+                if model.moreNotes { LoadingActivity().task(id: model.notes.count) { await model.loadNotes(reset: false) }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
             }.listStyle(.plain).scrollContentBackground(.hidden)
                 .overlay {
                     if model.notes.isEmpty && model.loadingNotes {

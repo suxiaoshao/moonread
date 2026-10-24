@@ -383,13 +383,13 @@ struct StatisticsView: View {
                 if model.compatibilityNotice != nil || StatisticsWriter.shared.error != nil {
                     DisclosureGroup {
                         if let notice = model.compatibilityNotice { Text(verbatim: notice) }
-                        if let error = StatisticsWriter.shared.error { Text(verbatim: error) }
+                        if let error = StatisticsWriter.shared.error { Text(verbatim: error).foregroundStyle(Color(uiColor: theme.destructive)) }
                     } label: {
                         Label(StatisticsWriter.shared.error != nil ? String(localized: "部分阅读记录未能保存") : String(localized: "部分统计暂不可用"), systemImage: "exclamationmark.circle")
                     }
                 }
             }.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
-                .padding(.horizontal).padding(.vertical, 8).background(.bar).accessibilityIdentifier("statisticsStatus")
+                .padding(.horizontal).padding(.vertical, 8).background(Color(uiColor: theme.surface)).accessibilityIdentifier("statisticsStatus")
         }
     }
 
@@ -553,7 +553,7 @@ struct StatisticsView: View {
                 }
                 if model.spans.count > 8 {
                     NavigationLink("全部时段") {
-                        List(model.spans.reversed()) { ReadingSessionRow(span: $0, showBook: false) }
+                        List(model.spans.reversed()) { ReadingSessionRow(span: $0, showBook: false).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
                             .themedPage().navigationTitle("阅读时段")
                     }
                 }
