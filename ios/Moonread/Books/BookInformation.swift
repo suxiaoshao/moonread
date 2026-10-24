@@ -49,7 +49,9 @@ final class BookInformationModel {
             if let known = target.key { key = known } else { key = try await service.userKey(id) }
             entry = try await service.libraryEntries(nil).first { $0.readingKey == key && !$0.directory }
         } else { entry = nil }
-        let details = try await service.details(bookID: target.fromReader ? target.bookID : (entry?.bookId ?? target.bookID), sha: entry?.readingKey ?? target.key)
+        let key = entry?.readingKey ?? target.key
+        let bookID = entry?.bookId ?? (validSHA(key) == nil ? target.bookID : nil)
+        let details = try await service.details(bookID: target.fromReader ? target.bookID : bookID, sha: key)
         return (entry, details)
     }
     static func validSHA(_ value: String?) -> String? {
@@ -76,7 +78,7 @@ final class BookInformationModel {
                 let chapters = try await readChapters(book.id)
                 guard loadRevision == revision, requestedIdentity == identity, !Task.isCancelled else { return }
                 self.chapters = chapters
-            }
+            } else { self.chapters = [] }
         } catch {
             guard loadRevision == revision, requestedIdentity == identity, !Task.isCancelled else { return }
             self.error = ReaderMessages.error(error)

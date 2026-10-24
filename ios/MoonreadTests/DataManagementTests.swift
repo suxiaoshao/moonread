@@ -166,6 +166,10 @@ import XCTest
         let f = try positionWinnerFixture(); defer { f.clean() }
         let key = f.book.contentSha256, alias = "pending:" + f.book.id
         try await f.pending.receiveSyncFixture("position", key: alias, payload: UserSyncJSON.encode(positionRecord(key: alias, token: "old-pending", offset: 9), envelope: true))
+        let information = BookInformationModel(service: f.service)
+        let route = StatisticsRoute(key: key, bookID: f.book.id, title: "Position fixture")
+        await information.load(route)
+        XCTAssertNil(information.error); XCTAssertFalse(information.chapters.isEmpty)
         do { _ = try await f.service.exportReadingData(); XCTFail("A full export must not silently omit pending data") }
         catch ReadingDataError.pendingIdentity { }
         let gate = RestorationGate()
@@ -178,6 +182,12 @@ import XCTest
         let deletion = Task { try await service.deleteReadingData([key]) }
         await gate.release()
         try await flush.value; _ = try await deletion.value
+        XCTAssertThrowsError(try f.core.importStatus(bookId: f.book.id), "The old cached book ID really was evicted")
+        await information.load(route)
+        XCTAssertNil(information.error)
+        XCTAssertEqual(information.details?.metadata.sha, key)
+        XCTAssertEqual(information.details?.metadata.status, .unread)
+        XCTAssertNil(information.details?.book); XCTAssertTrue(information.chapters.isEmpty)
         let positions = try await f.formal.positionValues(), pending = try await f.pending.pendingKeys()
         XCTAssertTrue(positions.isEmpty, "Remaining formal keys: \(positions.keys.sorted())"); XCTAssertTrue(pending.isEmpty, "Remaining pending keys: \(pending.sorted())")
         let rebuilt = try f.core.importBook(filePath: f.root.appendingPathComponent("synthetic.txt").path, title: "New read")
