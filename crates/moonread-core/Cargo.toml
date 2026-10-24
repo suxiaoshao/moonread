@@ -23,7 +23,7 @@ regex = "1.12"
 encoding_rs = "0.8.35"
 # Detection changes are identity-sensitive: upgrades must pass the frozen corpus.
 chardetng = "=1.0.0"
-scraper = { version = "0.27", default-features = false }
+scraper = { version = "0.29", default-features = false }
 url = "2.5"
 sha2 = "0.11"
 thiserror = "2"
