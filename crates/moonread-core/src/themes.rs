@@ -188,7 +188,7 @@ fn validate_palette(palette: &ThemePalette) -> Result<()> {
 
 fn validate_snapshot(value: &ThemeSnapshot) -> Result<()> {
     let mut ids = std::collections::HashSet::new();
-    if value.palettes.len() > 70
+    if value.palettes.len() > builtin_theme_palettes().len() + 64
         || value
             .palettes
             .iter()
@@ -456,6 +456,33 @@ pub fn builtin_theme_palettes() -> Vec<ThemePalette> {
             [
                 0x211f2b, 0x2c2839, 0x262230, 0xd0c8df, 0xb2a5c4, 0xc3a6e5, 0x665479, 0x4c4035,
                 0x283f50, 0x2d546c, 0xefa0b6, 0xdec08d, 0xa0cdb8,
+            ],
+        ),
+        (
+            "black-dark",
+            "纯黑夜间",
+            ThemeAppearance::Dark,
+            [
+                0x000000, 0x101010, 0x000000, 0xb8b8b8, 0x939393, 0x9fbde5, 0x545454, 0x302b1e,
+                0x192c3b, 0x253c50, 0xef9ca7, 0xdec088, 0x9dccad,
+            ],
+        ),
+        (
+            "white-light",
+            "素白",
+            ThemeAppearance::Light,
+            [
+                0xf4f4f4, 0xffffff, 0xffffff, 0x303030, 0x606060, 0x315e8a, 0xb9bec4, 0xf3e3ae,
+                0xddebf5, 0xbfd7eb, 0xb73548, 0x805c22, 0x386c58,
+            ],
+        ),
+        (
+            "bean-light",
+            "豆沙绿",
+            ThemeAppearance::Light,
+            [
+                0xdce6d7, 0xeaf0e5, 0xdce8d1, 0x303b2d, 0x55614e, 0x386441, 0xa4b49b, 0xede0aa,
+                0xd0e2eb, 0xabcad9, 0xac3446, 0x74551d, 0x376343,
             ],
         ),
     ];
