@@ -57,8 +57,9 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 - 构建阶段执行编译与生成绑定两条工具调用。target、Debug/Release、链接路径声明在 [Rust.xcconfig](../../../ios/Rust.xcconfig)。
 - UniFFI 从 [uniffi.toml](../../../crates/moonread-core/uniffi.toml) 读取输出名称；使用 `--no-format` 生成，避免每次构建格式化自动生成代码。
 - 链接明确指定 `libmoonread_core.a`，避免同目录动态库被优先选中或把 Mac 路径带进 iPhone。
-- Rust 输出位于 `build/cargo/`，绑定位于 `build/ios/Generated/<Configuration>/`，均不提交。模拟器构建生成 arm64 / x86_64 两个 slice。
+- Rust 输出位于 `build/cargo/`，绑定位于 `build/ios/Generated/<Configuration>/`，均不提交。模拟器只编译 `aarch64-apple-ios-sim`（arm64）。
 - Xcode 构建缓存只用两份：模拟器构建和测试统一 `-derivedDataPath build/DerivedData`，真机构建统一 `build/DeviceDerivedData`。不按任务另建缓存目录；任务的日志、截图等验证记录可以放在 `build/<任务名>/`，任务合并后删除。
+- 不使用 git worktree；在主目录切分支，共用 `build/cargo`、`build/DerivedData` 和 `build/DeviceDerivedData`。
 - Nix 默认路径为 `/nix/var/nix/profiles/default/bin/nix`；非标准安装可在本地 `LocalSigning.xcconfig` 覆盖 `MOONREAD_NIX`。
 
 首次运行需要下载工具链和 Cargo 依赖，之后复用缓存。

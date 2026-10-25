@@ -340,7 +340,7 @@ struct BookInformationSections: View {
                             }
                         }
                         if let details = model.details, details.wordCount > 0 {
-                            Text("\(details.wordCount.formatted()) 字 · \(details.chapterCount.formatted()) 章")
+                            Text("\(details.wordCount) 字 · \(details.chapterCount) 章")
                                 .font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                         }
                     }

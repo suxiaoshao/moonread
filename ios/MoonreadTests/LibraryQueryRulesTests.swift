@@ -2,6 +2,29 @@ import XCTest
 @testable import Moonread
 
 final class LibraryQueryRulesTests: XCTestCase {
+    func testEnglishCountResourcesSelectSingularAndIndependentPluralArguments() throws {
+        let path = try XCTUnwrap(Bundle.main.path(forResource: "en", ofType: "lproj"))
+        let english = try XCTUnwrap(Bundle(path: path))
+        let locale = Locale(identifier: "en_US")
+        XCTAssertEqual(String(localized: "\(UInt64(0)) 本小说", bundle: english, locale: locale), "0 books")
+        XCTAssertEqual(String(localized: "\(UInt64(1)) 本小说", bundle: english, locale: locale), "1 book")
+        XCTAssertEqual(String(localized: "\(UInt64(2)) 本小说", bundle: english, locale: locale), "2 books")
+        XCTAssertEqual(String(localized: "\(UInt64(1)) 个阅读日", bundle: english, locale: locale), "1 reading day")
+        XCTAssertEqual(String(localized: "\(UInt64(2)) 个阅读日", bundle: english, locale: locale), "2 reading days")
+        XCTAssertEqual(String(localized: "\(Int64(1)) 个阅读日 · \(Int64(2)) 本书", bundle: english, locale: locale), "1 reading day · 2 books")
+        XCTAssertEqual(String(localized: "\(UInt64(1)) 字 · \(UInt64(2)) 章", bundle: english, locale: locale), "1 character · 2 chapters")
+        XCTAssertEqual(String(localized: "\(UInt64(2)) 字 · \(UInt64(1)) 章", bundle: english, locale: locale), "2 characters · 1 chapter")
+        XCTAssertEqual(String(localized: "\(Int64(1)) 本", table: "DataManagement", bundle: english, locale: locale), "1 book")
+        XCTAssertEqual(String(localized: "删除 \(Int64(2)) 本", table: "DataManagement", bundle: english, locale: locale), "Delete 2 books")
+        XCTAssertEqual(String(localized: "\(Int64(1)) 项需要处理", table: "DataManagement", bundle: english, locale: locale), "1 item needs attention")
+        XCTAssertEqual(String(localized: "包含 \(Int64(1)) 本小说的阅读数据，其中 \(Int64(1)) 本在书架上", table: "DataManagement", bundle: english, locale: locale), "Reading data for 1 book; 1 on your bookshelf.")
+        XCTAssertEqual(String(localized: "已清理 \(Int64(1)) 本缓存，保留 \(Int64(2)) 本", table: "DataManagement", bundle: english, locale: locale), "Cleared cache for 1 book; kept 2")
+        XCTAssertEqual(String(localized: "已索引 \(Int64(0)) / \(Int64(1)) 本", table: "FullIndex", bundle: english, locale: locale), "Indexed 0 / 1 book")
+        XCTAssertEqual(String(localized: "已索引 \(Int64(1)) / \(Int64(2)) 本", table: "FullIndex", bundle: english, locale: locale), "Indexed 1 / 2 books")
+        XCTAssertEqual(String(localized: "有 \(Int64(1)) 本未索引", table: "ShelfRecovery", bundle: english, locale: locale), "1 book not indexed")
+        XCTAssertEqual(String(localized: "导入备份", table: "DataManagement", bundle: english, locale: locale), "Import")
+    }
+
     private func candidate(_ name: String, ordinal: UInt64, folder: Bool = false, metadata: BookMetadata? = nil, recent: Int64 = 0) -> LibrarySearchCandidate {
         let entry = LibraryEntry(id: name, shelfId: "s", shelfName: "Shelf", relativePath: name, parentPath: "", name: name,
             directory: folder, size: 0, modified: 0, needsDownload: false, bookId: nil, positionUtf8: 0, byteCount: 0,
