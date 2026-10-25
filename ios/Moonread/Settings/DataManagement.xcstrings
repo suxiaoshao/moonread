@@ -109,11 +109,23 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld books are still being prepared. Complete preparation before exporting."
-          }
+  "variations": {
+    "plural": {
+      "one": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld book is still being prepared. Complete preparation before exporting."
         }
+      },
+      "other": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld books are still being prepared. Complete preparation before exporting."
+        }
+      }
+    }
+  }
+}
       }
     },
     "部分数据需要较新版本处理，请更新 App": {
@@ -339,11 +351,23 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reading Data (%lld books)"
-          }
+  "variations": {
+    "plural": {
+      "one": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reading Data (%lld book)"
         }
+      },
+      "other": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reading Data (%lld books)"
+        }
+      }
+    }
+  }
+}
       }
     },
     "预计可重建缓存：%@": {
@@ -500,11 +524,23 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "All %lld books and palettes. Unfinished preparation or missing assets must be resolved before export."
-          }
+  "variations": {
+    "plural": {
+      "one": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "All reading data (%lld book) and palettes. Unfinished preparation or missing assets must be resolved before export."
         }
+      },
+      "other": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "All reading data (%lld books) and palettes. Unfinished preparation or missing assets must be resolved before export."
+        }
+      }
+    }
+  }
+}
       }
     },
     "清理可重建缓存？": {
@@ -638,11 +674,23 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Clear Reading Data for %lld Books?"
-          }
+  "variations": {
+    "plural": {
+      "one": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Clear Reading Data for %lld Book?"
         }
+      },
+      "other": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Clear Reading Data for %lld Books?"
+        }
+      }
+    }
+  }
+}
       }
     },
     "确认清除阅读数据": {
@@ -868,11 +916,33 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cleared cache for %lld books; kept %lld"
+  "stringUnit": {
+    "state": "translated",
+    "value": "Cleared cache for %#@books@; kept %2$lld"
+  },
+  "substitutions": {
+    "books": {
+      "argNum": 1,
+      "formatSpecifier": "lld",
+      "variations": {
+        "plural": {
+          "one": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%arg book"
+            }
+          },
+          "other": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%arg books"
+            }
           }
         }
+      }
+    }
+  }
+}
       }
     },
     "备份数据无效或包含冲突的记录": {
@@ -1581,11 +1651,33 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reading data for books: %lld total, %lld on your bookshelf."
+  "stringUnit": {
+    "state": "translated",
+    "value": "Reading data for %#@books@; %2$lld on your bookshelf."
+  },
+  "substitutions": {
+    "books": {
+      "argNum": 1,
+      "formatSpecifier": "lld",
+      "variations": {
+        "plural": {
+          "one": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%arg book"
+            }
+          },
+          "other": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%arg books"
+            }
           }
         }
+      }
+    }
+  }
+}
       }
     },
     "本机有 %lld 条更新的记录会保留": {
@@ -1735,11 +1827,11 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Import backup"
-          }
-        },
+  "stringUnit": {
+    "state": "translated",
+    "value": "Import"
+  }
+},
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -1781,11 +1873,23 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld books"
-          }
-        },
+  "variations": {
+    "plural": {
+      "one": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld book"
+        }
+      },
+      "other": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld books"
+        }
+      }
+    }
+  }
+},
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -1804,11 +1908,23 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld items need attention"
-          }
-        },
+  "variations": {
+    "plural": {
+      "one": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld item needs attention"
+        }
+      },
+      "other": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld items need attention"
+        }
+      }
+    }
+  }
+},
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -1988,11 +2104,23 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Delete %lld books"
-          }
-        },
+  "variations": {
+    "plural": {
+      "one": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Delete %lld book"
+        }
+      },
+      "other": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Delete %lld books"
+        }
+      }
+    }
+  }
+},
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -2540,11 +2668,23 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld books are in use or their original files cannot be found, so their caches will be kept."
-          }
-        },
+  "variations": {
+    "plural": {
+      "one": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld book is in use or its original file cannot be found, so its cache will be kept."
+        }
+      },
+      "other": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld books are in use or their original files cannot be found, so their caches will be kept."
+        }
+      }
+    }
+  }
+},
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",

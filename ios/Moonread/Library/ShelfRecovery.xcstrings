@@ -179,11 +179,23 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld books not indexed"
-          }
+  "variations": {
+    "plural": {
+      "one": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld book not indexed"
         }
+      },
+      "other": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld books not indexed"
+        }
+      }
+    }
+  }
+}
       }
     },
     "包含 %lld 本未下载的 iCloud 文件": {
@@ -202,11 +214,23 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Includes %lld iCloud files not downloaded"
-          }
+  "variations": {
+    "plural": {
+      "one": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Includes %lld iCloud file not downloaded"
         }
+      },
+      "other": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Includes %lld iCloud files not downloaded"
+        }
+      }
+    }
+  }
+}
       }
     },
     "部分文件大小未知": {
@@ -288,11 +312,23 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld books not indexed yet"
-          }
-        },
+  "variations": {
+    "plural": {
+      "one": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld book not indexed yet"
+        }
+      },
+      "other": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld books not indexed yet"
+        }
+      }
+    }
+  }
+},
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",

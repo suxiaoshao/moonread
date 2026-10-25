@@ -133,11 +133,33 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Index Now (%lld books, about %@)"
+  "stringUnit": {
+    "state": "translated",
+    "value": "Index Now (%#@books@, about %2$@)"
+  },
+  "substitutions": {
+    "books": {
+      "argNum": 1,
+      "formatSpecifier": "lld",
+      "variations": {
+        "plural": {
+          "one": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%arg book"
+            }
+          },
+          "other": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%arg books"
+            }
           }
         }
+      }
+    }
+  }
+}
       }
     },
     "包含未下载的 iCloud 文件（需下载 %@）": {
@@ -357,11 +379,33 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Indexed %lld / %lld books"
+  "stringUnit": {
+    "state": "translated",
+    "value": "Indexed %1$lld / %#@books@"
+  },
+  "substitutions": {
+    "books": {
+      "argNum": 2,
+      "formatSpecifier": "lld",
+      "variations": {
+        "plural": {
+          "one": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%arg book"
+            }
+          },
+          "other": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%arg books"
+            }
           }
-        },
+        }
+      }
+    }
+  }
+},
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -495,11 +539,33 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld books, known download size %@"
+  "stringUnit": {
+    "state": "translated",
+    "value": "%#@books@, known download size %2$@"
+  },
+  "substitutions": {
+    "books": {
+      "argNum": 1,
+      "formatSpecifier": "lld",
+      "variations": {
+        "plural": {
+          "one": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%arg book"
+            }
+          },
+          "other": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%arg books"
+            }
           }
-        },
+        }
+      }
+    }
+  }
+},
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
@@ -587,11 +653,23 @@
           }
         },
         "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld books remain. Index them to search their full text and restore progress and tags."
-          }
-        },
+  "variations": {
+    "plural": {
+      "one": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld book remains. Index it to search its full text and restore progress and tags."
+        }
+      },
+      "other": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld books remain. Index them to search their full text and restore progress and tags."
+        }
+      }
+    }
+  }
+},
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
