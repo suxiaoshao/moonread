@@ -52,6 +52,11 @@ struct ChapterInput {
 pub(crate) fn initialize(db: &Connection) -> Result<()> {
     crate::identity::content::initialize(db)?;
     db.execute_batch("CREATE TEMP TABLE user_positions(content_key TEXT PRIMARY KEY,position_utf8 INTEGER,last_read INTEGER,recent_visible INTEGER,preferred_file_id TEXT);
+    CREATE TEMP VIEW ranked_library_sources AS
+    SELECT f.id file_id,fi.content_sha256,
+      ROW_NUMBER() OVER (PARTITION BY fi.content_sha256 ORDER BY COALESCE(p.preferred_file_id=f.id,0) DESC,f.id) source_rank
+    FROM main.library_files f JOIN file_identities fi ON fi.file_id=f.id
+    LEFT JOIN user_positions p ON p.content_key=fi.content_sha256;
     CREATE TEMP VIEW reading_content_positions AS SELECT content_key content_sha256 FROM user_positions WHERE last_read>0;
     CREATE TEMP VIEW reading_books AS SELECT b.*,COALESCE(p.position_utf8,0) position_utf8,COALESCE(p.last_read,0) last_read,COALESCE(p.recent_visible,1) recent_visible,p.preferred_file_id FROM main.books b LEFT JOIN user_positions p ON p.content_key=b.content_sha256;
     CREATE TEMP TABLE book_metadata(content_sha TEXT PRIMARY KEY,value TEXT);
@@ -310,6 +315,12 @@ impl ReaderQuery {
     }
     pub fn library_entry(&self, file_id: String) -> Result<LibraryEntry> {
         self.core.library_entry(file_id)
+    }
+    pub fn system_reading_catalogue(&self) -> Result<Vec<SystemReadingBookProjection>> {
+        self.core.system_reading_catalogue()
+    }
+    pub fn system_reading_sources(&self, content_sha256: String) -> Result<Vec<LibraryEntry>> {
+        self.core.system_reading_sources(content_sha256)
     }
     pub fn recent_library_entries(&self, limit: u32) -> Result<Vec<LibraryEntry>> {
         self.core.recent_library_entries(limit)

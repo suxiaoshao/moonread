@@ -215,12 +215,14 @@ final class LibraryModel {
     private var fileWork: FileWork?
     private var systemImports: [SystemImport] = []
     private let lookupDropEntry: @MainActor (String) async throws -> LibraryEntry
+    @ObservationIgnored lazy var systemReading = SystemReadingRouter(library: self, service: service)
     let service: AppDataService
     private let fileMutationReload: (@Sendable () async throws -> Void)?
     private let prepareLibrary: @Sendable () async throws -> Void
     private let scanShelf: @Sendable (String) async throws -> Void
     private let refreshLibrary: @Sendable () async throws -> Void
     private let prepareSource: @Sendable (SourceFile, @escaping @Sendable (Double?) -> Void) async throws -> Void
+    private var openingOrigin: (AppTab, [LibraryRoute])?
     private var openingTask: Task<Void, Never>?
     private var openingRequest: UUID?
     private(set) var openingFileID: String?
@@ -567,7 +569,7 @@ final class LibraryModel {
             catch { self.error = ReaderMessages.error(error) }
         }
     }
-    func open(_ entry: LibraryEntry, push: ((LibraryRoute) -> Void)? = nil, isCurrent: @escaping () -> Bool = { true }) {
+    func open(_ entry: LibraryEntry, expectedContentSHA: String? = nil, push: ((LibraryRoute) -> Void)? = nil, isCurrent: @escaping () -> Bool = { true }) {
         let tap = ProcessInfo.processInfo.systemUptime
         if entry.id == openingFileID { return }
         cancelOpening()
@@ -575,6 +577,7 @@ final class LibraryModel {
         let origin = path, tab = selectedTab
         let request = UUID()
         openingRequest = request
+        openingOrigin = (tab, origin)
         openingFileID = entry.id
         openingSource = entry.source
         showsFileLoading = entry.needsDownload; fileProgress = nil
@@ -599,10 +602,10 @@ final class LibraryModel {
                 try Task.checkCancellation()
                 if let push {
                     guard isCurrent() else { return }
-                    push(.reader(OpeningRequest(target: .source(entry.source), tap: tap))); return
+                    push(.reader(OpeningRequest(target: .source(entry.source), tap: tap, expectedContentSHA: expectedContentSHA))); return
                 }
                 guard selectedTab == tab, path == origin else { return }
-                path.append(.reader(OpeningRequest(target: .source(entry.source), tap: tap)))
+                path.append(.reader(OpeningRequest(target: .source(entry.source), tap: tap, expectedContentSHA: expectedContentSHA)))
             } catch is CancellationError { }
             catch {
                 guard !Task.isCancelled, openingRequest == request, push == nil ? (selectedTab == tab && path == origin) : isCurrent() else { return }
@@ -610,7 +613,12 @@ final class LibraryModel {
             }
         }
     }
+    func cancelOpeningForNavigationChange() {
+        guard let (tab, origin) = openingOrigin, selectedTab != tab || path != origin else { return }
+        cancelOpening()
+    }
     func cancelOpening() {
+        openingOrigin = nil
         openingTask?.cancel(); openingTask = nil
         openingFileID = nil; openingSource = nil; showsFileLoading = false; fileProgress = nil; openingRequest = nil
     }

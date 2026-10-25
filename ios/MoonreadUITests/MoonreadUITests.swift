@@ -150,8 +150,8 @@ import XCTest
     ready(file(sample))
     app.terminate()
     app.launch()
-    shelf()
-    open()
+    ready(file(sample)).tap() // Home resume uses the same identity router as system entry points.
+    readableBody()
     waitUntil { self.anchor() == saved }
   }
   func testU05DeleteOnlySelectedBook() {

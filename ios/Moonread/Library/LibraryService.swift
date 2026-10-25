@@ -420,6 +420,7 @@ extension AppDataService {
         libraryScans[id] = nil
         libraryObservers[id]?.stop()
         libraryObservers[id] = nil
+        scheduleSystemReadingCatalog(immediate: true)
     }
 
     func refreshLibrary() async throws {
@@ -585,6 +586,7 @@ extension AppDataService {
     private func publishIndexScan(_ id: String, root: URL, items: [ScannedLibraryItem]) {
         let revision = UUID(), files = Set(items.filter { !$0.directory }.map(\.relativePath))
         indexScanFiles[id] = files; indexScanRoots[id] = root.standardizedFileURL; indexScanRevisions[id] = revision
+        scheduleSystemReadingCatalog(immediate: true)
         NotificationCenter.default.post(name: .libraryIndexScanCommitted, object: LibraryIndexScan(shelfID: id, revision: revision, files: files))
     }
 

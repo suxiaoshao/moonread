@@ -1,0 +1,94 @@
+{
+  "sourceLanguage": "zh-Hans",
+  "strings": {
+    "打开一本书后，即可在这里继续。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open a book to continue reading here."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开一本书后，即可在这里继续。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打開一本書後，即可在這裡繼續。"
+          }
+        }
+      }
+    },
+    "找不到这本书的原文件，请在书架管理中重新连接来源。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original file is unavailable. Reconnect its source in Library Management."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找不到这本书的原文件，请在书架管理中重新连接来源。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找不到這本書的原始檔，請在書架管理中重新連接來源。"
+          }
+        }
+      }
+    },
+    "请先在书架管理中重新连接这本书的来源。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnect this book’s source in Library Management first."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先在书架管理中重新连接这本书的来源。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請先在書架管理中重新連接這本書的來源。"
+          }
+        }
+      }
+    },
+    "文件内容已变化，请从书架打开。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file’s contents have changed. Open it from your library."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件内容已变化，请从书架打开。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檔案內容已變更，請從書架打開。"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

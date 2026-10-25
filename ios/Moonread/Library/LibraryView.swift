@@ -157,7 +157,7 @@ private struct ContinueReadingRow: View {
     @Environment(\.theme) private var theme
     private var position: Double { min(1, Double(entry.positionUtf8) / Double(max(1, entry.byteCount))) }
     var body: some View {
-        Button { model.open(entry) } label: {
+        Button { model.systemReading.submit(.continueReading) } label: {
             HStack(spacing: 16) {
                 LibraryBookCover(title: entry.title, compact: true, cover: entry.metadata?.cover).frame(width: 60, height: 84)
                 VStack(alignment: .leading, spacing: 8) {

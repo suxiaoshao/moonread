@@ -40,6 +40,8 @@ struct MoonreadApp: App {
             .task {
                 library.startCloudDiscovery()
                 if await library.load() {
+                    await library.service.startSystemReadingCatalog()
+                    library.systemReading.resume()
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--ui-test-store-screenshots") {
                         library.layout = .list
@@ -59,12 +61,14 @@ struct MoonreadApp: App {
                 if ready { Task { await library.coordinatePendingIndexes(all: true) } }
             }
             .onChange(of: library.filePickerPresented) { _, shown in
+                if !shown { library.systemReading.resume() }
                 if !shown { Task { await library.coordinatePendingIndexes() } }
             }
             .onChange(of: library.canAcceptFileWork) { _, available in
                 if available { Task { await library.coordinatePendingIndexes() } }
             }
             .onChange(of: library.sheet == nil) { _, closed in
+                if closed { library.systemReading.resume() }
                 if closed { Task { await library.coordinatePendingIndexes() } }
             }
             .onChange(of: library.indexPrompt == nil) { _, closed in
@@ -79,9 +83,16 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .libraryIdentityChanged).receive(on: DispatchQueue.main)) { note in
                 Task {
                     await library.reloadBooks()
+                    await library.service.scheduleSystemReadingCatalog(immediate: true)
                     if let id = library.fullIndex.shelfID { await library.refreshIndexSummary(id) }
                     if let message = note.object as? String { library.error = message }
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { _ in
+                Task { await library.service.scheduleSystemReadingCatalog(immediate: true) }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .systemReadingCatalogChanged).receive(on: DispatchQueue.main)) { note in
+                if let message = note.object as? String { library.error = message }
             }
             .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in
                 Task { await CloudSyncCoordinator.shared.localDataChanged() }
@@ -93,7 +104,7 @@ struct MoonreadApp: App {
                 Task { try? await library.reload() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in
-                Task { await themes.load(); try? await library.reload() }
+                Task { await themes.load(); try? await library.reload(); await library.service.scheduleSystemReadingCatalog(immediate: true) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .NSUbiquityIdentityDidChange).receive(on: DispatchQueue.main)) { _ in
                 Task { library.startCloudDiscovery(reset: true); await cloud.identityChanged(); await library.refresh(); await cloud.refresh() }
@@ -104,6 +115,7 @@ struct MoonreadApp: App {
             .onChange(of: scenePhase) { _, phase in
                 library.fullIndex.scene(active: phase == .active)
                 if phase == .background {
+                    Task { await library.service.scheduleSystemReadingCatalog(immediate: true) }
                     BackgroundSave.perform(name: "保存显示偏好") { await themes.flushPreferences() }
                     Task { await AppDataService.shared.pauseImports() }
                 }
@@ -121,6 +133,11 @@ struct MoonreadApp: App {
     }
 
     private func openURL(_ url: URL) {
+        if url.scheme == "moonread" {
+            do { library.systemReading.submit(try SystemReadingRequest(url: url)) }
+            catch { library.error = ReaderMessages.error(error) }
+            return
+        }
         let access = LibraryImportFile(url: url)
         Task {
             defer { access.finish() }
@@ -171,11 +188,11 @@ private struct MoonreadRoot: View {
             .themeScope(appTheme).environment(themes).environment(library)
             .environment(\.moonreadReduceMotion, reduceMotion)
             .environment(\.readerTheme, readerTheme)
-            .onChange(of: library.libraryPath) { _, _ in library.cancelOpening(); library.returnedToLibrary() }
-            .onChange(of: library.statisticsPath) { _, _ in library.cancelOpening() }
-            .onChange(of: library.settingsPath) { _, _ in library.cancelOpening() }
-            .onChange(of: library.searchPath) { _, _ in library.cancelOpening() }
-            .onChange(of: library.selectedTab) { _, _ in library.cancelOpening() }
+            .onChange(of: library.libraryPath) { _, _ in library.cancelOpeningForNavigationChange(); library.returnedToLibrary() }
+            .onChange(of: library.statisticsPath) { _, _ in library.cancelOpeningForNavigationChange() }
+            .onChange(of: library.settingsPath) { _, _ in library.cancelOpeningForNavigationChange() }
+            .onChange(of: library.searchPath) { _, _ in library.cancelOpeningForNavigationChange() }
+            .onChange(of: library.selectedTab) { _, _ in library.cancelOpeningForNavigationChange() }
             .onReceive(NotificationCenter.default.publisher(for: .libraryFilesChanged).receive(on: DispatchQueue.main)) { _ in library.retryPendingCloudDiscovery(); library.scheduleRefresh() }
             .alert("暂时无法完成", isPresented: Binding(get: { themes.error != nil }, set: { if !$0 { themes.error = nil } })) {
                 Button("知道了", role: .cancel) { themes.error = nil }
@@ -200,6 +217,7 @@ private struct MoonreadRoot: View {
     }
 
     private func finishIntroduction() {
+        library.systemReading.resume()
         Task { await library.receiveSharedInbox() }
         // Presenting the file importer (or pushing a reader) is safe only after
         // the introduction's presentation has actually finished dismissing.

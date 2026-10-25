@@ -136,7 +136,7 @@ final class ReaderSession {
                        terminal: error != nil || snapshot.map { [.paused, .failed].contains($0.phase) } == true)
     }
     func retry(_ route: ReaderRoute) async {
-        opening.begin(OpeningRequest(target: route), navigationSettled: true)
+        opening.begin(OpeningRequest(target: route, expectedContentSHA: opening.request?.expectedContentSHA), navigationSettled: true)
         error = nil; await open(route)
     }
     private func current(_ id: String, attempt: UUID?, monitor: UUID? = nil) -> Bool {
@@ -166,7 +166,12 @@ final class ReaderSession {
                     ReaderOpenDiagnostics.mark(attempt, "snapshotCompleted")
                     snapshot = value
                     isLoading = !value.canRead && preparing
-                    if value.canRead {
+                    let expected = opening.request?.expectedContentSHA
+                    if let expected, value.phase == .complete, value.book.contentSha256 != expected {
+                        throw SystemReadingRouteError.contentChanged
+                    }
+                    // A system identity must be verified before any prefix is displayed.
+                    if value.canRead && (expected == nil || value.phase == .complete) {
                         let firstDisplay = window?.projectionAnchor == nil
                         if firstDisplay {
                             ReaderOpenDiagnostics.mark(attempt, "canRead")

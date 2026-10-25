@@ -249,7 +249,13 @@ struct ReaderScreen: View {
     private var monitoredReader: some View {
         presentedReader
         .allowsHitTesting(!session.isLeaving)
-        .task { await session.open(route, request: openingRequest) }
+        .task {
+            library.systemReading.register(session, route: route)
+            await session.open(route, request: openingRequest)
+        }
+        .onChange(of: sheetPresented || panel != nil || session.editor != nil || session.chapterDraft != nil, initial: true) { _, blocked in
+            library.systemReading.presentationBlocked = blocked
+        }
         .onChange(of: session.opening.request?.id) { _, id in
             if let id, completedOpeningID == id { session.opening.settled(id, reason: "observedAppearance") }
         }
@@ -319,7 +325,7 @@ struct ReaderScreen: View {
             battery.stop()
             // Settings are pushed above the reader in the same navigation stack.
             // Only leaving its navigation destination ends the reading session.
-            if panel?.isPage != true, !navigationPresentation.isSuspended { completeReturning() }
+            if panel?.isPage != true, !navigationPresentation.isSuspended { library.systemReading.unregister(session); completeReturning() }
         }
     }
 

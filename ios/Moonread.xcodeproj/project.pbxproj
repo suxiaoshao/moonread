@@ -264,6 +264,11 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
         D50610000000000000000005 /* DataManagement.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000005; };
         D50610000000000000000006 /* DataManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000006; };
         D50610000000000000000007 /* CacheManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000007; };
+		7B9630E623C04ED8BB311275 /* SystemReadingSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E155E91D8B34C16AFEB2F94 /* SystemReadingSnapshot.swift */; };
+		D96AA4CE1D4740298CEB37E3 /* SystemReadingCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21B61C6DDA05486692B7E164 /* SystemReadingCatalog.swift */; };
+		7C27F97BAC8E4D479B8F5F0C /* SystemReadingRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDF91CB9E9184CA3BF5287FC /* SystemReadingRouter.swift */; };
+		B6A0D28AA3B246EAB1783AED /* SystemReadingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 596EAC3B58A8431E8BF449F6; };
+		D720FF62FEF54991885AE8D3 /* SystemReading.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 5F785348B3B2446E889C0D8F; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -543,6 +548,11 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
         D50620000000000000000005 /* DataManagement.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = DataManagement.xcstrings; sourceTree = "<group>"; };
         D50620000000000000000006 /* DataManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementTests.swift; sourceTree = "<group>"; };
         D50620000000000000000007 /* CacheManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheManagementTests.swift; sourceTree = "<group>"; };
+		3E155E91D8B34C16AFEB2F94 /* SystemReadingSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemReadingSnapshot.swift; sourceTree = "<group>"; };
+		21B61C6DDA05486692B7E164 /* SystemReadingCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemReadingCatalog.swift; sourceTree = "<group>"; };
+		CDF91CB9E9184CA3BF5287FC /* SystemReadingRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemReadingRouter.swift; sourceTree = "<group>"; };
+		596EAC3B58A8431E8BF449F6 /* SystemReadingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemReadingTests.swift; sourceTree = "<group>"; };
+		5F785348B3B2446E889C0D8F /* SystemReading.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = SystemReading.xcstrings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -579,6 +589,8 @@ D35000000000000000000001,
 		A50000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
+				A1DE5DFDB223BC4D95971F4F /* SystemIntegration */,
+				A2E6EE44E97CC74D11961166 /* SystemIntegrationShared */,
                 C14A00000000000000000001,
                 F94762692B4A52B5A2524BF1,
 				A2000000000000000000000E /* Configuration.xcconfig */,
@@ -648,6 +660,7 @@ A20000000000000000000009 /* MoonreadUITests.swift */,
 			sourceTree = "<group>";
 		};
 		A50000000000000000000006 /* MoonreadTests */ = {isa = PBXGroup; children = (
+                596EAC3B58A8431E8BF449F6 /* SystemReadingTests.swift */,
                 D50620000000000000000007 /* CacheManagementTests.swift */,
                 D50620000000000000000006 /* DataManagementTests.swift */,
 				660000000000000000000005,
@@ -952,6 +965,14 @@ F01900000000000000000002,
                 F01700000000000000000006 /* TipJarTestFixtures.swift */,
                 C22000000000000000000004 /* UserDataTestFixtures.swift */,
             ); path = Fixtures; sourceTree = "<group>"; };
+		A1DE5DFDB223BC4D95971F4F /* SystemIntegration */ = {isa = PBXGroup; children = (
+				21B61C6DDA05486692B7E164 /* SystemReadingCatalog.swift */,
+				CDF91CB9E9184CA3BF5287FC /* SystemReadingRouter.swift */,
+			); path = Moonread/SystemIntegration; sourceTree = "<group>"; };
+		A2E6EE44E97CC74D11961166 /* SystemIntegrationShared */ = {isa = PBXGroup; children = (
+                5F785348B3B2446E889C0D8F /* SystemReading.xcstrings */,
+				3E155E91D8B34C16AFEB2F94 /* SystemReadingSnapshot.swift */,
+			); path = SystemIntegrationShared; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -1075,6 +1096,7 @@ F01900000000000000000002,
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                D720FF62FEF54991885AE8D3 /* SystemReading.xcstrings in Resources */,
                 D50610000000000000000005 /* DataManagement.xcstrings in Resources */,
                 B39A10000000000000000002 /* ShelfRecovery.xcstrings in Resources */,
                 F14900000000000000000003 /* FullIndex.xcstrings in Resources */,
@@ -1137,6 +1159,9 @@ E51000000000000000000009,D41000000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7C27F97BAC8E4D479B8F5F0C /* SystemReadingRouter.swift in Sources */,
+				D96AA4CE1D4740298CEB37E3 /* SystemReadingCatalog.swift in Sources */,
+				7B9630E623C04ED8BB311275 /* SystemReadingSnapshot.swift in Sources */,
                 D50610000000000000000004 /* DataManagementView.swift in Sources */,
                 D50610000000000000000003 /* CacheManagement.swift in Sources */,
                 D50610000000000000000002 /* ReadingDataManagement.swift in Sources */,
@@ -1283,6 +1308,7 @@ F01900000000000000000001,
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A60000000000000000000006 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
+                B6A0D28AA3B246EAB1783AED /* SystemReadingTests.swift */,
                 D50610000000000000000007 /* CacheManagementTests.swift in Sources */,
                 D50610000000000000000006 /* DataManagementTests.swift in Sources */,
 				660000000000000000000004,

@@ -71,6 +71,7 @@ extension AppDataService {
             cancelRecentRestoration()
             userStoreTask = nil; userCloudEnabled = enabled
             userCloudConfigurationRevision = UUID()
+            resetSystemReadingCatalog()
             let revision = userCloudConfigurationRevision
             // The configuration switch is serialized with deletion, not store
             // bootstrap: a newer configuration must be able to replace a stuck
@@ -82,7 +83,7 @@ extension AppDataService {
                 throw error
             }
             guard userCloudConfigurationRevision == revision else { return }
-            scheduleRecentRestoration()
+            scheduleRecentRestoration(); scheduleSystemReadingCatalog(immediate: true)
         }
     }
     func startUserRecovery() {
