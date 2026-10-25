@@ -337,9 +337,6 @@ private struct LibraryImportResultsView: View {
                         Label("导入完成", systemImage: "checkmark.circle")
                     } description: {
                         if let result = model.sharedImportResult { Text(verbatim: result) }
-                    } actions: {
-                        Button("完成") { model.sheet = nil }.buttonStyle(ThemedProminentButtonStyle())
-                            .accessibilityIdentifier("finishImportResults")
                     }
                 } else {
                     VStack(alignment: .leading, spacing: 8) {
@@ -358,8 +355,8 @@ private struct LibraryImportResultsView: View {
                 }
             }.themedPage().navigationTitle(String(localized: "导入结果", table: "ShareReceive"))
                 .toolbar {
-                    if !model.importFailures.isEmpty {
-                        ToolbarItem(placement: .confirmationAction) { Button("完成") { model.sheet = nil } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完成") { model.sheet = nil }.accessibilityIdentifier("finishImportResults")
                     }
                 }
         }

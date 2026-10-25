@@ -308,7 +308,7 @@ struct StatisticsView: View {
         Group {
             if target == nil, model.overview?.books.isEmpty != false {
                 VStack(spacing: 0) {
-                    if model.overview != nil { periodControls.padding().background(Color(uiColor: theme.surface)) }
+                    if model.overview != nil { periodControls.padding().background(Color(uiColor: theme.canvas)) }
                     if let overview = model.overview {
                         ContentUnavailableView {
                             Label("暂无阅读记录", systemImage: "book.closed")
@@ -325,6 +325,8 @@ struct StatisticsView: View {
                         LoadingActivity(size: 52, waitingLabel: "正在读取统计").frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
+                .toolbarBackground(Color(uiColor: theme.canvas), for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
             } else {
                 List {
                     if let target {

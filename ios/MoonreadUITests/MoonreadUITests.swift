@@ -271,6 +271,8 @@ import XCTest
     app.navigationBars.buttons.firstMatch.tap()
     app.tabBars.buttons["统计"].tap()
     ready(app.staticTexts["阅读统计已暂停"])
+    XCTAssertTrue(ready(app.staticTexts["暂无阅读记录"]).exists)
+    XCTAssertTrue(app.segmentedControls.firstMatch.exists)
     ready(app.buttons["统计设置"]).tap()
     ready(element("statisticsEnabled")).tap()
     app.navigationBars.buttons.firstMatch.tap()
