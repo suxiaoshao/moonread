@@ -133,6 +133,50 @@ import XCTest
             XCTAssertEqual(ReadingDataDiagnostic.reason(for: error), .newerFormat)
         }
     }
+    func testInventoryFailureCompletesLoadingAndRetryClearsTheError() async throws {
+        let f = try positionWinnerFixture(); defer { f.clean() }
+        let attempts = InventoryStoreAttempts()
+        let service = ReaderService(core: f.core, libraryDirectory: f.root, sourceDefaultsSuite: f.suite,
+            userStoreFactory: { name, _ in
+                try await attempts.check()
+                return name == "pending-users.store" ? f.pending : f.formal
+            })
+        let model = DataManagementModel(service: service)
+        XCTAssertFalse(model.loaded)
+        await model.load()
+        XCTAssertTrue(model.loaded); XCTAssertFalse(model.loading); XCTAssertNotNil(model.error)
+        await model.load()
+        XCTAssertTrue(model.loaded); XCTAssertFalse(model.loading); XCTAssertNil(model.error)
+        XCTAssertTrue(model.inventory.diagnostics.isEmpty)
+    }
+    func testInventoryRefreshDuringLoadingCoalescesIntoOneFollowupRead() async throws {
+        let f = try positionWinnerFixture(); defer { f.clean() }
+        let gate = RestorationGate(), reads = InventoryRefreshReads()
+        let service = ReaderService(core: f.core, libraryDirectory: f.root, sourceDefaultsSuite: f.suite,
+            userStoreFactory: { _, _ in
+                let count = await reads.begin()
+                if count == 1 { await gate.wait() }
+                // A failed initialization is not cached, so each inventory
+                // pass is observable without adding a production test hook.
+                throw CocoaError(.fileReadNoPermission)
+            })
+        let model = DataManagementModel(service: service)
+        let initial = Task { await model.load() }
+        await gate.waitForEntry()
+        let requested = expectation(description: "Refresh requests entered while the first read is blocked")
+        requested.expectedFulfillmentCount = 3
+        let refreshes = (0..<3).map { _ in Task { @MainActor in
+            requested.fulfill()
+            await model.load()
+        } }
+        await fulfillment(of: [requested], timeout: 2)
+        await gate.release()
+        await initial.value
+        for refresh in refreshes { await refresh.value }
+        let count = await reads.count
+        XCTAssertEqual(count, 2, "Many in-flight requests require exactly one fresh inventory read")
+        XCTAssertTrue(model.loaded); XCTAssertFalse(model.loading)
+    }
     func testReadingDataFilteringClearsHiddenSelectionsAndKeepsHistoricalTitles() {
         let model = DataManagementModel()
         model.updateInventory(.init(items: [.init(id: "a", title: "归途", lastRead: 20, linked: true), .init(id: "b", title: "星灯", lastRead: 10)], pending: 0, unsupported: 0))
@@ -423,3 +467,15 @@ private extension UserDataStore {
 }
 
 private enum BackupTestFailure: Error { case beforeSave }
+
+private actor InventoryStoreAttempts {
+    private var fail = true
+    func check() throws {
+        if fail { fail = false; throw CocoaError(.fileReadNoPermission) }
+    }
+}
+
+private actor InventoryRefreshReads {
+    private(set) var count = 0
+    func begin() -> Int { count += 1; return count }
+}
