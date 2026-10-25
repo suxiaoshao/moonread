@@ -80,7 +80,11 @@ fn document(root: &Path, textures: &BTreeMap<String, Vec<u8>>) -> Result<Value> 
             let label = format!("{name} · {}", suffix[&lang]); (lang, label)
         }).collect();
         let alpha: BTreeMap<String, f64> = strengths.iter().map(|&strength| {
-            Ok((id(strength)?, reader_texture_alpha(palette.colors.paper, palette.colors.ink, strength)))
+            let alpha = reader_texture_alpha(palette.colors.paper, palette.colors.ink, strength);
+            // Serialize nine decimal places so macOS/Linux libm last-bit
+            // differences do not stale the artifact. Error is < 2e-7 of an
+            // 8-bit channel; the app keeps the original full-precision alpha.
+            Ok((id(strength)?, (alpha * 1e9).round() / 1e9))
         }).collect::<Result<_>>()?;
         Ok(json!({"id":palette.id,"appearance":appearance,"name":labels,"colors":colors(palette.colors)?,"highContrast":colors(palette.high_contrast)?,"textureAlpha":alpha}))
     }).collect::<Result<_>>()?;
