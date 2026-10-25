@@ -91,6 +91,7 @@
 </ul>
 </section>
 
+{% if config.extra.reading_preview | default(value=false) %}{% include "reader-preview.html" %}{% endif %}
 <section class="section faq">
 <h2 class="section-title">{% if zh %}你可能还想知道{% else %}A few things to know{% endif %}</h2>
 <details>

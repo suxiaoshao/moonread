@@ -1,0 +1,773 @@
+{
+  "controls": {
+    "fontSize": {
+      "defaultValue": 20.0,
+      "maximum": 48.0,
+      "minimum": 12.0,
+      "name": {
+        "en": "Text Size",
+        "zh": "字号"
+      },
+      "step": 1.0
+    },
+    "lineSpacing": {
+      "defaultValue": 8.0,
+      "maximum": 32.0,
+      "minimum": 0.0,
+      "name": {
+        "en": "Line Spacing",
+        "zh": "行距"
+      },
+      "step": 2.0
+    },
+    "paragraphSpacing": {
+      "defaultValue": 7.0,
+      "maximum": 32.0,
+      "minimum": 0.0,
+      "name": {
+        "en": "Paragraph Spacing",
+        "zh": "段间距"
+      },
+      "step": 1.0
+    }
+  },
+  "fonts": [
+    {
+      "id": "system",
+      "name": {
+        "en": "System",
+        "zh": "系统"
+      }
+    },
+    {
+      "id": "serif",
+      "name": {
+        "en": "Songti",
+        "zh": "宋体"
+      }
+    },
+    {
+      "id": "rounded",
+      "name": {
+        "en": "Rounded",
+        "zh": "圆体"
+      }
+    }
+  ],
+  "labels": {
+    "dark": {
+      "en": "Dark",
+      "zh": "深色"
+    },
+    "font": {
+      "en": "Font",
+      "zh": "字体"
+    },
+    "light": {
+      "en": "Light",
+      "zh": "浅色"
+    },
+    "none": {
+      "en": "None",
+      "zh": "无"
+    },
+    "palette": {
+      "en": "Palette",
+      "zh": "配色"
+    },
+    "strength": {
+      "en": "Texture Strength",
+      "zh": "纹理强度"
+    },
+    "texture": {
+      "en": "Paper Texture",
+      "zh": "纸张纹理"
+    }
+  },
+  "palettes": [
+    {
+      "appearance": "light",
+      "colors": {
+        "accent": "#a94f3d",
+        "accent_surface": "#f5e5dc",
+        "annotation": "#f0d896",
+        "border": "#d4c2b5",
+        "canvas": "#f7efe5",
+        "destructive": "#b73548",
+        "disabled": "#a59990",
+        "focus": "#a94f3d",
+        "ink": "#403833",
+        "input": "#fbf4ec",
+        "maria": "#596b7a",
+        "moon": "#8c9189",
+        "on_accent": "#ffffff",
+        "on_destructive": "#ffffff",
+        "paper": "#f5ecda",
+        "pressed": "#f5e5dc",
+        "raised": "#faf4ed",
+        "search": "#d5e3ee",
+        "search_current": "#b9d2e6",
+        "secondary": "#6f6057",
+        "selected": "#f8ebe4",
+        "selection": "#a94f3d",
+        "separator": "#e7dbd0",
+        "success": "#376a50",
+        "surface": "#fff9f2",
+        "warning": "#8a5b19"
+      },
+      "highContrast": {
+        "accent": "#904334",
+        "accent_surface": "#f5e5dc",
+        "annotation": "#f0d896",
+        "border": "#756b64",
+        "canvas": "#f7efe5",
+        "destructive": "#b73548",
+        "disabled": "#a59990",
+        "focus": "#904334",
+        "ink": "#2a2421",
+        "input": "#fbf4ec",
+        "maria": "#596b7a",
+        "moon": "#8c9189",
+        "on_accent": "#ffffff",
+        "on_destructive": "#ffffff",
+        "paper": "#f5ecda",
+        "pressed": "#f5e5dc",
+        "raised": "#faf4ed",
+        "search": "#d5e3ee",
+        "search_current": "#b9d2e6",
+        "secondary": "#3d3530",
+        "selected": "#f8ebe4",
+        "selection": "#a94f3d",
+        "separator": "#756b64",
+        "success": "#376a50",
+        "surface": "#fff9f2",
+        "warning": "#8a5b19"
+      },
+      "id": "apricot-light",
+      "name": {
+        "en": "Apricot · Light",
+        "zh": "杏桃 · 浅色"
+      },
+      "textureAlpha": {
+        "light": 0.02381692138455982,
+        "medium": 0.03965174460794607,
+        "strong": 0.055451830039247696
+      }
+    },
+    {
+      "appearance": "dark",
+      "colors": {
+        "accent": "#e6a68e",
+        "accent_surface": "#41342e",
+        "annotation": "#51452f",
+        "border": "#665149",
+        "canvas": "#201b19",
+        "destructive": "#ef9ca7",
+        "disabled": "#7b6e66",
+        "focus": "#e6a68e",
+        "ink": "#d6c8ba",
+        "input": "#26201d",
+        "maria": "#717e89",
+        "moon": "#b1b1a8",
+        "on_accent": "#211e24",
+        "on_destructive": "#211e24",
+        "paper": "#241f1c",
+        "pressed": "#41342e",
+        "raised": "#2f2825",
+        "search": "#283e50",
+        "search_current": "#2f5068",
+        "secondary": "#b8a69a",
+        "selected": "#3a2e2a",
+        "selection": "#e6a68e",
+        "separator": "#4b3d37",
+        "success": "#9dccad",
+        "surface": "#2b2421",
+        "warning": "#dec088"
+      },
+      "highContrast": {
+        "accent": "#eab39f",
+        "accent_surface": "#41342e",
+        "annotation": "#51452f",
+        "border": "#ab9f9b",
+        "canvas": "#201b19",
+        "destructive": "#ef9ca7",
+        "disabled": "#7b6e66",
+        "focus": "#eab39f",
+        "ink": "#e4dbd2",
+        "input": "#26201d",
+        "maria": "#717e89",
+        "moon": "#b1b1a8",
+        "on_accent": "#211e24",
+        "on_destructive": "#211e24",
+        "paper": "#241f1c",
+        "pressed": "#41342e",
+        "raised": "#2f2825",
+        "search": "#283e50",
+        "search_current": "#2f5068",
+        "secondary": "#d8cec7",
+        "selected": "#3a2e2a",
+        "selection": "#e6a68e",
+        "separator": "#ab9f9b",
+        "success": "#9dccad",
+        "surface": "#2b2421",
+        "warning": "#dec088"
+      },
+      "id": "apricot-dark",
+      "name": {
+        "en": "Apricot · Dark",
+        "zh": "杏桃 · 深色"
+      },
+      "textureAlpha": {
+        "light": 0.020898374471075343,
+        "medium": 0.034740696067659727,
+        "strong": 0.04853578692569904
+      }
+    },
+    {
+      "appearance": "light",
+      "colors": {
+        "accent": "#2f725e",
+        "accent_surface": "#dfebe6",
+        "annotation": "#f0e3b4",
+        "border": "#adc6b8",
+        "canvas": "#edf4ef",
+        "destructive": "#b2354d",
+        "disabled": "#98a79e",
+        "focus": "#2f725e",
+        "ink": "#2e4138",
+        "input": "#f2f8f4",
+        "maria": "#596b7a",
+        "moon": "#8c9189",
+        "on_accent": "#ffffff",
+        "on_destructive": "#ffffff",
+        "paper": "#f4faf5",
+        "pressed": "#dfebe6",
+        "raised": "#f2f7f3",
+        "search": "#dde8f8",
+        "search_current": "#bdd2ee",
+        "secondary": "#5f7368",
+        "selected": "#e7f1ec",
+        "selection": "#2f725e",
+        "separator": "#ceded5",
+        "success": "#2f725e",
+        "surface": "#f7fcf8",
+        "warning": "#805d19"
+      },
+      "highContrast": {
+        "accent": "#286150",
+        "accent_surface": "#dfebe6",
+        "annotation": "#f0e3b4",
+        "border": "#5f6d65",
+        "canvas": "#edf4ef",
+        "destructive": "#b2354d",
+        "disabled": "#98a79e",
+        "focus": "#286150",
+        "ink": "#1e2a24",
+        "input": "#f2f8f4",
+        "maria": "#596b7a",
+        "moon": "#8c9189",
+        "on_accent": "#ffffff",
+        "on_destructive": "#ffffff",
+        "paper": "#f4faf5",
+        "pressed": "#dfebe6",
+        "raised": "#f2f7f3",
+        "search": "#dde8f8",
+        "search_current": "#bdd2ee",
+        "secondary": "#343f39",
+        "selected": "#e7f1ec",
+        "selection": "#2f725e",
+        "separator": "#5f6d65",
+        "success": "#2f725e",
+        "surface": "#f7fcf8",
+        "warning": "#805d19"
+      },
+      "id": "mint-light",
+      "name": {
+        "en": "Mint · Light",
+        "zh": "薄荷 · 浅色"
+      },
+      "textureAlpha": {
+        "light": 0.022806491728564637,
+        "medium": 0.03797121172271822,
+        "strong": 0.05310403925018825
+      }
+    },
+    {
+      "appearance": "dark",
+      "colors": {
+        "accent": "#98cdb6",
+        "accent_surface": "#2e443b",
+        "annotation": "#454330",
+        "border": "#426452",
+        "canvas": "#17231f",
+        "destructive": "#f0a3b0",
+        "disabled": "#687c72",
+        "focus": "#98cdb6",
+        "ink": "#c5d5ca",
+        "input": "#1c2a25",
+        "maria": "#717e89",
+        "moon": "#b1b1a8",
+        "on_accent": "#211e24",
+        "on_destructive": "#211e24",
+        "paper": "#1c2924",
+        "pressed": "#2e443b",
+        "raised": "#24352e",
+        "search": "#293f56",
+        "search_current": "#2f506c",
+        "secondary": "#9eb8a9",
+        "selected": "#2a3d35",
+        "selection": "#98cdb6",
+        "separator": "#334d40",
+        "success": "#98cdb6",
+        "surface": "#20312a",
+        "warning": "#dec593"
+      },
+      "highContrast": {
+        "accent": "#a7d5c1",
+        "accent_surface": "#2e443b",
+        "annotation": "#454330",
+        "border": "#97aaa0",
+        "canvas": "#17231f",
+        "destructive": "#f0a3b0",
+        "disabled": "#687c72",
+        "focus": "#a7d5c1",
+        "ink": "#d9e4dd",
+        "input": "#1c2a25",
+        "maria": "#717e89",
+        "moon": "#b1b1a8",
+        "on_accent": "#211e24",
+        "on_destructive": "#211e24",
+        "paper": "#1c2924",
+        "pressed": "#2e443b",
+        "raised": "#24352e",
+        "search": "#293f56",
+        "search_current": "#2f506c",
+        "secondary": "#cad8d0",
+        "selected": "#2a3d35",
+        "selection": "#98cdb6",
+        "separator": "#97aaa0",
+        "success": "#98cdb6",
+        "surface": "#20312a",
+        "warning": "#dec593"
+      },
+      "id": "mint-dark",
+      "name": {
+        "en": "Mint · Dark",
+        "zh": "薄荷 · 深色"
+      },
+      "textureAlpha": {
+        "light": 0.020774231458814185,
+        "medium": 0.034580007566708204,
+        "strong": 0.04836690076477801
+      }
+    },
+    {
+      "appearance": "light",
+      "colors": {
+        "accent": "#71549d",
+        "accent_surface": "#eae4f2",
+        "annotation": "#f4e2b5",
+        "border": "#bfb2d0",
+        "canvas": "#f1eff8",
+        "destructive": "#ad3550",
+        "disabled": "#a49eaf",
+        "focus": "#71549d",
+        "ink": "#3b3649",
+        "input": "#f6f4fb",
+        "maria": "#596b7a",
+        "moon": "#8c9189",
+        "on_accent": "#ffffff",
+        "on_destructive": "#ffffff",
+        "paper": "#f8f5fc",
+        "pressed": "#eae4f2",
+        "raised": "#f5f3f9",
+        "search": "#d9e9ef",
+        "search_current": "#b8d3e4",
+        "secondary": "#71687f",
+        "selected": "#efebf6",
+        "selection": "#71549d",
+        "separator": "#dad2e5",
+        "success": "#386c58",
+        "surface": "#faf8fe",
+        "warning": "#805c22"
+      },
+      "highContrast": {
+        "accent": "#604785",
+        "accent_surface": "#eae4f2",
+        "annotation": "#f4e2b5",
+        "border": "#696272",
+        "canvas": "#f1eff8",
+        "destructive": "#ad3550",
+        "disabled": "#a49eaf",
+        "focus": "#604785",
+        "ink": "#26232f",
+        "input": "#f6f4fb",
+        "maria": "#596b7a",
+        "moon": "#8c9189",
+        "on_accent": "#ffffff",
+        "on_destructive": "#ffffff",
+        "paper": "#f8f5fc",
+        "pressed": "#eae4f2",
+        "raised": "#f5f3f9",
+        "search": "#d9e9ef",
+        "search_current": "#b8d3e4",
+        "secondary": "#3e3946",
+        "selected": "#efebf6",
+        "selection": "#71549d",
+        "separator": "#696272",
+        "success": "#386c58",
+        "surface": "#faf8fe",
+        "warning": "#805c22"
+      },
+      "id": "lilac-light",
+      "name": {
+        "en": "Lilac · Light",
+        "zh": "雾紫 · 浅色"
+      },
+      "textureAlpha": {
+        "light": 0.02269227734755397,
+        "medium": 0.037780635188235934,
+        "strong": 0.0528369184936377
+      }
+    },
+    {
+      "appearance": "dark",
+      "colors": {
+        "accent": "#c3a6e5",
+        "accent_surface": "#3e374e",
+        "annotation": "#4c4035",
+        "border": "#665479",
+        "canvas": "#211f2b",
+        "destructive": "#efa0b6",
+        "disabled": "#786f87",
+        "focus": "#c3a6e5",
+        "ink": "#d0c8df",
+        "input": "#272432",
+        "maria": "#717e89",
+        "moon": "#b1b1a8",
+        "on_accent": "#211e24",
+        "on_destructive": "#211e24",
+        "paper": "#262230",
+        "pressed": "#3e374e",
+        "raised": "#302c3d",
+        "search": "#283f50",
+        "search_current": "#2d546c",
+        "secondary": "#b2a5c4",
+        "selected": "#383247",
+        "selection": "#c3a6e5",
+        "separator": "#4c405c",
+        "success": "#a0cdb8",
+        "surface": "#2c2839",
+        "warning": "#dec08d"
+      },
+      "highContrast": {
+        "accent": "#ccb3e9",
+        "accent_surface": "#3e374e",
+        "annotation": "#4c4035",
+        "border": "#aba1b5",
+        "canvas": "#211f2b",
+        "destructive": "#efa0b6",
+        "disabled": "#786f87",
+        "focus": "#ccb3e9",
+        "ink": "#e0dbea",
+        "input": "#272432",
+        "maria": "#717e89",
+        "moon": "#b1b1a8",
+        "on_accent": "#211e24",
+        "on_destructive": "#211e24",
+        "paper": "#262230",
+        "pressed": "#3e374e",
+        "raised": "#302c3d",
+        "search": "#283f50",
+        "search_current": "#2d546c",
+        "secondary": "#d5cedf",
+        "selected": "#383247",
+        "selection": "#c3a6e5",
+        "separator": "#aba1b5",
+        "success": "#a0cdb8",
+        "surface": "#2c2839",
+        "warning": "#dec08d"
+      },
+      "id": "lilac-dark",
+      "name": {
+        "en": "Lilac · Dark",
+        "zh": "雾紫 · 深色"
+      },
+      "textureAlpha": {
+        "light": 0.021078488055325195,
+        "medium": 0.035082411565975136,
+        "strong": 0.04906489675125236
+      }
+    },
+    {
+      "appearance": "dark",
+      "colors": {
+        "accent": "#9fbde5",
+        "accent_surface": "#21252a",
+        "annotation": "#302b1e",
+        "border": "#545454",
+        "canvas": "#000000",
+        "destructive": "#ef9ca7",
+        "disabled": "#585858",
+        "focus": "#9fbde5",
+        "ink": "#b8b8b8",
+        "input": "#080808",
+        "maria": "#717e89",
+        "moon": "#b1b1a8",
+        "on_accent": "#211e24",
+        "on_destructive": "#211e24",
+        "paper": "#000000",
+        "pressed": "#21252a",
+        "raised": "#141414",
+        "search": "#192c3b",
+        "search_current": "#253c50",
+        "secondary": "#939393",
+        "selected": "#1b1e21",
+        "selection": "#9fbde5",
+        "separator": "#353535",
+        "success": "#9dccad",
+        "surface": "#101010",
+        "warning": "#dec088"
+      },
+      "highContrast": {
+        "accent": "#adc7e9",
+        "accent_surface": "#21252a",
+        "annotation": "#302b1e",
+        "border": "#a1a1a1",
+        "canvas": "#000000",
+        "destructive": "#ef9ca7",
+        "disabled": "#585858",
+        "focus": "#adc7e9",
+        "ink": "#d1d1d1",
+        "input": "#080808",
+        "maria": "#717e89",
+        "moon": "#b1b1a8",
+        "on_accent": "#211e24",
+        "on_destructive": "#211e24",
+        "paper": "#000000",
+        "pressed": "#21252a",
+        "raised": "#141414",
+        "search": "#192c3b",
+        "search_current": "#253c50",
+        "secondary": "#c4c4c4",
+        "selected": "#1b1e21",
+        "selection": "#9fbde5",
+        "separator": "#a1a1a1",
+        "success": "#9dccad",
+        "surface": "#101010",
+        "warning": "#dec088"
+      },
+      "id": "black-dark",
+      "name": {
+        "en": "Pure Black · Dark",
+        "zh": "纯黑夜间 · 深色"
+      },
+      "textureAlpha": {
+        "light": 0.00445931023337387,
+        "medium": 0.01291286252811652,
+        "strong": 0.024376414222414766
+      }
+    },
+    {
+      "appearance": "light",
+      "colors": {
+        "accent": "#315e8a",
+        "accent_surface": "#e6ecf1",
+        "annotation": "#f3e3ae",
+        "border": "#b9bec4",
+        "canvas": "#f4f4f4",
+        "destructive": "#b73548",
+        "disabled": "#9b9b9b",
+        "focus": "#315e8a",
+        "ink": "#303030",
+        "input": "#fafafa",
+        "maria": "#596b7a",
+        "moon": "#8c9189",
+        "on_accent": "#ffffff",
+        "on_destructive": "#ffffff",
+        "paper": "#ffffff",
+        "pressed": "#e6ecf1",
+        "raised": "#fafafa",
+        "search": "#ddebf5",
+        "search_current": "#bfd7eb",
+        "secondary": "#606060",
+        "selected": "#eff2f6",
+        "selection": "#315e8a",
+        "separator": "#d9dbdf",
+        "success": "#386c58",
+        "surface": "#ffffff",
+        "warning": "#805c22"
+      },
+      "highContrast": {
+        "accent": "#2a5075",
+        "accent_surface": "#e6ecf1",
+        "annotation": "#f3e3ae",
+        "border": "#66696c",
+        "canvas": "#f4f4f4",
+        "destructive": "#b73548",
+        "disabled": "#9b9b9b",
+        "focus": "#2a5075",
+        "ink": "#1f1f1f",
+        "input": "#fafafa",
+        "maria": "#596b7a",
+        "moon": "#8c9189",
+        "on_accent": "#ffffff",
+        "on_destructive": "#ffffff",
+        "paper": "#ffffff",
+        "pressed": "#e6ecf1",
+        "raised": "#fafafa",
+        "search": "#ddebf5",
+        "search_current": "#bfd7eb",
+        "secondary": "#353535",
+        "selected": "#eff2f6",
+        "selection": "#315e8a",
+        "separator": "#66696c",
+        "success": "#386c58",
+        "surface": "#ffffff",
+        "warning": "#805c22"
+      },
+      "id": "white-light",
+      "name": {
+        "en": "Plain White · Light",
+        "zh": "素白 · 浅色"
+      },
+      "textureAlpha": {
+        "light": 0.020883320055476773,
+        "medium": 0.034769536582638594,
+        "strong": 0.048626762388432
+      }
+    },
+    {
+      "appearance": "light",
+      "colors": {
+        "accent": "#386441",
+        "accent_surface": "#d5dfd1",
+        "annotation": "#ede0aa",
+        "border": "#a4b49b",
+        "canvas": "#dce6d7",
+        "destructive": "#ac3446",
+        "disabled": "#8b9685",
+        "focus": "#386441",
+        "ink": "#303b2d",
+        "input": "#e3ebde",
+        "maria": "#596b7a",
+        "moon": "#8c9189",
+        "on_accent": "#ffffff",
+        "on_destructive": "#ffffff",
+        "paper": "#dce8d1",
+        "pressed": "#d5dfd1",
+        "raised": "#e5ebe0",
+        "search": "#d0e2eb",
+        "search_current": "#abcad9",
+        "secondary": "#55614e",
+        "selected": "#dce5d8",
+        "selection": "#386441",
+        "separator": "#c4cfbc",
+        "success": "#376343",
+        "surface": "#eaf0e5",
+        "warning": "#74551d"
+      },
+      "highContrast": {
+        "accent": "#305537",
+        "accent_surface": "#d5dfd1",
+        "annotation": "#ede0aa",
+        "border": "#5a6355",
+        "canvas": "#dce6d7",
+        "destructive": "#ac3446",
+        "disabled": "#8b9685",
+        "focus": "#305537",
+        "ink": "#1f261d",
+        "input": "#e3ebde",
+        "maria": "#596b7a",
+        "moon": "#8c9189",
+        "on_accent": "#ffffff",
+        "on_destructive": "#ffffff",
+        "paper": "#dce8d1",
+        "pressed": "#d5dfd1",
+        "raised": "#e5ebe0",
+        "search": "#d0e2eb",
+        "search_current": "#abcad9",
+        "secondary": "#2f352b",
+        "selected": "#dce5d8",
+        "selection": "#386441",
+        "separator": "#5a6355",
+        "success": "#376343",
+        "surface": "#eaf0e5",
+        "warning": "#74551d"
+      },
+      "id": "bean-light",
+      "name": {
+        "en": "Bean Green · Light",
+        "zh": "豆沙绿 · 浅色"
+      },
+      "textureAlpha": {
+        "light": 0.02462694139969379,
+        "medium": 0.04099912923732241,
+        "strong": 0.05733444337822924
+      }
+    }
+  ],
+  "schemaVersion": 1,
+  "strengths": [
+    {
+      "id": "light",
+      "name": {
+        "en": "Light",
+        "zh": "淡"
+      }
+    },
+    {
+      "id": "medium",
+      "name": {
+        "en": "Medium",
+        "zh": "中"
+      }
+    },
+    {
+      "id": "strong",
+      "name": {
+        "en": "Strong",
+        "zh": "浓"
+      }
+    }
+  ],
+  "textures": [
+    {
+      "id": "paper-v1",
+      "name": {
+        "en": "Rice Paper",
+        "zh": "宣纸"
+      },
+      "path": "textures/paper-v1.png",
+      "sha256": "51c5d57df8a4b3509fc0634767241ad8eb7a49b21fb84f1daf3ec42b9cab5732"
+    },
+    {
+      "id": "kraft-v1",
+      "name": {
+        "en": "Kraft Paper",
+        "zh": "牛皮纸"
+      },
+      "path": "textures/kraft-v1.png",
+      "sha256": "64fec3b54f91a4dabb77d035a9a044fceffdb3fd69ca2be25b40378cb1aed102"
+    },
+    {
+      "id": "linen-v1",
+      "name": {
+        "en": "Fine Linen",
+        "zh": "细麻布"
+      },
+      "path": "textures/linen-v1.png",
+      "sha256": "b1eb579ff917eda25b92d4975a211a33a0d878e950cb38198b06d7209dd77ef6"
+    },
+    {
+      "id": "grain-v1",
+      "name": {
+        "en": "Grain",
+        "zh": "颗粒"
+      },
+      "path": "textures/grain-v1.png",
+      "sha256": "20b7438719beb79bf11fa7febeaee700cf1e1e30f4876e32ceeef7e503a13097"
+    }
+  ],
+  "tileSize": 256
+}
