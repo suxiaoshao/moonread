@@ -8,6 +8,13 @@ on:
       - '.github/workflows/pages.yml'
       - 'flake.nix'
       - 'flake.lock'
+      - 'Cargo.*'
+      - 'crates/moonread-core/Cargo.toml'
+      - 'crates/moonread-core/src/themes.rs'
+      - 'crates/moonread-core/src/reading_layout.rs'
+      - 'crates/moonread-core/src/bin/site-theme-data.rs'
+      - 'ios/Moonread/Localizable.xcstrings'
+      - 'ios/Moonread/Assets.xcassets/ReaderTexture*/**'
   workflow_dispatch:
 
 permissions:
@@ -26,6 +33,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - name: Check generated reader preview data
+        run: nix develop --no-update-lock-file -c cargo run --locked -p moonread-core --bin site-theme-data -- --check
       - name: Build site
         working-directory: docs/site
         run: nix develop --no-update-lock-file -c zola build
