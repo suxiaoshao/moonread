@@ -56,6 +56,24 @@ actor ReaderService {
     static let shared: ReaderService = {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("--ui-test-store-screenshots"), arguments.contains("--ui-testing"),
+           let i = arguments.firstIndex(of: "--ui-test-session"), arguments.indices.contains(i + 1),
+           let session = UUID(uuidString: arguments[i + 1])?.uuidString {
+            UserDefaults(suiteName: "Moonread.AI.UITest-" + session)!.set(false, forKey: "Moonread.ai.enabled.v1")
+            let suite = "Moonread.StoreShots." + session
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-StoreShots-" + session, isDirectory: true)
+            let mode = arguments.firstIndex(of: "--ui-test-store-scene").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil } ?? "paper"
+            var snapshot = defaultThemeSnapshot()
+            snapshot.preferences.appMode = .light
+            snapshot.preferences.readerMode = mode == "night" ? .dark : .light
+            snapshot.preferences.readerLight = .palette(id: mode == "appearance" ? "bean-light" : (mode == "notes" ? "apricot-light" : "white-light"))
+            snapshot.preferences.readerDark = .palette(id: "black-dark")
+            snapshot.preferences.readerLightTexture = ReaderTextureChoice(id: mode == "appearance" ? .linen : .paper, strength: mode == "notes" ? .light : .medium)
+            snapshot.preferences.readerDarkTexture = nil
+            UserDefaults(suiteName: suite)!.set(try! encodeThemePreferences(value: snapshot.preferences), forKey: "Moonread.themePreferences")
+            UserDefaults.standard.set(try! encodeThemeSnapshot(value: snapshot), forKey: "Moonread.appearanceCache." + session)
+            return ReaderService(libraryDirectory: root, sourceDefaultsSuite: suite)
+        }
         if arguments.contains("--ui-testing"),
            let index = arguments.firstIndex(of: "--ui-test-session"), arguments.indices.contains(index + 1),
            let session = UUID(uuidString: arguments[index + 1])?.uuidString {

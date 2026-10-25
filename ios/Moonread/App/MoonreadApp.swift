@@ -40,6 +40,13 @@ struct MoonreadApp: App {
             .task {
                 library.startCloudDiscovery()
                 if await library.load() {
+                    #if DEBUG
+                    if ProcessInfo.processInfo.arguments.contains("--ui-test-store-screenshots") {
+                        library.layout = .list
+                        await themes.load()
+                        return
+                    }
+                    #endif
                     library.fullIndex.scene(active: scenePhase == .active)
                     if Onboarding.shared.completed { await library.receiveSharedInbox() }
                     await cloud.refresh()

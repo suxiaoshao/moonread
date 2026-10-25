@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CD0100000000000000000001 = {isa = PBXBuildFile; fileRef = CD0200000000000000000001; };
+		CD0100000000000000000002 = {isa = PBXBuildFile; fileRef = CD0200000000000000000002; };
+		CD0100000000000000000003 = {isa = PBXBuildFile; fileRef = CD0200000000000000000001; };
 		660000000000000000000006 = {isa = PBXBuildFile; fileRef = 660000000000000000000005; };
 		660000000000000000000004 = {isa = PBXBuildFile; fileRef = 660000000000000000000003; };
 		660000000000000000000002 = {isa = PBXBuildFile; fileRef = 660000000000000000000001; };
@@ -246,6 +249,8 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		CD0200000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = StoreScreenshotFixture.swift; path = ../Moonread/Library/StoreScreenshotFixture.swift; sourceTree = "<group>"; };
+		CD0200000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreScreenshots.swift; sourceTree = "<group>"; };
 		660000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../crates/moonread-core/tests/fixtures/library-input-contract-v1.json"; sourceTree = SOURCE_ROOT; };
 		660000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/LibraryQueryRulesTests.swift"; sourceTree = SOURCE_ROOT; };
 		660000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/Library/LibraryQueryRules.swift"; sourceTree = SOURCE_ROOT; };
@@ -536,6 +541,8 @@ D35000000000000000000001,
                 10332C17C92A416A96E3B55A,
                 EC14CE0E00934BB682B83B4D,
                 5C7A519CEC4946EDB0957CC2,
+CD0200000000000000000001,
+                CD0200000000000000000002,
 A20000000000000000000009 /* MoonreadUITests.swift */,
 			);
 			path = MoonreadUITests;
@@ -1074,6 +1081,7 @@ F01900000000000000000001,
                 B13000000000000000000002,
                 B13000000000000000000003,
                 B01000000000000000000002,
+				CD0100000000000000000003,
 				A10000000000000000000001 /* MoonreadApp.swift in Sources */,
                 AC1000000000000000000001,
                 AC1000000000000000000002,
@@ -1110,6 +1118,8 @@ F01900000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CD0100000000000000000001,
+                CD0100000000000000000002,
 				A10000000000000000000009 /* MoonreadUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
