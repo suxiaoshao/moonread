@@ -1,5 +1,12 @@
-use super::*;
+use crate::reading::chapters::MAX_CHAPTER_LINE_BYTES;
+use crate::*;
+use rusqlite::Connection;
+use rusqlite::OptionalExtension;
+use rusqlite::params;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
+use uuid::Uuid;
 
 pub(crate) fn reading_percentage(offset: u64, total: u64) -> f64 {
     offset.min(total) as f64 / total.max(1) as f64 * 100.0
@@ -107,8 +114,8 @@ impl ReaderCore {
         let db = Connection::open(&self.database_path)?;
         db.busy_timeout(std::time::Duration::from_secs(5))?;
         db.execute_batch("PRAGMA temp_store=FILE;")?;
-        user_projection::initialize(&db)?;
-        let id = library_tools::content_key(&db, &book_id)?;
+        crate::user::projection::initialize(&db)?;
+        let id = crate::library::tools::content_key(&db, &book_id)?;
         let book = require_complete(&db, &id)?;
         db.execute_batch("CREATE TEMP TABLE detected_chapters(start_utf8 INTEGER PRIMARY KEY,title TEXT NOT NULL,level INTEGER NOT NULL,start_char_count INTEGER NOT NULL,body_char_count INTEGER NOT NULL);")?;
         Ok(Arc::new(ChapterRebuild {
@@ -136,7 +143,7 @@ fn chapter_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<ChapterInfo> {
 
 /// Derive a manual heading's prefix counts from one indexed chunk and its
 /// bounded source line. Shared by local editing and cloud materialization.
-pub(super) fn chapter_counts(db: &Connection, id: &str, offset: u64) -> Result<(u64, u64)> {
+pub(crate) fn chapter_counts(db: &Connection, id: &str, offset: u64) -> Result<(u64, u64)> {
     let info = book(db, id)?;
     if offset >= info.byte_count {
         return Err(ReaderError::InvalidRange);
@@ -309,7 +316,7 @@ impl ReaderCore {
             return Err(ReaderError::InvalidRange);
         }
         let db = self.reader.lock().map_err(|_| ReaderError::ImportBusy)?;
-        let id = library_tools::content_key(&db, &book_id)?;
+        let id = crate::library::tools::content_key(&db, &book_id)?;
         let info = require_complete(&db, &id)?;
         let mut offset =
             ((info.byte_count as f64 * percentage / 100.0).round() as u64).min(info.byte_count);
@@ -323,7 +330,7 @@ impl ReaderCore {
         Ok(ReadingLocation {
             offset_utf8: offset,
             percentage: reading_percentage(offset, info.byte_count),
-            chapter: library_tools::chapter(&db, &id, offset)?,
+            chapter: crate::library::tools::chapter(&db, &id, offset)?,
         })
     }
     pub(crate) fn adjacent_chapter(
@@ -333,8 +340,8 @@ impl ReaderCore {
         forward: bool,
     ) -> Result<Option<ChapterInfo>> {
         let db = self.reader.lock().map_err(|_| ReaderError::ImportBusy)?;
-        let id = library_tools::content_key(&db, &book_id)?;
-        let current = library_tools::chapter(&db, &id, offset_utf8)?
+        let id = crate::library::tools::content_key(&db, &book_id)?;
+        let current = crate::library::tools::chapter(&db, &id, offset_utf8)?
             .map(|c| c.start_utf8)
             .unwrap_or(0);
         let sql = if forward {

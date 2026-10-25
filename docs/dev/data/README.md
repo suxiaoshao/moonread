@@ -140,7 +140,7 @@ Rust `books` 不再保存正式位置或最近阅读时间。`user_projection.rs
 
 首次使用本地空目录仍复制自带原创短篇；已注册内置根不会因文件被删除而再次预置。目录扫描仍只读取元数据，跳过隐藏项、包内容与符号链接；按实际目录权限工作，不主动读取整库正文。
 
-源码入口：[SwiftData 存储](../../../ios/Moonread/Data/UserData.swift)、[用户业务接口](../../../ios/Moonread/Data/UserDataService.swift)、[Rust 计算输入](../../../crates/moonread-core/src/user_projection.rs)、[平台文件操作](../../../ios/Moonread/Library/LibraryService.swift)。
+源码入口：[SwiftData 存储](../../../ios/Moonread/Data/UserData.swift)、[用户业务接口](../../../ios/Moonread/Data/UserDataService.swift)、[Rust 计算输入](../../../crates/moonread-core/src/user/projection.rs)、[平台文件操作](../../../ios/Moonread/Library/LibraryService.swift)。
 
 ## 先统一术语
 

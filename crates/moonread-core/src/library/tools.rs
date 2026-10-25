@@ -1,6 +1,11 @@
-use super::*;
+use crate::*;
 use regex::{Regex, RegexBuilder};
+use rusqlite::Connection;
+use rusqlite::OptionalExtension;
+use rusqlite::params;
 use std::collections::VecDeque;
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
@@ -74,11 +79,11 @@ pub struct SearchBatch {
     pub available_utf8: u64,
 }
 
-pub(super) fn content_key(db: &Connection, id: &str) -> Result<String> {
+pub(crate) fn content_key(db: &Connection, id: &str) -> Result<String> {
     db.query_row("SELECT COALESCE(j.canonical_id,b.id) FROM reading_books b LEFT JOIN import_jobs j ON j.book_id=b.id WHERE b.id=?1", [id], |r| r.get(0))
         .optional()?.ok_or(ReaderError::NotFound)
 }
-pub(super) fn chapter(db: &Connection, id: &str, offset: u64) -> Result<Option<ChapterInfo>> {
+pub(crate) fn chapter(db: &Connection, id: &str, offset: u64) -> Result<Option<ChapterInfo>> {
     Ok(db.query_row("SELECT start_utf8,title,level FROM effective_chapters WHERE book_id=?1 AND start_utf8<=?2 ORDER BY start_utf8 DESC LIMIT 1",
         params![id, offset.min(i64::MAX as u64) as i64], |r| Ok(ChapterInfo { start_utf8: unsigned_column(r,0)?, title:r.get(1)?, level:r.get(2)? })).optional()?)
 }
@@ -140,7 +145,7 @@ impl ReaderCore {
                 }
             }
         }
-        let blanks = crate::reading_layout::blank_ranges(&tx, &id, start_utf8, end_utf8)?;
+        let blanks = crate::reading::layout::blank_ranges(&tx, &id, start_utf8, end_utf8)?;
         let mut cursor = start_utf8;
         let mut text = String::new();
         for (lo, hi) in blanks
@@ -475,7 +480,7 @@ impl ReaderCore {
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        let coverage = coverage::covered_char_ranges(&tx, &id)?;
+        let coverage = crate::user::coverage::covered_char_ranges(&tx, &id)?;
         let mut parent: Option<&IndexedChapter> = None;
         let mut items = Vec::with_capacity(headings.len());
         for (index, heading) in headings.iter().enumerate() {
@@ -498,7 +503,9 @@ impl ReaderCore {
                 covered_characters: coverage
                     .as_ref()
                     .filter(|_| next.is_some() || complete)
-                    .map(|ranges| coverage::count(ranges, heading.body_char_count, end)),
+                    .map(|ranges| {
+                        crate::user::coverage::count(ranges, heading.body_char_count, end)
+                    }),
             });
             if heading.level == 0 {
                 parent = Some(heading);
@@ -543,7 +550,7 @@ impl ReaderCore {
         let (snapshot, book_id, headings) = {
             let mut reader = self.read_lock()?;
             let tx = reader.transaction()?;
-            let snapshot = progressive::snapshot(&tx, &book_id)?;
+            let snapshot = crate::reading::progressive::snapshot(&tx, &book_id)?;
             let id = content_key(&tx, &book_id)?;
             let headings = {
                 let mut statement = tx.prepare("SELECT start_utf8,title,level FROM effective_chapters WHERE book_id=?1 ORDER BY start_utf8")?;
@@ -587,7 +594,7 @@ impl ReaderCore {
         }
         let db = Connection::open(&self.database_path)?;
         db.busy_timeout(std::time::Duration::from_secs(5))?;
-        user_projection::initialize(&db)?;
+        crate::user::projection::initialize(&db)?;
         db.execute_batch("PRAGMA query_only=ON; PRAGMA foreign_keys=ON")?;
         Ok(Arc::new(SearchJob {
             cancelled: AtomicBool::new(false),

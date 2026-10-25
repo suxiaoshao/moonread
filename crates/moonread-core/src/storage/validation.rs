@@ -111,7 +111,7 @@ mod tests {
     #[test]
     fn entry_profiles_preserve_the_shared_input_contract() {
         let contract: serde_json::Value = serde_json::from_str(include_str!(
-            "../tests/fixtures/library-input-contract-v1.json"
+            "../../tests/fixtures/library-input-contract-v1.json"
         ))
         .unwrap();
         for case in contract["names"].as_array().unwrap() {

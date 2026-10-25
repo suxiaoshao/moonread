@@ -11,7 +11,7 @@ pub struct LibraryIdentityInventory {
 }
 
 fn pending_files(db: &rusqlite::Connection, shelf_id: &str) -> Result<Vec<SourceFileSnapshot>> {
-    crate::bookshelf::source_snapshots(
+    crate::library::bookshelf::source_snapshots(
         db,
         "WHERE f.directory=0 AND f.shelf_id=?1 AND NOT EXISTS(SELECT 1 FROM valid_indexed_identities v WHERE v.file_id=f.id) ORDER BY f.id",
         [shelf_id],
@@ -207,9 +207,10 @@ mod tests {
     #[test]
     fn full_index_v21_to_v22_preserves_files() {
         let mut db = rusqlite::Connection::open_in_memory().unwrap();
-        db.execute_batch(include_str!("schema.sql")).unwrap();
+        db.execute_batch(include_str!("../storage/schema.sql"))
+            .unwrap();
         db.execute_batch("ALTER TABLE import_jobs ADD COLUMN purpose TEXT NOT NULL DEFAULT 'reading'; PRAGMA user_version=21; INSERT INTO library_shelves VALUES('s','Shelf',X'0102','local',0,NULL);").unwrap();
-        crate::migrations::initialize(&mut db).unwrap();
+        crate::storage::migrations::initialize(&mut db).unwrap();
         assert_eq!(
             db.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
                 .unwrap(),

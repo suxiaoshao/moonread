@@ -1,6 +1,7 @@
 //! Read-only, bounded normalized identity probing for a small admitted candidate set.
 //! Uses exactly the import decoder and normalization-v1, without any database writes.
-use crate::{ReaderError, Result, decoding_policy, sha::sha256_hex, text};
+use crate::identity::sha::sha256_hex;
+use crate::{ReaderError, Result, SourceContentKey, valid_sha};
 use encoding_rs::Encoding;
 use sha2::{Digest, Sha256};
 use std::{
@@ -58,7 +59,7 @@ impl SourceIdentityProbe {
         let mut file = File::open(file_path)?;
         let policy = decoding_policy(&decoding)?;
         let encoding = if policy == "auto" {
-            text::detect_encoding(&mut file)?
+            crate::reading::text::detect_encoding(&mut file)?
         } else {
             Encoding::for_label(policy.as_bytes()).ok_or(ReaderError::InvalidSettings)?
         };
@@ -73,7 +74,7 @@ impl SourceIdentityProbe {
         let mut has_text = false;
         let mut utf8_bytes = 0;
         let mut char_count = 0;
-        text::decode_chunks(&mut input, encoding, |part| {
+        crate::reading::text::decode_chunks(&mut input, encoding, |part| {
             content.update(part.as_bytes());
             utf8_bytes += part.len() as u64;
             char_count += part.chars().filter(|c| !c.is_whitespace()).count() as u64;
@@ -318,5 +319,43 @@ mod tests {
             Some(imported.id.clone())
         );
         assert!(core.text_id_for_sha(imported.content_sha256).is_ok());
+    }
+}
+
+pub(crate) fn valid_source_key(key: &SourceContentKey) -> bool {
+    valid_sha(&key.raw_sha256) && decoding_policy(&key.decoding).is_ok()
+}
+pub(crate) fn decoding_policy(value: &str) -> Result<&'static str> {
+    if value == "auto" {
+        return Ok("auto");
+    }
+    Encoding::for_label(value.as_bytes())
+        .filter(|e| ![encoding_rs::REPLACEMENT, encoding_rs::X_USER_DEFINED].contains(e))
+        .map(|e| e.name())
+        .ok_or(ReaderError::InvalidSettings)
+}
+#[cfg(test)]
+mod decoding_policy_tests {
+    use super::*;
+    #[test]
+    fn manual_policy_accepts_all_text_decoders_and_rejects_unsuitable_labels() {
+        for (input, expected) in [
+            ("UTF-16BE", "UTF-16BE"),
+            ("utf-8", "UTF-8"),
+            ("shift-jis", "Shift_JIS"),
+            ("latin1", "windows-1252"),
+        ] {
+            assert_eq!(
+                decoding_policy(input).unwrap(),
+                expected,
+                "manual decoding label {input}"
+            );
+        }
+        for label in ["replacement", "not-an-encoding"] {
+            assert!(
+                matches!(decoding_policy(label), Err(ReaderError::InvalidSettings)),
+                "unsafe label {label}"
+            );
+        }
     }
 }

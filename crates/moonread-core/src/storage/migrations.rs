@@ -5,7 +5,7 @@ use rusqlite::Connection;
 const BASELINE: u32 = 20;
 const STEPS: &[&str] = &[
     "ALTER TABLE import_jobs ADD COLUMN purpose TEXT NOT NULL DEFAULT 'reading';",
-    include_str!("full_index.sql"),
+    include_str!("../library/full_index.sql"),
 ];
 
 pub(crate) fn initialize(db: &mut Connection) -> Result<()> {

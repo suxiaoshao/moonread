@@ -1,7 +1,12 @@
 //! Reading facts, not wall-clock time between opening and closing a book.
 //! The platform supplies scene visibility, actual text interaction and a monotonic clock.
 use crate::*;
+use rusqlite::Connection;
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use std::sync::Mutex;
+use uuid::Uuid;
 
 const IDLE_MS: u64 = 120_000;
 const CHECKPOINT_MS: i64 = 15_000;

@@ -14,7 +14,7 @@
 
 - 当前工作区为 `claude/reader-blank-lines`，HEAD `67923bf`；本地 `origin/main` 是用户给出的 `03dcdb7`。`git diff 03dcdb7 HEAD` 为空，文件树一致，因此下面的源码结论适用于该合并版本。未切分支、未更新引用。
 - [现有排版规则](../reader/reading.md)、[阅读工具契约](../reader/tools.md)是当前产品边界。本方案不更改“空行只呈现段间距”和“原文不改写”。
-- 本文“原文坐标”指 Rust 的**规范正文 UTF-8**，不是原 TXT 文件的编码字节位置。`crates/moonread-core/src/text.rs::decode_chunks` 已有去初始 BOM、CRLF/CR 转 LF 的规范化；本方案不再改变它。
+- 本文“原文坐标”指 Rust 的**规范正文 UTF-8**，不是原 TXT 文件的编码字节位置。`crates/moonread-core/src/reading/text.rs::decode_chunks` 已有去初始 BOM、CRLF/CR 转 LF 的规范化；本方案不再改变它。
 - 现有运行事实仍只以 [verification.md 的空行条目](../engineering/verification.md#2026-10-15-正文空行显示投影与长空白窗口)为准。本文不把代码推断写成新的测试通过记录。
 - 用户提供的评论编号 `4281238727` 未在本轮重新拉取正文；下面独立检查了相关代码链路。此次没有重跑其复现。
 
