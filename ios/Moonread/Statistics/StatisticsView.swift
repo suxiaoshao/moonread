@@ -32,7 +32,7 @@ struct StatisticsView: View {
             return $0.contentKey < $1.contentKey
         } : books
     }
-    private var total: UInt64 { (model.overview?.books ?? []).reduce(0) { $0 + $1.durationMs } }
+    private var total: UInt64 { model.overview.map { statisticsTotalDuration(overview: $0) } ?? 0 }
 
     var body: some View {
         ScrollViewReader { proxy in

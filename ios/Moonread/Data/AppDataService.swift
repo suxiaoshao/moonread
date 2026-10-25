@@ -113,6 +113,7 @@ actor AppDataService {
         return AppDataService()
     }()
     var systemCatalog: SystemReadingCatalog?
+    var systemExposureTask: Task<Void, Never>?
     private var core: ReaderCore?
     struct CachedQuery { let signature: String; let query: ReaderQuery }
     var queryCache: [String: CachedQuery] = [:]

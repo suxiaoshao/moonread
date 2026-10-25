@@ -2,7 +2,7 @@ import Foundation
 
 /// Book matching and result composition. Database scope/identity and natural
 /// ordering come from Rust; deliberately different entry contracts stay named.
-enum LibraryQueryRules {
+extension LibraryQueryRules {
     struct SearchSpec: Sendable {
         enum Profile: Sendable, Equatable { case library, ai }
         var profile: Profile

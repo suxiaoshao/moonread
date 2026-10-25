@@ -376,3 +376,9 @@ mod tests {
 }
 
 // Business projections are exported only by ReaderQuery.
+
+/// Shared total of the already-projected book durations (UI and system answers).
+#[uniffi::export]
+pub fn statistics_total_duration(overview: StatisticsOverview) -> u64 {
+    overview.books.iter().map(|book| book.duration_ms).sum()
+}

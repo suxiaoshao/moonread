@@ -250,7 +250,7 @@ struct ReaderScreen: View {
         presentedReader
         .allowsHitTesting(!session.isLeaving)
         .task {
-            library.systemReading.register(session, route: route)
+            library.systemReading.register(session)
             await session.open(route, request: openingRequest)
         }
         .onChange(of: sheetPresented || panel != nil || session.editor != nil || session.chapterDraft != nil, initial: true) { _, blocked in
@@ -259,7 +259,10 @@ struct ReaderScreen: View {
         .onChange(of: session.opening.request?.id) { _, id in
             if let id, completedOpeningID == id { session.opening.settled(id, reason: "observedAppearance") }
         }
-        .task(id: session.book?.contentSha256) { await loadCoverInformation() }
+        .task(id: session.book?.contentSha256) {
+            await loadCoverInformation()
+            if statisticsReadable { session.systemReadingBecameReadable() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { _ in
             Task { await loadCoverInformation() }
         }
@@ -268,6 +271,7 @@ struct ReaderScreen: View {
         }
         .onChange(of: statisticsReadable, initial: true) { _, readable in
             session.activity.update(readable: readable, preview: session.browseOrigin != nil)
+            if readable { session.systemReadingBecameReadable() }
         }
         .onChange(of: session.browseOrigin != nil) { _, preview in
             session.activity.update(readable: statisticsReadable, preview: preview)

@@ -52,12 +52,12 @@ final class SystemReadingRouter {
     private var task: Task<Void, Never>?
     private var token = UUID()
     private weak var reader: ReaderSession?
-    private var readerTarget: ReaderRoute?
+    var sceneActive = false { didSet { if sceneActive { resume() } } }
     var presentationBlocked = false { didSet { if !presentationBlocked { resume() } } }
     init(library: LibraryModel, service: AppDataService) { self.library = library; self.service = service }
-    func register(_ session: ReaderSession, route: ReaderRoute) { reader = session; readerTarget = route }
+    func register(_ session: ReaderSession) { reader = session }
     func unregister(_ session: ReaderSession) {
-        if reader === session { reader = nil; readerTarget = nil; presentationBlocked = false }
+        if reader === session { reader = nil; presentationBlocked = false }
     }
     func submit(_ request: SystemReadingRequest) {
         if pending == request { return }
@@ -66,13 +66,14 @@ final class SystemReadingRouter {
     }
     func resume() {
         guard task == nil, let request = pending, let library, library.initialized,
-              Onboarding.shared.completed, library.sheet == nil, !library.filePickerPresented,
+              sceneActive, Onboarding.shared.completed, library.sheet == nil, !library.filePickerPresented, library.indexPrompt == nil, library.canAcceptFileWork,
               !presentationBlocked else { return }
         let current = token
         task = Task { [weak self] in
             guard let self else { return }
             defer { if token == current { task = nil } }
             do {
+                guard sceneActive, !presentationBlocked, library.sheet == nil else { return }
                 let id: SystemReadingBookID
                 switch request {
                 case .showStatistics:
@@ -86,8 +87,8 @@ final class SystemReadingRouter {
                 case .openBook(let value): id = value
                 }
                 let entry = try await service.resolveSystemReadingBook(id)
-                guard token == current, !Task.isCancelled else { return }
-                if reader?.book?.contentSha256 == id.sha || (reader != nil && readerTarget == .source(entry.source)) {
+                guard token == current, !Task.isCancelled, !presentationBlocked, library.sheet == nil else { return }
+                if reader?.book?.contentSha256 == id.sha || (reader != nil && reader?.opening.request?.expectedContentSHA == id.sha) {
                     pending = nil; return // Never reset an already displayed session to an older saved position.
                 }
                 if let reader { await reader.leave().value }

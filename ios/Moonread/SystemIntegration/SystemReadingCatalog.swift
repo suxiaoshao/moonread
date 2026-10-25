@@ -55,7 +55,9 @@ extension AppDataService {
         catalog.scope = UUID().uuidString
         systemCatalog = catalog
         do {
-            try catalog.file.publish(.init(storeScope: catalog.scope, exposurePolicy: systemExposurePolicy()))
+            let empty = SystemReadingSnapshot(storeScope: catalog.scope, exposurePolicy: systemExposurePolicy())
+            try catalog.file.publish(empty)
+            systemReadingSnapshotPublished(empty)
             NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
         } catch { publishSystemCatalogError(error) }
     }
@@ -102,6 +104,7 @@ extension AppDataService {
                 let recent = books.filter { $0.recentRank != nil }.sorted { $0.recentRank! < $1.recentRank! }.map(\.id)
                 let snapshot = SystemReadingSnapshot(storeScope: catalog.scope, books: books, recentIDs: recent, exposurePolicy: policy)
                 try catalog.file.publish(snapshot)
+                systemReadingSnapshotPublished(snapshot)
                 systemCatalog?.lastPublished = Date(); systemCatalog?.error = nil
                 NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
                 return

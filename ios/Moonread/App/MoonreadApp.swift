@@ -41,7 +41,7 @@ struct MoonreadApp: App {
                 library.startCloudDiscovery()
                 if await library.load() {
                     await library.service.startSystemReadingCatalog()
-                    library.systemReading.resume()
+                    library.systemReading.receiveIntent(); library.systemReading.resume()
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--ui-test-store-screenshots") {
                         library.layout = .list
@@ -65,6 +65,7 @@ struct MoonreadApp: App {
                 if !shown { Task { await library.coordinatePendingIndexes() } }
             }
             .onChange(of: library.canAcceptFileWork) { _, available in
+                if available { library.systemReading.resume() }
                 if available { Task { await library.coordinatePendingIndexes() } }
             }
             .onChange(of: library.sheet == nil) { _, closed in
@@ -72,6 +73,7 @@ struct MoonreadApp: App {
                 if closed { Task { await library.coordinatePendingIndexes() } }
             }
             .onChange(of: library.indexPrompt == nil) { _, closed in
+                if closed { library.systemReading.resume() }
                 if closed { Task { await library.coordinatePendingIndexes() } }
             }
             .onChange(of: library.fullIndex.automatic) { _, enabled in
@@ -87,6 +89,9 @@ struct MoonreadApp: App {
                     if let id = library.fullIndex.shelfID { await library.refreshIndexSummary(id) }
                     if let message = note.object as? String { library.error = message }
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: SystemReadingIntentDelivery.notification).receive(on: DispatchQueue.main)) { _ in
+                library.systemReading.receiveIntent()
             }
             .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { _ in
                 Task { await library.service.scheduleSystemReadingCatalog(immediate: true) }
@@ -112,7 +117,8 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .CKAccountChanged).receive(on: DispatchQueue.main)) { _ in
                 Task { await cloud.identityChanged() }
             }
-            .onChange(of: scenePhase) { _, phase in
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                library.systemReading.sceneActive = phase == .active
                 library.fullIndex.scene(active: phase == .active)
                 if phase == .background {
                     Task { await library.service.scheduleSystemReadingCatalog(immediate: true) }

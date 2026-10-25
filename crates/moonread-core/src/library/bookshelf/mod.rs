@@ -4,6 +4,9 @@ use crate::{ReaderCore, ReaderError, Result, SourceContentKey, valid_source_key}
 use rusqlite::{Connection, params};
 use std::collections::HashSet;
 
+// One copy-selection order, shared by the full catalogue and scoped recents.
+pub(crate) const PREFERRED_SOURCE_ORDER: &str = "COALESCE(p.preferred_file_id=f.id,0) DESC,f.id";
+
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct LibraryShelf {
     pub id: String,
@@ -383,7 +386,7 @@ impl ReaderCore {
     }
     pub(crate) fn recent_library_entries(&self, limit: u32) -> Result<Vec<LibraryEntry>> {
         let db = self.read_lock()?;
-        let mut statement = db.prepare(
+        let mut statement = db.prepare(&format!(
             "WITH recent_positions AS (
                 SELECT * FROM user_positions
                 WHERE last_read>0 AND COALESCE(recent_visible,1)=1
@@ -396,11 +399,10 @@ impl ReaderCore {
                         AND c.start_utf8<=p.position_utf8 ORDER BY c.start_utf8 DESC LIMIT 1) chapter_title,
                     0 child_book_count,p.last_read,COALESCE(p.preferred_file_id=f.id,0) preferred,
                     m.value,p.content_key,
-                    rs.source_rank chosen
+                    ROW_NUMBER() OVER (PARTITION BY p.content_key ORDER BY {source_order}) chosen
                 FROM recent_positions p
                 JOIN file_identities fi ON fi.content_sha256=p.content_key
                 JOIN library_files f ON f.id=fi.file_id
-                JOIN ranked_library_sources rs ON rs.file_id=f.id
                 JOIN library_shelves s ON s.id=f.shelf_id
                 LEFT JOIN books b ON b.id=fi.associated_book_id
                 LEFT JOIN (SELECT content_sha256,MAX(utf8_bytes) utf8_bytes FROM source_identities GROUP BY content_sha256) si ON si.content_sha256=fi.content_sha256
@@ -408,7 +410,8 @@ impl ReaderCore {
             )
             SELECT * FROM ranked WHERE chosen=1
             ORDER BY last_read DESC,preferred DESC,id LIMIT ?1",
-        )?;
+            source_order = PREFERRED_SOURCE_ORDER,
+        ))?;
         Ok(statement
             .query_map([limit.min(1000)], library_entry_row)?
             .collect::<std::result::Result<_, _>>()?)

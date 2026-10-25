@@ -45,6 +45,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | source hint 字节/字段限制；恢复候选优先级与下载限额 | Swift `Data/UserData.swift::PositionSourceHint`、`RecentReadingRestoration.swift::RecentRestorationPolicy` | 同步载荷与恢复行为专用且已经单源；共享路径语法调用 Rust | 保留，删重复路径语法 |
 | symlink/授权/provider 生命周期、真实文件 IO | Swift `LibraryService.swift`、ShareReceiveShared | 平台安全事实，Rust 字符串校验不能替代 | 保持 |
 | 分享扩展入站安全校验 | Swift `ios/ShareReceiveShared/ShareInbox.swift` | 独立进程不依赖 Rust，属于明确防御性例外 | 保留，共同 fixture 对齐公共规则 |
+| 系统元数据匹配 | Swift 共享 `LibraryQueryRules.systemMetadataBooks` | 只匹配书名/作者/标签，复用 Rust ordinal；App Entity 与 App 同一 owner，不带 AI 简介 profile | 新增具名契约 |
 | 系统书目派生快照与统一开书路由 | Swift `SystemIntegration`、`SystemIntegrationShared` | 主 App 唯一生产者；共享 DTO 不含正文、路径、位置 token/偏移，不成为事实权威；身份、代表副本、顺序与进度沿既有 Rust 查询 | 平台边界 |
 | 查询范围、身份/metadata 关联、目录后代最近时间、最近副本选择 | Rust `library/bookshelf/`、`user/projection.rs` | 需要完整索引/快照，不能由限量 recents 再聚合 | 收敛，删除 Swift 目录聚合 |
 | 书目文本/作者/标签/状态筛选、搜索排名和建议匹配 | Swift `Library/LibraryQueryRules.swift` | Foundation 本地化能力合适；UI literal 与 AI/建议模式显式保留 | 删除 Rust search_rank/metadata filter 与各 Swift 调用点副本 |

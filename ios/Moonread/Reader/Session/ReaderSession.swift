@@ -4,6 +4,7 @@ import UIKit
 @MainActor @Observable
 final class ReaderSession {
     let opening = ReaderOpeningState()
+    private var systemDonationOpening: UUID?
     private var monitorToken = UUID()
     var snapshot: ReadingSnapshot?
     var book: BookInfo? { snapshot?.book }
@@ -219,6 +220,14 @@ final class ReaderSession {
             window = value; ReaderOpenDiagnostics.mark(attempt, "windowPublished")
             updateOpening(); refreshAnnotations()
         }
+    }
+
+    func systemReadingBecameReadable() {
+        guard !isLeaving, browseOrigin == nil, let openingID = opening.request?.id,
+              systemDonationOpening != openingID, let id = readingID,
+              let sha = book?.contentSha256, (try? parseSha256(value: sha)) != nil else { return }
+        systemDonationOpening = openingID
+        Task { await service.systemReadingBegan(id) }
     }
 
     func moved(to offset: UInt64, settled: Bool) {

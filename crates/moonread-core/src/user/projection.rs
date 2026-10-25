@@ -51,10 +51,10 @@ struct ChapterInput {
 
 pub(crate) fn initialize(db: &Connection) -> Result<()> {
     crate::identity::content::initialize(db)?;
-    db.execute_batch("CREATE TEMP TABLE user_positions(content_key TEXT PRIMARY KEY,position_utf8 INTEGER,last_read INTEGER,recent_visible INTEGER,preferred_file_id TEXT);
+    db.execute_batch(&format!("CREATE TEMP TABLE user_positions(content_key TEXT PRIMARY KEY,position_utf8 INTEGER,last_read INTEGER,recent_visible INTEGER,preferred_file_id TEXT);
     CREATE TEMP VIEW ranked_library_sources AS
     SELECT f.id file_id,fi.content_sha256,
-      ROW_NUMBER() OVER (PARTITION BY fi.content_sha256 ORDER BY COALESCE(p.preferred_file_id=f.id,0) DESC,f.id) source_rank
+      ROW_NUMBER() OVER (PARTITION BY fi.content_sha256 ORDER BY {source_order}) source_rank
     FROM main.library_files f JOIN file_identities fi ON fi.file_id=f.id
     LEFT JOIN user_positions p ON p.content_key=fi.content_sha256;
     CREATE TEMP VIEW reading_content_positions AS SELECT content_key content_sha256 FROM user_positions WHERE last_read>0;
@@ -66,7 +66,7 @@ pub(crate) fn initialize(db: &Connection) -> Result<()> {
     UNION ALL SELECT o.book_id,o.start_utf8,o.title,o.level,o.start_char_count,o.body_char_count FROM chapter_overrides o WHERE o.excluded=0 AND NOT EXISTS(SELECT 1 FROM import_chapters a WHERE a.book_id=o.book_id AND a.start_utf8=o.start_utf8);
     CREATE TEMP TABLE statistics_preferences(singleton INTEGER,enabled INTEGER,generation INTEGER);
     INSERT INTO statistics_preferences VALUES(1,1,0);
-    CREATE TEMP TABLE reading_activity(id TEXT PRIMARY KEY,session_id TEXT,book_id TEXT,content_key TEXT,title TEXT,device_id TEXT,started_ms INTEGER,ended_ms INTEGER,local_day INTEGER,utc_offset_seconds INTEGER,preview INTEGER,exposures TEXT,visit_id TEXT,deleted INTEGER DEFAULT 0);")?;
+    CREATE TEMP TABLE reading_activity(id TEXT PRIMARY KEY,session_id TEXT,book_id TEXT,content_key TEXT,title TEXT,device_id TEXT,started_ms INTEGER,ended_ms INTEGER,local_day INTEGER,utc_offset_seconds INTEGER,preview INTEGER,exposures TEXT,visit_id TEXT,deleted INTEGER DEFAULT 0);", source_order = crate::library::bookshelf::PREFERRED_SOURCE_ORDER))?;
     Ok(())
 }
 fn apply(db: &mut Connection, value: &UserProjection) -> Result<()> {

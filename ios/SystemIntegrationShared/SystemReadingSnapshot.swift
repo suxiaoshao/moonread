@@ -57,8 +57,11 @@ struct SystemReadingSnapshotFile: Sendable {
         guard data.count <= Self.maximumBytes else { throw CocoaError(.fileReadTooLarge) }
         let snapshot = try JSONDecoder().decode(SystemReadingSnapshot.self, from: data)
         guard snapshot.schemaVersion == SystemReadingSnapshot.currentVersion else { throw CocoaError(.coderReadCorrupt) }
+        let ids = Set(snapshot.books.map(\.id))
+        guard ids.count == snapshot.books.count, snapshot.recentIDs.allSatisfy(ids.contains) else { throw CocoaError(.coderReadCorrupt) }
         return snapshot
     }
+    #if !MOONREAD_WIDGET
     func publish(_ snapshot: SystemReadingSnapshot) throws {
         for book in snapshot.books {
             guard book.title.utf8.count <= 1024, (book.author?.utf8.count ?? 0) <= 1024,
@@ -72,4 +75,5 @@ struct SystemReadingSnapshotFile: Sendable {
         // same protection applies to the newly published inode, not only its parent.
         try data.write(to: url, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     }
+    #endif
 }

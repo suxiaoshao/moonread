@@ -69,4 +69,34 @@ import XCTest
         XCTAssertEqual(session.error, SystemReadingRouteError.contentChanged.errorDescription)
         await session.leave().value
     }
+    func testSystemBookQueryUsesOnlyMetadataAndExplicitSelectionSurvivesAutomaticExclusion() async throws {
+        let first = SystemReadingSnapshot.Book(id: "book:" + String(repeating: "a", count: 64), title: "合成甲", author: "合成作者", tags: ["远航"], availability: .available, sourceCount: 1, naturalOrdinal: 1, progress: nil, chapterLabel: nil, recentRank: nil, allowsAutomaticExposure: false)
+        let second = SystemReadingSnapshot.Book(id: "book:" + String(repeating: "b", count: 64), title: "合成乙", author: nil, tags: [], availability: .reconnectRequired, sourceCount: 1, naturalOrdinal: 0, progress: nil, chapterLabel: nil, recentRank: 0, allowsAutomaticExposure: true)
+        let snapshot = SystemReadingSnapshot(storeScope: "test", books: [first, second], recentIDs: [second.id], exposurePolicy: .init(systemSearchEnabled: false, excludedShelfIDs: []))
+        let query = SystemBookQuery(readSnapshot: { snapshot })
+        let match = try await query.entities(matching: "远航")
+        XCTAssertEqual(match.map(\.id), [first.id])
+        let explicit = try await query.entities(for: [first.id, "not-present"])
+        XCTAssertEqual(explicit.map(\.id), [first.id])
+        let suggested = try await query.suggestedEntities()
+        XCTAssertEqual(suggested.map(\.id), [second.id])
+        let missing = SystemBookQuery(readSnapshot: { throw CocoaError(.fileReadNoPermission) })
+        do { _ = try await missing.suggestedEntities(); XCTFail("Unreadable snapshots must not manufacture a book") } catch { }
+    }
+    func testIntentHandoffIsOneShotAndStatisticsBoundsUseLocalCalendar() throws {
+        try SystemReadingIntentDelivery.submit(.resume)
+        try SystemReadingIntentDelivery.submit(.book("book:" + String(repeating: "c", count: 64)))
+        XCTAssertEqual(SystemReadingIntentDelivery.take(), .book("book:" + String(repeating: "c", count: 64)))
+        XCTAssertNil(SystemReadingIntentDelivery.take())
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 8 * 3600)!
+        calendar.firstWeekday = 2
+        let date = calendar.date(from: DateComponents(year: 2026, month: 10, day: 25, hour: 0, minute: 10))!
+        let today = SystemStatisticsPeriod.today.bounds(now: date, calendar: calendar)
+        let week = SystemStatisticsPeriod.week.bounds(now: date, calendar: calendar)
+        XCTAssertEqual(today.lowerBound, today.upperBound)
+        XCTAssertEqual(week.upperBound, today.upperBound)
+        XCTAssertEqual(week.upperBound - week.lowerBound, 6)
+    }
+
 }

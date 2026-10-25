@@ -269,6 +269,16 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		7C27F97BAC8E4D479B8F5F0C /* SystemReadingRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDF91CB9E9184CA3BF5287FC /* SystemReadingRouter.swift */; };
 		B6A0D28AA3B246EAB1783AED /* SystemReadingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 596EAC3B58A8431E8BF449F6; };
 		D720FF62FEF54991885AE8D3 /* SystemReading.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 5F785348B3B2446E889C0D8F; };
+		5CFA5E7E0D364B50B1EF3A9C = {isa = PBXBuildFile; fileRef = 62E1DE86580044548A03C0AA; settings = {ATTRIBUTES = (RemoveHeadersOnCopy,);}; };
+		DB1FD46172074EF9A1016624 /* MoonreadWidgets.swift */ = {isa = PBXBuildFile; fileRef = F790FD22094446BB9D2C8798; };
+		DD96C5C6D7644E1BA3EC0764 /* SystemReadingEntities.swift */ = {isa = PBXBuildFile; fileRef = D7ABB22416B94A80A0741820; };
+		174FF1DA006A482FA274E861 /* SystemReadingEntities.swift */ = {isa = PBXBuildFile; fileRef = D7ABB22416B94A80A0741820; };
+		B56C2D6C1C9A4E179056846B /* SystemReadingSnapshot.swift */ = {isa = PBXBuildFile; fileRef = 3E155E91D8B34C16AFEB2F94; };
+		010EFBB7F2A045A3A50FBC84 /* SystemReading.xcstrings */ = {isa = PBXBuildFile; fileRef = 5F785348B3B2446E889C0D8F; };
+		F02F8D5E092D48BEBAF2CBBB /* Localizable.xcstrings */ = {isa = PBXBuildFile; fileRef = 751125BDDAAA459CA29C7F1D; };
+		1B506102BF4B408999F282DE /* SystemReadingIntents.swift */ = {isa = PBXBuildFile; fileRef = F756EB1D8CB74351A3734567; };
+		3A970D96D5C34B91AD51685B /* SystemReadingDonations.swift */ = {isa = PBXBuildFile; fileRef = 85EA54F55F414881875C8E6B; };
+		005AC664DBAF46D4BDDD504A /* AppShortcuts.xcstrings */ = {isa = PBXBuildFile; fileRef = E82B5CEE6CCE405993FF6B63; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -287,10 +297,12 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 			remoteInfo = Moonread;
 		};
 		72DACA4B8D1E5727AAF77721 /* Share Target Proxy */ = { isa = PBXContainerItemProxy; containerPortal = A90000000000000000000001; proxyType = 1; remoteGlobalIDString = 04C2476D974D589BB2C7513F; remoteInfo = MoonreadShare; };
+		37E2CAB8FF304630B382A542 = {isa = PBXContainerItemProxy; containerPortal = A90000000000000000000001; proxyType = 1; remoteGlobalIDString = AF656EF2055C4EDC80ED01F9; remoteInfo = MoonreadWidgets; };
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		6502577E2278509DB864FF63 /* Embed App Extensions */ = { isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (5A465E51B64F5138BF6CF41C,); name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0; };
+		6502577E2278509DB864FF63 /* Embed App Extensions */ = { isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (
+                5CFA5E7E0D364B50B1EF3A9C /* Embed MoonreadWidgets */,5A465E51B64F5138BF6CF41C,); name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -553,6 +565,15 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		CDF91CB9E9184CA3BF5287FC /* SystemReadingRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemReadingRouter.swift; sourceTree = "<group>"; };
 		596EAC3B58A8431E8BF449F6 /* SystemReadingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemReadingTests.swift; sourceTree = "<group>"; };
 		5F785348B3B2446E889C0D8F /* SystemReading.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = SystemReading.xcstrings; sourceTree = "<group>"; };
+		62E1DE86580044548A03C0AA /* MoonreadWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MoonreadWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F790FD22094446BB9D2C8798 /* MoonreadWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadWidgets.swift"; sourceTree = "<group>"; };
+		47DCD4CE1E2440B39068C495 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info.plist"; sourceTree = "<group>"; };
+		F52184EFA80149EE9D516ADF /* MoonreadWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "MoonreadWidgets.entitlements"; sourceTree = "<group>"; };
+		D7ABB22416B94A80A0741820 /* SystemReadingEntities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemReadingEntities.swift"; sourceTree = "<group>"; };
+		751125BDDAAA459CA29C7F1D /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = "Localizable.xcstrings"; sourceTree = "<group>"; };
+		F756EB1D8CB74351A3734567 /* SystemReadingIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemReadingIntents.swift"; sourceTree = "<group>"; };
+		85EA54F55F414881875C8E6B /* SystemReadingDonations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemReadingDonations.swift"; sourceTree = "<group>"; };
+		E82B5CEE6CCE405993FF6B63 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = "AppShortcuts.xcstrings"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -583,12 +604,14 @@ D35000000000000000000001,
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C3E05493EB5F54BB9BFA12EA /* Share Frameworks */ = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		3FC6D6EDD8194024ADBFC58B = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		A50000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
+                E983876392444DAC9F3E2609 /* MoonreadWidgets */,
 				A1DE5DFDB223BC4D95971F4F /* SystemIntegration */,
 				A2E6EE44E97CC74D11961166 /* SystemIntegrationShared */,
                 C14A00000000000000000001,
@@ -605,6 +628,7 @@ D35000000000000000000001,
 		A50000000000000000000002 /* Moonread */ = {
 			isa = PBXGroup;
 			children = (
+                751125BDDAAA459CA29C7F1D /* Localizable.xcstrings */,
                 AP2000000000000000000001,
                 OS2000000000000000000001,
 				C69F370A1A8A46EDAB23B47D /* App */,
@@ -651,6 +675,7 @@ A20000000000000000000009 /* MoonreadUITests.swift */,
 		A50000000000000000000005 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+                62E1DE86580044548A03C0AA /* MoonreadWidgets.appex */,
                 44920FD9D2A9541EA0D84A3B,
 				A2000000000000000000000A /* Moonread.app */,
 				A2000000000000000000000B /* MoonreadUITests-Runner.app */,
@@ -966,13 +991,21 @@ F01900000000000000000002,
                 C22000000000000000000004 /* UserDataTestFixtures.swift */,
             ); path = Fixtures; sourceTree = "<group>"; };
 		A1DE5DFDB223BC4D95971F4F /* SystemIntegration */ = {isa = PBXGroup; children = (
+                E82B5CEE6CCE405993FF6B63 /* AppShortcuts.xcstrings */,
+                85EA54F55F414881875C8E6B /* SystemReadingDonations.swift */,
+                F756EB1D8CB74351A3734567 /* SystemReadingIntents.swift */,
 				21B61C6DDA05486692B7E164 /* SystemReadingCatalog.swift */,
 				CDF91CB9E9184CA3BF5287FC /* SystemReadingRouter.swift */,
 			); path = Moonread/SystemIntegration; sourceTree = "<group>"; };
 		A2E6EE44E97CC74D11961166 /* SystemIntegrationShared */ = {isa = PBXGroup; children = (
+                D7ABB22416B94A80A0741820 /* SystemReadingEntities.swift */,
                 5F785348B3B2446E889C0D8F /* SystemReading.xcstrings */,
 				3E155E91D8B34C16AFEB2F94 /* SystemReadingSnapshot.swift */,
 			); path = SystemIntegrationShared; sourceTree = "<group>"; };
+		E983876392444DAC9F3E2609 /* MoonreadWidgets */ = {isa = PBXGroup; children = (
+                F52184EFA80149EE9D516ADF /* MoonreadWidgets.entitlements */,
+                47DCD4CE1E2440B39068C495 /* Info.plist */,
+                F790FD22094446BB9D2C8798 /* MoonreadWidgets.swift */,); path = MoonreadWidgets; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -989,6 +1022,7 @@ F01900000000000000000002,
 			buildRules = (
 			);
 			dependencies = (
+                F1C19004BB32432C8F23B23B,
                 24EC65B9F10B59B19FF49005,
 			);
 			packageProductDependencies = (D34000000000000000000001,D34000000000000000000002,D34000000000000000000003,D34000000000000000000004,D34000000000000000000006,D34000000000000000000007,D34000000000000000000008,FB4000000000000000000001);
@@ -1034,6 +1068,7 @@ F01900000000000000000002,
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		04C2476D974D589BB2C7513F /* MoonreadShare */ = { isa = PBXNativeTarget; buildConfigurationList = B0A8488C9CD75E49AB087C16; buildPhases = (67F838CFAF2F527F8C8EE359,C3E05493EB5F54BB9BFA12EA,CA0C3527F96E5A318EE28FC7,); buildRules = (); dependencies = (); name = MoonreadShare; productName = MoonreadShare; productReference = 44920FD9D2A9541EA0D84A3B; productType = "com.apple.product-type.app-extension"; };
+		AF656EF2055C4EDC80ED01F9 /* MoonreadWidgets */ = {isa = PBXNativeTarget; buildConfigurationList = 0E91A9D300784A34AE232948; buildPhases = (D68B24CD446A49FDAD76CC77,3FC6D6EDD8194024ADBFC58B,EC1986FEC42C4A9A940AE0B0,); buildRules = (); dependencies = (); name = MoonreadWidgets; productName = MoonreadWidgets; productReference = 62E1DE86580044548A03C0AA; productType = "com.apple.product-type.app-extension"; };
 /* End PBXNativeTarget section */
 
 /* Begin PBXVariantGroup section */
@@ -1047,6 +1082,7 @@ F01900000000000000000002,
 				BuildIndependentTargetsInParallel = 1;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
+                    AF656EF2055C4EDC80ED01F9 = { CreatedOnToolsVersion = 27.1; SystemCapabilities = {com.apple.ApplicationGroups.iOS = {enabled = 1;};}; };
                     04C2476D974D589BB2C7513F = { CreatedOnToolsVersion = 27.0; SystemCapabilities = {com.apple.ApplicationGroups.iOS = {enabled = 1;};}; };
 					A80000000000000000000001 = {
 						CreatedOnToolsVersion = 27.0;
@@ -1083,6 +1119,7 @@ F01900000000000000000002,
 			projectRoot = "";
             packageReferences = (AP3000000000000000000001,D33000000000000000000001,FB3000000000000000000001);
 			targets = (
+                AF656EF2055C4EDC80ED01F9 /* MoonreadWidgets */,
                 04C2476D974D589BB2C7513F,
 				A80000000000000000000001 /* Moonread */,
 				A80000000000000000000002 /* MoonreadUITests */,
@@ -1096,6 +1133,7 @@ F01900000000000000000002,
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                005AC664DBAF46D4BDDD504A /* AppShortcuts.xcstrings */,
                 D720FF62FEF54991885AE8D3 /* SystemReading.xcstrings in Resources */,
                 D50610000000000000000005 /* DataManagement.xcstrings in Resources */,
                 B39A10000000000000000002 /* ShelfRecovery.xcstrings in Resources */,
@@ -1130,6 +1168,9 @@ E51000000000000000000009,D41000000000000000000001,
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CA0C3527F96E5A318EE28FC7 /* Share Resources */ = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (C14A00000000000000000003,395542A1DDDA57A6B2AC983D,E4FBAEE53BD05822ADA6F920,); runOnlyForDeploymentPostprocessing = 0; };
+		EC1986FEC42C4A9A940AE0B0 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (
+                F02F8D5E092D48BEBAF2CBBB /* Localizable.xcstrings */,
+                010EFBB7F2A045A3A50FBC84 /* SystemReading.xcstrings */,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -1159,6 +1200,9 @@ E51000000000000000000009,D41000000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                3A970D96D5C34B91AD51685B /* SystemReadingDonations.swift */,
+                1B506102BF4B408999F282DE /* SystemReadingIntents.swift */,
+                DD96C5C6D7644E1BA3EC0764 /* SystemReadingEntities.swift */,
 				7C27F97BAC8E4D479B8F5F0C /* SystemReadingRouter.swift in Sources */,
 				D96AA4CE1D4740298CEB37E3 /* SystemReadingCatalog.swift in Sources */,
 				7B9630E623C04ED8BB311275 /* SystemReadingSnapshot.swift in Sources */,
@@ -1381,6 +1425,10 @@ F01900000000000000000001,
                 9F8DE62685C2F88403C6ECD7,
             ); runOnlyForDeploymentPostprocessing = 0; };
 		67F838CFAF2F527F8C8EE359 /* Share Sources */ = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (906A74D1BD2A5FAD9BE897E1,0804D0B539CB5AB19A9DB8FF,); runOnlyForDeploymentPostprocessing = 0; };
+		D68B24CD446A49FDAD76CC77 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
+                B56C2D6C1C9A4E179056846B /* SystemReadingSnapshot.swift */,
+                174FF1DA006A482FA274E861 /* SystemReadingEntities.swift */,
+                DB1FD46172074EF9A1016624 /* MoonreadWidgets.swift */,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -1395,6 +1443,7 @@ F01900000000000000000001,
 			targetProxy = A30000000000000000000003 /* PBXContainerItemProxy */;
 		};
 		24EC65B9F10B59B19FF49005 /* Share Target Dependency */ = { isa = PBXTargetDependency; target = 04C2476D974D589BB2C7513F; targetProxy = 72DACA4B8D1E5727AAF77721; };
+		F1C19004BB32432C8F23B23B = {isa = PBXTargetDependency; target = AF656EF2055C4EDC80ED01F9; targetProxy = 37E2CAB8FF304630B382A542; };
 /* End PBXTargetDependency section */
 
 
@@ -1648,6 +1697,40 @@ SWIFT_STRICT_CONCURRENCY = complete;
 SWIFT_VERSION = 6.0;
 TARGETED_DEVICE_FAMILY = "1,2";
 }; name = Release; };
+		D169C1A3633B4A5AA938943E = {isa = XCBuildConfiguration; buildSettings = {
+APPLICATION_EXTENSION_API_ONLY = YES;
+CODE_SIGN_STYLE = Automatic;
+CODE_SIGN_ENTITLEMENTS = MoonreadWidgets/MoonreadWidgets.entitlements;
+GENERATE_INFOPLIST_FILE = YES;
+INFOPLIST_FILE = MoonreadWidgets/Info.plist;
+LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks",);
+PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.Moonread.Widgets;
+PRODUCT_NAME = "$(TARGET_NAME)";
+SKIP_INSTALL = YES;
+SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) MOONREAD_WIDGET";
+SWIFT_EMIT_LOC_STRINGS = YES;
+SWIFT_STRICT_CONCURRENCY = complete;
+SWIFT_VERSION = 6.0;
+TARGETED_DEVICE_FAMILY = "1,2";
+}; name = Debug; };
+		9731E3AA1E41424182A5C9A4 = {isa = XCBuildConfiguration; buildSettings = {
+APPLICATION_EXTENSION_API_ONLY = YES;
+CODE_SIGN_STYLE = Automatic;
+CODE_SIGN_ENTITLEMENTS = MoonreadWidgets/MoonreadWidgets.entitlements;
+GENERATE_INFOPLIST_FILE = YES;
+INFOPLIST_FILE = MoonreadWidgets/Info.plist;
+LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks",);
+PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.Moonread.Widgets;
+PRODUCT_NAME = "$(TARGET_NAME)";
+SKIP_INSTALL = YES;
+SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) MOONREAD_WIDGET";
+SWIFT_EMIT_LOC_STRINGS = YES;
+SWIFT_STRICT_CONCURRENCY = complete;
+SWIFT_VERSION = 6.0;
+TARGETED_DEVICE_FAMILY = "1,2";
+}; name = Release; };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1688,6 +1771,7 @@ TARGETED_DEVICE_FAMILY = "1,2";
 			defaultConfigurationName = Release;
 		};
 		B0A8488C9CD75E49AB087C16 /* Share Build Configurations */ = { isa = XCConfigurationList; buildConfigurations = (1FF0DD6CEC3B5A399A673FEA,5F615DEDBAA3557AB5E6B48D,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		0E91A9D300784A34AE232948 = {isa = XCConfigurationList; buildConfigurations = (D169C1A3633B4A5AA938943E,9731E3AA1E41424182A5C9A4,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 	};
 	rootObject = A90000000000000000000001 /* Project object */;
