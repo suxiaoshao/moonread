@@ -11,6 +11,7 @@ extension UTType { static let moonreadBackup = UTType(exportedAs: "dev.moonread.
     private(set) var loading = false
     private(set) var loaded = false
     private var inventoryLoad: Task<Void, Never>?
+    private var inventoryRefreshRequested = false
     var working = ""
     var error: String?
     var message: String?
@@ -46,18 +47,25 @@ extension UTType { static let moonreadBackup = UTType(exportedAs: "dev.moonread.
         }
     }
     func load() async {
-        if let inventoryLoad { await inventoryLoad.value; return }
+        if let inventoryLoad {
+            inventoryRefreshRequested = true
+            await inventoryLoad.value
+            return
+        }
         loading = true; error = nil
         let task = Task { @MainActor in
-            defer { loading = false; loaded = true }
-            do {
-                updateInventory(try await service.readingDataInventory())
-                cache = try await service.cacheSummary()
-            } catch { self.error = ReaderMessages.error(error) }
+            defer { inventoryLoad = nil; loading = false; loaded = true }
+            repeat {
+                inventoryRefreshRequested = false
+                error = nil
+                do {
+                    updateInventory(try await service.readingDataInventory())
+                    cache = try await service.cacheSummary()
+                } catch { self.error = ReaderMessages.error(error) }
+            } while inventoryRefreshRequested
         }
         inventoryLoad = task
         await task.value
-        inventoryLoad = nil
     }
     func updateInventory(_ value: ReadingDataInventory) {
             loaded = true
