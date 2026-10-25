@@ -17,7 +17,7 @@
           <label class="choice" title="{{ palette.name[section.lang] }}">
             <input type="radio" name="palette" value="{{ palette.id }}" aria-label="{{ palette.name[section.lang] }}"{% if palette.id == initial.id %} checked{% endif %}>
             <span class="palette-swatch" aria-hidden="true" style="background:{{ palette.colors.paper }};color:{{ palette.colors.ink }}">{% if zh %}文{% else %}Aa{% endif %}</span>
-            <span class="choice-name">{{ palette.name[section.lang] }}</span>
+            <span class="choice-name">{{ palette.name[section.lang] | split(pat=" · ") | first }}</span>
           </label>
         {% endif %}{% endfor %}
         </div>
