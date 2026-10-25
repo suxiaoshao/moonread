@@ -7,21 +7,21 @@
 - [架构与规则归属](engineering/architecture.md)：Rust/Swift 单一 owner、正文身份、坐标与持久化演进。
 - [开发环境与分支协作](engineering/development.md)、[仓库与持续集成](engineering/repository.md)、[iOS 支持策略](engineering/ios-support.md)。
 - [性能设计与待优化](engineering/performance.md)、[测试原则与验证记录](engineering/verification.md)。
-- [CloudKit 发布核对](data/cloudkit-release-checklist.md)、[首发准备历史材料](plans/app-store-launch.md)（不是当前待办）。
+- [CloudKit 发布核对](data/cloudkit-release-checklist.md)、[发布与 TestFlight](engineering/release.md)。
 
 ## 数据与同步
 
 - [存储、文件书架与正文身份](data/README.md)。
-- [同步、冲突与删除](data/sync.md)、[iCloud 接入实施](data/icloud-implementation.md)、[最近阅读恢复](data/recent-reading-restoration.md)。
+- [同步、冲突与删除](data/sync.md)、[备份与缓存清理](data/backup-and-cleanup.md)、[最近阅读恢复](data/recent-reading-restoration.md)。
 
 ## 阅读与界面
 
 - [正文准备与编码](reader/import.md)、[排版与阅读交互](reader/reading.md)、[目录/搜索/批注与导航](reader/tools.md)。
 - [首页与书架](design/library.md)、[小说详情](design/book-details.md)、[阅读统计](design/statistics.md)、[阅读弹层](design/reader-panels.md)。
 - [当前设置页](design/settings.md)、[设置信息架构与新增入口规则](design/settings-information-architecture.md)、[系统集成设计](design/ios-integration.md)。
-- [主题入口](design/appearance.md)、[主题模型与纹理](design/themes.md)、[界面样式归属](design/ui-inventory.md)、[动效与月亮](design/motion-and-moon.md)。
+- [主题模型与纹理](design/themes.md)、[界面样式归属](design/ui-inventory.md)、[动效与月亮](design/motion-and-moon.md)。
 - [应用图标](design/app-icon.md)、[配色研究图](design/palette-study.svg)、[本地化](design/localization.md)。
-- 已实施、待收口的产品说明：[首次引导](plans/onboarding.md)、[支持月读](plans/tip-jar.md)；历史实施记录：[最近删除](plans/library-trash.md)、[空行显示投影](plans/reader-blank-lines.md)。
+- [首次引导](design/onboarding.md)、[支持月读](design/tip-jar.md)。
 
 ## AI
 

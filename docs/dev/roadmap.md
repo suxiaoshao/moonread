@@ -27,7 +27,7 @@
 
 ## 书架与数据源
 
-统一真实文件夹书架及本地文件管理已实现。iCloud Documents 原文接入与 CloudKit SHA 阅读数据同步代码已加入；本地验证通过不代表真实云端验收，当前限制见[接入实施](data/icloud-implementation.md)。
+统一真实文件夹书架及本地文件管理已实现。iCloud Documents 原文接入与 CloudKit SHA 阅读数据同步代码已加入；本地验证通过不代表真实云端验收，当前限制见[接入实施](data/sync.md)。
 
 - [数据与来源](data/README.md)：当前存储、文件树、正文身份与真实文件操作。
 - [同步设计](data/sync.md)：应用创建的固定 iCloud 目录与 CloudKit 阅读数据的分工。

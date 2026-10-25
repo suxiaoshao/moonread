@@ -1,6 +1,6 @@
 # 主题与产品化参考
 
-研究日期：2026-09-27。本轮查阅本地 gpui-component 源码、Apple 官方材料和 iOS 开发者原文；未运行参考项目，也未据此更换 Moonread 技术栈。产品提案入口见[外观与产品化](../design/appearance.md)。
+研究日期：2026-09-27。本轮查阅本地 gpui-component 源码、Apple 官方材料和 iOS 开发者原文；未运行参考项目，也未据此更换 Moonread 技术栈。产品提案入口见[外观与产品化](../design/themes.md)。
 
 ## gpui-component：借鉴类型分工
 

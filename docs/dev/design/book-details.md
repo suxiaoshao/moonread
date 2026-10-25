@@ -55,7 +55,7 @@ PhotosPicker/系统文件选择器取得图片后，由 ImageIO 校正方向并�
 
 作者、简介、标签、状态与封面跟随阅读数据同步开关，原 TXT 继续走 iCloud Documents。字段修订与标签成员合并复用已有同步机制。Swift 管理图片与平台传输，Rust 管理正文身份与计算，SwiftData 业务层管理字段、引用与合并。
 
-平台依据：[Apple 文件目录](https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/FileSystemOverview/FileSystemOverview.html)、[PhotosPickerItem](https://developer.apple.com/documentation/photosui/photospickeritem)、[SwiftData 外部存储](https://developer.apple.com/documentation/swiftdata/schema/attribute/option/externalstorage)。云端边界见[iCloud 接入实施](../data/icloud-implementation.md)。
+平台依据：[Apple 文件目录](https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/FileSystemOverview/FileSystemOverview.html)、[PhotosPickerItem](https://developer.apple.com/documentation/photosui/photospickeritem)、[SwiftData 外部存储](https://developer.apple.com/documentation/swiftdata/schema/attribute/option/externalstorage)。云端边界见[iCloud 接入实施](../data/sync.md)。
 
 ## 入口统一
 

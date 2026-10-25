@@ -1,6 +1,6 @@
 # iCloud 文件与阅读数据同步
 
-更新：2026-10-02。用户数据已正式切换为 SwiftData + CloudKit 自动同步；正文和文件索引保留 Rust，文件交接规则不变，真实云容器和跨设备联调尚未完成，限制见[接入实施](icloud-implementation.md)。原始 TXT 与真实目录使用 iCloud Documents，设置和 SHA 下的阅读数据使用 CloudKit；不把小说原件放入 CKAsset。统一书架模型见[数据与来源](README.md)。
+更新：2026-10-02。用户数据已正式切换为 SwiftData + CloudKit 自动同步；正文和文件索引保留 Rust，文件交接规则不变，真实云容器和跨设备联调尚未完成，限制见[接入实施](sync.md)。原始 TXT 与真实目录使用 iCloud Documents，设置和 SHA 下的阅读数据使用 CloudKit；不把小说原件放入 CKAsset。统一书架模型见[数据与来源](README.md)。
 
 ## 两条同步边界
 
@@ -107,7 +107,7 @@ SwiftData 的 `UserDataStore`（ModelActor）是用户数据持久化入口。`A
 
 系统调度自动同步；界面根据 `NSPersistentCloudKitContainer` 事件显示运行状态及成功时间，不把一次本地保存声称为同步完成。SwiftData 没有本项目使用的公开强制同步接口，界面显示系统自动同步，不保留误导性的“立即同步”按钮。
 
-启停后旧容器的在途操作、账户切换期间的系统镜像隔离、附件自动同步及两设备离线并发尚未实测。相关验证条件见[接入实施](icloud-implementation.md)。
+启停后旧容器的在途操作、账户切换期间的系统镜像隔离、附件自动同步及两设备离线并发尚未实测。相关验证条件见[接入实施](sync.md)。
 
 ## 验证边界
 

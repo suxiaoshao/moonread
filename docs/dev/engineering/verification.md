@@ -973,7 +973,7 @@ Tab 下方空白带：iOS 27 原生视口诊断确认，书架的 `UICollectionV
 
 文件选择交接与加载时机：5 项原生回归和 2 项 UI 回归通过。覆盖选择器先清空展示状态再交付 URL、进入目录后扫描继续运行、取消不重放旧选择、TXT 结果直接启动导入及失败重试、失败项授权清理、下载取消与迟到回调保护；UI 覆盖目录/全部小说/搜索加载与取消、封面内真实比例及稳定布局。证据：`build/LibraryLoadingHandoff.xcresult`、`build/library-loading-handoff.log`。真机覆盖安装成功，保留原有书架与数据；通过 iPhone 镜像从书架管理选择已授权的 iCloud Drive 目录后，直接进入包含 389 本小说的目录，不再需要再次打开/取消选择器来启动任务；随后重新打开并取消，保持在管理页，无旧动作跳转。该目录已有缓存，首次无缓存的等待由暂停扫描的原生回归和慢查询 UI 回归验证，未将它表述为真机冷扫描耗时测量。
 
-iCloud 本地接入：iOS 27 无签名构建通过，3 项原生回归通过，覆盖复制中断保留原件/恢复收据、同名明确替换与复制时源变动保护、两阶段交接及暂停正文任务来源重绑；测试使用真实临时文件和替代 ubiquity 搬运函数，**不等于 iCloud 上传成功**。证据：`build/CloudHandoffFinal.xcresult`；交接后目标被删除不自动恢复的补充断言在 `build/CloudHandoffDeletion.xcresult` 通过。工程 entitlements、Info.plist 和项目文件语法检查通过；该轮使用 Personal Team 本地包；当前云签名及安装见上方真机交付，真实两设备同步、离线恢复和账户切换仍未验收，条件见[接入实施](../data/icloud-implementation.md)。
+iCloud 本地接入：iOS 27 无签名构建通过，3 项原生回归通过，覆盖复制中断保留原件/恢复收据、同名明确替换与复制时源变动保护、两阶段交接及暂停正文任务来源重绑；测试使用真实临时文件和替代 ubiquity 搬运函数，**不等于 iCloud 上传成功**。证据：`build/CloudHandoffFinal.xcresult`；交接后目标被删除不自动恢复的补充断言在 `build/CloudHandoffDeletion.xcresult` 通过。工程 entitlements、Info.plist 和项目文件语法检查通过；该轮使用 Personal Team 本地包；当前云签名及安装见上方真机交付，真实两设备同步、离线恢复和账户切换仍未验收，条件见[接入实施](../data/sync.md)。
 
 | 范围 | 已取得的证据 | 本地结果 |
 | --- | --- | --- |
@@ -1850,3 +1850,7 @@ C 线专用 `Moonread-LibraryTrash-C-iCloud`（iOS 27.0）与 B 分开；用户�
 - 正向 UI 使用隔离合成统计与 DEBUG 60 倍测试时钟，仍走 ReadingClock 的前台／正文／闲置扣除与实际退出保存链路，不改系统时间；退出回书架出现真实 StoreKit 评分框，仅点“以后”，没有提交评分。普通运行和 Release 不加速。系统评分视图按五颗星定位；重启从“继续阅读”进入后返回首页也算正常书架落点。
 - 设置链接的实际 Safari 地址包含正确 App ID 和 `action=write-review`；当前网络的页面最终跳转到中国区“今日”，未验证商店内评分编辑页。Apple 美区公开 lookup 的 App ID、名称和 Bundle ID 与月读相符；未擅改 issue 的目标 URL、账号或发行地区，也未操作手机。
 - 日志与截图：`build/ReviewPrompt/build-final.log`、`final.log`（10 项单测与设置 UI）、`prompt-context.log`（评分 UI 修正定位后单独重跑通过）、`verification.json`（12 项最新结果）、`screens/overview.png`；页面响应见 `store-http.log`、`store-lookup-us.json`。
+
+## 2026-10-17 CloudKit schema 部署
+
+状态：2026-10-17 开发 schema 已按下文 DEBUG 入口初始化，开发者本人在 Console 执行 Deploy Schema Changes 部署到生产；部署后架构师只读核对 Production：6 个记录类型的字段与索引和 Development 一致，封面为 asset，数据类型、索引、权限的待部署差异均为 0。未读取私人记录。真机生产同步（写入、读回、修改/删除、封面、跨设备）另按第 5 条验收。1.0.0 起生产 schema 只增不删。
