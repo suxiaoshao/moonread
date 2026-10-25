@@ -1,4 +1,6 @@
-# App Store 上架准备
+# App Store 首发准备（历史材料）
+
+> 本文保存首发前的调查与草稿，不是当前待办。App 已发布，隐私清单、政策入口与中国大陆店面关闭 AI 的逻辑均已实现；下文 No Apps、缺少隐私清单、待建商品等描述只表示当时现场。当前政策正文以 docs/site 为准；销售范围、ICP 和审核状态须以对应日期的实际核验为准，不能从本文推断。有效流程将在文档收口时提炼。
 
 状态：第一阶段，只读核查与材料草案；未创建 App、注册标识、设置价格、上传构建或提交审核。核查日期：2026-10-16。打赏产品决定见[打赏方案](tip-jar.md)，本文不重新决定产品范围。
 
@@ -169,7 +171,7 @@ Apple 的“收集”关注离开设备并被开发者/伙伴保留超过实时�
 
 | 联网路径 | 当前代码证据与触发方式 | 对未来无 AI 版本的含义 |
 | --- | --- | --- |
-| 自身 iCloud 书架与云文件 | [CloudLibrary](../../../ios/Moonread/Library/CloudLibrary.swift) 使用 ubiquity 容器、`NSMetadataQuery`、`setUbiquitous`；[ReaderService](../../../ios/Moonread/Data/ReaderService.swift) 跟踪云文件下载。系统负责文件同步/下载，应用访问真实云目录 | 保留 iCloud 书架即仍有联网能力；关闭 AI 不影响此路径 |
+| 自身 iCloud 书架与云文件 | [CloudLibrary](../../../ios/Moonread/Library/CloudLibrary.swift) 使用 ubiquity 容器、`NSMetadataQuery`、`setUbiquitous`；[现 AppDataService（当时名为 ReaderService）](../../../ios/Moonread/Data/AppDataService.swift) 跟踪云文件下载。系统负责文件同步/下载，应用访问真实云目录 | 保留 iCloud 书架即仍有联网能力；关闭 AI 不影响此路径 |
 | 阅读数据与设置同步、账号状态及推送 | [CloudSync](../../../ios/Moonread/Data/CloudSync.swift) 查询 `CKContainer` 账号与用户记录；[UserDataService](../../../ios/Moonread/Data/UserDataService.swift) 使用 SwiftData 私有 CloudKit 数据库；[MoonreadDelegate](../../../ios/Moonread/App/MoonreadDelegate.swift) 在支持云的构建中注册远程通知 | 独立于 AI；同步可选不等于发行包完全离线，需分别向 Apple 说明 |
 | 外部书架、导入/拖入、导出与分享 | [LibraryActions](../../../ios/Moonread/Library/LibraryActions.swift) 的文件夹/文件选择、文档导出和分享；[LibraryDrop](../../../ios/Moonread/Library/LibraryDrop.swift) 的 `loadFileRepresentation`。用户选择 iCloud Drive 或其他云文件提供者时，系统可取回或上传文件 | 非 AI 功能；这是系统/提供者联网能力，不能把所有文件操作笼统记为纯本地 |
 | 手动封面选图 | [BookInformation](../../../ios/Moonread/Books/BookInformation.swift) 支持照片选择、`loadTransferable` 及图片文件导入；照片或所选文件可能由系统从云端取回 | 与 AI 搜封面分开。本地图片编辑本身不发起网页搜索，但云照片/云文件路径可能联网 |

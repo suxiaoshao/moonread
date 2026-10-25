@@ -136,7 +136,7 @@ SwiftData 正式用户存储为 `Application Support/Moonread/user-data.store`�
 
 SQLite 不是可整体删除的纯缓存。`books`、`chunks`、`reading_blanks`、自动 `import_chapters` 与 `source_imports` 是正文派生数据，在原文件和相同解码策略仍可访问时可重建；原件暂不可访问时不得自动丢弃唯一可读缓存。`library_files` 的目录元数据可重扫，但文件 ID、`book_id` 关联及用户选择的 `decoding` 不能随重建遗失。`library_shelves.bookmark`、书架名称/ID、外部根授权不可从小说正文恢复，必须迁移保留。`import_jobs` 含暂停/继续代次、来源映射和待交接状态，不能当作可随时删除的缓存；需与 SwiftData `pending-users.store` 一起保持中断恢复契约。SwiftData 中的进度、批注、书签、统计、主题、封面，以及 AI 会话/资产、UserDefaults 偏好/许可和 Keychain 凭据均非正文可重建数据。迁移入口与降级错误见[持久化演进](../engineering/architecture.md#持久化演进与发布兼容)。
 
-Rust `books` 不再保存正式位置或最近阅读时间。`user_projection.rs` 在各计算连接中建立临时位置、元信息、事实和目录修正视图；输入来自 SwiftData，可以随时重建。`effective_chapters` 同样是临时计算视图。用户记录不依赖文件索引或正文缓存的外键级联。
+Rust `books` 不再保存正式位置或最近阅读时间。`user/projection.rs` 在各计算连接中建立临时位置、元信息、事实和目录修正视图；输入来自 SwiftData，可以随时重建。`effective_chapters` 同样是临时计算视图。用户记录不依赖文件索引或正文缓存的外键级联。
 
 首次使用本地空目录仍复制自带原创短篇；已注册内置根不会因文件被删除而再次预置。目录扫描仍只读取元数据，跳过隐藏项、包内容与符号链接；按实际目录权限工作，不主动读取整库正文。
 

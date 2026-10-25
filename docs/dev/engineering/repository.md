@@ -35,7 +35,7 @@ CI 工作流只读仓库，checkout 不保留凭据，引用的 Actions 固定�
 - 开启 squash 与 merge commit，关闭 rebase merge。功能 PR 对当前 `release/x.y` 使用 squash；发布后的 `release/x.y` → `main` 使用普通 merge。线上 hotfix 从 `main` 开 `hotfix/x.y.z`，在分支上修复、打包和提审，上线后才普通 merge 回 `main` 并打 tag，再把 `main` 合进当前 release。合并后自动删除普通开发分支；受保护的 main 与 release 分支禁止删除。合并方式由维护者选择，仓库开关不会按 PR 来源自动限制。
 - PR 合入 `release/x.y` 或 `hotfix` 分支时，GitHub 不会根据 `Closes` 自动关闭 issue。合并后需手动关闭对应 issue，评论注明合入的分支与提交，并把看板状态改为「完成」。
 - Actions 允许范围设为全部允许；仍强制引用固定到完整 SHA，默认 token 只读，不允许其创建或批准 PR。当前工作流只使用 GitHub 官方 Actions 和 Nix 安装 action。
-- 启用 Dependabot 漏洞提醒与安全更新；Cargo 和 Actions 的常规版本更新每周向当前 `release/x.y` 提出 PR，同类兼容更新分组，不自动合并；每次新开版本分支同步修改两个 `target-branch`（当前配置 `release/1.2`，待流程 PR 合并后创建并验证）。Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 hotfix 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。Nix 输入由维护者显式更新锁文件并验证。
+- 启用 Dependabot 漏洞提醒与安全更新；Cargo 和 Actions 的常规版本更新每周向当前 `release/x.y` 提出 PR，同类兼容更新分组，不自动合并；每次新开版本分支同步修改两个 `target-branch`（当前配置 `release/1.3`）。Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 hotfix 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。Nix 输入由维护者显式更新锁文件并验证。
 
 `main` 的 App 代码始终对应 App Store 最新发布版本；每个版本在 `release/x.y` 开发，正式发布后普通 merge 回 main 并打 tag（如 `v1.1`）。完整流程见[分支与协作](development.md#分支与协作)。
 
@@ -76,6 +76,6 @@ cd docs/site && zola serve
 
 测试职责、适配器例外及推送前全量单测要求统一见[测试原则](verification.md#测试原则)。
 
-MoonreadUITests 保留 U01–U19 十九条独立小样本主路径；U04 真实重启，其余不叠加重启、外观矩阵或系统选择器/菜单验证。U15 从已选文件接收边界导入；U19 经 NSItemProvider 测试适配器发布真实 ShareInbox 清单再由主 App 消费，不声称覆盖第三方宿主的分享面板。默认只附失败截图。原 008、009、105 删除，不另设每 PR 性能通道。
+MoonreadUITests 保留少量独立小样本主路径，具体清单以测试源码为准；U04 真实重启，其余不叠加重启、外观矩阵或系统选择器/菜单验证。U15 从已选文件接收边界导入；U19 经 NSItemProvider 测试适配器发布真实 ShareInbox 清单再由主 App 消费，不声称覆盖第三方宿主的分享面板。默认只附失败截图。原 008、009、105 删除，不另设每 PR 性能通道。
 
-UI 本轮由协调者安排在既有 iPhone 18 Pro 上跑一次并记录总时长；3–5 分钟是目标预算，必须以执行结果确认，不能由测试数量推断。Linux 与 iOS 单测以同一提交的 CI 结果为准。
+商店截图由独立的 opt-in StoreScreenshots 流程生成，不计入日常关键 UI 流程；入口见[商店截图](development.md#商店截图独立-debug-测试)。UI 按改动范围验证并记录实际用时，不能由测试数量推断全量预算。Linux 与 iOS 单测以同一提交的 CI 结果为准。

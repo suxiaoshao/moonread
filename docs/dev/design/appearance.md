@@ -17,7 +17,7 @@
 | 文档 | 内容 |
 | --- | --- |
 | [样式盘点](ui-inventory.md) | 现有颜色、材质、边框、圆角、间距、字体、加载与动画的源码位置 |
-| [主题模型](themes.md) | 结构 token、明暗/配色来源、Rust 类型契约、继承解析、三组各含浅深两套的配色和 iOS 作用域 |
+| [主题模型](themes.md) | 结构 token、明暗/配色来源、Rust 类型契约、继承解析、预设/自定义配色、纸张纹理和 iOS 作用域 |
 | [设置页](settings.md) | 书架/设置的顶层结构、当前入口与持续偏好 |
 | [动效与月亮](motion-and-moon.md) | 动效规则、加载与真实进度、启动白屏衔接与月亮的角色 |
 | [调研依据](../research/theme-references.md) | gpui-component 固定源码、Apple 和社区文章，以及采用范围 |

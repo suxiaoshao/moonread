@@ -850,7 +850,7 @@ Xcode iPhone 18 Pro / iOS 27 模拟器构建和 39 项定向原生回归通过�
 - 显式浅色和摘要定向复测通过于 `build/settings-ui4.log` / `build/Settings-UI4.xcresult`，浅色首页及外观截图已查看，附件在 `build/Settings-UI4-Attachments/`；测试明确选择浅色，避免受此前设备偏好影响。普通模拟器启动成功，进程仍运行，证据 `build/settings-startup.log`、`build/settings-startup.png`；启动书架画面已检查。
 - UI 测试按既定配置禁用真实云能力；本轮 iCloud 分组与异常显示通过源码和构建检查，未执行真实账户异常、跨设备同步及系统语言设置跳转。iOS 18、VoiceOver 实际朗读与真机画面仍未验收。设置页已覆盖安装并启动，尚未做真机画面验收。
 
-## 当前真机交付（2026-10-02）
+## 2026-10-02 真机交付
 
 当前为包含设置页整理、文件版本关联交接和同步账户意愿修复的云能力版本，使用默认配置及开发者团队自动签名构建，通过覆盖安装到 iPhone 13 并成功启动，未重置测试数据。新描述文件及应用签名已确认包含 iCloud Documents、CloudKit、指定云容器和开发推送权限。证据：`build/cloud-account-device-build.log`、`build/cloud-account-device-install.json`、`build/cloud-account-device-launch.json`，产物位于 `build/CloudCapabilityCheck`；临时日志可能被系统清理。安装与启动不代表真实跨设备同步、真实 iCloud 文件交接或全部真机交互验收。
 
@@ -1041,9 +1041,9 @@ iOS 27 原生快速触摸滑动另外复现了补片中断：`appendScrollConten
 
 表中明确限定到用例的结果不代表整个日志或 xcresult 包通过，部分开发中间包含有后来修复的失败项。构建、截图、视频与合成文本在被忽略的 `build/`；文档不提交用户小说。日期或相同目录不代表这些测试是在一次完整验收中执行的。
 
-## 当前安装包与真机交付
+## 2026-10-01 安装包与真机交付
 
-2026-10-01，当前 Debug 包含小说详情与信息编辑、章节覆盖、统一批注菜单和合并编辑，以及搜索结果双行布局与撤销药丸对齐。schema 为 13，安装包在 `build/DeviceDerivedData/Build/Products/Debug-iphoneos/Moonread.app`。最新设备构建通过，覆盖安装到 iPhone 13 并启动成功；应用与两个内嵌 dylib 均已验证签名。`MOONREAD_CLOUD_ENABLED=NO`，不作为云功能验收版本。证据：`build/search-row-and-undo-device.log`、`build/search-row-and-undo-install.json`、`build/search-row-and-undo-launch.json`。本次覆盖安装保留测试数据；如后续需要开发重装，直接重置应用内测试数据，不备份恢复，外部小说原件仍不修改。
+以下是当日交付记录，不代表现版本安装状态。2026-10-01 的 Debug 包含小说详情与信息编辑、章节覆盖、统一批注菜单和合并编辑，以及搜索结果双行布局与撤销药丸对齐。schema 为 13，安装包在 `build/DeviceDerivedData/Build/Products/Debug-iphoneos/Moonread.app`。最新设备构建通过，覆盖安装到 iPhone 13 并启动成功；应用与两个内嵌 dylib 均已验证签名。`MOONREAD_CLOUD_ENABLED=NO`，不作为云功能验收版本。证据：`build/search-row-and-undo-device.log`、`build/search-row-and-undo-install.json`、`build/search-row-and-undo-launch.json`。本次覆盖安装保留测试数据；如后续需要开发重装，直接重置应用内测试数据，不备份恢复，外部小说原件仍不修改。
 
 真机 08:59 的崩溃报告确认 dyld 因 `Moonread.debug.dylib` 缺少代码签名而在加载阶段终止，尚未执行数据库初始化；原因是无签名构建后只签了 `.app`。修复包先签 `Moonread.debug.dylib` 与 `__preview.dylib`，再签应用，每个产物单独验证签名及相同 TeamIdentifier 后成功覆盖安装，没有再次清理数据。打包流程已写入[开发环境](development.md#personal-team-本地试用包)。证据：`build/statistics-startup-crash.ips`、`build/statistics-device-local-final.log`、`build/statistics-signature-fix-install.json`。后续通过 iPhone 镜像确认应用正常启动，从最近阅读进入指定测试书、连续阅读与返回书架均可完成。
 
@@ -1077,9 +1077,9 @@ iOS 27 原生快速触摸滑动另外复现了补片中断：`appendScrollConten
 | --- | --- |
 | 长时间实读 | 只有下述合成核心和短时原生窗口基线；用户最长小说的持续流畅度、内存趋势、热状态和耗电未完成受控测量 |
 | 真机平台行为 | 常亮、方向、亮度的模拟器生命周期测试已做；控制中心改亮度、锁屏、方向请求被系统拒绝和长期耗电仍需实机确认 |
-| 旧系统与构建环境 | iOS 18/26 实际运行、Linux/Intel Mac/iOS Release 环境尚未覆盖；部署下限与 API 可用性检查不能替代运行验收 |
+| 旧系统与构建环境 | iOS 18/26 实际运行和 Intel Mac 仍缺覆盖；Linux CI 与 Release 打包已有流程及分期证据，具体结果按对应提交记录核对，不能沿用早期“尚未覆盖”总括；部署下限与 API 可用性检查不能替代运行验收 |
 | 文件提供方 | 第三方云文件下载、授权失效及恢复未走完端到端流程；提供方可能先整文件下载，不能声称云端边下载边读 |
-| 语言与辅助功能 | 主要简中/英文流程已有证据；全应用长英文、较大字号、VoiceOver 和完整主题/辅助功能组合仍未验收 |
+| 语言与辅助功能 | 简中/繁中/英文流程已有分期证据；全应用长英文、较大字号、VoiceOver 和完整主题/辅助功能组合仍未验收 |
 | 视觉与长时体验 | 浅深独立配色和若干主题截图已看；完整视觉矩阵、夜间长时阅读、系统启动快照与自定义配色交接仍未完全覆盖 |
 | 底部书签操作后的工具位置 | 添加书签、工具收起后再展开，搜索按钮的纵坐标比首次展开偏移约 4.16pt。等面板停稳后仍存在；恢复原来的顶部渐变实现也复现同值，确认不由本次悬浮顶部改动引入。原有全量工具显隐用例因此失败，待独立定位底部面板；证据 `build/reader-floating-controls-verified.log`、`build/reader-original-controls-comparison.log` |
 
