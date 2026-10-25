@@ -161,6 +161,6 @@ ThemePreferences 的 reader_light_texture / reader_dark_texture 是可选本机�
 
 四张 768×768 归一化 RGBA source PNG（每张对应 256pt）随 Asset Catalog 分发。平台按 256pt 周期及 displayScale 合成不透明 tile，仅保留当前输入（paper、ink、纹理、档位、scale）和结果。颗粒素材名为 ReaderTextureGrain/grain-source.png，沿用原颗粒 mask。
 
-滚动时 pattern 放在不滚动的 readingSurface，正文和内层标题页透明；分页把 pattern 放在原 PageController 的正文 view 和封面 hosting view，随页移动。根外围和底部 fade 继续用纯 paper。纹理只换背景，不改字体、textStorage、排版、选区或导航位置；不新建背景层、缓存服务、随机运行时生成器或同步记录。
+滚动时 pattern 由不滚动的阅读器根视图铺满，覆盖顶部安全区和透明的信息栏，正文、readingSurface 和内层标题页透明。分页仍把 pattern 放在原 PageController 的正文 view 和封面 hosting view，随页移动；根视图也绘制同一纸面，以正文视口的起点对齐平铺相位，静止时顶部与页面连续。底部 fade 继续用纯 paper。纹理只换背景，不改字体、textStorage、排版、选区或导航位置；不新建背景层、缓存服务、随机运行时生成器或同步记录。
 
 阅读设置的纹理与强度作为配色列表首个分组，位于明暗槽切换下方，随列表滚动。展开预览的标题和正文共享同一平铺背景；正文保持透明，不改变预览视口或位置恢复的几何。
