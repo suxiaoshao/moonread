@@ -23,7 +23,7 @@
 | --- | --- |
 | [Color](https://developer.apple.com/design/human-interface-guidelines/color) | 系统语义色按外观和提高对比度适配；自定义色需同时考虑浅/深及更高对比。用途一致不等于所有元素同色 |
 | [Materials](https://developer.apple.com/design/human-interface-guidelines/materials) | 材质按作用和层次选，不把某次渲染出的表观颜色视为固定色值 |
-| [Tab bars](https://developer.apple.com/design/human-interface-guidelines/tab-bars) | Tab 表达顶层导航，保留清楚标签和状态。月读只规划书架/设置，阅读工具仍属书内 |
+| [Tab bars](https://developer.apple.com/design/human-interface-guidelines/tab-bars) | Tab 表达顶层导航，保留清楚标签和状态。当时曾提议月读只设书架/设置（非当前结构），阅读工具仍属书内 |
 | [Launching](https://developer.apple.com/design/human-interface-guidelines/launching) | 启动画面接近第一屏，不把系统启动阶段做成强制品牌片头；App 内等待才有真实加载动画 |
 | [Progress indicators](https://developer.apple.com/design/human-interface-guidelines/progress-indicators) | 已知进度尽量真实显示，未知工作显示活动状态；位置稳定，可行时可暂停/取消，不制造假的百分比 |
 | [preferredColorScheme](https://developer.apple.com/documentation/swiftui/view/preferredcolorscheme(_:)) | 覆盖最近 presentation，不能假设任意子视图调用都只影响局部；App/Reader 的原生容器边界需要验证 |

@@ -70,4 +70,4 @@ Swift 层提供独立于页面的 AIWebSearchInput、AIGenerateImageInput 与 AI
 - pi-xai-oauth：extensions/xai/tools/custom-tools.ts 的 xai_generate_image 单独选择图片模型并按认证解析 route。插件实现不等于本机账户权限已经验证。
 - [OpenAI 生图工具](https://developers.openai.com/api/docs/guides/tools-image-generation)、[xAI 生图工具](https://docs.x.ai/developers/tools/image-generation)。官方 API 资料与订阅 backend 分别核对。
 
-既有服务证据见 [接入调研](../engineering/ai-feasibility.md)，产品长期规则见 [AI 产品设计](../design/ai.md)。
+既有服务证据见 [接入调研](../research/ai-integration-history.md)，产品长期规则见 [AI 产品设计](../design/ai.md)。

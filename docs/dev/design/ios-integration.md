@@ -70,3 +70,7 @@ BGTask 的 launch／expiration 回调显式非隔离且 `@Sendable`，只在切�
 - [系统入口深链](https://developer.apple.com/documentation/widgetkit/linking-to-specific-app-scenes-from-your-widget-or-live-activity)：点按后进入对应内容。
 
 以上依据在 2026-10-01 查阅；官方能力说明与月读建议分别表达，具体系统支持范围在实施时按 SDK 和设备验证。
+
+## 技术合同与状态
+
+已接入的索引后台任务仍按当前实现；1.3 App Entity、Spotlight、Controls 和 Widget 的共同数据源、失效、路由与平台边界见[系统集成技术合同](../engineering/system-integration.md)，本节设计默认不表示已经实现。Live Activities/Handoff 仍是后续候选，不随小组件范围自动进入1.3。

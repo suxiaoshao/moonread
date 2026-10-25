@@ -1,6 +1,6 @@
 # Moonread 开发约定
 
-- 产品方向见 `README.md`，开发依据见 `docs/dev/README.md`；实现任务先阅读相关开发文档。当前请求决定工作阶段，待讨论提案、规划和 skill 不构成开始实现的授权。
+- 产品方向见 `docs/dev/product.md`，开发依据见 `docs/dev/README.md`；实现任务先阅读相关开发文档。当前请求决定工作阶段，待讨论提案、规划和 skill 不构成开始实现的授权。
 - 优先满足个人 iOS 阅读需求。所有书架统一为真实文件夹树；内置“我的书架”的本地目录和自身 iCloud 容器目录均由应用固定管理，未启用 iCloud 时照常本地导入，启用后由应用接入固定云目录，不允许用户自选根位置、移动根或移除入口，内部文件正常管理。小说文件与按正文 SHA 保存的阅读数据分离。云端小说文件使用 iCloud Documents，阅读数据与配色方案使用 CloudKit，排版、当前配色选择等设备偏好留在本机；代码已接入，真实云容器与跨设备验收状态见 docs/dev/data/sync.md。
 - 发布后的持久化变更必须保持旧数据可读：持久化枚举只增不删不改名，新增字段可选或有默认值，结构变更带版本、迁移和迁移测试；CloudKit 生产 schema 只增不删。正文身份 `content_sha256`（normalization-v1）与已支持文件的解码结果保持稳定，必须变更时保留旧键映射。细节见 `docs/dev/engineering/architecture.md` 的持久化演进规则。阅读不改写原文；用户明确的重命名、移动、建目录和删除作用于真实文件系统。开发重置须有当轮授权，不得触碰外部或 iCloud 小说原件；最低 iOS 与 API 可用性遵守既定策略。
 - 项目开发环境使用 Nix，由 `flake.nix` / `flake.lock` 管理工具链与 Rust targets；不新增独立安装或构建脚本。Xcode 使用 Nix 环境编译 Rust，平台 SDK、签名与运行由本机 Xcode 管理。
