@@ -458,32 +458,17 @@ struct ReaderScreen: View {
         }
     }
 
-    @ViewBuilder private var readerTask: some View {
-        if panel == .ai, ai.availability.isAvailable {
-            AIReadingConversation(context: aiEntrySnapshot ?? aiContext(), close: closeTask, selected: $aiConversationID, openingIsActive: { exitPhase == .reading && !session.isLeaving })
-        } else if let mark = session.editor {
-            NoteEditor(edit: mark, close: closeTask)
-        } else if panel == .history {
-            ReaderHistorySheet(session: session, close: closeTask)
-        } else if panel == .chapterEditor, let draft = session.chapterDraft, let id = session.readingID {
-            NavigationStack {
-                ChapterEditor(bookID: id, draft: draft) { await session.refreshOutline(); closeTask() }
-                    .toolbar { ToolbarItem(placement: .topBarLeading) {
-                        Button("取消", systemImage: "xmark", action: closeTask).labelStyle(.titleOnly)
-                    } }
-            }
-        } else if panel == .library {
-            ReaderLibrarySheet(model: tools, session: session, navigate: { start, end, placement in
-                guard !session.isLeaving else { return }
-                // Keep the library until the target is ready, then collapse
-                // directly to its browse actions without a gap between sheets.
-                libraryNavigationRevision = session.navigationRevision
-                session.browse(to: start, end: end, placement: placement)
-            }, edit: { mark in
-                if !session.isLeaving { session.openAnnotation(mark.id) }
-            }, close: closeTask)
-            .disabled(session.navigating)
-        }
+    private var readerTask: some View {
+        ReaderTaskContent(panel: panel, session: session, tools: tools, aiEntrySnapshot: aiEntrySnapshot,
+                          aiContext: { aiContext() }, aiConversationID: $aiConversationID,
+                          openingIsActive: { exitPhase == .reading && !session.isLeaving }, closeTask: closeTask,
+                          navigate: { start, end, placement in
+            guard !session.isLeaving else { return }
+            libraryNavigationRevision = session.navigationRevision
+            session.browse(to: start, end: end, placement: placement)
+        }, edit: { mark in
+            if !session.isLeaving { session.openAnnotation(mark.id) }
+        })
     }
 
     private func clearTask() {
@@ -654,67 +639,9 @@ struct ReaderScreen: View {
     }
 
     private func compactHeader(book: BookInfo) -> some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 4) {
-                Text(session.showingCover ? String(localized: "封面") : (session.chapter?.title ?? book.title))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .accessibilityIdentifier("readingChapter")
-                if !session.incomplete && !session.showingCover {
-                    Text("·").accessibilityHidden(true)
-                    progress(book: book).fixedSize()
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if session.atPreparedEdge {
-                Button { controlsVisible = true } label: {
-                    Text(session.preparing ? String(localized: "后续准备中") : (session.snapshot?.phase == .failed ? String(localized: "查看问题") : String(localized: "继续准备")))
-                        .fixedSize()
-                        .frame(minHeight: 44)
-                }
-                .accessibilityIdentifier("preparedEdge")
-            }
-            HStack(spacing: 5) {
-                TimelineView(.everyMinute) { timeline in
-                    Text(timeline.date, format: .dateTime.hour().minute())
-                        .monospacedDigit()
-                        .accessibilityLabel("当前时间")
-                        .accessibilityValue(timeline.date.formatted(.dateTime.hour().minute()))
-                        .accessibilityIdentifier("readingClock")
-                }
-                if let symbol = battery.symbol {
-                    Image(systemName: symbol)
-                        .accessibilityLabel(battery.accessibilityLabel)
-                        .accessibilityIdentifier("readingBattery")
-                }
-            }
-            .fixedSize()
-        }
-        .font(.system(size: 11))
-        .foregroundStyle(Color(uiColor: theme.secondary))
-        .padding(.horizontal, ReadingTypography.insets(session.settings ?? defaultReaderSettings(), width: readerWidth).left)
-        .frame(height: compactHeaderHeight)
-        // The full-screen reader supplies the continuous paper behind this overlay.
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("readerCompactHeader")
-        .allowsHitTesting(session.atPreparedEdge)
+        ReaderCompactHeader(session: session, battery: battery, book: book, readerWidth: readerWidth,
+                            compactHeaderHeight: compactHeaderHeight, showControls: { controlsVisible = true })
     }
-
-    private func progress(book: BookInfo) -> some View {
-        let fraction = Double(session.anchor) / Double(max(book.byteCount, 1))
-        return Text(fraction, format: .percent.precision(.fractionLength(1)))
-            .monospacedDigit()
-            .accessibilityLabel("阅读进度")
-            .accessibilityIdentifier("readingProgress")
-            #if DEBUG
-            .accessibilityValue(ProcessInfo.processInfo.arguments.contains("--ui-testing")
-                                ? String(session.anchor)
-                                : fraction.formatted(.percent.precision(.fractionLength(1))))
-            #else
-            .accessibilityValue(fraction.formatted(.percent.precision(.fractionLength(1))))
-            #endif
-    }
-
     private var readerNavigationVisible: Bool {
         !session.isLeaving && !navigationPresentation.isSuspended
             && (controlsVisible || session.window == nil)
@@ -787,40 +714,8 @@ struct ReaderScreen: View {
     /// label style, columns and targets as the tools below; at accessibility sizes the
     /// same labels stack as rows so they stay readable.
     private var moreContent: some View {
-        Group {
-            if dynamicTypeSize.isAccessibilitySize {
-                VStack(spacing: 0) {
-                    ForEach(moreActions) { action in
-                        moreButton(action) { label in
-                            HStack { label; Spacer(minLength: 0) }
-                                // The whole row is the target; the sheet draws slightly scaled.
-                                .frame(minHeight: 52)
-                        }
-                    }
-                    if session.encodingLabel != nil {
-                        moreEncodingMenu.frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
-                    }
-                }
-            } else {
-                HStack(spacing: 0) {
-                    ForEach(moreActions) { action in
-                        moreButton(action) { label in
-                            label.labelStyle(ReaderToolLabelStyle())
-                                .frame(maxWidth: .infinity, minHeight: 56)
-                        }
-                    }
-                    if session.encodingLabel != nil {
-                        moreEncodingMenu.labelStyle(ReaderToolLabelStyle())
-                            .frame(maxWidth: .infinity, minHeight: 56)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 24).padding(.top, LayoutTokens.content)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("readerMorePanel")
+        ReaderMoreContent(session: session, openLibrary: openLibrary, presentPanel: presentPanel, changeEncoding: changeEncoding)
     }
-
     private func changeEncoding(_ encoding: String?) {
         controlsVisible = false; dock = .progress
         closeSearch()
@@ -830,239 +725,13 @@ struct ReaderScreen: View {
         session.restart(encoding: encoding)
     }
 
-    private var moreEncodingMenu: some View {
-        ReaderEncodingMenu(title: "更换编码", symbol: "character.bubble", isRestarting: session.restartingEncoding, select: changeEncoding)
-            .foregroundStyle(Color(uiColor: theme.ink))
-            .accessibilityIdentifier("moreTextEncoding")
-    }
-
-    private enum MoreAction: String, Identifiable {
-        case bookmark, bookmarks, notes, details
-        var id: Self { self }
-    }
-
-    private var moreActions: [MoreAction] { [.bookmark, .bookmarks, .notes, .details] }
-
-    /// One 更多 action: the visible names stay short; VoiceOver and Voice Control get the full ones.
-    private func moreButton(_ action: MoreAction, @ViewBuilder layout: (MoreLabel) -> some View) -> some View {
-        let marked = action == .bookmark && session.bookmarked
-        let symbol = switch action {
-        case .bookmark: marked ? "bookmark.fill" : "bookmark"
-        case .bookmarks: "list.bullet.rectangle"
-        case .notes: "highlighter"
-        case .details: "info.circle"
-        }
-        let title: LocalizedStringKey = switch action {
-        case .bookmark: "书签"
-        case .bookmarks: "书签列表"
-        case .notes: "笔记"
-        case .details: "详情"
-        }
-        let label = MoreLabel(title: title, symbol: symbol, bookmarked: session.bookmarked, reduceMotion: reduceMotion)
-        return Button {
-            switch action {
-            case .bookmark: Task { await session.toggleBookmark() }
-            case .bookmarks: openLibrary(.bookmarks, fromMore: true)
-            case .notes: openLibrary(.notes, fromMore: true)
-            case .details: presentPanel(.details)
-            }
-        } label: {
-            layout(label).foregroundStyle(Color(uiColor: marked ? theme.accent : theme.ink)).contentShape(.rect)
-        }
-        .buttonStyle(.plain)
-        .disabled(action == .bookmark && (session.showingCover || session.changingBookmark))
-        .opacity(action == .bookmark && session.showingCover ? 0.45 : 1)
-        .modifier(MoreAccessibility(action: action, bookmarked: session.bookmarked, cover: session.showingCover))
-    }
-
-    /// The action's label; the surrounding label style decides the layout.
-    private struct MoreLabel: View {
-        let title: LocalizedStringKey
-        let symbol: String
-        let bookmarked: Bool
-        let reduceMotion: Bool
-        var body: some View {
-            Label(title, systemImage: symbol)
-                .contentTransition(.symbolEffect(.replace))
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: bookmarked)
-        }
-    }
-
-    private struct MoreAccessibility: ViewModifier {
-        let action: MoreAction
-        let bookmarked: Bool
-        let cover: Bool
-        func body(content: Content) -> some View {
-            switch action {
-            case .bookmark:
-                content
-                    .accessibilityLabel("书签")
-                    .accessibilityValue(bookmarked ? Text("已添加") : Text("未添加"))
-                    .accessibilityHint(cover ? Text("封面不能添加书签") : Text("添加或移除当前位置的书签"))
-                    .accessibilityInputLabels([Text("书签"), Text("添加书签"), Text("移除书签")])
-                    .accessibilityAddTraits(bookmarked ? .isSelected : [])
-                    .accessibilityIdentifier("toggleBookmark")
-            case .bookmarks:
-                content.accessibilityLabel("书签列表").accessibilityHint("查看全部书签")
-                    .accessibilityIdentifier("openBookmarks")
-            case .notes:
-                content.accessibilityLabel("标注与笔记")
-                    .accessibilityInputLabels([Text("笔记"), Text("标注与笔记")])
-                    .accessibilityIdentifier("openNotes")
-            case .details:
-                content.accessibilityLabel("小说详情")
-                    .accessibilityInputLabels([Text("详情"), Text("小说详情")])
-                    .accessibilityIdentifier("moreBookDetails")
-            }
-        }
-    }
-
-    private var preparationFraction: Double? {
-        guard let state = session.snapshot, state.sourceByteCount > 0 else { return nil }
-        return min(1, Double(state.sourceBytesRead) / Double(state.sourceByteCount))
-    }
-
     private var preparationView: some View {
-        ReaderTitlePage(title: session.book?.title ?? route.title)
-            .overlay(alignment: .bottom) {
-                VStack(spacing: 12) {
-                if session.preparing && session.error == nil {
-                    if session.opening.showsProgress {
-                        HStack(spacing: 12) {
-                            LoadingActivity(size: 24, fraction: preparationFraction, delay: .zero)
-                            Text("正在准备正文").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                            Button("暂停准备", systemImage: "pause", action: session.pause).labelStyle(.iconOnly)
-                        }
-                    }
-                } else {
-                    Text(session.snapshot?.phase == .paused ? String(localized: "准备已暂停") : String(localized: "暂时无法准备正文"))
-                        .font(.headline)
-                    if let error = session.snapshot?.error.map { ReaderMessages.error($0) } ?? session.error {
-                        Text(error).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                            .multilineTextAlignment(.center)
-                    }
-                    if session.snapshot != nil {
-                        Button("继续准备", action: session.resume).buttonStyle(.bordered)
-                        encodingMenu
-                    } else {
-                        Button("重试") { Task { await session.retry(route) } }.buttonStyle(.bordered)
-                    }
-                }
-                }
-                .padding(.horizontal, 28).padding(.vertical, 20)
-                .frame(maxWidth: .infinity)
-                .background(Color(uiColor: theme.paper))
-                .padding(.bottom, 12)
-            }
-        .accessibilityIdentifier("preparingBook")
+        ReaderPreparationContent(session: session, route: route, changeEncoding: changeEncoding)
     }
-
     private var importStatus: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                if session.preparing { LoadingActivity(size: 28, fraction: preparationFraction) }
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(session.preparing ? String(localized: "正在准备后续内容") : (session.snapshot?.phase == .failed ? String(localized: "准备失败") : String(localized: "准备已暂停")))
-                        .font(.subheadline.weight(.medium))
-                    if let fraction = preparationFraction {
-                        Text(fraction, format: .percent.precision(.fractionLength(0)))
-                            .font(.caption).monospacedDigit().foregroundStyle(Color(uiColor: theme.secondary))
-                    }
-                }
-                Spacer()
-                Button(session.preparing ? String(localized: "暂停") : String(localized: "继续")) {
-                    if session.preparing { session.pause() } else { session.resume() }
-                }
-                    .font(.subheadline).frame(minHeight: 44)
-            }
-            if let message = session.snapshot?.error {
-                Text(ReaderMessages.error(message)).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                HStack {
-                    Button("重新准备") { session.restart() }
-                    Spacer()
-                    encodingMenu
-                }.font(.caption)
-            }
-        }
-        .padding(16)
-        .background(theme.floatingBackground(.thinMaterial), in: .rect(cornerRadius: LayoutTokens.floatingRadius))
-        .accessibilityIdentifier("importStatus")
+        ReaderPreparationContent(session: session, route: route, statusOnly: true, changeEncoding: changeEncoding)
     }
 
-    private var encodingMenu: some View {
-        ReaderEncodingMenu(isRestarting: session.restartingEncoding, select: changeEncoding)
-    }
-
-}
-
-/// Battery monitoring is a platform concern and only runs while reading.
-@MainActor @Observable
-final class ReaderBattery {
-    private(set) var level: Float = -1
-    private(set) var state: UIDevice.BatteryState = .unknown
-    private var observers: [NSObjectProtocol] = []
-    private var wasMonitoring = false
-
-    var symbol: String? { Self.symbol(level: level, state: state) }
-
-    static func symbol(level: Float, state: UIDevice.BatteryState) -> String? {
-        guard level >= 0 else { return nil }
-        if state == .charging { return "battery.100percent.bolt" }
-        switch level {
-        case ..<0.125: return "battery.0percent"
-        case ..<0.375: return "battery.25percent"
-        case ..<0.625: return "battery.50percent"
-        case ..<0.875: return "battery.75percent"
-        default: return "battery.100percent"
-        }
-    }
-
-    var accessibilityLabel: String {
-        guard level >= 0 else { return String(localized: "电量不可用") }
-        let percentage = Int((level * 100).rounded())
-        return state == .charging ? String(localized: "电量百分之\(percentage)，正在充电") : String(localized: "电量百分之\(percentage)")
-    }
-
-    func start() {
-        guard observers.isEmpty else { return }
-        wasMonitoring = UIDevice.current.isBatteryMonitoringEnabled
-        UIDevice.current.isBatteryMonitoringEnabled = true
-        refresh()
-        observers = [UIDevice.batteryLevelDidChangeNotification, UIDevice.batteryStateDidChangeNotification].map { name in
-            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor [weak self] in self?.refresh() }
-            }
-        }
-    }
-
-    func refresh() {
-        level = UIDevice.current.batteryLevel
-        state = UIDevice.current.batteryState
-    }
-
-    func stop() {
-        guard !observers.isEmpty else { return }
-        observers.forEach { NotificationCenter.default.removeObserver($0) }
-        observers.removeAll()
-        UIDevice.current.isBatteryMonitoringEnabled = wasMonitoring
-    }
-}
-
-/// The content above the reader's anchored tools: progress (or search/browse), quick settings, or 更多.
-enum ReaderDock {
-    case progress, settings, more
-    mutating func toggle(_ destination: Self) { self = self == destination ? .progress : destination }
-}
-
-private struct ReaderToolLabelStyle: LabelStyle {
-    @ScaledMetric(relativeTo: .body) private var iconSize = 22.0
-    func makeBody(configuration: Configuration) -> some View {
-        VStack(spacing: 6) {
-            configuration.icon.font(.system(size: iconSize)).frame(width: iconSize + 4, height: iconSize + 4)
-            configuration.title.font(.caption).lineLimit(1)
-        }
-        .padding(.vertical, 4)
-    }
 }
 
 private struct ReaderOpenLegacyFade: ViewModifier {
@@ -1091,90 +760,5 @@ private struct ReaderImportDiagnosticStatus: ViewModifier {
         #else
         content
         #endif
-    }
-}
-
-
-/// Manual choices do not perform detection in Swift. Labels are encoding_rs names;
-/// the Rust decoding policy validates and canonicalizes every selected value.
-enum ReadingEncodingGroup: String, CaseIterable, Identifiable {
-    case simplifiedChinese, traditionalChinese, japanese, korean, westernEuropean, other
-    var id: String { rawValue }
-    var title: LocalizedStringResource {
-        switch self {
-        case .simplifiedChinese: "简体中文"
-        case .traditionalChinese: "繁体中文"
-        case .japanese: "日文"
-        case .korean: "韩文"
-        case .westernEuropean: "西欧"
-        case .other: "其他编码"
-        }
-    }
-    var encodings: [String] {
-        switch self {
-        case .simplifiedChinese: ["gb18030", "GBK"]
-        case .traditionalChinese: ["Big5"]
-        case .japanese: ["Shift_JIS", "EUC-JP", "ISO-2022-JP"]
-        case .korean: ["EUC-KR"]
-        case .westernEuropean: ["windows-1252", "ISO-8859-14", "ISO-8859-15", "macintosh"]
-        case .other: ["UTF-8", "UTF-16LE", "UTF-16BE", "IBM866", "ISO-8859-2", "ISO-8859-3", "ISO-8859-4",
-                      "ISO-8859-5", "ISO-8859-6", "ISO-8859-7", "ISO-8859-8", "ISO-8859-8-I", "ISO-8859-10",
-                      "ISO-8859-13", "ISO-8859-16", "KOI8-R", "KOI8-U", "windows-1250", "windows-1251",
-                      "windows-1253", "windows-1254", "windows-1255", "windows-1256", "windows-1257",
-                      "windows-1258", "windows-874", "x-mac-cyrillic"]
-        }
-    }
-}
-
-struct ReaderEncodingMenu: View {
-    var title: LocalizedStringKey = "更换编码重新打开"
-    var value: String? = nil
-    var symbol: String? = nil
-    var isRestarting = false
-    let select: (String?) -> Void
-    @State private var pendingEncoding: String?
-    @Environment(\.theme) private var theme
-    var body: some View {
-        Menu {
-            Button("自动识别") { pendingEncoding = "auto" }
-            ForEach(ReadingEncodingGroup.allCases) { group in
-                Menu {
-                    ForEach(group.encodings, id: \.self) { encoding in
-                        Button(encoding) { pendingEncoding = encoding }
-                    }
-                } label: { Text(group.title) }
-            }
-        } label: {
-            HStack {
-                if isRestarting, value == nil {
-                    Label("正在重新读取", systemImage: "hourglass")
-                } else if let symbol { Label(title, systemImage: symbol) } else { Text(title) }
-                if let value {
-                    Spacer()
-                    if isRestarting {
-                        ProgressView().controlSize(.small)
-                        Text("正在重新读取")
-                    } else {
-                        HStack(spacing: 5) {
-                            Text(value)
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption.weight(.semibold))
-                                .accessibilityHidden(true)
-                        }.foregroundStyle(Color(uiColor: theme.accent))
-                    }
-                }
-            }.contentShape(.rect)
-        }
-        .menuOrder(.fixed)
-        .disabled(isRestarting)
-        .onChange(of: isRestarting) { _, busy in if busy { pendingEncoding = nil } }
-        .accessibilityLabel(isRestarting ? Text("正在重新读取") : value.map { Text("文字编码，\($0)，可更换") } ?? Text(title))
-        .accessibilityIdentifier("readerEncodingMenu")
-        .alert("更换文字编码？", isPresented: Binding(get: { pendingEncoding != nil }, set: { if !$0 { pendingEncoding = nil } }), presenting: pendingEncoding) { encoding in
-            Button("重新读取") { pendingEncoding = nil; select(encoding == "auto" ? nil : encoding) }
-            Button("取消", role: .cancel) { pendingEncoding = nil }
-        } message: { _ in
-            Text("正文会按新编码重新读取。当前编码下的阅读位置、书签和批注不会带到不同的新正文，原数据会保留。原文件未变时，换回原编码可找回。")
-        }
     }
 }
