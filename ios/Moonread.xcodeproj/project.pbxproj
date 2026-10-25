@@ -1128,7 +1128,7 @@ E51000000000000000000009,D41000000000000000000001,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -eu\ncd \"${SRCROOT}/..\"\nexport CARGO_TARGET_DIR=\"${MOONREAD_CARGO_DIR}\"\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command cargo build --locked --package moonread-core --lib --profile \"${MOONREAD_CARGO_PROFILE}\" ${MOONREAD_RUST_TARGET_FLAGS}\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command cargo run --locked --package moonread-core --features cli --bin uniffi-bindgen -- generate --library \"${MOONREAD_BINDGEN_LIBRARY}\" --language swift --no-format --out-dir \"${MOONREAD_BINDINGS_DIR}\"\n";
+			shellScript = "set -eu\ncd \"${SRCROOT}/..\"\nexport CARGO_TARGET_DIR=\"$PWD/target\"\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command bash -c '\n  builder=cargo\n  if [ -z \"${CI:-}\" ]; then\n    if command -v mbx >/dev/null 2>&1; then\n      builder=$(command -v mbx)\n    elif [ -x \"$HOME/.cargo/bin/mbx\" ]; then\n      builder=\"$HOME/.cargo/bin/mbx\"\n    fi\n  fi\n  echo \"Rust builder: $builder; rustc: $(command -v rustc)\"\n  exec \"$builder\" build --locked --package moonread-core --lib --profile \"$1\" ${2}\n' bash \"${MOONREAD_CARGO_PROFILE}\" \"${MOONREAD_RUST_TARGET_FLAGS}\"\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command cargo run --locked --package moonread-core --features cli --bin uniffi-bindgen -- generate --library \"${MOONREAD_BINDGEN_LIBRARY}\" --language swift --no-format --out-dir \"${MOONREAD_BINDINGS_DIR}\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -1484,7 +1484,7 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 				OTHER_LDFLAGS = (
                     "-lsqlite3",
 					"$(inherited)",
-					"$(MOONREAD_CARGO_DIR)/$(MOONREAD_RUST_TARGET)/$(MOONREAD_CARGO_OUTPUT)/libmoonread_core.a",
+					"$(SRCROOT)/../target/$(MOONREAD_RUST_TARGET)/$(MOONREAD_CARGO_OUTPUT)/libmoonread_core.a",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.Moonread;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1517,7 +1517,7 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 				OTHER_LDFLAGS = (
                     "-lsqlite3",
 					"$(inherited)",
-					"$(MOONREAD_CARGO_DIR)/$(MOONREAD_RUST_TARGET)/$(MOONREAD_CARGO_OUTPUT)/libmoonread_core.a",
+					"$(SRCROOT)/../target/$(MOONREAD_RUST_TARGET)/$(MOONREAD_CARGO_OUTPUT)/libmoonread_core.a",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.Moonread;
 				PRODUCT_NAME = "$(TARGET_NAME)";
