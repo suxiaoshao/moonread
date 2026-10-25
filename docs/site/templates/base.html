@@ -29,34 +29,42 @@ try {
 </style>
 </head>
 <body>
+<a class="skip-link" href="#main-content">{% if lang == "zh" %}跳到正文{% else %}Skip to content{% endif %}</a>
 <header class="sky">
-  <div class="wrap bar">
+  <div class="stars" aria-hidden="true"></div>
+  <div class="wrap topnav">
     <a class="brand" href="{{ get_url(path='@/_index.md', lang=lang) }}">
       <img src="{{ get_url(path='icon.png') }}" alt="" width="32" height="32">
       <span>{% if lang == "zh" %}月读{% else %}Moonread{% endif %}</span>
     </a>
-    <nav class="nav" aria-label="{% if lang == 'zh' %}站点导航{% else %}Site{% endif %}">
+    <nav class="navlinks" aria-label="{% if lang == 'zh' %}站点导航{% else %}Site{% endif %}">
+      <a class="nav-features" href="{{ get_url(path='@/_index.md', lang=lang) }}#features">{% if lang == "zh" %}阅读体验{% else %}Experience{% endif %}</a>
       {% set privacy = get_url(path='@/privacy.md', lang=lang) -%}
       {% set support = get_url(path='@/support.md', lang=lang) -%}
       <a class="opt" href="{{ privacy }}"{% if item.permalink == privacy %} aria-current="page"{% endif %}>{{ trans(key="privacy", lang=lang) }}</a>
       <a class="opt" href="{{ support }}"{% if item.permalink == support %} aria-current="page"{% endif %}>{{ trans(key="support", lang=lang) }}</a>
+      <a class="github-nav" href="https://github.com/suxiaoshao/moonread" aria-label="GitHub">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.49c-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82A7.65 7.65 0 0 1 8 3.86c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        <span>GitHub</span>
+      </a>
       {% for t in item.translations %}{% if t.lang != lang %}<a class="lang" href="{{ t.permalink }}" onclick="try{localStorage.setItem('lang','{{ t.lang }}')}catch(e){}" hreflang="{{ t.lang }}" lang="{% if t.lang == 'zh' %}zh-Hans{% else %}en{% endif %}">{{ trans(key="switch", lang=lang) }}</a>{% endif %}{% endfor %}
     </nav>
   </div>
   {% block sky %}{% endblock %}
 </header>
-<main class="wrap">
+<main class="wrap {% block main_class %}{% endblock main_class %}" id="main-content">
 {% block content %}{% endblock %}
 </main>
-<footer class="wrap">
-  <div class="row">
-    <span>© 2026 {{ config.extra.holder }}</span>
-    <span>
-      <a href="{{ get_url(path='@/privacy.md', lang=lang) }}">{{ trans(key="privacy", lang=lang) }}</a> ·
-      <a href="{{ get_url(path='@/support.md', lang=lang) }}">{{ trans(key="support", lang=lang) }}</a> ·
-      <a href="mailto:{{ config.extra.email }}">{{ config.extra.email }}</a>
-    </span>
+<footer class="wrap footer">
+  <div class="footer-line">
+    <span>© 2026 {{ config.extra.holder }} · {% if lang == "zh" %}安静地读下去。{% else %}One more quiet page.{% endif %}</span>
+    <nav aria-label="{% if lang == 'zh' %}页尾导航{% else %}Footer{% endif %}">
+      <a href="{{ get_url(path='@/privacy.md', lang=lang) }}">{{ trans(key="privacy", lang=lang) }}</a>
+      <a href="{{ get_url(path='@/support.md', lang=lang) }}">{{ trans(key="support", lang=lang) }}</a>
+      <a href="https://github.com/suxiaoshao/moonread">GitHub</a>
+    </nav>
   </div>
+  <p class="legal">Apple, the Apple logo, iPhone, and iPad are trademarks of Apple Inc., registered in the U.S. and other countries and regions. App Store is a service mark of Apple Inc.</p>
 </footer>
 </body>
 </html>

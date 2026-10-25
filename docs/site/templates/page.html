@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ page.title }} · {% if page.lang == "zh" %}月读{% else %}Moonread{% endif %}{% endblock %}
 {% block description %}{% if page.extra.kind == "privacy" %}{{ trans(key="privacy_desc", lang=page.lang) }}{% else %}{{ trans(key="support_desc", lang=page.lang) }}{% endif %}{% endblock %}
+{% block main_class %}doc-layout{% endblock main_class %}
 {% block sky %}
 <div class="wrap doc-head">
   <h1>{{ page.title }}</h1>
@@ -11,12 +12,12 @@
 {% endblock %}
 {% block content %}
 {% if page.toc | length > 2 %}
-<nav class="toc" aria-label="{{ trans(key='contents', lang=page.lang) }}">
+<nav class="doc-toc" aria-label="{{ trans(key='contents', lang=page.lang) }}">
   <p>{{ trans(key="contents", lang=page.lang) }}</p>
   <ol>{% for h in page.toc %}<li><a href="#{{ h.id }}">{{ h.title }}</a></li>{% endfor %}</ol>
 </nav>
 {% endif %}
-<article>
+<article class="doc-body">
 {{ page.content | safe }}
 </article>
 {% endblock %}
