@@ -1,11 +1,21 @@
 +++
 title = "Moonread Privacy Policy"
-date = 2026-10-18
+date = 2026-10-24
 [extra]
 kind = "privacy"
 +++
 
 Moonread reads TXT files that you provide. No Moonread account is required. The app has no ads or servers of its own. Data is used for reading, file management, the sync options you choose, and optional AI features. We do not sell your personal data, display advertising in the app, or track you across apps for advertising.
+
+## Supplement for the China mainland App Store storefront
+
+This section applies to the Moonread features offered through the China mainland App Store storefront and takes precedence over other descriptions of feature availability in this policy. AI conversations, AI service connections, web search, AI image generation, and online cover search are not offered in this storefront. Moonread does not send requests to third-party AI services, model catalogs, or search services for these features there. The descriptions of these optional features and AI-reply feedback elsewhere in this policy apply to other storefronts where those features are available.
+
+You can import your own TXT files and read them on your device without a Moonread account. Moonread has no online bookstore, book-source service, public content-distribution service, or developer-operated data server. If you choose iCloud, book files are stored and synced using iCloud Documents, while reading data such as positions, bookmarks, and annotations is synced using a private CloudKit database. Apple and the applicable service operator provide these services under their terms and privacy policies. This does not mean that all data remains on the device or is processed only in one region. File sync and reading-data sync are separate options; turning one off does not automatically disable the other or delete existing cloud copies.
+
+Voluntary tips use Apple's In-App Purchase service and unlock no content or features. The developer does not receive your card or bank-account details. System file and photo pickers, other file providers you select, support and privacy-policy pages you choose to open, and support emails you choose to send remain subject to the relevant sections of this policy. This policy website is hosted on GitHub Pages; this does not mean that Apple handles every network interaction.
+
+Use the controls described under “Your choices” to manage local data, sync, and statistics, or contact suxiaoshao@gmail.com about data actually held by the developer.
 
 ## Files and reading data
 

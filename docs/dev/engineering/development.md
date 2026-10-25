@@ -32,6 +32,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 - `main` 的 App 代码始终对应 App Store 最新发布版本，不承载下一版本 App 的日常开发；正式发布后，在对应提交打版本 tag（如 `v1.1`）。TestFlight 上传不等于 App Store 发布。
 - `docs/site/**` 是版本分支规则的例外：隐私政策、支持页等版本所需的网站改动，在提交 App Store 审核前用小 PR 直接合进 `main`，由 Pages 即时部署，不等待 App 版本上线。网站检查通过后再合并；“main 等于线上版本”只约束 App 代码。
+- 发布工作流等不含 App 功能代码的发布基础设施可通过小 PR 直接进入 `main`，使默认分支上的手动工作流可用；合入后同步到当前 release 分支。此例外不提前发布下一版 App 代码。
 - 每个版本从 `main` 建立 `release/x.y`，在该分支开发。功能、修复与文档使用独立开发分支，PR 以当前 `release/x.y` 为目标，通过检查后 **squash** 合并。
 - App Store 发布后，`release/x.y` 通过 PR 以普通 **merge commit** 合回 `main`，保留版本开发历史；发布回合使用普通 merge，不 squash 发布分支；下述已上线 hotfix 回合也使用普通 merge。
 - 线上问题从 `main` 建立 `hotfix/x.y.z`，在该分支修复、打包并提审；App Store 上线后才通过 PR 以普通 merge 回 `main` 并打补丁 tag（如 `v1.1.1`），随后把 `main` 合进当前 `release/x.y`。补丁审核及等待上线期间不提前合回 main，确保 main 的 App 代码始终对应线上版本。
@@ -92,6 +93,24 @@ nix develop --no-update-lock-file -c xcodebuild \
 上传前检查 Bundle ID、版本/构建号、`ITSAppUsesNonExemptEncryption=NO`、隐私清单、无 DEBUG/诊断入口、无 `.storekit` 文件，以及签名完整性。生产权限应在**导出分发包**核对：`aps-environment=production`、CloudKit 环境 Production、`get-task-allow=false`，容器为 `iCloud.dev.moonread.Moonread`，服务同时包含 CloudKit 与 CloudDocuments。不要拿原始开发签名归档的权限代替分发包结论。
 
 `TipJar.storekit` 仅保留 Debug scheme 的 StoreKit Configuration 引用，不属于任何 target 的 Copy Bundle Resources；普通 Release 归档不需要资源排除参数。本地 StoreKitTest 自动化在模拟器通过源文件 URL 读取同一配置，不依赖 App 或测试 bundle 内的副本。上传成功与 ASC 处理完成／可测试分别记录；上传不等于提交审核或正式发布。归档、分发包核验和上传日志保存在 `build/TestFlight/`。
+
+### TestFlight 手动 CI
+
+[`TestFlight`](../../../.github/workflows/testflight.yml) 只接受在默认分支 `main` 上的 `workflow_dispatch`，不由 tag、PR 或 push 上传。工作流本身须先通过 PR 合入 main；维护者再同步到当前 release 分支。Actions 中选择 `main`，填写 `source_branch`（仅 `release/x.y` 或 `hotfix/x.y.z`）、`expected_sha`（完整 40 位、等于该分支 HEAD）、`mode`（默认 `verify`）。`upload` 必须另获用户明确授权后才选择；verify 从不上传。
+
+无凭据的 prepare job 检查同一个可信 `ci.yml` 的该 SHA 最新 push run：`Secret scan`、`Workflow syntax`、`Linux checks`、`iOS unit tests` 全部成功，skipped/pending 不放行。签名 job 进入 `testflight` Environment 后再次检查分支 HEAD，检出固定 SHA；上传前再检查一次。所有版本共用 `moonread-testflight` 串行组，不取消正在运行的任务；不要连续排多个发版请求。
+
+用户在 GitHub **Environment `testflight`** 中自行配置三项 Secrets：`ASC_API_KEY_BASE64`（ASC Team API Key 的 p8 原字节 Base64）、`ASC_KEY_ID`、`ASC_ISSUER_ID`；配置非敏感 Variable `APPLE_TEAM_ID`。API Key 按已确认自动签名方案使用 Admin 角色。Environment 限制只允许 main 部署，并由用户设置可用的审批保护；不要把签名 Secrets 配到 PR 可访问的仓库环境。代理不读取或代填密钥，也不索要 p12/profile。未配置或自动签名权限、协议、证书额度不足时停止报告，不自动改走手动签名、不撤销证书或循环申请。GitHub-hosted `xcode-27` 必须提供 Xcode 27.1 / iPhoneOS SDK，否则停止，不自行换工具链。
+
+先在工程 PR 中分配全局递增构建号，App/Share、Debug/Release 一致，营销版本与源分支版本一致。CI 只读取，绝不修改版本号。ASC 对 App `6823849812` 的所有营销版本分页取数字最大构建号；upload 的候选号必须更大，verify 可以核验已用号但不消耗新号。上传命令非零退出时立即保存网络、权限、协议、签名或导出失败的脱敏类别并停止，不空等处理结果或自动重传；上传是否发生可能不明，列表也可能延迟，需用户先核对 ASC 后决定重试或新号。
+
+archive、本地 export、upload export 都使用 `-allowProvisioningUpdates` 和三个 `-authenticationKey*` 参数、`CODE_SIGN_STYLE=Automatic`，不指定 Distribution 身份或 profile 映射。两份 ExportOptions 除 destination 外一致：automatic、Production、`manageAppVersionAndBuildNumber=false`。工作流不读取本机 `LocalSigning.xcconfig`，p8 只存在 runner 临时文件中，隔离钥匙串在 finally 步骤恢复并删除；只运行在一次性 GitHub-hosted runner。Nix 使用锁定工具链；SPM 必须使用已提交的 Package.resolved；不复用 PR 的构建/签名产物。
+
+归档完成后本地导出，解压 **IPA** 审计：App/Share Bundle ID 与版本/构建、逐个代码签名与 arm64、有效 App Store profile 与团队/签名证书、生产推送与 CloudKit/CloudDocuments/固定容器、App Group、`get-task-allow=false`、加密声明、四处已知隐私清单，以及无 DEBUG/诊断入口、`.storekit`、测试包；App 与 Share 二进制均禁止 `--ui-test` 前缀的所有测试启动参数（包括 `--ui-testing`、`--ui-test-session`、`--ui-test-tips`、`--ui-test-introduction`），同时检查其他既有诊断标记。原始 archive 的开发签名不能代替此结论。上传使用同一份已审计且未改动的 archive 再导出，不宣称两次重签的 IPA 字节完全相同。
+
+公开仓库 artifact **仅**保存白名单脱敏 JSON（来源 SHA、版本/构建、锁文件与 IPA 哈希、审计结果、失败类别/ASC 状态），保留 7 天；不上传 IPA、archive、dSYM、完整签名日志、profile、entitlements 或密钥。原始资料只在临时 runner，结束时删除；需要私有 dSYM 留存时另行授权配置。失败按网络、权限/签名、协议和构建/导出区分；日志不输出凭据。只有上传命令成功才只读查询准确版本/构建，最多 20 分钟；分别记录 Xcode 接受上传、ASC VALID/PROCESSING/FAILED/INVALID/结果待确认。目标 Moonread Auto 组由维护者在 ASC 配置/核对，工作流不改分组、外部测试、审核或发布状态。
+
+首次验收为：用户合并工作流并配置 Environment 后，手动执行一次 `verify`，审计通过再单独授权 upload。PR CI 或 actionlint 通过只证明对应检查，不证明自动签名或上传已成功。
 
 ### 当前真机云能力构建
 
