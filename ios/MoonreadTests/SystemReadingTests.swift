@@ -1,5 +1,6 @@
 import Foundation
 import XCTest
+import SwiftUI
 @testable import Moonread
 
 @MainActor final class SystemReadingTests: ReaderIntegrationFixture {
@@ -27,6 +28,8 @@ import XCTest
         await service.resetSystemReadingCatalog()
         let empty = try file.read()
         XCTAssertTrue(empty.books.isEmpty); XCTAssertTrue(empty.recentIDs.isEmpty)
+        XCTAssertNil(empty.statistics); XCTAssertNil(empty.appearance)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.coversDirectory.path))
         XCTAssertNotEqual(empty.storeScope, snapshot.storeScope)
         await service.scheduleSystemReadingCatalog(immediate: true)
         await service.waitForSystemReadingCatalog()
@@ -238,6 +241,128 @@ import XCTest
         await service.scheduleSystemReadingCatalog(immediate: true)
         await service.waitForSystemReadingCatalog()
         XCTAssertEqual(try file.read().books.count, 2)
+    }
+
+    func testWidgetFieldsRoundTripAndSearchExclusionsPreserveExplicitDisplay() async throws {
+        let (root, service, _, _, _, _, _, suite) = try singleBookFixture()
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        let file = SystemReadingSnapshotFile(directory: root.appendingPathComponent("system"))
+        await service.startSystemReadingCatalog(file: file); await service.waitForSystemReadingCatalog()
+        let initial = try file.read()
+        let stats = try XCTUnwrap(initial.statistics)
+        XCTAssertEqual(stats.status, "ready"); XCTAssertEqual(stats.days?.count, 7)
+        XCTAssertNotNil(initial.appearance)
+        var books = initial.books
+        books[0].coverThumbnail = .init(fileName: "cover-synthetic-r1-128.png", revision: "r1-synthetic", pixelWidth: 128, pixelHeight: 192)
+        let candidate = SystemReadingSnapshot(storeScope: initial.storeScope, books: books, recentIDs: initial.recentIDs,
+            appearance: initial.appearance, statistics: initial.statistics)
+        try file.publish(candidate)
+        try await service.setSystemSearch(enabled: false, excludedShelfIDs: [])
+        let roundTrip = try file.read()
+        XCTAssertEqual(roundTrip.statistics?.todayDurationMs, stats.todayDurationMs)
+        XCTAssertEqual(roundTrip.appearance, initial.appearance)
+        // The restricted publication itself must preserve all display fields;
+        // subsequent rebuilds may drop an unavailable synthetic image.
+        let restricted = candidate.restrictingAutomaticExposure(to: .init(systemSearchEnabled: false, excludedShelfIDs: []))
+        let decoded = try JSONDecoder().decode(SystemReadingSnapshot.self, from: SystemReadingSnapshotFile.encode(restricted))
+        XCTAssertEqual(decoded.books[0].coverThumbnail, books[0].coverThumbnail)
+        XCTAssertEqual(decoded.statistics, candidate.statistics); XCTAssertEqual(decoded.appearance, candidate.appearance)
+        XCTAssertFalse(decoded.books[0].allowsAutomaticExposure)
+        XCTAssertEqual(SystemReadingWidgetModel.recentBooks(in: candidate, limit: 4).count, candidate.recentIDs.count)
+        XCTAssertEqual(try SystemReadingRequest(url: SystemReadingLink.recent), .showRecent)
+    }
+    func testWidgetAppearanceUsesAppModeAndAppSlotsWithoutReaderTextures() async throws {
+        let (root, service, _, _, _, _, _, suite) = try singleBookFixture()
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        var preferences = try await service.themes().preferences
+        preferences.appMode = .dark
+        preferences.readerMode = .light; preferences.readerLight = .palette(id: "white-light")
+        let snapshot = try await service.saveThemes(preferences)
+        let dark = await service.systemWidgetAppearance()
+        XCTAssertEqual(dark?.preferredDark, true)
+        XCTAssertEqual(dark?.light, dark?.dark, "App's forced dark mode applies regardless of Widget host scheme")
+        let resolved = try resolveThemes(value: snapshot, system: .light, highContrast: false)
+        XCTAssertEqual(dark?.light?.paper, resolved.app.colors?.paper)
+        XCTAssertNotEqual(dark?.light?.paper, resolved.reader.colors?.paper)
+        preferences.appMode = .light
+        _ = try await service.saveThemes(preferences)
+        let light = await service.systemWidgetAppearance()
+        XCTAssertEqual(light?.preferredDark, false); XCTAssertEqual(light?.light, light?.dark)
+        XCTAssertNotEqual(light?.light, dark?.dark)
+    }
+    func testWidgetStatisticsExpireAtCivilMidnightAndRejectChangedCalendarOrUnknownStatus() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles")); calendar.firstWeekday = 2
+        let now = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 3, day: 8, hour: 0, minute: 10)))
+        let end = try XCTUnwrap(calendar.dateInterval(of: .day, for: now)?.end)
+        XCTAssertLessThan(end.timeIntervalSince(now), 24 * 3600 - 60 * 10, "DST boundary uses Calendar, not fixed seconds")
+        let value = SystemReadingSnapshot.Statistics(status: "ready", generatedAt: now, localDay: 0, validUntil: end,
+            timeZoneID: calendar.timeZone.identifier, calendarID: String(describing: calendar.identifier), firstWeekday: 2,
+            recordingEnabled: false, todayDurationMs: 0, weekDurationMs: 0, currentStreakDays: 0, days: (0..<7).map { .init(localDay: Int64($0), durationMs: 0) })
+        XCTAssertTrue(value.hasValues(at: now, calendar: calendar), "Paused history is still readable")
+        XCTAssertFalse(value.hasValues(at: end, calendar: calendar))
+        calendar.firstWeekday = 1; XCTAssertFalse(value.hasValues(at: now, calendar: calendar))
+        calendar.firstWeekday = 2; calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        XCTAssertFalse(value.hasValues(at: now, calendar: calendar))
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(value)) as? [String: Any])
+        json["status"] = "future-status"
+        let unknown = try JSONDecoder().decode(SystemReadingSnapshot.Statistics.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertFalse(unknown.hasValues(at: now, calendar: calendar))
+    }
+    func testWidgetCoverBudgetUsesControlledFilesAndNeverTouchesOriginalAssets() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = SystemReadingSnapshotFile(directory: root)
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = true
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 128, height: 192), format: format).image { context in
+            UIColor.systemGreen.setFill(); context.fill(CGRect(x: 0, y: 0, width: 128, height: 192))
+        }
+        let value = try XCTUnwrap(SystemReadingDerivedCover.encode(try XCTUnwrap(image.cgImage), sha: String(repeating: "a", count: 64), pixels: 384))
+        XCTAssertLessThanOrEqual(value.data.count, SystemReadingSnapshotFile.maximumCoverBytes)
+        try file.publishCover(value)
+        XCTAssertEqual(file.coverData(value.reference), value.data)
+        let traversal = SystemReadingSnapshot.CoverThumbnail(fileName: "cover-../../original.jpg", revision: "x", pixelWidth: 10, pixelHeight: 10)
+        XCTAssertNil(file.coverData(traversal)); XCTAssertNil(file.coverURL(traversal))
+        let sibling = root.appendingPathComponent("original.png")
+        try value.data.write(to: sibling)
+        file.cleanupCovers(current: [], previous: [])
+        XCTAssertNil(file.coverData(value.reference))
+        XCTAssertEqual(try Data(contentsOf: sibling), value.data, "Only the owned Covers directory is cleaned")
+        let unwritable = SystemReadingSnapshotFile(directory: sibling)
+        XCTAssertThrowsError(try unwritable.publishCover(value))
+    }
+    func testWidgetReloadsFollowDisplayChangesInsteadOfRandomEnvelopeGeneration() async throws {
+        let initial = SystemReadingWidgetModel.sampleSnapshot
+        let same = SystemReadingSnapshot(storeScope: initial.storeScope, generatedAt: initial.generatedAt.addingTimeInterval(20),
+            books: initial.books.map { $0.withAutomaticExposure(false) }, recentIDs: initial.recentIDs,
+            exposurePolicy: .init(systemSearchEnabled: false, excludedShelfIDs: []), appearance: initial.appearance, statistics: initial.statistics)
+        XCTAssertTrue(SystemReadingWidgetModel.reloadKinds(from: initial, to: same).isEmpty)
+        let old = try XCTUnwrap(initial.statistics)
+        let changed = SystemReadingSnapshot.Statistics(status: old.status, generatedAt: old.generatedAt, localDay: old.localDay, validUntil: old.validUntil,
+            timeZoneID: old.timeZoneID, calendarID: old.calendarID, firstWeekday: old.firstWeekday, recordingEnabled: old.recordingEnabled,
+            todayDurationMs: 1, weekDurationMs: old.weekDurationMs, currentStreakDays: old.currentStreakDays, days: old.days)
+        let candidate = SystemReadingSnapshot(storeScope: initial.storeScope, books: initial.books, recentIDs: initial.recentIDs, appearance: initial.appearance, statistics: changed)
+        XCTAssertEqual(SystemReadingWidgetModel.reloadKinds(from: initial, to: candidate), [SystemReadingWidgetModel.statisticsKind])
+        XCTAssertEqual(Set(SystemReadingWidgetModel.reloadKinds(from: initial, to: .init(storeScope: "other"))),
+            Set([SystemReadingWidgetModel.continueKind, SystemReadingWidgetModel.recentKind, SystemReadingWidgetModel.statisticsKind]))
+        // Actual shared views, synthetic data only; attachments are for visual review,
+        // not assertions about system geometry or WidgetKit scheduling.
+        let (root, service, _, _, _, _, _, suite) = try singleBookFixture()
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        let appearance = await service.systemWidgetAppearance()
+        for scheme in [ColorScheme.light, .dark] {
+            let colors = SystemWidgetColors(tokens: scheme == .dark ? appearance?.dark : appearance?.light)
+            let board = VStack(spacing: 20) {
+                SystemReadingCard(book: initial.books.first, appearance: appearance).frame(width: 144, height: 144).padding(16).background(colors.paper, in: .rect(cornerRadius: 24)).frame(maxWidth: .infinity, alignment: .leading)
+                SystemReadingCard(book: initial.books.first, wide: true, appearance: appearance).frame(width: 320, height: 144).padding(16).background(colors.paper, in: .rect(cornerRadius: 24))
+                SystemRecentReadingCard(books: Array(initial.books.prefix(2)), colors: colors).frame(width: 320, height: 144).padding(16).background(colors.paper, in: .rect(cornerRadius: 24))
+                SystemRecentReadingCard(books: initial.books, colors: colors, large: true).frame(width: 320, height: 338).padding(16).background(colors.paper, in: .rect(cornerRadius: 24))
+                SystemStatisticsCard(statistics: initial.statistics, colors: colors).frame(width: 320, height: 144).padding(16).background(colors.paper, in: .rect(cornerRadius: 24))
+            }.padding(20).background(colors.canvas).environment(\.colorScheme, scheme)
+            let renderer = ImageRenderer(content: board); renderer.scale = 2
+            let attachment = XCTAttachment(image: try XCTUnwrap(renderer.uiImage))
+            attachment.name = "widget-v7-" + (scheme == .dark ? "dark" : "light"); attachment.lifetime = .keepAlways; add(attachment)
+        }
     }
 
     func testReaderHandoffRemovesOnlyItsOldNavigationDestination() {

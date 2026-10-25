@@ -77,19 +77,7 @@ struct LibraryBookCover: View {
     @Environment(\.theme) private var theme
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: compact ? 3 : 6)
-                .fill(Color(uiColor: theme.accentSurface))
-            Rectangle().fill(Color(uiColor: theme.accent).opacity(0.18))
-                .frame(width: 1).padding(.leading, compact ? 4 : 7)
-            Text(verbatim: title)
-                .font(compact ? .system(size: 10, weight: .medium, design: .serif) : .system(.headline, design: .serif))
-                .foregroundStyle(Color(uiColor: theme.accent))
-                .multilineTextAlignment(.center).lineLimit(compact ? 4 : 5)
-                .minimumScaleFactor(0.8)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(compact ? 6 : LayoutTokens.control)
-        }
+        SystemTextBookCover(title: title, accent: Color(uiColor: theme.accent), surface: Color(uiColor: theme.accentSurface), compact: compact)
         .overlay { if let cover { BookCoverImage(cover: cover, pixels: compact ? 160 : 600, loader: coverLoader).clipped() } }
         .clipShape(.rect(cornerRadius: compact ? 3 : 6))
         .accessibilityHidden(true)

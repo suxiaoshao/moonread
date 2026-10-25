@@ -287,6 +287,11 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		CB6A7FD1BF984A79B8586F5E /* SystemReadingCard.swift */ = {isa = PBXBuildFile; fileRef = 930DD47374D548D2A44CEC28; };
 		E473A3CD4DBB45B7AB184A3D /* ReadingWidget.swift */ = {isa = PBXBuildFile; fileRef = 18545B46D1CF43D98A0D7F6D; };
 		3590C0DA176B4ADBBFB73708 /* PrivacyInfo.xcprivacy */ = {isa = PBXBuildFile; fileRef = CE0214FA08B84EE38BFA0704; };
+		BB8ABFEE74F04456A4BE070E /* SystemWidgetSnapshot.swift */ = {isa = PBXBuildFile; fileRef = 98A93E7440E64AE0B11216AC; };
+		4FB012E703494D00A03A92E4 /* SystemWidgetSnapshot.swift */ = {isa = PBXBuildFile; fileRef = 98A93E7440E64AE0B11216AC; };
+		2474CD360E81483DBDA43BE3 /* SystemStatisticsCard.swift */ = {isa = PBXBuildFile; fileRef = 66ECAE43656B4E6FA118B88B; };
+		74CBED75A4D04FC1A1E2382C /* SystemStatisticsCard.swift */ = {isa = PBXBuildFile; fileRef = 66ECAE43656B4E6FA118B88B; };
+		9AD8D099CCC74446903914B8 /* SystemWidgetPublishing.swift */ = {isa = PBXBuildFile; fileRef = F304E7CD71124E5D9F7DEC91; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -588,6 +593,9 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		930DD47374D548D2A44CEC28 /* SystemReadingCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemReadingCard.swift"; sourceTree = "<group>"; };
 		18545B46D1CF43D98A0D7F6D /* ReadingWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingWidget.swift"; sourceTree = "<group>"; };
 		CE0214FA08B84EE38BFA0704 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		98A93E7440E64AE0B11216AC /* SystemWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemWidgetSnapshot.swift"; sourceTree = "<group>"; };
+		66ECAE43656B4E6FA118B88B /* SystemStatisticsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemStatisticsCard.swift"; sourceTree = "<group>"; };
+		F304E7CD71124E5D9F7DEC91 /* SystemWidgetPublishing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemWidgetPublishing.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1005,6 +1013,7 @@ F01900000000000000000002,
                 C22000000000000000000004 /* UserDataTestFixtures.swift */,
             ); path = Fixtures; sourceTree = "<group>"; };
 		A1DE5DFDB223BC4D95971F4F /* SystemIntegration */ = {isa = PBXGroup; children = (
+                F304E7CD71124E5D9F7DEC91 /* SystemWidgetPublishing.swift */,
                 DF9898CA5D68423AB9936975 /* SystemIntegrationSettingsView.swift */,
                 6F59DF87BB644F99AE184A7C /* SystemSpotlightIndexer.swift */,
                 E82B5CEE6CCE405993FF6B63 /* AppShortcuts.xcstrings */,
@@ -1014,6 +1023,8 @@ F01900000000000000000002,
 				CDF91CB9E9184CA3BF5287FC /* SystemReadingRouter.swift */,
 			); path = Moonread/SystemIntegration; sourceTree = "<group>"; };
 		A2E6EE44E97CC74D11961166 /* SystemIntegrationShared */ = {isa = PBXGroup; children = (
+                66ECAE43656B4E6FA118B88B /* SystemStatisticsCard.swift */,
+                98A93E7440E64AE0B11216AC /* SystemWidgetSnapshot.swift */,
                 930DD47374D548D2A44CEC28 /* SystemReadingCard.swift */,
                 7B12A4C9A1BD4B6CB7B43312 /* SystemReadingLink.swift */,
                 D7ABB22416B94A80A0741820 /* SystemReadingEntities.swift */,
@@ -1221,6 +1232,9 @@ E51000000000000000000009,D41000000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                9AD8D099CCC74446903914B8 /* SystemWidgetPublishing.swift */,
+                2474CD360E81483DBDA43BE3 /* SystemStatisticsCard.swift */,
+                BB8ABFEE74F04456A4BE070E /* SystemWidgetSnapshot.swift */,
                 83977DC4948F48748061915D /* SystemReadingCard.swift */,
                 CB5D24E426C74DB28C409E79 /* SystemReadingLink.swift */,
                 A674F357DD104E0393C79ACC /* SystemIntegrationSettingsView.swift */,
@@ -1451,6 +1465,8 @@ F01900000000000000000001,
             ); runOnlyForDeploymentPostprocessing = 0; };
 		67F838CFAF2F527F8C8EE359 /* Share Sources */ = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (906A74D1BD2A5FAD9BE897E1,0804D0B539CB5AB19A9DB8FF,); runOnlyForDeploymentPostprocessing = 0; };
 		D68B24CD446A49FDAD76CC77 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
+                74CBED75A4D04FC1A1E2382C /* SystemStatisticsCard.swift */,
+                4FB012E703494D00A03A92E4 /* SystemWidgetSnapshot.swift */,
                 E473A3CD4DBB45B7AB184A3D /* ReadingWidget.swift */,
                 CB6A7FD1BF984A79B8586F5E /* SystemReadingCard.swift */,
                 58F94938188043B8B65F2209 /* SystemReadingLink.swift */,

@@ -13,6 +13,7 @@ struct SystemSpotlightMetadata: Equatable, Sendable {
     var chapterLabel: String? = nil
     var progress: Double? = nil
     var cover: BookCoverAsset? = nil
+    var thumbnailRevision: String? = nil
     var keywords: [String] { LibraryQueryRules.systemMetadataTerms(title: title, author: author, tags: tags) }
     var contentDescription: String {
         [author, chapterLabel, progress.map { ($0 / 100).formatted(.percent.precision(.fractionLength(1))) }]
@@ -102,7 +103,9 @@ private struct SystemSpotlightState: Codable {
 
 extension AppDataService {
     private func systemSpotlightThumbnail(_ book: SystemSpotlightMetadata) async -> Data? {
-        if let cover = book.cover, let image = try? await coverImage(cover, pixels: 274) { return image.pngData() }
+        if let reference = systemCatalog?.displaySnapshot?.books.first(where: { $0.id == book.id })?.coverThumbnail,
+           let data = systemCatalog?.file.coverData(reference) { return data }
+        if let cover = book.cover, let value = await systemDerivedCover(cover) { return value.data }
         return await SystemSpotlightMetadata.textThumbnail(title: book.title)
     }
 
@@ -134,7 +137,7 @@ extension AppDataService {
         }
         let metadata = snapshot.books.filter(\.allowsAutomaticExposure).map {
             SystemSpotlightMetadata(id: $0.id, title: $0.title, author: $0.author, tags: $0.tags,
-                chapterLabel: $0.chapterLabel, progress: $0.progress, cover: systemCatalog?.spotlightCovers[$0.id])
+                chapterLabel: $0.chapterLabel, progress: $0.progress, cover: systemCatalog?.spotlightCovers[$0.id], thumbnailRevision: $0.coverThumbnail?.revision)
         }
         let desired = Set(metadata.map(\.id))
         let obsolete = Set(state.ids).subtracting(desired)
@@ -162,11 +165,11 @@ extension AppDataService {
         // Revoke automatic exposure locally first. Explicit widgets/entities keep
         // the same readable book catalogue while its new policy is being rebuilt.
         if let catalog = systemCatalog, let old = try? catalog.file.read() {
-            let restricted = SystemReadingSnapshot(storeScope: catalog.scope,
-                books: old.books.map { $0.withAutomaticExposure(false) }, recentIDs: old.recentIDs, exposurePolicy: systemExposurePolicy())
+            let restricted = old.restrictingAutomaticExposure(to: systemExposurePolicy())
             try catalog.file.publish(restricted)
             systemCatalog?.publishedGeneration = restricted.generation
-            systemReadingSnapshotPublished(restricted)
+            systemCatalog?.displaySnapshot = restricted
+            systemReadingSnapshotPublished(restricted, previous: old)
         }
         scheduleSystemReadingCatalog(immediate: true)
         await waitForSystemReadingCatalog()

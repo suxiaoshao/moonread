@@ -10,6 +10,8 @@ struct SystemReadingSnapshot: Codable, Equatable, Sendable {
     let books: [Book]
     let recentIDs: [String]
     let exposurePolicy: ExposurePolicy
+    let appearance: Appearance?
+    let statistics: Statistics?
 
     struct ExposurePolicy: Codable, Equatable, Sendable {
         let systemSearchEnabled: Bool
@@ -30,16 +32,22 @@ struct SystemReadingSnapshot: Codable, Equatable, Sendable {
         let chapterLabel: String?
         let recentRank: UInt32?
         let allowsAutomaticExposure: Bool
+        var coverThumbnail: CoverThumbnail? = nil
         func withAutomaticExposure(_ allowed: Bool) -> Self {
             .init(id: id, title: title, author: author, tags: tags, availability: availability, sourceCount: sourceCount,
                 naturalOrdinal: naturalOrdinal, progress: progress, chapterLabel: chapterLabel, recentRank: recentRank,
-                allowsAutomaticExposure: allowed)
+                allowsAutomaticExposure: allowed, coverThumbnail: coverThumbnail)
         }
     }
+    func restrictingAutomaticExposure(to policy: ExposurePolicy) -> Self {
+        .init(storeScope: storeScope, books: books.map { $0.withAutomaticExposure(false) }, recentIDs: recentIDs,
+              exposurePolicy: policy, appearance: appearance, statistics: statistics)
+    }
     init(generation: UUID = UUID(), storeScope: String, generatedAt: Date = Date(), books: [Book] = [],
-         recentIDs: [String] = [], exposurePolicy: ExposurePolicy = .initial) {
+         recentIDs: [String] = [], exposurePolicy: ExposurePolicy = .initial, appearance: Appearance? = nil, statistics: Statistics? = nil) {
         schemaVersion = Self.currentVersion; self.generation = generation; self.storeScope = storeScope
         self.generatedAt = generatedAt; self.books = books; self.recentIDs = recentIDs; self.exposurePolicy = exposurePolicy
+        self.appearance = appearance; self.statistics = statistics
     }
 }
 

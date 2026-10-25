@@ -205,6 +205,16 @@ pub struct StatisticsOverview {
     pub preferences: StatisticsPreferences,
 }
 
+/// Display-only summary of the existing effective activity projection.
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct StatisticsWidgetSummary {
+    pub has_reading_history: bool,
+    pub today_duration_ms: u64,
+    pub week_duration_ms: u64,
+    pub current_streak_days: u64,
+    pub days: Vec<StatisticsDay>,
+}
+
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct ReadingActivity {
     pub id: String,
@@ -233,6 +243,25 @@ fn preferences(db: &Connection) -> Result<StatisticsPreferences> {
     )?)
 }
 
+fn statistics_days(
+    db: &Connection,
+    first_day: i64,
+    last_day: i64,
+    content_key: Option<String>,
+) -> Result<Vec<StatisticsDay>> {
+    let mut query = db.prepare("SELECT local_day,SUM(ended_ms-started_ms),COUNT(DISTINCT content_key) FROM reading_activity WHERE deleted=0 AND local_day>=?1 AND local_day<=?2 AND (?3 IS NULL OR content_key=?3) GROUP BY local_day ORDER BY local_day")?;
+    let days = query
+        .query_map(params![first_day, last_day, content_key], |r| {
+            Ok(StatisticsDay {
+                day: r.get(0)?,
+                duration_ms: unsigned_column(r, 1)?,
+                book_count: unsigned_column(r, 2)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(days)
+}
+
 impl ReaderCore {
     pub(crate) fn statistics_overview(
         &self,
@@ -256,21 +285,58 @@ impl ReaderCore {
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        let mut query = db.prepare("SELECT local_day,SUM(ended_ms-started_ms),COUNT(DISTINCT content_key) FROM reading_activity WHERE deleted=0 AND local_day>=?1 AND local_day<=?2 AND (?3 IS NULL OR content_key=?3) GROUP BY local_day ORDER BY local_day")?;
-        let days = query
-            .query_map(params![first_day, last_day, content_key], |r| {
-                Ok(StatisticsDay {
-                    day: r.get(0)?,
-                    duration_ms: unsigned_column(r, 1)?,
-                    book_count: unsigned_column(r, 2)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let days = statistics_days(&db, first_day, last_day, content_key)?;
         Ok(StatisticsOverview {
             total_duration_ms: books.iter().map(|book| book.duration_ms).sum(),
             books,
             days,
             preferences: preferences(&db)?,
+        })
+    }
+    pub(crate) fn statistics_widget_summary(
+        &self,
+        today: i64,
+        week_start: i64,
+    ) -> Result<StatisticsWidgetSummary> {
+        if today < i64::MIN + 7 || week_start > today {
+            return Err(ReaderError::InvalidSettings);
+        }
+        let db = self.read_lock()?;
+        let days = statistics_days(&db, i64::MIN, today, None)?;
+        let durations: std::collections::BTreeMap<_, _> =
+            days.iter().map(|d| (d.day, d.duration_ms)).collect();
+        let mut cursor = if durations.get(&today).copied().unwrap_or(0) > 0 {
+            today
+        } else {
+            today - 1
+        };
+        let mut streak = 0;
+        while durations.get(&cursor).copied().unwrap_or(0) > 0 {
+            streak += 1;
+            let Some(previous) = cursor.checked_sub(1) else {
+                break;
+            };
+            cursor = previous;
+        }
+        Ok(StatisticsWidgetSummary {
+            has_reading_history: durations.values().any(|duration| *duration > 0),
+            today_duration_ms: durations.get(&today).copied().unwrap_or(0),
+            week_duration_ms: days
+                .iter()
+                .filter(|d| d.day >= week_start)
+                .map(|d| d.duration_ms)
+                .sum(),
+            current_streak_days: streak,
+            days: (today - 6..=today)
+                .map(|day| StatisticsDay {
+                    day,
+                    duration_ms: durations.get(&day).copied().unwrap_or(0),
+                    book_count: days
+                        .iter()
+                        .find(|d| d.day == day)
+                        .map_or(0, |d| d.book_count),
+                })
+                .collect(),
         })
     }
     pub(crate) fn reading_activities(
@@ -319,6 +385,56 @@ mod tests {
     }
     fn duration(slices: &[ReadingSlice]) -> i64 {
         slices.iter().map(|s| s.ended_ms - s.started_ms).sum()
+    }
+    #[test]
+    fn widget_streak_uses_today_or_yesterday_and_effective_days_without_a_seven_day_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = ReaderCore::new(dir.path().join("cache").to_string_lossy().into()).unwrap();
+        {
+            let db = core.read_lock().unwrap();
+            // Populate the same effective TEMP projection used after fact/clear adjudication.
+            for day in 80..=100 {
+                db.execute("INSERT INTO reading_activity(id,session_id,content_key,book_id,title,started_ms,ended_ms,local_day,utc_offset_seconds,preview,exposures,deleted) VALUES(?1,'s','key',NULL,'synthetic',0,60000,?2,0,0,'[]',0)", params![format!("day-{day}"),day]).unwrap();
+            }
+        }
+        let summary = core.statistics_widget_summary(100, 99).unwrap();
+        assert_eq!(summary.current_streak_days, 21);
+        assert_eq!(summary.today_duration_ms, 60_000);
+        assert_eq!(summary.week_duration_ms, 120_000); // Calendar week, not seven days.
+        assert_eq!(summary.days.len(), 7);
+        assert_eq!(
+            core.statistics_widget_summary(101, 99)
+                .unwrap()
+                .current_streak_days,
+            21
+        );
+        assert_eq!(
+            core.statistics_widget_summary(102, 99)
+                .unwrap()
+                .current_streak_days,
+            0
+        );
+        core.read_lock()
+            .unwrap()
+            .execute(
+                "UPDATE reading_activity SET deleted=1 WHERE local_day=99",
+                [],
+            )
+            .unwrap();
+        assert_eq!(
+            core.statistics_widget_summary(100, 99)
+                .unwrap()
+                .current_streak_days,
+            1
+        );
+        core.read_lock()
+            .unwrap()
+            .execute("UPDATE reading_activity SET deleted=1", [])
+            .unwrap();
+        let empty = core.statistics_widget_summary(100, 99).unwrap();
+        assert_eq!(empty.current_streak_days, 0);
+        assert_eq!(empty.today_duration_ms, 0);
+        assert!(empty.days.iter().all(|d| d.duration_ms == 0));
     }
     #[test]
     fn idle_is_capped_and_interaction_never_backfills() {

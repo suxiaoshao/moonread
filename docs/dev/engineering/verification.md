@@ -94,3 +94,10 @@
 - Swift 相关边界 15 条通过（10 条 SystemReading + 5 条 ReaderQuery 适配器）；涵盖后台旧候选被 scope 重置拒绝、原子快照/未知版本、陈旧 SHA 不显示正文、最小 Entity、显式/自动范围、索引失败仍可撤销与 Widget 原目标保持。使用假系统索引，不测 Apple 搜索/建议调度。
 - 既有 U04 改从首页统一路由续读；U12 覆盖国区仍有系统集成设置与合成 Widget 预览。实际结果与截图保存在 build/SystemReading/。
 - 不以这些本地结果声明 Siri、Control 的真实执行进程、锁屏/待机刷新或 iOS 18 实机已验收；整批先作 Production 云能力试用包，用户确认后再推送 PR，CI 做全量把关。
+
+
+## 1.3 V7 小组件本地验证（2026-10-26）
+
+- Rust 统计 owner 相关 4 条与既有事实投影合同 1 条通过；新增连续日代表例包括今日未读接昨日、断日、清除及超过七天，不在 Swift 重算。
+- 主模拟器相关 18 条 Swift 单测通过（16 条 SystemReading、2 条封面适配器）；覆盖最终 DTO 往返、显式展示与自动曝光边界、受限图/清理、scope、App 界面配色槽和固定模式、民用午夜/DST/时区/周起点、未知统计状态及按显示变化 reload。既有 U12 通过；使用后关闭模拟器。
+- `build/SystemReading/WidgetV7Final.xcresult` 与 `widget-v7-final-screens/` 保存结果及实际共享视图的合成审图附件。不是 WidgetKit 调度、锁屏低光或 Siri 识别率的自动验收。用户重新添加最终 kind 后检查系统实物，重大批次试用确认前不推送。

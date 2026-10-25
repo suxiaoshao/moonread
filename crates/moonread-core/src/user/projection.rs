@@ -334,6 +334,13 @@ impl ReaderQuery {
         self.core
             .statistics_overview(first_day, last_day, content_key)
     }
+    pub fn statistics_widget_summary(
+        &self,
+        today: i64,
+        week_start: i64,
+    ) -> Result<StatisticsWidgetSummary> {
+        self.core.statistics_widget_summary(today, week_start)
+    }
     pub fn reading_activities(
         &self,
         first_day: i64,

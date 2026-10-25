@@ -172,7 +172,7 @@ extension AppDataService {
         for alias in aliases {
             if case let .pending(id) = try parseReadingKey(value: alias) { promotedUserKeys.remove(id); pendingPromotionIDs.remove(id) }
         }
-        queryCache.removeAll(); cancelRecentRestoration(); dataChanged(); scheduleSystemReadingCatalog(immediate: true)
+        queryCache.removeAll(); cancelRecentRestoration(); dataChanged(); scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
         NotificationCenter.default.post(name: .statisticsChanged, object: nil)
         do {
             // Retain every other book's untransferred pending data before the
@@ -294,7 +294,7 @@ extension AppDataService {
         guard preview.staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         try Task.checkCancellation()
         try await userStore().mergeBackup(directory: preview.staging.directory, manifest: preview.staging.manifest)
-        queryCache.removeAll(); dataChanged(); scheduleSystemReadingCatalog(immediate: true)
+        queryCache.removeAll(); dataChanged(); scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
         NotificationCenter.default.post(name: .statisticsChanged, object: nil)
         // Reuse the existing received-data refresh (including ThemeStore.load).
         NotificationCenter.default.post(name: .cloudDataReceived, object: nil)

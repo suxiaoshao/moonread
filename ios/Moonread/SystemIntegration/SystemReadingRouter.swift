@@ -7,7 +7,7 @@ enum SystemReadingRequest: Equatable, Sendable {
     case continueReading
     case openBook(SystemReadingBookID)
     case openSearchBook(SystemReadingBookID)
-    case showStatistics, showLibrary, searchBooks(String)
+    case showStatistics, showLibrary, showRecent, searchBooks(String)
 
     init(url: URL) throws {
         guard url.absoluteString.utf8.count <= 8192,
@@ -22,6 +22,7 @@ enum SystemReadingRequest: Equatable, Sendable {
         }
         guard c.query == nil, url.absoluteString.utf8.count <= 256 else { throw ReaderError.InvalidSettings }
         if c.percentEncodedPath == "/library" { self = .showLibrary }
+        else if c.percentEncodedPath == "/recent" { self = .showRecent }
         else if c.percentEncodedPath == "/continue" { self = .continueReading }
         else if c.percentEncodedPath == "/statistics" { self = .showStatistics }
         else {
@@ -34,6 +35,7 @@ enum SystemReadingRequest: Equatable, Sendable {
         switch self {
         case .continueReading: SystemReadingLink.resume
         case .showStatistics: SystemReadingLink.statistics
+        case .showRecent: SystemReadingLink.recent
         case .showLibrary: SystemReadingLink.library
         case .searchBooks(let query): SystemReadingLink.search(query)
         case .openBook(let id), .openSearchBook(let id): SystemReadingLink.book(id.rawValue)!
@@ -113,12 +115,13 @@ final class SystemReadingRouter {
                 let id: SystemReadingBookID
                 let automatic: Bool
                 switch request {
-                case .showStatistics, .showLibrary, .searchBooks:
+                case .showStatistics, .showLibrary, .showRecent, .searchBooks:
                     guard !presentationBlocked, library.sheet == nil, !library.filePickerPresented, library.canAcceptFileWork else { return }
                     await finishReader(in: library)
                     guard sceneActive, token == current, !Task.isCancelled else { return }
                     switch request {
                     case .showStatistics: library.selectedTab = .statistics; library.statisticsPath = []
+                    case .showRecent: library.selectedTab = .library; library.libraryPath = [.recent]
                     case .showLibrary:
                         library.selectedTab = .library; library.libraryPath = [.folder(LibraryLocation(shelfID: "builtin"))]
                     case .searchBooks(let query):

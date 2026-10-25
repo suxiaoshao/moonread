@@ -9,6 +9,7 @@ struct SystemIntegrationSettingsView: View {
     @State private var loading = true
     @State private var saving = false
     @State private var error: String?
+    @State private var widgetAppearance: SystemReadingSnapshot.Appearance?
     var body: some View {
         Form {
             Section {
@@ -41,7 +42,7 @@ struct SystemIntegrationSettingsView: View {
                 Text("可用“继续阅读”“我的书架”“搜索书籍”“阅读统计”和“打开书籍”。搜索可带关键词，统计可回答今天或本周的阅读时长。也可以在支持的控制中心、锁屏或操作按钮中添加“继续阅读”。")
             }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section {
-                SystemReadingCard(book: SystemReadingWidgetModel.sample)
+                SystemReadingCard(book: SystemReadingWidgetModel.sample, appearance: widgetAppearance)
                     .frame(width: 150, height: 150).padding(16)
                     .foregroundStyle(Color(uiColor: theme.ink)).tint(Color(uiColor: theme.accent))
                     .background(Color(uiColor: theme.raised), in: .rect(cornerRadius: 20))
@@ -49,13 +50,14 @@ struct SystemIntegrationSettingsView: View {
                     .accessibilityLabel("小组件合成示例：月下归舟，42%")
                     .accessibilityIdentifier("systemWidgetPreview")
             } header: { Text("小组件") } footer: {
-                Text("长按主屏幕或锁屏，添加月读小组件；待机沿用系统支持的布局。在小组件配置中选择最近阅读或指定书籍，默认显示书名和进度。")
+                Text("长按主屏幕或锁屏，添加月读小组件。可选继续阅读、最近阅读和阅读统计；继续阅读可显示最近一本或指定书籍。锁屏与待机沿用系统支持的布局。")
             }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
         }
         .themedPage().navigationTitle("系统集成")
         .disabled(loading || saving)
         .overlay { if loading { ProgressView() } }
         .task {
+            widgetAppearance = await library.service.systemWidgetAppearance()
             let policy = await library.service.systemExposurePolicy()
             enabled = policy.systemSearchEnabled; excluded = Set(policy.excludedShelfIDs)
             error = await library.service.systemReadingCatalogError(); loading = false

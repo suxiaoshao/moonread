@@ -11,13 +11,14 @@ private struct SystemReadingDonationState: Codable {
 extension AppDataService {
     /// One platform work chain keeps revoke/donate ordering explicit without
     /// making the App's storage actor wait for system services.
-    func systemReadingSnapshotPublished(_ snapshot: SystemReadingSnapshot) {
+    func systemReadingSnapshotPublished(_ snapshot: SystemReadingSnapshot, previous previousSnapshot: SystemReadingSnapshot? = nil) {
+        let kinds = SystemReadingWidgetModel.reloadKinds(from: previousSnapshot, to: snapshot)
         guard libraryDirectoryOverride == nil, testSession == nil else { return }
         let previous = systemExposureTask
         systemExposureTask = Task { [weak self] in
             await previous?.value
             guard await self?.systemSnapshotIsCurrent(snapshot) == true else { return }
-            await MainActor.run { WidgetCenter.shared.reloadTimelines(ofKind: SystemReadingWidgetModel.kind) }
+            await MainActor.run { for kind in kinds { WidgetCenter.shared.reloadTimelines(ofKind: kind) } }
             await self?.reconcileSystemReadingDonations(snapshot)
             do { try await self?.reconcileSystemSpotlight(snapshot) }
             catch { await self?.recordSystemExposureError(error) }

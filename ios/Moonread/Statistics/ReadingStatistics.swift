@@ -31,6 +31,7 @@ extension AppDataService {
         try await userStore(pending: true).setRecording(generation: generation, enabled: enabled)
         sourceDefaults.set(enabled, forKey: "Moonread.statisticsEnabled")
         sourceDefaults.set(Int(generation), forKey: "Moonread.statisticsGeneration")
+        scheduleSystemReadingCatalog(statisticsChanged: true)
         NotificationCenter.default.post(name: .statisticsPreferencesChanged, object: nil)
     }
     func saveReading(_ slices: [ReadingSlice], generation: UInt64) async throws {
@@ -51,6 +52,7 @@ extension AppDataService {
         pendingFacts = pendingFacts.filter { leases[$0.1] == localReadingWriteLease($0.1) }
         try await userStore().saveFacts(facts, generation: generation, current: preferences.generation, enabled: preferences.enabled)
         try await userStore(pending: true).saveFacts(pendingFacts, generation: generation, current: preferences.generation, enabled: preferences.enabled)
+        scheduleSystemReadingCatalog(statisticsChanged: true)
         NotificationCenter.default.post(name: .statisticsChanged, object: nil)
     }
     func statistics(first: Int64, last: Int64, book: String? = nil) async throws -> StatisticsOverview {
@@ -86,7 +88,9 @@ extension AppDataService {
         try await userStore().clear(book: book, session: session, newGeneration: generation)
         try await userStore(pending: true).clear(book: book, session: session, newGeneration: generation)
         sourceDefaults.set(Int(generation), forKey: "Moonread.statisticsGeneration")
+        scheduleSystemReadingCatalog(statisticsChanged: true)
         NotificationCenter.default.post(name: .statisticsPreferencesChanged, object: nil)
+        scheduleSystemReadingCatalog(statisticsChanged: true)
         NotificationCenter.default.post(name: .statisticsChanged, object: nil)
     }
 }

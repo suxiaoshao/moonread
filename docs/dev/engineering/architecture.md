@@ -192,6 +192,7 @@ SHA-256 是规范正文身份，原始 SHA 加解码策略仅作快开和字节�
 | --- | --- | --- |
 | 系统书目/最近项、展示排除、快照失效 | Swift SystemReadingCatalog；身份/排序继续调用现有 owner | [系统集成](system-integration.md) |
 | 系统元数据字符串匹配 | Swift LibraryQueryRules 具名 profile | Entity 不复制匹配，Spotlight 排名由系统负责 |
+| 系统统计摘要与连续日 | Rust user/statistics（既有有效日汇总），Swift 仅处理 Calendar/展示 | 今日未读截至昨日；不限七天，清除复用原投影；Widget 不读事实库 |
 | 系统路由与统计回答 | Swift SystemReadingRouter / AppDataService 既有查询 | 扩展不读正文或用户事实库，不保存位置 |
 | 领先阈值/有效章节/百分比 | Rust navigation / ReaderQuery | [同步提示](../data/sync.md#13-已定稿待实现)，Swift 仅本机基线与提示状态 |
 | rawSHA/编码规范 | Rust source identity/text；Swift 协调读源 | 不改 normalization-v1 |

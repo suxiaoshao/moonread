@@ -8,6 +8,7 @@ enum SystemReadingLink {
     static let bookIDPrefix = "book:"
     static let bookPathPrefix = "/book/"
     static let resume = URL(string: "moonread://reading/continue")!
+    static let recent = URL(string: "moonread://reading/recent")!
     static let statistics = URL(string: "moonread://reading/statistics")!
     static let library = URL(string: "moonread://reading/library")!
     static func search(_ query: String) -> URL {
@@ -22,7 +23,14 @@ enum SystemReadingLink {
 }
 
 enum SystemReadingWidgetModel {
-    static let kind = "dev.moonread.Moonread.reading"
+    static let continueKind = "dev.moonread.Moonread.widgets.continue-reading"
+    static let recentKind = "dev.moonread.Moonread.widgets.recent-reading"
+    static let statisticsKind = "dev.moonread.Moonread.widgets.reading-statistics"
+    static func recentBooks(in snapshot: SystemReadingSnapshot?, limit: Int) -> [SystemReadingSnapshot.Book] {
+        guard let snapshot else { return [] }
+        let byID = Dictionary(uniqueKeysWithValues: snapshot.books.map { ($0.id, $0) })
+        return snapshot.recentIDs.prefix(max(0, limit)).compactMap { byID[$0] }
+    }
     /// Selecting a missing book must never silently show a different recent book.
     static func book(in snapshot: SystemReadingSnapshot, selectedID: String?) -> SystemReadingSnapshot.Book? {
         guard let id = selectedID ?? snapshot.recentIDs.first else { return nil }
