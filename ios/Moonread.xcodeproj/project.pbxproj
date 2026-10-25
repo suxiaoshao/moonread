@@ -7,6 +7,22 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		65ECA15E2CC74AE98456F117 /* ReadingModePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8E428810AD14CC69F07A0DC /* ReadingModePicker.swift */; };
+		CE9F8CE75AFE42C28ECC1229 /* AppThemePreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF7A36A33FED40B1B0F6D237 /* AppThemePreferencesView.swift */; };
+		BA82A3CBA86846ECB5AE63D2 /* PalettePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2FC43F5CF31408684F519A8 /* PalettePicker.swift */; };
+		6C7083940065499F8C0487BB /* PalettePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C09A37A925A455A99296F73 /* PalettePreview.swift */; };
+		F587C1E1155B48F9AEAC88ED /* PaletteEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAB14494517A4B36B6E9A470 /* PaletteEditor.swift */; };
+		A454A845E962475DB9521518 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC34429CDFF645F5BAE7F6D8 /* AboutView.swift */; };
+		DEC2BEC0985D4462A3DFFD5B /* ThirdPartyLicensesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10228DEB2BD941C69E7913EA /* ThirdPartyLicensesView.swift */; };
+		5D04F75C81604F72B1B2B5D7 /* StatisticsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 843D6CEA0CEA4CCA9AF02AE8 /* StatisticsModels.swift */; };
+		29A6B7ABAE5F498383369043 /* StatisticsBookList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB4842B3A754C71A06C635E /* StatisticsBookList.swift */; };
+		DBED821EB4A6440D9732F774 /* StatisticsDurationBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E34349A15174B0B96CF5ED2 /* StatisticsDurationBar.swift */; };
+		D40DDEFC45D0459C95B0AC51 /* StatisticsRhythm.swift in Sources */ = {isa = PBXBuildFile; fileRef = 219DD27FBAD14D52B0C6126E /* StatisticsRhythm.swift */; };
+		29AAD3F529884B28913015CC /* ReadingSessionsChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 950900AFC89A493D8BACE3EB /* ReadingSessionsChart.swift */; };
+		15CFAA04BB604325A6F7B91C /* StatisticsDayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF633098CC3047F3B4C9FD53 /* StatisticsDayView.swift */; };
+		BC404FD2C78B4E67B20B56A2 /* StatisticsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A103F3A708D4F35A64FFE37 /* StatisticsSettingsView.swift */; };
+		180EAB5E6B1F402795800E0D /* StatisticsSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 569E074D07FB4F80B6BF0E1C /* StatisticsSessionsView.swift */; };
+
 		E34C8E660FB8402F9D808D83 /* ReadingViewport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B366E511A14B4057A2530C62 /* ReadingViewport.swift */; };
 		C6E02235F2BC49C99652D6ED /* ReadingPagination.swift in Sources */ = {isa = PBXBuildFile; fileRef = 458B0A398F7C438EA28DEEE7 /* ReadingPagination.swift */; };
 		D1D21C97FB7B4DC9ABAC60C8 /* ReadingTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74FA7B4B76DC4862A844072D /* ReadingTextView.swift */; };
@@ -273,6 +289,22 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B8E428810AD14CC69F07A0DC /* ReadingModePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingModePicker.swift"; sourceTree = "<group>"; };
+		FF7A36A33FED40B1B0F6D237 /* AppThemePreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppThemePreferencesView.swift"; sourceTree = "<group>"; };
+		D2FC43F5CF31408684F519A8 /* PalettePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PalettePicker.swift"; sourceTree = "<group>"; };
+		4C09A37A925A455A99296F73 /* PalettePreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PalettePreview.swift"; sourceTree = "<group>"; };
+		CAB14494517A4B36B6E9A470 /* PaletteEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PaletteEditor.swift"; sourceTree = "<group>"; };
+		EC34429CDFF645F5BAE7F6D8 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AboutView.swift"; sourceTree = "<group>"; };
+		10228DEB2BD941C69E7913EA /* ThirdPartyLicensesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ThirdPartyLicensesView.swift"; sourceTree = "<group>"; };
+		843D6CEA0CEA4CCA9AF02AE8 /* StatisticsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsModels.swift"; sourceTree = "<group>"; };
+		1DB4842B3A754C71A06C635E /* StatisticsBookList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsBookList.swift"; sourceTree = "<group>"; };
+		7E34349A15174B0B96CF5ED2 /* StatisticsDurationBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsDurationBar.swift"; sourceTree = "<group>"; };
+		219DD27FBAD14D52B0C6126E /* StatisticsRhythm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsRhythm.swift"; sourceTree = "<group>"; };
+		950900AFC89A493D8BACE3EB /* ReadingSessionsChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingSessionsChart.swift"; sourceTree = "<group>"; };
+		BF633098CC3047F3B4C9FD53 /* StatisticsDayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsDayView.swift"; sourceTree = "<group>"; };
+		0A103F3A708D4F35A64FFE37 /* StatisticsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsSettingsView.swift"; sourceTree = "<group>"; };
+		569E074D07FB4F80B6BF0E1C /* StatisticsSessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsSessionsView.swift"; sourceTree = "<group>"; };
+
 		B366E511A14B4057A2530C62 /* ReadingViewport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingViewport.swift"; sourceTree = "<group>"; };
 		458B0A398F7C438EA28DEEE7 /* ReadingPagination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingPagination.swift"; sourceTree = "<group>"; };
 		74FA7B4B76DC4862A844072D /* ReadingTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingTextView.swift"; sourceTree = "<group>"; };
@@ -815,6 +847,14 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 		204EB727B33D4FF6B1F4A5B7 /* Statistics */ = {
 			isa = PBXGroup;
 			children = (
+				843D6CEA0CEA4CCA9AF02AE8 /* StatisticsModels.swift */,
+				1DB4842B3A754C71A06C635E /* StatisticsBookList.swift */,
+				7E34349A15174B0B96CF5ED2 /* StatisticsDurationBar.swift */,
+				219DD27FBAD14D52B0C6126E /* StatisticsRhythm.swift */,
+				950900AFC89A493D8BACE3EB /* ReadingSessionsChart.swift */,
+				BF633098CC3047F3B4C9FD53 /* StatisticsDayView.swift */,
+				0A103F3A708D4F35A64FFE37 /* StatisticsSettingsView.swift */,
+				569E074D07FB4F80B6BF0E1C /* StatisticsSessionsView.swift */,
 				B12000000000000000000002 /* StatisticsView.swift */,
 				B12000000000000000000001 /* ReadingStatistics.swift */,
 			);
@@ -824,6 +864,13 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 		3076A470656A4497AB8E9918 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				B8E428810AD14CC69F07A0DC /* ReadingModePicker.swift */,
+				FF7A36A33FED40B1B0F6D237 /* AppThemePreferencesView.swift */,
+				D2FC43F5CF31408684F519A8 /* PalettePicker.swift */,
+				4C09A37A925A455A99296F73 /* PalettePreview.swift */,
+				CAB14494517A4B36B6E9A470 /* PaletteEditor.swift */,
+				EC34429CDFF645F5BAE7F6D8 /* AboutView.swift */,
+				10228DEB2BD941C69E7913EA /* ThirdPartyLicensesView.swift */,
                 D50620000000000000000005 /* DataManagement.xcstrings */,
                 D50620000000000000000004 /* DataManagementView.swift */,
 				AC2000000000000000000002 /* SettingsView.swift */,
@@ -1178,6 +1225,21 @@ F01900000000000000000001,
 				AA51DD835A184821B465CFD4 /* ReaderPreparationContent.swift in Sources */,
 				920111E653264DBDB7FC1858 /* ReaderMoreContent.swift in Sources */,
 				4C49B0B7AF064FE799DE604A /* ReaderTaskContent.swift in Sources */,
+				65ECA15E2CC74AE98456F117 /* ReadingModePicker.swift in Sources */,
+				CE9F8CE75AFE42C28ECC1229 /* AppThemePreferencesView.swift in Sources */,
+				BA82A3CBA86846ECB5AE63D2 /* PalettePicker.swift in Sources */,
+				6C7083940065499F8C0487BB /* PalettePreview.swift in Sources */,
+				F587C1E1155B48F9AEAC88ED /* PaletteEditor.swift in Sources */,
+				A454A845E962475DB9521518 /* AboutView.swift in Sources */,
+				DEC2BEC0985D4462A3DFFD5B /* ThirdPartyLicensesView.swift in Sources */,
+				5D04F75C81604F72B1B2B5D7 /* StatisticsModels.swift in Sources */,
+				29A6B7ABAE5F498383369043 /* StatisticsBookList.swift in Sources */,
+				DBED821EB4A6440D9732F774 /* StatisticsDurationBar.swift in Sources */,
+				D40DDEFC45D0459C95B0AC51 /* StatisticsRhythm.swift in Sources */,
+				29AAD3F529884B28913015CC /* ReadingSessionsChart.swift in Sources */,
+				15CFAA04BB604325A6F7B91C /* StatisticsDayView.swift in Sources */,
+				BC404FD2C78B4E67B20B56A2 /* StatisticsSettingsView.swift in Sources */,
+				180EAB5E6B1F402795800E0D /* StatisticsSessionsView.swift in Sources */,
 				A10000000000000000000001 /* MoonreadApp.swift in Sources */,
                 AC1000000000000000000001,
                 AC1000000000000000000002,

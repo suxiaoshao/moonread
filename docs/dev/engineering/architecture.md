@@ -94,15 +94,17 @@ SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `in
 | `Reader/UI` | `ReaderScreen` 保留会话生命周期和私有路由状态；`ReaderTaskContent`、`ReaderPreparationContent`、`ReaderCompactHeader`、`ReaderMoreContent` 分别呈现任务、准备、顶部提示和更多操作；`ReaderTools` 保留 model，目录/笔记/搜索及 NoteEditor 分文件 |
 | `Reader/Rendering` | `ReadingView` 是 SwiftUI 适配入口；`ReadingController` 与 Pages/Scroll/Navigation/Selection 扩展共用原控制器状态；`ReadingPagination`、`ReadingViewport`、`ReadingTextDecorations`、`ReadingTextView`、扉页/分页控制器按职责分文件，坐标和设备控制保持原 owner |
 | `Books` | 小说详情与完整 `BookMetadata`；封面展示、加载及服务私有辅助保留原文件边界 |
-| `Statistics` | 统计 UI 和完整 `ReadingStatistics`；统计 writer、recorder 与日期辅助仍在同一文件 |
-| `Settings` | 设置 UI、设备阅读偏好、阅读预览、`CloudSettingsView` 和现有 UI 状态 `CloudStore` |
+| `Statistics` | `StatisticsView` 保留总览/单书详情的状态和路由；models、书目列表、时长条、节奏图、时段图/行、全部时段、日期详情、统计设置按完整类型分文件；`ReadingStatistics` 的 writer、recorder 与日期辅助保持原 owner |
+| `Settings` | `SettingsView` 只保留首页与私有入口辅助；应用外观、模式 Picker、配色选择/预览/编辑、关于与第三方许可分文件；设备阅读偏好、阅读预览、`CloudSettingsView` / `CloudStore` 保持原 owner |
 | `Data` | `ReaderService`、SwiftData 用户数据及同步协调；正文准备、导入、云目录 owner 与紧耦合私有类型仍在 `ReaderService` |
 | `Shared` | `Theme`、`MoonView`/`MoonCharacter`/`BrandSeal`、输入焦点及跨功能错误文案 `ReaderMessages` |
 | `AI` | 保持现有分层和路径；资源与签名配置路径保持原位 |
 
 `ios/MoonreadShare` 是独立分享扩展 target，只负责接收与取消。`ios/ShareReceiveShared` 同时编译进主 App 与扩展，提供版本化 ShareInbox、原字节复制和 provider 生命周期适配；不依赖主 App 的 Rust、SwiftData、AI 或阅读 UI。App Group 只共享待导入原件，主 App 继续独占书架写入和正文准备。
 
-拆分保留现有类型、状态 owner 和 actor 隔离；SwiftUI 的 `@State` / `@FocusState` 留在原父视图，目录子视图只接收 Binding 和回调。UIKit 控制器跨文件扩展共用状态与方法时，仅将必要成员调整为模块内访问，其余保持 private，不增加 public API。原有 Sources UUID 与 target membership 保留，新增拆分文件显式加入应用 target。
+拆分保留现有类型、状态 owner 和 actor 隔离；SwiftUI 的 `@State` / `@FocusState` 留在原父视图，目录子视图只接收 Binding 和回调。UIKit 控制器跨文件扩展共用状态与方法时，仅将必要成员调整为模块内访问，其余保持 private，不增加 public API。原有 Sources UUID 与 target membership 保留，新增拆分文件显式加入应用 target。设置和统计按完整 View/model 类型移动，原有私有状态和 actor 标注保持；共享的页面与图表 helper 只在必要时由文件私有调整为模块内访问。
+
+`ReaderService` 当前协调小说来源、Rust 正文/查询、用户阅读数据、配色与同步，不仅服务阅读页；`ReaderSession` 才是阅读会话状态 owner。其扩展已随领域位于 Library、Books、Statistics 和 AI，Data 保存用户事实、备份/缓存及同步协调。名称仍为 `ReaderService`，领域扩展共用同一 actor 的串行边界；文件目录不改变数据权威和存储归属。
 
 ## 原文件与平台访问
 
