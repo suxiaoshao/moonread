@@ -16,7 +16,13 @@ extension AppDataService {
         systemExposureTask = Task { [weak self] in
             await previous?.value
             await self?.reconcileSystemReadingDonations(snapshot)
+            do { try await self?.reconcileSystemSpotlight(snapshot) }
+            catch { await self?.recordSystemExposureError(error) }
         }
+    }
+    private func recordSystemExposureError(_ error: Error) {
+        systemCatalog?.error = ReaderMessages.error(error)
+        NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
     }
     private func donationState() -> SystemReadingDonationState {
         if let data = sourceDefaults.data(forKey: "Moonread.systemReadingDonations.v1"),

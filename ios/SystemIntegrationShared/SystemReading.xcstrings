@@ -132,6 +132,28 @@
           }
         }
       }
+    },
+    "这本书不在系统搜索范围内，请从书架打开。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This book is excluded from system search. Open it from your library."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这本书不在系统搜索范围内，请从书架打开。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這本書不在系統搜尋範圍內，請從書架打開。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

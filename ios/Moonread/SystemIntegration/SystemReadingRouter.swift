@@ -6,6 +6,7 @@ import Observation
 enum SystemReadingRequest: Equatable, Sendable {
     case continueReading
     case openBook(SystemReadingBookID)
+    case openSearchBook(SystemReadingBookID)
     case showStatistics
 
     init(url: URL) throws {
@@ -26,19 +27,20 @@ enum SystemReadingRequest: Equatable, Sendable {
         switch self {
         case .continueReading: path = "continue"
         case .showStatistics: path = "statistics"
-        case .openBook(let id): path = "book/" + id.sha
+        case .openBook(let id), .openSearchBook(let id): path = "book/" + id.sha
         }
         return URL(string: "moonread://reading/" + path)!
     }
 }
 
 enum SystemReadingRouteError: LocalizedError {
-    case noRecent, unavailable, reconnect, contentChanged
+    case noRecent, unavailable, reconnect, contentChanged, searchDisabled
     var errorDescription: String? {
         switch self {
         case .noRecent: String(localized: "打开一本书后，即可在这里继续。", table: "SystemReading")
         case .unavailable: String(localized: "找不到这本书的原文件，请在书架管理中重新连接来源。", table: "SystemReading")
         case .reconnect: String(localized: "请先在书架管理中重新连接这本书的来源。", table: "SystemReading")
+        case .searchDisabled: String(localized: "这本书不在系统搜索范围内，请从书架打开。", table: "SystemReading")
         case .contentChanged: String(localized: "文件内容已变化，请从书架打开。", table: "SystemReading")
         }
     }
@@ -75,31 +77,33 @@ final class SystemReadingRouter {
             do {
                 guard sceneActive, !presentationBlocked, library.sheet == nil else { return }
                 let id: SystemReadingBookID
+                let automatic: Bool
                 switch request {
                 case .showStatistics:
                     if let reader { await reader.leave().value }
-                    guard token == current, !Task.isCancelled else { return }
+                    guard sceneActive, token == current, !Task.isCancelled else { return }
                     library.selectedTab = .statistics; library.statisticsPath = []; pending = nil
                     return
                 case .continueReading:
                     guard let sha = try await service.recentLibrary(1).first?.contentSha256 else { throw SystemReadingRouteError.noRecent }
-                    id = try SystemReadingBookID(sha: sha)
-                case .openBook(let value): id = value
+                    id = try SystemReadingBookID(sha: sha); automatic = false
+                case .openBook(let value): id = value; automatic = false
+                case .openSearchBook(let value): id = value; automatic = true
                 }
-                let entry = try await service.resolveSystemReadingBook(id)
-                guard token == current, !Task.isCancelled, !presentationBlocked, library.sheet == nil else { return }
+                let entry = try await service.resolveSystemReadingBook(id, automatic: automatic)
+                guard sceneActive, token == current, !Task.isCancelled, !presentationBlocked, library.sheet == nil else { return }
                 if reader?.book?.contentSha256 == id.sha || (reader != nil && reader?.opening.request?.expectedContentSHA == id.sha) {
                     pending = nil; return // Never reset an already displayed session to an older saved position.
                 }
                 if let reader { await reader.leave().value }
-                guard token == current, !Task.isCancelled, !presentationBlocked else { return }
+                guard sceneActive, token == current, !Task.isCancelled, !presentationBlocked else { return }
                 library.selectedTab = .library
                 library.libraryPath = Array(library.libraryPath.prefix { !$0.isReader })
                 library.open(entry, expectedContentSHA: id.sha)
                 pending = nil
             } catch is CancellationError { }
             catch {
-                guard token == current, !Task.isCancelled else { return }
+                guard sceneActive, token == current, !Task.isCancelled, !presentationBlocked, library.sheet == nil else { return }
                 pending = nil; library.selectedTab = .library
                 if case SystemReadingRouteError.reconnect = error { library.libraryPath = [.manage] }
                 if case SystemReadingRouteError.unavailable = error { library.libraryPath = [.manage] }

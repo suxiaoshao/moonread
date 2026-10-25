@@ -30,12 +30,18 @@ extension Notification.Name {
 extension AppDataService {
     func startSystemReadingCatalog(file: SystemReadingSnapshotFile? = nil) {
         guard systemCatalog == nil else { return }
+        #if DEBUG
+        if file == nil, NSClassFromString("XCTestCase") != nil { return }
+        #endif
         do {
             // Tests and screenshot fixtures may only publish into their own directory.
             let output = try file ?? (libraryDirectoryOverride.map {
                 SystemReadingSnapshotFile(directory: $0.appendingPathComponent(".SystemReading/v1"))
             } ?? SystemReadingSnapshotFile.shared())
-            systemCatalog = SystemReadingCatalog(file: output)
+            let scopeKey = "Moonread.systemReadingScope.v1"
+            let scope = sourceDefaults.string(forKey: scopeKey) ?? UUID().uuidString
+            sourceDefaults.set(scope, forKey: scopeKey)
+            systemCatalog = SystemReadingCatalog(file: output, scope: scope)
             scheduleSystemReadingCatalog(immediate: true)
         } catch { publishSystemCatalogError(error) }
     }
@@ -53,6 +59,7 @@ extension AppDataService {
         guard var catalog = systemCatalog else { return }
         catalog.task?.cancel(); catalog.task = nil; catalog.taskID = UUID(); catalog.revision = UUID()
         catalog.scope = UUID().uuidString
+        sourceDefaults.set(catalog.scope, forKey: "Moonread.systemReadingScope.v1")
         systemCatalog = catalog
         do {
             let empty = SystemReadingSnapshot(storeScope: catalog.scope, exposurePolicy: systemExposurePolicy())
@@ -112,10 +119,14 @@ extension AppDataService {
         } catch is CancellationError { }
         catch { if systemCatalog?.taskID == taskID { publishSystemCatalogError(error) } }
     }
-    func resolveSystemReadingBook(_ id: SystemReadingBookID) async throws -> LibraryEntry {
+    func resolveSystemReadingBook(_ id: SystemReadingBookID, automatic: Bool = false) async throws -> LibraryEntry {
         let query = try await effectiveQuery(keys: [id.sha], scope: "system-open-" + id.sha)
         let sources = try query.systemReadingSources(contentSha256: id.sha)
         guard !sources.isEmpty else { throw SystemReadingRouteError.unavailable }
+        if automatic {
+            let policy = systemExposurePolicy()
+            guard policy.systemSearchEnabled, Set(policy.excludedShelfIDs).isDisjoint(with: sources.map(\.shelfId)) else { throw SystemReadingRouteError.searchDisabled }
+        }
         let shelves = Dictionary(uniqueKeysWithValues: try self.shelves().map { ($0.id, $0) })
         guard let source = sources.first(where: { shelves[$0.shelfId]?.error == nil && shelves[$0.shelfId] != nil }) else {
             throw SystemReadingRouteError.reconnect

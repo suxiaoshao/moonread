@@ -114,6 +114,8 @@ actor AppDataService {
     }()
     var systemCatalog: SystemReadingCatalog?
     var systemExposureTask: Task<Void, Never>?
+    var systemSpotlightAdapter: SystemSpotlightAdapter?
+    var systemSpotlightMetadata: [String: SystemSpotlightMetadata] = [:]
     private var core: ReaderCore?
     struct CachedQuery { let signature: String; let query: ReaderQuery }
     var queryCache: [String: CachedQuery] = [:]

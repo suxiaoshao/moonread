@@ -1,5 +1,6 @@
 import SwiftUI
 import CloudKit
+import CoreSpotlight
 import UIKit
 
 @main
@@ -128,11 +129,17 @@ struct MoonreadApp: App {
                 if phase == .active {
                     Task { if ai.providers.catalogActivated { await ai.providers.refreshCatalogsIfNeeded() } }
                     Task {
+                        await library.service.scheduleSystemReadingCatalog(immediate: true)
                         await AppDataService.shared.resumePausedImports(); await library.refresh()
                         if Onboarding.shared.completed { await library.receiveSharedInbox() }
                         await cloud.refresh()
                     }
                 }
+            }
+            .onContinueUserActivity(CSSearchableItemActionType) { activity in
+                guard let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return }
+                do { library.systemReading.submit(.openSearchBook(try SystemReadingBookID(rawValue: id))) }
+                catch { library.error = ReaderMessages.error(error) }
             }
             .onOpenURL(perform: openURL)
 

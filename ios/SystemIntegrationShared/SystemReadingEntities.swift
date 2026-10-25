@@ -66,7 +66,6 @@ enum SystemReadingDestination: String, AppEnum {
 }
 struct OpenReadingDestinationIntent: OpenIntent {
     static let title: LocalizedStringResource = "打开月读"
-    static let isDiscoverable = false
     @available(iOS 27.0, *) static var allowedExecutionTargets: IntentExecutionTargets { .main }
     @Parameter(title: "页面") var target: SystemReadingDestination
     init() { target = .resume }

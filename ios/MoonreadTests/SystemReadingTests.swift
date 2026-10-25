@@ -99,4 +99,63 @@ import XCTest
         XCTAssertEqual(week.upperBound - week.lowerBound, 6)
     }
 
+    func testSpotlightMetadataChangesAndShelfExclusionUseOnePolicy() async throws {
+        let (root, service, _, _, _, first, _, suite) = try singleBookFixture()
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        let file = SystemReadingSnapshotFile(directory: root.appendingPathComponent("system"))
+        await service.startSystemReadingCatalog(file: file); await service.waitForSystemReadingCatalog()
+        let probe = SystemSearchProbe()
+        let adapter = SystemSpotlightAdapter(index: { try await probe.index($0) }, delete: { await probe.delete($0) }, deleteAll: { await probe.deleteAll() })
+        let snapshot = try file.read()
+        try await service.reconcileSystemSpotlight(snapshot, using: adapter)
+        try await service.reconcileSystemSpotlight(snapshot, using: adapter)
+        let before = await probe.result()
+        XCTAssertEqual(before.0, 1, "Position-only refreshes do not reindex unchanged metadata")
+        XCTAssertEqual(before.1.count, 2)
+        try await service.setSystemSearch(enabled: true, excludedShelfIDs: ["builtin"])
+        let excluded = try file.read()
+        XCTAssertEqual(excluded.books.count, 2, "Explicit selection/widget catalogue remains available")
+        XCTAssertTrue(excluded.books.allSatisfy { !$0.allowsAutomaticExposure })
+        try await service.reconcileSystemSpotlight(excluded, using: adapter)
+        let after = await probe.result()
+        XCTAssertEqual(Set(after.2), Set(snapshot.books.map(\.id)))
+        let sha = try await service.snapshot(first.id).book.contentSha256
+        let id = try SystemReadingBookID(sha: sha)
+        _ = try await service.resolveSystemReadingBook(id)
+        do { _ = try await service.resolveSystemReadingBook(id, automatic: true); XCTFail("Stale Spotlight links must respect current exclusions") }
+        catch SystemReadingRouteError.searchDisabled { }
+    }
+    func testFailedSpotlightSubmissionRemainsRevocableWhenDisabled() async throws {
+        let (root, service, _, _, _, _, _, suite) = try singleBookFixture()
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        let file = SystemReadingSnapshotFile(directory: root.appendingPathComponent("system"))
+        await service.startSystemReadingCatalog(file: file); await service.waitForSystemReadingCatalog()
+        let probe = SystemSearchProbe(fail: true)
+        let adapter = SystemSpotlightAdapter(index: { try await probe.index($0) }, delete: { await probe.delete($0) }, deleteAll: { await probe.deleteAll() })
+        let snapshot = try file.read()
+        do { try await service.reconcileSystemSpotlight(snapshot, using: adapter); XCTFail("Injected failure must surface") } catch { }
+        try await service.setSystemSearch(enabled: false, excludedShelfIDs: [])
+        let disabled = try file.read()
+        XCTAssertFalse(disabled.exposurePolicy.systemSearchEnabled)
+        try await service.reconcileSystemSpotlight(disabled, using: adapter)
+        let calls = await probe.result()
+        XCTAssertEqual(Set(calls.2), Set(snapshot.books.map(\.id)), "Even possibly partially indexed IDs are deleted")
+    }
+
+}
+
+
+private actor SystemSearchProbe {
+    private var indexes = 0
+    private var items: [SystemSpotlightMetadata] = []
+    private var deleted: [String] = []
+    private let fail: Bool
+    init(fail: Bool = false) { self.fail = fail }
+    func index(_ items: [SystemSpotlightMetadata]) throws {
+        indexes += 1; self.items += items
+        if fail { throw CocoaError(.fileWriteUnknown) }
+    }
+    func delete(_ ids: [String]) { deleted += ids }
+    func deleteAll() { }
+    func result() -> (Int, [SystemSpotlightMetadata], [String]) { (indexes, items, deleted) }
 }

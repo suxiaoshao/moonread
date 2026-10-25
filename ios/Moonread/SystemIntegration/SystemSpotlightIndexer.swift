@@ -1,0 +1,144 @@
+import CoreSpotlight
+import Foundation
+import UniformTypeIdentifiers
+
+/// This whitelist is the entire Spotlight payload. No progress, chapter,
+/// synopsis, cover, URL, file path, annotation or reading time can enter it.
+struct SystemSpotlightMetadata: Equatable, Sendable {
+    let id: String
+    let title: String
+    let author: String?
+    let tags: [String]
+}
+struct SystemSpotlightAdapter: Sendable {
+    let index: @MainActor @Sendable ([SystemSpotlightMetadata]) async throws -> Void
+    let delete: @MainActor @Sendable ([String]) async throws -> Void
+    let deleteAll: @MainActor @Sendable () async throws -> Void
+}
+
+/// Core Spotlight supplies arbitrary-queue callbacks. Only this acknowledgement
+/// crosses those queues; mutable App state is accessed after an explicit hop.
+private final class SystemSpotlightAcknowledgement: @unchecked Sendable {
+    private let lock = NSLock()
+    private var handler: (() -> Void)?
+    init(_ handler: @escaping () -> Void) { self.handler = handler }
+    func finish() {
+        let callback = lock.withLock { let value = handler; handler = nil; return value }
+        callback?()
+    }
+}
+@MainActor private final class SystemSpotlightNative: NSObject, CSSearchableIndexDelegate {
+    private let index = CSSearchableIndex(name: "MoonreadBooks")
+    private nonisolated let reindex: @Sendable () async -> Void
+    init(reindex: @escaping @Sendable () async -> Void) {
+        self.reindex = reindex
+        super.init(); index.indexDelegate = self
+    }
+    nonisolated func searchableIndex(_ searchableIndex: CSSearchableIndex, reindexAllSearchableItemsWithAcknowledgementHandler acknowledgementHandler: @escaping () -> Void) {
+        let acknowledgement = SystemSpotlightAcknowledgement(acknowledgementHandler), work = reindex
+        Task { await work(); acknowledgement.finish() }
+    }
+    nonisolated func searchableIndex(_ searchableIndex: CSSearchableIndex, reindexSearchableItemsWithIdentifiers identifiers: [String], acknowledgementHandler: @escaping () -> Void) {
+        let acknowledgement = SystemSpotlightAcknowledgement(acknowledgementHandler), work = reindex
+        Task { await work(); acknowledgement.finish() }
+    }
+    var adapter: SystemSpotlightAdapter {
+        .init(index: { [self] metadata in
+            let items = metadata.map { book in
+                let attributes = CSSearchableItemAttributeSet(contentType: .text)
+                attributes.title = book.title
+                attributes.authorNames = book.author.map { [$0] }
+                attributes.keywords = book.tags
+                return CSSearchableItem(uniqueIdentifier: book.id, domainIdentifier: "dev.moonread.Moonread.books", attributeSet: attributes)
+            }
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                index.indexSearchableItems(items) { error in
+                    if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+                }
+            }
+        }, delete: { [self] ids in
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                index.deleteSearchableItems(withIdentifiers: ids) { error in
+                    if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+                }
+            }
+        }, deleteAll: { [self] in
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                index.deleteAllSearchableItems { error in
+                    if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+                }
+            }
+        })
+    }
+}
+private struct SystemSpotlightState: Codable {
+    var schemaVersion = 1
+    var scope: String
+    var ids: [String] = []
+}
+
+extension AppDataService {
+    func requestSystemSpotlightReindex() async {
+        systemSpotlightMetadata.removeAll()
+        scheduleSystemReadingCatalog(immediate: true)
+        await waitForSystemReadingCatalog()
+        // Acknowledge after the catalogue/client state is ready. Waiting on the
+        // platform work chain here could wait for this very delegate callback.
+    }
+    func reconcileSystemSpotlight(_ snapshot: SystemReadingSnapshot, using suppliedAdapter: SystemSpotlightAdapter? = nil) async throws {
+        guard systemCatalog?.scope == snapshot.storeScope, snapshot.exposurePolicy == systemExposurePolicy() else { return }
+        let adapter: SystemSpotlightAdapter
+        if let suppliedAdapter { adapter = suppliedAdapter }
+        else if let existing = systemSpotlightAdapter { adapter = existing }
+        else {
+            adapter = await SystemSpotlightNative(reindex: { [weak self] in await self?.requestSystemSpotlightReindex() }).adapter
+            systemSpotlightAdapter = adapter
+        }
+        let key = "Moonread.systemSpotlight.v1"
+        var state = sourceDefaults.data(forKey: key).flatMap { try? JSONDecoder().decode(SystemSpotlightState.self, from: $0) }
+            .flatMap { $0.schemaVersion == 1 ? $0 : nil } ?? .init(scope: "")
+        if state.scope != snapshot.storeScope {
+            try await adapter.deleteAll()
+            state = .init(scope: snapshot.storeScope)
+            systemSpotlightMetadata.removeAll()
+            sourceDefaults.set(try JSONEncoder().encode(state), forKey: key)
+        }
+        let metadata = snapshot.books.filter(\.allowsAutomaticExposure).map {
+            SystemSpotlightMetadata(id: $0.id, title: $0.title, author: $0.author, tags: $0.tags)
+        }
+        let desired = Set(metadata.map(\.id))
+        let obsolete = Set(state.ids).subtracting(desired)
+        if !obsolete.isEmpty {
+            try await adapter.delete(Array(obsolete).sorted())
+            state.ids.removeAll { obsolete.contains($0) }
+            sourceDefaults.set(try JSONEncoder().encode(state), forKey: key)
+            for id in obsolete { systemSpotlightMetadata[id] = nil }
+        }
+        let changed = metadata.filter { systemSpotlightMetadata[$0.id] != $0 }
+        // Record attempted IDs before the asynchronous API: failed/interrupted
+        // submissions can still be deleted after permission changes or a restart.
+        state.ids = Array(Set(state.ids).union(desired)).sorted()
+        sourceDefaults.set(try JSONEncoder().encode(state), forKey: key)
+        for start in stride(from: 0, to: changed.count, by: 500) {
+            guard systemCatalog?.scope == snapshot.storeScope, systemExposurePolicy() == snapshot.exposurePolicy else { return }
+            let batch = Array(changed[start..<min(start + 500, changed.count)])
+            try await adapter.index(batch)
+            for item in batch { systemSpotlightMetadata[item.id] = item }
+        }
+    }
+    func setSystemSearch(enabled: Bool, excludedShelfIDs: [String]) async throws {
+        sourceDefaults.set(enabled, forKey: "Moonread.systemSearch.v1")
+        sourceDefaults.set(Array(Set(excludedShelfIDs)).sorted(), forKey: "Moonread.systemSearchExcludedShelves.v1")
+        // Revoke automatic exposure locally first. Explicit widgets/entities keep
+        // the same readable book catalogue while its new policy is being rebuilt.
+        if let catalog = systemCatalog, let old = try? catalog.file.read() {
+            let restricted = SystemReadingSnapshot(storeScope: catalog.scope,
+                books: old.books.map { $0.withAutomaticExposure(false) }, recentIDs: old.recentIDs, exposurePolicy: systemExposurePolicy())
+            try catalog.file.publish(restricted)
+            systemReadingSnapshotPublished(restricted)
+        }
+        scheduleSystemReadingCatalog(immediate: true)
+        await waitForSystemReadingCatalog()
+        await systemExposureTask?.value
+    }
+}

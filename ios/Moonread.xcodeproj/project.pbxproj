@@ -279,6 +279,8 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		1B506102BF4B408999F282DE /* SystemReadingIntents.swift */ = {isa = PBXBuildFile; fileRef = F756EB1D8CB74351A3734567; };
 		3A970D96D5C34B91AD51685B /* SystemReadingDonations.swift */ = {isa = PBXBuildFile; fileRef = 85EA54F55F414881875C8E6B; };
 		005AC664DBAF46D4BDDD504A /* AppShortcuts.xcstrings */ = {isa = PBXBuildFile; fileRef = E82B5CEE6CCE405993FF6B63; };
+		637E8D49F3D84FECA7E48556 /* SystemSpotlightIndexer.swift */ = {isa = PBXBuildFile; fileRef = 6F59DF87BB644F99AE184A7C; };
+		A674F357DD104E0393C79ACC /* SystemIntegrationSettingsView.swift */ = {isa = PBXBuildFile; fileRef = DF9898CA5D68423AB9936975; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -574,6 +576,8 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		F756EB1D8CB74351A3734567 /* SystemReadingIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemReadingIntents.swift"; sourceTree = "<group>"; };
 		85EA54F55F414881875C8E6B /* SystemReadingDonations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemReadingDonations.swift"; sourceTree = "<group>"; };
 		E82B5CEE6CCE405993FF6B63 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = "AppShortcuts.xcstrings"; sourceTree = "<group>"; };
+		6F59DF87BB644F99AE184A7C /* SystemSpotlightIndexer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemSpotlightIndexer.swift"; sourceTree = "<group>"; };
+		DF9898CA5D68423AB9936975 /* SystemIntegrationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemIntegrationSettingsView.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -991,6 +995,8 @@ F01900000000000000000002,
                 C22000000000000000000004 /* UserDataTestFixtures.swift */,
             ); path = Fixtures; sourceTree = "<group>"; };
 		A1DE5DFDB223BC4D95971F4F /* SystemIntegration */ = {isa = PBXGroup; children = (
+                DF9898CA5D68423AB9936975 /* SystemIntegrationSettingsView.swift */,
+                6F59DF87BB644F99AE184A7C /* SystemSpotlightIndexer.swift */,
                 E82B5CEE6CCE405993FF6B63 /* AppShortcuts.xcstrings */,
                 85EA54F55F414881875C8E6B /* SystemReadingDonations.swift */,
                 F756EB1D8CB74351A3734567 /* SystemReadingIntents.swift */,
@@ -1200,6 +1206,8 @@ E51000000000000000000009,D41000000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                A674F357DD104E0393C79ACC /* SystemIntegrationSettingsView.swift */,
+                637E8D49F3D84FECA7E48556 /* SystemSpotlightIndexer.swift */,
                 3A970D96D5C34B91AD51685B /* SystemReadingDonations.swift */,
                 1B506102BF4B408999F282DE /* SystemReadingIntents.swift */,
                 DD96C5C6D7644E1BA3EC0764 /* SystemReadingEntities.swift */,

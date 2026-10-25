@@ -30,6 +30,11 @@ struct SystemReadingSnapshot: Codable, Equatable, Sendable {
         let chapterLabel: String?
         let recentRank: UInt32?
         let allowsAutomaticExposure: Bool
+        func withAutomaticExposure(_ allowed: Bool) -> Self {
+            .init(id: id, title: title, author: author, tags: tags, availability: availability, sourceCount: sourceCount,
+                naturalOrdinal: naturalOrdinal, progress: progress, chapterLabel: chapterLabel, recentRank: recentRank,
+                allowsAutomaticExposure: allowed)
+        }
     }
     init(generation: UUID = UUID(), storeScope: String, generatedAt: Date = Date(), books: [Book] = [],
          recentIDs: [String] = [], exposurePolicy: ExposurePolicy = .initial) {

@@ -40,6 +40,9 @@ struct SettingsView: View {
                 NavigationLink { StatisticsSettingsView() } label: {
                     SettingsEntry(title: "阅读统计设置", symbol: "chart.bar.xaxis", summary: recording.map { String(localized: $0 ? "记录中" : "已暂停") } ?? String(localized: "正在加载"))
                 }.accessibilityIdentifier("statisticsSettings")
+                NavigationLink { SystemIntegrationSettingsView(library: library) } label: {
+                    SettingsEntry(title: "系统集成", symbol: "rectangle.3.group", summary: String(localized: "系统搜索、快捷指令、小组件"))
+                }.accessibilityIdentifier("systemIntegrationSettings")
             }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section("书架与数据") {
                 NavigationLink(value: LibraryRoute.manage) {
