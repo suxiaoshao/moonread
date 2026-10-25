@@ -234,13 +234,22 @@ fn chapter_corrections_are_inputs_and_rebuild_retains_text_integrity() {
 #[test]
 fn settings_codec_preserves_device_preferences_and_validates_ranges() {
     let mut value = default_reader_settings();
+    let controls = reader_typography_controls();
+    assert_eq!(value.font_size, controls.font_size.default_value);
+    assert_eq!(value.line_spacing, controls.line_spacing.default_value);
+    assert_eq!(
+        value.paragraph_spacing,
+        controls.paragraph_spacing.default_value
+    );
     value.keep_awake = true;
     value.font = ReaderFont::Serif;
     assert_eq!(
         decode_reader_settings(encode_reader_settings(value.clone()).unwrap()).unwrap(),
         value
     );
-    value.font_size = 99.;
+    value.font_size = controls.font_size.maximum;
+    assert!(decode_reader_settings(encode_reader_settings(value.clone()).unwrap()).is_ok());
+    value.font_size += controls.font_size.step;
     assert!(decode_reader_settings(encode_reader_settings(value).unwrap()).is_err());
 }
 

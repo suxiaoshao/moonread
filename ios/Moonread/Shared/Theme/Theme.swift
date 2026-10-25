@@ -96,12 +96,13 @@ struct ThemeSurface: Equatable {
         let paper = UIColor(rgb: input.paper)
         let format = UIGraphicsImageRendererFormat()
         format.scale = input.scale; format.opaque = true; format.preferredRange = .standard
-        return UIGraphicsImageRenderer(size: CGSize(width: 256, height: 256), format: format).image { context in
-            paper.setFill(); context.fill(CGRect(x: 0, y: 0, width: 256, height: 256))
+        let side = CGFloat(readerTextureTileSize()), bounds = CGRect(x: 0, y: 0, width: side, height: side)
+        return UIGraphicsImageRenderer(size: bounds.size, format: format).image { context in
+            paper.setFill(); context.fill(bounds)
             context.cgContext.interpolationQuality = .none
             if let choice = input.choice, let source = UIImage(named: choice.id.assetName) {
                 source.withTintColor(UIColor(rgb: input.ink), renderingMode: .alwaysOriginal)
-                    .draw(in: CGRect(x: 0, y: 0, width: 256, height: 256), blendMode: .normal,
+                    .draw(in: bounds, blendMode: .normal,
                           alpha: CGFloat(readerTextureAlpha(paper: input.paper, ink: input.ink, strength: choice.strength)))
             }
         }
