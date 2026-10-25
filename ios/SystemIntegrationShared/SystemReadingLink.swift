@@ -9,6 +9,12 @@ enum SystemReadingLink {
     static let bookPathPrefix = "/book/"
     static let resume = URL(string: "moonread://reading/continue")!
     static let statistics = URL(string: "moonread://reading/statistics")!
+    static let library = URL(string: "moonread://reading/library")!
+    static func search(_ query: String) -> URL {
+        var url = URLComponents(string: "moonread://reading/search")!
+        if !query.isEmpty { url.queryItems = [URLQueryItem(name: "query", value: query)] }
+        return url.url!
+    }
     static func book(_ id: String) -> URL? {
         guard id.hasPrefix(bookIDPrefix) else { return nil }
         return URL(string: "\(scheme)://\(host)\(bookPathPrefix)" + id.dropFirst(bookIDPrefix.count))

@@ -30,7 +30,7 @@ Rust 索引、身份、来源状态 ─────────┴→ AppDataSer
 | 阅读摘要 | progress?、chapterLabel?、recentRank?；现有 ReaderQuery 计算，未知为 nil，不伪造0% |
 | envelope | schemaVersion=1、generation、storeScope、generatedAt、books、recentIDs、exposurePolicy；scope 为本机不透明域，不含 Apple ID |
 
-不保存精确 offset/位置 token，点击时读最新权威位置，不能反算百分比跳页。首版文字封面，不发布实际图片资产。同 SHA 多副本合一；正文改变换身份，旧 ID 不按同名重绑。
+不保存精确 offset/位置 token，点击时读最新权威位置，不能反算百分比跳页。共享 catalog 仍不发布图片资产；Spotlight 在主 App 内另取现有封面缩略图或渲染文字封面。同 SHA 多副本合一；正文改变换身份，旧 ID 不按同名重绑。
 
 ## 发布和失效
 
@@ -49,7 +49,7 @@ App Group `SystemReading/v1/` 同目录暂存后原子替换完整 JSON；串行
 
 ## 共用动作与路由
 
-输入仅 `continueReading`、`openBook(entityID)`、`showStatistics`。深链只作路由，严格校验 scheme/host/path/SHA，无任意文件 URL 或 offset 参数。待主 App 容器/引导/导航 ready 再执行。
+输入包括 `continueReading`、`openBook(entityID)`、`showStatistics`、`showLibrary`、`searchBooks(query)`。深链只作路由，严格校验 scheme/host/path/SHA；仅搜索允许一个受限的 query 参数，无任意文件 URL 或 offset 参数。待主 App 容器/引导/导航 ready 再执行。
 
 - 继续阅读执行时重新取最近书；无记录到书架，已打开同书保持当前会话，不重开或跳页。
 - 指定书重新核验 SHA、授权和来源，复用 LibraryModel/OpeningRequest/ReaderSession 的下载、取消与错误；快照不授访问权。同名不同正文不接旧进度。
@@ -59,9 +59,9 @@ App Group `SystemReading/v1/` 同目录暂存后原子替换完整 JSON；串行
 
 ## 各消费者的范围
 
-**App Entity / Shortcuts / Control：**显式选书使用 catalog；元数据匹配由 Swift LibraryQueryRules 的具名 systemMetadata profile 统一处理（书名/作者/标签），不用 AI 简介匹配。注册三语短语，Control 只有继续阅读；不自动替用户添加控件。不承诺任意自然语言都能识别，不为此采用不匹配的 Books schema。
+**App Entity / Shortcuts / Control：**显式选书使用 catalog；元数据匹配由 Swift LibraryQueryRules 的具名 systemMetadata profile 统一处理（书名/作者/标签、NLTokenizer 分词与词边界前缀、无声调拼音全拼和首字母），Entity 做部分匹配，Spotlight 使用同一份检索词；不用 AI 简介匹配。注册三语短语，Control 只有继续阅读；不自动替用户添加控件。不承诺任意自然语言都能识别，不为此采用不匹配的 Books schema。
 
-**Spotlight 与建议：**本机默认开启，书架排除默认空，无 onboarding。一个命名 CSSearchableIndex，仅填写 title/author/keywords，不填 textContent、正文 URL、简介、批注、进度、章节、时间、路径、封面。按 ID/domain 做更新/删除与可重建处理，点击走共用 router；不同时启用另一套 IndexedEntity 自动全属性捐赠。
+**Spotlight 与建议：**本机默认开启，书架排除默认空，无 onboarding。一个命名 CSSearchableIndex，填写 title/author/keywords、thumbnailData 和 contentDescription（作者 · 当前章节 · 已知进度）。缩略图从用户已有封面读取，缺失时用 App 内文字封面渲染；只在主 App 内查询资产描述，不给 Widget 增加权限或数据。未知章节/进度省略；不填 textContent、正文 URL、简介、批注、精确时间或路径。按 ID/domain 做更新/删除与可重建处理，点击走共用 router；不同时启用另一套 IndexedEntity 自动全属性捐赠。
 
 同 SHA 任一已知副本被排除就不自动公开；donation 只针对真实读过且未排除的书，按会话/目标合并，不每页或整库批量捐赠。开关/排除同时撤自动建议。用户显式放书到 Widget/Shortcuts 是另一用途，不能被 Spotlight 开关误关；两种范围共用一个 exposure owner。
 

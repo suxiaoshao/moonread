@@ -21,6 +21,24 @@ struct ContinueReadingIntent: AppIntent {
     }
 }
 
+struct OpenMyBookshelfIntent: AppIntent {
+    static let title: LocalizedStringResource = "我的书架"
+    static let openAppWhenRun = true
+    @MainActor func perform() async throws -> some IntentResult {
+        try SystemReadingIntentDelivery.submit(.library)
+        return .result()
+    }
+}
+struct SearchSystemBooksIntent: AppIntent {
+    static let title: LocalizedStringResource = "搜索书籍"
+    static let openAppWhenRun = true
+    @Parameter(title: "关键词") var query: String?
+    @MainActor func perform() async throws -> some IntentResult {
+        try SystemReadingIntentDelivery.submit(.search(query ?? ""))
+        return .result()
+    }
+}
+
 enum SystemStatisticsPeriod: String, AppEnum {
     case today, week
     static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "统计时段")
@@ -50,9 +68,11 @@ private struct SystemStatisticsError: LocalizedError { let message: String; var 
 
 struct MoonreadShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
-        AppShortcut(intent: ContinueReadingIntent(), phrases: ["用\(.applicationName)继续阅读"], shortTitle: "继续阅读", systemImageName: "book")
-        AppShortcut(intent: OpenSystemBookIntent(), phrases: ["用\(.applicationName)打开\(\.$target)"], shortTitle: "打开书籍", systemImageName: "books.vertical")
+        AppShortcut(intent: ContinueReadingIntent(), phrases: ["用\(.applicationName)继续阅读"], shortTitle: "继续阅读", systemImageName: "book.fill")
+        AppShortcut(intent: OpenMyBookshelfIntent(), phrases: ["打开\(.applicationName)我的书架"], shortTitle: "我的书架", systemImageName: "books.vertical.fill")
+        AppShortcut(intent: SearchSystemBooksIntent(), phrases: ["用\(.applicationName)搜索书籍"], shortTitle: "搜索书籍", systemImageName: "magnifyingglass")
         AppShortcut(intent: ReadingStatisticsIntent(), phrases: ["查看\(.applicationName)阅读统计"], shortTitle: "阅读统计", systemImageName: "chart.bar.xaxis")
+        AppShortcut(intent: OpenSystemBookIntent(), phrases: ["用\(.applicationName)打开\(\.$target)"], shortTitle: "打开书籍", systemImageName: "book.closed.fill")
     }
 }
 
@@ -63,6 +83,8 @@ extension SystemReadingRouter {
             switch request {
             case .resume: submit(.continueReading)
             case .statistics: submit(.showStatistics)
+            case .library: submit(.showLibrary)
+            case .search(let query): submit(.searchBooks(query))
             case .book(let id): submit(.openBook(try SystemReadingBookID(rawValue: id)))
             }
         } catch { /* Malformed entity IDs never become paths or file imports. */ }

@@ -66,6 +66,50 @@
           }
         }
       }
+    },
+    "打开${applicationName}我的书架": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开${applicationName}我的书架"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打開${applicationName}我的書架"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open my bookshelf in ${applicationName}"
+          }
+        }
+      }
+    },
+    "用${applicationName}搜索书籍": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用${applicationName}搜索书籍"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用${applicationName}搜尋書籍"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search books in ${applicationName}"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

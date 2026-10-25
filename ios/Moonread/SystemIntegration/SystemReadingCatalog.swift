@@ -31,6 +31,8 @@ struct SystemReadingCatalog: Sendable {
     var accountPending = false
     var lastPublished = Date.distantPast
     var publishedGeneration: UUID?
+    // Main-App-only asset descriptors; never enter the shared Widget catalogue.
+    var spotlightCovers: [String: BookCoverAsset] = [:]
     var revision = UUID()
     var task: Task<Void, Never>?
     var taskID = UUID()
@@ -76,6 +78,7 @@ extension AppDataService {
     func resetSystemReadingCatalog() {
         guard var catalog = systemCatalog else { return }
         catalog.task?.cancel(); catalog.task = nil; catalog.taskID = UUID(); catalog.revision = UUID()
+        catalog.spotlightCovers.removeAll()
         catalog.scope = UUID().uuidString
         sourceDefaults.set(catalog.scope, forKey: "Moonread.systemReadingScope.v1")
         systemCatalog = catalog
@@ -140,6 +143,9 @@ extension AppDataService {
                 guard systemCatalog?.taskID == taskID, userCloudConfigurationRevision == configuration else { return }
                 guard systemCatalog?.revision == revision else { continue }
                 try catalog.file.publishEncoded(encoded)
+                systemCatalog?.spotlightCovers = Dictionary(uniqueKeysWithValues: projected.compactMap { book in
+                    book.cover.map { (SystemReadingLink.bookIDPrefix + book.contentSha256, $0) }
+                })
                 systemCatalog?.publishedGeneration = snapshot.generation
                 systemReadingSnapshotPublished(snapshot)
                 systemCatalog?.lastPublished = Date(); systemReadingLastError = nil

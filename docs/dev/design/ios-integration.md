@@ -1,10 +1,10 @@
 # iOS 系统集成
 
-更新：2026-10-25。1.3 的系统展示默认值按用户确认修订；详细设置归属见[设置信息架构](settings-information-architecture.md)。系统续读基础已接入 App 内首页续读：稳定 book:SHA ID、主 App 唯一生产的版本化只读快照、失效事件和统一开书路由。App Entity、三项 App Shortcuts 与继续阅读 Control 已接线；选书查询只读共享快照，统计动作仅在主 App 读取既有统计查询。真实正文可读时才为允许的书登记带书名的打开动作 donation；关闭系统搜索、排除来源或切换分域时撤销。Control/OpenIntent 声明同时属于主 App 和扩展，扩展不含 AppDataService/Rust/SwiftData；iOS 27 显式限定主 App 执行，iOS 18 沿 OpenIntent 的前台打开语义。进程归属和系统可见性仍需真机核验。最低系统继续为 iOS 18；具体 API 按部署版本检查可用性，不因最新文档提高系统下限。
+更新：2026-10-25。1.3 的系统展示默认值按用户确认修订；详细设置归属见[设置信息架构](settings-information-architecture.md)。系统续读基础已接入 App 内首页续读：稳定 book:SHA ID、主 App 唯一生产的版本化只读快照、失效事件和统一开书路由。App Entity、五项 App Shortcuts 与继续阅读 Control 已接线；选书查询只读共享快照，统计动作仅在主 App 读取既有统计查询。真实正文可读时才为允许的书登记带书名的打开动作 donation；关闭系统搜索、排除来源或切换分域时撤销。Control/OpenIntent 声明同时属于主 App 和扩展，扩展不含 AppDataService/Rust/SwiftData；iOS 27 显式限定主 App 执行，iOS 18 沿 OpenIntent 的前台打开语义。进程归属和系统可见性仍需真机核验。最低系统继续为 iOS 18；具体 API 按部署版本检查可用性，不因最新文档提高系统下限。
 
 ## 系统搜索（1.3）
 
-设置 → 阅读 → 系统集成提供默认开启的“在系统搜索中显示书籍”和本机书架排除。共用 catalog 的已识别书目；同 SHA 任一已知来源被排除，就不自动索引/捐赠，但显式选书与 Widget 配置仍可使用。命名索引 `MoonreadBooks` 只提交书名、作者和标签，不提交正文、路径、简介、封面、章节、进度或精确时间。旧系统搜索点击重新检查当前许可，再走统一路由。
+设置 → 阅读 → 系统集成提供默认开启的“在系统搜索中显示书籍”和本机书架排除。共用 catalog 的已识别书目；同 SHA 任一已知来源被排除，就不自动索引/捐赠，但显式选书与 Widget 配置仍可使用。命名索引 `MoonreadBooks` 提交书名、作者、标签，以及用户允许的封面缩略图、当前章节与进度。书名/作者使用 NLTokenizer 分词，加入书名词边界前缀、无声调拼音全拼和首字母（ü 用 v）；App Entity 选书复用同一份检索词做部分匹配。封面优先使用已有用户资产，否则复用 App 内文字封面渲染；封面描述只在主 App 内使用，不改变 Widget 快照。正文、路径、简介、批注和精确时间仍不索引。旧系统搜索点击重新检查当前许可，再走统一路由。
 
 成功扫描、身份发布、元数据与事实变更更新快照；临时扫描失败保留已知书目，明确移除最后副本才删除候选。已提交/尝试提交的 ID 是版本化本机派生状态，删除成功才去除，失败下次前台重试。Core Spotlight delegate 的任意队列回调显式非隔离，只将重建请求交回主 App；回执不等待可能依赖该回调的系统索引工作链。
 
@@ -57,7 +57,7 @@ BGTask 的 launch／expiration 回调显式非隔离且 `@Sendable`，只在切�
 
 一个阅读 Widget kind：`dev.moonread.Moonread.reading`；支持桌面小/中、锁屏 rectangular/inline，待机沿系统布局。配置最近阅读或指定书籍，默认展示书名和已知进度，首版文字封面。缺失/未知版本/首次解锁前不可读时为通用项；指定书籍失效仍保留原目标，不能改开另一部最近书。画廊与设置预览只用合成书名。没有默认隐藏详情开关，也不强制 unredacted 绕过系统保护；保护级别为首次解锁后可读。
 
-继续阅读 Control kind 为 `dev.moonread.Moonread.continue-reading`。主 App 与扩展共同包含 OpenIntent 声明，但扩展分支不初始化任何 App 服务；当前系统显式限定主 App，iOS 18 沿平台 OpenIntent 前台语义。快捷指令提供继续阅读、指定书与今天/本周统计；另可用“打开月读”的统计页面目标进入总览。统计时长由现有 Rust 投影返回总量，日期范围及格式沿 StatisticsDates，不在 intent 重做事实合并。普通读取失败/不完整不能回答为零。
+继续阅读 Control kind 为 `dev.moonread.Moonread.continue-reading`。主 App 与扩展共同包含 OpenIntent 声明，但扩展分支不初始化任何 App 服务；当前系统显式限定主 App，iOS 18 沿平台 OpenIntent 前台语义。快捷指令提供继续阅读、我的书架、搜索书籍（可选关键词）、今天/本周阅读统计、打开指定书籍，短语与名称均有简中、繁中、英文。我的书架进入内置书架根目录，搜索使用 App 内现有搜索页；另可用“打开月读”的统计页面目标进入总览。统计时长由现有 Rust 投影返回总量，日期范围及格式沿 StatisticsDates，不在 intent 重做事实合并。普通读取失败/不完整不能回答为零。
 
 目前本地验证保护应用规则、快照、假平台适配器与 App 内续读/设置流程。Siri 识别、系统 Widget/Control 可见性、锁屏、进程归属和真实 iCloud 交付仍由真机试用确认；iOS 18 实机尚未验证，不能把当前 SDK 的低部署目标编译等同于实机验收。
 

@@ -7,14 +7,22 @@ enum SystemReadingRequest: Equatable, Sendable {
     case continueReading
     case openBook(SystemReadingBookID)
     case openSearchBook(SystemReadingBookID)
-    case showStatistics
+    case showStatistics, showLibrary, searchBooks(String)
 
     init(url: URL) throws {
-        guard url.absoluteString.utf8.count <= 256,
+        guard url.absoluteString.utf8.count <= 8192,
               let c = URLComponents(url: url, resolvingAgainstBaseURL: false),
               c.scheme == SystemReadingLink.scheme, c.host == SystemReadingLink.host, c.user == nil, c.password == nil,
-              c.port == nil, c.query == nil, c.fragment == nil else { throw ReaderError.InvalidSettings }
-        if c.percentEncodedPath == "/continue" { self = .continueReading }
+              c.port == nil, c.fragment == nil else { throw ReaderError.InvalidSettings }
+        if c.percentEncodedPath == "/search" {
+            let items = c.queryItems ?? []
+            guard items.count <= 1, items.allSatisfy({ $0.name == "query" && $0.value != nil }),
+                  (items.first?.value?.utf8.count ?? 0) <= 1024 else { throw ReaderError.InvalidSettings }
+            self = .searchBooks(items.first?.value ?? ""); return
+        }
+        guard c.query == nil, url.absoluteString.utf8.count <= 256 else { throw ReaderError.InvalidSettings }
+        if c.percentEncodedPath == "/library" { self = .showLibrary }
+        else if c.percentEncodedPath == "/continue" { self = .continueReading }
         else if c.percentEncodedPath == "/statistics" { self = .showStatistics }
         else {
             let prefix = SystemReadingLink.bookPathPrefix
@@ -26,6 +34,8 @@ enum SystemReadingRequest: Equatable, Sendable {
         switch self {
         case .continueReading: SystemReadingLink.resume
         case .showStatistics: SystemReadingLink.statistics
+        case .showLibrary: SystemReadingLink.library
+        case .searchBooks(let query): SystemReadingLink.search(query)
         case .openBook(let id), .openSearchBook(let id): SystemReadingLink.book(id.rawValue)!
         }
     }
@@ -103,11 +113,20 @@ final class SystemReadingRouter {
                 let id: SystemReadingBookID
                 let automatic: Bool
                 switch request {
-                case .showStatistics:
+                case .showStatistics, .showLibrary, .searchBooks:
                     guard !presentationBlocked, library.sheet == nil, !library.filePickerPresented, library.canAcceptFileWork else { return }
                     await finishReader(in: library)
                     guard sceneActive, token == current, !Task.isCancelled else { return }
-                    library.selectedTab = .statistics; library.statisticsPath = []; pending = nil
+                    switch request {
+                    case .showStatistics: library.selectedTab = .statistics; library.statisticsPath = []
+                    case .showLibrary:
+                        library.selectedTab = .library; library.libraryPath = [.folder(LibraryLocation(shelfID: "builtin"))]
+                    case .searchBooks(let query):
+                        library.search.query = query; library.search.tokens = []; library.searchPath = []
+                        library.selectedTab = .search; library.setSearchPresented(true)
+                    default: break
+                    }
+                    pending = nil
                     return
                 case .continueReading:
                     guard let entry = try await service.recentLibrary(1).first else { throw SystemReadingRouteError.noRecent }

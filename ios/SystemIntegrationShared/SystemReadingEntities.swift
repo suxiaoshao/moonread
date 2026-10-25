@@ -1,13 +1,46 @@
 import AppIntents
 import Foundation
+import NaturalLanguage
 
 /// Shares the same named metadata matching owner as in-App library queries.
 /// It can run in an extension using only the already-produced catalogue.
 enum LibraryQueryRules {
+    /// Platform search vocabulary only; no novel text or AI matching profile.
+    /// Entity selection and Spotlight use these same partial/pinyin spellings.
+    static func systemMetadataTerms(title: String, author: String?, tags: [String]) -> [String] {
+        var terms = [title] + tags
+        for (text, includePrefixes) in [(title, true), (author ?? "", false)] where !text.isEmpty {
+            terms.append(text)
+            let tokenizer = NLTokenizer(unit: .word)
+            tokenizer.string = text
+            var words: [String] = []
+            tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
+                words.append(String(text[range]))
+                if includePrefixes { terms.append(String(text[..<range.upperBound]).trimmingCharacters(in: .whitespacesAndNewlines)) }
+                return true
+            }
+            terms += words
+            let latin = NSMutableString(string: text)
+            CFStringTransform(latin, nil, kCFStringTransformMandarinLatin, false)
+            // Keep the conventional keyboard spelling lü → lv before removing tones.
+            latin.setString((latin as String).decomposedStringWithCanonicalMapping)
+            latin.replaceOccurrences(of: "u\u{0308}", with: "v", options: .literal, range: NSRange(location: 0, length: latin.length))
+            CFStringTransform(latin, nil, kCFStringTransformStripDiacritics, false)
+            let syllables = (latin as String).lowercased().split { !$0.isLetter && !$0.isNumber }
+            terms.append(syllables.joined())
+            terms.append(String(syllables.compactMap(\.first)))
+        }
+        var seen = Set<String>()
+        return terms.filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+    }
     static func systemMetadataBooks(_ books: [SystemReadingSnapshot.Book], matching query: String) -> [SystemReadingSnapshot.Book] {
         let value = query.trimmingCharacters(in: .whitespacesAndNewlines)
         return books.filter { book in
-            value.isEmpty || ([book.title, book.author ?? ""] + book.tags).contains { $0.localizedCaseInsensitiveContains(value) }
+            if value.isEmpty || ([book.title, book.author ?? ""] + book.tags).contains(where: { $0.localizedCaseInsensitiveContains(value) }) { return true }
+            // Ordinary title/author substrings need no tokenization. Only a
+            // Roman-letter query needs the shared transliterated vocabulary.
+            guard value.unicodeScalars.allSatisfy(\.isASCII) else { return false }
+            return systemMetadataTerms(title: book.title, author: book.author, tags: book.tags).contains { $0.localizedCaseInsensitiveContains(value) }
         }.sorted { $0.naturalOrdinal < $1.naturalOrdinal }
     }
 }
@@ -49,7 +82,7 @@ struct SystemBookQuery: EntityStringQuery {
 /// In-memory foreground handoff. The OpenIntent is included in both targets;
 /// only the App receives these requests. No database is linked into the widget.
 @MainActor enum SystemReadingIntentDelivery {
-    enum Request: Equatable { case resume, book(String), statistics }
+    enum Request: Equatable { case resume, book(String), statistics, library, search(String) }
     private static var pending: Request?
     static let notification = Notification.Name("Moonread.systemReadingIntentRequested")
     static func submit(_ request: Request) throws {

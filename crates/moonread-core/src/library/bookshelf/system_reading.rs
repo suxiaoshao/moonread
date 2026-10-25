@@ -9,6 +9,7 @@ pub struct SystemReadingBookProjection {
     pub title: String,
     pub author: Option<String>,
     pub tags: Vec<String>,
+    pub cover: Option<crate::BookCoverAsset>,
     pub source_shelf_ids: Vec<String>,
     pub source_count: u64,
     pub needs_download: bool,
@@ -65,6 +66,7 @@ impl ReaderCore {
                         .as_ref()
                         .map(|m| m.author.clone())
                         .filter(|s| !s.is_empty()),
+                    cover: metadata.as_ref().and_then(|m| m.cover.clone()),
                     tags: metadata.map(|m| m.tags).unwrap_or_default(),
                     source_shelf_ids: shelves,
                     source_count,
@@ -140,7 +142,7 @@ mod tests {
             )
             .unwrap();
             db.execute("INSERT INTO book_metadata VALUES(?1,?2)", params![sha,
-                serde_json::json!({"sha":sha,"author":"合成作者","synopsis":"not published","tags":["合成标签"],"cover":null,"status":"Reading"}).to_string()]).unwrap();
+                serde_json::json!({"sha":sha,"author":"合成作者","synopsis":"not published","tags":["合成标签"],"cover":{"id":"synthetic-cover","sha256":"c".repeat(64),"extension":"png","width":98,"height":137},"status":"Reading"}).to_string()]).unwrap();
         }
         let books = core.system_reading_catalogue().unwrap();
         assert_eq!(books.len(), 1);
@@ -151,6 +153,7 @@ mod tests {
         assert_eq!(book.source_shelf_ids, ["other", "s"]);
         assert_eq!(book.author.as_deref(), Some("合成作者"));
         assert_eq!(book.tags, ["合成标签"]);
+        assert_eq!(book.cover.as_ref().unwrap().id, "synthetic-cover");
         assert_eq!(book.percentage, Some(50.0));
         assert_eq!(book.recent_rank, Some(0));
         assert!(book.needs_download);

@@ -1,14 +1,36 @@
 import CoreSpotlight
 import Foundation
 import UniformTypeIdentifiers
+import SwiftUI
 
-/// This whitelist is the entire Spotlight payload. No progress, chapter,
-/// synopsis, cover, URL, file path, annotation or reading time can enter it.
+/// Spotlight-only display whitelist. No novel text, path, synopsis, annotation,
+/// position offset/token or precise reading time enters the system index.
 struct SystemSpotlightMetadata: Equatable, Sendable {
     let id: String
     let title: String
     let author: String?
     let tags: [String]
+    var chapterLabel: String? = nil
+    var progress: Double? = nil
+    var cover: BookCoverAsset? = nil
+    var keywords: [String] { LibraryQueryRules.systemMetadataTerms(title: title, author: author, tags: tags) }
+    var contentDescription: String {
+        [author, chapterLabel, progress.map { ($0 / 100).formatted(.percent.precision(.fractionLength(1))) }]
+            .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+    @MainActor func attributes(thumbnail: Data?) -> CSSearchableItemAttributeSet {
+        let attributes = CSSearchableItemAttributeSet(contentType: .text)
+        attributes.title = title; attributes.authorNames = author.map { [$0] }
+        attributes.keywords = keywords; attributes.contentDescription = contentDescription
+        attributes.thumbnailData = thumbnail
+        return attributes
+    }
+    @MainActor static func textThumbnail(title: String) -> Data? {
+        let renderer = ImageRenderer(content: LibraryBookCover(title: title)
+            .environment(\.theme, ThemeSurface.initial).frame(width: 98, height: 137))
+        renderer.scale = 2
+        return renderer.uiImage?.pngData()
+    }
 }
 struct SystemSpotlightAdapter: Sendable {
     let index: @MainActor @Sendable ([SystemSpotlightMetadata]) async throws -> Void
@@ -29,9 +51,10 @@ private final class SystemSpotlightAcknowledgement: @unchecked Sendable {
 }
 @MainActor private final class SystemSpotlightNative: NSObject, CSSearchableIndexDelegate {
     private let index = CSSearchableIndex(name: "MoonreadBooks")
+    private let thumbnail: @Sendable (SystemSpotlightMetadata) async -> Data?
     private nonisolated let reindex: @Sendable () async -> Void
-    init(reindex: @escaping @Sendable () async -> Void) {
-        self.reindex = reindex
+    init(reindex: @escaping @Sendable () async -> Void, thumbnail: @escaping @Sendable (SystemSpotlightMetadata) async -> Data?) {
+        self.reindex = reindex; self.thumbnail = thumbnail
         super.init(); index.indexDelegate = self
     }
     nonisolated func searchableIndex(_ searchableIndex: CSSearchableIndex, reindexAllSearchableItemsWithAcknowledgementHandler acknowledgementHandler: @escaping () -> Void) {
@@ -44,14 +67,12 @@ private final class SystemSpotlightAcknowledgement: @unchecked Sendable {
     }
     var adapter: SystemSpotlightAdapter {
         .init(index: { [self] metadata in
-            let items = metadata.map { book in
-                let attributes = CSSearchableItemAttributeSet(contentType: .text)
-                attributes.title = book.title
-                attributes.authorNames = book.author.map { [$0] }
-                attributes.keywords = book.tags
+            var items: [CSSearchableItem] = []
+            for book in metadata {
+                let attributes = book.attributes(thumbnail: await thumbnail(book))
                 let item = CSSearchableItem(uniqueIdentifier: book.id, domainIdentifier: "dev.moonread.Moonread.books", attributeSet: attributes)
                 item.expirationDate = .distantFuture
-                return item
+                items.append(item)
             }
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 index.indexSearchableItems(items) { @Sendable error in
@@ -80,6 +101,11 @@ private struct SystemSpotlightState: Codable {
 }
 
 extension AppDataService {
+    private func systemSpotlightThumbnail(_ book: SystemSpotlightMetadata) async -> Data? {
+        if let cover = book.cover, let image = try? await coverImage(cover, pixels: 274) { return image.pngData() }
+        return await SystemSpotlightMetadata.textThumbnail(title: book.title)
+    }
+
     func requestSystemSpotlightReindex() async {
         systemSpotlightMetadata.removeAll()
         scheduleSystemReadingCatalog(immediate: true)
@@ -93,7 +119,8 @@ extension AppDataService {
         if let suppliedAdapter { adapter = suppliedAdapter }
         else if let existing = systemSpotlightAdapter { adapter = existing }
         else {
-            adapter = await SystemSpotlightNative(reindex: { [weak self] in await self?.requestSystemSpotlightReindex() }).adapter
+            adapter = await SystemSpotlightNative(reindex: { [weak self] in await self?.requestSystemSpotlightReindex() },
+                thumbnail: { [weak self] book in await self?.systemSpotlightThumbnail(book) }).adapter
             systemSpotlightAdapter = adapter
         }
         let key = "Moonread.systemSpotlight.v1"
@@ -106,7 +133,8 @@ extension AppDataService {
             sourceDefaults.set(try JSONEncoder().encode(state), forKey: key)
         }
         let metadata = snapshot.books.filter(\.allowsAutomaticExposure).map {
-            SystemSpotlightMetadata(id: $0.id, title: $0.title, author: $0.author, tags: $0.tags)
+            SystemSpotlightMetadata(id: $0.id, title: $0.title, author: $0.author, tags: $0.tags,
+                chapterLabel: $0.chapterLabel, progress: $0.progress, cover: systemCatalog?.spotlightCovers[$0.id])
         }
         let desired = Set(metadata.map(\.id))
         let obsolete = Set(state.ids).subtracting(desired)

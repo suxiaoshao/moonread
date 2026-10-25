@@ -90,11 +90,26 @@ import XCTest
         let missing = SystemBookQuery(readSnapshot: { throw CocoaError(.fileReadNoPermission) })
         do { _ = try await missing.suggestedEntities(); XCTFail("Unreadable snapshots must not manufacture a book") } catch { }
     }
-    func testIntentHandoffIsOneShotAndStatisticsBoundsUseLocalCalendar() throws {
+    func testIntentHandoffIsOneShotAndStatisticsBoundsUseLocalCalendar() async throws {
         try SystemReadingIntentDelivery.submit(.resume)
         try SystemReadingIntentDelivery.submit(.book("book:" + String(repeating: "c", count: 64)))
         XCTAssertEqual(SystemReadingIntentDelivery.take(), .book("book:" + String(repeating: "c", count: 64)))
         XCTAssertNil(SystemReadingIntentDelivery.take())
+        _ = try await OpenMyBookshelfIntent().perform()
+        XCTAssertEqual(SystemReadingIntentDelivery.take(), .library)
+        var search = SearchSystemBooksIntent()
+        search.query = "巫师"
+        _ = try await search.perform()
+        XCTAssertEqual(SystemReadingIntentDelivery.take(), .search("巫师"))
+        search.query = nil
+        _ = try await search.perform()
+        XCTAssertEqual(SystemReadingIntentDelivery.take(), .search(""))
+        for request in [SystemReadingRequest.showLibrary, .searchBooks(""), .searchBooks("巫师 & wizard")] {
+            XCTAssertEqual(try SystemReadingRequest(url: request.url), request)
+        }
+        for invalid in ["moonread://reading/search?offset=3", "moonread://reading/search?query=x&query=y"] {
+            XCTAssertThrowsError(try SystemReadingRequest(url: URL(string: invalid)!))
+        }
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 8 * 3600)!
         calendar.firstWeekday = 2
@@ -117,7 +132,7 @@ import XCTest
         try await service.reconcileSystemSpotlight(snapshot, using: adapter)
         try await service.reconcileSystemSpotlight(snapshot, using: adapter)
         let before = await probe.result()
-        XCTAssertEqual(before.0, 1, "Position-only refreshes do not reindex unchanged metadata")
+        XCTAssertEqual(before.0, 1, "An unchanged display summary is not reindexed")
         XCTAssertEqual(before.1.count, 2)
         await service.requestSystemSpotlightReindex()
         try await service.reconcileSystemSpotlight(snapshot, using: adapter)
@@ -139,6 +154,32 @@ import XCTest
         do { _ = try await service.resolveSystemReadingBook(id, automatic: true); XCTFail("Stale Spotlight links must respect current exclusions") }
         catch SystemReadingRouteError.searchDisabled { }
     }
+    func testSystemSearchPartialPinyinAndSpotlightPresentation() async throws {
+        let book = SystemReadingSnapshot.Book(id: "book:" + String(repeating: "a", count: 64), title: "巫师之旅", author: "刘慈欣", tags: ["奇幻"], availability: .available, sourceCount: 1, naturalOrdinal: 0, progress: 42, chapterLabel: "第一章 月下归舟", recentRank: nil, allowsAutomaticExposure: true)
+        let traditional = SystemReadingSnapshot.Book(id: "book:" + String(repeating: "b", count: 64), title: "巫師之旅", author: nil, tags: [], availability: .available, sourceCount: 1, naturalOrdinal: 1, progress: nil, chapterLabel: nil, recentRank: nil, allowsAutomaticExposure: true)
+        let english = SystemReadingSnapshot.Book(id: "book:" + String(repeating: "c", count: 64), title: "The Wizard Journey", author: "Alex River", tags: [], availability: .available, sourceCount: 1, naturalOrdinal: 2, progress: nil, chapterLabel: nil, recentRank: nil, allowsAutomaticExposure: true)
+        let query = SystemBookQuery(readSnapshot: { .init(storeScope: "test", books: [book, traditional, english]) })
+        for text in ["巫师", "之旅", "wushi", "wushizhilv", "WSZL", "liucixin", "lcx"] {
+            let matches = try await query.entities(matching: text)
+            XCTAssertTrue(matches.contains { $0.id == book.id }, text)
+        }
+        let traditionalMatches = try await query.entities(matching: "巫師"), englishMatches = try await query.entities(matching: "wizard")
+        XCTAssertEqual(traditionalMatches.map(\.id), [traditional.id])
+        XCTAssertEqual(englishMatches.map(\.id), [english.id])
+        let metadata = SystemSpotlightMetadata(id: book.id, title: book.title, author: book.author, tags: book.tags, chapterLabel: book.chapterLabel, progress: book.progress)
+        for text in ["巫师", "wushizhilv", "wszl", "liucixin", "lcx"] { XCTAssertTrue(metadata.keywords.contains(text), text) }
+        let englishTerms = LibraryQueryRules.systemMetadataTerms(title: english.title, author: english.author, tags: [])
+        XCTAssertTrue(englishTerms.contains("The Wizard")); XCTAssertTrue(englishTerms.contains("Wizard"))
+        let thumbnail = try XCTUnwrap(SystemSpotlightMetadata.textThumbnail(title: book.title))
+        let attributes = metadata.attributes(thumbnail: thumbnail)
+        XCTAssertEqual(attributes.thumbnailData, thumbnail)
+        XCTAssertTrue(attributes.contentDescription?.contains("刘慈欣 · 第一章 月下归舟 · ") == true)
+        XCTAssertTrue(attributes.contentDescription?.contains("42") == true)
+        XCTAssertNil(attributes.textContent); XCTAssertNil(attributes.contentURL)
+        let empty = SystemSpotlightMetadata(id: book.id, title: book.title, author: nil, tags: [])
+        XCTAssertTrue(empty.contentDescription.isEmpty, "Unknown chapters/progress are never fabricated")
+    }
+
     func testFailedSpotlightSubmissionRemainsRevocableWhenDisabled() async throws {
         let (root, service, _, _, _, _, _, suite) = try singleBookFixture()
         defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }

@@ -33,14 +33,12 @@ struct SystemIntegrationSettingsView: View {
                     Button("重试") { save(enabled: enabled, excluded: excluded) }
                 }
             } header: { Text("系统搜索与建议") } footer: {
-                Text("只使用已识别书籍的书名、作者和标签，不索引正文。读过的书可出现在系统续读建议中。排除书架不会影响在快捷指令或小组件中主动选书。")
+                Text("使用已识别书籍的书名、作者、标签、封面及章节和进度，不索引正文。读过的书可出现在系统续读建议中。排除书架不会影响在快捷指令或小组件中主动选书。")
             }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section {
-                Text("可用“继续阅读”“打开书籍”和“查看阅读统计”；统计可回答今天或本周的阅读时长。")
-                    .foregroundStyle(Color(uiColor: theme.secondary))
                 ShortcutsLink()
             } header: { Text("Siri 与快捷指令") } footer: {
-                Text("也可以在支持的控制中心、锁屏或操作按钮中添加“继续阅读”。")
+                Text("可用“继续阅读”“我的书架”“搜索书籍”“阅读统计”和“打开书籍”。搜索可带关键词，统计可回答今天或本周的阅读时长。也可以在支持的控制中心、锁屏或操作按钮中添加“继续阅读”。")
             }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section {
                 SystemReadingCard(book: SystemReadingWidgetModel.sample)
