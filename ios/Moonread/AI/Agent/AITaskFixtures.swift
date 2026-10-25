@@ -8,7 +8,7 @@ extension Notification.Name { static let aiTaskFixtureReady = Notification.Name(
 extension AIService {
     /// Runs only in the existing isolated UUID UI-test library/store. No Agent request is started.
     func seedTaskFixturesIfReady() async throws {
-        guard !fixtureSeeded, !fixtureSeeding, let session = await ReaderService.shared.testSession,
+        guard !fixtureSeeded, !fixtureSeeding, let session = await AppDataService.shared.testSession,
               ProcessInfo.processInfo.arguments.contains("--ui-test-ai-tasks") else { return }
         if conversations.contains(where: { $0.id == "ui-ai-notes-" + session }) { fixtureSeeded = true; return }
         fixtureSeeding = true; defer { fixtureSeeding = false }
@@ -16,7 +16,7 @@ extension AIService {
             try await installFixtureSession(AISessionValue(id: "smoke-task-" + session, title: "合成任务", kind: .statistics, listed: false), entries: [])
             fixtureSeeded = true; return
         }
-        let reader = ReaderService.shared
+        let reader = AppDataService.shared
         let entries = try await reader.aiLibraryBooks("builtin")
         guard var sample = entries.first(where: { $0.name == "月读 · 排版示例.txt" }),
               let sha = sample.metadata?.sha, (try? parseSha256(value: sha)) != nil,

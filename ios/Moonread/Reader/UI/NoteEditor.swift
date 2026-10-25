@@ -6,7 +6,7 @@ final class NoteEditorModel {
     var edit: AnnotationEdit
     var conflicts: [AnnotationCandidate] = []
     private var conflictBaselines: [String: [AnnotationCandidate]] = [:]
-    let service: ReaderService
+    let service: AppDataService
     var conflictChoice = false
     var loadingConflicts = true
     var deleteChoice = false
@@ -15,7 +15,7 @@ final class NoteEditorModel {
     private var committed = false
     @ObservationIgnored private let aiCommit: AIAnnotationCommitHooks?
     @ObservationIgnored private let onCommitted: (() -> Void)?
-    init(edit: AnnotationEdit, service: ReaderService = .shared, onCommitted: (() -> Void)? = nil, aiCommit: AIAnnotationCommitHooks? = nil) {
+    init(edit: AnnotationEdit, service: AppDataService = .shared, onCommitted: (() -> Void)? = nil, aiCommit: AIAnnotationCommitHooks? = nil) {
         self.edit = edit; self.service = service; text = edit.note; self.onCommitted = onCommitted; self.aiCommit = aiCommit
     }
     func loadConflicts() async {

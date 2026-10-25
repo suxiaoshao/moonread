@@ -357,7 +357,7 @@ struct FirstRunOnboarding: View {
         while !Task.isCancelled {
             let key = directoryKey, generation = library.discoveryGeneration, revision = library.discoveryRevision
             do {
-                let entries = try await ReaderService.shared.libraryEntries(LibraryLocation(shelfID: "builtin"))
+                let entries = try await AppDataService.shared.libraryEntries(LibraryLocation(shelfID: "builtin"))
                 try Task.checkCancellation()
                 guard key == directoryKey else { continue }
                 contents = entries; contentsKey = key; directoryFailed = false

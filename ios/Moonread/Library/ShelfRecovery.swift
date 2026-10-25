@@ -55,7 +55,7 @@ struct ShelfRecoverySnapshot: Sendable, Equatable {
     var guidance: Set<String> = []
 }
 
-extension ReaderService {
+extension AppDataService {
     private var shelfReferenceScope: String {
         userDirectoryName + "/" + (sourceDefaults.string(forKey: "Moonread.userOwner") ?? "local")
     }

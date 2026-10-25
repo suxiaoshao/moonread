@@ -136,7 +136,7 @@ import XCTest
     func testInventoryFailureCompletesLoadingAndRetryClearsTheError() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
         let attempts = InventoryStoreAttempts()
-        let service = ReaderService(core: f.core, libraryDirectory: f.root, sourceDefaultsSuite: f.suite,
+        let service = AppDataService(core: f.core, libraryDirectory: f.root, sourceDefaultsSuite: f.suite,
             userStoreFactory: { name, _ in
                 try await attempts.check()
                 return name == "pending-users.store" ? f.pending : f.formal
@@ -152,7 +152,7 @@ import XCTest
     func testInventoryRefreshDuringLoadingCoalescesIntoOneFollowupRead() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
         let gate = RestorationGate(), reads = InventoryRefreshReads()
-        let service = ReaderService(core: f.core, libraryDirectory: f.root, sourceDefaultsSuite: f.suite,
+        let service = AppDataService(core: f.core, libraryDirectory: f.root, sourceDefaultsSuite: f.suite,
             userStoreFactory: { _, _ in
                 let count = await reads.begin()
                 if count == 1 { await gate.wait() }
@@ -358,7 +358,7 @@ import XCTest
         do { _ = try await f.service.exportReadingData(); XCTFail("A full export must not silently omit pending data") }
         catch ReadingDataError.pendingIdentity { }
         let gate = RestorationGate()
-        let service = ReaderService(core: f.core, sourceDefaultsSuite: f.suite, userStoreFactory: { name, _ in
+        let service = AppDataService(core: f.core, sourceDefaultsSuite: f.suite, userStoreFactory: { name, _ in
             if name == "pending-users.store" { return f.pending }
             await gate.wait(); return f.formal
         })
@@ -390,7 +390,7 @@ import XCTest
             let values = slices.map { ($0.id, key, self.syncFact(key, id: $0.id)) }
             try await f.formal.saveFacts(values, generation: generation, current: generation, enabled: true)
         }
-        let service = ReaderService(core: f.core, sourceDefaultsSuite: f.suite, dataManagementWriter: writer, userStoreFactory: { name, _ in
+        let service = AppDataService(core: f.core, sourceDefaultsSuite: f.suite, dataManagementWriter: writer, userStoreFactory: { name, _ in
             if name == "pending-users.store" { return f.pending }
             await positionGate.wait(); return f.formal
         })
@@ -431,7 +431,7 @@ import XCTest
             calls += slices.map(\.bookId)
             if calls.count == 1 { await gate.wait(); throw CocoaError(.fileWriteUnknown) }
         }
-        let service = ReaderService(core: f.core, sourceDefaultsSuite: f.suite, dataManagementWriter: writer,
+        let service = AppDataService(core: f.core, sourceDefaultsSuite: f.suite, dataManagementWriter: writer,
             userStoreFactory: { name, _ in name == "pending-users.store" ? f.pending : f.formal })
         try await receiveBackupPosition(positionRecord(key: f.book.contentSha256, token: "old", offset: 12), key: f.book.contentSha256, store: f.formal)
         func slices(_ book: String) -> [ReadingSlice] {

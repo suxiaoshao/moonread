@@ -410,7 +410,7 @@ struct ReaderScreen: View {
 
     private func loadCoverInformation() async {
         guard let id = session.readingID else { return }
-        coverInformation = try? await ReaderService.shared.details(bookID: id)
+        coverInformation = try? await AppDataService.shared.details(bookID: id)
     }
 
     private var bookDetailsTarget: StatisticsRoute {

@@ -38,8 +38,8 @@ struct StatisticsDayView: View {
     private func load() async {
         do {
             await StatisticsWriter.shared.drain()
-            compatibilityNotice = try await ReaderService.shared.statisticsCompatibilityNotice(book: route.book)
-            spans = StatisticsSpan.merge(try await ReaderService.shared.activities(first: route.day, last: route.day, book: route.book))
+            compatibilityNotice = try await AppDataService.shared.statisticsCompatibilityNotice(book: route.book)
+            spans = StatisticsSpan.merge(try await AppDataService.shared.activities(first: route.day, last: route.day, book: route.book))
             error = nil
         } catch { self.error = ReaderMessages.error(error) }
         loaded = true

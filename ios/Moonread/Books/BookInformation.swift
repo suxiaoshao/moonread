@@ -31,17 +31,17 @@ final class BookInformationModel {
     private(set) var loadedIdentity: Identity?
     private var requestedIdentity: Identity?
     private var loadRevision = UUID()
-    @ObservationIgnored private let service: ReaderService
+    @ObservationIgnored private let service: AppDataService
     @ObservationIgnored private let readInformation: @MainActor (StatisticsRoute) async throws -> (LibraryEntry?, BookDetails)
     @ObservationIgnored private let readChapters: @MainActor (String) async throws -> [ChapterEntry]
-    init(service: ReaderService = .shared,
+    init(service: AppDataService = .shared,
          readInformation: (@MainActor (StatisticsRoute) async throws -> (LibraryEntry?, BookDetails))? = nil,
          readChapters: (@MainActor (String) async throws -> [ChapterEntry])? = nil) {
         self.service = service
         self.readInformation = readInformation ?? { try await Self.read($0, service: service) }
         self.readChapters = readChapters ?? { try await service.chapters($0).items }
     }
-    private static func read(_ target: StatisticsRoute, service: ReaderService) async throws -> (LibraryEntry?, BookDetails) {
+    private static func read(_ target: StatisticsRoute, service: AppDataService) async throws -> (LibraryEntry?, BookDetails) {
         let entry: LibraryEntry?
         if let file = target.fileID { entry = try await service.libraryEntry(file) }
         else if let id = target.bookID, !target.fromReader {
@@ -172,13 +172,13 @@ final class BookMetadataDraft: Identifiable {
         let request = UUID(); imageRequest = request; choosingImage = true
         defer { if imageRequest == request { choosingImage = false } }
         do {
-            let cover = try await ReaderService.shared.makeCover(data)
-            guard !closed, imageRequest == request, !Task.isCancelled else { await ReaderService.shared.discardCoverDraft(cover); return }
+            let cover = try await AppDataService.shared.makeCover(data)
+            guard !closed, imageRequest == request, !Task.isCancelled else { await AppDataService.shared.discardCoverDraft(cover); return }
             discardNewCover(); value.cover = cover
         } catch { if imageRequest == request { self.error = ReaderMessages.error(error) } }
     }
     func discardNewCover() {
-        if let cover = value.cover, cover != base.cover { Task { await ReaderService.shared.discardCoverDraft(cover) } }
+        if let cover = value.cover, cover != base.cover { Task { await AppDataService.shared.discardCoverDraft(cover) } }
     }
     func removeCover() { imageRequest = UUID(); choosingImage = false; discardNewCover(); value.cover = nil }
     func cancel() { closed = true; imageRequest = UUID(); discardNewCover() }
@@ -252,7 +252,7 @@ struct BookMetadataEditor: View {
                             addTag(); focused = false; draft.saving = true
                             Task {
                                 defer { draft.saving = false }
-                                do { try await ReaderService.shared.saveMetadata(base: draft.base, edited: draft.value); dismiss() }
+                                do { try await AppDataService.shared.saveMetadata(base: draft.base, edited: draft.value); dismiss() }
                                 catch { draft.error = ReaderMessages.error(error) }
                             }
                         }.labelStyle(.titleOnly).disabled(draft.saving || draft.choosingImage).accessibilityIdentifier("saveBookMetadata")
@@ -276,7 +276,7 @@ struct BookMetadataEditor: View {
                     do { if let data = try await photo.loadTransferable(type: Data.self) { await draft.image(data) } }
                     catch { draft.error = ReaderMessages.error(error) }
                 }
-                .task { suggestions = (try? await ReaderService.shared.metadataOptions(shelfID: nil).tags) ?? [] }
+                .task { suggestions = (try? await AppDataService.shared.metadataOptions(shelfID: nil).tags) ?? [] }
                 .alert("暂时无法完成", isPresented: Binding(get: { draft.error != nil }, set: { if !$0 { draft.error = nil } })) {
                     Button("知道了", role: .cancel) { draft.error = nil }
                 } message: { Text(draft.error ?? "") }

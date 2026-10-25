@@ -36,7 +36,7 @@ actor RestorationReads {
   var ids: [String] = []
   func record(_ id: String) { ids.append(id) }
 }
-extension ReaderService {
+extension AppDataService {
   func restorationFixture(
     active: Bool, beforeRead: (@Sendable (String) async -> Void)? = nil,
     beforeCommit: (@Sendable () async -> Void)? = nil
@@ -52,7 +52,7 @@ extension ReaderService {
 @MainActor class RecentReadingRestorationFixture: XCTestCase {
   struct Fixture {
     let root: URL, directory: URL
-    let core: ReaderCore, service: ReaderService
+    let core: ReaderCore, service: AppDataService
     let store: UserDataStore, pending: UserDataStore
     let suite: String
     func clean() {
@@ -83,7 +83,7 @@ extension ReaderService {
     let store = try makeStore()
     let pending = try makeStore()
     let suite = "RecentRestore-" + UUID().uuidString
-    let service = ReaderService(
+    let service = AppDataService(
       core: core, libraryDirectory: directory, sourceDefaultsSuite: suite,
       userStoreFactory: { name, _ in name == "pending-users.store" ? pending : store })
     await service.restorationFixture(active: false)
@@ -97,7 +97,7 @@ extension ReaderService {
       pending: pending, suite: suite)
   }
   func scan(_ f: Fixture) async throws {
-    let files = try ReaderService.libraryDirectoryItems(f.directory)
+    let files = try AppDataService.libraryDirectoryItems(f.directory)
     try await f.service.applyLibraryScan("builtin", root: f.directory, items: files, observe: false)
   }
   func hint(_ path: String, size: UInt64?, decoding: String = "auto") -> PositionSourceHint {

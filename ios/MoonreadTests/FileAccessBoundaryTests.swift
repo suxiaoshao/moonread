@@ -43,7 +43,7 @@ final class FileAccessBoundaryReaderIntegrationTests: ReaderIntegrationFixture {
     try text.write(to: actual.appendingPathComponent("测试.txt"), atomically: true, encoding: .utf8)
     try text.write(to: nested.appendingPathComponent("嵌套.txt"), atomically: true, encoding: .utf8)
     let core = try ReaderCore(dataDirectory: temporary.appendingPathComponent("db").path)
-    let service = ReaderService(
+    let service = AppDataService(
       core: core, libraryDirectory: alias.appendingPathComponent("Documents"))
     try await service.prepareLibrary()
     try await service.scanLibraryShelf("builtin")
@@ -67,7 +67,7 @@ final class FileAccessBoundaryReaderIntegrationTests: ReaderIntegrationFixture {
     try Data("第一章 起点\n正文甲".utf8).write(to: url)
     let modified = Date(timeIntervalSince1970: 1_800_000_000)
     try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: url.path)
-    let service = ReaderService()
+    let service = AppDataService()
     let initialValue = try CloudDocumentHandoff.bytesHash(url)
     let initial = try XCTUnwrap(initialValue)
     let unchanged = try CloudDocumentHandoff.bytesHash(url)
@@ -91,7 +91,7 @@ final class FileAccessBoundaryLibraryTrashTests: LibraryTrashFixture {
       deletion: { _, _ in },
       scan: { root, _ in
         probe.record(root.path)
-        return try ReaderService.libraryDirectoryItems(root)
+        return try AppDataService.libraryDirectoryItems(root)
       })
     defer { try? FileManager.default.removeItem(at: temporary) }
     let deleted = temporary.appendingPathComponent(".Trash/root")

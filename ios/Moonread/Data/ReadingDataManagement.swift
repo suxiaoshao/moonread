@@ -14,7 +14,7 @@ struct ReadingBackupPreview: Sendable {
     let linked: Int
 }
 
-extension ReaderService {
+extension AppDataService {
     /// Serializes only local writes/pending transfer/deletion across actor awaits.
     func acquireUserDataOperation() async {
         if userDataOperationBusy { await withCheckedContinuation { userDataOperationWaiters.append($0) } }

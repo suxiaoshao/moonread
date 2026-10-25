@@ -159,7 +159,7 @@ final class ThemeStore {
     private let persistPreferences: @MainActor (ThemePreferences) async throws -> ThemeSnapshot
 
     convenience init() {
-        self.init { preferences in try await ReaderService.shared.saveThemes(preferences) }
+        self.init { preferences in try await AppDataService.shared.saveThemes(preferences) }
     }
 
     init(persistPreferences: @escaping @MainActor (ThemePreferences) async throws -> ThemeSnapshot) {
@@ -194,7 +194,7 @@ final class ThemeStore {
 
     func load() async {
         await preferencesTask?.value
-        do { accept(try await ReaderService.shared.themes()); loaded = true }
+        do { accept(try await AppDataService.shared.themes()); loaded = true }
         catch { self.error = ReaderMessages.error(error) }
     }
     private func accept(_ value: ThemeSnapshot) {
@@ -237,15 +237,15 @@ final class ThemeStore {
         saving = true
         defer { saving = false }
         await flushPreferences()
-        _ = try await ReaderService.shared.savePalette(palette, creating: creating)
-        accept(try await ReaderService.shared.themes())
+        _ = try await AppDataService.shared.savePalette(palette, creating: creating)
+        accept(try await AppDataService.shared.themes())
     }
     func deletePalette(_ id: String) async {
         guard !saving else { return }
         saving = true
         defer { saving = false }
         await flushPreferences()
-        do { accept(try await ReaderService.shared.deletePalette(id)) }
+        do { accept(try await AppDataService.shared.deletePalette(id)) }
         catch { self.error = ReaderMessages.error(error) }
     }
 }

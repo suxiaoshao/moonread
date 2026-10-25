@@ -238,7 +238,7 @@ struct AppSearchView: View {
         .modifier(PageLoadingOverlay(request: search.hasCriteria ? loading.request : nil,
                                      hasContent: !entries.isEmpty || !conversations.isEmpty, label: "正在搜索"))
         .task(id: OptionsKey(shelfID: search.shelfID, revision: model.revision)) {
-            search.options = try? await ReaderService.shared.metadataOptions(shelfID: search.shelfID)
+            search.options = try? await AppDataService.shared.metadataOptions(shelfID: search.shelfID)
         }
         .task(id: key) { await run(key) }
     }
@@ -246,8 +246,8 @@ struct AppSearchView: View {
     private func run(_ key: SearchKey) async {
         await results.run(key, hasCriteria: search.hasCriteria) {
             try await Task.sleep(for: .milliseconds(120))
-            try await ReaderService.libraryTestLatency()
-            let found = try await ReaderService.shared.searchLibrary(shelfID: search.shelfID, query: key.term,
+            try await AppDataService.libraryTestLatency()
+            let found = try await AppDataService.shared.searchLibrary(shelfID: search.shelfID, query: key.term,
                                                                    author: search.author, tag: search.tag)
             let talks = search.tokens.isEmpty ? try await ai.searchConversations(key.term) : []
             return (found, talks)

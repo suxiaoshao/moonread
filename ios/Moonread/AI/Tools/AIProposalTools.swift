@@ -64,8 +64,8 @@ enum AIResolvedSource: Sendable, Identifiable {
     var renameFeedback: [String: String] = [:]
     var renameErrors: [String: String] = [:]
     var liveMetadata: [String: BookMetadata] = [:]
-    let reader: ReaderService
-    init(reader: ReaderService = .shared) { self.reader = reader }
+    let reader: AppDataService
+    init(reader: AppDataService = .shared) { self.reader = reader }
     func remove(_ owner: String) { closeSession(owner) }
     func closeSession(_ owner: String) {
         for id in reviews.values.filter({ $0.sessionID == owner }).map(\.id) { closeResult(id) }

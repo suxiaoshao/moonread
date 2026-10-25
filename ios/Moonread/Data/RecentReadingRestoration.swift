@@ -166,7 +166,7 @@ final class RecentRestorationWork: @unchecked Sendable {
     }
 }
 
-extension ReaderService {
+extension AppDataService {
     func positionSourceHint(_ id: String) -> PositionSourceHint? {
         guard let fileID = readingSourceIDs[id], let file = try? textCore().sourceFileSnapshots(fileId: fileID).first,
               let shelf = try? libraryShelf(file.shelfId) else { return nil }
@@ -179,7 +179,7 @@ extension ReaderService {
 
 extension Notification.Name { static let recentReadingRestored = Notification.Name("Moonread.recentReadingRestored") }
 
-extension ReaderService {
+extension AppDataService {
     func scheduleRecentRestoration(retry: Bool = false) {
         if retry { recentRestorationAttempts.removeAll() }
         recentRestorationRequested = true

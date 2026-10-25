@@ -23,7 +23,7 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
     let moved = local.appendingPathComponent("moved.txt")
     try Data("第一章 合成\n原始正文甲。".utf8).write(to: source)
     let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let service = ReaderService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
+    let service = AppDataService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
     try await service.prepareLibrary()
     try await service.scanLibraryShelf("builtin")
     let first = try XCTUnwrap(
@@ -115,7 +115,7 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
         to: parent.appendingPathComponent("story.txt"), atomically: true, encoding: .utf8)
     }
     let core = try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path)
-    let service = ReaderService(core: core, libraryDirectory: root, sourceDefaultsSuite: suite)
+    let service = AppDataService(core: core, libraryDirectory: root, sourceDefaultsSuite: suite)
     try await service.prepareLibrary()
     try await service.refreshLibrary()
     let entries = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")
@@ -158,7 +158,7 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
       defaults.removePersistentDomain(forName: suite)
     }
     let core = try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path)
-    let service = ReaderService(
+    let service = AppDataService(
       core: core, libraryDirectory: directory.appendingPathComponent("books"),
       sourceDefaultsSuite: suite)
     try await service.prepareLibrary()
@@ -202,7 +202,7 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
     // Simulate termination after the DB transaction, before defaults cleanup.
     defaults.set(Data([1]), forKey: "Moonread.importSource.library.orphan")
     defaults.set("orphan", forKey: "Moonread.sourceDraft.library.orphan-file")
-    let restarted = ReaderService(core: core, sourceDefaultsSuite: suite)
+    let restarted = AppDataService(core: core, sourceDefaultsSuite: suite)
     _ = try await restarted.book(try XCTUnwrap(canonical))
     await restarted.startUserRecovery()
     await restarted.waitForUserRecovery()

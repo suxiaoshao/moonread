@@ -43,8 +43,8 @@ struct ReadingWindow: Equatable, Sendable {
 /// Merely hiding the view (for settings, for example) does not end this lease.
 final class ReadingLease: Sendable {
     let id: String
-    private let service: ReaderService
-    init(id: String, service: ReaderService) { self.id = id; self.service = service }
+    private let service: AppDataService
+    init(id: String, service: AppDataService) { self.id = id; self.service = service }
     deinit {
         let id = id, service = service
         Task { await service.releaseReading(id) }
@@ -52,8 +52,8 @@ final class ReadingLease: Sendable {
 }
 
 /// Serializes blocking Rust and file-provider calls away from the main actor.
-actor ReaderService {
-    static let shared: ReaderService = {
+actor AppDataService {
+    static let shared: AppDataService = {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("--ui-test-store-screenshots"), arguments.contains("--ui-testing"),
@@ -72,7 +72,7 @@ actor ReaderService {
             snapshot.preferences.readerDarkTexture = nil
             UserDefaults(suiteName: suite)!.set(try! encodeThemePreferences(value: snapshot.preferences), forKey: "Moonread.themePreferences")
             UserDefaults.standard.set(try! encodeThemeSnapshot(value: snapshot), forKey: "Moonread.appearanceCache." + session)
-            return ReaderService(libraryDirectory: root, sourceDefaultsSuite: suite)
+            return AppDataService(libraryDirectory: root, sourceDefaultsSuite: suite)
         }
         if arguments.contains("--ui-testing"),
            let index = arguments.firstIndex(of: "--ui-test-session"), arguments.indices.contains(index + 1),
@@ -91,7 +91,7 @@ actor ReaderService {
            let index = arguments.firstIndex(of: "--ui-test-session"), arguments.indices.contains(index + 1),
            UUID(uuidString: arguments[index + 1]) != nil {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Library-" + arguments[index + 1])
-            return ReaderService(libraryDeletion: { url, permanently in
+            return AppDataService(libraryDeletion: { url, permanently in
                 // Deterministic A-line UI fixture only. Ordinary launches and
                 // provider/system-integration checks always use real trashItem.
                 guard !permanently, url.resolvingSymlinksInPath().path.hasPrefix(root.resolvingSymlinksInPath().path + "/"),
@@ -107,10 +107,10 @@ actor ReaderService {
             let suite = "Moonread.ReaderOpen." + session
             if let settings = UserDefaults.standard.string(forKey: "Moonread.readerSettings") { UserDefaults(suiteName: suite)?.set(settings, forKey: "Moonread.readerSettings") }
             let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-ReaderOpen-" + session, isDirectory: true)
-            return ReaderService(libraryDirectory: directory, sourceDefaultsSuite: suite)
+            return AppDataService(libraryDirectory: directory, sourceDefaultsSuite: suite)
         }
         #endif
-        return ReaderService()
+        return AppDataService()
     }()
     private var core: ReaderCore?
     struct CachedQuery { let signature: String; let query: ReaderQuery }

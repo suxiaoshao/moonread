@@ -14,7 +14,7 @@ struct IdentityInventory: Sendable {
     var cloudBytes: UInt64 { pending.filter(\.needsDownload).reduce(0) { $0 + $1.size } }
 }
 
-extension ReaderService {
+extension AppDataService {
     func identityInventory(_ shelfID: String, scannedOnly: Bool = false) throws -> IdentityInventory {
         let core = try textCore()
         let value = try core.libraryIdentityInventory(shelfId: shelfID)
@@ -136,7 +136,7 @@ final class FullIndexController {
         var scannedOnly: Bool? = nil
     }
     @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let service: ReaderService
+    @ObservationIgnored private let service: AppDataService
     @ObservationIgnored private var request: Request?
     @ObservationIgnored private var runner: Task<Void, Never>?
     @ObservationIgnored private var work: IdentityFileWork?
@@ -175,7 +175,7 @@ final class FullIndexController {
             if automatic && !oldValue { admissions.removeAll() }
         }
     }
-    init(defaults: UserDefaults = .standard, service: ReaderService = .shared, registerTasks: Bool = true) {
+    init(defaults: UserDefaults = .standard, service: AppDataService = .shared, registerTasks: Bool = true) {
         self.defaults = defaults; self.service = service
         automatic = defaults.bool(forKey: "Moonread.fullIndex.automatic")
         if let data = defaults.data(forKey: "Moonread.fullIndex.request.v1"), let saved = try? JSONDecoder().decode(Request.self, from: data), saved.schemaVersion == 1 { request = saved; shelfID = saved.shelf }
@@ -404,7 +404,7 @@ struct FullIndexView: View {
     }
     private func start() { controller.start(shelfID, includeCloud: includeCloud, userInitiated: true, files: inventory?.pending) }
     private func loadInventory() async {
-        do { inventory = try await ReaderService.shared.identityInventory(shelfID); loadError = nil }
+        do { inventory = try await AppDataService.shared.identityInventory(shelfID); loadError = nil }
         catch { loadError = ReaderMessages.error(error) }
     }
 }

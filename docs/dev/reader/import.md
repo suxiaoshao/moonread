@@ -51,7 +51,7 @@ Swift 按回收后仍存在的任务 ID 清理 `importSource` 授权描述和 `s
 
 ## 流式管线与并行
 
-1. `LibraryModel.open` 调用 `ReaderService.prepareSourceFile`：独立队列取得 security scope 和 `NSFileCoordinator` 协调读取，等待提供方完成文件落地并验证可打开句柄。此时不创建 Rust import、不读取全文、不改变阅读记录。取消或导航离开后不再进入阅读。
+1. `LibraryModel.open` 调用 `AppDataService.prepareSourceFile`：独立队列取得 security scope 和 `NSFileCoordinator` 协调读取，等待提供方完成文件落地并验证可打开句柄。此时不创建 Rust import、不读取全文、不改变阅读记录。取消或导航离开后不再进入阅读。
 2. 就绪后进入 `.source` 路由并创建正文处理任务。工作队列重新协调读访问；原始 SHA 读取、探测、流式读取与字节复核和完成提交都在 accessor 生命周期内进行，最后才释放权限。书架预取不替代读取过程中的权限和字节校验。
 3. Rust 使用有界缓冲完成解码、规范化、SHA 和章节扫描。约 12 KiB 一个块，优先换行并保留完整扩展字素簇（含组合重音和 emoji ZWJ 序列）；尾部保留 lookahead，单个字素簇可延伸至 64 KiB；更长时仅在 Unicode 标量边界拆成有界片段，正文码点与顺序不变，极端组合的显示／选区可能降级。首个可见块立即短事务提交，后续按约 128 KiB 或 80ms 批量提交。
 4. SQLite WAL 的独立只读连接提供快照和正文；串行写连接只在提交时占用，解码与源 I/O 不持有写锁。进度保存可在批次间完成。
@@ -129,7 +129,7 @@ VT、FF、C0/C1 等已解码控制字符及零星 NUL 按原码点保留，不�
 ### 就绪通知与生命周期
 
 **等待**
-- `waitForChange` 在 ReaderService actor 内同一段无 await 代码中复核代次并登记 waiter。每个 waiter 有独立 UUID；change、timeout、cancel 三条路径共用 take-and-remove，只有取到 continuation 的一方 resume，并取消对应的 timeout 任务。
+- `waitForChange` 在 AppDataService actor 内同一段无 await 代码中复核代次并登记 waiter。每个 waiter 有独立 UUID；change、timeout、cancel 三条路径共用 take-and-remove，只有取到 continuation 的一方 resume，并取消对应的 timeout 任务。
 - onCancel 投递到 actor 处理，不直接碰字典。登记时再查 `Task.isCancelled`，返回后 `checkCancellation`。超时是普通唤醒，不算状态变更。
 - 同一本书可以有多个 lease 和 waiter，互不取消。代次计数至少活到对应 lease 和 waiter 释放，`importFinished`、回前台时不清零。
 - 这个“变更代次”与 Rust `ImportControl.generation`、阅读页 `openingAttemptID` 是三个不同的东西。
@@ -172,10 +172,10 @@ VT、FF、C0/C1 等已解码控制字符及零星 NUL 按原码点保留，不�
 
 **诊断**
 - 状态机单测注入时钟和 ready 事件，精确验证 299/301、799/801 和同一轮到达的情况。
-- 集成测试在 SourceImportWork 开始协调读取前放一个可取消的延迟 gate，不阻塞 ReaderService 和 MainActor，也不延长文件协调的持有时间。按实际 ready 相对 routeRequested 的时间判断落在哪一档。取消 gate 后仍要执行 finished 清理。
+- 集成测试在 SourceImportWork 开始协调读取前放一个可取消的延迟 gate，不阻塞 AppDataService 和 MainActor，也不延长文件协调的持有时间。按实际 ready 相对 routeRequested 的时间判断落在哪一档。取消 gate 后仍要执行 finished 清理。
 - 不借用 `--ui-test-download-progress`。
 - Release 测量用显式的 `READER_OPEN_DIAGNOSTICS` 编译条件；四组对照使用相同的埋点并标明变体；正式包关闭诊断。诊断构建启动时使用 `--reader-open-benchmark --reader-open-session <有效 UUID>`（可另加 `--reader-open-mode resume/first/import` 等测量选项），不要添加 `--ui-testing` 或任何 `--ui-test-*` 参数。缺失/非法 session 会显示错误，不使用正式书库作为回退。
-- `--reader-open-session` 的解析、benchmark 界面及独立 ReaderService 的创建只在 `READER_OPEN_DIAGNOSTICS` 下编译；隔离正文缓存、SwiftData 阅读数据、source defaults 和临时小说根，同一 UUID 重启复用隔离数据，新 UUID 开新测量。普通 Release 不识别 UI 测试参数，也不含这些诊断启动开关；带诊断条件的专用构建不可用于 TestFlight 上传。
+- `--reader-open-session` 的解析、benchmark 界面及独立 AppDataService 的创建只在 `READER_OPEN_DIAGNOSTICS` 下编译；隔离正文缓存、SwiftData 阅读数据、source defaults 和临时小说根，同一 UUID 重启复用隔离数据，新 UUID 开新测量。普通 Release 不识别 UI 测试参数，也不含这些诊断启动开关；带诊断条件的专用构建不可用于 TestFlight 上传。
 - 示例（固定已有模拟器，无需新建）：用 `-configuration Release 'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) READER_OPEN_DIAGNOSTICS'` 编译并安装后，`xcrun simctl launch FFA6F448-E09C-4885-B59C-53C5E07185F5 dev.moonread.Moonread --reader-open-benchmark --reader-open-session "$(uuidgen)" --reader-open-mode resume`。进入“开书测量”且“小书／长书”出现，说明已走过“准备隔离快开缓存”；只看到该提示不能算准备成功。
 
 

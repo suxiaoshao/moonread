@@ -535,8 +535,8 @@ private struct AIReadingObjectPicker: View {
         loaded = false; error = nil
         do {
             var result: [AIReadingAttachment] = []; var seen = Set<String>()
-            for shelf in try await ReaderService.shared.shelves() {
-                for row in try await ReaderService.shared.aiLibraryBooks(shelf.id) {
+            for shelf in try await AppDataService.shared.shelves() {
+                for row in try await AppDataService.shared.aiLibraryBooks(shelf.id) {
                     let bookRef = (row.metadata?.sha).flatMap { (try? parseSha256(value: $0)) != nil ? AIReadingTools.bookRef($0) : nil }
                     let fileRef = AIReadingTools.ref("f", row.id)
                     guard seen.insert(bookRef ?? fileRef).inserted else { continue }
@@ -594,7 +594,7 @@ private struct AIReadingMarkPicker: View {
 
         do {
             guard let ref = book.bookRef else { loaded = true; return }
-            let groups = try await ReaderService.shared.aiMarks(sha: String(ref.dropFirst(2)))
+            let groups = try await AppDataService.shared.aiMarks(sha: String(ref.dropFirst(2)))
             items = groups.compactMap { id, heads in
                 let live = heads.filter { $0.content != nil }
                 guard let first = live.first, let content = first.content, first.bookmark == (kind == .bookmark) else { return nil }

@@ -102,7 +102,7 @@ final class CallbackURLProvider: NSItemProvider {
   struct Fixture {
     let root: URL, books: URL
     let core: ReaderCore
-    let service: ReaderService
+    let service: AppDataService
     func write(_ name: String) throws -> URL {
       let url = root.appendingPathComponent(name)
       try FileManager.default.createDirectory(
@@ -123,7 +123,7 @@ final class CallbackURLProvider: NSItemProvider {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
     let books = root.appendingPathComponent("books")
-    let service = ReaderService(core: core, libraryDirectory: books)
+    let service = AppDataService(core: core, libraryDirectory: books)
     try await service.prepareLibrary()
     return Fixture(root: root, books: books, core: core, service: service)
   }

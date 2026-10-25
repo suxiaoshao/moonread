@@ -49,7 +49,7 @@ struct ChapterEditor: View {
         Task {
             defer { saving = false }
             do {
-                try await ReaderService.shared.correctChapter(bookID, offset: draft.start, title: title, level: level)
+                try await AppDataService.shared.correctChapter(bookID, offset: draft.start, title: title, level: level)
                 focused = false; await saved(); dismiss()
             } catch { self.error = ReaderMessages.error(error) }
         }
@@ -75,7 +75,7 @@ struct ChapterEditor: View {
     @ObservationIgnored private let advance: @MainActor (ChapterRebuild) async throws -> ChapterRebuildProgress
     @ObservationIgnored private let preview: @MainActor (ChapterRebuild, UInt64) async throws -> [ChapterInfo]
     @ObservationIgnored private let commit: @MainActor (ChapterRebuild) async throws -> Void
-    init(bookID: String, reader: ReaderService = .shared,
+    init(bookID: String, reader: AppDataService = .shared,
          start: (@MainActor (String) async throws -> ChapterRebuild)? = nil,
          advance: (@MainActor (ChapterRebuild) async throws -> ChapterRebuildProgress)? = nil,
          preview: (@MainActor (ChapterRebuild, UInt64) async throws -> [ChapterInfo])? = nil,

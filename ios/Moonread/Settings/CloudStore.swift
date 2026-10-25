@@ -32,17 +32,17 @@ final class CloudStore {
     func updateStatus() async {
         status = await coordinator.currentStatus()
         if let account = confirmationAccount, status.accountToConfirm != account { confirmationAccount = nil }
-        libraryStatus = await ReaderService.shared.cloudLibraryStatus()
-        conflictPath = await ReaderService.shared.cloudConflictPath()
+        libraryStatus = await AppDataService.shared.cloudLibraryStatus()
+        conflictPath = await AppDataService.shared.cloudConflictPath()
     }
     func replaceCloudFile(_ path: String) {
         guard !busy else { return }; busy = true
         Task {
             defer { busy = false }
             do {
-                try await ReaderService.shared.updateCloudLibrary(replacing: path)
-                try await ReaderService.shared.prepareLibrary()
-                try await ReaderService.shared.refreshLibrary()
+                try await AppDataService.shared.updateCloudLibrary(replacing: path)
+                try await AppDataService.shared.prepareLibrary()
+                try await AppDataService.shared.refreshLibrary()
                 NotificationCenter.default.post(name: .libraryFilesChanged, object: nil)
             } catch { self.error = ReaderMessages.error(error) }
             await updateStatus()

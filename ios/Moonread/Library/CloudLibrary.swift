@@ -272,7 +272,7 @@ enum CloudDocumentHandoff {
     }
 }
 
-extension ReaderService {
+extension AppDataService {
     func cloudDiscoveryRoot() -> URL? { cloudLibraryRoot }
     func adoptCloudDiscovery(_ items: [CloudDocumentItem]) async throws {
         try await updateCloudLibrary()
@@ -452,8 +452,8 @@ extension ReaderService {
                     }
                     let transfers = try CloudDocumentHandoff.verifiedTransfers(local: from, cloud: to, receipts: receipts, requireCompleteSource: true)
                     let bookmark = try cloud.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-                    let updates = try ReaderService.importSourceRebindings(sources, from: local, to: cloud, bookmark: bookmark)
-                    let items = try ReaderService.libraryDirectoryItems(to, cloudItems: cloudItems)
+                    let updates = try AppDataService.importSourceRebindings(sources, from: local, to: cloud, bookmark: bookmark)
+                    let items = try AppDataService.libraryDirectoryItems(to, cloudItems: cloudItems)
                     try validateIdentity()
                     // Only this independent I/O queue waits: keep coordination held through atomic index publication.
                     try CloudHandoffWork.commit {

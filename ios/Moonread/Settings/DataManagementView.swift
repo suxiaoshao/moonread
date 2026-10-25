@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 extension UTType { static let moonreadBackup = UTType(exportedAs: "dev.moonread.backup", conformingTo: .zip) }
 
 @MainActor @Observable final class DataManagementModel {
-    let service: ReaderService
+    let service: AppDataService
     var inventory = ReadingDataInventory(items: [], pending: 0, unsupported: 0)
     var cache = CacheSummary()
     var busy = false
@@ -39,7 +39,7 @@ extension UTType { static let moonreadBackup = UTType(exportedAs: "dev.moonread.
     }
     private var nameOrder: [String] = []
     private var recentOrder: [String] = []
-    init(service: ReaderService = .shared) { self.service = service }
+    init(service: AppDataService = .shared) { self.service = service }
     var visible: [ReadingDataItem] {
         let items = Dictionary(uniqueKeysWithValues: inventory.items.map { ($0.id, $0) })
         return (recent ? recentOrder : nameOrder).compactMap { items[$0] }.filter {

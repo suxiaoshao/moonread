@@ -23,7 +23,7 @@
 
 SwiftData 模型与 ModelActor 已接入。`Data/UserDataService.swift` 对阅读与编辑提供业务接口，`Data/CloudSync.swift` 仅管理账户/configuration 和系统同步事件；Rust 用户表、待发送记录、平台检查点和 CKSyncEngine 已删除。
 
-源码目录整理后，同步协调与 ReaderService 扩展位于 `Data/CloudSync.swift`；原有 UI 状态与页面分别位于 `Settings/CloudStore.swift`、`Settings/CloudSettingsView.swift`。App 继续持有相同模型，协调任务与同步行为保持。
+源码目录整理后，同步协调与 AppDataService 扩展位于 `Data/CloudSync.swift`；原有 UI 状态与页面分别位于 `Settings/CloudStore.swift`、`Settings/CloudSettingsView.swift`。App 继续持有相同模型，协调任务与同步行为保持。
 
 默认关闭阅读数据同步。账户可用且匹配已绑定账户时，建立 `.private("iCloud.dev.moonread.Moonread")` 容器；关闭重新建立 `.none` 的本机容器，不搬动或删除小说。账户不可用或初始化失败保留开启意愿，同账户恢复尝试，不同账户暂停并在设置显式确认当前剩余阅读数据；执行前再次核对目标账户，取消不上传且不反复弹窗。退出账户后的资料保留遵循系统规则，不保证本地及未同步数据保留。当前入口没有自选根或账户管理中心。SwiftData 自动调度同步，界面不承诺手动强制刷新。
 

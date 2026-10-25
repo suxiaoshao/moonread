@@ -49,7 +49,7 @@ private final class CacheSourceWork: @unchecked Sendable {
         }.value
     }
 }
-extension ReaderService {
+extension AppDataService {
     func cacheSummary() throws -> CacheSummary {
         let core = try textCore(), bodies = try core.cacheInventory(protectedBookIds: cacheProtectedBookIDs())
         var summary = CacheSummary()

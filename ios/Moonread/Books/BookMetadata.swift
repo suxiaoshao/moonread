@@ -19,7 +19,7 @@ extension BookMetadata {
     }
 }
 
-extension ReaderService {
+extension AppDataService {
     func details(bookID: String? = nil, sha: String? = nil) async throws -> BookDetails {
         let result: BookDetails
         if let bookID { result = try await bookQuery(bookID).bookDetails(bookId: bookID, contentSha: sha) }
@@ -161,7 +161,7 @@ private final class CoverObservationTokens: @unchecked Sendable {
     private let observers = CoverObservationTokens()
     private let load: @Sendable (BookCoverAsset, Int) async throws -> UIImage?
     init(load: @escaping @Sendable (BookCoverAsset, Int) async throws -> UIImage? = { cover, pixels in
-        try await ReaderService.shared.coverImage(cover, pixels: pixels)
+        try await AppDataService.shared.coverImage(cover, pixels: pixels)
     }) {
         self.load = load
         for name in [ModelContext.didSave, .NSPersistentStoreRemoteChange, .cloudDataReceived, .bookMetadataChanged] {

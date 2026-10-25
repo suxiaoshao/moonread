@@ -138,7 +138,7 @@ C21000000000000000000001 = {isa = PBXBuildFile; fileRef = C220000000000000000000
         AC1000000000000000000005 = {isa = PBXBuildFile; fileRef = AC2000000000000000000005; };
         AC1000000000000000000006 = {isa = PBXBuildFile; fileRef = AC2000000000000000000006; };
 		A10000000000000000000001 /* MoonreadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* MoonreadApp.swift */; };
-		A10000000000000000000002 /* ReaderService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* ReaderService.swift */; };
+		A10000000000000000000002 /* AppDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* AppDataService.swift */; };
 		A10000000000000000000003 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* LibraryView.swift */; };
 		A10000000000000000000004 /* ReaderScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* ReaderScreen.swift */; };
 		A10000000000000000000005 /* ReadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* ReadingView.swift */; };
@@ -421,7 +421,7 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
         AC2000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
         AC2000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputFocus.swift; sourceTree = "<group>"; };
 		A20000000000000000000001 /* MoonreadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadApp.swift; sourceTree = "<group>"; };
-		A20000000000000000000002 /* ReaderService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderService.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* AppDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataService.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		A20000000000000000000004 /* ReaderScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderScreen.swift; sourceTree = "<group>"; };
 		A20000000000000000000005 /* ReadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingView.swift; sourceTree = "<group>"; };
@@ -891,7 +891,7 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
                 D50620000000000000000003 /* CacheManagement.swift */,
                 D50620000000000000000002 /* ReadingDataManagement.swift */,
                 D50620000000000000000001 /* UserDataBackup.swift */,
-				A20000000000000000000002 /* ReaderService.swift */,
+				A20000000000000000000002 /* AppDataService.swift */,
 				C22000000000000000000001 /* UserData.swift */,
                 FF2000000000000000000001,
 				C22000000000000000000002 /* UserDataService.swift */,
@@ -1247,7 +1247,7 @@ F01900000000000000000001,
                 AC1000000000000000000003,
                 AC1000000000000000000077,
                 AC1000000000000000000006,
-				A10000000000000000000002 /* ReaderService.swift in Sources */,
+				A10000000000000000000002 /* AppDataService.swift in Sources */,
 				A10000000000000000000003 /* LibraryView.swift in Sources */,
                 AF1000000000000000000002 /* LibraryPresentation.swift in Sources */,
                 AF1000000000000000000003 /* LibraryCollection.swift in Sources */,

@@ -81,7 +81,7 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
       try Data("第二話 月台\n原创次册。\n".utf8).write(to: other.appendingPathComponent("second.txt"))
       let secondID = try await f.service.registerLibraryShelf(other)
       try await f.service.applyLibraryScan(
-        secondID, root: other, items: ReaderService.libraryDirectoryItems(other), observe: false)
+        secondID, root: other, items: AppDataService.libraryDirectoryItems(other), observe: false)
       let entered = expectation(description: "foreground keeps first shelf pending")
       let release = RestorationGate(entered)
       let foreground = Task {
@@ -227,7 +227,7 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
   @MainActor func testPullDuringRefreshWaitsForSharedWorkAndRunsAnotherPass() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
-    let service = ReaderService(
+    let service = AppDataService(
       core: try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path),
       libraryDirectory: directory.appendingPathComponent("books"))
     let entered = expectation(description: "Automatic refresh started")
@@ -398,7 +398,7 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
     try await scan(f)
     let file = f.directory.appendingPathComponent("new.txt")
     try "第一話 新书\n成功区域的原创正文。".write(to: file, atomically: true, encoding: .utf8)
-    let items = try ReaderService.libraryDirectoryItems(f.directory).filter { $0.relativePath == "new.txt" }
+    let items = try AppDataService.libraryDirectoryItems(f.directory).filter { $0.relativePath == "new.txt" }
     try await f.service.applyLibraryScan("builtin", root: f.directory,
       scan: LibraryScanSnapshot(items: items, failedPaths: ["kept"], failures: ["Synthetic partial warning"]))
     let inventory = try await f.service.identityInventory("builtin", scannedOnly: true)
@@ -408,7 +408,7 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
     controller.start("builtin", includeCloud: false, userInitiated: false, scannedOnly: true, files: inventory.local)
     await controller.waitForCompletion()
     XCTAssertEqual(try f.core.pendingIdentityFiles(shelfId: "builtin").map(\.relativePath), ["kept/old.txt"])
-    var full = try ReaderService.libraryDirectoryItems(f.directory)
+    var full = try AppDataService.libraryDirectoryItems(f.directory)
     let cloudText = "第一話 云端\n这是下载后才出现的原创文本。"
     full.append(.init(relativePath: "remote.txt", directory: false, size: UInt64(cloudText.utf8.count), modified: 1000, needsDownload: true))
     try await f.service.applyLibraryScan("builtin", root: f.directory, items: full, observe: false)
@@ -420,14 +420,14 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
     let cloudFile = f.directory.appendingPathComponent("remote.txt")
     try cloudText.write(to: cloudFile, atomically: true, encoding: .utf8)
     try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1)], ofItemAtPath: cloudFile.path)
-    let downloaded = try ReaderService.libraryDirectoryItems(f.directory)
+    let downloaded = try AppDataService.libraryDirectoryItems(f.directory)
     try await f.service.applyLibraryScan("builtin", root: f.directory, items: downloaded, observe: false)
     let available = try await f.service.identityInventory("builtin", scannedOnly: true)
     controller.start("builtin", includeCloud: false, userInitiated: false, scannedOnly: true, files: available.local)
     await controller.waitForCompletion()
     XCTAssertTrue(try f.core.pendingIdentityFiles(shelfId: "builtin").isEmpty, "A cloud file not selected earlier was not prematurely marked as admitted")
     full.append(.init(relativePath: "blocked.txt", directory: false, size: 1, modified: 1, needsDownload: false))
-    let failing = ReaderService(core: f.core, libraryDirectory: f.directory, sourceDefaultsSuite: f.suite,
+    let failing = AppDataService(core: f.core, libraryDirectory: f.directory, sourceDefaultsSuite: f.suite,
       libraryScan: { _, _ in throw CocoaError(.fileReadNoPermission) })
     await failing.restorationFixture(active: false)
     try await failing.applyLibraryScan("builtin", root: f.directory, items: full, observe: false)
