@@ -13,8 +13,8 @@
 | Swift 用户数据 | `UserDataStore` ModelActor：用户事实、完整批注候选、小说信息、配色及正式位置；自动 CloudKit，设备偏好独立 |
 | Swift 平台适配 | `Data/ReaderService.swift`、`Library/LibraryService.swift`：目录授权、bookmark、协调扫描与真实文件操作、目录变动通知、生命周期和异步工作调度 |
 | 页面状态 | `Library/LibraryModel.swift` 保存现有书架状态与路由；`Reader/Session/ReaderSession.swift` 保存现有阅读会话状态与任务 |
-| SwiftUI 页面 | `Library/LibraryView.swift`、`Reader/UI/ReaderScreen.swift`、`Reader/UI/ReaderTools.swift`：书架、阅读、工具面板与编辑器呈现 |
-| 原生正文 | `Reader/Rendering/ReadingView.swift` 使用 UIKit / TextKit 1；`Reader/Rendering/TextCoordinates.swift` 映射 UTF-8 / UTF-16，处理局部滚动、分页与选字 |
+| SwiftUI 页面 | `Library/LibraryView.swift`、`Reader/UI/ReaderScreen.swift`、`Reader/UI/ReaderLibrarySheet.swift` / `ReaderSearchContent.swift` / `NoteEditor.swift`：书架、阅读、工具面板与编辑器呈现 |
+| 原生正文 | `Reader/Rendering/ReadingView.swift` 适配原 UIKit 控制器，`ReadingPagination.swift` / `ReadingTextDecorations.swift` 使用 TextKit 1；`Reader/Rendering/TextCoordinates.swift` 映射 UTF-8 / UTF-16，处理局部滚动、分页与选字 |
 | Swift AI | Providers / Agent / Data / Tools / UI 分层；Swift AI SDK 承担协议与工具循环，本机 SwiftData 保存对话；读取工具经 ReaderService 读取不可变投影，书目匹配由 Swift LibraryQueryRules 统一 |
 | 后续平台 | Android 可复用 Rust 正文与计算核心；不预先增加平台依赖 |
 
@@ -30,7 +30,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | --- | --- | --- | --- |
 | 阅读纹理 ID/强度、alpha 与偏好兼容解码 | Rust `user/themes.rs` | 两个可选本机槽；未知值归无，旧 night-v1 读作 grain-v1；接收 paper/ink，按 OKLab toe 修正后的 ΔLr 求 alpha，不做可读性门槛 | 单源 |
 | 纹理槽本机保存/回滚、最终系统来源禁用 | Swift `UserThemes` / `ThemeStore` / 阅读设置 | 使用既有 UserDefaults；不改 Palette、CloudKit 或备份 | 平台边界 |
-| 纸面 tile 与滚动/分页背景 | Swift `ThemeSurface` / `ReadingView` / `ReaderTitlePage` | 当前输入与 tile；复用容器/页面，不动正文布局 | 平台绘制 |
+| 纸面 tile 与滚动/分页背景 | Swift `ThemeSurface` / `ReadingTextDecorations` / `ReadingController+Pages` / `ReaderTitlePage` | 当前输入与 tile；复用容器/页面，不动正文布局 | 平台绘制 |
 | 解码、normalization-v1、正文/原字节 SHA 计算 | Rust `reading/text.rs`、`identity/source.rs` 及正文导入共用核心 | 和正文缓存/稳定内容身份一致；Swift 不重算规范正文 | 保持 |
 | fileId/bookId/canonical→正式或 pending 阅读键、索引有效性 | Rust `identity/content.rs`，供 user/projection、library/full_index 和 library/bookshelf 共用 | 数据库关联是事实，不能由 UI 看长度猜身份 | 收敛 |
 | 待索引集合与书架索引 inventory | Rust `library/full_index.rs` | 同一数据库快照返回总量/pending；Swift 不重复身份判定 | 单源扩展 |
@@ -91,8 +91,8 @@ SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `in
 | `App` | 应用入口和 `MoonreadDelegate`；App 继续持有同一个 `CloudStore` |
 | `Library` | 书架 model/路由、UI、目录操作、云文件与书目搜索；`LibraryPresentation` 保留跨功能复用的 `LibraryBookCover` |
 | `Reader/Session` | 单独的 `ReaderSession.swift`，完整保留现有会话 owner |
-| `Reader/UI` | 阅读页面、底部面板、目录、进度、工具和 `ReaderTitlePage` |
-| `Reader/Rendering` | UIKit 正文、排版、坐标转换和设备控制 |
+| `Reader/UI` | `ReaderScreen` 保留会话生命周期和私有路由状态；`ReaderTaskContent`、`ReaderPreparationContent`、`ReaderCompactHeader`、`ReaderMoreContent` 分别呈现任务、准备、顶部提示和更多操作；`ReaderTools` 保留 model，目录/笔记/搜索及 NoteEditor 分文件 |
+| `Reader/Rendering` | `ReadingView` 是 SwiftUI 适配入口；`ReadingController` 与 Pages/Scroll/Navigation/Selection 扩展共用原控制器状态；`ReadingPagination`、`ReadingViewport`、`ReadingTextDecorations`、`ReadingTextView`、扉页/分页控制器按职责分文件，坐标和设备控制保持原 owner |
 | `Books` | 小说详情与完整 `BookMetadata`；封面展示、加载及服务私有辅助保留原文件边界 |
 | `Statistics` | 统计 UI 和完整 `ReadingStatistics`；统计 writer、recorder 与日期辅助仍在同一文件 |
 | `Settings` | 设置 UI、设备阅读偏好、阅读预览、`CloudSettingsView` 和现有 UI 状态 `CloudStore` |
@@ -102,7 +102,7 @@ SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `in
 
 `ios/MoonreadShare` 是独立分享扩展 target，只负责接收与取消。`ios/ShareReceiveShared` 同时编译进主 App 与扩展，提供版本化 ShareInbox、原字节复制和 provider 生命周期适配；不依赖主 App 的 Rust、SwiftData、AI 或阅读 UI。App Group 只共享待导入原件，主 App 继续独占书架写入和正文准备。
 
-拆分仅沿现有类型边界进行，未放宽 `private` / `fileprivate`。原有 Sources UUID 与 target membership 保留，新增拆分文件显式加入应用 target。
+拆分保留现有类型、状态 owner 和 actor 隔离；SwiftUI 的 `@State` / `@FocusState` 留在原父视图，目录子视图只接收 Binding 和回调。UIKit 控制器跨文件扩展共用状态与方法时，仅将必要成员调整为模块内访问，其余保持 private，不增加 public API。原有 Sources UUID 与 target membership 保留，新增拆分文件显式加入应用 target。
 
 ## 原文件与平台访问
 

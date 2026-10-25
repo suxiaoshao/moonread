@@ -1,0 +1,316 @@
+import SwiftUI
+import UIKit
+
+/// TextKit 1 is explicit here: the same native glyph layout drives text selection,
+/// visible-line anchors and fixed-height page containers. Rust bounds retained
+/// payload independently of confirmed blank gaps; layout never scales with the book.
+@MainActor
+final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewControllerDataSource, UIPageViewControllerDelegate, UIGestureRecognizerDelegate {
+    var openingID: UUID?
+    var requestWindow: (ReadingDirection, SourceSpan) -> Bool = { _,_ in false }
+    var requestedFrontiers = ReadingFrontierAdmissions()
+    private var diagnosedOpening: UUID?
+    #if READER_OPEN_DIAGNOSTICS
+    private var displayProbe: ReaderDisplayProbe?
+    #endif
+    var statisticsInteraction: () -> Void = {}
+
+    func statisticsRange() -> (UInt64, UInt64)? {
+        guard !isCoverVisible, !rebuilding, !needsRebuild, !pageTransitioning,
+              viewIfLoaded?.window != nil, let text = activeTextView, !text.text.isEmpty else { return nil }
+        let rect = text.bounds.offsetBy(dx: -text.textContainerInset.left, dy: -text.textContainerInset.top)
+        let glyphs = text.layoutManager.glyphRange(forBoundingRect: rect, in: text.textContainer)
+        let chars = text.layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        guard chars.length > 0 else { return nil }
+        let mapping = textCoordinates(text), base = textBase(text)
+        let clipped = NSIntersectionRange(chars, (text as! ReadingTextView).readingText.selectableRange)
+        guard let envelope = mapping.sourceRange(clipped), !envelope.isEmpty else { return nil }
+        return (base+UInt64(envelope.lowerBound), base+UInt64(envelope.upperBound))
+    }
+    func selectedSourceRange() -> (UInt64, UInt64)? {
+        guard let text = activeTextView else { return nil }
+        let range = text.selectedRange
+        guard range.length > 0, NSMaxRange(range) <= text.textStorage.length else { return nil }
+        let mapping = textCoordinates(text)
+        let base = textBase(text)
+        guard let envelope = mapping.sourceRange(range) else { return nil }
+        return (min(selectionStart ?? (base + UInt64(envelope.lowerBound)), base + UInt64(envelope.lowerBound)), max(selectionStart ?? (base + UInt64(envelope.upperBound)), base + UInt64(envelope.upperBound)))
+    }
+    let backNavigation = ReaderBackNavigation()
+    let deviceControls = ReaderDeviceControls()
+    var allowsChapterEditing = true
+    var allowsSelection = true {
+        didSet { if allowsSelection != oldValue { visibleTextViews.forEach { $0.isSelectable = allowsSelection && !isCoverVisible } } }
+    }
+    var allowsBackGesture = false
+    let readingSurface = UIView()
+    let bottomFade = CAGradientLayer()
+    var stableInsets = UIEdgeInsets.zero
+    private var insetSize = CGSize.zero
+    /// Only an inline first-use guide reserves space. Sheets still keep the full reader viewport.
+    var guideHeight: CGFloat = 0 {
+        didSet { if guideHeight != oldValue { view.setNeedsLayout() } }
+    }
+    var controlsVisible = false
+    var toggleControls: (() -> Void)?
+    var readingBegan: (() -> Void)?
+    var window: ReadingWindow?
+    var settings: ReaderSettings?
+    var anchor: UInt64 = 0
+    private var dark = false
+    var theme = ThemeSurface.initial
+    let ink = ReadingInk()
+    var reduceMotion = false
+    var typeSize: DynamicTypeSize = .large
+    var changed: ((UInt64, Bool) -> Void)?
+    var scrollText: ScrollReadingTextView?
+    var pageController: UIPageViewController?
+    var pages: [TextPage] = []
+    var renderedSize: CGSize = .zero
+    var rebuilding = false
+    var needsRebuild = true
+    var reportGeneration = 0
+    var pageTransitioning = false
+    var programmaticPageTransition = false
+    private var compactHeaderHeight: CGFloat = 0
+    var preservePageBoundaries = false
+    var pendingWindow: ReadingWindow?
+    private var navigationRevision = 0
+    var pendingNavigation: (request: ReadingNavigation, keepVisible: Bool)?
+    var edgeChanged: ((Bool) -> Void)?
+    var reportedEdge = false
+    var annotations: [ReaderMark] = []
+    var preparingAnnotationMenu = false
+    weak var annotationMenuText: UITextView?
+    var tappedAnnotation: (context: AnnotationSelection, range: NSRange)?
+    var bookmarkPositions: [UInt64] = []
+    var focusRange: TextRange?
+    var selectionStart: UInt64?
+    var selection: ((UInt64, UInt64, ReaderSelectionAction) -> Void)?
+    var coverTitle: String?
+    var coverInformation: BookDetails?
+    var showBookDetails: () -> Void = {}
+    var isCoverVisible = false
+    var coverChanged: ((Bool) -> Void)?
+    var paperInput: ThemeSurface.PaperInput?
+    var paperBackground = UIColor.clear
+    var scrollCover: ReaderCoverController?
+    var hasCover: Bool { coverTitle != nil && window?.isStartOfBook == true }
+
+    override func loadView() {
+        view = ReadingPaperView()
+        view.contentMode = .redraw
+        view.backgroundColor = theme.paper
+        view.addSubview(readingSurface)
+        let singleTap = UITapGestureRecognizer(target: self, action: #selector(tappedBody(_:)))
+        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(ignoredDoubleTap))
+        doubleTap.numberOfTapsRequired = 2
+        for recognizer in [singleTap, doubleTap] {
+            recognizer.cancelsTouchesInView = false
+            recognizer.delaysTouchesBegan = false
+            recognizer.delaysTouchesEnded = false
+            recognizer.delegate = self
+            readingSurface.addGestureRecognizer(recognizer)
+        }
+        // Wait for a possible second tap without stealing native word selection.
+        singleTap.require(toFail: doubleTap)
+        backNavigation.canBegin = { [weak self] in
+            guard let self, allowsBackGesture,
+                  selectionStart == nil, !rebuilding, !pageTransitioning else { return false }
+            guard let text = activeTextView else { return isCoverVisible }
+            // A new touch can interrupt scrolling and begin a native back gesture.
+            // Gesture arbitration handles the text view pan; inertia is not a lock.
+            return text.selectedRange.length == 0
+        }
+        backNavigation.readingPan = { [weak self] in
+            self?.scrollText?.panGestureRecognizer ?? self?.pageController?.view.subviews.compactMap { $0 as? UIScrollView }.first?.panGestureRecognizer
+        }
+        backNavigation.allowsContentGesture = { [weak self] in self?.settings?.mode == .scroll }
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        backNavigation.install(on: self)
+        deviceControls.start(in: view.window?.windowScene)
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        backNavigation.uninstall()
+        deviceControls.stop()
+    }
+
+    func configure(window: ReadingWindow, settings: ReaderSettings, anchor: UInt64,
+                   dark: Bool, typeSize: DynamicTypeSize, theme: ThemeSurface? = nil, reduceMotion: Bool = false,
+                   navigationRevision: Int = 0, navigation: ReadingNavigation? = nil,
+                   annotations: [ReaderMark] = [], bookmarkPositions: [UInt64] = [], focusRange: TextRange? = nil,
+                   selectionStart: UInt64? = nil, selection: @escaping (UInt64, UInt64, ReaderSelectionAction) -> Void = { _, _, _ in },
+                   edgeChanged: @escaping (Bool) -> Void = { _ in },
+                   coverTitle: String? = nil, coverInformation: BookDetails? = nil, showBookDetails: @escaping () -> Void = {},
+                   showingCover: Bool = false, coverChanged: @escaping (Bool) -> Void = { _ in },
+                   compactHeaderHeight: CGFloat,
+                   controlsVisible: Bool, toggleControls: @escaping () -> Void,
+                   readingBegan: @escaping () -> Void, changed: @escaping (UInt64, Bool) -> Void) {
+        let contentsChanged = self.window != window
+        if contentsChanged { requestedFrontiers.reset() }
+        let oldWindow = self.window
+        let navigating = self.navigationRevision != navigationRevision
+        let layoutChanged = !settings.hasSameLayout(as: self.settings) || self.typeSize != typeSize
+            || (self.window?.chunks == window.chunks && self.window?.paragraphs != window.paragraphs)
+            || self.compactHeaderHeight != compactHeaderHeight
+        if navigating {
+            reportGeneration += 1 // Ignore movement callbacks queued before the jump.
+            pageTransitioning = false
+            programmaticPageTransition = false
+            pendingNavigation = (navigation ?? ReadingNavigation(), !contentsChanged && !layoutChanged && !needsRebuild)
+        }
+        let nextTheme = theme ?? ThemeSurface(plan: try! resolveThemes(value: defaultThemeSnapshot(), system: dark ? .dark : .light, highContrast: false).reader)
+        let appearanceChanged = self.theme.plan != nextTheme.plan
+        self.theme = nextTheme
+        self.reduceMotion = reduceMotion
+        ink.set(nextTheme.ink)
+        overrideUserInterfaceStyle = nextTheme.style
+        view.backgroundColor = nextTheme.paper
+        if layoutChanged { preservePageBoundaries = false }
+        else if contentsChanged { preservePageBoundaries = true }
+        self.settings = settings
+        updatePaperSurface()
+        self.anchor = anchor
+        self.dark = dark
+        self.typeSize = typeSize
+        self.changed = changed
+        self.controlsVisible = controlsVisible
+        self.toggleControls = toggleControls
+        self.readingBegan = readingBegan
+        self.compactHeaderHeight = compactHeaderHeight
+        self.navigationRevision = navigationRevision
+        self.edgeChanged = edgeChanged
+        self.coverTitle = coverTitle
+        self.coverInformation = coverInformation; self.showBookDetails = showBookDetails
+        self.coverChanged = coverChanged
+        if !isInteracting { isCoverVisible = showingCover }
+        scrollCover?.update(title: coverTitle ?? "", information: coverInformation, showDetails: showBookDetails, theme: nextTheme, background: .clear)
+        for case let cover as ReaderCoverController in pageController?.children ?? [] { cover.update(title: coverTitle ?? "", information: coverInformation, showDetails: showBookDetails, theme: nextTheme, background: paperBackground) }
+        // Note text and drafts do not change the visible highlight ranges.
+        let sameRanges = self.annotations.count == annotations.count
+            && zip(self.annotations, annotations).allSatisfy {
+                $0.startUtf8 == $1.startUtf8 && $0.endUtf8 == $1.endUtf8
+            }
+        let decorationsChanged = !sameRanges || self.focusRange != focusRange || self.bookmarkPositions != bookmarkPositions
+        self.annotations = annotations; self.focusRange = focusRange
+        self.bookmarkPositions = bookmarkPositions
+        self.selectionStart = selectionStart; self.selection = selection
+        if contentsChanged && !layoutChanged && !navigating && isInteracting {
+            pendingWindow = window
+            if let previous = oldWindow, let text = scrollText, text.selectedRange.length == 0, window.end > previous.end {
+                // Even an append can make UITextView reveal its selection.
+                // Keep the document fixed until native handle dragging ends.
+                let merged = previous.chunks + window.chunks.filter { $0.startUtf8 >= previous.end }
+                if Set(merged.map(\.index)).count <= 256 && merged.reduce(0, { $0+$1.text.utf8.count }) <= 65536 {
+                    let paragraphs = previous.paragraphs.filter { $0.startUtf8 < window.start } + window.paragraphs
+                    var combined = window
+                    combined.chunks = merged; combined.paragraphs = paragraphs
+                    combined.sourceStart = previous.start; combined.omitted = previous.omitted + window.omitted
+                    combined.previousCursor = previous.previousCursor; combined.isStartOfBook = previous.isStartOfBook
+                    appendScrollContents(combined)
+                }
+            }
+        } else {
+            pendingWindow = nil
+            self.window = window
+            if contentsChanged && !layoutChanged, let oldWindow, !needsRebuild {
+                if navigating {
+                    replaceNavigationContents()
+                } else if scrollText != nil, window.start == oldWindow.start, window.end > oldWindow.end {
+                    self.window = oldWindow
+                    if !appendScrollContents(window) { self.window = window; replaceContents(from: oldWindow) }
+                } else {
+                    replaceContents(from: oldWindow)
+                }
+            }
+        }
+        if layoutChanged || (contentsChanged && oldWindow == nil) {
+            needsRebuild = true
+            view.setNeedsLayout()
+        }
+        if navigating { view.setNeedsLayout() }
+        if let text = activeTextView { configureAccessibility(text) }
+        updateBottomFade()
+        if decorationsChanged || appearanceChanged { decorateVisibleText() }
+        if appearanceChanged {
+            // Dynamic foreground paint affects drawing, never text storage or
+            // pagination. Selection, line geometry and position stay intact.
+            for text in visibleTextViews {
+                text.layoutManager.invalidateDisplay(forCharacterRange: NSRange(location: 0, length: text.textStorage.length))
+            }
+        }
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updatePaperSurface()
+        guard let window = view.window, view.bounds.width > 60, view.bounds.height > 60 else { return }
+        // SwiftUI fills the window even when the status bar appears. Reserve the
+        // hardware safe area here, independently of the overlay controls. Keep
+        // the larger inset for this size so status-bar changes cannot reflow text.
+        let insets = window.safeAreaInsets
+        // This controller is the full-screen reader. A presented sheet can
+        // animate SwiftUI's container height by the bottom safe area; that is
+        // chrome motion, not a new text viewport. Use this scene's actual size.
+        let viewport = CGRect(origin: .zero, size: window.bounds.size)
+        if insetSize != viewport.size {
+            insetSize = viewport.size
+            stableInsets = insets
+        }
+        stableInsets.top = max(stableInsets.top, insets.top)
+        stableInsets.bottom = max(stableInsets.bottom, insets.bottom)
+        stableInsets.left = max(stableInsets.left, insets.left)
+        stableInsets.right = max(stableInsets.right, insets.right)
+        if viewport.height > viewport.width {
+            stableInsets.top = max(stableInsets.top, 20)
+        }
+        var contentInsets = stableInsets
+        contentInsets.top += compactHeaderHeight
+        // The bottom safe area is a drawing overlay in scroll mode, not an
+        // empty strip removed from the text viewport.
+        if settings?.mode == .scroll { contentInsets.bottom = 0 }
+        if guideHeight > 0 { contentInsets.bottom = max(contentInsets.bottom, guideHeight + insets.bottom) }
+        readingSurface.frame = viewport.inset(by: contentInsets)
+        updatePaperBackdrop()
+        updateBottomFade()
+        if needsRebuild || renderedSize != readingSurface.bounds.size {
+            if renderedSize != readingSurface.bounds.size { preservePageBoundaries = false }
+            renderedSize = readingSurface.bounds.size
+            rebuild()
+            pendingNavigation?.keepVisible = false
+        }
+        applyNavigation()
+        if let id = openingID, diagnosedOpening != id, !needsRebuild {
+            diagnosedOpening = id
+            ReaderOpenDiagnostics.mark(id, "layoutCompleted")
+            ReaderOpenDiagnostics.mark(id, isCoverVisible ? "coverLayout" : "bodyLayout")
+            #if READER_OPEN_DIAGNOSTICS
+            displayProbe = ReaderDisplayProbe(view: view, id: id, cover: isCoverVisible, glyphsVisible: { [weak self] in self?.diagnosticGlyphsVisible() ?? false }) { [weak self] in self?.displayProbe = nil }
+            #endif
+        }
+    }
+
+    #if READER_OPEN_DIAGNOSTICS
+    private func diagnosticGlyphsVisible() -> Bool {
+        guard let text = activeTextView, let window = text.window else { return false }
+        let visible = text.convert(window.bounds, from: window).intersection(text.bounds)
+            .offsetBy(dx: -text.textContainerInset.left, dy: -text.textContainerInset.top)
+        guard !visible.isEmpty else { return false }
+        let glyphs = text.layoutManager.glyphRange(forBoundingRect: visible, in: text.textContainer)
+        guard glyphs.length > 0 else { return false }
+        let chars = text.layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+        guard chars.length > 0, NSMaxRange(chars) <= text.textStorage.length else { return false }
+        return !(text.textStorage.string as NSString).substring(with: chars).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+    #endif
+
+    var activeTextView: UITextView? {
+        scrollText ?? pageController?.viewControllers?.first?.view as? UITextView
+    }
+
+}
