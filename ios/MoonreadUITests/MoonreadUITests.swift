@@ -318,6 +318,13 @@ import XCTest
     element("paletteOptions").swipeDown(); element("paletteOptions").swipeDown()
     element("readerTexture").tap(); app.buttons["无"].tap()
     XCTAssertFalse(element("readerTextureStrength").exists)
+    app.navigationBars.buttons.firstMatch.tap()
+    ready(app.buttons["systemIntegrationSettings"]).tap()
+    XCTAssertTrue(ready(app.switches["systemSearchEnabled"]).exists)
+    XCTAssertTrue(ready(element("systemWidgetPreview")).exists)
+    snapshot("system-integration-search")
+    app.collectionViews.firstMatch.swipeUp()
+    snapshot("system-integration-widget")
   }
   func testU13ManualEncodingRecovery() {
     launch(["--ui-test-encoding"])

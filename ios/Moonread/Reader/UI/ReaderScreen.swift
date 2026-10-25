@@ -250,8 +250,16 @@ struct ReaderScreen: View {
         presentedReader
         .allowsHitTesting(!session.isLeaving)
         .task {
-            library.systemReading.register(session)
+            library.systemReading.register(session, navigationID: openingRequest?.id)
             await session.open(route, request: openingRequest)
+        }
+        .onChange(of: library.systemReading.pending) { _, request in
+            // A plain reading toolbar can close through its normal onDismiss
+            // path. Editors, searches and AI work keep their draft/presentation.
+            if request != nil, !session.isLeaving, panel == nil, taskID == nil,
+               session.editor == nil, session.chapterDraft == nil, !searchActive {
+                controlsVisible = false
+            }
         }
         .onChange(of: sheetPresented || panel != nil || session.editor != nil || session.chapterDraft != nil, initial: true) { _, blocked in
             library.systemReading.presentationBlocked = blocked

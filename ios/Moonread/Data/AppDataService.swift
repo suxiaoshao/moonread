@@ -113,6 +113,7 @@ actor AppDataService {
         return AppDataService()
     }()
     var systemCatalog: SystemReadingCatalog?
+    var systemReadingLastError: String?
     var systemExposureTask: Task<Void, Never>?
     var systemSpotlightAdapter: SystemSpotlightAdapter?
     var systemSpotlightMetadata: [String: SystemSpotlightMetadata] = [:]

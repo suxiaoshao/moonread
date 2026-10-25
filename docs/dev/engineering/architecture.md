@@ -48,7 +48,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 系统元数据匹配 | Swift 共享 `LibraryQueryRules.systemMetadataBooks` | 只匹配书名/作者/标签，复用 Rust ordinal；App Entity 与 App 同一 owner，不带 AI 简介 profile | 新增具名契约 |
 | 系统书目派生快照与统一开书路由 | Swift `SystemIntegration`、`SystemIntegrationShared` | 主 App 唯一生产者；共享 DTO 不含正文、路径、位置 token/偏移，不成为事实权威；身份、代表副本、顺序与进度沿既有 Rust 查询 | 平台边界 |
 | 查询范围、身份/metadata 关联、目录后代最近时间、最近副本选择 | Rust `library/bookshelf/`、`user/projection.rs` | 需要完整索引/快照，不能由限量 recents 再聚合 | 收敛，删除 Swift 目录聚合 |
-| 书目文本/作者/标签/状态筛选、搜索排名和建议匹配 | Swift `Library/LibraryQueryRules.swift` | Foundation 本地化能力合适；UI literal 与 AI/建议模式显式保留 | 删除 Rust search_rank/metadata filter 与各 Swift 调用点副本 |
+| 书目文本/作者/标签/状态筛选、搜索排名和建议匹配 | Swift `LibraryQueryRules`（`Library/LibraryQueryRules.swift` 与共享系统元数据 profile） | Foundation 本地化能力合适；UI literal 与 AI/建议模式显式保留 | 删除 Rust search_rank/metadata filter 与各 Swift 调用点副本 |
 | 文件自然比较、目录/全书/标签自然排序 | Rust `library/order.rs`（从 bookshelf 提取） | 已服务 SQL 查询和目录；按完整快照一次计算 | Swift 搜索使用批量 ordinal，不复制自然 comparator |
 | 搜索排名组合、AI 名称字典序/recent 平手顺序 | Swift `LibraryQueryRules.swift` | 与匹配结果一同完成，AI 原生字符串比较不迁语言 | AI 私有 sort 收入单一模块；Rust 不留搜索组合副本 |
 | 拼音 key、字母分组及组内 localized collation | Swift `LibraryPresentation.swift::LibraryNameGroup` | 唯一实现且依赖 Foundation；不是原文件自然序副本 | 原位保留 |
@@ -58,6 +58,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 字节位置→进度比例、百分比跳转 | Rust `reading/navigation.rs::reading_percentage`，阅读数据通过 `identity/content.rs::reading_data_percentage` 查询可信全文长度 | 阅读数据与跳转共用比例/边界计算；Swift 只本地化格式化 | 其余旧报告第9项 Swift 比例副本仍待处理 |
 | 有效章节/位置归属 | Rust `library/tools.rs` 与有效章节关系（后续统一 SQL） | 手动目录需一致；Swift 展开/滚动目标不是同一规则 | #66 不迁；旧报告第10项仍登记 |
 | 阅读时长/有效天数/覆盖等统计数值 | Rust `user/statistics.rs`、`user/coverage.rs`（后续统一 summary） | 事实聚合按固定 local_day；Swift 不再另 reduce 同一总量 | #66 不迁；旧报告第11项仍登记 |
+| 统计总览总时长 | Rust `user/statistics.rs::statistics_overview` | 与已投影书目一次计算为只读 DTO 字段，App 总览和 Siri 直接读取，不来回搬运整个列表重复求和 | 单源 |
 | 统计事实保存/去重裁决、日历展示桶/连续行视觉合并、显示格式 | Swift `ReadingStatistics.swift`、`StatisticsView.swift`，按各自职责单源 | 写入/界面组织与 Rust 数值汇总是不同规则；展示合并应消费已算 duration | 保持平台/状态规则，数值副本后续删除 |
 | 备份 ZIP 布局、受限解包、路径/摘要与正文缓存 SQL 驱逐 | Rust `storage/backup_archive.rs`、`storage/cache_management.rs` | Swift 不另写 ZIP 或数据库清理规则，驱逐保留索引/授权/任务 | 新增单源 |
 | 用户备份 envelope、原 payload 接入、对象级删除 | Swift `UserDataBackup.swift`、`ReadingDataManagement.swift` | SwiftData 权威与既有裁决不迁到 Rust；整书删除无本机删除回执或启动补删 | 共用接入 |
@@ -99,6 +100,7 @@ SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `in
 | `Statistics` | `StatisticsView` 保留总览/单书详情的状态和路由；models、书目列表、时长条、节奏图、时段图/行、全部时段、日期详情、统计设置按完整类型分文件；`ReadingStatistics` 的 writer、recorder 与日期辅助保持原 owner |
 | `Settings` | `SettingsView` 只保留首页与私有入口辅助；应用外观、模式 Picker、配色选择/预览/编辑、关于与第三方许可分文件；设备阅读偏好、阅读预览、`CloudSettingsView` / `CloudStore` 保持原 owner |
 | `Data` | `AppDataService`、SwiftData 用户数据及同步协调；正文准备、导入、云目录 owner 与紧耦合私有类型仍在 `AppDataService` |
+| `SystemIntegration` / `SystemIntegrationShared` | 主 App 派生快照、系统入口路由与平台更新；共享部分只有稳定链接、只读 DTO、最小 Entity/配置与无状态文字卡片。Widget/Control 目标不含数据库/正文服务；任意队列系统回调显式 nonisolated / @Sendable 后再交接 |
 | `Shared` | `Theme`、`MoonView`/`MoonCharacter`/`BrandSeal`、输入焦点及跨功能错误文案 `ReaderMessages` |
 | `AI` | 保持现有分层和路径；资源与签名配置路径保持原位 |
 

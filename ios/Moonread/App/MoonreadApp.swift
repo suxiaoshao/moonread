@@ -58,8 +58,14 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .libraryIndexScanCommitted).receive(on: DispatchQueue.main)) { note in
                 if let scan = note.object as? LibraryIndexScan { Task { await library.indexScanCommitted(scan) } }
             }
-            .onChange(of: library.initialized) { _, ready in
-                if ready { Task { await library.coordinatePendingIndexes(all: true) } }
+            .onChange(of: library.initialized, initial: true) { _, ready in
+                if ready {
+                    Task {
+                        await library.service.startSystemReadingCatalog()
+                        library.systemReading.receiveIntent(); library.systemReading.resume()
+                        await library.coordinatePendingIndexes(all: true)
+                    }
+                }
             }
             .onChange(of: library.filePickerPresented) { _, shown in
                 if !shown { library.systemReading.resume() }
@@ -77,6 +83,9 @@ struct MoonreadApp: App {
                 if closed { library.systemReading.resume() }
                 if closed { Task { await library.coordinatePendingIndexes() } }
             }
+            .onChange(of: library.fullIndex.running) { _, running in
+                if !running { Task { await library.service.scheduleSystemReadingCatalog(immediate: true) } }
+            }
             .onChange(of: library.fullIndex.automatic) { _, enabled in
                 if enabled { Task { await library.coordinatePendingIndexes(all: true) } }
             }
@@ -86,7 +95,7 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .libraryIdentityChanged).receive(on: DispatchQueue.main)) { note in
                 Task {
                     await library.reloadBooks()
-                    await library.service.scheduleSystemReadingCatalog(immediate: true)
+                    await library.service.scheduleSystemReadingCatalog(immediate: !library.fullIndex.running)
                     if let id = library.fullIndex.shelfID { await library.refreshIndexSummary(id) }
                     if let message = note.object as? String { library.error = message }
                 }
@@ -96,9 +105,6 @@ struct MoonreadApp: App {
             }
             .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { _ in
                 Task { await library.service.scheduleSystemReadingCatalog(immediate: true) }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .systemReadingCatalogChanged).receive(on: DispatchQueue.main)) { note in
-                if let message = note.object as? String { library.error = message }
             }
             .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in
                 Task { await CloudSyncCoordinator.shared.localDataChanged() }

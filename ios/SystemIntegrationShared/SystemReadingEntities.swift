@@ -28,7 +28,10 @@ struct SystemBookQuery: EntityStringQuery {
     private let readSnapshot: @Sendable () throws -> SystemReadingSnapshot
     init() { readSnapshot = { try SystemReadingSnapshotFile.shared().read() } }
     init(readSnapshot: @escaping @Sendable () throws -> SystemReadingSnapshot) { self.readSnapshot = readSnapshot }
-    private func snapshot() throws -> SystemReadingSnapshot { try readSnapshot() }
+    private func snapshot() throws -> SystemReadingSnapshot {
+        do { return try readSnapshot() }
+        catch { throw SystemBookQueryUnavailable() }
+    }
     func entities(for identifiers: [String]) async throws -> [SystemBookEntity] {
         let books = try snapshot().books
         let byID = Dictionary(uniqueKeysWithValues: books.map { ($0.id, $0) })
@@ -83,7 +86,21 @@ struct OpenSystemBookIntent: OpenIntent {
     init() { }
     init(target: SystemBookEntity) { self.target = target }
     @MainActor func perform() async throws -> some IntentResult & ProvidesDialog {
+        var title = target.title
+        #if !MOONREAD_WIDGET
+        do {
+            let id = try SystemReadingBookID(rawValue: target.id)
+            title = try await AppDataService.shared.resolveSystemReadingBook(id).title
+        } catch {
+            try SystemReadingIntentDelivery.submit(.book(target.id))
+            return .result(dialog: "\(ReaderMessages.error(error))")
+        }
+        #endif
         try SystemReadingIntentDelivery.submit(.book(target.id))
-        return .result(dialog: "正在打开《\(target.title)》。")
+        return .result(dialog: "正在打开《\(title)》。")
     }
+}
+
+private struct SystemBookQueryUnavailable: LocalizedError {
+    var errorDescription: String? { String(localized: "请先打开月读，刷新可用书籍。") }
 }

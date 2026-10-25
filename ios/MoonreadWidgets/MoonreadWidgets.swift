@@ -3,7 +3,7 @@ import SwiftUI
 import WidgetKit
 
 @main struct MoonreadWidgets: WidgetBundle {
-    var body: some Widget { ContinueReadingControl() }
+    var body: some Widget { ReadingWidget(); ContinueReadingControl() }
 }
 
 struct ContinueReadingControl: ControlWidget {

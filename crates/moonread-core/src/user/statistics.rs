@@ -199,6 +199,7 @@ pub struct StatisticsDay {
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct StatisticsOverview {
+    pub total_duration_ms: u64,
     pub books: Vec<StatisticsBook>,
     pub days: Vec<StatisticsDay>,
     pub preferences: StatisticsPreferences,
@@ -266,6 +267,7 @@ impl ReaderCore {
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(StatisticsOverview {
+            total_duration_ms: books.iter().map(|book| book.duration_ms).sum(),
             books,
             days,
             preferences: preferences(&db)?,
@@ -376,9 +378,3 @@ mod tests {
 }
 
 // Business projections are exported only by ReaderQuery.
-
-/// Shared total of the already-projected book durations (UI and system answers).
-#[uniffi::export]
-pub fn statistics_total_duration(overview: StatisticsOverview) -> u64 {
-    overview.books.iter().map(|book| book.duration_ms).sum()
-}

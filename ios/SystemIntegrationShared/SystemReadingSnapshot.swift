@@ -67,13 +67,17 @@ struct SystemReadingSnapshotFile: Sendable {
         return snapshot
     }
     #if !MOONREAD_WIDGET
-    func publish(_ snapshot: SystemReadingSnapshot) throws {
+    func publish(_ snapshot: SystemReadingSnapshot) throws { try publishEncoded(Self.encode(snapshot)) }
+    static func encode(_ snapshot: SystemReadingSnapshot) throws -> Data {
         for book in snapshot.books {
             guard book.title.utf8.count <= 1024, (book.author?.utf8.count ?? 0) <= 1024,
                   book.tags.reduce(0, { $0 + $1.utf8.count }) <= 4096 else { throw CocoaError(.fileWriteFileExists) }
         }
         let data = try JSONEncoder().encode(snapshot)
         guard data.count <= Self.maximumBytes else { throw CocoaError(.fileWriteOutOfSpace) }
+        return data
+    }
+    func publishEncoded(_ data: Data) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
             attributes: [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication])
         // Foundation writes a sibling temporary file and renames atomically; the

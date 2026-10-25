@@ -2,25 +2,38 @@ import Foundation
 
 struct SystemReadingBookID: Hashable, Sendable {
     let sha: String
-    var rawValue: String { "book:" + sha }
+    var rawValue: String { SystemReadingLink.bookIDPrefix + sha }
     init(sha: String) throws { self.sha = try parseSha256(value: sha) }
     init(rawValue: String) throws {
-        guard rawValue.hasPrefix("book:") else { throw ReaderError.InvalidSettings }
-        try self.init(sha: String(rawValue.dropFirst(5)))
+        guard rawValue.hasPrefix(SystemReadingLink.bookIDPrefix) else { throw ReaderError.InvalidSettings }
+        try self.init(sha: String(rawValue.dropFirst(SystemReadingLink.bookIDPrefix.count)))
+    }
+}
+
+extension LibraryEntry {
+    /// Unfinished imports remain ordinary in-App sources, never public entities.
+    var systemReadingIdentity: SystemReadingBookID? {
+        get throws {
+            switch readingIdentity {
+            case .formal(let sha)?: return try SystemReadingBookID(sha: sha)
+            case .pending?: return nil
+            case nil: throw SystemReadingRouteError.unavailable
+            }
+        }
     }
 }
 
 /// Main-App-only producer; all mutable state and publication run on AppDataService.
 /// It never reads novels or statistics/annotations to construct the catalogue.
-struct SystemReadingCatalog {
+struct SystemReadingCatalog: Sendable {
     let file: SystemReadingSnapshotFile
     var scope = UUID().uuidString
     var accountPending = false
     var lastPublished = Date.distantPast
+    var publishedGeneration: UUID?
     var revision = UUID()
     var task: Task<Void, Never>?
     var taskID = UUID()
-    var error: String?
 }
 
 extension Notification.Name {
@@ -35,14 +48,19 @@ extension AppDataService {
         #endif
         do {
             // Tests and screenshot fixtures may only publish into their own directory.
-            let output = try file ?? (libraryDirectoryOverride.map {
+            let isolatedRoot = libraryDirectoryOverride ?? testSession.map {
+                FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-SystemReading-" + $0, isDirectory: true)
+            }
+            let output = try file ?? (isolatedRoot.map {
                 SystemReadingSnapshotFile(directory: $0.appendingPathComponent(".SystemReading/v1"))
             } ?? SystemReadingSnapshotFile.shared())
             let scopeKey = "Moonread.systemReadingScope.v1"
             let scope = sourceDefaults.string(forKey: scopeKey) ?? UUID().uuidString
             sourceDefaults.set(scope, forKey: scopeKey)
-            systemCatalog = SystemReadingCatalog(file: output, scope: scope)
-            scheduleSystemReadingCatalog(immediate: true)
+            systemCatalog = SystemReadingCatalog(file: output, scope: scope,
+                accountPending: cloudSyncRequested() && userCloudOwner() != nil)
+            if systemCatalog?.accountPending == true { resetSystemReadingCatalog() }
+            else { scheduleSystemReadingCatalog(immediate: true) }
         } catch { publishSystemCatalogError(error) }
     }
     func systemExposurePolicy() -> SystemReadingSnapshot.ExposurePolicy {
@@ -64,6 +82,7 @@ extension AppDataService {
         do {
             let empty = SystemReadingSnapshot(storeScope: catalog.scope, exposurePolicy: systemExposurePolicy())
             try catalog.file.publish(empty)
+            systemCatalog?.publishedGeneration = empty.generation
             systemReadingSnapshotPublished(empty)
             NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
         } catch { publishSystemCatalogError(error) }
@@ -82,24 +101,30 @@ extension AppDataService {
         }
     }
     func waitForSystemReadingCatalog() async { await systemCatalog?.task?.value }
-    func systemReadingCatalogError() -> String? { systemCatalog?.error }
+    func systemReadingCatalogError() -> String? { systemReadingLastError }
+    static func systemReadingRefreshMessage(_ error: Error) -> String {
+        if let error = error as? ReaderError { return ReaderMessages.error(error) }
+        return String(localized: "系统搜索和小组件暂时无法刷新，请稍后重试。", table: "SystemReading")
+    }
     private func publishSystemCatalogError(_ error: Error) {
-        systemCatalog?.error = ReaderMessages.error(error)
-        NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: ReaderMessages.error(error))
+        systemReadingLastError = Self.systemReadingRefreshMessage(error)
+        NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
     }
     private func rebuildSystemReadingCatalog(taskID: UUID) async {
         defer { if systemCatalog?.taskID == taskID { systemCatalog?.task = nil } }
         do {
             while let catalog = systemCatalog, catalog.taskID == taskID, !catalog.accountPending, !Task.isCancelled {
                 let configuration = userCloudConfigurationRevision, revision = catalog.revision
-                let query = try await catalogueQuery(nil, recursive: true)
+                let keys = try textCore().catalogueContentKeys(scope: catalogueScope(nil, recursive: true))
+                let query = try await effectiveQuery(keys: keys.map { serializeReadingKey(key: $0) }, scope: "system-catalogue", sparseCatalogue: true)
+                let projected = try await Task.detached(priority: .utility) { try query.systemReadingCatalogue() }.value
                 try Task.checkCancellation()
                 guard systemCatalog?.taskID == taskID, userCloudConfigurationRevision == configuration else { return }
                 // A concurrent save/scan during projection is coalesced into one fresh read.
                 guard systemCatalog?.revision == revision else { continue }
                 let shelves = Dictionary(uniqueKeysWithValues: try self.shelves().map { ($0.id, $0) })
                 let policy = systemExposurePolicy(), excluded = Set(policy.excludedShelfIDs)
-                let books = try query.systemReadingCatalogue().map { book in
+                let books = try projected.map { book in
                     SystemReadingSnapshot.Book(id: try SystemReadingBookID(sha: book.contentSha256).rawValue,
                         title: book.title, author: book.author, tags: book.tags,
                         availability: book.sourceShelfIds.allSatisfy { shelves[$0]?.error != nil || shelves[$0] == nil }
@@ -110,9 +135,14 @@ extension AppDataService {
                 }
                 let recent = books.filter { $0.recentRank != nil }.sorted { $0.recentRank! < $1.recentRank! }.map(\.id)
                 let snapshot = SystemReadingSnapshot(storeScope: catalog.scope, books: books, recentIDs: recent, exposurePolicy: policy)
-                try catalog.file.publish(snapshot)
+                let encoded = try await Task.detached(priority: .utility) { try SystemReadingSnapshotFile.encode(snapshot) }.value
+                try Task.checkCancellation()
+                guard systemCatalog?.taskID == taskID, userCloudConfigurationRevision == configuration else { return }
+                guard systemCatalog?.revision == revision else { continue }
+                try catalog.file.publishEncoded(encoded)
+                systemCatalog?.publishedGeneration = snapshot.generation
                 systemReadingSnapshotPublished(snapshot)
-                systemCatalog?.lastPublished = Date(); systemCatalog?.error = nil
+                systemCatalog?.lastPublished = Date(); systemReadingLastError = nil
                 NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
                 return
             }
@@ -125,7 +155,7 @@ extension AppDataService {
         guard !sources.isEmpty else { throw SystemReadingRouteError.unavailable }
         if automatic {
             let policy = systemExposurePolicy()
-            guard policy.systemSearchEnabled, Set(policy.excludedShelfIDs).isDisjoint(with: sources.map(\.shelfId)) else { throw SystemReadingRouteError.searchDisabled }
+            guard systemCatalog?.accountPending != true, policy.systemSearchEnabled, Set(policy.excludedShelfIDs).isDisjoint(with: sources.map(\.shelfId)) else { throw SystemReadingRouteError.searchDisabled }
         }
         let shelves = Dictionary(uniqueKeysWithValues: try self.shelves().map { ($0.id, $0) })
         guard let source = sources.first(where: { shelves[$0.shelfId]?.error == nil && shelves[$0.shelfId] != nil }) else {

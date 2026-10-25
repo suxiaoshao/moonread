@@ -150,6 +150,8 @@ actor CloudSyncCoordinator {
             reason = Self.message(error)
         }
         guard operation == current else { return }
+        await service.setSystemReadingAccountPending(account != nil)
+        guard operation == current else { return }
         status.enabled = false; status.syncing = false; status.accountToConfirm = account
         status.message = reason; publish()
     }

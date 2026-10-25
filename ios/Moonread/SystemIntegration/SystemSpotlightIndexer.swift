@@ -49,22 +49,24 @@ private final class SystemSpotlightAcknowledgement: @unchecked Sendable {
                 attributes.title = book.title
                 attributes.authorNames = book.author.map { [$0] }
                 attributes.keywords = book.tags
-                return CSSearchableItem(uniqueIdentifier: book.id, domainIdentifier: "dev.moonread.Moonread.books", attributeSet: attributes)
+                let item = CSSearchableItem(uniqueIdentifier: book.id, domainIdentifier: "dev.moonread.Moonread.books", attributeSet: attributes)
+                item.expirationDate = .distantFuture
+                return item
             }
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                index.indexSearchableItems(items) { error in
+                index.indexSearchableItems(items) { @Sendable error in
                     if let error { continuation.resume(throwing: error) } else { continuation.resume() }
                 }
             }
         }, delete: { [self] ids in
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                index.deleteSearchableItems(withIdentifiers: ids) { error in
+                index.deleteSearchableItems(withIdentifiers: ids) { @Sendable error in
                     if let error { continuation.resume(throwing: error) } else { continuation.resume() }
                 }
             }
         }, deleteAll: { [self] in
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                index.deleteAllSearchableItems { error in
+                index.deleteAllSearchableItems { @Sendable error in
                     if let error { continuation.resume(throwing: error) } else { continuation.resume() }
                 }
             }
@@ -86,7 +88,7 @@ extension AppDataService {
         // platform work chain here could wait for this very delegate callback.
     }
     func reconcileSystemSpotlight(_ snapshot: SystemReadingSnapshot, using suppliedAdapter: SystemSpotlightAdapter? = nil) async throws {
-        guard systemCatalog?.scope == snapshot.storeScope, snapshot.exposurePolicy == systemExposurePolicy() else { return }
+        guard systemSnapshotIsCurrent(snapshot), snapshot.exposurePolicy == systemExposurePolicy() else { return }
         let adapter: SystemSpotlightAdapter
         if let suppliedAdapter { adapter = suppliedAdapter }
         else if let existing = systemSpotlightAdapter { adapter = existing }
@@ -120,7 +122,7 @@ extension AppDataService {
         state.ids = Array(Set(state.ids).union(desired)).sorted()
         sourceDefaults.set(try JSONEncoder().encode(state), forKey: key)
         for start in stride(from: 0, to: changed.count, by: 500) {
-            guard systemCatalog?.scope == snapshot.storeScope, systemExposurePolicy() == snapshot.exposurePolicy else { return }
+            guard systemSnapshotIsCurrent(snapshot), systemExposurePolicy() == snapshot.exposurePolicy else { return }
             let batch = Array(changed[start..<min(start + 500, changed.count)])
             try await adapter.index(batch)
             for item in batch { systemSpotlightMetadata[item.id] = item }
@@ -135,6 +137,7 @@ extension AppDataService {
             let restricted = SystemReadingSnapshot(storeScope: catalog.scope,
                 books: old.books.map { $0.withAutomaticExposure(false) }, recentIDs: old.recentIDs, exposurePolicy: systemExposurePolicy())
             try catalog.file.publish(restricted)
+            systemCatalog?.publishedGeneration = restricted.generation
             systemReadingSnapshotPublished(restricted)
         }
         scheduleSystemReadingCatalog(immediate: true)

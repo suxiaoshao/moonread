@@ -613,6 +613,16 @@ final class LibraryModel {
             }
         }
     }
+    func removeReaderDestination(_ id: UUID) {
+        func removing(_ path: [LibraryRoute]) -> [LibraryRoute] {
+            guard let index = path.firstIndex(where: { route in
+                if case .reader(let request) = route { return request.id == id }; return false
+            }) else { return path }
+            return Array(path[..<index])
+        }
+        libraryPath = removing(libraryPath); statisticsPath = removing(statisticsPath)
+        settingsPath = removing(settingsPath); searchPath = removing(searchPath)
+    }
     func cancelOpeningForNavigationChange() {
         guard let (tab, origin) = openingOrigin, selectedTab != tab || path != origin else { return }
         cancelOpening()

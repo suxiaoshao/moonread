@@ -1,5 +1,6 @@
 @preconcurrency import AppIntents
 import Foundation
+import WidgetKit
 
 private struct SystemReadingDonationState: Codable {
     var schemaVersion = 1
@@ -15,13 +16,18 @@ extension AppDataService {
         let previous = systemExposureTask
         systemExposureTask = Task { [weak self] in
             await previous?.value
+            guard await self?.systemSnapshotIsCurrent(snapshot) == true else { return }
+            await MainActor.run { WidgetCenter.shared.reloadTimelines(ofKind: SystemReadingWidgetModel.kind) }
             await self?.reconcileSystemReadingDonations(snapshot)
             do { try await self?.reconcileSystemSpotlight(snapshot) }
             catch { await self?.recordSystemExposureError(error) }
         }
     }
+    func systemSnapshotIsCurrent(_ snapshot: SystemReadingSnapshot) -> Bool {
+        systemCatalog?.scope == snapshot.storeScope && systemCatalog?.publishedGeneration == snapshot.generation
+    }
     private func recordSystemExposureError(_ error: Error) {
-        systemCatalog?.error = ReaderMessages.error(error)
+        systemReadingLastError = Self.systemReadingRefreshMessage(error)
         NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
     }
     private func donationState() -> SystemReadingDonationState {
@@ -50,7 +56,7 @@ extension AppDataService {
         } catch {
             // IDs remain recorded until a revoke succeeds; next foreground/publication retries.
             // Optional system suggestions never block reading or modify user facts.
-            systemCatalog?.error = ReaderMessages.error(error)
+            recordSystemExposureError(error)
         }
     }
     func systemReadingBegan(_ bookID: String) async {
@@ -80,6 +86,6 @@ extension AppDataService {
             if systemCatalog?.scope != scope || systemCatalog?.accountPending == true || systemExposurePolicy() != policy {
                 try await IntentDonationManager.shared.deleteDonations(matching: .entityIdentifier(EntityIdentifier(for: SystemBookEntity.self, identifier: book.id)))
             }
-        } catch { systemCatalog?.error = ReaderMessages.error(error) }
+        } catch { recordSystemExposureError(error) }
     }
 }

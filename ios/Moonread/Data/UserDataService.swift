@@ -123,7 +123,7 @@ extension AppDataService {
         diagnostic?.mark("effectiveQuery.resumed")
         return query
     }
-    func effectiveQuery(facts: Bool = false, keys: [String]? = nil, positionsOnly: Bool = false, statisticsBook: String? = nil, scope: String = "batch", diagnostic: ReaderOpenTrace? = nil) async throws -> ReaderQuery {
+    func effectiveQuery(facts: Bool = false, keys: [String]? = nil, positionsOnly: Bool = false, statisticsBook: String? = nil, scope: String = "batch", sparseCatalogue: Bool = false, diagnostic: ReaderOpenTrace? = nil) async throws -> ReaderQuery {
         diagnostic?.mark("effectiveQuery.actor.begin")
         defer { diagnostic?.mark("effectiveQuery.actor.return") }
         diagnostic?.mark("formalStore.queued")
@@ -147,15 +147,15 @@ extension AppDataService {
                 if item.key.hasPrefix(prefix), let file = item.value as? String { result[String(item.key.dropFirst(prefix.count))] = file }
             }
         }
-        let cacheKey = scope + "-\(facts)-\(positionsOnly)-\(statisticsBook ?? "all")-" + (keys?.sorted().joined(separator: ",") ?? "all")
+        let cacheKey = scope + "-\(facts)-\(positionsOnly)-\(statisticsBook ?? "all")-\(sparseCatalogue)-" + (keys?.sorted().joined(separator: ",") ?? "all")
         let signature = "\(userCloudConfigurationRevision)-\(formalVersion)-\(pendingVersion)-\(preferences.generation)-\(preferences.enabled)-" + hidden.sorted().joined(separator: ",") + preferred.sorted { $0.key < $1.key }.map { $0.key + "=" + $0.value }.joined(separator: ",")
         diagnostic?.mark("inputSignature.return")
         if let cached = queryCache[cacheKey], cached.signature == signature { diagnostic?.mark("query.cacheHit"); return cached.query }
         diagnostic?.mark("formalProjection.queued")
-        let formalJSON = try await store.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: keys, positionsOnly: positionsOnly, statisticsBook: statisticsBook, diagnostic: diagnostic, diagnosticScope: "formalProjection")
+        let formalJSON = try await store.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: keys, positionsOnly: positionsOnly, statisticsBook: statisticsBook, diagnostic: diagnostic, diagnosticScope: "formalProjection", sparseCatalogue: sparseCatalogue)
         diagnostic?.mark("formalProjection.resumed")
         diagnostic?.mark("pendingProjection.queued")
-        let pendingJSON = try await pending.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: keys, positionsOnly: positionsOnly, statisticsBook: statisticsBook, diagnostic: diagnostic, diagnosticScope: "pendingProjection")
+        let pendingJSON = try await pending.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: keys, positionsOnly: positionsOnly, statisticsBook: statisticsBook, diagnostic: diagnostic, diagnosticScope: "pendingProjection", sparseCatalogue: sparseCatalogue)
         diagnostic?.mark("pendingProjection.resumed")
         // Full JSON/TEMP work runs independently, so an exiting reader's batch cannot occupy this actor.
         diagnostic?.mark("queryBuild.queued")

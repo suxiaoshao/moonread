@@ -392,7 +392,7 @@ extension AppDataService {
         if let parsed = try? parseReadingKey(value: value) { key = serializeReadingKey(key: parsed) }
         else { key = try userKey(value) }
         var hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
-        hidden.insert(key); sourceDefaults.set(Array(hidden), forKey: "Moonread.hiddenRecent"); dataChanged()
+        hidden.insert(key); sourceDefaults.set(Array(hidden), forKey: "Moonread.hiddenRecent"); dataChanged(); scheduleSystemReadingCatalog(immediate: true)
     }
 
     func registerLibraryShelf(_ url: URL, replacing shelfID: String? = nil) throws -> String {

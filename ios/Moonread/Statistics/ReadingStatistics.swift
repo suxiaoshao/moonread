@@ -275,6 +275,11 @@ final class ReadingActivityRecorder {
 }
 
 enum StatisticsDates {
+    static func systemReadingBounds(week: Bool, now: Date, calendar: Calendar) -> ClosedRange<Int64> {
+        let today = day(now, calendar: calendar)
+        let start = week ? calendar.dateInterval(of: .weekOfYear, for: now)!.start : now
+        return day(start, calendar: calendar)...today
+    }
     static var civilCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!

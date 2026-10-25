@@ -42,6 +42,17 @@ struct SystemIntegrationSettingsView: View {
             } header: { Text("Siri 与快捷指令") } footer: {
                 Text("也可以在支持的控制中心、锁屏或操作按钮中添加“继续阅读”。")
             }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+            Section {
+                SystemReadingCard(book: SystemReadingWidgetModel.sample)
+                    .frame(width: 150, height: 150).padding(16)
+                    .foregroundStyle(Color(uiColor: theme.ink)).tint(Color(uiColor: theme.accent))
+                    .background(Color(uiColor: theme.raised), in: .rect(cornerRadius: 20))
+                    .frame(maxWidth: .infinity).padding(.vertical, 8)
+                    .accessibilityLabel("小组件合成示例：月下归舟，42%")
+                    .accessibilityIdentifier("systemWidgetPreview")
+            } header: { Text("小组件") } footer: {
+                Text("长按主屏幕或锁屏，添加月读小组件；待机沿用系统支持的布局。在小组件配置中选择最近阅读或指定书籍，默认显示书名和进度。")
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
         }
         .themedPage().navigationTitle("系统集成")
         .disabled(loading || saving)
@@ -60,7 +71,7 @@ struct SystemIntegrationSettingsView: View {
         self.enabled = enabled; self.excluded = excluded; saving = true; error = nil
         Task {
             defer { saving = false }
-            do { try await library.service.setSystemSearch(enabled: enabled, excludedShelfIDs: Array(excluded)) }
+            do { await library.service.startSystemReadingCatalog(); try await library.service.setSystemSearch(enabled: enabled, excludedShelfIDs: Array(excluded)) }
             catch { self.error = ReaderMessages.error(error) }
             if error == nil { error = await library.service.systemReadingCatalogError() }
         }

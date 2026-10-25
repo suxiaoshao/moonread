@@ -154,6 +154,28 @@
           }
         }
       }
+    },
+    "系统搜索和小组件暂时无法刷新，请稍后重试。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System search and widgets could not be refreshed. Please try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统搜索和小组件暂时无法刷新，请稍后重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系統搜尋和小工具暫時無法重新整理，請稍後再試。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

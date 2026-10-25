@@ -4,14 +4,17 @@ import XCTest
 
 @MainActor final class SystemReadingTests: ReaderIntegrationFixture {
     func testCatalogPublishesAuthoritativeSummaryAndResetsScopeBeforeRebuilding() async throws {
-        let (root, service, core, _, _, first, _, suite) = try singleBookFixture()
+        let (root, service, core, formal, _, first, second, suite) = try singleBookFixture()
         defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
         let file = SystemReadingSnapshotFile(directory: root.appendingPathComponent("system"))
+        let secondSHA = serializeReadingKey(key: try core.resolveBookIdentity(bookId: second.id).key)
+        try await formal.put("metadata/" + secondSHA + "/author", value: "\"合成作者\"", device: "test")
         try await service.savePosition(bookID: first.id, offset: 9)
         await service.startSystemReadingCatalog(file: file)
         await service.waitForSystemReadingCatalog()
         let snapshot = try file.read()
         XCTAssertEqual(snapshot.books.count, 2)
+        XCTAssertEqual(snapshot.books.first { $0.id == "book:" + secondSHA }?.author, "合成作者")
         let sha = try core.resolveBookIdentity(bookId: first.id).key
         let id = try SystemReadingBookID(sha: serializeReadingKey(key: sha))
         XCTAssertEqual(snapshot.recentIDs.first, id.rawValue)
@@ -61,6 +64,10 @@ import XCTest
         let (root, service, core, _, _, _, _, suite) = try singleBookFixture()
         defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
         let entry = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first)
+        var pending = try await service.libraryEntry(entry.id)
+        pending.contentSha256 = "pending:synthetic"
+        pending.readingIdentity = .pending(bookId: "synthetic")
+        XCTAssertNil(try pending.systemReadingIdentity, "An unfinished in-App resume never invents a public ID")
         let route = ReaderRoute.source(SourceFile(id: entry.id, shelfID: entry.shelfId, relativePath: entry.relativePath))
         let session = ReaderSession(service: service)
         await session.open(route, request: OpeningRequest(target: route, expectedContentSHA: id.sha))
@@ -112,6 +119,13 @@ import XCTest
         let before = await probe.result()
         XCTAssertEqual(before.0, 1, "Position-only refreshes do not reindex unchanged metadata")
         XCTAssertEqual(before.1.count, 2)
+        await service.requestSystemSpotlightReindex()
+        try await service.reconcileSystemSpotlight(snapshot, using: adapter)
+        let stale = await probe.result()
+        XCTAssertEqual(stale.0, 1, "A superseded generation cannot answer a new rebuild request")
+        try await service.reconcileSystemSpotlight(file.read(), using: adapter)
+        let rebuilt = await probe.result()
+        XCTAssertEqual(rebuilt.0, 2)
         try await service.setSystemSearch(enabled: true, excludedShelfIDs: ["builtin"])
         let excluded = try file.read()
         XCTAssertEqual(excluded.books.count, 2, "Explicit selection/widget catalogue remains available")
@@ -142,6 +156,66 @@ import XCTest
         XCTAssertEqual(Set(calls.2), Set(snapshot.books.map(\.id)), "Even possibly partially indexed IDs are deleted")
     }
 
+    func testWidgetSelectionKeepsItsDisplayedIdentityAndNeverInventsProgress() throws {
+        let sample = SystemReadingWidgetModel.sample
+        let value = SystemReadingSnapshot(storeScope: "local", books: [sample], recentIDs: [sample.id])
+        let recent = SystemReadingWidgetModel.selection(in: value, selectedID: nil)
+        XCTAssertEqual(recent.book?.id, sample.id)
+        XCTAssertEqual(recent.book?.progress, 42)
+        XCTAssertEqual(recent.targetID, sample.id)
+        let unavailableID = "book:" + String(repeating: "b", count: 64)
+        let missing = SystemReadingWidgetModel.selection(in: value, selectedID: unavailableID)
+        XCTAssertNil(missing.book)
+        XCTAssertEqual(missing.targetID, unavailableID, "A stale configured book never falls back to another recent book")
+        let unreadable = SystemReadingWidgetModel.selection(in: nil, selectedID: unavailableID)
+        XCTAssertNil(unreadable.book?.progress)
+        XCTAssertEqual(unreadable.targetID, unavailableID)
+        XCTAssertEqual(try SystemReadingRequest(url: SystemReadingLink.book(unavailableID)!), .openBook(try SystemReadingBookID(rawValue: unavailableID)))
+        let empty = SystemReadingWidgetModel.selection(in: .init(storeScope: "new-account"), selectedID: nil)
+        XCTAssertNil(empty.book); XCTAssertNil(empty.targetID)
+    }
+
+    func testInFlightOldCatalogueCannotOverwriteResetScope() async throws {
+        let (root, _, core, formal, pending, _, _, suite) = try singleBookFixture()
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        let gate = SystemCatalogueGate()
+        let service = AppDataService(core: core, libraryDirectory: root, sourceDefaultsSuite: suite,
+            userStoreFactory: { name, _ in
+                await gate.wait()
+                return name == "pending-users.store" ? pending : formal
+            })
+        let file = SystemReadingSnapshotFile(directory: root.appendingPathComponent("system"))
+        await service.startSystemReadingCatalog(file: file)
+        await gate.waitForEntry()
+        let oldTask = await service.systemCatalog?.task
+        await service.resetSystemReadingCatalog()
+        let reset = try file.read()
+        await gate.release()
+        await oldTask?.value
+        XCTAssertEqual(try file.read(), reset)
+        XCTAssertTrue(reset.books.isEmpty)
+        await service.scheduleSystemReadingCatalog(immediate: true)
+        await service.waitForSystemReadingCatalog()
+        XCTAssertEqual(try file.read().books.count, 2)
+    }
+
+    func testReaderHandoffRemovesOnlyItsOldNavigationDestination() {
+        let suite = "SystemRoute-" + UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let service = AppDataService(sourceDefaultsSuite: suite)
+        let model = LibraryModel(service: service, fullIndex: FullIndexController(defaults: defaults, service: service, registerTasks: false), defaults: defaults, cloudDiscoveryRequired: false)
+        let old = OpeningRequest(target: .book("old")), replacement = OpeningRequest(target: .book("replacement"))
+        let folder = LibraryRoute.folder(LibraryLocation(shelfID: "builtin"))
+        model.libraryPath = [folder, .reader(old), .settings]
+        model.statisticsPath = [.reader(replacement)]
+        model.removeReaderDestination(old.id)
+        XCTAssertEqual(model.libraryPath, [folder])
+        XCTAssertEqual(model.statisticsPath, [.reader(replacement)])
+        model.removeReaderDestination(old.id)
+        XCTAssertEqual(model.statisticsPath, [.reader(replacement)], "Late cleanup cannot pop a newer reader")
+    }
+
 }
 
 
@@ -158,4 +232,21 @@ private actor SystemSearchProbe {
     func delete(_ ids: [String]) { deleted += ids }
     func deleteAll() { }
     func result() -> (Int, [SystemSpotlightMetadata], [String]) { (indexes, items, deleted) }
+}
+
+
+private actor SystemCatalogueGate {
+    private var open = false
+    private var entered = false
+    private var waiter: CheckedContinuation<Void, Never>?
+    private var observers: [CheckedContinuation<Void, Never>] = []
+    func wait() async {
+        entered = true
+        let watching = observers; observers.removeAll(); for item in watching { item.resume() }
+        if !open { await withCheckedContinuation { waiter = $0 } }
+    }
+    func waitForEntry() async {
+        if !entered { await withCheckedContinuation { observers.append($0) } }
+    }
+    func release() { open = true; waiter?.resume(); waiter = nil }
 }
