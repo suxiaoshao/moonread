@@ -55,7 +55,7 @@ PhotosPicker/系统文件选择器取得图片后，由 ImageIO 校正方向并�
 
 作者、简介、标签、状态与封面跟随阅读数据同步开关，原 TXT 继续走 iCloud Documents。字段修订与标签成员合并复用已有同步机制。Swift 管理图片与平台传输，Rust 管理正文身份与计算，SwiftData 业务层管理字段、引用与合并。
 
-平台依据：[Apple 文件目录](https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/FileSystemOverview/FileSystemOverview.html)、[PhotosPickerItem](https://developer.apple.com/documentation/photosui/photospickeritem)、[SwiftData 外部存储](https://developer.apple.com/documentation/swiftdata/schema/attribute/option/externalstorage)。云端边界见[iCloud 接入实施](../data/icloud-implementation.md)。
+平台依据：[Apple 文件目录](https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/FileSystemOverview/FileSystemOverview.html)、[PhotosPickerItem](https://developer.apple.com/documentation/photosui/photospickeritem)、[SwiftData 外部存储](https://developer.apple.com/documentation/swiftdata/schema/attribute/option/externalstorage)。云端边界见[iCloud 接入实施](../data/sync.md)。
 
 ## 入口统一
 
@@ -86,22 +86,7 @@ PhotosPicker/系统文件选择器取得图片后，由 ImageIO 校正方向并�
 
 ### 计算与边界
 
-`本章覆盖率 = 有效阅读范围并集中的本章正文字符数 / 本章正文字符总数`
-
-坐标使用规范 UTF-8 偏移，字符口径沿用章字数：排除标题和空白，包含标点。通过已索引字符前缀与范围边界计算，不用字节比例代替字符比例，不逐行扫描章节全文。
-
-| 场景 | 结果 |
-| --- | --- |
-| 跳章/搜索/书签定位 | 只计实际可见且达标的范围，不补齐跳过内容 |
-| 重复阅读 | 时长继续增加，覆盖取并集，最多 100% |
-| 有观察但没有范围达标 | 0% |
-| 没有记录、章终点未定或正文字数为零 | —，不从续读位置伪造历史 |
-| 大于零但不足 1% | 已读不足 1%；其他比例向下取整，避免提前显示 100% |
-| 字号/方向/阅读方式改变 | 同原文范围保持覆盖，不依赖页码 |
-| 修改目录边界 | 按新边界重新归属既有范围 |
-| 暂停/清理统计 | 暂停不增长；清理按剩余事实一起重算 |
-
-覆盖是阅读事实的可重建结果，不单独存一套权威百分比。清理不修改正文、续读、书签、批注、补充信息或手动状态。打开目录前结算并等待统计写入，目录和覆盖批量查询、按需绘制行。
+章节覆盖的分母、并集、连续可见门槛、未知与清理语义见[统计规则](statistics.md#章节覆盖计算)。这里只定义展示：累计估算不随期间切换，不等于当前位置；未知为 —，未完整计数保留 +，不足1%单独说明。
 
 ## 数据、加载与职责
 
@@ -122,18 +107,6 @@ PhotosPicker/系统文件选择器取得图片后，由 ImageIO 校正方向并�
 
 Swift 采集可见原文范围、正文交互和生命周期，Rust 负责计时、连续可见范围、并集和章节归属。图片处理不在主线程执行；书架批量取得封面引用，不逐行查询整本详情。
 
-## 有效覆盖规则
-
-**已确认并接入：原文范围连续可见满 3 秒参与估算覆盖；120 秒仍为闲置上限。** 3 秒不扣除正常正文阅读时长，也不用于判断读懂。
-
-- 慢滚时，重叠原文范围延续停留，新出现的部分从零累计。
-- 快速掠过不计覆盖；分别掠过的短停留不能相加冒充连续阅读。
-- 静止达标后计入可见范围，闲置最多累计到 120 秒；锁屏/后台立即暂停。
-- 跳转、暂停、重新开书断开访问；检查点和跨午夜切片不打断同一访问。布局重建不刷新阅读意图。
-- 回看时长继续累计，覆盖仍取并集。独立回看次数、边界微调去重和正文分布图仍在后续分析，当前不显示“读了几遍”。
-
-固定源码对照见[参考研究](../research/readers.md#停留快滑慢滚与回看)。Readest 的 3 秒、KOReader 的 5 秒用于页事件；月读采用原文范围，计算单位不同。
-
 ## 验证与剩余边界
 
 关键回归包括 SHA 门槛、字段/标签并发合并、封面草稿/保存/移除/内容校验、跨检查点覆盖与清理重算，以及编辑保存、作者/标签筛选、阅读返回和章节列表。实际结果统一记录在[验证记录](../engineering/verification.md)。
@@ -143,3 +116,7 @@ Swift 采集可见原文范围、正文交互和生命周期，Rust 负责计时
 ## AI 资料审阅与书名
 
 资料结果按一本书打开最终效果预览，标签 chip 与文本切换控制用户将要应用的更改。书名就是真实文件名，AI 可建议去掉明显噪声或响应明确改名要求；审阅展示完整旧文件名 → 新文件名，确认后仅对指定来源真实改名、保留扩展名、不覆盖同名文件。重命名和作者、简介、标签等资料独立保存并分别反馈。规则见 [工具契约](../ai/tools.md)。
+
+## 1.3 已确认待实现：V1 A
+
+窄屏保持纵向摘要/操作/统计，宽屏两栏。身份未定和统计失败分别就近提示，不把全页变空；删除阅读数据与续读分开。数值定义复用[统计](statistics.md)，不改变返回阅读与计时。排期见[1.3 计划](../plans/1.3.md)。

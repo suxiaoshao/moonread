@@ -57,10 +57,10 @@ display-link、onAppear、layout completion 都是程序代理，不能声称光
 | **P1-2 AI 启动与会话列表**：`AIService.load/connect`、`AIRepository.sessions` | 启动逐个连接会话、每个读取最近历史；未分页会话数和长消息解码可能抢首屏/开书。先加载摘要、打开会话才取历史，仅恢复确需运行/确认/排队的 runtime；不能丢恢复语义。对话列表分页为明确未实现项 | 1/100/500 会话，消息 0.8/20KB，启动可交互、actor/主线程等待、RSS；延迟 AI 初始化消融。单会话回放不能覆盖此成本 |
 | **P1-3 统计与章节 facts**：`UserData.visibleFacts/projection(includeFacts:)`、`StatisticsView` | 全事实解码、清理标记遍历、TEMP apply；单书页面期间/累计/活动重复查询。按书/期间下推、同快照批量算、可重建章节范围汇总，实体化查询字段；合并/取消过期查询。exportPending 按 key 已处理，不再列旧全库缺陷 | 1万/10万事实 × 0/100 清理标记，连续切期间；投影字节、CPU/RSS、耗时和废弃查询数。保持时区、查阅、清理、跨设备事实语义 |
 | **P1-4 AI 长会话内存与长帧**：`AINativeMarkdown`、`AIConversation` | sizing pool 有界，但 parsed/retained views、高度和用户已加载历史仍可能累计；先测 1000 条及多会话，再决定各缓存 cost 上限、近邻逐出。不能全清缓存导致空白重建 | 缓存项/RSS、流结束/队列换 turn/胶囊消失/拖动结束复合时序。保留历史坏样本，未复现不算修复 |
-| **P2-5 搜索规模**：`ReaderTools`、`library_tools.rs`、`AIRepository`、`bookshelf.rs` | 单批有界但 UI hits 持续累计；扫描 sleep 与 UI 节流耦合。跨会话先全 fetch 再筛允许会话，书架搜索全取排序。考虑分页显示/内存窗口、存储范围下推与扫描发布解耦，不静默截断既有全结果 | 高频单字/无命中/regex/1MiB 长行/连续改词，首批、全搜、取消、结果数与 RSS。分批等待的估计不当实测 |
+| **P2-5 搜索规模**：`Reader/UI/ReaderTools.swift`、`library/tools.rs`、`AIRepository`、`library/bookshelf/` | 单批有界但 UI hits 持续累计；扫描 sleep 与 UI 节流耦合。跨会话先全 fetch 再筛允许会话，书架搜索全取排序。考虑分页显示/内存窗口、存储范围下推与扫描发布解耦，不静默截断既有全结果 | 高频单字/无命中/regex/1MiB 长行/连续改词，首批、全搜、取消、结果数与 RSS。分批等待的估计不当实测 |
 | **P2-6 云刷新与其他文件操作**：`CloudLibrary`、`LibraryService`、`LibraryModel` | 云交接主因已修。剩余 metadata 全量映射、重复通知扫描及其他同步移动/复制/导出是否阻塞共享 actor 待测；按真实变化合并 dirty 代次、保留 single-flight 与原子发布，不因每个等待者补跑一轮 | 393 本含未下载占位、后台变更/下载叠加开书，通知/扫描次数与入队等待；不为摘要/封面下载原书 |
-| **P2-7 翻页选字与窗口交接**：`ReadingView`、`ReaderSession`、批注查询 | 已有有限窗口、页边界/coordinates 复用；TextKit、字号/方向变化、选区坐标和大量批注装饰仍在主线程。按窗口修订缓存必要范围，交互中保护当前行/页与选区；实测排版占主导时再考虑当前页及邻页优先、完整排版键缓存、仅实际阅读字体的空闲预热，不无条件预热所有字体或先重写 renderer | 连续阅读、边缘选区拖动、数千批注、调字号/转屏/导入完成；P95/P99/最大帧、CPU、块数/RSS和录屏位置联合判断 |
-| **P3-8 封面与首次长书冷态**：`BookMetadata`、`SourceImportWork`、`progressive.rs` | 已有 1600px 下采样、目标像素磁盘缩略图、共享订阅；冷滚动和释放后回看可能重复解码/争用 service。测后再加 cost 有界缓存或独立图像队列。首次 raw hash+解码、恢复重放是正确性成本，保留完整校验 | 393 本冷缩略图命中/解码栈/峰值字节；20MB+/100MB 冷页、下载、热降频下首块/EOF/RSS/取消与耗电趋势，热 SHA 不覆盖这些 |
+| **P2-7 翻页选字与窗口交接**：`Reader/Rendering/ReadingView.swift`、`ReaderSession`、批注查询 | 已有有限窗口、页边界/coordinates 复用；TextKit、字号/方向变化、选区坐标和大量批注装饰仍在主线程。按窗口修订缓存必要范围，交互中保护当前行/页与选区；实测排版占主导时再考虑当前页及邻页优先、完整排版键缓存、仅实际阅读字体的空闲预热，不无条件预热所有字体或先重写 renderer | 连续阅读、边缘选区拖动、数千批注、调字号/转屏/导入完成；P95/P99/最大帧、CPU、块数/RSS和录屏位置联合判断 |
+| **P3-8 封面与首次长书冷态**：`BookMetadata`、`SourceImportWork`、`reading/progressive/` | 已有 1600px 下采样、目标像素磁盘缩略图、共享订阅；冷滚动和释放后回看可能重复解码/争用 service。测后再加 cost 有界缓存或独立图像队列。首次 raw hash+解码、恢复重放是正确性成本，保留完整校验 | 393 本冷缩略图命中/解码栈/峰值字节；20MB+/100MB 冷页、下载、热降频下首块/EOF/RSS/取消与耗电趋势，热 SHA 不覆盖这些 |
 | **MainActor 调度恢复**：`ThemeStore` 偏好保存及开书返回 | 偏好 queued→invoke 的旧成功样本存在长间隔，但没有 CPU 栈证明具体视图重建。后台保存保护已加，不把同类现象都归为此原因 | 再复现时同时采主线程栈、视图失效和动画事件；先收窄等值发布/重复更新，不仅调 Task 优先级。旧约 337ms 事实见 verification |
 | **首页/目录结构更新**：`LibraryCollection`、`HomeSnapshot` | 等值首页稳定不等于目录 grid hosting cell 无重配；真实增删/远端最近项改变仍可能移动。测 opening 状态影响范围，再按行更新；交互期间结构更新延后或恢复 anchor/offset。初装欢迎书 0→1 是否还会暴露、超时兜底与持久首屏缓存必要性待数据 | 原 393 本目录列表/网格实际入口、冷揭幕后立即点书、真实更新时滚动；无动画不能代替锚点保护，不承诺所有结构变化零位移 |
 
@@ -78,11 +78,7 @@ display-link、onAppear、layout completion 都是程序代理，不能声称光
 
 ### 预排版候选的必要契约
 
-只有重新决定实施时适用，当前没有预排版：候选由 `OpeningAttempt` 独立持有，不写 session.window/snapshot/book/anchor/hasEnteredBody，不触发 opening 更新、批注、封面、位置、统计或 AI 正文读取。确认后才原子提升。
-
-候选 book_id 在 `openSourceFile` 之前、同一 actor 事务捕获，避免 startImport 已把行指向 draft；确认用受控 canonical id 或正文 SHA+解码策略，不能比较 readingID。只对已开始阅读的续读做候选，首次正式封面保持。
-
-使用真实 viewport/safeArea 的纯布局，或可直接提升的同一个 controller；尺寸未知跳过。离屏期间禁用方向亮度、readingBegan/edge、位置/封面等回调，防双 controller 重复工作。失效键包括 attempt/monitor、文件/确认身份/解码策略、frame范围/段落/用户投影、anchor、hasStarted、hasSameLayout 全字段、字体/DynamicType、viewport/方向/safeArea/compactHeader；纯颜色主题只重绘。云位置/文件变化不提升旧 frame；错误静默降级、迟到候选不覆盖已显示正文。独立记录 prelayoutStart/End、确认、promotion、最终 layout，与无预排版对照。
+尚未决定实施。只有测得真实空档才重新设计：独立候选不写位置/统计/会话，确认身份、来源、实际 viewport、设置与代次后原子安装；失败降级到正常路径，不保留第二套正文或兼容缓存。详细旧方案留 Git 历史，不作为已排期任务。
 
 ### AI 列表第二步与显示候选
 
@@ -95,3 +91,13 @@ display-link、onAppear、layout completion 都是程序代理，不能声称光
 `UserDataStore.projectionVersion` 与 ReaderQuery 签名仍含全局版本，其他书/统计写入可能使当前无 facts 单书缓存 miss；新 draft scope 也不保证跨会话命中。当前缓存约32项有界，单书 preferred 值已按 key 读，不再声称每次单书查询扫描全部 UserDefaults。若有残余热点，再区分位置/资料/章节、facts、可见性/首选等失效域，合并同 scope 的并发构建；先保证 miss 本身足够小，不无证据引入复杂 LRU。
 
 Rust ReaderQuery 的固定建连与 TEMP apply 成本仍存在。只有新数据说明其占主要残余成本时再优化连接或重复 apply，保持独立不可变快照和 search job 持有期。必要的最终位置保存、后台统计 drain、启动恢复与 facts 查询仍应在原入口交错检查，不能把 utility 优先级理解为可抢占或绕过同书最终提交。
+
+## 隔离开书诊断
+
+- Release 测量用显式的 `READER_OPEN_DIAGNOSTICS` 编译条件；四组对照使用相同的埋点并标明变体；正式包关闭诊断。诊断构建启动时使用 `--reader-open-benchmark --reader-open-session <有效 UUID>`（可另加 `--reader-open-mode resume/first/import` 等测量选项），不要添加 `--ui-testing` 或任何 `--ui-test-*` 参数。缺失/非法 session 会显示错误，不使用正式书库作为回退。
+- `--reader-open-session` 的解析、benchmark 界面及独立 AppDataService 的创建只在 `READER_OPEN_DIAGNOSTICS` 下编译；隔离正文缓存、SwiftData 阅读数据、source defaults 和临时小说根，同一 UUID 重启复用隔离数据，新 UUID 开新测量。普通 Release 不识别 UI 测试参数，也不含这些诊断启动开关；带诊断条件的专用构建不可用于 TestFlight 上传。
+- 示例（固定已有模拟器，无需新建）：用 `-configuration Release 'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) READER_OPEN_DIAGNOSTICS'` 编译并安装后，`xcrun simctl launch FFA6F448-E09C-4885-B59C-53C5E07185F5 dev.moonread.Moonread --reader-open-benchmark --reader-open-session "$(uuidgen)" --reader-open-mode resume`。进入“开书测量”且“小书／长书”出现，说明已走过“准备隔离快开缓存”；只看到该提示不能算准备成功。
+
+
+
+300ms 沿用局部反馈防闪烁的体验门槛；800ms 区分短准备与需要进度/暂停的长等待，均非系统规定或性能承诺。准备期间仍持续工作，不设最短展示时长。诊断方法与后续优化见[性能设计](../engineering/performance.md)。

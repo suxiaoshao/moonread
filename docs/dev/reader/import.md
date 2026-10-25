@@ -24,7 +24,7 @@
 
 阅读百分比只在全文完成后显示。源文件处理百分比属于“正文准备进度”，不会当作阅读进度，也不会随着正文追加让阅读百分比倒退。
 
-正文准备过程遵循[正文交互](reading.md)：默认沉浸、工具覆盖正文、选区优先，不因后台处理改变正在读的行。配色见[外观设计](../design/appearance.md)。
+正文准备过程遵循[正文交互](reading.md)：默认沉浸、工具覆盖正文、选区优先，不因后台处理改变正在读的行。配色见[外观设计](../design/themes.md)。
 
 ## 数据契约
 
@@ -174,10 +174,4 @@ VT、FF、C0/C1 等已解码控制字符及零星 NUL 按原码点保留，不�
 - 状态机单测注入时钟和 ready 事件，精确验证 299/301、799/801 和同一轮到达的情况。
 - 集成测试在 SourceImportWork 开始协调读取前放一个可取消的延迟 gate，不阻塞 AppDataService 和 MainActor，也不延长文件协调的持有时间。按实际 ready 相对 routeRequested 的时间判断落在哪一档。取消 gate 后仍要执行 finished 清理。
 - 不借用 `--ui-test-download-progress`。
-- Release 测量用显式的 `READER_OPEN_DIAGNOSTICS` 编译条件；四组对照使用相同的埋点并标明变体；正式包关闭诊断。诊断构建启动时使用 `--reader-open-benchmark --reader-open-session <有效 UUID>`（可另加 `--reader-open-mode resume/first/import` 等测量选项），不要添加 `--ui-testing` 或任何 `--ui-test-*` 参数。缺失/非法 session 会显示错误，不使用正式书库作为回退。
-- `--reader-open-session` 的解析、benchmark 界面及独立 AppDataService 的创建只在 `READER_OPEN_DIAGNOSTICS` 下编译；隔离正文缓存、SwiftData 阅读数据、source defaults 和临时小说根，同一 UUID 重启复用隔离数据，新 UUID 开新测量。普通 Release 不识别 UI 测试参数，也不含这些诊断启动开关；带诊断条件的专用构建不可用于 TestFlight 上传。
-- 示例（固定已有模拟器，无需新建）：用 `-configuration Release 'SWIFT_ACTIVE_COMPILATION_CONDITIONS=$(inherited) READER_OPEN_DIAGNOSTICS'` 编译并安装后，`xcrun simctl launch FFA6F448-E09C-4885-B59C-53C5E07185F5 dev.moonread.Moonread --reader-open-benchmark --reader-open-session "$(uuidgen)" --reader-open-mode resume`。进入“开书测量”且“小书／长书”出现，说明已走过“准备隔离快开缓存”；只看到该提示不能算准备成功。
-
-
-
-300ms 沿用局部反馈防闪烁的体验门槛；800ms 区分短准备与需要进度/暂停的长等待，均非系统规定或性能承诺。准备期间仍持续工作，不设最短展示时长。诊断方法与后续优化见[性能设计](../engineering/performance.md)。
+- 编译条件、隔离 benchmark 参数与诊断命令统一见[性能测量](../engineering/performance.md#隔离开书诊断)。

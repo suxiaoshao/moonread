@@ -16,7 +16,7 @@
 | 目录、书签、笔记 | surface、ink、accent、secondary、separator、destructive | 当前章标题与字数都用 accent，其他章字数用 secondary；章节输入区同样采用 input 与 border/focus；删除保留文字与图标 |
 | 搜索 | surface、input、ink、secondary、border/focus、separator、accent/accentSurface、selected | 摘要使用原生 SwiftUI AttributedString 显式设置 ink；普通命中用 search，选中命中与正文都用 searchCurrent；当前行底色用 selected，标注用独立 annotation |
 | 批注 | surface、raised、input、ink、secondary、border/focus、selection | 原生控制器显式设置主题与键盘明暗；输入和摘录圆角统一为 16 |
-| AI 对话与列表 | canvas/surface、raised、input、accentSurface、ink、secondary、accent/onAccent、border/focus、selected、destructive、success、moon/maria | 对话列表为 plain List：标题＋右侧时间或运行状态，下一行为最新可见消息摘要，关联书名用小字；对话页用户气泡 accentSurface 靠右，回复无底框；输入框 1pt border/focus，发送与停止为 accent 实心圆；阅读弹窗沿用阅读作用域的 surface；阅读月亮为主题 MoonView 加纸色间隙，状态角标颜色按语义。细则见 [AI 阅读助手](ai.md) 与[对话错误与单次操作确认](../ai/errors-and-confirmation.md) |
+| AI 对话与列表 | canvas/surface、raised、input、accentSurface、ink、secondary、accent/onAccent、border/focus、selected、destructive、success、moon/maria | 对话列表为 plain List：标题＋右侧时间或运行状态，下一行为最新可见消息摘要，关联书名用小字；对话页用户气泡 accentSurface 靠右，回复无底框；输入框 1pt border/focus，发送与停止为 accent 实心圆；阅读弹窗沿用阅读作用域的 surface；阅读月亮为主题 MoonView 加纸色间隙，状态角标颜色按语义。细则见 [AI 阅读助手](ai.md) 与[对话错误与单次操作确认](../ai/rendering.md) |
 | 准备、空态、关于 | moon、maria、secondary、paper | 月亮角色以矢量路径按主题着色（静止姿态；扉页为读书姿态），月体保持完整圆形 |
 | 阅读封面／扉页 | paper、ink、secondary、accent；品牌固定色 | 书名与品牌图标（无封面时）居中、细分隔线和小字号落款；与书架文字封面共用字体设计和主题角色，封面使用阅读主题。正文准备阶段复用这一画面，较慢任务在底部显示原生加载进度 |
 | 启动页 | LaunchBackground 浅深颜色资产、LaunchSeal（桌面图标渲染） | 系统静态图与 App 首帧均为 120pt 桌面图标、全屏居中；主题与本地首页快照就绪或错误后（根等待上限1s、封面子预算150ms），底色和图标一起250ms原地淡出，减弱动态缩短至 120ms；首页同步可用，回前台不重播 |
@@ -37,7 +37,7 @@
 | --- | --- |
 | 书目行 | 标题/状态 8，行上下 8；来源两行间 4 |
 | 正文 | 上 16、左右 16、下 4；紧凑信息栏 22；字号/行距由阅读设置管理 |
-| 工具覆盖层 | 操作触区 44；顶部恢复普通返回图标、居中书名及原有纸色渐变，删除圆形／胶囊玻璃；底部沿用原生工具 sheet；显示工具不改变正文区域 |
+| 工具覆盖层 | 操作触区 44；顶部使用原生导航返回、居中书名和纸色导航背景，显隐不重排正文；底部沿用原生工具 sheet；显示工具不改变正文区域 |
 | 搜索 | 输入圆角 16、描边 1、选项圆角 8；sheet 圆角 32；紧凑档按药丸与工具实际内容测量，详情用原生大档，展开期间保留起始高度 |
 | 批注 | 外边距和块间距 20，摘录内边距 16，输入最小高度 104；聚焦只改边框色 |
 | 标注底纹 | 按字身绘制，圆角 min(2, 字身高度 × 0.1)，不包含额外行距 |
@@ -49,3 +49,7 @@
 MotionTokens 统一工具 180ms、减少动态 100ms、快捷面板高度 200ms、搜索面板 240ms、配色 180ms；原生导航、sheet、分页和键盘保留系统时序。辅助加载提示延迟 300ms 防闪烁。无内容的整页未知等待用居中大号系统转圈，局部未知进度用小号系统转圈，已知进度用原生线性进度条；月亮不做加载动画。进度来自真实任务，不循环。
 
 位置稳定、明暗反向组合、保存重启与实际截图必须一起检查。已覆盖和仍未验证的环境分别记录在验证文档，不因有主题类型就视为产品体验验收完成。
+
+## 信息与操作的选择
+
+配置集合和钻取用 List/Form；进度、错误和空态使用真实状态组件或局部摘要，说明优先 footer，主要操作与对象相邻，破坏性操作独立。App 自绘背景/行底/分隔线显式用主题角色；系统导航、键盘、菜单和原生搜索内部由系统管理，不用逐帧取色冒充固定 token。1.3 页面定稿见[计划](../plans/1.3.md)。

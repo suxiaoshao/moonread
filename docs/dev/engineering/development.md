@@ -21,6 +21,8 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 更新依赖显式执行 `nix flake update` 并检查锁文件变化；构建不会自行更新锁文件。新增 Nix 文件须加入 Git 跟踪后供本地 flake 使用，不能用 `path:.` 把含本地凭据的整个工作目录作为输入。
 
+项目级 [SwiftUI Expert skill](../../../.agents/skills/swiftui-expert-skill/SKILL.md) 用于 SwiftUI 开发与审阅。来源为 [AvdLee/SwiftUI-Agent-Skill](https://github.com/AvdLee/SwiftUI-Agent-Skill)，固定 `4.2.0` / `9692ec5c3e78a0acc7757de2dbe8e64e519a72fb`，保留上游 [MIT 许可](../../../.agents/skills/swiftui-expert-skill/LICENSE)；更新时显式选择版本。
+
 ## 本地化
 
 界面支持简体中文 `zh-Hans`、台湾繁体中文 `zh-Hant` 与英文 `en`。`ios/Moonread/Localizable.xcstrings` 的源键保留简体，繁体翻译按 OpenCC `s2twp` 生成并人工校正台湾用语（設定、檔案、資料夾、字型、匯入、複製、回饋）。不要转换源键、格式占位符、协议／模型 ID、用户命名或小说正文；英文数量文案保留单复数。新增文案同步补齐三语，不直接把中文动态 String 当界面值。
@@ -43,7 +45,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 - 新开 `release/x.y` 时，同步修改 [Dependabot](../../../.github/dependabot.yml) 两个更新项的 `target-branch`，让常规依赖版本更新 PR 指向当前版本分支。
 - Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 PR 的 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 `hotfix/x.y.z` 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。
-- 当前目标配置为 `release/1.2`，该分支在本流程 PR 合并后才创建；新目标分支的 CI 触发与 Dependabot 实际校验以合并并创建分支后为准，不能以本 PR 的 CI 通过代替。
+- 当前常规依赖更新目标为 `release/1.3`，以 `.github/dependabot.yml` 为准；新版本分支切换后需核对实际配置。
 
 签名配置、小说原件、构建产物与凭据不随代码推送。CI、仓库保护、模板及依赖更新见[仓库与持续集成](repository.md)，测试范围与推送前要求见[测试原则](verification.md#测试原则)。
 
@@ -80,21 +82,7 @@ App 的营销版本（`MARKETING_VERSION`，用户可见）和构建号（`CURRE
 
 ### TestFlight 打包与上传
 
-使用干净提交和本机 `LocalSigning.xcconfig`，在 Nix 环境执行 Release archive，真机缓存统一为 `build/DeviceDerivedData`。自动签名的原始归档通常使用开发签名，导出时由 Xcode 重签为 App Store Connect 分发包，这是正常流程；不要给自动开发签名的归档强行指定 Apple Distribution 身份。
-
-```sh
-nix develop --no-update-lock-file -c xcodebuild \
-  -project ios/Moonread.xcodeproj -scheme Moonread -configuration Release \
-  -xcconfig ios/LocalSigning.xcconfig -destination 'generic/platform=iOS' \
-  -derivedDataPath build/DeviceDerivedData \
-  -archivePath build/TestFlight/Moonread.xcarchive -allowProvisioningUpdates archive
-```
-
-先用 `xcodebuild -exportArchive` 本地导出并核对分发包。ExportOptions 使用 `method=app-store-connect`、`signingStyle=automatic`、`iCloudContainerEnvironment=Production`、`manageAppVersionAndBuildNumber=false`；预检用 `destination=export`，上传时改为 `destination=upload`，两次均允许自动签名更新，并使用同一归档。每次新上传先按上一节递增构建号；遇账号登录或钥匙串授权，由用户本人处理。
-
-上传前检查 Bundle ID、版本/构建号、`ITSAppUsesNonExemptEncryption=NO`、隐私清单、无 DEBUG/诊断入口、无 `.storekit` 文件，以及签名完整性。生产权限应在**导出分发包**核对：`aps-environment=production`、CloudKit 环境 Production、`get-task-allow=false`，容器为 `iCloud.dev.moonread.Moonread`，服务同时包含 CloudKit 与 CloudDocuments。不要拿原始开发签名归档的权限代替分发包结论。
-
-`TipJar.storekit` 仅保留 Debug scheme 的 StoreKit Configuration 引用，不属于任何 target 的 Copy Bundle Resources；普通 Release 归档不需要资源排除参数。本地 StoreKitTest 自动化在模拟器通过源文件 URL 读取同一配置，不依赖 App 或测试 bundle 内的副本。上传成功与 ASC 处理完成／可测试分别记录；上传不等于提交审核或正式发布。归档、分发包核验和上传日志保存在 `build/TestFlight/`。
+统一见[发布手册](release.md)：main 手动触发、branch+SHA、verify 后授权 upload，或本机同归档导出核验。
 
 ### 商店截图（独立 DEBUG 测试）
 

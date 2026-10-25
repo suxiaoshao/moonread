@@ -2,30 +2,11 @@
 
 状态：2026-10-04。Agent 与全部10个读取工具已接入正式对话页面。`AIAgentCoordinator` 组装连接、运行器、存储和工具；对话 Tab 与阅读弹窗共用运行器和历史，旧文本执行与消息表已删除。基础交付包含全部[读取工具及契约](tools.md)、执行循环、队列、压缩、分页、消息与状态，不以单一 Codex 请求或三个工具跑通替代完成。
 
-本次删除的额外策略、Pi源码依据和保留的产品行为见[对齐记录](../engineering/ai-pi-alignment.md)。
-
-## 源码证据与分工
-
-| 核对对象 | 已确认接口/行为 | 月读负责 |
-| --- | --- | --- |
-| 2026-10-04 调研时的 Swift AI SDK `df3e071ac414858a4d57e1cd48b3f686e92ab1ce`，`GenerateText/StreamText.swift` | tools、prepareStep、onStepFinish、stopWhen、fullStream、usage；默认停止条件只有1步 | 注册业务工具，显式配置循环条件、保存每一步，不能只保存最后文字 |
-| `GenerateText/PrepareStep.swift` | async throws；读取 messages/steps，返回 messages/model/activeTools/system/providerOptions | 排队消息注入、每步预算、压缩后输入和下一请求配置 |
-| `SwiftAISDK/Tool/TypedTool.swift`、`AISDKProviderUtils/Tool.swift` | Codable typed 输入/输出、schema validator、执行结果 resolve、needsApproval | 补 schema 约束、对象/跨字段规则、取消业务工作、确认界面 |
-| `GenerateText/RunToolsTransformation.swift` | 校验调用、approval事件、为执行调用创建 Task；不能假定同批调用按顺序完成 | 并行执行、稳定消息顺序、取消/等待的协调；写入不混入自动并行读取 |
-| 本地 Pi `200387122ca450d6387f033949423114a270b96c`，`packages/agent/src/agent-loop.ts` | 工具循环边界接收 steering，结束后处理 follow-up；支持执行策略 | 沿用用户已确认语义，不引入第二套基础推理循环 |
-| Pi `packages/coding-agent/src/core/compaction/compaction.ts` | usage/增量估算、保留近期、摘要检查点；默认16384预留/20000近期预算，部分采用chars/4 | 使用 Pi 的预留、近期保留目标与估算规则 |
-
-SDK 源码来自 `build/AIDerivedData/SourcePackages/checkouts/swift-ai-sdk/Sources/`；Pi 来自 `https://github.com/badlogic/pi-mono/`。公开参考：[Swift AI SDK](https://github.com/teunlao/swift-ai-sdk/tree/df3e071ac414858a4d57e1cd48b3f686e92ab1ce/Sources)、[JSON Schema 对象规则](https://json-schema.org/understanding-json-schema/reference/object)。实际编译以锁定版本为准，不使用上游 TypeScript 或当前网页的新 API 冒充 Swift 已有能力。
+运行规则以本文为准；历史取舍见[调研记录](../research/ai-integration-history.md)。
 
 ## 代码职责
 
-- Providers：认证、选定连接的请求适配、工具 schema 协议转换、模型能力/容量、usage 与结束原因归一化。新增模型不能靠隐式 Codex 默认。
-- Agent：会话运行、工具注册与执行上下文、追加队列、预算/压缩、确认协调和消息投影。继续复用 SDK streamText 工具循环。
-- Tools：调用 AppDataService 等最终业务服务，返回稳定业务结果；无 UI、无直接数据库/任意文件访问。
-- Data：消息/工具调用/结果、摘要检查点、已提交排队输入、确认提案与附件引用；按页查询，未发送草稿只留内存。
-- UI：只观察应用状态、显示工具活动/引用/确认并提交用户操作，页面关闭不销毁任务。
-
-不用独立 package、通用插件系统或持久后台任务引擎。读写数据格式按发布兼容规则演进，结构调整须带版本、迁移和历史回归测试。
+目录、状态与存储 owner 见[AI 架构](architecture.md)，固定 SDK/Pi 研究见[历史依据](../research/ai-integration-history.md)。运行器复用 SDK 多步工具循环，不增加独立 package 或通用任务引擎。
 
 ## SDK 与界面库接入边界
 
@@ -63,7 +44,7 @@ SDK 源码来自 `build/AIDerivedData/SourcePackages/checkouts/swift-ai-sdk/Sour
 
 关闭弹窗：运行/确认状态保留，月亮显示等待标记。拒绝：返回本次 denied 结果，模型可基于已有结果解释；后续请求同一操作时重新询问，不缓存拒绝决定。停止：取消网络、待执行工具、确认等待与本任务资源；已完成操作不撤销。重启：运行标为中断，未确认请求失效；重新继续时再次展示最新方案，不能自动准备、付费请求或写入。
 
-四协议共用应用确认路径；SDK 原生 approval 路径不启用。单次操作是否获准以应用记录为依据，模型文本不能批准。这不构成长期权限系统。错误分类、实际实现边界与界面行为见[对话错误与单次操作确认](errors-and-confirmation.md)。
+四协议共用应用确认路径；SDK 原生 approval 路径不启用。单次操作是否获准以应用记录为依据，模型文本不能批准。这不构成长期权限系统。错误分类、实际实现边界与界面行为见[对话错误与单次操作确认](rendering.md)。
 
 ## Steering、follow-up 与切换模型
 
@@ -76,17 +57,9 @@ SDK 源码来自 `build/AIDerivedData/SourcePackages/checkouts/swift-ai-sdk/Sour
 
 不同会话有各自任务、transport、队列和工具取消令牌；一处停止或换模型不修改其他会话。
 
-## 消息、持久化与分页
+## 消息与持久化
 
-首次连接读取最新一页，结果卡片直接由其中的成功工具消息解码；不另行恢复全历史结果或计数。用户加载更早消息时向前插入并按稳定 ID 去重，已加载范围不会被运行更新缩回。数据库提交返回此次新增/变更的记录，运行器发布成功提交的记录与对应 head；服务按 ID 追加或替换对应记录。结束、失败、停止只更新对应历史记录的 outcome/error。流式文字、推理及工具活动仅更新当前运行投影，不读取数据库历史。分页返回不覆盖期间已收到的更新。
-
-不能继续将整个多步轮次折叠成一条 assistant.text。按顺序保存 assistant步骤、toolCall、toolResult、来源、usage、结束原因和协议元数据。工具状态有 queued/running/waitingConfirmation/completed/failed/cancelled；结果可以先于其他调用结束，但显示和回放按步骤及callID关联。
-
-一个callID只能写入一个最终结果；增量/preliminary结果只更新展示，不作为多个正式结果重放。终止前没有结果的调用保存取消/中断终态；下次请求修复配对或转换为文本记录，不孤立发送 toolCall。
-
-Agent 存储提供每页最多50条的前后 keyset 查询，按会话、递增 sequence 和稳定消息身份保存。运行输入按预算加载。页面首次读取最近50条，按需向前加载50条，使用惰性列表渲染。从搜索结果打开时读取以命中消息结尾的一页及其后一页，形成历史窗口：上方继续向前加载，下方“加载较新消息”向后读取50条；窗口未到最新时运行器提交的新条目只更新已在窗口内的记录、不插入，流式输出也不显示在窗口末尾，“回到底部”或发送新消息时换回最新一页。会话列表本身尚未分页，主动加载的旧历史不自动回收，长会话内存仍需实测。
-
-每条历史记录保存一份 `searchText`：user 消息只取 `userText`；assistant 消息没有任何 `tool-call` 部分时取文字部分与 `content.value`，不检查 finality、outcome 或 finishReason，带有工具调用时整条消息的搜索文字为空。reasoning 部分和 tool/system 消息不参与。已保存的无工具调用中断正文、被后续 steering 回答移入过程的较早正文仍可搜索；尚未消费的队列和未提交的流式投影没有搜索记录，附件上下文展开也不进入 `userText`。对话搜索用 SwiftData `localizedStandardContains` 查询该列，只保留已列出会话中每个会话最新的命中记录；标题匹配独立处理。当前按命中 sequence 加载窗口、按整轮居中与高亮，不自动展开隐藏的命中，详见[当前语料与定位](../design/ai.md#对话搜索的当前语料与定位)。这些行为本次只记录，语料与定位调整留待后续讨论。附件独立存储、正文/工具输出按工具上限保存。UI渲染快照与SDK临时投影不成为第二份可编辑历史。发送窗口、完整历史、摘要检查点用途不同，数据库分页不能删历史。
+有序步骤、配对调用、分页与搜索文字的保存契约见[AI 数据归属](architecture.md#消息持久化与分页)。发送窗口、完整历史和摘要检查点用途不同，压缩不能删除历史。
 
 ## 上下文预算与压缩
 
@@ -134,4 +107,4 @@ Agent 存储提供每页最多50条的前后 keyset 查询，按会话、递增 
 
 ### 会话、草稿与展示分类
 
-所有未发送输入和阅读附件只在应用内存保留，不存入数据库、不跨启动恢复。普通聊天首次发送前不创建会话记录；首次发送在同一 AIRepository 事务创建会话、模型选择、附件资产和首条队列输入，并列入列表。保存失败保留内存输入供重试。发送提交 Task 存在时禁用整个输入区，并由服务拒绝文字、附件和模型修改；提交完成后恢复，不等待模型生成结束。快捷入口 Start 创建的未列出任务、已提交队列、运行检查点及历史跨启动保留；开始前纯表单不创建会话。快捷入口“转入对话”只保存 listed=true/origin=nil，不复制历史或资产、不换运行器。初始目的在首条可见用户输入中，系统指令保持统一。存储／资产 first-reference／工作投影及删除事务见 [内容技术设计](../engineering/ai-architecture.md#统一持久会话)。
+所有未发送输入和阅读附件只在应用内存保留，不存入数据库、不跨启动恢复。普通聊天首次发送前不创建会话记录；首次发送在同一 AIRepository 事务创建会话、模型选择、附件资产和首条队列输入，并列入列表。保存失败保留内存输入供重试。发送提交 Task 存在时禁用整个输入区，并由服务拒绝文字、附件和模型修改；提交完成后恢复，不等待模型生成结束。快捷入口 Start 创建的未列出任务、已提交队列、运行检查点及历史跨启动保留；开始前纯表单不创建会话。快捷入口“转入对话”只保存 listed=true/origin=nil，不复制历史或资产、不换运行器。初始目的在首条可见用户输入中，系统指令保持统一。存储／资产 first-reference／工作投影及删除事务见 [内容技术设计](architecture.md#统一持久会话)。
