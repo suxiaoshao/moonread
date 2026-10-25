@@ -1,5 +1,7 @@
 //! Supplemental information belongs to complete normalized text, never a file or import job.
 use crate::*;
+use rusqlite::Connection;
+use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
 use std::collections::BTreeSet;
@@ -228,7 +230,7 @@ impl ReaderCore {
     ) -> Result<BookDetails> {
         let db = self.read_lock()?;
         let info = if let Some(id) = book_id {
-            Some(book(&db, &library_tools::content_key(&db, &id)?)?)
+            Some(book(&db, &crate::library::tools::content_key(&db, &id)?)?)
         } else if let Some(sha) = &content_sha {
             db.query_row(
                 "SELECT id FROM reading_books WHERE content_sha256=?1",
@@ -263,7 +265,7 @@ impl ReaderCore {
                     [&b.id],
                     |r| unsigned_column(r, 0),
                 )?,
-                library_tools::chapter(&db, &b.id, b.position_utf8)?.map(|c| c.title),
+                crate::library::tools::chapter(&db, &b.id, b.position_utf8)?.map(|c| c.title),
             )
         } else {
             (0, 0, None)

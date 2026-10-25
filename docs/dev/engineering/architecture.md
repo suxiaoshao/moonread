@@ -28,15 +28,15 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 
 | 独立规则 | 唯一归属方 / 文件 | 理由与其他层边界 | #66 动作 |
 | --- | --- | --- | --- |
-| 阅读纹理 ID/强度、alpha 与偏好兼容解码 | Rust `themes.rs` | 两个可选本机槽；未知值归无，旧 night-v1 读作 grain-v1；接收 paper/ink，按 OKLab toe 修正后的 ΔLr 求 alpha，不做可读性门槛 | 单源 |
+| 阅读纹理 ID/强度、alpha 与偏好兼容解码 | Rust `user/themes.rs` | 两个可选本机槽；未知值归无，旧 night-v1 读作 grain-v1；接收 paper/ink，按 OKLab toe 修正后的 ΔLr 求 alpha，不做可读性门槛 | 单源 |
 | 纹理槽本机保存/回滚、最终系统来源禁用 | Swift `UserThemes` / `ThemeStore` / 阅读设置 | 使用既有 UserDefaults；不改 Palette、CloudKit 或备份 | 平台边界 |
 | 纸面 tile 与滚动/分页背景 | Swift `ThemeSurface` / `ReadingView` / `ReaderTitlePage` | 当前输入与 tile；复用容器/页面，不动正文布局 | 平台绘制 |
-| 解码、normalization-v1、正文/原字节 SHA 计算 | Rust `text.rs`、`source_identity.rs` 及正文导入共用核心 | 和正文缓存/稳定内容身份一致；Swift 不重算规范正文 | 保持 |
-| fileId/bookId/canonical→正式或 pending 阅读键、索引有效性 | Rust `identity.rs`，供 user_projection/full_index/bookshelf 共用 | 数据库关联是事实，不能由 UI 看长度猜身份 | 收敛 |
-| 待索引集合与书架索引 inventory | Rust `full_index.rs` | 同一数据库快照返回总量/pending；Swift 不重复身份判定 | 单源扩展 |
+| 解码、normalization-v1、正文/原字节 SHA 计算 | Rust `reading/text.rs`、`identity/source.rs` 及正文导入共用核心 | 和正文缓存/稳定内容身份一致；Swift 不重算规范正文 | 保持 |
+| fileId/bookId/canonical→正式或 pending 阅读键、索引有效性 | Rust `identity/content.rs`，供 user/projection、library/full_index 和 library/bookshelf 共用 | 数据库关联是事实，不能由 UI 看长度猜身份 | 收敛 |
+| 待索引集合与书架索引 inventory | Rust `library/full_index.rs` | 同一数据库快照返回总量/pending；Swift 不重复身份判定 | 单源扩展 |
 | 书架同步描述、本机授权绑定和扫描后准入 | Swift `ShelfRecovery.swift`、`UserSyncJSON.swift`、`FullIndex.swift` | SwiftData 裁决描述，本机 schemaVersion 1 绑定按账户隔离；平台扫描成功范围限制自动任务，不复制 Rust 查询 | 平台边界 |
-| SHA 格式 | Rust `identity.rs::parse_sha256` | 身份及资产校验共享严格语法，语义字段仍区分 | 收敛 |
-| 默认阅读中状态 | Rust `user_projection.rs::reading_content_positions` + `book_details.rs::project_metadata` | 详情与搜索共用 SHA 位置记录判定；file_identities 提供有效索引身份，不依赖本机 books 正文缓存；显式状态优先 | 单源修复 |
+| SHA 格式 | Rust `identity/content.rs::parse_sha256` | 身份及资产校验共享严格语法，语义字段仍区分 | 收敛 |
+| 默认阅读中状态 | Rust `user/projection.rs::reading_content_positions` + `reading/book_details.rs::project_metadata` | 详情与搜索共用 SHA 位置记录判定；file_identities 提供有效索引身份，不依赖本机 books 正文缓存；显式状态优先 | 单源修复 |
 | AI b: 引用协议 | Swift `AI/Tools/AIReadingReferences.swift` | 工具协议只在 Swift；调用 Rust SHA 校验，不再复制 hex 判断 | 删除 AIReadingTools 第二 parser |
 | SwiftData LWW/候选裁决、未知 payload 隔离 | Swift `Data/UserData.swift`、`UserSyncJSON.swift` | 权威写入口；Rust 仅接最终唯一投影 | 保持已修复单源 |
 | 相对路径语法、组件边界匹配、名称合法性 | Rust `validation.rs`，bookshelf 委托 | 索引和真实操作都需要相同底线；具名 profile 保留入口差异 | 删除主 App 字符/路径段副本 |
@@ -44,27 +44,43 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | source hint 字节/字段限制；恢复候选优先级与下载限额 | Swift `Data/UserData.swift::PositionSourceHint`、`RecentReadingRestoration.swift::RecentRestorationPolicy` | 同步载荷与恢复行为专用且已经单源；共享路径语法调用 Rust | 保留，删重复路径语法 |
 | symlink/授权/provider 生命周期、真实文件 IO | Swift `LibraryService.swift`、ShareReceiveShared | 平台安全事实，Rust 字符串校验不能替代 | 保持 |
 | 分享扩展入站安全校验 | Swift `ios/ShareReceiveShared/ShareInbox.swift` | 独立进程不依赖 Rust，属于明确防御性例外 | 保留，共同 fixture 对齐公共规则 |
-| 查询范围、身份/metadata 关联、目录后代最近时间、最近副本选择 | Rust `bookshelf.rs`、`user_projection.rs` | 需要完整索引/快照，不能由限量 recents 再聚合 | 收敛，删除 Swift 目录聚合 |
+| 查询范围、身份/metadata 关联、目录后代最近时间、最近副本选择 | Rust `library/bookshelf/`、`user/projection.rs` | 需要完整索引/快照，不能由限量 recents 再聚合 | 收敛，删除 Swift 目录聚合 |
 | 书目文本/作者/标签/状态筛选、搜索排名和建议匹配 | Swift `Library/LibraryQueryRules.swift` | Foundation 本地化能力合适；UI literal 与 AI/建议模式显式保留 | 删除 Rust search_rank/metadata filter 与各 Swift 调用点副本 |
-| 文件自然比较、目录/全书/标签自然排序 | Rust `library_order.rs`（从 bookshelf 提取） | 已服务 SQL 查询和目录；按完整快照一次计算 | Swift 搜索使用批量 ordinal，不复制自然 comparator |
+| 文件自然比较、目录/全书/标签自然排序 | Rust `library/order.rs`（从 bookshelf 提取） | 已服务 SQL 查询和目录；按完整快照一次计算 | Swift 搜索使用批量 ordinal，不复制自然 comparator |
 | 搜索排名组合、AI 名称字典序/recent 平手顺序 | Swift `LibraryQueryRules.swift` | 与匹配结果一同完成，AI 原生字符串比较不迁语言 | AI 私有 sort 收入单一模块；Rust 不留搜索组合副本 |
 | 拼音 key、字母分组及组内 localized collation | Swift `LibraryPresentation.swift::LibraryNameGroup` | 唯一实现且依赖 Foundation；不是原文件自然序副本 | 原位保留 |
-| 多标签分组/未标注/未索引分区 | Rust `bookshelf.rs::all_library_tag_groups` | 已单源，依赖索引身份 | 保持 |
-| 目录四封面选择 | Rust `bookshelf.rs::populate_cover_previews` | 独立 top-4 策略，不等于目录列表顺序 | 保持 |
-| 字数定义与 UTF-8 前缀累计字数 | Rust 文本计数共用 helper（后续）；当前 lib/source_identity/navigation/coverage | 与导入字数、章节/覆盖分母一致 | 不在 #66 改写；旧报告第8项仍待收敛 |
-| 字节位置→进度比例、百分比跳转 | Rust `navigation.rs::reading_percentage`，阅读数据通过 `identity.rs::reading_data_percentage` 查询可信全文长度 | 阅读数据与跳转共用比例/边界计算；Swift 只本地化格式化 | 其余旧报告第9项 Swift 比例副本仍待处理 |
-| 有效章节/位置归属 | Rust `library_tools.rs` 与有效章节关系（后续统一 SQL） | 手动目录需一致；Swift 展开/滚动目标不是同一规则 | #66 不迁；旧报告第10项仍登记 |
-| 阅读时长/有效天数/覆盖等统计数值 | Rust `statistics.rs`、`coverage.rs`（后续统一 summary） | 事实聚合按固定 local_day；Swift 不再另 reduce 同一总量 | #66 不迁；旧报告第11项仍登记 |
+| 多标签分组/未标注/未索引分区 | Rust `library/bookshelf/::all_library_tag_groups` | 已单源，依赖索引身份 | 保持 |
+| 目录四封面选择 | Rust `library/bookshelf/::populate_cover_previews` | 独立 top-4 策略，不等于目录列表顺序 | 保持 |
+| 字数定义与 UTF-8 前缀累计字数 | Rust 文本计数共用 helper（后续）；当前 reading/chapters、identity/source、reading/navigation 和 user/coverage | 与导入字数、章节/覆盖分母一致 | 不在 #66 改写；旧报告第8项仍待收敛 |
+| 字节位置→进度比例、百分比跳转 | Rust `reading/navigation.rs::reading_percentage`，阅读数据通过 `identity/content.rs::reading_data_percentage` 查询可信全文长度 | 阅读数据与跳转共用比例/边界计算；Swift 只本地化格式化 | 其余旧报告第9项 Swift 比例副本仍待处理 |
+| 有效章节/位置归属 | Rust `library/tools.rs` 与有效章节关系（后续统一 SQL） | 手动目录需一致；Swift 展开/滚动目标不是同一规则 | #66 不迁；旧报告第10项仍登记 |
+| 阅读时长/有效天数/覆盖等统计数值 | Rust `user/statistics.rs`、`user/coverage.rs`（后续统一 summary） | 事实聚合按固定 local_day；Swift 不再另 reduce 同一总量 | #66 不迁；旧报告第11项仍登记 |
 | 统计事实保存/去重裁决、日历展示桶/连续行视觉合并、显示格式 | Swift `ReadingStatistics.swift`、`StatisticsView.swift`，按各自职责单源 | 写入/界面组织与 Rust 数值汇总是不同规则；展示合并应消费已算 duration | 保持平台/状态规则，数值副本后续删除 |
 
-| 备份 ZIP 布局、受限解包、路径/摘要与正文缓存 SQL 驱逐 | Rust `backup_archive.rs`、`cache_management.rs` | Swift 不另写 ZIP 或数据库清理规则，驱逐保留索引/授权/任务 | 新增单源 |
+| 备份 ZIP 布局、受限解包、路径/摘要与正文缓存 SQL 驱逐 | Rust `storage/backup_archive.rs`、`storage/cache_management.rs` | Swift 不另写 ZIP 或数据库清理规则，驱逐保留索引/授权/任务 | 新增单源 |
 | 用户备份 envelope、原 payload 接入、对象级删除 | Swift `UserDataBackup.swift`、`ReadingDataManagement.swift` | SwiftData 权威与既有裁决不迁到 Rust；本机回执不参与同步裁决 | 共用接入 |
 | 缓存来源协调/授权与可读性证明 | Swift `CacheManagement.swift` | 证明期内调用 Rust 重验事务；页面不判断可清性 | 平台边界 |
 
 维护约定：新增规则先查本表；已存在则调用 owner。新增或改变归属必须在同一 PR 更新表、实现入口及测试位置。两个策略若故意不同，命名其输入/输出契约；不能仅以语言或调用入口不同为理由再实现一份。
 
 
-备份容器布局、受限解包、路径/摘要验证与正文缓存 SQL 驱逐由 Rust `backup_archive.rs` / `cache_management.rs` 负责；用户备份 envelope、原 payload 接入与对象级删除仍由 Swift `UserDataStore` / `UserDataBackup.swift` 负责，调用既有裁决。`ReadingDataManagement.swift` 只编排本机事务交接，`CacheManagement.swift` 负责安全作用域、源文件协调与可读性证明；页面不实现另一份身份、排序或合并规则。数据管理列表的自然顺序调用 Rust `reading_data_order`，本地化文本匹配复用 `LibraryQueryRules`。
+备份容器布局、受限解包、路径/摘要验证与正文缓存 SQL 驱逐由 Rust `storage/backup_archive.rs` / `storage/cache_management.rs` 负责；用户备份 envelope、原 payload 接入与对象级删除仍由 Swift `UserDataStore` / `UserDataBackup.swift` 负责，调用既有裁决。`ReadingDataManagement.swift` 只编排本机事务交接，`CacheManagement.swift` 负责安全作用域、源文件协调与可读性证明；页面不实现另一份身份、排序或合并规则。数据管理列表的自然顺序调用 Rust `reading_data_order`，本地化文本匹配复用 `LibraryQueryRules`。
+
+## Rust 源码目录
+
+`crates/moonread-core/src/lib.rs` 仅声明领域模块、重导出现有 API 和注册 UniFFI scaffolding。模块移动不改变规则 owner、导出名称、签名、正文身份或持久化格式；跨实现模块需要的 `pub(crate)` / `pub(super)` 只表达原先 crate 根及父模块已有的内部访问范围，不增加对外 API。
+
+| 目录 / 入口 | 职责 |
+| --- | --- |
+| `core.rs`、`error.rs` | ReaderCore 连接/锁与入口类型，共享错误类型 |
+| `library/` | `bookshelf/` 分查询、mutations、source 和测试；full_index（及原 SQL）、order、tools |
+| `identity/` | content 阅读键与文件关联、source 原件探测/解码策略、sha |
+| `reading/` | ingest 事务正文导入、chapters 扫描、text 解码/分块、navigation、layout、cover_page、book_details |
+| `reading/progressive/` | 任务类型与状态入口；tasks 生命周期、stream 前缀分块、recovery 恢复/回收、query 不可变读取、原有测试 |
+| `user/` | projection、statistics、coverage、themes；只投影/计算，SwiftData 继续是用户事实权威 |
+| `storage/` | 原 schema.sql、migrations、backup_archive、cache_management、validation、rows 正文缓存 SQL 行映射 |
+
+SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `include_str!` 路径。章节和渐进准备的既有测试随实现移动，不复制测试或规则。
 
 ## Swift 源码目录
 
@@ -127,7 +143,7 @@ SwiftData 是用户数据权威来源。Rust 用户存储和同步协议已删�
 
 从 1.0.0 发布基线开始，SQLite、SwiftData/CloudKit、UserDefaults、Keychain、同步 payload 与缓存的格式变更必须保持已有数据可读。持久化枚举只增加、不删除或更改已有 raw value；退役功能可停止展示，不能用未知值使整个集合读取失败。新增字段使用可选值或明确默认值；结构调整须带版本、升级路径与迁移测试（旧数据、重复打开、失败回滚、降级拒绝），不能以删除重装代替升级。内部非持久化接口仍可直接整理，不要求保留无用的重复实现。
 
-SQLite 以 `user_version=20` 为首次支持基线，`migrations.rs` 按有序步骤升级。新库先事务创建 v20，再与已有库一样逐级升级；当前 v21 为导入任务增加目的字段，既有任务默认 reading，恢复专用任务为 restoration。每步成功后更新版本，失败回滚该步。高于当前版本明确提示更新应用；低于 20 的开发库无升级路径，保留原库并报不支持，不自动删除或重建。哪些是可重建派生数据、哪些必须保留，见[数据存储](../data/README.md#当前实际存储)。
+SQLite 以 `user_version=20` 为首次支持基线，`storage/migrations.rs` 按有序步骤升级。新库先事务创建 v20，再与已有库一样逐级升级；当前 v21 为导入任务增加目的字段，既有任务默认 reading，恢复专用任务为 restoration。每步成功后更新版本，失败回滚该步。高于当前版本明确提示更新应用；低于 20 的开发库无升级路径，保留原库并报不支持，不自动删除或重建。哪些是可重建派生数据、哪些必须保留，见[数据存储](../data/README.md#当前实际存储)。
 
 AI 连接、共享授权、用途默认值逐条解码，失败条目跳过并记录不含正文/凭据的日志；会话列表逐行容错，存储读取错误仍向上抛出。读取不修复、不回写。显式保存时按稳定 ID/用途键更新可识别项，保留不可识别的原始 JSON 元素与未知对象字段；用户可删除可识别项，不能顺带删掉未知项。JSON 整体损坏时拒绝覆盖并报告失败。用途字典既读取此前 Codable 的键值交替数组，也读取对象，显式保存统一为字符串键对象。授权撤销另更新连接 generation，保留的未知授权不能绕过该边界；日志只记录集合键和序号。同步 payload 采用独立的版本/隔离契约，见[同步专题](../data/sync.md#同步-payload-的-v1-边界与隔离)。
 

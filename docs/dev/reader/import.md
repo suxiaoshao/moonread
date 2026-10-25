@@ -28,7 +28,7 @@
 
 ## 数据契约
 
-实现位于 `crates/moonread-core/src/progressive.rs`；SQLite 的 `import_jobs` 和 `import_chapters` 保存正文准备状态与自动章节；人工目录覆盖独立保存。schema 版本见[当前存储](../data/README.md#当前实际存储)。每个文件的任务描述携带自身根授权与相对路径，不再依赖一个全局目录授权。发布后格式变化通过逐级迁移处理，保留既有任务与来源授权。
+实现位于 `crates/moonread-core/src/reading/progressive/`；SQLite 的 `import_jobs` 和 `import_chapters` 保存正文准备状态与自动章节；人工目录覆盖独立保存。schema 版本见[当前存储](../data/README.md#当前实际存储)。每个文件的任务描述携带自身根授权与相对路径，不再依赖一个全局目录授权。发布后格式变化通过逐级迁移处理，保留既有任务与来源授权。
 
 | 类型/字段 | 当前含义 |
 | --- | --- |

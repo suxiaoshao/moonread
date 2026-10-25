@@ -1,5 +1,8 @@
 //! One owner for content keys and file/cache identity associations.
 use crate::*;
+use rusqlite::Connection;
+use rusqlite::OptionalExtension;
+use rusqlite::params;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, uniffi::Enum)]
 pub enum ReadingKey {
@@ -100,7 +103,7 @@ impl ReaderCore {
             )", [&sha], |r| r.get(0))?;
         Ok(bytes
             .filter(|n| *n > 0)
-            .map(|n| crate::navigation::reading_percentage(offset, n as u64)))
+            .map(|n| crate::reading::navigation::reading_percentage(offset, n as u64)))
     }
     pub fn resolve_book_identity(&self, book_id: String) -> Result<ResolvedBookIdentity> {
         resolve(&*self.lock()?, &book_id)
@@ -147,7 +150,7 @@ impl ReaderCore {
     /// Includes original pending aliases before Swift reads/reduces user facts.
     pub fn catalogue_content_keys(&self, scope: CatalogueScope) -> Result<Vec<ReadingKey>> {
         if let Some(p) = &scope.parent_path {
-            crate::bookshelf::validate_relative(p, true)?;
+            crate::library::bookshelf::validate_relative(p, true)?;
         }
         let db = self.lock()?;
         let mut stmt=db.prepare("SELECT fi.content_sha256,f.book_id FROM main.library_files f LEFT JOIN file_identities fi ON fi.file_id=f.id WHERE f.directory=0 AND (?1 IS NULL OR f.shelf_id=?1) AND (?2 IS NULL OR (?3=0 AND f.parent_path=?2) OR (?3=1 AND (?2='' OR substr(f.relative_path,1,length(?2)+1)=?2||'/')))")?;
@@ -174,7 +177,7 @@ impl ReaderCore {
     pub fn source_files_for_sha(&self, sha: String) -> Result<Vec<SourceFileSnapshot>> {
         parse_sha256(sha.clone())?;
         let db = self.lock()?;
-        crate::bookshelf::source_snapshots(
+        crate::library::bookshelf::source_snapshots(
             &db,
             "WHERE f.directory=0 AND fi.content_sha256=?1",
             [sha],
@@ -185,14 +188,18 @@ impl ReaderCore {
         shelf_id: String,
         relative_path: String,
     ) -> Result<Vec<SourceFileSnapshot>> {
-        crate::bookshelf::validate_relative(&relative_path, false)?;
+        crate::library::bookshelf::validate_relative(&relative_path, false)?;
         let db = self.lock()?;
-        crate::bookshelf::source_snapshots(
+        crate::library::bookshelf::source_snapshots(
             &db,
             "WHERE f.directory=0 AND f.shelf_id=?1 AND f.relative_path=?2",
             [shelf_id, relative_path],
         )
     }
+}
+
+pub(crate) fn valid_sha(value: &str) -> bool {
+    parse_sha256(value.into()).is_ok()
 }
 
 #[cfg(test)]

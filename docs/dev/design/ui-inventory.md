@@ -4,7 +4,7 @@
 
 ## 颜色从哪里来
 
-颜色由 Rust 的 [themes.rs](../../../crates/moonread-core/src/themes.rs) 定义和解析，经 Swift 的 [Theme.swift](../../../ios/Moonread/Shared/Theme/Theme.swift) 映射为原生颜色。已删除旧 ReaderPalette 和根级 tint(.primary)。系统来源保留原生语义颜色；预设和自定义使用完整 sRGB 角色。
+颜色由 Rust 的 [themes.rs](../../../crates/moonread-core/src/user/themes.rs) 定义和解析，经 Swift 的 [Theme.swift](../../../ios/Moonread/Shared/Theme/Theme.swift) 映射为原生颜色。已删除旧 ReaderPalette 和根级 tint(.primary)。系统来源保留原生语义颜色；预设和自定义使用完整 sRGB 角色。
 
 | 界面 | 使用角色 | 平台处理 |
 | --- | --- | --- |

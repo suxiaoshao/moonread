@@ -1,4 +1,14 @@
-use super::*;
+use crate::*;
+use rusqlite::Connection;
+use rusqlite::OptionalExtension;
+use rusqlite::params;
+use std::collections::HashMap;
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize, uniffi::Enum)]
+pub enum ReadingMode {
+    Scroll,
+    Pages,
+}
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
@@ -52,7 +62,7 @@ pub fn default_reader_settings() -> ReaderSettings {
     }
 }
 
-pub(super) fn valid(settings: &ReaderSettings) -> bool {
+pub(crate) fn valid(settings: &ReaderSettings) -> bool {
     [
         (settings.font_size, 12.0, 48.0),
         (settings.line_spacing, 0.0, 32.0),
@@ -86,7 +96,7 @@ pub struct ReadingParagraph {
     pub indented: bool,
 }
 
-pub(super) fn paragraphs(
+pub(crate) fn paragraphs(
     db: &Connection,
     id: &str,
     chunks: &[TextChunk],
@@ -144,7 +154,7 @@ pub(super) fn paragraphs(
 /// Uses constant memory even for an arbitrarily long whitespace-only line.
 /// A prefix is not blank until its LF (or final EOF) confirms the whole paragraph.
 #[derive(Default)]
-pub(super) struct BlankScanner {
+pub(crate) struct BlankScanner {
     start: u64,
     end: u64,
     visible: bool,
@@ -202,7 +212,7 @@ impl BlankScanner {
 
 /// Runs are disjoint and maximal. One predecessor and a bounded start interval
 /// avoid scanning all earlier paragraphs when paging near the end of a book.
-pub(super) fn blank_ranges(db: &Connection, id: &str, lo: u64, hi: u64) -> Result<Vec<(u64, u64)>> {
+pub(crate) fn blank_ranges(db: &Connection, id: &str, lo: u64, hi: u64) -> Result<Vec<(u64, u64)>> {
     let predecessor: Option<(u64,u64)> = db.query_row(
         "SELECT start_utf8,end_utf8 FROM reading_blanks WHERE book_id=?1 AND start_utf8<?2 ORDER BY start_utf8 DESC LIMIT 1",
         params![id,lo as i64],|r|Ok((unsigned_column(r,0)?,unsigned_column(r,1)?))).optional()?;

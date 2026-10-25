@@ -1,6 +1,11 @@
 //! Disposable inputs for Rust calculations. These TEMP tables never enter reader.sqlite3.
 use crate::*;
+use rusqlite::Connection;
+use rusqlite::OptionalExtension;
+use rusqlite::params;
 use serde::Deserialize;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 #[derive(Default, Deserialize)]
 struct UserProjection {
@@ -45,7 +50,7 @@ struct ChapterInput {
 }
 
 pub(crate) fn initialize(db: &Connection) -> Result<()> {
-    crate::identity::initialize(db)?;
+    crate::identity::content::initialize(db)?;
     db.execute_batch("CREATE TEMP TABLE user_positions(content_key TEXT PRIMARY KEY,position_utf8 INTEGER,last_read INTEGER,recent_visible INTEGER,preferred_file_id TEXT);
     CREATE TEMP VIEW reading_content_positions AS SELECT content_key content_sha256 FROM user_positions WHERE last_read>0;
     CREATE TEMP VIEW reading_books AS SELECT b.*,COALESCE(p.position_utf8,0) position_utf8,COALESCE(p.last_read,0) last_read,COALESCE(p.recent_visible,1) recent_visible,p.preferred_file_id FROM main.books b LEFT JOIN user_positions p ON p.content_key=b.content_sha256;
@@ -107,7 +112,7 @@ fn apply(db: &mut Connection, value: &UserProjection) -> Result<()> {
             )
             .optional()?;
         if let Some(id) = id {
-            let (start, body) = navigation::chapter_counts(&tx, &id, c.offset)?;
+            let (start, body) = crate::reading::navigation::chapter_counts(&tx, &id, c.offset)?;
             tx.execute(
                 "INSERT OR REPLACE INTO chapter_overrides VALUES(?1,?2,?3,?4,?5,?6,?7)",
                 params![
@@ -163,13 +168,13 @@ impl ReaderCore {
     }
     pub fn validate_chapter_offset(&self, book_id: String, offset_utf8: u64) -> Result<()> {
         let db = self.read_lock()?;
-        let id = library_tools::content_key(&db, &book_id)?;
-        navigation::chapter_counts(&db, &id, offset_utf8)?;
+        let id = crate::library::tools::content_key(&db, &book_id)?;
+        crate::reading::navigation::chapter_counts(&db, &id, offset_utf8)?;
         Ok(())
     }
     pub fn normalized_position(&self, book_id: String, offset_utf8: u64) -> Result<u64> {
         let db = self.read_lock()?;
-        let id = library_tools::content_key(&db, &book_id)?;
+        let id = crate::library::tools::content_key(&db, &book_id)?;
         let info = book(&db, &id)?;
         if info.byte_count == 0 {
             return Ok(0);
@@ -190,7 +195,7 @@ pub fn encode_reader_settings(value: ReaderSettings) -> Result<String> {
 pub fn decode_reader_settings(json: String) -> Result<ReaderSettings> {
     let value: ReaderSettings =
         serde_json::from_str(&json).map_err(|_| ReaderError::InvalidSettings)?;
-    if !reading_layout::valid(&value) {
+    if !crate::reading::layout::valid(&value) {
         return Err(ReaderError::InvalidSettings);
     }
     Ok(value)

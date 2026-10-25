@@ -16,7 +16,7 @@ App 保存一份浅色配色选择和一份深色选择；阅读同样保存两�
 
 ## 数据契约
 
-下列表示共享契约的逻辑结构。实际 [Rust/UniFFI 类型](../../../crates/moonread-core/src/themes.rs) 使用显式 appLight/appDark/readerLight/readerDark 字段保存槽位，PaletteId 指向指定明暗的完整调色板，ResolvedTheme 另携带高对比状态。
+下列表示共享契约的逻辑结构。实际 [Rust/UniFFI 类型](../../../crates/moonread-core/src/user/themes.rs) 使用显式 appLight/appDark/readerLight/readerDark 字段保存槽位，PaletteId 指向指定明暗的完整调色板，ResolvedTheme 另携带高对比状态。
 
 ```text
 Appearance = Light | Dark

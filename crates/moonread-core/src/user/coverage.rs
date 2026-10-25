@@ -1,5 +1,8 @@
 //! Continuous visible-text dwell, independently of duration totals and layout pages.
 use crate::*;
+use rusqlite::Connection;
+use rusqlite::OptionalExtension;
+use rusqlite::params;
 use std::collections::BTreeMap;
 
 const MIN_VISIBLE_MS: u64 = 3_000;
