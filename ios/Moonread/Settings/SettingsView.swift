@@ -106,13 +106,13 @@ struct SettingsView: View {
             let request = loading.begin(); defer { loading.finish(request) }
             await settingsTask?.value
             do {
-                settings = try await ReaderService.shared.settings()
-                recording = await ReaderService.shared.statisticsPreferences().enabled
+                settings = try await AppDataService.shared.settings()
+                recording = await AppDataService.shared.statisticsPreferences().enabled
             }
             catch { self.error = ReaderMessages.error(error) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .statisticsPreferencesChanged).receive(on: DispatchQueue.main)) { _ in
-            Task { recording = await ReaderService.shared.statisticsPreferences().enabled }
+            Task { recording = await AppDataService.shared.statisticsPreferences().enabled }
         }
         .modifier(PageLoadingOverlay(request: loading.request, hasContent: true))
         .alert("暂时无法完成", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
@@ -150,7 +150,7 @@ struct SettingsView: View {
             // Keep controls live while a single writer drains the latest value.
             while let next = pendingSettings {
                 pendingSettings = nil
-                do { try await ReaderService.shared.saveSettings(next) }
+                do { try await AppDataService.shared.saveSettings(next) }
                 catch { self.error = ReaderMessages.error(error) }
             }
         }
@@ -192,7 +192,7 @@ private struct ReaderTestOrigin: View {
         }
         .navigationTitle("测试来源页面")
         .task {
-            do { book = try await ReaderService.shared.sample() }
+            do { book = try await AppDataService.shared.sample() }
             catch { self.error = ReaderMessages.error(error) }
         }
         .alert("阅读遇到问题", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {

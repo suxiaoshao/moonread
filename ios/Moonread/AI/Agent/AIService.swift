@@ -164,7 +164,7 @@ struct AISessionSummary: Identifiable {
     var loaded = false
     @ObservationIgnored private var repository: AIRepository?
     @ObservationIgnored private var coordinator: AIAgentCoordinator?
-    @ObservationIgnored private let reader: ReaderService
+    @ObservationIgnored private let reader: AppDataService
     @ObservationIgnored private let makeTransport: @Sendable () -> AITransport
     @ObservationIgnored private var loading: Task<Void, Never>?
     private var closedOwners: Set<String> = []
@@ -174,7 +174,7 @@ struct AISessionSummary: Identifiable {
     @ObservationIgnored var fixtureSeeding = false
     @ObservationIgnored var fixtureSeeded = false
     #endif
-    init(repository: AIRepository? = nil, defaults suppliedDefaults: UserDefaults? = nil, storefront: AIStorefrontSource = .live, auth: AIAuthentication = AIAuthentication(), reader: ReaderService = .shared, makeTransport: @escaping @Sendable () -> AITransport = { AITransport() }) {
+    init(repository: AIRepository? = nil, defaults suppliedDefaults: UserDefaults? = nil, storefront: AIStorefrontSource = .live, auth: AIAuthentication = AIAuthentication(), reader: AppDataService = .shared, makeTransport: @escaping @Sendable () -> AITransport = { AITransport() }) {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         let session = arguments.firstIndex(of: "--ui-test-session").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }

@@ -24,7 +24,7 @@ extension Notification.Name {
 }
 
 /// The presenter only signals invalidation. Coordinated scans and all content
-/// work run on ReaderService, never on the presenter's queue or the main actor.
+/// work run on AppDataService, never on the presenter's queue or the main actor.
 final class LibraryDirectoryObserver: NSObject, NSFilePresenter, @unchecked Sendable {
     let presentedItemURL: URL?
     let presentedItemOperationQueue: OperationQueue
@@ -71,7 +71,7 @@ struct LibraryDeletionResult: Sendable {
     var refreshError: (any Error)?
 }
 
-/// Never occupy ReaderService while a provider waits for coordination or callbacks.
+/// Never occupy AppDataService while a provider waits for coordination or callbacks.
 private enum LibraryDeletionWork {
     private static let queue = DispatchQueue(label: "moonread.library-delete.io")
     static func run(_ body: @escaping @Sendable () throws -> Void) async throws {
@@ -127,7 +127,7 @@ struct LibraryScanSnapshot: Sendable {
     var failures: [String] = []
 }
 
-extension ReaderService {
+extension AppDataService {
     func libraryEntry(_ id: String) async throws -> LibraryEntry {
         let core = try textCore()
         // Only this file and its original import alias are needed.
@@ -155,7 +155,7 @@ extension ReaderService {
         try Task.checkCancellation()
     }
 
-    func prepareLocalLibrary(restoreRoot: @Sendable (isolated ReaderService) -> Void = { $0.restoreCloudLibraryRoot() }) async throws {
+    func prepareLocalLibrary(restoreRoot: @Sendable (isolated AppDataService) -> Void = { $0.restoreCloudLibraryRoot() }) async throws {
         restoreRoot(self)
         // Normal cached startup is identical in Debug and Release; isolated
         // fixtures still need full preparation to seed their temporary library.
@@ -1108,7 +1108,7 @@ extension ReaderService {
 }
 
 #if DEBUG
-extension ReaderService {
+extension AppDataService {
     private func createLocalizedStoreShotFixture() async throws {
         let arguments = ProcessInfo.processInfo.arguments
         guard let i = arguments.firstIndex(of: "--ui-test-store-language"), arguments.indices.contains(i + 1) else { throw ReaderError.InvalidRange }

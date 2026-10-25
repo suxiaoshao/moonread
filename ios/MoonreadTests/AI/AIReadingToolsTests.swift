@@ -36,7 +36,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     XCTAssertNil(unnecessary)
   }
 
-  // S134: 保留一个 read 工具边界：传正确 book/scope 给 ReaderService，映射 UTF-8 结果且不产生阅读写入；删十工具成功矩阵和底层算法重测。
+  // S134: 保留一个 read 工具边界：传正确 book/scope 给 AppDataService，映射 UTF-8 结果且不产生阅读写入；删十工具成功矩阵和底层算法重测。
   func testAllTenToolsAndCorrectedSearchUTF8AndNoReadingSideEffects() async throws {
     let (root, reader, book, _, tools) = try await fixture(paragraphs: 3)
     defer { try? FileManager.default.removeItem(at: root) }

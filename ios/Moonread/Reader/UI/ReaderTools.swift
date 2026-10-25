@@ -69,7 +69,7 @@ final class ReaderToolsModel {
     private var searchGeneration = 0
     private var job: SearchJob?
     private var searchTask: Task<Void, Never>?
-    private let service: ReaderService
+    private let service: AppDataService
     private var isLeaving = false
     private var undoVisible = false
     private var undoRemaining: Duration = .seconds(6)
@@ -78,7 +78,7 @@ final class ReaderToolsModel {
     private let sleep: @Sendable (Duration) async throws -> Void
     private var undoTask: Task<Void, Never>?
 
-    init(service: ReaderService = .shared,
+    init(service: AppDataService = .shared,
          uptime: @escaping @Sendable () -> Duration = { .nanoseconds(Int64(DispatchTime.now().uptimeNanoseconds)) },
          sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.service = service; self.uptime = uptime; self.sleep = sleep

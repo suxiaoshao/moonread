@@ -147,7 +147,7 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     let book = try core.importBook(filePath: file.path, title: "Outline")
     let outline = try core.querySnapshot(json: "{}").chapterOutline(bookId: book.id)
     let current = try XCTUnwrap(outline.items.first { $0.title == "第150章 月" })
-    let service = ReaderService(core: core)
+    let service = AppDataService(core: core)
     let model = ReaderToolsModel(service: service)
     await model.prepare(bookID: book.id, currentChapter: current.startUtf8, library: true)
     XCTAssertEqual(model.chapters.count, 202)
@@ -188,7 +188,7 @@ final class ReaderQueryAdapterUserDataTests: UserDataFixture {
     let book = try core.importBook(filePath: file.path, title: "Book")
     let formal = try store()
     let pending = try store()
-    let service = ReaderService(
+    let service = AppDataService(
       core: core, sourceDefaultsSuite: "Query-\(root.lastPathComponent)",
       userStoreFactory: { name, _ in name == "pending-users.store" ? pending : formal })
     let before = try await service.details(bookID: book.id).metadata

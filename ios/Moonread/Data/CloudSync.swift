@@ -38,7 +38,7 @@ final class CloudSyncIntent: @unchecked Sendable {
 /// owns upload, download and retries; there is no second record transport.
 actor CloudSyncCoordinator {
     static let shared = CloudSyncCoordinator()
-    private let service: ReaderService
+    private let service: AppDataService
     private let available: Bool
     private let observeEvents: Bool
     private let account: @Sendable () async throws -> String?
@@ -46,7 +46,7 @@ actor CloudSyncCoordinator {
     private var observing = false
     private var operation = UUID()
 
-    init(service: ReaderService = .shared, available: Bool = CloudConfiguration.availableInBuild, observeEvents: Bool = true,
+    init(service: AppDataService = .shared, available: Bool = CloudConfiguration.availableInBuild, observeEvents: Bool = true,
          account: @escaping @Sendable () async throws -> String? = {
              let container = CKContainer(identifier: CloudConfiguration.containerID)
              guard try await container.accountStatus() == .available else { throw CKError(.notAuthenticated) }
@@ -179,7 +179,7 @@ actor CloudSyncCoordinator {
         return ReaderMessages.error(error)
     }
 }
-extension ReaderService {
+extension AppDataService {
     func cloudSyncRequested() -> Bool { cloudSyncIntent.requested }
     func setCloudSyncRequested(_ requested: Bool) { cloudSyncIntent.set(requested) }
     func userCloudOwner() -> String? { sourceDefaults.string(forKey: "Moonread.userOwner") }

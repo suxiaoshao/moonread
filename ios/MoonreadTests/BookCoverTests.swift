@@ -15,7 +15,7 @@ final class BookCoverReaderIntegrationTests: ReaderIntegrationFixture {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let core = try ReaderCore(dataDirectory: root.path)
-    let service = ReaderService(core: core)
+    let service = AppDataService(core: core)
     let book = try core.createSampleBook()
     let base = try await service.details(bookID: book.id).metadata
     let format = UIGraphicsImageRendererFormat()

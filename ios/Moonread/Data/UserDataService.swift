@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 import CryptoKit
 
-extension ReaderService {
+extension AppDataService {
     func userStore(pending: Bool = false, diagnostic: ReaderOpenTrace? = nil) async throws -> UserDataStore {
         let label = pending ? "pendingStore" : "formalStore"
         diagnostic?.mark(label + ".service.begin")

@@ -215,7 +215,7 @@ final class LibraryModel {
     private var fileWork: FileWork?
     private var systemImports: [SystemImport] = []
     private let lookupDropEntry: @MainActor (String) async throws -> LibraryEntry
-    let service: ReaderService
+    let service: AppDataService
     private let fileMutationReload: (@Sendable () async throws -> Void)?
     private let prepareLibrary: @Sendable () async throws -> Void
     private let scanShelf: @Sendable (String) async throws -> Void
@@ -228,12 +228,12 @@ final class LibraryModel {
     private(set) var showsFileLoading = false
     private(set) var fileProgress: Double?
 
-    init(service: ReaderService = .shared, fullIndex: FullIndexController? = nil,
+    init(service: AppDataService = .shared, fullIndex: FullIndexController? = nil,
          prepareLibrary: (@Sendable () async throws -> Void)? = nil,
          scanShelf: (@Sendable (String) async throws -> Void)? = nil,
          refreshLibrary: (@Sendable () async throws -> Void)? = nil,
          fileMutationReload: (@Sendable () async throws -> Void)? = nil,
-         prepareSource: @escaping @Sendable (SourceFile, @escaping @Sendable (Double?) -> Void) async throws -> Void = { try await ReaderService.shared.prepareSourceFile($0, progress: $1) },
+         prepareSource: @escaping @Sendable (SourceFile, @escaping @Sendable (Double?) -> Void) async throws -> Void = { try await AppDataService.shared.prepareSourceFile($0, progress: $1) },
          lookupDropEntry: (@MainActor (String) async throws -> LibraryEntry)? = nil,
          defaults: UserDefaults = .standard,
          cloudDiscoveryRequired: Bool? = nil,

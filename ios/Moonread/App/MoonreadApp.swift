@@ -105,12 +105,12 @@ struct MoonreadApp: App {
                 library.fullIndex.scene(active: phase == .active)
                 if phase == .background {
                     BackgroundSave.perform(name: "保存显示偏好") { await themes.flushPreferences() }
-                    Task { await ReaderService.shared.pauseImports() }
+                    Task { await AppDataService.shared.pauseImports() }
                 }
                 if phase == .active {
                     Task { if ai.providers.catalogActivated { await ai.providers.refreshCatalogsIfNeeded() } }
                     Task {
-                        await ReaderService.shared.resumePausedImports(); await library.refresh()
+                        await AppDataService.shared.resumePausedImports(); await library.refresh()
                         if Onboarding.shared.completed { await library.receiveSharedInbox() }
                         await cloud.refresh()
                     }

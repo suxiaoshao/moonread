@@ -46,7 +46,7 @@ final class ReaderSession {
     private(set) var navigating = false
     private var readingLease: ReadingLease?
     var readingID: String? { readingLease?.id }
-    private let service: ReaderService
+    private let service: AppDataService
     private var activityStartTask: Task<Void, Never>?
     private var monitorTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
@@ -62,7 +62,7 @@ final class ReaderSession {
     var restartingEncoding: Bool { restartTask != nil }
     private let restartReading: @Sendable (String, String?) async throws -> ReadingLease
 
-    init(service: ReaderService = .shared, activity: ReadingActivityRecorder? = nil,
+    init(service: AppDataService = .shared, activity: ReadingActivityRecorder? = nil,
          restartReading: (@Sendable (String, String?) async throws -> ReadingLease)? = nil) {
         self.service = service; self.activity = activity ?? ReadingActivityRecorder()
         self.restartReading = restartReading ?? { try await service.restartImport($0, encoding: $1) }

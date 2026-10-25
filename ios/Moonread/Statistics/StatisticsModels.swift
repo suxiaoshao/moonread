@@ -160,17 +160,17 @@ final class StatisticsModel {
             await StatisticsWriter.shared.drain()
             var contentKey = target?.key
             if let target, contentKey == nil, let id = target.bookID {
-                contentKey = try await ReaderService.shared.book(id).contentSha256
+                contentKey = try await AppDataService.shared.book(id).contentSha256
             }
             if target != nil, contentKey == nil { contentKey = "unprepared" }
-            let notice = try await ReaderService.shared.statisticsCompatibilityNotice(book: contentKey)
+            let notice = try await AppDataService.shared.statisticsCompatibilityNotice(book: contentKey)
             let bounds = window.bounds
-            let result = try await ReaderService.shared.statistics(first: bounds.lowerBound, last: bounds.upperBound, book: contentKey)
-            let all = target == nil ? nil : try await ReaderService.shared.statistics(first: 0, last: StatisticsDates.day(Date()), book: contentKey).books.first
+            let result = try await AppDataService.shared.statistics(first: bounds.lowerBound, last: bounds.upperBound, book: contentKey)
+            let all = target == nil ? nil : try await AppDataService.shared.statistics(first: 0, last: StatisticsDates.day(Date()), book: contentKey).books.first
             // One book's sessions: the last seven reading days within the selected range.
             var spans: [StatisticsSpan] = []
             if target != nil, let first = result.days.suffix(7).first?.day, let last = result.days.last?.day {
-                spans = StatisticsSpan.merge(try await ReaderService.shared.activities(first: first, last: last, book: contentKey))
+                spans = StatisticsSpan.merge(try await AppDataService.shared.activities(first: first, last: last, book: contentKey))
             }
             guard !Task.isCancelled, request == revision else { return }
             key = contentKey; title = target?.title; overview = result; cumulative = all; self.spans = spans; compatibilityNotice = notice

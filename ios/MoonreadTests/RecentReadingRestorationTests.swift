@@ -244,7 +244,7 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
       try f.core.saveLibraryShelf(
         id: "builtin", name: "Synthetic cloud", bookmark: bookmark, location: "icloud",
         builtin: true)
-      var indexed = try ReaderService.libraryDirectoryItems(f.directory)
+      var indexed = try AppDataService.libraryDirectoryItems(f.directory)
       for i in indexed.indices { indexed[i].needsDownload = true }
       try await f.service.applyLibraryScan(
         "builtin", root: f.directory, items: indexed, observe: false)

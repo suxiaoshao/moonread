@@ -338,8 +338,8 @@ struct LibraryFolderView: View {
             let cloudGeneration = model.discoveryGeneration, cloudRevision = model.discoveryRevision
             do {
                 guard let value = try await catalogue.read({
-                    try await ReaderService.libraryTestLatency()
-                    return try await ReaderService.shared.libraryEntries(location)
+                    try await AppDataService.libraryTestLatency()
+                    return try await AppDataService.shared.libraryEntries(location)
                 }) else { return }
                 entries = value
                 selection.formIntersection(Set(value.map(\.id))); loaded = true
@@ -461,13 +461,13 @@ struct LibraryAllBooksView: View {
         .task(id: "\(model.revision):\(model.grouping.rawValue)") {
             let request = loading.begin(); defer { loading.finish(request) }
             do {
-                try await ReaderService.libraryTestLatency()
+                try await AppDataService.libraryTestLatency()
                 if model.grouping == .tags {
-                    let catalogue = try await ReaderService.shared.libraryTagGroups(shelfID)
+                    let catalogue = try await AppDataService.shared.libraryTagGroups(shelfID)
                     try Task.checkCancellation()
                     tagGroups = catalogue.groups; bookCount = catalogue.bookCount
                 } else {
-                    let values = try await ReaderService.shared.allLibraryBooks(shelfID)
+                    let values = try await AppDataService.shared.allLibraryBooks(shelfID)
                     let grouped = await Task.detached(priority: .userInitiated) { LibraryNameGroup.group(values) }.value
                     try Task.checkCancellation()
                     groups = grouped; books = grouped.flatMap(\.entries); bookCount = UInt64(values.count)
@@ -676,7 +676,7 @@ struct RecentLibraryView: View {
         if next != entries { entries = next }
     }
     private func loadEntries() async {
-        do { let next = try await ReaderService.shared.recentLibrary(); if next != entries { entries = next } }
+        do { let next = try await AppDataService.shared.recentLibrary(); if next != entries { entries = next } }
         catch { model.error = ReaderMessages.error(error) }
     }
 }

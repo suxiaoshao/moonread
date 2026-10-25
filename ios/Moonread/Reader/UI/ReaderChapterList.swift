@@ -140,7 +140,7 @@ struct ReaderChapterList: View {
         guard let id = session.readingID else { return }
         Task {
             do {
-                try await ReaderService.shared.correctChapter(id, offset: chapter.startUtf8, title: chapter.title, level: chapter.level, excluded: true)
+                try await AppDataService.shared.correctChapter(id, offset: chapter.startUtf8, title: chapter.title, level: chapter.level, excluded: true)
                 removedChapter = chapter; await refreshOutline()
             } catch { model.error = ReaderMessages.error(error) }
         }

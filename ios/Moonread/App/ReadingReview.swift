@@ -98,7 +98,7 @@ struct ReadingReviewCandidate: Equatable {
             do {
                 try await Task.sleep(for: .seconds(1))
                 guard canPresent, library.libraryPath == returnPath else { return }
-                let overview = try await ReaderService.shared.statistics(first: 0, last: StatisticsDates.day(Date()))
+                let overview = try await AppDataService.shared.statistics(first: 0, last: StatisticsDates.day(Date()))
                 guard !Task.isCancelled, canPresent, library.libraryPath == returnPath,
                       store.claim(days: overview.days, milliseconds: candidate.milliseconds, version: version) else { return }
                 requestReview()

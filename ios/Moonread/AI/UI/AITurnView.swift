@@ -431,7 +431,7 @@ struct AISourcePreview: View {
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
         }.presentationDetents([.medium, .large]).task(id: source.id) {
             do {
-                let reader = ReaderService.shared
+                let reader = AppDataService.shared
                 let sha = String(source.bookRef.dropFirst(2))
                 let id = try await reader.aiBookID(sha: sha)
                 let snapshot = try await reader.snapshot(id)

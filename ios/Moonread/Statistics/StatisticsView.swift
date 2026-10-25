@@ -105,7 +105,7 @@ struct StatisticsView: View {
         .confirmationDialog("清除本书的阅读统计？", isPresented: $deleteBook, titleVisibility: .visible) {
             Button("清除统计", role: .destructive) {
                 guard let key = model.key else { return }
-                Task { do { try await ReaderService.shared.deleteStatistics(book: key) } catch { model.report(error) } }
+                Task { do { try await AppDataService.shared.deleteStatistics(book: key) } catch { model.report(error) } }
             }
         } message: { Text("正文、续读位置、书签和笔记会保留。") }
         .alert("暂时无法完成", isPresented: Binding(get: { model.error != nil && model.overview != nil }, set: { if !$0 { model.error = nil } })) {

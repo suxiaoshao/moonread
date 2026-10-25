@@ -2,8 +2,8 @@ import Foundation
 
 /// Shared validation of application-generated book, file and folder references.
 actor AIReadingReferences {
-  let reader: ReaderService
-  init(reader: ReaderService = .shared) { self.reader = reader }
+  let reader: AppDataService
+  init(reader: AppDataService = .shared) { self.reader = reader }
   nonisolated static func parseBookReference(_ ref: String) throws -> String {
     guard ref.hasPrefix("b:"), let value = try? parseSha256(value: String(ref.dropFirst(2))) else {
       throw AIToolError("invalid_argument", field: "bookRef", message: "Use a b: reference returned by the book tools.")

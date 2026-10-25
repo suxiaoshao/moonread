@@ -66,7 +66,7 @@ struct ReaderLibrarySheet: View {
                         Button("撤销") {
                             Task {
                                 do {
-                                    try await ReaderService.shared.correctChapter(id, offset: removed.startUtf8, title: removed.title, level: removed.level)
+                                    try await AppDataService.shared.correctChapter(id, offset: removed.startUtf8, title: removed.title, level: removed.level)
                                     removedChapter = nil; await refreshOutline()
                                 } catch { model.error = ReaderMessages.error(error) }
                             }
@@ -84,7 +84,7 @@ struct ReaderLibrarySheet: View {
                 Button("清除人工修正", role: .destructive) {
                     guard let id = session.readingID else { return }
                     Task {
-                        do { try await ReaderService.shared.restoreChapterCorrections(id); await refreshOutline() }
+                        do { try await AppDataService.shared.restoreChapterCorrections(id); await refreshOutline() }
                         catch { model.error = ReaderMessages.error(error) }
                     }
                 }

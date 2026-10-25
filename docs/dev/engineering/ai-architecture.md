@@ -26,7 +26,7 @@ AI 在现有 Swift target 内按职责组织，不另建包或实现第二套 SD
 
 新增供应商优先修改预设、品牌、目录映射和必要的认证/协议适配。界面不新增供应商特判。图标来源与处理见 [资源说明](../../../ios/Moonread/AI/PROVIDER-ICONS.md)。
 
-完整基础设计与工具参数见 [Agent 基础](../ai/agent.md)、[工具契约](../ai/tools.md)。`AIAgentCoordinator` 是页面共用的应用级入口，复用同一 `AIConnectionService`，按会话持有 `AIAgentRuntime`。运行器负责 SDK 多步执行、排队、确认、停止、模型切换和压缩；`AIAgentStore` 保存有序历史及检查点；`AIReadingTools` 调用 ReaderService 最终业务投影。页面关闭应只移除观察者，不调用 stop/remove。
+完整基础设计与工具参数见 [Agent 基础](../ai/agent.md)、[工具契约](../ai/tools.md)。`AIAgentCoordinator` 是页面共用的应用级入口，复用同一 `AIConnectionService`，按会话持有 `AIAgentRuntime`。运行器负责 SDK 多步执行、排队、确认、停止、模型切换和压缩；`AIAgentStore` 保存有序历史及检查点；`AIReadingTools` 调用 AppDataService 最终业务投影。页面关闭应只移除观察者，不调用 stop/remove。
 
 旧文本执行循环和 `AIMessageRecord` 已删除。历史只存入 `AIAgentEntry`，未发送文字和附件仅保存在内存投影中；UI 由历史、当前增量和运行状态生成轮次投影，不保存第二份可编辑消息。后续持久化结构按发布兼容规则演进，迁移须保留历史。
 
@@ -49,7 +49,7 @@ AI 在现有 Swift target 内按职责组织，不另建包或实现第二套 SD
 
 ## 快捷任务与业务提案
 
-以下保持一个 Agent、现有 Swift target、SDK、ReaderService/ReaderQuery、Rust 正文及文件索引、SwiftData 用户数据。不新增包、供应商、依赖、通用任务引擎或全应用 owner 重构。工具只是业务服务适配；目录组织不等于职责已经解耦。
+以下保持一个 Agent、现有 Swift target、SDK、AppDataService/ReaderQuery、Rust 正文及文件索引、SwiftData 用户数据。不新增包、供应商、依赖、通用任务引擎或全应用 owner 重构。工具只是业务服务适配；目录组织不等于职责已经解耦。
 
 ### 模型启用与搜索
 

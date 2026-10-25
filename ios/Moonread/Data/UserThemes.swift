@@ -1,6 +1,6 @@
 import Foundation
 
-extension ReaderService {
+extension AppDataService {
     func themes() async throws -> ThemeSnapshot {
         var snapshot = defaultThemeSnapshot()
         if let json = sourceDefaults.string(forKey: "Moonread.themePreferences") { snapshot.preferences = try decodeThemePreferences(json: json) }

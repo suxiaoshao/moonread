@@ -21,7 +21,7 @@ SDK 源码来自 `build/AIDerivedData/SourcePackages/checkouts/swift-ai-sdk/Sour
 
 - Providers：认证、选定连接的请求适配、工具 schema 协议转换、模型能力/容量、usage 与结束原因归一化。新增模型不能靠隐式 Codex 默认。
 - Agent：会话运行、工具注册与执行上下文、追加队列、预算/压缩、确认协调和消息投影。继续复用 SDK streamText 工具循环。
-- Tools：调用 ReaderService 等最终业务服务，返回稳定业务结果；无 UI、无直接数据库/任意文件访问。
+- Tools：调用 AppDataService 等最终业务服务，返回稳定业务结果；无 UI、无直接数据库/任意文件访问。
 - Data：消息/工具调用/结果、摘要检查点、已提交排队输入、确认提案与附件引用；按页查询，未发送草稿只留内存。
 - UI：只观察应用状态、显示工具活动/引用/确认并提交用户操作，页面关闭不销毁任务。
 

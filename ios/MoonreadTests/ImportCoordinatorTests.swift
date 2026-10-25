@@ -138,7 +138,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     XCTAssertEqual(notes.items.map(\.note), ["Original annotation"])
     XCTAssertEqual(try core.sourceDecoding(fileId: file.id), "UTF-8")
     XCTAssertEqual(try Data(contentsOf: path), Data(original.utf8))
-    let reopenedService = ReaderService(
+    let reopenedService = AppDataService(
       core: core, libraryDirectory: root, sourceDefaultsSuite: suite,
       userStoreFactory: { name, _ in name == "pending-users.store" ? pending : formal })
     let reopened = try await reopenedService.aiPrepare(entry.source)
@@ -165,7 +165,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     XCTAssertEqual(first.id, id)
     XCTAssertEqual(try core.importStatus(bookId: id).phase, .paused)
     let restartedCore = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let restarted = ReaderService(
+    let restarted = AppDataService(
       core: restartedCore, libraryDirectory: root.appendingPathComponent("local"),
       sourceDefaultsSuite: suite)
     let reopened = try await restarted.openSourceFile(source)
@@ -248,7 +248,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
         try? FileManager.default.removeItem(at: root)
       }
       let restartedCore = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-      let restarted = ReaderService(
+      let restarted = AppDataService(
         core: restartedCore, libraryDirectory: root.appendingPathComponent("local"),
         sourceDefaultsSuite: suite)
       let lease = try await restarted.openSourceFile(source)
@@ -316,7 +316,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     let folder = directory.appendingPathComponent("selected")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     try Data("第一章\n正文".utf8).write(to: folder.appendingPathComponent("小说.txt"))
-    let service = ReaderService(
+    let service = AppDataService(
       core: try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path),
       libraryDirectory: directory.appendingPathComponent("books"))
     try await service.prepareLibrary()
@@ -364,7 +364,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let books = directory.appendingPathComponent("books")
-    let service = ReaderService(
+    let service = AppDataService(
       core: try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path),
       libraryDirectory: books)
     try await service.prepareLibrary()

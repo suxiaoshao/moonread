@@ -77,7 +77,7 @@ struct ReadingSessionRow: View {
         }.padding(.vertical, 4)
             .contextMenu { Button("删除本次阅读记录", systemImage: "trash", role: .destructive) { confirmDelete = true } }
             .confirmationDialog("删除本次阅读记录？", isPresented: $confirmDelete, titleVisibility: .visible) {
-                Button("删除记录", role: .destructive) { Task { do { try await ReaderService.shared.deleteStatistics(book: span.key, session: span.sessionID) } catch { self.error = ReaderMessages.error(error) } } }
+                Button("删除记录", role: .destructive) { Task { do { try await AppDataService.shared.deleteStatistics(book: span.key, session: span.sessionID) } catch { self.error = ReaderMessages.error(error) } } }
             } message: { Text("删除这次开书产生的统计片段，正文和续读位置会保留。") }
             .alert("暂时无法完成", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button("知道了", role: .cancel) { error = nil } } message: { Text(error ?? "") }
     }

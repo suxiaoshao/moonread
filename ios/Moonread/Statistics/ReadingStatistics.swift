@@ -20,7 +20,7 @@ extension Notification.Name {
     static let statisticsPreferencesChanged = Notification.Name("Moonread.statisticsPreferencesChanged")
 }
 
-extension ReaderService {
+extension AppDataService {
     func statisticsPreferences() -> StatisticsPreferences {
         ReaderOpenDiagnostics.background("statisticsPreferences.actor.begin"); defer { ReaderOpenDiagnostics.background("statisticsPreferences.actor.return") }
         return StatisticsPreferences(enabled: sourceDefaults.object(forKey: "Moonread.statisticsEnabled") as? Bool ?? true, generation: UInt64(sourceDefaults.integer(forKey: "Moonread.statisticsGeneration")))
@@ -97,7 +97,7 @@ final class StatisticsWriter {
     static let shared = StatisticsWriter()
     private let save: @MainActor ([ReadingSlice], UInt64) async throws -> Void
     init(save: @escaping @MainActor ([ReadingSlice], UInt64) async throws -> Void = { slices, generation in
-        try await ReaderService.shared.saveReading(slices, generation: generation)
+        try await AppDataService.shared.saveReading(slices, generation: generation)
     }) { self.save = save }
     private var task: Task<Void, Never>?
     private(set) var error: String?
@@ -164,7 +164,7 @@ final class ReadingActivityRecorder {
     private(set) var effectiveReadingMilliseconds: UInt64 = 0
 
     convenience init(writer: StatisticsWriter = .shared, preferences: @escaping @MainActor () async throws -> StatisticsPreferences = {
-        await ReaderService.shared.statisticsPreferences()
+        await AppDataService.shared.statisticsPreferences()
     }) { self.init(writer: writer, time: { .current() }, preferences: preferences) }
 
     init(writer: StatisticsWriter, time: @escaping @MainActor () -> ReadingActivityTime,
@@ -337,7 +337,7 @@ enum StatisticsDates {
 }
 
 #if DEBUG
-extension ReaderService {
+extension AppDataService {
     /// Synthetic events live exclusively in the isolated UI-test store.
     func createStatisticsFixture() async throws {
         guard testSession != nil else { return }

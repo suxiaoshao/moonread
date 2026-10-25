@@ -19,7 +19,7 @@ final class TextCoordinatesReaderSelectionTests: ReaderSelectionFixture {
     try Data(raw.utf8).write(to: file)
     let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
     let book = try core.importBook(filePath: file.path, title: "选取")
-    let service = ReaderService(core: core)
+    let service = AppDataService(core: core)
     let session = ReaderSession(service: service)
     await session.open(.book(book.id))
     await awaitState { session.window != nil }

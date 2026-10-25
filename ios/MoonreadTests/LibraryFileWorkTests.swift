@@ -211,7 +211,7 @@ final class LibraryFileWorkReaderIntegrationTests: ReaderIntegrationFixture {
     try FileManager.default.createDirectory(at: local, withIntermediateDirectories: true)
     try Data("handoff actor probe".utf8).write(to: local.appendingPathComponent("book.txt"))
     let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let service = ReaderService(core: core, libraryDirectory: local)
+    let service = AppDataService(core: core, libraryDirectory: local)
     try await service.prepareLibrary()
     try await service.scanLibraryShelf("builtin")
     var initial: [String: CloudHandoffReceipt] = [:]
@@ -288,7 +288,7 @@ final class LibraryFileWorkReaderIntegrationTests: ReaderIntegrationFixture {
   @MainActor func testOlderSheetDismissalDoesNotClearNewImportResults() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
-    let service = ReaderService(
+    let service = AppDataService(
       core: try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path),
       libraryDirectory: directory.appendingPathComponent("books"))
     try await service.prepareLibrary()
@@ -312,7 +312,7 @@ final class LibraryFileWorkReaderIntegrationTests: ReaderIntegrationFixture {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let root = directory.appendingPathComponent("books")
-    let service = ReaderService(
+    let service = AppDataService(
       core: try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path),
       libraryDirectory: root)
     try await service.prepareLibrary()
@@ -351,7 +351,7 @@ final class LibraryFileWorkReaderIntegrationTests: ReaderIntegrationFixture {
     defer { try? FileManager.default.removeItem(at: temporary) }
     let core = try ReaderCore(dataDirectory: temporary.appendingPathComponent("db").path)
     let root = temporary.appendingPathComponent("books")
-    let service = ReaderService(core: core, libraryDirectory: root)
+    let service = AppDataService(core: core, libraryDirectory: root)
     try await service.prepareLibrary()
     let source = temporary.appendingPathComponent("同名.txt")
     try "旧原文".write(to: source, atomically: true, encoding: .utf8)

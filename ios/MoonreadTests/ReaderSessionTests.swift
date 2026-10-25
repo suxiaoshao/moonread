@@ -40,7 +40,7 @@ final class ReaderSessionReaderSelectionTests: ReaderSelectionFixture {
     try Data(("甲段。\n" + String(repeating: "合成正文。\n", count: 12000)).utf8).write(to: file)
     let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
     let imported = try core.importBook(filePath: file.path, title: "合成")
-    let service = ReaderService(core: core)
+    let service = AppDataService(core: core)
     let session = ReaderSession(
       service: service,
       activity: ReadingActivityRecorder { StatisticsPreferences(enabled: false, generation: 0) })
@@ -212,7 +212,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
   func testReadingChangeWaitRegistersAtomicallyAndWakesAllWaiters() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    let service = ReaderService(core: try ReaderCore(dataDirectory: root.path))
+    let service = AppDataService(core: try ReaderCore(dataDirectory: root.path))
     let before = await service.readingChangeRevision("book")
     await service.readingChanged("book")
     try await service.waitForChange("book", after: before, timeout: .seconds(5))
@@ -266,7 +266,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
   @MainActor func testOpeningWaitsForSourceAndCancellationCannotNavigate() async throws {
     let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: temporary) }
-    let service = ReaderService(
+    let service = AppDataService(
       core: try ReaderCore(dataDirectory: temporary.appendingPathComponent("db").path),
       libraryDirectory: temporary.appendingPathComponent("books"))
     try await service.prepareLibrary()
@@ -333,7 +333,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     defer { try? FileManager.default.removeItem(at: temporary) }
     let core = try ReaderCore(dataDirectory: temporary.appendingPathComponent("db").path)
     let root = temporary.appendingPathComponent("books")
-    let service = ReaderService(core: core, libraryDirectory: root)
+    let service = AppDataService(core: core, libraryDirectory: root)
     try await service.prepareLibrary()
     try await service.refreshLibrary()
     let entries = try await service.libraryEntries(LibraryLocation(shelfID: "builtin"))
@@ -407,7 +407,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     defer { try? FileManager.default.removeItem(at: directory) }
     let core = try ReaderCore(dataDirectory: directory.path)
     let book = try core.createSampleBook()
-    let service = ReaderService(core: core)
+    let service = AppDataService(core: core)
     let session = ReaderSession(service: service)
     await session.open(.book(book.id))
     let loaded = XCTNSPredicateExpectation(
