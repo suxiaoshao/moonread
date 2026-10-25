@@ -201,6 +201,7 @@ extension ReaderService {
             sourceDefaults.set(file.id, forKey: "Moonread.seededExampleFileID")
         }
         #if DEBUG
+        if arguments.contains("--ui-test-store-screenshots") { try await createLocalizedStoreShotFixture(); return }
         if ReaderSmokeFixture.enabled {
             try await createSmokeFixture()
             try await createShelfRecoveryFixture()
@@ -1105,3 +1106,61 @@ extension ReaderService {
     }
     #endif
 }
+
+#if DEBUG
+extension ReaderService {
+    private func createLocalizedStoreShotFixture() async throws {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let i = arguments.firstIndex(of: "--ui-test-store-language"), arguments.indices.contains(i + 1) else { throw ReaderError.InvalidRange }
+        let f = try StoreShotFixture.localized(arguments[i + 1])
+        guard let session = testSession, libraryDirectoryOverride != nil, cloudLibraryRoot == nil else { throw LibraryFileError.invalidDestination }
+        let root = try builtinLibraryURL().resolvingSymlinksInPath(), temp = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+        guard root.path.hasPrefix(temp.path + "/"), root.lastPathComponent == "Moonread-StoreShots-" + session,
+              !root.path.contains("Mobile Documents"), !root.path.contains("CloudDocs"), !root.pathComponents.contains("Downloads") else { throw LibraryFileError.invalidDestination }
+        var settings = defaultReaderSettings(); settings.font = .serif; settings.mode = .scroll
+        // Save the ordinary reader preference; no display/font scaling override.
+        if arguments.contains("--ui-test-store-ipad") { settings.fontSize = 24 }
+        try saveSettings(settings)
+        guard !sourceDefaults.bool(forKey: "StoreShots.seeded") else { return }
+        for folder in f.folders { try FileManager.default.createDirectory(at: root.appendingPathComponent(folder), withIntermediateDirectories: true) }
+        for (index,book) in f.books.enumerated() {
+            let parent = index == 3 || index == 4 ? root.appendingPathComponent(f.folders[0]) : (index == 5 ? root.appendingPathComponent(f.folders[1]) : root)
+            try book.text.write(to: parent.appendingPathComponent(book.title + ".txt"), atomically: true, encoding: .utf8)
+        }
+        try refreshLibraryShelf("builtin")
+        let core = try textCore()
+        let files = try core.sourceFileSnapshots(fileId: nil).filter { $0.shelfId == "builtin" }
+        for file in files {
+            let path = root.appendingPathComponent(file.relativePath)
+            let identity = try SourceIdentityProbe().identify(filePath: path.path, decoding: file.decoding)
+            guard try core.publishSourceIdentity(file: file, identity: identity) else { throw ReaderError.InvalidRange }
+            let title = path.deletingPathExtension().lastPathComponent
+            let book = try core.importBook(filePath: path.path, title: title)
+            try core.linkLibraryFile(fileId: file.id, bookId: book.id)
+            if let index = [f.books[1].title, f.books[2].title].firstIndex(of: title) {
+                guard let range = f.books[index + 1].text.range(of: f.progressChapters[index]) else { throw ReaderError.InvalidRange }
+                let offset = UInt64(f.books[index + 1].text[..<range.lowerBound].utf8.count)
+                try await savePosition(bookID: book.id, offset: offset)
+            }
+            let metadata = try await details(bookID: book.id).metadata
+            var edited = metadata; edited.author = f.author; edited.tags = [title == f.books[3].title || title == f.books[5].title ? f.folders[1] : f.folders[0]]
+            try await saveMetadata(base: metadata, edited: edited)
+            if title == f.books[0].title {
+                let original = f.books[0].text
+                for pair in f.notes {
+                    guard let range = original.range(of: pair[0]) else { throw ReaderError.InvalidRange }
+                    let start = UInt64(original[..<range.lowerBound].utf8.count), end = start + UInt64(pair[0].utf8.count)
+                    let edit = try await prepareAnnotation(book.id, start: start, end: end)
+                    _ = try await saveNote(edit, text: pair[1])
+                }
+                guard let range = original.range(of: f.bookmark) else { throw ReaderError.InvalidRange }
+                _ = try await ensureBookmark(book.id, at: UInt64(original[..<range.lowerBound].utf8.count))
+            }
+        }
+        let inventory = try await readingDataInventory()
+        guard inventory.items.count == 6, inventory.pending == 0, inventory.unsupported == 0,
+              try core.libraryShelves().count == 1 else { throw ReaderError.InvalidRange }
+        sourceDefaults.set(true, forKey: "StoreShots.seeded")
+    }
+}
+#endif

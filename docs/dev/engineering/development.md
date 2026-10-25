@@ -96,6 +96,46 @@ nix develop --no-update-lock-file -c xcodebuild \
 
 `TipJar.storekit` 仅保留 Debug scheme 的 StoreKit Configuration 引用，不属于任何 target 的 Copy Bundle Resources；普通 Release 归档不需要资源排除参数。本地 StoreKitTest 自动化在模拟器通过源文件 URL 读取同一配置，不依赖 App 或测试 bundle 内的副本。上传成功与 ASC 处理完成／可测试分别记录；上传不等于提交审核或正式发布。归档、分发包核验和上传日志保存在 `build/TestFlight/`。
 
+### 商店截图（独立 DEBUG 测试）
+
+先对比本地上一版截图，只拍有变化的页面。使用独立的 `StoreScreenshots` scheme；它不进入日常 `Moonread` 测试计划的关键 UI 用例，不改变正常用户的书库、云设置或阅读数据。所有拍摄启动参数、原创样书和 App 处理代码均由 `#if DEBUG` 包围，Release 不识别这些参数（沿用 #83 的约定）。
+
+从主目录执行一条命令；`-destination` 选择已经存在的模拟器，不能用设备组代替 UUID：
+
+```sh
+nix develop --no-update-lock-file -c xcodebuild \
+  -project ios/Moonread.xcodeproj -scheme StoreScreenshots -configuration Debug \
+  -destination 'platform=iOS Simulator,id=FFA6F448-E09C-4885-B59C-53C5E07185F5' \
+  -derivedDataPath build/DerivedData -parallel-testing-enabled NO \
+  -collect-test-diagnostics never \
+  STORE_SCREENSHOT_DEVICE=iphone-medium \
+  STORE_SCREENSHOT_LANGUAGES=zh-Hans,zh-Hant,en \
+  STORE_SCREENSHOT_SCENES=01,02,03,04,05,06 \
+  CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES test
+```
+
+`STORE_SCREENSHOT_LANGUAGES` 传到测试进程后，按语言设置 App 的 `-AppleLanguages` / `-AppleLocale` 和对应原创正文、书名、批注；可只填 `zh-Hans`、`zh-Hant` 或 `en`。`STORE_SCREENSHOT_SCENES` 是逗号分隔的场景 ID，可只填 `01`，不会跑其他页面。未指定语言时默认三语，未指定场景时手机/iPad 默认 01–06，Duo 默认 01/02/03/06。
+
+| 设备组 | 已有模拟器 | 原生 PNG 尺寸 | 阅读字号与准备 |
+| --- | --- | --- | --- |
+| `iphone-medium` | iPhone 18 Pro（上例 UUID） | 1206×2622 | 20 pt |
+| `ipad-13` | iPad Pro 13-inch (M5)，`0F4A5FC1-EA80-4A88-81C2-D1650CFCA791` | 2064×2752 | 24 pt；先在系统「设置 → 多任务与手势」选择全屏 App，确认没有窗口缩放手柄 |
+| `duo-outer` | iPhone Duo，`6E42EBA5-DA26-4E2C-BF50-0CA9DC193893` | 1398×2034 | 20 pt；DeviceHub 选择 Closed |
+| `duo-inner` | 同一台 Duo | 2853×2007（横向） | 20 pt；先启动 Duo，在 DeviceHub 打开该设备窗口并选择 Open，确认横向内屏能显示 App，再执行命令；本轮不自动旋转/折叠 |
+
+| 场景 | 内容 |
+| --- | --- |
+| 01 | 素白 + 宣纸（中），正文 |
+| 02 | 纯黑夜读，无纹理，保留书签标记 |
+| 03 | 豆沙绿 + 细麻布（中），配色设置展开阅读预览 |
+| 04 | 书架，文件夹有书 |
+| 05 | 标注与笔记 |
+| 06 | 数据管理与备份入口 |
+
+scheme 的 pre-action 启动 `ios/StoreScreenshots/export.py` 拍摄/导出协作器，post-action 停止它并关闭所选模拟器；构建本身仍全部由 xcodebuild/Nix 管理，没有独立 shell 构建脚本。App 每个场景使用随机 UUID 隔离会话，只在自己的临时目录写原创 TXT，拒绝 iCloud/Downloads 路径。固定系统状态栏为 9:41、满电满格；阅读器中的当前时间保持真实路径。
+
+PNG 自动保存到 `build/Release/<MARKETING_VERSION>-screenshots/<语言>/<设备组>/01.png` 等路径，只覆盖本次指定的场景，其余图片保留。导出原生截图，不缩放、不叠标题；按实际 RGB 像素排除黑图，不把 alpha 算成画面。尺寸或 DeviceHub 展开状态不符时直接失败，日志见 `build/StoreScreenshots/export.log`。失败截图不能当作交付，交付前仍需目视检查正文、构图和全屏状态。若用户强制中断 xcodebuild，先执行 `touch build/StoreScreenshots/stop` 停止导出协作器，再手动关闭本次使用的模拟器，不保留空闲 Booted 设备。
+
 ### 当前真机云能力构建
 
 现有开发者团队已支持 iCloud。使用默认云配置和自动签名，不再为当前手机构建覆盖 `MOONREAD_CLOUD_ENABLED=NO` 或清空 entitlements：

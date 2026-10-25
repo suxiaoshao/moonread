@@ -1,0 +1,54 @@
+{
+  "configurations": [
+    {
+      "id": "F0220000-0000-4000-8000-000000000001",
+      "name": "简体中文",
+      "options": {}
+    }
+  ],
+  "defaultOptions": {
+    "environmentVariableEntries": [
+      {
+        "key": "MOONREAD_TEST_CREDENTIALS",
+        "value": "memory"
+      },
+      {
+        "key": "STORE_SCREENSHOTS",
+        "value": "1"
+      },
+      {
+        "key": "STORE_SCREENSHOT_DEVICE",
+        "value": "$(STORE_SCREENSHOT_DEVICE)"
+      },
+      {
+        "key": "STORE_SCREENSHOT_LANGUAGES",
+        "value": "$(STORE_SCREENSHOT_LANGUAGES)"
+      },
+      {
+        "key": "STORE_SCREENSHOT_SCENES",
+        "value": "$(STORE_SCREENSHOT_SCENES)"
+      }
+    ],
+    "language": "zh-Hans",
+    "region": "CN",
+    "targetForVariableExpansion": {
+      "containerPath": "container:Moonread.xcodeproj",
+      "identifier": "A80000000000000000000001",
+      "name": "Moonread"
+    }
+  },
+  "testTargets": [
+    {
+      "parallelizable": false,
+      "selectedTests": [
+        "StoreScreenshots"
+      ],
+      "target": {
+        "containerPath": "container:Moonread.xcodeproj",
+        "identifier": "A80000000000000000000002",
+        "name": "MoonreadUITests"
+      }
+    }
+  ],
+  "version": 1
+}
