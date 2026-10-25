@@ -9,6 +9,17 @@ import XCTest
 @testable import Moonread
 
 final class ReaderSettingsAppStorePrivacyTests: AppStorePrivacyFixture {
+  @MainActor func testReaderBatteryHidesUnknownLevelAndPreservesKnownLevels() {
+    XCTAssertNil(ReaderBattery.symbol(level: -1, state: .unknown))
+    XCTAssertNil(ReaderBattery.symbol(level: -1, state: .charging))
+    XCTAssertEqual(ReaderBattery.symbol(level: 0, state: .unplugged), "battery.0percent")
+    XCTAssertEqual(ReaderBattery.symbol(level: 0.2, state: .unplugged), "battery.25percent")
+    XCTAssertEqual(ReaderBattery.symbol(level: 0.5, state: .unplugged), "battery.50percent")
+    XCTAssertEqual(ReaderBattery.symbol(level: 0.7, state: .unplugged), "battery.75percent")
+    XCTAssertEqual(ReaderBattery.symbol(level: 1, state: .full), "battery.100percent")
+    XCTAssertEqual(ReaderBattery.symbol(level: 0.5, state: .charging), "battery.100percent.bolt")
+  }
+
   // S250: 已发布设置 raw value 保持可读，不因本地化改键；删错误文案逐字匹配，存储不重置由 Rust 迁移测试。
   func testReleaseSettingsUseStableIdentifiersAndStoreErrorsPreserveData() {
     XCTAssertEqual(
