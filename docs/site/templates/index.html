@@ -1,87 +1,118 @@
 {% extends "base.html" %}
-{% block title %}{% if section.lang == "zh" %}月读 · {{ section.extra.tagline }}{% else %}Moonread · {{ section.extra.tagline }}{% endif %}{% endblock %}
-{% block description %}{{ section.extra.lede }}{% endblock %}
+{% block title %}{% if section.lang == "zh" %}月读 · {{ section.extra.tagline }}{% else %}Moonread · {{ section.extra.tagline }}{% endif %}{% endblock title %}
+{% block description %}{{ section.extra.lede }}{% endblock description %}
 {% block sky %}
 {% set zh = section.lang == "zh" %}
 <div class="wrap hero">
-  <img class="icon" src="{{ get_url(path='icon.png') }}" alt="{% if zh %}月读图标{% else %}Moonread icon{% endif %}" width="128" height="128">
-  <h1>{{ section.title }}</h1>
-  <p class="tagline">{{ section.extra.tagline }}</p>
-  <p class="lede">{{ section.extra.lede }}</p>
-  <span class="badge">{{ trans(key="soon", lang=section.lang) }}</span>
+<div class="hero-copy">
+<div class="eyebrow">{% if zh %}为 iPhone 与 iPad 而作的 TXT 阅读器{% else %}A TXT reader for iPhone and iPad{% endif %}</div>
+<h1>{% if zh %}月读{% else %}Moonread{% endif %}</h1>
+<p class="tagline">{% if zh %}安静地读，<br>你自己的小说。{% else %}A quiet place<br>for your own books.{% endif %}</p>
+<p class="lede">{% if zh %}把文本放进书架，选一页舒服的底色。<br>从上次停下的地方，接着读。{% else %}Bring a text file. Find a comfortable page.<br>Pick up right where you left off.{% endif %}</p>
+<div class="download">
+<a class="badge-link" href="https://apps.apple.com/app/id6823849812">
+<img src="{{ get_url(path='images/app-store-' ~ section.lang ~ '.svg') }}" alt="{% if zh %}在 App Store 下载{% else %}Download on the App Store{% endif %}">
+</a>
+<span class="download-note">{% if zh %}免费 · 无广告 · 开源<br>iOS / iPadOS 18 及以上{% else %}Free · No ads · Open source<br>iOS / iPadOS 18 or later{% endif %}</span>
 </div>
-{% endblock %}
+</div>
+<div class="device-stage">
+<div class="moon" aria-hidden="true">
+</div>
+<div class="device">
+<picture>
+<source media="(prefers-color-scheme: dark)" srcset="{{ get_url(path='images/reading-dark.png') }}">
+<img class="device-screen" src="{{ get_url(path='images/reading-light.png') }}" alt="{% if zh %}月读正文阅读真实截图{% else %}Actual Moonread reading screenshot in Chinese{% endif %}" width="1206" height="2622">
+</picture>
+<img class="device-frame" width="1350" height="2760" src="{{ get_url(path='images/iphone17-black.png') }}" alt="">
+</div>
+</div>
+</div>
+
+{% endblock sky %}
 {% block content %}
 {% set zh = section.lang == "zh" %}
-<ul class="features">
-  <li>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C10 5 7 4.5 4 5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5V5c-3-.5-6 0-8 1.5Z"/><path d="M12 6.5v13"/></svg>
-    <h3>{% if zh %}连续阅读{% else %}Read without breaks{% endif %}</h3>
-    <p>{% if zh %}分页或滚动，大文件边准备边显示，退出后回到原处。{% else %}Paged or scrolling. Large files open as they load, and you return to where you left off.{% endif %}</p>
-  </li>
-  <li>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/></svg>
-    <h3>{% if zh %}书架就是你的文件夹{% else %}Your folders are the shelf{% endif %}</h3>
-    <p>{% if zh %}本地或 iCloud 中的真实文件，月读不改写小说原文。{% else %}Real files on device or in iCloud. Moonread never rewrites your books.{% endif %}</p>
-  </li>
-  <li>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z"/></svg>
-    <h3>{% if zh %}为夜读调好的排版{% else %}Type tuned for night reading{% endif %}</h3>
-    <p>{% if zh %}字号、行距、段距和配色随你调整，浅色深色各有预设。{% else %}Adjust size, line and paragraph spacing, and colors, with light and dark presets.{% endif %}</p>
-  </li>
-  <li>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3.5 14 9l5.5 2-5.5 2-2 5.5L10 13l-5.5-2L10 9Z"/></svg>
-    <h3>{% if zh %}可选的 AI 助手{% else %}Optional AI assistant{% endif %}</h3>
-    <p>{% if zh %}连接你自己选择的服务，第一次发送前会告诉你发什么、发给谁。{% else %}Connect a service you choose. Before anything is first shared, you see what goes where.{% endif %}</p>
-  </li>
-  <li>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4.5h11l3 3v12H5Z"/><path d="M8.5 10h7M8.5 13.5h7M8.5 17h4"/></svg>
-    <h3>{% if zh %}目录、搜索与批注{% else %}Contents, search, and notes{% endif %}</h3>
-    <p>{% if zh %}自动识别章节，全文搜索，书签、标注和批注随手留下。{% else %}Chapters are detected automatically. Search the whole book and keep bookmarks, highlights, and notes.{% endif %}</p>
-  </li>
-  <li>
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 19.5V11M10 19.5V5M15 19.5v-6M20 19.5V8.5"/></svg>
-    <h3>{% if zh %}阅读统计{% else %}Reading statistics{% endif %}</h3>
-    <p>{% if zh %}每天读了多久、读了哪些书，随时回看；记录只保存在你自己的设备和 iCloud。{% else %}See how long and what you read each day. Records stay on your devices and in your iCloud.{% endif %}</p>
-  </li>
-</ul>
-
-<section class="promise" aria-labelledby="promise-title">
-  <h2 id="promise-title">{% if zh %}你的书，只属于你{% else %}Your books stay yours{% endif %}</h2>
-  <ul>
-    <li>{% if zh %}不需要注册账号{% else %}No account required{% endif %}</li>
-    <li>{% if zh %}没有广告，不做跨应用追踪{% else %}No ads, no cross-app tracking{% endif %}</li>
-    <li>{% if zh %}没有自己的服务器：书和阅读记录只在你的设备和 iCloud{% else %}No servers of our own: books and reading data stay on your devices and in your iCloud{% endif %}</li>
-    <li>{% if zh %}AI 完全可选，第一次发送前先征得你的同意{% else %}AI is optional and asks before anything is first shared{% endif %}</li>
-  </ul>
-  <a href="{{ get_url(path='@/privacy.md', lang=section.lang) }}">{% if zh %}阅读隐私政策{% else %}Read the privacy policy{% endif %} ›</a>
-</section>
-
-<section class="faq" aria-labelledby="faq-title">
-  <h2 id="faq-title">{% if zh %}常见问题{% else %}FAQ{% endif %}</h2>
-  {% if zh %}
-    <details><summary>支持哪些格式？</summary><p>目前只支持 TXT。月读会自动识别常见编码和章节，不改写原文件。</p></details>
-    <details><summary>收费吗？</summary><p>免费，没有订阅，所有功能都能用。设置里有完全自愿的打赏，打赏不会解锁任何东西。</p></details>
-    <details><summary>AI 要付费吗？</summary><p>AI 是可选功能，使用你自己选择的服务和账户，费用和额度由该服务决定。不用 AI 也能正常阅读。</p></details>
-    <details><summary>换手机后书和进度还在吗？</summary><p>把小说放在“我的书架”并开启 iCloud Drive，文件会同步；在设置中开启阅读数据 iCloud 同步后，进度、书签和批注也会同步。</p></details>
-    <details><summary>支持 iPad 吗？</summary><p>支持 iPhone 和 iPad，需要 iOS 18 或更新版本。</p></details>
-  {% else %}
-    <details><summary>Which formats are supported?</summary><p>TXT only for now. Moonread detects common encodings and chapters and never rewrites your files.</p></details>
-    <details><summary>Does it cost anything?</summary><p>It is free with no subscription, and every feature is available. Settings include completely optional tips that unlock nothing.</p></details>
-    <details><summary>Does AI cost money?</summary><p>AI is optional and uses the service and account you choose, so pricing and quota come from that service. Reading works fine without it.</p></details>
-    <details><summary>Will my books and progress move to a new phone?</summary><p>Keep books in My Bookshelf with iCloud Drive on and the files sync. Turn on reading-data iCloud sync in Settings to sync positions, bookmarks, and notes too.</p></details>
-    <details><summary>Does it work on iPad?</summary><p>Yes, on iPhone and iPad running iOS 18 or later.</p></details>
-  {% endif %}
-</section>
-
-<div class="links">
-  <a class="card" href="{{ get_url(path='@/privacy.md', lang=section.lang) }}">
-    <div class="text"><strong>{{ trans(key="privacy", lang=section.lang) }}</strong><span>{{ trans(key="privacy_desc", lang=section.lang) }}</span></div>
-    <span class="chev" aria-hidden="true">›</span>
-  </a>
-  <a class="card" href="{{ get_url(path='@/support.md', lang=section.lang) }}">
-    <div class="text"><strong>{{ trans(key="support", lang=section.lang) }}</strong><span>{{ trans(key="support_desc", lang=section.lang) }}</span></div>
-    <span class="chev" aria-hidden="true">›</span>
-  </a>
+<section class="section" id="features">
+<h2 class="section-title">{% if zh %}打开一本，就读下去。{% else %}Open a book. Stay a while.{% endif %}</h2>
+<p class="section-intro">{% if zh %}文件、文字和你留下的笔记，都有自己的位置。{% else %}Room for your books, your words, and the notes you leave behind.{% endif %}</p>
+<div class="features">
+<article class="feature">
+<div class="feature-number">01 / <span>{% if zh %}你的书架{% else %}Your bookshelf{% endif %}</span>
 </div>
-{% endblock %}
+<h3>{% if zh %}文件夹，就是书架。{% else %}Your folders, your shelf.{% endif %}</h3>
+<p>{% if zh %}本地或 iCloud 中的 TXT，放进来就能读。按自己的方式整理，小说原文保持原样。{% else %}Read your own TXT files, on device or in iCloud. Organize them your way; the original text stays untouched.{% endif %}</p>
+<div class="shot-window">
+<img src="{{ get_url(path='images/bookshelf.png') }}" width="1206" height="2622" alt="{% if zh %}月读书架真实截图{% else %}Actual Moonread bookshelf screenshot in Chinese{% endif %}" loading="lazy">
+</div>
+<span class="caption">{% if zh %}本地文件 · iCloud · 标签{% else %}Local files · iCloud · Tags{% endif %}</span>
+</article>
+<article class="feature">
+<div class="feature-number">02 / <span>{% if zh %}舒服的排版{% else %}Your reading rhythm{% endif %}</span>
+</div>
+<h3>{% if zh %}调成喜欢的样子。{% else %}Make yourself comfortable.{% endif %}</h3>
+<p>{% if zh %}字号、行距、段间距，按阅读习惯调整。白天与夜里，各有舒服的配色。{% else %}Tune type size and spacing to your liking, with light and dark palettes for any time of day.{% endif %}</p>
+<div class="shot-window settings">
+<img src="{{ get_url(path='images/reading-settings.png') }}" width="1206" height="2622" alt="{% if zh %}月读阅读设置真实截图{% else %}Actual Moonread reading settings screenshot in Chinese{% endif %}" loading="lazy">
+</div>
+<span class="caption">{% if zh %}分页或滚动 · 浅色与深色{% else %}Paged or scrolling · Light and dark{% endif %}</span>
+</article>
+<article class="feature">
+<div class="feature-number">03 / <span>{% if zh %}读过的痕迹{% else %}Your reading trail{% endif %}</span>
+</div>
+<h3>{% if zh %}喜欢的句子，留下来。{% else %}Keep the words that stay.{% endif %}</h3>
+<p>{% if zh %}标注、书签和随手记下的想法，和阅读位置一起保存。打开书时，再回到熟悉的地方。{% else %}Save a passage, a thought, or a bookmark alongside your reading position. Return to a familiar place.{% endif %}</p>
+<div class="shot-window notes">
+<img src="{{ get_url(path='images/annotations.png') }}" width="1206" height="2622" alt="{% if zh %}月读批注真实截图{% else %}Actual Moonread annotation screenshot in Chinese{% endif %}" loading="lazy">
+</div>
+<span class="caption">{% if zh %}书签 · 批注 · 阅读位置{% else %}Bookmarks · Notes · Reading position{% endif %}</span>
+</article>
+</div>
+</section>
+<div class="rule" aria-hidden="true">☾</div>
+<section class="section promise">
+<div>
+<h2 class="section-title">{% if zh %}你的书，只属于你。{% else %}Your books stay yours.{% endif %}</h2>
+<p>{% if zh %}没有书城，不必注册月读账号。<br>你决定读什么，也决定怎样保存。{% else %}No bookstore. No Moonread account.<br>You choose what to read and where to keep it.{% endif %}</p>
+<a href="{{ get_url(path='@/privacy.md', lang=section.lang) }}" class="privacyBodyLink">{% if zh %}了解数据与隐私 →{% else %}About your data and privacy →{% endif %}</a>
+</div>
+<ul class="quiet-list">
+<li>
+<span>01</span>
+<div>{% if zh %}没有广告，也没有订阅。{% else %}No ads. No subscription.{% endif %}</div>
+</li>
+<li>
+<span>02</span>
+<div>{% if zh %}小说与阅读数据，可选择通过 iCloud 同步。{% else %}Choose iCloud sync for books and reading data.{% endif %}</div>
+</li>
+<li>
+<span>03</span>
+<div>{% if zh %}免费使用所有阅读功能，打赏完全自愿。{% else %}All reading features are free. Tips are optional.{% endif %}</div>
+</li>
+</ul>
+</section>
+
+<section class="section faq">
+<h2 class="section-title">{% if zh %}你可能还想知道{% else %}A few things to know{% endif %}</h2>
+<details>
+<summary>{% if zh %}支持哪些文件？{% else %}Which files can I read?{% endif %}</summary>
+<p>{% if zh %}目前支持 TXT，会自动识别常见编码和章节。月读不提供书城、书源或小说下载。{% else %}TXT files, with automatic detection of common encodings and chapters. Moonread has no bookstore, content sources, or book downloads.{% endif %}</p>
+</details>
+<details>
+<summary>{% if zh %}换手机，进度还在吗？{% else %}Will my place move to a new phone?{% endif %}</summary>
+<p>{% if zh %}把小说放在“我的书架”并开启 iCloud Drive，文件会同步；在设置中开启阅读数据 iCloud 同步后，进度、书签和批注也会同步。{% else %}Keep books in My Bookshelf with iCloud Drive on to sync files. Enable reading-data iCloud sync in Settings to sync positions, bookmarks, and notes.{% endif %}</p>
+</details>
+<details>
+<summary>{% if zh %}AI 是必需的吗？{% else %}Do I have to use AI?{% endif %}</summary>
+<p>{% if zh %}不是。支持该功能的店面中，AI 默认关闭，使用你选择的服务与账户；不用 AI 也能完整阅读。部分地区不提供 AI 功能，包括中国大陆店面。{% else %}No. Where available, AI is off by default and uses a service and account you choose. Reading works fully without it. AI features are unavailable in some regions, including the mainland China storefront.{% endif %}</p>
+</details>
+<details>
+<summary>{% if zh %}月读开源吗？{% else %}Is Moonread open source?{% endif %}</summary>
+<p>{% if zh %}是的。代码托管在 <a href="https://github.com/suxiaoshao/moonread">GitHub</a>，采用 MIT 许可证。欢迎查看代码，也欢迎<a href="https://github.com/suxiaoshao/moonread/issues">提出 issue</a>，反馈问题或建议。{% else %}Yes. The code is on <a href="https://github.com/suxiaoshao/moonread">GitHub</a> under the MIT License. You are welcome to explore it and <a href="https://github.com/suxiaoshao/moonread/issues">open an issue</a> with a bug report or suggestion.{% endif %}</p>
+</details>
+</section>
+<section class="final-cta">
+<span aria-hidden="true">☾</span>
+<h2>{% if zh %}今晚，从一本自己的书开始。{% else %}Tonight, start with a book of your own.{% endif %}</h2>
+<a href="https://apps.apple.com/app/id6823849812">{% if zh %}在 App Store 查看月读 →{% else %}Find Moonread on the App Store →{% endif %}</a>
+</section>
+{% endblock content %}
