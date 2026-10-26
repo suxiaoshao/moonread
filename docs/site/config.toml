@@ -16,6 +16,7 @@ generate_feeds = false
 build_search_index = false
 
 [extra]
+reading_preview = true
 email = "suxiaoshao@gmail.com"
 holder = "suxiaoshao"
 

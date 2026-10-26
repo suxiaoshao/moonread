@@ -188,6 +188,7 @@ a, .shot-window {transition:color .18s ease,box-shadow .18s ease}
 }
 
 /* Document layouts share the same canvas and navigation as the home page. */
+{% if config.extra.reading_preview | default(value=false) %}{% include "reader-preview-style.html" %}{% endif %}
 .doc-body {min-width:0; overflow-wrap:anywhere}
 .doc-body a {color:var(--accent)}
 .doc-body ul,.doc-body ol {padding-left:1.5em}

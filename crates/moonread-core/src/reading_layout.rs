@@ -35,14 +35,57 @@ pub struct ReaderSettings {
     pub orientation: ReadingOrientation,
 }
 
+/// Shared control metadata; native and web renderers still own font metrics.
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct ReaderNumberControl {
+    pub minimum: f64,
+    pub maximum: f64,
+    pub step: f64,
+    pub default_value: f64,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, uniffi::Record)]
+#[serde(rename_all = "camelCase")]
+pub struct ReaderTypographyControls {
+    pub font_size: ReaderNumberControl,
+    pub line_spacing: ReaderNumberControl,
+    pub paragraph_spacing: ReaderNumberControl,
+}
+
+#[uniffi::export]
+pub fn reader_typography_controls() -> ReaderTypographyControls {
+    ReaderTypographyControls {
+        font_size: ReaderNumberControl {
+            minimum: 12.0,
+            maximum: 48.0,
+            step: 1.0,
+            default_value: 20.0,
+        },
+        line_spacing: ReaderNumberControl {
+            minimum: 0.0,
+            maximum: 32.0,
+            step: 2.0,
+            default_value: 8.0,
+        },
+        paragraph_spacing: ReaderNumberControl {
+            minimum: 0.0,
+            maximum: 32.0,
+            step: 1.0,
+            default_value: 7.0,
+        },
+    }
+}
+
 #[uniffi::export]
 pub fn default_reader_settings() -> ReaderSettings {
+    let controls = reader_typography_controls();
     ReaderSettings {
         mode: ReadingMode::Scroll,
-        font_size: 20.0,
-        line_spacing: 8.0,
+        font_size: controls.font_size.default_value,
+        line_spacing: controls.line_spacing.default_value,
         font: ReaderFont::System,
-        paragraph_spacing: 7.0,
+        paragraph_spacing: controls.paragraph_spacing.default_value,
         indent: ReadingIndent::Smart,
         horizontal_margin: 16.0,
         maximum_line_width: 680.0,
@@ -53,10 +96,23 @@ pub fn default_reader_settings() -> ReaderSettings {
 }
 
 pub(super) fn valid(settings: &ReaderSettings) -> bool {
+    let controls = reader_typography_controls();
     [
-        (settings.font_size, 12.0, 48.0),
-        (settings.line_spacing, 0.0, 32.0),
-        (settings.paragraph_spacing, 0.0, 32.0),
+        (
+            settings.font_size,
+            controls.font_size.minimum,
+            controls.font_size.maximum,
+        ),
+        (
+            settings.line_spacing,
+            controls.line_spacing.minimum,
+            controls.line_spacing.maximum,
+        ),
+        (
+            settings.paragraph_spacing,
+            controls.paragraph_spacing.minimum,
+            controls.paragraph_spacing.maximum,
+        ),
         (settings.horizontal_margin, 12.0, 48.0),
         (settings.maximum_line_width, 320.0, 1200.0),
     ]

@@ -1,0 +1,67 @@
+{% set preview = load_data(path="data/themes.json") %}
+{% set initial = [p for p in preview.palettes if p.id == "apricot-light"] | first %}
+{% set paper = [t for t in preview.textures if t.id == "paper-v1"] | first %}
+<section class="section preview-section" id="reading-preview">
+  <div class="rule" aria-hidden="true">☾</div>
+  <div class="preview-heading">
+    <h2 class="section-title">{% if zh %}找到喜欢的那一页。{% else %}Find a page that feels like yours.{% endif %}</h2>
+    <span class="release-label">{% if zh %}阅读预览{% else %}Reading preview{% endif %}</span>
+  </div>
+  <div class="preview-layout" data-asset-root="{{ get_url(path='/', trailing_slash=true) }}" data-lang="{{ section.lang }}">
+    <div class="reader-controls" id="readerControls" hidden>
+      <fieldset class="visual-field"><legend>{{ preview.labels.palette[section.lang] }}</legend>
+      {% for appearance in ["light", "dark"] %}
+        <div class="palette-row-label">{{ preview.labels[appearance][section.lang] }}</div>
+        <div class="palette-options">
+        {% for palette in preview.palettes %}{% if palette.appearance == appearance %}
+          <label class="choice" title="{{ palette.name[section.lang] }}">
+            <input type="radio" name="palette" value="{{ palette.id }}" aria-label="{{ palette.name[section.lang] }}"{% if palette.id == initial.id %} checked{% endif %}>
+            <span class="palette-swatch" aria-hidden="true" style="background:{{ palette.colors.paper }};color:{{ palette.colors.ink }}">{% if zh %}文{% else %}Aa{% endif %}</span>
+            <span class="choice-name">{{ palette.name[section.lang] | split(pat=" · ") | first }}</span>
+          </label>
+        {% endif %}{% endfor %}
+        </div>
+      {% endfor %}
+      </fieldset>
+      <fieldset class="visual-field"><legend>{{ preview.labels.texture[section.lang] }}</legend>
+        <div class="texture-options">
+          <label class="choice"><input type="radio" name="texture" value="none" aria-label="{{ preview.labels.none[section.lang] }}"><span class="texture-swatch" aria-hidden="true">∅</span><span>{{ preview.labels.none[section.lang] }}</span></label>
+        {% for texture in preview.textures %}
+          <label class="choice"><input type="radio" name="texture" value="{{ texture.id }}" aria-label="{{ texture.name[section.lang] }}"{% if texture.id == paper.id %} checked{% endif %}><span class="texture-swatch" aria-hidden="true"><span class="texture-ink" style="mask-image:url('{{ get_url(path=texture.path) }}');-webkit-mask-image:url('{{ get_url(path=texture.path) }}')"></span></span><span>{{ texture.name[section.lang] }}</span></label>
+        {% endfor %}
+        </div>
+      </fieldset>
+      <fieldset class="visual-field compact-field" id="strengthField"><legend>{{ preview.labels.strength[section.lang] }}</legend><div class="segments">
+      {% for strength in preview.strengths %}<label class="choice"><input type="radio" name="strength" value="{{ strength.id }}"{% if strength.id == "light" %} checked{% endif %}><span class="segment">{{ strength.name[section.lang] }}</span></label>{% endfor %}
+      </div></fieldset>
+      <fieldset class="visual-field compact-field"><legend>{{ preview.labels.font[section.lang] }}</legend><div class="segments">
+      {% for font in preview.fonts %}<label class="choice"><input type="radio" name="font" value="{{ font.id }}"{% if font.id == "serif" %} checked{% endif %}><span class="segment">{{ font.name[section.lang] }}</span></label>{% endfor %}
+      </div></fieldset>
+      <div class="number-settings">
+      {% for key in ["fontSize", "lineSpacing", "paragraphSpacing"] %}
+        {% set control = preview.controls[key] %}
+        <div class="setting-line"><span id="{{ key }}Label">{{ control.name[section.lang] }}</span><div class="stepper" role="group" aria-labelledby="{{ key }}Label">
+          <button type="button" data-adjust="{{ key }}" data-direction="-1" aria-label="{% if zh %}减小{% else %}Decrease {% endif %}{{ control.name[section.lang] }}">−</button>
+          <output id="{{ key }}Value" aria-live="polite">{{ control.defaultValue | int }} pt</output>
+          <button type="button" data-adjust="{{ key }}" data-direction="1" aria-label="{% if zh %}增大{% else %}Increase {% endif %}{{ control.name[section.lang] }}">+</button>
+        </div></div>
+      {% endfor %}
+      </div>
+      <p class="control-help">{% if zh %}只在这张纸上试读，不会改动 App 设置。{% else %}Try it here. Your settings in the app stay unchanged.{% endif %}</p>
+    </div>
+    <div>
+      <div class="reader-paper" id="readerPaper" style="--tile-size:{{ preview.tileSize }}px;background:{{ initial.colors.paper }};color:{{ initial.colors.ink }}">
+        <div class="texture-layer" id="textureLayer" style="background:{{ initial.colors.ink }};opacity:{{ initial.textureAlpha.light }};mask-image:url('{{ get_url(path=paper.path) }}');-webkit-mask-image:url('{{ get_url(path=paper.path) }}')"></div>
+        <div class="reader-scroll" id="readerScroll" tabindex="0" aria-label="{% if zh %}可滚动的阅读预览{% else %}Scrollable reading preview{% endif %}">
+          <div class="reader-kicker">{% if zh %}原创示例 / 月光下的归途{% else %}Original sample / The Way Home by Moonlight{% endif %}</div>
+          <article class="reader-text" id="readerText" style="font-size:{{ preview.controls.fontSize.defaultValue }}px;--paragraph:{{ preview.controls.paragraphSpacing.defaultValue }}px">
+            {% include "reader-sample.html" %}
+          </article>
+        </div>
+      </div>
+      <div class="reader-footer"><span>{% if zh %}原创示例正文 · 可滚动阅读{% else %}Original sample · Scroll to read{% endif %}</span><span>{% if zh %}颜色来自 App；字体与换行随设备略有不同。{% else %}App colors. Type and line breaks vary by device.{% endif %}</span></div>
+    </div>
+  </div>
+</section>
+<script id="readerPreviewData" type="application/json">{{ preview | json_encode | replace(from="<", to="\\u003c") | safe }}</script>
+<script>{% include "reader-preview-script.html" %}</script>

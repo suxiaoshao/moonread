@@ -21,8 +21,8 @@
 </div>
 <div class="device">
 <picture>
-<source media="(prefers-color-scheme: dark)" srcset="{{ get_url(path='images/reading-dark.png') }}">
-<img class="device-screen" src="{{ get_url(path='images/reading-light.png') }}" alt="{% if zh %}月读正文阅读真实截图{% else %}Actual Moonread reading screenshot in Chinese{% endif %}" width="1206" height="2622">
+<source media="(prefers-color-scheme: dark)" srcset="{{ get_url(path='images/' ~ section.lang ~ '/reading-dark.webp') }}">
+<img class="device-screen" src="{{ get_url(path='images/' ~ section.lang ~ '/reading-light.webp') }}" alt="{% if zh %}月读正文阅读真实截图{% else %}Actual Moonread reading screenshot{% endif %}" width="960" height="2087">
 </picture>
 <img class="device-frame" width="1350" height="2760" src="{{ get_url(path='images/iphone17-black.png') }}" alt="">
 </div>
@@ -42,7 +42,7 @@
 <h3>{% if zh %}文件夹，就是书架。{% else %}Your folders, your shelf.{% endif %}</h3>
 <p>{% if zh %}本地或 iCloud 中的 TXT，放进来就能读。按自己的方式整理，小说原文保持原样。{% else %}Read your own TXT files, on device or in iCloud. Organize them your way; the original text stays untouched.{% endif %}</p>
 <div class="shot-window">
-<img src="{{ get_url(path='images/bookshelf.png') }}" width="1206" height="2622" alt="{% if zh %}月读书架真实截图{% else %}Actual Moonread bookshelf screenshot in Chinese{% endif %}" loading="lazy">
+<img src="{{ get_url(path='images/' ~ section.lang ~ '/bookshelf.webp') }}" width="960" height="2087" alt="{% if zh %}月读书架真实截图{% else %}Actual Moonread bookshelf screenshot{% endif %}" loading="lazy">
 </div>
 <span class="caption">{% if zh %}本地文件 · iCloud · 标签{% else %}Local files · iCloud · Tags{% endif %}</span>
 </article>
@@ -52,7 +52,7 @@
 <h3>{% if zh %}调成喜欢的样子。{% else %}Make yourself comfortable.{% endif %}</h3>
 <p>{% if zh %}字号、行距、段间距，按阅读习惯调整。白天与夜里，各有舒服的配色。{% else %}Tune type size and spacing to your liking, with light and dark palettes for any time of day.{% endif %}</p>
 <div class="shot-window settings">
-<img src="{{ get_url(path='images/reading-settings.png') }}" width="1206" height="2622" alt="{% if zh %}月读阅读设置真实截图{% else %}Actual Moonread reading settings screenshot in Chinese{% endif %}" loading="lazy">
+<img src="{{ get_url(path='images/' ~ section.lang ~ '/reading-settings.webp') }}" width="960" height="2087" alt="{% if zh %}月读阅读设置真实截图{% else %}Actual Moonread reading settings screenshot{% endif %}" loading="lazy">
 </div>
 <span class="caption">{% if zh %}分页或滚动 · 浅色与深色{% else %}Paged or scrolling · Light and dark{% endif %}</span>
 </article>
@@ -62,7 +62,7 @@
 <h3>{% if zh %}喜欢的句子，留下来。{% else %}Keep the words that stay.{% endif %}</h3>
 <p>{% if zh %}标注、书签和随手记下的想法，和阅读位置一起保存。打开书时，再回到熟悉的地方。{% else %}Save a passage, a thought, or a bookmark alongside your reading position. Return to a familiar place.{% endif %}</p>
 <div class="shot-window notes">
-<img src="{{ get_url(path='images/annotations.png') }}" width="1206" height="2622" alt="{% if zh %}月读批注真实截图{% else %}Actual Moonread annotation screenshot in Chinese{% endif %}" loading="lazy">
+<img src="{{ get_url(path='images/' ~ section.lang ~ '/annotations.webp') }}" width="960" height="2087" alt="{% if zh %}月读批注真实截图{% else %}Actual Moonread annotation screenshot{% endif %}" loading="lazy">
 </div>
 <span class="caption">{% if zh %}书签 · 批注 · 阅读位置{% else %}Bookmarks · Notes · Reading position{% endif %}</span>
 </article>
@@ -91,6 +91,7 @@
 </ul>
 </section>
 
+{% if config.extra.reading_preview | default(value=false) %}{% include "reader-preview.html" %}{% endif %}
 <section class="section faq">
 <h2 class="section-title">{% if zh %}你可能还想知道{% else %}A few things to know{% endif %}</h2>
 <details>

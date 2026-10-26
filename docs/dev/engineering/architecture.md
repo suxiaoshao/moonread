@@ -28,7 +28,8 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 
 | 独立规则 | 唯一归属方 / 文件 | 理由与其他层边界 | #66 动作 |
 | --- | --- | --- | --- |
-| 阅读纹理 ID/强度、alpha 与偏好兼容解码 | Rust `themes.rs` | 两个可选本机槽；未知值归无，旧 night-v1 读作 grain-v1；接收 paper/ink，按 OKLab toe 修正后的 ΔLr 求 alpha，不做可读性门槛 | 单源 |
+| 阅读纹理 ID/强度、alpha、逻辑平铺周期与偏好兼容解码 | Rust `themes.rs` | App 与官网复用同一 256pt/CSS px 周期；两个可选本机槽；未知值归无，旧 night-v1 读作 grain-v1；接收 paper/ink，按 OKLab toe 修正后的 ΔLr 求 alpha，不做可读性门槛 | 单源 |
+| 字号、行距、段间距的默认值、范围与控件步长 | Rust `reading_layout.rs` | `reader_typography_controls` 同时供设置校验、Swift Stepper 和官网导出器使用；原生/浏览器字体度量各自归平台 | 单源 |
 | 纹理槽本机保存/回滚、最终系统来源禁用 | Swift `UserThemes` / `ThemeStore` / 阅读设置 | 使用既有 UserDefaults；不改 Palette、CloudKit 或备份 | 平台边界 |
 | 纸面 tile 与滚动/分页背景 | Swift `ThemeSurface` / `ReadingView` / `ReaderTitlePage` | 当前输入与 tile；复用容器/页面，不动正文布局 | 平台绘制 |
 | 解码、normalization-v1、正文/原字节 SHA 计算 | Rust `text.rs`、`source_identity.rs` 及正文导入共用核心 | 和正文缓存/稳定内容身份一致；Swift 不重算规范正文 | 保持 |
