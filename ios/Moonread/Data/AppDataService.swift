@@ -795,7 +795,7 @@ actor AppDataService {
 final class SourceFileAccess: @unchecked Sendable {
     private let bookmark: Data
     private let path: String
-    private let coordinator = NSFileCoordinator()
+    private let access = ProtectedFileAccess()
     private let lock = NSLock()
     private var cancelled = false
     private let progress: @Sendable (Double?) -> Void
@@ -807,7 +807,7 @@ final class SourceFileAccess: @unchecked Sendable {
     func cancel() {
         let monitor = lock.withLock { cancelled = true; return self.monitor }
         DispatchQueue.main.async { monitor?.stop() }
-        coordinator.cancel()
+        access.cancel()
     }
     private func checkCancellation() throws {
         if lock.withLock({ cancelled }) { throw CancellationError() }
@@ -817,11 +817,9 @@ final class SourceFileAccess: @unchecked Sendable {
             DispatchQueue.global(qos: .userInitiated).async { [self] in
                 continuation.resume(with: Result {
                     try checkCancellation()
-                    var stale = false
-                    let root = try URL(resolvingBookmarkData: bookmark, options: .withoutUI, bookmarkDataIsStale: &stale)
-                    let scoped = root.startAccessingSecurityScopedResource()
-                    defer { if scoped { root.stopAccessingSecurityScopedResource() } }
-                    let file = root.appendingPathComponent(path)
+                    let source = try ProtectedFileAccess.Source(bookmark: bookmark, relativePath: path)
+                    defer { withExtendedLifetime(source) {} }
+                    let file = source.url
                     // Metadata queries need a run loop. Only start/stop runs on
                     // main; coordinated access continues on this worker queue.
                     let isCloud = (try? file.resourceValues(forKeys: [.isUbiquitousItemKey]).isUbiquitousItem) == true
@@ -839,10 +837,8 @@ final class SourceFileAccess: @unchecked Sendable {
                         lock.withLock { self.monitor = nil }
                         DispatchQueue.main.async { monitor?.stop() }
                     }
-                    var error: NSError?
-                    var result: Result<Void, Error>?
-                    coordinator.coordinate(readingItemAt: file, options: [], error: &error) { url in
-                        result = Result {
+                    let result = Result {
+                        try access.read(at: file) { url in
                             try checkCancellation()
                             // Opening a handle verifies accessibility without loading the novel.
                             let handle = try FileHandle(forReadingFrom: url)
@@ -850,8 +846,6 @@ final class SourceFileAccess: @unchecked Sendable {
                         }
                     }
                     try checkCancellation()
-                    if let error { throw error }
-                    guard let result else { throw CocoaError(.fileReadUnknown) }
                     try result.get()
                 })
             }
@@ -920,13 +914,13 @@ private final class SourceImportWork: @unchecked Sendable {
     let control: ImportControl
     let source: ImportSource
     let encoding: String?
-    private let coordinator = NSFileCoordinator()
+    private let access = ProtectedFileAccess()
 
     private let gate = NSCondition()
     private var stopped = false
     func cancel() {
         gate.lock(); stopped = true; gate.broadcast(); gate.unlock()
-        control.pause(); coordinator.cancel()
+        control.pause(); access.cancel()
     }
     private func waitForDiagnosticGate() throws {
         #if READER_OPEN_DIAGNOSTICS
@@ -946,39 +940,29 @@ private final class SourceImportWork: @unchecked Sendable {
             defer { event(.finished) }
             do {
                 try waitForDiagnosticGate()
-                var stale = false
-                let root = try URL(resolvingBookmarkData: source.rootBookmark, options: .withoutUI, bookmarkDataIsStale: &stale)
-                let accessed = root.startAccessingSecurityScopedResource()
-                defer { if accessed { root.stopAccessingSecurityScopedResource() } }
-                let file = root.appendingPathComponent(source.relativePath)
-                var coordinationError: NSError?
-                var result: Result<Void, Error>?
-                coordinator.coordinate(readingItemAt: file, options: [], error: &coordinationError) { url in
-                    result = Result {
-                        ReaderOpenDiagnostics.worker(control.bookId(), "accessor")
-                        let digest = try core.hashImportSource(control: control, filePath: url.path)
-                        guard source.expectedRawSHA == nil || source.expectedRawSHA == digest else { throw ReaderError.SourceChanged }
-                        ReaderOpenDiagnostics.worker(control.bookId(), "rawHashEnd")
-                        let initial = try core.importStatus(bookId: control.bookId())
-                        let key = SourceContentKey(rawSha256: digest, decoding: encoding ?? "auto")
-                        try core.validateImportSource(control: control, key: key)
-                        if initial.text.chunkCount == 0,
-                           let cached = try core.sourceBook(key: key) {
-                            try core.reuseImport(control: control, existingId: cached.id)
-                            ReaderOpenDiagnostics.worker(control.bookId(), "reuseReturned")
-                            event(.ready)
-                            return
-                        }
-                        try core.streamImport(control: control, filePath: url.path,
-                                              expectedRawSha256: digest, encodingOverride: encoding)
-                        _ = try core.finishImport(control: control)
-                        ReaderOpenDiagnostics.worker(control.bookId(), "finishReturned")
+                let authorized = try ProtectedFileAccess.Source(bookmark: source.rootBookmark, relativePath: source.relativePath)
+                defer { withExtendedLifetime(authorized) {} }
+                try access.read(at: authorized.url) { url in
+                    ReaderOpenDiagnostics.worker(control.bookId(), "accessor")
+                    let digest = try core.hashImportSource(control: control, filePath: url.path)
+                    guard source.expectedRawSHA == nil || source.expectedRawSHA == digest else { throw ReaderError.SourceChanged }
+                    ReaderOpenDiagnostics.worker(control.bookId(), "rawHashEnd")
+                    let initial = try core.importStatus(bookId: control.bookId())
+                    let key = SourceContentKey(rawSha256: digest, decoding: encoding ?? "auto")
+                    try core.validateImportSource(control: control, key: key)
+                    if initial.text.chunkCount == 0,
+                       let cached = try core.sourceBook(key: key) {
+                        try core.reuseImport(control: control, existingId: cached.id)
+                        ReaderOpenDiagnostics.worker(control.bookId(), "reuseReturned")
                         event(.ready)
+                        return
                     }
+                    try core.streamImport(control: control, filePath: url.path,
+                                          expectedRawSha256: digest, encodingOverride: encoding)
+                    _ = try core.finishImport(control: control)
+                    ReaderOpenDiagnostics.worker(control.bookId(), "finishReturned")
+                    event(.ready)
                 }
-                if let coordinationError { throw coordinationError }
-                guard let result else { throw CocoaError(.fileReadUnknown) }
-                try result.get()
             } catch {
                 let state = try? core.importStatus(bookId: control.bookId())
                 // Rust records typed failures; presentation localizes them in the current language.

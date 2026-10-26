@@ -117,3 +117,66 @@ final class FileAccessBoundaryLibraryTrashTests: LibraryTrashFixture {
     XCTAssertNil(try core.libraryShelves().first { $0.id == other }?.error)
   }
 }
+
+final class ProtectedFileAccessTests: XCTestCase {
+  func testContainedAliasesRejectSiblingEscapeAndRestorationLeafSymlink() throws {
+    let fm = FileManager.default
+    let directory = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? fm.removeItem(at: directory) }
+    let root = directory.appendingPathComponent("shelf")
+    let sibling = directory.appendingPathComponent("shelf-other")
+    try fm.createDirectory(at: root, withIntermediateDirectories: true)
+    try fm.createDirectory(at: sibling, withIntermediateDirectories: true)
+    let file = root.appendingPathComponent("book.txt")
+    try Data("Synthetic source".utf8).write(to: file)
+    let alias = directory.appendingPathComponent("alias")
+    try fm.createSymbolicLink(at: alias, withDestinationURL: root)
+    let source = try ProtectedFileAccess.Source(bookmark: alias.bookmarkData(), relativePath: "book.txt")
+    defer { withExtendedLifetime(source) {} }
+    let direct = try ProtectedFileAccess.Source(bookmark: root.bookmarkData(), relativePath: "book.txt")
+    defer { withExtendedLifetime(direct) {} }
+    XCTAssertTrue(try direct.availableDirectory())
+    XCTAssertNoThrow(try source.requireContained())
+    XCTAssertNoThrow(try source.validateRestoration())
+    XCTAssertThrowsError(try source.requireContained(sibling.appendingPathComponent("book.txt")))
+    let escaped = try ProtectedFileAccess.Source(bookmark: root.bookmarkData(), relativePath: "../shelf-other/book.txt")
+    defer { withExtendedLifetime(escaped) {} }
+    XCTAssertThrowsError(try escaped.requireContained())
+    let link = root.appendingPathComponent("link.txt")
+    try fm.createSymbolicLink(at: link, withDestinationURL: file)
+    XCTAssertNoThrow(try source.requireContained(link), "An in-root alias is contained; restoration separately rejects leaf links")
+    XCTAssertThrowsError(try source.validateRestoration(link))
+    let trash = directory.appendingPathComponent(".Trash/shelf")
+    try fm.createDirectory(at: trash, withIntermediateDirectories: true)
+    let discarded = try ProtectedFileAccess.Source(bookmark: trash.bookmarkData(), relativePath: "book.txt")
+    defer { withExtendedLifetime(discarded) {} }
+    XCTAssertFalse(try discarded.availableDirectory())
+    XCTAssertThrowsError(try discarded.validateRestoration())
+  }
+
+  func testReadPreservesAccessorErrorsAndSuccessfulNil() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try Data("Original synthetic bytes".utf8).write(to: file)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let access = ProtectedFileAccess()
+    enum Failure: Error { case accessor }
+    XCTAssertThrowsError(try access.read(at: file) { _ in throw Failure.accessor }) { error in
+      XCTAssertTrue(error is Failure)
+    }
+    let value: String? = try access.read(at: file) { _ in nil }
+    XCTAssertNil(value, "A delivered nil is not a missing accessor")
+    XCTAssertThrowsError(try ProtectedFileAccess.Source(bookmark: Data(), relativePath: "book.txt"))
+  }
+
+  func testCancellationDoesNotRunAsyncAccessor() async throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    try Data("Synthetic bytes".utf8).write(to: file)
+    defer { try? FileManager.default.removeItem(at: file) }
+    let access = ProtectedFileAccess()
+    access.cancel()
+    do {
+      _ = try await access.readAsync(at: file) { _ in XCTFail("Cancelled access must not start source I/O"); return true }
+      XCTFail("Expected cancellation")
+    } catch is CancellationError { }
+  }
+}

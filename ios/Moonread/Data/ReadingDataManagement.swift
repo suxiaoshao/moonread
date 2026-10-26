@@ -122,14 +122,12 @@ extension AppDataService {
         } else { rootBookmark = source.rootBookmark }
         try validateRelativePath(path: result.source, allowRoot: false)
         do {
-            var stale = false
-            let root = try URL(resolvingBookmarkData: rootBookmark, options: .withoutUI, bookmarkDataIsStale: &stale)
-            let access = root.startAccessingSecurityScopedResource()
-            defer { if access { root.stopAccessingSecurityScopedResource() } }
-            guard !root.pathComponents.contains(".Trash"), try root.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else {
+            let source = try ProtectedFileAccess.Source(bookmark: rootBookmark, relativePath: result.source)
+            defer { withExtendedLifetime(source) {} }
+            guard try source.availableDirectory() else {
                 result.sourceState = result.shelfID == nil ? .missing : .reconnect; return result
             }
-            let file = root.appendingPathComponent(result.source)
+            let file = source.url
             do {
                 let metadata = try file.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey])
                 result.sourceState = metadata.isRegularFile == true && metadata.isSymbolicLink != true ? .available : .missing
@@ -258,19 +256,17 @@ extension AppDataService {
     }
     func previewReadingBackup(_ url: URL) async throws -> ReadingBackupPreview {
         let revision = userCloudConfigurationRevision
-        let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
+        let source = ProtectedFileAccess.Source(selectedFile: url)
+        defer { withExtendedLifetime(source) {} }
         let directory = try backupDirectory("import")
         inFlightBackupDirectories.insert(directory)
         defer { inFlightBackupDirectories.remove(directory) }
         do {
             let info = try await Task.detached(priority: .utility) {
-                let coordinator = NSFileCoordinator(); var coordinationError: NSError?
-                var result: Result<BackupArchiveInfo, Error>?
-                coordinator.coordinate(readingItemAt: url, options: [], error: &coordinationError) { readable in
-                    result = Result { try inspectBackup(archivePath: readable.path, stagingRoot: directory.path) }
+                let info = try ProtectedFileAccess().coordinatedRead(at: source.url) { readable in
+                    try inspectBackup(archivePath: readable.path, stagingRoot: directory.path)
                 }
-                if let coordinationError { throw coordinationError }
-                guard let result else { throw ReadingDataError.invalid }; return try result.get()
+                guard let info else { throw ReadingDataError.invalid }; return info
             }.value
             try Task.checkCancellation()
             let manifest = try JSONDecoder().decode(BackupManifest.self, from: Data(info.manifestJson.utf8))

@@ -51,6 +51,8 @@ Swift 按回收后仍存在的任务 ID 清理 `importSource` 授权描述和 `s
 
 ## 流式管线与并行
 
+开书预检、正文导入、索引、最近阅读恢复和缓存验证共用 `Data/ProtectedFileAccess.swift`：书签解析、安全作用域和协调读取只在此实现；各入口原有的下载、路径准入和取消错误映射保持不变。安全作用域覆盖多阶段读取，协调 accessor 内不等待 actor。
+
 1. `LibraryModel.open` 调用 `AppDataService.prepareSourceFile`：独立队列取得 security scope 和 `NSFileCoordinator` 协调读取，等待提供方完成文件落地并验证可打开句柄。此时不创建 Rust import、不读取全文、不改变阅读记录。取消或导航离开后不再进入阅读。
 2. 就绪后进入 `.source` 路由并创建正文处理任务。工作队列重新协调读访问；原始 SHA 读取、探测、流式读取与字节复核和完成提交都在 accessor 生命周期内进行，最后才释放权限。书架预取不替代读取过程中的权限和字节校验。
 3. Rust 使用有界缓冲完成解码、规范化、SHA 和章节扫描。约 12 KiB 一个块，优先换行并保留完整扩展字素簇（含组合重音和 emoji ZWJ 序列）；尾部保留 lookahead，单个字素簇可延伸至 64 KiB；更长时仅在 Unicode 标量边界拆成有界片段，正文码点与顺序不变，极端组合的显示／选区可能降级。首个可见块立即短事务提交，后续按约 128 KiB 或 80ms 批量提交。

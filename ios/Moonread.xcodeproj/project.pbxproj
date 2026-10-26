@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4DF6E88FEFC27B5FF2E847AD /* ProtectedFileAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */; };
 		6FE466A10D361A647F688D3A /* SourceDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */; };
 		FF97A598EBE17BAA6A938B5F /* SourceDecodingPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F3544F22AA3B4C3242F849D /* SourceDecodingPreferences.swift */; };
 		65ECA15E2CC74AE98456F117 /* ReadingModePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8E428810AD14CC69F07A0DC /* ReadingModePicker.swift */; };
@@ -325,6 +326,7 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectedFileAccess.swift; sourceTree = "<group>"; };
 		B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceDecodingTests.swift; sourceTree = "<group>"; };
 		2F3544F22AA3B4C3242F849D /* SourceDecodingPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceDecodingPreferences.swift; sourceTree = "<group>"; };
 		B8E428810AD14CC69F07A0DC /* ReadingModePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingModePicker.swift"; sourceTree = "<group>"; };
@@ -966,6 +968,7 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
                 D50620000000000000000001 /* UserDataBackup.swift */,
 				A20000000000000000000002 /* AppDataService.swift */,
 				7FE1A12BC743430DA09B92A0 /* ReadingContinuation.swift */,
+				80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */,
 				2F3544F22AA3B4C3242F849D /* SourceDecodingPreferences.swift */,
 				C22000000000000000000001 /* UserData.swift */,
                 FF2000000000000000000001,
@@ -1376,6 +1379,7 @@ F01900000000000000000001,
 				A10000000000000000000002 /* AppDataService.swift in Sources */,
 				1513FFF184D943E0B24401D6 /* ReadingContinuationBanner.swift in Sources */,
 				A24F794D4BB7412191A19329 /* ReadingContinuation.swift in Sources */,
+				4DF6E88FEFC27B5FF2E847AD /* ProtectedFileAccess.swift in Sources */,
 				FF97A598EBE17BAA6A938B5F /* SourceDecodingPreferences.swift in Sources */,
 				A10000000000000000000003 /* LibraryView.swift in Sources */,
                 AF1000000000000000000002 /* LibraryPresentation.swift in Sources */,
