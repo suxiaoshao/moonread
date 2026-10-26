@@ -174,7 +174,7 @@ struct MoonreadApp: App {
             guard await library.load() else { return }
             library.selectedTab = .library
             if url.pathExtension.lowercased() == "moonread-backup" {
-                library.libraryPath = [.settings, .dataManagement]
+                library.openSettings(origin: .library, target: .data)
                 await library.dataManagement.prepareImport(url)
             } else { library.receiveSystemURLs([url]) }
         }
@@ -220,7 +220,7 @@ private struct MoonreadRoot: View {
             .environment(\.readerTheme, readerTheme)
             .onChange(of: library.libraryPath) { _, _ in library.cancelOpeningForNavigationChange(); library.returnedToLibrary() }
             .onChange(of: library.statisticsPath) { _, _ in library.cancelOpeningForNavigationChange() }
-            .onChange(of: library.settingsPath) { _, _ in library.cancelOpeningForNavigationChange() }
+            .onChange(of: library.settingsNavigation.path) { _, _ in library.cancelOpeningForNavigationChange() }
             .onChange(of: library.searchPath) { _, _ in library.cancelOpeningForNavigationChange() }
             .onChange(of: library.selectedTab) { _, _ in library.cancelOpeningForNavigationChange() }
             .onReceive(NotificationCenter.default.publisher(for: .libraryFilesChanged).receive(on: DispatchQueue.main)) { _ in library.retryPendingCloudDiscovery(); library.scheduleRefresh() }
@@ -261,15 +261,18 @@ private struct MoonreadRoot: View {
 
     private var tabs: some View {
         TabView(selection: $library.selectedTab) {
-            Tab("书架", systemImage: "books.vertical", value: AppTab.library) { libraryStack }
+            Tab("书架", systemImage: "books.vertical", value: AppTab.library) { settingsSlot(.library) { libraryStack } }
             if ai.availability.isAvailable {
-                Tab("对话", systemImage: "bubble.left.and.bubble.right", value: AppTab.conversations) { AIConversationsView() }
+                Tab("对话", systemImage: "bubble.left.and.bubble.right", value: AppTab.conversations) { settingsSlot(.conversations) { AIConversationsView() } }
             }
-            Tab("统计", systemImage: "chart.bar.xaxis", value: AppTab.statistics) { statisticsStack }
+            Tab("统计", systemImage: "chart.bar.xaxis", value: AppTab.statistics) { settingsSlot(.statistics) { statisticsStack } }
             if !ai.availability.isAvailable {
-                Tab("设置", systemImage: "gearshape", value: AppTab.settings) { settingsStack }
+                Tab("设置", systemImage: "gearshape", value: AppTab.settings) {
+                    if library.settingsNavigation.tab == nil || library.settingsNavigation.tab == .settings { settingsStack }
+                    else { Color.clear }
+                }
             }
-            Tab("搜索", systemImage: "magnifyingglass", value: AppTab.search, role: .search) { searchStack }
+            Tab("搜索", systemImage: "magnifyingglass", value: AppTab.search, role: .search) { settingsSlot(.search) { searchStack } }
         }
         .modifier(AppSearchActivation())
         .onChange(of: ai.availability.isAvailable, initial: true) { _, available in
@@ -293,10 +296,16 @@ private struct MoonreadRoot: View {
         .modifier(AppSearchField(model: library, search: library.search, quickEntry: true))
     }
     private var settingsStack: some View {
-        NavigationStack(path: $library.settingsPath) {
-            SettingsView(library: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
+        SettingsView(library: library, navigation: library.settingsNavigation)
+    }
+    private func settingsSlot<Content: View>(_ tab: AppTab, @ViewBuilder content: () -> Content) -> some View {
+        let active = library.settingsNavigation.tab == tab
+        return ZStack {
+            content().opacity(active ? 0 : 1).allowsHitTesting(!active).accessibilityHidden(active)
+            if active { settingsStack }
         }
     }
+
 }
 
 /// The page for a library route. Every navigation stack, and the search pushed
@@ -324,10 +333,9 @@ struct LibraryDestination: View {
         case .statistics(let target): StatisticsView(library: library, target: target)
         case .conversation(let id, let anchor):
             if ai.availability.isAvailable { AIChatView(conversationID: id, anchor: anchor) }
-        // This route is consumed only by SettingsView's detail stack.
-        case .settingsTask: EmptyView()
-        case .settings: SettingsView(library: library, returnsToApp: true)
-        case .dataManagement: DataManagementView(model: library.dataManagement)
+        // Also supports existing contextual entries without creating a workspace.
+        case .settingsTask(let task): SettingsTaskContent(task: task, library: library, navigation: library.settingsNavigation)
+        case .settingsPalette(let appearance): PalettePicker(reader: false, appearance: appearance)
         case .search(let scope): AppSearchPage(model: library, scope: scope)
         }
     }

@@ -81,6 +81,18 @@ enum ReadingSettingsTab: String, CaseIterable {
     }
 }
 
+@MainActor @Observable final class ReadingSettingsEditing {
+    var editedAppearance: ThemeAppearance?
+    var previewPresented = false
+    var previewDetent = PresentationDetent.height(60)
+    var restingDetent = PresentationDetent.height(60)
+    var draft: PaletteDraft?
+    var navigation = NavigationPresentationState()
+    var previewPosition = ReadingPreviewPosition()
+    var previewVisible = false
+    var appeared = false
+}
+
 struct ReaderSettingsView: View {
     @Binding var settings: ReaderSettings
     let preview: ReadingPreviewSource
@@ -93,18 +105,51 @@ struct ReaderSettingsView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(\.displayScale) private var displayScale
     @AppStorage("readingSettingsTab") private var tab = ReadingSettingsTab.typography
-    @State private var editedAppearance: ThemeAppearance?
-    @State private var previewPresented = false
-    @State private var previewDetent = PresentationDetent.height(60)
-    @State private var restingDetent = PresentationDetent.height(60)
-    @State private var draft: PaletteDraft?
-    @State private var navigation = NavigationPresentationState()
-    @State private var previewPosition = ReadingPreviewPosition()
-    @State private var previewVisible = false
-    @State private var appeared = false
+    @State private var localEditing = ReadingSettingsEditing()
+    let editing: ReadingSettingsEditing?
+    let keepsTabBar: Bool
+    private var editor: ReadingSettingsEditing { editing ?? localEditing }
+    private var editedAppearance: ThemeAppearance? {
+        get { editor.editedAppearance }
+        nonmutating set { editor.editedAppearance = newValue }
+    }
+    private var previewPresented: Bool {
+        get { editor.previewPresented }
+        nonmutating set { editor.previewPresented = newValue }
+    }
+    private var previewDetent: PresentationDetent {
+        get { editor.previewDetent }
+        nonmutating set { editor.previewDetent = newValue }
+    }
+    private var restingDetent: PresentationDetent {
+        get { editor.restingDetent }
+        nonmutating set { editor.restingDetent = newValue }
+    }
+    private var draft: PaletteDraft? {
+        get { editor.draft }
+        nonmutating set { editor.draft = newValue }
+    }
+    private var navigation: NavigationPresentationState {
+        get { editor.navigation }
+        nonmutating set { editor.navigation = newValue }
+    }
+    private var previewPosition: ReadingPreviewPosition {
+        get { editor.previewPosition }
+        nonmutating set { editor.previewPosition = newValue }
+    }
+    private var previewVisible: Bool {
+        get { editor.previewVisible }
+        nonmutating set { editor.previewVisible = newValue }
+    }
+    private var appeared: Bool {
+        get { editor.appeared }
+        nonmutating set { editor.appeared = newValue }
+    }
 
-    init(settings: Binding<ReaderSettings>, preview: ReadingPreviewSource = .sample, encoding: String? = nil, isRestartingEncoding: Bool = false, changeEncoding: ((String?) -> Void)? = nil) {
+    init(settings: Binding<ReaderSettings>, preview: ReadingPreviewSource = .sample, encoding: String? = nil, isRestartingEncoding: Bool = false, changeEncoding: ((String?) -> Void)? = nil,
+         editing: ReadingSettingsEditing? = nil, keepsTabBar: Bool = false) {
         _settings = settings; self.preview = preview; self.encoding = encoding; self.isRestartingEncoding = isRestartingEncoding; self.changeEncoding = changeEncoding
+        self.editing = editing; self.keepsTabBar = keepsTabBar
     }
     private var appearance: ThemeAppearance { editedAppearance ?? themes.reader.plan.appearance }
     private var previewExpanded: Bool { verticalSizeClass == .compact || previewDetent == .large }
@@ -123,6 +168,7 @@ struct ReaderSettingsView: View {
         return ThemeSurface(plan: plan.reader, readerTexture: texture)
     }
     var body: some View {
+        @Bindable var editing = editor
         GeometryReader { geometry in
             // Keep enough room for both native controls and readable text.
             let wide = geometry.size.width >= 760
@@ -131,7 +177,7 @@ struct ReaderSettingsView: View {
             let frame = geometry.frame(in: .global)
             let mediumHeight = max(0, (frame.maxY + geometry.safeAreaInsets.bottom) / 2 - frame.minY - LayoutTokens.control)
             HStack(spacing: 0) {
-                ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editedAppearance, encoding: encoding, isRestartingEncoding: isRestartingEncoding, changeEncoding: changeEncoding,
+                ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editing.editedAppearance, encoding: encoding, isRestartingEncoding: isRestartingEncoding, changeEncoding: changeEncoding,
                                      editPalette: { value in
                                          if !wide && previewPresented { previewDetent = .large }
                                          draft = value
@@ -167,7 +213,7 @@ struct ReaderSettingsView: View {
             .navigationTitle("阅读设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarVisibility(.visible, for: .navigationBar)
-            .toolbarVisibility(.hidden, for: .tabBar)
+            .toolbarVisibility(keepsTabBar ? .automatic : .hidden, for: .tabBar)
             .statusBarHidden(false)
             .background(NavigationTransitionObserver(willLeave: { _ in
                 previewPosition.capture()
@@ -177,7 +223,7 @@ struct ReaderSettingsView: View {
                 navigation.appear()
                 if !appeared {
                     appeared = true
-                    previewPresented = verticalSizeClass != .compact
+                    previewPresented = !keepsTabBar && verticalSizeClass != .compact
                 }
             }
             .sheet(item: Binding(get: { !wide && previewPresented ? nil : draft }, set: { draft = $0 })) { value in
@@ -221,7 +267,7 @@ struct ReaderSettingsView: View {
                 .clipped()
                 .padding(.top, LayoutTokens.control)
                 .presentationSizing(.page)
-                .presentationDetents([.height(60), .medium, .large], selection: $previewDetent)
+                .presentationDetents([.height(60), .medium, .large], selection: $editing.previewDetent)
                 .presentationDragIndicator(.visible)
                 .presentationContentInteraction(.resizes)
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
@@ -233,7 +279,7 @@ struct ReaderSettingsView: View {
                 .preferredColorScheme(previewTheme.scheme)
                 .interactiveDismissDisabled()
                 .onAppear { previewVisible = true }
-                .sheet(item: $draft, onDismiss: {
+                .sheet(item: $editing.draft, onDismiss: {
                     if verticalSizeClass != .compact { previewDetent = .height(60) }
                 }) { value in
                     paletteEditor(value)
@@ -251,9 +297,7 @@ struct ReaderSettingsView: View {
     }
 
     private func paletteEditor(_ value: PaletteDraft) -> some View {
-        PaletteEditor(initial: value.palette, creating: value.creating, showsAppPreview: false) { palette in
-            draft?.palette = palette
-        }
+        PaletteEditor(draft: value, showsAppPreview: false)
         .themeScope(theme)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
