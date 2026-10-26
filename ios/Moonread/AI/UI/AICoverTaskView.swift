@@ -126,7 +126,7 @@ struct AICoverPreview: View {
                         Button { openURL(url) } label: { Label("来源", systemImage: "safari") }.frame(minHeight: LayoutTokens.hit)
                     }
                 }.padding(LayoutTokens.content)
-            }
+            }.pageScrollMargins()
             // The decision stays reachable without scrolling past the image.
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: LayoutTokens.compact) {

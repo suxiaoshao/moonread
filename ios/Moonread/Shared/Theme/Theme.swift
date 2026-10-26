@@ -7,6 +7,7 @@ enum LayoutTokens {
     static let content: CGFloat = 16
     static let page: CGFloat = 20
     static let section: CGFloat = 24
+    static let pageBottomSpacing: CGFloat = 32
     static let hit: CGFloat = 44
     static let inputRadius: CGFloat = 16
     static let floatingRadius: CGFloat = 20
@@ -338,5 +339,13 @@ extension View {
     func themeScope(_ theme: ThemeSurface) -> some View {
         environment(\.theme, theme).environment(\.colorScheme, theme.scheme)
             .foregroundStyle(Color(uiColor: theme.ink)).tint(Color(uiColor: theme.accent))
+    }
+}
+
+// Opt in only at a page's scrolling container. Theme styling also wraps Lists,
+// reader tools and nested content, so it must not add scroll margins globally.
+extension ScrollView {
+    func pageScrollMargins() -> some View {
+        contentMargins(.bottom, LayoutTokens.pageBottomSpacing, for: .scrollContent)
     }
 }

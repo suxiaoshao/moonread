@@ -57,7 +57,7 @@ struct AIConnectionView: View {
 
                 }.padding(24).frame(maxWidth: 600, alignment: .leading).frame(maxWidth: .infinity)
             }
-        }.themedPage().navigationTitle("AI 连接").navigationBarTitleDisplayMode(.inline)
+        }.pageScrollMargins().themedPage().navigationTitle("AI 连接").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) { Text("AI 连接").font(.headline).foregroundStyle(Color(uiColor: theme.ink)) }
 

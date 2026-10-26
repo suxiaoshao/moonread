@@ -424,7 +424,7 @@ struct LibraryAllBooksView: View {
                             }
                         }.padding(.leading, LayoutTokens.page).padding(.trailing, LayoutTokens.page + 20)
                             .padding(.vertical, LayoutTokens.control)
-                    }.themedPage().accessibilityIdentifier("libraryGrid")
+                    }.pageScrollMargins().themedPage().accessibilityIdentifier("libraryGrid")
                         .modifier(LibraryGridTestGeometry())
                 }
             }
@@ -513,7 +513,7 @@ struct LibraryAllBooksView: View {
                         }
                     }
                 }.padding(.horizontal, LayoutTokens.page).padding(.vertical, LayoutTokens.control)
-            }.themedPage().accessibilityIdentifier("libraryTagGrid")
+            }.pageScrollMargins().themedPage().accessibilityIdentifier("libraryTagGrid")
         }
     }
 

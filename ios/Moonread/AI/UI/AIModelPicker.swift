@@ -451,7 +451,7 @@ struct AIModelDetailView: View {
                         .frame(maxWidth: .infinity).accessibilityIdentifier("applyAIModelDetail")
                 }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
             } else { ContentUnavailableView("模型不可用", systemImage: "sparkles") }
-        }.accessibilityIdentifier("aiModelDetails").themedPage().navigationTitle("模型详情").navigationBarTitleDisplayMode(.inline)
+        }.pageScrollMargins().accessibilityIdentifier("aiModelDetails").themedPage().navigationTitle("模型详情").navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 guard !initialized, let connection, let model else { return }
                 var value = initialSelection ?? ai.modelSelection(for: target) ?? AIModelSelection(connectionID: connectionID, modelID: modelID, thinking: nil)

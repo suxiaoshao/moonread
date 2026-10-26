@@ -27,7 +27,7 @@ struct StatisticsDayView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }.padding(20).frame(maxWidth: 1200).frame(maxWidth: .infinity)
-            }
+            }.pageScrollMargins()
         }
         .themedPage()
         .navigationTitle(StatisticsDates.dateLabel(route.day, full: true)).navigationBarTitleDisplayMode(.inline)

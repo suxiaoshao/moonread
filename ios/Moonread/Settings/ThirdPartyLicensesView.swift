@@ -67,7 +67,7 @@ struct ThirdPartyLicensesView: View {
             .padding()
             .frame(maxWidth: 760, alignment: .leading)
             .frame(maxWidth: .infinity)
-        }
+        }.pageScrollMargins()
         .themedPage()
         .navigationTitle("第三方许可").navigationBarTitleDisplayMode(.inline)
         .accessibilityIdentifier("thirdPartyNoticesScroll")

@@ -97,7 +97,7 @@ struct AIMetadataResultReview: View {
                     }.padding(LayoutTokens.content).disabled(saving)
                 } else if let error = ai.proposals.lastErrors[resultID] { Text(verbatim: error).padding() }
                 else { ProgressView().padding() }
-            }.accessibilityIdentifier("aiMetadataReviewScroll").themedPage().navigationTitle("资料建议").navigationBarTitleDisplayMode(.inline)
+            }.pageScrollMargins().accessibilityIdentifier("aiMetadataReviewScroll").themedPage().navigationTitle("资料建议").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("关闭", systemImage: "xmark") { dismiss() }.disabled(saving) } }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if let review, case .metadata(let metadata) = review.body {

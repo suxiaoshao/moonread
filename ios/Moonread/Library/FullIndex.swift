@@ -383,7 +383,7 @@ struct FullIndexView: View {
                         }
                     }
                 }.padding().frame(maxWidth: .infinity, alignment: .leading)
-            }.themedPage().navigationTitle(Text("建立索引", tableName: "FullIndex"))
+            }.pageScrollMargins().themedPage().navigationTitle(Text("建立索引", tableName: "FullIndex"))
             .safeAreaInset(edge: .bottom) { primaryButton.padding().frame(maxWidth: .infinity).background(Color(uiColor: theme.canvas)) }
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button { dismiss() } label: { Text("完成") } } }
             .task(id: controller.running) { await loadInventory() }
