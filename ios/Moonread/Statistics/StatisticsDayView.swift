@@ -12,14 +12,21 @@ struct StatisticsDayView: View {
     private var total: UInt64 { spans.reduce(0) { $0 + $1.milliseconds } }
     var body: some View {
         GeometryReader { geometry in
-            if geometry.size.width >= 760, !spans.isEmpty {
-                HStack(alignment: .top, spacing: 0) {
-                    List { summary }
-                        .frame(width: min(380, geometry.size.width * 0.42))
-                    List { sessions }
-                }
-            } else {
-                List { if !spans.isEmpty { summary; sessions } }
+            ScrollView {
+                let wide = geometry.size.width >= 760
+                let layout = wide ? AnyLayout(HStackLayout(alignment: .top, spacing: 28)) : AnyLayout(VStackLayout(alignment: .leading, spacing: 24))
+                layout {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(StatisticsDates.dateLabel(route.day, full: true)).font(.title.weight(.semibold))
+                        Text("当天阅读节奏").font(.headline)
+                        Text("按当天的时间顺序排列阅读时段。").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                    }.frame(width: wide ? min(360, geometry.size.width * 0.4) : nil)
+                        .frame(maxWidth: wide ? nil : .infinity, alignment: .leading)
+                    if !spans.isEmpty {
+                        VStack(alignment: .leading, spacing: 24) { summary; sessions }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }.padding(20).frame(maxWidth: 1200).frame(maxWidth: .infinity)
             }
         }
         .themedPage()
@@ -51,17 +58,24 @@ struct StatisticsDayView: View {
                 .foregroundStyle(Color(uiColor: theme.destructive))
                 .listRowBackground(Color.clear).listRowSeparator(.hidden)
         }
-        Section {
-            Text(StatisticsDates.duration(total)).font(.title2.weight(.semibold)).monospacedDigit()
+        VStack(alignment: .leading, spacing: 12) {
+            Text("当天累计").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+            Text(StatisticsDates.duration(total)).font(.largeTitle.weight(.semibold)).monospacedDigit()
             ReadingSessionsChart(spans: spans, singleBook: false)
-        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+        }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
     }
     private var sessions: some View {
-        Section {
-            ForEach(spans.reversed()) { ReadingSessionRow(span: $0, showBook: route.book == nil) }
-        } header: { Text("阅读时段") } footer: {
-            if let compatibilityNotice { Text(compatibilityNotice).foregroundStyle(Color(uiColor: theme.secondary)) }
-        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+        VStack(alignment: .leading, spacing: 12) {
+            Text("阅读时段").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
+            VStack(spacing: 0) {
+                ForEach(spans.reversed()) { span in
+                    ReadingSessionRow(span: span, showBook: route.book == nil).padding(16)
+                    if span.id != spans.first?.id { ThemedDivider() }
+                }
+            }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
+            if let compatibilityNotice { Text(compatibilityNotice).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
+        }
     }
     private func load() async {
         do {

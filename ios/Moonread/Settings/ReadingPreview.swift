@@ -70,7 +70,9 @@ struct ReadingPreviewPane: View {
             HStack {
                 Text(verbatim: source.title).font(.caption).lineLimit(1)
                 Spacer()
+                Text("\(Int(settings.fontSize)) pt").font(.caption).monospacedDigit()
             }
+            .padding(.vertical, 12)
             .foregroundStyle(Color(uiColor: surface.secondary))
             .padding(.horizontal, LayoutTokens.content)
             ReadingPreviewText(source: source, settings: settings, surface: surface, position: position)

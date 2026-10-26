@@ -52,7 +52,8 @@ struct PalettePicker: View {
     }
     var body: some View {
         Group {
-            if embedded { paletteList }
+            if reader && embedded { embeddedPalettes }
+            else if embedded { paletteList }
             else {
                 paletteList.navigationTitle(appearance == .light ? "浅色时的配色" : "深色时的配色")
                     .navigationBarTitleDisplayMode(.inline)
@@ -65,6 +66,41 @@ struct PalettePicker: View {
                 deleting = nil
             }
         } message: { Text("使用此配色的应用槽位将恢复杏桃，阅读槽位将恢复跟随应用。") }
+    }
+    private var embeddedPalettes: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                textureSection
+                VStack(spacing: 0) {
+                    sourceRow("跟随应用", id: "app", icon: "arrow.turn.down.right").padding(14)
+                    ThemedDivider()
+                    sourceRow("系统配色", id: "system", icon: "circle.lefthalf.filled").padding(14)
+                }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 16))
+                Text("预设").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
+                VStack(spacing: 0) {
+                    ForEach(palettes.filter { !$0.custom }, id: \.id) { palette in
+                        paletteRow(palette).padding(.horizontal, 14).padding(.vertical, 6)
+                        if palette.id != palettes.last(where: { !$0.custom })?.id { ThemedDivider() }
+                    }
+                }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 16))
+                Text("自定义").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
+                VStack(spacing: 0) {
+                    ForEach(palettes.filter(\.custom), id: \.id) { palette in
+                        paletteRow(palette).padding(14)
+                            .contextMenu {
+                                Button("编辑", systemImage: "pencil") { edit(PaletteDraft(palette: palette, creating: false)) }
+                                Button("删除", systemImage: "trash", role: .destructive) { deleting = palette }
+                            }
+                        ThemedDivider()
+                    }
+                    Button("新建配色", systemImage: "plus") {
+                        guard var base = palettes.first(where: { $0.id == selected }) ?? palettes.first else { return }
+                        base.name = ""; base.custom = true
+                        edit(PaletteDraft(palette: base, creating: true))
+                    }.frame(maxWidth: .infinity, minHeight: LayoutTokens.hit).padding(6).accessibilityIdentifier("createPalette")
+                }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 16))
+            }.padding(.horizontal, LayoutTokens.content).padding(.vertical, LayoutTokens.compact)
+        }.disabled(themes.saving).themedPage().accessibilityIdentifier("paletteOptions")
     }
     private var paletteList: some View {
         List {
@@ -111,29 +147,49 @@ struct PalettePicker: View {
         }
     }
     private var textureSection: some View {
-        Section {
-            Picker("纸张纹理", selection: Binding(get: { texture?.id }, set: { id in
-                var choice = id.map { readerTextureChoice(id: $0) }
-                if let strength = texture?.strength { choice?.strength = strength }
-                setTexture(choice)
-            })) {
-                Text("无").tag(ReaderTextureId?.none)
-                ForEach(readerTextureIds(), id: \.self) { id in Text(id.label).tag(Optional(id)) }
-            }.accessibilityIdentifier("readerTexture")
-            if let texture {
-                Picker("纹理强度", selection: Binding(get: { texture.strength }, set: { value in
-                    var choice = texture; choice.strength = value; setTexture(choice)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("纸张纹理").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
+            VStack(alignment: .leading, spacing: 18) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 72))], spacing: 12) {
+                    textureOption(nil)
+                    ForEach(readerTextureIds(), id: \.self) { textureOption($0) }
+                }.accessibilityIdentifier("readerTexture")
+                Text("纹理强度").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                Picker("纹理强度", selection: Binding(get: { texture?.strength ?? .medium }, set: { value in
+                    guard var choice = texture else { return }
+                    choice.strength = value; setTexture(choice)
                 })) {
                     ForEach(readerTextureStrengths(), id: \.self) { value in Text(value.label).tag(value) }
-                }.accessibilityIdentifier("readerTextureStrength")
-            }
-        } footer: {
+                }.pickerStyle(.segmented).disabled(texture == nil).accessibilityIdentifier("readerTextureStrength")
+            }.padding(14).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 16))
+                .disabled(previewTheme.plan.colors == nil)
             if previewTheme.plan.colors == nil {
-                Text("请选择具体配色后使用纹理").accessibilityIdentifier("readerTextureUnavailable")
+                Text("请选择具体配色后使用纹理").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                    .accessibilityIdentifier("readerTextureUnavailable")
+            } else {
+                Text("纹理与配色独立。选择保存在此设备。").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
             }
         }
-        .disabled(previewTheme.plan.colors == nil)
-        .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+    }
+    private func textureOption(_ id: ReaderTextureId?) -> some View {
+        let choice = id.map { readerTextureChoice(id: $0) }
+        let surface = ThemeSurface(plan: previewTheme.plan, readerTexture: choice)
+        let tile = choice.map { _ in ThemeSurface.paperTile(surface.paperInput(scale: 1)) }
+        return Button {
+            var next = choice
+            if let strength = texture?.strength { next?.strength = strength }
+            setTexture(next)
+        } label: {
+            VStack(spacing: 8) {
+                ZStack {
+                    Color(uiColor: surface.paper)
+                    if let tile { Image(uiImage: tile).resizable(resizingMode: .tile) }
+                }.frame(height: 50).clipShape(.rect(cornerRadius: 10))
+                    .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(Color(uiColor: texture?.id == id ? theme.accent : theme.separator), lineWidth: texture?.id == id ? 2 : 1) }
+                Text(id?.label ?? "无").font(.caption).foregroundStyle(Color(uiColor: theme.ink))
+            }.frame(maxWidth: .infinity)
+        }.buttonStyle(.plain).accessibilityIdentifier("readerTexture-\(id?.assetName ?? "none")")
+            .accessibilityAddTraits(texture?.id == id ? .isSelected : [])
     }
     private func sourceRow(_ title: LocalizedStringKey, id: String, icon: String) -> some View {
         Button { choose(id) } label: {
