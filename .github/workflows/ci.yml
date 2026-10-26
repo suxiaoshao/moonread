@@ -182,7 +182,6 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
           persist-credentials: false
       - name: Require Xcode 27.1 and the existing iOS 27 simulator
         id: simulator
@@ -225,40 +224,6 @@ jobs:
           mkdir -p build/CI
           # Boot overlaps compilation. A shutdown or already-booted device must not fail this step.
           nohup xcrun simctl boot "$SIMULATOR_UDID" >build/CI/simulator-boot.log 2>&1 &
-          # Match each tracked file's mtime to the commit that last changed it, so restored
-          # objects stay newer than unchanged sources and newer sources still rebuild.
-          # Rust inputs keep checkout time: Cargo only rebuilds sources newer than its outputs,
-          # and a prefix-restored target may hold artifacts built later from other sources.
-          python3 - <<'PY'
-          import os
-          import subprocess
-          tracked = set(subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\0"))
-          tracked.discard("")
-          history = subprocess.check_output(["git", "-c", "core.quotePath=false", "log", "--pretty=format:%ct", "--name-only"]).decode()
-          seen = set()
-          stamp = None
-          for line in history.splitlines():
-              if not line:
-                  stamp = None
-                  continue
-              if stamp is None and line.isdigit():
-                  stamp = int(line)
-                  continue
-              if stamp is None or line in seen or line not in tracked:
-                  continue
-              seen.add(line)
-              if line.startswith("crates/") or line in ("Cargo.toml", "Cargo.lock"):
-                  continue
-              if os.path.isfile(line):
-                  os.utime(line, (stamp, stamp))
-          missing = tracked - seen
-          if missing:
-              raise SystemExit(
-                  "checkout history does not record "
-                  + str(len(missing))
-                  + " tracked files; fetch-depth is too shallow"
-              )
-          PY
           nix develop --no-update-lock-file -c xcodebuild \
             -project ios/Moonread.xcodeproj -scheme Moonread -configuration Debug \
             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
