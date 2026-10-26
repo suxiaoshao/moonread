@@ -290,9 +290,6 @@ struct BookInformationSections: View {
     let model: BookInformationModel
     let target: StatisticsRoute
     let library: LibraryModel?
-    /// Actions open the existing task or start a new one for this book.
-    var aiRequests: [AIQuickTaskRequest] = []
-    var openAI: (AIQuickTaskRequest) -> Void = { _ in }
     @Environment(\.theme) private var theme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
@@ -321,64 +318,46 @@ struct BookInformationSections: View {
         if target.fromReader { readerSearch = scope } else { library.path.append(.search(scope)) }
     }
     var body: some View {
-        Section {
-            VStack(alignment: .leading, spacing: LayoutTokens.content) {
-                HStack(alignment: .top, spacing: LayoutTokens.content) {
-                    LibraryBookCover(title: target.title, cover: model.details?.metadata.cover).frame(width: 64, height: 90)
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(verbatim: model.entry?.title ?? target.title).font(.title3.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
-                        if let author = model.details?.metadata.author, !author.isEmpty {
-                            if library != nil {
-                                Button(author) { search(.author(author)) }
-                                    .buttonStyle(.borderless).font(.subheadline).foregroundStyle(Color(uiColor: theme.accent))
-                            } else {
-                                Text(verbatim: author).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                            }
-                        }
-                        if let details = model.details, details.wordCount > 0 {
-                            Text("\(details.wordCount) 字 · \(details.chapterCount) 章")
-                                .font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                        }
-                    }
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .top, spacing: 16) {
+                LibraryBookCover(title: target.title, cover: model.details?.metadata.cover)
+                    .frame(width: 64, height: 90).accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(verbatim: model.entry?.title ?? target.title)
+                        .font(.title2.weight(.semibold)).fixedSize(horizontal: false, vertical: true)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) { author; bookCounts }
+                        VStack(alignment: .leading, spacing: 4) { author; bookCounts }
+                    }.font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                 }
-                primaryAction
-                let actionLayout = dynamicTypeSize.isAccessibilitySize
-                    ? AnyLayout(VStackLayout(spacing: LayoutTokens.control))
-                    : AnyLayout(HStackLayout(spacing: LayoutTokens.control))
-                actionLayout {
-                    ForEach(aiRequests) { request in
-                        Button { openAI(request) } label: {
-                            Label {
-                                Text(request.family == .metadata ? "补全资料" : "找封面")
-                                    .fixedSize(horizontal: false, vertical: true)
-                            } icon: { Image(systemName: "sparkles") }
-                                .font(.subheadline).frame(maxWidth: .infinity, minHeight: LayoutTokens.hit)
-                        }.buttonStyle(.borderless)
-                    }
-                }
-            }.padding(.vertical, LayoutTokens.compact)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier("bookInformationHeader")
-                .listRowBackground(Color(uiColor: theme.surface))
+            }.accessibilityIdentifier("bookInformationHeader")
+            primaryAction
             if let tags = model.details?.metadata.tags, !tags.isEmpty {
                 AIFlowLayout(spacing: 8) {
                     ForEach(tags, id: \.self) { tag in
-                        Button(tag) { search(.tag(tag)) }.buttonStyle(.bordered).font(.subheadline)
+                        Button(tag) { search(.tag(tag)) }
+                            .font(.subheadline).buttonStyle(.plain)
+                            .padding(.horizontal, 9).padding(.vertical, 6)
+                            .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 7))
                             .disabled(library == nil)
                     }
-                }.padding(.vertical, LayoutTokens.compact)
+                }
             }
             if let synopsis = model.details?.metadata.synopsis, !synopsis.isEmpty {
-                VStack(alignment: .leading, spacing: LayoutTokens.compact) {
+                VStack(alignment: .leading, spacing: 8) {
                     Text(verbatim: synopsis).font(.subheadline).lineLimit(expandedSynopsis ? nil : 3)
+                        .foregroundStyle(Color(uiColor: theme.secondary))
                     if synopsis.count > 100 || synopsis.filter({ $0 == "\n" }).count > 2 {
                         Button(expandedSynopsis ? "收起" : "展开简介") { expandedSynopsis.toggle() }
-                            .font(.caption).buttonStyle(.borderless).foregroundStyle(Color(uiColor: theme.accent))
-                            .frame(minHeight: LayoutTokens.hit, alignment: .leading)
+                            .font(.caption).frame(minHeight: LayoutTokens.hit)
                     }
-                }.frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
-        }.listRowBackground(Color(uiColor: theme.surface)).id("bookInformation")
+            VStack(alignment: .leading, spacing: 12) {
+                Text("我的阅读").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
+                readingCard
+            }.padding(.top, 8).id("myReading")
+        }.frame(maxWidth: .infinity, alignment: .leading).id("bookInformation")
         .navigationDestination(item: $readerSearch) { scope in
             if let library {
                 ReaderContextSearch(model: library, scope: scope,
@@ -386,24 +365,57 @@ struct BookInformationSections: View {
                                     returnToBook: { if let returnToReading { returnToReading() } else { dismiss() } })
             }
         }
-        if let details = model.details, !details.metadata.sha.isEmpty {
-            Section("我的阅读") {
-                Picker("阅读状态", selection: Binding(get: { details.metadata.status }, set: { value in Task { await model.setStatus(value) } })) {
-                    if case .other = details.metadata.status { Text(details.metadata.status.label).tag(details.metadata.status) }
-                    if details.metadata.status == .unread { Text("未读").tag(BookReadingStatus.unread) }
-                    ForEach([BookReadingStatus.reading, .finished, .paused], id: \.self) { Text($0.label).tag($0) }
-                }
-                .accessibilityIdentifier("bookReadingStatus")
+    }
+    @ViewBuilder private var author: some View {
+        if let author = model.details?.metadata.author, !author.isEmpty {
+            if library != nil {
+                Button(author) { search(.author(author)) }.buttonStyle(.plain)
+            } else { Text(verbatim: author) }
+        }
+    }
+    @ViewBuilder private var bookCounts: some View {
+        if let details = model.details, details.wordCount > 0 {
+            Text("\(details.wordCount) 字 · \(details.chapterCount) 章")
+        }
+    }
+    private var readingCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let details = model.details, !details.metadata.sha.isEmpty {
                 let position = model.entry?.positionUtf8 ?? details.book?.positionUtf8 ?? 0
                 let bytes = model.entry?.byteCount ?? details.book?.byteCount ?? 0
-                if position > 0 {
-                    if let chapter = details.currentChapter { Text(verbatim: chapter).lineLimit(2) }
-                    LabeledContent("全书位置", value: (Double(position) / Double(max(1,bytes))).formatted(.percent.precision(.fractionLength(1))))
+                HStack(alignment: .top, spacing: 12) {
+                    if let chapter = details.currentChapter { Text(verbatim: chapter).font(.headline).fixedSize(horizontal: false, vertical: true) }
+                    Spacer(minLength: 0)
+                    Picker("阅读状态", selection: Binding(get: { details.metadata.status }, set: { value in Task { await model.setStatus(value) } })) {
+                        if case .other = details.metadata.status { Text(details.metadata.status.label).tag(details.metadata.status) }
+                        if details.metadata.status == .unread { Text("未读").tag(BookReadingStatus.unread) }
+                        ForEach([BookReadingStatus.reading, .finished, .paused], id: \.self) { Text($0.label).tag($0) }
+                    }.pickerStyle(.menu).labelsHidden().accessibilityIdentifier("bookReadingStatus")
                 }
-                if let chapter = model.chapters.last(where: { $0.startUtf8 <= (details.book?.positionUtf8 ?? 0) }) {
-                    LabeledContent("当前章覆盖", value: chapter.coverageLabel)
-                }
-            }.listRowBackground(Color(uiColor: theme.surface)).id("myReading")
+                if bytes > 0 {
+                    ProgressView(value: Double(position), total: Double(bytes)).accessibilityLabel("全书位置")
+                    ViewThatFits(in: .horizontal) {
+                        HStack { positionLabel(position, bytes); Spacer(); coverageLabel(position) }
+                        VStack(alignment: .leading, spacing: 6) { positionLabel(position, bytes); coverageLabel(position) }
+                    }.font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                } else { coverageLabel(position).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary)) }
+            }
+            if let error = model.error, model.details == nil {
+                Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
+                Button("重试") { Task { await model.load(target) } }
+            } else if model.matches(target), model.contentSHA(for: target) == nil {
+                Label("正文身份尚未确定", systemImage: "info.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+            } else if model.details == nil { ProgressView() }
+        }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
+    }
+    private func positionLabel(_ position: UInt64, _ bytes: UInt64) -> some View {
+        Text("读到全书 \((Double(position) / Double(max(1, bytes))).formatted(.percent.precision(.fractionLength(0))))")
+    }
+    private func coverageLabel(_ position: UInt64) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("本章覆盖 \(model.chapters.last(where: { $0.startUtf8 <= position })?.coverageLabel(readingPrefix: false) ?? "—")")
+            if model.chapters.isEmpty { Text("本章覆盖尚未计算完成，不影响继续阅读。").font(.caption) }
         }
     }
 }
@@ -415,18 +427,23 @@ struct BookReadingDataClearSection: View {
     let key: String
     @Bindable var manager: DataManagementModel
     var body: some View {
-        Section {
+        VStack(alignment: .leading, spacing: 10) {
             Button(role: .destructive) {
                 Task {
                     if !target.fromReader { await book.finishPreparationForDataDeletion() }
                     await manager.load()
                     manager.deleting = [key]
                 }
-            } label: { Text("清除阅读数据", tableName: "DataManagement") }
+            } label: {
+                Text("清除本书阅读数据").frame(maxWidth: .infinity, minHeight: LayoutTokens.hit)
+                    .contentShape(.rect)
+                    .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(Color(uiColor: theme.destructive), lineWidth: 1) }
+            }
+                .buttonStyle(.plain)
                 .foregroundStyle(Color(uiColor: theme.destructive)).disabled(manager.busy).accessibilityIdentifier("clearBookReadingData")
-        } footer: {
+            Text("不删除小说文件。删除会随阅读数据同步到其他设备。").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
             if let message = manager.message { Text(verbatim: message).font(.footnote) }
-        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+        }.padding(.top, 8)
             .modifier(ReadingDataDeletionPrompt(model: manager))
             .onChange(of: manager.busy) { _, busy in if !busy { Task { await book.load(target) } } }
             .alert("暂时无法完成", isPresented: Binding(get: { manager.error != nil }, set: { if !$0 { manager.error = nil } })) {

@@ -222,6 +222,8 @@ jobs:
           SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
         run: |
           mkdir -p build/CI
+          # Boot overlaps compilation. A shutdown or already-booted device must not fail this step.
+          nohup xcrun simctl boot "$SIMULATOR_UDID" >build/CI/simulator-boot.log 2>&1 &
           nix develop --no-update-lock-file -c xcodebuild \
             -project ios/Moonread.xcodeproj -scheme Moonread -configuration Debug \
             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \

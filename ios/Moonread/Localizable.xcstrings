@@ -1,6 +1,300 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+  "约 %llu%%": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "About %llu%%"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "約 %llu%%"
+        }
+      }
+    }
+  },
+  "不足 1%": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Less than 1%"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "不足 1%"
+        }
+      }
+    }
+  },
+  "读到全书 %@": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Read %@ of book"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "讀到全書 %@"
+        }
+      }
+    }
+  },
+  "本章覆盖 %@": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Chapter coverage %@"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "本章覆蓋 %@"
+        }
+      }
+    }
+  },
+  "本章覆盖尚未计算完成，不影响继续阅读。": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Chapter coverage is not ready yet. You can keep reading."
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "本章覆蓋尚未計算完成，不影響繼續閱讀。"
+        }
+      }
+    }
+  },
+  "清除本书阅读数据": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Clear This Book’s Reading Data"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "清除本書閱讀資料"
+        }
+      }
+    }
+  },
+  "不删除小说文件。删除会随阅读数据同步到其他设备。": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "The book file is kept. Deletions sync to other devices with reading data."
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "不刪除小說檔案。刪除會隨閱讀資料同步到其他裝置。"
+        }
+      }
+    }
+  },
+  "所选范围阅读": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reading in this period"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "所選範圍閱讀"
+        }
+      }
+    }
+  },
+  "当天阅读节奏": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reading rhythm for the day"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "當天閱讀節奏"
+        }
+      }
+    }
+  },
+  "按当天的时间顺序排列阅读时段。": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reading sessions in chronological order."
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "按當天的時間順序排列閱讀時段。"
+        }
+      }
+    }
+  },
+  "当天累计": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Day’s total"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "當天累計"
+        }
+      }
+    }
+  },
+  "阅读预览 · %lld pt": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reading preview · %lld pt"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "閱讀預覽 · %lld pt"
+        }
+      }
+    }
+  },
+  "配色与纹理": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Colors & Textures"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "配色與紋理"
+        }
+      }
+    }
+  },
+  "屏幕": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Screen"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "螢幕"
+        }
+      }
+    }
+  },
+  "减小": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Decrease"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "減小"
+        }
+      }
+    }
+  },
+  "增大": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Increase"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "增大"
+        }
+      }
+    }
+  },
+  "纹理与配色独立。选择保存在此设备。": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Textures are independent of colors. Your choice stays on this device."
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "紋理與配色獨立。選擇儲存在此裝置。"
+        }
+      }
+    }
+  },
+  "正文身份尚未确定": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Text identity is not yet available"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "正文身份尚未确定"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "正文身分尚未確定"
+        }
+      }
+    }
+  },
   "推理 %@": {
     "localizations": {
       "en": {

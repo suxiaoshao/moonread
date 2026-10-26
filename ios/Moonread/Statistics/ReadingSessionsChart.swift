@@ -60,20 +60,23 @@ struct ReadingSessionsChart: View {
 struct ReadingSessionRow: View {
     let span: StatisticsSpan
     let showBook: Bool
+    var compact = false
     @Environment(\.theme) private var theme
     @State private var confirmDelete = false
     @State private var error: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
-                Text(showBook ? span.title : StatisticsDates.dateLabel(span.day)).lineLimit(1)
+                Text(showBook ? span.title : compact ? "\(StatisticsDates.dateLabel(span.day)) · \(span.time)" : StatisticsDates.dateLabel(span.day)).lineLimit(2)
                 Spacer()
                 Text(StatisticsDates.duration(span.milliseconds)).font(.subheadline).monospacedDigit()
             }
-            HStack {
-                Text(span.time)
-                if span.preview { Text("查阅") }
-            }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+            if !compact || span.preview {
+                HStack {
+                    if !compact { Text(span.time) }
+                    if span.preview { Text("查阅") }
+                }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+            }
         }.padding(.vertical, 4)
             .contextMenu { Button("删除本次阅读记录", systemImage: "trash", role: .destructive) { confirmDelete = true } }
             .confirmationDialog("删除本次阅读记录？", isPresented: $confirmDelete, titleVisibility: .visible) {

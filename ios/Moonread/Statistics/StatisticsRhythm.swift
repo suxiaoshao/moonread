@@ -21,7 +21,7 @@ struct StatisticsRhythm: View {
     var body: some View {
         switch window.period {
         case .recent:
-            StatisticsBarChart(buckets: buckets, label: { $0.first == today ? String(localized: "今天") : StatisticsDates.format($0.first, template: "d") },
+            StatisticsBarChart(buckets: buckets, label: { $0.first == today ? String(localized: "今天") : StatisticsDates.format($0.first, template: "EE") },
                                accessibilityLabel: { StatisticsDates.dateLabel($0.first, full: true) },
                                open: { bucket in if bucket.durationMs > 0 { open(StatisticsDayRoute(day: bucket.first, book: book)) } })
         case .month:
@@ -52,8 +52,8 @@ private struct StatisticsBarChart: View {
     var body: some View {
         Chart(buckets) { bucket in
             BarMark(x: .value(String(localized: "日期"), String(bucket.first)), y: .value(String(localized: "阅读分钟"), Double(bucket.durationMs) / 60_000), width: .ratio(0.6))
-                .foregroundStyle(Color(uiColor: theme.accent))
-                .cornerRadius(3)
+                .foregroundStyle(Color(uiColor: theme.accent).opacity(bucket.last == StatisticsDates.day(Date()) ? 1 : 0.18))
+                .cornerRadius(5)
         }
         .chartXScale(domain: keys)
         .chartYScale(domain: 0...(StatisticsDates.axisSteps(maximum).last ?? maximum))
@@ -64,12 +64,7 @@ private struct StatisticsBarChart: View {
                 }
             }
         }
-        .chartYAxis {
-            AxisMarks(position: .trailing, values: StatisticsDates.axisSteps(maximum)) { value in
-                AxisGridLine()
-                AxisValueLabel { if let minutes = value.as(Double.self) { Text(verbatim: StatisticsDates.axisMinutes(minutes)).font(.caption2) } }
-            }
-        }
+        .chartYAxis(.hidden)
         .chartOverlay { proxy in
             if let open {
                 GeometryReader { geometry in
@@ -84,7 +79,7 @@ private struct StatisticsBarChart: View {
                 }
             }
         }
-        .frame(height: 150)
+        .frame(height: 180)
         // Axis labels share fixed columns; exact values scale elsewhere and in VoiceOver.
         .dynamicTypeSize(...DynamicTypeSize.xLarge)
         .accessibilityRepresentation {

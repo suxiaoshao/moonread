@@ -23,7 +23,7 @@ struct UsageGuideView: View {
                 }
                 section("iCloud", "开启系统 iCloud Drive 后，“我的书架”的小说文件由 iCloud Drive 同步。阅读进度、书签和批注由设置中的“阅读数据 iCloud 同步”控制；更换账户时可能需要确认。")
             }.padding().frame(maxWidth: 640, alignment: .leading).frame(maxWidth: .infinity)
-        }.themedPage().navigationTitle("月读使用指南").navigationBarTitleDisplayMode(.inline)
+        }.pageScrollMargins().themedPage().navigationTitle("月读使用指南").navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("usageGuide")
     }
     private func section(_ title: LocalizedStringKey, _ text: LocalizedStringKey) -> some View {

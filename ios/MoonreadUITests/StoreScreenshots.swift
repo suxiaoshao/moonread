@@ -80,7 +80,7 @@ import XCTest
                     readableBody()
                     controls(); app.buttons["readingSettings"].tap()
                     ready(app.buttons["moreReadingSettings"]).tap()
-                    ready(app.segmentedControls["readerThemeTabs"]).buttons[language == "en" ? "Palette" : "配色"].tap()
+                    ready(app.segmentedControls["readerThemeTabs"]).buttons[language == "en" ? "Colors & Textures" : language == "zh-Hant" ? "配色與紋理" : "配色与纹理"].tap()
                     ready(app.segmentedControls["readerPaletteSlots"]).buttons[language == "en" ? "When Light" : (language == "zh-Hant" ? "淺色時" : "浅色时")].tap()
                     ready(element("readerTexture")); ready(element("readerTextureStrength"))
                     ready(app.buttons["toggleReadingPreview"]).tap()
