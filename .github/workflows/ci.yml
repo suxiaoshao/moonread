@@ -227,6 +227,8 @@ jobs:
           nohup xcrun simctl boot "$SIMULATOR_UDID" >build/CI/simulator-boot.log 2>&1 &
           # Match each tracked file's mtime to the commit that last changed it, so restored
           # objects stay newer than unchanged sources and newer sources still rebuild.
+          # Rust inputs keep checkout time: Cargo only rebuilds sources newer than its outputs,
+          # and a prefix-restored target may hold artifacts built later from other sources.
           python3 - <<'PY'
           import os
           import subprocess
@@ -245,6 +247,8 @@ jobs:
               if stamp is None or line in seen or line not in tracked:
                   continue
               seen.add(line)
+              if line.startswith("crates/") or line in ("Cargo.toml", "Cargo.lock"):
+                  continue
               if os.path.isfile(line):
                   os.utime(line, (stamp, stamp))
           missing = tracked - seen
