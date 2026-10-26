@@ -534,6 +534,7 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     await awaitState { session.window != nil && session.continuation != nil }
     XCTAssertEqual(session.anchor, 6)
     XCTAssertEqual(session.continuation?.token, remote.token)
+    XCTAssertTrue(session.continuationMessage?.contains("100%") == true, "The hint rounds the Rust percentage to a whole number")
     session.moved(to: 6, settled: true, userInitiated: false)
     await session.flush()
     let afterLayout = try await formal.storedValue("position/" + book.contentSha256)

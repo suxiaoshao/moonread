@@ -591,7 +591,7 @@ final class ReaderSession {
 
     var continuationMessage: String? {
         guard let location = continuation?.location else { return nil }
-        let percentage = location.percentage.formatted(.number.precision(.fractionLength(1)))
+        let percentage = location.percentage.formatted(.number.precision(.fractionLength(0)))
         if let chapter = location.chapter { return String(localized: "已同步到\(chapter.title)（约 \(percentage)%）") }
         return String(localized: "已同步到约 \(percentage)%")
     }

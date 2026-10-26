@@ -719,7 +719,11 @@ struct ReaderScreen: View {
     @ViewBuilder private var continuationControl: some View {
         if let message = session.continuationMessage {
             if session.continuationCollapsed {
-                Button("同步进度") { session.expandContinuation() }.buttonStyle(.bordered)
+                Button("同步进度") { session.expandContinuation() }
+                    .font(.footnote).buttonStyle(.plain)
+                    .foregroundStyle(Color(uiColor: theme.accent))
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(Color(uiColor: theme.surface), in: .capsule)
                     .accessibilityIdentifier("showSyncedProgress")
             } else {
                 ReadingContinuationBanner(message: message, busy: session.navigating,
