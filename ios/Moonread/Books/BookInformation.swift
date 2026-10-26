@@ -414,7 +414,7 @@ struct BookInformationSections: View {
     }
     private func coverageLabel(_ position: UInt64) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("本章覆盖 \(model.chapters.last(where: { $0.startUtf8 <= position })?.coverageLabel ?? "—")")
+            Text("本章覆盖 \(model.chapters.last(where: { $0.startUtf8 <= position })?.coverageLabel(readingPrefix: false) ?? "—")")
             if model.chapters.isEmpty { Text("本章覆盖尚未计算完成，不影响继续阅读。").font(.caption) }
         }
     }
@@ -434,8 +434,12 @@ struct BookReadingDataClearSection: View {
                     await manager.load()
                     manager.deleting = [key]
                 }
-            } label: { Text("清除本书阅读数据").frame(maxWidth: .infinity, minHeight: LayoutTokens.hit) }
-                .buttonStyle(.bordered)
+            } label: {
+                Text("清除本书阅读数据").frame(maxWidth: .infinity, minHeight: LayoutTokens.hit)
+                    .contentShape(.rect)
+                    .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(Color(uiColor: theme.destructive), lineWidth: 1) }
+            }
+                .buttonStyle(.plain)
                 .foregroundStyle(Color(uiColor: theme.destructive)).disabled(manager.busy).accessibilityIdentifier("clearBookReadingData")
             Text("不删除小说文件。删除会随阅读数据同步到其他设备。").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
             if let message = manager.message { Text(verbatim: message).font(.footnote) }

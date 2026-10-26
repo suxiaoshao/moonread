@@ -1,6 +1,38 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+  "约 %llu%%": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "About %llu%%"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "約 %llu%%"
+        }
+      }
+    }
+  },
+  "不足 1%": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Less than 1%"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "不足 1%"
+        }
+      }
+    }
+  },
   "读到全书 %@": {
     "localizations": {
       "en": {

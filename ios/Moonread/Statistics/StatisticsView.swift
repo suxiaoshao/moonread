@@ -193,9 +193,11 @@ struct StatisticsView: View {
                         .accessibilityIdentifier("statisticsEmpty")
                 } else {
                     periodSummary(overview)
-                    if target == nil { bookSection } else { sessionsSection }
                 }
                 if target != nil { cumulativeSummary }
+                if !overview.books.isEmpty {
+                    if target == nil { bookSection } else { sessionsSection }
+                }
             } else if let error = model.error {
                 ContentUnavailableView {
                     Label("暂时无法读取统计", systemImage: "exclamationmark.circle")
@@ -301,20 +303,23 @@ struct StatisticsView: View {
 
     @ViewBuilder private var fileInformation: some View {
         if target != nil, let entry = information.entry {
-            DisclosureGroup("文件信息") {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("文件信息").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
                 VStack(spacing: 12) {
                     LabeledContent("书架", value: entry.shelfName)
                     LabeledContent("路径", value: entry.relativePath)
                     LabeledContent("文件大小", value: ByteCountFormatter.string(fromByteCount: Int64(entry.size), countStyle: .file))
                     if let book = information.details?.book { LabeledContent("编码", value: book.encoding) }
                     LabeledContent("本机状态", value: entry.needsDownload ? String(localized: "待下载") : String(localized: "已下载"))
-                }.font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary)).padding(.top, 12)
-            }.padding(16).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
+                }.font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                    .padding(16).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
+            }
         }
     }
 
     private var cumulativeSummary: some View {
-        DisclosureGroup("累计阅读") {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("累计阅读").font(.subheadline.weight(.medium))
             VStack(alignment: .leading, spacing: 8) {
                 Text(StatisticsDates.duration(model.cumulative?.durationMs ?? 0)).font(.title3).monospacedDigit()
                 if let book = model.cumulative {
@@ -324,7 +329,7 @@ struct StatisticsView: View {
                 }
             }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).padding(.top, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-        }.font(.subheadline).padding(16).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
+        }.foregroundStyle(Color(uiColor: theme.secondary)).padding(.vertical, 4)
     }
     private func periodSummary(_ overview: StatisticsOverview) -> some View {
         let today = StatisticsDates.day(Date())
@@ -405,14 +410,20 @@ struct StatisticsView: View {
             HStack {
                 Text("阅读时段").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
                 Spacer()
-                NavigationLink {
-                    StatisticsSessionsView(spans: model.spans, theme: theme)
-                } label: { HStack(spacing: 4) { Text("全部时段"); Image(systemName: "chevron.right") }.font(.subheadline) }
             }
             VStack(spacing: 0) {
                 ForEach(Array(model.spans.reversed().prefix(3))) { span in
                     ReadingSessionRow(span: span, showBook: false, compact: true).padding(16)
-                    if span.id != model.spans.reversed().prefix(3).last?.id { ThemedDivider() }
+                    ThemedDivider()
+                }
+                NavigationLink {
+                    StatisticsSessionsView(spans: model.spans, theme: theme)
+                } label: {
+                    HStack {
+                        Text("全部时段")
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption)
+                    }.font(.subheadline).padding(16).frame(minHeight: LayoutTokens.hit)
                 }
             }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
                 .accessibilityIdentifier("bookReadingSessions")
