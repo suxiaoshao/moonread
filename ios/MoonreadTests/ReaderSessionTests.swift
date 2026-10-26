@@ -593,6 +593,28 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     await session.leave().value
   }
 
+  func testCloudRefreshDuringPreparationStillChecksTheWinnerWhenTextCompletes() async throws {
+    let (root, service, core, formal, _, book, _, suite) = try singleBookFixture()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    try await service.savePosition(bookID: book.id, offset: 6)
+    _ = try await remotePosition(formal, book: book, offset: book.byteCount)
+    let draft = try core.createImport(title: "Deferred continuation")
+    let file = root.appendingPathComponent("a.txt")
+    let raw = try SourceIdentityProbe().rawSha256(filePath: file.path)
+    try core.streamImport(control: draft, filePath: file.path, expectedRawSha256: raw, encodingOverride: nil)
+    let session = ReaderSession(service: service)
+    await session.open(.book(draft.bookId()))
+    await awaitState { session.window != nil }
+    XCTAssertEqual(session.snapshot?.phase, .finalizing)
+    await session.refreshSyncedContinuation()
+    XCTAssertNil(session.continuation)
+    _ = try core.finishImport(control: draft)
+    await service.readingChanged(draft.bookId())
+    await awaitState { session.snapshot?.phase == .complete && session.continuation != nil }
+    XCTAssertNotNil(session.continuation, "An early cloud notification cannot consume the deferred check")
+    await session.leave().value
+  }
+
   func testLateContinuationResultCannotReappearAfterReaderLeaves() async throws {
     let (root, service, _, formal, _, book, _, suite) = try singleBookFixture()
     defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }

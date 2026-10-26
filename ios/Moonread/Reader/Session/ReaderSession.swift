@@ -622,7 +622,8 @@ final class ReaderSession {
         }
     }
     func refreshSyncedContinuation() async {
-        guard !isLeaving, !continuationSuppressed, let id = readingID, window != nil else { return }
+        guard !isLeaving, !continuationSuppressed, let id = readingID, window != nil,
+              snapshot?.phase == .complete else { return }
         firstContinuationReady = true
         let attempt = opening.request?.id, refresh = UUID()
         continuationRefresh = refresh
