@@ -81,6 +81,7 @@ extension ReadingController {
               let current = pageIndex(paging.viewControllers?.first) else { return }
         let index = current + direction
         guard pages.indices.contains(index) || (index == -1 && hasCover) else { updateEdge(direction > 0); requestMore(direction > 0 ? .forward : .backward); return }
+        statisticsInteraction(); readingBegan?()
         pageTransitioning = true
         programmaticPageTransition = true
         let generation = reportGeneration

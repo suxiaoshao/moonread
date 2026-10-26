@@ -1,6 +1,10 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "跳过去": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Jump There"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"跳過去"}}}},
+    "同步进度": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Synced Position"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"同步進度"}}}},
+    "已同步到%@（约 %@%%）": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Synced to %@ (about %@%%)"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"已同步到%@（約 %@%%）"}}}},
+    "已同步到约 %@%%": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Synced to about %@%%"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"已同步到約 %@%%"}}}},
     "无": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"None"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"無"}}}},
     "正在准备系统搜索…": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Preparing system search…"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"正在准备系统搜索…"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在準備系統搜尋…"}}}},
     "正在提交系统搜索：%lld / %lld 本": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Updating system search: %1$lld / %2$lld"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"正在提交系统搜索：%lld / %lld 本"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在提交系統搜尋：%lld / %lld 本"}}}},

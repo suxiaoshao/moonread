@@ -294,6 +294,8 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		9AD8D099CCC74446903914B8 /* SystemWidgetPublishing.swift */ = {isa = PBXBuildFile; fileRef = F304E7CD71124E5D9F7DEC91; };
 		2A49E75FB62D455EA40547D4 /* WidgetDefaultAppearance.json */ = {isa = PBXBuildFile; fileRef = 1FC26519733A4A86A5C69068; };
 		B135F2963E3B47819FE2FC73 /* WidgetDefaultAppearance.json */ = {isa = PBXBuildFile; fileRef = 1FC26519733A4A86A5C69068; };
+		A24F794D4BB7412191A19329 /* ReadingContinuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FE1A12BC743430DA09B92A0 /* ReadingContinuation.swift */; };
+		1513FFF184D943E0B24401D6 /* ReadingContinuationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -599,6 +601,8 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		66ECAE43656B4E6FA118B88B /* SystemStatisticsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemStatisticsCard.swift"; sourceTree = "<group>"; };
 		F304E7CD71124E5D9F7DEC91 /* SystemWidgetPublishing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemWidgetPublishing.swift"; sourceTree = "<group>"; };
 		1FC26519733A4A86A5C69068 /* WidgetDefaultAppearance.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "WidgetDefaultAppearance.json"; sourceTree = "<group>"; };
+		7FE1A12BC743430DA09B92A0 /* ReadingContinuation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingContinuation.swift"; sourceTree = "<group>"; };
+		B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingContinuationBanner.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -861,6 +865,7 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 				224B7CD539DE4B36838B5C59 /* ReaderEncodingMenu.swift */,
 				938B7199F7BA4FF48580021A /* ReaderToolLabelStyle.swift */,
 				AA08168B927640AD88AB7979 /* ReaderCompactHeader.swift */,
+				B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */,
 				5866FC7E25D04023BA807A6A /* ReaderPreparationContent.swift */,
 				1C1F21EBD02E4ED7BBD3B00E /* ReaderMoreContent.swift */,
 				3110BC3341AD464FA40E7DD1 /* ReaderTaskContent.swift */,
@@ -955,6 +960,7 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
                 D50620000000000000000002 /* ReadingDataManagement.swift */,
                 D50620000000000000000001 /* UserDataBackup.swift */,
 				A20000000000000000000002 /* AppDataService.swift */,
+				7FE1A12BC743430DA09B92A0 /* ReadingContinuation.swift */,
 				C22000000000000000000001 /* UserData.swift */,
                 FF2000000000000000000001,
 				C22000000000000000000002 /* UserDataService.swift */,
@@ -1362,6 +1368,8 @@ F01900000000000000000001,
                 AC1000000000000000000077,
                 AC1000000000000000000006,
 				A10000000000000000000002 /* AppDataService.swift in Sources */,
+				1513FFF184D943E0B24401D6 /* ReadingContinuationBanner.swift in Sources */,
+				A24F794D4BB7412191A19329 /* ReadingContinuation.swift in Sources */,
 				A10000000000000000000003 /* LibraryView.swift in Sources */,
                 AF1000000000000000000002 /* LibraryPresentation.swift in Sources */,
                 AF1000000000000000000003 /* LibraryCollection.swift in Sources */,

@@ -424,6 +424,27 @@ import XCTest
     open()
     waitUntil { self.anchor() == preview }
   }
+  func testU22SyncedProgressJumpRetainsReturnHistory() {
+    launch(["--ui-test-reader-fixture", "--ui-test-sync-continuation"])
+    shelf()
+    open()
+    let original = anchor()
+    // The compact prompt can collapse while XCTest waits for native scrolling
+    // to settle. Its persistent tool entry must still let the user act.
+    if !app.buttons["acceptSyncedProgress"].exists {
+      controls()
+      if app.buttons["showSyncedProgress"].exists { app.buttons["showSyncedProgress"].tap() }
+    }
+    ready(app.buttons["acceptSyncedProgress"])
+    snapshot("U22-synced-progress")
+    app.buttons["acceptSyncedProgress"].tap()
+    waitUntil { self.anchor() != original }
+    controls()
+    ready(app.buttons["showReadingHistory"]).tap()
+    ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'readingHistory-'")).firstMatch).tap()
+    waitUntil { self.anchor() == original }
+  }
+
   func testU18CancelAnnotationWithoutSaving() {
     launch()
     shelf()

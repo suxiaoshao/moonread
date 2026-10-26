@@ -72,6 +72,7 @@ extension AppDataService {
             userStoreTask = nil; userCloudEnabled = enabled
             userCloudConfigurationRevision = UUID()
             resetSystemReadingCatalog()
+            NotificationCenter.default.post(name: .readingContinuationInvalidated, object: nil)
             let revision = userCloudConfigurationRevision
             // The configuration switch is serialized with deletion, not store
             // bootstrap: a newer configuration must be able to replace a stuck
@@ -238,8 +239,9 @@ extension AppDataService {
         if case .formal = try parseReadingKey(value: key) { return try await userStore(pending: true).compatibilityNotice(key: serializeReadingKey(key: .pending(bookId: id))) }
         return nil
     }
-    func writePosition(_ id: String, offset: UInt64) async throws {
+    func writePosition(_ id: String, offset: UInt64, expectedConfiguration: UUID? = nil) async throws {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        if let expectedConfiguration, expectedConfiguration != userCloudConfigurationRevision { throw CancellationError() }
         try await promoteUserDataLocked(id)
         let core = try textCore(), key = try userKey(id)
         let normalized = try core.normalizedPosition(bookId: id, offsetUtf8: offset)
@@ -253,7 +255,11 @@ extension AppDataService {
         }
         let value = PositionValue(content_key: key, offset: normalized, source_hint: hint)
         let json = String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
-        try await store.put("position/\(key)", value: json, device: userDevice)
+        let stored = try await store.put("position/\(key)", value: json, device: userDevice)
+        // A missing device receipt may suppress a hint, but cannot turn a
+        // committed position into a failed write or rewrite that sync fact.
+        do { try rememberLocalReadingPosition(key: key, offset: normalized, token: stored.token) }
+        catch { UserSyncJSON.quarantined("local reading baseline") }
         dataChanged()
     }
     func userMarks(_ id: String, kind: MarkKind? = nil) async throws -> [ReaderMark] {

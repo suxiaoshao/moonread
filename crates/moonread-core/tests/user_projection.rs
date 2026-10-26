@@ -232,6 +232,67 @@ fn chapter_corrections_are_inputs_and_rebuild_retains_text_integrity() {
 }
 
 #[test]
+fn continuation_uses_whole_book_percentage_and_effective_chapter_boundaries() {
+    let root = TempDir::new().unwrap();
+    let core = ReaderCore::new(root.path().join("db").to_string_lossy().into()).unwrap();
+    let file = root.path().join("continuation.txt");
+    let first = "Chapter 1\n";
+    let second = "Chapter 2\n";
+    let text = format!(
+        "{first}{}\n{second}{}\n",
+        "a".repeat(4999 - first.len()),
+        "b".repeat(4999 - second.len())
+    );
+    std::fs::write(&file, text).unwrap();
+    let book = core
+        .import_book(file.to_string_lossy().into(), "Continuation".into())
+        .unwrap();
+    assert_eq!(book.byte_count, 10000);
+    let query = core.query_snapshot("{}".into()).unwrap();
+    assert!(
+        query
+            .reading_continuation(book.id.clone(), 1000, 1000)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        query
+            .reading_continuation(book.id.clone(), 1000, 900)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        query
+            .reading_continuation(book.id.clone(), 1000, 1099)
+            .unwrap()
+            .is_none()
+    );
+    let one_percent = query
+        .reading_continuation(book.id.clone(), 1000, 1100)
+        .unwrap()
+        .unwrap();
+    assert_eq!(one_percent.percentage, 11.0);
+    assert!(
+        query
+            .reading_continuation(book.id.clone(), 4990, 5009)
+            .unwrap()
+            .is_none()
+    );
+    let chapter = query
+        .reading_continuation(book.id.clone(), 4990, 5010)
+        .unwrap()
+        .unwrap();
+    assert_eq!(chapter.chapter.unwrap().title, "Chapter 2");
+    let excluded = core.query_snapshot(json!({"corrections":[{"content_key":book.content_sha256,"offset":5000,"title":"Chapter 2","level":1,"excluded":true}]}).to_string()).unwrap();
+    assert!(
+        excluded
+            .reading_continuation(book.id, 4990, 5010)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
 fn settings_codec_preserves_device_preferences_and_validates_ranges() {
     let mut value = default_reader_settings();
     let controls = reader_typography_controls();
