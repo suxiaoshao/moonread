@@ -61,8 +61,12 @@ import XCTest
         if group == "ipad-13" { app.launchArguments.append("--ui-test-store-ipad") }
         app.launchEnvironment["MOONREAD_TEST_CREDENTIALS"] = "memory"
         app.launch()
-        let readyID = ["book-details": "statisticsSummary", "reader-settings": "readerTypographyControls", "settings": "readerThemeSettings", "library-home": "shelf-builtin"]
-        if let id = readyID[scene] { settled(ready(element(id), timeout: 30)) }
+        let readyID = ["book-details": "statisticsSummary", "reader-settings": "readerTypographyControls", "library-home": "shelf-builtin"]
+        if scene == "settings" {
+            let home = element("readerThemeSettings"), controls = element("readerTypographyControls")
+            waitUntil { home.isHittable || controls.isHittable }
+            settled(controls.isHittable ? controls : home)
+        } else if let id = readyID[scene] { settled(ready(element(id), timeout: 30)) }
         else {
             let text = ready(app.textViews["pageText"], timeout: 30)
             waitUntil { !text.label.isEmpty && !text.label.hasPrefix("封面") }

@@ -213,6 +213,9 @@ struct SettingsView: View {
     }
     private func taskPage(_ task: SettingsTask, columns: Bool) -> some View {
         SettingsTaskContent(task: task, library: library, navigation: navigation)
+            .frame(maxWidth: columns && task != .reading ? 700 : .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(uiColor: theme.canvas))
             .safeAreaInset(edge: .top, spacing: 0) {
                 if columns, navigation.path.count == 1 {
                     VStack(alignment: .leading, spacing: 16) {
@@ -231,8 +234,12 @@ struct SettingsView: View {
                 }
             }
             .onAppear { navigation.group = task.group }
+            .navigationBarTitleDisplayMode(.inline)
             .navigationBarBackButtonHidden(columns && navigation.path.count == 1)
             .toolbar {
+                if columns, navigation.path.count == 1 {
+                    ToolbarItem(placement: .principal) { Text("") }
+                }
                 if columns, navigation.path.count == 1, navigation.tab != nil, navigation.tab != .settings {
                     ToolbarItem(placement: .topBarLeading) { returnToApp }
                 }
