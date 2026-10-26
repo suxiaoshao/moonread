@@ -15,7 +15,8 @@ struct IdentityInventory: Sendable {
 }
 
 extension AppDataService {
-    func identityInventory(_ shelfID: String, scannedOnly: Bool = false) throws -> IdentityInventory {
+    func identityInventory(_ shelfID: String, scannedOnly: Bool = false) async throws -> IdentityInventory {
+        try await refreshIndexedSourceDecodings(shelfID)
         let core = try textCore()
         let value = try core.libraryIdentityInventory(shelfId: shelfID)
         return try IdentityInventory(shelf: libraryShelf(shelfID), total: Int(clamping: value.total), pending: value.pending,
@@ -24,14 +25,13 @@ extension AppDataService {
     func identityCore() throws -> ReaderCore { try textCore() }
 }
 
-/// One coordinated read; cancellation is shared with the Rust bounded decoder.
+/// Coordinated hash and decode surround the single synced policy resolution.
 private final class IdentityFileWork: @unchecked Sendable {
-    let probe = SourceIdentityProbe()
-    let coordinator = NSFileCoordinator()
+    let read = SourceDecodingRead()
     private let cancellation = OSAllocatedUnfairLock(initialState: false)
     var isCancelled: Bool { cancellation.withLock { $0 } }
-    func cancel() { cancellation.withLock { $0 = true }; probe.cancel(); coordinator.cancel() }
-    func run(file: SourceFileSnapshot, shelf: LibraryShelf, core: ReaderCore, includeCloud: Bool) async throws {
+    func cancel() { cancellation.withLock { $0 = true }; read.cancel() }
+    func run(file: SourceFileSnapshot, shelf: LibraryShelf, core: ReaderCore, includeCloud: Bool, service: AppDataService) async throws {
         try await withTaskCancellationHandler {
             try await Task.detached(priority: .utility) { [self] in
                 try Task.checkCancellation()
@@ -55,21 +55,15 @@ private final class IdentityFileWork: @unchecked Sendable {
                         catch { NotificationCenter.default.post(name: .libraryIdentityChanged, object: String(localized: "索引已保存，但未能移除下载。", table: "FullIndex")) }
                     }
                 }
-                var coordinationError: NSError?
-                var failure: Error?
-                coordinator.coordinate(readingItemAt: url, options: [], error: &coordinationError) { readable in
-                    do {
-                        let before = try readable.resourceValues(forKeys: keys)
-                        guard before.isRegularFile == true, before.isSymbolicLink != true,
-                              UInt64(before.fileSize ?? 0) == file.size,
-                              Int64((before.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1000) == file.modified else { throw ReaderError.NotFound }
-                        let identity = try probe.identify(filePath: readable.path, decoding: file.decoding)
-                        let after = try readable.resourceValues(forKeys: keys)
-                        guard before.fileSize == after.fileSize, before.contentModificationDate == after.contentModificationDate else { throw ReaderError.NotFound }
-                        guard try core.publishSourceIdentity(file: file, identity: identity) else { throw ReaderError.NotFound }
-                    } catch { failure = error }
-                }
-                if let coordinationError { throw coordinationError }; if let failure { throw failure }
+                let raw = try await read.hash(at: url)
+                guard raw.size == file.size, raw.modifiedMilliseconds == file.modified else { throw ReaderError.SourceChanged }
+                let decoding = try await service.prepareSourceDecoding(raw: raw, fileID: file.id)
+                let identity = try await read.identify(at: url, raw: raw, decoding: decoding)
+                try read.checkCancellation()
+                var resolved = file; resolved.decoding = decoding
+                try core.setSourceDecoding(fileId: file.id, decoding: decoding)
+                guard try core.publishSourceIdentity(file: resolved, identity: identity) else { throw ReaderError.SourceChanged }
+
             }.value
         } onCancel: { self.cancel() }
     }
@@ -301,7 +295,7 @@ final class FullIndexController {
                     do {
                         let core = try await service.identityCore()
                         try await service.withReadingIdleWork(cancel: { nextWork.cancel() }) {
-                            try await nextWork.run(file: next, shelf: inventory.shelf, core: core, includeCloud: request.includeCloud)
+                            try await nextWork.run(file: next, shelf: inventory.shelf, core: core, includeCloud: request.includeCloud, service: service)
                         }
                         failures.removeAll { $0.id == next.id }
                         NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)

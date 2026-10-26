@@ -289,6 +289,10 @@ enum AnnotationReduction {
         }
         return result
     }
+    func sourceDecodingSnapshot() throws -> SourceDecodingSnapshot {
+        let snapshot = try valueSnapshot(prefix: "source-decoding/")
+        return SourceDecodingSnapshot(values: snapshot.values, blocked: snapshot.blocked)
+    }
     func values(key: String? = nil) throws -> [String: StoredValue] { try valueSnapshot(key: key).values }
     private func requireValueReadable(_ key: String) throws {
         guard try !valueSnapshot(key: key).blocked.contains(key) else { throw UserSyncCompatibilityError() }

@@ -6,6 +6,7 @@ const BASELINE: u32 = 20;
 const STEPS: &[&str] = &[
     "ALTER TABLE import_jobs ADD COLUMN purpose TEXT NOT NULL DEFAULT 'reading';",
     include_str!("../library/full_index.sql"),
+    include_str!("source_decoding_migration.sql"),
 ];
 
 pub(crate) fn initialize(db: &mut Connection) -> Result<()> {
@@ -57,7 +58,7 @@ mod tests {
         assert_eq!(
             db.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
                 .unwrap(),
-            22
+            23
         );
     }
 
@@ -124,18 +125,18 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut db = Connection::open(dir.path().join("reader.sqlite3")).unwrap();
         initialize(&mut db).unwrap();
-        db.execute_batch("PRAGMA user_version=23").unwrap();
+        db.execute_batch("PRAGMA user_version=24").unwrap();
         assert!(matches!(
             initialize(&mut db),
             Err(ReaderError::StoreTooNew {
-                version: 23,
-                current: 22
+                version: 24,
+                current: 23
             })
         ));
         assert_eq!(
             db.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
                 .unwrap(),
-            23
+            24
         );
         assert!(
             matches!(
@@ -153,6 +154,70 @@ mod tests {
             db.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
                 .unwrap(),
             19
+        );
+    }
+}
+
+#[cfg(test)]
+mod decoding_tests {
+    use super::*;
+    #[test]
+    fn v22_registers_only_manual_choices_once_with_only_verified_raw_identity() {
+        let mut db = Connection::open_in_memory().unwrap();
+        migrate(&mut db, &STEPS[..2]).unwrap();
+        db.execute_batch("INSERT INTO library_shelves VALUES('s','Shelf',X'01','local',0,NULL);
+            INSERT INTO library_files(id,shelf_id,relative_path,parent_path,name,directory,size,modified,needs_download,decoding) VALUES
+            ('auto','s','auto.txt','','auto.txt',0,10,20,0,'auto'),('manual','s','manual.txt','','manual.txt',0,10,20,0,'GB18030'),
+            ('stale','s','stale.txt','','stale.txt',0,10,21,0,'Big5'),('offline','s','offline.txt','','offline.txt',0,10,20,0,'UTF-8');").unwrap();
+        let raw = "a".repeat(64);
+        db.execute(
+            "INSERT INTO source_identities VALUES(?1,'GB18030',?1,'GB18030',10,10)",
+            [&raw],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO source_identities VALUES(?1,'Big5',?1,'Big5',10,10)",
+            [&raw],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO library_identities VALUES('manual',?1,'GB18030',10,20)",
+            [&raw],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO library_identities VALUES('stale',?1,'Big5',10,20)",
+            [&raw],
+        )
+        .unwrap();
+        initialize(&mut db).unwrap();
+        let rows: Vec<(String, Option<String>)> = db
+            .prepare("SELECT file_id,raw_sha256 FROM source_decoding_migration ORDER BY file_id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<std::result::Result<_, _>>()
+            .unwrap();
+        assert_eq!(
+            rows,
+            vec![
+                ("manual".into(), Some(raw)),
+                ("offline".into(), None),
+                ("stale".into(), None)
+            ]
+        );
+        db.execute(
+            "DELETE FROM source_decoding_migration WHERE file_id='manual'",
+            [],
+        )
+        .unwrap();
+        initialize(&mut db).unwrap();
+        assert_eq!(
+            db.query_row("SELECT count(*) FROM source_decoding_migration", [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .unwrap(),
+            2
         );
     }
 }

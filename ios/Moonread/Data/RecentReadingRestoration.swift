@@ -44,7 +44,6 @@ enum RecentRestorationPolicy {
     }
     static func candidates(hint: PositionSourceHint, files: [Candidate]) -> [Candidate] {
         matching(hint: hint, files: files).filter { candidate in
-            guard candidate.file.decoding == "auto" || candidate.file.decoding == hint.decoding else { return false }
             if !candidate.file.needsDownload { return true }
             return canAutomaticallyDownload(hint: hint, candidate: candidate, files: files)
         }.sorted { $0.file.id < $1.file.id }
@@ -58,41 +57,37 @@ final class RecentRestorationWork: @unchecked Sendable {
         let bookID: String
         let sourceSize: UInt64
         let modified: Date?
+        let decoding: String
     }
     let fileID: String
     private let core: ReaderCore
     private let candidate: RecentRestorationPolicy.Candidate
-    private let hint: PositionSourceHint
     private let contentKey: String
     private let mayDownload: Bool
-    private let probe = SourceIdentityProbe()
-    private let coordinator = NSFileCoordinator()
+    private let read = SourceDecodingRead()
+    private let service: AppDataService
     private let lock = NSLock()
     private var cancelled = false
     private var control: ImportControl?
 
-    init(core: ReaderCore, candidate: RecentRestorationPolicy.Candidate, hint: PositionSourceHint, contentKey: String, mayDownload: Bool) {
-        self.core = core; self.candidate = candidate; self.hint = hint; self.contentKey = contentKey; fileID = candidate.file.id
-        self.mayDownload = mayDownload
+    init(core: ReaderCore, candidate: RecentRestorationPolicy.Candidate, contentKey: String, mayDownload: Bool, service: AppDataService) {
+        self.core = core; self.candidate = candidate; self.contentKey = contentKey; fileID = candidate.file.id
+        self.mayDownload = mayDownload; self.service = service
     }
     var isCancelled: Bool { lock.withLock { cancelled } }
     func cancel() {
         let current = lock.withLock { cancelled = true; return control }
-        probe.cancel(); current?.pause(); coordinator.cancel()
+        read.cancel(); current?.pause()
     }
     func checkCancellation() throws {
         if lock.withLock({ cancelled }) { throw CancellationError() }
     }
     func run() async throws -> Result {
         try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                DispatchQueue(label: "moonread.recent-restoration", qos: .utility).async { [self] in
-                    continuation.resume(with: Swift.Result { try prepare() })
-                }
-            }
+            try await Task.detached(priority: .utility) { [self] in try await prepare() }.value
         } onCancel: { cancel() }
     }
-    private func prepare() throws -> Result {
+    private func prepare() async throws -> Result {
         try checkCancellation()
         var stale = false
         let root = try URL(resolvingBookmarkData: Data(candidate.shelf.bookmark), options: .withoutUI, bookmarkDataIsStale: &stale)
@@ -103,21 +98,23 @@ final class RecentRestorationWork: @unchecked Sendable {
         try Self.validate(file, root: canonicalRoot)
         let availability = try file.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey])
         if availability.isUbiquitousItem == true, availability.ubiquitousItemDownloadingStatus != .current, !mayDownload { throw ReaderError.NotFound }
-        var error: NSError?
-        var result: Swift.Result<Result, Error>?
-        coordinator.coordinate(readingItemAt: file, options: [], error: &error) { url in
-            result = Swift.Result {
+        let raw = try await read.hash(at: file)
+        guard raw.size == candidate.file.size, raw.modifiedMilliseconds == candidate.file.modified else { throw ReaderError.SourceChanged }
+        let decoding = try await service.prepareSourceDecoding(raw: raw, fileID: candidate.file.id)
+        let identity = try await read.identify(at: file, raw: raw, decoding: decoding)
+        guard identity.contentSha256 == contentKey else { throw ReaderError.NotFound }
+        return try await read.coordinate(at: file) { [self] url in
                 try checkCancellation()
                 try Self.validate(url, root: canonicalRoot)
                 let before = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
-                let identity = try probe.identify(filePath: url.path, decoding: hint.decoding)
-                guard identity.contentSha256 == contentKey else { throw ReaderError.NotFound }
+                guard before.fileSize.map(UInt64.init) == raw.size, before.contentModificationDate == raw.modified else { throw ReaderError.SourceChanged }
                 try checkCancellation()
                 let task = try core.createRestorationImport(title: candidate.file.title)
                 lock.withLock { control = task }
                 defer { try? core.discardRestorationImport(control: task); lock.withLock { control = nil } }
                 try checkCancellation()
-                let key = SourceContentKey(rawSha256: identity.rawSha256, decoding: hint.decoding)
+                guard try core.hashImportSource(control: task, filePath: url.path) == raw.sha else { throw ReaderError.SourceChanged }
+                let key = SourceContentKey(rawSha256: identity.rawSha256, decoding: decoding)
                 try core.validateImportSource(control: task, key: key)
                 let preparedID: String
                 if let cached = try core.sourceBook(key: key), cached.contentSha256 == contentKey {
@@ -125,7 +122,7 @@ final class RecentRestorationWork: @unchecked Sendable {
                     preparedID = cached.id
                 } else {
                     try core.streamImport(control: task, filePath: url.path, expectedRawSha256: identity.rawSha256,
-                                          encodingOverride: hint.decoding == "auto" ? nil : hint.decoding)
+                                          encodingOverride: decoding == "auto" ? nil : decoding)
                     preparedID = try core.finishImport(control: task)
                 }
                 try checkCancellation()
@@ -137,13 +134,8 @@ final class RecentRestorationWork: @unchecked Sendable {
                       before.fileSize == after.fileSize, before.contentModificationDate == after.contentModificationDate else { throw ReaderError.SourceChanged }
                 // Canonical text, not the unpublished draft/alias.
                 return Result(bookID: canonical, sourceSize: identity.sourceBytes,
-                              modified: after.contentModificationDate)
-            }
+                              modified: after.contentModificationDate, decoding: decoding)
         }
-        try checkCancellation()
-        if let error { throw error }
-        guard let result else { throw CocoaError(.fileReadUnknown) }
-        return try result.get()
     }
     private static func validate(_ file: URL, root: URL) throws {
         guard !root.pathComponents.contains(".Trash"),
@@ -218,9 +210,16 @@ extension AppDataService {
               let shelf = try shelves().first(where: { $0.id == file.shelfId && $0.error == nil }) else { return nil }
         return .init(file: file, shelf: shelf)
     }
-    private func restorationFingerprint(_ files: [RecentRestorationPolicy.Candidate], position: UserDataStore.RecentPosition) -> String {
+    private func restorationFingerprint(_ files: [RecentRestorationPolicy.Candidate], position: UserDataStore.RecentPosition, decodings: SourceDecodingSnapshot) -> String {
         var hash = SHA256()
         hash.update(data: Data(position.token.utf8))
+        // A newly synced decoding can make an earlier failed candidate readable.
+        // Repeated imports of the same winners still perform no additional I/O.
+        for key in decodings.values.keys.sorted() {
+            guard let value = decodings.values[key] else { continue }
+            for text in [key, String(value.updated), value.token] { hash.update(data: Data(text.utf8)); hash.update(data: Data([0])) }
+        }
+        for key in decodings.blocked.sorted() { hash.update(data: Data(key.utf8)); hash.update(data: Data([0])) }
         for candidate in files.sorted(by: { $0.file.id < $1.file.id }) {
             let f = candidate.file
             for text in [f.id, f.shelfId, f.relativePath, f.bookId ?? "", String(f.size), String(f.modified),
@@ -234,6 +233,7 @@ extension AppDataService {
     private func restoreRecentReadingPass() async throws {
         let store = try await userStore()
         let hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
+        let decodings = try await store.sourceDecodingSnapshot()
         let positions = try await store.recentRestorationPositions(limit: RecentRestorationPolicy.recentKeyLimit, excluding: hidden)
         let keys = Set(positions.map(\.contentKey))
         recentRestorationAttempts = recentRestorationAttempts.filter { keys.contains($0.key) }
@@ -244,15 +244,15 @@ extension AppDataService {
             let core = try textCore()
             if let id = try? core.textIdForSha(sha: position.contentKey), all.contains(where: { $0.file.bookId == id }) { continue }
             let candidates = RecentRestorationPolicy.candidates(hint: hint, files: all)
-            let fingerprint = restorationFingerprint(candidates, position: position)
+            let fingerprint = restorationFingerprint(candidates, position: position, decodings: decodings)
             guard recentRestorationAttempts[position.contentKey] != fingerprint else { continue }
             var interrupted = false
             for candidate in candidates {
                 try Task.checkCancellation()
                 try await waitForReadingIdle()
                 let generation = recentRestorationGeneration
-                let work = RecentRestorationWork(core: core, candidate: candidate, hint: hint, contentKey: position.contentKey,
-                    mayDownload: RecentRestorationPolicy.canAutomaticallyDownload(hint: hint, candidate: candidate, files: all))
+                let work = RecentRestorationWork(core: core, candidate: candidate, contentKey: position.contentKey,
+                    mayDownload: RecentRestorationPolicy.canAutomaticallyDownload(hint: hint, candidate: candidate, files: all), service: self)
                 recentRestorationWork = work
                 do {
                     if let recentRestorationBeforeRead { await recentRestorationBeforeRead(candidate.file.id) }
@@ -269,9 +269,9 @@ extension AppDataService {
                           !readingSourceIDs.values.contains(candidate.file.id),
                           identityMayRun(),
                           let fresh = try restorationCandidate(candidate.file.id),
-                          restorationFingerprint([fresh], position: position) == restorationFingerprint([candidate], position: position)
+                          restorationFingerprint([fresh], position: position, decodings: decodings) == restorationFingerprint([candidate], position: position, decodings: decodings)
                     else { interrupted = true; break }
-                    guard try core.linkRestoredLibraryFile(file: candidate.file, decoding: hint.decoding, bookId: result.bookID, contentSha256: position.contentKey) else { interrupted = true; break }
+                    guard try core.linkRestoredLibraryFile(file: candidate.file, decoding: result.decoding, bookId: result.bookID, contentSha256: position.contentKey) else { interrupted = true; break }
                     queryCache.removeAll()
                     NotificationCenter.default.post(name: .recentReadingRestored, object: nil)
                     break

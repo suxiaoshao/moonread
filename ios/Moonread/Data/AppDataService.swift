@@ -537,12 +537,12 @@ actor AppDataService {
 
     // The source is locally available before navigation. Only small metadata work runs on this actor;
     // coordinated provider access and the long Rust call have their own queue.
-    func openSourceFile(_ file: SourceFile, diagnostic: ReaderOpenTrace? = nil) throws -> ReadingLease {
+    func openSourceFile(_ file: SourceFile, diagnostic: ReaderOpenTrace? = nil) async throws -> ReadingLease {
         diagnostic?.mark("lease.actor.begin"); defer { diagnostic?.mark("lease.actor.return") }
-        return try openSourceFile(file, trackReadingSource: true)
+        return try await openSourceFile(file, trackReadingSource: true)
     }
 
-    func openSourceFile(_ file: SourceFile, trackReadingSource: Bool) throws -> ReadingLease {
+    func openSourceFile(_ file: SourceFile, trackReadingSource: Bool) async throws -> ReadingLease {
         let opening = "opening:" + UUID().uuidString
         holdForeground(opening); defer { releaseForeground(opening) }
         if recentRestorationWork?.fileID == file.id { recentRestorationWork?.cancel() }
@@ -551,21 +551,30 @@ actor AppDataService {
         let shelf = try libraryShelf(entry.shelfId)
         let root = Data(shelf.bookmark)
         let key = "Moonread.sourceDraft.\(testSession ?? "library").\(file.id)"
+        let configuration = userCloudConfigurationRevision
+        let read = SourceDecodingRead()
+        let raw = try await read.read(bookmark: root, relativePath: entry.relativePath)
+        let decoding = try await prepareSourceDecoding(raw: raw, fileID: file.id)
+        try Task.checkCancellation()
+        guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
+        let encoding = decoding == "auto" ? nil : decoding
         if let previous = sourceDefaults.string(forKey: key),
            let state = try? textCore().importStatus(bookId: previous), state.phase != .complete, entry.bookId == state.text.id {
             if let data = sourceDefaults.data(forKey: importSourceKey(previous)),
-               let old = try? JSONDecoder().decode(ImportSource.self, from: data) {
+               let old = try? JSONDecoder().decode(ImportSource.self, from: data),
+               try normalizeSourceDecoding(decoding: old.encoding ?? "auto") == decoding,
+               old.expectedRawSHA == nil || old.expectedRawSHA == raw.sha {
                 let moved = ImportSource(rootBookmark: root, relativePath: entry.relativePath,
-                                         encoding: old.encoding, sourceKey: key, fileID: file.id)
+                    encoding: encoding, sourceKey: key, fileID: file.id, expectedRawSHA: raw.sha)
                 sourceDefaults.set(try JSONEncoder().encode(moved), forKey: importSourceKey(previous))
+                try resumeSystemInterruptedImport(previous)
+                if trackReadingSource { readingSourceIDs[previous] = file.id }
+                return retainReading(previous)
             }
-            try resumeSystemInterruptedImport(previous)
-            if trackReadingSource { readingSourceIDs[previous] = file.id }
-            return retainReading(previous)
+            pauseImport(previous, reason: .system)
         }
-        let decoding = try textCore().sourceDecoding(fileId: file.id)
-        let encoding = decoding == "auto" ? nil : decoding
-        let descriptor = ImportSource(rootBookmark: root, relativePath: entry.relativePath, encoding: encoding, sourceKey: key, fileID: file.id)
+        let descriptor = ImportSource(rootBookmark: root, relativePath: entry.relativePath, encoding: encoding,
+                                      sourceKey: key, fileID: file.id, expectedRawSHA: raw.sha)
         let id = try startImport(title: file.title, descriptor: descriptor, encoding: encoding)
         if trackReadingSource { readingSourceIDs[id] = file.id }
         return retainReading(id)
@@ -633,7 +642,7 @@ actor AppDataService {
         let control = try core.createImport(title: title)
         let id = control.bookId()
         let source = ImportSource(rootBookmark: descriptor.rootBookmark, relativePath: descriptor.relativePath,
-                                  encoding: encoding, sourceKey: descriptor.sourceKey, fileID: descriptor.fileID)
+                                  encoding: encoding, sourceKey: descriptor.sourceKey, fileID: descriptor.fileID, expectedRawSHA: descriptor.expectedRawSHA)
         if let fileID = source.fileID { try core.linkLibraryFile(fileId: fileID, bookId: id) }
         sourceDefaults.set(try JSONEncoder().encode(source), forKey: importSourceKey(id))
         // Reopening the same file after an explicit encoding/version restart
@@ -684,7 +693,7 @@ actor AppDataService {
         let entry = try textCore().sourceFileLocation(fileId: fileID)
         let shelf = try libraryShelf(entry.shelfId)
         return ImportSource(rootBookmark: Data(shelf.bookmark), relativePath: entry.relativePath,
-                            encoding: source.encoding, sourceKey: source.sourceKey, fileID: fileID)
+                            encoding: source.encoding, sourceKey: source.sourceKey, fileID: fileID, expectedRawSHA: source.expectedRawSHA)
     }
 
     func rebindFileImportSources(_ fileIDs: Set<String>) throws {
@@ -770,7 +779,6 @@ actor AppDataService {
         }
         do {
             let source = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))
-            if let fileID = source.fileID { return try textCore().sourceDecoding(fileId: fileID) }
             return source.encoding ?? "auto"
         } catch {
             // Do not log source JSON, bookmarks, paths, titles, or error descriptions.
@@ -780,15 +788,21 @@ actor AppDataService {
         }
     }
 
-    func restartImport(_ id: String, encoding: String?) throws -> ReadingLease {
+    func restartImport(_ id: String, encoding: String?) async throws -> ReadingLease {
         // A cancelled reader queued behind this actor must not allocate an import
         // or change the file's persisted decoding policy.
         try Task.checkCancellation()
         guard let data = sourceDefaults.data(forKey: importSourceKey(id)) else { throw CocoaError(.fileReadNoPermission) }
-        let descriptor = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))
+        var descriptor = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))
+        let configuration = userCloudConfigurationRevision
+        let raw = try await SourceDecodingRead().read(bookmark: descriptor.rootBookmark, relativePath: descriptor.relativePath)
+        let decoding = try await prepareSourceDecoding(raw: raw, fileID: descriptor.fileID, selection: encoding ?? "auto")
+        try Task.checkCancellation()
+        guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
+        descriptor.expectedRawSHA = raw.sha
         clearUserPausedImport(id)
         pauseImport(id, reason: .system)
-        let next = try startImport(title: textCore().importStatus(bookId: id).text.title, descriptor: descriptor, encoding: encoding)
+        let next = try startImport(title: textCore().importStatus(bookId: id).text.title, descriptor: descriptor, encoding: decoding == "auto" ? nil : decoding)
         if let fileID = descriptor.fileID { readingSourceIDs[next] = fileID }
         return retainReading(next)
     }
@@ -914,6 +928,7 @@ struct ImportSource: Codable, Sendable {
     var encoding: String? = nil
     var sourceKey: String? = nil
     var fileID: String? = nil
+    var expectedRawSHA: String? = nil
 }
 
 private enum SourceImportEvent: String, Sendable { case ready, failed, finished }
@@ -963,6 +978,7 @@ private final class SourceImportWork: @unchecked Sendable {
                     result = Result {
                         ReaderOpenDiagnostics.worker(control.bookId(), "accessor")
                         let digest = try core.hashImportSource(control: control, filePath: url.path)
+                        guard source.expectedRawSHA == nil || source.expectedRawSHA == digest else { throw ReaderError.SourceChanged }
                         ReaderOpenDiagnostics.worker(control.bookId(), "rawHashEnd")
                         let initial = try core.importStatus(bookId: control.bookId())
                         let key = SourceContentKey(rawSha256: digest, decoding: encoding ?? "auto")

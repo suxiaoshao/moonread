@@ -173,9 +173,9 @@ UserValue 按 `(updated, token)` 做整值 LWW；位置候选写入与压缩也�
 
 库存诊断区分较新格式（高 v、未知类型或字段）、数据无法读取（坏结构）与读取失败（存储/查询异常）；只在确认为较新格式时建议更新。诊断只返回书键、可得书名/来源、记录类型和原因，不返回 payload。统计清除的 book 可以是正式 SHA 或非空 pending 键，旧作用域在库存、备份和整书删除中保持可读。
 
-## 1.3 已定稿待实现
+## 1.3 同步进度与编码
 
-以下是 #98/#99 的已确认设计，非 `6dc282a` 已存在的字段或运行行为。实现 PR 同步更新规则归属和迁移；CloudKit schema 不变，不新增通用同步引擎。排期见[1.3 计划](../plans/1.3.md)。
+以下为 #98/#99 的实现契约；兼容基线为已发布 1.2 (10) `6ceef33`。CloudKit schema 不变，不新增通用同步引擎。排期见[1.3 计划](../plans/1.3.md)。
 
 ### 同步进度提示：同步位置更靠后时的非打断提示
 
@@ -191,7 +191,7 @@ PositionValue 仍是 `content_key/offset/source_hint`，StoredValue 仍是 `upda
 
 #### 决策与时序
 
-建议在 `Data/ReadingContinuation.swift` 统一准备 ResumeContext；`ReaderSession` 只拥有可见提示、关闭和导航状态。
+`Data/ReadingContinuation.swift` 统一准备 ResumeContext；`ReaderSession` 只拥有可见提示、关闭和导航状态。
 
 1. 开书在首次位置写入之前同时取该 SHA 的现有 LWW 胜者、本机基线、兼容状态。未知 payload/隔离时沿用原保护，不猜位置。
 2. 无本机基线：沿用当前正常恢复胜者行为，不把读者拉回 0；已读过本机但无 token 的旧数据也不捏造来源。1.3 以后发生本机实际阅读才积累基线。
@@ -225,7 +225,7 @@ PositionValue 仍是 `content_key/offset/source_hint`，StoredValue 仍是 `upda
 - 用户本次明确选择最高优先级；事务提交经既有 put 获得比已见 winner 更新的 updated。之后已同步的更新可以在**下次开书/重建**成为默认；不能远端设置一到就销毁正在阅读的会话。
 - 选择“自动”必须保存显式 auto 值，不能只删本机 override，使远端旧手选值再次生效。
 
-新增 Swift `Data/SourceDecodingPreferences.swift` 统一编排“确定 rawSHA → 完成这条来源的旧值迁移 → 读取同步 winner”。Rust 继续负责原始摘要、编码规范和解码。迁移器只生产历史候选，正常解析只消费 UserDataStore 胜者，没有本机旧值参与第二轮裁决。
+Swift `Data/SourceDecodingPreferences.swift` 统一编排“确定 rawSHA → 完成这条来源的旧值迁移 → 读取同步 winner”。Rust 继续负责原始摘要、编码规范和解码。迁移器只生产历史候选，正常解析只消费 UserDataStore 胜者，没有本机旧值参与第二轮裁决。
 
 #### 三条路径共用同一个编码判定
 
@@ -245,8 +245,8 @@ hash 与解析跨 actor 时不得持 NSFileCoordinator accessor 同步等待 Mai
 
 迁移流程：
 
-1. **一次登记。** 通过 SQLite 下一有序版本，在事务中把升级前非 auto 的手选值登记为待迁项；auto 默认值无需生成候选，缺同步 key 本来就等于 auto。现有列无法区分“用户曾选 auto”和“从未选择”，不能杜撰历史。登记完成后不能每次启动重新从旧列生产候选。
-2. **不丢待迁选择。** 在现有 SQLite 增加一个专用于升级的 `source_decoding_migration` 待办表，保存既有 fileID/来源定位与快照、规范编码、可选 rawSHA；不新建数据库或文件格式，不同步此表，不是第二份运行时偏好。保留待办是因为 SwiftData 与 SQLite 无法跨库原子提交，也因为部分原文件未下载；不能把旧手选当可重建缓存清掉。已有 schema 基线文件不改，新增有序迁移；未知更高版本仍拒绝覆盖。
+1. **一次登记。** 通过 SQLite v23，在事务中把升级前非 auto 的手选值登记为待迁项；auto 默认值无需生成候选，缺同步 key 本来就等于 auto。现有列无法区分“用户曾选 auto”和“从未选择”，不能杜撰历史。登记完成后不能每次启动重新从旧列生产候选。
+2. **不丢待迁选择。** 在现有 SQLite 增加一个专用于升级的 `source_decoding_migration` 待办表，保存既有 fileID/来源定位与快照、规范编码、可选 rawSHA；不新建数据库或文件格式，不同步此表，不是第二份运行时偏好。保留待办是因为 SwiftData 与 SQLite 无法跨库原子提交，也因为部分原文件未下载；不能把旧手选当可重建缓存清掉。已有 schema 基线文件不改，有序迁移 v22→v23；未知更高版本仍拒绝覆盖。
 3. **取得强身份。** 已有 library_identities 且符合现有来源快照核验时可复用 rawSHA；不能从相同 contentSHA 反推唯一 rawSHA，source_imports 同一正文可能有多个原始字节版本。其余只读协调取得原文件后算完整 rawSHA，不按名称或路径猜。
 4. **写入历史候选。** `source-decoding/<rawSHA>`，`StoredValue.updated=0`，value 为规范编码；token 使用由迁移版本、rawSHA、规范编码组成的稳定标识。同 rawSHA+同编码重复迁移产生同一 token；不同旧编码均为 epoch，沿现有 `(updated,token)` 规则确定赢家，不再按设备、文件修改时间、遍历顺序另选“最新”。普通真实选择仍用原 put，所以至少为 1 且必定胜过 epoch。
 5. **先可靠保存，再确认完成。** 候选通过严格校验和去重接入 UserDataStore；同 token 不同 payload 必须报错。SwiftData 本机 save 成功（或确认已有相同候选/更高优先级真实值）后，才事务移除对应待迁项。若中途崩溃，使用同一 token 重试；不产生更大的时间戳，不覆盖已存在的新选择。迁移登记与完成标记只属于升级，不是已应用 token 缓存。
@@ -280,7 +280,7 @@ hash 与解析跨 actor 时不得持 NSFileCoordinator accessor 同步等待 Mai
 - rawSHA 不可用/原文件离线不静默清空，正常重新取得来源后只迁一次；文件变化不错误使用旧摘要，同正文多 rawSHA 不误关联。
 - 升级完成后三路径只调用同步 resolver；检查代码不存在 legacyLocalSelection/额外同步按钮/已应用 token。未知 payload 隔离，保存失败不改既有身份；旧备份可导入、新 key 备份旧版安全拒绝。
 
-真实两设备验收：一边迁 epoch、一边离线新选，再上线；迟到 epoch 不覆盖真实选择。此步骤待实现后执行，本轮未运行。
+真实两设备验收：一边迁 epoch、一边离线新选，再上线；迟到 epoch 不覆盖真实选择。单元测试的合成记录不替代这一验收，当前批次待用户真机试用。
 ## 系统续读派生快照
 
 `SystemReading/v1/catalog.json` 是主 App 从现有用户投影与文件索引生成的本机可重建快照，不同步、不进入备份，不反写位置或事实。只包含已确定正文 SHA 的书目与展示摘要；消费者不得打开用户数据库或小说。版本未知、首次解锁前不可读时使用通用入口。账户切换先发布空白分域，等待确认后重建；旧异步工作由 configuration revision 和本机请求代次拒绝。正式位置密集更新合并为至多每 30 秒一次，扫描、换书/退出、云导入等有意义事件及时刷新。快照使用首次解锁后可读的文件保护。

@@ -3,10 +3,7 @@ use encoding_rs::Encoding;
 use rusqlite::Connection;
 use rusqlite::OptionalExtension;
 use rusqlite::params;
-use sha2::Digest;
-use sha2::Sha256;
 use std::fs::File;
-use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
 use std::sync::Arc;
@@ -149,20 +146,9 @@ impl ReaderCore {
         control: Arc<ImportControl>,
         file_path: String,
     ) -> Result<String> {
-        let mut file = File::open(file_path)?;
-        let mut hash = Sha256::new();
-        let mut buffer = vec![0; 1024 * 1024];
-        loop {
-            if control.cancelled.load(Ordering::Acquire) {
-                return Err(ReaderError::Paused);
-            }
-            let n = file.read(&mut buffer)?;
-            if n == 0 {
-                break;
-            }
-            hash.update(&buffer[..n]);
-        }
-        Ok(sha256_hex(hash.finalize()))
+        crate::identity::source::hash_source(&mut File::open(file_path)?, || {
+            control.cancelled.load(Ordering::Acquire)
+        })
     }
 
     pub fn validate_import_source(

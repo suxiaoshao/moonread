@@ -165,6 +165,7 @@ extension AppDataService {
     }
     func prepareLibrary(localOnly: Bool = false) async throws {
         let core = try textCore()
+        try await migrateKnownSourceDecodings()
         if !localOnly { restoreCloudLibraryRoot() }
         let url = try builtinLibraryURL()
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
