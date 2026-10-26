@@ -298,13 +298,16 @@ struct ShelfReferenceHints: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(verbatim: reference.value.name).font(.headline)
                         Text(reference.locationLabel).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                        Text("需要重新授权", tableName: "ShelfRecovery").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                        Button { model.reauthorizeShelf(reference) } label: { Text("重新授权", tableName: "ShelfRecovery") }
+                        Button { model.reauthorizeShelf(reference) } label: { Text("重新连接", tableName: "Localizable") }
+                            .buttonStyle(ThemedSecondaryButtonStyle())
                             .accessibilityIdentifier("reauthorizeShelf-" + reference.id)
                             .disabled(!model.canAcceptFileWork)
                     }.padding(.vertical, 6)
                 }
-            } header: { Text("你之前添加过这些书架", tableName: "ShelfRecovery") }
+            } header: { Text("你之前添加过这些书架", tableName: "ShelfRecovery") } footer: {
+                Text("重新选择原来的文件夹，即可恢复对此书架的访问。")
+                    .foregroundStyle(Color(uiColor: theme.secondary))
+            }
                 .listRowBackground(grouped ? Color(uiColor: theme.surface) : Color.clear)
                 .listRowSeparatorTint(Color(uiColor: theme.separator))
         }

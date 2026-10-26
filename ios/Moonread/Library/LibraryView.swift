@@ -692,10 +692,20 @@ struct LibraryManagementView: View {
             ShelfReferenceHints(model: model, grouped: true)
             Section {
                 ForEach(model.shelves, id: \.id) { shelf in
-                    NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: shelf.id))) {
-                        ManagedShelfRow(shelf: shelf)
-                    }
-                    .accessibilityIdentifier("shelf-\(shelf.id)")
+                    Group {
+                        if shelf.error != nil {
+                            VStack(alignment: .leading, spacing: 12) {
+                                ManagedShelfRow(shelf: shelf)
+                                Button("重新连接") { model.chooseFiles(.folder(shelf.id)) }
+                                    .buttonStyle(ThemedSecondaryButtonStyle()).disabled(!model.canAcceptFileWork)
+                                    .accessibilityIdentifier("reconnectShelf-" + shelf.id)
+                            }
+                        } else {
+                            NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: shelf.id))) {
+                                ManagedShelfRow(shelf: shelf)
+                            }
+                        }
+                    }.accessibilityIdentifier("shelf-\(shelf.id)")
                     .modifier(LibraryShelfDropTarget(model: model, shelf: shelf))
                     .contextMenu { ShelfMenu(model: model, shelf: shelf) }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
