@@ -11,7 +11,7 @@ struct AIConversationsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
-                if let error = ai.error {
+                if !ai.conversations.isEmpty, let error = ai.error {
                     HStack(spacing: LayoutTokens.compact) {
                         Label(error, systemImage: "exclamationmark.circle").font(.footnote)
                             .foregroundStyle(Color(uiColor: theme.destructive))
@@ -27,11 +27,19 @@ struct AIConversationsView: View {
                 }.onDelete { offsets in for id in offsets.map({ ai.conversations[$0].id }) { ai.delete(id) } }
             }.listStyle(.plain).themedPage().navigationTitle("对话")
                 .overlay {
-                    if ai.loaded && ai.conversations.isEmpty {
-                        VStack(spacing: LayoutTokens.control) {
-                            MoonView(size: 56)
-                            Text("还没有对话").foregroundStyle(Color(uiColor: theme.secondary))
-                        }.allowsHitTesting(false)
+                    if ai.conversations.isEmpty {
+                        if let error = ai.error {
+                            ContentUnavailableView {
+                                Label("暂时无法读取对话", systemImage: "exclamationmark.bubble")
+                            } description: { Text(error).foregroundStyle(Color(uiColor: theme.secondary)) } actions: {
+                                Button("重试") { Task { await ai.load() } }.buttonStyle(ThemedProminentButtonStyle())
+                            }.accessibilityIdentifier("aiConversationLoadError")
+                        } else if ai.loaded {
+                            VStack(spacing: LayoutTokens.control) {
+                                MoonView(size: 56)
+                                Text("还没有对话").foregroundStyle(Color(uiColor: theme.secondary))
+                            }.allowsHitTesting(false)
+                        } else { LoadingActivity(fullPage: true, waitingLabel: "正在读取对话") }
                     }
                 }
                 .toolbar {

@@ -20,10 +20,8 @@ struct AICoverModePicker: View {
                 ForEach(AICoverMode.all) { Text($0.title).tag($0) }
             }.pickerStyle(.segmented).accessibilityIdentifier("aiCoverMode")
             if !available(mode) {
-                NavigationLink { AIToolServiceView(purpose: mode.purpose) } label: {
-                    Label { Text(mode.unavailable) } icon: { Image(systemName: "chevron.right").font(.caption) }
-                        .labelStyle(AITrailingIconLabelStyle())
-                }.font(.subheadline).frame(minHeight: LayoutTokens.hit)
+                AIModelPickerButton(purpose: mode.purpose, title: mode.unavailable)
+                    .font(.subheadline).frame(minHeight: LayoutTokens.hit)
             }
         }
         .onAppear { if !available(mode), let other = AICoverMode.all.first(where: available) { mode = other } }

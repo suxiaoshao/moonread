@@ -487,8 +487,12 @@ private struct ReadingDataIssuesView: View {
                                 Button { library.chooseFiles(.folder(shelf)) } label: { Text("重新连接书架", tableName: "DataManagement") }
                                     .buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("reconnectPending-" + item.id)
                             }
-                            Button(role: .destructive) { discarding = item } label: { Text("丢弃记录", tableName: "DataManagement") }
-                                .buttonStyle(.bordered).tint(Color(uiColor: theme.destructive)).foregroundStyle(Color(uiColor: theme.destructive)).accessibilityIdentifier("discardPending-" + item.id)
+                            Spacer(minLength: 8)
+                            Menu {
+                                Button(role: .destructive) { discarding = item } label: { Text("丢弃记录", tableName: "DataManagement") }
+                                    .accessibilityIdentifier("discardPending-" + item.id)
+                            } label: { Label("更多", systemImage: "ellipsis").labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44) }
+                                .foregroundStyle(Color(uiColor: theme.secondary)).accessibilityIdentifier("pendingMore-" + item.id)
                         }.disabled(model.busy)
                     }.padding(.vertical, 4)
                 }

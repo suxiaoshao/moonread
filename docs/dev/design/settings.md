@@ -82,3 +82,9 @@ iCloud 采用文件与阅读数据两任务分区，开关、说明和恢复操�
 本机 UserDefaults 独立键 `Moonread.readingReview.requests.v1` 保存已请求版本集合及最后请求时间，不进入 CloudKit。调用前先记请求，系统未显示也不反复请求；应用无法得知是否实际显示或评分。读取不了记录时保留原值并跳过。系统是否显示由 StoreKit 决定，TestFlight 不显示属于系统行为。参见 [Apple 的评分请求说明](https://developer.apple.com/documentation/storekit/requesting-app-store-reviews)。不显示自定义预弹窗。
 
 设置的“关于”区域始终提供“给月读评分”链接，打开 `https://apps.apple.com/app/id6823849812?action=write-review`，不受自动请求条件限制。
+
+## 1.3 设置导航与任务呈现
+
+设置按 `horizontalSizeClass` 分流：只有 regular 显示左侧五组与右侧内容两栏；compact（以及宽度尚未知时）只显示完整五组的单页表单，不创建可选中分组的侧栏。compact 复用外层原生导航栈，regular 才创建 NavigationSplitView 与右侧内容栈，不由系统折叠侧栏决定手机首页。当前组、任务路径及阅读设置保存状态各保留一份；宽窄变化不重新加载偏好，切换组才返回该组根入口。书架、数据管理与 iCloud 的后续导航留在右列。AI 不可用时退出正在配置的 AI 任务，地区说明为只读区。
+
+AI 设置按 V2-R A 的原生分组呈现：默认用途三行使用共享模型选择组件，对话先显示模型/强度浮层，工具直接显示列表，连接每项一行，未登录就地提供登录入口，添加连接在末行、说明在 footer；共享列表始终可搜索、点选模型即保存并返回，强度由共享浮层的滑杆即时保存；连接与目录状态取自 AIConnectionService，不由持有凭据推断连接成功。iCloud 分为阅读数据与我的书架文件两个独立任务区，确认与重试贴各自状态，账户和替换确认流程不变。阅读设置内部与统计/详情整体布局仍沿现状，本轮不实现 V1/V4。

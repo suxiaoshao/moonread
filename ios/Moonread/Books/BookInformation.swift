@@ -180,22 +180,32 @@ struct BookMetadataEditor: View {
     @State private var discard = false
     @State private var newTag = ""
     @State private var suggestions: [String] = []
+    @ViewBuilder private var coverActions: some View {
+        PhotosPicker(selection: $photo, matching: .images) { Label("从照片选择", systemImage: "photo") }
+            .buttonStyle(ThemedSecondaryButtonStyle()).disabled(draft.choosingImage)
+        Button("从文件选择", systemImage: "folder") { filePicker = true }
+            .buttonStyle(ThemedSecondaryButtonStyle()).disabled(draft.choosingImage)
+    }
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    HStack {
-                        Spacer()
+                    VStack(spacing: 16) {
                         LibraryBookCover(title: "", cover: draft.value.cover).frame(width: 112, height: 160)
-                        Spacer()
-                    }.listRowBackground(Color.clear)
-                    PhotosPicker(selection: $photo, matching: .images) { Label("从照片选择", systemImage: "photo") }
-                        .buttonStyle(.borderless).disabled(draft.choosingImage)
-                    Button("从文件选择", systemImage: "folder") { filePicker = true }.buttonStyle(.borderless).disabled(draft.choosingImage)
-                    if draft.choosingImage { ProgressView("正在处理图片") }
-                    if draft.value.cover != nil { Button("移除封面", role: .destructive) { draft.removeCover() } }
+                            .overlay { if draft.choosingImage { ProgressView("正在处理图片").padding(8).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12)) } }
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 12) { coverActions }
+                            VStack(spacing: 12) { coverActions }
+                        }
+                        if draft.value.cover != nil {
+                            Menu {
+                                Button("移除封面", systemImage: "trash", role: .destructive) { draft.removeCover() }
+                            } label: { Label("更多", systemImage: "ellipsis") }
+                                .disabled(draft.choosingImage).accessibilityIdentifier("coverMore")
+                        }
+                    }.frame(maxWidth: .infinity).padding(.vertical, 8)
                 } header: { Text("封面") }
-                .listRowBackground(Color(uiColor: theme.surface))
+                .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                 Section("作者") {
                     TextField("作者", text: $draft.value.author).focused($focused).keyboardInputRegion()
                         .accessibilityIdentifier("bookAuthorField")

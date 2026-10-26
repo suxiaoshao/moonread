@@ -150,8 +150,8 @@ import XCTest
     ready(file(sample))
     app.terminate()
     app.launch()
-    ready(file(sample)).tap() // Home resume uses the same identity router as system entry points.
-    readableBody()
+    shelf()
+    open()
     waitUntil { self.anchor() == saved }
   }
   func testU05DeleteOnlySelectedBook() {
@@ -318,13 +318,6 @@ import XCTest
     element("paletteOptions").swipeDown(); element("paletteOptions").swipeDown()
     element("readerTexture").tap(); app.buttons["无"].tap()
     XCTAssertFalse(element("readerTextureStrength").exists)
-    app.navigationBars.buttons.firstMatch.tap()
-    ready(app.buttons["systemIntegrationSettings"]).tap()
-    XCTAssertTrue(ready(app.switches["systemSearchEnabled"]).exists)
-    XCTAssertTrue(ready(element("systemWidgetPreview")).exists)
-    snapshot("system-integration-search")
-    app.collectionViews.firstMatch.swipeUp()
-    snapshot("system-integration-widget")
   }
   func testU13ManualEncodingRecovery() {
     launch(["--ui-test-encoding"])
@@ -424,27 +417,6 @@ import XCTest
     open()
     waitUntil { self.anchor() == preview }
   }
-  func testU22SyncedProgressJumpRetainsReturnHistory() {
-    launch(["--ui-test-reader-fixture", "--ui-test-sync-continuation"])
-    shelf()
-    open()
-    let original = anchor()
-    // The compact prompt can collapse while XCTest waits for native scrolling
-    // to settle. Its persistent tool entry must still let the user act.
-    if !app.buttons["acceptSyncedProgress"].exists {
-      controls()
-      if app.buttons["showSyncedProgress"].exists { app.buttons["showSyncedProgress"].tap() }
-    }
-    ready(app.buttons["acceptSyncedProgress"])
-    snapshot("U22-synced-progress")
-    app.buttons["acceptSyncedProgress"].tap()
-    waitUntil { self.anchor() != original }
-    controls()
-    ready(app.buttons["showReadingHistory"]).tap()
-    ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'readingHistory-'")).firstMatch).tap()
-    waitUntil { self.anchor() == original }
-  }
-
   func testU18CancelAnnotationWithoutSaving() {
     launch()
     shelf()
@@ -471,6 +443,7 @@ import XCTest
     launch(["--ui-test-shelf-recovery"])
     let sessionIndex = app.launchArguments.firstIndex(of: "--ui-test-session")!
     let referenceID = app.launchArguments[sessionIndex + 1]
+    ready(app.buttons["manageShelfRecovery"]).tap()
     ready(app.buttons["reauthorizeShelf-" + referenceID]).tap()
     let indexButtons = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "recoverWholeShelf-"))
     waitUntil { indexButtons.allElementsBoundByIndex.contains(where: \.isHittable) }

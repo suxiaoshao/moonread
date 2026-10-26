@@ -92,7 +92,7 @@ struct LibraryView: View {
                     .listRowInsets(EdgeInsets(top: 2, leading: 24, bottom: 2, trailing: 24))
                 }
             }
-            ShelfReferenceHints(model: model)
+            ShelfRecoverySummary(model: model)
             Section {
                 ForEach(model.shelves, id: \.id) { shelf in
                     NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: shelf.id))) { ShelfRow(shelf: shelf) }
@@ -689,13 +689,24 @@ struct LibraryManagementView: View {
             Section {
                 Toggle(isOn: Binding(get: { model.fullIndex.automatic }, set: { model.fullIndex.automatic = $0 })) { Text("新加入的书自动建立索引", tableName: "FullIndex") }.accessibilityIdentifier("automaticFullIndex")
             } header: { Text("索引", tableName: "FullIndex") }
+                .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             ShelfReferenceHints(model: model, grouped: true)
             Section {
                 ForEach(model.shelves, id: \.id) { shelf in
-                    NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: shelf.id))) {
-                        ManagedShelfRow(shelf: shelf)
-                    }
-                    .accessibilityIdentifier("shelf-\(shelf.id)")
+                    Group {
+                        if shelf.error != nil {
+                            VStack(alignment: .leading, spacing: 12) {
+                                ManagedShelfRow(shelf: shelf)
+                                Button("重新连接") { model.chooseFiles(.folder(shelf.id)) }
+                                    .buttonStyle(ThemedSecondaryButtonStyle()).disabled(!model.canAcceptFileWork)
+                                    .accessibilityIdentifier("reconnectShelf-" + shelf.id)
+                            }
+                        } else {
+                            NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: shelf.id))) {
+                                ManagedShelfRow(shelf: shelf)
+                            }
+                        }
+                    }.accessibilityIdentifier("shelf-\(shelf.id)")
                     .modifier(LibraryShelfDropTarget(model: model, shelf: shelf))
                     .contextMenu { ShelfMenu(model: model, shelf: shelf) }
                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {

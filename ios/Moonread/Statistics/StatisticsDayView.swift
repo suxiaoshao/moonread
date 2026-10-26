@@ -12,24 +12,41 @@ struct StatisticsDayView: View {
     private var total: UInt64 { spans.reduce(0) { $0 + $1.milliseconds } }
     var body: some View {
         List {
-            if error == nil, let compatibilityNotice { Text(compatibilityNotice).listRowBackground(Color(uiColor: theme.surface)) }
-            if let error {
-                Text(error).foregroundStyle(Color(uiColor: theme.destructive)).listRowBackground(Color(uiColor: theme.surface))
-            } else if loaded && spans.isEmpty {
-                ContentUnavailableView("这天没有阅读记录", systemImage: "book.closed").listRowBackground(Color.clear)
-            } else if loaded {
+            if !spans.isEmpty {
+                if let error {
+                    Label(error, systemImage: "exclamationmark.circle").font(.footnote)
+                        .foregroundStyle(Color(uiColor: theme.destructive))
+                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                }
                 Section {
                     Text(StatisticsDates.duration(total)).font(.title2.weight(.semibold)).monospacedDigit()
                     ReadingSessionsChart(spans: spans, singleBook: false)
-                }.listRowBackground(Color(uiColor: theme.surface))
-                Section("阅读时段") {
+                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                Section {
                     ForEach(spans.reversed()) { ReadingSessionRow(span: $0, showBook: route.book == nil) }
-                }.listRowBackground(Color(uiColor: theme.surface))
+                } header: { Text("阅读时段") } footer: {
+                    if let compatibilityNotice { Text(compatibilityNotice).foregroundStyle(Color(uiColor: theme.secondary)) }
+                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
         }
         .themedPage()
         .navigationTitle(StatisticsDates.dateLabel(route.day, full: true)).navigationBarTitleDisplayMode(.inline)
-        .overlay { if !loaded && error == nil { LoadingActivity(fullPage: true, waitingLabel: "正在读取统计") } }
+        .overlay {
+            if spans.isEmpty {
+                if let error {
+                    ContentUnavailableView {
+                        Label("暂时无法读取统计", systemImage: "exclamationmark.circle")
+                    } description: { Text(error).foregroundStyle(Color(uiColor: theme.secondary)) } actions: {
+                        Button("重试") { Task { await load() } }.buttonStyle(ThemedProminentButtonStyle())
+                    }
+                } else if !loaded { LoadingActivity(fullPage: true, waitingLabel: "正在读取统计") }
+                else {
+                    ContentUnavailableView {
+                        Label(compatibilityNotice == nil ? "这天没有阅读记录" : "部分统计暂不可用", systemImage: "book.closed")
+                    } description: { if let compatibilityNotice { Text(compatibilityNotice).foregroundStyle(Color(uiColor: theme.secondary)) } }
+                }
+            }
+        }
         .task { await load() }
         .onReceive(NotificationCenter.default.publisher(for: .statisticsChanged).receive(on: DispatchQueue.main)) { _ in Task { await load() } }
         .accessibilityIdentifier("statisticsDay")
