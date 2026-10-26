@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AISettingsView: View {
     @State private var adding = false
+    @State private var purposeRoute: AIModelPurpose?
     @Environment(\.dismiss) private var dismiss
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
@@ -18,7 +19,7 @@ struct AISettingsView: View {
                     ForEach(AIModelPurpose.allCases, id: \.self) { purpose in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(purpose.title).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                            NavigationLink { AIToolServiceView(purpose: purpose) } label: {
+                            Button { purposeRoute = purpose } label: {
                                 Text(verbatim: purposeLabel(purpose)).font(.subheadline.weight(.semibold))
                                     .padding(.horizontal, 14).padding(.vertical, 10)
                                     .background(Color(uiColor: theme.selected), in: .capsule)
@@ -55,7 +56,8 @@ struct AISettingsView: View {
                 .listRowBackground(Color.clear).listRowSeparator(.hidden)
         }.themedPage().navigationTitle("AI 助手")
             .aiAddConnectionFlow(isPresented: $adding)
-            .onChange(of: ai.availability.isAvailable) { _, available in if !available { adding = false; dismiss() } }
+            .navigationDestination(item: $purposeRoute) { AIToolServiceView(purpose: $0) }
+            .onChange(of: ai.availability.isAvailable) { _, available in if !available { adding = false; purposeRoute = nil; dismiss() } }
             .task { await ai.providers.refreshCatalogsIfNeeded() }
             .toolbar { ToolbarItem(placement: .topBarTrailing) { NavigationLink { AIUsageHelpView() } label: { Image(systemName: "questionmark.circle") }.toolbarGlyph().accessibilityLabel("AI 使用帮助") } }
     }

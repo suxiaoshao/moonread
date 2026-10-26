@@ -71,16 +71,19 @@ struct AIModelPickerButton: View {
                         }))
                     }
                     if destination.running(ai) {
-                        Text("本次选择将在下一次请求生效").font(.caption)
+                        Text("本次选择将在下一次请求生效").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                     }
                     if let value = destination.selection(ai), let connection = ai.providers.connections.first(where: { $0.id == value.connectionID }), ai.providers.isUsingChatGPTPlan(connection) {
-                        Text("正在使用 ChatGPT 套餐").font(.caption)
+                        Text("正在使用 ChatGPT 套餐").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                         Link("管理 ChatGPT 用量", destination: URL(string: "https://chatgpt.com/settings/usage")!)
                             .font(.caption).foregroundStyle(Color(uiColor: theme.accent))
                     }
                     if saveFailed { Text("模型目录已变化，请重新选择。").font(.caption).foregroundStyle(Color(uiColor: theme.destructive)) }
                 }.padding(16).frame(width: 290).foregroundStyle(Color(uiColor: theme.ink))
-                    .background(Color(uiColor: theme.canvas))
+                    .tint(Color(uiColor: theme.accent))
+                    .background(Color(uiColor: theme.surface))
+                    .environment(\.theme, theme).preferredColorScheme(theme.scheme)
+                    .presentationBackground(Color(uiColor: theme.surface))
                     .presentationCompactAdaptation(.popover)
             }
             .sheet(isPresented: $showing, onDismiss: { detent = .medium }) {

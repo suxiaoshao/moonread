@@ -44,8 +44,16 @@ struct CloudSettingsView: View {
                     if let path = cloud.conflictPath {
                         Button("处理同名文件") { replacing = path }.buttonStyle(ThemedProminentButtonStyle()).disabled(cloud.busy)
                     }
-                    NavigationLink("查看我的书架", value: LibraryRoute.folder(LibraryLocation(shelfID: "builtin")))
-                        .buttonStyle(ThemedSecondaryButtonStyle())
+                    ThemedDivider()
+                    NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: "builtin"))) {
+                        HStack {
+                            Text("查看我的书架")
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
+                                .foregroundStyle(Color(uiColor: theme.secondary))
+                        }.frame(maxWidth: .infinity, minHeight: 44).contentShape(.rect)
+                    }.buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.ink))
+                        .accessibilityIdentifier("openManagedShelfFiles")
                 }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 22))
                 Text("我的书架由应用管理固定的本机与 iCloud 目录，小说文件由 iCloud Drive 同步。外部文件夹仍在原位置管理。")
