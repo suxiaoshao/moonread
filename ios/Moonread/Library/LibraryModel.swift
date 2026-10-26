@@ -11,6 +11,7 @@ enum LibraryRoute: Hashable {
     case folder(LibraryLocation), allBooks(String), reader(OpeningRequest), recent, manage
     case statistics(StatisticsRoute)
     case settings, dataManagement
+    case settingsTask(SettingsTask)
     /// A contextual search pushed on the current stack, with its own session.
     case search(AppSearchScope)
     /// A conversation opened from search, anchored at the matching message.
@@ -99,9 +100,11 @@ final class LibraryModel {
     var statisticsPath: [LibraryRoute] = []
     var settingsPath: [LibraryRoute] = []
     var searchPath: [LibraryRoute] = []
+    @ObservationIgnored weak var settingsNavigation: SettingsNavigation?
     var path: [LibraryRoute] {
         get {
-            switch selectedTab {
+            if let settingsNavigation, settingsNavigation.tab == selectedTab { return settingsNavigation.path }
+            return switch selectedTab {
             case .library, .conversations: libraryPath
             case .statistics: statisticsPath
             case .settings: settingsPath
@@ -109,6 +112,7 @@ final class LibraryModel {
             }
         }
         set {
+            if let settingsNavigation, settingsNavigation.tab == selectedTab { settingsNavigation.path = newValue; return }
             switch selectedTab {
             case .library, .conversations: libraryPath = newValue
             case .statistics: statisticsPath = newValue

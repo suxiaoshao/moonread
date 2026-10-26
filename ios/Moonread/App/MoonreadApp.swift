@@ -293,9 +293,7 @@ private struct MoonreadRoot: View {
         .modifier(AppSearchField(model: library, search: library.search, quickEntry: true))
     }
     private var settingsStack: some View {
-        NavigationStack(path: $library.settingsPath) {
-            SettingsView(library: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }
+        SettingsView(library: library)
     }
 }
 
@@ -324,7 +322,9 @@ struct LibraryDestination: View {
         case .statistics(let target): StatisticsView(library: library, target: target)
         case .conversation(let id, let anchor):
             if ai.availability.isAvailable { AIChatView(conversationID: id, anchor: anchor) }
-        case .settings: SettingsView(library: library)
+        // This route is consumed only by SettingsView's detail stack.
+        case .settingsTask: EmptyView()
+        case .settings: SettingsView(library: library, returnsToApp: true)
         case .dataManagement: DataManagementView(model: library.dataManagement)
         case .search(let scope): AppSearchPage(model: library, scope: scope)
         }
