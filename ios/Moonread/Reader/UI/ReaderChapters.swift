@@ -144,7 +144,7 @@ struct ChapterRebuildView: View {
                     HStack(spacing: 12) {
                         if model.progress?.done != true && model.rebuildError == nil { LoadingActivity(size: 28, fraction: model.progress?.fraction) }
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(model.progress?.done == true ? "识别完成" : "正在识别目录").font(.headline)
+                            Text(model.rebuildError != nil ? "识别未完成" : (model.progress?.done == true ? "识别完成" : "正在识别目录")).font(.headline)
                             Text("已识别 \(Int(model.progress?.count ?? 0)) 章").monospacedDigit().foregroundStyle(Color(uiColor: theme.secondary))
                         }
                         Spacer()

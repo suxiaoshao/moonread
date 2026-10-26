@@ -471,6 +471,7 @@ import XCTest
     launch(["--ui-test-shelf-recovery"])
     let sessionIndex = app.launchArguments.firstIndex(of: "--ui-test-session")!
     let referenceID = app.launchArguments[sessionIndex + 1]
+    ready(app.buttons["manageShelfRecovery"]).tap()
     ready(app.buttons["reauthorizeShelf-" + referenceID]).tap()
     let indexButtons = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "recoverWholeShelf-"))
     waitUntil { indexButtons.allElementsBoundByIndex.contains(where: \.isHittable) }
@@ -515,6 +516,7 @@ import XCTest
     ready(app.buttons["confirmExportAllReadingData"].firstMatch).tap()
     let closeShare = app.buttons.matching(NSPredicate(format: "label IN %@", ["关闭", "Close"])).firstMatch
     ready(closeShare, timeout: 30).tap()
+    waitUntil { !closeShare.exists && self.app.buttons["readingDataList"].isHittable }
     ready(app.buttons["readingDataList"]).tap()
     let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reading-data-"))
     XCTAssertEqual(rows.count, 1)

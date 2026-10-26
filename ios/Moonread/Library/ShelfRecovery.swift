@@ -295,13 +295,13 @@ struct ShelfRecoverySummary: View {
         if !model.shelfRecovery.references.isEmpty {
             HStack(alignment: .center, spacing: 12) {
                 Text("有 \(model.shelfRecovery.references.count) 个书架需要重新连接")
+                    .accessibilityIdentifier("shelfRecoverySummary")
                     .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 4)
                 NavigationLink("处理", value: LibraryRoute.manage)
                     .buttonStyle(ThemedSecondaryButtonStyle()).accessibilityIdentifier("manageShelfRecovery")
             }.padding(14).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
-                .accessibilityIdentifier("shelfRecoverySummary")
         }
     }
 }

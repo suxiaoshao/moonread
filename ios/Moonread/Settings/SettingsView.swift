@@ -107,7 +107,7 @@ struct SettingsView: View {
                             destination(task).onAppear { navigation.group = task.group }
                         } else { LibraryDestination(route: route) }
                     }
-            }
+            }.navigationBarBackButtonHidden(true)
         }.navigationSplitViewStyle(.balanced)
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { navigation.tab = library.selectedTab; library.settingsNavigation = navigation }
