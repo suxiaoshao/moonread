@@ -1142,6 +1142,7 @@ extension AppDataService {
         var settings = defaultReaderSettings(); settings.font = .serif; settings.mode = .scroll
         // Save the ordinary reader preference; no display/font scaling override.
         if arguments.contains("--ui-test-store-ipad") { settings.fontSize = 24 }
+        if StoreShotPage.requested == .reader { settings.mode = .pages }
         try saveSettings(settings)
         guard !sourceDefaults.bool(forKey: "StoreShots.seeded") else { return }
         for folder in f.folders { try FileManager.default.createDirectory(at: root.appendingPathComponent(folder), withIntermediateDirectories: true) }
@@ -1177,11 +1178,21 @@ extension AppDataService {
                 }
                 guard let range = original.range(of: f.bookmark) else { throw ReaderError.InvalidRange }
                 _ = try await ensureBookmark(book.id, at: UInt64(original[..<range.lowerBound].utf8.count))
+                if StoreShotPage.requested != nil {
+                    try await savePosition(bookID: book.id, offset: UInt64(original[..<range.lowerBound].utf8.count))
+                    var display = edited
+                    display.synopsis = original.components(separatedBy: "\n\n").first(where: { $0.count > 45 }) ?? ""
+                    try await saveMetadata(base: edited, edited: display)
+                }
             }
         }
         let inventory = try await readingDataInventory()
         guard inventory.items.count == 6, inventory.pending == 0, inventory.unsupported == 0,
               try core.libraryShelves().count == 1 else { throw ReaderError.InvalidRange }
+        if StoreShotPage.requested != nil,
+           let id = try core.sourceFiles(shelfId: "builtin").first(where: { $0.relativePath == f.books[0].title + ".txt" })?.bookId {
+            try await createStatisticsFixture(bookID: id)
+        }
         sourceDefaults.set(true, forKey: "StoreShots.seeded")
     }
 }

@@ -352,11 +352,11 @@ enum StatisticsDates {
 #if DEBUG
 extension AppDataService {
     /// Synthetic events live exclusively in the isolated UI-test store.
-    func createStatisticsFixture() async throws {
+    func createStatisticsFixture(bookID: String? = nil) async throws {
         guard testSession != nil else { return }
         let core = try textCore(), now = Date()
         guard try await statistics(first: 0, last: 100_000).books.isEmpty else { return }
-        let entries = try core.sourceFiles(shelfId: "builtin").filter { $0.bookId != nil }.prefix(3)
+        let entries = try core.sourceFiles(shelfId: "builtin").filter { $0.bookId != nil && (bookID == nil || $0.bookId == bookID) }.prefix(3)
         for (index, entry) in entries.enumerated() {
             guard let id = entry.bookId else { continue }
             for daysAgo in [0, 1, 3, 5, 9] {

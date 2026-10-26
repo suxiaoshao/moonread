@@ -447,3 +447,22 @@ private struct ReaderControlsForm: View {
             .themedPage().accessibilityIdentifier("readerControlOptions")
     }
 }
+
+#if DEBUG
+/// Own only the normal settings binding for a direct, isolated screenshot route.
+struct PageShotReaderSettings: View {
+    @State private var settings: ReaderSettings?
+    @State private var error: String?
+    var body: some View {
+        Group {
+            if let initial = settings {
+                ReaderSettingsView(settings: Binding(get: { settings ?? initial }, set: { settings = $0 }))
+            } else if let error { Text(verbatim: error) }
+            else { ProgressView() }
+        }.task {
+            do { settings = try await AppDataService.shared.settings() }
+            catch { self.error = ReaderMessages.error(error) }
+        }
+    }
+}
+#endif

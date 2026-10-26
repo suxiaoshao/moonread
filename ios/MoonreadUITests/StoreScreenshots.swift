@@ -20,6 +20,10 @@ import XCTest
         }
         group = option("STORE_SCREENSHOT_DEVICE") ?? "iphone-medium"
         XCTAssertTrue(["iphone-medium", "ipad-13", "duo-outer", "duo-inner"].contains(group))
+        if let page = option("PAGE_SHOT_SCENE") {
+            try capturePage(page)
+            return
+        }
         if !group.hasPrefix("duo-") { XCUIDevice.shared.orientation = .portrait }
         let languages = (option("STORE_SCREENSHOT_LANGUAGES") ?? "zh-Hans,zh-Hant,en").split(separator: ",").map(String.init)
         let defaults = group.hasPrefix("duo-") ? "01,02,03,06" : "01,02,03,04,05,06"
@@ -38,6 +42,33 @@ import XCTest
                 }
             }
         }
+    }
+    private func capturePage(_ scene: String) throws {
+        let appearance = option("PAGE_SHOT_APPEARANCE") ?? "light"
+        let orientation = option("PAGE_SHOT_ORIENTATION") ?? (group == "ipad-13" ? "landscape" : group.hasPrefix("duo-") ? "current" : "portrait")
+        language = option("STORE_SCREENSHOT_LANGUAGES") ?? "zh-Hans"
+        guard StoreShotPage(rawValue: scene) != nil, ["light", "dark"].contains(appearance),
+              ["portrait", "landscape", "current"].contains(orientation),
+              ["zh-Hans", "zh-Hant", "en"].contains(language) else { return XCTFail("Invalid page scene, appearance, orientation or language") }
+        if orientation != "current" { XCUIDevice.shared.orientation = orientation == "landscape" ? .landscapeLeft : .portrait }
+        app.launchArguments = [
+            "--ui-testing", "--ui-test-session", UUID().uuidString,
+            "--ui-test-store-screenshots", "--ui-test-store-language", language,
+            "--ui-test-page-scene", scene, "--ui-test-page-appearance", appearance,
+            "--disable-tips", "--ui-test-storefront", "CHN",
+            "-AppleLanguages", "(\(language))", "-AppleLocale", language == "en" ? "en_US" : language == "zh-Hant" ? "zh_TW" : "zh_CN",
+        ]
+        if group == "ipad-13" { app.launchArguments.append("--ui-test-store-ipad") }
+        app.launchEnvironment["MOONREAD_TEST_CREDENTIALS"] = "memory"
+        app.launch()
+        let readyID = ["book-details": "statisticsSummary", "reader-settings": "readerTypographyControls", "settings": "readerThemeSettings", "library-home": "shelf-builtin"]
+        if let id = readyID[scene] { settled(ready(element(id), timeout: 30)) }
+        else {
+            let text = ready(app.textViews["pageText"], timeout: 30)
+            waitUntil { !text.label.isEmpty && !text.label.hasPrefix("封面") }
+            settled(text)
+        }
+        try photograph(scene, appearance: appearance, orientation: orientation)
     }
     private func capture(_ scene: String, fixture f: StoreShotFixture, session: String) throws {
         let mode = ["01": "paper", "02": "night", "03": "appearance", "04": "library", "05": "notes", "06": "backup"][scene]!
@@ -146,13 +177,15 @@ import XCTest
         start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -18)), withVelocity: .slow, thenHoldForDuration: 0.5)
         settled(text)
     }
-    private func photograph(_ scene: String) throws {
+    private func photograph(_ scene: String, appearance: String? = nil, orientation: String? = nil) throws {
         let gate = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-StoreScreenshots", isDirectory: true)
         try FileManager.default.createDirectory(at: gate, withIntermediateDirectories: true)
         let request = gate.appendingPathComponent("request.json"), ack = gate.appendingPathComponent("ack")
         if FileManager.default.fileExists(atPath: ack.path) { try FileManager.default.removeItem(at: ack) }
         let token = UUID().uuidString
-        try JSONSerialization.data(withJSONObject: ["token": token, "language": language, "scene": scene]).write(to: request, options: .atomic)
+        var item = ["token": token, "language": language, "scene": scene]
+        if let appearance { item["kind"] = "page"; item["appearance"] = appearance; item["orientation"] = orientation }
+        try JSONSerialization.data(withJSONObject: item).write(to: request, options: .atomic)
         let received = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             (try? String(contentsOf: ack, encoding: .utf8)) == token
         }, object: nil)

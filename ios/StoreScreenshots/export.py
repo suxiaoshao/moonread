@@ -15,7 +15,7 @@ def run(*args):
     return subprocess.check_output(args, text=True, stderr=subprocess.PIPE).strip()
 
 
-def opaque_pixels(source, target):
+def opaque_pixels(source, target, display_oriented=False):
     """Unfilter native 8-bit PNG pixels; test RGB and strip alpha losslessly.
 
     Preserve color-profile chunks and native dimensions. No third-party image
@@ -75,6 +75,10 @@ def opaque_pixels(source, target):
     output = bytearray(image[:8])
     wrote_pixels = False
     for kind, value in chunks:
+        # simctl supplies pixels in display orientation. Page shots must not be
+        # rotated a second time by viewers honoring an EXIF orientation tag.
+        if display_oriented and kind == b'eXIf':
+            continue
         if kind == b'IHDR':
             value = struct.pack('>IIBBBBB', width, height, 8, 2, compression, filtering, interlace)
         elif kind == b'IDAT':
@@ -110,11 +114,24 @@ def capture(root):
         if item['token'] in seen:
             time.sleep(.2)
             continue
-        if item['language'] not in ('zh-Hans', 'zh-Hant', 'en') or item['scene'] not in ('01', '02', '03', '04', '05', '06'):
+        page = item.get('kind') == 'page'
+        scenes = ('book-details', 'reader-settings', 'settings', 'library-home', 'reader') if page else ('01', '02', '03', '04', '05', '06')
+        if item['language'] not in ('zh-Hans', 'zh-Hant', 'en') or item['scene'] not in scenes:
             raise ValueError('Invalid capture request')
-        folder = root / 'build/Release' / (config['version'] + '-screenshots') / item['language'] / group
+        expected = dimensions
+        if page:
+            appearance, orientation = item.get('appearance'), item.get('orientation')
+            if appearance not in ('light', 'dark') or orientation not in ('portrait', 'landscape', 'current'):
+                raise ValueError('Invalid page appearance/orientation')
+            short, long = sorted(dimensions)
+            expected = (long, short) if orientation == 'landscape' else (short, long) if orientation == 'portrait' else None
+            folder = root / 'build/PageShots' / group
+            name = item['scene'] + '-' + ('浅' if appearance == 'light' else '深')
+        else:
+            folder = root / 'build/Release' / (config['version'] + '-screenshots') / item['language'] / group
+            name = item['scene']
         folder.mkdir(parents=True, exist_ok=True)
-        target = folder / (item['scene'] + '.png')
+        target = folder / (name + '.png')
         raw = state / 'raw.png'
         arguments = ['xcrun', 'simctl', 'io', uid, 'screenshot']
         if group.startswith('duo-'):
@@ -126,9 +143,9 @@ def capture(root):
             arguments.append('--display=' + re.search(r'UUID: ([A-F0-9-]+)', matches[0]).group(1))
         run(*arguments, str(raw))
         size = struct.unpack('>II', raw.read_bytes()[16:24])
-        if size != dimensions:
-            raise ValueError(f'Expected {dimensions}, received {size}; check device/fullscreen/DeviceHub posture')
-        if not opaque_pixels(raw, target):
+        if (expected is not None and size != expected) or sorted(size) != sorted(dimensions):
+            raise ValueError(f'Expected {expected or dimensions}, received {size}; check device/fullscreen/DeviceHub posture')
+        if not opaque_pixels(raw, target, display_oriented=page):
             time.sleep(.5)
             continue  # Never acknowledge black frames.
         raw.unlink()
