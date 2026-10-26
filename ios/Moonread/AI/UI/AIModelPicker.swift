@@ -82,7 +82,8 @@ struct AIModelPickerButton: View {
             .buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.ink))
             .accessibilityHint(destination.purpose == nil ? "选择模型与思考强度" : "选择模型")
             .accessibilityIdentifier("openAIModelPanel" + (destination.purpose.map { "-" + $0.rawValue } ?? ""))
-            .popover(isPresented: $panel, arrowEdge: .bottom) {
+            // Let the system fit top settings rows and bottom reader controls.
+            .popover(isPresented: $panel, arrowEdge: nil) {
                 VStack(spacing: 8) {
                     Button { panel = false; showing = true } label: {
                         HStack { modelLabel; Image(systemName: "chevron.right").font(.caption) }

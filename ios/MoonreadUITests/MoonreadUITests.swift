@@ -358,8 +358,15 @@ import XCTest
     ready(app.buttons["openAIModelPanel-image"]).tap()
     XCTAssertTrue(ready(app.buttons["aiModel-fixture-image-image"]).isSelected)
     ready(app.buttons["cancelAIModelPicker"]).tap()
-    // Defaults use the same model/strength popover as the reader.
-    ready(app.buttons["openAIModelPanel"]).tap()
+    // The shared popover must open below a top-of-page settings entry,
+    // keeping its whole model row visible rather than behind the navigation bar.
+    let defaultModel = ready(app.buttons["openAIModelPanel"])
+    let anchor = defaultModel.frame
+    defaultModel.tap()
+    let popoverModel = ready(app.buttons["openAIModelPicker"])
+    XCTAssertTrue(popoverModel.isHittable)
+    XCTAssertTrue(app.frame.contains(popoverModel.frame), "The entire model row must remain on screen")
+    XCTAssertGreaterThanOrEqual(popoverModel.frame.minY, anchor.maxY)
     let slider = ready(app.sliders["aiThinkingSlider"])
     slider.adjust(toNormalizedSliderPosition: 1)
     waitUntil { self.app.sliders["aiThinkingSlider"].value as? String == "高" }
