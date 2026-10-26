@@ -27,6 +27,18 @@
       {
         "key": "STORE_SCREENSHOT_SCENES",
         "value": "$(STORE_SCREENSHOT_SCENES)"
+      },
+      {
+        "key": "PAGE_SHOT_SCENE",
+        "value": "$(PAGE_SHOT_SCENE)"
+      },
+      {
+        "key": "PAGE_SHOT_APPEARANCE",
+        "value": "$(PAGE_SHOT_APPEARANCE)"
+      },
+      {
+        "key": "PAGE_SHOT_ORIENTATION",
+        "value": "$(PAGE_SHOT_ORIENTATION)"
       }
     ],
     "language": "zh-Hans",

@@ -12,6 +12,9 @@ enum LibraryRoute: Hashable {
     case statistics(StatisticsRoute)
     case settings, dataManagement
     case settingsTask(SettingsTask)
+    #if DEBUG
+    case screenshotReaderSettings
+    #endif
     /// A contextual search pushed on the current stack, with its own session.
     case search(AppSearchScope)
     /// A conversation opened from search, anchored at the matching message.

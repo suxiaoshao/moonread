@@ -193,6 +193,25 @@ done
   -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO test
 ```
 
+### 按页面截图对照效果图
+
+沿用独立的 `StoreScreenshots` scheme，通过 DEBUG 夹具直接打开指定页面，不走点击长流程，也不进入每 PR 的关键 UI 用例。先对比已有页面图，只截需要核对的页面；例如在现有 iPad 上只拍一张浅色横屏小说详情：
+
+```sh
+nix develop --no-update-lock-file -c xcodebuild \
+  -project ios/Moonread.xcodeproj -scheme StoreScreenshots -configuration Debug \
+  -destination 'platform=iOS Simulator,id=0F4A5FC1-EA80-4A88-81C2-D1650CFCA791' \
+  -derivedDataPath build/DerivedData -parallel-testing-enabled NO \
+  -collect-test-diagnostics never STORE_SCREENSHOT_DEVICE=ipad-13 \
+  STORE_SCREENSHOT_LANGUAGES=zh-Hans PAGE_SHOT_SCENE=book-details \
+  PAGE_SHOT_APPEARANCE=light PAGE_SHOT_ORIENTATION=landscape \
+  CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES test
+```
+
+`PAGE_SHOT_SCENE` 可选 `book-details`（小说详情）、`reader-settings`（阅读设置）、`settings`（设置，regular 宽度自动两栏）、`library-home`（书架首页）、`reader`（单页阅读器）。每次只运行指定页面；`PAGE_SHOT_APPEARANCE=light|dark` 选择杏桃浅／深，页面模式默认只用简中，也可通过 `STORE_SCREENSHOT_LANGUAGES` 指定一个语言。`PAGE_SHOT_ORIENTATION=portrait|landscape|current` 控制方向，默认 iPad 横屏、iPhone 竖屏、Duo 保持当前姿态。沿用现有四个设备组与 UUID destination；Duo 内屏须先手动在 DeviceHub 展开，再用 `duo-inner`，不自动折叠或创建模拟器。
+
+PNG 保存到 `build/PageShots/<设备组>/<场景>-浅.png` 或 `-深.png`；simctl 按实际 display 导出横屏像素，去掉会让查看器再次旋转的方向元数据，不缩放，不从 XCTest attachment 转图。scheme 会在结束时关闭所选模拟器。未设置 `PAGE_SHOT_SCENE` 时，原商店 01–06 流程与输出路径不变。
+
 按改动选受影响的核心测试、原生排版回归和必要交互流程；需要时使用 `-only-testing:` 限定测试，不因小修自动重复全部验收。UI 用例各自使用独立测试存储，同一用例重启仍复用该目录，不覆盖正常书库。DEBUG 下同时提供 `--ui-testing` 和有效 UUID `--ui-test-session` 时，新会话重置标准 defaults 的阅读设置及设置分类，从默认滚动模式、20 号字开始；相同 UUID 的重启保留修改以验证持久化，正常启动不重置。
 
 ## 试用入口

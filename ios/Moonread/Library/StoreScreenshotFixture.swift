@@ -2,6 +2,17 @@ import Foundation
 
 // Original stories shared by the DEBUG fixture and the separate screenshot tests.
 #if DEBUG
+enum StoreShotPage: String, CaseIterable {
+    case bookDetails = "book-details", readerSettings = "reader-settings"
+    case settings, libraryHome = "library-home", reader
+
+    static var requested: Self? {
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("--ui-testing"), args.contains("--ui-test-store-screenshots"),
+              let index = args.firstIndex(of: "--ui-test-page-scene"), args.indices.contains(index + 1) else { return nil }
+        return Self(rawValue: args[index + 1])
+    }
+}
 struct StoreShotBook: Decodable { let title: String; let text: String }
 struct StoreShotFixture: Decodable {
     let language: String; let author: String; let folders: [String]; let books: [StoreShotBook]
