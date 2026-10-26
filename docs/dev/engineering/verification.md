@@ -101,3 +101,10 @@
 - Rust 统计 owner 相关 4 条与既有事实投影合同 1 条通过；新增连续日代表例包括今日未读接昨日、断日、清除及超过七天，不在 Swift 重算。
 - 主模拟器相关 18 条 Swift 单测通过（16 条 SystemReading、2 条封面适配器）；覆盖最终 DTO 往返、显式展示与自动曝光边界、受限图/清理、scope、App 界面配色槽和固定模式、民用午夜/DST/时区/周起点、未知统计状态及按显示变化 reload。既有 U12 通过；使用后关闭模拟器。
 - `build/SystemReading/WidgetV7Final.xcresult` 与 `widget-v7-final-screens/` 保存结果及实际共享视图的合成审图附件。不是 WidgetKit 调度、锁屏低光或 Siri 识别率的自动验收。用户重新添加最终 kind 后检查系统实物，重大批次试用确认前不推送。
+
+
+### V7 真机反馈：系统搜索提交与画廊主题（2026-10-26）
+
+相关 18 条 SystemReading 单测及既有 U12（97.213 秒）通过。新增格式变更全量重提、失败不误标完成、默认杏桃导出数据与 Rust owner 相等、画廊只复制界面主题而不复制用户书目/统计断言；attributes 同时填写 displayName。Spotlight 与 Siri donation 独立排队，普通位置刷新不反复取消同 scope 的批次。结果 `build/SystemReading/SearchRebuild.xcresult`。
+
+代码核查不能证明用户真机上此前未重建：旧实现冷启动也会重新提交，只是没有内容格式失效标记或提交状态。画廊未接主题则已由 sample 路径 appearance=nil 确认。当前将“已提交给 Core Spotlight”与“系统检索已可见”分开；真实部分词/拼音与缩略图需试用确认，不以假适配器测试代替。

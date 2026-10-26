@@ -6,6 +6,8 @@ import SwiftUI
 /// Spotlight-only display whitelist. No novel text, path, synopsis, annotation,
 /// position offset/token or precise reading time enters the system index.
 struct SystemSpotlightMetadata: Equatable, Sendable {
+    // Bump whenever the submitted fields or keyword/thumbnail representation changes.
+    static let contentFormatVersion = 1
     let id: String
     let title: String
     let author: String?
@@ -21,7 +23,7 @@ struct SystemSpotlightMetadata: Equatable, Sendable {
     }
     @MainActor func attributes(thumbnail: Data?) -> CSSearchableItemAttributeSet {
         let attributes = CSSearchableItemAttributeSet(contentType: .text)
-        attributes.title = title; attributes.authorNames = author.map { [$0] }
+        attributes.title = title; attributes.displayName = title; attributes.authorNames = author.map { [$0] }
         attributes.keywords = keywords; attributes.contentDescription = contentDescription
         attributes.thumbnailData = thumbnail
         return attributes
@@ -97,11 +99,18 @@ private final class SystemSpotlightAcknowledgement: @unchecked Sendable {
 }
 private struct SystemSpotlightState: Codable {
     var schemaVersion = 1
+    var contentVersion = 0
     var scope: String
     var ids: [String] = []
 }
 
 extension AppDataService {
+    func systemSpotlightProgress() -> String? { systemSpotlightSubmissionStatus }
+    func reportSystemSpotlightProgress(_ message: String) {
+        systemSpotlightSubmissionStatus = message
+        NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
+    }
+
     private func systemSpotlightThumbnail(_ book: SystemSpotlightMetadata) async -> Data? {
         if let reference = systemCatalog?.displaySnapshot?.books.first(where: { $0.id == book.id })?.coverThumbnail,
            let data = systemCatalog?.file.coverData(reference) { return data }
@@ -129,7 +138,7 @@ extension AppDataService {
         let key = "Moonread.systemSpotlight.v1"
         var state = sourceDefaults.data(forKey: key).flatMap { try? JSONDecoder().decode(SystemSpotlightState.self, from: $0) }
             .flatMap { $0.schemaVersion == 1 ? $0 : nil } ?? .init(scope: "")
-        if state.scope != snapshot.storeScope {
+        if state.scope != snapshot.storeScope || state.contentVersion != SystemSpotlightMetadata.contentFormatVersion {
             try await adapter.deleteAll()
             state = .init(scope: snapshot.storeScope)
             systemSpotlightMetadata.removeAll()
@@ -152,12 +161,25 @@ extension AppDataService {
         // submissions can still be deleted after permission changes or a restart.
         state.ids = Array(Set(state.ids).union(desired)).sorted()
         sourceDefaults.set(try JSONEncoder().encode(state), forKey: key)
-        for start in stride(from: 0, to: changed.count, by: 500) {
-            guard systemSnapshotIsCurrent(snapshot), systemExposurePolicy() == snapshot.exposurePolicy else { return }
-            let batch = Array(changed[start..<min(start + 500, changed.count)])
+        if !changed.isEmpty { reportSystemSpotlightProgress(String(localized: "正在提交系统搜索：\(0) / \(changed.count) 本")) }
+        for start in stride(from: 0, to: changed.count, by: 50) {
+            // Position-only publications must not keep cancelling a full-format
+            // rebuild. The serial index chain applies the latest snapshot next;
+            // account and exposure changes still invalidate this work immediately.
+            guard systemCatalog?.scope == snapshot.storeScope, systemExposurePolicy() == snapshot.exposurePolicy else { return }
+            let batch = Array(changed[start..<min(start + 50, changed.count)])
             try await adapter.index(batch)
+            guard systemCatalog?.scope == snapshot.storeScope, systemExposurePolicy() == snapshot.exposurePolicy else { return }
             for item in batch { systemSpotlightMetadata[item.id] = item }
+            reportSystemSpotlightProgress(String(localized: "正在提交系统搜索：\(start + batch.count) / \(changed.count) 本"))
         }
+        guard systemCatalog?.scope == snapshot.storeScope, systemExposurePolicy() == snapshot.exposurePolicy else { return }
+        // Only a fully journaled submission marks this content format complete.
+        state.contentVersion = SystemSpotlightMetadata.contentFormatVersion
+        sourceDefaults.set(try JSONEncoder().encode(state), forKey: key)
+        reportSystemSpotlightProgress(snapshot.exposurePolicy.systemSearchEnabled
+            ? String(localized: "已向系统搜索提交 \(metadata.count) 本，等待系统处理。")
+            : String(localized: "系统搜索已关闭。"))
     }
     func setSystemSearch(enabled: Bool, excludedShelfIDs: [String]) async throws {
         sourceDefaults.set(enabled, forKey: "Moonread.systemSearch.v1")
@@ -173,6 +195,7 @@ extension AppDataService {
         }
         scheduleSystemReadingCatalog(immediate: true)
         await waitForSystemReadingCatalog()
+        await systemSpotlightTask?.value
         await systemExposureTask?.value
     }
 }

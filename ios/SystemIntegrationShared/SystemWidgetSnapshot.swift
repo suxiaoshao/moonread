@@ -136,3 +136,23 @@ extension SystemReadingWidgetModel {
         return .init(storeScope: "synthetic-gallery", books: books, recentIDs: books.map(\.id), statistics: statistics)
     }
 }
+
+extension SystemReadingWidgetModel {
+    /// Generated from Rust's default_theme_snapshot/resolve_themes. The contract
+    /// test compares it with the producer so fallback colors cannot silently drift.
+    static var defaultAppearance: SystemReadingSnapshot.Appearance? {
+        guard let url = Bundle.main.url(forResource: "WidgetDefaultAppearance", withExtension: "json"),
+              let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(SystemReadingSnapshot.Appearance.self, from: data)
+    }
+    /// Gallery examples never show user book names, covers, progress or statistics.
+    /// Only the App-interface theme is taken from the shared snapshot.
+    static func previewSnapshot(using snapshot: SystemReadingSnapshot?) -> SystemReadingSnapshot {
+        let sample = sampleSnapshot
+        let appearance: SystemReadingSnapshot.Appearance?
+        if let snapshot { appearance = snapshot.appearance }
+        else { appearance = defaultAppearance }
+        return .init(storeScope: sample.storeScope, generatedAt: sample.generatedAt, books: sample.books,
+            recentIDs: sample.recentIDs, appearance: appearance, statistics: sample.statistics)
+    }
+}

@@ -9,6 +9,7 @@ struct SystemIntegrationSettingsView: View {
     @State private var loading = true
     @State private var saving = false
     @State private var error: String?
+    @State private var spotlightProgress: String?
     @State private var widgetAppearance: SystemReadingSnapshot.Appearance?
     var body: some View {
         Form {
@@ -34,7 +35,10 @@ struct SystemIntegrationSettingsView: View {
                     Button("重试") { save(enabled: enabled, excluded: excluded) }
                 }
             } header: { Text("系统搜索与建议") } footer: {
-                Text("使用已识别书籍的书名、作者、标签、封面及章节和进度，不索引正文。读过的书可出现在系统续读建议中。排除书架不会影响在快捷指令或小组件中主动选书。")
+                VStack(alignment: .leading, spacing: 6) {
+                    if let spotlightProgress { Text(verbatim: spotlightProgress).accessibilityIdentifier("systemSpotlightProgress") }
+                    Text("使用已识别书籍的书名、作者、标签、封面及章节和进度，不索引正文。读过的书可出现在系统续读建议中。排除书架不会影响在快捷指令或小组件中主动选书。")
+                }
             }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section {
                 ShortcutsLink()
@@ -60,10 +64,10 @@ struct SystemIntegrationSettingsView: View {
             widgetAppearance = await library.service.systemWidgetAppearance()
             let policy = await library.service.systemExposurePolicy()
             enabled = policy.systemSearchEnabled; excluded = Set(policy.excludedShelfIDs)
-            error = await library.service.systemReadingCatalogError(); loading = false
+            error = await library.service.systemReadingCatalogError(); spotlightProgress = await library.service.systemSpotlightProgress(); loading = false
         }
         .onReceive(NotificationCenter.default.publisher(for: .systemReadingCatalogChanged).receive(on: DispatchQueue.main)) { _ in
-            Task { error = await library.service.systemReadingCatalogError() }
+            Task { error = await library.service.systemReadingCatalogError(); spotlightProgress = await library.service.systemSpotlightProgress() }
         }
     }
     private func save(enabled: Bool, excluded: Set<String>) {

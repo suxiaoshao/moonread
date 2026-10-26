@@ -19,7 +19,7 @@ struct SystemWidgetEntry: TimelineEntry {
         recent = SystemReadingWidgetModel.recentBooks(in: snapshot, limit: 4)
         appearance = snapshot?.appearance; statistics = snapshot?.statistics
     }
-    static var sample: Self { .init(snapshot: SystemReadingWidgetModel.sampleSnapshot) }
+    static var sample: Self { .init(snapshot: SystemReadingWidgetModel.previewSnapshot(using: try? SystemReadingSnapshotFile.shared().read())) }
 }
 struct ReadingWidgetProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> SystemWidgetEntry { .sample }

@@ -59,6 +59,7 @@ extension AppDataService {
             let output = try file ?? (isolatedRoot.map {
                 SystemReadingSnapshotFile(directory: $0.appendingPathComponent(".SystemReading/v1"))
             } ?? SystemReadingSnapshotFile.shared())
+            reportSystemSpotlightProgress(String(localized: "正在准备系统搜索…"))
             let scopeKey = "Moonread.systemReadingScope.v1"
             let scope = sourceDefaults.string(forKey: scopeKey) ?? UUID().uuidString
             sourceDefaults.set(scope, forKey: scopeKey)

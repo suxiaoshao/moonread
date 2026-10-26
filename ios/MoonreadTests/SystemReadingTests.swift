@@ -176,6 +176,7 @@ import SwiftUI
         let thumbnail = try XCTUnwrap(SystemSpotlightMetadata.textThumbnail(title: book.title))
         let attributes = metadata.attributes(thumbnail: thumbnail)
         XCTAssertEqual(attributes.thumbnailData, thumbnail)
+        XCTAssertEqual(attributes.displayName, book.title)
         XCTAssertTrue(attributes.contentDescription?.contains("刘慈欣 · 第一章 月下归舟 · ") == true)
         XCTAssertTrue(attributes.contentDescription?.contains("42") == true)
         XCTAssertNil(attributes.textContent); XCTAssertNil(attributes.contentURL)
@@ -197,7 +198,54 @@ import SwiftUI
         XCTAssertFalse(disabled.exposurePolicy.systemSearchEnabled)
         try await service.reconcileSystemSpotlight(disabled, using: adapter)
         let calls = await probe.result()
-        XCTAssertEqual(Set(calls.2), Set(snapshot.books.map(\.id)), "Even possibly partially indexed IDs are deleted")
+        XCTAssertTrue(calls.4.isEmpty, "Even a possibly partial failed submission is revoked, including by a full format reset")
+    }
+
+    func testSpotlightContentFormatChangeRebuildsAllAndFailureDoesNotMarkItComplete() async throws {
+        let (root, service, _, _, _, _, _, suite) = try singleBookFixture()
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        let file = SystemReadingSnapshotFile(directory: root.appendingPathComponent("system"))
+        await service.startSystemReadingCatalog(file: file); await service.waitForSystemReadingCatalog()
+        let snapshot = try file.read(), probe = SystemSearchProbe()
+        let adapter = SystemSpotlightAdapter(index: { try await probe.index($0) }, delete: { await probe.delete($0) }, deleteAll: { await probe.deleteAll() })
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite)), key = "Moonread.systemSpotlight.v1"
+        try await service.reconcileSystemSpotlight(snapshot, using: adapter)
+        let first = await probe.result()
+        XCTAssertEqual(first.0, 1); XCTAssertEqual(first.3, 1)
+        var state = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(defaults.data(forKey: key))) as? [String: Any])
+        XCTAssertEqual(state["contentVersion"] as? Int, SystemSpotlightMetadata.contentFormatVersion)
+        state["contentVersion"] = SystemSpotlightMetadata.contentFormatVersion - 1
+        defaults.set(try JSONSerialization.data(withJSONObject: state), forKey: key)
+        await probe.setFailure(true)
+        do { try await service.reconcileSystemSpotlight(snapshot, using: adapter); XCTFail("Injected indexing failure must surface") } catch { }
+        let incomplete = try XCTUnwrap(JSONSerialization.jsonObject(with: XCTUnwrap(defaults.data(forKey: key))) as? [String: Any])
+        XCTAssertNotEqual(incomplete["contentVersion"] as? Int, SystemSpotlightMetadata.contentFormatVersion)
+        await probe.setFailure(false)
+        try await service.reconcileSystemSpotlight(snapshot, using: adapter)
+        let complete = await probe.result()
+        XCTAssertEqual(complete.0, 3, "Unchanged books are resubmitted when the content format changes or its rebuild fails")
+        XCTAssertEqual(complete.3, 3)
+        XCTAssertEqual(complete.4, Set(snapshot.books.map(\.id)))
+        try await service.reconcileSystemSpotlight(snapshot, using: adapter)
+        let unchanged = await probe.result()
+        XCTAssertEqual(unchanged.0, complete.0); XCTAssertEqual(unchanged.3, complete.3)
+    }
+    func testWidgetGalleryUsesSharedAppThemeButKeepsBookAndStatisticsDataSynthetic() async throws {
+        let (root, service, _, _, _, _, _, suite) = try singleBookFixture()
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        let defaultAppearance = await service.systemWidgetAppearance()
+        let fallback = SystemReadingWidgetModel.previewSnapshot(using: nil)
+        XCTAssertEqual(try XCTUnwrap(fallback.appearance), try XCTUnwrap(defaultAppearance), "Bundled fallback is generated from the Rust default, not a second palette implementation")
+        var preferences = try await service.themes().preferences; preferences.appMode = .dark
+        _ = try await service.saveThemes(preferences)
+        let selected = await service.systemWidgetAppearance()
+        let book = SystemReadingSnapshot.Book(id: "book:" + String(repeating: "f", count: 64), title: "private-user-book", author: nil, tags: [], availability: .available, sourceCount: 1, naturalOrdinal: 0, progress: 98, chapterLabel: "private chapter", recentRank: 0, allowsAutomaticExposure: true)
+        let live = SystemReadingSnapshot(storeScope: "private-user-scope", books: [book], recentIDs: [book.id], appearance: selected)
+        let preview = SystemReadingWidgetModel.previewSnapshot(using: live)
+        XCTAssertEqual(preview.appearance, selected); XCTAssertEqual(preview.appearance?.preferredDark, true)
+        XCTAssertFalse(preview.books.contains { $0.id == book.id || $0.title == book.title })
+        XCTAssertFalse(preview.recentIDs.contains(book.id)); XCTAssertNotEqual(preview.storeScope, live.storeScope)
+        XCTAssertEqual(preview.statistics?.todayDurationMs, SystemReadingWidgetModel.sampleSnapshot.statistics?.todayDurationMs)
     }
 
     func testWidgetSelectionKeepsItsDisplayedIdentityAndNeverInventsProgress() throws {
@@ -389,15 +437,18 @@ private actor SystemSearchProbe {
     private var indexes = 0
     private var items: [SystemSpotlightMetadata] = []
     private var deleted: [String] = []
-    private let fail: Bool
+    private var fail: Bool
+    private var deleteAllCount = 0
+    private var activeIDs = Set<String>()
+    func setFailure(_ value: Bool) { fail = value }
     init(fail: Bool = false) { self.fail = fail }
     func index(_ items: [SystemSpotlightMetadata]) throws {
-        indexes += 1; self.items += items
+        indexes += 1; self.items += items; activeIDs.formUnion(items.map(\.id))
         if fail { throw CocoaError(.fileWriteUnknown) }
     }
-    func delete(_ ids: [String]) { deleted += ids }
-    func deleteAll() { }
-    func result() -> (Int, [SystemSpotlightMetadata], [String]) { (indexes, items, deleted) }
+    func delete(_ ids: [String]) { deleted += ids; activeIDs.subtract(ids) }
+    func deleteAll() { deleteAllCount += 1; activeIDs.removeAll() }
+    func result() -> (Int, [SystemSpotlightMetadata], [String], Int, Set<String>) { (indexes, items, deleted, deleteAllCount, activeIDs) }
 }
 
 

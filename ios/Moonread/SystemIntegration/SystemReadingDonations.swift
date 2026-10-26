@@ -14,16 +14,27 @@ extension AppDataService {
     func systemReadingSnapshotPublished(_ snapshot: SystemReadingSnapshot, previous previousSnapshot: SystemReadingSnapshot? = nil) {
         let kinds = SystemReadingWidgetModel.reloadKinds(from: previousSnapshot, to: snapshot)
         guard libraryDirectoryOverride == nil, testSession == nil else { return }
+        let previousIndex = systemSpotlightTask
+        systemSpotlightTask = Task { [weak self] in
+            await previousIndex?.value
+            guard await self?.systemSnapshotIsCurrent(snapshot) == true else { return }
+            do { try await self?.reconcileSystemSpotlight(snapshot) }
+            catch {
+                await self?.reportSystemSpotlightProgress(String(localized: "系统搜索提交失败，请重试。"))
+                await self?.recordSystemExposureError(error)
+            }
+        }
         let previous = systemExposureTask
         systemExposureTask = Task { [weak self] in
             await previous?.value
             guard await self?.systemSnapshotIsCurrent(snapshot) == true else { return }
             await MainActor.run { for kind in kinds { WidgetCenter.shared.reloadTimelines(ofKind: kind) } }
+            // Siri donation/revocation keeps its own order; it cannot hold up
+            // Core Spotlight's independent index submissions.
             await self?.reconcileSystemReadingDonations(snapshot)
-            do { try await self?.reconcileSystemSpotlight(snapshot) }
-            catch { await self?.recordSystemExposureError(error) }
         }
     }
+
     func systemSnapshotIsCurrent(_ snapshot: SystemReadingSnapshot) -> Bool {
         systemCatalog?.scope == snapshot.storeScope && systemCatalog?.publishedGeneration == snapshot.generation
     }
