@@ -11,6 +11,7 @@ private enum AISettingsRoute: Hashable {
 struct AISettingsView: View {
     @State private var adding = false
     @State private var route: AISettingsRoute?
+    @State private var thinkingFailed = false
     @Environment(\.dismiss) private var dismiss
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
@@ -20,12 +21,25 @@ struct AISettingsView: View {
                 Button { route = .conversation } label: {
                     AISettingsValueLabel(title: "对话", value: conversationLabel)
                 }.buttonStyle(.plain).accessibilityIdentifier("openAIModelPanel")
+                if let selection = ai.modelSelection(for: .defaults),
+                   let model = ai.providers.model(connectionID: selection.connectionID, modelID: selection.modelID),
+                   !model.thinking.isEmpty {
+                    Picker("推理强度", selection: Binding(get: {
+                        ai.modelSelection(for: .defaults)?.thinking ?? AIModelSelection.defaultThinking(model) ?? model.thinking[0]
+                    }, set: { effort in
+                        var value = selection; value.thinking = effort
+                        Task { thinkingFailed = !(await ai.applyModelSelection(value, to: .defaults)) }
+                    })) {
+                        ForEach(model.thinking, id: \.self) { Text(AIThinkingLabel.label($0)).tag($0) }
+                    }.pickerStyle(.menu).accessibilityIdentifier("aiDefaultThinking")
+                }
                 ForEach(AIModelPurpose.allCases, id: \.self) { purpose in
                     Button { route = .tool(purpose) } label: {
                         AISettingsValueLabel(title: LocalizedStringKey(purpose.title), value: purposeLabel(purpose))
                     }.buttonStyle(.plain).accessibilityIdentifier("openAIModelPanel-" + purpose.rawValue)
                 }
             } header: { Text("默认使用") } footer: {
+                if thinkingFailed { Text("模型目录已变化，请重新选择。").foregroundStyle(Color(uiColor: theme.destructive)) }
                 Text("按用途选择默认模型，具体对话仍可单独更换。")
                     .foregroundStyle(Color(uiColor: theme.secondary))
             }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
@@ -51,7 +65,7 @@ struct AISettingsView: View {
             .navigationDestination(item: $route) { destination in
                 switch destination {
                 case .conversation:
-                    AIModelPicker(destination: .target(.defaults), detent: .constant(.large), embedded: true)
+                    AISettingsModelList(purpose: nil)
                 case .tool(let purpose): AIToolServiceView(purpose: purpose)
                 case .connection(let value): AIConnectionView(connectionID: value.id, startsLogin: value.startsLogin)
                 }
@@ -62,7 +76,7 @@ struct AISettingsView: View {
     }
     private var conversationLabel: String {
         guard let value = ai.modelSelection(for: .defaults), let model = ai.providers.model(connectionID: value.connectionID, modelID: value.modelID) else { return String(localized: "未设置") }
-        return model.name + (value.thinking.map { " · " + AIThinkingLabel.label($0) } ?? "")
+        return model.name
     }
     private func purposeLabel(_ purpose: AIModelPurpose) -> String {
         guard let selection = ai.providers.purposeSelection(purpose),
@@ -232,168 +246,128 @@ private struct AIAddConnectionView: View {
     }
 }
 
-/// Tool services select an account first; the model belongs to that service's wire route.
+/// Tool entries from quick tasks and settings share the same immediate-save page.
 struct AIToolServiceView: View {
     let purpose: AIModelPurpose
-    @Environment(AIService.self) private var ai
-    @Environment(\.theme) private var theme
-    @Environment(\.dismiss) private var dismiss
-    @State private var connectionID: String?
-    @State private var modelID: String?
-    @State private var initialized = false
-    @State private var saveFailed = false
-    @State private var adding = false
-    @State private var connectionRoute: AIConnectionRoute?
-    private var connections: [AIConnection] { ai.providers.connections.filter { AINativeCapabilities.supportsConnection($0) && !(purpose == .image && $0.authMethod == .chatGPT) } }
-    private var connection: AIConnection? { connections.first { $0.id == connectionID } }
-    private var models: [AIModelOption] {
-        guard let connection else { return [] }
-        return connection.models.filter { AINativeCapabilities.supports(purpose, connection: connection, model: $0) }
-    }
-    private var valid: Bool { connectionID == nil || models.contains { $0.id == modelID } }
-    private var hostedImage: Bool {
-        guard purpose == .image, let connection, let model = models.first(where: { $0.id == modelID }) else { return false }
-        return AINativeCapabilities.route(purpose, connection: connection, model: model) == .openAIHosted
-    }
-    var body: some View {
-        Group {
-            if connections.isEmpty {
-                ContentUnavailableView {
-                    Label("还没有支持此工具的连接", systemImage: "sparkles")
-                } actions: {
-                    Button("添加连接", systemImage: "plus") { adding = true }.accessibilityIdentifier("addAIToolConnection")
-                }
-            } else {
-                List {
-                    Section {
-                        Picker("服务", selection: Binding(get: { connectionID }, set: { connectionID = $0; modelID = nil; saveFailed = false })) {
-                            Text("不使用").tag(String?.none)
-                            ForEach(connections) { value in Text(value.name).tag(Optional(value.id)) }
-                        }.pickerStyle(.menu).accessibilityIdentifier("aiPurposeConnection")
-                        if let connection {
-                            AISettingsConnectionRow(connection: connection,
-                                manage: { connectionRoute = .init(id: connection.id) },
-                                login: { connectionRoute = .init(id: connection.id, startsLogin: true) })
-                        }
-                    } header: { Text("服务") } footer: {
-                        if saveFailed || (initialized && connectionID != nil && !valid) {
-                            Label("模型目录已变化，请重新选择。", systemImage: "exclamationmark.circle")
-                                .foregroundStyle(Color(uiColor: theme.destructive))
-                        }
-                    }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-                    if let connection {
-                        Section {
-                            if models.isEmpty { Text("暂无可用模型").foregroundStyle(Color(uiColor: theme.secondary)) }
-                            else {
-                                NavigationLink {
-                                    AIPurposeModelList(purpose: purpose, connectionID: connection.id,
-                                        current: ai.providers.purposeSelection(purpose).flatMap { $0.connectionID == connection.id ? $0.modelID : nil }, selection: $modelID)
-                                } label: {
-                                    LabeledContent("模型") {
-                                        Text(verbatim: models.first { $0.id == modelID }?.name ?? String(localized: "选择模型"))
-                                            .foregroundStyle(Color(uiColor: theme.secondary))
-                                    }
-                                }.accessibilityIdentifier("openAIPurposeModels")
-                            }
-                        } header: { Text(purpose == .search ? "搜索模型" : "图片模型") } footer: {
-                            if hostedImage { Text("绘图模型由服务决定。").foregroundStyle(Color(uiColor: theme.secondary)) }
-                        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-                    }
-                }
-            }
-        }.themedPage().navigationTitle(purpose.title).navigationBarTitleDisplayMode(.inline)
-            .navigationDestination(item: $connectionRoute) { AIConnectionView(connectionID: $0.id, startsLogin: $0.startsLogin) }
-            .aiAddConnectionFlow(isPresented: $adding)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") {
-                        let selection = connectionID.flatMap { id in modelID.map { AIPurposeSelection(connectionID: id, modelID: $0) } }
-                        saveFailed = !ai.providers.setPurpose(purpose, selection: selection)
-                        if !saveFailed { dismiss() }
-                    }.disabled(!valid)
-                }
-            }
-            .onChange(of: ai.availability.isAvailable) { _, available in if !available { adding = false; dismiss() } }
-            .task {
-                guard !initialized else { return }
-                connectionID = ai.providers.purposeSelection(purpose)?.connectionID
-                initialized = true
-                modelID = ai.providers.purposeSelection(purpose)?.modelID
-            }
-    }
+    var body: some View { AISettingsModelList(purpose: purpose) }
 }
 
-/// A single connection's purpose-eligible models, using the shared search and enablement rules.
-private struct AIPurposeModelList: View {
+private struct AISettingsModelList: View {
+    /// nil is the conversation default; native tools have no separate effort setting.
+    let purpose: AIModelPurpose?
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
-    let purpose: AIModelPurpose
-    let connectionID: String
-    let current: String?
-    @Binding var selection: String?
     @State private var query = ""
-    // Read live so returning from model management shows re-enabled models at once.
-    private var connection: AIConnection? { ai.providers.connections.first { $0.id == connectionID } }
-    private var eligible: [AIModelOption] {
-        guard let connection else { return [] }
-        return connection.models.filter { AINativeCapabilities.supports(purpose, connection: connection, model: $0) }
+    @State private var saving = false
+    @State private var saveFailed = false
+    @State private var adding = false
+    private var current: AIPurposeSelection? {
+        if let purpose { return ai.providers.purposeDefaults[purpose] }
+        return ai.modelSelection(for: .defaults).map { .init(connectionID: $0.connectionID, modelID: $0.modelID) }
     }
-    private var offered: [AIModelOption] {
-        guard let connection else { return [] }
-        return AIModelSearch.offered(eligible, in: connection, keeping: current, ai.providers)
+    private func models(_ connection: AIConnection) -> [AIModelOption] {
+        connection.models.filter {
+            AISettingsModelAvailability.supports($0, purpose: purpose, connection: connection)
+                || (current?.connectionID == connection.id && current?.modelID == $0.id)
+        }
+    }
+    private var offeredCount: Int { ai.providers.connections.reduce(0) { $0 + models($1).count } }
+    private var hasMatches: Bool {
+        ai.providers.connections.contains { connection in
+            !AIModelSearch.filter(models(connection), query: query, connection: connection, ai.providers).isEmpty
+        }
     }
     var body: some View {
         Group {
-            if let connection { list(connection) }
-            else {
-                ContentUnavailableView {
-                    Label("连接不可用", systemImage: "sparkles")
-                } actions: { Button("返回") { dismiss() }.buttonStyle(ThemedSecondaryButtonStyle()) }
-            }
-        }.themedPage().navigationTitle("选择模型").navigationBarTitleDisplayMode(.inline)
-    }
-    private func list(_ connection: AIConnection) -> some View {
-        let shown = AIModelSearch.filter(offered, query: query, connection: connection, ai.providers)
-        return Group {
-            if eligible.isEmpty {
+            if offeredCount == 0 {
                 ContentUnavailableView {
                     Label("还没有可用模型", systemImage: "sparkles")
                 } description: { Text("先连接一个 AI 账户并加载模型。") } actions: {
-                    NavigationLink("管理模型") { AIConnectionView(connectionID: connection.id, startsEditingModels: true) }
+                    Button("添加连接", systemImage: "plus") { adding = true }
                 }
-            } else if offered.isEmpty {
-                ContentUnavailableView {
-                    Label("没有启用的模型", systemImage: "sparkles")
-                } actions: {
-                    NavigationLink("管理模型") { AIConnectionView(connectionID: connection.id, startsEditingModels: true) }
-                }
-            } else if shown.isEmpty {
+            } else if !hasMatches {
                 ContentUnavailableView {
                     Label("没有匹配的模型", systemImage: "magnifyingglass")
-                } description: { Text("试试其他搜索词。") } actions: { Button("清除搜索") { query = "" } }
+                } description: { Text("试试其他搜索词。") } actions: {
+                    Button("清除搜索") { query = "" }
+                }
             } else {
                 List {
-                    let duplicates = AIModelSearch.duplicateNames(offered)
-                    Section {
-                        ForEach(shown) { model in
-                            Button { selection = model.id; dismiss() } label: {
-                                HStack {
-                                    AIModelRowLabel(model: model, duplicate: duplicates.contains(model.name),
-                                                    disabled: !ai.providers.isEnabled(modelID: model.id, in: connection))
-                                    if selection == model.id {
-                                        Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent))
-                                    }
-                                }.contentShape(Rectangle())
-                            }.foregroundStyle(Color(uiColor: theme.ink))
-                                .accessibilityAddTraits(selection == model.id ? .isSelected : [])
-                                .accessibilityIdentifier("aiPurposeModel-\(model.id)")
+                    if let purpose {
+                        Button {
+                            if ai.providers.setPurpose(purpose, selection: nil) { dismiss() }
+                            else { saveFailed = true }
+                        } label: {
+                            HStack { Text("不使用"); Spacer(); if current == nil { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)) } }
+                        }.buttonStyle(.plain).accessibilityIdentifier("aiPurposeNone")
+                            .listRowBackground(Color(uiColor: theme.surface))
+                    }
+                    ForEach(ai.providers.connections) { connection in
+                        let offered = models(connection)
+                        let shown = AIModelSearch.filter(offered, query: query, connection: connection, ai.providers)
+                        if !shown.isEmpty {
+                            Section {
+                                ForEach(shown) { model in modelRow(model, connection: connection, offered: offered) }
+                            } header: { AIConnectionHeader(connection: connection) }
+                                .listRowBackground(Color(uiColor: theme.surface))
+                                .listRowSeparatorTint(Color(uiColor: theme.separator))
                         }
-                    } header: { AIConnectionHeader(connection: connection) }
-                        .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                    }
                 }
             }
-        }.themedPage().navigationTitle("选择模型").navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("搜索"))
+        }.modifier(AISettingsModelSearch(query: $query, enabled: offeredCount > 12))
+            .themedPage().accessibilityIdentifier("aiSettingsModelList")
+            .navigationTitle(purpose?.title ?? String(localized: "对话")).navigationBarTitleDisplayMode(.inline)
+            .aiAddConnectionFlow(isPresented: $adding)
+            .safeAreaInset(edge: .bottom) {
+                if saveFailed {
+                    Text("模型目录已变化，请重新选择。").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
+                        .padding().frame(maxWidth: .infinity).background(Color(uiColor: theme.canvas))
+                }
+            }
+            .onChange(of: ai.availability.isAvailable) { _, available in if !available { dismiss() } }
+    }
+    private func modelRow(_ model: AIModelOption, connection: AIConnection, offered: [AIModelOption]) -> some View {
+        let reason = AISettingsModelAvailability.reason(model, purpose: purpose, connection: connection, providers: ai.providers)
+        let selected = current == AIPurposeSelection(connectionID: connection.id, modelID: model.id)
+        return Button {
+            saving = true
+            Task {
+                let saved: Bool
+                if let purpose {
+                    saved = ai.providers.setPurpose(purpose, selection: .init(connectionID: connection.id, modelID: model.id))
+                } else {
+                    var value = ai.modelSelection(for: .defaults) ?? .init(connectionID: "", modelID: "", thinking: nil)
+                    value.select(model, connection: connection)
+                    saved = await ai.applyModelSelection(value, to: .defaults)
+                }
+                saving = false; saveFailed = !saved
+                if saved { dismiss() }
+            }
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    AIModelRowLabel(model: model, duplicate: AIModelSearch.duplicateNames(offered).contains(model.name), disabled: false)
+                    if let reason { Text(reason).font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
+                }
+                Spacer(minLength: 8)
+                if selected { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)) }
+            }.frame(minHeight: 44).contentShape(.rect)
+                .foregroundStyle(Color(uiColor: reason == nil ? theme.ink : theme.secondary))
+        }.buttonStyle(.plain).disabled(reason != nil || saving)
+            .accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityIdentifier("aiSettingsModel-\(connection.id)-\(model.id)")
+    }
+}
+
+private struct AISettingsModelSearch: ViewModifier {
+    @Binding var query: String
+    let enabled: Bool
+    func body(content: Content) -> some View {
+        if enabled {
+            content.searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("搜索"))
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+        } else { content }
     }
 }

@@ -49,6 +49,21 @@ final class AIModelSelectionConversationTests: ConversationFixture {
     await wait { conversation.turns.last?.outcome == .completed && conversation.entries.count == 4 }
     XCTAssertEqual(conversation.modelID, "fixture-model")
     XCTAssertEqual(conversation.turns.last?.thinking, "low")
+    // Model selection immediately updates defaults; a model without reasoning
+    // has no effort to display, and switching back restores its declared default.
+    let plain = AIModelOption(id: "plain", name: "Plain", thinking: [])
+    service.providers.connections[0].models.append(plain)
+    var selected = service.modelSelection(for: .defaults) ?? .init(connectionID: id, modelID: "", thinking: nil)
+    selected.select(plain, connection: service.providers.connections[0])
+    let savedPlain = await service.applyModelSelection(selected, to: .defaults)
+    XCTAssertTrue(savedPlain)
+    XCTAssertEqual(service.modelSelection(for: .defaults)?.modelID, "plain")
+    XCTAssertNil(service.modelSelection(for: .defaults)?.thinking)
+    selected.select(service.providers.connections[0].models[0], connection: service.providers.connections[0])
+    let savedReasoning = await service.applyModelSelection(selected, to: .defaults)
+    XCTAssertTrue(savedReasoning)
+    XCTAssertEqual(service.modelSelection(for: .defaults)?.thinking, "low")
+    XCTAssertEqual(conversation.thinking, "low", "Changing defaults does not edit a conversation")
   }
 }
 
@@ -63,6 +78,10 @@ final class AIModelSelectionAINativeToolsTests: AINativeToolsFixture {
     XCTAssertNil(providers.purposeSelection(.search))
     XCTAssertNotNil(providers.purposeSelection(.image))
     XCTAssertEqual(providers.defaultTextConnectionID, connection.id)
+    let selection = AIPurposeSelection(connectionID: connection.id, modelID: connection.modelID)
+    XCTAssertTrue(providers.setPurpose(.search, selection: selection))
+    XCTAssertEqual(providers.purposeSelection(.search), selection, "A row selection is saved immediately")
+    XCTAssertEqual(TestAI.connections(defaults: defaults, auth: providers.auth).purposeSelection(.search), selection)
   }
 
   // S214: 未授权/未配置/无声明能力的工具不得启用或发送，不从 provider 名称猜能力。
@@ -84,6 +103,15 @@ final class AIModelSelectionAINativeToolsTests: AINativeToolsFixture {
       connection.baseURL = "https://example.com/v1"
       XCTAssertFalse(AINativeCapabilities.supportsConnection(connection))
     }
+    var visible = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection()
+    let text = AIModelOption(id: "text", name: "Text", thinking: [])
+    providers.connections = [visible]
+    XCTAssertTrue(AISettingsModelAvailability.supports(text, purpose: .search, connection: visible))
+    XCTAssertEqual(AISettingsModelAvailability.reason(text, purpose: .search, connection: visible, providers: providers), String(localized: "未登录"))
+    providers.connections = []
+    visible.disabledModelIDs = [text.id]
+    XCTAssertFalse(AISettingsModelAvailability.supports(text, purpose: .image, connection: visible))
+    XCTAssertEqual(AISettingsModelAvailability.reason(text, purpose: .image, connection: visible, providers: providers), String(localized: "不支持该用途"))
     let unknown = AIModelOption(id: "unknown", name: "Unknown", thinking: [])
     XCTAssertEqual(
       providers.catalog.resolve(unknown, providerID: "openai", authentication: .chatGPT)

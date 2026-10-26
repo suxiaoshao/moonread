@@ -143,7 +143,6 @@ struct AIModelPicker: View {
     @Environment(\.dismiss) private var dismiss
     let destination: AIModelPickerDestination
     @Binding var detent: PresentationDetent
-    var embedded = false
     @State private var draft: AIModelSelection?
     @State private var current: AIModelSelection?
     @State private var initialized = false
@@ -166,103 +165,90 @@ struct AIModelPicker: View {
     }
     private var running: Bool { destination.running(ai) }
     var body: some View {
-        Group {
-            if embedded { content }
-            else { NavigationStack { content } }
+        NavigationStack {
+            Group {
+                if ai.providers.connections.allSatisfy({ eligible($0).isEmpty }) {
+                    ContentUnavailableView {
+                        Label("还没有可用模型", systemImage: "sparkles")
+                    } description: { Text("先连接一个 AI 账户并加载模型。") } actions: {
+                        Button("添加连接", systemImage: "plus") { adding = true }.accessibilityIdentifier("aiModelPickerSettings")
+                    }
+                } else if ai.providers.connections.allSatisfy({ offered($0).isEmpty }) {
+                    ContentUnavailableView {
+                        Label("没有启用的模型", systemImage: "sparkles")
+                    } actions: {
+                        ForEach(ai.providers.connections.filter { !eligible($0).isEmpty }) { connection in
+                            NavigationLink { AIConnectionView(connectionID: connection.id, startsEditingModels: true) } label: {
+                                Label { Text("管理模型 · \(connection.name)") } icon: { AIProviderIcon(providerID: connection.catalogID) }
+                            }.accessibilityIdentifier("manageAIModels-\(connection.id)")
+                        }
+                    }
+                } else if ai.providers.connections.allSatisfy({ shown($0).isEmpty }) {
+                    ContentUnavailableView {
+                        Label("没有匹配的模型", systemImage: "magnifyingglass")
+                    } description: { Text("试试其他搜索词。") } actions: {
+                        Button("清除搜索") { query = ""; searching = false }
+                    }
+                } else {
+                    List {
+                        Picker("选择模型", selection: Binding<AIModelChoice?>(get: {
+                            draft.map { AIModelChoice(connectionID: $0.connectionID, modelID: $0.modelID) }
+                        }, set: { choice in
+                            guard let choice, let connection = ai.providers.connections.first(where: { $0.id == choice.connectionID }),
+                                  let model = ai.providers.model(choice.modelID, in: connection) else { return }
+                            var value = draft ?? AIModelSelection(connectionID: "", modelID: "", thinking: nil)
+                            value.select(model, connection: connection); draft = value; error = false
+                            // Active search hides the bar's Cancel/Done; a choice ends the search.
+                            searching = false
+                        })) {
+                            ForEach(ai.providers.connections) { connection in
+                                let models = shown(connection)
+                                if !models.isEmpty {
+                                    let duplicates = AIModelSearch.duplicateNames(offered(connection))
+                                    Section {
+                                        ForEach(models) { model in
+                                            let choice = AIModelChoice(connectionID: connection.id, modelID: model.id)
+                                            AIModelRowLabel(model: model, duplicate: duplicates.contains(model.name),
+                                                            disabled: !ai.providers.isEnabled(modelID: model.id, in: connection))
+                                                .tag(Optional(choice)).id(choice)
+                                                .accessibilityIdentifier("aiModel-\(connection.id)-\(model.id)")
+                                        }
+                                    } header: { AIConnectionHeader(connection: connection) }
+                                }
+                            }
+                        }.pickerStyle(.inline).labelsHidden().listRowBackground(Color(uiColor: theme.surface))
+                    }
+                }
+            }.listStyle(.insetGrouped).themedPage().accessibilityIdentifier("aiModelList")
+                .searchable(text: $query, isPresented: $searching, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("搜索"))
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                .onChange(of: searching) { _, active in if active { detent = .large } }
+                .aiAddConnectionFlow(isPresented: $adding)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if running || error {
+                        VStack(spacing: 8) {
+                            if running { Text("本次选择将在下一次请求生效") }
+                            if error { Text("模型目录已变化，请重新选择。").foregroundStyle(Color(uiColor: theme.destructive)) }
+                        }.font(.footnote).padding(16).frame(maxWidth: .infinity).background(Color(uiColor: theme.canvas))
+                    }
+                }
+                .navigationTitle("选择模型").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .principal) { Text("选择模型").font(.headline).foregroundStyle(Color(uiColor: theme.ink)) }
+                    ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.accessibilityIdentifier("cancelAIModelPicker") }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完成") {
+                            guard let draft else { error = true; return }
+                            Task { if await destination.apply(draft, ai) { dismiss() } else { error = true } }
+                        }.disabled(selectedModel == nil).accessibilityIdentifier("applyAIModelPicker")
+                    }
+                }
         }.onAppear {
             if !initialized { current = destination.selection(ai); draft = current; initialized = true }
         }
     }
-    private var content: some View {
-        Group {
-            if ai.providers.connections.allSatisfy({ eligible($0).isEmpty }) {
-                ContentUnavailableView {
-                    Label("还没有可用模型", systemImage: "sparkles")
-                } description: { Text("先连接一个 AI 账户并加载模型。") } actions: {
-                    Button("添加连接", systemImage: "plus") { adding = true }.accessibilityIdentifier("aiModelPickerSettings")
-                }
-            } else if ai.providers.connections.allSatisfy({ offered($0).isEmpty }) {
-                ContentUnavailableView {
-                    Label("没有启用的模型", systemImage: "sparkles")
-                } actions: {
-                    ForEach(ai.providers.connections.filter { !eligible($0).isEmpty }) { connection in
-                        NavigationLink { AIConnectionView(connectionID: connection.id, startsEditingModels: true) } label: {
-                            Label { Text("管理模型 · \(connection.name)") } icon: { AIProviderIcon(providerID: connection.catalogID) }
-                        }.accessibilityIdentifier("manageAIModels-\(connection.id)")
-                    }
-                }
-            } else if ai.providers.connections.allSatisfy({ shown($0).isEmpty }) {
-                ContentUnavailableView {
-                    Label("没有匹配的模型", systemImage: "magnifyingglass")
-                } description: { Text("试试其他搜索词。") } actions: {
-                    Button("清除搜索") { query = ""; searching = false }
-                }
-            } else {
-                List {
-                    Picker("选择模型", selection: Binding<AIModelChoice?>(get: {
-                        draft.map { AIModelChoice(connectionID: $0.connectionID, modelID: $0.modelID) }
-                    }, set: { choice in
-                        guard let choice, let connection = ai.providers.connections.first(where: { $0.id == choice.connectionID }),
-                              let model = ai.providers.model(choice.modelID, in: connection) else { return }
-                        var value = draft ?? AIModelSelection(connectionID: "", modelID: "", thinking: nil)
-                        value.select(model, connection: connection); draft = value; error = false
-                        // Active search hides the bar's Cancel/Done; a choice ends the search.
-                        searching = false
-                    })) {
-                        ForEach(ai.providers.connections) { connection in
-                            let models = shown(connection)
-                            if !models.isEmpty {
-                                let duplicates = AIModelSearch.duplicateNames(offered(connection))
-                                Section {
-                                    ForEach(models) { model in
-                                        let choice = AIModelChoice(connectionID: connection.id, modelID: model.id)
-                                        AIModelRowLabel(model: model, duplicate: duplicates.contains(model.name),
-                                                        disabled: !ai.providers.isEnabled(modelID: model.id, in: connection))
-                                            .tag(Optional(choice)).id(choice)
-                                            .accessibilityIdentifier("aiModel-\(connection.id)-\(model.id)")
-                                    }
-                                } header: { AIConnectionHeader(connection: connection) }
-                            }
-                        }
-                    }.pickerStyle(.inline).labelsHidden().listRowBackground(Color(uiColor: theme.surface))
-                    if embedded, let model = selectedModel, model.thinking.count > 1 {
-                        Section("思考强度") {
-                            AIThinkingSlider(levels: model.thinking, selection: Binding(get: {
-                                draft?.thinking ?? AIModelSelection.defaultThinking(model) ?? ""
-                            }, set: { effort in
-                                guard var value = draft else { return }
-                                value.thinking = effort; draft = value
-                            }))
-                        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-                    }
-                }
-            }
-        }.listStyle(.insetGrouped).themedPage().accessibilityIdentifier("aiModelList")
-            .searchable(text: $query, isPresented: $searching, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("搜索"))
-            .textInputAutocapitalization(.never).autocorrectionDisabled()
-            .onChange(of: searching) { _, active in if active { detent = .large } }
-            .aiAddConnectionFlow(isPresented: $adding)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if running || error {
-                    VStack(spacing: 8) {
-                        if running { Text("本次选择将在下一次请求生效") }
-                        if error { Text("模型目录已变化，请重新选择。").foregroundStyle(Color(uiColor: theme.destructive)) }
-                    }.font(.footnote).padding(16).frame(maxWidth: .infinity).background(Color(uiColor: theme.canvas))
-                }
-            }
-            .navigationTitle(embedded ? "对话" : "选择模型").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .principal) { Text(embedded ? "对话" : "选择模型").font(.headline).foregroundStyle(Color(uiColor: theme.ink)) }
-                if !embedded { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.accessibilityIdentifier("cancelAIModelPicker") } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成") {
-                        guard let draft else { error = true; return }
-                        Task { if await destination.apply(draft, ai) { dismiss() } else { error = true } }
-                    }.disabled(selectedModel == nil).accessibilityIdentifier("applyAIModelPicker")
-                }
-            }
-    }
 }
+/// Connection identity shared by model lists: icon, name, billing.
 struct AIConnectionHeader: View {
     @Environment(\.theme) private var theme
     @Environment(\.dynamicTypeSize) private var typeSize
