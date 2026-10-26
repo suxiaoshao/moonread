@@ -950,6 +950,7 @@ F01900000000000000000002,
 			files = (
                 D50610000000000000000005 /* DataManagement.xcstrings in Resources */,
                 B39A10000000000000000002 /* ShelfRecovery.xcstrings in Resources */,
+                F14900000000000000000003 /* FullIndex.xcstrings in Resources */,
                 83C1F3DE49DE5AC693D3E8E8,
                 FC1100000000000000000002,
 AP1000000000000000000001,
@@ -1224,7 +1225,7 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
-                CURRENT_PROJECT_VERSION = 9;
+                CURRENT_PROJECT_VERSION = 10;
                 MARKETING_VERSION = 1.2;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
@@ -1275,7 +1276,7 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
-                CURRENT_PROJECT_VERSION = 9;
+                CURRENT_PROJECT_VERSION = 10;
                 MARKETING_VERSION = 1.2;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;

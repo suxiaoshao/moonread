@@ -79,23 +79,7 @@ struct LibraryPresentations: ViewModifier {
                     model.runAfterSheetDismiss { model.openIndexFailure(id) }
                 }.themeScope(theme)
                 case .importResults:
-                    NavigationStack {
-                        List {
-                            if let result = model.sharedImportResult {
-                                Text(verbatim: result).listRowBackground(Color(uiColor: theme.surface))
-                            }
-                            ForEach(model.importFailures) { failure in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(verbatim: failure.url.lastPathComponent).font(.headline)
-                                    Text(verbatim: failure.message).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                                    Button("重试", systemImage: "arrow.clockwise") {
-                                        model.runAfterSheetDismiss { model.retryImport(failure) }
-                                    }
-                                }.listRowBackground(Color(uiColor: theme.surface))
-                            }
-                        }.themedPage().navigationTitle(model.sharedImportResult == nil ? String(localized: "未完成的导入") : String(localized: "导入结果", table: "ShareReceive"))
-                            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成", systemImage: "checkmark") { model.sheet = nil }.labelStyle(.titleOnly) } }
-                    }.themeScope(theme)
+                    LibraryImportResultsView(model: model).themeScope(theme)
                 }
             }
             .onChange(of: model.path) { _, _ in model.showDeferredIndexPrompt() }
@@ -339,4 +323,42 @@ struct LibraryShareSheet: UIViewControllerRepresentable {
         return controller
     }
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
+
+/// The result is a completion panel; only failures need file rows and retry actions.
+private struct LibraryImportResultsView: View {
+    @Environment(\.theme) private var theme
+    @Bindable var model: LibraryModel
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                if model.importFailures.isEmpty {
+                    ContentUnavailableView {
+                        Label("导入完成", systemImage: "checkmark.circle")
+                    } description: {
+                        if let result = model.sharedImportResult { Text(verbatim: result) }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("部分文件未导入", systemImage: "exclamationmark.circle").font(.headline)
+                        if let result = model.sharedImportResult { Text(verbatim: result).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.top)
+                    List(model.importFailures) { failure in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(verbatim: failure.url.lastPathComponent).font(.headline)
+                            Text(verbatim: failure.message).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                            Button("重试", systemImage: "arrow.clockwise") {
+                                model.runAfterSheetDismiss { model.retryImport(failure) }
+                            }
+                        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                    }.contentMargins(.top, 0, for: .scrollContent)
+                }
+            }.themedPage().navigationTitle(String(localized: "导入结果", table: "ShareReceive"))
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完成") { model.sheet = nil }.accessibilityIdentifier("finishImportResults")
+                    }
+                }
+        }
+    }
 }

@@ -37,6 +37,23 @@ final class CloudAccountReaderIntegrationTests: ReaderIntegrationFixture {
 }
 
 final class CloudAccountCloudAccountTests: CloudAccountFixture {
+  @MainActor func testSyncStatusPresentsExistingActivityAndRecoveryFacts() {
+    let cloud = CloudStore()
+    XCTAssertEqual(cloud.syncTitle, String(localized: "阅读数据同步已关闭"))
+    cloud.status = CloudSyncStatus(requested: true, accountToConfirm: "fixture")
+    XCTAssertEqual(cloud.syncTitle, String(localized: "需要确认同步账户"))
+    cloud.status.accountToConfirm = nil
+    XCTAssertEqual(cloud.syncTitle, String(localized: "阅读数据同步已暂停"))
+    cloud.status.enabled = true; cloud.status.syncing = true; cloud.busy = true
+    XCTAssertEqual(cloud.syncTitle, String(localized: "正在处理并同步"))
+    cloud.busy = false
+    XCTAssertEqual(cloud.syncTitle, String(localized: "正在同步"))
+    cloud.status.syncing = false; cloud.status.message = "fixture error"
+    XCTAssertEqual(cloud.syncTitle, String(localized: "同步需要处理"))
+    cloud.status.message = nil
+    XCTAssertEqual(cloud.syncTitle, String(localized: "阅读数据同步已开启"))
+  }
+
   // S481: 临时不可用/退出账户保留用户同步意图，明确关闭才改意图，防错误切换本地数据。
   func testUnavailableSignOutAndExplicitOffPreserveIntentCorrectly() async throws {
     let (service, coordinator, probe, suite) = try fixture()

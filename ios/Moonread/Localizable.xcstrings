@@ -3345,22 +3345,64 @@
   "comment": "Estimated cumulative chapter coverage, not the current reading position."
 },
     "已读约 %llu%%": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"About %llu%% covered"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "已讀約 %llu%%"}}}},
-    "%@ 字 · %@ 章": {
+    "%llu 字 · %llu 章": {
   "localizations": {
     "en": {
-      "stringUnit": {
-        "state": "translated",
-        "value": "%@ characters · %@ chapters"
+  "stringUnit": {
+    "state": "translated",
+    "value": "%#@characters@ · %#@chapters@"
+  },
+  "substitutions": {
+    "characters": {
+      "argNum": 1,
+      "formatSpecifier": "llu",
+      "variations": {
+        "plural": {
+          "one": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%arg character"
+            }
+          },
+          "other": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%arg characters"
+            }
+          }
+        }
       }
     },
+    "chapters": {
+      "argNum": 2,
+      "formatSpecifier": "llu",
+      "variations": {
+        "plural": {
+          "one": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%arg chapter"
+            }
+          },
+          "other": {
+            "stringUnit": {
+              "state": "translated",
+              "value": "%arg chapters"
+            }
+          }
+        }
+      }
+    }
+  }
+},
     "zh-Hant": {
       "stringUnit": {
         "state": "translated",
-        "value": "%@ 字 · %@ 章"
+        "value": "%llu 字 · %llu 章"
       }
     }
   },
-  "comment": "Book summary. Both arguments are already locale-formatted counts. 字 counts characters, not words."
+  "comment": "Book summary: integer character and chapter counts select independent English plurals; 字 counts characters, not words."
 },
     "首次阅读 %@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"First read %@"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "首次閱讀 %@"}}}},
     "最近阅读 %@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Last read %@"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "最近閱讀 %@"}}}},
@@ -3472,7 +3514,24 @@
     "这天没有阅读记录": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"No reading on this day"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "這天沒有閱讀記錄"}}}},
     "今天": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Today"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "今天"}}}},
     "%@ 小时": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"%@ hr"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "%@ 小時"}}}},
-    "%llu 个阅读日": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"%llu reading days"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "%llu 個閱讀日"}}}},
+    "%llu 个阅读日": {"localizations":{"en":{
+  "variations": {
+    "plural": {
+      "one": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%llu reading day"
+        }
+      },
+      "other": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%llu reading days"
+        }
+      }
+    }
+  }
+}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "%llu 個閱讀日"}}}},
     "读过的书": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Books Read"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "讀過的書"}}}},
     "阅读时长": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Time"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀時長"}}}},
     "阅读分钟": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Minutes"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀分鐘"}}}},
@@ -3633,7 +3692,24 @@
   },
   "comment": "Shelf summary: argument 1 is book count; argument 2 is the storage location label."
 },
-    "%llu 本小说": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"%llu books"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "%llu 本小說"}}}},
+    "%llu 本小说": {"localizations":{"en":{
+  "variations": {
+    "plural": {
+      "one": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%llu book"
+        }
+      },
+      "other": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%llu books"
+        }
+      }
+    }
+  }
+}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "%llu 本小說"}}}},
     "%lld 个文件夹 · %lld 个文件": {
   "localizations": {
     "en": {
@@ -8056,7 +8132,22 @@
     "复制收件人": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Copy Recipient"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製收件人"}}}},
     "复制主题": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Copy Subject"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製主旨"}}}},
     "复制正文": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Copy Body"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製內文"}}}},
-    "复制全部": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Copy All"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製全部"}}}}
+    "复制全部": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Copy All"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "複製全部"}}}},
+    "正在处理并同步": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Processing and syncing"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在處理並同步"}}}},
+    "需要确认同步账户": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Confirm your sync account"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "需要確認同步帳戶"}}}},
+    "阅读数据同步已暂停": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Reading data sync paused"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀資料同步已暫停"}}}},
+    "同步需要处理": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Sync needs attention"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "同步需要處理"}}}},
+    "阅读数据同步已开启": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Reading data sync on"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀資料同步已開啟"}}}},
+    "阅读数据同步已关闭": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Reading data sync off"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀資料同步已關閉"}}}},
+    "查看我的书架": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Open My Bookshelf"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "查看我的書架"}}}},
+    "试试其他搜索词。": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Try another search term."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "試試其他搜尋詞。"}}}},
+    "正在读取书籍…": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Loading books…"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在讀取書籍⋯"}}}},
+    "暂时无法读取书籍": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Unable to Load Books"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "暫時無法讀取書籍"}}}},
+    "正在读取记录…": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Loading records…"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在讀取記錄⋯"}}}},
+    "暂时无法读取记录": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Unable to Load Records"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "暫時無法讀取記錄"}}}},
+    "搜索记录": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Search records"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "搜尋記錄"}}}},
+    "导入完成": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Import Complete"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "匯入完成"}}}},
+    "部分文件未导入": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Some Files Were Not Imported"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "部分檔案未匯入"}}}}
   },
   "version": "1.0"
 }

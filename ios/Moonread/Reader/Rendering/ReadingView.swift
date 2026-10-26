@@ -238,7 +238,8 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     private var hasCover: Bool { coverTitle != nil && window?.isStartOfBook == true }
 
     override func loadView() {
-        view = UIView()
+        view = ReadingPaperView()
+        view.contentMode = .redraw
         view.backgroundColor = theme.paper
         view.addSubview(readingSurface)
         let singleTap = UITapGestureRecognizer(target: self, action: #selector(tappedBody(_:)))
@@ -415,6 +416,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         if settings?.mode == .scroll { contentInsets.bottom = 0 }
         if guideHeight > 0 { contentInsets.bottom = max(contentInsets.bottom, guideHeight + insets.bottom) }
         readingSurface.frame = viewport.inset(by: contentInsets)
+        updatePaperBackdrop()
         updateBottomFade()
         if needsRebuild || renderedSize != readingSurface.bounds.size {
             if renderedSize != readingSurface.bounds.size { preservePageBoundaries = false }
@@ -1242,7 +1244,10 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             paperInput = input
             paperBackground = ThemeSurface.paperBackground(input)
         }
-        readingSurface.backgroundColor = settings?.mode == .scroll ? paperBackground : theme.paper
+        // Scroll text is transparent over one stationary full-screen paper.
+        // Pages keep their own moving paper, aligned with this backdrop at rest.
+        updatePaperBackdrop()
+        readingSurface.backgroundColor = settings?.mode == .scroll ? .clear : theme.paper
         pageController?.view.backgroundColor = theme.paper
         for text in visibleTextViews {
             text.backgroundColor = text is ScrollReadingTextView ? .clear : paperBackground
@@ -1250,6 +1255,10 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         }
         scrollCover?.view.backgroundColor = .clear
         for case let cover as ReaderCoverController in pageController?.children ?? [] { cover.viewIfLoaded?.backgroundColor = paperBackground }
+    }
+
+    private func updatePaperBackdrop() {
+        (view as? ReadingPaperView)?.update(paper: paperBackground, origin: readingSurface.frame.origin)
     }
 
     private func updateBottomFade() {
@@ -1852,5 +1861,27 @@ private final class PageController: UIViewController {
             text.textStorage.setAttributedString(page.layoutText)
             text.accessibilityLabel = page.text.string
         }
+    }
+}
+
+/// Fill the existing reader root, including the safe area and quiet header.
+/// Anchor the pattern at the page origin so the header joins page-local paper
+/// without shifting the text viewport or changing the moving page backgrounds.
+private final class ReadingPaperView: UIView {
+    private var paper = UIColor.clear
+    private var paperOrigin = CGPoint.zero
+
+    func update(paper: UIColor, origin: CGPoint) {
+        guard self.paper != paper || paperOrigin != origin else { return }
+        self.paper = paper
+        paperOrigin = origin
+        setNeedsDisplay()
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext() else { return }
+        context.setPatternPhase(CGSize(width: paperOrigin.x, height: paperOrigin.y))
+        paper.setFill()
+        context.fill(rect)
     }
 }
