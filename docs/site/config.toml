@@ -16,6 +16,7 @@ generate_feeds = false
 build_search_index = false
 
 [extra]
+reading_preview = true
 email = "suxiaoshao@gmail.com"
 holder = "suxiaoshao"
 
@@ -25,7 +26,6 @@ support = "帮助与支持"
 switch = "English"
 contents = "本页内容"
 effective = "生效日期"
-soon = "即将登陆 App Store"
 privacy_desc = "月读处理哪些数据、发给谁，以及你能怎么控制。"
 support_desc = "导入与阅读、iCloud、AI、打赏，以及如何反馈问题。"
 
@@ -35,6 +35,5 @@ support = "Support"
 switch = "中文"
 contents = "On this page"
 effective = "Effective"
-soon = "Coming soon to the App Store"
 privacy_desc = "What Moonread handles, where it goes, and how you stay in control."
 support_desc = "Importing and reading, iCloud, AI, tips, and how to report a problem."

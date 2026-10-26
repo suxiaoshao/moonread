@@ -57,10 +57,20 @@ jobs:
           rust = any(path.startswith(b'crates/') or
                      (b'/' not in path and path.startswith((b'Cargo.', b'flake.')))
                      for path in paths)
+          site_inputs = (
+              b'crates/moonread-core/src/user/themes.rs',
+              b'crates/moonread-core/src/reading/layout.rs',
+              b'crates/moonread-core/src/bin/site-theme-data.rs',
+              b'ios/Moonread/Localizable.xcstrings',
+          )
           checks = {
               'linux': all_checks or github or rust,
               'ios': all_checks or github or rust or any(path.startswith((b'ios/', b'assets/icon/')) for path in paths),
-              'site': all_checks or github or any(path.startswith(b'docs/site/') or path in (b'flake.nix', b'flake.lock') for path in paths),
+              'site': all_checks or github or any(
+                  path.startswith((b'docs/site/', b'ios/Moonread/Assets.xcassets/ReaderTexture')) or
+                  path in site_inputs or
+                  (b'/' not in path and path.startswith((b'Cargo.', b'flake.'))) or
+                  path == b'crates/moonread-core/Cargo.toml' for path in paths),
               'workflows': all_checks or github,
           }
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
@@ -109,6 +119,8 @@ jobs:
         with:
           persist-credentials: false
       - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - name: Check generated reader preview data
+        run: nix develop --no-update-lock-file -c cargo run --locked -p moonread-core --bin site-theme-data -- --check
       - name: Build site
         working-directory: docs/site
         run: nix develop --no-update-lock-file -c zola build

@@ -1,0 +1,70 @@
+/* Read-only local preview: update CSS from Rust-exported colors/alpha and control
+   metadata. No API calls, analytics, cookies, settings persistence, or app writes. */
+(() => {
+  const data = JSON.parse(document.getElementById('readerPreviewData').textContent);
+  const controls = document.getElementById('readerControls');
+  const layout = controls.closest('.preview-layout');
+  const paper = document.getElementById('readerPaper');
+  const layer = document.getElementById('textureLayer');
+  const text = document.getElementById('readerText');
+  const state = Object.fromEntries([...controls.querySelectorAll('input:checked')].map(input => [input.name, input.value]));
+  for (const [key, control] of Object.entries(data.controls)) state[key] = control.defaultValue;
+  const families = {system:'var(--sans)', serif:'var(--serif)', rounded:'ui-rounded, -apple-system, sans-serif'};
+  const canvas = document.createElement('canvas').getContext('2d');
+  controls.style.setProperty('--tile-size', data.tileSize + 'px');
+  function render() {
+    const palette = data.palettes.find(value => value.id === state.palette);
+    const texture = data.textures.find(value => value.id === state.texture);
+    paper.style.backgroundColor = palette.colors.paper;
+    paper.style.color = palette.colors.ink;
+    layer.style.backgroundColor = palette.colors.ink;
+    layer.style.opacity = palette.textureAlpha[state.strength];
+    layer.hidden = !texture;
+    if (texture) {
+      const url = new URL(texture.path, layout.dataset.assetRoot).href;
+      layer.style.maskImage = layer.style.webkitMaskImage = `url("${url}")`;
+    }
+    document.getElementById('strengthField').disabled = !texture;
+    for (const [key, role] of Object.entries({bg:'canvas',surface:'surface',ink:'ink',secondary:'secondary',accent:'accent',border:'border'})) {
+      controls.style.setProperty('--control-' + key, palette.colors[role]);
+    }
+    controls.style.setProperty('--texture-paper', palette.colors.paper);
+    controls.style.setProperty('--texture-ink', palette.colors.ink);
+    controls.style.setProperty('--thumb-alpha', palette.textureAlpha.strong);
+    text.style.fontFamily = families[state.font];
+    text.style.fontSize = state.fontSize + 'px';
+    // Browser font metrics are platform-specific; only the extra spacing is a shared rule.
+    const font = getComputedStyle(text);
+    canvas.font = `${font.fontSize} ${font.fontFamily}`;
+    const metrics = canvas.measureText('国Hg');
+    const base = (metrics.fontBoundingBoxAscent + metrics.fontBoundingBoxDescent) || state.fontSize * 1.2;
+    text.style.lineHeight = (base + state.lineSpacing) + 'px';
+    text.style.setProperty('--paragraph', state.paragraphSpacing + 'px');
+    for (const key of Object.keys(data.controls)) document.getElementById(key + 'Value').value = state[key] + ' pt';
+    for (const button of controls.querySelectorAll('[data-adjust]')) {
+      const key = button.dataset.adjust, rule = data.controls[key];
+      const next = state[key] + Number(button.dataset.direction) * rule.step;
+      button.disabled = next < rule.minimum || next > rule.maximum;
+    }
+  }
+  controls.addEventListener('change', event => {
+    if (event.target instanceof HTMLInputElement && event.target.type === 'radio') {
+      state[event.target.name] = event.target.value;
+      render();
+      if (['palette', 'texture', 'strength'].includes(event.target.name) && !layer.hidden &&
+          !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        for (const animation of layer.getAnimations()) animation.cancel();
+        layer.animate([{opacity:0}, {opacity:Number(layer.style.opacity)}], {duration:200, easing:'ease-out'});
+      }
+    }
+  });
+  controls.addEventListener('click', event => {
+    const button = event.target.closest('[data-adjust]');
+    if (!button || button.disabled) return;
+    const key = button.dataset.adjust, rule = data.controls[key];
+    state[key] = Math.min(rule.maximum, Math.max(rule.minimum, state[key] + Number(button.dataset.direction) * rule.step));
+    render();
+  });
+  render();
+  controls.hidden = false;
+})();

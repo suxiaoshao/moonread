@@ -1,5 +1,11 @@
 import SwiftUI
 
+private let typographyControls = readerTypographyControls()
+
+private extension ReaderNumberControl {
+    var range: ClosedRange<Double> { minimum...maximum }
+}
+
 struct ReaderQuickSettings: View {
     @Binding var settings: ReaderSettings
     let showMore: () -> Void
@@ -22,7 +28,7 @@ struct ReaderQuickSettings: View {
             }
             Stepper("字号 · \(Int(settings.fontSize)) pt", value: Binding(get: { settings.fontSize }, set: {
                 var value = settings; value.fontSize = $0; settings = value
-            }), in: 12...48).accessibilityIdentifier("quickFontSize")
+            }), in: typographyControls.fontSize.range, step: typographyControls.fontSize.step).accessibilityIdentifier("quickFontSize")
             HStack(spacing: LayoutTokens.content) {
                 Menu {
                     Button("跟随应用") { choose(.app) }
@@ -302,15 +308,15 @@ private struct ReadingSettingsControls: View {
                     Text("宋体").tag(ReaderFont.serif)
                     Text("圆体").tag(ReaderFont.rounded)
                 }.accessibilityIdentifier("readingFont")
-                Stepper("字号 · \(Int(settings.fontSize)) pt", value: binding(\.fontSize), in: 12...48).accessibilityIdentifier("fontSize")
-                Stepper("行距 · \(Int(settings.lineSpacing)) pt", value: binding(\.lineSpacing), in: 0...32, step: 2).accessibilityIdentifier("lineSpacing")
+                Stepper("字号 · \(Int(settings.fontSize)) pt", value: binding(\.fontSize), in: typographyControls.fontSize.range, step: typographyControls.fontSize.step).accessibilityIdentifier("fontSize")
+                Stepper("行距 · \(Int(settings.lineSpacing)) pt", value: binding(\.lineSpacing), in: typographyControls.lineSpacing.range, step: typographyControls.lineSpacing.step).accessibilityIdentifier("lineSpacing")
             }.listRowBackground(Color(uiColor: theme.surface))
             Section("段落") {
                 Picker("首行缩进", selection: binding(\.indent)) {
                     Text("按原文").tag(ReadingIndent.original)
                     Text("智能两字").tag(ReadingIndent.smart)
                 }.accessibilityIdentifier("readingIndent")
-                Stepper("段间距 · \(Int(settings.paragraphSpacing)) pt", value: binding(\.paragraphSpacing), in: 0...32).accessibilityIdentifier("paragraphSpacing")
+                Stepper("段间距 · \(Int(settings.paragraphSpacing)) pt", value: binding(\.paragraphSpacing), in: typographyControls.paragraphSpacing.range, step: typographyControls.paragraphSpacing.step).accessibilityIdentifier("paragraphSpacing")
             }.listRowBackground(Color(uiColor: theme.surface))
             Section("页面") {
                 Stepper("左右边距 · \(Int(settings.horizontalMargin)) pt", value: binding(\.horizontalMargin), in: 12...48, step: 2).accessibilityIdentifier("horizontalMargin")
