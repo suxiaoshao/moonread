@@ -47,6 +47,7 @@ struct MoonreadApp: App {
                     if ProcessInfo.processInfo.arguments.contains("--ui-test-store-screenshots") {
                         library.layout = .list
                         await themes.load()
+                        await openPageShot()
                         return
                     }
                     #endif
@@ -161,6 +162,29 @@ struct MoonreadApp: App {
             .onOpenURL(perform: openURL)
 
     }
+
+    #if DEBUG
+    private func openPageShot() async {
+        guard let page = StoreShotPage.requested else { return }
+        library.selectedTab = page == .settings ? .settings : .library
+        do {
+            switch page {
+            case .settings, .libraryHome: break
+            case .readerSettings: library.libraryPath = [.screenshotReaderSettings]
+            case .bookDetails, .reader:
+                let args = ProcessInfo.processInfo.arguments
+                let index = args.firstIndex(of: "--ui-test-store-language")
+                let language = index.flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil } ?? "zh-Hans"
+                let fixture = try StoreShotFixture.localized(language)
+                guard let entry = try await library.service.libraryEntries(LibraryLocation(shelfID: "builtin"))
+                    .first(where: { $0.title == fixture.books[0].title }) else { throw ReaderError.NotFound }
+                if page == .bookDetails {
+                    library.libraryPath = [.statistics(StatisticsRoute(key: entry.readingKey, bookID: entry.bookId, title: entry.title, fileID: entry.id))]
+                } else { library.open(entry) }
+            }
+        } catch { library.error = ReaderMessages.error(error) }
+    }
+    #endif
 
     private func openURL(_ url: URL) {
         if url.scheme == "moonread" {
@@ -326,6 +350,9 @@ struct LibraryDestination: View {
             if ai.availability.isAvailable { AIChatView(conversationID: id, anchor: anchor) }
         // This route is consumed only by SettingsView's detail stack.
         case .settingsTask: EmptyView()
+        #if DEBUG
+        case .screenshotReaderSettings: PageShotReaderSettings()
+        #endif
         case .settings: SettingsView(library: library, returnsToApp: true)
         case .dataManagement: DataManagementView(model: library.dataManagement)
         case .search(let scope): AppSearchPage(model: library, scope: scope)

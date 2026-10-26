@@ -70,6 +70,14 @@ actor AppDataService {
             snapshot.preferences.readerDark = .palette(id: "black-dark")
             snapshot.preferences.readerLightTexture = ReaderTextureChoice(id: mode == "appearance" ? .linen : .paper, strength: mode == "notes" ? .light : .medium)
             snapshot.preferences.readerDarkTexture = nil
+            if StoreShotPage.requested != nil {
+                let index = arguments.firstIndex(of: "--ui-test-page-appearance")
+                let dark = index.map { arguments.indices.contains($0 + 1) && arguments[$0 + 1] == "dark" } ?? false
+                snapshot.preferences.appMode = dark ? .dark : .light
+                snapshot.preferences.readerMode = .app
+                snapshot.preferences.readerLight = .app; snapshot.preferences.readerDark = .app
+                snapshot.preferences.readerLightTexture = nil; snapshot.preferences.readerDarkTexture = nil
+            }
             UserDefaults(suiteName: suite)!.set(try! encodeThemePreferences(value: snapshot.preferences), forKey: "Moonread.themePreferences")
             UserDefaults.standard.set(try! encodeThemeSnapshot(value: snapshot), forKey: "Moonread.appearanceCache." + session)
             return AppDataService(libraryDirectory: root, sourceDefaultsSuite: suite)
