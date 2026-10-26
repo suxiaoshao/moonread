@@ -62,12 +62,13 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 统计事实保存/去重裁决、日历展示桶/连续行视觉合并、显示格式 | Swift `ReadingStatistics.swift`、`StatisticsView.swift`，按各自职责单源 | 写入/界面组织与 Rust 数值汇总是不同规则；展示合并应消费已算 duration | 保持平台/状态规则，数值副本后续删除 |
 | 备份 ZIP 布局、受限解包、路径/摘要与正文缓存 SQL 驱逐 | Rust `storage/backup_archive.rs`、`storage/cache_management.rs` | Swift 不另写 ZIP 或数据库清理规则，驱逐保留索引/授权/任务 | 新增单源 |
 | 用户备份 envelope、原 payload 接入、对象级删除 | Swift `UserDataBackup.swift`、`ReadingDataManagement.swift` | SwiftData 权威与既有裁决不迁到 Rust；整书删除无本机删除回执或启动补删 | 共用接入 |
-| 缓存来源协调/授权与可读性证明 | Swift `CacheManagement.swift` | 证明期内调用 Rust 重验事务；页面不判断可清性 | 平台边界 |
+| 受保护来源的 bookmark 解析、安全作用域、协调读取与物理路径边界 | Swift `Data/ProtectedFileAccess.swift` | 开书、导入、索引、恢复、缓存和备份共用；沿用 `.withoutUI` 与可解析的陈旧书签，不增加拒绝条件；作用域覆盖各阶段，accessor 内不等待 actor | 平台边界 |
+| 缓存来源可读性证明与清理准入 | Swift `CacheManagement.swift` | 借用公共文件访问组件，证明期内调用 Rust 重验事务；页面不判断可清性 | 平台边界 |
 
 维护约定：新增规则先查本表；已存在则调用 owner。新增或改变归属必须在同一 PR 更新表、实现入口及测试位置。两个策略若故意不同，命名其输入/输出契约；不能仅以语言或调用入口不同为理由再实现一份。
 
 
-备份容器布局、受限解包、路径/摘要验证与正文缓存 SQL 驱逐由 Rust `storage/backup_archive.rs` / `storage/cache_management.rs` 负责；用户备份 envelope、原 payload 接入与对象级删除仍由 Swift `UserDataStore` / `UserDataBackup.swift` 负责，调用既有裁决。`ReadingDataManagement.swift` 只编排本机事务交接，`CacheManagement.swift` 负责安全作用域、源文件协调与可读性证明；页面不实现另一份身份、排序或合并规则。数据管理列表的自然顺序调用 Rust `reading_data_order`，本地化文本匹配复用 `LibraryQueryRules`。
+备份容器布局、受限解包、路径/摘要验证与正文缓存 SQL 驱逐由 Rust `storage/backup_archive.rs` / `storage/cache_management.rs` 负责；用户备份 envelope、原 payload 接入与对象级删除仍由 Swift `UserDataStore` / `UserDataBackup.swift` 负责，调用既有裁决。`ReadingDataManagement.swift` 只编排本机事务交接，`ProtectedFileAccess.swift` 负责 bookmark、安全作用域和协调读取；`CacheManagement.swift` 保留清理准入与可读性证明；页面不实现另一份身份、排序或合并规则。数据管理列表的自然顺序调用 Rust `reading_data_order`，本地化文本匹配复用 `LibraryQueryRules`。
 
 ## Rust 源码目录
 
@@ -195,7 +196,7 @@ SHA-256 是规范正文身份，原始 SHA 加解码策略仅作快开和字节�
 | 系统统计摘要与连续日 | Rust user/statistics（既有有效日汇总），Swift 仅处理 Calendar/展示 | 今日未读截至昨日；不限七天，清除复用原投影；Widget 不读事实库 |
 | 系统路由与统计回答 | Swift SystemReadingRouter / AppDataService 既有查询 | 扩展不读正文或用户事实库，不保存位置 |
 | 领先阈值/有效章节/百分比 | Rust navigation / ReaderQuery | [同步提示](../data/sync.md#13-同步进度与编码)，Swift 仅本机基线与提示状态 |
-| rawSHA/编码规范 | Rust source identity/text；Swift 协调读源 | 不改 normalization-v1 |
+| rawSHA/编码规范 | Rust source identity/text；Swift `ProtectedFileAccess` 协调读源 | 不改 normalization-v1 |
 | 编码 LWW、epoch 迁移候选与兼容 | Swift UserDataStore / UserSyncJSON 共用接入，SourceDecodingPreferences 编排 | 三路径只消费同步 winner，不新增 legacy 回退 |
 
 实现 PR 将拟增量并入上方现行表并删除相应计划表项；不让两张表长期定义同一已实现规则。

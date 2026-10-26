@@ -35,13 +35,10 @@ private final class IdentityFileWork: @unchecked Sendable {
         try await withTaskCancellationHandler {
             try await Task.detached(priority: .utility) { [self] in
                 try Task.checkCancellation()
-                var stale = false
-                let root = try URL(resolvingBookmarkData: Data(shelf.bookmark), options: .withoutUI, bookmarkDataIsStale: &stale)
-                let scoped = root.startAccessingSecurityScopedResource()
-                defer { if scoped { root.stopAccessingSecurityScopedResource() } }
-                let url = root.appendingPathComponent(file.relativePath)
-                let canonical = root.resolvingSymlinksInPath().standardizedFileURL.path + "/"
-                guard url.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(canonical) else { throw LibraryFileError.invalidDestination }
+                let source = try ProtectedFileAccess.Source(bookmark: Data(shelf.bookmark), relativePath: file.relativePath)
+                defer { withExtendedLifetime(source) {} }
+                try source.requireContained()
+                let url = source.url
                 let keys: Set<URLResourceKey> = [.fileSizeKey,.contentModificationDateKey,.isRegularFileKey,.isSymbolicLinkKey,.isUbiquitousItemKey,.ubiquitousItemDownloadingStatusKey,.ubiquitousItemIsUploadedKey]
                 let initial = try url.resourceValues(forKeys: keys)
                 let missing = initial.isUbiquitousItem == true && initial.ubiquitousItemDownloadingStatus == .notDownloaded

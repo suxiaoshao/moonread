@@ -23,27 +23,16 @@ struct RawSourceIdentity: Sendable {
 /// Separate coordinated accessors never wait for a Swift actor. The same raw
 /// digest is rechecked while decoding, so a changed original cannot borrow a policy.
 final class SourceDecodingRead: @unchecked Sendable {
-    private let coordinator = NSFileCoordinator()
+    private let access = ProtectedFileAccess()
     private let probe = SourceIdentityProbe()
-    private let lock = NSLock()
-    private var cancelled = false
-    func cancel() { lock.withLock { cancelled = true }; probe.cancel(); coordinator.cancel() }
+    func cancel() { probe.cancel(); access.cancel() }
     func checkCancellation() throws {
         try Task.checkCancellation()
-        if lock.withLock({ cancelled }) { throw CancellationError() }
+        try access.checkCancellation()
     }
     func coordinate<Value: Sendable>(at file: URL, _ body: @escaping @Sendable (URL) throws -> Value) async throws -> Value {
         try await withTaskCancellationHandler {
-            try await Task.detached(priority: .utility) { [self] in
-                try checkCancellation()
-                var error: NSError?
-                var result: Result<Value, Error>?
-                coordinator.coordinate(readingItemAt: file, options: [], error: &error) { url in result = Result { try body(url) } }
-                try checkCancellation()
-                if let error { throw error }
-                guard let result else { throw CocoaError(.fileReadUnknown) }
-                return try result.get()
-            }.value
+            try await access.readAsync(at: file, body)
         } onCancel: { self.cancel() }
     }
     func hash(at file: URL) async throws -> RawSourceIdentity {
@@ -74,13 +63,10 @@ final class SourceDecodingRead: @unchecked Sendable {
     func read(bookmark: Data, relativePath: String) async throws -> RawSourceIdentity {
         try await withTaskCancellationHandler {
             try await Task.detached(priority: .userInitiated) { [self] in
-                var stale = false
-                let root = try URL(resolvingBookmarkData: bookmark, options: .withoutUI, bookmarkDataIsStale: &stale)
-                let scoped = root.startAccessingSecurityScopedResource()
-                defer { if scoped { root.stopAccessingSecurityScopedResource() } }
-                let file = root.appendingPathComponent(relativePath)
-                guard file.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(root.resolvingSymlinksInPath().standardizedFileURL.path + "/") else { throw LibraryFileError.invalidDestination }
-                return try await hash(at: file)
+                let source = try ProtectedFileAccess.Source(bookmark: bookmark, relativePath: relativePath)
+                defer { withExtendedLifetime(source) {} }
+                try source.requireContained()
+                return try await hash(at: source.url)
             }.value
         } onCancel: { self.cancel() }
     }

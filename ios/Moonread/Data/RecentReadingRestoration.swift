@@ -89,13 +89,10 @@ final class RecentRestorationWork: @unchecked Sendable {
     }
     private func prepare() async throws -> Result {
         try checkCancellation()
-        var stale = false
-        let root = try URL(resolvingBookmarkData: Data(candidate.shelf.bookmark), options: .withoutUI, bookmarkDataIsStale: &stale)
-        let scoped = root.startAccessingSecurityScopedResource()
-        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
-        let canonicalRoot = root.resolvingSymlinksInPath().standardizedFileURL
-        let file = root.appendingPathComponent(candidate.file.relativePath)
-        try Self.validate(file, root: canonicalRoot)
+        let source = try ProtectedFileAccess.Source(bookmark: Data(candidate.shelf.bookmark), relativePath: candidate.file.relativePath)
+        defer { withExtendedLifetime(source) {} }
+        try source.validateRestoration()
+        let file = source.url
         let availability = try file.resourceValues(forKeys: [.isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey])
         if availability.isUbiquitousItem == true, availability.ubiquitousItemDownloadingStatus != .current, !mayDownload { throw ReaderError.NotFound }
         let raw = try await read.hash(at: file)
@@ -105,7 +102,7 @@ final class RecentRestorationWork: @unchecked Sendable {
         guard identity.contentSha256 == contentKey else { throw ReaderError.NotFound }
         return try await read.coordinate(at: file) { [self] url in
                 try checkCancellation()
-                try Self.validate(url, root: canonicalRoot)
+                try source.validateRestoration(url)
                 let before = try url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
                 guard before.fileSize.map(UInt64.init) == raw.size, before.contentModificationDate == raw.modified else { throw ReaderError.SourceChanged }
                 try checkCancellation()
@@ -137,20 +134,13 @@ final class RecentRestorationWork: @unchecked Sendable {
                               modified: after.contentModificationDate, decoding: decoding)
         }
     }
-    private static func validate(_ file: URL, root: URL) throws {
-        guard !root.pathComponents.contains(".Trash"),
-              file.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(root.path + "/"),
-              try file.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw LibraryFileError.invalidDestination }
-    }
     func validateResult(_ result: Result) async throws {
         try await Task.detached(priority: .utility) { [self] in
             try checkCancellation()
-            var stale = false
-            let root = try URL(resolvingBookmarkData: Data(candidate.shelf.bookmark), options: .withoutUI, bookmarkDataIsStale: &stale)
-            let scoped = root.startAccessingSecurityScopedResource()
-            defer { if scoped { root.stopAccessingSecurityScopedResource() } }
-            var file = root.appendingPathComponent(candidate.file.relativePath)
-            try Self.validate(file, root: root.resolvingSymlinksInPath().standardizedFileURL)
+            let source = try ProtectedFileAccess.Source(bookmark: Data(candidate.shelf.bookmark), relativePath: candidate.file.relativePath)
+            defer { withExtendedLifetime(source) {} }
+            try source.validateRestoration()
+            var file = source.url
             file.removeAllCachedResourceValues()
             let current = try file.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
             guard current.fileSize.map(UInt64.init) == result.sourceSize, current.contentModificationDate == result.modified else { throw ReaderError.SourceChanged }
