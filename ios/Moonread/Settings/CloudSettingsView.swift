@@ -7,46 +7,50 @@ struct CloudSettingsView: View {
     @Environment(\.theme) private var theme
     @State private var replacing: String?
     var body: some View {
-        Form {
-            Section {
-                Toggle("阅读数据 iCloud 同步", isOn: Binding(get: { cloud.status.requested }, set: cloud.setEnabled))
-                    .disabled(cloud.busy).accessibilityIdentifier("readingDataSyncToggle")
-                HStack(alignment: .top, spacing: 12) {
-                    if cloud.busy || cloud.status.syncing { ProgressView().accessibilityLabel(cloud.syncTitle) }
-                    else { Image(systemName: cloud.status.message != nil || cloud.status.accountToConfirm != nil ? "exclamationmark.icloud" : "icloud").foregroundStyle(Color(uiColor: theme.secondary)) }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(verbatim: cloud.syncTitle).font(.headline).accessibilityIdentifier("cloudSyncStatus")
-                        if let date = cloud.status.lastSync {
-                            HStack { Text("上次同步"); Text(date, style: .relative) }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                        }
-                        if let message = cloud.status.message { Text(verbatim: message).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
-                        if !cloud.status.enabled {
-                            if cloud.status.accountToConfirm != nil {
-                                Button("确认同步到此账户") { cloud.requestConfirmation() }
-                                    .disabled(cloud.busy).accessibilityIdentifier("confirmCloudAccount")
-                            } else if cloud.status.requested {
-                                Button("重试阅读数据同步") { cloud.retry() }.disabled(cloud.busy)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 16) {
+                    Toggle("阅读数据 iCloud 同步", isOn: Binding(get: { cloud.status.requested }, set: cloud.setEnabled))
+                        .font(.headline).disabled(cloud.busy).accessibilityIdentifier("readingDataSyncToggle")
+                    ThemedDivider()
+                    HStack(alignment: .top, spacing: 12) {
+                        if cloud.busy || cloud.status.syncing { ProgressView().accessibilityLabel(cloud.syncTitle) }
+                        else { Image(systemName: cloud.status.message != nil || cloud.status.accountToConfirm != nil ? "exclamationmark.icloud" : "icloud").foregroundStyle(Color(uiColor: theme.secondary)) }
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(verbatim: cloud.syncTitle).font(.headline).accessibilityIdentifier("cloudSyncStatus")
+                            if let date = cloud.status.lastSync {
+                                HStack { Text("上次同步"); Text(date, style: .relative) }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                            }
+                            if let message = cloud.status.message { Text(verbatim: message).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
+                            if !cloud.status.enabled {
+                                if cloud.status.accountToConfirm != nil {
+                                    Button("确认同步到此账户") { cloud.requestConfirmation() }
+                                        .buttonStyle(ThemedProminentButtonStyle()).disabled(cloud.busy).accessibilityIdentifier("confirmCloudAccount")
+                                } else if cloud.status.requested {
+                                    Button("重试阅读数据同步") { cloud.retry() }.buttonStyle(ThemedProminentButtonStyle()).disabled(cloud.busy)
+                                }
                             }
                         }
                     }
-                }.padding(.vertical, 4)
-
-            } header: { Text("阅读数据同步") } footer: {
-                Text("同步进度、书签、批注、小说信息、配色方案和阅读统计。显示与阅读偏好留在此设备；此开关不控制小说文件。")
-                if cloud.status.enabled { Text("系统会自动同步已保存的数据。") }
-            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            Section {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label(cloud.libraryStatus, systemImage: "folder.badge.gearshape").foregroundStyle(Color(uiColor: theme.secondary))
+                }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 22))
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("同步进度、书签、批注、小说信息、配色方案、手选编码和阅读统计。显示与阅读偏好留在此设备；此开关不控制小说文件。")
+                    if cloud.status.enabled { Text("系统会自动同步已保存的数据。") }
+                }.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)).padding(.horizontal, 4)
+                VStack(alignment: .leading, spacing: 16) {
+                    Label("我的书架文件", systemImage: "folder").font(.headline)
+                    Text(verbatim: cloud.libraryStatus).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                     if let path = cloud.conflictPath {
-                        Button("处理同名文件") { replacing = path }.disabled(cloud.busy)
-                    } else {
-                        NavigationLink("查看我的书架", value: LibraryRoute.folder(LibraryLocation(shelfID: "builtin")))
+                        Button("处理同名文件") { replacing = path }.buttonStyle(ThemedProminentButtonStyle()).disabled(cloud.busy)
                     }
-                }.padding(.vertical, 4)
-            } header: { Text("我的书架文件") } footer: {
+                    NavigationLink("查看我的书架", value: LibraryRoute.folder(LibraryLocation(shelfID: "builtin")))
+                        .buttonStyle(ThemedSecondaryButtonStyle())
+                }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 22))
                 Text("我的书架由应用管理固定的本机与 iCloud 目录，小说文件由 iCloud Drive 同步。外部文件夹仍在原位置管理。")
-            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                    .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)).padding(.horizontal, 4)
+            }.padding(20).frame(maxWidth: 680).frame(maxWidth: .infinity)
         }
         .themedPage().navigationTitle("iCloud").navigationBarTitleDisplayMode(.inline)
         .task { await cloud.updateStatus() }

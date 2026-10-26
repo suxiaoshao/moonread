@@ -92,7 +92,7 @@ struct LibraryView: View {
                     .listRowInsets(EdgeInsets(top: 2, leading: 24, bottom: 2, trailing: 24))
                 }
             }
-            ShelfReferenceHints(model: model)
+            ShelfRecoverySummary(model: model)
             Section {
                 ForEach(model.shelves, id: \.id) { shelf in
                     NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: shelf.id))) { ShelfRow(shelf: shelf) }
