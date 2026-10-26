@@ -188,7 +188,7 @@ extension AppDataService {
                 systemCatalog?.displaySnapshot = snapshot
                 catalog.file.cleanupCovers(current: Set(books.compactMap { $0.coverThumbnail?.fileName }),
                     previous: Set(previous?.books.compactMap { $0.coverThumbnail?.fileName } ?? []))
-                systemReadingSnapshotPublished(snapshot, previous: previous)
+                systemReadingSnapshotPublished(snapshot)
                 systemCatalog?.lastPublished = Date(); systemReadingLastError = nil
                 NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
                 return

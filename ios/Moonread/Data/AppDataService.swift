@@ -115,6 +115,7 @@ actor AppDataService {
     var systemCatalog: SystemReadingCatalog?
     var systemReadingLastError: String?
     var systemExposureTask: Task<Void, Never>?
+    var systemWidgetReloadSnapshot: SystemReadingSnapshot?
     var systemSpotlightTask: Task<Void, Never>?
     var systemSpotlightSubmissionStatus: String?
     var systemSpotlightAdapter: SystemSpotlightAdapter?

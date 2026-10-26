@@ -191,7 +191,7 @@ extension AppDataService {
             try catalog.file.publish(restricted)
             systemCatalog?.publishedGeneration = restricted.generation
             systemCatalog?.displaySnapshot = restricted
-            systemReadingSnapshotPublished(restricted, previous: old)
+            systemReadingSnapshotPublished(restricted)
         }
         scheduleSystemReadingCatalog(immediate: true)
         await waitForSystemReadingCatalog()

@@ -11,8 +11,7 @@ private struct SystemReadingDonationState: Codable {
 extension AppDataService {
     /// One platform work chain keeps revoke/donate ordering explicit without
     /// making the App's storage actor wait for system services.
-    func systemReadingSnapshotPublished(_ snapshot: SystemReadingSnapshot, previous previousSnapshot: SystemReadingSnapshot? = nil) {
-        let kinds = SystemReadingWidgetModel.reloadKinds(from: previousSnapshot, to: snapshot)
+    func systemReadingSnapshotPublished(_ snapshot: SystemReadingSnapshot) {
         guard libraryDirectoryOverride == nil, testSession == nil else { return }
         let previousIndex = systemSpotlightTask
         systemSpotlightTask = Task { [weak self] in
@@ -27,12 +26,27 @@ extension AppDataService {
         let previous = systemExposureTask
         systemExposureTask = Task { [weak self] in
             await previous?.value
-            guard await self?.systemSnapshotIsCurrent(snapshot) == true else { return }
-            await MainActor.run { for kind in kinds { WidgetCenter.shared.reloadTimelines(ofKind: kind) } }
+            guard await self?.requestSystemWidgetReload(snapshot) == true else { return }
             // Siri donation/revocation keeps its own order; it cannot hold up
             // Core Spotlight's independent index submissions.
             await self?.reconcileSystemReadingDonations(snapshot)
         }
+    }
+
+    @discardableResult
+    func requestSystemWidgetReload(_ snapshot: SystemReadingSnapshot,
+        using reload: @MainActor @Sendable ([String]) -> Void = { kinds in
+            for kind in kinds { WidgetCenter.shared.reloadTimelines(ofKind: kind) }
+        }) async -> Bool {
+        guard systemSnapshotIsCurrent(snapshot) else { return false }
+        let kinds = SystemReadingWidgetModel.reloadKinds(from: systemWidgetReloadSnapshot, to: snapshot)
+        if !kinds.isEmpty {
+            await reload(kinds)
+            // A skipped publication never advances this comparison baseline.
+            // Record requests, not assumptions about WidgetKit's later display.
+            systemWidgetReloadSnapshot = snapshot
+        }
+        return true
     }
 
     func systemSnapshotIsCurrent(_ snapshot: SystemReadingSnapshot) -> Bool {

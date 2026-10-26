@@ -394,6 +394,31 @@ import SwiftUI
         let unwritable = SystemReadingSnapshotFile(directory: sibling)
         XCTAssertThrowsError(try unwritable.publishCover(value))
     }
+    func testSkippedProgressPublicationStillReloadsTheFollowingUnchangedSnapshot() async throws {
+        let (root, service, _, _, _, book, _, suite) = try singleBookFixture()
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        let file = SystemReadingSnapshotFile(directory: root.appendingPathComponent("system"))
+        await service.startSystemReadingCatalog(file: file); await service.waitForSystemReadingCatalog()
+        let probe = WidgetReloadProbe(), initial = try file.read()
+        await service.requestSystemWidgetReload(initial, using: { probe.requests.append($0) })
+        try await service.savePosition(bookID: book.id, offset: 30)
+        await service.scheduleSystemReadingCatalog(immediate: true); await service.waitForSystemReadingCatalog()
+        let changed = try file.read()
+        await service.scheduleSystemReadingCatalog(immediate: true); await service.waitForSystemReadingCatalog()
+        let unchanged = try file.read()
+        XCTAssertNotEqual(initial.generation, changed.generation)
+        XCTAssertTrue(SystemReadingWidgetModel.reloadKinds(from: changed, to: unchanged).isEmpty)
+        let skipped = await service.requestSystemWidgetReload(changed, using: { probe.requests.append($0) })
+        XCTAssertFalse(skipped, "The progress publication has been superseded before its queued reload runs")
+        XCTAssertEqual(probe.requests.count, 1)
+        let requested = await service.requestSystemWidgetReload(unchanged, using: { probe.requests.append($0) })
+        XCTAssertTrue(requested)
+        XCTAssertEqual(probe.requests.count, 2)
+        XCTAssertTrue(probe.requests[1].contains(SystemReadingWidgetModel.continueKind))
+        await service.requestSystemWidgetReload(unchanged, using: { probe.requests.append($0) })
+        XCTAssertEqual(probe.requests.count, 2, "A requested reload advances the baseline and avoids redundant requests")
+    }
+
     func testWidgetReloadsFollowDisplayChangesInsteadOfRandomEnvelopeGeneration() async throws {
         let initial = SystemReadingWidgetModel.sampleSnapshot
         let same = SystemReadingSnapshot(storeScope: initial.storeScope, generatedAt: initial.generatedAt.addingTimeInterval(20),
@@ -447,6 +472,10 @@ import SwiftUI
 
 }
 
+
+@MainActor private final class WidgetReloadProbe {
+    var requests: [[String]] = []
+}
 
 private actor SystemSearchProbe {
     private var indexes = 0
