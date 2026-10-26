@@ -1120,7 +1120,7 @@ extension AppDataService {
   }
   private func aiPrepareUnshared(_ file: SourceFile) async throws -> ReadingLease {
     try await prepareSourceFile(file)
-    let lease = try openSourceFile(file, trackReadingSource: false)
+    let lease = try await openSourceFile(file, trackReadingSource: false)
     while true {
       try Task.checkCancellation()
       let state = try await snapshot(lease.id)

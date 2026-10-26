@@ -166,6 +166,7 @@ actor CloudSyncCoordinator {
             status.lastSync = end; status.message = nil
             if event.type == .import {
                 await service.receivedUserImport()
+                NotificationCenter.default.post(name: .cloudReadingPositionsReceived, object: nil)
                 NotificationCenter.default.post(name: .cloudDataReceived, object: nil)
                 NotificationCenter.default.post(name: .statisticsChanged, object: nil)
                 NotificationCenter.default.post(name: .bookMetadataChanged, object: nil)

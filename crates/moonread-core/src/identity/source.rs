@@ -52,6 +52,12 @@ impl SourceIdentityProbe {
     pub fn cancel(&self) {
         self.cancelled.store(true, Ordering::Release);
     }
+    /// Pure byte identity, including files whose text cannot yet be decoded.
+    pub fn raw_sha256(&self, file_path: String) -> Result<String> {
+        hash_source(&mut File::open(file_path)?, || {
+            self.cancelled.load(Ordering::Acquire)
+        })
+    }
     pub fn identify(&self, file_path: String, decoding: String) -> Result<SourceTextIdentity> {
         if self.cancelled.load(Ordering::Acquire) {
             return Err(ReaderError::Paused);
@@ -97,6 +103,22 @@ impl SourceIdentityProbe {
         })
     }
 }
+/// Shared by ordinary imports and read-only probes; cancellation stays bounded.
+pub(crate) fn hash_source(input: &mut impl Read, cancelled: impl Fn() -> bool) -> Result<String> {
+    let mut hash = Sha256::new();
+    let mut buffer = vec![0; 1024 * 1024];
+    loop {
+        if cancelled() {
+            return Err(ReaderError::Paused);
+        }
+        let count = input.read(&mut buffer)?;
+        if count == 0 {
+            return Ok(sha256_hex(hash.finalize()));
+        }
+        hash.update(&buffer[..count]);
+    }
+}
+
 #[uniffi::export]
 pub fn normalize_source_decoding(decoding: String) -> Result<String> {
     Ok(decoding_policy(&decoding)?.into())
@@ -134,6 +156,12 @@ mod tests {
                 .unwrap();
             assert_eq!(identity.content_sha256, expected);
             assert_eq!(identity.raw_sha256, sha256_hex(Sha256::digest(&bytes)));
+            assert_eq!(
+                SourceIdentityProbe::new()
+                    .raw_sha256(path.to_string_lossy().into())
+                    .unwrap(),
+                identity.raw_sha256
+            );
             assert_eq!(identity.source_bytes, bytes.len() as u64);
             assert_eq!(
                 core.lock()
@@ -171,6 +199,37 @@ mod tests {
                 .unwrap();
             assert_eq!(std::fs::read(path).unwrap(), bytes);
         }
+    }
+    #[test]
+    fn raw_probe_does_not_require_decodable_text_and_distinguishes_changed_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("input.txt");
+        std::fs::write(&path, [0u8; 100]).unwrap();
+        let raw = SourceIdentityProbe::new()
+            .raw_sha256(path.to_string_lossy().into())
+            .unwrap();
+        assert_eq!(raw, sha256_hex(Sha256::digest([0u8; 100])));
+        assert!(
+            SourceIdentityProbe::new()
+                .identify(path.to_string_lossy().into(), "auto".into())
+                .is_err()
+        );
+        std::fs::write(&path, "Chapter 1\r\nOriginal.\r\n").unwrap();
+        let crlf = SourceIdentityProbe::new()
+            .identify(path.to_string_lossy().into(), "auto".into())
+            .unwrap();
+        std::fs::write(&path, "Chapter 1\nOriginal.\n").unwrap();
+        let lf = SourceIdentityProbe::new()
+            .identify(path.to_string_lossy().into(), "auto".into())
+            .unwrap();
+        assert_eq!(crlf.content_sha256, lf.content_sha256);
+        assert_ne!(crlf.raw_sha256, lf.raw_sha256);
+        let stopped = SourceIdentityProbe::new();
+        stopped.cancel();
+        assert!(matches!(
+            stopped.raw_sha256(path.to_string_lossy().into()),
+            Err(ReaderError::Paused)
+        ));
     }
     #[test]
     fn cancelled_probe_stops_and_explicit_wrong_encoding_uses_replacement() {

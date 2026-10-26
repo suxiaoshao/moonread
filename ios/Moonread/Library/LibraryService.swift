@@ -165,6 +165,7 @@ extension AppDataService {
     }
     func prepareLibrary(localOnly: Bool = false) async throws {
         let core = try textCore()
+        try await migrateKnownSourceDecodings()
         if !localOnly { restoreCloudLibraryRoot() }
         let url = try builtinLibraryURL()
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -204,6 +205,7 @@ extension AppDataService {
         if arguments.contains("--ui-test-store-screenshots") { try await createLocalizedStoreShotFixture(); return }
         if ReaderSmokeFixture.enabled {
             try await createSmokeFixture()
+            if arguments.contains("--ui-test-sync-continuation") { try await createContinuationFixture() }
             try await createShelfRecoveryFixture()
             return
         }
@@ -1005,6 +1007,24 @@ extension AppDataService {
             }
             sourceDefaults.set(true, forKey: conflictFixture)
         }
+    }
+
+    private func createContinuationFixture() async throws {
+        guard let testSession else { return }
+        let marker = "Moonread.syncContinuationFixture." + testSession
+        guard !sourceDefaults.bool(forKey: marker),
+              let entry = try await libraryEntries(LibraryLocation(shelfID: "builtin")).first(where: { $0.name == "月读 · 排版示例.txt" }) else { return }
+        // Seed the actual synthetic file's identity, never an unrelated sample.
+        let prepared = try await aiPrepare(entry.source)
+        let actual = try await snapshot(prepared.id).book
+        let query = try textCore().querySnapshot(json: "{}")
+        let local = try query.readingLocation(bookId: prepared.id, percentage: 10)
+        try await savePosition(bookID: prepared.id, offset: local.offsetUtf8)
+        let target = try query.readingLocation(bookId: prepared.id, percentage: 75)
+        let value = PositionValue(content_key: actual.contentSha256, offset: target.offsetUtf8)
+        try await userStore().put("position/" + actual.contentSha256, value: UserSyncJSON.encode(value), device: "synthetic-remote")
+        sourceDefaults.set(true, forKey: marker)
+        withExtendedLifetime(prepared) {}
     }
 
     /// A synthetic catalogue of about 10,000-character chapters with short generic titles and

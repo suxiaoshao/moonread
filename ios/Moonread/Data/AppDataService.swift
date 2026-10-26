@@ -193,6 +193,11 @@ actor AppDataService {
         #endif
         let defaults = sourceDefaultsSuite.flatMap(UserDefaults.init(suiteName:)) ?? .standard
         sourceDefaults = defaults
+        // 1.2 could persist an explicit pause. Retire those keys together at
+        // startup; all remaining paused tasks are system interruptions.
+        for key in defaults.dictionaryRepresentation().keys where key.hasPrefix("Moonread.importUserPaused.v1.") {
+            defaults.removeObject(forKey: key)
+        }
         cloudSyncIntent = CloudSyncIntent(defaults: defaults)
         settingsCache = ReaderSettingsCache(defaults: defaults)
     }
@@ -537,12 +542,12 @@ actor AppDataService {
 
     // The source is locally available before navigation. Only small metadata work runs on this actor;
     // coordinated provider access and the long Rust call have their own queue.
-    func openSourceFile(_ file: SourceFile, diagnostic: ReaderOpenTrace? = nil) throws -> ReadingLease {
+    func openSourceFile(_ file: SourceFile, diagnostic: ReaderOpenTrace? = nil) async throws -> ReadingLease {
         diagnostic?.mark("lease.actor.begin"); defer { diagnostic?.mark("lease.actor.return") }
-        return try openSourceFile(file, trackReadingSource: true)
+        return try await openSourceFile(file, trackReadingSource: true)
     }
 
-    func openSourceFile(_ file: SourceFile, trackReadingSource: Bool) throws -> ReadingLease {
+    func openSourceFile(_ file: SourceFile, trackReadingSource: Bool) async throws -> ReadingLease {
         let opening = "opening:" + UUID().uuidString
         holdForeground(opening); defer { releaseForeground(opening) }
         if recentRestorationWork?.fileID == file.id { recentRestorationWork?.cancel() }
@@ -551,21 +556,30 @@ actor AppDataService {
         let shelf = try libraryShelf(entry.shelfId)
         let root = Data(shelf.bookmark)
         let key = "Moonread.sourceDraft.\(testSession ?? "library").\(file.id)"
+        let configuration = userCloudConfigurationRevision
+        let read = SourceDecodingRead()
+        let raw = try await read.read(bookmark: root, relativePath: entry.relativePath)
+        let decoding = try await prepareSourceDecoding(raw: raw, fileID: file.id)
+        try Task.checkCancellation()
+        guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
+        let encoding = decoding == "auto" ? nil : decoding
         if let previous = sourceDefaults.string(forKey: key),
            let state = try? textCore().importStatus(bookId: previous), state.phase != .complete, entry.bookId == state.text.id {
             if let data = sourceDefaults.data(forKey: importSourceKey(previous)),
-               let old = try? JSONDecoder().decode(ImportSource.self, from: data) {
+               let old = try? JSONDecoder().decode(ImportSource.self, from: data),
+               try normalizeSourceDecoding(decoding: old.encoding ?? "auto") == decoding,
+               old.expectedRawSHA == nil || old.expectedRawSHA == raw.sha {
                 let moved = ImportSource(rootBookmark: root, relativePath: entry.relativePath,
-                                         encoding: old.encoding, sourceKey: key, fileID: file.id)
+                    encoding: old.encoding, sourceKey: key, fileID: file.id, expectedRawSHA: old.expectedRawSHA)
                 sourceDefaults.set(try JSONEncoder().encode(moved), forKey: importSourceKey(previous))
+                try resumeSystemInterruptedImport(previous)
+                if trackReadingSource { readingSourceIDs[previous] = file.id }
+                return retainReading(previous)
             }
-            try resumeSystemInterruptedImport(previous)
-            if trackReadingSource { readingSourceIDs[previous] = file.id }
-            return retainReading(previous)
+            pauseImport(previous)
         }
-        let decoding = try textCore().sourceDecoding(fileId: file.id)
-        let encoding = decoding == "auto" ? nil : decoding
-        let descriptor = ImportSource(rootBookmark: root, relativePath: entry.relativePath, encoding: encoding, sourceKey: key, fileID: file.id)
+        let descriptor = ImportSource(rootBookmark: root, relativePath: entry.relativePath, encoding: encoding,
+                                      sourceKey: key, fileID: file.id, expectedRawSHA: raw.sha)
         let id = try startImport(title: file.title, descriptor: descriptor, encoding: encoding)
         if trackReadingSource { readingSourceIDs[id] = file.id }
         return retainReading(id)
@@ -602,7 +616,6 @@ actor AppDataService {
         if let bytes = sourceDefaults.data(forKey: importSourceKey(id)), let source = try? JSONDecoder().decode(ImportSource.self, from: bytes),
            let key = source.sourceKey, sourceDefaults.string(forKey: key) == id { sourceDefaults.removeObject(forKey: key) }
         sourceDefaults.removeObject(forKey: importSourceKey(id))
-        clearUserPausedImport(id)
         queryCache = queryCache.filter { !$0.key.hasPrefix("book-" + id + "-") }
         changeRevisions[id] = nil
     }
@@ -611,15 +624,9 @@ actor AppDataService {
         let remaining = Set(try core.reclaimCompletedImports(retainedBookIds: Array(Set(readers.keys).union(imports.keys).union(pendingPromotionIDs))))
         for id in Array(changeRevisions.keys) where !remaining.contains(id) && readers[id] == nil && imports[id] == nil && changeWaiters[id] == nil { changeRevisions[id] = nil }
         let sourcePrefix = importSourceKey("")
-        let pausePrefix = userPausedImportKey("")
         let draftPrefix = "Moonread.sourceDraft.\(testSession ?? "library")."
         for (key, value) in sourceDefaults.dictionaryRepresentation() {
-            if key.hasPrefix(pausePrefix) {
-                let id = String(key.dropFirst(pausePrefix.count))
-                if !remaining.contains(id) || (try? core.importStatus(bookId: id).phase) == .complete {
-                    sourceDefaults.removeObject(forKey: key)
-                }
-            } else if key.hasPrefix(sourcePrefix), !remaining.contains(String(key.dropFirst(sourcePrefix.count))) {
+            if key.hasPrefix(sourcePrefix), !remaining.contains(String(key.dropFirst(sourcePrefix.count))) {
                 sourceDefaults.removeObject(forKey: key)
             } else if key.hasPrefix(draftPrefix), let id = value as? String, !remaining.contains(id) {
                 sourceDefaults.removeObject(forKey: key)
@@ -633,7 +640,7 @@ actor AppDataService {
         let control = try core.createImport(title: title)
         let id = control.bookId()
         let source = ImportSource(rootBookmark: descriptor.rootBookmark, relativePath: descriptor.relativePath,
-                                  encoding: encoding, sourceKey: descriptor.sourceKey, fileID: descriptor.fileID)
+                                  encoding: encoding, sourceKey: descriptor.sourceKey, fileID: descriptor.fileID, expectedRawSHA: descriptor.expectedRawSHA)
         if let fileID = source.fileID { try core.linkLibraryFile(fileId: fileID, bookId: id) }
         sourceDefaults.set(try JSONEncoder().encode(source), forKey: importSourceKey(id))
         // Reopening the same file after an explicit encoding/version restart
@@ -665,13 +672,12 @@ actor AppDataService {
         imports[id] = nil
         let requested = requestedResumes.remove(id) != nil
         let automatic = automaticallyPaused.remove(id) != nil
-        if (requested || automatic) && !isImportUserPaused(id) {
+        if requested || automatic {
             if appActive { try? resumeImport(id) }
             else { automaticallyPaused.insert(id) }
         }
         if let core {
             if (try? core.importStatus(bookId: id).phase) == .complete {
-                clearUserPausedImport(id)
                 do { try await promoteUserData(id) }
                 catch { pendingPromotionIDs.insert(id) }
             }
@@ -684,7 +690,7 @@ actor AppDataService {
         let entry = try textCore().sourceFileLocation(fileId: fileID)
         let shelf = try libraryShelf(entry.shelfId)
         return ImportSource(rootBookmark: Data(shelf.bookmark), relativePath: entry.relativePath,
-                            encoding: source.encoding, sourceKey: source.sourceKey, fileID: fileID)
+                            encoding: source.encoding, sourceKey: source.sourceKey, fileID: fileID, expectedRawSHA: source.expectedRawSHA)
     }
 
     func rebindFileImportSources(_ fileIDs: Set<String>) throws {
@@ -696,25 +702,10 @@ actor AppDataService {
         }
     }
 
-    // Device-only intent, independent of the cache schema and synced reading data.
-    private func userPausedImportKey(_ id: String) -> String {
-        "Moonread.importUserPaused.v1.\(testSession ?? "library").\(id)"
-    }
-    func isImportUserPaused(_ id: String) -> Bool {
-        sourceDefaults.bool(forKey: userPausedImportKey(id))
-    }
-    private func clearUserPausedImport(_ id: String) {
-        sourceDefaults.removeObject(forKey: userPausedImportKey(id))
-    }
     private func resumeSystemInterruptedImport(_ id: String) throws {
-        guard !isImportUserPaused(id) else { return }
         if try textCore().importStatus(bookId: id).phase == .paused { try resumeImport(id) }
     }
-    enum ImportPauseReason { case user, system }
-    func pauseImport(_ id: String, reason: ImportPauseReason) {
-        if reason == .user, let state = try? textCore().importStatus(bookId: id), state.phase != .complete {
-            sourceDefaults.set(true, forKey: userPausedImportKey(id))
-        }
+    func pauseImport(_ id: String) {
         requestedResumes.remove(id)
         automaticallyPaused.remove(id)
         guard let work = imports[id] else { return }
@@ -723,15 +714,14 @@ actor AppDataService {
         readingChanged(id)
     }
     func pauseFileImports(_ fileIDs: Set<String>) {
-        for (id, work) in imports where work.source.fileID.map(fileIDs.contains) == true { pauseImport(id, reason: .system) }
+        for (id, work) in imports where work.source.fileID.map(fileIDs.contains) == true { pauseImport(id) }
     }
     func pauseImports() {
         recentRestorationActive = false; cancelRecentRestoration()
         appActive = false
         for id in imports.keys {
-            // A manually paused book stays paused after foregrounding.
             let wasActive = (try? textCore().importStatus(bookId: id)).map { [.preparing, .importing, .finalizing].contains($0.phase) } ?? false
-            pauseImport(id, reason: .system)
+            pauseImport(id)
             if wasActive { automaticallyPaused.insert(id) }
         }
     }
@@ -740,14 +730,13 @@ actor AppDataService {
         recentRestorationActive = true; scheduleRecentRestoration()
         for id in Array(automaticallyPaused) where imports[id] == nil {
             automaticallyPaused.remove(id)
-            if !isImportUserPaused(id) { try? resumeImport(id) }
+            try? resumeImport(id)
         }
     }
 
     func resumeImport(_ id: String) throws {
-        clearUserPausedImport(id)
         guard imports[id] == nil else {
-            // File-provider cancellation can outlive the button tap. Keep the
+            // File-provider cancellation can outlive a resume request. Keep the
             // request until that accessor releases its scope and worker exits.
             if [.paused, .failed].contains(try textCore().importStatus(bookId: id).phase) { requestedResumes.insert(id) }
             return
@@ -770,7 +759,6 @@ actor AppDataService {
         }
         do {
             let source = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))
-            if let fileID = source.fileID { return try textCore().sourceDecoding(fileId: fileID) }
             return source.encoding ?? "auto"
         } catch {
             // Do not log source JSON, bookmarks, paths, titles, or error descriptions.
@@ -780,15 +768,20 @@ actor AppDataService {
         }
     }
 
-    func restartImport(_ id: String, encoding: String?) throws -> ReadingLease {
+    func restartImport(_ id: String, encoding: String?) async throws -> ReadingLease {
         // A cancelled reader queued behind this actor must not allocate an import
         // or change the file's persisted decoding policy.
         try Task.checkCancellation()
         guard let data = sourceDefaults.data(forKey: importSourceKey(id)) else { throw CocoaError(.fileReadNoPermission) }
-        let descriptor = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))
-        clearUserPausedImport(id)
-        pauseImport(id, reason: .system)
-        let next = try startImport(title: textCore().importStatus(bookId: id).text.title, descriptor: descriptor, encoding: encoding)
+        var descriptor = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))
+        let configuration = userCloudConfigurationRevision
+        let raw = try await SourceDecodingRead().read(bookmark: descriptor.rootBookmark, relativePath: descriptor.relativePath)
+        let decoding = try await prepareSourceDecoding(raw: raw, fileID: descriptor.fileID, selection: encoding ?? "auto")
+        try Task.checkCancellation()
+        guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
+        descriptor.expectedRawSHA = raw.sha
+        pauseImport(id)
+        let next = try startImport(title: textCore().importStatus(bookId: id).text.title, descriptor: descriptor, encoding: decoding == "auto" ? nil : decoding)
         if let fileID = descriptor.fileID { readingSourceIDs[next] = fileID }
         return retainReading(next)
     }
@@ -914,6 +907,7 @@ struct ImportSource: Codable, Sendable {
     var encoding: String? = nil
     var sourceKey: String? = nil
     var fileID: String? = nil
+    var expectedRawSHA: String? = nil
 }
 
 private enum SourceImportEvent: String, Sendable { case ready, failed, finished }
@@ -963,6 +957,7 @@ private final class SourceImportWork: @unchecked Sendable {
                     result = Result {
                         ReaderOpenDiagnostics.worker(control.bookId(), "accessor")
                         let digest = try core.hashImportSource(control: control, filePath: url.path)
+                        guard source.expectedRawSHA == nil || source.expectedRawSHA == digest else { throw ReaderError.SourceChanged }
                         ReaderOpenDiagnostics.worker(control.bookId(), "rawHashEnd")
                         let initial = try core.importStatus(bookId: control.bookId())
                         let key = SourceContentKey(rawSha256: digest, decoding: encoding ?? "auto")

@@ -95,6 +95,13 @@ pub struct ReadingLocation {
     pub chapter: Option<ChapterInfo>,
 }
 
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ReadingContinuation {
+    pub offset_utf8: u64,
+    pub percentage: f64,
+    pub chapter: Option<ChapterInfo>,
+}
+
 fn require_complete(db: &Connection, id: &str) -> Result<BookInfo> {
     let active: bool = db.query_row(
         "SELECT EXISTS(SELECT 1 FROM import_jobs WHERE book_id=?1 AND phase!='complete')",
@@ -307,6 +314,40 @@ impl ChapterRebuild {
 
 // Business projections are exported only by ReaderQuery.
 impl ReaderCore {
+    pub(crate) fn reading_continuation(
+        &self,
+        book_id: String,
+        local_offset: u64,
+        winning_offset: u64,
+    ) -> Result<Option<ReadingContinuation>> {
+        let db = self.reader.lock().map_err(|_| ReaderError::ImportBusy)?;
+        let id = crate::library::tools::content_key(&db, &book_id)?;
+        let info = match require_complete(&db, &id) {
+            Ok(info) => info,
+            // Prepared bytes are not a trustworthy whole-book denominator.
+            Err(ReaderError::ImportBusy) => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let target = winning_offset.min(info.byte_count);
+        if target <= local_offset || info.byte_count == 0 {
+            return Ok(None);
+        }
+        let difference = reading_percentage(target - local_offset, info.byte_count);
+        let crossed: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM effective_chapters WHERE book_id=?1 AND start_utf8>?2 AND start_utf8<=?3)",
+            params![id, local_offset as i64, target as i64],
+            |row| row.get(0),
+        )?;
+        if difference < 1.0 && !(crossed && difference >= 0.2) {
+            return Ok(None);
+        }
+        Ok(Some(ReadingContinuation {
+            offset_utf8: target,
+            percentage: reading_percentage(target, info.byte_count),
+            chapter: crate::library::tools::chapter(&db, &id, target)?,
+        }))
+    }
+
     pub(crate) fn reading_location(
         &self,
         book_id: String,

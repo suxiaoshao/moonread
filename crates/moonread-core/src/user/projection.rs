@@ -255,6 +255,15 @@ impl ReaderQuery {
     pub fn reading_location(&self, book_id: String, percentage: f64) -> Result<ReadingLocation> {
         self.core.reading_location(book_id, percentage)
     }
+    pub fn reading_continuation(
+        &self,
+        book_id: String,
+        local_offset: u64,
+        winning_offset: u64,
+    ) -> Result<Option<ReadingContinuation>> {
+        self.core
+            .reading_continuation(book_id, local_offset, winning_offset)
+    }
     pub fn adjacent_chapter(
         &self,
         book_id: String,

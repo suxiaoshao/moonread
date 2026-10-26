@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		6FE466A10D361A647F688D3A /* SourceDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */; };
+		FF97A598EBE17BAA6A938B5F /* SourceDecodingPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F3544F22AA3B4C3242F849D /* SourceDecodingPreferences.swift */; };
 		65ECA15E2CC74AE98456F117 /* ReadingModePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8E428810AD14CC69F07A0DC /* ReadingModePicker.swift */; };
 		CE9F8CE75AFE42C28ECC1229 /* AppThemePreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF7A36A33FED40B1B0F6D237 /* AppThemePreferencesView.swift */; };
 		BA82A3CBA86846ECB5AE63D2 /* PalettePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2FC43F5CF31408684F519A8 /* PalettePicker.swift */; };
@@ -294,6 +296,8 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		9AD8D099CCC74446903914B8 /* SystemWidgetPublishing.swift */ = {isa = PBXBuildFile; fileRef = F304E7CD71124E5D9F7DEC91; };
 		2A49E75FB62D455EA40547D4 /* WidgetDefaultAppearance.json */ = {isa = PBXBuildFile; fileRef = 1FC26519733A4A86A5C69068; };
 		B135F2963E3B47819FE2FC73 /* WidgetDefaultAppearance.json */ = {isa = PBXBuildFile; fileRef = 1FC26519733A4A86A5C69068; };
+		A24F794D4BB7412191A19329 /* ReadingContinuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FE1A12BC743430DA09B92A0 /* ReadingContinuation.swift */; };
+		1513FFF184D943E0B24401D6 /* ReadingContinuationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -321,6 +325,8 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceDecodingTests.swift; sourceTree = "<group>"; };
+		2F3544F22AA3B4C3242F849D /* SourceDecodingPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceDecodingPreferences.swift; sourceTree = "<group>"; };
 		B8E428810AD14CC69F07A0DC /* ReadingModePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingModePicker.swift"; sourceTree = "<group>"; };
 		FF7A36A33FED40B1B0F6D237 /* AppThemePreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppThemePreferencesView.swift"; sourceTree = "<group>"; };
 		D2FC43F5CF31408684F519A8 /* PalettePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PalettePicker.swift"; sourceTree = "<group>"; };
@@ -599,6 +605,8 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		66ECAE43656B4E6FA118B88B /* SystemStatisticsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemStatisticsCard.swift"; sourceTree = "<group>"; };
 		F304E7CD71124E5D9F7DEC91 /* SystemWidgetPublishing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemWidgetPublishing.swift"; sourceTree = "<group>"; };
 		1FC26519733A4A86A5C69068 /* WidgetDefaultAppearance.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "WidgetDefaultAppearance.json"; sourceTree = "<group>"; };
+		7FE1A12BC743430DA09B92A0 /* ReadingContinuation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingContinuation.swift"; sourceTree = "<group>"; };
+		B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingContinuationBanner.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -713,6 +721,7 @@ A20000000000000000000009 /* MoonreadUITests.swift */,
                 596EAC3B58A8431E8BF449F6 /* SystemReadingTests.swift */,
                 D50620000000000000000007 /* CacheManagementTests.swift */,
                 D50620000000000000000006 /* DataManagementTests.swift */,
+				B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */,
 				660000000000000000000005,
 				660000000000000000000003,
                 9CD5D1790E1F4ABF94A8E63F /* AI */,
@@ -861,6 +870,7 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 				224B7CD539DE4B36838B5C59 /* ReaderEncodingMenu.swift */,
 				938B7199F7BA4FF48580021A /* ReaderToolLabelStyle.swift */,
 				AA08168B927640AD88AB7979 /* ReaderCompactHeader.swift */,
+				B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */,
 				5866FC7E25D04023BA807A6A /* ReaderPreparationContent.swift */,
 				1C1F21EBD02E4ED7BBD3B00E /* ReaderMoreContent.swift */,
 				3110BC3341AD464FA40E7DD1 /* ReaderTaskContent.swift */,
@@ -955,6 +965,8 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
                 D50620000000000000000002 /* ReadingDataManagement.swift */,
                 D50620000000000000000001 /* UserDataBackup.swift */,
 				A20000000000000000000002 /* AppDataService.swift */,
+				7FE1A12BC743430DA09B92A0 /* ReadingContinuation.swift */,
+				2F3544F22AA3B4C3242F849D /* SourceDecodingPreferences.swift */,
 				C22000000000000000000001 /* UserData.swift */,
                 FF2000000000000000000001,
 				C22000000000000000000002 /* UserDataService.swift */,
@@ -1362,6 +1374,9 @@ F01900000000000000000001,
                 AC1000000000000000000077,
                 AC1000000000000000000006,
 				A10000000000000000000002 /* AppDataService.swift in Sources */,
+				1513FFF184D943E0B24401D6 /* ReadingContinuationBanner.swift in Sources */,
+				A24F794D4BB7412191A19329 /* ReadingContinuation.swift in Sources */,
+				FF97A598EBE17BAA6A938B5F /* SourceDecodingPreferences.swift in Sources */,
 				A10000000000000000000003 /* LibraryView.swift in Sources */,
                 AF1000000000000000000002 /* LibraryPresentation.swift in Sources */,
                 AF1000000000000000000003 /* LibraryCollection.swift in Sources */,
@@ -1400,6 +1415,7 @@ F01900000000000000000001,
                 B6A0D28AA3B246EAB1783AED /* SystemReadingTests.swift */,
                 D50610000000000000000007 /* CacheManagementTests.swift in Sources */,
                 D50610000000000000000006 /* DataManagementTests.swift in Sources */,
+				6FE466A10D361A647F688D3A /* SourceDecodingTests.swift in Sources */,
 				660000000000000000000004,
                 1324E15761CF5ED68712722E,
                 2E2559685C214716AEE5F325,

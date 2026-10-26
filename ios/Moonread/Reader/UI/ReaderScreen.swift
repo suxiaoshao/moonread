@@ -84,9 +84,9 @@ struct ReaderScreen: View {
                             guideHeight: Onboarding.shared.enabled && !Onboarding.shared.revealedControls && !controlsVisible ? controlsTipHeight : 0,
                             controlsVisible: controlsVisible,
                             toggleControls: { if panel == nil || panel == .search { controlsVisible.toggle() } },
-                            readingBegan: { controlsVisible = false },
+                            readingBegan: { session.beganReadingInteraction(); controlsVisible = false },
                             positionChanged: { offset, end in
-                                if !navigationPresentation.isSuspended { session.moved(to: offset, settled: end) }
+                                if !navigationPresentation.isSuspended { session.moved(to: offset, settled: end, userInitiated: false) }
                             })
                     .allowsHitTesting(panel?.isPage != true)
                     .ignoresSafeArea(.container)
@@ -248,6 +248,12 @@ struct ReaderScreen: View {
 
     private var monitoredReader: some View {
         presentedReader
+        .overlay(alignment: .bottom) {
+            if !controlsVisible, panel == nil, !session.isLeaving,
+               session.opening.phase == .reading, !session.continuationCollapsed {
+                continuationControl.padding(.horizontal, 16).padding(.bottom, 24)
+            }
+        }
         .allowsHitTesting(!session.isLeaving)
         .task {
             library.systemReading.register(session, navigationID: openingRequest?.id)
@@ -276,6 +282,12 @@ struct ReaderScreen: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in
             Task { session.notesChanged(); await loadCoverInformation() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .cloudReadingPositionsReceived).receive(on: DispatchQueue.main)) { _ in
+            Task { await session.refreshSyncedContinuation() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .readingContinuationInvalidated).receive(on: DispatchQueue.main)) { _ in
+            session.invalidateSyncedContinuation()
         }
         .onChange(of: statisticsReadable, initial: true) { _, readable in
             session.activity.update(readable: readable, preview: session.browseOrigin != nil)
@@ -610,6 +622,7 @@ struct ReaderScreen: View {
     }
 
     private func selectText(start: UInt64, end: UInt64, action: ReaderSelectionAction) {
+        session.beganReadingInteraction()
         if action == .removeAnnotations {
             guard !session.isLeaving, let bookID = session.readingID else { return }
             Task {
@@ -678,6 +691,7 @@ struct ReaderScreen: View {
 
     private var bottomDock: some View {
         VStack(spacing: LayoutTokens.compact) {
+            if controlsVisible, !session.isLeaving { continuationControl }
             if Onboarding.shared.enabled, Onboarding.shared.revealedControls, !Onboarding.shared.selectedText, controlsVisible {
                 TipView(Onboarding.shared.selection).tipViewStyle(ThemedTipStyle(titleOverride: ai.availability.isAvailable ? nil : Text("长按文字可以标注、写批注或拷贝"))).accessibilityIdentifier("readerSelectionTip")
             }
@@ -693,8 +707,29 @@ struct ReaderScreen: View {
                 ReaderProgressControls(session: session) {
                     pendingProgressNavigation = true
                 }
+                if session.history.entries.count > 1 {
+                    Button("跳转历史", systemImage: "clock") { presentPanel(.history) }
+                        .accessibilityIdentifier("showReadingHistory")
+                }
             }
             if dock != .settings, tools.deletedIDs != nil { undoCapsule }
+        }
+    }
+
+    @ViewBuilder private var continuationControl: some View {
+        if let message = session.continuationMessage {
+            if session.continuationCollapsed {
+                Button("同步进度") { session.expandContinuation() }
+                    .font(.footnote).buttonStyle(.plain)
+                    .foregroundStyle(Color(uiColor: theme.accent))
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(Color(uiColor: theme.surface), in: .capsule)
+                    .accessibilityIdentifier("showSyncedProgress")
+            } else {
+                ReadingContinuationBanner(message: message, busy: session.navigating,
+                    accept: { Task { await session.acceptSyncedContinuation() } },
+                    stay: { session.stayAtLocalPosition() })
+            }
         }
     }
 

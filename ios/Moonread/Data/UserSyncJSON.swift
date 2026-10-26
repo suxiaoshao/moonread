@@ -28,7 +28,7 @@ enum UserSyncJSON {
         case string, uint, int, uint32, int32, bool
         case choice(Set<String>), nullable(Shape), array(Shape), object([String: Shape], optional: Set<String> = [])
     }
-    enum ValueKind { case position, chapter, author, synopsis, status, cover, tag, palette, shelfReference }
+    enum ValueKind { case position, chapter, author, synopsis, status, cover, tag, palette, shelfReference, sourceDecoding }
     static func kind(_ key: String) -> ValueKind? {
         let parts = key.split(separator: "/", omittingEmptySubsequences: false)
         guard parts.count >= 2, !parts[1].isEmpty else { return nil }
@@ -36,6 +36,7 @@ enum UserSyncJSON {
             switch parts[0] {
             case "position": return .position
             case "palette": return .palette
+            case "source-decoding": return .sourceDecoding
             case "shelf-reference": return UUID(uuidString: String(parts[1])) == nil ? nil : .shelfReference
             default: return nil
             }
@@ -52,6 +53,7 @@ enum UserSyncJSON {
         }
     }
 
+    static let sourceDecoding: Shape = .object(["decoding": .string])
     static let stored: Shape = .object(["updated": .int, "token": .string, "value": .string])
     static let sourceHint: Shape = .object(["source_kind": .choice(["managed_icloud", "managed_local", "external"]),
         "relative_path": .string, "file_name": .string, "byte_size": .nullable(.uint), "decoding": .string])
@@ -142,7 +144,7 @@ enum UserSyncJSON {
     static func validateValue(_ text: String, key: String) throws {
         guard let kind = kind(key) else {
             let parts = key.split(separator: "/", omittingEmptySubsequences: false)
-            let knownPrefix = parts.first.map { ["position", "chapter", "metadata", "palette", "shelf-reference"].contains(String($0)) } ?? false
+            let knownPrefix = parts.first.map { ["position", "chapter", "metadata", "palette", "shelf-reference", "source-decoding"].contains(String($0)) } ?? false
             let unknownField = parts.count == 3 && parts.first == "metadata" && !parts[2].isEmpty
             throw UserSyncCompatibilityError(reason: !knownPrefix || unknownField ? .newerFormat : .unreadable)
         }
@@ -154,6 +156,10 @@ enum UserSyncJSON {
             if text == "null" { return }
             let value = try decode(ChapterValue.self, text, as: chapter)
             guard "chapter/\(value.content_key)/\(value.offset)" == key else { throw UserSyncCompatibilityError() }
+        case .sourceDecoding:
+            guard let raw = key.split(separator: "/").last, (try? parseSha256(value: String(raw))) != nil else { throw UserSyncCompatibilityError() }
+            let value = try decode(SourceDecodingValue.self, text, as: sourceDecoding)
+            guard (try? normalizeSourceDecoding(decoding: value.decoding)) != nil else { throw UserSyncCompatibilityError(reason: .newerFormat) }
         case .shelfReference:
             let value = try decode(ShelfReferenceValue.self, text, as: .object(["schemaVersion": .uint, "name": .string, "locationDescription": .choice(["icloud-drive", "file-provider"])]))
             guard value.schemaVersion == 1 else { throw UserSyncCompatibilityError() }

@@ -157,6 +157,7 @@ extension ReadingController {
             #endif
             text.accessibilityCustomActions?.append(UIAccessibilityCustomAction(name: String(localized: "开始阅读")) { [weak self, weak text] _ in
                 guard let self, let text else { return false }
+                readingBegan?()
                 text.setContentOffset(CGPoint(x: 0, y: self.scrollCoverHeight), animated: !reduceMotion)
                 reportCover(false); report(window.flatMap { ReadingText($0).firstVisibleOffset } ?? anchor, settled: true)
                 return true

@@ -24,7 +24,6 @@ struct ReaderPreparationContent: View {
                         HStack(spacing: 12) {
                             LoadingActivity(size: 24, fraction: preparationFraction, delay: .zero)
                             Text("正在准备正文").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                            Button("暂停准备", systemImage: "pause", action: session.pause).labelStyle(.iconOnly)
                         }
                     }
                 } else {
@@ -35,7 +34,9 @@ struct ReaderPreparationContent: View {
                             .multilineTextAlignment(.center)
                     }
                     if session.snapshot != nil {
-                        Button("继续准备", action: session.resume).buttonStyle(.bordered)
+                        if session.snapshot?.phase == .failed {
+                            Button("重试", action: session.retryPreparation).buttonStyle(.bordered)
+                        }
                         encodingMenu
                     } else {
                         Button("重试") { Task { await session.retry(route) } }.buttonStyle(.bordered)
@@ -63,10 +64,6 @@ struct ReaderPreparationContent: View {
                     }
                 }
                 Spacer()
-                Button(session.preparing ? String(localized: "暂停") : String(localized: "继续")) {
-                    if session.preparing { session.pause() } else { session.resume() }
-                }
-                    .font(.subheadline).frame(minHeight: 44)
             }
             if let message = session.snapshot?.error {
                 Text(ReaderMessages.error(message)).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))

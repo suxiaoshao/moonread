@@ -10,6 +10,13 @@ pub struct LibraryIdentityInventory {
     pub pending: Vec<SourceFileSnapshot>,
 }
 
+#[derive(Debug, Clone, uniffi::Record)]
+pub struct IndexedSourcePolicy {
+    pub file_id: String,
+    pub raw_sha256: String,
+    pub decoding: String,
+}
+
 fn pending_files(db: &rusqlite::Connection, shelf_id: &str) -> Result<Vec<SourceFileSnapshot>> {
     crate::library::bookshelf::source_snapshots(
         db,
@@ -20,6 +27,19 @@ fn pending_files(db: &rusqlite::Connection, shelf_id: &str) -> Result<Vec<Source
 
 #[uniffi::export]
 impl ReaderCore {
+    pub fn indexed_source_policies(&self, shelf_id: String) -> Result<Vec<IndexedSourcePolicy>> {
+        let db = self.lock()?;
+        let mut stmt = db.prepare("SELECT v.file_id,v.raw_sha256,v.decoding FROM valid_indexed_identities v JOIN library_files f ON f.id=v.file_id WHERE f.shelf_id=?1")?;
+        Ok(stmt
+            .query_map([shelf_id], |r| {
+                Ok(IndexedSourcePolicy {
+                    file_id: r.get(0)?,
+                    raw_sha256: r.get(1)?,
+                    decoding: r.get(2)?,
+                })
+            })?
+            .collect::<std::result::Result<_, _>>()?)
+    }
     pub fn indexed_source_keys(
         &self,
         shelf_id: Option<String>,
@@ -205,7 +225,7 @@ mod tests {
         assert_eq!(other.pending.len(), 1);
     }
     #[test]
-    fn full_index_v21_to_v22_preserves_files() {
+    fn full_index_v21_to_current_preserves_files() {
         let mut db = rusqlite::Connection::open_in_memory().unwrap();
         db.execute_batch(include_str!("../storage/schema.sql"))
             .unwrap();
@@ -214,7 +234,7 @@ mod tests {
         assert_eq!(
             db.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
                 .unwrap(),
-            22
+            23
         );
         assert_eq!(
             db.query_row("SELECT bookmark FROM library_shelves", [], |r| r

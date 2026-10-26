@@ -8,6 +8,40 @@ import XCTest
 @testable import Moonread
 
 final class ReaderSessionReaderSelectionTests: ReaderSelectionFixture {
+  @MainActor func testAccessibleStartMarksInteractionBeforeReportingWhileLayoutDoesNot() async throws {
+    for coverSurface in [false, true] {
+      let controller = ReadingController()
+      let text = ScrollReadingTextView()
+      controller.scrollText = text
+      controller.settings = defaultReaderSettings()
+      controller.window = try window("第一章 原创样本\n窗边有一盏灯。\n")
+      controller.coverTitle = "辅助阅读合成样本"
+      controller.reduceMotion = true
+      var interacted = false
+      controller.readingBegan = {
+        XCTAssertEqual(controller.anchor, 13, "Interaction must be marked before reporting the new position")
+        interacted = true
+      }
+      let layout = expectation(description: "Automatic layout report")
+      controller.changed = { _, _ in XCTAssertFalse(interacted); layout.fulfill() }
+      controller.report(13, settled: true)
+      await fulfillment(of: [layout], timeout: 2)
+      XCTAssertFalse(interacted)
+      controller.isCoverVisible = true
+      let surface: UIView
+      let cover: ReaderCoverController?
+      if coverSurface { cover = controller.makeCover(); surface = try XCTUnwrap(cover?.view) }
+      else { cover = nil; controller.configureAccessibility(text); surface = text }
+      let report = expectation(description: "Accessible start report")
+      controller.changed = { _, _ in XCTAssertTrue(interacted); report.fulfill() }
+      let action = try XCTUnwrap(surface.accessibilityCustomActions?.first { $0.name == String(localized: "开始阅读") })
+      XCTAssertTrue(action.actionHandler?(action) == true)
+      XCTAssertTrue(interacted)
+      await fulfillment(of: [report], timeout: 2)
+      withExtendedLifetime((controller, text, cover)) {}
+    }
+  }
+
   // S308: 忙碌窗口请求不能被当作已消费而丢失，解除忙碌仍处理当前 viewport 请求。
   func testBusyWindowAdmissionDoesNotConsumeViewportRequest() {
     var admissions = ReadingFrontierAdmissions()
@@ -516,4 +550,130 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     loading.finish(new)
     XCTAssertFalse(loading.active)
   }
+}
+
+@MainActor final class ReadingContinuationTests: ReaderIntegrationFixture {
+  private func remotePosition(_ store: UserDataStore, book: ImportText, offset: UInt64) async throws -> StoredValue {
+    try await store.put("position/" + book.contentSha256,
+      value: UserSyncJSON.encode(PositionValue(content_key: book.contentSha256, offset: offset)), device: "remote-fixture")
+  }
+
+  func testColdOpenKeepsLocalBaselineWithoutWritingItBackAndStaySuppressesThisOpening() async throws {
+    let (root, service, _, formal, _, book, _, suite) = try singleBookFixture()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    try await service.savePosition(bookID: book.id, offset: 6)
+    let remote = try await remotePosition(formal, book: book, offset: book.byteCount)
+    let session = ReaderSession(service: service)
+    await session.open(.book(book.id))
+    await awaitState { session.window != nil && session.continuation != nil }
+    XCTAssertEqual(session.anchor, 6)
+    XCTAssertEqual(session.continuation?.token, remote.token)
+    XCTAssertTrue(session.continuationMessage?.contains("100%") == true, "The hint rounds the Rust percentage to a whole number")
+    session.moved(to: 6, settled: true, userInitiated: false)
+    await session.flush()
+    let afterLayout = try await formal.storedValue("position/" + book.contentSha256)
+    XCTAssertEqual(afterLayout?.token, remote.token, "First layout and flush cannot overwrite the synced winner")
+    session.collapseContinuation()
+    await session.refreshSyncedContinuation()
+    XCTAssertTrue(session.continuationCollapsed, "Repeated cloud notifications do not present the same candidate again")
+    session.stayAtLocalPosition()
+    _ = try await remotePosition(formal, book: book, offset: book.byteCount)
+    await session.refreshSyncedContinuation()
+    XCTAssertNil(session.continuation)
+    await session.leave().value
+  }
+
+  func testNoBaselineRestoresTheWinnerAndAcceptedContinuationRetainsHistory() async throws {
+    let (root, service, _, formal, _, book, _, suite) = try singleBookFixture()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    _ = try await remotePosition(formal, book: book, offset: 6)
+    let first = ReaderSession(service: service)
+    await first.open(.book(book.id)); await awaitState { first.window != nil }
+    XCTAssertEqual(first.anchor, 6); XCTAssertNil(first.continuation)
+    await first.leave().value
+    try await service.savePosition(bookID: book.id, offset: 6)
+    _ = try await remotePosition(formal, book: book, offset: book.byteCount)
+    let session = ReaderSession(service: service)
+    await session.open(.book(book.id)); await awaitState { session.continuation != nil }
+    let requested = try XCTUnwrap(session.continuation?.location.offsetUtf8)
+    let expectedFrame = try await service.frame(book.id, offset: requested)
+    let target = try XCTUnwrap(expectedFrame.projectionAnchor)
+    await session.acceptSyncedContinuation()
+    XCTAssertEqual(session.anchor, target); XCTAssertNil(session.continuation)
+    XCTAssertEqual(session.history.entries.map(\.offsetUtf8), [6, target])
+    let original = try XCTUnwrap(session.history.entries.first)
+    session.browse(to: original.offsetUtf8, historyID: original.id)
+    await awaitState { !session.navigating }
+    XCTAssertEqual(session.anchor, 6, "The existing history path returns to the original local point")
+    await session.leave().value
+  }
+
+  func testFailedContinuationWriteRestoresTheOriginalViewportAndPreservesUnreadableFacts() async throws {
+    let (root, service, _, formal, _, book, _, suite) = try singleBookFixture()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    try await service.savePosition(bookID: book.id, offset: 6)
+    _ = try await remotePosition(formal, book: book, offset: book.byteCount)
+    let session = ReaderSession(service: service)
+    await session.open(.book(book.id)); await awaitState { session.continuation != nil }
+    await session.refreshSyncedContinuation()
+    let previous = session.window
+    try await formal.receiveSyncFixture("position", key: book.contentSha256, payload: "{\"v\":999}")
+    let before = try await formal.syncFixturePayloads("position", key: book.contentSha256)
+    await session.acceptSyncedContinuation()
+    XCTAssertEqual(session.anchor, 6); XCTAssertEqual(session.window, previous)
+    XCTAssertTrue(session.history.entries.isEmpty); XCTAssertNotNil(session.error)
+    let after = try await formal.syncFixturePayloads("position", key: book.contentSha256)
+    XCTAssertEqual(before, after)
+    await session.leave().value
+  }
+
+  func testCloudRefreshDuringPreparationStillChecksTheWinnerWhenTextCompletes() async throws {
+    let (root, service, core, formal, _, book, _, suite) = try singleBookFixture()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    try await service.savePosition(bookID: book.id, offset: 6)
+    _ = try await remotePosition(formal, book: book, offset: book.byteCount)
+    let draft = try core.createImport(title: "Deferred continuation")
+    let file = root.appendingPathComponent("a.txt")
+    let raw = try SourceIdentityProbe().rawSha256(filePath: file.path)
+    try core.streamImport(control: draft, filePath: file.path, expectedRawSha256: raw, encodingOverride: nil)
+    let session = ReaderSession(service: service)
+    await session.open(.book(draft.bookId()))
+    await awaitState { session.window != nil }
+    XCTAssertEqual(session.snapshot?.phase, .finalizing)
+    await session.refreshSyncedContinuation()
+    XCTAssertNil(session.continuation)
+    _ = try core.finishImport(control: draft)
+    await service.readingChanged(draft.bookId())
+    await awaitState { session.snapshot?.phase == .complete && session.continuation != nil }
+    XCTAssertNotNil(session.continuation, "An early cloud notification cannot consume the deferred check")
+    await session.leave().value
+  }
+
+  func testLateContinuationResultCannotReappearAfterReaderLeaves() async throws {
+    let (root, service, _, formal, _, book, _, suite) = try singleBookFixture()
+    defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+    try await service.savePosition(bookID: book.id, offset: 6)
+    _ = try await remotePosition(formal, book: book, offset: book.byteCount)
+    let entered = expectation(description: "Continuation read is held")
+    let gate = SourceReadinessGate(entered: entered), probe = ContinuationReadProbe()
+    let session = ReaderSession(service: service, readContinuation: { id, offset in
+      let context = try await service.readingResumeContext(id, currentOffset: offset)
+      if await probe.consumeHold() { await gate.wait() }
+      return context
+    })
+    await session.open(.book(book.id)); await awaitState { session.continuation != nil }
+    await session.refreshSyncedContinuation()
+    await probe.arm()
+    let refresh = Task { await session.refreshSyncedContinuation() }
+    await fulfillment(of: [entered], timeout: 5)
+    await session.leave().value
+    await gate.release(); await refresh.value
+    XCTAssertNil(session.continuation)
+  }
+}
+
+private actor ContinuationReadProbe {
+  private var held = false
+  func arm() { held = true }
+  func consumeHold() -> Bool { defer { held = false }; return held }
 }

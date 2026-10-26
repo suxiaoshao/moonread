@@ -64,7 +64,7 @@ pub fn serialize_reading_key(key: ReadingKey) -> String {
 
 pub(crate) fn initialize(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TEMP VIEW valid_indexed_identities AS
-    SELECT f.id file_id,si.content_sha256,si.utf8_bytes
+    SELECT f.id file_id,si.content_sha256,si.utf8_bytes,li.raw_sha256,li.decoding
     FROM main.library_files f JOIN main.library_identities li ON li.file_id=f.id
       AND li.decoding=f.decoding AND li.indexed_size=f.size AND li.indexed_modified=f.modified
     JOIN main.source_identities si ON si.raw_sha256=li.raw_sha256 AND si.decoding=li.decoding

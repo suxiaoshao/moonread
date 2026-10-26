@@ -39,7 +39,7 @@ TEMP 视图 `file_identities(file_id, content_sha256)` 是文件到正文身份�
 
 正文规范化 SHA 是唯一内容身份。文件行 UUID、授权根和相对路径用于定位一份副本；大小、修改时间用于显示、排序、下载状态及已索引文件的跳过判断，不能代替正文 SHA。没有平台文件 ID、版本指纹或 xattr。用户已决定本版不在原件写扩展属性，不以尚未验证的同步上传、冲突副本或未下载文件行为建立另一套身份。扫描按路径对齐，同路径同类型保留最后已知的 book_id，文件与目录互换不继承；枚举失败保留已知清单。
 
-每次打开在后台协调访问中读取完整原始 SHA，按“原始 SHA + 解码策略（自动或手选编码）”查已准备正文。未命中时记录期望原始 SHA，导入那一遍同时哈希实际送入解码器的字节，一致才原子发布快开映射。最终正文 SHA 决定归并或新书；原书用户数据独立保留。 自动编码按 BOM、合法且不含 ESC 的 UTF-8、固定版本 chardetng 顺序识别，GBK 统一到 GB18030；正文仍由 encoding_rs 与 normalization-v1 生成。发布后升级识别/解码依赖须通过固定原创样本与旧 SHA 回归，不得改变已支持文件的正文结果。手选编码仅保存在本机文件行，不经 CloudKit 同步；另一台设备仍自动识别，结果不同时需手选相同编码，详见[编码与恢复](../reader/import.md#编码恢复和失败)。暂停续读先验证完整原始 SHA，再重放核对前缀；源变化保留旧任务、前缀和位置，由用户显式“重新准备”。任务 generation 继续防止旧 worker 发布。
+每次打开在后台协调访问中读取完整原始 SHA，按“原始 SHA + 解码策略（自动或手选编码）”查已准备正文。未命中时记录期望原始 SHA，导入那一遍同时哈希实际送入解码器的字节，一致才原子发布快开映射。最终正文 SHA 决定归并或新书；原书用户数据独立保留。 自动编码按 BOM、合法且不含 ESC 的 UTF-8、固定版本 chardetng 顺序识别，GBK 统一到 GB18030；正文仍由 encoding_rs 与 normalization-v1 生成。发布后升级识别/解码依赖须通过固定原创样本与旧 SHA 回归，不得改变已支持文件的正文结果。手选编码以完整原始 SHA 为作用域，通过现有 UserValue `source-decoding/<rawSHA>` 同步；开书、全量索引与最近恢复共用 resolver，选择“自动”也保存显式值。运行中的解码任务冻结其策略，下次开书/索引才采用新选择；详见[编码与恢复](../reader/import.md#编码恢复和失败)。暂停续读先验证完整原始 SHA，再重放核对前缀；源变化保留旧任务、前缀和位置，由用户显式“重新准备”。任务 generation 继续防止旧 worker 发布。
 
 应用内移动、改名、目录移动携带最后已知关联，立即按 file id 重绑定暂停任务定位；重启续读再从当前文件索引解析。移动不创建原始 SHA 映射。外部移动按旧路径消失、新路径新增处理，建立索引或打开后按 SHA 接回；旧 fileRef 失效，不替换成另一副本。失效首选文件可回退到已关联副本，正式阅读新路径后更新首选。
 
@@ -116,7 +116,7 @@ SQLite v22 新增 `source_identities`（原文件 SHA＋解码策略为键）与
 | TXT 原件及目录树 | 固定本机 Documents、自身 iCloud Documents 或用户授权的外部目录；文件操作作用于实际原件 |
 | 身份索引 | Rust SQLite `source_identities` / `library_identities`；派生身份与文件快照，不缓存正文 |
 | 授权与文件索引 | Rust SQLite `library_shelves` / `library_files`；设备数据，成功扫描更新，失败保护已知索引 |
-| 正文、自动章节与任务 | Rust `reader.sqlite3`，schema 22：`books`、`chunks`、`reading_blanks`、`import_chapters`、`source_imports`、`import_jobs` |
+| 正文、自动章节与任务 | Rust `reader.sqlite3`，schema 23：`books`、`chunks`、`reading_blanks`、`import_chapters`、`source_imports`、`import_jobs` |
 | 小说信息、标签、状态、配色方案 | SwiftData `UserValue`；字段或成员最终快照，按 SHA 或配色 ID 关联 |
 | 正式位置 | SwiftData `UserPosition`；取最后更新并淘汰旧更新，不保留位置历史 |
 | 书签与批注 | SwiftData `AnnotationOperation`；完整内容候选和操作基线，正式保存后不维护内容历史 |
@@ -124,6 +124,9 @@ SQLite v22 新增 `source_identities`（原文件 SHA＋解码策略为键）与
 | 分享接收 | App Group `ShareInbox`，原字节与 `schemaVersion: 1` 清单；已发布项跨启动保留，不参与缓存清理 |
 | 用户封面 | SwiftData `UserCover.bytes` 外部存储；权威图片不是缓存，附件暂缺时文字封面 |
 | SHA 完成前的阅读数据 | 设备 SwiftData `pending-users.store`，禁止云同步；完成后转入 SHA 用户存储并回收暂存 |
+| 原文件编码选择 | SwiftData UserValue `source-decoding/<rawSHA>`，整值 LWW；导出全部包含，整书删除不删除此全局设置 |
+| 旧手选升级待办 | SQLite v23 `source_decoding_migration`，只登记升级前非 auto 值；未知 raw 的离线原件暂留，保存 epoch 候选后才删除 |
+| 本机续读提示基线 | UserDefaults `Moonread.localReadingResume.v1`，schemaVersion 1，按 storeScope/SHA 保存实际写入 offset/token，不同步 |
 | 当前配色/明暗、排版/模式、设备控制、动效、记录开关 | 本机 UserDefaults；不随配色方案一起同步 |
 | 任务源描述、最近隐藏、上次文件入口 | 本机 UserDefaults；任务按持有期回收；批注未提交编辑仅在内存 |
 | 缩略图及图片读出副本 | 本机可重建缓存；SwiftData 附件是封面的唯一权威来源 |
@@ -134,7 +137,7 @@ SQLite v22 新增 `source_identities`（原文件 SHA＋解码策略为键）与
 
 SwiftData 正式用户存储为 `Application Support/Moonread/user-data.store`，按照阅读数据同步开关使用 `.none` 或固定 CloudKit 私有容器。附件由框架管理；不存在应用自建上传队列。读取入口与账户边界见[同步设计](sync.md)，封面编辑见[小说详情](../design/book-details.md#封面如何保存)。
 
-SQLite 不是可整体删除的纯缓存。`books`、`chunks`、`reading_blanks`、自动 `import_chapters` 与 `source_imports` 是正文派生数据，在原文件和相同解码策略仍可访问时可重建；原件暂不可访问时不得自动丢弃唯一可读缓存。`library_files` 的目录元数据可重扫，但文件 ID、`book_id` 关联及用户选择的 `decoding` 不能随重建遗失。`library_shelves.bookmark`、书架名称/ID、外部根授权不可从小说正文恢复，必须迁移保留。`import_jobs` 含暂停/继续代次、来源映射和待交接状态，不能当作可随时删除的缓存；需与 SwiftData `pending-users.store` 一起保持中断恢复契约。SwiftData 中的进度、批注、书签、统计、主题、封面，以及 AI 会话/资产、UserDefaults 偏好/许可和 Keychain 凭据均非正文可重建数据。迁移入口与降级错误见[持久化演进](../engineering/architecture.md#持久化演进与发布兼容)。
+SQLite 不是可整体删除的纯缓存。`books`、`chunks`、`reading_blanks`、自动 `import_chapters` 与 `source_imports` 是正文派生数据，在原文件和相同解码策略仍可访问时可重建；原件暂不可访问时不得自动丢弃唯一可读缓存。`library_files` 的目录元数据可重扫，但文件 ID 与 `book_id` 关联不能随重建遗失；`decoding` 仅描述实际缓存/任务策略，不再作为偏好读取。v23 的 `source_decoding_migration` 是尚未可靠转存的旧手选，不能按缓存清理。`library_shelves.bookmark`、书架名称/ID、外部根授权不可从小说正文恢复，必须迁移保留。`import_jobs` 含暂停/继续代次、来源映射和待交接状态，不能当作可随时删除的缓存；需与 SwiftData `pending-users.store` 一起保持中断恢复契约。SwiftData 中的进度、批注、书签、统计、主题、封面，以及 AI 会话/资产、UserDefaults 偏好/许可和 Keychain 凭据均非正文可重建数据。迁移入口与降级错误见[持久化演进](../engineering/architecture.md#持久化演进与发布兼容)。
 
 Rust `books` 不再保存正式位置或最近阅读时间。`user/projection.rs` 在各计算连接中建立临时位置、元信息、事实和目录修正视图；输入来自 SwiftData，可以随时重建。`effective_chapters` 同样是临时计算视图。用户记录不依赖文件索引或正文缓存的外键级联。
 

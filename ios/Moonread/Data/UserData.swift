@@ -289,6 +289,10 @@ enum AnnotationReduction {
         }
         return result
     }
+    func sourceDecodingSnapshot() throws -> SourceDecodingSnapshot {
+        let snapshot = try valueSnapshot(prefix: "source-decoding/")
+        return SourceDecodingSnapshot(values: snapshot.values, blocked: snapshot.blocked)
+    }
     func values(key: String? = nil) throws -> [String: StoredValue] { try valueSnapshot(key: key).values }
     private func requireValueReadable(_ key: String) throws {
         guard try !valueSnapshot(key: key).blocked.contains(key) else { throw UserSyncCompatibilityError() }
@@ -308,21 +312,25 @@ enum AnnotationReduction {
         for row in try obsoletePositionRows(key: key) { modelContext.delete(row) }
     }
     func value(_ key: String) throws -> String? {
+        try storedValue(key)?.value
+    }
+    func storedValue(_ key: String) throws -> StoredValue? {
         let snapshot = try valueSnapshot(key: key)
         guard !snapshot.blocked.contains(key) else { throw UserSyncCompatibilityError() }
-        return snapshot.values[key]?.value
+        return snapshot.values[key]
     }
-    func put(_ key: String, value: String, device: String) throws {
+    @discardableResult func put(_ key: String, value: String, device: String) throws -> StoredValue {
         try transaction { try putWithoutSave(key, value: value, device: device) }
     }
-    private func putWithoutSave(_ key: String, value: String, device: String) throws {
+    @discardableResult private func putWithoutSave(_ key: String, value: String, device: String) throws -> StoredValue {
         try UserSyncJSON.validateValue(value, key: key)
         try requireValueReadable(key)
         let rows = try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate { $0.key == key && $0.device == device }))
         for row in rows { _ = try UserSyncJSON.storedValue(row.payload, key: key) }
         let latest = try values(key: key)[key]?.updated ?? 0
         guard latest < Int64.max else { throw UserSyncCompatibilityError() }
-        let payload = try encode(StoredValue(updated: max(Int64(Date().timeIntervalSince1970 * 1000), latest + 1), token: UUID().uuidString, value: value))
+        let stored = StoredValue(updated: max(Int64(Date().timeIntervalSince1970 * 1000), latest + 1), token: UUID().uuidString, value: value)
+        let payload = try encode(stored)
         if key.hasPrefix("position/") {
             let contentKey = String(key.dropFirst(9))
             let old = try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { $0.contentKey == contentKey }))
@@ -331,6 +339,7 @@ enum AnnotationReduction {
             for row in old { modelContext.delete(row) }
         } else if let row = rows.first { row.payload = payload; for duplicate in rows.dropFirst() { modelContext.delete(duplicate) } }
         else { modelContext.insert(UserValue(key: key, device: device, payload: payload)) }
+        return stored
     }
     func putValues(_ values: [String: String], device: String) throws {
         try transaction { for (key, value) in values { try putWithoutSave(key, value: value, device: device) } }

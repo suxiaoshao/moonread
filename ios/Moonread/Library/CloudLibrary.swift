@@ -497,7 +497,7 @@ extension AppDataService {
             let root = try URL(resolvingBookmarkData: source.rootBookmark, options: .withoutUI, bookmarkDataIsStale: &stale)
             if root.standardizedFileURL == local.standardizedFileURL {
                 let moved = ImportSource(rootBookmark: bookmark, relativePath: source.relativePath,
-                    encoding: source.encoding, sourceKey: source.sourceKey, fileID: source.fileID)
+                    encoding: source.encoding, sourceKey: source.sourceKey, fileID: source.fileID, expectedRawSHA: source.expectedRawSHA)
                 updates[key] = try JSONEncoder().encode(moved)
             }
         }

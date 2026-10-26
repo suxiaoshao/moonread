@@ -187,7 +187,7 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
   }
 
   // S284: 恢复只准入唯一、近期、大小/解码合格的候选并串行下载；每道拒绝边界一个反例，不跑十书完整导入。
-  func testPolicyBoundsAmbiguityDownloadSizeAndManualDecoding() async throws {
+  func testPolicyBoundsAmbiguityAndDownloadSizeWithoutLegacyDecodingPreference() async throws {
     func candidate(
       _ id: String, path: String = "sample.txt", remote: Bool = true, policy: String = "auto",
       shelfID: String = "builtin", size: UInt64 = 20
@@ -219,10 +219,10 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
         hint: h,
         files: [candidate("grown", size: RecentRestorationPolicy.automaticDownloadByteLimit + 1)]
       ).isEmpty)
-    XCTAssertTrue(
+    XCTAssertEqual(
       RecentRestorationPolicy.candidates(
         hint: h, files: [candidate("manual", remote: false, policy: "Big5")]
-      ).isEmpty)
+      ).count, 1, "Candidate admission does not treat the retired cache policy as a preference")
     let many = (0..<4).map { candidate("\($0)", remote: false) }
     XCTAssertTrue(RecentRestorationPolicy.candidates(hint: h, files: many).isEmpty)
     h.relative_path = "moved/sample.txt"
@@ -395,7 +395,7 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
     try await position(
       f, key: sha(text), hint: hint("sample.txt", size: UInt64(bytes.count), decoding: "UTF-16LE"))
     await restore(f)
-    XCTAssertEqual(try f.core.sourceDecoding(fileId: file.id), "UTF-16LE")
+    XCTAssertEqual(try f.core.sourceDecoding(fileId: file.id), "auto", "A descriptive old hint is not a decoding preference")
     let lease = try await f.service.openSourceFile(
       .init(id: file.id, shelfID: "builtin", relativePath: "sample.txt"))
     try await f.service.waitForImportFinish(lease.id)
@@ -403,7 +403,7 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
     let storedValue = try await f.store.value("position/" + sha(text))
     let value = try XCTUnwrap(storedValue)
     let saved = try UserSyncJSON.decode(PositionValue.self, value, as: UserSyncJSON.position)
-    XCTAssertEqual(saved.source_hint?.decoding, "UTF-16LE")
+    XCTAssertEqual(saved.source_hint?.decoding, "auto")
     XCTAssertEqual(saved.source_hint?.relative_path, "sample.txt")
     XCTAssertEqual(saved.source_hint?.byte_size, UInt64(bytes.count))
     XCTAssertEqual(saved.offset, 20)

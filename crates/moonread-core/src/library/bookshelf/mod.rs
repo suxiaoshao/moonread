@@ -434,8 +434,10 @@ pub struct LibrarySearchCandidate {
     pub resolved_metadata: Option<crate::BookMetadata>,
 }
 
+mod decoding_migration;
 mod mutations;
 mod source;
+pub use decoding_migration::*;
 pub(crate) use source::source_snapshots;
 #[cfg(test)]
 mod tests;
