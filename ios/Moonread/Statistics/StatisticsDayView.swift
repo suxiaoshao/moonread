@@ -11,22 +11,15 @@ struct StatisticsDayView: View {
     @State private var error: String?
     private var total: UInt64 { spans.reduce(0) { $0 + $1.milliseconds } }
     var body: some View {
-        List {
-            if !spans.isEmpty {
-                if let error {
-                    Label(error, systemImage: "exclamationmark.circle").font(.footnote)
-                        .foregroundStyle(Color(uiColor: theme.destructive))
-                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
+        GeometryReader { geometry in
+            if geometry.size.width >= 760, !spans.isEmpty {
+                HStack(alignment: .top, spacing: 0) {
+                    List { summary }
+                        .frame(width: min(380, geometry.size.width * 0.42))
+                    List { sessions }
                 }
-                Section {
-                    Text(StatisticsDates.duration(total)).font(.title2.weight(.semibold)).monospacedDigit()
-                    ReadingSessionsChart(spans: spans, singleBook: false)
-                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-                Section {
-                    ForEach(spans.reversed()) { ReadingSessionRow(span: $0, showBook: route.book == nil) }
-                } header: { Text("阅读时段") } footer: {
-                    if let compatibilityNotice { Text(compatibilityNotice).foregroundStyle(Color(uiColor: theme.secondary)) }
-                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+            } else {
+                List { if !spans.isEmpty { summary; sessions } }
             }
         }
         .themedPage()
@@ -51,6 +44,24 @@ struct StatisticsDayView: View {
         .onReceive(NotificationCenter.default.publisher(for: .statisticsChanged).receive(on: DispatchQueue.main)) { _ in Task { await load() } }
         .accessibilityIdentifier("statisticsDay")
         .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in Task { await load() } }
+    }
+    @ViewBuilder private var summary: some View {
+        if let error {
+            Label(error, systemImage: "exclamationmark.circle").font(.footnote)
+                .foregroundStyle(Color(uiColor: theme.destructive))
+                .listRowBackground(Color.clear).listRowSeparator(.hidden)
+        }
+        Section {
+            Text(StatisticsDates.duration(total)).font(.title2.weight(.semibold)).monospacedDigit()
+            ReadingSessionsChart(spans: spans, singleBook: false)
+        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+    }
+    private var sessions: some View {
+        Section {
+            ForEach(spans.reversed()) { ReadingSessionRow(span: $0, showBook: route.book == nil) }
+        } header: { Text("阅读时段") } footer: {
+            if let compatibilityNotice { Text(compatibilityNotice).foregroundStyle(Color(uiColor: theme.secondary)) }
+        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
     }
     private func load() async {
         do {

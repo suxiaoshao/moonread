@@ -124,23 +124,37 @@ struct ReaderSettingsView: View {
     }
     var body: some View {
         GeometryReader { geometry in
+            // Keep enough room for both native controls and readable text.
+            let wide = geometry.size.width >= 760
             // The medium sheet covers half the window, including the navigation
             // bar above this page. Reserving half of just the content is too short.
             let frame = geometry.frame(in: .global)
             let mediumHeight = max(0, (frame.maxY + geometry.safeAreaInsets.bottom) / 2 - frame.minY - LayoutTokens.control)
-            ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editedAppearance, encoding: encoding, isRestartingEncoding: isRestartingEncoding, changeEncoding: changeEncoding,
-                                 editPalette: { value in
-                                     if previewPresented { previewDetent = .large }
-                                     draft = value
-                                 })
-                .frame(height: previewPresented
-                    ? (restingDetent == .medium ? mediumHeight : max(0, geometry.size.height - 76))
-                    : geometry.size.height)
-                .clipped()
-                .frame(maxHeight: .infinity, alignment: .top)
-        }
+            HStack(spacing: 0) {
+                ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editedAppearance, encoding: encoding, isRestartingEncoding: isRestartingEncoding, changeEncoding: changeEncoding,
+                                     editPalette: { value in
+                                         if !wide && previewPresented { previewDetent = .large }
+                                         draft = value
+                                     })
+                    .frame(width: wide ? min(400, geometry.size.width * 0.46) : nil)
+                    .frame(height: !wide && previewPresented
+                        ? (restingDetent == .medium ? mediumHeight : max(0, geometry.size.height - 76))
+                        : geometry.size.height)
+                    .clipped()
+                    .frame(maxHeight: .infinity, alignment: .top)
+                if wide {
+                    readingPreview
+                        .background {
+                            if let tile = previewPosition.paperTile(previewTheme.paperInput(scale: displayScale)) {
+                                Image(uiImage: tile).resizable(resizingMode: .tile)
+                            } else { Color(uiColor: previewTheme.paper) }
+                        }
+                        .clipShape(.rect(cornerRadius: 16))
+                        .padding(LayoutTokens.content)
+                }
+            }
             .safeAreaInset(edge: .bottom) {
-                if !previewPresented {
+                if !wide && !previewPresented {
                     Button("阅读预览", systemImage: "doc.text.magnifyingglass") {
                         previewDetent = verticalSizeClass == .compact ? .large : .height(60)
                         previewPresented = true
@@ -166,11 +180,11 @@ struct ReaderSettingsView: View {
                     previewPresented = verticalSizeClass != .compact
                 }
             }
-            .sheet(item: Binding(get: { previewPresented ? nil : draft }, set: { draft = $0 })) { value in
+            .sheet(item: Binding(get: { !wide && previewPresented ? nil : draft }, set: { draft = $0 })) { value in
                 paletteEditor(value)
             }
-            .sheet(isPresented: Binding(get: { previewPresented && !navigation.isSuspended }, set: {
-                if !navigation.isSuspended { previewPresented = $0 }
+            .sheet(isPresented: Binding(get: { !wide && previewPresented && !navigation.isSuspended }, set: {
+                if !wide && !navigation.isSuspended { previewPresented = $0 }
             }), onDismiss: {
                 previewVisible = false
                 navigation.presentationDismissed()
@@ -198,7 +212,7 @@ struct ReaderSettingsView: View {
                     .accessibilityValue(ProcessInfo.processInfo.arguments.contains("--ui-testing")
                         ? (previewExpanded ? "full" : previewDetent == .medium ? "half" : "compact") : "")
                     #endif
-                    ReadingPreviewPane(source: preview, settings: settings, surface: previewTheme, position: previewPosition)
+                    readingPreview
                         .opacity(previewCollapsed ? 0 : 1)
                         .accessibilityHidden(previewCollapsed)
                         .allowsHitTesting(!previewCollapsed)
@@ -228,7 +242,13 @@ struct ReaderSettingsView: View {
                 if value != .large { restingDetent = value }
             }
             .onChange(of: themes.snapshot.preferences.readerMode) { _, _ in editedAppearance = nil }
+        }
     }
+    private var readingPreview: some View {
+        ReadingPreviewPane(source: preview, settings: settings, surface: previewTheme, position: previewPosition)
+            .onDisappear { previewPosition.capture() }
+    }
+
     private func paletteEditor(_ value: PaletteDraft) -> some View {
         PaletteEditor(initial: value.palette, creating: value.creating, showsAppPreview: false) { palette in
             draft?.palette = palette

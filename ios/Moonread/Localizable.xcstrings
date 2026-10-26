@@ -1,6 +1,28 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+  "正文身份尚未确定": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Text identity is not yet available"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "正文身份尚未确定"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "正文身分尚未確定"
+        }
+      }
+    }
+  },
   "推理 %@": {
     "localizations": {
       "en": {
