@@ -69,14 +69,17 @@ struct SettingsView: View {
                         }.accessibilityIdentifier("aiSettings")
                     }
                 } else {
-                    Text(verbatim: ai.availability.regionMessage).accessibilityIdentifier("aiRegionUnavailable")
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(verbatim: ai.availability.regionMessage)
+                        Text("已有 AI 数据保留在本机，不会发送。")
+                    }.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                        .accessibilityIdentifier("aiRegionUnavailable")
+                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
                 }
             } header: { Text("AI 助手") } footer: {
                 if ai.availability.regionAllowsAI {
                     Text("关闭后隐藏所有 AI 功能，已有连接、会话和数据共享许可保留。")
                         .padding(.bottom, 16)
-                } else {
-                    Text("已有 AI 数据保留在本机，不会发送。").padding(.bottom, 16)
                 }
             }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section("外观与语言") {

@@ -64,15 +64,13 @@ struct PaletteFields: View {
                 Section {
                     PalettePreview(theme: appPreview).accessibilityIdentifier("palettePreview")
                         .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
-                }
+                } footer: { contrastNotice }
             }
-            if !themeColorsReadable(c: palette.colors) {
-                Section { Text("对比度偏低，可能不易阅读").foregroundStyle(Color(uiColor: theme.destructive)) }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            }
-            Section("背景") {
+            Section {
                 color("页面", \.canvas); color("分组与面板", \.surface); color("浮层", \.raised); color("输入区", \.input)
                 color("阅读纸面", \.paper).accessibilityIdentifier("palettePaper")
-            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+            } header: { Text("背景") } footer: { if appPreview == nil { contrastNotice } }
+                .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section("文字与操作") {
                 color("文字", \.ink); color("次要文字", \.secondary); color("禁用文字", \.disabled)
                 color("强调色", \.accent); color("强调色背景", \.accentSurface); color("强调色上的文字", \.onAccent)
@@ -86,6 +84,12 @@ struct PaletteFields: View {
                 color("月体", \.moon); color("月海", \.maria)
             }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
         }.themedPage().scrollDismissesKeyboard(.interactively).accessibilityIdentifier("paletteEditorControls")
+    }
+    @ViewBuilder private var contrastNotice: some View {
+        if !themeColorsReadable(c: palette.colors) {
+            Label("对比度偏低，可能不易阅读", systemImage: "exclamationmark.triangle")
+                .font(.footnote).foregroundStyle(Color(uiColor: theme.warning))
+        }
     }
     private func color(_ label: LocalizedStringKey, _ path: WritableKeyPath<ThemeColors, UInt32>) -> some View {
         ColorPicker(label, selection: Binding(get: { Color(uiColor: UIColor(rgb: palette.colors[keyPath: path])) }, set: { palette.colors[keyPath: path] = UIColor($0).opaqueRGB }), supportsOpacity: false)

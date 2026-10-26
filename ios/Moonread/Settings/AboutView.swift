@@ -11,8 +11,7 @@ struct AboutView: View {
                     Text(verbatim: "Moonread · \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")") .font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                 }.frame(maxWidth: .infinity).padding(.vertical, 24)
             }.listRowBackground(Color.clear)
-            Section("数据与隐私") {
-                Text("小说保存在我的书架或你添加的目录；我的书架可接入应用固定的 iCloud 文件目录。阅读数据可选择通过 iCloud 同步，显示与阅读偏好保存在此设备。")
+            Section {
                 Link("隐私政策", destination: AppLinks.privacy()).accessibilityIdentifier("privacyPolicyLink")
                 Link("帮助与支持", destination: AppLinks.support()).accessibilityIdentifier("helpSupportLink")
                 if let contact = AppLinks.contact {
@@ -23,6 +22,9 @@ struct AboutView: View {
                         }
                     }.accessibilityIdentifier("contactDeveloperLink")
                 }
+            } header: { Text("数据与隐私") } footer: {
+                Text("小说保存在我的书架或你添加的目录；我的书架可接入应用固定的 iCloud 文件目录。阅读数据可选择通过 iCloud 同步，显示与阅读偏好保存在此设备。")
+                    .foregroundStyle(Color(uiColor: theme.secondary))
             }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section("主要开源组件") {
                 NavigationLink("第三方许可") { ThirdPartyLicensesView() }

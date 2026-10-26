@@ -428,13 +428,14 @@ struct AIModelDetailView: View {
                 NavigationStack {
                     Form {
                         Section {
-                            TextField("上下文 · tokens", text: $contextBudget).keyboardType(.numberPad)
-                                .accessibilityIdentifier("chatGPTContextBudget")
-                            Text("账户目录未提供容量，请按服务说明填写")
-                            Text("这是你配置的上下文预算，不代表服务端确认的模型上限。")
-                                .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
-                            if invalidContextBudget { Text("请填写正整数。").foregroundStyle(Color(uiColor: theme.destructive)) }
-                        }.listRowBackground(Color(uiColor: theme.surface))
+                            VStack(alignment: .leading, spacing: 8) {
+                                TextField("上下文 · tokens", text: $contextBudget).keyboardType(.numberPad)
+                                    .accessibilityIdentifier("chatGPTContextBudget")
+                                if invalidContextBudget { Label("请填写正整数。", systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
+                            }
+                        } footer: {
+                            Text("账户目录未提供容量，请按服务说明填写。这是你配置的上下文预算，不代表服务端确认的模型上限。")
+                        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                     }.themedPage().navigationTitle("上下文预算")
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) { Button("取消") { editingContextBudget = false } }

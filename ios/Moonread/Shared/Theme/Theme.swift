@@ -61,6 +61,8 @@ struct ThemeSurface: Equatable {
     var searchCurrent: UIColor { ui(\.searchCurrent, system: .systemBlue.withAlphaComponent(0.28)) }
     var selection: UIColor { ui(\.selection, system: .systemBlue) }
     var destructive: UIColor { ui(\.destructive, system: .systemRed) }
+    var warning: UIColor { ui(\.warning, system: .systemOrange) }
+    var onDestructive: UIColor { ui(\.onDestructive, system: .white) }
     var success: UIColor { ui(\.success, system: .systemGreen) }
     var moon: UIColor { ui(\.moon, system: .tertiaryLabel) }
     var maria: UIColor { ui(\.maria, system: .secondaryLabel) }

@@ -236,7 +236,14 @@ private struct AIPurposeModelList: View {
         return AIModelSearch.offered(eligible, in: connection, keeping: current, ai.providers)
     }
     var body: some View {
-        if let connection { list(connection) } else { ContentUnavailableView("连接不可用", systemImage: "sparkles") }
+        Group {
+            if let connection { list(connection) }
+            else {
+                ContentUnavailableView {
+                    Label("连接不可用", systemImage: "sparkles")
+                } actions: { Button("返回") { dismiss() }.buttonStyle(ThemedSecondaryButtonStyle()) }
+            }
+        }.themedPage().navigationTitle("选择模型").navigationBarTitleDisplayMode(.inline)
     }
     private func list(_ connection: AIConnection) -> some View {
         let shown = AIModelSearch.filter(offered, query: query, connection: connection, ai.providers)
@@ -275,7 +282,7 @@ private struct AIPurposeModelList: View {
                                 .accessibilityIdentifier("aiPurposeModel-\(model.id)")
                         }
                     } header: { AIConnectionHeader(connection: connection) }
-                        .listRowBackground(Color(uiColor: theme.surface))
+                        .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                 }
             }
         }.themedPage().navigationTitle("选择模型").navigationBarTitleDisplayMode(.inline)

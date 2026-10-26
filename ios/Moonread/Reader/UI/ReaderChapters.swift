@@ -140,25 +140,31 @@ struct ChapterRebuildView: View {
     var body: some View {
         List {
             Section {
-                HStack(spacing: 12) {
-                    if model.progress?.done != true { LoadingActivity(size: 28, fraction: model.progress?.fraction) }
-                    Text("已识别 \(Int(model.progress?.count ?? 0)) 章").monospacedDigit(); Spacer()
-                }.frame(minHeight: 44)
-                if let error = model.rebuildError ?? model.actionError {
-                    Label(error, systemImage: "exclamationmark.circle").foregroundStyle(Color(uiColor: theme.destructive)).accessibilityIdentifier("chapterRebuildError")
-                }
-            }.listRowBackground(Color(uiColor: theme.surface))
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 12) {
+                        if model.progress?.done != true && model.rebuildError == nil { LoadingActivity(size: 28, fraction: model.progress?.fraction) }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(model.progress?.done == true ? "识别完成" : "正在识别目录").font(.headline)
+                            Text("已识别 \(Int(model.progress?.count ?? 0)) 章").monospacedDigit().foregroundStyle(Color(uiColor: theme.secondary))
+                        }
+                        Spacer()
+                    }
+                    if let error = model.rebuildError ?? model.actionError {
+                        Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)).accessibilityIdentifier("chapterRebuildError")
+                    }
+                }.padding(.vertical, 8)
+            }.listRowBackground(Color.clear).listRowSeparator(.hidden)
             Section {
                 ForEach(model.headings, id: \.startUtf8) { heading in
                     Text(heading.title).font(heading.level == 0 ? .headline : .body)
-                        .padding(.leading, heading.level == 0 ? 0 : 12).listRowBackground(Color(uiColor: theme.surface))
+                        .padding(.leading, heading.level == 0 ? 0 : 12).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                 }
                 if model.hasMore {
                     HStack {
                         Button("显示更多章节") { Task { await model.loadMore() } }.disabled(model.loadingMore)
                         Spacer()
                         if model.loadingMore { LoadingActivity(size: 22, waitingLabel: "正在加载") }
-                    }.listRowBackground(Color(uiColor: theme.surface))
+                    }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                 }
             }
         }

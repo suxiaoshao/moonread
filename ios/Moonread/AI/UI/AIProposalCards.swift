@@ -106,7 +106,7 @@ struct AIResultCard: View {
                 }
             }
             AIResultFeedback(resultID: resultID)
-            Divider()
+            ThemedDivider()
             HStack { Text("查看并应用"); Spacer(); Image(systemName: "chevron.right") }.font(.subheadline.weight(.semibold)).foregroundStyle(Color(uiColor: theme.accent))
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -122,7 +122,7 @@ struct AIResultCard: View {
                 }
             }
             AIResultFeedback(resultID: resultID)
-            Divider()
+            ThemedDivider()
             HStack { Text("选择封面"); Spacer(); Image(systemName: "chevron.right") }.font(.subheadline.weight(.semibold)).foregroundStyle(Color(uiColor: theme.accent))
         }.frame(maxWidth: .infinity, alignment: .leading)
     }

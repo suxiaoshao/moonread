@@ -79,13 +79,16 @@ struct AIConnectionView: View {
             .sheet(isPresented: $addingModel) {
                 NavigationStack {
                     Form {
-                      Group {
+                      Section {
                         TextField("模型 ID", text: $manualModel).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        TextField("上下文容量（tokens，必填）", text: $manualContext).keyboardType(.numberPad)
+                        VStack(alignment: .leading, spacing: 8) {
+                            TextField("上下文容量（tokens，必填）", text: $manualContext).keyboardType(.numberPad)
+                            if manualError { Label("请填写有效容量，最大输出不能超过上下文容量。", systemImage: "exclamationmark.circle")
+                                .font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
+                        }
                         TextField("最大输出（tokens，选填）", text: $manualOutput).keyboardType(.numberPad)
-                        if manualError { Text("请填写有效容量，最大输出不能超过上下文容量。")
-                            .foregroundStyle(Color(uiColor: theme.destructive)) }
-                      }.listRowBackground(Color(uiColor: theme.surface))
+                      } footer: { Text("最大输出不能超过上下文容量。") }
+                        .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                     }.themedPage().navigationTitle("添加模型")
                         .toolbar {
                             ToolbarItem(placement: .cancellationAction) { Button("取消") { addingModel = false } }
