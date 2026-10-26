@@ -331,17 +331,12 @@ final class ReaderSession {
         }
     }
 
-    func pause() {
-        guard let id = readingID else { return }
-        Task { await service.pauseImport(id, reason: .user) }
-    }
-
-    func resume() {
-        guard !isLeaving, let id = readingID else { return }
+    func retryPreparation() {
+        guard !isLeaving, snapshot?.phase == .failed, let id = readingID else { return }
         error = nil
         Task {
             do { try await service.resumeImport(id); startMonitoring() }
-            catch { if !isLeaving { self.error = String(localized: "暂时无法继续准备。请确认原目录仍可访问。\n\(ReaderMessages.error(error))") } }
+            catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
         }
     }
 

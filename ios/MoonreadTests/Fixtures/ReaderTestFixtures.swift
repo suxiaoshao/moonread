@@ -209,7 +209,7 @@ class ReaderIntegrationFixture: XCTestCase {
     let id = control.bookId()
     try core.streamImport(
       control: control, filePath: source.path,
-      expectedRawSha256: CloudDocumentHandoff.bytesHash(source), encodingOverride: "UTF-8")
+      expectedRawSha256: CloudDocumentHandoff.bytesHash(source), encodingOverride: nil)
     control.pause()
     try core.failImport(control: control, error: .Paused)
     try core.linkLibraryFile(fileId: entry.id, bookId: id)
@@ -217,7 +217,7 @@ class ReaderIntegrationFixture: XCTestCase {
     let bookmark = try local.bookmarkData(
       options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
     let descriptor = ImportSource(
-      rootBookmark: bookmark, relativePath: "book.txt", encoding: "UTF-8", sourceKey: sourceKey,
+      rootBookmark: bookmark, relativePath: "book.txt", encoding: nil, sourceKey: sourceKey,
       fileID: entry.id)
     defaults.set(
       try JSONEncoder().encode(descriptor), forKey: "Moonread.importSource.library." + id)

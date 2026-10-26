@@ -8,6 +8,40 @@ import XCTest
 @testable import Moonread
 
 final class ReaderSessionReaderSelectionTests: ReaderSelectionFixture {
+  @MainActor func testAccessibleStartMarksInteractionBeforeReportingWhileLayoutDoesNot() async throws {
+    for coverSurface in [false, true] {
+      let controller = ReadingController()
+      let text = ScrollReadingTextView()
+      controller.scrollText = text
+      controller.settings = defaultReaderSettings()
+      controller.window = try window("第一章 原创样本\n窗边有一盏灯。\n")
+      controller.coverTitle = "辅助阅读合成样本"
+      controller.reduceMotion = true
+      var interacted = false
+      controller.readingBegan = {
+        XCTAssertEqual(controller.anchor, 13, "Interaction must be marked before reporting the new position")
+        interacted = true
+      }
+      let layout = expectation(description: "Automatic layout report")
+      controller.changed = { _, _ in XCTAssertFalse(interacted); layout.fulfill() }
+      controller.report(13, settled: true)
+      await fulfillment(of: [layout], timeout: 2)
+      XCTAssertFalse(interacted)
+      controller.isCoverVisible = true
+      let surface: UIView
+      let cover: ReaderCoverController?
+      if coverSurface { cover = controller.makeCover(); surface = try XCTUnwrap(cover?.view) }
+      else { cover = nil; controller.configureAccessibility(text); surface = text }
+      let report = expectation(description: "Accessible start report")
+      controller.changed = { _, _ in XCTAssertTrue(interacted); report.fulfill() }
+      let action = try XCTUnwrap(surface.accessibilityCustomActions?.first { $0.name == String(localized: "开始阅读") })
+      XCTAssertTrue(action.actionHandler?(action) == true)
+      XCTAssertTrue(interacted)
+      await fulfillment(of: [report], timeout: 2)
+      withExtendedLifetime((controller, text, cover)) {}
+    }
+  }
+
   // S308: 忙碌窗口请求不能被当作已消费而丢失，解除忙碌仍处理当前 viewport 请求。
   func testBusyWindowAdmissionDoesNotConsumeViewportRequest() {
     var admissions = ReadingFrontierAdmissions()

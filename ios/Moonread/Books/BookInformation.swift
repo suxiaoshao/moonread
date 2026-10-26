@@ -12,9 +12,6 @@ final class BookInformationModel {
     var downloading = false
     var progress: Double?
     var confirmDownload = false
-    private enum PreparationStep { case running, paused, resumeRequested }
-    private var preparationStep = PreparationStep.running
-    var preparationPaused: Bool { preparationStep == .paused }
     var draft: BookMetadataDraft?
     private var task: Task<Void, Never>?
     private var lease: ReadingLease?
@@ -92,9 +89,9 @@ final class BookInformationModel {
     }
     func prepareEditing(_ target: StatisticsRoute) {
         guard !preparing else { return }
-        preparing = true; preparationStep = .running; downloading = entry?.needsDownload == true; progress = nil
+        preparing = true; downloading = entry?.needsDownload == true; progress = nil
         task = Task { [self] in
-            defer { preparing = false; preparationStep = .running; task = nil; lease = nil }
+            defer { preparing = false; task = nil; lease = nil }
             do {
                 if let entry, !target.fromReader {
                     try await service.prepareSourceFile(entry.source) { [weak self] value in
@@ -120,26 +117,15 @@ final class BookInformationModel {
                     }
                     if snapshot.phase == .failed { throw CocoaError(.fileReadCorruptFile) }
                     if snapshot.phase == .paused {
-                        let userPaused = await service.isImportUserPaused(lease.id)
                         try Task.checkCancellation()
-                        if userPaused && preparationStep != .resumeRequested {
-                            preparationStep = .paused
-                        } else {
-                            preparationStep = .running
-                            try await service.resumeImport(lease.id)
-                        }
-                    } else { preparationStep = .running }
+                        try await service.resumeImport(lease.id)
+                    }
                     progress = snapshot.sourceByteCount > 0 ? Double(snapshot.sourceBytesRead) / Double(snapshot.sourceByteCount) : nil
                     try await Task.sleep(for: .milliseconds(100))
                 }
             } catch is CancellationError { }
             catch { self.error = ReaderMessages.error(error) }
         }
-    }
-    func resumePreparation() {
-        guard preparing, preparationPaused else { return }
-        // The existing preparation task owns the resume, including cancellation.
-        preparationStep = .resumeRequested
     }
     func finishPreparationForDataDeletion() async {
         let current = task; current?.cancel(); await current?.value; lease = nil

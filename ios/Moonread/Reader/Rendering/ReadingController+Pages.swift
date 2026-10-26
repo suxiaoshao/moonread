@@ -16,6 +16,7 @@ extension ReadingController {
             UIAccessibilityCustomAction(name: String(localized: "开始阅读")) { [weak self] _ in
                 guard let self else { return false }
                 if let text = scrollText {
+                    readingBegan?()
                     text.setContentOffset(CGPoint(x: 0, y: self.scrollCoverHeight), animated: !reduceMotion)
                     reportCover(false); report(window.flatMap { ReadingText($0).firstVisibleOffset } ?? anchor, settled: true)
                 } else { movePage(1) }

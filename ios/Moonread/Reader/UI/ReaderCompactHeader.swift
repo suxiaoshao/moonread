@@ -24,7 +24,7 @@ struct ReaderCompactHeader: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             if session.atPreparedEdge {
                 Button { showControls() } label: {
-                    Text(session.preparing ? String(localized: "后续准备中") : (session.snapshot?.phase == .failed ? String(localized: "查看问题") : String(localized: "继续准备")))
+                    Text(session.preparing ? String(localized: "后续准备中") : (session.snapshot?.phase == .failed ? String(localized: "查看问题") : String(localized: "准备已暂停")))
                         .fixedSize()
                         .frame(minHeight: 44)
                 }
