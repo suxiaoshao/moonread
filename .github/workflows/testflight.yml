@@ -124,7 +124,7 @@ jobs:
           test "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$SOURCE_BRANCH" --jq .object.sha)" = "$EXPECTED_SHA"
           test "$(xcodebuild -version | head -n 1)" = 'Xcode 27.1'
           xcrun --sdk iphoneos --show-sdk-version
-      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
       - name: Prepare isolated signing context and read-only ASC client
         env:
           ASC_API_KEY_BASE64: ${{ secrets.ASC_API_KEY_BASE64 }}
@@ -509,7 +509,7 @@ jobs:
           PY
       - name: Publish only allowlisted sanitized summaries
         if: ${{ always() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: testflight-sanitized-summary
           path: |
