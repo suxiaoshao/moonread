@@ -16,15 +16,22 @@ struct AIProviderIcon: View {
 enum AIModelPickerDestination {
     case target(AIModelSelectionTarget)
     case draft(Binding<AIModelSelection?>)
+    case purpose(AIModelPurpose)
     @MainActor func selection(_ ai: AIService) -> AIModelSelection? {
         switch self {
         case .target(let target): return ai.modelSelection(for: target)
         case .draft(let value): return value.wrappedValue
+        case .purpose(let purpose):
+            return ai.providers.purposeDefaults[purpose].map {
+                AIModelSelection(connectionID: $0.connectionID, modelID: $0.modelID, thinking: nil)
+            }
         }
     }
     @MainActor func apply(_ selection: AIModelSelection, _ ai: AIService) async -> Bool {
         switch self {
         case .target(let target): return await ai.applyModelSelection(selection, to: target)
+        case .purpose(let purpose):
+            return ai.providers.setPurpose(purpose, selection: .init(connectionID: selection.connectionID, modelID: selection.modelID))
         case .draft(let value):
             guard let model = ai.providers.model(connectionID: selection.connectionID, modelID: selection.modelID),
                   model.capabilities?.text != false,
@@ -39,6 +46,7 @@ enum AIModelPickerDestination {
         }
     }
     var isDefault: Bool { if case .target(let target) = self { target.isDefault } else { false } }
+    var purpose: AIModelPurpose? { if case .purpose(let purpose) = self { purpose } else { nil } }
 }
 /// Shared controls write only to their caller's selection target.
 struct AIModelPickerButton: View {
@@ -46,18 +54,34 @@ struct AIModelPickerButton: View {
     @Environment(\.theme) private var theme
     let destination: AIModelPickerDestination
     var compact = false
-    init(target: AIModelSelectionTarget, compact: Bool = false) { destination = .target(target); self.compact = compact }
+    var title: LocalizedStringKey?
+    init(target: AIModelSelectionTarget, compact: Bool = false, title: LocalizedStringKey? = nil) {
+        destination = .target(target); self.compact = compact; self.title = title
+    }
     init(draft: Binding<AIModelSelection?>) { destination = .draft(draft) }
+    init(purpose: AIModelPurpose, title: LocalizedStringKey? = nil) { destination = .purpose(purpose); self.title = title }
     @State private var panel = false
     @State private var showing = false
     @State private var detent = PresentationDetent.medium
     @State private var saveFailed = false
     var body: some View {
-        Button { panel = true } label: {
-            modelLabel.frame(maxWidth: destination.isDefault && !compact ? .infinity : nil, alignment: .trailing).contentShape(Rectangle())
+        Button {
+            if destination.purpose != nil { showing = true } else { panel = true }
+        } label: {
+            if let title {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text(title)
+                    Spacer(minLength: 8)
+                    Text(verbatim: summary).font(.subheadline).multilineTextAlignment(.trailing).foregroundStyle(Color(uiColor: theme.secondary))
+                    Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color(uiColor: theme.secondary)).accessibilityHidden(true)
+                }.frame(maxWidth: .infinity, minHeight: 44).contentShape(.rect)
+            } else {
+                modelLabel.frame(maxWidth: destination.isDefault && !compact ? .infinity : nil, alignment: .trailing).contentShape(Rectangle())
+            }
         }
             .buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.ink))
-            .accessibilityHint("选择模型与思考强度").accessibilityIdentifier("openAIModelPanel")
+            .accessibilityHint(destination.purpose == nil ? "选择模型与思考强度" : "选择模型")
+            .accessibilityIdentifier("openAIModelPanel" + (destination.purpose.map { "-" + $0.rawValue } ?? ""))
             .popover(isPresented: $panel, arrowEdge: .bottom) {
                 VStack(spacing: 8) {
                     Button { panel = false; showing = true } label: {
@@ -89,7 +113,13 @@ struct AIModelPickerButton: View {
             .sheet(isPresented: $showing, onDismiss: { detent = .medium }) {
                 AIModelPicker(destination: destination, detent: $detent).environment(ai).environment(\.theme, theme).preferredColorScheme(theme.scheme)
                     .presentationDetents([.medium, .large], selection: $detent).presentationDragIndicator(.visible)
+                    .presentationBackground(Color(uiColor: theme.canvas))
             }
+    }
+    private var summary: String {
+        guard let value = destination.selection(ai),
+              let model = ai.providers.model(connectionID: value.connectionID, modelID: value.modelID) else { return String(localized: "未设置") }
+        return model.name + (value.thinking.map { " · " + AIThinkingLabel.label($0) } ?? "")
     }
     private var modelLabel: some View {
         HStack(spacing: 6) {
@@ -101,17 +131,16 @@ struct AIModelPickerButton: View {
         }.padding(.horizontal, 4).frame(minHeight: 44)
     }
 }
-private struct AIModelChoice: Hashable {
-    let connectionID: String
-    let modelID: String
-}
-/// Selection lists offer enabled models plus the target's existing value, which stays usable.
+/// Shared filtering for conversation, default, task-draft and native-tool pickers.
 @MainActor enum AIModelSearch {
     static func filter(_ models: [AIModelOption], query: String, connection: AIConnection, _ providers: AIConnectionService) -> [AIModelOption] {
         models.filter { providers.matches($0, in: connection, query: query) }
     }
-    static func offered(_ models: [AIModelOption], in connection: AIConnection, keeping current: String?, _ providers: AIConnectionService) -> [AIModelOption] {
-        models.filter { providers.isEnabled(modelID: $0.id, in: connection) || $0.id == current }
+    static func offered(_ connection: AIConnection, purpose: AIModelPurpose?, keeping current: AIModelSelection?) -> [AIModelOption] {
+        connection.models.filter {
+            AIModelAvailability.supports($0, purpose: purpose, connection: connection)
+                || (current?.connectionID == connection.id && current?.modelID == $0.id)
+        }
     }
     /// Names only identify a row unless the same connection repeats them.
     static func duplicateNames(_ models: [AIModelOption]) -> Set<String> {
@@ -143,45 +172,27 @@ struct AIModelPicker: View {
     @Environment(\.dismiss) private var dismiss
     let destination: AIModelPickerDestination
     @Binding var detent: PresentationDetent
-    @State private var draft: AIModelSelection?
-    @State private var current: AIModelSelection?
-    @State private var initialized = false
     @State private var error = false
     @State private var adding = false
+    @State private var saving = false
     @State private var query = ""
     @State private var searching = false
-    private func eligible(_ connection: AIConnection) -> [AIModelOption] {
-        connection.models.filter { model in model.capabilities?.text != false }
-    }
+    private var current: AIModelSelection? { destination.selection(ai) }
     private func offered(_ connection: AIConnection) -> [AIModelOption] {
-        AIModelSearch.offered(eligible(connection), in: connection, keeping: current?.connectionID == connection.id ? current?.modelID : nil, ai.providers)
+        AIModelSearch.offered(connection, purpose: destination.purpose, keeping: current)
     }
     private func shown(_ connection: AIConnection) -> [AIModelOption] {
         AIModelSearch.filter(offered(connection), query: query, connection: connection, ai.providers)
-    }
-    private var selectedModel: AIModelOption? {
-        guard let draft else { return nil }
-        return ai.providers.model(connectionID: draft.connectionID, modelID: draft.modelID)
     }
     private var running: Bool { destination.running(ai) }
     var body: some View {
         NavigationStack {
             Group {
-                if ai.providers.connections.allSatisfy({ eligible($0).isEmpty }) {
+                if ai.providers.connections.allSatisfy({ offered($0).isEmpty }) {
                     ContentUnavailableView {
                         Label("还没有可用模型", systemImage: "sparkles")
                     } description: { Text("先连接一个 AI 账户并加载模型。") } actions: {
                         Button("添加连接", systemImage: "plus") { adding = true }.accessibilityIdentifier("aiModelPickerSettings")
-                    }
-                } else if ai.providers.connections.allSatisfy({ offered($0).isEmpty }) {
-                    ContentUnavailableView {
-                        Label("没有启用的模型", systemImage: "sparkles")
-                    } actions: {
-                        ForEach(ai.providers.connections.filter { !eligible($0).isEmpty }) { connection in
-                            NavigationLink { AIConnectionView(connectionID: connection.id, startsEditingModels: true) } label: {
-                                Label { Text("管理模型 · \(connection.name)") } icon: { AIProviderIcon(providerID: connection.catalogID) }
-                            }.accessibilityIdentifier("manageAIModels-\(connection.id)")
-                        }
                     }
                 } else if ai.providers.connections.allSatisfy({ shown($0).isEmpty }) {
                     ContentUnavailableView {
@@ -191,32 +202,27 @@ struct AIModelPicker: View {
                     }
                 } else {
                     List {
-                        Picker("选择模型", selection: Binding<AIModelChoice?>(get: {
-                            draft.map { AIModelChoice(connectionID: $0.connectionID, modelID: $0.modelID) }
-                        }, set: { choice in
-                            guard let choice, let connection = ai.providers.connections.first(where: { $0.id == choice.connectionID }),
-                                  let model = ai.providers.model(choice.modelID, in: connection) else { return }
-                            var value = draft ?? AIModelSelection(connectionID: "", modelID: "", thinking: nil)
-                            value.select(model, connection: connection); draft = value; error = false
-                            // Active search hides the bar's Cancel/Done; a choice ends the search.
-                            searching = false
-                        })) {
-                            ForEach(ai.providers.connections) { connection in
-                                let models = shown(connection)
-                                if !models.isEmpty {
-                                    let duplicates = AIModelSearch.duplicateNames(offered(connection))
-                                    Section {
-                                        ForEach(models) { model in
-                                            let choice = AIModelChoice(connectionID: connection.id, modelID: model.id)
-                                            AIModelRowLabel(model: model, duplicate: duplicates.contains(model.name),
-                                                            disabled: !ai.providers.isEnabled(modelID: model.id, in: connection))
-                                                .tag(Optional(choice)).id(choice)
-                                                .accessibilityIdentifier("aiModel-\(connection.id)-\(model.id)")
-                                        }
-                                    } header: { AIConnectionHeader(connection: connection) }
+                        if let purpose = destination.purpose {
+                            Button {
+                                if ai.providers.setPurpose(purpose, selection: nil) { dismiss() }
+                                else { error = true }
+                            } label: {
+                                HStack {
+                                    Text("不使用"); Spacer()
+                                    if current == nil { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)) }
                                 }
+                            }.buttonStyle(.plain).listRowBackground(Color(uiColor: theme.surface)).accessibilityIdentifier("aiPurposeNone")
+                        }
+                        ForEach(ai.providers.connections) { connection in
+                            let models = shown(connection)
+                            if !models.isEmpty {
+                                let duplicates = AIModelSearch.duplicateNames(offered(connection))
+                                Section {
+                                    ForEach(models) { model in modelRow(model, connection: connection, duplicate: duplicates.contains(model.name)) }
+                                } header: { AIConnectionHeader(connection: connection) }
+                                    .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                             }
-                        }.pickerStyle(.inline).labelsHidden().listRowBackground(Color(uiColor: theme.surface))
+                        }
                     }
                 }
             }.listStyle(.insetGrouped).themedPage().accessibilityIdentifier("aiModelList")
@@ -232,20 +238,37 @@ struct AIModelPicker: View {
                         }.font(.footnote).padding(16).frame(maxWidth: .infinity).background(Color(uiColor: theme.canvas))
                     }
                 }
-                .navigationTitle("选择模型").navigationBarTitleDisplayMode(.inline)
+                .navigationTitle(destination.purpose?.title ?? String(localized: "选择模型")).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .principal) { Text("选择模型").font(.headline).foregroundStyle(Color(uiColor: theme.ink)) }
                     ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.accessibilityIdentifier("cancelAIModelPicker") }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("完成") {
-                            guard let draft else { error = true; return }
-                            Task { if await destination.apply(draft, ai) { dismiss() } else { error = true } }
-                        }.disabled(selectedModel == nil).accessibilityIdentifier("applyAIModelPicker")
-                    }
                 }
-        }.onAppear {
-            if !initialized { current = destination.selection(ai); draft = current; initialized = true }
+                .onChange(of: ai.availability.isAvailable) { _, available in if !available { dismiss() } }
         }
+    }
+    private func modelRow(_ model: AIModelOption, connection: AIConnection, duplicate: Bool) -> some View {
+        let reason = AIModelAvailability.reason(model, purpose: destination.purpose, connection: connection, providers: ai.providers)
+        let selected = current?.connectionID == connection.id && current?.modelID == model.id
+        return Button {
+            guard !saving, AIModelAvailability.reason(model, purpose: destination.purpose, connection: connection, providers: ai.providers) == nil else { return }
+            saving = true
+            var value = current ?? AIModelSelection(connectionID: "", modelID: "", thinking: nil)
+            value.select(model, connection: connection)
+            Task {
+                let saved = await destination.apply(value, ai)
+                saving = false; error = !saved
+                if saved { dismiss() }
+            }
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    AIModelRowLabel(model: model, duplicate: duplicate, disabled: false)
+                    if let reason { Text(reason).font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
+                }
+                Spacer(minLength: 8)
+                if selected { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)) }
+            }.frame(minHeight: 44).contentShape(.rect).foregroundStyle(Color(uiColor: reason == nil ? theme.ink : theme.secondary))
+        }.buttonStyle(.plain).disabled(reason != nil || saving)
+            .accessibilityAddTraits(selected ? .isSelected : []).accessibilityIdentifier("aiModel-\(connection.id)-\(model.id)")
     }
 }
 /// Connection identity shared by model lists: icon, name, billing.

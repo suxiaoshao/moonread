@@ -56,9 +56,9 @@ extension AIModelSelectionTarget {
     var isDefault: Bool { if case .defaults = self { true } else { false } }
 }
 
-/// Settings present capability-compatible models (and a stale selected value),
+/// Shared selectors present capability-compatible models (and a stale selected value),
 /// while credential/model state explains why a visible choice cannot be used.
-@MainActor enum AISettingsModelAvailability {
+@MainActor enum AIModelAvailability {
     static func supports(_ model: AIModelOption, purpose: AIModelPurpose?, connection: AIConnection) -> Bool {
         if let purpose { return AINativeCapabilities.supports(purpose, connection: connection, model: model) }
         return model.capabilities?.text != false
