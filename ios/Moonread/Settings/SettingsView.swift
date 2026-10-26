@@ -71,7 +71,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var navigation = SettingsNavigation()
-    @State private var compactColumn: NavigationSplitViewColumn = .detail
+    private var usesColumns: Bool { sizeClass == .regular }
     @State private var recording: Bool?
     @State private var settings: ReaderSettings?
     @State private var pendingSettings: ReaderSettings?
@@ -80,40 +80,33 @@ struct SettingsView: View {
     @State private var loading = LoadingState()
 
     var body: some View {
-        NavigationSplitView(preferredCompactColumn: $compactColumn) {
-            List {
-                ForEach(SettingsGroup.allCases) { group in
-                    Button { navigation.select(group) } label: {
-                        Label(group.title, systemImage: group.symbol)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
-                    }.foregroundStyle(Color(uiColor: navigation.group == group ? theme.accent : theme.ink))
-                        .listRowBackground(Color(uiColor: navigation.group == group ? theme.selected : theme.canvas))
-                        .listRowSeparator(.hidden)
-                        .accessibilityAddTraits(navigation.group == group ? .isSelected : [])
-                        .accessibilityIdentifier("settingsGroup-" + group.rawValue)
-                }
-            }.listStyle(.sidebar).themedPage().navigationTitle("设置")
-                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
-                .toolbar(.visible, for: .navigationBar)
-                .toolbar { if returnsToApp { ToolbarItem(placement: .topBarLeading) { returnToApp } } }
-        } detail: {
-            NavigationStack(path: $navigation.path) {
-                settingsForm
-                    .navigationTitle(sizeClass == .compact ? "设置" : navigation.group.title)
-                    .toolbar(.visible, for: .navigationBar)
-                    .toolbar { if returnsToApp && sizeClass == .compact { ToolbarItem(placement: .topBarLeading) { returnToApp } } }
-                    .navigationDestination(for: LibraryRoute.self) { route in
-                        if case .settingsTask(let task) = route {
-                            destination(task).onAppear { navigation.group = task.group }
-                        } else { LibraryDestination(route: route) }
+        Group {
+            if usesColumns {
+                NavigationSplitView {
+                    sidebar.navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
+                } detail: {
+                    NavigationStack(path: $navigation.path) {
+                        settingsForm
+                            .navigationTitle(navigation.group.title)
+                            .toolbar(.visible, for: .navigationBar)
+                            .navigationDestination(for: LibraryRoute.self) { route in
+                                if case .settingsTask(let task) = route {
+                                    destination(task).onAppear { navigation.group = task.group }
+                                } else { LibraryDestination(route: route) }
+                            }
                     }
-            }.navigationBarBackButtonHidden(true)
-        }.navigationSplitViewStyle(.balanced)
-        .toolbar(.hidden, for: .navigationBar)
-        .onAppear { navigation.tab = library.selectedTab; library.settingsNavigation = navigation }
+                }.navigationSplitViewStyle(.balanced)
+                    .toolbar(.hidden, for: .navigationBar)
+            } else {
+                // Use the existing parent stack on phones, just like 1.2.
+                // A nested stack can reset a pushed settings destination.
+                settingsForm.navigationTitle("设置")
+            }
+        }
+        .onAppear { updateNavigationOwner() }
+        .onChange(of: usesColumns) { _, _ in updateNavigationOwner() }
         .onDisappear { if library.settingsNavigation === navigation { library.settingsNavigation = nil } }
         .onChange(of: navigation.path) { _, _ in library.cancelOpeningForNavigationChange() }
-        .onChange(of: sizeClass) { _, _ in compactColumn = .detail }
         .onChange(of: ai.availability.isAvailable) { _, available in navigation.aiAvailabilityChanged(available) }
 
         .task {
@@ -135,6 +128,33 @@ struct SettingsView: View {
         } message: { Text(error ?? "") }
     }
 
+    private var sidebar: some View {
+            List {
+                ForEach(SettingsGroup.allCases) { group in
+                    Button { navigation.select(group) } label: {
+                        Label(group.title, systemImage: group.symbol)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
+                    }.foregroundStyle(Color(uiColor: navigation.group == group ? theme.accent : theme.ink))
+                        .listRowBackground(Color(uiColor: navigation.group == group ? theme.selected : theme.canvas))
+                        .listRowSeparator(.hidden)
+                        .accessibilityAddTraits(navigation.group == group ? .isSelected : [])
+                        .accessibilityIdentifier("settingsGroup-" + group.rawValue)
+                }
+            }.listStyle(.sidebar).themedPage().navigationTitle("设置")
+                .toolbar(.visible, for: .navigationBar)
+                .toolbar { if returnsToApp { ToolbarItem(placement: .topBarLeading) { returnToApp } } }
+    }
+
+    private func updateNavigationOwner() {
+        if usesColumns {
+            navigation.tab = library.selectedTab; library.settingsNavigation = navigation
+        } else if library.settingsNavigation === navigation { library.settingsNavigation = nil }
+    }
+    @ViewBuilder private func settingsLink<Label: View>(_ task: SettingsTask, @ViewBuilder label: () -> Label) -> some View {
+        if usesColumns { NavigationLink(value: LibraryRoute.settingsTask(task), label: label) }
+        else { NavigationLink { destination(task) } label: { label() } }
+    }
+
     private var returnToApp: some View {
         Button("返回", systemImage: "chevron.backward") { dismiss() }.toolbarGlyph()
     }
@@ -146,41 +166,41 @@ struct SettingsView: View {
                     .accessibilityIdentifier("readerTestOrigin")
             }
             #endif
-            if sizeClass == .compact || navigation.group == .reading {
+            if !usesColumns || navigation.group == .reading {
                 Section("阅读") {
-                    NavigationLink(value: LibraryRoute.settingsTask(.reading)) {
+                    settingsLink(.reading) {
                         SettingsEntry(title: "阅读设置", symbol: "book", summary: settings.map { String(localized: $0.mode == .scroll ? "上下滚动" : "左右分页") } ?? String(localized: "正在加载"))
                     }.disabled(settings == nil).accessibilityIdentifier("readerThemeSettings")
-                    NavigationLink(value: LibraryRoute.settingsTask(.statistics)) {
+                    settingsLink(.statistics) {
                         SettingsEntry(title: "阅读统计设置", symbol: "chart.bar.xaxis", summary: recording.map { String(localized: $0 ? "记录中" : "已暂停") } ?? String(localized: "正在加载"))
                     }.accessibilityIdentifier("statisticsSettings")
-                    NavigationLink(value: LibraryRoute.settingsTask(.system)) {
+                    settingsLink(.system) {
                         SettingsEntry(title: "系统集成", symbol: "rectangle.3.group", summary: String(localized: "系统搜索、快捷指令、小组件"))
                     }.accessibilityIdentifier("systemIntegrationSettings")
                 }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
-            if sizeClass == .compact || navigation.group == .library {
+            if !usesColumns || navigation.group == .library {
                 Section("书架与数据") {
-                    NavigationLink(value: LibraryRoute.settingsTask(.library)) {
+                    settingsLink(.library) {
                         SettingsEntry(title: "书架管理", symbol: "books.vertical", summary: String(localized: "\(library.shelves.count) 个书架"))
                     }.accessibilityIdentifier("libraryManagementSettings")
-                    NavigationLink(value: LibraryRoute.settingsTask(.data)) {
+                    settingsLink(.data) {
                         SettingsEntry(title: "数据管理", symbol: "externaldrive", summary: String(localized: "备份、恢复、清理"))
                     }.accessibilityIdentifier("dataManagementSettings")
                     if CloudConfiguration.availableInBuild {
-                        NavigationLink(value: LibraryRoute.settingsTask(.cloud)) {
+                        settingsLink(.cloud) {
                             SettingsEntry(title: "iCloud", symbol: "icloud", summary: cloud.settingsSummary)
                         }.accessibilityIdentifier("cloudSettings")
                     }
                 }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
-            if sizeClass == .compact || navigation.group == .assistant {
+            if !usesColumns || navigation.group == .assistant {
                 Section {
                     if ai.availability.regionAllowsAI {
                         Toggle("AI 功能", isOn: Binding(get: { ai.availability.isEnabled }, set: { ai.availability.setEnabled($0) }))
                             .tint(Color(uiColor: theme.accent)).accessibilityIdentifier("aiMasterSwitch")
                         if ai.availability.isAvailable {
-                            NavigationLink(value: LibraryRoute.settingsTask(.ai)) {
+                            settingsLink(.ai) {
                                 SettingsEntry(title: "AI 助手", symbol: "bubble.left.and.bubble.right", summary: aiSummary)
                             }.accessibilityIdentifier("aiSettings")
                         }
@@ -199,9 +219,9 @@ struct SettingsView: View {
                     }
                 }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
-            if sizeClass == .compact || navigation.group == .appearance {
+            if !usesColumns || navigation.group == .appearance {
                 Section("外观与语言") {
-                    NavigationLink(value: LibraryRoute.settingsTask(.appearance)) {
+                    settingsLink(.appearance) {
                         SettingsEntry(title: "应用外观", symbol: "paintpalette", summary: appearanceSummary)
                     }.accessibilityIdentifier("appThemeSettings")
                     Button { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) } label: {
@@ -210,18 +230,18 @@ struct SettingsView: View {
                         .accessibilityHint("打开系统设置")
                 }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
-            if sizeClass == .compact || navigation.group == .help {
+            if !usesColumns || navigation.group == .help {
                 Section("帮助与关于") {
-                    NavigationLink(value: LibraryRoute.settingsTask(.guide)) {
+                    settingsLink(.guide) {
                         SettingsEntry(title: "使用指南", symbol: "questionmark.circle", summary: String(localized: "导入、阅读与同步"))
                     }.accessibilityIdentifier("usageGuideSettings")
                     Link(destination: AppLinks.writeReview) {
                         SettingsEntry(title: "给月读评分", symbol: "star", summary: "")
                     }.accessibilityIdentifier("rateMoonread")
-                    NavigationLink(value: LibraryRoute.settingsTask(.about)) {
+                    settingsLink(.about) {
                         SettingsEntry(title: "关于月读", symbol: "info.circle", summary: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
                     }.accessibilityIdentifier("aboutSettings")
-                    NavigationLink(value: LibraryRoute.settingsTask(.support)) {
+                    settingsLink(.support) {
                         SettingsEntry(title: "支持月读", symbol: "heart", summary: "")
                     }.accessibilityIdentifier("tipJarSettings")
                 }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))

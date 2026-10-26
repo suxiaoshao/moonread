@@ -293,7 +293,9 @@ private struct MoonreadRoot: View {
         .modifier(AppSearchField(model: library, search: library.search, quickEntry: true))
     }
     private var settingsStack: some View {
-        SettingsView(library: library)
+        NavigationStack(path: $library.settingsPath) {
+            SettingsView(library: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
+        }
     }
 }
 

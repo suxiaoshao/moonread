@@ -261,6 +261,8 @@ import XCTest
     XCTAssertFalse(app.buttons["appSettings"].exists)
     ready(app.tabBars.buttons["设置"]).tap()
     ready(app.buttons["readerThemeSettings"])
+    XCTAssertTrue(app.buttons["libraryManagementSettings"].exists, "Compact settings lists tasks from every group directly")
+    XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "settingsGroup-")).count, 0, "Compact settings must not show a selectable group sidebar")
     snapshot("settings-home")
     XCTAssertFalse(app.buttons["aiSettings"].exists)
     XCTAssertFalse(element("automaticFullIndex").exists)
@@ -325,6 +327,19 @@ import XCTest
     snapshot("system-integration-search")
     app.collectionViews.firstMatch.swipeUp()
     snapshot("system-integration-widget")
+    // The pushed gear entry must have the same compact form as the settings tab.
+    launch(["--ui-test-storefront", "USA"])
+    ready(app.buttons["shelf-builtin"])
+    ready(app.buttons["appSettings"]).tap()
+    ready(app.buttons["readerThemeSettings"])
+    XCTAssertTrue(app.buttons["dataManagementSettings"].exists)
+    XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "settingsGroup-")).count, 0)
+    ready(app.buttons["readerThemeSettings"]).tap()
+    ready(app.segmentedControls["readerThemeTabs"])
+    app.navigationBars.buttons.firstMatch.tap()
+    ready(app.buttons["readerThemeSettings"])
+    app.navigationBars.buttons.firstMatch.tap()
+    ready(app.buttons["shelf-builtin"])
   }
   func testU13ManualEncodingRecovery() {
     launch(["--ui-test-encoding"])
