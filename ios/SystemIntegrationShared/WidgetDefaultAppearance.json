@@ -1,0 +1,23 @@
+{
+  "dark": {
+    "accent": 15115918,
+    "accentSurface": 4273198,
+    "border": 6705481,
+    "canvas": 2104089,
+    "ink": 14076090,
+    "onAccent": 2170404,
+    "paper": 2367260,
+    "secondary": 12101274
+  },
+  "light": {
+    "accent": 11095869,
+    "accentSurface": 16115164,
+    "border": 13943477,
+    "canvas": 16248805,
+    "ink": 4208691,
+    "onAccent": 16777215,
+    "paper": 16116954,
+    "secondary": 7299159
+  },
+  "preferredDark": null
+}

@@ -249,11 +249,28 @@ struct ReaderScreen: View {
     private var monitoredReader: some View {
         presentedReader
         .allowsHitTesting(!session.isLeaving)
-        .task { await session.open(route, request: openingRequest) }
+        .task {
+            library.systemReading.register(session, navigationID: openingRequest?.id)
+            await session.open(route, request: openingRequest)
+        }
+        .onChange(of: library.systemReading.pending) { _, request in
+            // A plain reading toolbar can close through its normal onDismiss
+            // path. Editors, searches and AI work keep their draft/presentation.
+            if request != nil, !session.isLeaving, panel == nil, taskID == nil,
+               session.editor == nil, session.chapterDraft == nil, !searchActive {
+                controlsVisible = false
+            }
+        }
+        .onChange(of: sheetPresented || panel != nil || session.editor != nil || session.chapterDraft != nil, initial: true) { _, blocked in
+            library.systemReading.presentationBlocked = blocked
+        }
         .onChange(of: session.opening.request?.id) { _, id in
             if let id, completedOpeningID == id { session.opening.settled(id, reason: "observedAppearance") }
         }
-        .task(id: session.book?.contentSha256) { await loadCoverInformation() }
+        .task(id: session.book?.contentSha256) {
+            await loadCoverInformation()
+            if statisticsReadable { session.systemReadingBecameReadable() }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { _ in
             Task { await loadCoverInformation() }
         }
@@ -262,6 +279,7 @@ struct ReaderScreen: View {
         }
         .onChange(of: statisticsReadable, initial: true) { _, readable in
             session.activity.update(readable: readable, preview: session.browseOrigin != nil)
+            if readable { session.systemReadingBecameReadable() }
         }
         .onChange(of: session.browseOrigin != nil) { _, preview in
             session.activity.update(readable: statisticsReadable, preview: preview)
@@ -319,7 +337,7 @@ struct ReaderScreen: View {
             battery.stop()
             // Settings are pushed above the reader in the same navigation stack.
             // Only leaving its navigation destination ends the reading session.
-            if panel?.isPage != true, !navigationPresentation.isSuspended { completeReturning() }
+            if panel?.isPage != true, !navigationPresentation.isSuspended { library.systemReading.unregister(session); completeReturning() }
         }
     }
 

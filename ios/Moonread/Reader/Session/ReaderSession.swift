@@ -4,6 +4,7 @@ import UIKit
 @MainActor @Observable
 final class ReaderSession {
     let opening = ReaderOpeningState()
+    private var systemDonationOpening: UUID?
     private var monitorToken = UUID()
     var snapshot: ReadingSnapshot?
     var book: BookInfo? { snapshot?.book }
@@ -136,7 +137,7 @@ final class ReaderSession {
                        terminal: error != nil || snapshot.map { [.paused, .failed].contains($0.phase) } == true)
     }
     func retry(_ route: ReaderRoute) async {
-        opening.begin(OpeningRequest(target: route), navigationSettled: true)
+        opening.begin(OpeningRequest(target: route, expectedContentSHA: opening.request?.expectedContentSHA), navigationSettled: true)
         error = nil; await open(route)
     }
     private func current(_ id: String, attempt: UUID?, monitor: UUID? = nil) -> Bool {
@@ -166,7 +167,12 @@ final class ReaderSession {
                     ReaderOpenDiagnostics.mark(attempt, "snapshotCompleted")
                     snapshot = value
                     isLoading = !value.canRead && preparing
-                    if value.canRead {
+                    let expected = opening.request?.expectedContentSHA
+                    if let expected, value.phase == .complete, value.book.contentSha256 != expected {
+                        throw SystemReadingRouteError.contentChanged
+                    }
+                    // A system identity must be verified before any prefix is displayed.
+                    if value.canRead && (expected == nil || value.phase == .complete) {
                         let firstDisplay = window?.projectionAnchor == nil
                         if firstDisplay {
                             ReaderOpenDiagnostics.mark(attempt, "canRead")
@@ -214,6 +220,14 @@ final class ReaderSession {
             window = value; ReaderOpenDiagnostics.mark(attempt, "windowPublished")
             updateOpening(); refreshAnnotations()
         }
+    }
+
+    func systemReadingBecameReadable() {
+        guard !isLeaving, browseOrigin == nil, let openingID = opening.request?.id,
+              systemDonationOpening != openingID, let id = readingID,
+              let sha = book?.contentSha256, (try? parseSha256(value: sha)) != nil else { return }
+        systemDonationOpening = openingID
+        Task { await service.systemReadingBegan(id) }
     }
 
     func moved(to offset: UInt64, settled: Bool) {
@@ -402,7 +416,7 @@ final class ReaderSession {
         pendingChapterAnchor = nil
         navigating = false
         error = nil
-        let task = Task { await flush(); await StatisticsWriter.shared.drain() }
+        let task = Task { await flush(); await StatisticsWriter.shared.drain(); await service.scheduleSystemReadingCatalog(immediate: true) }
         leaveTask = task
         return task
     }

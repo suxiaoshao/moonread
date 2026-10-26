@@ -4,6 +4,9 @@ use crate::{ReaderCore, ReaderError, Result, SourceContentKey, valid_source_key}
 use rusqlite::{Connection, params};
 use std::collections::HashSet;
 
+// One copy-selection order, shared by the full catalogue and scoped recents.
+pub(crate) const PREFERRED_SOURCE_ORDER: &str = "COALESCE(p.preferred_file_id=f.id,0) DESC,f.id";
+
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct LibraryShelf {
     pub id: String,
@@ -115,7 +118,7 @@ fn entries(
     parent: Option<&str>,
     books_only: bool,
 ) -> Result<Vec<LibraryEntry>> {
-    filtered_entries(db, shelf, parent, books_only, None, None)
+    filtered_entries(db, shelf, parent, books_only, None, None, None)
 }
 
 fn filtered_entries(
@@ -125,6 +128,7 @@ fn filtered_entries(
     books_only: bool,
     file: Option<&str>,
     book: Option<&str>,
+    sha: Option<&str>,
 ) -> Result<Vec<LibraryEntry>> {
     let mut stmt=db.prepare("SELECT f.id,f.shelf_id,s.name,f.relative_path,f.parent_path,f.name,f.directory,f.size,f.modified,f.needs_download,
        b.id,COALESCE(p.position_utf8,0),COALESCE(si.utf8_bytes,b.byte_count,0),
@@ -141,10 +145,10 @@ fn filtered_entries(
        LEFT JOIN (SELECT content_sha256,MAX(utf8_bytes) utf8_bytes FROM source_identities GROUP BY content_sha256) si ON si.content_sha256=fi.content_sha256
        LEFT JOIN user_positions p ON p.content_key=fi.content_sha256
        LEFT JOIN book_metadata m ON m.content_sha=fi.content_sha256
-       WHERE (?1 IS NULL OR f.shelf_id=?1) AND (?2 IS NULL OR f.parent_path=?2) AND (?3=0 OR f.directory=0) AND (?4 IS NULL OR f.id=?4) AND (?5 IS NULL OR b.id=?5)")?;
+       WHERE (?1 IS NULL OR f.shelf_id=?1) AND (?2 IS NULL OR f.parent_path=?2) AND (?3=0 OR f.directory=0) AND (?4 IS NULL OR f.id=?4) AND (?5 IS NULL OR b.id=?5) AND (?6 IS NULL OR fi.content_sha256=?6)")?;
     Ok(stmt
         .query_map(
-            params![shelf, parent, books_only, file, book],
+            params![shelf, parent, books_only, file, book, sha],
             library_entry_row,
         )?
         .collect::<std::result::Result<_, _>>()?)
@@ -375,14 +379,14 @@ impl ReaderCore {
     }
     pub(crate) fn library_entry(&self, file_id: String) -> Result<LibraryEntry> {
         let db = self.read_lock()?;
-        filtered_entries(&db, None, None, false, Some(&file_id), None)?
+        filtered_entries(&db, None, None, false, Some(&file_id), None, None)?
             .into_iter()
             .next()
             .ok_or(ReaderError::NotFound)
     }
     pub(crate) fn recent_library_entries(&self, limit: u32) -> Result<Vec<LibraryEntry>> {
         let db = self.read_lock()?;
-        let mut statement = db.prepare(
+        let mut statement = db.prepare(&format!(
             "WITH recent_positions AS (
                 SELECT * FROM user_positions
                 WHERE last_read>0 AND COALESCE(recent_visible,1)=1
@@ -395,7 +399,7 @@ impl ReaderCore {
                         AND c.start_utf8<=p.position_utf8 ORDER BY c.start_utf8 DESC LIMIT 1) chapter_title,
                     0 child_book_count,p.last_read,COALESCE(p.preferred_file_id=f.id,0) preferred,
                     m.value,p.content_key,
-                    ROW_NUMBER() OVER (PARTITION BY p.content_key ORDER BY COALESCE(p.preferred_file_id=f.id,0) DESC,f.id) chosen
+                    ROW_NUMBER() OVER (PARTITION BY p.content_key ORDER BY {source_order}) chosen
                 FROM recent_positions p
                 JOIN file_identities fi ON fi.content_sha256=p.content_key
                 JOIN library_files f ON f.id=fi.file_id
@@ -406,7 +410,8 @@ impl ReaderCore {
             )
             SELECT * FROM ranked WHERE chosen=1
             ORDER BY last_read DESC,preferred DESC,id LIMIT ?1",
-        )?;
+            source_order = PREFERRED_SOURCE_ORDER,
+        ))?;
         Ok(statement
             .query_map([limit.min(1000)], library_entry_row)?
             .collect::<std::result::Result<_, _>>()?)
@@ -434,3 +439,6 @@ mod source;
 pub(crate) use source::source_snapshots;
 #[cfg(test)]
 mod tests;
+
+mod system_reading;
+pub use system_reading::SystemReadingBookProjection;

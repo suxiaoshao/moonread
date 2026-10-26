@@ -64,6 +64,7 @@ actor CloudSyncCoordinator {
         await resume()
     }
     func identityChanged() async {
+        await service.setSystemReadingAccountPending(true)
         operation = UUID()
         let current = operation
         do { try await service.configureUserCloud(false, account: nil) }
@@ -79,6 +80,7 @@ actor CloudSyncCoordinator {
         guard operation == current else { return }
         publish()
         if !status.requested {
+            await service.setSystemReadingAccountPending(false)
             await pause(current, message: nil); return
         }
         guard available else {
@@ -106,6 +108,7 @@ actor CloudSyncCoordinator {
             guard try await account() == target else { throw ReaderError.CloudAccountChanged }
             guard operation == current else { return }
             try await service.configureUserCloud(true, account: target)
+            await service.setSystemReadingAccountPending(false)
             guard operation == current else { return }
             status.enabled = true; status.accountToConfirm = nil; status.message = nil; publish()
         } catch {
@@ -130,6 +133,7 @@ actor CloudSyncCoordinator {
                 await pause(current, message: String(localized: "账户已再次变化，请重新确认。"), account: verified); return
             }
             try await service.configureUserCloud(true, account: target, allowAccountChange: true)
+            await service.setSystemReadingAccountPending(false)
             guard operation == current else { return }
             status.enabled = true; status.accountToConfirm = nil; status.message = nil; status.lastSync = nil; publish()
         } catch {
@@ -138,12 +142,15 @@ actor CloudSyncCoordinator {
         }
     }
     private func pause(_ current: UUID, message: String?, account: String? = nil) async {
+        if account != nil { await service.setSystemReadingAccountPending(true) }
         var reason = message
         do { try await service.configureUserCloud(false, account: nil) }
         catch {
             guard operation == current else { return }
             reason = Self.message(error)
         }
+        guard operation == current else { return }
+        await service.setSystemReadingAccountPending(account != nil)
         guard operation == current else { return }
         status.enabled = false; status.syncing = false; status.accountToConfirm = account
         status.message = reason; publish()
@@ -183,5 +190,5 @@ extension AppDataService {
     func cloudSyncRequested() -> Bool { cloudSyncIntent.requested }
     func setCloudSyncRequested(_ requested: Bool) { cloudSyncIntent.set(requested) }
     func userCloudOwner() -> String? { sourceDefaults.string(forKey: "Moonread.userOwner") }
-    func dataChanged() { NotificationCenter.default.post(name: .readingDataChanged, object: nil) }
+    func dataChanged() { scheduleSystemReadingCatalog(); NotificationCenter.default.post(name: .readingDataChanged, object: nil) }
 }

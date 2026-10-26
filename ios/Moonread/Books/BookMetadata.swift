@@ -113,14 +113,18 @@ extension AppDataService {
             try bytes.write(to: main, options: .atomic)
         }
         let url = FileManager.default.fileExists(atPath: main.path) ? main : coverDraftURL(cover)
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                  kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: pixels] as CFDictionary) else { return nil }
-        try Task.checkCancellation()
-        if let output = CGImageDestinationCreateWithURL(cached as CFURL, (cover.extension == "png" ? UTType.png : .jpeg).identifier as CFString, 1, nil) {
-            CGImageDestinationAddImage(output, image, nil); CGImageDestinationFinalize(output)
-        }
-        return UIImage(cgImage: image)
+        return await Task.detached(priority: .utility) {
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+                  let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                      kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: pixels] as CFDictionary) else { return nil as UIImage? }
+            guard !Task.isCancelled else { return nil }
+            let bytes = NSMutableData()
+            if let output = CGImageDestinationCreateWithData(bytes, (cover.extension == "png" ? UTType.png : .jpeg).identifier as CFString, 1, nil) {
+                CGImageDestinationAddImage(output, image, nil)
+                if CGImageDestinationFinalize(output) { try? (bytes as Data).write(to: cached, options: .atomic) }
+            }
+            return UIImage(cgImage: image)
+        }.value
     }
 
 }

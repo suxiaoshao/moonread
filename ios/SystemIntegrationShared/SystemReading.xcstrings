@@ -1,0 +1,182 @@
+{
+  "sourceLanguage": "zh-Hans",
+  "strings": {
+    "打开一本书后，即可在这里继续。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open a book to continue reading here."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开一本书后，即可在这里继续。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打開一本書後，即可在這裡繼續。"
+          }
+        }
+      }
+    },
+    "找不到这本书的原文件，请在书架管理中重新连接来源。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The original file is unavailable. Reconnect its source in Library Management."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找不到这本书的原文件，请在书架管理中重新连接来源。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "找不到這本書的原始檔，請在書架管理中重新連接來源。"
+          }
+        }
+      }
+    },
+    "请先在书架管理中重新连接这本书的来源。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reconnect this book’s source in Library Management first."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请先在书架管理中重新连接这本书的来源。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請先在書架管理中重新連接這本書的來源。"
+          }
+        }
+      }
+    },
+    "文件内容已变化，请从书架打开。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file’s contents have changed. Open it from your library."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件内容已变化，请从书架打开。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檔案內容已變更，請從書架打開。"
+          }
+        }
+      }
+    },
+    "今天读了 %@。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You read for %@ today."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天读了 %@。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "今天讀了 %@。"
+          }
+        }
+      }
+    },
+    "本周读了 %@。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You read for %@ this week."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本周读了 %@。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本週讀了 %@。"
+          }
+        }
+      }
+    },
+    "这本书不在系统搜索范围内，请从书架打开。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This book is excluded from system search. Open it from your library."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这本书不在系统搜索范围内，请从书架打开。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這本書不在系統搜尋範圍內，請從書架打開。"
+          }
+        }
+      }
+    },
+    "系统搜索和小组件暂时无法刷新，请稍后重试。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System search and widgets could not be refreshed. Please try again."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统搜索和小组件暂时无法刷新，请稍后重试。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系統搜尋和小工具暫時無法重新整理，請稍後再試。"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

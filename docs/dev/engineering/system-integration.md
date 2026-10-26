@@ -1,6 +1,6 @@
 # 系统续读、动作与书目快照
 
-1.3 已确认设计，整理基线 release/1.3 `6dc282a`；本页不是已交付声明。实现 PR 更新实际接口和状态，顺序见[1.3 计划](../plans/1.3.md)。产品默认见[系统集成设计](../design/ios-integration.md)，持久化与身份规则沿用[架构](architecture.md)。
+1.3 当前实现，兼容基线为已发布的 1.2 (10) `6ceef33`；本批新增 Widget、Intent 与共享快照直接采用最终结构，无开发中间态迁移，本批快捷指令、小组件（含画廊配色）与正常阅读已通过用户真机试用，Spotlight 以全名可搜验收。实现 PR 更新实际接口和状态，顺序见[1.3 计划](../plans/1.3.md)。产品默认见[系统集成设计](../design/ios-integration.md)，持久化与身份规则沿用[架构](architecture.md)。
 
 ## 一个生产者，多个消费者
 
@@ -28,9 +28,11 @@ Rust 索引、身份、来源状态 ─────────┴→ AppDataSer
 | BookEntity | id、title、author?；标题沿现有有效书名规则，不含正文、简介、批注、路径或精确时间 |
 | catalog 书目 | id、title、author?、tags、availability、sourceCount、naturalOrdinal；排序/代表副本沿既有 owner，availability 不是授权 |
 | 阅读摘要 | progress?、chapterLabel?、recentRank?；现有 ReaderQuery 计算，未知为 nil，不伪造0% |
-| envelope | schemaVersion=1、generation、storeScope、generatedAt、books、recentIDs、exposurePolicy；scope 为本机不透明域，不含 Apple ID |
+| envelope | schemaVersion=1、generation、storeScope、generatedAt、books、recentIDs、exposurePolicy、appearance?、statistics?；scope 为本机不透明域，不含 Apple ID |
+| 封面引用 | fileName/revision/pixelWidth/pixelHeight；仅受控 Covers basename，损坏/缺图用文字封面，统计/主题不可得不阻断书目 |
+| 统计摘要 | status、generatedAt、localDay、validUntil、timeZoneID/calendarID/firstWeekday、recordingEnabled、今日/本周时长、连续日、七日条；不进 Entity/Spotlight/donation |
 
-不保存精确 offset/位置 token，点击时读最新权威位置，不能反算百分比跳页。首版文字封面，不发布实际图片资产。同 SHA 多副本合一；正文改变换身份，旧 ID 不按同名重绑。
+不保存精确 offset/位置 token，点击时读最新权威位置，不能反算百分比跳页。共享 catalog 只引用自身 Covers 子目录内的受限缩略图，不发布原封面路径或字节；Spotlight 复用同一缩略图生成入口，缺图共用 App 文字封面。同 SHA 多副本合一；正文改变换身份，旧 ID 不按同名重绑。
 
 ## 发布和失效
 
@@ -49,7 +51,7 @@ App Group `SystemReading/v1/` 同目录暂存后原子替换完整 JSON；串行
 
 ## 共用动作与路由
 
-输入仅 `continueReading`、`openBook(entityID)`、`showStatistics`。深链只作路由，严格校验 scheme/host/path/SHA，无任意文件 URL 或 offset 参数。待主 App 容器/引导/导航 ready 再执行。
+输入包括 `continueReading`、`openBook(entityID)`、`showStatistics`、`showLibrary`、`searchBooks(query)`。深链只作路由，严格校验 scheme/host/path/SHA；仅搜索允许一个受限的 query 参数，无任意文件 URL 或 offset 参数。待主 App 容器/引导/导航 ready 再执行。
 
 - 继续阅读执行时重新取最近书；无记录到书架，已打开同书保持当前会话，不重开或跳页。
 - 指定书重新核验 SHA、授权和来源，复用 LibraryModel/OpeningRequest/ReaderSession 的下载、取消与错误；快照不授访问权。同名不同正文不接旧进度。
@@ -59,13 +61,25 @@ App Group `SystemReading/v1/` 同目录暂存后原子替换完整 JSON；串行
 
 ## 各消费者的范围
 
-**App Entity / Shortcuts / Control：**显式选书使用 catalog；元数据匹配由 Swift LibraryQueryRules 的具名 systemMetadata profile 统一处理（书名/作者/标签），不用 AI 简介匹配。注册三语短语，Control 只有继续阅读；不自动替用户添加控件。不承诺任意自然语言都能识别，不为此采用不匹配的 Books schema。
+**App Entity / Shortcuts / Control：**显式选书使用 catalog；元数据匹配由 Swift LibraryQueryRules 的具名 systemMetadata profile 统一处理（书名/作者/标签、有效 NLTokenizer 分词、无声调拼音全拼和首字母；去空白、去重，最多 64 项，不生成前缀碎片或单字分词），Entity 做部分匹配，Spotlight 使用同一份检索词；不用 AI 简介匹配。注册三语短语，Control 只有继续阅读；不自动替用户添加控件。不承诺任意自然语言都能识别，不为此采用不匹配的 Books schema。
 
-**Spotlight 与建议：**本机默认开启，书架排除默认空，无 onboarding。一个命名 CSSearchableIndex，仅填写 title/author/keywords，不填 textContent、正文 URL、简介、批注、进度、章节、时间、路径、封面。按 ID/domain 做更新/删除与可重建处理，点击走共用 router；不同时启用另一套 IndexedEntity 自动全属性捐赠。
+**Spotlight 与建议：**本机默认开启，书架排除默认空，无 onboarding。一个命名 CSSearchableIndex，填写 title/author/keywords、thumbnailData 和 contentDescription（作者 · 当前章节 · 已知进度）。缩略图从用户已有封面读取，缺失时用 App 内文字封面渲染；只在主 App 内查询资产描述，不给 Widget 增加权限或数据。未知章节/进度省略；不填 textContent、正文 URL、简介、批注、精确时间或路径。按 ID/domain 做更新/删除与可重建处理，点击走共用 router；不同时启用另一套 IndexedEntity 自动全属性捐赠。
+
+Spotlight 另记 `contentFormatVersion`（当前 2）：提交字段、关键词或缩略图表达变化时递增。启动/后续 catalog 刷新发现版本不同就清空自身命名索引并全量重提，仅所有批次成功回调后标完成；失败或 scope/许可变化不误记完成。这是同一用户数据版本内的可重建缓存失效，不是数据迁移。填写 title/displayName/contentType；每批最多 50 本，独立于 Siri donation 工作链，普通位置更新不反复中断同 scope 全量提交。
+
+当前没有后台 reindex extension，必须先打开主 App，让它生成并提交书目。设置 → 阅读 → 系统集成显示“正在准备/正在提交/已向系统搜索提交 N 本”；保持前台直到已提交即可，不必重新导入或重建正文。API 成功仅表示 Core Spotlight 已接受并 journal，不等于系统结果已可见，不能承诺固定秒数；系统检索匹配仍由 iOS 决定。若已提交但仍不命中，可据此区分提交失败与系统检索问题。
+
+已验收的系统 Spotlight 行为为按完整书名查找；中文部分书名的系统匹配受 iOS 限制，不承诺支持，也不改写 title/displayName 来绕过。App 内 EntityStringQuery 的部分/拼音匹配由应用控制，继续保留。
 
 同 SHA 任一已知副本被排除就不自动公开；donation 只针对真实读过且未排除的书，按会话/目标合并，不每页或整库批量捐赠。开关/排除同时撤自动建议。用户显式放书到 Widget/Shortcuts 是另一用途，不能被 Spotlight 开关误关；两种范围共用一个 exposure owner。
 
-**Widget：**一个 kind，最近阅读/指定书；桌面 small/必要 medium、锁屏 rectangular/inline、系统 StandBy，默认书名+进度、文字封面。不提供 circular、隐藏书名开关或实时计时。显示哪本就传其 ID；未知进度不填零。Timeline 只读快照、`.never` 配合主 App 事件 reload，系统不保证即时更新；无联网、定时下载或 Widget push。gallery 全用合成数据。
+**Widget（V7）：**三个最终 kind：`dev.moonread.Moonread.widgets.continue-reading`、`dev.moonread.Moonread.widgets.recent-reading`、`dev.moonread.Moonread.widgets.reading-statistics`。续读 small/medium 用 A，配置最近一本/指定书；最近阅读 medium 为 A 双本、large 为 B 四行，各书独立 Link，不复制填满，查看全部进入 App 最近阅读。统计 medium 为 B 三列与七日柱，整块进入统计总览。锁屏 circular/rectangular/inline 与待机用 A；未知进度用书本符号，不画伪零值圆环。系统背景移除、染色、低光由平台接管，gallery 的书目与统计全是合成数据，但 placeholder/isPreview 读取共享快照的 App 界面配色；无快照才用 `WidgetDefaultAppearance.json` 的默认杏桃。该资源由 Rust 默认主题导出，Swift 合同测试与主 App 解析结果比对，扩展不复制配色计算。
+
+共享颜色由主 App 调用既有主题 owner 解析 App 界面（书架/设置）的 appMode 与 light/dark 槽；固定浅/深同样生效，系统配色槽使用原生角色，染色/锁屏由系统处理。小组件不读取阅读页配色或纸张纹理，使用纯色背景；扩展不重新混色。自设封面保留原色，复用 coverImage 下采样后重新编码（最长边 384，必要时 274/192；JPEG 0.8 或透明 PNG，去原图元数据），目标 128 KiB、单图硬上限 256 KiB。自身 Covers 目录按指定书、最近、其余书目优先，保留当前及预算内上一代引用，清理后总预算 32 MiB。先落图再原子发布 JSON，失败用文字回退，不省书目。Widget 配置查询独立于发布，失败不阻塞；scope 变更清空旧图，过时异步工作不得重新发布。
+
+统计从单个 ReaderQuery 有效事实快照查询，Rust statistics owner 统一日汇总、今日/本周及连续天数：今天有效时长 >0 则截至今天，否则截至昨天，向前数到断日，不限七天，清除规则沿原投影。Swift 只传 Calendar 周起点并格式化。位置变化复用统计摘要，事实/清除/导入/开关/跨日才标脏；关闭记录保留历史，未知必需格式提示更新、读取失败显示不可用，未取得摘要不伪造 0。
+
+统计带本地日、时区/日历/周起点及下个民用午夜有效期。主 App 活跃时重算跨日/设置变化；扩展在午夜时间线 entry 显示“打开月读更新统计”并请求 reload，不能靠重读旧 JSON 冒充新一天或访问数据库。续读仍可用。显示数据没变不 reload；generation/generatedAt 本身不是内容变更。系统调度不保证按时刷新。
 
 ## 可用性与验收
 

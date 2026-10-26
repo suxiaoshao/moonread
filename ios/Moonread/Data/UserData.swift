@@ -586,6 +586,17 @@ enum AnnotationReduction {
         }
         if let newGeneration { recordingGeneration = newGeneration }
     }
+    private func populatedReadingKeys() throws -> Set<String> {
+        let metadata = "metadata/", chapter = "chapter/", position = "position/"
+        let values = try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate {
+            $0.key.starts(with: metadata) || $0.key.starts(with: chapter) || $0.key.starts(with: position)
+        }))
+        // This is only a broad presence filter, never a second parser or LWW
+        // decision. All selected candidates go through scopedValues unchanged.
+        var result = Set(values.compactMap { row in row.key.split(separator: "/", maxSplits: 2).dropFirst().first.map(String.init) })
+        result.formUnion(try modelContext.fetch(FetchDescriptor<UserPosition>()).map(\.contentKey))
+        return result
+    }
     private func scopedValues(_ contentKey: String) throws -> ValueSnapshot {
         var result = try valueSnapshot(key: "position/" + contentKey)
         for prefix in ["metadata/" + contentKey + "/", "chapter/" + contentKey + "/"] {
@@ -595,10 +606,10 @@ enum AnnotationReduction {
         return result
     }
     func positionValues() throws -> [String: StoredValue] { try valueSnapshot(prefix: "position/").values }
-    func projection(generation: UInt64, enabled: Bool, includeFacts: Bool, keys: [String]? = nil, positionsOnly: Bool = false, statisticsBook: String? = nil, diagnostic: ReaderOpenTrace? = nil, diagnosticScope: String = "projection") throws -> String {
+    func projection(generation: UInt64, enabled: Bool, includeFacts: Bool, keys: [String]? = nil, positionsOnly: Bool = false, statisticsBook: String? = nil, diagnostic: ReaderOpenTrace? = nil, diagnosticScope: String = "projection", sparseCatalogue: Bool = false) throws -> String {
         diagnostic?.mark(diagnosticScope + ".actor.begin")
         defer { diagnostic?.mark(diagnosticScope + ".actor.return") }
-        let cacheKey = "\(generation)-\(enabled)-\(includeFacts)-\(positionsOnly)-\(statisticsBook ?? "all")-" + (keys?.sorted().joined(separator: ",") ?? "all")
+        let cacheKey = "\(generation)-\(enabled)-\(includeFacts)-\(positionsOnly)-\(statisticsBook ?? "all")-\(sparseCatalogue)-" + (keys?.sorted().joined(separator: ",") ?? "all")
         if includeFacts { try requireStatisticsReadable(book: statisticsBook) }
         let version = projectionVersion
         if let cached = projectionCache[cacheKey], cached.0 == version { diagnostic?.mark(diagnosticScope + ".cacheHit"); return cached.1 }
@@ -607,7 +618,11 @@ enum AnnotationReduction {
         if positionsOnly { snapshot = try valueSnapshot(prefix: "position/") }
         else if let keys {
             var scoped = ValueSnapshot()
-            for key in keys {
+            // Large catalogues are mostly unread files without user data. One
+            // metadata-only presence pass avoids three empty fetches per file;
+            // populated keys still use the sole scoped projection/check below.
+            let present = sparseCatalogue ? try populatedReadingKeys() : nil
+            for key in keys where present?.contains(key) ?? true {
                 let next = try scopedValues(key)
                 try scoped.merge(next)
             }

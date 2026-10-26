@@ -414,6 +414,7 @@ fn filtered_fact_snapshots_update_overview_book_and_days_without_duplicate_ids()
             .query_snapshot(json!({"facts": facts}).to_string())
             .unwrap();
         let overview = query.statistics_overview(20000, 20001, None).unwrap();
+        assert_eq!(overview.total_duration_ms, total);
         assert_eq!(
             overview.books.iter().map(|b| b.duration_ms).sum::<u64>(),
             total

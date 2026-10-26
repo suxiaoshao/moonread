@@ -392,7 +392,7 @@ extension AppDataService {
         if let parsed = try? parseReadingKey(value: value) { key = serializeReadingKey(key: parsed) }
         else { key = try userKey(value) }
         var hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
-        hidden.insert(key); sourceDefaults.set(Array(hidden), forKey: "Moonread.hiddenRecent"); dataChanged()
+        hidden.insert(key); sourceDefaults.set(Array(hidden), forKey: "Moonread.hiddenRecent"); dataChanged(); scheduleSystemReadingCatalog(immediate: true)
     }
 
     func registerLibraryShelf(_ url: URL, replacing shelfID: String? = nil) throws -> String {
@@ -420,6 +420,7 @@ extension AppDataService {
         libraryScans[id] = nil
         libraryObservers[id]?.stop()
         libraryObservers[id] = nil
+        scheduleSystemReadingCatalog(immediate: true)
     }
 
     func refreshLibrary() async throws {
@@ -585,6 +586,7 @@ extension AppDataService {
     private func publishIndexScan(_ id: String, root: URL, items: [ScannedLibraryItem]) {
         let revision = UUID(), files = Set(items.filter { !$0.directory }.map(\.relativePath))
         indexScanFiles[id] = files; indexScanRoots[id] = root.standardizedFileURL; indexScanRevisions[id] = revision
+        scheduleSystemReadingCatalog(immediate: true)
         NotificationCenter.default.post(name: .libraryIndexScanCommitted, object: LibraryIndexScan(shelfID: id, revision: revision, files: files))
     }
 
