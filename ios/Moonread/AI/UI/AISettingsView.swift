@@ -4,50 +4,39 @@ private struct AIConnectionRoute: Hashable {
     let id: String
     var startsLogin = false
 }
-private enum AISettingsRoute: Hashable {
-    case conversation, tool(AIModelPurpose), connection(AIConnectionRoute)
+private enum AISettingsModelSheet: Identifiable {
+    case conversation, tool(AIModelPurpose)
+    var id: String { switch self { case .conversation: "conversation"; case .tool(let purpose): purpose.rawValue } }
+    var purpose: AIModelPurpose? { if case .tool(let purpose) = self { purpose } else { nil } }
 }
 
 struct AISettingsView: View {
     @State private var adding = false
-    @State private var route: AISettingsRoute?
-    @State private var thinkingFailed = false
+    @State private var connectionRoute: AIConnectionRoute?
+    @State private var modelSheet: AISettingsModelSheet?
     @Environment(\.dismiss) private var dismiss
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     var body: some View {
         List {
             Section {
-                Button { route = .conversation } label: {
+                Button { modelSheet = .conversation } label: {
                     AISettingsValueLabel(title: "对话", value: conversationLabel)
                 }.buttonStyle(.plain).accessibilityIdentifier("openAIModelPanel")
-                if let selection = ai.modelSelection(for: .defaults),
-                   let model = ai.providers.model(connectionID: selection.connectionID, modelID: selection.modelID),
-                   !model.thinking.isEmpty {
-                    Picker("推理强度", selection: Binding(get: {
-                        ai.modelSelection(for: .defaults)?.thinking ?? AIModelSelection.defaultThinking(model) ?? model.thinking[0]
-                    }, set: { effort in
-                        var value = selection; value.thinking = effort
-                        Task { thinkingFailed = !(await ai.applyModelSelection(value, to: .defaults)) }
-                    })) {
-                        ForEach(model.thinking, id: \.self) { Text(AIThinkingLabel.label($0)).tag($0) }
-                    }.pickerStyle(.menu).accessibilityIdentifier("aiDefaultThinking")
-                }
                 ForEach(AIModelPurpose.allCases, id: \.self) { purpose in
-                    Button { route = .tool(purpose) } label: {
+                    Button { modelSheet = .tool(purpose) } label: {
                         AISettingsValueLabel(title: LocalizedStringKey(purpose.title), value: purposeLabel(purpose))
                     }.buttonStyle(.plain).accessibilityIdentifier("openAIModelPanel-" + purpose.rawValue)
                 }
             } header: { Text("默认使用") } footer: {
-                if thinkingFailed { Text("模型目录已变化，请重新选择。").foregroundStyle(Color(uiColor: theme.destructive)) }
                 Text("按用途选择默认模型，具体对话仍可单独更换。")
                     .foregroundStyle(Color(uiColor: theme.secondary))
             }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section {
                 ForEach(ai.providers.connections) { connection in
                     AISettingsConnectionRow(connection: connection,
-                        manage: { route = .connection(.init(id: connection.id)) },
-                        login: { route = .connection(.init(id: connection.id, startsLogin: true)) })
+                        manage: { connectionRoute = .init(id: connection.id) },
+                        login: { connectionRoute = .init(id: connection.id, startsLogin: true) })
                 }
                 Button("添加连接", systemImage: "plus") { adding = true }
                     .foregroundStyle(Color(uiColor: theme.accent)).accessibilityIdentifier("addAIConnection")
@@ -62,21 +51,25 @@ struct AISettingsView: View {
             }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
         }.themedPage().navigationTitle("AI 助手")
             .aiAddConnectionFlow(isPresented: $adding)
-            .navigationDestination(item: $route) { destination in
-                switch destination {
-                case .conversation:
-                    AISettingsModelList(purpose: nil)
-                case .tool(let purpose): AIToolServiceView(purpose: purpose)
-                case .connection(let value): AIConnectionView(connectionID: value.id, startsLogin: value.startsLogin)
-                }
+            .navigationDestination(item: $connectionRoute) { value in
+                AIConnectionView(connectionID: value.id, startsLogin: value.startsLogin)
             }
-            .onChange(of: ai.availability.isAvailable) { _, available in if !available { adding = false; route = nil; dismiss() } }
+            .sheet(item: $modelSheet) { value in
+                NavigationStack { AISettingsModelList(purpose: value.purpose) }
+                    .environment(ai).themeScope(theme).preferredColorScheme(theme.scheme)
+                    .presentationBackground(Color(uiColor: theme.canvas)).presentationDragIndicator(.visible)
+            }
+            .onChange(of: ai.availability.isAvailable) { _, available in
+                if !available { adding = false; connectionRoute = nil; modelSheet = nil; dismiss() }
+            }
             .task { await ai.providers.refreshCatalogsIfNeeded() }
             .toolbar { ToolbarItem(placement: .topBarTrailing) { NavigationLink { AIUsageHelpView() } label: { Image(systemName: "questionmark.circle") }.toolbarGlyph().accessibilityLabel("AI 使用帮助") } }
     }
     private var conversationLabel: String {
         guard let value = ai.modelSelection(for: .defaults), let model = ai.providers.model(connectionID: value.connectionID, modelID: value.modelID) else { return String(localized: "未设置") }
-        return model.name
+        guard !model.thinking.isEmpty else { return model.name }
+        let effort = value.thinking.map(AIThinkingLabel.label) ?? String(localized: "默认")
+        return model.name + " · " + String(localized: "推理 \(effort)")
     }
     private func purposeLabel(_ purpose: AIModelPurpose) -> String {
         guard let selection = ai.providers.purposeSelection(purpose),
@@ -246,7 +239,7 @@ private struct AIAddConnectionView: View {
     }
 }
 
-/// Tool entries from quick tasks and settings share the same immediate-save page.
+/// Tool entries from quick tasks and settings share immediate-save selection.
 struct AIToolServiceView: View {
     let purpose: AIModelPurpose
     var body: some View { AISettingsModelList(purpose: purpose) }
@@ -294,6 +287,26 @@ private struct AISettingsModelList: View {
                 }
             } else {
                 List {
+                    if purpose == nil, let selection = ai.modelSelection(for: .defaults),
+                       let model = ai.providers.model(connectionID: selection.connectionID, modelID: selection.modelID),
+                       !model.thinking.isEmpty {
+                        Section("推理强度") {
+                            Picker(selection: Binding<String?>(get: {
+                                ai.modelSelection(for: .defaults)?.thinking
+                            }, set: { effort in
+                                var value = selection; value.thinking = effort
+                                saving = true
+                                Task {
+                                    saveFailed = !(await ai.applyModelSelection(value, to: .defaults))
+                                    saving = false
+                                }
+                            })) {
+                                if AIModelSelection.defaultThinking(model) == nil { Text("默认").tag(String?.none) }
+                                ForEach(model.thinking, id: \.self) { Text(AIThinkingLabel.label($0)).tag(Optional($0)) }
+                            } label: { Text(verbatim: model.name) }
+                                .pickerStyle(.menu).disabled(saving).accessibilityIdentifier("aiDefaultThinking")
+                        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                    }
                     if let purpose {
                         Button {
                             if ai.providers.setPurpose(purpose, selection: nil) { dismiss() }
@@ -320,6 +333,11 @@ private struct AISettingsModelList: View {
             .themedPage().accessibilityIdentifier("aiSettingsModelList")
             .navigationTitle(purpose?.title ?? String(localized: "对话")).navigationBarTitleDisplayMode(.inline)
             .aiAddConnectionFlow(isPresented: $adding)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }.accessibilityIdentifier("dismissAISettingsModels")
+                }
+            }
             .safeAreaInset(edge: .bottom) {
                 if saveFailed {
                     Text("模型目录已变化，请重新选择。").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
@@ -343,7 +361,7 @@ private struct AISettingsModelList: View {
                     saved = await ai.applyModelSelection(value, to: .defaults)
                 }
                 saving = false; saveFailed = !saved
-                if saved { dismiss() }
+                if saved && purpose != nil { dismiss() }
             }
         } label: {
             HStack {

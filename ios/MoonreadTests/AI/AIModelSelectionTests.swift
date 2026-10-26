@@ -63,6 +63,11 @@ final class AIModelSelectionConversationTests: ConversationFixture {
     let savedReasoning = await service.applyModelSelection(selected, to: .defaults)
     XCTAssertTrue(savedReasoning)
     XCTAssertEqual(service.modelSelection(for: .defaults)?.thinking, "low")
+    selected.thinking = "high"
+    let savedEffort = await service.applyModelSelection(selected, to: .defaults)
+    XCTAssertTrue(savedEffort)
+    XCTAssertEqual(service.modelSelection(for: .defaults)?.thinking, "high", "Reasoning saves without closing or confirming a picker")
+    XCTAssertEqual(service.providers.connections[0].thinking, "high")
     XCTAssertEqual(conversation.thinking, "low", "Changing defaults does not edit a conversation")
   }
 }
