@@ -71,6 +71,8 @@ actor AppDataService {
             snapshot.preferences.readerLightTexture = ReaderTextureChoice(id: mode == "appearance" ? .linen : .paper, strength: mode == "notes" ? .light : .medium)
             snapshot.preferences.readerDarkTexture = nil
             if StoreShotPage.requested != nil {
+                // This path returns before the general UI-test defaults reset.
+                UserDefaults.standard.set(ReadingSettingsTab.typography.rawValue, forKey: "readingSettingsTab")
                 let index = arguments.firstIndex(of: "--ui-test-page-appearance")
                 let dark = index.map { arguments.indices.contains($0 + 1) && arguments[$0 + 1] == "dark" } ?? false
                 snapshot.preferences.appMode = dark ? .dark : .light
