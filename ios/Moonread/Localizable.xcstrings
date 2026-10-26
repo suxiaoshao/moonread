@@ -1,6 +1,7 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "无": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"None"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"無"}}}},
     "部分统计暂不可用": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"部分统计暂不可用"}},"en":{"stringUnit":{"state":"translated","value":"Some statistics are temporarily unavailable"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"部分統計暫時無法使用"}}}},
     "书架与数据": {"extractionState":"manual","localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"书架与数据"}},"en":{"stringUnit":{"state":"translated","value":"Bookshelves & Data"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"書架與資料"}}}},
     "外观与语言": {"extractionState":"manual","localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"外观与语言"}},"en":{"stringUnit":{"state":"translated","value":"Appearance & Language"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"外觀與語言"}}}},

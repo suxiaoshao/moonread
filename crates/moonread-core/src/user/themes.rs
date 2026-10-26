@@ -87,6 +87,11 @@ pub fn reader_texture_strengths() -> Vec<ReaderTextureStrength> {
         ReaderTextureStrength::Strong,
     ]
 }
+/// Logical point/CSS-pixel period. The source mask is sampled at this tile size.
+#[uniffi::export]
+pub fn reader_texture_tile_size() -> u32 {
+    256
+}
 #[uniffi::export]
 pub fn reader_texture_alpha(paper: u32, ink: u32, strength: ReaderTextureStrength) -> f64 {
     let target = match strength {
