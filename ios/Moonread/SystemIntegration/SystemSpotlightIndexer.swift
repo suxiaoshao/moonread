@@ -7,7 +7,7 @@ import SwiftUI
 /// position offset/token or precise reading time enters the system index.
 struct SystemSpotlightMetadata: Equatable, Sendable {
     // Bump whenever the submitted fields or keyword/thumbnail representation changes.
-    static let contentFormatVersion = 1
+    static let contentFormatVersion = 2
     let id: String
     let title: String
     let author: String?

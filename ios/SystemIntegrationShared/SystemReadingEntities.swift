@@ -6,20 +6,20 @@ import NaturalLanguage
 /// It can run in an extension using only the already-produced catalogue.
 enum LibraryQueryRules {
     /// Platform search vocabulary only; no novel text or AI matching profile.
-    /// Entity selection and Spotlight use these same partial/pinyin spellings.
+    /// Entity selection and Spotlight share metadata vocabulary. The system's
+    /// own Spotlight matching policy is independent of our EntityStringQuery.
+    static let systemMetadataTermLimit = 64
     static func systemMetadataTerms(title: String, author: String?, tags: [String]) -> [String] {
-        var terms = [title] + tags
-        for (text, includePrefixes) in [(title, true), (author ?? "", false)] where !text.isEmpty {
-            terms.append(text)
+        let names = [title, author ?? ""].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        var terms = names, words: [String] = []
+        for text in names {
             let tokenizer = NLTokenizer(unit: .word)
             tokenizer.string = text
-            var words: [String] = []
             tokenizer.enumerateTokens(in: text.startIndex..<text.endIndex) { range, _ in
-                words.append(String(text[range]))
-                if includePrefixes { terms.append(String(text[..<range.upperBound]).trimmingCharacters(in: .whitespacesAndNewlines)) }
+                let word = String(text[range])
+                if word.count > 1, word.contains(where: { $0.isLetter || $0.isNumber }) { words.append(word) }
                 return true
             }
-            terms += words
             let latin = NSMutableString(string: text)
             CFStringTransform(latin, nil, kCFStringTransformMandarinLatin, false)
             // Keep the conventional keyboard spelling lü → lv before removing tones.
@@ -27,11 +27,17 @@ enum LibraryQueryRules {
             latin.replaceOccurrences(of: "u\u{0308}", with: "v", options: .literal, range: NSRange(location: 0, length: latin.length))
             CFStringTransform(latin, nil, kCFStringTransformStripDiacritics, false)
             let syllables = (latin as String).lowercased().split { !$0.isLetter && !$0.isNumber }
-            terms.append(syllables.joined())
-            terms.append(String(syllables.compactMap(\.first)))
+            for spelling in [syllables.joined(), String(syllables.compactMap(\.first))] where spelling.count > 1 {
+                terms.append(spelling)
+            }
         }
+        // Keep full names and their pinyin ahead of potentially long token/tag
+        // lists, so the bound cannot discard the Entity query's pinyin keys.
+        terms += words + tags
         var seen = Set<String>()
-        return terms.filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+        return Array(terms.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+            .prefix(systemMetadataTermLimit))
     }
     static func systemMetadataBooks(_ books: [SystemReadingSnapshot.Book], matching query: String) -> [SystemReadingSnapshot.Book] {
         let value = query.trimmingCharacters(in: .whitespacesAndNewlines)

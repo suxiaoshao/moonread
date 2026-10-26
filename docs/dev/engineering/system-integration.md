@@ -1,6 +1,6 @@
 # 系统续读、动作与书目快照
 
-1.3 当前实现，兼容基线为已提审且会先上架的 1.2 (10) `6ceef33`；本批新增 Widget、Intent 与共享快照直接采用最终结构，无开发中间态迁移，真实系统效果仍待用户试用。实现 PR 更新实际接口和状态，顺序见[1.3 计划](../plans/1.3.md)。产品默认见[系统集成设计](../design/ios-integration.md)，持久化与身份规则沿用[架构](architecture.md)。
+1.3 当前实现，兼容基线为已发布的 1.2 (10) `6ceef33`；本批新增 Widget、Intent 与共享快照直接采用最终结构，无开发中间态迁移，本批快捷指令、小组件（含画廊配色）与正常阅读已通过用户真机试用，Spotlight 以全名可搜验收。实现 PR 更新实际接口和状态，顺序见[1.3 计划](../plans/1.3.md)。产品默认见[系统集成设计](../design/ios-integration.md)，持久化与身份规则沿用[架构](architecture.md)。
 
 ## 一个生产者，多个消费者
 
@@ -61,13 +61,15 @@ App Group `SystemReading/v1/` 同目录暂存后原子替换完整 JSON；串行
 
 ## 各消费者的范围
 
-**App Entity / Shortcuts / Control：**显式选书使用 catalog；元数据匹配由 Swift LibraryQueryRules 的具名 systemMetadata profile 统一处理（书名/作者/标签、NLTokenizer 分词与词边界前缀、无声调拼音全拼和首字母），Entity 做部分匹配，Spotlight 使用同一份检索词；不用 AI 简介匹配。注册三语短语，Control 只有继续阅读；不自动替用户添加控件。不承诺任意自然语言都能识别，不为此采用不匹配的 Books schema。
+**App Entity / Shortcuts / Control：**显式选书使用 catalog；元数据匹配由 Swift LibraryQueryRules 的具名 systemMetadata profile 统一处理（书名/作者/标签、有效 NLTokenizer 分词、无声调拼音全拼和首字母；去空白、去重，最多 64 项，不生成前缀碎片或单字分词），Entity 做部分匹配，Spotlight 使用同一份检索词；不用 AI 简介匹配。注册三语短语，Control 只有继续阅读；不自动替用户添加控件。不承诺任意自然语言都能识别，不为此采用不匹配的 Books schema。
 
 **Spotlight 与建议：**本机默认开启，书架排除默认空，无 onboarding。一个命名 CSSearchableIndex，填写 title/author/keywords、thumbnailData 和 contentDescription（作者 · 当前章节 · 已知进度）。缩略图从用户已有封面读取，缺失时用 App 内文字封面渲染；只在主 App 内查询资产描述，不给 Widget 增加权限或数据。未知章节/进度省略；不填 textContent、正文 URL、简介、批注、精确时间或路径。按 ID/domain 做更新/删除与可重建处理，点击走共用 router；不同时启用另一套 IndexedEntity 自动全属性捐赠。
 
-Spotlight 另记 `contentFormatVersion`（当前 1）：提交字段、关键词或缩略图表达变化时递增。启动/后续 catalog 刷新发现版本不同就清空自身命名索引并全量重提，仅所有批次成功回调后标完成；失败或 scope/许可变化不误记完成。这是同一用户数据版本内的可重建缓存失效，不是数据迁移。填写 title/displayName/contentType；每批最多 50 本，独立于 Siri donation 工作链，普通位置更新不反复中断同 scope 全量提交。
+Spotlight 另记 `contentFormatVersion`（当前 2）：提交字段、关键词或缩略图表达变化时递增。启动/后续 catalog 刷新发现版本不同就清空自身命名索引并全量重提，仅所有批次成功回调后标完成；失败或 scope/许可变化不误记完成。这是同一用户数据版本内的可重建缓存失效，不是数据迁移。填写 title/displayName/contentType；每批最多 50 本，独立于 Siri donation 工作链，普通位置更新不反复中断同 scope 全量提交。
 
 当前没有后台 reindex extension，必须先打开主 App，让它生成并提交书目。设置 → 阅读 → 系统集成显示“正在准备/正在提交/已向系统搜索提交 N 本”；保持前台直到已提交即可，不必重新导入或重建正文。API 成功仅表示 Core Spotlight 已接受并 journal，不等于系统结果已可见，不能承诺固定秒数；系统检索匹配仍由 iOS 决定。若已提交但仍不命中，可据此区分提交失败与系统检索问题。
+
+已验收的系统 Spotlight 行为为按完整书名查找；中文部分书名的系统匹配受 iOS 限制，不承诺支持，也不改写 title/displayName 来绕过。App 内 EntityStringQuery 的部分/拼音匹配由应用控制，继续保留。
 
 同 SHA 任一已知副本被排除就不自动公开；donation 只针对真实读过且未排除的书，按会话/目标合并，不每页或整库批量捐赠。开关/排除同时撤自动建议。用户显式放书到 Widget/Shortcuts 是另一用途，不能被 Spotlight 开关误关；两种范围共用一个 exposure owner。
 

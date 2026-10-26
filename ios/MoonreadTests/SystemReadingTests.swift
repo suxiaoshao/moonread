@@ -172,7 +172,8 @@ import SwiftUI
         let metadata = SystemSpotlightMetadata(id: book.id, title: book.title, author: book.author, tags: book.tags, chapterLabel: book.chapterLabel, progress: book.progress)
         for text in ["巫师", "wushizhilv", "wszl", "liucixin", "lcx"] { XCTAssertTrue(metadata.keywords.contains(text), text) }
         let englishTerms = LibraryQueryRules.systemMetadataTerms(title: english.title, author: english.author, tags: [])
-        XCTAssertTrue(englishTerms.contains("The Wizard")); XCTAssertTrue(englishTerms.contains("Wizard"))
+        XCTAssertTrue(englishTerms.contains("The Wizard Journey")); XCTAssertTrue(englishTerms.contains("Wizard"))
+        XCTAssertFalse(englishTerms.contains("The Wizard"), "Word-boundary prefix fragments are not keywords")
         let thumbnail = try XCTUnwrap(SystemSpotlightMetadata.textThumbnail(title: book.title))
         let attributes = metadata.attributes(thumbnail: thumbnail)
         XCTAssertEqual(attributes.thumbnailData, thumbnail)
@@ -182,6 +183,20 @@ import SwiftUI
         XCTAssertNil(attributes.textContent); XCTAssertNil(attributes.contentURL)
         let empty = SystemSpotlightMetadata(id: book.id, title: book.title, author: nil, tags: [])
         XCTAssertTrue(empty.contentDescription.isEmpty, "Unknown chapters/progress are never fabricated")
+    }
+
+    func testSpotlightKeywordsAreMeaningfulDeduplicatedAndBounded() {
+        let metadata = SystemSpotlightMetadata(id: "sample", title: "  巫师之旅\n", author: " 刘慈欣 ", tags: ["奇幻", " 奇幻 ", "科幻", "", " \n"])
+        let terms = metadata.attributes(thumbnail: nil).keywords ?? []
+        let required: Set<String> = ["巫师之旅", "刘慈欣", "奇幻", "科幻", "巫师", "wushizhilv", "wszl", "liucixin", "lcx"]
+        XCTAssertTrue(required.isSubset(of: Set(terms)))
+        XCTAssertTrue(Set(terms).isSubset(of: required.union(["之旅", "慈欣"])), "Only metadata, meaningful words and transliterations belong in keywords")
+        XCTAssertTrue(Set(terms).isDisjoint(with: ["巫", "师", "之", "旅", "刘", "慈", "欣", "巫师之", "w", "l"]))
+        XCTAssertEqual(terms.count, Set(terms.map { $0.lowercased() }).count)
+        XCTAssertTrue(terms.allSatisfy { !$0.isEmpty && $0 == $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+        let bounded = LibraryQueryRules.systemMetadataTerms(title: "巫师之旅", author: "刘慈欣", tags: (0..<100).map { "标签\($0)" })
+        XCTAssertEqual(bounded.count, 64)
+        XCTAssertTrue(Set(["巫师之旅", "刘慈欣", "wushizhilv", "wszl", "liucixin", "lcx"]).isSubset(of: Set(bounded)))
     }
 
     func testFailedSpotlightSubmissionRemainsRevocableWhenDisabled() async throws {
