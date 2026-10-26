@@ -92,11 +92,13 @@ struct LibraryView: View {
                     .listRowInsets(EdgeInsets(top: 2, leading: 24, bottom: 2, trailing: 24))
                 }
             }
+            ShelfReferenceHints(model: model)
             Section {
                 ForEach(model.shelves, id: \.id) { shelf in
                     NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: shelf.id))) { ShelfRow(shelf: shelf) }
                         .contextMenu { ShelfMenu(model: model, shelf: shelf) }.accessibilityIdentifier("shelf-\(shelf.id)")
                         .modifier(LibraryShelfDropTarget(model: model, shelf: shelf))
+                    ShelfIndexGuidance(model: model, shelfID: shelf.id)
                 }
             } header: {
                 homeHeader("书架与文件夹", showsAll: false)
@@ -236,6 +238,7 @@ struct LibraryFolderView: View {
     @State private var loading = LoadingState()
     @State private var selection = Set<String>()
     @State private var editing = EditMode.inactive
+    @State private var catalogue = LibraryCatalogueRequest()
     private var shelf: LibraryShelf? { model.shelves.first { $0.id == location.shelfID } }
     private var title: String { location.path.isEmpty ? model.shelfTitle(location.shelfID) : URL(fileURLWithPath: location.path).lastPathComponent }
     private var selectedEntries: [LibraryEntry] { entries.filter { selection.contains($0.id) } }
@@ -270,7 +273,7 @@ struct LibraryFolderView: View {
                 }
                 else {
                     Menu {
-                        Button { model.sheet = .fullIndex(location.shelfID) } label: { Label { Text("建立索引", tableName: "FullIndex") } icon: { Image(systemName: "text.badge.checkmark") } }.accessibilityIdentifier("buildShelfIndex")
+                        Button { Task { await model.openShelfIndex(location.shelfID) } } label: { Label { Text("建立索引", tableName: "FullIndex") } icon: { Image(systemName: "text.badge.checkmark") } }.accessibilityIdentifier("buildShelfIndex")
                         Button("选择项目", systemImage: "checkmark.circle") { editing = .active }
                         Button("新建文件夹", systemImage: "folder.badge.plus") { model.sheet = .create(location) }
                         if location.shelfID == "builtin" { Button("导入小说", systemImage: "square.and.arrow.down") { model.chooseFiles(.novels(location)) } }
@@ -330,13 +333,15 @@ struct LibraryFolderView: View {
                 ToolbarItem(placement: .bottomBar) { Spacer() }
             }
         }
-        .task(id: model.revision) {
+        .task(id: LibraryCatalogueRequest.Input(location: location, libraryRevision: model.revision, readingRevision: model.readingInputRevision)) {
             let request = loading.begin(); defer { loading.finish(request) }
             let cloudGeneration = model.discoveryGeneration, cloudRevision = model.discoveryRevision
             do {
-                try await ReaderService.libraryTestLatency()
-                let value = try await ReaderService.shared.libraryEntries(location)
-                try Task.checkCancellation(); entries = value
+                guard let value = try await catalogue.read({
+                    try await ReaderService.libraryTestLatency()
+                    return try await ReaderService.shared.libraryEntries(location)
+                }) else { return }
+                entries = value
                 selection.formIntersection(Set(value.map(\.id))); loaded = true
                 if location.shelfID == "builtin", location.path.isEmpty {
                     model.builtinDirectoryLoaded(generation: cloudGeneration, snapshotRevision: cloudRevision)
@@ -347,24 +352,6 @@ struct LibraryFolderView: View {
             }
         }
 
-        .onChange(of: model.recents) { _, values in
-            let updates = Dictionary(uniqueKeysWithValues: values.map { ($0.id, $0) })
-            let next = entries.enumerated().map { index, original in
-                var entry = updates[original.id] ?? original
-                if entry.directory {
-                    let children = values.filter { $0.shelfId == entry.shelfId && $0.relativePath.hasPrefix(entry.relativePath + "/") }
-                    entry.lastRead = max(entry.lastRead, children.map(\.lastRead).max() ?? 0)
-                }
-                return (index, entry)
-            }.sorted { a, b in
-                let aEmpty = a.1.directory && a.1.childBookCount == 0
-                let bEmpty = b.1.directory && b.1.childBookCount == 0
-                if aEmpty != bEmpty { return !aEmpty }
-                if a.1.lastRead != b.1.lastRead { return a.1.lastRead > b.1.lastRead }
-                return a.0 < b.0 // Preserve the existing natural-name/modified tie order.
-            }.map { $0.1 }
-            if next != entries { entries = next }
-        }
         .onChange(of: editing) { _, value in if value.isEditing { model.cancelOpening() } }
         .modifier(PageLoadingOverlay(request: model.processingFiles || model.nativeRefreshing ? nil : model.shelfScans[location.shelfID] ?? loading.request ?? model.refreshing.request,
                                      hasContent: !entries.isEmpty, label: "正在加载书架", immediate: model.explicitRefresh || model.shelfScans[location.shelfID] != nil))
@@ -700,6 +687,10 @@ struct LibraryManagementView: View {
     var body: some View {
         List {
             Section {
+                Toggle(isOn: Binding(get: { model.fullIndex.automatic }, set: { model.fullIndex.automatic = $0 })) { Text("新加入的书自动建立索引", tableName: "FullIndex") }.accessibilityIdentifier("automaticFullIndex")
+            } header: { Text("索引", tableName: "FullIndex") }
+            ShelfReferenceHints(model: model, grouped: true)
+            Section {
                 ForEach(model.shelves, id: \.id) { shelf in
                     NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: shelf.id))) {
                         ManagedShelfRow(shelf: shelf)
@@ -770,7 +761,7 @@ struct ShelfMenu: View {
     let shelf: LibraryShelf
     var body: some View {
         Group {
-            Button { model.sheet = .fullIndex(shelf.id) } label: { Text("建立索引", tableName: "FullIndex") }
+            Button { Task { await model.openShelfIndex(shelf.id) } } label: { Text("建立索引", tableName: "FullIndex") }
             Button("刷新", systemImage: "arrow.clockwise") { Task { await model.refresh(userInitiated: true) } }
             if !shelf.builtin {
                 Button("重新连接", systemImage: "folder.badge.questionmark") { model.chooseFiles(.folder(shelf.id)) }

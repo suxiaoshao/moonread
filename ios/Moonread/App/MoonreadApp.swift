@@ -32,7 +32,7 @@ struct MoonreadApp: App {
         appContent
         #endif
     }
-    private var appContent: some View {
+    private var indexedAppContent: some View {
         MoonreadRoot(library: library, themes: themes)
             .environment(cloud).environment(ai).environment(tipJar)
             .task { await tipJar.listenForTransactions() }
@@ -45,14 +45,42 @@ struct MoonreadApp: App {
                     await cloud.refresh()
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .libraryIndexScanCommitted).receive(on: DispatchQueue.main)) { note in
+                if let scan = note.object as? LibraryIndexScan { Task { await library.indexScanCommitted(scan) } }
+            }
+            .onChange(of: library.initialized) { _, ready in
+                if ready { Task { await library.coordinatePendingIndexes(all: true) } }
+            }
+            .onChange(of: library.filePickerPresented) { _, shown in
+                if !shown { Task { await library.coordinatePendingIndexes() } }
+            }
+            .onChange(of: library.canAcceptFileWork) { _, available in
+                if available { Task { await library.coordinatePendingIndexes() } }
+            }
+            .onChange(of: library.sheet == nil) { _, closed in
+                if closed { Task { await library.coordinatePendingIndexes() } }
+            }
+            .onChange(of: library.indexPrompt == nil) { _, closed in
+                if closed { Task { await library.coordinatePendingIndexes() } }
+            }
+            .onChange(of: library.fullIndex.automatic) { _, enabled in
+                if enabled { Task { await library.coordinatePendingIndexes(all: true) } }
+            }
+    }
+    private var appContent: some View {
+        indexedAppContent
             .onReceive(NotificationCenter.default.publisher(for: .libraryIdentityChanged).receive(on: DispatchQueue.main)) { note in
-                Task { await library.reloadBooks(); if let message = note.object as? String { library.error = message } }
+                Task {
+                    await library.reloadBooks()
+                    if let id = library.fullIndex.shelfID { await library.refreshIndexSummary(id) }
+                    if let message = note.object as? String { library.error = message }
+                }
             }
             .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in
                 Task { await CloudSyncCoordinator.shared.localDataChanged() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .cloudStatusChanged).receive(on: DispatchQueue.main)) { _ in
-                Task { await cloud.updateStatus() }
+                Task { await cloud.updateStatus(); await library.refreshShelfRecovery() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .recentReadingRestored).receive(on: DispatchQueue.main)) { _ in
                 Task { try? await library.reload() }
@@ -81,10 +109,21 @@ struct MoonreadApp: App {
                     }
                 }
             }
-            .onOpenURL { url in Task {
-                guard await library.load() else { return }
-                library.selectedTab = .library; library.receiveSystemURLs([url])
-            } }
+            .onOpenURL(perform: openURL)
+
+    }
+
+    private func openURL(_ url: URL) {
+        let access = LibraryImportFile(url: url)
+        Task {
+            defer { access.finish() }
+            guard await library.load() else { return }
+            library.selectedTab = .library
+            if url.pathExtension.lowercased() == "moonread-backup" {
+                library.libraryPath = [.settings, .dataManagement]
+                await library.dataManagement.prepareImport(url)
+            } else { library.receiveSystemURLs([url]) }
+        }
     }
 
 }
@@ -105,7 +144,10 @@ private struct MoonreadRoot: View {
                            highContrast: contrast == .increased)
     }
     private var appTheme: ThemeSurface { ThemeSurface(plan: plans.app) }
-    private var readerTheme: ThemeSurface { ThemeSurface(plan: plans.reader) }
+    private var readerTheme: ThemeSurface {
+        let plan = plans.reader
+        return ThemeSurface(plan: plan, readerTexture: plan.appearance == .light ? themes.snapshot.preferences.readerLightTexture : themes.snapshot.preferences.readerDarkTexture)
+    }
 
     var body: some View {
         // Observe outside the UIKit host's content closure. The app navigation
@@ -228,6 +270,7 @@ struct LibraryDestination: View {
         case .conversation(let id, let anchor):
             if ai.availability.isAvailable { AIChatView(conversationID: id, anchor: anchor) }
         case .settings: SettingsView(library: library)
+        case .dataManagement: DataManagementView(model: library.dataManagement)
         case .search(let scope): AppSearchPage(model: library, scope: scope)
         }
     }

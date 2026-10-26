@@ -40,18 +40,20 @@ struct SettingsView: View {
                 NavigationLink { StatisticsSettingsView() } label: {
                     SettingsEntry(title: "阅读统计设置", symbol: "chart.bar.xaxis", summary: recording.map { String(localized: $0 ? "记录中" : "已暂停") } ?? String(localized: "正在加载"))
                 }.accessibilityIdentifier("statisticsSettings")
-            }.listRowBackground(Color(uiColor: theme.surface))
-            Section("书架与同步") {
-                Toggle(isOn: Binding(get: { library.fullIndex.automatic }, set: { library.fullIndex.automatic = $0 })) { Text("新加入的书自动建立索引", tableName: "FullIndex") }.accessibilityIdentifier("automaticFullIndex")
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+            Section("书架与数据") {
                 NavigationLink(value: LibraryRoute.manage) {
                     SettingsEntry(title: "书架管理", symbol: "books.vertical", summary: String(localized: "\(library.shelves.count) 个书架"))
                 }.accessibilityIdentifier("libraryManagementSettings")
+                NavigationLink(value: LibraryRoute.dataManagement) {
+                    SettingsEntry(title: "数据管理", symbol: "externaldrive", summary: String(localized: "备份、恢复、清理"))
+                }.accessibilityIdentifier("dataManagementSettings")
                 if CloudConfiguration.availableInBuild {
                     NavigationLink { CloudSettingsView() } label: {
                         SettingsEntry(title: "iCloud", symbol: "icloud", summary: cloud.settingsSummary)
                     }.accessibilityIdentifier("cloudSettings")
                 }
-            }.listRowBackground(Color(uiColor: theme.surface))
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section {
                 if ai.availability.regionAllowsAI {
                     Toggle("AI 功能", isOn: Binding(get: { ai.availability.isEnabled }, set: { ai.availability.setEnabled($0) }))
@@ -66,18 +68,15 @@ struct SettingsView: View {
                 } else {
                     Text(verbatim: ai.availability.regionMessage).accessibilityIdentifier("aiRegionUnavailable")
                 }
-            } footer: {
+            } header: { Text("AI 助手") } footer: {
                 if ai.availability.regionAllowsAI {
                     Text("关闭后隐藏所有 AI 功能，已有连接、会话和数据共享许可保留。")
                         .padding(.bottom, 16)
                 } else {
                     Text("已有 AI 数据保留在本机，不会发送。").padding(.bottom, 16)
                 }
-            }.listRowBackground(Color(uiColor: theme.surface))
-            Section("应用") {
-                NavigationLink { UsageGuideView() } label: {
-                    SettingsEntry(title: "使用指南", symbol: "questionmark.circle", summary: String(localized: "导入、阅读与同步"))
-                }.accessibilityIdentifier("usageGuideSettings")
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+            Section("外观与语言") {
                 NavigationLink { AppThemePreferencesView() } label: {
                     SettingsEntry(title: "应用外观", symbol: "paintpalette", summary: appearanceSummary)
                 }.accessibilityIdentifier("appThemeSettings")
@@ -85,8 +84,11 @@ struct SettingsView: View {
                     SettingsEntry(title: "语言", symbol: "globe", summary: languageSummary)
                 }.accessibilityIdentifier("languageSettings")
                     .accessibilityHint("打开系统设置")
-            }.listRowBackground(Color(uiColor: theme.surface))
-            Section("关于") {
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+            Section("帮助与关于") {
+                NavigationLink { UsageGuideView() } label: {
+                    SettingsEntry(title: "使用指南", symbol: "questionmark.circle", summary: String(localized: "导入、阅读与同步"))
+                }.accessibilityIdentifier("usageGuideSettings")
                 Link(destination: AppLinks.writeReview) {
                     SettingsEntry(title: "给月读评分", symbol: "star", summary: "")
                 }.accessibilityIdentifier("rateMoonread")
@@ -96,7 +98,7 @@ struct SettingsView: View {
                 NavigationLink { TipJarView() } label: {
                     SettingsEntry(title: "支持月读", symbol: "heart", summary: "")
                 }.accessibilityIdentifier("tipJarSettings")
-            }.listRowBackground(Color(uiColor: theme.surface))
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
         }
         .themedPage()
         .navigationTitle("设置")
@@ -228,15 +230,15 @@ struct AppThemePreferencesView: View {
                         Text("浅色").tag(AppAppearanceMode.light)
                         Text("深色").tag(AppAppearanceMode.dark)
                     }.accessibilityIdentifier("appAppearanceMode")
-            }.disabled(themes.saving).listRowBackground(Color(uiColor: theme.surface))
+            }.disabled(themes.saving).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section("配色") {
                 slot(.light, title: "浅色时")
                 slot(.dark, title: "深色时")
-            }.listRowBackground(Color(uiColor: theme.surface))
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section {
                 Toggle("减弱动态效果", isOn: Binding(get: { preferences.reduceMotion }, set: { value in themes.update { $0.reduceMotion = value } }))
                     .disabled(themes.saving).accessibilityIdentifier("reduceMotion")
-            }.listRowBackground(Color(uiColor: theme.surface))
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section {
                 PalettePreview(theme: themes.app)
                     .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
@@ -265,9 +267,13 @@ struct AppThemePreferencesView: View {
 func paletteDisplayName(_ value: ThemePalette) -> String {
     if value.custom { return value.name }
     switch value.id.split(separator: "-").first {
+    case "apricot": return String(localized: "杏桃")
     case "mint": return String(localized: "薄荷")
     case "lilac": return String(localized: "雾紫")
-    default: return String(localized: "杏桃")
+    case "black": return String(localized: "纯黑夜间")
+    case "white": return String(localized: "素白")
+    case "bean": return String(localized: "豆沙绿")
+    default: return value.name
     }
 }
 
@@ -329,13 +335,14 @@ struct PalettePicker: View {
             if !embedded { Section {
                 PalettePreview(theme: previewTheme).listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
             } }
+            if reader && embedded { textureSection }
             Section {
                 if reader { sourceRow("跟随应用", id: "app", icon: "arrow.turn.down.right") }
                 sourceRow("系统配色", id: "system", icon: "circle.lefthalf.filled")
-            }.listRowBackground(Color(uiColor: theme.surface))
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section("预设") {
                 ForEach(palettes.filter { !$0.custom }, id: \.id) { palette in paletteRow(palette) }
-            }.listRowBackground(Color(uiColor: theme.surface))
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section("自定义") {
                 ForEach(palettes.filter(\.custom), id: \.id) { palette in
                     paletteRow(palette)
@@ -353,11 +360,44 @@ struct PalettePicker: View {
                     base.name = ""; base.custom = true
                     edit(PaletteDraft(palette: base, creating: true))
                 }.accessibilityIdentifier("createPalette")
-            }.listRowBackground(Color(uiColor: theme.surface))
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
         }
         .disabled(themes.saving).themedPage()
         .contentMargins(.top, embedded ? LayoutTokens.compact : LayoutTokens.content, for: .scrollContent)
         .accessibilityIdentifier("paletteOptions")
+    }
+    private var texture: ReaderTextureChoice? {
+        appearance == .light ? themes.snapshot.preferences.readerLightTexture : themes.snapshot.preferences.readerDarkTexture
+    }
+    private func setTexture(_ choice: ReaderTextureChoice?) {
+        themes.update { value in
+            if appearance == .light { value.readerLightTexture = choice } else { value.readerDarkTexture = choice }
+        }
+    }
+    private var textureSection: some View {
+        Section {
+            Picker("纸张纹理", selection: Binding(get: { texture?.id }, set: { id in
+                var choice = id.map { readerTextureChoice(id: $0) }
+                if let strength = texture?.strength { choice?.strength = strength }
+                setTexture(choice)
+            })) {
+                Text("无").tag(ReaderTextureId?.none)
+                ForEach(readerTextureIds(), id: \.self) { id in Text(id.label).tag(Optional(id)) }
+            }.accessibilityIdentifier("readerTexture")
+            if let texture {
+                Picker("纹理强度", selection: Binding(get: { texture.strength }, set: { value in
+                    var choice = texture; choice.strength = value; setTexture(choice)
+                })) {
+                    ForEach(readerTextureStrengths(), id: \.self) { value in Text(value.label).tag(value) }
+                }.accessibilityIdentifier("readerTextureStrength")
+            }
+        } footer: {
+            if previewTheme.plan.colors == nil {
+                Text("请选择具体配色后使用纹理").accessibilityIdentifier("readerTextureUnavailable")
+            }
+        }
+        .disabled(previewTheme.plan.colors == nil)
+        .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
     }
     private func sourceRow(_ title: LocalizedStringKey, id: String, icon: String) -> some View {
         Button { choose(id) } label: {
@@ -458,7 +498,7 @@ struct PaletteEditor: View {
 
 extension ThemePalette {
     var isValidDraft: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && name.count <= 40 && themeColorsReadable(c: colors)
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && name.count <= 40
     }
 }
 
@@ -473,7 +513,7 @@ struct PaletteFields: View {
                 TextField("配色名称", text: $palette.name)
                     .focused(nameFocused).submitLabel(.done).onSubmit { nameFocused.wrappedValue = false }
                     .keyboardInputRegion().accessibilityIdentifier("paletteName")
-            }.listRowBackground(Color(uiColor: theme.surface))
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             if let appPreview {
                 Section {
                     PalettePreview(theme: appPreview).accessibilityIdentifier("palettePreview")
@@ -481,24 +521,24 @@ struct PaletteFields: View {
                 }
             }
             if !themeColorsReadable(c: palette.colors) {
-                Section { Text("文字与背景对比不足，请调整文字、强调色或背景。").foregroundStyle(Color(uiColor: theme.destructive)) }
+                Section { Text("对比度偏低，可能不易阅读").foregroundStyle(Color(uiColor: theme.destructive)) }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
             Section("背景") {
                 color("页面", \.canvas); color("分组与面板", \.surface); color("浮层", \.raised); color("输入区", \.input)
                 color("阅读纸面", \.paper).accessibilityIdentifier("palettePaper")
-            }.listRowBackground(Color(uiColor: theme.surface))
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section("文字与操作") {
                 color("文字", \.ink); color("次要文字", \.secondary); color("禁用文字", \.disabled)
                 color("强调色", \.accent); color("强调色背景", \.accentSurface); color("强调色上的文字", \.onAccent)
                 color("边框", \.border); color("分隔线", \.separator); color("聚焦", \.focus); color("按压", \.pressed); color("选中", \.selected)
-            }.listRowBackground(Color(uiColor: theme.surface))
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section("阅读标记") {
                 color("标注", \.annotation); color("搜索结果", \.search); color("当前搜索结果", \.searchCurrent); color("文字选区", \.selection)
-            }.listRowBackground(Color(uiColor: theme.surface))
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section("状态与月亮") {
                 color("删除", \.destructive); color("删除按钮文字", \.onDestructive); color("提醒", \.warning); color("成功", \.success)
                 color("月体", \.moon); color("月海", \.maria)
-            }.listRowBackground(Color(uiColor: theme.surface))
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
         }.themedPage().scrollDismissesKeyboard(.interactively).accessibilityIdentifier("paletteEditorControls")
     }
     private func color(_ label: LocalizedStringKey, _ path: WritableKeyPath<ThemeColors, UInt32>) -> some View {
@@ -529,7 +569,7 @@ private struct AboutView: View {
                         }
                     }.accessibilityIdentifier("contactDeveloperLink")
                 }
-            }.listRowBackground(Color(uiColor: theme.surface))
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section("主要开源组件") {
                 NavigationLink("第三方许可") { ThirdPartyLicensesView() }
                     .accessibilityIdentifier("thirdPartyLicenses")
@@ -540,7 +580,7 @@ private struct AboutView: View {
                 Link("regex", destination: URL(string: "https://github.com/rust-lang/regex")!)
                 Link("SHA-2", destination: URL(string: "https://github.com/RustCrypto/hashes")!)
                 Link("UUID", destination: URL(string: "https://github.com/uuid-rs/uuid")!)
-            }.listRowBackground(Color(uiColor: theme.surface))
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
         }.themedPage().navigationTitle("关于月读").navigationBarTitleDisplayMode(.inline)
     }
 }

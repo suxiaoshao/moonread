@@ -194,7 +194,7 @@ struct AIToolServiceView: View {
                     }
                 }.listRowBackground(Color(uiColor: theme.surface))
             }
-            if saveFailed { Text("模型目录已变化，请重新选择。").foregroundStyle(Color(uiColor: theme.destructive)) }
+            if saveFailed { Text("模型目录已变化，请重新选择。").foregroundStyle(Color(uiColor: theme.destructive)).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
         }.themedPage().navigationTitle(purpose.title).navigationBarTitleDisplayMode(.inline)
             .aiAddConnectionFlow(isPresented: $adding)
             .toolbar {
@@ -227,41 +227,56 @@ private struct AIPurposeModelList: View {
     @State private var query = ""
     // Read live so returning from model management shows re-enabled models at once.
     private var connection: AIConnection? { ai.providers.connections.first { $0.id == connectionID } }
+    private var eligible: [AIModelOption] {
+        guard let connection else { return [] }
+        return connection.models.filter { AINativeCapabilities.supports(purpose, connection: connection, model: $0) }
+    }
     private var offered: [AIModelOption] {
         guard let connection else { return [] }
-        let models = connection.models.filter { AINativeCapabilities.supports(purpose, connection: connection, model: $0) }
-        return AIModelSearch.offered(models, in: connection, keeping: current, ai.providers)
+        return AIModelSearch.offered(eligible, in: connection, keeping: current, ai.providers)
     }
     var body: some View {
         if let connection { list(connection) } else { ContentUnavailableView("连接不可用", systemImage: "sparkles") }
     }
     private func list(_ connection: AIConnection) -> some View {
         let shown = AIModelSearch.filter(offered, query: query, connection: connection, ai.providers)
-        return List {
-            if offered.isEmpty {
-                ContentUnavailableView("没有启用的模型", systemImage: "sparkles").listRowBackground(Color.clear)
-                NavigationLink("管理模型") { AIConnectionView(connectionID: connection.id, startsEditingModels: true) }
-                    .listRowBackground(Color(uiColor: theme.surface))
+        return Group {
+            if eligible.isEmpty {
+                ContentUnavailableView {
+                    Label("还没有可用模型", systemImage: "sparkles")
+                } description: { Text("先连接一个 AI 账户并加载模型。") } actions: {
+                    NavigationLink("管理模型") { AIConnectionView(connectionID: connection.id, startsEditingModels: true) }
+                }
+            } else if offered.isEmpty {
+                ContentUnavailableView {
+                    Label("没有启用的模型", systemImage: "sparkles")
+                } actions: {
+                    NavigationLink("管理模型") { AIConnectionView(connectionID: connection.id, startsEditingModels: true) }
+                }
             } else if shown.isEmpty {
-                ContentUnavailableView.search(text: query).listRowBackground(Color.clear)
+                ContentUnavailableView {
+                    Label("没有匹配的模型", systemImage: "magnifyingglass")
+                } description: { Text("试试其他搜索词。") } actions: { Button("清除搜索") { query = "" } }
             } else {
-                let duplicates = AIModelSearch.duplicateNames(offered)
-                Section {
-                    ForEach(shown) { model in
-                        Button { selection = model.id; dismiss() } label: {
-                            HStack {
-                                AIModelRowLabel(model: model, duplicate: duplicates.contains(model.name),
-                                                disabled: !ai.providers.isEnabled(modelID: model.id, in: connection))
-                                if selection == model.id {
-                                    Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent))
-                                }
-                            }.contentShape(Rectangle())
-                        }.foregroundStyle(Color(uiColor: theme.ink))
-                            .accessibilityAddTraits(selection == model.id ? .isSelected : [])
-                            .accessibilityIdentifier("aiPurposeModel-\(model.id)")
-                    }
-                } header: { AIConnectionHeader(connection: connection) }
-                    .listRowBackground(Color(uiColor: theme.surface))
+                List {
+                    let duplicates = AIModelSearch.duplicateNames(offered)
+                    Section {
+                        ForEach(shown) { model in
+                            Button { selection = model.id; dismiss() } label: {
+                                HStack {
+                                    AIModelRowLabel(model: model, duplicate: duplicates.contains(model.name),
+                                                    disabled: !ai.providers.isEnabled(modelID: model.id, in: connection))
+                                    if selection == model.id {
+                                        Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent))
+                                    }
+                                }.contentShape(Rectangle())
+                            }.foregroundStyle(Color(uiColor: theme.ink))
+                                .accessibilityAddTraits(selection == model.id ? .isSelected : [])
+                                .accessibilityIdentifier("aiPurposeModel-\(model.id)")
+                        }
+                    } header: { AIConnectionHeader(connection: connection) }
+                        .listRowBackground(Color(uiColor: theme.surface))
+                }
             }
         }.themedPage().navigationTitle("选择模型").navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("搜索"))

@@ -166,7 +166,8 @@ struct LibraryCollection: UIViewControllerRepresentable {
             guard let config = configuration, sections.indices.contains(index) else { return nil }
             let section: NSCollectionLayoutSection
             if sections[index] == .overview {
-                let height: NSCollectionLayoutDimension = config.shelf?.error == nil ? .absolute(LayoutTokens.hit) : .estimated(100)
+                // The root overview includes optional index guidance and must self-size.
+                let height: NSCollectionLayoutDimension = .estimated(LayoutTokens.hit)
                 let item = NSCollectionLayoutItem(layoutSize: .init(widthDimension: .fractionalWidth(1), heightDimension: height))
                 section = NSCollectionLayoutSection(group: .vertical(layoutSize: item.layoutSize, subitems: [item]))
             } else if config.layout == .list {
@@ -359,6 +360,7 @@ private struct FolderOverview: View {
                         Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Color(uiColor: theme.secondary))
                     }.frame(minHeight: LayoutTokens.hit).contentShape(.rect)
                 }.buttonStyle(.plain).accessibilityIdentifier("library-all-books")
+                ShelfIndexGuidance(model: model, shelfID: location.shelfID)
             }
         }
     }

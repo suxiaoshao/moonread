@@ -282,3 +282,35 @@ fn text_context_skips_blank_lines_and_preserves_unicode_boundaries() {
     assert!(core.text_context(id.clone(), anchor + 1, 1, 1).is_err());
     assert!(core.text_context(id, size, 1, 1).is_err());
 }
+
+#[test]
+fn oversized_lines_keep_literal_matches_and_regex_continues_after_skipped_line() {
+    let text = format!(
+        "{}月光{}月光\n尾声月光\n",
+        "a".repeat(1024 * 1024 - 1),
+        "b".repeat(1024 * 1024)
+    );
+    let (_dir, core, id) = setup(&text);
+    let query = core.query_snapshot("{}".into()).unwrap();
+    for regex in [false, true] {
+        let search = query
+            .start_search(id.clone(), "月光".into(), regex, true, None)
+            .unwrap();
+        let mut hits = Vec::new();
+        loop {
+            let batch = search.next_batch().unwrap();
+            hits.extend(batch.hits);
+            if batch.done {
+                assert_eq!(batch.truncated, regex);
+                break;
+            }
+        }
+        assert_eq!(hits.len(), if regex { 1 } else { 3 });
+        for hit in hits {
+            assert_eq!(
+                &text[hit.start_utf8 as usize..hit.end_utf8 as usize],
+                "月光"
+            );
+        }
+    }
+}

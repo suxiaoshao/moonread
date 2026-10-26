@@ -1,9 +1,19 @@
 //! Platform-independent text ingestion, normalized positions and reader state.
 //! The caller owns authorization and file coordination for source paths.
 
+mod cache_management;
+pub use cache_management::*;
+mod backup_archive;
+pub use backup_archive::*;
+mod identity;
+pub use identity::*;
+mod validation;
+pub use validation::*;
 mod book_details;
 mod bookshelf;
+mod library_order;
 pub use book_details::*;
+pub use library_order::{ReadingDataSortEntry, reading_data_order};
 mod library_tools;
 mod migrations;
 pub use bookshelf::*;
@@ -11,6 +21,7 @@ mod cover_page;
 mod coverage;
 pub use cover_page::extract_page_images;
 mod full_index;
+pub use full_index::LibraryIdentityInventory;
 mod navigation;
 mod progressive;
 mod reading_layout;
@@ -53,6 +64,8 @@ uniffi::setup_scaffolding!();
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize, thiserror::Error, uniffi::Error)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ReaderError {
+    #[error("{message}")]
+    Backup { message: String },
     #[error("文件访问失败：{message}")]
     Io { message: String },
     #[error("数据存储失败：{message}")]
@@ -61,6 +74,10 @@ pub enum ReaderError {
     Decode { message: String },
     #[error("单个组合字符超过 64 KiB，无法安全分块")]
     GraphemeTooLong,
+    #[error("文件具有二进制特征，或文字编码选择不正确")]
+    BinaryContent,
+    #[error("正文超过可存储的范围")]
+    TextCapacityExceeded,
     #[error("未找到书籍或正文片段")]
     NotFound,
     #[error("文件没有正文")]
@@ -210,6 +227,7 @@ impl ReaderCore {
     }
 
     pub fn text_id_for_sha(&self, sha: String) -> Result<String> {
+        parse_sha256(sha.clone())?;
         self.lock()?
             .query_row("SELECT id FROM books WHERE content_sha256=?1", [sha], |r| {
                 r.get(0)
@@ -264,13 +282,9 @@ impl ReaderCore {
             has_visible_text |= text.chars().any(|c| !c.is_whitespace());
             let end = offset
                 .checked_add(text.len() as u64)
-                .ok_or_else(|| ReaderError::Decode {
-                    message: "正文过长".into(),
-                })?;
+                .ok_or(ReaderError::TextCapacityExceeded)?;
             if end > i64::MAX as u64 {
-                return Err(ReaderError::Decode {
-                    message: "正文过长".into(),
-                });
+                return Err(ReaderError::TextCapacityExceeded);
             }
             let start_count = scanner.char_count;
             scanner.push_chunk(offset, text);
@@ -294,9 +308,9 @@ impl ReaderCore {
             )?;
             hasher.update(text.as_bytes());
             offset = end;
-            index = index.checked_add(1).ok_or_else(|| ReaderError::Decode {
-                message: "正文片段过多".into(),
-            })?;
+            index = index
+                .checked_add(1)
+                .ok_or(ReaderError::TextCapacityExceeded)?;
             Ok(())
         })?;
         if !has_visible_text {
@@ -364,10 +378,7 @@ fn decoding_policy(value: &str) -> Result<&'static str> {
         .ok_or(ReaderError::InvalidSettings)
 }
 fn valid_sha(value: &str) -> bool {
-    value.len() == 64
-        && value
-            .bytes()
-            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+    parse_sha256(value.into()).is_ok()
 }
 
 fn book(db: &Connection, id: &str) -> Result<BookInfo> {

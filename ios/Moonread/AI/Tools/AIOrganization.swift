@@ -168,7 +168,7 @@ struct AIOrganizationTreeItem: Codable, Identifiable, Sendable {
         for node in nodes where node.result == nil || node.result?.canExecuteRemaining == true {
             node.conflict = nil
             if node.changedSincePreview { node.conflict = .changed; continue }
-            if node.name.isEmpty || node.name == "." || node.name == ".." || node.name.contains("/") || node.name.contains("\\") || node.name.hasPrefix(".") { node.conflict = .invalidName }
+            if (try? validateLibraryName(input: node.name, profile: .aiPreview)) == nil { node.conflict = .invalidName }
             var seen: Set<String> = [node.id], parent = node.parentRef
             while let ancestor = nodes.first(where: { $0.id == parent && $0.kind == .newFolder }) {
                 guard seen.insert(parent).inserted else { node.conflict = .cycle; break }

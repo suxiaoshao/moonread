@@ -32,6 +32,7 @@ enum MotionTokens {
 
 struct ThemeSurface: Equatable {
     let plan: ResolvedTheme
+    var readerTexture: ReaderTextureChoice? = nil
     var scheme: ColorScheme { plan.appearance == .dark ? .dark : .light }
     var style: UIUserInterfaceStyle { plan.appearance == .dark ? .dark : .light }
     func ui(_ role: KeyPath<ThemeColors, UInt32>, system: UIColor) -> UIColor {
@@ -78,7 +79,46 @@ struct ThemeSurface: Equatable {
         // custom surface, including its background rather than just the text.
         plan.colors == nil ? AnyShapeStyle(material) : AnyShapeStyle(Color(uiColor: raised))
     }
+    struct PaperInput: Equatable {
+        let paper: UInt32
+        let ink: UInt32
+        let choice: ReaderTextureChoice?
+        let scale: CGFloat
+    }
+    func paperInput(scale: CGFloat) -> PaperInput {
+        PaperInput(paper: paper.opaqueRGB, ink: ink.opaqueRGB, choice: plan.colors == nil ? nil : readerTexture, scale: max(1, scale))
+    }
+    static func paperBackground(_ input: PaperInput) -> UIColor {
+        guard input.choice != nil else { return UIColor(rgb: input.paper) }
+        return UIColor(patternImage: paperTile(input))
+    }
+    static func paperTile(_ input: PaperInput) -> UIImage {
+        let paper = UIColor(rgb: input.paper)
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = input.scale; format.opaque = true; format.preferredRange = .standard
+        return UIGraphicsImageRenderer(size: CGSize(width: 256, height: 256), format: format).image { context in
+            paper.setFill(); context.fill(CGRect(x: 0, y: 0, width: 256, height: 256))
+            context.cgContext.interpolationQuality = .none
+            if let choice = input.choice, let source = UIImage(named: choice.id.assetName) {
+                source.withTintColor(UIColor(rgb: input.ink), renderingMode: .alwaysOriginal)
+                    .draw(in: CGRect(x: 0, y: 0, width: 256, height: 256), blendMode: .normal,
+                          alpha: CGFloat(readerTextureAlpha(paper: input.paper, ink: input.ink, strength: choice.strength)))
+            }
+        }
+    }
     static let initial = ThemeSurface(plan: try! resolveThemes(value: defaultThemeSnapshot(), system: .light, highContrast: false).app)
+}
+
+extension ReaderTextureId {
+    var label: LocalizedStringKey {
+        switch self { case .paper: "宣纸"; case .kraft: "牛皮纸"; case .linen: "细麻布"; case .grain: "颗粒" }
+    }
+    var assetName: String {
+        switch self { case .paper: "ReaderTexturePaper"; case .kraft: "ReaderTextureKraft"; case .linen: "ReaderTextureLinen"; case .grain: "ReaderTextureGrain" }
+    }
+}
+extension ReaderTextureStrength {
+    var label: LocalizedStringKey { switch self { case .light: "淡"; case .medium: "中"; case .strong: "浓" } }
 }
 
 extension UIColor {
@@ -124,8 +164,12 @@ final class ThemeStore {
 
     init(persistPreferences: @escaping @MainActor (ThemePreferences) async throws -> ThemeSnapshot) {
         self.persistPreferences = persistPreferences
+        #if DEBUG
         let args = ProcessInfo.processInfo.arguments
         let session = args.firstIndex(of: "--ui-test-session").flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil }
+        #else
+        let session: String? = nil
+        #endif
         cacheKey = "Moonread.appearanceCache.\(session ?? "library")"
         snapshot = UserDefaults.standard.string(forKey: cacheKey).flatMap { try? decodeThemeSnapshot(json: $0) } ?? defaultThemeSnapshot()
         #if DEBUG
@@ -143,7 +187,10 @@ final class ThemeStore {
             ?? (try! resolveThemes(value: defaultThemeSnapshot(), system: system, highContrast: highContrast))
     }
     var app: ThemeSurface { ThemeSurface(plan: resolved.app) }
-    var reader: ThemeSurface { ThemeSurface(plan: resolved.reader) }
+    var reader: ThemeSurface {
+        let plan = resolved.reader
+        return ThemeSurface(plan: plan, readerTexture: plan.appearance == .light ? snapshot.preferences.readerLightTexture : snapshot.preferences.readerDarkTexture)
+    }
 
     func load() async {
         await preferencesTask?.value

@@ -24,8 +24,8 @@ enum LibraryPendingDecision: Identifiable {
 enum LibraryTrashChoice { case permanentlyDelete, skip }
 
 enum LibraryFilePicker {
-    case folder(String?), novels(LibraryLocation)
-    var types: [UTType] { if case .folder = self { [.folder] } else { [.plainText] } }
+    case folder(String?), novels(LibraryLocation), reauthorize(ShelfReference, scope: String)
+    var types: [UTType] { if case .novels = self { [.plainText] } else { [.folder] } }
     var multiple: Bool { if case .novels = self { true } else { false } }
 }
 
@@ -75,25 +75,11 @@ struct LibraryPresentations: ViewModifier {
                 case .move(let entries): NavigationStack { LibraryMoveDestination(model: model, entries: entries, location: nil) }.themeScope(theme)
                 case .export(let files): LibraryExportPicker(files: files)
                 case .share(let files): LibraryShareSheet(files: files)
-                case .fullIndex(let shelf): FullIndexView(shelfID: shelf).themeScope(theme)
+                case .fullIndex(let shelf): FullIndexView(shelfID: shelf) { id in
+                    model.runAfterSheetDismiss { model.openIndexFailure(id) }
+                }.themeScope(theme)
                 case .importResults:
-                    NavigationStack {
-                        List {
-                            if let result = model.sharedImportResult {
-                                Text(verbatim: result).listRowBackground(Color(uiColor: theme.surface))
-                            }
-                            ForEach(model.importFailures) { failure in
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text(verbatim: failure.url.lastPathComponent).font(.headline)
-                                    Text(verbatim: failure.message).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                                    Button("重试", systemImage: "arrow.clockwise") {
-                                        model.runAfterSheetDismiss { model.retryImport(failure) }
-                                    }
-                                }.listRowBackground(Color(uiColor: theme.surface))
-                            }
-                        }.themedPage().navigationTitle(model.sharedImportResult == nil ? String(localized: "未完成的导入") : String(localized: "导入结果", table: "ShareReceive"))
-                            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成", systemImage: "checkmark") { model.sheet = nil }.labelStyle(.titleOnly) } }
-                    }.themeScope(theme)
+                    LibraryImportResultsView(model: model).themeScope(theme)
                 }
             }
             .onChange(of: model.path) { _, _ in model.showDeferredIndexPrompt() }
@@ -236,7 +222,7 @@ private struct LibraryNameEditor: View {
     @Environment(\.theme) private var theme
     @State private var name = ""
     @FocusState private var focused: Bool
-    private var isValid: Bool { !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !name.contains("/") && !name.contains(":") && !name.hasPrefix(".") }
+    private var isValid: Bool { (try? validateLibraryName(input: name, profile: .manualForm)) != nil }
     var body: some View {
         NavigationStack {
             Form {
@@ -324,7 +310,7 @@ private struct LibraryExportPicker: UIViewControllerRepresentable {
     }
 }
 
-private struct LibraryShareSheet: UIViewControllerRepresentable {
+struct LibraryShareSheet: UIViewControllerRepresentable {
     let files: LibraryExport
     func makeUIViewController(context: Context) -> UIActivityViewController {
         let controller = UIActivityViewController(activityItems: files.urls, applicationActivities: nil)
@@ -337,4 +323,42 @@ private struct LibraryShareSheet: UIViewControllerRepresentable {
         return controller
     }
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}
+}
+
+/// The result is a completion panel; only failures need file rows and retry actions.
+private struct LibraryImportResultsView: View {
+    @Environment(\.theme) private var theme
+    @Bindable var model: LibraryModel
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 16) {
+                if model.importFailures.isEmpty {
+                    ContentUnavailableView {
+                        Label("导入完成", systemImage: "checkmark.circle")
+                    } description: {
+                        if let result = model.sharedImportResult { Text(verbatim: result) }
+                    }
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("部分文件未导入", systemImage: "exclamationmark.circle").font(.headline)
+                        if let result = model.sharedImportResult { Text(verbatim: result).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
+                    }.frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.top)
+                    List(model.importFailures) { failure in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(verbatim: failure.url.lastPathComponent).font(.headline)
+                            Text(verbatim: failure.message).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                            Button("重试", systemImage: "arrow.clockwise") {
+                                model.runAfterSheetDismiss { model.retryImport(failure) }
+                            }
+                        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                    }.contentMargins(.top, 0, for: .scrollContent)
+                }
+            }.themedPage().navigationTitle(String(localized: "导入结果", table: "ShareReceive"))
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("完成") { model.sheet = nil }.accessibilityIdentifier("finishImportResults")
+                    }
+                }
+        }
+    }
 }

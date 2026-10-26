@@ -31,7 +31,7 @@ struct AIProposalSourcesSheet: View {
                 case .text(let source):
                     Button { preview = source } label: {
                         Label(source.title.isEmpty ? String(localized: "原文") : source.title, systemImage: "text.quote")
-                    }.foregroundStyle(Color(uiColor: theme.ink))
+                    }.foregroundStyle(Color(uiColor: theme.ink)).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                 case .web(let source):
                     Button { if let url = URL(string: source.url) { openURL(url) } } label: {
                         VStack(alignment: .leading, spacing: 2) {
@@ -39,7 +39,7 @@ struct AIProposalSourcesSheet: View {
                             Text(verbatim: URL(string: source.url)?.host ?? source.url).font(.caption)
                                 .foregroundStyle(Color(uiColor: theme.secondary))
                         }
-                    }.foregroundStyle(Color(uiColor: theme.ink))
+                    }.foregroundStyle(Color(uiColor: theme.ink)).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                 }
             }
             .themedPage().navigationTitle("来源").navigationBarTitleDisplayMode(.inline)

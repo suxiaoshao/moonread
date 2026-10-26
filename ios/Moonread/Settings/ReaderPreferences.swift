@@ -85,6 +85,7 @@ struct ReaderSettingsView: View {
     @Environment(\.theme) private var theme
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.displayScale) private var displayScale
     @AppStorage("readingSettingsTab") private var tab = ReadingSettingsTab.typography
     @State private var editedAppearance: ThemeAppearance?
     @State private var previewPresented = false
@@ -102,15 +103,18 @@ struct ReaderSettingsView: View {
     private var appearance: ThemeAppearance { editedAppearance ?? themes.reader.plan.appearance }
     private var previewExpanded: Bool { verticalSizeClass == .compact || previewDetent == .large }
     private var previewCollapsed: Bool { verticalSizeClass != .compact && previewDetent == .height(60) }
+    private var texture: ReaderTextureChoice? {
+        appearance == .light ? themes.snapshot.preferences.readerLightTexture : themes.snapshot.preferences.readerDarkTexture
+    }
     private var previewTheme: ThemeSurface {
         if let draft {
             return ThemeSurface(plan: ResolvedTheme(appearance: draft.palette.appearance, highContrast: themes.highContrast,
-                                                   colors: draft.palette.colors, paletteId: draft.palette.id))
+                                                   colors: draft.palette.colors, paletteId: draft.palette.id), readerTexture: texture)
         }
         var snapshot = themes.snapshot
         snapshot.preferences.readerMode = appearance == .light ? .light : .dark
         guard let plan = try? resolveThemes(value: snapshot, system: themes.system, highContrast: themes.highContrast) else { return themes.reader }
-        return ThemeSurface(plan: plan.reader)
+        return ThemeSurface(plan: plan.reader, readerTexture: texture)
     }
     var body: some View {
         GeometryReader { geometry in
@@ -184,8 +188,10 @@ struct ReaderSettingsView: View {
                     .foregroundStyle(Color(uiColor: previewTheme.secondary))
                     .accessibilityIdentifier("toggleReadingPreview")
                     .accessibilityLabel(previewExpanded ? "收起预览" : "展开预览")
+                    #if DEBUG
                     .accessibilityValue(ProcessInfo.processInfo.arguments.contains("--ui-testing")
                         ? (previewExpanded ? "full" : previewDetent == .medium ? "half" : "compact") : "")
+                    #endif
                     ReadingPreviewPane(source: preview, settings: settings, surface: previewTheme, position: previewPosition)
                         .opacity(previewCollapsed ? 0 : 1)
                         .accessibilityHidden(previewCollapsed)
@@ -198,7 +204,11 @@ struct ReaderSettingsView: View {
                 .presentationDragIndicator(.visible)
                 .presentationContentInteraction(.resizes)
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
-                .presentationBackground(Color(uiColor: previewTheme.paper))
+                .presentationBackground {
+                    if let tile = previewPosition.paperTile(previewTheme.paperInput(scale: displayScale)) {
+                        Image(uiImage: tile).resizable(resizingMode: .tile).ignoresSafeArea()
+                    } else { Color(uiColor: previewTheme.paper) }
+                }
                 .preferredColorScheme(previewTheme.scheme)
                 .interactiveDismissDisabled()
                 .onAppear { previewVisible = true }

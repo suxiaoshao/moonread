@@ -151,7 +151,7 @@ Swift 上报正文可见性、实际交互、场景状态、单调时间和墙�
 
 片段保存在 SwiftData `ReadingFact`，包含正文身份、会话、连续访问 `visit_id`、设备、UTC 起止、发生地自然日/时区、正式或查阅类型、可见范围停留证据。SHA 完成前按临时身份保存，正文完成后从设备存储转入 SHA 正式用户存储。覆盖查询根据连续范围和 3 秒门槛派生，不把原始可见范围直接作为已读。
 
-阅读记录设置用独立 generation 阻断清理前的迟到写入；失败保留原 ID 重试，有界队列积满时暂停新增记录，并在统计页显示错误。数据库版本统一见[数据结构](../data/README.md)，后续持久化变更须带版本与迁移测试，不能清空统计代替升级；外部及云目录原件不随迁移改写。真实设备的锁屏/长时性能、辅助功能及跨设备验证边界见[验证记录](../engineering/verification.md)。
+阅读记录设置用独立 generation 阻断清理前的迟到写入；统计写入按顺序每批只尝试一次，失败就丢弃该批并在统计页提示错误，不重试、不补写；批次完成或失败后释放 lease，没有队列上限对计时的影响。导出和删除只需 drain 等待当前写入结束。数据库版本统一见[数据结构](../data/README.md)，后续持久化变更须带版本与迁移测试，不能清空统计代替升级；外部及云目录原件不随迁移改写。真实设备的锁屏/长时性能、辅助功能及跨设备验证边界见[验证记录](../engineering/verification.md)。
 
 计时平台依据：[ScenePhase](https://developer.apple.com/documentation/swiftui/scenephase)、[失活时暂停与保存](https://developer.apple.com/documentation/uikit/uiscenedelegate/scenewillresignactive(_:))、[ContinuousClock](https://developer.apple.com/documentation/swift/continuousclock)。Apple Books 提供阅读分钟和目标功能，但[公开说明](https://support.apple.com/guide/iphone/set-reading-goals-iph6013e96f4/ios)没有公布可照搬的闲置算法。
 
@@ -166,3 +166,5 @@ Swift 上报正文可见性、实际交互、场景状态、单调时间和墙�
 本机 UserDefaults 独立键 `Moonread.readingReview.requests.v1` 保存已请求版本集合及最后请求时间，不进入 CloudKit。调用前先记请求，系统未显示也不反复请求；应用无法得知是否实际显示或评分。读取不了记录时保留原值并跳过。系统是否显示由 StoreKit 决定，TestFlight 不显示属于系统行为。参见 [Apple 的评分请求说明](https://developer.apple.com/documentation/storekit/requesting-app-store-reviews)。不显示自定义预弹窗。
 
 设置的“关于”区域始终提供“给月读评分”链接，打开 `https://apps.apple.com/app/id6823849812?action=write-review`，不受自动请求条件限制。
+
+暂停、保存失败和兼容说明合并为摘要区域外的紧凑状态；保存失败或兼容细节可展开，保留现有统计内容，并提供统计设置入口。

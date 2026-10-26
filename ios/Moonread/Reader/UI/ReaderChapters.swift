@@ -144,6 +144,9 @@ struct ChapterRebuildView: View {
                     if model.progress?.done != true { LoadingActivity(size: 28, fraction: model.progress?.fraction) }
                     Text("已识别 \(Int(model.progress?.count ?? 0)) 章").monospacedDigit(); Spacer()
                 }.frame(minHeight: 44)
+                if let error = model.rebuildError ?? model.actionError {
+                    Label(error, systemImage: "exclamationmark.circle").foregroundStyle(Color(uiColor: theme.destructive)).accessibilityIdentifier("chapterRebuildError")
+                }
             }.listRowBackground(Color(uiColor: theme.surface))
             Section {
                 ForEach(model.headings, id: \.startUtf8) { heading in
@@ -158,7 +161,6 @@ struct ChapterRebuildView: View {
                     }.listRowBackground(Color(uiColor: theme.surface))
                 }
             }
-            if let error = model.rebuildError ?? model.actionError { Text(error).foregroundStyle(Color(uiColor: theme.destructive)) }
         }
         .themedPage().navigationTitle("目录预览").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) {

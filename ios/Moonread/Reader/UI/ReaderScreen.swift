@@ -682,9 +682,11 @@ struct ReaderScreen: View {
                         .accessibilityValue(timeline.date.formatted(.dateTime.hour().minute()))
                         .accessibilityIdentifier("readingClock")
                 }
-                Image(systemName: battery.symbol)
-                    .accessibilityLabel(battery.accessibilityLabel)
-                    .accessibilityIdentifier("readingBattery")
+                if let symbol = battery.symbol {
+                    Image(systemName: symbol)
+                        .accessibilityLabel(battery.accessibilityLabel)
+                        .accessibilityIdentifier("readingBattery")
+                }
             }
             .fixedSize()
         }
@@ -692,7 +694,7 @@ struct ReaderScreen: View {
         .foregroundStyle(Color(uiColor: theme.secondary))
         .padding(.horizontal, ReadingTypography.insets(session.settings ?? defaultReaderSettings(), width: readerWidth).left)
         .frame(height: compactHeaderHeight)
-        .background(Color(uiColor: theme.paper))
+        // The full-screen reader supplies the continuous paper behind this overlay.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("readerCompactHeader")
         .allowsHitTesting(session.atPreparedEdge)
@@ -704,9 +706,13 @@ struct ReaderScreen: View {
             .monospacedDigit()
             .accessibilityLabel("阅读进度")
             .accessibilityIdentifier("readingProgress")
+            #if DEBUG
             .accessibilityValue(ProcessInfo.processInfo.arguments.contains("--ui-testing")
                                 ? String(session.anchor)
                                 : fraction.formatted(.percent.precision(.fractionLength(1))))
+            #else
+            .accessibilityValue(fraction.formatted(.percent.precision(.fractionLength(1))))
+            #endif
     }
 
     private var readerNavigationVisible: Bool {
@@ -991,15 +997,17 @@ struct ReaderScreen: View {
 
 /// Battery monitoring is a platform concern and only runs while reading.
 @MainActor @Observable
-private final class ReaderBattery {
+final class ReaderBattery {
     private(set) var level: Float = -1
     private(set) var state: UIDevice.BatteryState = .unknown
     private var observers: [NSObjectProtocol] = []
     private var wasMonitoring = false
 
-    var symbol: String {
+    var symbol: String? { Self.symbol(level: level, state: state) }
+
+    static func symbol(level: Float, state: UIDevice.BatteryState) -> String? {
+        guard level >= 0 else { return nil }
         if state == .charging { return "battery.100percent.bolt" }
-        guard level >= 0 else { return "battery.0percent" }
         switch level {
         case ..<0.125: return "battery.0percent"
         case ..<0.375: return "battery.25percent"

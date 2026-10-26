@@ -51,11 +51,14 @@ enum AIConnectionState: Equatable {
         self.defaults = defaults; self.auth = auth
         auth.network.bind(self.availability)
         self.catalog.network.bind(self.availability)
+        #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         let session = arguments.firstIndex(of: "--ui-test-session").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
+        #endif
         connections = AIPersistedJSON.readArray(AIConnection.self, data: defaults.data(forKey: "Moonread.ai.connections"), key: "Moonread.ai.connections")
         defaultTextConnectionID = defaults.string(forKey: "Moonread.ai.defaultTextConnection")
         purposeDefaults = AIPersistedJSON.readDictionary(AIPurposeSelection.self, data: defaults.data(forKey: "Moonread.ai.purposeDefaults"), key: "Moonread.ai.purposeDefaults")
+        #if DEBUG
         if arguments.contains("--ui-testing"), session != nil, arguments.contains("--ui-test-ai-model-picker") {
             var first = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection(); first.id = "fixture-first"; first.name = "测试连接甲"
             first.models = [AIModelOption(id: "shared", name: "Same Model", thinking: ["low", "high"], defaultThinking: "low")]
@@ -74,7 +77,6 @@ enum AIConnectionState: Equatable {
             connections = [first, second]; defaultTextConnectionID = first.id
             authenticatedConnections = [first.id, second.id]
         }
-        #if DEBUG
         if arguments.contains("--ui-testing"), session != nil, arguments.contains("--ui-test-ai-key-write-failure") {
             var connection = AIConnection(name: "离线密钥连接", billing: .usage, baseURL: "https://example.com", providerID: "fixture", providerName: "Fixture", wireProtocol: .chat, authMethod: .apiKey)
             connection.id = "fixture-key"; connections = [connection]; authenticatedConnections = [connection.id]
@@ -372,7 +374,9 @@ enum AIConnectionState: Equatable {
     func refreshCatalogsIfNeeded() async {
         try? await availability.perform {
             self.catalogActivated = true
+            #if DEBUG
             guard !ProcessInfo.processInfo.arguments.contains("--ui-testing"), ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] == nil else { return }
+            #endif
             await self.catalog.refresh()
             try self.availability.requireAvailable()
             await self.refreshConnectionCatalogsIfNeeded()

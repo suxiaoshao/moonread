@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | TXT、文件名、真实子目录、移动与删除 | 本地目录或 iCloud Documents；iCloud 文件由系统同步 | 真实文件及其所在目录 |
 | 进度、书签、批注、人工章节修正、阅读事实 | SwiftData 与自动 CloudKit | 正文 SHA；标记另有稳定 ID |
-| 配色方案本身 | SwiftData 与自动 CloudKit；显示选择和排版偏好留在设备 | 设置字段及配色 ID |
+| 配色方案本身 | SwiftData 与自动 CloudKit；显示选择、阅读纹理/强度和排版偏好留在设备 | 设置字段及配色 ID |
 | 缓存、授权、任务与设备状态 | 留在本机 | 本机状态 |
 
 CloudKit 不再重复保存一份藏书目录清单、文件夹树或 TXT 附件。目录提供的文件清单是来源事实，本机索引用于展示和快速定位；有阅读记录但暂时没有原文件是正常状态。
@@ -24,6 +24,14 @@ CloudKit 不再重复保存一份藏书目录清单、文件夹树或 TXT 附件
 普通读取、改名、移动和删除采用 `NSFileCoordinator`；文件呈现与观察更新跟踪外部变化，目录清单不能只依赖长期不变的绝对 URL。iCloud 根通过元数据查询发现文件及状态，外部根用提供方支持的协调访问和变更机制；平台适配差异不扩展为两种书架业务。[Apple：iCloud 文件协调与发现](https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/FileSystemProgrammingGuide/iCloud/iCloud.html)
 
 应用内不提供重命名、移动、移除我的书架根入口或改变其位置的操作，内部文件与子目录仍可管理。容器确认可用而固定目录不存在时可以创建空根；绝不从阅读缓存重建用户已经删除的 TXT。
+
+## 外部书架的同步提示与本机授权
+
+`UserValue` 新增 `shelf-reference/<logical UUID>`，载荷为 `{schemaVersion: 1, name, locationDescription}`，沿现有 `StoredValue(updated, token, value)` 的 LWW 裁决；来源描述仅接受 `icloud-drive` 或 `file-provider`；其他值的原记录保留并单条隔离，不参与 LWW，也不遮蔽同一逻辑 ID 的可用提示。不包含路径、bookmark、本机 ID 或文件清单。内置根不发布提示。不新增 SwiftData model 或 CloudKit 字段；旧版本保留不认识的原记录，新版本按条目隔离未知载荷，不阻断其他记录或改写未知版本。
+
+`ShelfReferenceBindings`（UserDefaults，schemaVersion 1）仅在本机保存逻辑 ID 与本机授权根的绑定、本机忽略、已处理整架引导及已发布描述。按用户存储/账户分域，首次从本机开启同步时沿用逻辑 ID，后续切换账户不复制旧账户绑定；未知版本只读拒绝覆盖。提示迟到不阻塞首页；目录选择成功后才绑定，不凭同名自动接入。已有设备须先升级并上传提示；重装不保证恢复从未同步过的根。
+
+重新授权或内置根首次可用后，可经现有全量索引重新关联 SHA 用户数据；未下载云文件仍需用户选择包含。同步提示并不授予目录访问权，也不改变[最近阅读逐本恢复](recent-reading-restoration.md)规则。真实跨设备提示与授权恢复的验收单独记录，不能用本地注入代替。
 
 ## 固定目录与同步控制
 
@@ -57,7 +65,7 @@ SwiftData 的 `UserDataStore`（ModelActor）是用户数据持久化入口。`R
 | 数据 | 保存与同步 |
 | --- | --- |
 | 小说作者、简介、标签、手动状态 | SwiftData；字段独立、标签按成员保存，按 SHA 关联 |
-| 自定义配色方案本身 | SwiftData；当前使用的配色、明暗及动效留在本机 |
+| 自定义配色方案本身 | SwiftData；当前使用的配色、明暗、阅读纹理/强度及动效留在本机 |
 | 正式位置 | SwiftData；按更新时间与稳定标识取最终结果；同版本保存用于定位原文件的相对路径、文件名、大小和解码策略线索，详见[最近阅读恢复](recent-reading-restoration.md) |
 | 书签、批注及人工章节修正 | SwiftData；按 SHA 关联，不依赖本机有原件或正文缓存 |
 | 阅读事实与清理边界 | SwiftData；片段 ID 防止重试重复，各设备独立事实全部累加，时间重叠不扣除 |
@@ -121,7 +129,7 @@ SwiftData 的 `UserDataStore`（ModelActor）是用户数据持久化入口。`R
 
 同步字符串 payload 的顶层 envelope 使用整数 `v`，缺失单独视为 1；非整数、非法版本或高于 1 不理解。版本覆盖内层 value，不在嵌套对象重复，也不在 SwiftData `@Model` 上添加版本属性。校验集中在 Swift `UserSyncJSON` 存储边界，不给 Rust/UniFFI 类型增加 serde Map；通过校验后才交给计算投影。整数字段按声明宽度直接解码，不先经过 Double。
 
-v1 写入所有字段，Optional 的 nil 显式写 `null`。读取同时检查**键集合与类型**：必需键缺失、null 用在非 Optional 上、错误类型、未声明字段（含嵌套对象）、解码失败都隔离。兼容字段默认值白名单当前为空，只有未来另行声明的新增字段可采用安全默认。开发期旧的省略 nil 编码不兼容；生产 CloudKit 为空，发布前由开发者删除重装开发版、清理开发环境数据，不增加旧编码读取分支或运行时自动清库。
+v1 写入所有字段，Optional 的 nil 显式写 `null`。读取同时检查**键集合与类型**：必需键缺失、null 用在非 Optional 上、错误类型、未声明字段（含嵌套对象）、解码失败都隔离。位置的 `source_hint` 是兼容例外：TestFlight 1.0.0(2) 未写此字段，缺失按 nil 读取；其他必需字段仍不能缺失。未分发开发版的其他省略 nil 编码不作为通用缺省例外；已发布数据按明确的兼容规则保留，不运行时自动清库。
 
 | 顶层记录 | v1 字段（除可缺失的 v 外，其余键必须存在） |
 | --- | --- |
@@ -130,7 +138,7 @@ v1 写入所有字段，Optional 的 nil 显式写 `null`。读取同时检查**
 | ReadingFact | content_key、title、device、slice |
 | StatisticsClear | book、session、through（Int64）、ids |
 
-批注 `content:null` 是删除 tombstone，`mergedInto:null` 是未合并；`relatedMarks` 总是数组。统计清除的 `book:null` / `session:null` 才表示不限定该维度，缺键不能解释为全局。位置内层字段为 content_key/offset；章节为 content_key/offset/title/level/excluded；批注 content 为 start/end/excerpt/note。slice、exposures、cover、调色板及颜色对象逐层使用当前声明的完整字段集合；UserCover 的 bytes 不加 envelope，约定同 id 字节不可变。不支持的封面格式显示占位并保留引用与原字节。
+批注 `content:null` 是删除 tombstone，`mergedInto:null` 是未合并；`relatedMarks` 总是数组。统计清除的 `book:null` / `session:null` 才表示不限定该维度，缺键不能解释为全局。位置内层字段为 content_key/offset/source_hint（历史缺失来源线索按 nil 读取）；章节为 content_key/offset/title/level/excluded；批注 content 为 start/end/excerpt/note。slice、exposures、cover、调色板及颜色对象逐层使用当前声明的完整字段集合；UserCover 的 bytes 不加 envelope，约定同 id 字节不可变。不支持的封面格式显示占位并保留引用与原字节。
 
 v1 key 白名单：`position/{contentKey}`、`chapter/{contentKey}/{offset}`、`palette/{id}`、`metadata/{sha}/{author,synopsis,status,cover,tag-*}`。遍历、投影、批量操作和 pending 转移不处理未知 key；保留其原始记录，metadata 只投影已知属性。内层 null 仅用于声明允许删除的章节、封面、标签、调色板；author/synopsis/status 必须是字符串。
 
@@ -150,3 +158,17 @@ v1 key 白名单：`position/{contentKey}`、`chapter/{contentKey}/{offset}`、`
 UserValue 按 `(updated, token)` 做整值 LWW；位置候选写入与压缩也遵循这一顺序。Swift 用户事实层的 `PositionCandidate.winner` 是位置的唯一胜者函数，即时投影、scoped 合并和 pending 晋升共用；投影保留 token，pending 别名归并到正文 SHA 后，每个 content key 只交给 Rust 一条最终位置，Rust 装载时拒绝重复 key。并发位置或同一独立属性互相覆盖是允许的产品语义，`v` 不能保全离线设备从未看到的新信息。需要保全的新数据必须拆为独立 key、独立不可变记录或显式字段级合并，不能声称“保留未知字段”就解决跨版本 LWW。批注沿用因果候选而非整对象 LWW，统计事实/清除是不可变记录。
 
 隔离状态依据**仍存在的无法理解记录**计算，不依据哪个 v1 候选最后到达；后到或时间戳更高的旧版记录不能解除隔离。验证必须经 UserDataStore/ReaderService 的真实保存链路，覆盖 v1→v2 与 v2→离线 v1 两种到达顺序、压缩/append/清除/pending、未知嵌套字段、缺失/null/错类型、整数精度与明确修改状态；本机模拟导入不等同于真实双设备 CloudKit 验收。
+
+## 整书阅读数据删除与备份恢复
+
+整书清除删除当前 SwiftData 中所选正文 SHA 的全部物理候选/副本，由 CloudKit 镜像传播对象删除；不新增 book-reset、删除代次或同步 epoch，不要求所有设备升级。共享封面只有无剩余引用才删除，跨书/全局统计清除保留，配色和小说不动。本机保存成功不表示所有设备已完成删除；关闭同步时不承诺追溯删除未同步云记录。其他设备的新事实及主动导入旧备份允许保存，正常旧备份合并仍保留已有较新数据。
+
+本机串行处理位置 flush 与清除、pending 跨库清理；导出和删除先 drain 等待 StatisticsWriter 的当前写入结束。统计按顺序每批只写一次，失败即丢弃该批、保留错误提示，完成后释放其 lease；没有重试队列、上限或重试入口。删除先清 pending 库，再清正式库，各自一次提交；中途退出仅会剩下正式库数据，列表仍可见，用户可再次删除。不保存删除回执，也不在启动或后续写入时补删。drain 后只检查仍然开着的阅读器，正在阅读时拒绝删除。
+
+不能理解的数据在编辑、合并、导入时仍隔离保护，不能改写。用户主动整书删除是明确的例外：按 `metadata/<key>/…`、`chapter/<key>/…`、`position/<key>` 或记录的 `contentKey` 归属删除全部物理候选，不要求 payload 可读；统计清除只需能读出属于该书的 `book`。未知类型前缀、无法识别书键或无法解出 `book` 的统计清除原样保留，跨书／全局清除仍保留。列表中的 unsupported 书也允许整书删除。封面资产仅在引用可理解且无剩余引用时回收；被删或剩余的引用只要有读不懂的，就保守保留资产。
+
+备份和 pending 晋升共用位置胜者及不可变批注/事实接入，保留 updated/token、ID 和因果，冲突 ID 拒绝并回滚。历史 pending 晋升可能留下内层 pending content_key 的事实：正式 ReadingFact.contentKey 为权威路由，与现有 visibleFacts 一样处理，备份保持原 payload；内外两个正式 SHA 不一致仍拒绝。未知必需 payload 保留原数据并阻止导入，不降级或重编码。
+
+同 token 的位置重试按 updated 与解码后 PositionValue 的内容相等判断，不比较 JSON 键排列；pending 晋升和备份位置接入共用该判断。备份快照是 UserDataStore 上不挂起的同步调用；预览后的最终校验在导入事务中执行，保留账户/configuration 检查，不将全局投影缓存 epoch 当成该 store 的一致性凭据。
+
+库存诊断区分较新格式（高 v、未知类型或字段）、数据无法读取（坏结构）与读取失败（存储/查询异常）；只在确认为较新格式时建议更新。诊断只返回书键、可得书名/来源、记录类型和原因，不返回 payload。统计清除的 book 可以是正式 SHA 或非空 pending 键，旧作用域在库存、备份和整书删除中保持可读。

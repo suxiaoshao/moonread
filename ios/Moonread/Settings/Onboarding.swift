@@ -74,22 +74,30 @@ struct ReaderSelectionTip: Tip {
     private(set) var selectedText: Bool
     init(defaults: UserDefaults = .standard, enabled: Bool? = nil, showIntroduction: Bool? = nil, invalidate: ((TipTarget) -> Void)? = nil) {
         self.invalidation = invalidate
+        #if DEBUG
         let args = ProcessInfo.processInfo.arguments
         self.tipsEnabled = enabled ?? (!args.contains("--disable-tips") && (!args.contains("--ui-testing") || args.contains("--ui-test-tips")))
         let session = args.firstIndex(of: "--ui-test-session").flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil }
         self.defaults = session.flatMap { UserDefaults(suiteName: "Moonread.Onboarding." + $0) } ?? defaults
         completed = !(showIntroduction ?? (!args.contains("--ui-testing") || args.contains("--ui-test-introduction"))) || self.defaults.bool(forKey: Self.completionKey)
+        #else
+        self.tipsEnabled = enabled ?? true
+        self.defaults = defaults
+        completed = !(showIntroduction ?? true) || defaults.bool(forKey: Self.completionKey)
+        #endif
         imported = self.defaults.bool(forKey: Key.imported)
         revealedControls = self.defaults.bool(forKey: Key.controls)
         selectedText = self.defaults.bool(forKey: Key.selection)
         guard tipsEnabled, invalidate == nil else { return }
         do {
             var config: [Tips.ConfigurationOption] = [.displayFrequency(.immediate)]
+            #if DEBUG
             if let session {
                 let url = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Tips-" + session)
                 try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
                 config.append(.datastoreLocation(.url(url)))
             }
+            #endif
             try Tips.configure(config)
         } catch { tipsEnabled = false }
     }

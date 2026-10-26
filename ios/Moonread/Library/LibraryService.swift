@@ -114,33 +114,35 @@ final class LibraryExport: Sendable {
 
 extension LibraryEntry {
     /// Reading data follows normalized text; unfinished imports retain their pending namespace.
-    var readingKey: String? { contentSha256 ?? bookId.map { "pending:" + $0 } }
+    var readingKey: String? { readingIdentity.map { serializeReadingKey(key: $0) } }
     var source: SourceFile { SourceFile(id: id, shelfID: shelfId, relativePath: relativePath) }
     var location: LibraryLocation { LibraryLocation(shelfID: shelfId, path: relativePath) }
     var parent: LibraryLocation { LibraryLocation(shelfID: shelfId, path: parentPath) }
     var title: String { directory ? name : URL(fileURLWithPath: name).deletingPathExtension().lastPathComponent }
 }
 
+struct LibraryScanSnapshot: Sendable {
+    var items: [ScannedLibraryItem]
+    var failedPaths: [String] = []
+    var failures: [String] = []
+}
+
 extension ReaderService {
     func libraryEntry(_ id: String) async throws -> LibraryEntry {
-        let file = try textCore().sourceFileLocation(fileId: id)
-        let query: ReaderQuery
-        if let book = file.bookId { query = try await bookQuery(book) }
-        else { query = try await effectiveQuery(keys: try textCore().indexedSourceKeys(shelfId: nil, fileId: id), scope: "unprepared-file") }
-        return try query.libraryEntry(fileId: id)
+        let core = try textCore()
+        // Only this file and its original import alias are needed.
+        let identity = try core.fileIdentity(fileId: id)
+        var selected = identity.key.map { [$0] } ?? []
+        if let alias = identity.pendingAlias { selected.append(alias) }
+        return try await effectiveQuery(keys: selected.map { serializeReadingKey(key: $0) }, scope: "file-" + id).libraryEntry(fileId: id)
+    }
+    func catalogueScope(_ location: LibraryLocation?, recursive: Bool) -> CatalogueScope {
+        .init(shelfId: location?.shelfID, parentPath: location?.path, recursive: recursive)
     }
     func catalogueQuery(_ location: LibraryLocation?, recursive: Bool) async throws -> ReaderQuery {
-        let core = try textCore()
-        let shelves = try location.map { [$0.shelfID] } ?? core.libraryShelves().map(\.id)
-        var keys = Set<String>()
-        for shelf in shelves {
-            keys.formUnion(try core.indexedSourceKeys(shelfId: shelf, fileId: nil))
-            for file in try core.sourceFiles(shelfId: shelf) where !file.directory {
-                if !recursive, let location, !location.path.isEmpty, !file.relativePath.hasPrefix(location.path + "/") { continue }
-                if let id = file.bookId, let key = try? userKey(id) { keys.insert(key); keys.insert("pending:" + id) }
-            }
-        }
-        return try await effectiveQuery(keys: keys.sorted(), scope: "catalogue")
+        // A directory's last_read aggregates descendants even when only its children are returned.
+        let keys = try textCore().catalogueContentKeys(scope: catalogueScope(location, recursive: true))
+        return try await effectiveQuery(keys: keys.map { serializeReadingKey(key: $0) }, scope: "catalogue")
     }
 
     /// Deterministic latency for UI checks; release builds never delay queries.
@@ -199,7 +201,11 @@ extension ReaderService {
             sourceDefaults.set(file.id, forKey: "Moonread.seededExampleFileID")
         }
         #if DEBUG
-        if ReaderSmokeFixture.enabled { try await createSmokeFixture(); return }
+        if ReaderSmokeFixture.enabled {
+            try await createSmokeFixture()
+            try await createShelfRecoveryFixture()
+            return
+        }
         try importFixture()
         if arguments.contains("--ui-test-onboarding-local"), testSession != nil {
             try "第一章 合成\n已存在的本机测试内容。".write(to: url.appendingPathComponent("本机已有合成.txt"), atomically: true, encoding: .utf8)
@@ -335,7 +341,27 @@ extension ReaderService {
         return try await catalogueQuery(location, recursive: recursive).libraryEntries(shelfId: location?.shelfID, parentPath: recursive ? nil : location?.path, sort: sort)
     }
     func searchLibrary(shelfID: String?, query: String, author: String?, tag: String?) async throws -> [LibraryEntry] {
-        try await catalogueQuery(shelfID.map { LibraryLocation(shelfID: $0) }, recursive: true).searchLibrary(shelfId: shelfID, query: query, author: author, tag: tag)
+        try await searchCatalogue(shelfID.map { LibraryLocation(shelfID: $0) }, spec: .init(profile: .library, query: query, author: author, tags: tag.map { [$0] } ?? []))
+    }
+    /// AI previously read details before matching. Preserve its unknown-metadata
+    /// barrier in one store call, without doing a details lookup for each file.
+    func requireAIMetadataReadable(_ location: LibraryLocation?, recursive: Bool) async throws {
+        let keys = try textCore().catalogueContentKeys(scope: catalogueScope(location, recursive: recursive))
+        let formal = Set(keys.compactMap { key -> String? in
+            if case .formal = key { return serializeReadingKey(key: key) }; return nil
+        })
+        try await userStore().requireMetadataReadable(keys: formal)
+    }
+    func searchCatalogue(_ location: LibraryLocation?, spec: LibraryQueryRules.SearchSpec) async throws -> [LibraryEntry] {
+        let query = try await catalogueQuery(location, recursive: true)
+        let candidates = try query.librarySearchCandidates(scope: catalogueScope(location, recursive: true), booksOnly: spec.profile == .ai)
+        if spec.profile == .ai { try await requireAIMetadataReadable(nil, recursive: true) }
+        var entries = LibraryQueryRules.filterAndRank(candidates, spec: spec)
+        for index in entries.indices where entries[index].directory {
+            entries[index].coverPreviews = try query.libraryFolderCoverPreviews(
+                shelfId: entries[index].shelfId, relativePath: entries[index].relativePath)
+        }
+        return entries
     }
 
     func allLibraryBooks(_ shelfID: String) async throws -> [LibraryEntry] {
@@ -361,7 +387,9 @@ extension ReaderService {
         }
     }
     func hideRecent(_ value: String) throws {
-        let key = value.hasPrefix("pending:") || value.count == 64 ? value : try userKey(value)
+        let key: String
+        if let parsed = try? parseReadingKey(value: value) { key = serializeReadingKey(key: parsed) }
+        else { key = try userKey(value) }
         var hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
         hidden.insert(key); sourceDefaults.set(Array(hidden), forKey: "Moonread.hiddenRecent"); dataChanged()
     }
@@ -386,6 +414,8 @@ extension ReaderService {
 
     func removeLibraryShelf(_ id: String) throws {
         try textCore().removeLibraryShelf(shelfId: id)
+        try? forgetShelfReference(id)
+        indexScanFiles[id] = nil; indexScanRoots[id] = nil; indexScanRevisions[id] = nil
         libraryScans[id] = nil
         libraryObservers[id]?.stop()
         libraryObservers[id] = nil
@@ -429,11 +459,12 @@ extension ReaderService {
             }.value
             try Task.checkCancellation()
             guard libraryScans[id] == request else { return false }
-            try applyLibraryScan(id, root: root, items: items)
+            try applyLibraryScan(id, root: root, scan: items)
             return true
         } catch is CancellationError { throw CancellationError() }
         catch {
             if libraryScans[id] == request {
+                indexScanFiles[id] = nil; indexScanRoots[id] = nil; indexScanRevisions[id] = nil
                 try textCore().setLibraryShelfError(shelfId: id, message: ReaderMessages.error(error))
             }
             throw error
@@ -458,18 +489,24 @@ extension ReaderService {
     func refreshLibraryShelf(_ id: String) throws {
         libraryScans[id] = UUID()
         let shelf = try libraryShelf(id), root = try resolveShelf(shelf)
-        try applyLibraryScan(id, root: root, items: scanLibraryDirectory(root, cloudItems: shelf.builtin && root == cloudLibraryRoot ? cloudDocumentItems : []))
+        try applyLibraryScan(id, root: root, scan: scanLibraryDirectory(root, cloudItems: shelf.builtin && root == cloudLibraryRoot ? cloudDocumentItems : []))
     }
 
-    nonisolated private func scanLibraryDirectory(_ root: URL, cloudItems: [CloudDocumentItem] = []) throws -> [ScannedLibraryItem] {
+    nonisolated private func scanLibraryDirectory(_ root: URL, cloudItems: [CloudDocumentItem] = []) throws -> LibraryScanSnapshot {
         let access = root.startAccessingSecurityScopedResource()
         defer { if access { root.stopAccessingSecurityScopedResource() } }
-        if let libraryScan { return try libraryScan(root, cloudItems) }
-        return try coordinatedRead(root) { directory in try Self.libraryDirectoryItems(directory, cloudItems: cloudItems) }
+        if let libraryScan { return try LibraryScanSnapshot(items: libraryScan(root, cloudItems)) }
+        return try coordinatedRead(root) { directory in try Self.libraryDirectoryScan(directory, cloudItems: cloudItems) }
     }
 
     /// The caller already holds a coordination claim (handoff publication).
     nonisolated static func libraryDirectoryItems(_ directory: URL, cloudItems: [CloudDocumentItem] = []) throws -> [ScannedLibraryItem] {
+        let scan = try libraryDirectoryScan(directory, cloudItems: cloudItems)
+        // Publication/handoff callers need a complete source inventory.
+        guard scan.failedPaths.isEmpty else { throw CocoaError(.fileReadUnknown) }
+        return scan.items
+    }
+    nonisolated static func libraryDirectoryScan(_ directory: URL, cloudItems: [CloudDocumentItem] = []) throws -> LibraryScanSnapshot {
         // FileManager can enumerate /private/var paths even when the
         // coordinated root uses /var. Compare the same filesystem spelling.
         let directory = directory.resolvingSymlinksInPath()
@@ -477,14 +514,22 @@ extension ReaderService {
         let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isSymbolicLinkKey, .isPackageKey,
             .fileSizeKey, .contentModificationDateKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey]
         guard try directory.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else { throw LibraryFileError.missingShelf }
-        var scanError: Error?
+        var failedPaths: [String] = [], failures: [String] = []
+        func record(_ url: URL, _ error: Error) {
+            let path = url.standardizedFileURL.path
+            let relative = path.hasPrefix(prefix) ? String(path.dropFirst(prefix.count)) : ""
+            failedPaths.append(relative)
+            failures.append(url.lastPathComponent + ": " + error.localizedDescription)
+        }
         guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: Array(keys),
-            options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { _, error in scanError = error; return false }) else {
+            options: [.skipsHiddenFiles, .skipsPackageDescendants], errorHandler: { url, error in record(url, error); return true }) else {
             throw CocoaError(.fileReadNoPermission)
         }
         var result: [ScannedLibraryItem] = []
         for case let file as URL in enumerator {
-            let value = try file.resourceValues(forKeys: keys)
+            let value: URLResourceValues
+            do { value = try file.resourceValues(forKeys: keys) }
+            catch { record(file, error); enumerator.skipDescendants(); continue }
             if value.isSymbolicLink == true || value.isPackage == true { enumerator.skipDescendants(); continue }
             let folder = value.isDirectory == true
             guard folder || (value.isRegularFile == true && file.pathExtension.lowercased() == "txt") else { continue }
@@ -495,7 +540,6 @@ extension ReaderService {
                 size: UInt64(max(0, value.fileSize ?? 0)), modified: Int64((value.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1000),
                 needsDownload: value.isUbiquitousItem == true && value.ubiquitousItemDownloadingStatus == .notDownloaded))
         }
-        if let scanError { throw scanError }
         var paths = Set(result.map(\.relativePath))
         for item in cloudItems {
             let path = item.url.resolvingSymlinksInPath().path
@@ -515,13 +559,32 @@ extension ReaderService {
                 parent = (parent as NSString).deletingLastPathComponent
             }
         }
-        return result
+        return LibraryScanSnapshot(items: result, failedPaths: failedPaths, failures: failures)
+    }
+
+    func applyLibraryScan(_ id: String, root: URL, scan: LibraryScanSnapshot) throws {
+        try textCore().scanLibraryShelfPartial(shelfId: id, items: scan.items, failedPaths: scan.failedPaths)
+        if !scan.failures.isEmpty { try textCore().setLibraryShelfError(shelfId: id, message: scan.failures.joined(separator: "\n")) }
+        observeLibraryRoot(id, root: root)
+        scheduleRecentRestoration()
+        publishIndexScan(id, root: root, items: scan.items)
     }
 
     func applyLibraryScan(_ id: String, root: URL, items: [ScannedLibraryItem], observe: Bool = true) throws {
         try textCore().scanLibraryShelf(shelfId: id, items: items)
         if observe { observeLibraryRoot(id, root: root) }
         scheduleRecentRestoration()
+        publishIndexScan(id, root: root, items: items)
+    }
+
+    func indexScanIsCurrent(_ id: String) -> Bool {
+        guard let shelf = try? libraryShelf(id), let root = try? resolveShelf(shelf) else { return false }
+        return indexScanRoots[id] == root.standardizedFileURL
+    }
+    private func publishIndexScan(_ id: String, root: URL, items: [ScannedLibraryItem]) {
+        let revision = UUID(), files = Set(items.filter { !$0.directory }.map(\.relativePath))
+        indexScanFiles[id] = files; indexScanRoots[id] = root.standardizedFileURL; indexScanRevisions[id] = revision
+        NotificationCenter.default.post(name: .libraryIndexScanCommitted, object: LibraryIndexScan(shelfID: id, revision: revision, files: files))
     }
 
     func observeLibraryRoot(_ id: String, root: URL) {
@@ -790,10 +853,11 @@ extension ReaderService {
     }
 
     nonisolated private static func libraryURL(_ location: LibraryLocation, root: URL) throws -> URL {
+        do { try validateRelativePath(path: location.path, allowRoot: true) }
+        catch { throw LibraryFileError.invalidDestination }
         var url = root
         if !location.path.isEmpty {
             for part in location.path.split(separator: "/", omittingEmptySubsequences: false) {
-                guard !part.isEmpty, part != ".", part != ".." else { throw LibraryFileError.invalidDestination }
                 url.appendPathComponent(String(part))
                 if try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink == true { throw LibraryFileError.invalidDestination }
             }
@@ -815,6 +879,27 @@ extension ReaderService {
     }
 
     #if DEBUG
+    private func createShelfRecoveryFixture() async throws {
+        guard let testSession, ProcessInfo.processInfo.arguments.contains("--ui-test-shelf-recovery") else { return }
+        let marker = "Moonread.shelfRecovery.fixture." + testSession
+        guard !sourceDefaults.bool(forKey: marker) else { return }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Recovery-" + testSession).appendingPathComponent("复原书架")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("复原样本.txt")
+        try ("第一話 星光来信\n" + String(repeating: "窗前的灯照着回家的路，这是原创的恢复验证正文。\n", count: 60)).write(to: file, atomically: true, encoding: .utf8)
+        let identity = try SourceIdentityProbe().identify(filePath: file.path, decoding: "auto")
+        let store = try await userStore()
+        try await store.put("shelf-reference/" + testSession, value: UserSyncJSON.encode(ShelfReferenceValue(name: "复原书架", locationDescription: "file-provider")), device: "recovery-fixture")
+        let position = PositionValue(content_key: identity.contentSha256, offset: identity.utf8Bytes / 2, source_hint: nil)
+        try await store.put("position/" + identity.contentSha256, value: UserSyncJSON.encode(position), device: "recovery-fixture")
+        try await store.put("metadata/" + identity.contentSha256 + "/tag-restored", value: UserSyncJSON.encode("复原标签"), device: "recovery-fixture")
+        sourceDefaults.set(true, forKey: marker)
+    }
+    func shelfRecoveryFixtureURL(_ reference: String) -> URL? {
+        guard let testSession, testSession == reference, ProcessInfo.processInfo.arguments.contains("--ui-test-shelf-recovery") else { return nil }
+        return FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Recovery-" + testSession).appendingPathComponent("复原书架")
+    }
+
     private func createSmokeFixture() async throws {
         guard let testSession else { return }
         let marker = "Moonread.smoke.seed.v1." + testSession
@@ -836,8 +921,12 @@ extension ReaderService {
             let base = try await details(sha: identity.contentSha256).metadata
             var edited = base; edited.tags = ["星灯"]
             try await saveMetadata(base: base, edited: edited)
-            if ProcessInfo.processInfo.arguments.contains("--ui-test-smoke-restored") {
-                let position = PositionValue(content_key: identity.contentSha256, offset: 120, source_hint: nil)
+            if ProcessInfo.processInfo.arguments.contains("--ui-test-data-management") {
+                let chapter = ChapterValue(content_key: identity.contentSha256, offset: 0, title: "备份目录", level: 1, excluded: false)
+                try await userStore().put("chapter/" + identity.contentSha256 + "/0", value: UserSyncJSON.encode(chapter), device: "data-management-fixture")
+            }
+            if ProcessInfo.processInfo.arguments.contains("--ui-test-smoke-restored") || ProcessInfo.processInfo.arguments.contains("--ui-test-data-management") {
+                let position = PositionValue(content_key: identity.contentSha256, offset: ProcessInfo.processInfo.arguments.contains("--ui-test-data-management") ? identity.utf8Bytes / 2 : 120, source_hint: nil)
                 try await userStore().put("position/" + identity.contentSha256, value: UserSyncJSON.encode(position), device: "smoke-fixture")
             }
         }

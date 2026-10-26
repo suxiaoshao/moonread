@@ -4,15 +4,13 @@ import Foundation
 actor AIReadingReferences {
   let reader: ReaderService
   init(reader: ReaderService = .shared) { self.reader = reader }
-  func sha(_ ref: String) throws -> String {
-    let value = String(ref.dropFirst(2))
-    guard ref.hasPrefix("b:"), value.count == 64, value.allSatisfy(\.isHexDigit) else {
-      throw AIToolError(
-        "invalid_argument", field: "bookRef",
-        message: "Use a b: reference returned by the book tools.")
+  nonisolated static func parseBookReference(_ ref: String) throws -> String {
+    guard ref.hasPrefix("b:"), let value = try? parseSha256(value: String(ref.dropFirst(2))) else {
+      throw AIToolError("invalid_argument", field: "bookRef", message: "Use a b: reference returned by the book tools.")
     }
     return value
   }
+  nonisolated func sha(_ ref: String) throws -> String { try Self.parseBookReference(ref) }
   func files() async throws -> [LibraryEntry] {
     var values: [LibraryEntry] = []
     for shelf in try await reader.shelves() { values += try await reader.aiLibraryBooks(shelf.id) }

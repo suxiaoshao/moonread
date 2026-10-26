@@ -4,6 +4,15 @@ import XCTest
 @testable import Moonread
 
 final class ShareInboxTests: ShareInboxFixture {
+  func testSharedFilenameContractPreservesExtensionSafetyBoundary() throws {
+    let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: "library-input-contract-v1", withExtension: "json"))
+    let contract = try JSONSerialization.jsonObject(with: Data(contentsOf: url)) as! [String: Any]
+    for row in contract["names"] as! [[String: Any]] {
+      let name = row["name"] as! String
+      XCTAssertEqual(ShareInbox.validName(name), row["shareInboxName"] as! Bool, name)
+    }
+  }
+
   // S290: 发布版本化清单后接收进程消失，主 App 仍能消费完整原字节且只消费一次；不启动扩展宿主。
   func testRawBytesPublishRecoverAndConsume() async throws {
     let (root, inbox) = try fixture()
@@ -40,12 +49,23 @@ final class ShareInboxTests: ShareInboxFixture {
       done(original, nil)
       return nil
     }
+    let unreadable = NSItemProvider()
+    unreadable.suggestedName = "unreadable.txt"
+    unreadable.registerFileRepresentation(forTypeIdentifier: UTType.plainText.identifier, fileOptions: [], visibility: .all) { done in
+      done(nil, false, CocoaError(.fileReadNoPermission))
+      return nil
+    }
     let providerDraft = try ShareInbox.Draft(in: inbox)
-    let item = try await providerDraft.load(provider)
-    try providerDraft.publish(items: [item], skippedNames: [])
+    let (items, skipped) = try await providerDraft.receive([provider, unreadable, provider])
+    XCTAssertEqual(items.count, 2, "One I/O failure must not discard copies before or after it")
+    XCTAssertEqual(skipped.count, 1)
+    XCTAssertTrue(skipped[0].contains("unreadable.txt"))
+    try providerDraft.publish(items: items, skippedNames: skipped)
     let recovered = try XCTUnwrap(try ShareInbox(root: inbox.root).scan().batches.first)
-    XCTAssertEqual(try Data(contentsOf: item.url(in: recovered.directory)), original)
-    LibraryImportFile(url: item.url(in: recovered.directory), inbox: (recovered, item)).finish()
+    for item in items {
+      XCTAssertEqual(try Data(contentsOf: item.url(in: recovered.directory)), original)
+      LibraryImportFile(url: item.url(in: recovered.directory), inbox: (recovered, item)).finish()
+    }
     XCTAssertTrue(
       try inbox.scan().batches.isEmpty, "consuming again cannot rediscover the same manifest")
   }

@@ -305,53 +305,68 @@ struct StatisticsView: View {
     }
 
     private var contentList: some View {
-        List {
-            if let target {
-                BookInformationSections(model: information, target: target, library: library,
-                                        aiRequests: ai.availability.isAvailable ? [bookRequest(.metadata), bookRequest(.cover)].compactMap { $0 } : [],
-                                        openAI: { aiRequest = $0 })
-                    .listRowBackground(Color(uiColor: theme.surface))
-            }
-            if let overview = model.overview {
-                if let notice = model.compatibilityNotice {
-                    Section { Label(notice, systemImage: "exclamationmark.circle") }.listRowBackground(Color(uiColor: theme.surface))
+        Group {
+            if target == nil, model.overview?.books.isEmpty != false {
+                VStack(spacing: 0) {
+                    if model.overview != nil { periodControls.padding().background(Color(uiColor: theme.canvas)) }
+                    if let overview = model.overview {
+                        ContentUnavailableView {
+                            Label("暂无阅读记录", systemImage: "book.closed")
+                        } description: {
+                            Text(overview.preferences.enabled ? String(localized: "开始阅读后，这里会显示书籍、阅读时段和时长。") : String(localized: "开启阅读统计后记录新的阅读活动。"))
+                        }.accessibilityIdentifier("statisticsEmpty")
+                    } else if let error = model.error {
+                        ContentUnavailableView {
+                            Label("暂时无法读取统计", systemImage: "exclamationmark.circle")
+                        } description: { Text(error) } actions: {
+                            Button("重试") { Task { await model.load(window, target: statisticsTarget) } }
+                        }
+                    } else {
+                        LoadingActivity(size: 52, waitingLabel: "正在读取统计").frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 }
-                if !overview.preferences.enabled {
-                    Section { Label("阅读统计已暂停", systemImage: "pause.circle").foregroundStyle(Color(uiColor: theme.secondary)) }
-                        .listRowBackground(Color(uiColor: theme.surface))
-                }
-                if let error = StatisticsWriter.shared.error {
-                    Section {
-                        Text("部分阅读记录尚未保存")
-                        Button("重试") { StatisticsWriter.shared.retry() }
-                        Text(error).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                    }.listRowBackground(Color(uiColor: theme.surface))
-                }
-                if target != nil { cumulativeSummary }
-                periodPicker
-                if overview.books.isEmpty {
-                    ContentUnavailableView {
-                        Label("暂无阅读记录", systemImage: "book.closed")
-                    } description: {
-                        Text(overview.preferences.enabled ? String(localized: "开始阅读后，这里会显示书籍、阅读时段和时长。") : String(localized: "开启阅读统计后记录新的阅读活动。"))
-                    }.listRowBackground(Color.clear)
-                } else {
-                    periodSummary(overview)
-                    if target == nil { bookSection } else { sessionsSection }
-                }
-                fileInformation
-            } else if let error = model.error {
-                ContentUnavailableView {
-                    Label("暂时无法读取统计", systemImage: "exclamationmark.circle")
-                } description: { Text(error) } actions: {
-                    Button("重试") { Task { await model.load(window, target: statisticsTarget) } }
-                }.listRowBackground(Color.clear)
+                .toolbarBackground(Color(uiColor: theme.canvas), for: .navigationBar)
+                .toolbarBackground(.visible, for: .navigationBar)
             } else {
-                HStack { Spacer(); LoadingActivity(size: 52, waitingLabel: "正在读取统计"); Spacer() }
-                    .frame(minHeight: 230).listRowBackground(Color.clear)
+                List {
+                    if let target {
+                        BookInformationSections(model: information, target: target, library: library,
+                                                aiRequests: ai.availability.isAvailable ? [bookRequest(.metadata), bookRequest(.cover)].compactMap { $0 } : [],
+                                                openAI: { aiRequest = $0 })
+                            .listRowBackground(Color(uiColor: theme.surface))
+                    }
+                    if let overview = model.overview {
+                        if target != nil { cumulativeSummary }
+                        periodPicker
+                        if overview.books.isEmpty {
+                            ContentUnavailableView {
+                                Label("暂无阅读记录", systemImage: "book.closed")
+                            } description: {
+                                Text(overview.preferences.enabled ? String(localized: "开始阅读后，这里会显示书籍、阅读时段和时长。") : String(localized: "开启阅读统计后记录新的阅读活动。"))
+                            }.listRowBackground(Color.clear)
+                        } else {
+                            periodSummary(overview)
+                            if target == nil { bookSection } else { sessionsSection }
+                        }
+                        fileInformation
+                    } else if let error = model.error {
+                        ContentUnavailableView {
+                            Label("暂时无法读取统计", systemImage: "exclamationmark.circle")
+                        } description: { Text(error) } actions: {
+                            Button("重试") { Task { await model.load(window, target: statisticsTarget) } }
+                        }.listRowBackground(Color.clear)
+                    } else {
+                        HStack { Spacer(); LoadingActivity(size: 52, waitingLabel: "正在读取统计"); Spacer() }
+                            .frame(minHeight: 230).listRowBackground(Color.clear)
+                    }
+                    if let target, !target.fromReader, let details = information.details {
+                        BookReadingDataClearSection(book: information, target: target, key: details.metadata.sha, manager: library.dataManagement)
+                    }
+                }
             }
         }
         .themedPage()
+        .safeAreaInset(edge: .top, spacing: 0) { statisticsStatus }
         .navigationTitle(target == nil ? String(localized: "统计") : String(localized: "小说详情"))
         .navigationBarTitleDisplayMode(target == nil ? .large : .inline)
         .toolbarVisibility(.visible, for: .navigationBar)
@@ -378,6 +393,28 @@ struct StatisticsView: View {
         .navigationDestination(item: $openedDay) { StatisticsDayView(route: $0) }
         .navigationDestination(isPresented: $showAllBooks) {
             StatisticsBookList(books: orderedBooks, maximum: orderedBooks.map(\.durationMs).max() ?? 1, window: window)
+        }
+    }
+
+    @ViewBuilder private var statisticsStatus: some View {
+        if let overview = model.overview,
+           !overview.preferences.enabled || model.compatibilityNotice != nil || StatisticsWriter.shared.error != nil {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    if !overview.preferences.enabled { Label("阅读统计已暂停", systemImage: "pause.circle") }
+                    Spacer()
+                    Button("统计设置") { showSettings = true }
+                }
+                if model.compatibilityNotice != nil || StatisticsWriter.shared.error != nil {
+                    DisclosureGroup {
+                        if let notice = model.compatibilityNotice { Text(verbatim: notice) }
+                        if let error = StatisticsWriter.shared.error { Text(verbatim: error).foregroundStyle(Color(uiColor: theme.destructive)) }
+                    } label: {
+                        Label(StatisticsWriter.shared.error != nil ? String(localized: "部分阅读记录未能保存") : String(localized: "部分统计暂不可用"), systemImage: "exclamationmark.circle")
+                    }
+                }
+            }.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                .padding(.horizontal).padding(.vertical, 8).background(Color(uiColor: theme.surface)).accessibilityIdentifier("statisticsStatus")
         }
     }
 
@@ -495,7 +532,10 @@ struct StatisticsView: View {
     }
     private func activeDays(_ overview: StatisticsOverview) -> Int { overview.days.filter { $0.durationMs > 0 }.count }
     private var periodPicker: some View {
-        Section {
+        Section { periodControls }.listRowBackground(Color(uiColor: theme.surface))
+    }
+    private var periodControls: some View {
+        VStack(spacing: 0) {
             Picker("统计范围", selection: $window.period) {
                 ForEach(StatisticsPeriod.allCases) { Text($0.label).tag($0) }
             }.pickerStyle(.segmented).accessibilityIdentifier("statisticsPeriod")
@@ -511,7 +551,7 @@ struct StatisticsView: View {
                         .disabled(!window.canAdvance).accessibilityLabel("下一时段")
                 }
             }.buttonStyle(.borderless).frame(minHeight: LayoutTokens.hit)
-        }.listRowBackground(Color(uiColor: theme.surface))
+        }
     }
     private var bookSection: some View {
         Section {
@@ -541,7 +581,7 @@ struct StatisticsView: View {
                 }
                 if model.spans.count > 8 {
                     NavigationLink("全部时段") {
-                        List(model.spans.reversed()) { ReadingSessionRow(span: $0, showBook: false) }
+                        List(model.spans.reversed()) { ReadingSessionRow(span: $0, showBook: false).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
                             .themedPage().navigationTitle("阅读时段")
                     }
                 }
@@ -616,7 +656,7 @@ private struct StatisticsBookList: View {
     @State private var query = ""
     @Environment(\.theme) private var theme
     var body: some View {
-        List(books.filter { query.isEmpty || $0.title.localizedStandardContains(query) }, id: \.contentKey) {
+        List(books.filter { LibraryQueryRules.selectionMatches($0.title, query: query) }, id: \.contentKey) {
             StatisticsBookRow(book: $0, maximum: maximum, window: window).listRowBackground(Color(uiColor: theme.surface))
         }.themedPage().navigationTitle("读过的书").searchable(text: $query, prompt: "搜索书名")
     }
@@ -939,12 +979,12 @@ struct StatisticsSettingsView: View {
                     enabled = value
                     Task { do { await StatisticsWriter.shared.drain(); try await ReaderService.shared.setStatisticsEnabled(value) } catch { enabled = !value; self.error = ReaderMessages.error(error) } }
                 })).accessibilityIdentifier("statisticsEnabled")
-            } footer: { Text("只记录可见正文的阅读活动。锁屏、后台和工具面板中暂停；连续 2 分钟没有正文操作后暂停，再次操作恢复。") }
+            } footer: { Text("关闭后保留历史统计，只停止此设备的新记录。只记录可见正文活动；锁屏、后台、工具面板和闲置时暂停。") }
                 .listRowBackground(Color(uiColor: theme.surface))
             Section {
                 Button("清除阅读统计", role: .destructive) { clearing = true }.accessibilityIdentifier("clearStatistics")
                     .foregroundStyle(Color(uiColor: theme.destructive))
-            } footer: { Text("不影响小说文件、续读位置、书签和笔记。历史阅读时长无法由旧进度补算。") }
+            } footer: { Text("清除历史统计不改变记录开关，也不影响小说文件、续读位置、书签和笔记。历史时长无法由旧进度补算。") }
                 .listRowBackground(Color(uiColor: theme.surface))
         }.themedPage().navigationTitle("阅读统计设置").navigationBarTitleDisplayMode(.inline)
             .task { enabled = await ReaderService.shared.statisticsPreferences().enabled }

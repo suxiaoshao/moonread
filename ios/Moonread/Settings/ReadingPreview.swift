@@ -10,6 +10,15 @@ final class ReadingPreviewPosition {
     }
     weak var view: ReadingPreviewTextView?
     private(set) var saved: Saved?
+    private var paperInput: ThemeSurface.PaperInput?
+    private var tile: UIImage?
+    func paperTile(_ input: ThemeSurface.PaperInput) -> UIImage? {
+        if paperInput != input {
+            paperInput = input
+            tile = input.choice == nil ? nil : ThemeSurface.paperTile(input)
+        }
+        return tile
+    }
     func capture() { if let view { saved = view.capturePosition() } }
 }
 
@@ -67,7 +76,6 @@ struct ReadingPreviewPane: View {
             ReadingPreviewText(source: source, settings: settings, surface: surface, position: position)
                 .accessibilityIdentifier("readingPreviewText")
         }
-        .background(Color(uiColor: surface.paper))
     }
 }
 
@@ -172,9 +180,11 @@ final class ReadingPreviewTextView: UITextView {
             rendering = false
         }
         super.layoutSubviews()
+        #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-testing"), let settings {
             accessibilityValue = "\(Int(settings.fontSize))|\(Int(settings.lineSpacing))|\(Int(settings.horizontalMargin))|\(Int(settings.paragraphSpacing))|\(surface.plan.paletteId)|\(surface.plan.appearance)|\(projectionAnchor())"
         }
+        #endif
     }
 
     private func updateDecorations() {

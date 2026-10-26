@@ -93,13 +93,13 @@ struct AppSearchField: ViewModifier {
             ForEach(matches(search.options?.tags ?? [], term), id: \.self) { tag in
                 Label(tag, systemImage: "tag").searchCompletion(AppSearchToken.tag(tag))
             }
-            ForEach(model.shelves.filter { model.shelfTitle($0.id).localizedStandardContains(term) }, id: \.id) { shelf in
+            ForEach(model.shelves.filter { LibraryQueryRules.selectionMatches(model.shelfTitle($0.id), query: term) }, id: \.id) { shelf in
                 Label(model.shelfTitle(shelf.id), systemImage: "books.vertical").searchCompletion(AppSearchToken.shelf(shelf.id))
             }
         }
     }
     private func matches(_ values: [String], _ term: String) -> [String] {
-        Array(values.filter { $0.localizedStandardContains(term) }.prefix(3))
+        Array(LibraryQueryRules.filterSuggestions(values, query: term).prefix(3))
     }
 }
 

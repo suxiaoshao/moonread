@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		660000000000000000000006 = {isa = PBXBuildFile; fileRef = 660000000000000000000005; };
+		660000000000000000000004 = {isa = PBXBuildFile; fileRef = 660000000000000000000003; };
+		660000000000000000000002 = {isa = PBXBuildFile; fileRef = 660000000000000000000001; };
 		F02200000000000000000001 /* TestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = F02200000000000000000002 /* TestSupport.swift */; };
         F14900000000000000000001 = {isa = PBXBuildFile; fileRef = F14900000000000000000002; };
         F14900000000000000000003 = {isa = PBXBuildFile; fileRef = F14900000000000000000004; };
@@ -209,6 +212,15 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		542E6B712E2CF6CEA71DD1E2 /* UserDataConflictTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED575D4FB40600C79376B30D; };
 		9F8DE62685C2F88403C6ECD7 /* UserPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DD6B800901BD6C290FD4CBA; };
 		714F48D3E479BA56DD626210 /* TipJar.storekit in Test Resources */ = {isa = PBXBuildFile; fileRef = F01700000000000000000004 /* TipJar.storekit */; };
+        B39A10000000000000000001 /* ShelfRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B39A20000000000000000001; };
+        B39A10000000000000000002 /* ShelfRecovery.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B39A20000000000000000002; };
+        D50610000000000000000001 /* UserDataBackup.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000001; };
+        D50610000000000000000002 /* ReadingDataManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000002; };
+        D50610000000000000000003 /* CacheManagement.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000003; };
+        D50610000000000000000004 /* DataManagementView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000004; };
+        D50610000000000000000005 /* DataManagement.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000005; };
+        D50610000000000000000006 /* DataManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000006; };
+        D50610000000000000000007 /* CacheManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000007; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -234,6 +246,9 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		660000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../crates/moonread-core/tests/fixtures/library-input-contract-v1.json"; sourceTree = SOURCE_ROOT; };
+		660000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/LibraryQueryRulesTests.swift"; sourceTree = SOURCE_ROOT; };
+		660000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/Library/LibraryQueryRules.swift"; sourceTree = SOURCE_ROOT; };
 		F02200000000000000000002 /* TestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/TestSupport.swift"; sourceTree = SOURCE_ROOT; };
         F14900000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullIndex.swift; sourceTree = "<group>"; };
         F14900000000000000000004 = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = FullIndex.xcstrings; sourceTree = "<group>"; };
@@ -434,6 +449,15 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		1AC33131D026ECD095CC101C /* TipJarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/TipJarTests.swift"; sourceTree = SOURCE_ROOT; };
 		ED575D4FB40600C79376B30D /* UserDataConflictTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/UserDataConflictTests.swift"; sourceTree = SOURCE_ROOT; };
 		5DD6B800901BD6C290FD4CBA /* UserPersistenceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/UserPersistenceTests.swift"; sourceTree = SOURCE_ROOT; };
+        B39A20000000000000000001 /* ShelfRecovery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShelfRecovery.swift; sourceTree = "<group>"; };
+        B39A20000000000000000002 /* ShelfRecovery.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = ShelfRecovery.xcstrings; sourceTree = "<group>"; };
+        D50620000000000000000001 /* UserDataBackup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDataBackup.swift; sourceTree = "<group>"; };
+        D50620000000000000000002 /* ReadingDataManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingDataManagement.swift; sourceTree = "<group>"; };
+        D50620000000000000000003 /* CacheManagement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheManagement.swift; sourceTree = "<group>"; };
+        D50620000000000000000004 /* DataManagementView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementView.swift; sourceTree = "<group>"; };
+        D50620000000000000000005 /* DataManagement.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = DataManagement.xcstrings; sourceTree = "<group>"; };
+        D50620000000000000000006 /* DataManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementTests.swift; sourceTree = "<group>"; };
+        D50620000000000000000007 /* CacheManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheManagementTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -537,6 +561,10 @@ A20000000000000000000009 /* MoonreadUITests.swift */,
 			sourceTree = "<group>";
 		};
 		A50000000000000000000006 /* MoonreadTests */ = {isa = PBXGroup; children = (
+                D50620000000000000000007 /* CacheManagementTests.swift */,
+                D50620000000000000000006 /* DataManagementTests.swift */,
+				660000000000000000000005,
+				660000000000000000000003,
                 9CD5D1790E1F4ABF94A8E63F /* AI */,
                 F398589F111A211464165FBE /* Fixtures */,
                 9DB797D2C3C5EB500E7790F3 /* AnnotationEditingTests.swift */,
@@ -631,11 +659,14 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 		F3866779E63B481A9D1A3C35 /* Library */ = {
 			isa = PBXGroup;
 			children = (
+				660000000000000000000001,
 				AE2000000000000000000002 /* LibraryActions.swift */,
 				AF2000000000000000000003 /* LibraryCollection.swift */,
                 AF2000000000000000000004 /* LibraryDrop.swift */,
                 F14900000000000000000002,
+                B39A20000000000000000001 /* ShelfRecovery.swift */,
                 F14900000000000000000004,
+                B39A20000000000000000002 /* ShelfRecovery.xcstrings */,
 				AF2000000000000000000002 /* LibraryPresentation.swift */,
 				AE2000000000000000000001 /* LibraryService.swift */,
 				B02000000000000000000002 /* CloudLibrary.swift */,
@@ -713,6 +744,8 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 		3076A470656A4497AB8E9918 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+                D50620000000000000000005 /* DataManagement.xcstrings */,
+                D50620000000000000000004 /* DataManagementView.swift */,
 				AC2000000000000000000002 /* SettingsView.swift */,
                 F01600000000000000000002,
                 F01700000000000000000004,
@@ -728,6 +761,9 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 		C60318128F8C4F59B3C2CFB2 /* Data */ = {
 			isa = PBXGroup;
 			children = (
+                D50620000000000000000003 /* CacheManagement.swift */,
+                D50620000000000000000002 /* ReadingDataManagement.swift */,
+                D50620000000000000000001 /* UserDataBackup.swift */,
 				A20000000000000000000002 /* ReaderService.swift */,
 				C22000000000000000000001 /* UserData.swift */,
                 FF2000000000000000000001,
@@ -912,6 +948,9 @@ F01900000000000000000002,
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                D50610000000000000000005 /* DataManagement.xcstrings in Resources */,
+                B39A10000000000000000002 /* ShelfRecovery.xcstrings in Resources */,
+                F14900000000000000000003 /* FullIndex.xcstrings in Resources */,
                 83C1F3DE49DE5AC693D3E8E8,
                 FC1100000000000000000002,
 AP1000000000000000000001,
@@ -936,6 +975,7 @@ E51000000000000000000009,D41000000000000000000001,
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				660000000000000000000006,
                 714F48D3E479BA56DD626210 /* TipJar.storekit in Test Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -970,6 +1010,11 @@ E51000000000000000000009,D41000000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                D50610000000000000000004 /* DataManagementView.swift in Sources */,
+                D50610000000000000000003 /* CacheManagement.swift in Sources */,
+                D50610000000000000000002 /* ReadingDataManagement.swift in Sources */,
+                D50610000000000000000001 /* UserDataBackup.swift in Sources */,
+				660000000000000000000002,
                 FD64F53149DE5DBFB6AA04F1,
                 344233D679E94ACDA4FA2A11,
                 FC1100000000000000000001,
@@ -1042,6 +1087,7 @@ F01900000000000000000001,
                 AF1000000000000000000003 /* LibraryCollection.swift in Sources */,
                 AF1000000000000000000004 /* LibraryDrop.swift in Sources */,
                 F14900000000000000000001,
+                B39A10000000000000000001 /* ShelfRecovery.swift in Sources */,
 				A10000000000000000000004 /* ReaderScreen.swift in Sources */,
                 AD1000000000000000000001,
                 AD1000000000000000000002,
@@ -1069,6 +1115,9 @@ F01900000000000000000001,
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A60000000000000000000006 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
+                D50610000000000000000007 /* CacheManagementTests.swift in Sources */,
+                D50610000000000000000006 /* DataManagementTests.swift in Sources */,
+				660000000000000000000004,
                 1324E15761CF5ED68712722E,
                 2E2559685C214716AEE5F325,
                 785244D6C1DB4AF6B15A8AA0,
@@ -1176,8 +1225,8 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
-                CURRENT_PROJECT_VERSION = 7;
-                MARKETING_VERSION = 1.1;
+                CURRENT_PROJECT_VERSION = 10;
+                MARKETING_VERSION = 1.2;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -1227,8 +1276,8 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
-                CURRENT_PROJECT_VERSION = 7;
-                MARKETING_VERSION = 1.1;
+                CURRENT_PROJECT_VERSION = 10;
+                MARKETING_VERSION = 1.2;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;

@@ -32,6 +32,126 @@ pub enum ReaderPaletteSource {
     Palette { id: String },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+pub enum ReaderTextureId {
+    #[serde(rename = "paper-v1")]
+    Paper,
+    #[serde(rename = "kraft-v1")]
+    Kraft,
+    #[serde(rename = "linen-v1")]
+    Linen,
+    #[serde(rename = "grain-v1", alias = "night-v1")]
+    Grain,
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "lowercase")]
+pub enum ReaderTextureStrength {
+    #[default]
+    Light,
+    Medium,
+    Strong,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
+pub struct ReaderTextureChoice {
+    pub id: ReaderTextureId,
+    #[serde(default)]
+    pub strength: ReaderTextureStrength,
+}
+fn decode_texture_choice<'de, D: serde::Deserializer<'de>>(
+    decoder: D,
+) -> std::result::Result<Option<ReaderTextureChoice>, D::Error> {
+    Ok(Option::<serde_json::Value>::deserialize(decoder)?
+        .and_then(|value| serde_json::from_value(value).ok()))
+}
+#[uniffi::export]
+pub fn reader_texture_choice(id: ReaderTextureId) -> ReaderTextureChoice {
+    ReaderTextureChoice {
+        id,
+        strength: ReaderTextureStrength::default(),
+    }
+}
+#[uniffi::export]
+pub fn reader_texture_ids() -> Vec<ReaderTextureId> {
+    vec![
+        ReaderTextureId::Paper,
+        ReaderTextureId::Kraft,
+        ReaderTextureId::Linen,
+        ReaderTextureId::Grain,
+    ]
+}
+#[uniffi::export]
+pub fn reader_texture_strengths() -> Vec<ReaderTextureStrength> {
+    vec![
+        ReaderTextureStrength::Light,
+        ReaderTextureStrength::Medium,
+        ReaderTextureStrength::Strong,
+    ]
+}
+#[uniffi::export]
+pub fn reader_texture_alpha(paper: u32, ink: u32, strength: ReaderTextureStrength) -> f64 {
+    let target = match strength {
+        ReaderTextureStrength::Light => 0.015,
+        ReaderTextureStrength::Medium => 0.025,
+        ReaderTextureStrength::Strong => 0.035,
+    };
+    let paper = srgb_channels(paper);
+    let ink = srgb_channels(ink);
+    let lightness = texture_lightness(paper);
+    // Match normal source-over compositing in the standard sRGB tile. Only
+    // the OKLab conversion linearizes the mixed RGB channels; strength is
+    // measured in toe-corrected Lr to avoid the steep near-black L curve.
+    let delta = |alpha: f64| {
+        let mixed = std::array::from_fn(|i| paper[i] + (ink[i] - paper[i]) * alpha);
+        (texture_lightness(mixed) - lightness).abs()
+    };
+    // Custom paper/ink may be too close to reach the requested change. Use
+    // the available endpoint; this is not a palette-saving restriction.
+    if delta(1.0) <= target {
+        return 1.0;
+    }
+    let (mut low, mut high) = (0.0, 1.0);
+    for _ in 0..48 {
+        let mid = (low + high) / 2.0;
+        if delta(mid) < target {
+            low = mid;
+        } else {
+            high = mid;
+        }
+    }
+    (low + high) / 2.0
+}
+
+fn srgb_channels(color: u32) -> [f64; 3] {
+    [16, 8, 0].map(|shift| f64::from((color >> shift) & 255) / 255.0)
+}
+fn srgb_linear(value: f64) -> f64 {
+    if value <= 0.04045 {
+        value / 12.92
+    } else {
+        ((value + 0.055) / 1.055).powf(2.4)
+    }
+}
+fn oklab_lightness(srgb: [f64; 3]) -> f64 {
+    // Björn Ottosson's 2021 linear-sRGB → OKLab matrices (L component).
+    // https://bottosson.github.io/posts/oklab/#converting-from-linear-srgb-to-oklab
+    let [r, g, b] = srgb.map(srgb_linear);
+    let l = (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b).cbrt();
+    let m = (0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b).cbrt();
+    let s = (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b).cbrt();
+    0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s
+}
+
+fn texture_lightness(srgb: [f64; 3]) -> f64 {
+    // Ottosson's Okhsl toe function: OKLab L → perceptual lightness Lr.
+    // https://bottosson.github.io/posts/colorpicker/#common-code
+    let lightness = oklab_lightness(srgb);
+    let k1 = 0.206;
+    let k2 = 0.03;
+    let k3 = (1.0 + k1) / (1.0 + k2);
+    let x = k3 * lightness - k1;
+    (x + (x * x + 4.0 * k2 * k3 * lightness).sqrt()) / 2.0
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 pub struct ThemePreferences {
     pub app_mode: AppAppearanceMode,
@@ -41,6 +161,10 @@ pub struct ThemePreferences {
     pub reader_light: ReaderPaletteSource,
     pub reader_dark: ReaderPaletteSource,
     pub reduce_motion: bool,
+    #[serde(default, deserialize_with = "decode_texture_choice")]
+    pub reader_light_texture: Option<ReaderTextureChoice>,
+    #[serde(default, deserialize_with = "decode_texture_choice")]
+    pub reader_dark_texture: Option<ReaderTextureChoice>,
 }
 
 impl Default for ThemePreferences {
@@ -57,6 +181,8 @@ impl Default for ThemePreferences {
             reader_light: ReaderPaletteSource::App,
             reader_dark: ReaderPaletteSource::App,
             reduce_motion: false,
+            reader_light_texture: None,
+            reader_dark_texture: None,
         }
     }
 }
@@ -178,8 +304,8 @@ fn validate_palette(palette: &ThemePalette) -> Result<()> {
     if palette.id.is_empty()
         || palette.name.trim().is_empty()
         || palette.name.chars().count() > 40
-        || !theme_colors_readable(palette.colors.clone())
-        || !theme_colors_readable(palette.high_contrast.clone())
+        || !theme_colors_valid(&palette.colors)
+        || !theme_colors_valid(&palette.high_contrast)
     {
         return Err(ReaderError::InvalidSettings);
     }
@@ -188,7 +314,7 @@ fn validate_palette(palette: &ThemePalette) -> Result<()> {
 
 fn validate_snapshot(value: &ThemeSnapshot) -> Result<()> {
     let mut ids = std::collections::HashSet::new();
-    if value.palettes.len() > 70
+    if value.palettes.len() > builtin_theme_palettes().len() + 64
         || value
             .palettes
             .iter()
@@ -300,12 +426,7 @@ pub fn theme_color_contrast(foreground: u32, background: u32) -> f64 {
             .zip([0.2126, 0.7152, 0.0722])
             .map(|(shift, weight)| {
                 let v = ((c >> shift) & 255) as f64 / 255.;
-                weight
-                    * if v <= 0.04045 {
-                        v / 12.92
-                    } else {
-                        ((v + 0.055) / 1.055).powf(2.4)
-                    }
+                weight * srgb_linear(v)
             })
             .sum()
     }
@@ -314,8 +435,7 @@ pub fn theme_color_contrast(foreground: u32, background: u32) -> f64 {
     (a.max(b) + 0.05) / (a.min(b) + 0.05)
 }
 
-#[uniffi::export]
-pub fn theme_colors_readable(c: ThemeColors) -> bool {
+fn theme_colors_valid(c: &ThemeColors) -> bool {
     let values = [
         c.canvas,
         c.surface,
@@ -345,6 +465,11 @@ pub fn theme_colors_readable(c: ThemeColors) -> bool {
         c.maria,
     ];
     values.iter().all(|v| *v <= 0xffffff)
+}
+
+#[uniffi::export]
+pub fn theme_colors_readable(c: ThemeColors) -> bool {
+    theme_colors_valid(&c)
         && [
             c.canvas,
             c.surface,
@@ -458,6 +583,33 @@ pub fn builtin_theme_palettes() -> Vec<ThemePalette> {
                 0x283f50, 0x2d546c, 0xefa0b6, 0xdec08d, 0xa0cdb8,
             ],
         ),
+        (
+            "black-dark",
+            "纯黑夜间",
+            ThemeAppearance::Dark,
+            [
+                0x000000, 0x101010, 0x000000, 0xb8b8b8, 0x939393, 0x9fbde5, 0x545454, 0x302b1e,
+                0x192c3b, 0x253c50, 0xef9ca7, 0xdec088, 0x9dccad,
+            ],
+        ),
+        (
+            "white-light",
+            "素白",
+            ThemeAppearance::Light,
+            [
+                0xf4f4f4, 0xffffff, 0xffffff, 0x303030, 0x606060, 0x315e8a, 0xb9bec4, 0xf3e3ae,
+                0xddebf5, 0xbfd7eb, 0xb73548, 0x805c22, 0x386c58,
+            ],
+        ),
+        (
+            "bean-light",
+            "豆沙绿",
+            ThemeAppearance::Light,
+            [
+                0xdce6d7, 0xeaf0e5, 0xdce8d1, 0x303b2d, 0x55614e, 0x386441, 0xa4b49b, 0xede0aa,
+                0xd0e2eb, 0xabcad9, 0xac3446, 0x74551d, 0x376343,
+            ],
+        ),
     ];
     rows.into_iter()
         .map(|(id, name, appearance, r)| {
@@ -525,7 +677,7 @@ pub fn make_theme_palette(
     colors: ThemeColors,
 ) -> Result<ThemePalette> {
     let name = name.trim().to_owned();
-    if name.is_empty() || name.chars().count() > 40 || !theme_colors_readable(colors.clone()) {
+    if name.is_empty() || name.chars().count() > 40 || !theme_colors_valid(&colors) {
         return Err(ReaderError::InvalidSettings);
     }
     Ok(ThemePalette {
@@ -536,4 +688,70 @@ pub fn make_theme_palette(
         high_contrast: increased_contrast(&colors, appearance),
         colors,
     })
+}
+
+#[cfg(test)]
+mod texture_tests {
+    use super::*;
+
+    #[test]
+    fn textures_share_perceptual_strength_across_all_builtin_palettes() {
+        assert_eq!(
+            reader_texture_ids(),
+            vec![
+                ReaderTextureId::Paper,
+                ReaderTextureId::Kraft,
+                ReaderTextureId::Linen,
+                ReaderTextureId::Grain
+            ]
+        );
+        for id in reader_texture_ids() {
+            assert_eq!(
+                reader_texture_choice(id).strength,
+                ReaderTextureStrength::Light
+            );
+        }
+        assert!((oklab_lightness([1.0; 3]) - 1.0).abs() < 1e-7);
+        assert_eq!(oklab_lightness([0.0; 3]), 0.0);
+        assert!((oklab_lightness([1.0, 0.0, 0.0]) - 0.6279553606).abs() < 1e-7);
+        assert_eq!(texture_lightness([0.0; 3]), 0.0);
+        assert!((texture_lightness([1.0; 3]) - 1.0).abs() < 1e-7);
+        let black = builtin_theme_palettes()
+            .into_iter()
+            .find(|p| p.id == "black-dark")
+            .unwrap();
+        let alpha = reader_texture_alpha(
+            black.colors.paper,
+            black.colors.ink,
+            ReaderTextureStrength::Strong,
+        );
+        assert!(
+            (0.02..0.03).contains(&alpha),
+            "pure-black strong alpha: {alpha}"
+        );
+        for palette in builtin_theme_palettes() {
+            for colors in [palette.colors, palette.high_contrast] {
+                let paper = srgb_channels(colors.paper);
+                let ink = srgb_channels(colors.ink);
+                for (strength, target) in reader_texture_strengths()
+                    .into_iter()
+                    .zip([0.015, 0.025, 0.035])
+                {
+                    let alpha = reader_texture_alpha(colors.paper, colors.ink, strength);
+                    assert!(
+                        (0.0..=1.0).contains(&alpha),
+                        "{} {strength:?}: {alpha}",
+                        palette.id
+                    );
+                    let mixed = std::array::from_fn(|i| paper[i] * (1.0 - alpha) + ink[i] * alpha);
+                    let delta = (texture_lightness(mixed) - texture_lightness(paper)).abs();
+                    assert!(
+                        (delta - target).abs() < 1e-7,
+                        "{} {strength:?}: ΔLr={delta}",
+                        palette.id
+                    );
+                }
+            }
+        }
+    }
 }

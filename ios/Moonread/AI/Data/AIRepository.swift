@@ -63,8 +63,12 @@ struct AIStagedAsset: Sendable {
         let configuration: ModelConfiguration
         if inMemory { configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none) }
         else {
+            #if DEBUG
             let arguments = ProcessInfo.processInfo.arguments
             let session = arguments.firstIndex(of: "--ui-test-session").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
+            #else
+            let session: String? = nil
+            #endif
             let location: URL
             if let url { location = url }
             else {

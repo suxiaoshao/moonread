@@ -175,9 +175,13 @@ struct AISessionSummary: Identifiable {
     @ObservationIgnored var fixtureSeeded = false
     #endif
     init(repository: AIRepository? = nil, defaults suppliedDefaults: UserDefaults? = nil, storefront: AIStorefrontSource = .live, auth: AIAuthentication = AIAuthentication(), reader: ReaderService = .shared, makeTransport: @escaping @Sendable () -> AITransport = { AITransport() }) {
+        #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         let session = arguments.firstIndex(of: "--ui-test-session").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
         let defaults = suppliedDefaults ?? session.flatMap { UserDefaults(suiteName: "Moonread.AI.UITest-\($0)") } ?? .standard
+        #else
+        let defaults = suppliedDefaults ?? .standard
+        #endif
         self.repository = repository; self.makeTransport = makeTransport; self.reader = reader
         proposals = AIProposalRegistry(reader: reader)
         availability = AIAvailability(defaults: defaults, storefront: storefront)

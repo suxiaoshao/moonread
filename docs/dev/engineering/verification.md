@@ -1,16 +1,42 @@
 # 验证记录与覆盖边界
 
-更新：2026-10-23。本文按能力保存必要证据与未覆盖范围，不作逐轮修改日志。表中结果来自各次受影响回归，不能解释为当前版本在所有设备上完成了全量验收。
+更新：2026-10-24。本文按能力保存必要证据与未覆盖范围，不作逐轮修改日志。表中结果来自各次受影响回归，不能解释为当前版本在所有设备上完成了全量验收。
 
 ## 测试原则
 
 - 测试只保护我们自己的规则，不在多在精；调用生产实现，不复制算法自证。新增或失败的测试先判断是否值得存在、属于哪一层，再决定保留、合并、删除或修复，不能只为变绿而修改断言。
 - Rust 是可复用业务规则的测试主力：身份、解码与 normalization、目录、查询排序、统计及迁移在规则所在处覆盖。Swift 单测只保护 Rust 调用边界、平台适配和自身状态，包括 SwiftData 事实落盘、取消／代次、路由、结果及错误映射；不重复枚举 Rust 算法。规则迁移时测试随生产 owner 一起迁移。
-- UI 只留应用动作到可见结果的关键流程（当前 19 条），不堆编码、语言、主题或字号矩阵，不重复验证单元层规则。不测系统／第三方实现、像素几何、菜单或选择器内部行为，也不以实际运行快慢作业务断言。
+- UI 只留应用动作到可见结果的关键流程（当前 21 条），不堆编码、语言、主题或字号矩阵，不重复验证单元层规则。不测系统／第三方实现、像素几何、菜单或选择器内部行为，也不以实际运行快慢作业务断言。
 - 业务测试使用内存 CredentialStore、假 PurchaseGateway、固定时钟和显式事件／gate，避免真实凭据、网络、购买及 sleep 时序。真实 StoreKit 和钥匙串只放在少数配置好的适配器集成测试中，使用项目 `.storekit` 与隔离的测试钥匙串，验证应用接线，不测系统行为、不接触个人凭据或真实交易。无界面 CI 不可靠的 StoreKit 适配器测试可显式跳过，须在本地与发版前执行，不能把跳过记成通过。
 - 推送前在本地跑全量 Rust 与 Swift 单元测试；CI 是同一提交的最终把关，UI 按改动范围验证关键流程。测试通过不能代替真实阅读体验、系统能力或发布状态的验收。
 
+本机主模拟器仍使用 iOS 27.0 的 iPhone 18 Pro（`FFA6F448-E09C-4885-B59C-53C5E07185F5`）；当前 iOS 27.1 运行时仅支持 Duo，Duo 检查使用独立的 iPhone Duo（`6E42EBA5-DA26-4E2C-BF50-0CA9DC193893`），两个运行时均保留，CI 不变。
+
 以下为历史验证证据，数量和范围保留当时口径，不代表当前测试清单或全量验收状态。
+
+## 2026-10-24 统计单次写入（#88）
+
+移除统计失败重试队列、重试入口、256 批上限及计时限制。写入任务按顺序执行，每批只尝试一次，失败丢弃并保留错误提示，lease 不留在失败批次中；ReaderScreen 按 error 跳过评分的逻辑不变。导出和删除仅 drain，删除随后检查仍然开着的阅读器。不再有 discard、flushForBackup 或未保存统计阻止导出的错误。
+
+原只测 discard／重试的用例改为顺序单次写入断言：失败不阻塞下一批、不重试、保留 error，真实阅读器仍阻止删除，关闭后 lease 释放且可正常删除。原写入期间保留 lease、导出等待在途写入的断言保留。本地 Rust 全量 94 项通过（real 4.2 秒）；固定 iPhone 18 Pro 的 MoonreadTests 全量 272 项通过（用例 62.9 秒，含增量构建／启动 real 123.1 秒），既有 U21 单跑通过（用例 37.7 秒，real 56.2 秒），不新增 UI 用例。证据：`build/DataManagement/once-rust.log`、`Once-MoonreadTests.xcresult` / `once-swift.log`、`Once-U21.xcresult` / `once-u21.log`。
+
+导入成功复用已有 received-data 通知刷新 ThemeStore snapshot；原临时目录清理同时覆盖 export-* / import-*，生产调用点不变，保护当前预览及进行中的解包／导出。通知和遗留暂存／当前预览保护断言并入原导出测试，没有新增测试方法。追加验证：Rust 全量 94 项通过（real 5.5 秒），MoonreadTests 全量 272 项通过（用例 58.3 秒，含增量构建／启动 113.3 秒），U21 单跑通过（用例 40.5 秒，real 56.9 秒）。证据：`build/DataManagement/finalize-rust.log`、`Finalize-MoonreadTests.xcresult` / `finalize-swift.log`、`Finalize-U21.xcresult` / `finalize-u21.log`。
+
+## 2026-10-24 整书删除边界调整（#88）
+
+删除回执及启动补删已移除，pending 库先提交、正式库后提交；中途退出可从仍可见的正式记录再次删除。现有删除测试改为保护按键归属：未知 chapter/metadata、位置、批注、事实与可归属的统计清除随整书删除，未知前缀与无法归属的统计清除保留；未知封面引用保守保留资产。unsupported 条目允许选择和删除，编辑／合并／导入的兼容隔离不变。原位置 flush 与统计收尾断言保留。
+
+本地 Rust 全量 94 项通过（real 6.3 秒），Clippy 通过；固定 iPhone 18 Pro 的 MoonreadTests 全量 272 项通过（用例 62.4 秒，含增量构建／启动 real 118.7 秒），U21 单跑通过（用例 36.2 秒，real 51.1 秒）。证据：`build/DataManagement/deletion-rust.log`、`deletion-clippy.log`、`Deletion-Final-MoonreadTests.xcresult` / `deletion-final-swift.log`、`Deletion-Final-U21.xcresult` / `deletion-final-u21.log`。本轮未新增 UI 用例，也未验证真实跨设备同步。
+
+## 2026-10-23 阅读数据管理（#50 / #60）
+
+本地 Nix Rust 全量 94 项通过（12.0 秒），Clippy 通过；iPhone 18 Pro `FFA6F448-E09C-4885-B59C-53C5E07185F5` 的 MoonreadTests 全量 272 项通过（用例 56.2 秒，含增量构建与启动共 98.9 秒）。覆盖完整权威备份/目录/附件往返、幂等及冲突回滚、pending 与账户准入、位置 flush/转移/统计收尾，以及原件不可用时保留正文。新增 gate 断言导出包含在途位置和事实；保留陈旧位置候选并在最终保存前注入失败，验证整包回滚；此处原先的统计重试／discard 断言已由上述单次写入规则替代。原有 S467 和导入预览失败用例的业务断言保持不变并通过。
+
+备份预览以只读方式获取批注候选，导入最终校验与位置压缩处于同一事务，只有一次保存；快照与导入不再使用全局投影 epoch 拒绝，账户/configuration 校验保留。同 token 位置按解码后的内容比较，普通批注压缩和其余投影缓存机制保持原行为。Rust 表驱动验证新增「成员摘要正确但与资产文件名不符」的拒绝场景。没有改变 SwiftData/CloudKit schema。
+
+唯一新增 U21 流程通过（用例 34.2 秒）：设置导出全部、删除该条、确认小说原件仍在、导入旧包恢复 50.0% 位置和手动目录。预览为简明文案与主题主按钮，行内不显示 SHA 短码；仍是 21 条 UI 流程，没有增加截图矩阵。证据：`build/DataManagement/verified-review-rust.log`、`Verified-Review-MoonreadTests.xcresult` / `verified-review-swift.log`、`Verified-Review-U21.xcresult` / `verified-review-u21.log`。四张静止图在 `build/DataManagement/screens/`（列表、删除确认、导入预览、导入后的列表），来源与录屏见 `screenshot-evidence.txt`。早期定位失败不计为通过，同提交 CI 以 PR 检查为准。
+
+这些结果不代表真实 CloudKit 对象删除已传播到其他设备；离线回连、新事实保留、账户系统清理与 iCloud 原件不可访问仍需授权的真实环境验收。本轮没有操作真机、真实小说库、Apple 账号或云端 schema。
 
 ## TXT 分享接收
 

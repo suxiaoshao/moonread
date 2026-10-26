@@ -43,15 +43,7 @@ private final class ShareReceiveModel {
                 let draft = try ShareInbox.Draft(in: .shared())
                 var published = false
                 defer { if !published { draft.discard() } }
-                var items: [ShareInbox.Item] = [], skipped: [String] = []
-                for provider in providers {
-                    try Task.checkCancellation()
-                    do { items.append(try await draft.load(provider)) }
-                    catch let skippedFile as ShareInbox.SkippedFile { skipped.append(skippedFile.name) }
-                    catch ShareInbox.InboxError.unsupported {
-                        skipped.append(provider.suggestedName ?? String(localized: "未命名文件", table: "ShareReceive"))
-                    }
-                }
+                let (items, skipped) = try await draft.receive(providers)
                 try Task.checkCancellation()
                 if !items.isEmpty { try draft.publish(items: items, skippedNames: skipped); published = true }
                 state = .received(items.count, skipped)

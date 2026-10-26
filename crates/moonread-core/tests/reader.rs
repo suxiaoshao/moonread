@@ -1,4 +1,4 @@
-use moonread_core::{ReaderCore, ReaderError};
+use moonread_core::ReaderCore;
 use tempfile::TempDir;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -65,7 +65,7 @@ fn normalization_handles_decoder_buffer_boundaries() {
 }
 
 #[test]
-fn long_grapheme_extends_chunk_and_excessive_grapheme_is_rejected_without_fallback() {
+fn long_grapheme_extends_chunk_and_excessive_grapheme_preserves_all_scalars() {
     let dir = TempDir::new().unwrap();
     let core = core(&dir);
     let cluster = format!("e{}", "\u{301}".repeat(10_000));
@@ -79,16 +79,16 @@ fn long_grapheme_extends_chunk_and_excessive_grapheme_is_rejected_without_fallba
 
     let path = dir.path().join("excessive-grapheme.txt");
     std::fs::write(&path, format!("e{}", "\u{301}".repeat(32_768))).unwrap();
-    assert!(matches!(
-        core.import_book(path.to_string_lossy().into(), "excessive".into()),
-        Err(ReaderError::GraphemeTooLong)
-    ));
+    let excessive = core
+        .import_book(path.to_string_lossy().into(), "excessive".into())
+        .unwrap();
+    let chunks: Vec<_> = (0..excessive.chunk_count)
+        .map(|i| core.read_chunk(excessive.id.clone(), i).unwrap())
+        .collect();
+    assert!(chunks.iter().all(|c| c.text.len() <= 64 * 1024));
     assert_eq!(
-        rusqlite::Connection::open(dir.path().join("data/reader.sqlite3"))
-            .unwrap()
-            .query_row("SELECT COUNT(*) FROM books", [], |row| row.get::<_, i64>(0))
-            .unwrap(),
-        1
+        chunks.into_iter().map(|c| c.text).collect::<String>(),
+        format!("e{}", "\u{301}".repeat(32_768))
     );
 }
 

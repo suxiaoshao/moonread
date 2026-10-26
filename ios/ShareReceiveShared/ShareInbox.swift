@@ -146,6 +146,27 @@ struct ShareInbox: Sendable {
         func discard(_ item: Item) { try? FileManager.default.removeItem(at: item.url(in: directory).deletingLastPathComponent()) }
         func discard() { try? FileManager.default.removeItem(at: directory) }
 
+        /// Per-provider I/O isolation is shared by the extension and adapter tests.
+        /// Cancellation still aborts the draft; only completed copies are published.
+        @MainActor func receive(_ providers: [NSItemProvider]) async throws -> (items: [Item], skipped: [String]) {
+            var items: [ShareInbox.Item] = [], skipped: [String] = []
+            for provider in providers {
+                try Task.checkCancellation()
+                do { items.append(try await load(provider)) }
+                catch let skippedFile as ShareInbox.SkippedFile { skipped.append(skippedFile.name) }
+                catch ShareInbox.InboxError.unsupported {
+                    skipped.append(provider.suggestedName ?? String(localized: "未命名文件", table: "ShareReceive"))
+                }
+                catch is CancellationError { throw CancellationError() }
+                catch {
+                    try Task.checkCancellation()
+                    skipped.append((provider.suggestedName ?? String(localized: "未命名文件", table: "ShareReceive")) + ": " + error.localizedDescription)
+                }
+            }
+            try Task.checkCancellation()
+            return (items, skipped)
+        }
+
         @MainActor func load(_ provider: NSItemProvider) async throws -> Item {
             let plainType = provider.registeredContentTypes.first { $0.conforms(to: .plainText) }
             let suggestedName = provider.suggestedName

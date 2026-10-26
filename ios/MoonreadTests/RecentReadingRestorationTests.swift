@@ -9,13 +9,14 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
   func testExplicitHintShapeNullableFieldsAndPendingTransferPreserveOriginalClock() async throws {
     let f = try await fixture()
     defer { f.clean() }
+    let formalKey = String(repeating: "a", count: 64)
     let h = hint("原创/样本.txt", size: nil, decoding: "UTF-8")
     let value = PositionValue(content_key: "pending:sample", offset: 12, source_hint: h)
     let json = try UserSyncJSON.encode(value)
     let object = try XCTUnwrap(
       JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
     XCTAssertTrue((object["source_hint"] as? [String: Any])?["byte_size"] is NSNull)
-    let empty = try UserSyncJSON.encode(PositionValue(content_key: "sha", offset: 0))
+    let empty = try UserSyncJSON.encode(PositionValue(content_key: formalKey, offset: 0))
     XCTAssertTrue(
       try XCTUnwrap(JSONSerialization.jsonObject(with: Data(empty.utf8)) as? [String: Any])[
         "source_hint"] is NSNull)
@@ -23,19 +24,18 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
       StoredValue(updated: 123, token: "keep-token", value: json), envelope: true)
     try await f.pending.receiveSyncFixture("position", key: "pending:sample", payload: encoded)
     let transfer = try await f.pending.exportPending(key: "pending:sample")
-    try await f.store.importPending(transfer, from: "pending:sample", to: "sha")
+    try await f.store.importPending(transfer, from: "pending:sample", to: formalKey)
     let rows = try await f.store.recentRestorationPositions(limit: 10)
     XCTAssertEqual(rows.first?.hint, h)
     XCTAssertEqual(rows.first?.updated, 123)
     XCTAssertEqual(rows.first?.token, "keep-token")
     for mutation in [
-      "missingHint", "missingSize", "unknown", "escape", "absolute", "name", "encoding", "kind",
+      "missingSize", "unknown", "escape", "absolute", "name", "encoding", "kind",
       "type", "size",
     ] {
       var bad = object
       var nested = try XCTUnwrap(object["source_hint"] as? [String: Any])
       switch mutation {
-      case "missingHint": bad.removeValue(forKey: "source_hint")
       case "missingSize": nested.removeValue(forKey: "byte_size")
       case "unknown": nested["future"] = true
       case "escape": nested["relative_path"] = "../样本.txt"
@@ -46,22 +46,30 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
       case "type": nested["byte_size"] = "12"
       default: nested["byte_size"] = UInt64.max
       }
-      if mutation != "missingHint" { bad["source_hint"] = nested }
+      bad["source_hint"] = nested
       let text = String(decoding: try JSONSerialization.data(withJSONObject: bad), as: UTF8.self)
       XCTAssertThrowsError(
         try UserSyncJSON.decode(PositionValue.self, text, as: UserSyncJSON.position), mutation)
     }
-    // Build 2's missing field is explicitly unsupported; never rewrite it.
+    // Build 2 omitted source_hint. Read it as nil and keep its payload intact;
+    // restoration can still use the existing fallback when no hint is available.
+    var noHint = object; noHint.removeValue(forKey: "source_hint")
+    let oldPosition = String(decoding: try JSONSerialization.data(withJSONObject: noHint), as: UTF8.self)
+    XCTAssertNil(try UserSyncJSON.decode(PositionValue.self, oldPosition, as: UserSyncJSON.position).source_hint)
     let legacy = try UserSyncJSON.encode(
-      StoredValue(updated: 999, token: "old", value: "{\"content_key\":\"legacy\",\"offset\":12}"),
+      StoredValue(updated: 999, token: "old", value: "{\"content_key\":\"\(formalKey)\",\"offset\":12}"),
       envelope: true)
-    try await f.store.receiveSyncFixture("position", key: "legacy", payload: legacy)
+    try await f.store.receiveSyncFixture("position", key: formalKey, payload: legacy)
     let before = try await snapshot(f.store)
     await restore(f)
     let after = try await snapshot(f.store)
     XCTAssertEqual(before, after)
     let compatible = try await f.store.recentRestorationPositions(limit: 10)
-    XCTAssertFalse(compatible.contains { $0.contentKey == "legacy" })
+    let restoredLegacy = try XCTUnwrap(compatible.first { $0.contentKey == formalKey })
+    XCTAssertNil(restoredLegacy.hint); XCTAssertEqual(restoredLegacy.updated, 999)
+    XCTAssertEqual(restoredLegacy.token, "old")
+    let saved = try await f.store.value("position/" + formalKey)
+    XCTAssertEqual(saved, "{\"content_key\":\"\(formalKey)\",\"offset\":12}")
   }
 
   // S280: 文件与同步数据任一先到均可恢复位置，但恢复过程不得写新阅读事实或改原文件。
@@ -285,11 +293,12 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
       try await scan(f)
       let key = sha(text)
       try await position(f, key: key, hint: hint("sample.txt", size: UInt64(text.utf8.count)))
-      let entered = expectation(description: "prepared but not linked: " + mutation)
-      let gate = RestorationGate(entered)
+      let gate = RestorationGate()
       await f.service.restorationFixture(active: true, beforeCommit: { await gate.wait() })
       await f.service.scheduleRecentRestoration()
-      await fulfillment(of: [entered], timeout: 5)
+      // Wait for preparation to reach the publication boundary before mutating
+      // the source. Runner speed must not select the order of these operations.
+      await gate.waitForEntry()
       let file = try XCTUnwrap(f.core.sourceFileSnapshots(fileId: nil).first)
       switch mutation {
       case "replace":
@@ -340,11 +349,10 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
       try await scan(f)
       let key = sha(text)
       try await position(f, key: key, hint: hint("sample.txt", size: UInt64(text.utf8.count)))
-      let entered = expectation(description: "background admitted, source not yet read")
-      let gate = RestorationGate(entered)
+      let gate = RestorationGate()
       await f.service.restorationFixture(active: true, beforeRead: { _ in await gate.wait() })
       await f.service.scheduleRecentRestoration()
-      await fulfillment(of: [entered], timeout: 5)
+      await gate.waitForEntry()
       let file = try XCTUnwrap(f.core.sourceFileSnapshots(fileId: nil).first)
       let before = try await snapshot(f.store)
       let source = SourceFile(id: file.id, shelfID: "builtin", relativePath: file.relativePath)

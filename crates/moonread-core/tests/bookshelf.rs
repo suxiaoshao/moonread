@@ -30,6 +30,7 @@ fn scope_tree_and_natural_order_use_only_metadata() {
             item("奇幻/山海.txt", false),
             item("10.txt", false),
             item("2.txt", false),
+            item("02.txt", false),
         ],
     )
     .unwrap();
@@ -42,10 +43,30 @@ fn scope_tree_and_natural_order_use_only_metadata() {
         .unwrap();
     assert_eq!(
         root.iter().map(|x| x.name.as_str()).collect::<Vec<_>>(),
-        ["奇幻", "2.txt", "10.txt"]
+        ["奇幻", "2.txt", "02.txt", "10.txt"]
     );
     assert_eq!(root[0].child_book_count, 1);
     assert_eq!(root[0].cover_previews[0].name, "山海.txt");
+    let ordinal = core
+        .query_snapshot("{}".into())
+        .unwrap()
+        .library_search_candidates(
+            moonread_core::CatalogueScope {
+                shelf_id: Some("builtin".into()),
+                parent_path: None,
+                recursive: true,
+            },
+            true,
+        )
+        .unwrap();
+    assert_eq!(
+        ordinal
+            .iter()
+            .map(|c| (c.entry.name.as_str(), c.natural_order_ordinal))
+            .collect::<Vec<_>>(),
+        [("2.txt", 0), ("02.txt", 1), ("10.txt", 2), ("山海.txt", 3)]
+    );
+
     let catalogue = core
         .query_snapshot("{}".into())
         .unwrap()
@@ -56,28 +77,27 @@ fn scope_tree_and_natural_order_use_only_metadata() {
             .iter()
             .map(|e| e.name.as_str())
             .collect::<Vec<_>>(),
-        ["2.txt", "10.txt", "山海.txt"]
+        ["2.txt", "02.txt", "10.txt", "山海.txt"]
     );
     assert!(
         catalogue
             .iter()
             .all(|e| !e.directory && e.shelf_id == "builtin")
     );
-    assert_eq!(
-        core.query_snapshot("{}".into())
-            .unwrap()
-            .search_library(None, "山".into(), None, None)
-            .unwrap()
-            .len(),
-        2
-    );
-    let scoped = core
+    let candidates = core
         .query_snapshot("{}".into())
         .unwrap()
-        .search_library(Some("builtin".into()), "山".into(), None, None)
+        .library_search_candidates(
+            moonread_core::CatalogueScope {
+                shelf_id: Some("builtin".into()),
+                parent_path: Some("奇幻".into()),
+                recursive: true,
+            },
+            true,
+        )
         .unwrap();
-    assert_eq!(scoped.len(), 1);
-    assert_eq!(scoped[0].parent_path, "奇幻");
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].entry.parent_path, "奇幻");
     assert!(
         core.query_snapshot("{}".into())
             .unwrap()
@@ -305,80 +325,7 @@ fn cover_previews_are_bounded_recursive_and_follow_current_files() {
 }
 
 #[test]
-fn search_ranks_titles_before_authors_and_filters_only_books() {
-    let dir = TempDir::new().unwrap();
-    let core = core(&dir);
-    core.scan_library_shelf(
-        "builtin".into(),
-        vec![
-            item("星河", true),
-            item("星河/星河书简.txt", false),
-            item("书简星河.txt", false),
-            item("雨巷.txt", false),
-            item("txt说明.txt", false),
-        ],
-    )
-    .unwrap();
-    core.scan_library_shelf("external".into(), vec![item("星河外传.txt", false)])
-        .unwrap();
-    let files = core
-        .query_snapshot("{}".into())
-        .unwrap()
-        .all_library_books("builtin".into())
-        .unwrap();
-    let id = |name: &str| files.iter().find(|e| e.name == name).unwrap().id.clone();
-    let book = core.create_sample_book().unwrap();
-    core.link_library_file(id("雨巷.txt"), book.id.clone())
-        .unwrap();
-    let query = core
-        .query_snapshot(
-            serde_json::json!({"positions":[],"metadata":[{"sha":book.content_sha256,"author":"林澄","synopsis":"","tags":["武侠"],"cover":null,"status":"Unread"}]})
-                .to_string(),
-        )
-        .unwrap();
-    let names = |shelf: Option<&str>, text: &str, author: Option<&str>, tag: Option<&str>| {
-        query
-            .search_library(
-                shelf.map(Into::into),
-                text.into(),
-                author.map(Into::into),
-                tag.map(Into::into),
-            )
-            .unwrap()
-            .into_iter()
-            .map(|e| e.name)
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(
-        names(None, " 星河 ", None, None),
-        ["星河书简.txt", "星河外传.txt", "书简星河.txt", "星河"],
-        "Books first; prefix before contains; folders last"
-    );
-    assert_eq!(
-        names(Some("builtin"), "星河", None, None),
-        ["星河书简.txt", "书简星河.txt", "星河"]
-    );
-    assert_eq!(
-        names(None, "txt", None, None),
-        ["txt说明.txt"],
-        "The extension is not searchable"
-    );
-    assert_eq!(
-        names(None, "林", None, None),
-        ["雨巷.txt"],
-        "Author text matches after titles"
-    );
-    assert_eq!(names(None, "", Some("林澄"), None), ["雨巷.txt"]);
-    assert_eq!(names(None, "", None, Some("武侠")), ["雨巷.txt"]);
-    assert!(
-        names(None, "星", Some("林澄"), None).is_empty(),
-        "Filters exclude folders and other books"
-    );
-    assert!(names(None, "  ", None, None).is_empty());
-}
-
-#[test]
-fn combined_search_scope_keeps_indexed_unopened_copies_and_excludes_other_shelves() {
+fn candidate_scope_keeps_indexed_unopened_copies_and_excludes_other_shelves() {
     let dir = TempDir::new().unwrap();
     let core = core(&dir);
     let text = "第一章 星灯\n仅用于组合搜索的合成正文。\n";
@@ -416,14 +363,25 @@ fn combined_search_scope_keeps_indexed_unopened_copies_and_excludes_other_shelve
         "sha":identity.content_sha256,"author":"林澄","synopsis":"","tags":["旅途"],"cover":null,"status":"Unread"
     }]}).to_string()).unwrap();
     let books = query
-        .search_library(
-            Some("builtin".into()),
-            "星灯".into(),
-            Some("林澄".into()),
-            Some("旅途".into()),
+        .library_search_candidates(
+            moonread_core::CatalogueScope {
+                shelf_id: Some("builtin".into()),
+                parent_path: None,
+                recursive: true,
+            },
+            true,
         )
-        .unwrap();
+        .unwrap()
+        .into_iter()
+        .map(|c| c.entry)
+        .collect::<Vec<_>>();
     assert_eq!(books.len(), 2);
+    assert!(books.iter().all(|b| {
+        b.metadata
+            .as_ref()
+            .is_some_and(|m| m.author == "林澄" && m.tags == ["旅途"])
+    }));
+
     assert!(
         books
             .iter()
@@ -436,16 +394,5 @@ fn combined_search_scope_keeps_indexed_unopened_copies_and_excludes_other_shelve
             .collect::<std::collections::HashSet<_>>()
             .len(),
         2
-    );
-    assert!(
-        query
-            .search_library(
-                Some("builtin".into()),
-                "星灯".into(),
-                Some("其他作者".into()),
-                Some("旅途".into())
-            )
-            .unwrap()
-            .is_empty()
     );
 }
