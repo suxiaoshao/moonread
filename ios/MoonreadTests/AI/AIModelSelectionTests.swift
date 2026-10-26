@@ -27,6 +27,11 @@ final class AIModelSelectionConversationTests: ConversationFixture {
     service.providers.connections[0].modelID = "fixture-model"
     service.providers.connections[0].thinking = "high"
     service.providers.saveConnections()
+    // The settings page commits model + effort through the default-selection owner.
+    let savedDefault = await service.applyModelSelection(
+      .init(connectionID: id, modelID: "fixture-model", thinking: "high"), to: .defaults)
+    XCTAssertTrue(savedDefault)
+    XCTAssertEqual(service.modelSelection(for: .defaults)?.thinking, "high")
     service.updateDraft(conversation.id, text: "目录就绪后发送")
     service.send(conversation.id)
     await wait { conversation.turns.last?.outcome == .completed }

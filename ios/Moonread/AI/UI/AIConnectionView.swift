@@ -7,6 +7,8 @@ struct AIConnectionView: View {
     @Environment(\.dismiss) private var dismiss
     let connectionID: String
     var startsEditingModels = false
+    var startsLogin = false
+    @State private var startedLogin = false
     @State private var editingModels = false
     @State private var confirmingRemoval = false
     @State private var removing = false
@@ -100,6 +102,12 @@ struct AIConnectionView: View {
                             }
                         }
                 }
+            }
+            .task {
+                guard startsLogin, !startedLogin else { return }
+                startedLogin = true
+                guard let connection, connection.authMethod != .apiKey else { return }
+                ai.providers.login(connectionID)
             }
             .onChange(of: addingModel) { _, presented in
                 if !presented { manualModel = ""; manualContext = ""; manualOutput = ""; manualError = false }

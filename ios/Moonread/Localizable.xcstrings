@@ -1,6 +1,66 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+  "未登录": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Not signed in"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "未登入"
+        }
+      }
+    }
+  },
+  "按用途选择默认模型，具体对话仍可单独更换。": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Choose defaults by purpose. Individual conversations can use a different model."
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "按用途選擇預設模型，個別對話仍可單獨更換。"
+        }
+      }
+    }
+  },
+  "%lld 个模型": {
+    "localizations": {
+      "en": {
+        "variations": {
+          "plural": {
+            "one": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%lld model"
+              }
+            },
+            "other": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%lld models"
+              }
+            }
+          }
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld 個模型"
+        }
+      }
+    }
+  },
     "识别未完成": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Recognition Incomplete"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"識別未完成"}}}},
     "处理": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Manage"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"處理"}}}},
     "最大输出不能超过上下文容量。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Maximum output must not exceed the context capacity."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"最大輸出不能超過上下文容量。"}}}},
