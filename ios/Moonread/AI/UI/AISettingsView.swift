@@ -7,51 +7,110 @@ struct AISettingsView: View {
     @Environment(\.theme) private var theme
     var body: some View {
         List {
-            // What to use is the recurring task; the account list can grow without pushing it away.
             Section {
-                Text("登录、模型发现和公共模型目录刷新只用于连接与能力信息，不发送小说或聊天内容。内容共享会在发送前另行询问。")
-            }.listRowBackground(Color(uiColor: theme.surface))
-            Section("默认使用") {
-                HStack {
-                    Text("对话")
-                    Spacer(minLength: LayoutTokens.compact)
-                    AIModelPickerButton(target: .defaults)
-                }
-                ForEach(AIModelPurpose.allCases, id: \.self) { purpose in
-                    NavigationLink { AIToolServiceView(purpose: purpose) } label: {
-                        HStack {
-                            Text(purpose.title)
-                            Spacer()
-                            Text(ai.providers.purposeSelection(purpose).flatMap { selection in
-                                ai.providers.connections.first { $0.id == selection.connectionID }?.name
-                            } ?? String(localized: "未设置"))
-                                .foregroundStyle(Color(uiColor: theme.secondary))
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("默认使用").font(.headline)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("对话").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                        AIModelPickerButton(target: .defaults, compact: true)
+                            .padding(.horizontal, 10).background(Color(uiColor: theme.selected), in: .capsule)
+                    }
+                    ForEach(AIModelPurpose.allCases, id: \.self) { purpose in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(purpose.title).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                            NavigationLink { AIToolServiceView(purpose: purpose) } label: {
+                                Text(verbatim: purposeLabel(purpose)).font(.subheadline.weight(.semibold))
+                                    .padding(.horizontal, 14).padding(.vertical, 10)
+                                    .background(Color(uiColor: theme.selected), in: .capsule)
+                            }.buttonStyle(.plain).accessibilityIdentifier("openAIModelPanel-" + purpose.rawValue)
                         }
-                    }.accessibilityIdentifier("openAIModelPanel-" + purpose.rawValue)
-                }
-            }.listRowBackground(Color(uiColor: theme.surface))
-            Section("连接") {
-                ForEach(ai.providers.connections) { connection in
-                    NavigationLink { AIConnectionView(connectionID: connection.id) } label: {
-                        HStack(spacing: 12) {
-                            AIProviderIcon(providerID: connection.catalogID)
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(connection.name).font(.headline)
-                                Text(ai.providers.isLoggedIn(connection) ? (connection.authMethod == .apiKey ? "已配置" : "已连接") : "尚未连接")
-                                    .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                            }
-                        }.padding(.vertical, 6)
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(18)
+                    .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 22))
+            }.listRowInsets(EdgeInsets()).listRowBackground(Color.clear).listRowSeparator(.hidden)
+            Section {
+                if ai.providers.connections.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("还没有连接").font(.headline)
+                        Text("添加一个 AI 连接后，选择用于对话和工具的模型。")
+                            .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                    }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 22))
+                } else {
+                    ForEach(ai.providers.connections) { connection in
+                        AISettingsConnectionCard(connection: connection)
                     }
                 }
                 Button("添加连接", systemImage: "plus") { adding = true }
-                    .accessibilityIdentifier("addAIConnection")
-            }.listRowBackground(Color(uiColor: theme.surface))
-            if let error = ai.providers.error { Section { Text(error).foregroundStyle(Color(uiColor: theme.destructive)) }.listRowBackground(Color(uiColor: theme.surface)) }
+                    .buttonStyle(ThemedProminentButtonStyle()).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 8).accessibilityIdentifier("addAIConnection")
+                if let error = ai.providers.error {
+                    Label(error, systemImage: "exclamationmark.circle").font(.footnote)
+                        .foregroundStyle(Color(uiColor: theme.destructive))
+                }
+            } header: { Text("连接") } footer: {
+                Text("登录、模型发现和公共模型目录刷新只用于连接与能力信息，不发送小说或聊天内容。内容共享会在发送前另行询问。")
+                    .foregroundStyle(Color(uiColor: theme.secondary))
+            }.listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                .listRowBackground(Color.clear).listRowSeparator(.hidden)
         }.themedPage().navigationTitle("AI 助手")
             .aiAddConnectionFlow(isPresented: $adding)
             .onChange(of: ai.availability.isAvailable) { _, available in if !available { adding = false; dismiss() } }
             .task { await ai.providers.refreshCatalogsIfNeeded() }
             .toolbar { ToolbarItem(placement: .topBarTrailing) { NavigationLink { AIUsageHelpView() } label: { Image(systemName: "questionmark.circle") }.toolbarGlyph().accessibilityLabel("AI 使用帮助") } }
+    }
+    private func purposeLabel(_ purpose: AIModelPurpose) -> String {
+        guard let selection = ai.providers.purposeSelection(purpose),
+              let connection = ai.providers.connections.first(where: { $0.id == selection.connectionID }) else { return String(localized: "未设置") }
+        let model = connection.models.first { $0.id == selection.modelID }?.name ?? selection.modelID
+        return model + " · " + connection.name
+    }
+}
+
+/// Configuration summary, shared by the settings home and purpose draft. State
+/// and model enablement continue to come from AIConnectionService.
+private struct AISettingsConnectionCard: View {
+    let connection: AIConnection
+    @Environment(AIService.self) private var ai
+    @Environment(\.theme) private var theme
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                AIProviderIcon(providerID: connection.catalogID)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(connection.name).font(.headline)
+                    Text(verbatim: connection.serviceName).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                }
+            }
+            status.font(.subheadline)
+            if connection.modelsChecked != nil || !connection.models.isEmpty {
+                Text("已启用 \(connection.models.filter { ai.providers.isEnabled(modelID: $0.id, in: connection) }.count) 个模型")
+                    .font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+            } else { Text("模型目录尚未加载").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
+            if case .modelsFailed = ai.providers.connectionState(connection) {
+                Button("重新加载模型") { Task { await ai.providers.refreshModels(connection.id) } }
+                    .buttonStyle(ThemedSecondaryButtonStyle())
+                NavigationLink("管理连接") { AIConnectionView(connectionID: connection.id) }.font(.subheadline)
+            } else {
+                NavigationLink(ai.providers.isLoggedIn(connection) ? "管理连接" : "连接账户") { AIConnectionView(connectionID: connection.id) }
+                    .buttonStyle(ThemedSecondaryButtonStyle())
+            }
+        }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 22))
+            .accessibilityIdentifier("aiConnectionCard-" + connection.id)
+    }
+    @ViewBuilder private var status: some View {
+        switch ai.providers.connectionState(connection) {
+        case .signedOut: Text("尚未连接").foregroundStyle(Color(uiColor: theme.secondary))
+        case .connected: Text(connection.authMethod == .apiKey ? "已配置" : "已连接").foregroundStyle(Color(uiColor: theme.accent))
+        case .authorizing, .browser: Label { Text("等待授权") } icon: { ProgressView() }
+        case .loadingModels: Label { Text("正在加载模型") } icon: { ProgressView() }
+        case .modelsFailed(let message), .loginFailed(let message):
+            Label(message, systemImage: "exclamationmark.circle").foregroundStyle(Color(uiColor: theme.destructive))
+        case .expired: Text("授权已过期").foregroundStyle(Color(uiColor: theme.secondary))
+        case .needsLogin: Text("请重新登录并完成授权。").foregroundStyle(Color(uiColor: theme.secondary))
+        case .planPermissionRequired: Text("你没有允许月读使用 ChatGPT 套餐").foregroundStyle(Color(uiColor: theme.secondary))
+        }
     }
 }
 
@@ -122,13 +181,15 @@ private struct AIAddConnectionView: View {
                         Text("Anthropic Messages").tag(AIWireProtocol.anthropic)
                         Text("Google Gemini").tag(AIWireProtocol.gemini)
                     }
-                    Button("添加") {
+                    Button {
                         let value = AIConnection(name: customName, billing: .usage,
                             baseURL: endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/ ")),
                             providerID: "custom", providerName: customName, wireProtocol: wire, authMethod: .apiKey)
                         createdConnectionID = ai.providers.addConnection(value); dismiss()
-                    }.disabled(customName.isEmpty || URL(string: endpoint)?.scheme != "https" || URL(string: endpoint)?.host == nil)
-                }.listRowBackground(Color(uiColor: theme.surface)) }
+                    } label: { Text("添加连接").frame(maxWidth: .infinity).padding(.vertical, 6) }
+                        .buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("addCustomAIConnection")
+                        .disabled(customName.isEmpty || URL(string: endpoint)?.scheme != "https" || URL(string: endpoint)?.host == nil)
+                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
             }.themedPage().searchable(text: $query).navigationTitle("添加连接")
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
         }
@@ -158,43 +219,47 @@ struct AIToolServiceView: View {
         return AINativeCapabilities.route(purpose, connection: connection, model: model) == .openAIHosted
     }
     var body: some View {
-        List {
-            Section("服务") {
-                Picker("服务", selection: Binding(get: { connectionID }, set: { connectionID = $0; modelID = nil; saveFailed = false })) {
-                    Text("不使用").tag(String?.none)
-                    ForEach(connections) { connection in
-                        Label { Text(connection.name) } icon: { AIProviderIcon(providerID: connection.catalogID) }
-                            .tag(Optional(connection.id))
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                if connections.isEmpty {
+                    ContentUnavailableView {
+                        Label("还没有支持此工具的连接", systemImage: "sparkles")
+                    } actions: {
+                        Button("添加连接", systemImage: "plus") { adding = true }
+                            .buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("addAIToolConnection")
                     }
-                }.pickerStyle(.inline).labelsHidden()
-            }.listRowBackground(Color(uiColor: theme.surface))
-            if connections.isEmpty {
-                Section { Text("还没有支持此工具的连接")
-                    Button("添加连接", systemImage: "plus") { adding = true }.accessibilityIdentifier("addAIToolConnection")
-                }.listRowBackground(Color(uiColor: theme.surface))
-            }
-            if let connection {
-                Section(hostedImage ? String(localized: "执行模型") : (purpose == .search ? String(localized: "搜索模型") : String(localized: "图片模型"))) {
-                    if models.isEmpty {
-                        Text("暂无可用模型").foregroundStyle(Color(uiColor: theme.secondary))
-                    } else {
-                        NavigationLink {
-                            AIPurposeModelList(purpose: purpose, connectionID: connection.id,
-                                               current: ai.providers.purposeSelection(purpose).flatMap { $0.connectionID == connection.id ? $0.modelID : nil },
-                                               selection: $modelID)
-                        } label: {
-                            LabeledContent("模型") {
-                                Text(verbatim: models.first { $0.id == modelID }?.name ?? String(localized: "选择模型"))
+                } else {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("服务").font(.headline)
+                        Picker("服务", selection: Binding(get: { connectionID }, set: { connectionID = $0; modelID = nil; saveFailed = false })) {
+                            Text("不使用").tag(String?.none)
+                            ForEach(connections) { value in Text(value.name).tag(Optional(value.id)) }
+                        }.pickerStyle(.menu).accessibilityIdentifier("aiPurposeConnection")
+                        if let connection {
+                            AISettingsConnectionCard(connection: connection)
+                            ThemedDivider()
+                            if models.isEmpty {
+                                Text("暂无可用模型").foregroundStyle(Color(uiColor: theme.secondary))
+                            } else {
+                                NavigationLink {
+                                    AIPurposeModelList(purpose: purpose, connectionID: connection.id,
+                                        current: ai.providers.purposeSelection(purpose).flatMap { $0.connectionID == connection.id ? $0.modelID : nil }, selection: $modelID)
+                                } label: {
+                                    Label { Text(verbatim: models.first { $0.id == modelID }?.name ?? String(localized: "选择模型")) } icon: { Image(systemName: "sparkles") }
+                                        .padding(.horizontal, 14).padding(.vertical, 10)
+                                        .background(Color(uiColor: theme.selected), in: .capsule)
+                                }.buttonStyle(.plain).accessibilityIdentifier("openAIPurposeModels")
                             }
-                        }.accessibilityIdentifier("openAIPurposeModels")
-                    }
-                    if hostedImage { LabeledContent("绘图模型", value: "由服务决定") }
-                    NavigationLink(ai.providers.isLoggedIn(connection) ? "管理连接" : "连接账户") {
-                        AIConnectionView(connectionID: connection.id)
-                    }
-                }.listRowBackground(Color(uiColor: theme.surface))
-            }
-            if saveFailed { Text("模型目录已变化，请重新选择。").foregroundStyle(Color(uiColor: theme.destructive)).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
+                            if hostedImage { Text("绘图模型由服务决定。").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
+                        }
+                        if saveFailed || (initialized && connectionID != nil && !valid) {
+                            Label("模型目录已变化，请重新选择。", systemImage: "exclamationmark.circle")
+                                .font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
+                        }
+                    }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 22))
+                }
+            }.padding(20).frame(maxWidth: 650).frame(maxWidth: .infinity)
         }.themedPage().navigationTitle(purpose.title).navigationBarTitleDisplayMode(.inline)
             .aiAddConnectionFlow(isPresented: $adding)
             .toolbar {
@@ -206,6 +271,7 @@ struct AIToolServiceView: View {
                     }.disabled(!valid)
                 }
             }
+            .onChange(of: ai.availability.isAvailable) { _, available in if !available { adding = false; dismiss() } }
             .task {
                 guard !initialized else { return }
                 connectionID = ai.providers.purposeSelection(purpose)?.connectionID

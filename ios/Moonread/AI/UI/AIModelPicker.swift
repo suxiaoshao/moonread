@@ -45,7 +45,8 @@ struct AIModelPickerButton: View {
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     let destination: AIModelPickerDestination
-    init(target: AIModelSelectionTarget) { destination = .target(target) }
+    var compact = false
+    init(target: AIModelSelectionTarget, compact: Bool = false) { destination = .target(target); self.compact = compact }
     init(draft: Binding<AIModelSelection?>) { destination = .draft(draft) }
     @State private var panel = false
     @State private var showing = false
@@ -53,7 +54,7 @@ struct AIModelPickerButton: View {
     @State private var saveFailed = false
     var body: some View {
         Button { panel = true } label: {
-            modelLabel.frame(maxWidth: destination.isDefault ? .infinity : nil, alignment: .trailing).contentShape(Rectangle())
+            modelLabel.frame(maxWidth: destination.isDefault && !compact ? .infinity : nil, alignment: .trailing).contentShape(Rectangle())
         }
             .buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.ink))
             .accessibilityHint("选择模型与思考强度").accessibilityIdentifier("openAIModelPanel")
