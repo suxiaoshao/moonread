@@ -151,6 +151,10 @@ final class FullIndexController {
         if failures.contains(where: { $0.file.shelfId == shelf }) { return .retry }
         return .none
     }
+    func sheetIncludeCloud(_ shelf: String, selection: Bool) -> Bool {
+        if running && shelfID == shelf { return request?.includeCloud ?? selection }
+        return selection
+    }
     func sheetProgress(_ shelf: String, inventory: IdentityInventory?) -> (indexed: Int, total: Int)? {
         if running && shelfID == shelf && hasInventory { return (indexed, total) }
         return inventory.map { ($0.total - $0.pending.count, $0.total) }
@@ -351,7 +355,10 @@ struct FullIndexView: View {
                     if let inventory, inventory.pending.contains(where: \.needsDownload) {
                         let cloud = inventory.pending.filter(\.needsDownload)
                         VStack(alignment: .leading, spacing: 8) {
-                            Toggle(isOn: $includeCloud) { Text("包含未下载的 iCloud 文件", tableName: "FullIndex") }.disabled(active)
+                            Toggle(isOn: Binding(get: { controller.sheetIncludeCloud(shelfID, selection: includeCloud) },
+                                                 set: { if !active { includeCloud = $0 } })) {
+                                Text("包含未下载的 iCloud 文件", tableName: "FullIndex")
+                            }.disabled(active)
                                 .accessibilityIdentifier("fullIndexIncludeCloud")
                             Text("\(cloud.count) 本，已知下载量 \(ByteCountFormatter.string(fromByteCount: Int64(clamping: inventory.cloudBytes), countStyle: .file))", tableName: "FullIndex").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                             if cloud.contains(where: { $0.size == 0 }) { Text("部分文件大小未知", tableName: "ShelfRecovery").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
