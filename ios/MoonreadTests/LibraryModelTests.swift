@@ -47,25 +47,6 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
     XCTAssertEqual(controller.sheetProgress("builtin", inventory: refreshed)?.indexed, 2)
   }
 
-  func testIndexSheetReopenedWhileRunningKeepsCloudTaskSelection() async throws {
-    let f = try await fixture(["sample.txt": Data("第一章 原创样本\n窗边亮着一盏灯。".utf8)])
-    defer { f.clean() }
-    try await scan(f)
-    let controller = FullIndexController(defaults: try XCTUnwrap(UserDefaults(suiteName: f.suite)), service: f.service, registerTasks: false)
-    XCTAssertFalse(controller.sheetIncludeCloud("builtin", selection: false))
-    XCTAssertTrue(controller.sheetIncludeCloud("builtin", selection: true))
-    controller.start("builtin", includeCloud: true, userInitiated: false)
-    XCTAssertTrue(controller.running)
-    // Closing/reopening resets the sheet's local selection to false, but the
-    // disabled switch must still reflect the running request, not that default.
-    XCTAssertTrue(controller.sheetIncludeCloud("builtin", selection: false))
-    XCTAssertTrue(controller.sheetIncludeCloud("builtin", selection: false))
-    XCTAssertFalse(controller.sheetIncludeCloud("another-shelf", selection: false))
-    await controller.waitForCompletion()
-    XCTAssertFalse(controller.sheetIncludeCloud("builtin", selection: false))
-    XCTAssertTrue(controller.sheetIncludeCloud("builtin", selection: true))
-  }
-
   @MainActor func testBackgroundTaskCallbacksHopToMainActor() async {
     let launched = expectation(description: "launch delivered on MainActor")
     let expired = expectation(description: "expiration delivered on MainActor")

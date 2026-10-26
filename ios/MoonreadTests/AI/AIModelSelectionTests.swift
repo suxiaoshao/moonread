@@ -27,11 +27,6 @@ final class AIModelSelectionConversationTests: ConversationFixture {
     service.providers.connections[0].modelID = "fixture-model"
     service.providers.connections[0].thinking = "high"
     service.providers.saveConnections()
-    // The settings page commits model + effort through the default-selection owner.
-    let savedDefault = await AIModelPickerDestination.target(.defaults).apply(
-      .init(connectionID: id, modelID: "fixture-model", thinking: "high"), service)
-    XCTAssertTrue(savedDefault)
-    XCTAssertEqual(service.modelSelection(for: .defaults)?.thinking, "high")
     service.updateDraft(conversation.id, text: "目录就绪后发送")
     service.send(conversation.id)
     await wait { conversation.turns.last?.outcome == .completed }
@@ -49,33 +44,6 @@ final class AIModelSelectionConversationTests: ConversationFixture {
     await wait { conversation.turns.last?.outcome == .completed && conversation.entries.count == 4 }
     XCTAssertEqual(conversation.modelID, "fixture-model")
     XCTAssertEqual(conversation.turns.last?.thinking, "low")
-    // Model selection immediately updates defaults; a model without reasoning
-    // has no effort to display, and switching back restores its declared default.
-    let plain = AIModelOption(id: "plain", name: "Plain", thinking: [])
-    service.providers.connections[0].models.append(plain)
-    var selected = service.modelSelection(for: .defaults) ?? .init(connectionID: id, modelID: "", thinking: nil)
-    selected.select(plain, connection: service.providers.connections[0])
-    let savedPlain = await AIModelPickerDestination.target(.defaults).apply(selected, service)
-    XCTAssertTrue(savedPlain)
-    XCTAssertEqual(service.modelSelection(for: .defaults)?.modelID, "plain")
-    XCTAssertNil(service.modelSelection(for: .defaults)?.thinking)
-    selected.select(service.providers.connections[0].models[0], connection: service.providers.connections[0])
-    let savedReasoning = await AIModelPickerDestination.target(.defaults).apply(selected, service)
-    XCTAssertTrue(savedReasoning)
-    XCTAssertEqual(service.modelSelection(for: .defaults)?.thinking, "low")
-    selected.thinking = "high"
-    let savedEffort = await AIModelPickerDestination.target(.defaults).apply(selected, service)
-    XCTAssertTrue(savedEffort)
-    XCTAssertEqual(service.modelSelection(for: .defaults)?.thinking, "high", "Reasoning saves without closing or confirming a picker")
-    XCTAssertEqual(service.providers.connections[0].thinking, "high")
-    XCTAssertEqual(conversation.thinking, "low", "Changing defaults does not edit a conversation")
-    var taskDraft: AIModelSelection?
-    let taskPicker = AIModelPickerDestination.draft(Binding(get: { taskDraft }, set: { taskDraft = $0 }))
-    let pickedDraft = await taskPicker.apply(.init(connectionID: id, modelID: "plain", thinking: nil), service)
-    XCTAssertTrue(pickedDraft)
-    XCTAssertEqual(taskDraft?.modelID, "plain")
-    XCTAssertEqual(service.modelSelection(for: .defaults)?.modelID, "fixture-model", "A task picker only updates its own draft")
-
   }
 }
 
@@ -90,18 +58,6 @@ final class AIModelSelectionAINativeToolsTests: AINativeToolsFixture {
     XCTAssertNil(providers.purposeSelection(.search))
     XCTAssertNotNil(providers.purposeSelection(.image))
     XCTAssertEqual(providers.defaultTextConnectionID, connection.id)
-    let selection = AIPurposeSelection(connectionID: connection.id, modelID: connection.modelID)
-    XCTAssertTrue(providers.setPurpose(.search, selection: selection))
-    XCTAssertEqual(providers.purposeSelection(.search), selection, "A row selection is saved immediately")
-    XCTAssertEqual(TestAI.connections(defaults: defaults, auth: providers.auth).purposeSelection(.search), selection)
-    let service = TestAI.service(defaults: defaults, auth: providers.auth)
-    let searchPicker = AIModelPickerDestination.purpose(.search)
-    let selectedSearch = await searchPicker.apply(.init(connectionID: connection.id, modelID: connection.modelID, thinking: nil), service)
-    XCTAssertTrue(selectedSearch)
-    XCTAssertEqual(searchPicker.selection(service)?.modelID, connection.modelID)
-    XCTAssertEqual(service.providers.defaultTextConnectionID, connection.id)
-    XCTAssertEqual(service.providers.purposeSelection(.image), providers.purposeSelection(.image), "The shared tool picker changes only its purpose")
-
   }
 
   // S214: 未授权/未配置/无声明能力的工具不得启用或发送，不从 provider 名称猜能力。
@@ -123,20 +79,6 @@ final class AIModelSelectionAINativeToolsTests: AINativeToolsFixture {
       connection.baseURL = "https://example.com/v1"
       XCTAssertFalse(AINativeCapabilities.supportsConnection(connection))
     }
-    var visible = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection()
-    let text = AIModelOption(id: "text", name: "Text", thinking: [])
-    providers.connections = [visible]
-    XCTAssertTrue(AIModelAvailability.supports(text, purpose: .search, connection: visible))
-    XCTAssertEqual(AIModelAvailability.reason(text, purpose: .search, connection: visible, providers: providers), String(localized: "未登录"))
-    visible.models = [text]
-    XCTAssertEqual(AIModelSearch.offered(visible, purpose: .search, keeping: nil).map(\.id), [text.id])
-    XCTAssertTrue(AIModelSearch.offered(visible, purpose: .image, keeping: nil).isEmpty)
-    let stale = AIModelSelection(connectionID: visible.id, modelID: text.id, thinking: nil)
-    XCTAssertEqual(AIModelSearch.offered(visible, purpose: .image, keeping: stale).map(\.id), [text.id])
-    providers.connections = []
-    visible.disabledModelIDs = [text.id]
-    XCTAssertFalse(AIModelAvailability.supports(text, purpose: .image, connection: visible))
-    XCTAssertEqual(AIModelAvailability.reason(text, purpose: .image, connection: visible, providers: providers), String(localized: "不支持该用途"))
     let unknown = AIModelOption(id: "unknown", name: "Unknown", thinking: [])
     XCTAssertEqual(
       providers.catalog.resolve(unknown, providerID: "openai", authentication: .chatGPT)

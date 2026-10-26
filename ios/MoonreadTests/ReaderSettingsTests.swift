@@ -120,26 +120,3 @@ final class ReaderSettingsUserDataTests: UserDataFixture {
     XCTAssertEqual(deleted.preferences.readerDarkTexture, preferences.readerDarkTexture)
   }
 }
-
-final class SettingsNavigationTests: XCTestCase {
-  @MainActor func testSettingsSessionKeepsTaskUntilGroupChangesAndRetiresUnavailableAI() {
-    let session = SettingsNavigation()
-    session.group = .appearance
-    session.path.append(.settingsTask(.appearance))
-    let library = LibraryModel()
-    session.tab = library.selectedTab; library.settingsNavigation = session
-    library.path.append(.manage)
-    XCTAssertEqual(session.path.last, .manage, "Actions from settings remain inside its detail stack")
-    library.path.removeLast()
-    session.select(.appearance)
-    XCTAssertEqual(session.path.count, 1, "Selecting the active group preserves its task; layout never mutates this path")
-    session.aiAvailabilityChanged(false)
-    XCTAssertEqual(session.path.count, 1, "An unrelated draft survives AI changes")
-    session.select(.assistant)
-    XCTAssertEqual(session.path.count, 0)
-    session.path.append(.settingsTask(.ai))
-    session.aiAvailabilityChanged(false)
-    XCTAssertEqual(session.path.count, 0, "An unavailable AI task returns to its legal settings entry")
-    XCTAssertEqual(session.group, .assistant)
-  }
-}

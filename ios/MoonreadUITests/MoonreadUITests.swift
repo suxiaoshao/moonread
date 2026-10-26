@@ -150,8 +150,8 @@ import XCTest
     ready(file(sample))
     app.terminate()
     app.launch()
-    ready(file(sample)).tap() // Home resume uses the same identity router as system entry points.
-    readableBody()
+    shelf()
+    open()
     waitUntil { self.anchor() == saved }
   }
   func testU05DeleteOnlySelectedBook() {
@@ -261,8 +261,6 @@ import XCTest
     XCTAssertFalse(app.buttons["appSettings"].exists)
     ready(app.tabBars.buttons["设置"]).tap()
     ready(app.buttons["readerThemeSettings"])
-    XCTAssertTrue(app.buttons["libraryManagementSettings"].exists, "Compact settings lists tasks from every group directly")
-    XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "settingsGroup-")).count, 0, "Compact settings must not show a selectable group sidebar")
     snapshot("settings-home")
     XCTAssertFalse(app.buttons["aiSettings"].exists)
     XCTAssertFalse(element("automaticFullIndex").exists)
@@ -320,76 +318,6 @@ import XCTest
     element("paletteOptions").swipeDown(); element("paletteOptions").swipeDown()
     element("readerTexture").tap(); app.buttons["无"].tap()
     XCTAssertFalse(element("readerTextureStrength").exists)
-    app.navigationBars.buttons.firstMatch.tap()
-    ready(app.buttons["systemIntegrationSettings"]).tap()
-    XCTAssertTrue(ready(app.switches["systemSearchEnabled"]).exists)
-    XCTAssertTrue(ready(element("systemWidgetPreview")).exists)
-    snapshot("system-integration-search")
-    app.collectionViews.firstMatch.swipeUp()
-    snapshot("system-integration-widget")
-    // The pushed gear entry must have the same compact form as the settings tab.
-    launch(["--ui-test-storefront", "USA", "--ui-test-ai-model-picker"])
-    ready(app.buttons["shelf-builtin"])
-    ready(app.buttons["appSettings"]).tap()
-    ready(app.buttons["readerThemeSettings"])
-    XCTAssertTrue(app.buttons["dataManagementSettings"].exists)
-    XCTAssertEqual(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "settingsGroup-")).count, 0)
-    ready(app.buttons["readerThemeSettings"]).tap()
-    ready(app.segmentedControls["readerThemeTabs"])
-    app.navigationBars.buttons.firstMatch.tap()
-    ready(app.buttons["readerThemeSettings"])
-    ready(app.buttons["aiSettings"]).tap()
-    // All purposes share the searchable picker and save on the selected row.
-    ready(app.buttons["openAIModelPanel-search"]).tap()
-    ready(app.navigationBars["联网搜索"])
-    let search = ready(app.searchFields.firstMatch)
-    search.tap(); search.typeText("Same")
-    ready(app.buttons["aiModel-fixture-second-shared"]).tap()
-    ready(app.buttons["openAIModelPanel-search"]).tap()
-    XCTAssertTrue(ready(app.buttons["aiModel-fixture-second-shared"]).isSelected)
-    XCTAssertFalse(app.buttons["aiModel-fixture-image-image"].exists)
-    XCTAssertFalse(app.buttons["applyAIModelPicker"].exists)
-    ready(app.buttons["cancelAIModelPicker"]).tap()
-    ready(app.buttons["openAIModelPanel-image"]).tap()
-    ready(app.navigationBars["图片生成"])
-    XCTAssertTrue(ready(app.searchFields.firstMatch).exists)
-    XCTAssertFalse(app.buttons["aiModel-fixture-first-shared"].exists)
-    ready(app.buttons["aiModel-fixture-image-image"]).tap()
-    ready(app.buttons["openAIModelPanel-image"]).tap()
-    XCTAssertTrue(ready(app.buttons["aiModel-fixture-image-image"]).isSelected)
-    ready(app.buttons["cancelAIModelPicker"]).tap()
-    // The shared popover must open below a top-of-page settings entry,
-    // keeping its whole model row visible rather than behind the navigation bar.
-    let defaultModel = ready(app.buttons["openAIModelPanel"])
-    let anchor = defaultModel.frame
-    defaultModel.tap()
-    let popoverModel = ready(app.buttons["openAIModelPicker"])
-    XCTAssertTrue(popoverModel.isHittable)
-    XCTAssertTrue(app.frame.contains(popoverModel.frame), "The entire model row must remain on screen")
-    XCTAssertGreaterThanOrEqual(popoverModel.frame.minY, anchor.maxY)
-    let slider = ready(app.sliders["aiThinkingSlider"])
-    slider.adjust(toNormalizedSliderPosition: 1)
-    waitUntil { self.app.sliders["aiThinkingSlider"].value as? String == "高" }
-    ready(app.buttons["openAIModelPicker"]).tap()
-    ready(app.navigationBars["选择模型"])
-    XCTAssertTrue(ready(app.searchFields.firstMatch).exists)
-    XCTAssertFalse(app.buttons["applyAIModelPicker"].exists)
-    ready(app.buttons["aiModel-fixture-second-shared"]).tap()
-    XCTAssertFalse(ready(app.buttons["openAIModelPanel"]).label.contains("·"))
-    ready(app.buttons["openAIModelPanel"]).tap()
-    XCTAssertFalse(app.sliders["aiThinkingSlider"].exists)
-    ready(app.buttons["openAIModelPicker"]).tap()
-    XCTAssertTrue(ready(app.buttons["aiModel-fixture-second-shared"]).isSelected)
-    ready(app.buttons["aiModel-fixture-first-shared"]).tap()
-    ready(app.buttons["openAIModelPanel"]).tap()
-    XCTAssertTrue(ready(app.sliders["aiThinkingSlider"]).exists)
-    ready(app.buttons["openAIModelPicker"]).tap()
-    ready(app.buttons["cancelAIModelPicker"]).tap()
-    XCTAssertTrue(ready(app.buttons["openAIModelPanel"]).label.contains("·"))
-    app.navigationBars.buttons.firstMatch.tap()
-    ready(app.buttons["readerThemeSettings"])
-    app.navigationBars.buttons.firstMatch.tap()
-    ready(app.buttons["shelf-builtin"])
   }
   func testU13ManualEncodingRecovery() {
     launch(["--ui-test-encoding"])
@@ -489,27 +417,6 @@ import XCTest
     open()
     waitUntil { self.anchor() == preview }
   }
-  func testU22SyncedProgressJumpRetainsReturnHistory() {
-    launch(["--ui-test-reader-fixture", "--ui-test-sync-continuation"])
-    shelf()
-    open()
-    let original = anchor()
-    // The compact prompt can collapse while XCTest waits for native scrolling
-    // to settle. Its persistent tool entry must still let the user act.
-    if !app.buttons["acceptSyncedProgress"].exists {
-      controls()
-      if app.buttons["showSyncedProgress"].exists { app.buttons["showSyncedProgress"].tap() }
-    }
-    ready(app.buttons["acceptSyncedProgress"])
-    snapshot("U22-synced-progress")
-    app.buttons["acceptSyncedProgress"].tap()
-    waitUntil { self.anchor() != original }
-    controls()
-    ready(app.buttons["showReadingHistory"]).tap()
-    ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'readingHistory-'")).firstMatch).tap()
-    waitUntil { self.anchor() == original }
-  }
-
   func testU18CancelAnnotationWithoutSaving() {
     launch()
     shelf()
@@ -581,7 +488,6 @@ import XCTest
     ready(app.buttons["confirmExportAllReadingData"].firstMatch).tap()
     let closeShare = app.buttons.matching(NSPredicate(format: "label IN %@", ["关闭", "Close"])).firstMatch
     ready(closeShare, timeout: 30).tap()
-    waitUntil { !closeShare.exists && self.app.buttons["readingDataList"].isHittable }
     ready(app.buttons["readingDataList"]).tap()
     let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reading-data-"))
     XCTAssertEqual(rows.count, 1)

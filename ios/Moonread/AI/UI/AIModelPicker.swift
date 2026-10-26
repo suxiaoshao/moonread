@@ -203,17 +203,6 @@ struct AIModelPicker: View {
                     }
                 } else {
                     List {
-                        if let purpose = destination.purpose {
-                            Button {
-                                if ai.providers.setPurpose(purpose, selection: nil) { dismiss() }
-                                else { error = true }
-                            } label: {
-                                HStack {
-                                    Text("不使用"); Spacer()
-                                    if current == nil { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)) }
-                                }
-                            }.buttonStyle(.plain).listRowBackground(Color(uiColor: theme.surface)).accessibilityIdentifier("aiPurposeNone")
-                        }
                         ForEach(ai.providers.connections) { connection in
                             let models = shown(connection)
                             if !models.isEmpty {
@@ -231,6 +220,22 @@ struct AIModelPicker: View {
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
                 .onChange(of: searching) { _, active in if active { detent = .large } }
                 .aiAddConnectionFlow(isPresented: $adding)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if let purpose = destination.purpose {
+                        Button {
+                            if ai.providers.setPurpose(purpose, selection: nil) { dismiss() }
+                            else { error = true }
+                        } label: {
+                            HStack {
+                                Text("不使用"); Spacer()
+                                if current == nil { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)) }
+                            }.padding().frame(maxWidth: .infinity)
+                                .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
+                        }.buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.ink))
+                            .padding(.horizontal, 20).padding(.vertical, 8).background(Color(uiColor: theme.canvas))
+                            .accessibilityIdentifier("aiPurposeNone")
+                    }
+                }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
                     if running || error {
                         VStack(spacing: 8) {
