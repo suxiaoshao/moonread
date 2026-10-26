@@ -37,7 +37,7 @@ CI 工作流只读仓库，checkout 不保留凭据，引用的 Actions 固定�
 - Actions 允许范围设为全部允许；仍强制引用固定到完整 SHA，默认 token 只读，不允许其创建或批准 PR。当前工作流只使用 GitHub 官方 Actions 和 Nix 安装 action。
 - 启用 Dependabot 漏洞提醒与安全更新；Cargo 和 Actions 的常规版本更新每周向当前 `release/x.y` 提出 PR，同类兼容更新分组，不自动合并；每次新开版本分支同步修改两个 `target-branch`（当前配置 `release/1.3`）。Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 hotfix 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。Nix 输入由维护者显式更新锁文件并验证。
 
-`main` 的 App 代码始终对应 App Store 最新发布版本；每个版本在 `release/x.y` 开发，正式发布后普通 merge 回 main 并打 tag（如 `v1.1`）。完整流程见[分支与协作](development.md#分支与协作)。
+`main` 的 App 代码始终对应 App Store 最新发布版本。所有改动（含官网、文档和发布基础设施）都进入当前 `release/x.y`，不直接向 `main` 提交开发 PR；`main` 只接收发布后的版本分支合并，正式发布后普通 merge 并打 tag（如 `v1.1`），线上 hotfix 按上述发布流程处理。完整流程见[分支与协作](development.md#分支与协作)。
 
 公开仓库的分支保护已可用并启用：`main` 与 `release/**` 均必须 PR，必需检查为 `Linux checks`、`iOS unit tests`，必须解决所有讨论，禁止强推及删除。不要求其他人的批准，不要求分支在检查前更新至最新基线，不强制线性历史，以允许 release → main 的发布回合；保留现有管理员处理规则。
 
@@ -68,7 +68,7 @@ cd docs/site && zola serve
 
 [Pages 工作流](../../../.github/workflows/pages.yml) 在 main 的网站源码、工作流或 Nix 配置变化时构建，也支持手动触发。两种触发方式均照常构建并上传 Pages artifact，仅在事件中的 `repository.private == false` 时执行 deploy，私有仓库跳过部署。仅 deploy job 授予 `pages:write` 与 `id-token:write`；checkout 不保留凭据，Actions 使用完整 SHA。不发布其余开发文档。
 
-`docs/site/**` 是版本分支规则的例外：版本所需的隐私政策、支持页等网站改动，在提交 App Store 审核前以小 PR 直接合进 `main`，由 Pages 即时部署，不等待 App 发布；“main 等于线上版本”只约束 App 代码，网站可提前上线。
+`docs/site/**` 与其他改动一样进入当前 `release/x.y`，发布后随版本分支合并到 `main`，再由 Pages 部署。审核前确需提前上线的隐私政策、支持页等网站页面，须先向用户申请，不自动视为例外。
 
 当前仓库已公开，Pages 来源已设为 GitHub Actions（`build_type=workflow`）。网站部署与 App 发布分别验证，不把构建通过等同于线上页面已验收。旧 `suxiaoshao/moonread-site` 仓库已于 2026-10-17 删除。
 
