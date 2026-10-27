@@ -324,9 +324,6 @@ private struct ReadingDataListView: View {
                     Button { model.toggleVisibleSelection() } label: { Text(model.allVisibleSelected ? "取消全选" : "全选", tableName: "DataManagement") }
                         .accessibilityIdentifier("selectAllReadingData")
                     Spacer()
-                    Text(model.unlinkedOnly ? "不在书架上" : "全部", tableName: "DataManagement")
-                        .font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                    Spacer()
                     Button(role: .destructive) { model.deleting = model.selected } label: { Text("删除 \(model.selected.count) 本", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.destructive)) }
                         .disabled(model.selected.isEmpty).accessibilityIdentifier("deleteSelectedReadingData")
                 }

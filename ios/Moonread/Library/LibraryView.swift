@@ -178,7 +178,11 @@ private struct ContinueReadingRow: View {
                         Text(position, format: .percent.precision(.fractionLength(0))).monospacedDigit()
                         if entry.lastRead > 0 {
                             Text("·")
-                            Text(Date(timeIntervalSince1970: Double(entry.lastRead) / 1000), style: .relative)
+                            let lastRead = Date(timeIntervalSince1970: Double(entry.lastRead) / 1000)
+                            TimelineView(.explicit([lastRead.addingTimeInterval(60)])) { context in
+                                if context.date.timeIntervalSince(lastRead) < 60 { Text("刚刚") }
+                                else { Text(lastRead, style: .relative) }
+                            }
                         }
                     }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                 }
