@@ -8,6 +8,7 @@ struct MoonreadApp: App {
     @UIApplicationDelegateAdaptor(MoonreadDelegate.self) private var appDelegate
     @State private var library = LibraryModel()
     @State private var themes = ThemeStore()
+    @State private var readerSettings = ReaderSettingsStore.shared
     @State private var cloud = CloudStore()
     @State private var ai = AIService()
     @State private var tipJar = TipJar()
@@ -35,7 +36,7 @@ struct MoonreadApp: App {
     }
     private var indexedAppContent: some View {
         MoonreadRoot(library: library, themes: themes)
-            .environment(cloud).environment(ai).environment(tipJar)
+            .environment(cloud).environment(ai).environment(tipJar).environment(readerSettings)
             .task { await tipJar.listenForTransactions() }
             .task { await ai.load() }
             .task {
@@ -140,7 +141,7 @@ struct MoonreadApp: App {
                 library.fullIndex.scene(active: phase == .active)
                 if phase == .background {
                     Task { await library.service.scheduleSystemReadingCatalog(immediate: true) }
-                    BackgroundSave.perform(name: "保存显示偏好") { await themes.flushPreferences() }
+                    BackgroundSave.perform(name: "保存显示偏好") { await themes.flushPreferences(); await readerSettings.flush() }
                     Task { await AppDataService.shared.pauseImports() }
                 }
                 if phase == .active {

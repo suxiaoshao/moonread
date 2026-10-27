@@ -8,14 +8,11 @@ enum SettingsTask: Hashable {
 @MainActor @Observable final class SettingsNavigation {
     var selectedTask: SettingsTask?
     var path: [LibraryRoute] = []
-    var settings: ReaderSettings?
-    var pendingSettings: ReaderSettings?
     var recording: Bool?
     var error: String?
     let loading = LoadingState()
     let readingEditor = ReadingSettingsEditing()
     var paletteDraft: PaletteDraft?
-    @ObservationIgnored private var saveTask: Task<Void, Never>?
 
     var hasDraft: Bool { paletteDraft != nil || readingEditor.draft != nil }
     func select(_ task: SettingsTask) {
@@ -27,32 +24,14 @@ enum SettingsTask: Hashable {
         if !available, selectedTask == .ai { selectedTask = nil; path = [] }
     }
     func load() async {
-        guard settings == nil, !loading.active else { return }
+        guard recording == nil, !loading.active else { return }
         let request = loading.begin(); defer { loading.finish(request) }
-        do {
-            settings = try await AppDataService.shared.settings()
-            recording = await AppDataService.shared.statisticsPreferences().enabled
-        } catch { self.error = ReaderMessages.error(error) }
-    }
-    var readingSettings: Binding<ReaderSettings> {
-        Binding(get: { self.settings ?? defaultReaderSettings() }, set: { self.saveReading($0) })
-    }
-    private func saveReading(_ value: ReaderSettings) {
-        guard value != settings else { return }
-        settings = value; pendingSettings = value
-        guard saveTask == nil else { return }
-        saveTask = Task {
-            defer { saveTask = nil }
-            while let next = pendingSettings {
-                pendingSettings = nil
-                do { try await AppDataService.shared.saveSettings(next) }
-                catch { self.error = ReaderMessages.error(error) }
-            }
-        }
+        recording = await AppDataService.shared.statisticsPreferences().enabled
     }
 }
 
 struct SettingsView: View {
+    @Environment(ReaderSettingsStore.self) private var readerSettings
     @Environment(ThemeStore.self) private var themes
     @Environment(CloudStore.self) private var cloud
     @Environment(AIService.self) private var ai
@@ -87,15 +66,19 @@ struct SettingsView: View {
         }
         .background(Color(uiColor: theme.canvas).ignoresSafeArea())
         .sheet(item: $navigation.paletteDraft) { PaletteEditor(draft: $0) }
-        .task { await navigation.load() }
+        .task {
+            do { try readerSettings.load() }
+            catch { navigation.error = ReaderMessages.error(error) }
+            await navigation.load()
+        }
         .onChange(of: navigation.path) { _, _ in library.cancelOpeningForNavigationChange() }
         .onReceive(NotificationCenter.default.publisher(for: .statisticsPreferencesChanged).receive(on: DispatchQueue.main)) { _ in
             Task { navigation.recording = await AppDataService.shared.statisticsPreferences().enabled }
         }
         .modifier(PageLoadingOverlay(request: navigation.loading.request, hasContent: true))
-        .alert("暂时无法完成", isPresented: Binding(get: { navigation.error != nil }, set: { if !$0 { navigation.error = nil } })) {
-            Button("知道了", role: .cancel) { navigation.error = nil }
-        } message: { Text(navigation.error ?? "") }
+        .alert("暂时无法完成", isPresented: Binding(get: { navigation.error != nil || readerSettings.error != nil }, set: { if !$0 { navigation.error = nil; readerSettings.error = nil } })) {
+            Button("知道了", role: .cancel) { navigation.error = nil; readerSettings.error = nil }
+        } message: { Text(navigation.error ?? readerSettings.error ?? "") }
     }
 
     @ViewBuilder private var sidebar: some View {
@@ -119,8 +102,8 @@ struct SettingsView: View {
             Group {
                 Section("阅读") {
                     settingsLink(.reading) {
-                        SettingsEntry(title: "阅读设置", symbol: "book", summary: navigation.settings.map { String(localized: $0.mode == .scroll ? "上下滚动" : "左右分页") } ?? String(localized: "正在加载"), selected: sizeClass == .regular && navigation.selectedTask == .reading)
-                    }.disabled(navigation.settings == nil).accessibilityIdentifier("readerThemeSettings")
+                        SettingsEntry(title: "阅读设置", symbol: "book", summary: readerSettings.value.map { String(localized: $0.mode == .scroll ? "上下滚动" : "左右分页") } ?? String(localized: "正在加载"), selected: sizeClass == .regular && navigation.selectedTask == .reading)
+                    }.disabled(readerSettings.value == nil).accessibilityIdentifier("readerThemeSettings")
                     settingsLink(.statistics) {
                         SettingsEntry(title: "阅读统计设置", symbol: "chart.bar.xaxis", summary: navigation.recording.map { String(localized: $0 ? "记录中" : "已暂停") } ?? String(localized: "正在加载"), selected: sizeClass == .regular && navigation.selectedTask == .statistics)
                     }.accessibilityIdentifier("statisticsSettings")
@@ -278,11 +261,12 @@ struct SettingsTaskContent: View {
     let task: SettingsTask
     let library: LibraryModel
     @Bindable var navigation: SettingsNavigation
+    @Environment(ReaderSettingsStore.self) private var readerSettings
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     @ViewBuilder var body: some View {
         switch task {
-        case .reading: ReaderSettingsView(settings: navigation.readingSettings, editing: navigation.readingEditor)
+        case .reading: ReaderSettingsView(settings: readerSettings.binding, editing: navigation.readingEditor)
         case .statistics: StatisticsSettingsView()
         case .system: SystemIntegrationSettingsView(library: library)
         case .library: LibraryManagementView(model: library)

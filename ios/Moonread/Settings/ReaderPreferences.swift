@@ -477,18 +477,18 @@ private struct ReaderControlsForm: View {
 }
 
 #if DEBUG
-/// Own only the normal settings binding for a direct, isolated screenshot route.
+/// The isolated screenshot route uses the same app preference owner.
 struct PageShotReaderSettings: View {
-    @State private var settings: ReaderSettings?
+    @Environment(ReaderSettingsStore.self) private var settings
     @State private var error: String?
     var body: some View {
         Group {
-            if let initial = settings {
-                ReaderSettingsView(settings: Binding(get: { settings ?? initial }, set: { settings = $0 }))
+            if settings.value != nil {
+                ReaderSettingsView(settings: settings.binding)
             } else if let error { Text(verbatim: error) }
             else { ProgressView() }
         }.task {
-            do { settings = try await AppDataService.shared.settings() }
+            do { try settings.load() }
             catch { self.error = ReaderMessages.error(error) }
         }
     }

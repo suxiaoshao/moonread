@@ -69,7 +69,7 @@
 
 设置始终占 Tab。根 `NavigationSplitView` 的 sidebar 使用现有完整分节条目，AI Toggle 和外部动作仍在目录内；regular 为系统侧栏，compact 保持 release/1.3 分组表单。点击任务后右侧直接显示对应页面，分节仅作标题，不增加分组导航、任务条或第三列。
 
-scene 的唯一 `SettingsNavigation` 保存当前任务、详情路径、偏好读写与配色草稿。任务内部由固定详情 `NavigationStack` 钻取；宽屏首次可选阅读设置，手机首次停完整首页，折叠/旋转/切 Tab 不主动清路径或草稿。不写手工折线几何、不在宽窄分支各建宿主。手机的阅读设置及其他任务内容、标题、Tab 隐藏和预览都保持 release/1.3。
+scene 的唯一 `SettingsNavigation` 保存当前任务、详情路径与配色草稿。阅读偏好读写统一走 App 级 `ReaderSettingsStore`，书内和设置页共用当前值与串行保存。任务内部由固定详情 `NavigationStack` 钻取；宽屏首次可选阅读设置，手机首次停完整首页，折叠/旋转/切 Tab 不主动清路径或草稿。不写手工折线几何、不在宽窄分支各建宿主。手机的阅读设置及其他任务内容、标题、Tab 隐藏和预览都保持 release/1.3。
 
 全局就近入口定位设置 Tab 的任务，书内更多保留 ReaderSession 边界。语言、评分等外部动作不成为右栏 selection；没有独立的“返回书架”按钮。
 

@@ -33,17 +33,28 @@ final class ReaderSettingsAppStorePrivacyTests: AppStorePrivacyFixture {
 }
 
 final class ReaderSettingsReaderIntegrationTests: ReaderIntegrationFixture {
-  // S343: 内存设置只发布经过 Rust 验证且持久化成功的值，失败不污染当前读者配置。
+  // S343: 书内和设置页共用当前偏好；交错与连续编辑保留最后一次，持久化仍经过 Rust 校验。
   @MainActor func testSettingsMemoryCopyTracksValidatedPersistence() async throws {
     let (root, service, _, _, _, _, _, suite) = try singleBookFixture()
     defer {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)
     }
-    var settings = try service.settings()
-    settings.fontSize = 23
+    let store = ReaderSettingsStore(service: service)
+    try store.load()
+    let session = ReaderSession(service: service, settingsStore: store)
+    session.update(fontSize: 23)
+    XCTAssertEqual(store.binding.wrappedValue.fontSize, 23)
+    var settings = store.binding.wrappedValue
     settings.lineSpacing = 9
-    try await service.saveSettings(settings)
+    store.binding.wrappedValue = settings
+    XCTAssertEqual(session.settings?.fontSize, 23)
+    XCTAssertEqual(session.settings?.lineSpacing, 9)
+    for size in 24...28 { session.update(fontSize: Double(size)) }
+    settings.fontSize = 28
+    await store.flush()
+    XCTAssertEqual(store.value, settings)
+    XCTAssertEqual(session.settings, settings)
     XCTAssertEqual(try service.settings(), settings)
     XCTAssertEqual(
       try decodeReaderSettings(
