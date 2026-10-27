@@ -61,12 +61,8 @@ import XCTest
         if group == "ipad-13" { app.launchArguments.append("--ui-test-store-ipad") }
         app.launchEnvironment["MOONREAD_TEST_CREDENTIALS"] = "memory"
         app.launch()
-        let readyID = ["book-details": "statisticsSummary", "reader-settings": "readerTypographyControls", "library-home": "shelf-builtin"]
-        if scene == "settings" {
-            let home = element("settingsGroup-reading"), controls = element("readerTypographyControls")
-            waitUntil { home.isHittable || controls.isHittable }
-            settled(controls.isHittable ? controls : home)
-        } else if let id = readyID[scene] { settled(ready(element(id), timeout: 30)) }
+        let readyID = ["book-details": "statisticsSummary", "reader-settings": "readerTypographyControls", "settings": "readerThemeSettings", "library-home": "shelf-builtin"]
+        if let id = readyID[scene] { settled(ready(element(id), timeout: 30)) }
         else {
             let text = ready(app.textViews["pageText"], timeout: 30)
             waitUntil { !text.label.isEmpty && !text.label.hasPrefix("封面") }
@@ -90,8 +86,7 @@ import XCTest
         ready(app.buttons["shelf-builtin"], timeout: 30)
         if scene == "06" {
             app.buttons[settingsTitle].firstMatch.tap()
-            ready(element("settingsGroup-library")).tap()
-            ready(app.buttons[language == "en" ? "Data Management" : (language == "zh-Hant" ? "資料管理" : "数据管理")]).tap()
+            ready(element("dataManagementSettings")).tap()
             ready(app.buttons["readingDataCaches"])
             settled(ready(app.buttons["exportAllReadingData"]))
         } else {

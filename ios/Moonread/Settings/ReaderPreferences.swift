@@ -107,7 +107,6 @@ struct ReaderSettingsView: View {
     @AppStorage("readingSettingsTab") private var tab = ReadingSettingsTab.typography
     @State private var localEditing = ReadingSettingsEditing()
     let editing: ReadingSettingsEditing?
-    let keepsTabBar: Bool
     private var editor: ReadingSettingsEditing { editing ?? localEditing }
     private var editedAppearance: ThemeAppearance? {
         get { editor.editedAppearance }
@@ -147,9 +146,9 @@ struct ReaderSettingsView: View {
     }
 
     init(settings: Binding<ReaderSettings>, preview: ReadingPreviewSource = .sample, encoding: String? = nil, isRestartingEncoding: Bool = false, changeEncoding: ((String?) -> Void)? = nil,
-         editing: ReadingSettingsEditing? = nil, keepsTabBar: Bool = false) {
+         editing: ReadingSettingsEditing? = nil) {
         _settings = settings; self.preview = preview; self.encoding = encoding; self.isRestartingEncoding = isRestartingEncoding; self.changeEncoding = changeEncoding
-        self.editing = editing; self.keepsTabBar = keepsTabBar
+        self.editing = editing
     }
     private var appearance: ThemeAppearance { editedAppearance ?? themes.reader.plan.appearance }
     private var previewExpanded: Bool { verticalSizeClass == .compact || previewDetent == .large }
@@ -172,6 +171,9 @@ struct ReaderSettingsView: View {
         GeometryReader { geometry in
             // Keep enough room for both native controls and readable text.
             let wide = geometry.size.width >= 760
+            // Match the released compact reading settings, including preview space.
+            let frame = geometry.frame(in: .global)
+            let mediumHeight = max(0, (frame.maxY + geometry.safeAreaInsets.bottom) / 2 - frame.minY - LayoutTokens.control)
             HStack(spacing: 0) {
                 ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editing.editedAppearance, encoding: encoding, isRestartingEncoding: isRestartingEncoding, changeEncoding: changeEncoding,
                                      editPalette: { value in
@@ -179,6 +181,9 @@ struct ReaderSettingsView: View {
                                          draft = value
                                      })
                     .frame(width: wide ? min(400, geometry.size.width * 0.46) : nil)
+                    .frame(height: !wide && previewPresented
+                        ? (restingDetent == .medium ? mediumHeight : max(0, geometry.size.height - 76))
+                        : geometry.size.height)
                     .clipped()
                     .frame(maxHeight: .infinity, alignment: .top)
                 if wide {
@@ -203,10 +208,10 @@ struct ReaderSettingsView: View {
                 }
             }
             .background(Color(uiColor: theme.canvas).ignoresSafeArea())
-            .navigationTitle(keepsTabBar ? Text("阅读") : Text("阅读设置"))
+            .navigationTitle("阅读设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarVisibility(.visible, for: .navigationBar)
-            .toolbarVisibility(keepsTabBar ? .automatic : .hidden, for: .tabBar)
+            .toolbarVisibility(.hidden, for: .tabBar)
             .statusBarHidden(false)
             .background(NavigationTransitionObserver(willLeave: { _ in
                 previewPosition.capture()
@@ -216,7 +221,7 @@ struct ReaderSettingsView: View {
                 navigation.appear()
                 if !appeared {
                     appeared = true
-                    previewPresented = !keepsTabBar && verticalSizeClass != .compact
+                    previewPresented = verticalSizeClass != .compact
                 }
             }
             .sheet(item: Binding(get: { !wide && previewPresented ? nil : draft }, set: { draft = $0 })) { value in
@@ -393,7 +398,6 @@ private struct ReadingSettingsControls: View {
                     Image(systemName: "minus").frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit)
                 }.disabled(value.wrappedValue <= range.lowerBound).accessibilityLabel("减小")
                 Text("\(Int(value.wrappedValue)) pt").monospacedDigit().font(.subheadline)
-                    .lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 Button { value.wrappedValue = min(range.upperBound, value.wrappedValue + step) } label: {
                     Image(systemName: "plus").frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit)
                 }.disabled(value.wrappedValue >= range.upperBound).accessibilityLabel("增大")

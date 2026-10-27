@@ -207,6 +207,7 @@ struct DataManagementView: View {
             }.padding()
         }.pageScrollMargins()
         .themedPage().navigationTitle(Text("数据管理", tableName: "DataManagement"))
+        .navigationBarTitleDisplayMode(.large)
         .modifier(ReadingDataWorking(model: model))
         .modifier(ReadingDataDeletionPrompt(model: model))
         .refreshable { await model.load() }
