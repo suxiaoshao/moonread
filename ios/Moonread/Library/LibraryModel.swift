@@ -10,8 +10,7 @@ enum ReaderRoute: Hashable, Sendable {
 enum LibraryRoute: Hashable {
     case folder(LibraryLocation), allBooks(String), reader(OpeningRequest), recent, manage
     case statistics(StatisticsRoute)
-    case settings, dataManagement
-    case settingsTask(SettingsTask)
+    case settingsPalette(ThemeAppearance)
     #if DEBUG
     case screenshotReaderSettings
     #endif
@@ -78,15 +77,18 @@ final class LibraryModel {
     private(set) var readingInputRevision: UInt64 = 0
     var revision = 0
     var selectedTab = AppTab.library {
-        didSet { if selectedTab == .search && oldValue != .search { searchOrigin = oldValue } }
+        didSet {
+            if selectedTab == .search && oldValue != .search { searchOrigin = oldValue }
+        }
     }
     /// Search is a quick entry: leaving it returns to the tab it was entered from.
     private(set) var searchOrigin = AppTab.library
     func updateAvailableTabs(aiAvailable: Bool) {
         func existing(_ tab: AppTab) -> AppTab {
-            if tab == .conversations && !aiAvailable || tab == .settings && aiAvailable { return .library }
+            if tab == .conversations && !aiAvailable { return .library }
             return tab
         }
+        settingsNavigation.aiAvailabilityChanged(aiAvailable)
         selectedTab = existing(selectedTab)
         searchOrigin = existing(searchOrigin)
         if !aiAvailable { dismissAIPaths() }
@@ -96,33 +98,36 @@ final class LibraryModel {
             Array(path.prefix { if case .conversation = $0 { return false }; return true })
         }
         libraryPath = withoutAI(libraryPath); statisticsPath = withoutAI(statisticsPath); searchPath = withoutAI(searchPath)
-        settingsPath = withoutAI(settingsPath)
+        settingsNavigation.path = withoutAI(settingsNavigation.path)
         aiRequest = nil
     }
     var libraryPath: [LibraryRoute] = []
     var statisticsPath: [LibraryRoute] = []
-    var settingsPath: [LibraryRoute] = []
     var searchPath: [LibraryRoute] = []
-    @ObservationIgnored weak var settingsNavigation: SettingsNavigation?
+    var settingsNavigation = SettingsNavigation()
     var path: [LibraryRoute] {
         get {
-            if let settingsNavigation, settingsNavigation.tab == selectedTab { return settingsNavigation.path }
             return switch selectedTab {
             case .library, .conversations: libraryPath
             case .statistics: statisticsPath
-            case .settings: settingsPath
+            case .settings: settingsNavigation.path
             case .search: searchPath
             }
         }
         set {
-            if let settingsNavigation, settingsNavigation.tab == selectedTab { settingsNavigation.path = newValue; return }
             switch selectedTab {
             case .library, .conversations: libraryPath = newValue
             case .statistics: statisticsPath = newValue
-            case .settings: settingsPath = newValue
+            case .settings: settingsNavigation.path = newValue
             case .search: searchPath = newValue
             }
         }
+    }
+    func openSettings(target: SettingsTask? = nil) {
+        selectedTab = .settings
+        // An external entry must not replace an unsaved palette edit.
+        guard !settingsNavigation.hasDraft else { return }
+        if let target { settingsNavigation.select(target) }
     }
     /// The one search session, owned here so library pages can open it with a scope.
     let search = AppSearch()
@@ -628,7 +633,7 @@ final class LibraryModel {
             return Array(path[..<index])
         }
         libraryPath = removing(libraryPath); statisticsPath = removing(statisticsPath)
-        settingsPath = removing(settingsPath); searchPath = removing(searchPath)
+        settingsNavigation.path = removing(settingsNavigation.path); searchPath = removing(searchPath)
     }
     func cancelOpeningForNavigationChange() {
         guard let (tab, origin) = openingOrigin, selectedTab != tab || path != origin else { return }

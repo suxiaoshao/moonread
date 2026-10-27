@@ -1,207 +1,140 @@
 import SwiftUI
 
-/// The same app settings destination and accessible toolbar control on every home page.
-struct AppSettingsLink: View {
-    var body: some View {
-        NavigationLink(value: LibraryRoute.settings) {
-            Label("设置", systemImage: "gearshape")
-        }
-        .toolbarGlyph()
-        .accessibilityLabel("设置")
-        .accessibilityIdentifier("appSettings")
-    }
-}
-
-enum SettingsGroup: String, CaseIterable, Identifiable {
-    case reading, library, assistant, appearance, help
-    var id: Self { self }
-    var title: LocalizedStringKey {
-        switch self {
-        case .reading: "阅读"
-        case .library: "书架与数据"
-        case .assistant: "AI 助手"
-        case .appearance: "外观与语言"
-        case .help: "帮助与关于"
-        }
-    }
-    var symbol: String {
-        switch self {
-        case .reading: "book"
-        case .library: "books.vertical"
-        case .assistant: "sparkles"
-        case .appearance: "paintpalette"
-        case .help: "questionmark.circle"
-        }
-    }
-}
 enum SettingsTask: Hashable {
     case reading, statistics, system, library, data, cloud, ai, appearance, guide, about, support
-    var group: SettingsGroup {
-        switch self {
-        case .reading, .statistics, .system: .reading
-        case .library, .data, .cloud: .library
-        case .ai: .assistant
-        case .appearance: .appearance
-        case .guide, .about, .support: .help
-        }
-    }
 }
 
-/// UI session only: width changes never replace the detail stack or its drafts.
+/// One scene-owned settings session; layout only changes its presentation.
 @MainActor @Observable final class SettingsNavigation {
-    var group: SettingsGroup = .reading
+    var selectedTask: SettingsTask?
     var path: [LibraryRoute] = []
-    var tab: AppTab?
-    func select(_ next: SettingsGroup) {
-        guard group != next else { return }
-        group = next; path = []
+    var recording: Bool?
+    var error: String?
+    let loading = LoadingState()
+    let readingEditor = ReadingSettingsEditing()
+    var paletteDraft: PaletteDraft?
+
+    var hasDraft: Bool { paletteDraft != nil || readingEditor.draft != nil }
+    func select(_ task: SettingsTask) {
+        guard selectedTask != task else { return }
+        selectedTask = task
+        path = []
     }
     func aiAvailabilityChanged(_ available: Bool) {
-        if !available && group == .assistant { path = [] }
+        if !available, selectedTask == .ai { selectedTask = nil; path = [] }
+    }
+    func load() async {
+        guard recording == nil, !loading.active else { return }
+        let request = loading.begin(); defer { loading.finish(request) }
+        recording = await AppDataService.shared.statisticsPreferences().enabled
     }
 }
 
 struct SettingsView: View {
+    @Environment(ReaderSettingsStore.self) private var readerSettings
     @Environment(ThemeStore.self) private var themes
     @Environment(CloudStore.self) private var cloud
     @Environment(AIService.self) private var ai
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.theme) private var theme
     let library: LibraryModel
-    var returnsToApp = false
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.horizontalSizeClass) private var sizeClass
-    @State private var navigation = SettingsNavigation()
-    private var usesColumns: Bool { sizeClass == .regular }
-    @State private var recording: Bool?
-    @State private var settings: ReaderSettings?
-    @State private var pendingSettings: ReaderSettings?
-    @State private var settingsTask: Task<Void, Never>?
-    @State private var error: String?
-    @State private var loading = LoadingState()
+    @Bindable var navigation: SettingsNavigation
 
     var body: some View {
-        Group {
-            if usesColumns {
-                NavigationSplitView {
-                    sidebar.navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
-                } detail: {
-                    NavigationStack(path: $navigation.path) {
-                        settingsForm
-                            .navigationTitle(navigation.group.title)
-                            .toolbar(.visible, for: .navigationBar)
-                            .navigationDestination(for: LibraryRoute.self) { route in
-                                if case .settingsTask(let task) = route {
-                                    destination(task).onAppear { navigation.group = task.group }
-                                } else { LibraryDestination(route: route) }
-                            }
-                    }
-                }.navigationSplitViewStyle(.balanced)
-                    .toolbar(.hidden, for: .navigationBar)
-            } else {
-                // Use the existing parent stack on phones, just like 1.2.
-                // A nested stack can reset a pushed settings destination.
-                settingsForm.navigationTitle("设置")
-            }
-        }
-        .onAppear { updateNavigationOwner() }
-        .onChange(of: usesColumns) { _, _ in updateNavigationOwner() }
-        .onDisappear { if library.settingsNavigation === navigation { library.settingsNavigation = nil } }
-        .onChange(of: navigation.path) { _, _ in library.cancelOpeningForNavigationChange() }
-        .onChange(of: ai.availability.isAvailable) { _, available in navigation.aiAvailabilityChanged(available) }
-
-        .task {
-            guard settings == nil else { return }
-            let request = loading.begin(); defer { loading.finish(request) }
-            await settingsTask?.value
-            do {
-                settings = try await AppDataService.shared.settings()
-                recording = await AppDataService.shared.statisticsPreferences().enabled
-            }
-            catch { self.error = ReaderMessages.error(error) }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .statisticsPreferencesChanged).receive(on: DispatchQueue.main)) { _ in
-            Task { recording = await AppDataService.shared.statisticsPreferences().enabled }
-        }
-        .modifier(PageLoadingOverlay(request: loading.request, hasContent: true))
-        .alert("暂时无法完成", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-            Button("知道了", role: .cancel) { error = nil }
-        } message: { Text(error ?? "") }
-    }
-
-    private var sidebar: some View {
-            List {
-                ForEach(SettingsGroup.allCases) { group in
-                    Button { navigation.select(group) } label: {
-                        Label(group.title, systemImage: group.symbol)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
-                    }.foregroundStyle(Color(uiColor: navigation.group == group ? theme.accent : theme.ink))
-                        .listRowBackground(Color(uiColor: navigation.group == group ? theme.selected : theme.canvas))
-                        .listRowSeparator(.hidden)
-                        .accessibilityAddTraits(navigation.group == group ? .isSelected : [])
-                        .accessibilityIdentifier("settingsGroup-" + group.rawValue)
+        NavigationSplitView {
+            sidebar
+                .navigationTitle("设置")
+                .navigationSplitViewColumnWidth(min: 300, ideal: 360)
+        } detail: {
+            NavigationStack(path: $navigation.path) {
+                Group {
+                    if let task = navigation.selectedTask {
+                        SettingsTaskContent(task: task, library: library, navigation: navigation)
+                    } else { Color.clear }
                 }
-            }.listStyle(.sidebar).themedPage().navigationTitle("设置")
-                .toolbar(.visible, for: .navigationBar)
-                .toolbar { if returnsToApp { ToolbarItem(placement: .topBarLeading) { returnToApp } } }
+                    .navigationDestination(for: LibraryRoute.self) { route in
+                        if case .settingsPalette(let appearance) = route {
+                            PalettePicker(reader: false, appearance: appearance, editPalette: { navigation.paletteDraft = $0 })
+                        } else { LibraryDestination(route: route) }
+                    }
+            }
+        }
+        .navigationSplitViewStyle(.balanced)
+        // Only initialize the first wide-screen selection; never replace the host.
+        .onChange(of: sizeClass, initial: true) { _, value in
+            if value == .regular, navigation.selectedTask == nil { navigation.select(.reading) }
+        }
+        .background(Color(uiColor: theme.canvas).ignoresSafeArea())
+        .sheet(item: $navigation.paletteDraft) { PaletteEditor(draft: $0) }
+        .task {
+            do { try readerSettings.load() }
+            catch { navigation.error = ReaderMessages.error(error) }
+            await navigation.load()
+        }
+        .onChange(of: navigation.path) { _, _ in library.cancelOpeningForNavigationChange() }
+        .onReceive(NotificationCenter.default.publisher(for: .statisticsPreferencesChanged).receive(on: DispatchQueue.main)) { _ in
+            Task { navigation.recording = await AppDataService.shared.statisticsPreferences().enabled }
+        }
+        .modifier(PageLoadingOverlay(request: navigation.loading.request, hasContent: true))
+        .alert("暂时无法完成", isPresented: Binding(get: { navigation.error != nil || readerSettings.error != nil }, set: { if !$0 { navigation.error = nil; readerSettings.error = nil } })) {
+            Button("知道了", role: .cancel) { navigation.error = nil; readerSettings.error = nil }
+        } message: { Text(navigation.error ?? readerSettings.error ?? "") }
     }
 
-    private func updateNavigationOwner() {
-        if usesColumns {
-            navigation.tab = library.selectedTab; library.settingsNavigation = navigation
-        } else if library.settingsNavigation === navigation { library.settingsNavigation = nil }
+    @ViewBuilder private var sidebar: some View {
+        if sizeClass == .regular { settingsList.listStyle(.sidebar) }
+        else { settingsList.listStyle(.insetGrouped).themedPage() }
     }
-    @ViewBuilder private func settingsLink<Label: View>(_ task: SettingsTask, @ViewBuilder label: () -> Label) -> some View {
-        if usesColumns { NavigationLink(value: LibraryRoute.settingsTask(task), label: label) }
-        else { NavigationLink { destination(task) } label: { label() } }
+    private func settingsLink<Label: View>(_ task: SettingsTask, @ViewBuilder label: () -> Label) -> some View {
+        NavigationLink(value: task, label: label).tag(task)
     }
-
-    private var returnToApp: some View {
-        Button("返回", systemImage: "chevron.backward") { dismiss() }.toolbarGlyph()
-    }
-    private var settingsForm: some View {
-        Form {
+    private var settingsList: some View {
+        List(selection: Binding<SettingsTask?>(get: { navigation.selectedTask }, set: { value in
+            if let value { navigation.select(value) }
+            else { navigation.selectedTask = nil }
+        })) {
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-test-reader-origin") {
                 NavigationLink("测试来源页面") { ReaderTestOrigin() }
                     .accessibilityIdentifier("readerTestOrigin")
             }
             #endif
-            if !usesColumns || navigation.group == .reading {
+            Group {
                 Section("阅读") {
                     settingsLink(.reading) {
-                        SettingsEntry(title: "阅读设置", symbol: "book", summary: settings.map { String(localized: $0.mode == .scroll ? "上下滚动" : "左右分页") } ?? String(localized: "正在加载"))
-                    }.disabled(settings == nil).accessibilityIdentifier("readerThemeSettings")
+                        SettingsEntry(title: "阅读设置", symbol: "book", summary: readerSettings.value.map { String(localized: $0.mode == .scroll ? "上下滚动" : "左右分页") } ?? String(localized: "正在加载"), selected: sizeClass == .regular && navigation.selectedTask == .reading)
+                    }.disabled(readerSettings.value == nil).accessibilityIdentifier("readerThemeSettings")
                     settingsLink(.statistics) {
-                        SettingsEntry(title: "阅读统计设置", symbol: "chart.bar.xaxis", summary: recording.map { String(localized: $0 ? "记录中" : "已暂停") } ?? String(localized: "正在加载"))
+                        SettingsEntry(title: "阅读统计设置", symbol: "chart.bar.xaxis", summary: navigation.recording.map { String(localized: $0 ? "记录中" : "已暂停") } ?? String(localized: "正在加载"), selected: sizeClass == .regular && navigation.selectedTask == .statistics)
                     }.accessibilityIdentifier("statisticsSettings")
                     settingsLink(.system) {
-                        SettingsEntry(title: "系统集成", symbol: "rectangle.3.group", summary: String(localized: "系统搜索、快捷指令、小组件"))
+                        SettingsEntry(title: "系统集成", symbol: "rectangle.3.group", summary: String(localized: "系统搜索、快捷指令、小组件"), selected: sizeClass == .regular && navigation.selectedTask == .system)
                     }.accessibilityIdentifier("systemIntegrationSettings")
-                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                }.listRowBackground(sizeClass == .regular ? nil : Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
-            if !usesColumns || navigation.group == .library {
+            Group {
                 Section("书架与数据") {
                     settingsLink(.library) {
-                        SettingsEntry(title: "书架管理", symbol: "books.vertical", summary: String(localized: "\(library.shelves.count) 个书架"))
+                        SettingsEntry(title: "书架管理", symbol: "books.vertical", summary: String(localized: "\(library.shelves.count) 个书架"), selected: sizeClass == .regular && navigation.selectedTask == .library)
                     }.accessibilityIdentifier("libraryManagementSettings")
                     settingsLink(.data) {
-                        SettingsEntry(title: "数据管理", symbol: "externaldrive", summary: String(localized: "备份、恢复、清理"))
+                        SettingsEntry(title: "数据管理", symbol: "externaldrive", summary: String(localized: "备份、恢复、清理"), selected: sizeClass == .regular && navigation.selectedTask == .data)
                     }.accessibilityIdentifier("dataManagementSettings")
                     if CloudConfiguration.availableInBuild {
                         settingsLink(.cloud) {
-                            SettingsEntry(title: "iCloud", symbol: "icloud", summary: cloud.settingsSummary)
+                            SettingsEntry(title: "iCloud", symbol: "icloud", summary: cloud.settingsSummary, selected: sizeClass == .regular && navigation.selectedTask == .cloud)
                         }.accessibilityIdentifier("cloudSettings")
                     }
-                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                }.listRowBackground(sizeClass == .regular ? nil : Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
-            if !usesColumns || navigation.group == .assistant {
+            Group {
                 Section {
                     if ai.availability.regionAllowsAI {
                         Toggle("AI 功能", isOn: Binding(get: { ai.availability.isEnabled }, set: { ai.availability.setEnabled($0) }))
                             .tint(Color(uiColor: theme.accent)).accessibilityIdentifier("aiMasterSwitch")
                         if ai.availability.isAvailable {
                             settingsLink(.ai) {
-                                SettingsEntry(title: "AI 助手", symbol: "bubble.left.and.bubble.right", summary: aiSummary)
+                                SettingsEntry(title: "AI 助手", symbol: "bubble.left.and.bubble.right", summary: aiSummary, selected: sizeClass == .regular && navigation.selectedTask == .ai)
                             }.accessibilityIdentifier("aiSettings")
                         }
                     } else {
@@ -217,54 +150,40 @@ struct SettingsView: View {
                         Text("关闭后隐藏所有 AI 功能，已有连接、会话和数据共享许可保留。")
                             .padding(.bottom, 16)
                     }
-                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                }.listRowBackground(sizeClass == .regular ? nil : Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
-            if !usesColumns || navigation.group == .appearance {
+            Group {
                 Section("外观与语言") {
                     settingsLink(.appearance) {
-                        SettingsEntry(title: "应用外观", symbol: "paintpalette", summary: appearanceSummary)
+                        SettingsEntry(title: "应用外观", symbol: "paintpalette", summary: appearanceSummary, selected: sizeClass == .regular && navigation.selectedTask == .appearance)
                     }.accessibilityIdentifier("appThemeSettings")
                     Button { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) } label: {
                         SettingsEntry(title: "语言", symbol: "globe", summary: languageSummary)
                     }.accessibilityIdentifier("languageSettings")
                         .accessibilityHint("打开系统设置")
-                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                }.listRowBackground(sizeClass == .regular ? nil : Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
-            if !usesColumns || navigation.group == .help {
+            Group {
                 Section("帮助与关于") {
                     settingsLink(.guide) {
-                        SettingsEntry(title: "使用指南", symbol: "questionmark.circle", summary: String(localized: "导入、阅读与同步"))
+                        SettingsEntry(title: "使用指南", symbol: "questionmark.circle", summary: String(localized: "导入、阅读与同步"), selected: sizeClass == .regular && navigation.selectedTask == .guide)
                     }.accessibilityIdentifier("usageGuideSettings")
                     Link(destination: AppLinks.writeReview) {
                         SettingsEntry(title: "给月读评分", symbol: "star", summary: "")
                     }.accessibilityIdentifier("rateMoonread")
                     settingsLink(.about) {
-                        SettingsEntry(title: "关于月读", symbol: "info.circle", summary: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
+                        SettingsEntry(title: "关于月读", symbol: "info.circle", summary: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—", selected: sizeClass == .regular && navigation.selectedTask == .about)
                     }.accessibilityIdentifier("aboutSettings")
                     settingsLink(.support) {
-                        SettingsEntry(title: "支持月读", symbol: "heart", summary: "")
+                        SettingsEntry(title: "支持月读", symbol: "heart", summary: "", selected: sizeClass == .regular && navigation.selectedTask == .support)
                     }.accessibilityIdentifier("tipJarSettings")
-                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                }.listRowBackground(sizeClass == .regular ? nil : Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
         }
-        .themedPage()
+        .scrollContentBackground(.hidden)
+        .background(Color(uiColor: theme.canvas))
+        .tint(Color(uiColor: theme.accent))
     }
-    @ViewBuilder private func destination(_ task: SettingsTask) -> some View {
-        switch task {
-        case .reading: ReaderSettingsView(settings: readingSettings)
-        case .statistics: StatisticsSettingsView()
-        case .system: SystemIntegrationSettingsView(library: library)
-        case .library: LibraryManagementView(model: library)
-        case .data: DataManagementView(model: library.dataManagement)
-        case .cloud: CloudSettingsView()
-        case .ai: if ai.availability.isAvailable { AISettingsView() }
-        case .appearance: AppThemePreferencesView()
-        case .guide: UsageGuideView()
-        case .about: AboutView()
-        case .support: TipJarView()
-        }
-    }
-
     private var appearanceSummary: String {
         switch themes.snapshot.preferences.appMode {
         case .system: String(localized: "跟随系统")
@@ -281,25 +200,6 @@ struct SettingsView: View {
         return String(localized: "\(language) · 系统设置")
     }
 
-    private var readingSettings: Binding<ReaderSettings> {
-        Binding(get: { settings ?? defaultReaderSettings() }, set: saveReading)
-    }
-
-    private func saveReading(_ value: ReaderSettings) {
-        guard value != settings else { return }
-        settings = value
-        pendingSettings = value
-        guard settingsTask == nil else { return }
-        settingsTask = Task {
-            defer { settingsTask = nil }
-            // Keep controls live while a single writer drains the latest value.
-            while let next = pendingSettings {
-                pendingSettings = nil
-                do { try await AppDataService.shared.saveSettings(next) }
-                catch { self.error = ReaderMessages.error(error) }
-            }
-        }
-    }
 }
 
 /// Shared only by the settings home: native rows retain their navigation controls.
@@ -307,15 +207,25 @@ private struct SettingsEntry: View {
     let title: LocalizedStringKey
     let symbol: String
     let summary: String
+    var selected = false
     @Environment(\.theme) private var theme
     @ScaledMetric(relativeTo: .body) private var iconSize = 20.0
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol).font(.system(size: iconSize))
-                .frame(width: iconSize + 6).foregroundStyle(Color(uiColor: theme.secondary))
-                .accessibilityHidden(true)
-            LabeledContent { Text(verbatim: summary).foregroundStyle(Color(uiColor: theme.secondary)) } label: {
-                Text(title).foregroundStyle(Color(uiColor: theme.ink))
+            if selected {
+                Image(systemName: symbol).font(.system(size: iconSize))
+                    .frame(width: iconSize + 6).foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                LabeledContent { Text(verbatim: summary).foregroundStyle(.secondary) } label: {
+                    Text(title).foregroundStyle(.primary)
+                }
+            } else {
+                Image(systemName: symbol).font(.system(size: iconSize))
+                    .frame(width: iconSize + 6).foregroundStyle(Color(uiColor: theme.secondary))
+                    .accessibilityHidden(true)
+                LabeledContent { Text(verbatim: summary).foregroundStyle(Color(uiColor: theme.secondary)) } label: {
+                    Text(title).foregroundStyle(Color(uiColor: theme.ink))
+                }
             }
         }
     }
@@ -346,3 +256,28 @@ private struct ReaderTestOrigin: View {
     }
 }
 #endif
+
+struct SettingsTaskContent: View {
+    let task: SettingsTask
+    let library: LibraryModel
+    @Bindable var navigation: SettingsNavigation
+    @Environment(ReaderSettingsStore.self) private var readerSettings
+    @Environment(AIService.self) private var ai
+    @Environment(\.theme) private var theme
+    @ViewBuilder var body: some View {
+        switch task {
+        case .reading: ReaderSettingsView(settings: readerSettings.binding, editing: navigation.readingEditor)
+        case .statistics: StatisticsSettingsView()
+        case .system: SystemIntegrationSettingsView(library: library)
+        case .library: LibraryManagementView(model: library)
+        case .data: DataManagementView(model: library.dataManagement).navigationBarTitleDisplayMode(.large)
+        case .cloud: CloudSettingsView()
+        case .ai: if ai.availability.isAvailable { AISettingsView() }
+        case .appearance: AppThemePreferencesView()
+        case .guide: UsageGuideView()
+        case .about: AboutView()
+        case .support: TipJarView()
+        }
+    }
+
+}

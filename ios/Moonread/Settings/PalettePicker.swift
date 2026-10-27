@@ -13,10 +13,11 @@ func paletteDisplayName(_ value: ThemePalette) -> String {
     }
 }
 
-struct PaletteDraft: Identifiable {
+@MainActor @Observable final class PaletteDraft: Identifiable {
     let id = UUID()
     var palette: ThemePalette
     let creating: Bool
+    init(palette: ThemePalette, creating: Bool) { self.palette = palette; self.creating = creating }
 }
 
 struct PalettePicker: View {
@@ -59,7 +60,7 @@ struct PalettePicker: View {
                     .navigationBarTitleDisplayMode(.inline)
             }
         }
-        .sheet(item: $draft) { value in PaletteEditor(initial: value.palette, creating: value.creating) }
+        .sheet(item: $draft) { value in PaletteEditor(draft: value) }
         .confirmationDialog("删除配色？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
             Button("删除并恢复默认配色", role: .destructive) {
                 if let deleting { Task { await themes.deletePalette(deleting.id) } }

@@ -4,22 +4,22 @@ struct PaletteEditor: View {
     @Environment(ThemeStore.self) private var themes
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
-    @State private var palette: ThemePalette
+    @Bindable var draft: PaletteDraft
     @State private var error: String?
     @FocusState private var nameFocused: Bool
-    let creating: Bool
+    private var creating: Bool { draft.creating }
     let showsAppPreview: Bool
-    let previewChanged: ((ThemePalette) -> Void)?
-    init(initial: ThemePalette, creating: Bool, showsAppPreview: Bool = true, previewChanged: ((ThemePalette) -> Void)? = nil) {
-        _palette = State(initialValue: initial); self.creating = creating
-        self.showsAppPreview = showsAppPreview; self.previewChanged = previewChanged
+    init(draft: PaletteDraft, showsAppPreview: Bool = true) {
+        self.draft = draft
+        self.showsAppPreview = showsAppPreview
     }
+    private var palette: ThemePalette { draft.palette }
     private var previewTheme: ThemeSurface {
         ThemeSurface(plan: ResolvedTheme(appearance: palette.appearance, highContrast: themes.highContrast, colors: palette.colors, paletteId: palette.id))
     }
     var body: some View {
         NavigationStack {
-            PaletteFields(palette: $palette, nameFocused: $nameFocused, appPreview: showsAppPreview ? previewTheme : nil)
+            PaletteFields(palette: $draft.palette, nameFocused: $nameFocused, appPreview: showsAppPreview ? previewTheme : nil)
             .dismissKeyboardOnOutsideTap($nameFocused)
             .navigationTitle(creating ? "新建配色" : "编辑配色").navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -38,7 +38,6 @@ struct PaletteEditor: View {
             } message: { Text(error ?? "") }
         }
         .interactiveDismissDisabled(themes.saving).preferredColorScheme(theme.scheme)
-        .onChange(of: palette) { _, value in previewChanged?(value) }
     }
 }
 

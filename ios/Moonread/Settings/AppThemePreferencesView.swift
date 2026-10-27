@@ -31,7 +31,7 @@ struct AppThemePreferencesView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
     private func slot(_ appearance: ThemeAppearance, title: LocalizedStringKey) -> some View {
-        NavigationLink { PalettePicker(reader: false, appearance: appearance) } label: {
+        NavigationLink(value: LibraryRoute.settingsPalette(appearance)) {
             LabeledContent(title, value: paletteName(appearance))
         }.accessibilityIdentifier("paletteSlot-\(appearance == .light ? "light" : "dark")")
             .accessibilityValue(paletteName(appearance))

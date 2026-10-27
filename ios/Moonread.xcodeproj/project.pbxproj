@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        F14100000000000000000001 /* ReaderSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F14100000000000000000002 /* ReaderSettingsStore.swift */; };
 		4DF6E88FEFC27B5FF2E847AD /* ProtectedFileAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */; };
 		6FE466A10D361A647F688D3A /* SourceDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */; };
 		FF97A598EBE17BAA6A938B5F /* SourceDecodingPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F3544F22AA3B4C3242F849D /* SourceDecodingPreferences.swift */; };
@@ -325,6 +326,7 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+        F14100000000000000000002 /* ReaderSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSettingsStore.swift; sourceTree = "<group>"; };
 		80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectedFileAccess.swift; sourceTree = "<group>"; };
 		B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceDecodingTests.swift; sourceTree = "<group>"; };
 		2F3544F22AA3B4C3242F849D /* SourceDecodingPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceDecodingPreferences.swift; sourceTree = "<group>"; };
@@ -950,6 +952,7 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
                 F01700000000000000000004,
                 F01700000000000000000002,
 				AD2000000000000000000003 /* ReaderPreferences.swift */,
+                F14100000000000000000002 /* ReaderSettingsStore.swift */,
 				AD2000000000000000000007 /* ReadingPreview.swift */,
 				42742C82EEF942DE87A817BA /* CloudSettingsView.swift */,
 				5CD01275239A4B0EA525197E /* CloudStore.swift */,
@@ -1388,6 +1391,7 @@ F01900000000000000000001,
                 AD1000000000000000000001,
                 AD1000000000000000000002,
                 AD1000000000000000000003,
+                F14100000000000000000001 /* ReaderSettingsStore.swift in Sources */,
                 AD1000000000000000000004,
                 AD1000000000000000000005,
                 AD1000000000000000000006,

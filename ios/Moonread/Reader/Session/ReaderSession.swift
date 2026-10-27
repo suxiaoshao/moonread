@@ -9,7 +9,8 @@ final class ReaderSession {
     var snapshot: ReadingSnapshot?
     var book: BookInfo? { snapshot?.book }
     var window: ReadingWindow?
-    var settings: ReaderSettings?
+    private let settingsStore: ReaderSettingsStore
+    var settings: ReaderSettings? { settingsStore.value }
     var anchor: UInt64 = 0
     private(set) var displayAnchor: UInt64?
     var showingCover = true
@@ -28,7 +29,11 @@ final class ReaderSession {
         return decodingPolicy == "auto" ? String(localized: "自动 · \(encoding.uppercased())") : encoding.uppercased()
     }
     var chapter: ChapterInfo?
-    var error: String?
+    private var sessionError: String?
+    var error: String? {
+        get { sessionError ?? settingsStore.error }
+        set { sessionError = newValue; if newValue == nil { settingsStore.error = nil } }
+    }
     private var hasPresentedCompatibilityNotice = false
     var isLoading = true
     var nearEdge = false
@@ -60,8 +65,6 @@ final class ReaderSession {
     private var monitorTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
     private var windowTask: Task<Void, Never>?
-    private var settingsTask: Task<Void, Never>?
-    private var pendingSettings: ReaderSettings?
     private var chapterTask: Task<Void, Never>?
     private var pendingChapterAnchor: UInt64?
     private(set) var isLeaving = false
@@ -73,9 +76,11 @@ final class ReaderSession {
     private let readContinuation: @Sendable (String, UInt64?) async throws -> ReadingResumeContext
 
     init(service: AppDataService = .shared, activity: ReadingActivityRecorder? = nil,
+         settingsStore: ReaderSettingsStore? = nil,
          restartReading: (@Sendable (String, String?) async throws -> ReadingLease)? = nil,
          readContinuation: (@Sendable (String, UInt64?) async throws -> ReadingResumeContext)? = nil) {
         self.service = service; self.activity = activity ?? ReadingActivityRecorder()
+        self.settingsStore = settingsStore ?? (service === AppDataService.shared ? .shared : ReaderSettingsStore(service: service))
         self.restartReading = restartReading ?? { try await service.restartImport($0, encoding: $1) }
         self.readContinuation = readContinuation ?? { try await service.readingResumeContext($0, currentOffset: $1) }
     }
@@ -96,10 +101,9 @@ final class ReaderSession {
             isLoading = true
             do {
                 ReaderOpenDiagnostics.mark(attempt, "settingsRequested")
-                let value = try service.settings()
+                try settingsStore.load()
                 ReaderOpenDiagnostics.mark(attempt, "settingsLoaded")
                 guard !isLeaving, !Task.isCancelled, opening.request?.id == attempt else { return }
-                settings = value
                 ReaderOpenDiagnostics.mark(attempt, "leaseRequested")
                 let diagnostic = ReaderOpenDiagnostics.trace(attempt)
                 diagnostic?.mark("lease.queued")
@@ -387,20 +391,8 @@ final class ReaderSession {
     }
 
     func updateSettings(_ value: ReaderSettings) {
-        guard !isLeaving, value != settings else { return }
-        self.settings = value
-        pendingSettings = value
-        guard settingsTask == nil else { return }
-        settingsTask = Task { [weak self] in
-            guard let self else { return }
-            defer { settingsTask = nil }
-            // Only one writer exists; rapid changes replace the pending snapshot.
-            // A previous write always finishes before the newest one begins.
-            while let next = pendingSettings {
-                pendingSettings = nil
-                do { try await service.saveSettings(next) } catch { self.error = ReaderMessages.error(error) }
-            }
-        }
+        guard !isLeaving else { return }
+        settingsStore.update(value)
     }
 
     func flush() async {
@@ -410,7 +402,7 @@ final class ReaderSession {
         let progress = leavingProgress ?? readingID.flatMap { id in
             window == nil || !hasEnteredBody || !hasLocalReadingInteraction ? nil : (bookID: id, offset: browseOrigin ?? anchor)
         }
-        await settingsTask?.value
+        await settingsStore.flush()
         guard let progress else { return }
         do { try await service.savePosition(bookID: progress.bookID, offset: progress.offset) }
         catch { reportAutomaticReadingError(error) }
