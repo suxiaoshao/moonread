@@ -159,13 +159,7 @@ private struct ReaderLibraryEditorPresentation: ViewModifier {
     let refreshOutline: () async -> Void
     @ViewBuilder func body(content: Content) -> some View {
         if inspector {
-            content
-                .sheet(item: $editing.chapterEdit) { draft in
-                    NavigationStack { if let id = session.readingID { ChapterEditor(bookID: id, draft: draft) { await refreshOutline() } } }
-                }
-                .sheet(isPresented: $editing.rebuildingOutline) {
-                    NavigationStack { if let id = session.readingID { ChapterRebuildView(bookID: id) { await refreshOutline() } } }
-                }
+            content // The stable reader owns wide editing sheets across folds.
         } else {
             content
                 .navigationDestination(item: $editing.chapterEdit) { draft in

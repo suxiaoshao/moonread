@@ -52,8 +52,14 @@ enum ReaderWideTool: CaseIterable {
 
 @MainActor @Observable final class ReaderWideTools {
     var tool = ReaderWideTool.chapters
+    var regular = false
     var inputFocused = false
-    var editingNote = false
+    var compactSettingsHandoff = false
+    var settingsReturningToInspector = false
+    var toolSheetHandoff = false
+    var inspectorMounted = false
+    var compactToolPending: ReaderWideTool?
+    var editor: ReaderWideEditor?
     let libraryEditing = ReaderLibraryEditing()
     let settingsEditing = ReadingSettingsEditing()
     var isActive: Bool {
@@ -71,6 +77,7 @@ struct ReaderInspectorContent: View {
     let navigate: (UInt64, UInt64?, ReadingTargetPlacement) -> Void
     let edit: (ReaderMark) -> Void
     let close: () -> Void
+    let dismissed: () -> Void
     let showHistory: () -> Void
     let changeEncoding: (String?) -> Void
     @Binding var searchExpanded: Bool
@@ -100,17 +107,11 @@ struct ReaderInspectorContent: View {
                     changeEncoding: changeEncoding)
             }
         }
-        .sheet(isPresented: Binding(get: { state.editingNote && session.editor != nil }, set: { shown in
-            if !shown { closeNote() }
-        })) {
-            if let mark = session.editor { NoteEditor(edit: mark, close: closeNote) }
-        }
+        .onAppear { state.inspectorMounted = true }
+        .onDisappear { state.inspectorMounted = false; dismissed() }
         .background(Color(uiColor: surface.canvas))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("readerInspector")
-    }
-    private func closeNote() {
-        state.editingNote = false; session.editor = nil; session.notesChanged()
     }
     @ToolbarContentBuilder var inspectorToolbar: some ToolbarContent {
         if state.tool == .chapters {
@@ -147,10 +148,70 @@ private struct ReaderInspectorSettings: View {
         ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editing.editedAppearance,
             encoding: encoding, isRestartingEncoding: isRestarting, changeEncoding: changeEncoding,
             editPalette: { editing.draft = $0 }, wideControls: true)
-            .sheet(item: $editing.draft) { draft in
-                PaletteEditor(draft: draft, showsAppPreview: false).themeScope(theme)
-                    .presentationDetents([.medium, .large])
-                    .presentationBackground(Color(uiColor: theme.canvas))
+
+    }
+}
+
+
+enum ReaderWideEditor: String, Identifiable {
+    case chapter, rebuild, palette
+    var id: Self { self }
+}
+
+/// Complex tasks belong to the stable reader, not to the inspector subtree
+/// that the system removes when folding. Drafts stay in their existing owners.
+struct ReaderWideEditorPresentation: ViewModifier {
+    @Bindable var state: ReaderWideTools
+    let session: ReaderSession
+    let tools: ReaderToolsModel
+    let closed: () -> Void
+    @Environment(\.theme) private var theme
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: state.libraryEditing.chapterEdit != nil) { _, editing in
+                if state.regular && editing { state.editor = .chapter }
             }
+            .onChange(of: state.libraryEditing.rebuildingOutline) { _, rebuilding in
+                if state.regular && rebuilding { state.editor = .rebuild }
+            }
+            .onChange(of: state.settingsEditing.draft != nil) { _, editing in
+                if state.regular && editing { state.editor = .palette }
+            }
+            .sheet(item: Binding(get: { state.editor }, set: { if $0 == nil { finish() } }), onDismiss: closed) { editor in
+                Group {
+                    switch editor {
+                    case .chapter:
+                        NavigationStack {
+                            if let id = session.readingID, let draft = state.libraryEditing.chapterEdit {
+                                ChapterEditor(bookID: id, draft: draft, saved: refreshOutline)
+                            }
+                        }
+                    case .rebuild:
+                        NavigationStack {
+                            if let id = session.readingID { ChapterRebuildView(bookID: id, applied: refreshOutline) }
+                        }
+                    case .palette:
+                        if let draft = state.settingsEditing.draft {
+                            PaletteEditor(draft: draft, showsAppPreview: false)
+                                .presentationDetents([.medium, .large])
+                                .presentationBackground(Color(uiColor: theme.canvas))
+                        }
+                    }
+                }.themeScope(theme).preferredColorScheme(theme.scheme)
+            }
+    }
+    private func refreshOutline() async {
+        await session.refreshOutline()
+        await tools.refreshChapters(jumpTo: session.anchor)
+    }
+    private func finish() {
+        switch state.editor {
+        case .chapter: state.libraryEditing.chapterEdit = nil
+        case .rebuild: state.libraryEditing.rebuildingOutline = false
+        case .palette: state.settingsEditing.draft = nil
+        case nil: break
+        }
+        state.editor = nil
     }
 }

@@ -4,7 +4,8 @@ import UIKit
 extension ReadingController {
     @objc func tappedBody(_ gesture: UITapGestureRecognizer) {
         statisticsInteraction()
-        if let text = activeTextView {
+        if let text = visibleTextViews.first(where: { $0.bounds.contains(gesture.location(in: $0)) }) {
+            activateLeaf(text, userInitiated: true)
             let ids = annotationIDs(at: gesture.location(in: text), in: text)
             if !ids.isEmpty { showAnnotations(ids, in: text); return }
         }
@@ -142,7 +143,8 @@ extension ReadingController {
     func configureAccessibility(_ text: UITextView) {
         (text as? ReadingTextView)?.copySelection = { [weak self] start, end in
             guard let self else { return }
-            selection?(min(selectionStart ?? start, start), max(selectionStart ?? end, end), .copy)
+            let full = retainedSelection ?? (min(selectionStart ?? start, start), max(selectionStart ?? end, end))
+            selection?(full.0, full.1, .copy)
         }
         text.isSelectable = allowsSelection && !isCoverVisible
         text.accessibilityLabel = isCoverVisible ? String(localized: "封面，\(coverTitle ?? "")") : (text as? ReadingTextView)?.readingText.text
@@ -219,7 +221,8 @@ extension ReadingController {
             guard let envelope = mapping.sourceRange(range) else { return UIMenu(children: suggestedActions) }
             let from = base + UInt64(envelope.lowerBound)
             let to = base + UInt64(envelope.upperBound)
-            context = AnnotationSelection(start: min(selectionStart ?? from, from), end: max(selectionStart ?? to, to), annotations: annotations)
+            let full = retainedSelection ?? (min(selectionStart ?? from, from), max(selectionStart ?? to, to))
+            context = AnnotationSelection(start: full.0, end: full.1, annotations: annotations)
         }
         return selectionMenu(for: context, suggestedActions: suggestedActions) { [weak self, weak textView] kind in
             self?.endAnnotationMenu(clearSelection: true)

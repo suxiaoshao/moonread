@@ -1,10 +1,18 @@
 # 阅读弹层与工具布局
 
-日期：2026-09-28。四列入口、统一阅读设置与实时预览、共用底部面板和目录整理已接入，配合[正文](../reader/reading.md)与[阅读工具](../reader/tools.md)。运行验证及设备边界见[验证记录](../engineering/verification.md)。
+日期：2026-10-28。compact 四列入口、统一阅读设置与实时预览、共用底部面板和目录整理，以及 regular 系统工具栏和 inspector 已接入，配合[正文](../reader/reading.md)与[阅读工具](../reader/tools.md)。运行验证及设备边界见[验证记录](../engineering/verification.md)。
 
 小说详情按钮位于阅读页右上角，与返回按钮同一行并随工具显隐；“更多”的最后一项“详情”是第二个入口。底部进度和快捷设置不放详情。原生导航和返回上下文见[小说详情](book-details.md#阅读弹层中的信息按钮)。
 
 阅读页顶部现使用系统导航栏与 `toolbarVisibility`，不再绘制返回/标题覆盖层或给顶部单独设置 0.18 秒转场。工具状态同时驱动导航栏和底部 sheet；两种系统容器各自管理转场，不保证同一动画曲线。UIKit 本身也提供按空白处点击显隐栏的 [hidesBarsOnTap](https://developer.apple.com/documentation/uikit/uinavigationcontroller/hidesbarsontap)，月读保留现有正文点击判定，以避开选字、翻页和批注手势，再通过 SwiftUI 控制原生栏。
+
+## regular 宽度
+
+宽屏使用原生 bottomBar 的目录、批注、搜索、设置四入口，以及来源栈外层的一个 inspector。标题、关闭与目录整理共用 inspector 列自己的系统导航栏；列内 NavigationStack 仅提供工具栏，不包阅读器、不建立另一条正文导航路径。系统将工具呈现为模态时，先关闭再从原 toolbar 切换，不复制四入口。
+
+工具内容与手机共用 ReaderToolsModel、ReaderLibraryEditing 和 ReadingSettingsEditing；目录跳转与编辑通过 ReaderScreen 同一方法执行退出保护、导航 revision 记录与既有会话动作。新增工具状态使用引用或 Binding，不向 inspector 追加值快照。偏好仅在用户意图确实改变时保存。常驻目录静置允许阅读计时和续读提示，搜索输入、设置及编辑任务按原交互规则暂停。
+
+以下 dock、四列和 sheet 高度说明仅适用于 compact，宽屏设置直接操作真实正文，不再嵌一个小预览。
 
 ## 为什么要调整
 
@@ -18,7 +26,7 @@ Apple 建议 sheet 聚焦当前任务，主界面同一时间只展示一个 she
 
 顶部保留返回和书名；设置入口移到底部，减少单手阅读时够到右上角的需要。正文视口和布局不随工具显隐变化。
 
-顶部恢复到改动前的阅读工具样式：普通返回图标、居中书名，长书名单行省略，返回触区 44pt。删除圆形返回玻璃和书名胶囊，恢复原有纸色渐变背景及向下延伸 28pt 的覆盖范围。此处是阅读器已有的自定义覆盖层，显隐不改变正文视口；不把这次恢复描述为系统导航栏实现。书架导航另行使用系统默认组件。
+顶部沿用来源 NavigationStack 的原生返回与 inline 书名，由 `toolbarVisibility` 显隐。正文的章节、时间与电量信息独立覆盖，不改变排版视口；不另画第二套返回栏。
 
 ```text
 顶部：  ‹ 返回               书名

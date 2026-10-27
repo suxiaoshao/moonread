@@ -2,11 +2,41 @@ import SwiftUI
 import UIKit
 
 extension ReadingController {
-    func makePage(at index: Int) -> UIViewController {
+    func makePage(at index: Int, endingBefore end: Int? = nil) -> UIViewController {
         if index == -1 { return makeCover() }
+        guard leafFrames.count > 1 else { return makeLeaf(at: index) }
+        let indices = index..<min(end ?? pages.count, index + leafFrames.count)
+        let group = ReadingPageGroupController(leaves: indices.map(makeLeaf), frames: leafFrames,
+            waitingForText: end == nil && indices.count < leafFrames.count && window?.isEndOfBook != true)
+        group.view.backgroundColor = paperBackground
+        for leaf in group.leaves { if let text = leaf.view as? UITextView { paintPaper(on: text) } }
+        return group
+    }
+
+    func makeLeaf(at index: Int) -> PageController {
         let controller = PageController(page: pages[index], index: index)
-        if let text = controller.view as? UITextView { text.delegate = self; configureAccessibility(text); decorate(text, base: controller.page.start) }
+        if let text = controller.view as? UITextView {
+            text.delegate = self; configureAccessibility(text); decorate(text, base: controller.page.start)
+        }
         return controller
+    }
+
+    var currentLeaves: [PageController] {
+        let current = pageController?.viewControllers?.first
+        if let group = current as? ReadingPageGroupController { return group.leaves }
+        return (current as? PageController).map { [$0] } ?? []
+    }
+    var anchorLeaf: PageController? {
+        (pageController?.viewControllers?.first as? ReadingPageGroupController)?.anchorLeaf ?? currentLeaves.first
+    }
+    func activateLeaf(_ text: UITextView, userInitiated: Bool = false) {
+        (pageController?.viewControllers?.first as? ReadingPageGroupController)?.activate(text)
+        if userInitiated, let leaf = currentLeaves.first(where: { $0.viewIfLoaded === text }) {
+            layoutAnchor = leaf.page.firstVisibleOffset
+        }
+    }
+    func lastPageIndex(_ controller: UIViewController?) -> Int? {
+        (controller as? ReadingPageGroupController)?.leaves.last?.index ?? pageIndex(controller)
     }
 
     func makeCover() -> ReaderCoverController {
@@ -55,7 +85,7 @@ extension ReadingController {
     func reportCover(_ visible: Bool) {
         guard isCoverVisible != visible else { return }
         isCoverVisible = visible
-        if let text = activeTextView { configureAccessibility(text) }
+        visibleTextViews.forEach(configureAccessibility)
         let generation = reportGeneration
         DispatchQueue.main.async { [weak self] in
             guard let self, generation == reportGeneration else { return }
@@ -65,14 +95,14 @@ extension ReadingController {
 
     func pageIndex(_ controller: UIViewController?) -> Int? {
         if controller is ReaderCoverController { return -1 }
-        return (controller as? PageController)?.index
+        return (controller as? ReadingPageGroupController)?.leaves.first?.index ?? (controller as? PageController)?.index
     }
 
     private func reportPage(_ index: Int) {
         reportCover(index == -1)
         if pages.indices.contains(index) {
             report(pages[index].firstVisibleOffset, settled: true)
-            if index >= pages.count-2 { requestMore(.forward) }
+            if (lastPageIndex(pageController?.viewControllers?.first) ?? index) >= pages.count - max(2, leafFrames.count * 2) { requestMore(.forward) }
             if index <= 1 { requestMore(.backward) }
         }
     }
@@ -80,40 +110,41 @@ extension ReadingController {
     func movePage(_ direction: Int) {
         guard !rebuilding, !pageTransitioning, let paging = pageController,
               let current = pageIndex(paging.viewControllers?.first) else { return }
-        let index = current + direction
+        guard direction > 0 || current > (hasCover ? -1 : 0) else { requestMore(.backward); return }
+        let index = direction > 0 ? (lastPageIndex(paging.viewControllers?.first) ?? current) + 1 : (current == 0 && hasCover ? -1 : max(0, current - leafFrames.count))
         guard pages.indices.contains(index) || (index == -1 && hasCover) else { updateEdge(direction > 0); requestMore(direction > 0 ? .forward : .backward); return }
         statisticsInteraction(); readingBegan?()
         pageTransitioning = true
         programmaticPageTransition = true
         let generation = reportGeneration
-        paging.setViewControllers([makePage(at: index)],
+        paging.setViewControllers([makePage(at: index, endingBefore: direction < 0 ? current : nil)],
                                   direction: direction > 0 ? .forward : .reverse,
                                   animated: !reduceMotion && !UIAccessibility.isReduceMotionEnabled) { [weak self] complete in
             guard let self, generation == self.reportGeneration else { return }
             self.pageTransitioning = false
             self.programmaticPageTransition = false
             if complete { self.reportPage(index) }
-            self.updateEdge(index == self.pages.count - 1)
+            self.updateEdge((self.lastPageIndex(paging.viewControllers?.first) ?? index) == self.pages.count - 1)
             self.applyPendingWindow()
         }
     }
 
     func pageViewController(_ pageViewController: UIPageViewController, viewControllerBefore viewController: UIViewController) -> UIViewController? {
         guard let current = pageIndex(viewController), current > (hasCover ? -1 : 0) else { return nil }
-        return makePage(at: current - 1)
+        return makePage(at: (current == 0 && hasCover ? -1 : max(0, current - leafFrames.count)), endingBefore: current)
     }
     func pageViewController(_ pageViewController: UIPageViewController, viewControllerAfter viewController: UIViewController) -> UIViewController? {
-        guard let current = pageIndex(viewController), current + 1 < pages.count else { return nil }
-        return makePage(at: current + 1)
+        guard let current = pageIndex(viewController), (lastPageIndex(viewController) ?? current) + 1 < pages.count else { return nil }
+        return makePage(at: (lastPageIndex(viewController) ?? current) + 1)
     }
     func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool,
                             previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
         guard pageViewController === pageController else { return }
         pageTransitioning = false
         guard completed, let current = pageIndex(pageViewController.viewControllers?.first) else { applyPendingWindow(); return }
-        if let text = activeTextView { configureAccessibility(text) }
+        visibleTextViews.forEach(configureAccessibility)
         reportPage(current)
-        updateEdge(current == pages.count - 1)
+        updateEdge(lastPageIndex(pageViewController.viewControllers?.first) == pages.count - 1)
         applyPendingWindow()
     }
     func pageViewController(_ pageViewController: UIPageViewController, willTransitionTo pendingViewControllers: [UIViewController]) {

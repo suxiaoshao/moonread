@@ -17,17 +17,22 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
 
     func statisticsRange() -> (UInt64, UInt64)? {
         guard !isCoverVisible, !rebuilding, !needsRebuild, !pageTransitioning,
-              viewIfLoaded?.window != nil, let text = activeTextView, !text.text.isEmpty else { return nil }
-        let rect = text.bounds.offsetBy(dx: -text.textContainerInset.left, dy: -text.textContainerInset.top)
-        let glyphs = text.layoutManager.glyphRange(forBoundingRect: rect, in: text.textContainer)
-        let chars = text.layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
-        guard chars.length > 0 else { return nil }
-        let mapping = textCoordinates(text), base = textBase(text)
-        let clipped = NSIntersectionRange(chars, (text as! ReadingTextView).readingText.selectableRange)
-        guard let envelope = mapping.sourceRange(clipped), !envelope.isEmpty else { return nil }
-        return (base+UInt64(envelope.lowerBound), base+UInt64(envelope.upperBound))
+              viewIfLoaded?.window != nil else { return nil }
+        let ranges = visibleTextViews.compactMap { text -> (UInt64, UInt64)? in
+            guard let body = text as? ReadingTextView, !text.text.isEmpty else { return nil }
+            let rect = text.bounds.offsetBy(dx: -text.textContainerInset.left, dy: -text.textContainerInset.top)
+            let glyphs = text.layoutManager.glyphRange(forBoundingRect: rect, in: text.textContainer)
+            let chars = text.layoutManager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
+            let clipped = NSIntersectionRange(chars, body.readingText.selectableRange)
+            guard clipped.length > 0, let envelope = textCoordinates(text).sourceRange(clipped), !envelope.isEmpty else { return nil }
+            let base = textBase(text)
+            return (base + UInt64(envelope.lowerBound), base + UInt64(envelope.upperBound))
+        }
+        guard let start = ranges.map({ $0.0 }).min(), let end = ranges.map({ $0.1 }).max() else { return nil }
+        return (start, end)
     }
     func selectedSourceRange() -> (UInt64, UInt64)? {
+        if let retainedSelection { return retainedSelection }
         guard let text = activeTextView else { return nil }
         let range = text.selectedRange
         guard range.length > 0, NSMaxRange(range) <= text.textStorage.length else { return nil }
@@ -63,6 +68,8 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     var window: ReadingWindow?
     var settings: ReaderSettings?
     var anchor: UInt64 = 0
+    var layoutAnchor: UInt64?
+    private var hadWideLayout = false
     private var dark = false
     var theme = ThemeSurface.initial
     let ink = ReadingInk()
@@ -72,6 +79,11 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     var scrollText: ScrollReadingTextView?
     var pageController: UIPageViewController?
     var pages: [TextPage] = []
+    var leafFrames: [CGRect] = []
+    var pageSize: CGSize { leafFrames.first?.size ?? readingSurface.bounds.size }
+    var retainedSelection: (UInt64, UInt64)?
+    private var selectionWasFirstResponder = false
+    private var readingRegion: CGRect?
     var renderedSize: CGSize = .zero
     var rebuilding = false
     var needsRebuild = true
@@ -162,9 +174,12 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         let oldWindow = self.window
         let navigating = self.navigationRevision != navigationRevision
         let layoutChanged = !settings.hasSameLayout(as: self.settings) || self.typeSize != typeSize
+            || (contentGeometry != nil && settings.widePageMode != self.settings?.widePageMode)
             || (self.window?.chunks == window.chunks && self.window?.paragraphs != window.paragraphs)
             || self.compactHeaderHeight != compactHeaderHeight
         if navigating {
+            layoutAnchor = anchor
+            retainedSelection = nil
             reportGeneration += 1 // Ignore movement callbacks queued before the jump.
             pageTransitioning = false
             programmaticPageTransition = false
@@ -240,7 +255,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             view.setNeedsLayout()
         }
         if navigating { view.setNeedsLayout() }
-        if let text = activeTextView { configureAccessibility(text) }
+        visibleTextViews.forEach(configureAccessibility)
         updateBottomFade()
         if decorationsChanged || appearanceChanged { decorateVisibleText() }
         if appearanceChanged {
@@ -274,14 +289,6 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
                 stableInsets = UIEdgeInsets(top: max(0, hardware.minY), left: 0,
                     bottom: max(0, viewport.maxY - hardware.maxY), right: 0)
             }
-            if reportedHeaderTop != stableInsets.top {
-                reportedHeaderTop = stableInsets.top
-                let top = stableInsets.top
-                Task { @MainActor [weak self] in
-                    guard let self, self.contentGeometry != nil, self.reportedHeaderTop == top else { return }
-                    self.headerPositionChanged(top)
-                }
-            }
             contentInsets = stableInsets
             contentInsets.top += compactHeaderHeight
             if settings?.mode == .scroll { contentInsets.bottom = 0 }
@@ -314,13 +321,68 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             if settings?.mode == .scroll { contentInsets.bottom = 0 }
             if guideHeight > 0 { contentInsets.bottom = max(contentInsets.bottom, guideHeight + insets.bottom) }
         }
-        readingSurface.frame = viewport.inset(by: contentInsets)
+        if contentGeometry != nil { hadWideLayout = true }
+        let savedViewport = captureViewport()
+        let savedSelection = selectedSourceRange()
+        let selectionFocused = activeTextView?.isFirstResponder == true
+        let surface = viewport.inset(by: contentInsets)
+        let regions = contentGeometry == nil ? [surface] : readingRegions(in: surface)
+        var nextSurface = surface
+        var nextFrames = [CGRect(origin: .zero, size: surface.size)]
+        if contentGeometry != nil, settings?.mode == .pages, settings?.widePageMode == .double,
+           let settings {
+            let minimum = max(320, 16 * ReadingTypography.font(settings).pointSize)
+            let candidates: [CGRect]
+            if regions.count == 1, regions[0] == surface {
+                let width = (surface.width - 24) / 2
+                candidates = [CGRect(x: surface.minX, y: surface.minY, width: width, height: surface.height),
+                              CGRect(x: surface.minX + width + 24, y: surface.minY, width: width, height: surface.height)]
+            } else { candidates = regions.sorted { $0.minX < $1.minX } }
+            if candidates.count == 2, abs(candidates[0].minY - candidates[1].minY) < 1,
+               candidates[0].maxX <= candidates[1].minX {
+                let size = CGSize(width: min(candidates[0].width, candidates[1].width), height: min(candidates[0].height, candidates[1].height))
+                let insets = ReadingTypography.insets(settings, width: size.width)
+                if size.width - insets.left - insets.right >= minimum {
+                    nextFrames = candidates.map { CGRect(x: $0.midX - size.width / 2 - surface.minX,
+                        y: $0.midY - size.height / 2 - surface.minY, width: size.width, height: size.height) }
+                }
+            }
+        }
+        if nextFrames.count == 1, let region = preferredReadingRegion(regions) {
+            nextSurface = region
+            if region.minY > surface.minY {
+                nextSurface.origin.y += compactHeaderHeight
+                nextSurface.size.height = max(1, nextSurface.height - compactHeaderHeight)
+            }
+            nextFrames = [CGRect(origin: .zero, size: nextSurface.size)]
+        }
+        readingRegion = nextSurface
+        let pageLayoutChanged = leafFrames != nextFrames
+        readingSurface.frame = nextSurface
+        leafFrames = nextFrames
+        if contentGeometry != nil {
+            let headerTop = max(0, nextSurface.minY - compactHeaderHeight)
+            if reportedHeaderTop != headerTop {
+                reportedHeaderTop = headerTop
+                Task { @MainActor [weak self] in
+                    guard let self, self.contentGeometry != nil, self.reportedHeaderTop == headerTop else { return }
+                    self.headerPositionChanged(headerTop)
+                }
+            }
+        }
         updatePaperBackdrop()
         updateBottomFade()
-        if needsRebuild || renderedSize != readingSurface.bounds.size {
-            if renderedSize != readingSurface.bounds.size { preservePageBoundaries = false }
+        if needsRebuild || renderedSize != readingSurface.bounds.size || pageLayoutChanged {
+            if pendingNavigation == nil, let savedViewport {
+                anchor = hadWideLayout ? (layoutAnchor ?? savedViewport.offset) : savedViewport.offset
+                isCoverVisible = savedViewport.isCover
+            }
+            retainedSelection = savedSelection
+            selectionWasFirstResponder = selectionFocused
+            if renderedSize != readingSurface.bounds.size || pageLayoutChanged { preservePageBoundaries = false }
             renderedSize = readingSurface.bounds.size
             rebuild()
+            if layoutAnchor == nil { layoutAnchor = anchorLeaf?.page.firstVisibleOffset }
             pendingNavigation?.keepVisible = false
         }
         applyNavigation()
@@ -331,6 +393,58 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             #if READER_OPEN_DIAGNOSTICS
             displayProbe = ReaderDisplayProbe(view: view, id: id, cover: isCoverVisible, glyphsVisible: { [weak self] in self?.diagnosticGlyphsVisible() ?? false }) { [weak self] in self?.displayProbe = nil }
             #endif
+        }
+    }
+
+    private func readingRegions(in surface: CGRect) -> [CGRect] {
+        guard #available(iOS 27.1, *) else { return [surface] }
+        var regions = [surface]
+        for kind in [UIView.ReservedRegion.Kind.division, .occlusion] {
+            for reserved in view.reservedRegions(kind: kind) where reserved.isActive {
+                let frame = reserved.frame
+                let margins = reserved.margins
+                let blocked = CGRect(x: frame.minX - margins.left, y: frame.minY - margins.top,
+                    width: frame.width + margins.left + margins.right,
+                    height: frame.height + margins.top + margins.bottom)
+                regions = regions.flatMap { region -> [CGRect] in
+                    let overlap = region.intersection(blocked)
+                    guard !overlap.isNull, overlap.width > 0, overlap.height > 0 else { return [region] }
+                    // Text stays in complete rectangles. A horizontal fold yields
+                    // one reading region, never a lower-screen control console.
+                    if overlap.height >= overlap.width {
+                        return [CGRect(x: region.minX, y: region.minY, width: overlap.minX-region.minX, height: region.height),
+                                CGRect(x: overlap.maxX, y: region.minY, width: region.maxX-overlap.maxX, height: region.height)].filter { $0.width > 0 }
+                    }
+                    return [CGRect(x: region.minX, y: region.minY, width: region.width, height: overlap.minY-region.minY),
+                            CGRect(x: region.minX, y: overlap.maxY, width: region.width, height: region.maxY-overlap.maxY)].filter { $0.height > 0 }
+                }
+            }
+        }
+        return regions
+    }
+
+    private func preferredReadingRegion(_ regions: [CGRect]) -> CGRect? {
+        if let previous = readingRegion, let same = regions.first(where: { $0.contains(CGPoint(x: previous.midX, y: previous.midY)) }) { return same }
+        return regions.sorted {
+            let a = $0.width * $0.height, b = $1.width * $1.height
+            return a == b ? $0.minX < $1.minX : a > b
+        }.first
+    }
+
+    func restoreNativeSelection() {
+        guard let retainedSelection else { return }
+        let preferred = currentLeaves.first { leaf in
+            layoutAnchor.map { $0 >= leaf.page.start && $0 < leaf.page.end } ?? false
+        }?.view as? UITextView
+        let texts = preferred.map { [$0] + visibleTextViews.filter { $0 !== preferred } } ?? visibleTextViews
+        for text in texts {
+            let base = textBase(text), mapping = textCoordinates(text)
+            let start = max(base, retainedSelection.0), end = min(base + UInt64(mapping.byteCount), retainedSelection.1)
+            guard start < end, let range = mapping.displayRange(Int(start-base)..<Int(end-base)) else { continue }
+            activateLeaf(text)
+            text.selectedRange = range
+            if selectionWasFirstResponder { text.becomeFirstResponder() }
+            break // Native handles belong to just one leaf; logical range is full.
         }
     }
 
@@ -349,7 +463,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     #endif
 
     var activeTextView: UITextView? {
-        scrollText ?? pageController?.viewControllers?.first?.view as? UITextView
+        scrollText ?? anchorLeaf?.view as? UITextView
     }
 
 }

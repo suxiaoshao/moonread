@@ -7,7 +7,7 @@ extension ReadingController {
     }
 
     var textInsets: UIEdgeInsets {
-        ReadingTypography.insets(settings ?? defaultReaderSettings(), width: readingSurface.bounds.width)
+        ReadingTypography.insets(settings ?? defaultReaderSettings(), width: pageSize.width)
     }
 
     private func styledText(_ window: ReadingWindow) -> NSAttributedString {
@@ -37,7 +37,7 @@ extension ReadingController {
 
     private func paginate(_ window: ReadingWindow, preserving previous: [TextPage] = [], keeping anchor: UInt64? = nil,
                          layout: ((ReadingText, Bool) -> [NSRange])? = nil) -> [TextPage] {
-        TextPage.paginate(window, size: readingSurface.bounds.size, attributes: attributes(), source: styledText(window),
+        TextPage.paginate(window, size: pageSize, attributes: attributes(), source: styledText(window),
                           insets: textInsets, preserving: previous, keeping: anchor)
     }
 
@@ -85,13 +85,13 @@ extension ReadingController {
             return ReadingViewport(offset: line.offset, lineY: line.lineY,
                                    size: renderedSize, settings: settings, typeSize: typeSize, pages: [])
         }
-        guard let current = pageController?.viewControllers?.first as? PageController else { return nil }
+        guard let current = anchorLeaf else { return nil }
         return ReadingViewport(offset: current.page.firstVisibleOffset, lineY: 0, size: renderedSize,
-                               settings: settings, typeSize: typeSize, pages: pages)
+                               settings: settings, typeSize: typeSize, pages: pages, pageSize: contentGeometry == nil ? nil : pageSize, leafCount: leafFrames.count, groupStart: currentLeaves.count > 1 ? currentLeaves.first?.page.start : nil)
     }
 
     private var matchingRestoration: ReadingViewport? {
-        pendingNavigation?.request.restoration(size: readingSurface.bounds.size, settings: settings, typeSize: typeSize)
+        pendingNavigation?.request.restoration(size: readingSurface.bounds.size, settings: settings, typeSize: typeSize, pageSize: contentGeometry == nil ? nil : pageSize, leafCount: leafFrames.count)
     }
 
     func replaceNavigationContents() {
@@ -136,8 +136,10 @@ extension ReadingController {
         if let text = scrollText, let rect = targetRect(offset, end: end, in: text) {
             let visible = contextViewport(in: text, bottomObstruction: bottomObstruction).insetBy(dx: 0, dy: 8)
             if rect.minY >= visible.minY && rect.maxY <= visible.maxY { return window }
-        } else if let current = pageController?.viewControllers?.first as? PageController,
-                  offset >= current.page.start, offset < current.page.end { return window }
+        } else if let leaf = currentLeaves.first(where: { offset >= $0.page.start && offset < $0.page.end }) {
+            if let text = leaf.view as? UITextView { activateLeaf(text) }
+            return window
+        }
         return nil
     }
 
@@ -150,7 +152,7 @@ extension ReadingController {
             pendingNavigation = nil
             decorateVisibleText()
             updateBottomFade()
-            if let text = activeTextView { configureAccessibility(text) }
+            visibleTextViews.forEach(configureAccessibility)
         }
         if let text = scrollText {
             if hasCover && (pending.request.placement == .cover || pending.request.restoring?.isCover == true) {
@@ -198,15 +200,16 @@ extension ReadingController {
             }
             guard !pages.isEmpty else { return }
             let target = restoration?.offset ?? anchor
-            let index = pending.request.pageIndex(in: pages, anchor: target)
-            if let current = paging.viewControllers?.first as? PageController,
-               current.page.start == pages[index].start, current.page.end == pages[index].end {
-                current.update(page: pages[index], index: index)
+            let index = pending.request.pageIndex(in: pages, anchor: restoration?.groupStart ?? target)
+            if let leaf = currentLeaves.first(where: { $0.page.start == pages[index].start && $0.page.end == pages[index].end }) {
+                leaf.update(page: pages[index], index: index)
+                if let text = leaf.view as? UITextView { activateLeaf(text) }
             } else {
-                let current = (paging.viewControllers?.first as? PageController)?.index ?? index
+                let current = pageIndex(paging.viewControllers?.first) ?? index
                 paging.setViewControllers([makePage(at: index)], direction: index >= current ? .forward : .reverse, animated: false)
             }
-            updateEdge(index == pages.count - 1)
+            if let leaf = currentLeaves.first(where: { target >= $0.page.start && target < $0.page.end }), let text = leaf.view as? UITextView { activateLeaf(text) }
+            updateEdge(lastPageIndex(paging.viewControllers?.first) == pages.count - 1)
         }
     }
 
@@ -245,7 +248,7 @@ extension ReadingController {
         rebuilding = true
         defer {
             rebuilding = false; decorateVisibleText(); updateBottomFade()
-            if let text = activeTextView { configureAccessibility(text) }
+            visibleTextViews.forEach(configureAccessibility)
         }
         if let text = scrollText, text.textStorage.length > 0 {
             let coverOffset = previous.isStartOfBook && scrollCover != nil && isCoverVisible ? text.contentOffset.y : nil
@@ -267,18 +270,23 @@ extension ReadingController {
             let rect = text.layoutManager.lineFragmentRect(forGlyphAt: newGlyph, effectiveRange: nil)
             text.setContentOffset(CGPoint(x: 0, y: max(0, rect.minY + text.textContainerInset.top - line.lineY)), animated: false)
         } else if settings.mode == .pages, let paging = pageController,
-                  let current = paging.viewControllers?.first as? PageController {
-            guard current.page.start >= window.start, current.page.start < window.end else {
+                  let current = currentLeaves.first {
+            guard current.page.start >= window.start, currentLeaves.last!.page.end <= window.end else {
                 self.window = previous; requestMore(current.page.firstVisibleOffset < window.start ? .backward : .forward); return
             }
             let visible = current.page.firstVisibleOffset
             pages = paginate(window,preserving:pages,keeping:visible)
             guard !pages.isEmpty else { return }
             let index = pages.lastIndex(where:{$0.start<=visible}) ?? 0
-            current.update(page: pages[index], index: index)
-            // Clear cached neighbours while retaining the visible controller.
-            paging.setViewControllers([current], direction: .forward, animated: false)
-            updateEdge(index == pages.count - 1)
+            let active = anchorLeaf?.page.firstVisibleOffset
+            if paging.viewControllers?.first is ReadingPageGroupController {
+                paging.setViewControllers([makePage(at: index)], direction: .forward, animated: false)
+                if let active, let leaf = currentLeaves.first(where: { $0.page.start <= active && $0.page.end > active }), let text = leaf.view as? UITextView { activateLeaf(text) }
+            } else {
+                current.update(page: pages[index], index: index)
+                paging.setViewControllers([current], direction: .forward, animated: false)
+            }
+            updateEdge(lastPageIndex(paging.viewControllers?.first) == pages.count - 1)
         } else if let paging = pageController, paging.viewControllers?.first is ReaderCoverController {
             pages = paginate(window, preserving: pages)
             if let cover = paging.viewControllers?.first { paging.setViewControllers([cover], direction: .forward, animated: false) }
@@ -291,7 +299,7 @@ extension ReadingController {
         pageTransitioning = false
         programmaticPageTransition = false
         reportGeneration += 1
-        defer { rebuilding = false; needsRebuild = false }
+        defer { restoreNativeSelection(); rebuilding = false; needsRebuild = false }
         removeScrollCover()
         scrollText?.removeFromSuperview()
         scrollText = nil

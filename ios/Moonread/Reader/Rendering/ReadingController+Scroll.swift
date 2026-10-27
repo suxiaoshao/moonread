@@ -9,8 +9,27 @@ extension ReadingController {
     }
 
     func textViewDidChangeSelection(_ textView: UITextView) {
+        guard textView === scrollText || currentLeaves.contains(where: { $0.viewIfLoaded === textView }) else { return }
         if !preparingAnnotationMenu, textView === annotationMenuText, let tappedAnnotation, textView.selectedRange != tappedAnnotation.range {
             endAnnotationMenu(clearSelection: false)
+        }
+        if !rebuilding {
+            if let selected = retainedSelection {
+                let expected = Self.annotationRange(AnnotationSelection(start: selected.0, end: selected.1, annotations: []),
+                    mapping: textCoordinates(textView), base: textBase(textView))
+                if textView === activeTextView {
+                    if textView.selectedRange != expected { retainedSelection = nil }
+                } else if textView.selectedRange.length > 0 { retainedSelection = nil }
+            }
+            if textView.selectedRange.length > 0 {
+                let previous = anchorLeaf?.index
+                activateLeaf(textView, userInitiated: true)
+                if currentLeaves.count > 1, previous != anchorLeaf?.index, let leaf = anchorLeaf {
+                    readingBegan?()
+                    report(leaf.page.firstVisibleOffset, settled: true)
+                }
+            }
+            decorateVisibleText()
         }
         if !rebuilding, textView.selectedRange.length > 0 {
             statisticsInteraction(); Onboarding.shared.didSelectText()
@@ -54,8 +73,8 @@ extension ReadingController {
         if let text=scrollText {
             if text.contentOffset.y+text.bounds.height*2>=text.contentSize.height { requestMore(.forward) }
             if text.contentOffset.y<text.bounds.height { requestMore(.backward) }
-        } else if let page=pageController?.viewControllers?.first as? PageController {
-            if page.index>=pages.count-2 { requestMore(.forward) }
+        } else if let page = currentLeaves.first {
+            if (currentLeaves.last?.index ?? page.index) >= pages.count - max(2, leafFrames.count * 2) { requestMore(.forward) }
             if page.index<=1 { requestMore(.backward) }
         }
     }
@@ -69,6 +88,7 @@ extension ReadingController {
 
     func report(_ offset: UInt64, settled: Bool) {
         anchor = offset
+        layoutAnchor = offset
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-testing") {
             scrollText?.accessibilityValue = String(offset)
