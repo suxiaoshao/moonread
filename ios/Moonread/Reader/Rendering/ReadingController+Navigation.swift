@@ -91,7 +91,12 @@ extension ReadingController {
     }
 
     private var matchingRestoration: ReadingViewport? {
-        pendingNavigation?.request.restoration(size: readingSurface.bounds.size, settings: settings, typeSize: typeSize, pageSize: contentGeometry == nil ? nil : pageSize, leafCount: leafFrames.count)
+        if contentGeometry != nil, let saved = pendingNavigation?.request.restoring, let window {
+            // A former group start is valid only for the same projection and
+            // typography. Repagination must otherwise follow the source target.
+            guard saved.pages.allSatisfy({ $0.layoutVersion == ReadingTypography.layoutVersion && $0.readingText.revision == window.revision }) else { return nil }
+        }
+        return pendingNavigation?.request.restoration(size: readingSurface.bounds.size, settings: settings, typeSize: typeSize, pageSize: contentGeometry == nil ? nil : pageSize, leafCount: leafFrames.count)
     }
 
     func replaceNavigationContents() {
