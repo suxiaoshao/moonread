@@ -5,6 +5,7 @@ struct ReaderTaskContent: View {
     let panel: ReaderPanel?
     let session: ReaderSession
     let tools: ReaderToolsModel
+    let libraryEditing: ReaderLibraryEditing
     let aiEntrySnapshot: AIEntryContext?
     let aiContext: () -> AIEntryContext
     @Binding var aiConversationID: String?
@@ -28,7 +29,7 @@ struct ReaderTaskContent: View {
                     } }
             }
         } else if panel == .library {
-            ReaderLibrarySheet(model: tools, session: session, navigate: navigate, edit: edit, close: closeTask)
+            ReaderLibrarySheet(model: tools, session: session, navigate: navigate, edit: edit, close: closeTask, editing: libraryEditing)
             .disabled(session.navigating)
         }
     }

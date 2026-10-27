@@ -334,7 +334,7 @@ struct ReaderSettingsView: View {
 }
 
 /// Settings retain their own scroll and focus state while the preview covers them.
-private struct ReadingSettingsControls: View {
+struct ReadingSettingsControls: View {
     @Binding var settings: ReaderSettings
     @Binding var tab: ReadingSettingsTab
     @Binding var editedAppearance: ThemeAppearance?
@@ -342,6 +342,7 @@ private struct ReadingSettingsControls: View {
     let isRestartingEncoding: Bool
     let changeEncoding: ((String?) -> Void)?
     let editPalette: (PaletteDraft) -> Void
+    var wideControls = false
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
     private var appearance: ThemeAppearance { editedAppearance ?? themes.reader.plan.appearance }
@@ -389,6 +390,15 @@ private struct ReadingSettingsControls: View {
     }
     private var typography: some View {
         Form {
+            if wideControls {
+                Section("宽屏阅读") {
+                    Toggle("展开阅读工具", isOn: binding(\.wideToolsExpanded))
+                    Picker("分页版式", selection: binding(\.widePageMode)) {
+                        Text("单页").tag(WidePageMode.single)
+                        Text("双页").tag(WidePageMode.double)
+                    }
+                }.listRowBackground(Color(uiColor: theme.surface))
+            }
             if let encoding, let changeEncoding {
                 Section("本书") {
                     ReaderEncodingMenu(title: "文字编码", value: encoding, isRestarting: isRestartingEncoding, select: changeEncoding)

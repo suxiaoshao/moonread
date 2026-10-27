@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		3D1C1E4B0133473A9A1C7DC4 /* ReaderInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 383925FAF2394CAEBB958065 /* ReaderInspector.swift */; };
         F14100000000000000000001 /* ReaderSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F14100000000000000000002 /* ReaderSettingsStore.swift */; };
 		4DF6E88FEFC27B5FF2E847AD /* ProtectedFileAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */; };
 		6FE466A10D361A647F688D3A /* SourceDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */; };
@@ -326,6 +327,7 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		383925FAF2394CAEBB958065 /* ReaderInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderInspector.swift; sourceTree = "<group>"; };
         F14100000000000000000002 /* ReaderSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSettingsStore.swift; sourceTree = "<group>"; };
 		80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectedFileAccess.swift; sourceTree = "<group>"; };
 		B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceDecodingTests.swift; sourceTree = "<group>"; };
@@ -867,6 +869,7 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 				2DD24446A106474B8CE31B7C /* ReaderChapterList.swift */,
 				22ECFC9087614B5699133F80 /* ReaderNotesList.swift */,
 				A3D73220A89040FF91FC9A23 /* ReaderLibrarySheet.swift */,
+				383925FAF2394CAEBB958065 /* ReaderInspector.swift */,
 				F985A452EFF8466E81960075 /* ReaderBattery.swift */,
 				224B7CD539DE4B36838B5C59 /* ReaderEncodingMenu.swift */,
 				938B7199F7BA4FF48580021A /* ReaderToolLabelStyle.swift */,
@@ -1347,6 +1350,7 @@ F01900000000000000000001,
 				79080AE9A8A340A1B99ACC83 /* ReaderChapterList.swift in Sources */,
 				CC9B3BCAE0EA4013878D9BA4 /* ReaderNotesList.swift in Sources */,
 				87B3FE2BFDD04847AE5A02CA /* ReaderLibrarySheet.swift in Sources */,
+				3D1C1E4B0133473A9A1C7DC4 /* ReaderInspector.swift in Sources */,
 				48A7297CFF794C178D1242D0 /* ReaderBattery.swift in Sources */,
 				308165AED1DF4230A31FF52B /* ReaderEncodingMenu.swift in Sources */,
 				4C8BF65601CA4114841B5D6B /* ReaderToolLabelStyle.swift in Sources */,

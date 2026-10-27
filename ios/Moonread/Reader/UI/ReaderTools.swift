@@ -115,7 +115,7 @@ final class ReaderToolsModel {
         }
     }
 
-    func prepare(bookID: String, currentChapter: UInt64, library: Bool) async {
+    func prepare(bookID: String, currentChapter: UInt64, library: Bool, preservingPosition: Bool = false) async {
         guard !isLeaving else { return }
         let changed = self.bookID != bookID
         if changed {
@@ -125,6 +125,10 @@ final class ReaderToolsModel {
         }
         guard library else { return }
         self.currentChapter = currentChapter
+        if preservingPosition && !changed && !allChapters.isEmpty {
+            if notesKind != noteKind { await loadNotes(reset: true) }
+            return
+        }
         await refreshChapters(jumpTo: currentChapter)
         await loadNotes(reset: true)
     }

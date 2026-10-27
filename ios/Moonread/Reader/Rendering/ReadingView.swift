@@ -1,6 +1,10 @@
 import SwiftUI
 import UIKit
 
+struct ReadingContentGeometry: Equatable {
+    let size: CGSize
+}
+
 struct ReadingView: UIViewControllerRepresentable {
     @Environment(\.theme) private var theme
     @Environment(\.moonreadReduceMotion) private var reduceMotion
@@ -33,6 +37,8 @@ struct ReadingView: UIViewControllerRepresentable {
     var edgeChanged: (Bool) -> Void = { _ in }
     let compactHeaderHeight: CGFloat
     var guideHeight: CGFloat = 0
+    var contentGeometry: ReadingContentGeometry? = nil
+    var headerPositionChanged: (CGFloat) -> Void = { _ in }
     let controlsVisible: Bool
     let toggleControls: () -> Void
     let readingBegan: () -> Void
@@ -44,6 +50,8 @@ struct ReadingView: UIViewControllerRepresentable {
         return controller
     }
     func updateUIViewController(_ controller: ReadingController, context: Context) {
+        controller.headerPositionChanged = headerPositionChanged
+        controller.contentGeometry = contentGeometry
         controller.guideHeight = guideHeight
         controller.requestWindow = requestWindow
         controller.openingID = openingID

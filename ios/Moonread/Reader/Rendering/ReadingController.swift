@@ -51,6 +51,12 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     var guideHeight: CGFloat = 0 {
         didSet { if guideHeight != oldValue { view.setNeedsLayout() } }
     }
+    var headerPositionChanged: (CGFloat) -> Void = { _ in }
+    private var reportedHeaderTop: CGFloat?
+    private var localInsetHeight: CGFloat?
+    var contentGeometry: ReadingContentGeometry? {
+        didSet { if contentGeometry != oldValue { viewIfLoaded?.setNeedsLayout() } }
+    }
     var controlsVisible = false
     var toggleControls: (() -> Void)?
     var readingBegan: (() -> Void)?
@@ -250,31 +256,64 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         super.viewDidLayoutSubviews()
         updatePaperSurface()
         guard let window = view.window, view.bounds.width > 60, view.bounds.height > 60 else { return }
-        // SwiftUI fills the window even when the status bar appears. Reserve the
-        // hardware safe area here, independently of the overlay controls. Keep
-        // the larger inset for this size so status-bar changes cannot reflow text.
-        let insets = window.safeAreaInsets
-        // This controller is the full-screen reader. A presented sheet can
-        // animate SwiftUI's container height by the bottom safe area; that is
-        // chrome motion, not a new text viewport. Use this scene's actual size.
-        let viewport = CGRect(origin: .zero, size: window.bounds.size)
-        if insetSize != viewport.size {
-            insetSize = viewport.size
-            stableInsets = insets
+        let viewport: CGRect
+        var contentInsets: UIEdgeInsets
+        view.clipsToBounds = contentGeometry != nil
+        if let geometry = contentGeometry {
+            // The regular host provides the immersive local layout target. Bars
+            // overlay it; inspector animation can change UIView bounds every
+            // frame, but only a new target repaginates. Clip during that motion.
+            viewport = CGRect(origin: .zero, size: geometry.size)
+            // Freeze the vertical safe boundary for this immersive height. A
+            // status/navigation bar animation is an overlay, not a new body
+            // viewport. Width-only inspector motion keeps the same boundary;
+            // a genuinely different height replaces it (never a historical max).
+            if localInsetHeight != geometry.size.height {
+                localInsetHeight = geometry.size.height
+                let hardware = view.convert(window.safeAreaLayoutGuide.layoutFrame, from: window)
+                stableInsets = UIEdgeInsets(top: max(0, hardware.minY), left: 0,
+                    bottom: max(0, viewport.maxY - hardware.maxY), right: 0)
+            }
+            if reportedHeaderTop != stableInsets.top {
+                reportedHeaderTop = stableInsets.top
+                let top = stableInsets.top
+                Task { @MainActor [weak self] in
+                    guard let self, self.contentGeometry != nil, self.reportedHeaderTop == top else { return }
+                    self.headerPositionChanged(top)
+                }
+            }
+            contentInsets = stableInsets
+            contentInsets.top += compactHeaderHeight
+            if settings?.mode == .scroll { contentInsets.bottom = 0 }
+            if guideHeight > 0 { contentInsets.bottom = max(contentInsets.bottom, guideHeight + stableInsets.bottom) }
+        } else {
+            localInsetHeight = nil
+            // SwiftUI fills the window even when the status bar appears. Reserve the
+            // hardware safe area here, independently of the overlay controls. Keep
+            // the larger inset for this size so status-bar changes cannot reflow text.
+            let insets = window.safeAreaInsets
+            // This controller is the full-screen reader. A presented sheet can
+            // animate SwiftUI's container height by the bottom safe area; that is
+            // chrome motion, not a new text viewport. Use this scene's actual size.
+            viewport = CGRect(origin: .zero, size: window.bounds.size)
+            if insetSize != viewport.size {
+                insetSize = viewport.size
+                stableInsets = insets
+            }
+            stableInsets.top = max(stableInsets.top, insets.top)
+            stableInsets.bottom = max(stableInsets.bottom, insets.bottom)
+            stableInsets.left = max(stableInsets.left, insets.left)
+            stableInsets.right = max(stableInsets.right, insets.right)
+            if viewport.height > viewport.width {
+                stableInsets.top = max(stableInsets.top, 20)
+            }
+            contentInsets = stableInsets
+            contentInsets.top += compactHeaderHeight
+            // The bottom safe area is a drawing overlay in scroll mode, not an
+            // empty strip removed from the text viewport.
+            if settings?.mode == .scroll { contentInsets.bottom = 0 }
+            if guideHeight > 0 { contentInsets.bottom = max(contentInsets.bottom, guideHeight + insets.bottom) }
         }
-        stableInsets.top = max(stableInsets.top, insets.top)
-        stableInsets.bottom = max(stableInsets.bottom, insets.bottom)
-        stableInsets.left = max(stableInsets.left, insets.left)
-        stableInsets.right = max(stableInsets.right, insets.right)
-        if viewport.height > viewport.width {
-            stableInsets.top = max(stableInsets.top, 20)
-        }
-        var contentInsets = stableInsets
-        contentInsets.top += compactHeaderHeight
-        // The bottom safe area is a drawing overlay in scroll mode, not an
-        // empty strip removed from the text viewport.
-        if settings?.mode == .scroll { contentInsets.bottom = 0 }
-        if guideHeight > 0 { contentInsets.bottom = max(contentInsets.bottom, guideHeight + insets.bottom) }
         readingSurface.frame = viewport.inset(by: contentInsets)
         updatePaperBackdrop()
         updateBottomFade()

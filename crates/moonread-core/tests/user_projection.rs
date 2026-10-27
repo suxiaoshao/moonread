@@ -315,6 +315,32 @@ fn settings_codec_preserves_device_preferences_and_validates_ranges() {
 }
 
 #[test]
+fn released_reader_settings_keep_their_values_and_default_wide_preferences() {
+    // Published 1.2 (10), 6ceef33: no wide-screen fields. Keep every old choice.
+    let json = r#"{"mode":"Pages","font_size":24.0,"line_spacing":10.0,"font":"Serif","paragraph_spacing":9.0,"indent":"Original","horizontal_margin":20.0,"maximum_line_width":720.0,"keep_awake":true,"brightness":0.4,"orientation":"Portrait"}"#;
+    let mut value = decode_reader_settings(json.to_owned()).unwrap();
+    assert_eq!(value.mode, ReadingMode::Pages);
+    assert_eq!(value.font_size, 24.0);
+    assert_eq!(value.line_spacing, 10.0);
+    assert_eq!(value.font, ReaderFont::Serif);
+    assert_eq!(value.paragraph_spacing, 9.0);
+    assert_eq!(value.indent, ReadingIndent::Original);
+    assert_eq!(value.horizontal_margin, 20.0);
+    assert_eq!(value.maximum_line_width, 720.0);
+    assert!(value.keep_awake);
+    assert_eq!(value.brightness, Some(0.4));
+    assert_eq!(value.orientation, ReadingOrientation::Portrait);
+    assert!(value.wide_tools_expanded);
+    assert_eq!(value.wide_page_mode, WidePageMode::Double);
+    value.wide_tools_expanded = false;
+    value.wide_page_mode = WidePageMode::Single;
+    assert_eq!(
+        decode_reader_settings(encode_reader_settings(value.clone()).unwrap()).unwrap(),
+        value
+    );
+}
+
+#[test]
 fn effective_directory_is_explicit_for_navigation_search_and_isolated_queries() {
     let (root, core, book) = fixture();
     let text = std::fs::read_to_string(root.path().join("text.txt")).unwrap();

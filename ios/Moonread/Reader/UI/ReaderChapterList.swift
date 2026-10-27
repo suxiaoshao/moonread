@@ -12,6 +12,8 @@ struct ReaderChapterList: View {
     @Binding var removedChapter: ChapterEntry?
     @FocusState.Binding var chapterFilterFocused: Bool
     let refreshOutline: () async -> Void
+    var restoringOffset: UInt64? = nil
+    @State private var restoredViewport = false
     @Environment(\.theme) private var theme
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     var body: some View {
@@ -87,10 +89,12 @@ struct ReaderChapterList: View {
                     }
                 }
                 .onChange(of: model.chapterJumpRevision, initial: true) { _, _ in
-                    if session.showingCover && model.chapterFilter.isEmpty { proxy.scrollTo("reader-cover", anchor: .top) }
+                    if !restoredViewport, let restoringOffset { proxy.scrollTo(restoringOffset, anchor: .top) }
+                    else if session.showingCover && model.chapterFilter.isEmpty { proxy.scrollTo("reader-cover", anchor: .top) }
                     else if let target = model.chapterTarget {
                         proxy.scrollTo(target, anchor: model.chapterTargetCentered ? .center : .top)
                     }
+                    restoredViewport = true
                 }
                 .overlay {
                     if model.chapters.isEmpty {
