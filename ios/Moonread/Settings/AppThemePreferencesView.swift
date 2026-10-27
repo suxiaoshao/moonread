@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct AppThemePreferencesView: View {
-    var showsLanguage = false
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
     private var preferences: ThemePreferences { themes.snapshot.preferences }
@@ -22,12 +21,6 @@ struct AppThemePreferencesView: View {
                 Toggle("减弱动态效果", isOn: Binding(get: { preferences.reduceMotion }, set: { value in themes.update { $0.reduceMotion = value } }))
                     .disabled(themes.saving).accessibilityIdentifier("reduceMotion")
             }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            if showsLanguage {
-                Section {
-                    Button("语言", systemImage: "globe") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
-                        .accessibilityIdentifier("languageSettings")
-                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            }
             Section {
                 PalettePreview(theme: themes.app)
                     .listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
