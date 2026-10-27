@@ -11,7 +11,6 @@ enum LibraryRoute: Hashable {
     case folder(LibraryLocation), allBooks(String), reader(OpeningRequest), recent, manage
     case statistics(StatisticsRoute)
     case settingsPalette(ThemeAppearance)
-    case settingsTask(SettingsTask)
     #if DEBUG
     case screenshotReaderSettings
     #endif
@@ -80,19 +79,14 @@ final class LibraryModel {
     var selectedTab = AppTab.library {
         didSet {
             if selectedTab == .search && oldValue != .search { searchOrigin = oldValue }
-            if selectedTab == .settings { settingsNavigation.tab = .settings }
         }
     }
     /// Search is a quick entry: leaving it returns to the tab it was entered from.
     private(set) var searchOrigin = AppTab.library
     func updateAvailableTabs(aiAvailable: Bool) {
         func existing(_ tab: AppTab) -> AppTab {
-            if tab == .conversations && !aiAvailable || tab == .settings && aiAvailable { return .library }
+            if tab == .conversations && !aiAvailable { return .library }
             return tab
-        }
-        if selectedTab == .settings && aiAvailable { settingsNavigation.tab = .library }
-        if let origin = settingsNavigation.tab, existing(origin) != origin {
-            settingsNavigation.tab = existing(origin)
         }
         settingsNavigation.aiAvailabilityChanged(aiAvailable)
         selectedTab = existing(selectedTab)
@@ -113,7 +107,6 @@ final class LibraryModel {
     var settingsNavigation = SettingsNavigation()
     var path: [LibraryRoute] {
         get {
-            if settingsNavigation.tab == selectedTab || selectedTab == .settings { return settingsNavigation.path }
             return switch selectedTab {
             case .library, .conversations: libraryPath
             case .statistics: statisticsPath
@@ -122,7 +115,6 @@ final class LibraryModel {
             }
         }
         set {
-            if settingsNavigation.tab == selectedTab || selectedTab == .settings { settingsNavigation.path = newValue; return }
             switch selectedTab {
             case .library, .conversations: libraryPath = newValue
             case .statistics: statisticsPath = newValue
@@ -131,23 +123,11 @@ final class LibraryModel {
             }
         }
     }
-    func openSettings(origin: AppTab, target: SettingsTask? = nil) {
-        // A backup URL must not silently replace an active palette edit.
-        guard !settingsNavigation.hasDraft else {
-            selectedTab = settingsNavigation.tab ?? .settings
-            return
-        }
-        if target == nil, let existing = settingsNavigation.tab {
-            selectedTab = existing
-            return
-        }
-        settingsNavigation.tab = origin
-        selectedTab = origin
+    func openSettings(target: SettingsTask? = nil) {
+        selectedTab = .settings
+        // An external entry must not replace an unsaved palette edit.
+        guard !settingsNavigation.hasDraft else { return }
         if let target { settingsNavigation.select(target) }
-    }
-    func closeSettings() {
-        cancelOpening()
-        settingsNavigation = SettingsNavigation()
     }
     /// The one search session, owned here so library pages can open it with a scope.
     let search = AppSearch()

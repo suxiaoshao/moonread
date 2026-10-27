@@ -172,10 +172,6 @@ struct ReaderSettingsView: View {
         GeometryReader { geometry in
             // Keep enough room for both native controls and readable text.
             let wide = geometry.size.width >= 760
-            // The medium sheet covers half the window, including the navigation
-            // bar above this page. Reserving half of just the content is too short.
-            let frame = geometry.frame(in: .global)
-            let mediumHeight = max(0, (frame.maxY + geometry.safeAreaInsets.bottom) / 2 - frame.minY - LayoutTokens.control)
             HStack(spacing: 0) {
                 ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editing.editedAppearance, encoding: encoding, isRestartingEncoding: isRestartingEncoding, changeEncoding: changeEncoding,
                                      editPalette: { value in
@@ -183,9 +179,6 @@ struct ReaderSettingsView: View {
                                          draft = value
                                      })
                     .frame(width: wide ? min(400, geometry.size.width * 0.46) : nil)
-                    .frame(height: !wide && previewPresented
-                        ? (restingDetent == .medium ? mediumHeight : max(0, geometry.size.height - 76))
-                        : nil)
                     .clipped()
                     .frame(maxHeight: .infinity, alignment: .top)
                 if wide {

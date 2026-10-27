@@ -3,6 +3,7 @@ import AISDKProvider
 import AISDKProviderUtils
 
 struct AIConversationsView: View {
+    @Environment(LibraryModel.self) private var library
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     @State private var path = NavigationPath()
@@ -43,10 +44,9 @@ struct AIConversationsView: View {
                     }
                 }
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) { NavigationLink { AISettingsView() } label: { Label("AI 助手", systemImage: "slider.horizontal.3") }.toolbarGlyph().accessibilityIdentifier("aiAssistantSettings") }
+                    ToolbarItem(placement: .topBarLeading) { Button { library.openSettings(target: .ai) } label: { Label("AI 助手", systemImage: "slider.horizontal.3") }.toolbarGlyph().accessibilityIdentifier("aiAssistantSettings") }
                     ToolbarItemGroup(placement: .topBarTrailing) {
                         Button("新对话", systemImage: "square.and.pencil") { Task { if let value = await ai.openDraft() { path.append(value.id) } } }.toolbarGlyph().accessibilityIdentifier("newAIConversation")
-                        AppSettingsLink()
                     }
                 }
                 .navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }

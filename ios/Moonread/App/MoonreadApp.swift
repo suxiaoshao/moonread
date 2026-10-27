@@ -198,7 +198,7 @@ struct MoonreadApp: App {
             guard await library.load() else { return }
             library.selectedTab = .library
             if url.pathExtension.lowercased() == "moonread-backup" {
-                library.openSettings(origin: .library, target: .data)
+                library.openSettings(target: .data)
                 await library.dataManagement.prepareImport(url)
             } else { library.receiveSystemURLs([url]) }
         }
@@ -285,18 +285,13 @@ private struct MoonreadRoot: View {
 
     private var tabs: some View {
         TabView(selection: $library.selectedTab) {
-            Tab("书架", systemImage: "books.vertical", value: AppTab.library) { settingsSlot(.library) { libraryStack } }
+            Tab("书架", systemImage: "books.vertical", value: AppTab.library) { libraryStack }
             if ai.availability.isAvailable {
-                Tab("对话", systemImage: "bubble.left.and.bubble.right", value: AppTab.conversations) { settingsSlot(.conversations) { AIConversationsView() } }
+                Tab("对话", systemImage: "bubble.left.and.bubble.right", value: AppTab.conversations) { AIConversationsView() }
             }
-            Tab("统计", systemImage: "chart.bar.xaxis", value: AppTab.statistics) { settingsSlot(.statistics) { statisticsStack } }
-            if !ai.availability.isAvailable {
-                Tab("设置", systemImage: "gearshape", value: AppTab.settings) {
-                    if library.settingsNavigation.tab == nil || library.settingsNavigation.tab == .settings { settingsStack }
-                    else { Color.clear }
-                }
-            }
-            Tab("搜索", systemImage: "magnifyingglass", value: AppTab.search, role: .search) { settingsSlot(.search) { searchStack } }
+            Tab("统计", systemImage: "chart.bar.xaxis", value: AppTab.statistics) { statisticsStack }
+            Tab("设置", systemImage: "gearshape", value: AppTab.settings) { settingsStack }
+            Tab("搜索", systemImage: "magnifyingglass", value: AppTab.search, role: .search) { searchStack }
         }
         .modifier(AppSearchActivation())
         .onChange(of: ai.availability.isAvailable, initial: true) { _, available in
@@ -322,13 +317,7 @@ private struct MoonreadRoot: View {
     private var settingsStack: some View {
         SettingsView(library: library, navigation: library.settingsNavigation)
     }
-    private func settingsSlot<Content: View>(_ tab: AppTab, @ViewBuilder content: () -> Content) -> some View {
-        let active = library.settingsNavigation.tab == tab
-        return ZStack {
-            content().opacity(active ? 0 : 1).allowsHitTesting(!active).accessibilityHidden(active)
-            if active { settingsStack }
-        }
-    }
+
 
 }
 
@@ -358,7 +347,6 @@ struct LibraryDestination: View {
         case .conversation(let id, let anchor):
             if ai.availability.isAvailable { AIChatView(conversationID: id, anchor: anchor) }
         // Contextual routes delegate to the same task content.
-        case .settingsTask(let task): SettingsTaskContent(task: task, library: library, navigation: library.settingsNavigation)
         case .settingsPalette(let appearance): PalettePicker(reader: false, appearance: appearance)
         #if DEBUG
         case .screenshotReaderSettings: PageShotReaderSettings()

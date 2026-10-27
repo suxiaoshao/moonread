@@ -9,7 +9,6 @@ struct StatisticsView: View {
     @State private var window = StatisticsWindow()
     @State private var sortByDuration = false
     @State private var showAllBooks = false
-    @State private var showSettings = false
     @State private var openedDay: StatisticsDayRoute?
     @State private var deleteBook = false
     @State private var visible = false
@@ -131,7 +130,6 @@ struct StatisticsView: View {
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 optionsMenu
-                if target == nil && ai.availability.isAvailable { AppSettingsLink() }
             }
         }
         .sheet(item: $aiRequest) { if ai.availability.isAvailable { AIQuickTaskSheet(request: $0).themeScope(theme) } }
@@ -147,7 +145,6 @@ struct StatisticsView: View {
         } message: { task in
             Text(AIQuickTaskRemoval.message(task))
         }
-        .navigationDestination(isPresented: $showSettings) { StatisticsSettingsView() }
         .navigationDestination(item: $openedDay) { StatisticsDayView(route: $0) }
         .navigationDestination(isPresented: $showAllBooks) {
             StatisticsBookList(books: orderedBooks, maximum: orderedBooks.map(\.durationMs).max() ?? 1, window: window)
@@ -224,7 +221,7 @@ struct StatisticsView: View {
                 HStack {
                     if !overview.preferences.enabled { Label("阅读统计已暂停", systemImage: "pause.circle") }
                     Spacer()
-                    Button("统计设置") { showSettings = true }
+                    Button("统计设置") { library.openSettings(target: .statistics) }
                 }
                 if model.compatibilityNotice != nil || StatisticsWriter.shared.error != nil {
                     DisclosureGroup {
@@ -266,7 +263,7 @@ struct StatisticsView: View {
                 Button("分析阅读", systemImage: "sparkles") { aiRequest = statisticsRequest }
                     .disabled(statisticsRequest == nil).accessibilityIdentifier("analyzeReading")
             }
-            Button("统计设置", systemImage: "gearshape") { showSettings = true }
+            Button("统计设置", systemImage: "gearshape") { library.openSettings(target: .statistics) }
             if target != nil {
                 Button("清除本书统计", systemImage: "trash", role: .destructive) { deleteBook = true }
             }

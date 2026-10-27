@@ -254,17 +254,26 @@ import XCTest
     ready(app.buttons["星灯"])
     XCTAssertFalse(app.textViews["scrollText"].exists)
   }
+  private func settingsTask(group: String, title: String) {
+    let entry = app.buttons["settingsGroup-" + group]
+    let picker = app.segmentedControls["settingsTaskPicker"]
+    if !entry.exists && !picker.buttons[title].exists {
+      app.navigationBars.buttons.firstMatch.tap()
+    }
+    if entry.exists { ready(entry).tap() }
+    if picker.buttons[title].exists { picker.buttons[title].tap() }
+  }
   func testU12ChinaHasNoAIAndKeepsSettingsAndReading() {
     launch(["--ui-test-storefront", "CHN", "--ui-test-ai-model-picker", "--ui-test-ai-tasks"])
     ready(app.buttons["shelf-builtin"])
     XCTAssertFalse(app.tabBars.buttons["对话"].exists)
     XCTAssertFalse(app.buttons["appSettings"].exists)
     ready(app.tabBars.buttons["设置"]).tap()
-    ready(app.buttons["readerThemeSettings"])
+    ready(app.buttons["settingsGroup-reading"])
     snapshot("settings-home")
     XCTAssertFalse(app.buttons["aiSettings"].exists)
     XCTAssertFalse(element("automaticFullIndex").exists)
-    ready(app.buttons["statisticsSettings"]).tap()
+    settingsTask(group: "reading", title: "阅读统计设置")
     ready(element("statisticsEnabled"))
     XCTAssertTrue(app.staticTexts["关闭后保留历史统计，只停止此设备的新记录。只记录可见正文活动；锁屏、后台、工具面板和闲置时暂停。"].exists)
     element("statisticsEnabled").tap()
@@ -277,7 +286,7 @@ import XCTest
     ready(element("statisticsEnabled")).tap()
     app.navigationBars.buttons.firstMatch.tap()
     app.tabBars.buttons["设置"].tap()
-    ready(app.buttons["libraryManagementSettings"]).tap()
+    settingsTask(group: "library", title: "书架管理")
     ready(element("automaticFullIndex"))
     app.navigationBars.buttons.firstMatch.tap()
     app.tabBars.buttons["书架"].tap()
@@ -289,7 +298,7 @@ import XCTest
     let saved = anchor()
     backFromReader()
     app.tabBars.buttons["设置"].tap()
-    ready(app.buttons["readerThemeSettings"]).tap()
+    settingsTask(group: "reading", title: "阅读设置")
     app.segmentedControls["readerThemeTabs"].buttons["配色与纹理"].tap()
     app.segmentedControls["readerPaletteSlots"].buttons["浅色时"].tap()
     element("paletteOptions").swipeUp()
@@ -313,7 +322,7 @@ import XCTest
     waitUntil { self.anchor() == saved }
     backFromReader()
     app.tabBars.buttons["设置"].tap()
-    ready(app.buttons["readerThemeSettings"]).tap()
+    settingsTask(group: "reading", title: "阅读设置")
     app.segmentedControls["readerThemeTabs"].buttons["配色与纹理"].tap()
     element("paletteOptions").swipeDown(); element("paletteOptions").swipeDown()
     app.buttons["readerTexture-none"].tap()
@@ -475,7 +484,7 @@ import XCTest
   func testU21ExportAllDeleteAndRestoreReadingData() {
     launch(["--ui-test-data-management", "--ui-test-storefront", "CHN"])
     ready(app.buttons["设置"]).tap()
-    ready(element("dataManagementSettings")).tap()
+    settingsTask(group: "library", title: "数据管理")
     ready(app.buttons["readingDataCaches"])
     snapshot("data-overview")
     app.buttons["readingDataCaches"].tap()

@@ -1,18 +1,5 @@
 import SwiftUI
 
-/// The same app settings destination and accessible toolbar control on every home page.
-struct AppSettingsLink: View {
-    @Environment(LibraryModel.self) private var library
-    var body: some View {
-        Button { library.openSettings(origin: library.selectedTab) } label: {
-            Label("设置", systemImage: "gearshape")
-        }
-        .toolbarGlyph()
-        .accessibilityLabel("设置")
-        .accessibilityIdentifier("appSettings")
-    }
-}
-
 enum SettingsGroup: String, CaseIterable, Identifiable {
     case reading, library, assistant, appearance, help
     var id: Self { self }
@@ -50,9 +37,8 @@ enum SettingsTask: Hashable {
 
 /// One scene-owned settings session; layout only changes its presentation.
 @MainActor @Observable final class SettingsNavigation {
-    var group: SettingsGroup = .reading
+    var group: SettingsGroup?
     var path: [LibraryRoute] = []
-    var tab: AppTab?
     var settings: ReaderSettings?
     var pendingSettings: ReaderSettings?
     var recording: Bool?
@@ -62,23 +48,20 @@ enum SettingsTask: Hashable {
     var paletteDraft: PaletteDraft?
     @ObservationIgnored private var saveTask: Task<Void, Never>?
 
-    var currentTask: SettingsTask? {
-        guard case .settingsTask(let task) = path.first else { return nil }
-        return task
-    }
+    var currentTask: SettingsTask = .reading
     var hasDraft: Bool { paletteDraft != nil || readingEditor.draft != nil }
     func select(_ next: SettingsGroup) {
         guard group != next else { return }
-        group = next
         select(next.tasks.first!)
     }
     func select(_ task: SettingsTask) {
-        guard currentTask != task || path.count != 1 else { return }
         group = task.group
-        path = [.settingsTask(task)]
+        guard currentTask != task else { return }
+        currentTask = task
+        path = []
     }
     func aiAvailabilityChanged(_ available: Bool) {
-        if !available, currentTask == .ai { path = [.settingsTask(.ai)] }
+        if !available, currentTask == .ai { path = [] }
     }
     func load() async {
         guard settings == nil, !loading.active else { return }
@@ -136,50 +119,48 @@ extension SettingsTask {
 }
 
 struct SettingsView: View {
-    @Environment(ThemeStore.self) private var themes
-    @Environment(CloudStore.self) private var cloud
-    @Environment(AIService.self) private var ai
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.theme) private var theme
     let library: LibraryModel
     @Bindable var navigation: SettingsNavigation
-    @Environment(\.horizontalSizeClass) private var sizeClass
-    @Environment(\.layoutDirection) private var layoutDirection
 
     var body: some View {
-        GeometryReader { geometry in
-            let columns = columnGeometry(geometry)
-            ZStack(alignment: .topLeading) {
-                sidebar
-                    .frame(width: columns.sidebar.width, height: columns.sidebar.height)
-                    .clipped().opacity(columns.sidebar.isEmpty ? 0 : 1)
-                    .allowsHitTesting(!columns.sidebar.isEmpty)
-                    .accessibilityHidden(columns.sidebar.isEmpty)
-                    .position(x: columns.sidebar.midX, y: columns.sidebar.midY)
-                Color(uiColor: theme.separator)
-                    .frame(width: columns.sidebar.isEmpty ? 0 : 1, height: columns.sidebar.height)
-                    .position(x: layoutDirection == .leftToRight ? columns.sidebar.maxX : columns.sidebar.minX, y: columns.sidebar.midY)
-                    .allowsHitTesting(false)
-                // This stack and its destinations stay at the same structural
-                // location through size-class, window and folding changes.
-                NavigationStack(path: $navigation.path) {
-                    settingsForm.navigationTitle("设置")
-                        .toolbar { if navigation.tab != nil && navigation.tab != .settings { ToolbarItem(placement: .topBarLeading) { returnToApp } } }
-                        .navigationDestination(for: LibraryRoute.self) { route in
-                            if case .settingsTask(let task) = route {
-                                taskPage(task, columns: !columns.sidebar.isEmpty)
-                            } else if case .settingsPalette(let appearance) = route {
-                                PalettePicker(reader: false, appearance: appearance, editPalette: { navigation.paletteDraft = $0 })
-                            } else { LibraryDestination(route: route) }
-                        }
+        NavigationSplitView {
+            List(selection: Binding<SettingsGroup?>(get: { navigation.group }, set: { group in
+                if let group { navigation.select(group) }
+                else { navigation.group = nil }
+            })) {
+                ForEach(SettingsGroup.allCases) { group in
+                    NavigationLink(value: group) {
+                        Label(group.title, systemImage: group.symbol)
+                            .foregroundStyle(Color(uiColor: theme.ink))
+                    }
+                    .tag(group)
+                    .accessibilityIdentifier("settingsGroup-" + group.rawValue)
+                    .listRowBackground(Color(uiColor: theme.canvas))
                 }
-                .frame(width: columns.detail.width, height: columns.detail.height)
-                .position(x: columns.detail.midX, y: columns.detail.midY)
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--ui-test-reader-origin") {
+                    NavigationLink("测试来源页面") { ReaderTestOrigin() }
+                        .accessibilityIdentifier("readerTestOrigin")
+                }
+                #endif
             }
-            .frame(width: geometry.size.width, height: geometry.size.height)
-            .onChange(of: !columns.sidebar.isEmpty, initial: true) { _, wide in
-                if wide, navigation.path.isEmpty { navigation.select(navigation.group.tasks.first!) }
+            .themedPage()
+            .navigationTitle("设置")
+            .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+        } detail: {
+            // The same stack and scene-owned draft survive system column changes.
+            NavigationStack(path: $navigation.path) {
+                taskPage
+                    .navigationDestination(for: LibraryRoute.self) { route in
+                        if case .settingsPalette(let appearance) = route {
+                            PalettePicker(reader: false, appearance: appearance, editPalette: { navigation.paletteDraft = $0 })
+                        } else { LibraryDestination(route: route) }
+                    }
             }
         }
+        .navigationSplitViewStyle(.balanced)
         .background(Color(uiColor: theme.canvas).ignoresSafeArea())
         .sheet(item: $navigation.paletteDraft) { PaletteEditor(draft: $0) }
         .task { await navigation.load() }
@@ -193,232 +174,33 @@ struct SettingsView: View {
         } message: { Text(navigation.error ?? "") }
     }
 
-    private var sidebar: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("设置").font(.largeTitle.bold()).padding(.bottom, 20)
-                ForEach(SettingsGroup.allCases) { group in
-                    Button { navigation.select(group) } label: {
-                        Label(group.title, systemImage: group.symbol)
-                            .frame(maxWidth: .infinity, minHeight: LayoutTokens.hit, alignment: .leading)
-                            .padding(.horizontal, 12)
-                            .foregroundStyle(Color(uiColor: navigation.group == group ? theme.accent : theme.ink))
-                            .background(Color(uiColor: navigation.group == group ? theme.selected : theme.canvas), in: .rect(cornerRadius: 12))
-                    }.buttonStyle(.plain)
-                        .accessibilityAddTraits(navigation.group == group ? .isSelected : [])
-                        .accessibilityIdentifier("settingsGroup-" + group.rawValue)
-                }
-            }.padding(20)
-        }.background(Color(uiColor: theme.canvas))
-    }
-    private var returnToApp: some View {
-        Button("返回", systemImage: "chevron.backward") { library.closeSettings() }.toolbarGlyph()
-    }
-    private func settingsLink<Label: View>(_ task: SettingsTask, @ViewBuilder label: () -> Label) -> some View {
-        NavigationLink(value: LibraryRoute.settingsTask(task), label: label)
-    }
-    private func taskPage(_ task: SettingsTask, columns: Bool) -> some View {
-        SettingsTaskContent(task: task, library: library, navigation: navigation)
-            .frame(maxWidth: columns && task != .reading ? 700 : .infinity)
+    private var taskPage: some View {
+        let task = navigation.currentTask
+        return SettingsTaskContent(task: task, library: library, navigation: navigation)
+            .frame(maxWidth: task == .reading ? .infinity : 700)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(uiColor: theme.canvas))
             .safeAreaInset(edge: .top, spacing: 0) {
-                if columns, navigation.path.count == 1 {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(task.group.title).font(.title.bold())
-                        if task.group == .help {
-                            Link("给月读评分", destination: AppLinks.writeReview).accessibilityIdentifier("rateMoonread")
-                        }
-                        if task.group.tasks.count > 1 {
-                            Picker("设置", selection: Binding(get: { task }, set: { navigation.select($0) })) {
-                                ForEach(task.group.tasks, id: \.self) { Text($0.title).tag($0) }
-                            }.pickerStyle(.segmented).accessibilityIdentifier("settingsTaskPicker")
-                        }
-                    }.padding(.horizontal, 24).padding(.vertical, 16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(uiColor: theme.canvas))
-                }
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(task.group.title).font(.title.bold())
+                    if task.group == .help {
+                        Link("给月读评分", destination: AppLinks.writeReview).accessibilityIdentifier("rateMoonread")
+                    }
+                    if task.group.tasks.count > 1 {
+                        Picker("设置", selection: Binding(get: { navigation.currentTask }, set: { navigation.select($0) })) {
+                            ForEach(task.group.tasks, id: \.self) { Text($0.title).tag($0) }
+                        }.pickerStyle(.segmented).accessibilityIdentifier("settingsTaskPicker")
+                    }
+                }.padding(.horizontal, 24).padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color(uiColor: theme.canvas))
             }
-            .onAppear { navigation.group = task.group }
+            // Initialize the visible wide-screen task selection, not the column layout.
+            // Compact starts at the sidebar; all folding remains system-owned.
+            .onChange(of: sizeClass, initial: true) { _, value in
+                if value == .regular, navigation.group == nil { navigation.select(task) }
+            }
             .navigationBarTitleDisplayMode(.inline)
-            .navigationBarBackButtonHidden(columns && navigation.path.count == 1)
-            .toolbar {
-                if columns, navigation.path.count == 1 {
-                    ToolbarItem(placement: .principal) { Text("") }
-                }
-                if columns, navigation.path.count == 1, navigation.tab != nil, navigation.tab != .settings {
-                    ToolbarItem(placement: .topBarLeading) { returnToApp }
-                }
-            }
-    }
-    private func columnGeometry(_ geometry: GeometryProxy) -> (sidebar: CGRect, detail: CGRect) {
-        // This container is already sized inside the system's bars. Deducting
-        // its propagated safeAreaInsets again would remove that space twice.
-        let bounds = CGRect(origin: .zero, size: geometry.size)
-        if #available(iOS 27.1, *),
-           let division = geometry.reservedRegions(kind: .division, layoutDirectionBehavior: .fixed).first(where: \.isActive) {
-            // Our positions use physical local coordinates, so ask for fixed
-            // (unmirrored) frames and choose leading/trailing only once here.
-            let frame = division.frame
-            let margins = division.margins
-            let cut = CGRect(x: frame.minX - margins.leading, y: frame.minY - margins.top,
-                             width: frame.width + margins.leading + margins.trailing,
-                             height: frame.height + margins.top + margins.bottom).intersection(bounds)
-            if !cut.isNull {
-                let regions: [CGRect]
-                if frame.height > frame.width {
-                    let left = CGRect(x: 0, y: 0, width: max(0, cut.minX), height: bounds.height)
-                    let right = CGRect(x: cut.maxX, y: 0, width: max(0, bounds.maxX - cut.maxX), height: bounds.height)
-                    let leading = layoutDirection == .leftToRight ? left : right
-                    let trailing = layoutDirection == .leftToRight ? right : left
-                    // 400/440pt is an ideal unsplit task width, not a minimum.
-                    // At 320pt the existing wrapping rows and task picker fit.
-                    if leading.width >= 220, trailing.width >= 320 {
-                        return (leading, trailing)
-                    }
-                    regions = [leading, trailing]
-                } else {
-                    regions = [CGRect(x: 0, y: 0, width: bounds.width, height: max(0, cut.minY)),
-                               CGRect(x: 0, y: cut.maxY, width: bounds.width, height: max(0, bounds.maxY - cut.maxY))]
-                }
-                // Genuine space shortages retain the task in one safe region;
-                // never give a child the full width across an active fold.
-                let detail = regions.max { $0.width * $0.height < $1.width * $1.height } ?? .zero
-                return (.zero, detail)
-            }
-        }
-        guard sizeClass == .regular, bounds.width >= 700 else { return (.zero, bounds) }
-        let width = max(220, min(260, bounds.width * 0.28))
-        let sidebar = CGRect(x: layoutDirection == .leftToRight ? 0 : bounds.width - width,
-                             y: 0, width: width, height: bounds.height)
-        let detail = CGRect(x: layoutDirection == .leftToRight ? width + 1 : 0,
-                            y: 0, width: max(0, bounds.width - width - 1), height: bounds.height)
-        return (sidebar, detail)
-    }
-    private var settingsForm: some View {
-        Form {
-            #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--ui-test-reader-origin") {
-                NavigationLink("测试来源页面") { ReaderTestOrigin() }
-                    .accessibilityIdentifier("readerTestOrigin")
-            }
-            #endif
-            Group {
-                Section("阅读") {
-                    settingsLink(.reading) {
-                        SettingsEntry(title: "阅读设置", symbol: "book", summary: navigation.settings.map { String(localized: $0.mode == .scroll ? "上下滚动" : "左右分页") } ?? String(localized: "正在加载"))
-                    }.disabled(navigation.settings == nil).accessibilityIdentifier("readerThemeSettings")
-                    settingsLink(.statistics) {
-                        SettingsEntry(title: "阅读统计设置", symbol: "chart.bar.xaxis", summary: navigation.recording.map { String(localized: $0 ? "记录中" : "已暂停") } ?? String(localized: "正在加载"))
-                    }.accessibilityIdentifier("statisticsSettings")
-                    settingsLink(.system) {
-                        SettingsEntry(title: "系统集成", symbol: "rectangle.3.group", summary: String(localized: "系统搜索、快捷指令、小组件"))
-                    }.accessibilityIdentifier("systemIntegrationSettings")
-                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            }
-            Group {
-                Section("书架与数据") {
-                    settingsLink(.library) {
-                        SettingsEntry(title: "书架管理", symbol: "books.vertical", summary: String(localized: "\(library.shelves.count) 个书架"))
-                    }.accessibilityIdentifier("libraryManagementSettings")
-                    settingsLink(.data) {
-                        SettingsEntry(title: "数据管理", symbol: "externaldrive", summary: String(localized: "备份、恢复、清理"))
-                    }.accessibilityIdentifier("dataManagementSettings")
-                    if CloudConfiguration.availableInBuild {
-                        settingsLink(.cloud) {
-                            SettingsEntry(title: "iCloud", symbol: "icloud", summary: cloud.settingsSummary)
-                        }.accessibilityIdentifier("cloudSettings")
-                    }
-                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            }
-            Group {
-                Section {
-                    if ai.availability.regionAllowsAI {
-                        Toggle("AI 功能", isOn: Binding(get: { ai.availability.isEnabled }, set: { ai.availability.setEnabled($0) }))
-                            .tint(Color(uiColor: theme.accent)).accessibilityIdentifier("aiMasterSwitch")
-                        if ai.availability.isAvailable {
-                            settingsLink(.ai) {
-                                SettingsEntry(title: "AI 助手", symbol: "bubble.left.and.bubble.right", summary: aiSummary)
-                            }.accessibilityIdentifier("aiSettings")
-                        }
-                    } else {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(verbatim: ai.availability.regionMessage)
-                            Text("已有 AI 数据保留在本机，不会发送。")
-                        }.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
-                            .accessibilityIdentifier("aiRegionUnavailable")
-                            .listRowBackground(Color.clear).listRowSeparator(.hidden)
-                    }
-                } header: { Text("AI 助手") } footer: {
-                    if ai.availability.regionAllowsAI {
-                        Text("关闭后隐藏所有 AI 功能，已有连接、会话和数据共享许可保留。")
-                            .padding(.bottom, 16)
-                    }
-                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            }
-            Group {
-                Section("外观与语言") {
-                    settingsLink(.appearance) {
-                        SettingsEntry(title: "应用外观", symbol: "paintpalette", summary: appearanceSummary)
-                    }.accessibilityIdentifier("appThemeSettings")
-                    Button { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) } label: {
-                        SettingsEntry(title: "语言", symbol: "globe", summary: languageSummary)
-                    }.accessibilityIdentifier("languageSettings")
-                        .accessibilityHint("打开系统设置")
-                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            }
-            Group {
-                Section("帮助与关于") {
-                    settingsLink(.guide) {
-                        SettingsEntry(title: "使用指南", symbol: "questionmark.circle", summary: String(localized: "导入、阅读与同步"))
-                    }.accessibilityIdentifier("usageGuideSettings")
-                    Link(destination: AppLinks.writeReview) {
-                        SettingsEntry(title: "给月读评分", symbol: "star", summary: "")
-                    }.accessibilityIdentifier("rateMoonread")
-                    settingsLink(.about) {
-                        SettingsEntry(title: "关于月读", symbol: "info.circle", summary: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
-                    }.accessibilityIdentifier("aboutSettings")
-                    settingsLink(.support) {
-                        SettingsEntry(title: "支持月读", symbol: "heart", summary: "")
-                    }.accessibilityIdentifier("tipJarSettings")
-                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            }
-        }
-        .themedPage()
-    }
-    private var appearanceSummary: String {
-        switch themes.snapshot.preferences.appMode {
-        case .system: String(localized: "跟随系统")
-        case .light: String(localized: "浅色")
-        case .dark: String(localized: "深色")
-        }
-    }
-    private var aiSummary: String {
-        let count = ai.providers.connections.count
-        return count == 0 ? String(localized: "未添加") : String(localized: "\(count) 个连接")
-    }
-    private var languageSummary: String {
-        let language = Locale.current.localizedString(forLanguageCode: Bundle.main.preferredLocalizations.first ?? "zh-Hans") ?? String(localized: "系统设置")
-        return String(localized: "\(language) · 系统设置")
-    }
-}
-
-/// Shared only by the settings home: native rows retain their navigation controls.
-private struct SettingsEntry: View {
-    let title: LocalizedStringKey
-    let symbol: String
-    let summary: String
-    @Environment(\.theme) private var theme
-    @ScaledMetric(relativeTo: .body) private var iconSize = 20.0
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: symbol).font(.system(size: iconSize))
-                .frame(width: iconSize + 6).foregroundStyle(Color(uiColor: theme.secondary))
-                .accessibilityHidden(true)
-            LabeledContent { Text(verbatim: summary).foregroundStyle(Color(uiColor: theme.secondary)) } label: {
-                Text(title).foregroundStyle(Color(uiColor: theme.ink))
-            }
-        }
     }
 }
 

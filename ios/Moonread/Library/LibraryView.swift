@@ -28,7 +28,6 @@ struct LibraryView: View {
                     Button("添加书架", systemImage: "folder.badge.plus") { model.chooseFiles(.folder(nil)) }
                         .accessibilityIdentifier("chooseFolder")
                 } label: { Label("书架操作", systemImage: "plus") }.toolbarGlyph().accessibilityIdentifier("libraryActions")
-                if ai.availability.isAvailable { AppSettingsLink() }
                 #if DEBUG
                 if ReaderSmokeFixture.enabled {
                     Menu("测试接收") {
