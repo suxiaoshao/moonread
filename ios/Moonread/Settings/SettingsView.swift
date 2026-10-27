@@ -148,13 +148,17 @@ struct SettingsView: View {
     var body: some View {
         GeometryReader { geometry in
             let columns = columnGeometry(geometry)
-            HStack(spacing: 0) {
+            ZStack(alignment: .topLeading) {
                 sidebar
-                    .frame(width: columns.sidebar)
-                    .clipped().opacity(columns.sidebar > 0 ? 1 : 0)
-                    .allowsHitTesting(columns.sidebar > 0)
-                    .accessibilityHidden(columns.sidebar == 0)
-                Color(uiColor: columns.gap > 1 ? theme.canvas : theme.separator).frame(width: columns.gap)
+                    .frame(width: columns.sidebar.width, height: columns.sidebar.height)
+                    .clipped().opacity(columns.sidebar.isEmpty ? 0 : 1)
+                    .allowsHitTesting(!columns.sidebar.isEmpty)
+                    .accessibilityHidden(columns.sidebar.isEmpty)
+                    .position(x: columns.sidebar.midX, y: columns.sidebar.midY)
+                Color(uiColor: theme.separator)
+                    .frame(width: columns.sidebar.isEmpty ? 0 : 1, height: columns.sidebar.height)
+                    .position(x: layoutDirection == .leftToRight ? columns.sidebar.maxX : columns.sidebar.minX, y: columns.sidebar.midY)
+                    .allowsHitTesting(false)
                 // This stack and its destinations stay at the same structural
                 // location through size-class, window and folding changes.
                 NavigationStack(path: $navigation.path) {
@@ -162,15 +166,17 @@ struct SettingsView: View {
                         .toolbar { if navigation.tab != nil && navigation.tab != .settings { ToolbarItem(placement: .topBarLeading) { returnToApp } } }
                         .navigationDestination(for: LibraryRoute.self) { route in
                             if case .settingsTask(let task) = route {
-                                taskPage(task, columns: columns.sidebar > 0)
+                                taskPage(task, columns: !columns.sidebar.isEmpty)
                             } else if case .settingsPalette(let appearance) = route {
                                 PalettePicker(reader: false, appearance: appearance, editPalette: { navigation.paletteDraft = $0 })
                             } else { LibraryDestination(route: route) }
                         }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(width: columns.detail.width, height: columns.detail.height)
+                .position(x: columns.detail.midX, y: columns.detail.midY)
             }
-            .onChange(of: columns.sidebar > 0, initial: true) { _, wide in
+            .frame(width: geometry.size.width, height: geometry.size.height)
+            .onChange(of: !columns.sidebar.isEmpty, initial: true) { _, wide in
                 if wide, navigation.path.isEmpty { navigation.select(navigation.group.tasks.first!) }
             }
         }
@@ -245,21 +251,49 @@ struct SettingsView: View {
                 }
             }
     }
-    private func columnGeometry(_ geometry: GeometryProxy) -> (sidebar: CGFloat, gap: CGFloat) {
-        guard sizeClass == .regular else { return (0, 0) }
-        if #available(iOS 27.1, *) {
-            let divisions = geometry.reservedRegions(kind: .division).filter(\.isActive)
-            if let division = divisions.first {
-                let frame = division.frame
-                // Only a left/right division can host two related columns.
-                let leading = layoutDirection == .leftToRight ? frame.minX : geometry.size.width - frame.maxX
-                let trailing = layoutDirection == .leftToRight ? geometry.size.width - frame.maxX : frame.minX
-                guard frame.height > frame.width, leading >= 220, trailing >= 400 else { return (0, 0) }
-                return (leading, frame.width)
+    private func columnGeometry(_ geometry: GeometryProxy) -> (sidebar: CGRect, detail: CGRect) {
+        // This container is already sized inside the system's bars. Deducting
+        // its propagated safeAreaInsets again would remove that space twice.
+        let bounds = CGRect(origin: .zero, size: geometry.size)
+        if #available(iOS 27.1, *),
+           let division = geometry.reservedRegions(kind: .division, layoutDirectionBehavior: .fixed).first(where: \.isActive) {
+            // Our positions use physical local coordinates, so ask for fixed
+            // (unmirrored) frames and choose leading/trailing only once here.
+            let frame = division.frame
+            let margins = division.margins
+            let cut = CGRect(x: frame.minX - margins.leading, y: frame.minY - margins.top,
+                             width: frame.width + margins.leading + margins.trailing,
+                             height: frame.height + margins.top + margins.bottom).intersection(bounds)
+            if !cut.isNull {
+                let regions: [CGRect]
+                if frame.height > frame.width {
+                    let left = CGRect(x: 0, y: 0, width: max(0, cut.minX), height: bounds.height)
+                    let right = CGRect(x: cut.maxX, y: 0, width: max(0, bounds.maxX - cut.maxX), height: bounds.height)
+                    let leading = layoutDirection == .leftToRight ? left : right
+                    let trailing = layoutDirection == .leftToRight ? right : left
+                    // 400/440pt is an ideal unsplit task width, not a minimum.
+                    // At 320pt the existing wrapping rows and task picker fit.
+                    if leading.width >= 220, trailing.width >= 320 {
+                        return (leading, trailing)
+                    }
+                    regions = [leading, trailing]
+                } else {
+                    regions = [CGRect(x: 0, y: 0, width: bounds.width, height: max(0, cut.minY)),
+                               CGRect(x: 0, y: cut.maxY, width: bounds.width, height: max(0, bounds.maxY - cut.maxY))]
+                }
+                // Genuine space shortages retain the task in one safe region;
+                // never give a child the full width across an active fold.
+                let detail = regions.max { $0.width * $0.height < $1.width * $1.height } ?? .zero
+                return (.zero, detail)
             }
         }
-        guard geometry.size.width >= 700 else { return (0, 0) }
-        return (max(220, min(260, geometry.size.width * 0.28)), 1)
+        guard sizeClass == .regular, bounds.width >= 700 else { return (.zero, bounds) }
+        let width = max(220, min(260, bounds.width * 0.28))
+        let sidebar = CGRect(x: layoutDirection == .leftToRight ? 0 : bounds.width - width,
+                             y: 0, width: width, height: bounds.height)
+        let detail = CGRect(x: layoutDirection == .leftToRight ? width + 1 : 0,
+                            y: 0, width: max(0, bounds.width - width - 1), height: bounds.height)
+        return (sidebar, detail)
     }
     private var settingsForm: some View {
         Form {

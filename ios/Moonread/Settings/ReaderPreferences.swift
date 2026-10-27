@@ -185,7 +185,7 @@ struct ReaderSettingsView: View {
                     .frame(width: wide ? min(400, geometry.size.width * 0.46) : nil)
                     .frame(height: !wide && previewPresented
                         ? (restingDetent == .medium ? mediumHeight : max(0, geometry.size.height - 76))
-                        : geometry.size.height)
+                        : nil)
                     .clipped()
                     .frame(maxHeight: .infinity, alignment: .top)
                 if wide {
