@@ -1,6 +1,94 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+  "刚刚": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "刚刚"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Just now"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "剛剛"
+        }
+      }
+    }
+  },
+  "有一个同名文件需要处理": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A file with the same name needs attention"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "有一個同名檔案需要處理"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "有一个同名文件需要处理"
+        }
+      }
+    }
+  },
+  "本机与 iCloud 中都有这个文件。处理前，两处原件都会保留。": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This file exists both on this device and in iCloud. Both originals will be kept until you choose how to proceed."
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "此裝置與 iCloud 中都有這個檔案。處理前，兩處原件都會保留。"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "本机与 iCloud 中都有这个文件。处理前，两处原件都会保留。"
+        }
+      }
+    }
+  },
+  "阅读数据仍然保留": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Your reading data is still here"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "閱讀資料仍然保留"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "阅读数据仍然保留"
+        }
+      }
+    }
+  },
   "约 %llu%%": {
     "localizations": {
       "en": {

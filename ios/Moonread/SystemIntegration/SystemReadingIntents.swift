@@ -47,6 +47,15 @@ enum SystemStatisticsPeriod: String, AppEnum {
         StatisticsDates.systemReadingBounds(week: self == .week, now: now, calendar: calendar)
     }
 }
+/// Visual shortcut opens the overview; the separate query intent keeps Siri answers.
+struct OpenReadingStatisticsIntent: AppIntent {
+    static let title: LocalizedStringResource = "阅读统计"
+    static let openAppWhenRun = true
+    @MainActor func perform() async throws -> some IntentResult {
+        try SystemReadingIntentDelivery.submit(.statistics)
+        return .result()
+    }
+}
 struct ReadingStatisticsIntent: AppIntent {
     static let title: LocalizedStringResource = "查看阅读统计"
     @Parameter(title: "时段", default: .today) var period: SystemStatisticsPeriod
@@ -69,10 +78,10 @@ private struct SystemStatisticsError: LocalizedError { let message: String; var 
 struct MoonreadShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(intent: ContinueReadingIntent(), phrases: ["用\(.applicationName)继续阅读"], shortTitle: "继续阅读", systemImageName: "book.fill")
-        AppShortcut(intent: OpenMyBookshelfIntent(), phrases: ["打开\(.applicationName)我的书架"], shortTitle: "我的书架", systemImageName: "books.vertical.fill")
+        AppShortcut(intent: OpenMyBookshelfIntent(), phrases: ["打开\(.applicationName)我的书架"], shortTitle: "我的书架", systemImageName: "books.vertical")
         AppShortcut(intent: SearchSystemBooksIntent(), phrases: ["用\(.applicationName)搜索书籍"], shortTitle: "搜索书籍", systemImageName: "magnifyingglass")
-        AppShortcut(intent: ReadingStatisticsIntent(), phrases: ["查看\(.applicationName)阅读统计"], shortTitle: "阅读统计", systemImageName: "chart.bar.xaxis")
-        AppShortcut(intent: OpenSystemBookIntent(), phrases: ["用\(.applicationName)打开\(\.$target)"], shortTitle: "打开书籍", systemImageName: "book.closed.fill")
+        AppShortcut(intent: OpenReadingStatisticsIntent(), phrases: ["查看\(.applicationName)阅读统计"], shortTitle: "阅读统计", systemImageName: "chart.bar.xaxis")
+        AppShortcut(intent: OpenSystemBookIntent(), phrases: ["用\(.applicationName)打开\(\.$target)"], shortTitle: "打开书籍", systemImageName: "book.closed")
     }
 }
 

@@ -279,15 +279,18 @@ private struct ReadingDataListView: View {
                     .padding(.horizontal).padding(.vertical, 8).accessibilityIdentifier("readingDataResult")
             }
             if !model.visible.isEmpty {
-                List {
+                List(selection: $model.selected) {
                     Section {
                         ForEach(model.visible) { item in
-                            Button {
-                                if model.selecting { if !model.selected.insert(item.id).inserted { model.selected.remove(item.id) } }
-                                else { detail = item }
-                            } label: {
-                                DataManagementRow(item: item, duplicate: model.duplicateNames[item.id], selected: model.selected.contains(item.id), selecting: model.selecting)
-                            }.buttonStyle(.plain).accessibilityIdentifier("reading-data-" + item.id)
+                            Group {
+                                if model.selecting {
+                                    DataManagementRow(item: item, duplicate: model.duplicateNames[item.id])
+                                } else {
+                                    Button { detail = item } label: {
+                                        DataManagementRow(item: item, duplicate: model.duplicateNames[item.id])
+                                    }.buttonStyle(.plain)
+                                }
+                            }.tag(item.id).accessibilityIdentifier("reading-data-" + item.id)
                                 .swipeActions { Button(role: .destructive) { model.deleting = [item.id] } label: { Text("删除", tableName: "DataManagement") } }
                         }
                     } footer: {
@@ -311,21 +314,28 @@ private struct ReadingDataListView: View {
         .navigationTitle(model.selecting ? Text("已选 \(model.selected.count) 本", tableName: "DataManagement") : Text("阅读数据", tableName: "DataManagement"))
         .navigationBarTitleDisplayMode(model.selecting ? .inline : .large)
         .searchable(text: $model.query, prompt: Text("搜索书名、作者或标签", tableName: "DataManagement"))
+        .environment(\.editMode, .constant(model.selecting ? .active : .inactive))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { model.selecting.toggle(); model.selected.removeAll() } label: { Text(model.selecting ? "完成" : "选择", tableName: "DataManagement") }.accessibilityIdentifier("selectReadingData")
             }
+            if model.selecting {
+                ToolbarItemGroup(placement: .bottomBar) {
+                    Button { model.toggleVisibleSelection() } label: { Text(model.allVisibleSelected ? "取消全选" : "全选", tableName: "DataManagement") }
+                        .accessibilityIdentifier("selectAllReadingData")
+                    Spacer()
+                    Button(role: .destructive) { model.deleting = model.selected } label: { Text("删除 \(model.selected.count) 本", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.destructive)) }
+                        .disabled(model.selected.isEmpty).accessibilityIdentifier("deleteSelectedReadingData")
+                }
+            }
         }
         .toolbar(model.selecting ? .hidden : .automatic, for: .tabBar)
-        .safeAreaInset(edge: .bottom) {
-            if model.selecting { selectionBar }
-        }
         .onDisappear { model.selecting = false; model.selected.removeAll() }
         .modifier(ReadingDataWorking(model: model)).modifier(ReadingDataDeletionPrompt(model: model))
         .sheet(item: $detail) { item in
             NavigationStack {
                 VStack(alignment: .leading, spacing: 20) {
-                    DataManagementRow(item: item, duplicate: model.duplicateNames[item.id], selected: false, selecting: false)
+                    DataManagementRow(item: item, duplicate: model.duplicateNames[item.id])
                     Text("书签 \(item.bookmarks) · 批注 \(item.annotations)", tableName: "DataManagement").font(.footnote)
                     Spacer()
                 }.padding().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).themedPage()
@@ -346,33 +356,12 @@ private struct ReadingDataListView: View {
         }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
             .accessibilityIdentifier(unlinked ? "readingDataFilterUnlinked" : "readingDataFilterAll")
     }
-    private var selectionBar: some View {
-        HStack(spacing: 8) {
-            Button { model.toggleVisibleSelection() } label: { Text(model.allVisibleSelected ? "取消全选" : "全选", tableName: "DataManagement") }
-                .foregroundStyle(Color(uiColor: theme.accent))
-                .accessibilityIdentifier("selectAllReadingData")
-            Spacer(minLength: 0)
-            VStack(spacing: 0) {
-                Text(model.unlinkedOnly ? "不在书架上" : "全部", tableName: "DataManagement")
-                Text("\(model.visible.count) 本", tableName: "DataManagement")
-            }.font(.caption2).foregroundStyle(Color(uiColor: theme.secondary))
-            Spacer(minLength: 0)
-            Button(role: .destructive) { model.deleting = model.selected } label: { Text("删除 \(model.selected.count) 本", tableName: "DataManagement") }
-                .buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color(uiColor: theme.destructive))
-                .foregroundStyle(Color(uiColor: model.selected.isEmpty ? theme.secondary : theme.onAccent))
-                .disabled(model.selected.isEmpty).accessibilityIdentifier("deleteSelectedReadingData")
-        }.frame(minHeight: 58).padding(.horizontal, 16)
-            .background(Color(uiColor: theme.raised), in: .capsule).padding(.horizontal, 14).padding(.bottom, 8)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("readingDataSelectionBar")
-    }
+
 }
 private struct DataManagementRow: View {
     @Environment(\.theme) private var theme
     let item: ReadingDataItem
     var duplicate: (index: Int, count: Int)? = nil
-    let selected: Bool
-    let selecting: Bool
     private var sourceLabel: String {
         guard let hint = item.sourceHint else { return String(localized: "来源未知", table: "DataManagement") }
         var parts = [hint.relative_path]
@@ -394,7 +383,6 @@ private struct DataManagementRow: View {
     }
     var body: some View {
         HStack {
-            if selecting { Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(Color(uiColor: selected ? theme.accent : theme.secondary)) }
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline) {
                     if !item.title.isEmpty { Text(verbatim: item.title) } else { Text("书架上没有这本小说", tableName: "DataManagement") }
