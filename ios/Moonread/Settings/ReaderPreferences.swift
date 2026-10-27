@@ -103,6 +103,7 @@ struct ReaderSettingsView: View {
     @Environment(\.theme) private var theme
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.displayScale) private var displayScale
     @AppStorage("readingSettingsTab") private var tab = ReadingSettingsTab.typography
     @State private var localEditing = ReadingSettingsEditing()
@@ -171,19 +172,22 @@ struct ReaderSettingsView: View {
         GeometryReader { geometry in
             // Keep enough room for both native controls and readable text.
             let wide = geometry.size.width >= 760
+            let compact = horizontalSizeClass == .compact
             // Match the released compact reading settings, including preview space.
             let frame = geometry.frame(in: .global)
             let mediumHeight = max(0, (frame.maxY + geometry.safeAreaInsets.bottom) / 2 - frame.minY - LayoutTokens.control)
             HStack(spacing: 0) {
                 ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editing.editedAppearance, encoding: encoding, isRestartingEncoding: isRestartingEncoding, changeEncoding: changeEncoding,
                                      editPalette: { value in
-                                         if !wide && previewPresented { previewDetent = .large }
+                                         if compact && !wide && previewPresented { previewDetent = .large }
                                          draft = value
                                      })
                     .frame(width: wide ? min(400, geometry.size.width * 0.46) : nil)
-                    .frame(height: !wide && previewPresented
-                        ? (restingDetent == .medium ? mediumHeight : max(0, geometry.size.height - 76))
-                        : geometry.size.height)
+                    .frame(height: compact
+                        ? (!wide && previewPresented
+                            ? (restingDetent == .medium ? mediumHeight : max(0, geometry.size.height - 76))
+                            : geometry.size.height)
+                        : nil)
                     .clipped()
                     .frame(maxHeight: .infinity, alignment: .top)
                 if wide {
@@ -198,7 +202,33 @@ struct ReaderSettingsView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                if !wide && !previewPresented {
+                if !wide && !compact {
+                    VStack(spacing: 0) {
+                        Button {
+                            withAnimation(MotionTokens.panel(reduced: reduceMotion)) {
+                                previewDetent = previewDetent == .height(60) ? .medium : .height(60)
+                            }
+                        } label: {
+                            HStack {
+                                Text("阅读预览 · \(Int(settings.fontSize)) pt").font(.caption.weight(.medium))
+                                Spacer()
+                                Image(systemName: previewDetent == .height(60) ? "chevron.up" : "chevron.down")
+                            }.frame(minHeight: LayoutTokens.hit).contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color(uiColor: previewTheme.secondary))
+                        .padding(.horizontal, LayoutTokens.content)
+                        .accessibilityIdentifier("toggleReadingPreview")
+                        if previewDetent != .height(60) {
+                            readingPreview.frame(height: min(300, geometry.size.height * 0.4))
+                        }
+                    }
+                    .background {
+                        if let tile = previewPosition.paperTile(previewTheme.paperInput(scale: displayScale)) {
+                            Image(uiImage: tile).resizable(resizingMode: .tile)
+                        } else { Color(uiColor: previewTheme.paper) }
+                    }
+                } else if compact && !wide && !previewPresented {
                     Button("阅读预览", systemImage: "doc.text.magnifyingglass") {
                         previewDetent = verticalSizeClass == .compact ? .large : .height(60)
                         previewPresented = true
@@ -211,7 +241,7 @@ struct ReaderSettingsView: View {
             .navigationTitle("阅读设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarVisibility(.visible, for: .navigationBar)
-            .toolbarVisibility(.hidden, for: .tabBar)
+            .toolbarVisibility(compact ? .hidden : .automatic, for: .tabBar)
             .statusBarHidden(false)
             .background(NavigationTransitionObserver(willLeave: { _ in
                 previewPosition.capture()
@@ -224,11 +254,11 @@ struct ReaderSettingsView: View {
                     previewPresented = verticalSizeClass != .compact
                 }
             }
-            .sheet(item: Binding(get: { !wide && previewPresented ? nil : draft }, set: { draft = $0 })) { value in
+            .sheet(item: Binding(get: { compact && !wide && previewPresented ? nil : draft }, set: { draft = $0 })) { value in
                 paletteEditor(value)
             }
-            .sheet(isPresented: Binding(get: { !wide && previewPresented && !navigation.isSuspended }, set: {
-                if !wide && !navigation.isSuspended { previewPresented = $0 }
+            .sheet(isPresented: Binding(get: { compact && !wide && previewPresented && !navigation.isSuspended }, set: {
+                if compact && !wide && !navigation.isSuspended { previewPresented = $0 }
             }), onDismiss: {
                 previewVisible = false
                 navigation.presentationDismissed()

@@ -100,7 +100,7 @@ struct SettingsView: View {
 
     @ViewBuilder private var sidebar: some View {
         if sizeClass == .regular { settingsList.listStyle(.sidebar) }
-        else { settingsList.listStyle(.insetGrouped) }
+        else { settingsList.listStyle(.insetGrouped).themedPage() }
     }
     private func settingsLink<Label: View>(_ task: SettingsTask, @ViewBuilder label: () -> Label) -> some View {
         NavigationLink(value: task, label: label).tag(task)
@@ -119,27 +119,27 @@ struct SettingsView: View {
             Group {
                 Section("阅读") {
                     settingsLink(.reading) {
-                        SettingsEntry(title: "阅读设置", symbol: "book", summary: navigation.settings.map { String(localized: $0.mode == .scroll ? "上下滚动" : "左右分页") } ?? String(localized: "正在加载"))
+                        SettingsEntry(title: "阅读设置", symbol: "book", summary: navigation.settings.map { String(localized: $0.mode == .scroll ? "上下滚动" : "左右分页") } ?? String(localized: "正在加载"), selected: sizeClass == .regular && navigation.selectedTask == .reading)
                     }.disabled(navigation.settings == nil).accessibilityIdentifier("readerThemeSettings")
                     settingsLink(.statistics) {
-                        SettingsEntry(title: "阅读统计设置", symbol: "chart.bar.xaxis", summary: navigation.recording.map { String(localized: $0 ? "记录中" : "已暂停") } ?? String(localized: "正在加载"))
+                        SettingsEntry(title: "阅读统计设置", symbol: "chart.bar.xaxis", summary: navigation.recording.map { String(localized: $0 ? "记录中" : "已暂停") } ?? String(localized: "正在加载"), selected: sizeClass == .regular && navigation.selectedTask == .statistics)
                     }.accessibilityIdentifier("statisticsSettings")
                     settingsLink(.system) {
-                        SettingsEntry(title: "系统集成", symbol: "rectangle.3.group", summary: String(localized: "系统搜索、快捷指令、小组件"))
+                        SettingsEntry(title: "系统集成", symbol: "rectangle.3.group", summary: String(localized: "系统搜索、快捷指令、小组件"), selected: sizeClass == .regular && navigation.selectedTask == .system)
                     }.accessibilityIdentifier("systemIntegrationSettings")
                 }.listRowBackground(sizeClass == .regular ? nil : Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
             Group {
                 Section("书架与数据") {
                     settingsLink(.library) {
-                        SettingsEntry(title: "书架管理", symbol: "books.vertical", summary: String(localized: "\(library.shelves.count) 个书架"))
+                        SettingsEntry(title: "书架管理", symbol: "books.vertical", summary: String(localized: "\(library.shelves.count) 个书架"), selected: sizeClass == .regular && navigation.selectedTask == .library)
                     }.accessibilityIdentifier("libraryManagementSettings")
                     settingsLink(.data) {
-                        SettingsEntry(title: "数据管理", symbol: "externaldrive", summary: String(localized: "备份、恢复、清理"))
+                        SettingsEntry(title: "数据管理", symbol: "externaldrive", summary: String(localized: "备份、恢复、清理"), selected: sizeClass == .regular && navigation.selectedTask == .data)
                     }.accessibilityIdentifier("dataManagementSettings")
                     if CloudConfiguration.availableInBuild {
                         settingsLink(.cloud) {
-                            SettingsEntry(title: "iCloud", symbol: "icloud", summary: cloud.settingsSummary)
+                            SettingsEntry(title: "iCloud", symbol: "icloud", summary: cloud.settingsSummary, selected: sizeClass == .regular && navigation.selectedTask == .cloud)
                         }.accessibilityIdentifier("cloudSettings")
                     }
                 }.listRowBackground(sizeClass == .regular ? nil : Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
@@ -151,7 +151,7 @@ struct SettingsView: View {
                             .tint(Color(uiColor: theme.accent)).accessibilityIdentifier("aiMasterSwitch")
                         if ai.availability.isAvailable {
                             settingsLink(.ai) {
-                                SettingsEntry(title: "AI 助手", symbol: "bubble.left.and.bubble.right", summary: aiSummary)
+                                SettingsEntry(title: "AI 助手", symbol: "bubble.left.and.bubble.right", summary: aiSummary, selected: sizeClass == .regular && navigation.selectedTask == .ai)
                             }.accessibilityIdentifier("aiSettings")
                         }
                     } else {
@@ -172,7 +172,7 @@ struct SettingsView: View {
             Group {
                 Section("外观与语言") {
                     settingsLink(.appearance) {
-                        SettingsEntry(title: "应用外观", symbol: "paintpalette", summary: appearanceSummary)
+                        SettingsEntry(title: "应用外观", symbol: "paintpalette", summary: appearanceSummary, selected: sizeClass == .regular && navigation.selectedTask == .appearance)
                     }.accessibilityIdentifier("appThemeSettings")
                     Button { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) } label: {
                         SettingsEntry(title: "语言", symbol: "globe", summary: languageSummary)
@@ -183,21 +183,23 @@ struct SettingsView: View {
             Group {
                 Section("帮助与关于") {
                     settingsLink(.guide) {
-                        SettingsEntry(title: "使用指南", symbol: "questionmark.circle", summary: String(localized: "导入、阅读与同步"))
+                        SettingsEntry(title: "使用指南", symbol: "questionmark.circle", summary: String(localized: "导入、阅读与同步"), selected: sizeClass == .regular && navigation.selectedTask == .guide)
                     }.accessibilityIdentifier("usageGuideSettings")
                     Link(destination: AppLinks.writeReview) {
                         SettingsEntry(title: "给月读评分", symbol: "star", summary: "")
                     }.accessibilityIdentifier("rateMoonread")
                     settingsLink(.about) {
-                        SettingsEntry(title: "关于月读", symbol: "info.circle", summary: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")
+                        SettingsEntry(title: "关于月读", symbol: "info.circle", summary: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—", selected: sizeClass == .regular && navigation.selectedTask == .about)
                     }.accessibilityIdentifier("aboutSettings")
                     settingsLink(.support) {
-                        SettingsEntry(title: "支持月读", symbol: "heart", summary: "")
+                        SettingsEntry(title: "支持月读", symbol: "heart", summary: "", selected: sizeClass == .regular && navigation.selectedTask == .support)
                     }.accessibilityIdentifier("tipJarSettings")
                 }.listRowBackground(sizeClass == .regular ? nil : Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
         }
-        .themedPage()
+        .scrollContentBackground(.hidden)
+        .background(Color(uiColor: theme.canvas))
+        .tint(Color(uiColor: theme.accent))
     }
     private var appearanceSummary: String {
         switch themes.snapshot.preferences.appMode {
@@ -222,15 +224,25 @@ private struct SettingsEntry: View {
     let title: LocalizedStringKey
     let symbol: String
     let summary: String
+    var selected = false
     @Environment(\.theme) private var theme
     @ScaledMetric(relativeTo: .body) private var iconSize = 20.0
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: symbol).font(.system(size: iconSize))
-                .frame(width: iconSize + 6).foregroundStyle(Color(uiColor: theme.secondary))
-                .accessibilityHidden(true)
-            LabeledContent { Text(verbatim: summary).foregroundStyle(Color(uiColor: theme.secondary)) } label: {
-                Text(title).foregroundStyle(Color(uiColor: theme.ink))
+            if selected {
+                Image(systemName: symbol).font(.system(size: iconSize))
+                    .frame(width: iconSize + 6).foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                LabeledContent { Text(verbatim: summary).foregroundStyle(.secondary) } label: {
+                    Text(title).foregroundStyle(.primary)
+                }
+            } else {
+                Image(systemName: symbol).font(.system(size: iconSize))
+                    .frame(width: iconSize + 6).foregroundStyle(Color(uiColor: theme.secondary))
+                    .accessibilityHidden(true)
+                LabeledContent { Text(verbatim: summary).foregroundStyle(Color(uiColor: theme.secondary)) } label: {
+                    Text(title).foregroundStyle(Color(uiColor: theme.ink))
+                }
             }
         }
     }
