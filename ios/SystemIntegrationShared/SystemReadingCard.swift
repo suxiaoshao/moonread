@@ -127,7 +127,9 @@ struct SystemReadingCard: View {
         Text(verbatim: book.title).fontDesign(.serif).foregroundStyle(colors.ink).lineLimit(2)
     }
     @ViewBuilder private func chapter(_ book: SystemReadingSnapshot.Book) -> some View {
-        if let chapter = book.chapterLabel { Text(verbatim: chapter).foregroundStyle(colors.secondary).lineLimit(1) }
+        if book.availability == .reconnectRequired {
+            Text("需要重新连接书架", tableName: "SystemReading").foregroundStyle(colors.secondary).lineLimit(1)
+        } else if let chapter = book.chapterLabel { Text(verbatim: chapter).foregroundStyle(colors.secondary).lineLimit(1) }
     }
     @ViewBuilder private func percentage(_ book: SystemReadingSnapshot.Book) -> some View {
         if let value = book.progress { Text(value / 100, format: .percent.precision(.fractionLength(0))).monospacedDigit().foregroundStyle(colors.accent) }
@@ -141,7 +143,11 @@ struct SystemReadingCard: View {
         }
     }
     private func continuation(_ book: SystemReadingSnapshot.Book) -> some View {
-        HStack(spacing: 4) { Text(book.availability == .reconnectRequired ? "打开月读查找此书" : "继续阅读"); Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold)) }
+        HStack(spacing: 4) {
+            if book.availability == .reconnectRequired { Text("打开月读处理", tableName: "SystemReading") }
+            else { Text("继续阅读") }
+            Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
+        }
             .font(.caption2.weight(.semibold)).foregroundStyle(colors.accent).lineLimit(1)
             .frame(maxWidth: .infinity).padding(.vertical, 6).background(colors.accentSurface, in: .capsule)
     }

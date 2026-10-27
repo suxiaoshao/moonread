@@ -1,6 +1,50 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+  "需要重新连接书架": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reconnect the bookshelf"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "需要重新連接書架"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "需要重新连接书架"
+        }
+      }
+    }
+  },
+  "打开月读处理": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Open Moonread to reconnect"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "打開月讀處理"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "打开月读处理"
+        }
+      }
+    }
+  },
     "打开一本书后，即可在这里继续。": {
       "localizations": {
         "en": {

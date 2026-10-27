@@ -294,13 +294,18 @@ struct ShelfRecoverySummary: View {
     var body: some View {
         if !model.shelfRecovery.references.isEmpty {
             HStack(alignment: .center, spacing: 12) {
-                Text("有 \(model.shelfRecovery.references.count) 个书架需要重新连接")
-                    .accessibilityIdentifier("shelfRecoverySummary")
-                    .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                    .fixedSize(horizontal: false, vertical: true)
+                Image(systemName: "exclamationmark.triangle").foregroundStyle(Color(uiColor: theme.accent))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("有 \(model.shelfRecovery.references.count) 个书架需要重新连接")
+                        .accessibilityIdentifier("shelfRecoverySummary")
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(Color(uiColor: theme.ink))
+                    Text("阅读数据仍然保留").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                }.fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 4)
-                NavigationLink("处理", value: LibraryRoute.manage)
-                    .buttonStyle(ThemedSecondaryButtonStyle()).accessibilityIdentifier("manageShelfRecovery")
+                NavigationLink(value: LibraryRoute.manage) {
+                    HStack(spacing: 4) { Text("处理"); Image(systemName: "chevron.right") }.font(.subheadline)
+                }.buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.accent))
+                    .accessibilityIdentifier("manageShelfRecovery")
             }.padding(14).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
         }
     }

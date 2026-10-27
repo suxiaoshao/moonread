@@ -4,6 +4,7 @@ import SwiftUI
 struct SystemIntegrationSettingsView: View {
     let library: LibraryModel
     @Environment(\.theme) private var theme
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var enabled = true
     @State private var excluded = Set<String>()
     @State private var loading = true
@@ -12,24 +13,29 @@ struct SystemIntegrationSettingsView: View {
     @State private var spotlightProgress: String?
     @State private var widgetAppearance: SystemReadingSnapshot.Appearance?
     var body: some View {
+        Group {
+            if sizeClass == .regular { wideContent }
+            else { compactContent }
+        }
+        .themedPage().navigationTitle("系统集成")
+        .disabled(loading || saving)
+        .overlay { if loading { ProgressView() } }
+        .task {
+            widgetAppearance = await library.service.systemWidgetAppearance()
+            let policy = await library.service.systemExposurePolicy()
+            enabled = policy.systemSearchEnabled; excluded = Set(policy.excludedShelfIDs)
+            error = await library.service.systemReadingCatalogError(); spotlightProgress = await library.service.systemSpotlightProgress(); loading = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .systemReadingCatalogChanged).receive(on: DispatchQueue.main)) { _ in
+            Task { error = await library.service.systemReadingCatalogError(); spotlightProgress = await library.service.systemSpotlightProgress() }
+        }
+    }
+    // Compact keeps the released settings presentation; only the wide task
+    // content removes the nested Form cards and long detached footers.
+    private var compactContent: some View {
         Form {
             Section {
-                Toggle("在系统搜索中显示书籍", isOn: Binding(get: { enabled }, set: { save(enabled: $0, excluded: excluded) }))
-                    .tint(Color(uiColor: theme.accent)).accessibilityIdentifier("systemSearchEnabled")
-                NavigationLink {
-                    Form {
-                        ForEach(library.shelves, id: \.id) { shelf in
-                            Toggle(shelf.builtin ? String(localized: "我的书架") : shelf.name,
-                                isOn: Binding(get: { excluded.contains(shelf.id) }, set: { selected in
-                                    var next = excluded
-                                    if selected { next.insert(shelf.id) } else { next.remove(shelf.id) }
-                                    save(enabled: enabled, excluded: next)
-                                })).tint(Color(uiColor: theme.accent))
-                        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-                    }.themedPage().navigationTitle("排除的书架").disabled(saving)
-                } label: {
-                    LabeledContent("排除的书架", value: String(localized: "\(excluded.count) 个书架"))
-                }.accessibilityIdentifier("systemSearchExcludedShelves")
+                searchSettings
                 if let error {
                     Text(verbatim: error).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
                     Button("重试") { save(enabled: enabled, excluded: excluded) }
@@ -57,19 +63,68 @@ struct SystemIntegrationSettingsView: View {
                 Text("长按主屏幕或锁屏，添加月读小组件。可选继续阅读、最近阅读和阅读统计；继续阅读可显示最近一本或指定书籍。锁屏与待机沿用系统支持的布局。")
             }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
         }
-        .themedPage().navigationTitle("系统集成")
-        .disabled(loading || saving)
-        .overlay { if loading { ProgressView() } }
-        .task {
-            widgetAppearance = await library.service.systemWidgetAppearance()
-            let policy = await library.service.systemExposurePolicy()
-            enabled = policy.systemSearchEnabled; excluded = Set(policy.excludedShelfIDs)
-            error = await library.service.systemReadingCatalogError(); spotlightProgress = await library.service.systemSpotlightProgress(); loading = false
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .systemReadingCatalogChanged).receive(on: DispatchQueue.main)) { _ in
-            Task { error = await library.service.systemReadingCatalogError(); spotlightProgress = await library.service.systemSpotlightProgress() }
+    }
+
+    private var searchSettings: some View {
+        Group {
+                Toggle("在系统搜索中显示书籍", isOn: Binding(get: { enabled }, set: { save(enabled: $0, excluded: excluded) }))
+                    .tint(Color(uiColor: theme.accent)).accessibilityIdentifier("systemSearchEnabled")
+                NavigationLink {
+                    Form {
+                        ForEach(library.shelves, id: \.id) { shelf in
+                            Toggle(shelf.builtin ? String(localized: "我的书架") : shelf.name,
+                                isOn: Binding(get: { excluded.contains(shelf.id) }, set: { selected in
+                                    var next = excluded
+                                    if selected { next.insert(shelf.id) } else { next.remove(shelf.id) }
+                                    save(enabled: enabled, excluded: next)
+                                })).tint(Color(uiColor: theme.accent))
+                        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                    }.themedPage().navigationTitle("排除的书架").disabled(saving)
+                } label: {
+                    LabeledContent("排除的书架", value: String(localized: "\(excluded.count) 个书架"))
+                }.accessibilityIdentifier("systemSearchExcludedShelves")
         }
     }
+
+    private var wideContent: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 28) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("系统搜索与建议").font(.headline)
+                    VStack(alignment: .leading, spacing: 16) { searchSettings }
+                        .padding(18).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 20))
+                    if let error {
+                        HStack(alignment: .top) {
+                            Label(error, systemImage: "exclamationmark.circle")
+                                .foregroundStyle(Color(uiColor: theme.destructive))
+                            Spacer(minLength: 8)
+                            Button("重试") { save(enabled: enabled, excluded: excluded) }
+                        }.font(.footnote)
+                    }
+                    if let spotlightProgress { Text(verbatim: spotlightProgress).font(.footnote).accessibilityIdentifier("systemSpotlightProgress") }
+                    Text("使用已识别书籍的书名、作者、标签、封面及章节和进度，不索引正文。读过的书可出现在系统续读建议中。排除书架不会影响在快捷指令或小组件中主动选书。")
+                        .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Siri 与快捷指令").font(.headline)
+                    Text("可用“继续阅读”“我的书架”“搜索书籍”“阅读统计”和“打开书籍”。搜索可带关键词，统计可回答今天或本周的阅读时长。也可以在支持的控制中心、锁屏或操作按钮中添加“继续阅读”。")
+                        .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                    ShortcutsLink()
+                }
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("小组件").font(.headline)
+                    Text("长按主屏幕或锁屏，添加月读小组件。可选继续阅读、最近阅读和阅读统计；继续阅读可显示最近一本或指定书籍。锁屏与待机沿用系统支持的布局。")
+                        .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                    SystemReadingCard(book: SystemReadingWidgetModel.sample, appearance: widgetAppearance)
+                        .padding(18).frame(width: 220, height: 220)
+                        .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 20))
+                        .accessibilityLabel("小组件合成示例：月下归舟，42%")
+                        .accessibilityIdentifier("systemWidgetPreview")
+                }
+            }.padding(24).frame(maxWidth: 720, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading)
+        }.tint(Color(uiColor: theme.accent))
+    }
+
     private func save(enabled: Bool, excluded: Set<String>) {
         guard !saving else { return }
         self.enabled = enabled; self.excluded = excluded; saving = true; error = nil

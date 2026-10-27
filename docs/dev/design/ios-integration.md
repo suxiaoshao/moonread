@@ -1,6 +1,6 @@
 # iOS 系统集成
 
-更新：2026-10-26。1.3 的系统展示默认值按用户确认修订；详细设置归属见[设置信息架构](settings-information-architecture.md)。系统续读基础已接入 App 内首页续读：稳定 book:SHA ID、主 App 唯一生产的版本化只读快照、失效事件和统一开书路由。App Entity、五项 App Shortcuts 与继续阅读 Control 已接线；选书查询只读共享快照，统计动作仅在主 App 读取既有统计查询。真实正文可读时才为允许的书登记带书名的打开动作 donation；关闭系统搜索、排除来源或切换分域时撤销。Control/OpenIntent 声明同时属于主 App 和扩展，扩展不含 AppDataService/Rust/SwiftData；iOS 27 显式限定主 App 执行，iOS 18 沿 OpenIntent 的前台打开语义。系统调度与可见性以真机试用结果为准。最低系统继续为 iOS 18；具体 API 按部署版本检查可用性，不因最新文档提高系统下限。
+更新：2026-10-26。1.3 的系统展示默认值按用户确认修订；详细设置归属见[设置信息架构](settings-information-architecture.md)。系统续读基础已接入 App 内首页续读：稳定 book:SHA ID、主 App 唯一生产的版本化只读快照、失效事件和统一开书路由。App Entity、五项 App Shortcuts 与继续阅读 Control 已接线；选书查询只读共享快照，统计图标动作打开统计总览，Siri 今天／本周问句继续读取主 App 的既有统计查询直接回答。真实正文可读时才为允许的书登记带书名的打开动作 donation；关闭系统搜索、排除来源或切换分域时撤销。Control/OpenIntent 声明同时属于主 App 和扩展，扩展不含 AppDataService/Rust/SwiftData；iOS 27 显式限定主 App 执行，iOS 18 沿 OpenIntent 的前台打开语义。系统调度与可见性以真机试用结果为准。最低系统继续为 iOS 18；具体 API 按部署版本检查可用性，不因最新文档提高系统下限。
 
 ## 系统搜索（1.3）
 

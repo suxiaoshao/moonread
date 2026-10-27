@@ -7,6 +7,7 @@ struct LibraryView: View {
     @Environment(AIService.self) private var ai
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
+    @Environment(\.horizontalSizeClass) private var sizeClass
     /// The most recent formal reading resumes from its own row; the rest follow as recents:
     /// two rows in the list layout, a scrollable cover row in the grid.
     private var current: LibraryEntry? { model.recents.first }
@@ -20,7 +21,7 @@ struct LibraryView: View {
                 ContentUnavailableView { Label("暂时无法加载书架", systemImage: "books.vertical") } description: { Text(error) } actions: { Button("重试") { Task { await model.load() } } }
             } else { ProgressView("正在加载书架").frame(maxWidth: .infinity, maxHeight: .infinity).themedPage() }
         }
-        .navigationTitle("书架").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("书架").navigationBarTitleDisplayMode(.large)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Menu {
@@ -49,64 +50,72 @@ struct LibraryView: View {
                                      hasContent: !model.shelves.isEmpty, label: "正在加载书架", immediate: model.explicitRefresh))
     }
     private var homeList: some View {
-        List {
-            if let current {
-                // The book read most recently resumes from its own, larger row.
-                Section {
-                    ContinueReadingRow(model: model, entry: current).contextMenu { recentMenu(current) }
-                } header: {
-                    homeHeader("继续阅读", showsAll: following.isEmpty)
-                }
-                .listRowBackground(Color.clear).listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets(top: 4, leading: 24, bottom: 4, trailing: 24))
-            }
-            if !following.isEmpty {
-                if model.layout == .grid {
-                    Section {
-                        ScrollView(.horizontal) {
-                            LazyHStack(alignment: .top, spacing: LayoutTokens.content) {
-                                ForEach(following, id: \.id) { entry in
-                                    RecentCoverTile(model: model, entry: entry) { recentMenu(entry) }
-                                }
-                            }.scrollTargetLayout()
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    if let current {
+                        VStack(alignment: .leading, spacing: 12) {
+                            homeHeader("继续阅读", showsAll: following.isEmpty)
+                            ContinueReadingRow(model: model, entry: current).contextMenu { recentMenu(current) }
                         }
-                        .scrollIndicators(.hidden).scrollTargetBehavior(.viewAligned)
-                        .contentMargins(.horizontal, 24, for: .scrollContent)
-                        .accessibilityIdentifier("recentCoverRow")
-                    } header: {
-                        // The header follows the row insets, which the edge-to-edge cover row clears.
-                        homeHeader("最近阅读", showsAll: true).padding(.horizontal, 24)
                     }
-                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                } else {
-                    Section {
-                        ForEach(following, id: \.id) { entry in
-                            RecentBookRow(model: model, entry: entry).contextMenu { recentMenu(entry) }
+                    ShelfRecoverySummary(model: model)
+                    if sizeClass == .regular && geometry.size.width >= 720 {
+                        HStack(alignment: .top, spacing: 24) {
+                            shelves.frame(maxWidth: .infinity, alignment: .topLeading)
+                            recentBooks.frame(maxWidth: .infinity, alignment: .topLeading)
                         }
-                    } header: {
-                        homeHeader("最近阅读", showsAll: true)
+                    } else {
+                        shelves
+                        recentBooks
                     }
-                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 2, leading: 24, bottom: 2, trailing: 24))
-                }
+                }.padding(20).frame(maxWidth: 1040).frame(maxWidth: .infinity)
             }
-            ShelfRecoverySummary(model: model)
-            Section {
-                ForEach(model.shelves, id: \.id) { shelf in
-                    NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: shelf.id))) { ShelfRow(shelf: shelf) }
-                        .contextMenu { ShelfMenu(model: model, shelf: shelf) }.accessibilityIdentifier("shelf-\(shelf.id)")
-                        .modifier(LibraryShelfDropTarget(model: model, shelf: shelf))
-                    ShelfIndexGuidance(model: model, shelfID: shelf.id)
-                }
-            } header: {
-                homeHeader("书架与文件夹", showsAll: false)
+            .refreshable { await model.refresh(showIndicator: false, userInitiated: true) }
+        }.themedPage()
+    }
+
+    private var shelves: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            homeHeader("我的书架", showsAll: false)
+            ForEach(model.shelves, id: \.id) { shelf in
+                NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: shelf.id))) {
+                    HStack {
+                        ShelfRow(shelf: shelf)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right").font(.footnote.weight(.semibold))
+                            .foregroundStyle(Color(uiColor: theme.secondary))
+                    }.padding(.horizontal, 16).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
+                        .contentShape(.rect)
+                }.buttonStyle(.plain)
+                    .contextMenu { ShelfMenu(model: model, shelf: shelf) }.accessibilityIdentifier("shelf-\(shelf.id)")
+                    .modifier(LibraryShelfDropTarget(model: model, shelf: shelf))
+                ShelfIndexGuidance(model: model, shelfID: shelf.id)
             }
-            .listRowBackground(Color.clear).listRowSeparator(.hidden)
-            .listRowInsets(EdgeInsets(top: 2, leading: 24, bottom: 2, trailing: 24))
         }
-        .listStyle(.plain).themedPage()
-        .refreshable { await model.refresh(showIndicator: false, userInitiated: true) }
+    }
+
+    @ViewBuilder private var recentBooks: some View {
+        if !following.isEmpty {
+            VStack(alignment: .leading, spacing: 12) {
+                homeHeader("最近阅读", showsAll: true)
+                if model.layout == .grid {
+                    ScrollView(.horizontal) {
+                        LazyHStack(alignment: .top, spacing: LayoutTokens.content) {
+                            ForEach(following, id: \.id) { entry in
+                                RecentCoverTile(model: model, entry: entry) { recentMenu(entry) }
+                            }
+                        }.scrollTargetLayout()
+                    }.scrollIndicators(.hidden).scrollTargetBehavior(.viewAligned)
+                        .accessibilityIdentifier("recentCoverRow")
+                } else {
+                    ForEach(following, id: \.id) { entry in
+                        RecentBookRow(model: model, entry: entry).contextMenu { recentMenu(entry) }
+                    }
+                }
+            }
+        }
     }
 
     /// One header style for every home section; 查看全部 opens the full recent list.
@@ -156,24 +165,28 @@ private struct ContinueReadingRow: View {
     @Environment(\.theme) private var theme
     private var position: Double { min(1, Double(entry.positionUtf8) / Double(max(1, entry.byteCount))) }
     var body: some View {
-        Button { model.systemReading.submit(.continueReading) } label: {
+        VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 16) {
                 LibraryBookCover(title: entry.title, compact: true, cover: entry.metadata?.cover).frame(width: 60, height: 84)
+                    .overlay { LibraryFileLoading(model: model, entry: entry, compact: true) }
                 VStack(alignment: .leading, spacing: 8) {
                     Text(verbatim: entry.title).font(.title3.weight(.semibold)).foregroundStyle(Color(uiColor: theme.ink)).lineLimit(2)
                     Text(entry.chapterTitle ?? String(localized: "继续阅读")).font(.subheadline)
                         .foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(1)
-                    HStack(spacing: 10) {
-                        ProgressView(value: position).tint(Color(uiColor: theme.accent))
-                        Text(position, format: .percent.precision(.fractionLength(1))).monospacedDigit()
-                            .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
-                    }
+                    ProgressView(value: position).tint(Color(uiColor: theme.accent))
+                    HStack(spacing: 6) {
+                        Text(position, format: .percent.precision(.fractionLength(0))).monospacedDigit()
+                        if entry.lastRead > 0 {
+                            Text("·")
+                            Text(Date(timeIntervalSince1970: Double(entry.lastRead) / 1000), style: .relative)
+                        }
+                    }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                 }
-            }.padding(.vertical, 6).contentShape(.rect)
-        }.buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
-            .overlay(alignment: .leading) {
-                LibraryFileLoading(model: model, entry: entry, compact: true).frame(width: 60, height: 84)
             }
+            Button { model.systemReading.submit(.continueReading) } label: {
+                Text("继续阅读").frame(maxWidth: .infinity)
+            }.buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("library-file-\(entry.name)")
+        }.padding(16).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 20))
     }
 }
 

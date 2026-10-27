@@ -40,9 +40,19 @@ struct CloudSettingsView: View {
                 }.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)).padding(.horizontal, 4)
                 VStack(alignment: .leading, spacing: 16) {
                     Label("我的书架文件", systemImage: "folder").font(.headline)
-                    Text(verbatim: cloud.libraryStatus).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                     if let path = cloud.conflictPath {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "exclamationmark.triangle").foregroundStyle(Color(uiColor: theme.accent))
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("有一个同名文件需要处理").font(.headline)
+                                Text(verbatim: path).textSelection(.enabled)
+                                Text("本机与 iCloud 中都有这个文件。处理前，两处原件都会保留。")
+                                    .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                            }
+                        }
                         Button("处理同名文件") { replacing = path }.buttonStyle(ThemedProminentButtonStyle()).disabled(cloud.busy)
+                    } else {
+                        Text(verbatim: cloud.libraryStatus).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                     }
                     ThemedDivider()
                     NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: "builtin"))) {
