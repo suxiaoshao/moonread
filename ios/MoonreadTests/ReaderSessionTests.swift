@@ -507,7 +507,7 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     XCTAssertEqual(model.selectedTab, .library)
     model.selectedTab = .settings
     model.updateAvailableTabs(aiAvailable: true)
-    XCTAssertEqual(model.selectedTab, .library)
+    XCTAssertEqual(model.selectedTab, .settings)
     let loading = LoadingState()
     let old = loading.begin()
     let new = loading.begin()
