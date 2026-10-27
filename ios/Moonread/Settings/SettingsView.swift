@@ -133,11 +133,9 @@ struct SettingsView: View {
                 ForEach(SettingsGroup.allCases) { group in
                     NavigationLink(value: group) {
                         Label(group.title, systemImage: group.symbol)
-                            .foregroundStyle(Color(uiColor: theme.ink))
                     }
                     .tag(group)
                     .accessibilityIdentifier("settingsGroup-" + group.rawValue)
-                    .listRowBackground(Color(uiColor: theme.canvas))
                 }
                 #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("--ui-test-reader-origin") {
@@ -146,6 +144,7 @@ struct SettingsView: View {
                 }
                 #endif
             }
+            .listStyle(.sidebar)
             .themedPage()
             .navigationTitle("设置")
             .navigationSplitViewColumnWidth(min: 220, ideal: 260)
@@ -182,7 +181,6 @@ struct SettingsView: View {
             .background(Color(uiColor: theme.canvas))
             .safeAreaInset(edge: .top, spacing: 0) {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text(task.group.title).font(.title.bold())
                     if task.group == .help {
                         Link("给月读评分", destination: AppLinks.writeReview).accessibilityIdentifier("rateMoonread")
                     }
@@ -200,6 +198,7 @@ struct SettingsView: View {
             .onChange(of: sizeClass, initial: true) { _, value in
                 if value == .regular, navigation.group == nil { navigation.select(task) }
             }
+            .navigationTitle(task.group.title)
             .navigationBarTitleDisplayMode(.inline)
     }
 }

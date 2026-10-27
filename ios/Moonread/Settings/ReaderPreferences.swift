@@ -203,7 +203,7 @@ struct ReaderSettingsView: View {
                 }
             }
             .background(Color(uiColor: theme.canvas).ignoresSafeArea())
-            .navigationTitle("阅读设置")
+            .navigationTitle(keepsTabBar ? Text("阅读") : Text("阅读设置"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbarVisibility(.visible, for: .navigationBar)
             .toolbarVisibility(keepsTabBar ? .automatic : .hidden, for: .tabBar)
@@ -393,6 +393,7 @@ private struct ReadingSettingsControls: View {
                     Image(systemName: "minus").frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit)
                 }.disabled(value.wrappedValue <= range.lowerBound).accessibilityLabel("减小")
                 Text("\(Int(value.wrappedValue)) pt").monospacedDigit().font(.subheadline)
+                    .lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 Button { value.wrappedValue = min(range.upperBound, value.wrappedValue + step) } label: {
                     Image(systemName: "plus").frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit)
                 }.disabled(value.wrappedValue >= range.upperBound).accessibilityLabel("增大")
