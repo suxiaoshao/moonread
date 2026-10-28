@@ -695,4 +695,36 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     loading.finish(new)
     XCTAssertFalse(loading.active)
   }
+  func testPresentationIntentDoesNotFollowBodyLayoutAndRejectsOldHostInput() {
+    let state = ReaderPresentationState()
+    state.choose(.settings, exposure: .expanded)
+    let draft = UUID(); state.push(.palette(draft))
+    let location = state.location
+    var metrics = ReaderContainerMetrics(bounds: CGRect(x: 0, y: 0, width: 1400, height: 900), regular: true)
+    let settings = defaultReaderSettings()
+    XCTAssertEqual(ReaderContainerPolicy.container(metrics, settings: settings), .inspector)
+    metrics.bounds.size.width = 600
+    XCTAssertEqual(ReaderContainerPolicy.container(metrics, settings: settings), .sheet)
+    metrics.regular = false
+    XCTAssertEqual(ReaderContainerPolicy.container(metrics, settings: settings), .compact)
+    XCTAssertEqual(state.location, location)
+    state.choose(.settings, exposure: .expanded)
+    XCTAssertEqual(state.location, location, "reselecting the same tool preserves its child")
+    let native = ReaderNativeInstallation(); let opening = UUID()
+    let old = native.install(opening: opening, generation: state.revision)
+    state.push(.progress)
+    let current = native.install(opening: opening, generation: state.revision)
+    XCTAssertEqual(old.id, current.id, "content changes do not replace a native presenter")
+    XCTAssertFalse(native.acceptsInput(old, opening: opening, generation: state.revision))
+    XCTAssertTrue(native.acceptsInput(current, opening: opening, generation: state.revision))
+    native.beginDismissal()
+    XCTAssertFalse(native.acceptsInput(current, opening: opening, generation: state.revision))
+    XCTAssertTrue(native.completed(old), "completion releases the same physical installation only")
+    let replacement = native.install(opening: opening, generation: state.revision)
+    XCTAssertFalse(native.completed(old))
+    XCTAssertEqual(native.token, replacement)
+    XCTAssertFalse(ReadingContainerRegions.permitsSpread(in: CGSize(width: 900, height: 900)))
+    XCTAssertTrue(ReadingContainerRegions.permitsSpread(in: CGSize(width: 1000, height: 900)))
+  }
+
 }

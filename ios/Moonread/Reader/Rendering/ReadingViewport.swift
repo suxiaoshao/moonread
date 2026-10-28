@@ -84,3 +84,23 @@ struct ReadingFrontierAdmissions {
         if admit() { accepted.insert(key) }
     }
 }
+
+/// One local rectangle policy for both capacity prediction and native text.
+/// UIKit's reserved-region frame already contains its interactive margins.
+enum ReadingContainerRegions {
+    static func available(_ surface: CGRect, blocked: [CGRect]) -> [CGRect] {
+        blocked.reduce([surface]) { regions, frame in
+            regions.flatMap { region -> [CGRect] in
+                let overlap = region.intersection(frame)
+                guard !overlap.isNull, overlap.width > 0, overlap.height > 0 else { return [region] }
+                if overlap.height >= overlap.width {
+                    return [CGRect(x: region.minX, y: region.minY, width: overlap.minX - region.minX, height: region.height),
+                            CGRect(x: overlap.maxX, y: region.minY, width: region.maxX - overlap.maxX, height: region.height)].filter { $0.width > 0 }
+                }
+                return [CGRect(x: region.minX, y: region.minY, width: region.width, height: overlap.minY - region.minY),
+                        CGRect(x: region.minX, y: overlap.maxY, width: region.width, height: region.maxY - overlap.maxY)].filter { $0.height > 0 }
+            }
+        }
+    }
+    static func permitsSpread(in size: CGSize) -> Bool { size.width > size.height }
+}
