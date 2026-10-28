@@ -490,6 +490,33 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(
       ReadingNavigation().pageIndex(in: again, anchor: pageRestore.offset), 1,
       "temporary distant navigation must restore the source page")
+
+    // Reuse only the whole saved spread, not its first page in the right slot.
+    // Synthetic spans exercise the native adapter without a window or UI flow.
+    let controller = ReadingController()
+    controller.loadViewIfNeeded()
+    let leafSize = CGSize(width: 320, height: 600)
+    controller.contentGeometry = ReadingContentGeometry(size: size)
+    controller.readingSurface.bounds.size = size
+    controller.renderedSize = size
+    controller.leafFrames = [CGRect(origin: .zero, size: leafSize), CGRect(x: 344, y: 0, width: 320, height: 600)]
+    controller.settings = settings
+    controller.window = window
+    controller.pages = pages
+    let pager = UIPageViewController(transitionStyle: .scroll, navigationOrientation: .horizontal)
+    controller.pageController = pager
+    let savedGroup = ReadingViewport(
+      offset: pages[2].firstVisibleOffset, lineY: 0, size: size, settings: settings,
+      typeSize: .large, pages: pages, pageSize: leafSize, leafCount: 2, groupStart: pages[1].start)
+    pager.setViewControllers([controller.makePage(at: 0)], direction: .forward, animated: false)
+    controller.pendingNavigation = (ReadingNavigation(restoring: savedGroup), false)
+    controller.applyNavigation()
+    XCTAssertEqual(controller.currentLeaves.map { $0.page.start }, [pages[1].start, pages[2].start])
+    XCTAssertEqual(controller.anchorLeaf?.page.start, pages[2].start, "restore the saved active right leaf")
+    let restoredGroup = pager.viewControllers?.first
+    controller.pendingNavigation = (ReadingNavigation(restoring: savedGroup), false)
+    controller.applyNavigation()
+    XCTAssertTrue(pager.viewControllers?.first === restoredGroup, "an exact spread can be reused")
   }
 }
 

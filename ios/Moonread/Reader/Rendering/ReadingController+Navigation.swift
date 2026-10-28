@@ -206,8 +206,18 @@ extension ReadingController {
             guard !pages.isEmpty else { return }
             let target = restoration?.offset ?? anchor
             let index = pending.request.pageIndex(in: pages, anchor: restoration?.groupStart ?? target)
-            if let leaf = currentLeaves.first(where: { $0.page.start == pages[index].start && $0.page.end == pages[index].end }) {
-                leaf.update(page: pages[index], index: index)
+            let leaves = currentLeaves
+            let expectedGroup = pages[index..<min(pages.count, index + leafFrames.count)]
+            // A saved first leaf in the current right slot is not the saved
+            // spread: [9, 10] must be rebuilt before restoring [10, 11].
+            let matchesGroup = restoration?.groupStart == nil ||
+                (leaves.count == expectedGroup.count && zip(leaves, expectedGroup).allSatisfy {
+                    $0.page.start == $1.start && $0.page.end == $1.end
+                })
+            if matchesGroup, let leaf = leaves.first(where: { $0.page.start == pages[index].start && $0.page.end == pages[index].end }) {
+                if restoration?.groupStart != nil {
+                    for (offset, leaf) in leaves.enumerated() { leaf.update(page: pages[index + offset], index: index + offset) }
+                } else { leaf.update(page: pages[index], index: index) }
                 if let text = leaf.view as? UITextView { activateLeaf(text) }
             } else {
                 let current = pageIndex(paging.viewControllers?.first) ?? index
