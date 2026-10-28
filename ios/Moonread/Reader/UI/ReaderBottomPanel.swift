@@ -2,13 +2,15 @@ import SwiftUI
 
 /// Natural-height search/accessory content inside the opening’s one root flow.
 /// This component owns detents/focus geometry, never the foreground task.
-struct ReaderBottomPanel<Compact: View, Details: View>: View {
+struct ReaderBottomPanel<Compact: View, Footer: View, Details: View>: View {
     @Binding var expanded: Bool
     @Binding var compactHeight: CGFloat
     let canExpand: Bool
     @ViewBuilder let compact: () -> Compact
+    @ViewBuilder let footer: () -> Footer
     @ViewBuilder let details: (_ readyForInput: Bool) -> Details
     @Environment(\.moonreadReduceMotion) private var reduceMotion
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.theme) private var theme
     @State private var previousHeight: CGFloat?
     @State private var resizing = false
@@ -47,7 +49,7 @@ struct ReaderBottomPanel<Compact: View, Details: View>: View {
         }))
         .presentationBackgroundInteraction(.enabled(upThrough: .height(max(compactHeight, previousHeight ?? compactHeight))))
         .presentationContentInteraction(.scrolls)
-        .presentationCornerRadius(32)
+                .presentationCornerRadius(sizeClass == .compact ? nil : 32)
         .presentationBackground(Color(uiColor: theme.surface))
         .presentationDragIndicator(.visible)
         .onChange(of: expanded && canExpand, initial: true) { _, value in setExpanded(value) }
@@ -78,6 +80,11 @@ struct ReaderBottomPanel<Compact: View, Details: View>: View {
                     }
             }
             .scrollBounceBehavior(.basedOnSize).scrollIndicators(.hidden)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                footer().fixedSize(horizontal: false, vertical: true)
+                    .background { GeometryReader { footer in Color.clear.preference(key: ReaderPanelHeight.self, value: footer.size.height) } }
+                    .background(Color(uiColor: theme.surface))
+            }
             .onPreferenceChange(ReaderPanelHeight.self) { measured in
                 let height = max(60, measured)
                 guard measured > 0 else { return }

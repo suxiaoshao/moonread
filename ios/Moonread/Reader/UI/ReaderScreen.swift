@@ -146,18 +146,8 @@ struct ReaderScreen: View {
             .toolbarBackground(Color(uiColor: theme.paper), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar { readerToolbar }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if !isWide, readerNavigationVisible, let chapter = session.chapter?.title {
-                    Text(verbatim: chapter)
-                        .font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                        .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 24).padding(.vertical, 6)
-                        .background(Color(uiColor: theme.paper))
-                        .accessibilityIdentifier("readerToolbarChapter")
-                }
-            }
             .toolbarVisibility(readerNavigationVisible ? .visible : .hidden, for: .navigationBar)
-            .toolbarVisibility(readerNavigationVisible ? .visible : .hidden, for: .bottomBar)
+            .toolbarVisibility(readerNavigationVisible && isWide ? .visible : .hidden, for: .bottomBar)
             .toolbarVisibility(.hidden, for: .tabBar)
             .statusBarHidden(!readerNavigationVisible)
             .modifier(ReaderToolbarAxis(ui: ui))
@@ -233,6 +223,7 @@ struct ReaderScreen: View {
         presentedReader
             .task {
                 library.systemReading.register(session, navigationID: openingRequest?.id)
+                library.systemReading.editingState = ui
                 await session.open(route, request: openingRequest)
             }
             .onAppear {
@@ -258,7 +249,6 @@ struct ReaderScreen: View {
             .onChange(of: library.systemReading.pending) { _, request in
                 if request != nil, ui.foreground.tool == nil, ui.editor == nil, ui.search == nil { ui.controlsVisible = false }
             }
-            .onChange(of: systemReadingBlocked, initial: true) { _, blocked in library.systemReading.presentationBlocked = blocked }
             .onChange(of: session.opening.request?.id) { _, id in
                 if let id, completedOpeningID == id { session.opening.settled(id, reason: "observedAppearance") }
             }
@@ -320,6 +310,7 @@ struct ReaderScreen: View {
 
     private var bookmarkTitle: LocalizedStringKey { session.bookmarked ? "移除当前位置书签" : "添加当前位置书签" }
     @ToolbarContentBuilder private var readerToolbar: some ToolbarContent {
+        if isWide {
         ToolbarItem(placement: .topBarTrailing) {
             Button(bookmarkTitle,
                 systemImage: session.bookmarked ? "bookmark.fill" : "bookmark") { Task { await session.toggleBookmark() } }
@@ -339,6 +330,7 @@ struct ReaderScreen: View {
             Menu { moreActions } label: { Label("更多", systemImage: "ellipsis") }
                 .labelStyle(.iconOnly).tint(Color(uiColor: theme.ink)).foregroundStyle(Color(uiColor: theme.ink)).accessibilityIdentifier("readerMore")
         }
+            }
     }
     private var progressButton: some View {
         Button { openTool(.progress) } label: {
@@ -371,7 +363,7 @@ struct ReaderScreen: View {
         openTool(.library)
     }
     private func openTool(_ tool: ReaderTool) {
-        guard !session.isLeaving, ui.editor == nil else { return }
+        guard !session.isLeaving, ui.editor == nil, ui.foreground.tool != tool else { return }
         if tool == .library || tool == .search || tool == .settings {
             if ui.layout.canInspect, var settings = session.settings, settings.wideToolsExpanded != true {
                 settings.wideToolsExpanded = true; session.updateSettings(settings)
@@ -415,9 +407,6 @@ struct ReaderScreen: View {
         let width = native?.hostWidth ?? readerWidth
         ui.layout.canInspect = native != nil && ReaderLayoutFacts.inspectorFits(regular: isWide, hostWidth: width, body: bodyLayout,
             inspectorWidth: native?.inspector?.width ?? 0, settings: session.settings)
-    }
-    private var systemReadingBlocked: Bool {
-        ui.editor != nil || ui.foreground.tool != nil || native?.isPresented == true
     }
     private var statisticsReadable: Bool {
         scenePhase == .active && !session.isLeaving && session.opening.phase == .reading && session.window != nil && !session.showingCover

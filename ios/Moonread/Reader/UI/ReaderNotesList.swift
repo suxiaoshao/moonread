@@ -49,7 +49,7 @@ struct ReaderNotesList: View {
                             Label(model.noteKind == .bookmark ? LocalizedStringKey("还没有书签") : LocalizedStringKey("还没有批注"), systemImage: model.noteKind == .bookmark ? "bookmark" : "highlighter")
                         } description: {
                             Text(model.noteKind == .bookmark ? LocalizedStringKey("阅读时轻点页面，再点右上角书签，记下当前位置。") : LocalizedStringKey("长按正文选择文字，可标注或写批注。"))
-                        } actions: { Button("返回阅读", action: close) }
+                        }
                     }
                 }
         }

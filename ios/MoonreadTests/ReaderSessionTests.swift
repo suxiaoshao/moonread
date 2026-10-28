@@ -542,10 +542,19 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     XCTAssertTrue(ReaderLayoutFacts.inspectorFits(regular: true, hostWidth: 1400, body: .init(width: 1400, leafCount: 2), inspectorWidth: 0, settings: settings))
     XCTAssertFalse(ReaderLayoutFacts.inspectorFits(regular: true, hostWidth: 600, body: .init(width: 600, leafCount: 2), inspectorWidth: 0, settings: settings))
     let ui = ReaderUIState()
+    let compactControls = ReaderPresentationPlan.project(task: .reading, layout: .init(), controls: true, available: true, passiveInspector: false, searchExpanded: nil, hasAccessory: false)
+    XCTAssertEqual(compactControls.root, .sheet(.accessory))
+    ui.show(.search); ui.search?.expanded = false
+    let searchIntent = ui.intentID
+    ui.show(.search)
+    XCTAssertEqual(ui.intentID, searchIntent); XCTAssertEqual(ui.search?.expanded, false)
+    XCTAssertFalse(ui.requiresDiscardConfirmation)
+    ui.closeSearch()
     let palette = PaletteDraft(palette: try XCTUnwrap(defaultThemeSnapshot().palettes.first), creating: true)
     palette.palette.name = "未保存的输入"; palette.error = "保存失败"
     for origin in [ReaderEditOrigin.reader, .library, .settings, .preview, .settingsSheet, .sheetPreview] {
       ui.beginEditing(.palette(palette), origin: origin, returning: .settings)
+      XCTAssertTrue(ui.requiresDiscardConfirmation)
       let editor = try XCTUnwrap(ui.editor)
       for layout in [ReaderLayoutFacts(), .init(regular: false, verticalToolbar: true), .init(regular: true, canInspect: true), .init(regular: true)] {
         let first = ReaderPresentationPlan.project(task: ui.descriptor, layout: layout, controls: true, available: true, passiveInspector: true, searchExpanded: false, hasAccessory: true)
@@ -611,7 +620,7 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     let flow = try XCTUnwrap(native.root)
     let sameToolPlan = context.plan
     ui.show(.search)
-    XCTAssertNotEqual(context.plan, sameToolPlan, "same-tool intent updates still reach native installation without replacing the flow")
+    XCTAssertEqual(context.plan, sameToolPlan, "reopening the current tool is a no-op")
     native.reconcile()
     XCTAssertEqual(native.root?.token, flow.token)
     XCTAssertEqual(native.root?.intentID, ui.intentID)

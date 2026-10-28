@@ -33,11 +33,23 @@ struct ReaderTaskContent: View {
                 ReaderProgressContent(context: context)
             case .search, .accessory:
                 ReaderBottomPanel(expanded: searchExpanded, compactHeight: $compactHeight,
-                    canExpand: ui.search != nil) {
+                    canExpand: ui.search != nil && ui.foreground.tool != .quickSettings && ui.foreground.tool != .more) {
                     VStack(spacing: 0) {
-                        if ui.search != nil { search(details: false, ready: false) }
+                        if !ui.layout.regular, ui.foreground.tool == .quickSettings {
+                            ReaderQuickSettings(settings: Binding(get: { session.settings ?? defaultReaderSettings() }, set: session.updateSettings)) { ui.show(.settings) }
+                        } else if !ui.layout.regular, ui.foreground.tool == .more {
+                            ReaderMoreContent(session: session, openLibrary: { tab, _ in ui.tools.tab = tab; ui.show(.library) }, presentPanel: ui.show, changeEncoding: context.changeEncoding)
+                        } else if ui.search != nil { search(details: false, ready: false) }
+                        else if session.browseOrigin == nil, ui.controlsVisible, !ui.layout.regular {
+                            ReaderProgressControls(session: session) { ui.controlsVisible = false }
+                            if session.history.entries.count > 1 {
+                                Button("跳转历史", systemImage: "clock") { ui.show(.history) }.accessibilityIdentifier("showReadingHistory")
+                            }
+                        }
                         ReaderTransientAccessories(context: context)
                     }
+                } footer: {
+                    if !ui.layout.regular, ui.controlsVisible { compactControls }
                 } details: { search(details: true, ready: $0) }
             }
         }
@@ -49,6 +61,22 @@ struct ReaderTaskContent: View {
             if session.navigating { LoadingActivity(size: 24, waitingLabel: "正在定位").allowsHitTesting(false) }
         }
     }
+    private var compactControls: some View {
+        HStack(spacing: 0) {
+            compactButton("目录", symbol: "list.bullet", id: "showChapters") { ui.tools.tab = .chapters; ui.show(.library) }
+            compactButton("搜索", symbol: "magnifyingglass", id: "showSearch") { ui.show(.search) }
+            compactButton("设置", symbol: "textformat.size", id: "readingSettings", selected: ui.foreground.tool == .quickSettings) { ui.toggleCompactTool(.quickSettings) }
+            compactButton("更多", symbol: "ellipsis", id: "readerMore", selected: ui.foreground.tool == .more) { ui.toggleCompactTool(.more) }
+        }.labelStyle(ReaderToolLabelStyle()).buttonStyle(.plain)
+            .padding(.horizontal, 24).padding(.top, LayoutTokens.compact).padding(.bottom, LayoutTokens.compact)
+            .accessibilityElement(children: .contain).accessibilityIdentifier("readerBottomControls")
+    }
+    private func compactButton(_ title: LocalizedStringKey, symbol: String, id: String, selected: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) { Label(title, systemImage: symbol)
+            .foregroundStyle(Color(uiColor: selected ? context.surface.accent : context.surface.ink))
+            .frame(maxWidth: .infinity, minHeight: 56).contentShape(.rect)
+        }.accessibilityIdentifier(id).accessibilityAddTraits(selected ? .isSelected : [])
+    }
     private var closeTask: () -> Void {
         let intent = flow.intentID
         return { guard ui.intentID == intent else { return }; ui.closeTask() }
@@ -56,7 +84,7 @@ struct ReaderTaskContent: View {
     private func search(details: Bool, ready: Bool) -> some View {
         ReaderSearchContent(model: ui.tools, session: session, expanded: searchExpanded,
             showsDetails: details, readyForInput: ready, compactHeight: compactHeight,
-            showsHistory: true, showHistory: { ui.show(.history) }, closeSearch: ui.closeSearch)
+            showsHistory: ui.layout.regular || ui.controlsVisible, showHistory: { ui.show(.history) }, closeSearch: ui.closeSearch)
     }
     private func editorContent(_ editor: ReaderEditSession) -> some View {
         ReaderEditorContent(editor: editor, bookID: session.readingID, ownsNavigation: true,
@@ -82,7 +110,8 @@ struct ReaderEditorContent: View {
     let ownsNavigation: Bool
     let refreshOutline: () async -> Void
     let finish: () -> Void
-    @ViewBuilder var body: some View {
+    var body: some View { content.modifier(ReaderSystemOpenConfirmation()) }
+    @ViewBuilder private var content: some View {
         switch editor.payload {
         case .note(let model): NoteEditor(model: model, close: finish)
         case .palette(let draft): PaletteEditor(draft: draft, showsAppPreview: false, completed: finish)
@@ -110,7 +139,7 @@ struct ReaderTransientAccessories: View {
     var body: some View {
         VStack(spacing: 0) {
             if context.session.browseOrigin != nil {
-                ReaderBrowseActions(session: context.session, showsHistory: true,
+                ReaderBrowseActions(session: context.session, showsHistory: context.ui.layout.regular || context.ui.controlsVisible,
                     showHistory: { context.ui.show(.history) }, finished: { context.ui.controlsVisible = false })
                     .padding(.horizontal, LayoutTokens.page).padding(.vertical, LayoutTokens.compact)
             }
@@ -136,5 +165,15 @@ extension ReaderPresentationContext {
         ReaderSettingsView(settings: settings, preview: preview, encoding: session.encodingLabel,
             isRestartingEncoding: session.restartingEncoding, changeEncoding: changeEncoding, editing: ui.settingsEditing, readerSheet: inSheet)
             .themeScope(surface).preferredColorScheme(surface.scheme)
+    }
+}
+
+struct ReaderSystemOpenConfirmation: ViewModifier {
+    @Environment(LibraryModel.self) private var library
+    func body(content: Content) -> some View {
+        content.alert(Text("放弃未保存的修改并打开《\(library.systemReading.confirmationTitle ?? "")》？"), isPresented: Binding(get: { library.systemReading.confirmationTitle != nil }, set: { if !$0 { library.systemReading.confirmOpening(false) } })) {
+            Button("取消", role: .cancel) { library.systemReading.confirmOpening(false) }
+            Button("放弃修改并打开", role: .destructive) { library.systemReading.confirmOpening(true) }
+        }
     }
 }

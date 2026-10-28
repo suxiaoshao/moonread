@@ -70,11 +70,12 @@ struct ReaderPresentationPlan: Equatable {
             result.allowsStatistics = searchExpanded == false && !layout.canInspect
         case .tool(.progress, _):
             result.root = layout.regular || layout.verticalToolbar ? .progressPopover : .sheet(.progress)
+        case .tool(.quickSettings, _), .tool(.more, _): result.root = .sheet(.accessory)
         case .tool(.history, _): result.root = .sheet(.history)
         case .tool(.ai, _): result.root = .sheet(.ai)
         case .reading:
             if layout.canInspect && passiveInspector { result.root = .inspector(.library) }
-            else if hasAccessory { result.root = .sheet(searchExpanded == nil ? .accessory : .search) }
+            else if hasAccessory || (controls && !layout.regular) { result.root = .sheet(searchExpanded == nil ? .accessory : .search) }
         }
         if case .tool(let tool, _) = task, tool != .library && tool != .search {
             result.allowsStatistics = false

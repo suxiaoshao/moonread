@@ -251,6 +251,7 @@ struct ReaderPalettePresentation: ViewModifier {
         }) { value in
             if case .palette(let draft) = value.payload {
                 PaletteEditor(draft: draft, showsAppPreview: false, completed: { editing.finishPalette(value.id) })
+                    .modifier(ReaderSystemOpenConfirmation())
                     .allowsHitTesting(native.requested && editing.paletteSession?.id == value.id)
                     .themeScope(theme).presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible).presentationBackground(Color(uiColor: theme.canvas))

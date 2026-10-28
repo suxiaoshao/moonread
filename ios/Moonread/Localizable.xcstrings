@@ -1,6 +1,8 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "放弃修改并打开": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Discard and Open"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "放弃修改并打开"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "放棄修改並打開"}}}},
+    "放弃未保存的修改并打开《%@》？": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Discard unsaved changes and open “%@”?"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "放弃未保存的修改并打开《%@》？"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "放棄未儲存的修改並打開《%@》？"}}}},
   "目录、书签与批注": {
     "localizations": {
       "en": {

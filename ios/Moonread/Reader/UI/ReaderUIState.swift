@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// One opening owns one user task. Native installation never advances this state.
-enum ReaderTool: CaseIterable, Hashable { case library, search, settings, progress, history, details, ai }
-enum ReaderReturnContext: Equatable { case reading, library, search, settings }
+enum ReaderTool: CaseIterable, Hashable { case library, search, settings, progress, history, details, ai, quickSettings, more }
+enum ReaderReturnContext: Equatable { case reading, library, search, settings, quickSettings, more }
 enum ReaderEditOrigin: Hashable { case reader, library, settings, preview, settingsSheet, sheetPreview }
 
 @MainActor final class ReaderEditSession: Identifiable, Hashable {
@@ -54,10 +54,13 @@ enum ReaderTask {
         return taskIDs[tool] ?? openingID
     }
     var editor: ReaderEditSession? { foreground.editor }
+    var requiresDiscardConfirmation: Bool { editor != nil }
     var search: ReaderSearchSession? { tools.searchSession }
     var context: ReaderReturnContext {
         if let editor { return editor.returning }
         switch foreground.tool {
+        case .quickSettings: return .quickSettings
+        case .more: return .more
         case .library: return .library
         case .settings: return .settings
         case .search: return .search
@@ -66,7 +69,7 @@ enum ReaderTask {
     }
     private func set(_ task: ReaderTask) { intentID = UUID(); foreground = task }
     func show(_ tool: ReaderTool) {
-        guard editor == nil else { return }
+        guard editor == nil, foreground.tool != tool else { return }
         let returning = context
         if tool != .search { taskIDs[tool] = UUID() }
         if tool == .search {
@@ -76,8 +79,16 @@ enum ReaderTask {
         controlsVisible = false; inputFocused = false
         set(.tool(tool, returning: returning))
     }
+    func toggleCompactTool(_ tool: ReaderTool) {
+        guard editor == nil else { return }
+        if foreground.tool == tool { set(.reading) }
+        else { set(.tool(tool, returning: .reading)) }
+        controlsVisible = true
+    }
     func restore(_ context: ReaderReturnContext) {
         switch context {
+        case .more: set(.tool(.more, returning: .reading)); controlsVisible = true
+        case .quickSettings: set(.tool(.quickSettings, returning: .reading)); controlsVisible = true
         case .reading: set(.reading)
         case .library: set(.tool(.library, returning: .reading))
         case .settings: set(.tool(.settings, returning: search == nil ? .reading : .search))

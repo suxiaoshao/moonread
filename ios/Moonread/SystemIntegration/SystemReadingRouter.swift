@@ -67,15 +67,30 @@ final class SystemReadingRouter {
     private weak var reader: ReaderSession?
     private var readerNavigationID: UUID?
     var sceneActive = false { didSet { if sceneActive { resume() } } }
-    var presentationBlocked = false { didSet { if !presentationBlocked { resume() } } }
+    weak var editingState: ReaderUIState?
+    var confirmationTitle: String?
+    func confirmOpening(_ discard: Bool) {
+        guard confirmationTitle != nil else { return }
+        confirmationTitle = nil
+        if discard {
+            if let editor = editingState?.editor { editingState?.finishEditing(editor.id) }
+            resume()
+        } else { pending = nil }
+    }
+    private func admitOpening(title: String, library: LibraryModel) -> Bool {
+        if editingState?.requiresDiscardConfirmation == true { confirmationTitle = title; return false }
+        library.sheet = nil; library.filePickerPresented = false; library.indexPrompt = nil
+        return true
+    }
     init(library: LibraryModel, service: AppDataService) { self.library = library; self.service = service }
     func register(_ session: ReaderSession, navigationID: UUID?) { reader = session; readerNavigationID = navigationID }
     func unregister(_ session: ReaderSession) {
-        if reader === session { reader = nil; readerNavigationID = nil; presentationBlocked = false }
+        if reader === session { reader = nil; readerNavigationID = nil; editingState = nil }
     }
     private func finishReader(in library: LibraryModel) async {
         guard let session = reader else { return }
         let navigationID = readerNavigationID
+        editingState?.leave()
         await session.leave().value
         // Cleanup still runs after cancellation, but can only remove the old
         // destination. A newer handoff's reader must not be popped by this task.
@@ -83,10 +98,9 @@ final class SystemReadingRouter {
     }
     private func openEntry(_ entry: LibraryEntry, expectedSHA: String?, in library: LibraryModel, requestToken: UUID) async -> Bool {
         if expectedSHA == nil, let id = entry.bookId, reader?.isLeaving == false, reader?.readingID == id { return true }
-        guard !presentationBlocked, library.sheet == nil, !library.filePickerPresented,
-              library.indexPrompt == nil, library.canAcceptFileWork else { return false }
+        guard admitOpening(title: entry.title, library: library) else { return false }
         await finishReader(in: library)
-        guard sceneActive, token == requestToken, !Task.isCancelled, !presentationBlocked else { return false }
+        guard sceneActive, token == requestToken, !Task.isCancelled else { return false }
         library.selectedTab = .library
         library.libraryPath = Array(library.libraryPath.prefix { !$0.isReader })
         library.open(entry, expectedContentSHA: expectedSHA)
@@ -94,12 +108,13 @@ final class SystemReadingRouter {
     }
     func submit(_ request: SystemReadingRequest) {
         if pending == request { return }
+        confirmationTitle = nil
         pending = request; token = UUID(); task?.cancel(); task = nil; resumeAfterCurrent = false
         resume()
     }
     func resume() {
         guard task == nil else { resumeAfterCurrent = true; return }
-        guard let request = pending, let library, library.initialized,
+        guard confirmationTitle == nil, let request = pending, let library, library.initialized,
               sceneActive, Onboarding.shared.completed else { return }
         let current = token
         task = Task { [weak self] in
@@ -116,7 +131,7 @@ final class SystemReadingRouter {
                 let automatic: Bool
                 switch request {
                 case .showStatistics, .showLibrary, .showRecent, .searchBooks:
-                    guard !presentationBlocked, library.sheet == nil, !library.filePickerPresented, library.canAcceptFileWork else { return }
+                    guard admitOpening(title: String(localized: "月读"), library: library) else { return }
                     await finishReader(in: library)
                     guard sceneActive, token == current, !Task.isCancelled else { return }
                     switch request {
@@ -150,7 +165,7 @@ final class SystemReadingRouter {
                 if await openEntry(entry, expectedSHA: id.sha, in: library, requestToken: current) { pending = nil }
             } catch is CancellationError { }
             catch {
-                guard sceneActive, token == current, !Task.isCancelled, !presentationBlocked, library.sheet == nil else { return }
+                guard sceneActive, token == current, !Task.isCancelled else { return }
                 let needsShelf: Bool
                 switch error {
                 case SystemReadingRouteError.reconnect, SystemReadingRouteError.unavailable: needsShelf = true

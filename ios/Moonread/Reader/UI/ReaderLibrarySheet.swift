@@ -50,11 +50,17 @@ struct ReaderLibraryContent: View {
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     @FocusState private var chapterFilterFocused: Bool
     @Bindable var editing: ReaderLibraryEditing
+    @Environment(\.horizontalSizeClass) private var sizeClass
     var inspector = false
     var focusChanged: (Bool) -> Void = { _ in }
 
     private var listTitle: String {
-        session.book?.title ?? ""
+        if sizeClass != .compact { return session.book?.title ?? "" }
+        switch model.tab {
+        case .chapters: return String(localized: "目录")
+        case .bookmarks: return String(localized: "书签")
+        case .notes: return String(localized: "标注与笔记")
+        }
     }
     private var outlineActions: some View {
         ReaderChapterActions(editing: editing, bookID: session.readingID, incomplete: session.incomplete)
@@ -84,6 +90,7 @@ struct ReaderLibraryContent: View {
 
     private var libraryContent: some View {
             VStack(spacing: 0) {
+                if sizeClass != .compact {
                 HStack(spacing: 8) {
                     if let title = session.chapter?.title { Text(title).lineLimit(1) }
                     if session.displayedProgress != nil { Text(session.displayedProgressText).monospacedDigit() }
@@ -93,6 +100,7 @@ struct ReaderLibraryContent: View {
                     Text("书签").tag(ReaderLibraryTab.bookmarks)
                     Text("批注").tag(ReaderLibraryTab.notes)
                 }.pickerStyle(.segmented).padding().accessibilityIdentifier("readerLibraryTabs")
+                }
                 switch model.tab {
                 case .chapters: chapterList
                 case .bookmarks, .notes: notesList
