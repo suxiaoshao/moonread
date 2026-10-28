@@ -6,70 +6,6 @@ private extension ReaderNumberControl {
     var range: ClosedRange<Double> { minimum...maximum }
 }
 
-struct ReaderQuickSettings: View {
-    @Binding var settings: ReaderSettings
-    let showMore: () -> Void
-    @Environment(ThemeStore.self) private var themes
-    @Environment(\.theme) private var theme
-    private var appearance: ThemeAppearance { themes.reader.plan.appearance }
-    private var selected: ReaderPaletteSource {
-        appearance == .light ? themes.snapshot.preferences.readerLight : themes.snapshot.preferences.readerDark
-    }
-    var body: some View {
-        VStack(spacing: LayoutTokens.compact) {
-            HStack {
-                Text("阅读设置").font(.subheadline.weight(.medium))
-                Spacer()
-                Button(action: showMore) {
-                    HStack(spacing: 4) { Text("更多"); Image(systemName: "chevron.right").font(.caption) }
-                        .frame(minHeight: LayoutTokens.hit)
-                }.font(.subheadline)
-                    .accessibilityIdentifier("moreReadingSettings")
-            }
-            Stepper("字号 · \(Int(settings.fontSize)) pt", value: Binding(get: { settings.fontSize }, set: {
-                var value = settings; value.fontSize = $0; settings = value
-            }), in: typographyControls.fontSize.range, step: typographyControls.fontSize.step).accessibilityIdentifier("quickFontSize")
-            HStack(spacing: LayoutTokens.content) {
-                Menu {
-                    Button("跟随应用") { choose(.app) }
-                    Button("系统配色") { choose(.system) }
-                } label: {
-                    Label("配色", systemImage: "paintpalette").font(.subheadline)
-                        .frame(minHeight: LayoutTokens.hit).contentShape(.rect)
-                }.accessibilityIdentifier("quickPaletteSource")
-                ScrollView(.horizontal) {
-                    HStack(spacing: LayoutTokens.control) {
-                        ForEach(themes.snapshot.palettes.filter { $0.appearance == appearance }, id: \.id) { palette in
-                            Button { choose(.palette(id: palette.id)) } label: {
-                                Text(verbatim: "Aa").font(.system(.body, design: .serif))
-                                    .foregroundStyle(Color(uiColor: UIColor(rgb: palette.colors.ink)))
-                                    .frame(width: 44, height: 40)
-                                    .background(Color(uiColor: UIColor(rgb: palette.colors.paper)), in: .rect(cornerRadius: 12))
-                                    .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(
-                                        Color(uiColor: selected == .palette(id: palette.id) ? theme.accent : theme.border),
-                                        lineWidth: selected == .palette(id: palette.id) ? 2 : 1))
-                                    .frame(minHeight: LayoutTokens.hit)
-                            }.buttonStyle(.plain).accessibilityLabel(paletteDisplayName(palette))
-                                .accessibilityAddTraits(selected == .palette(id: palette.id) ? .isSelected : [])
-                                .accessibilityIdentifier("quickPalette-\(palette.id)")
-                        }
-                    }
-                }.scrollIndicators(.hidden)
-            }
-            ReadingModePicker(mode: settings.mode) { var value = settings; value.mode = $0; settings = value }
-                .equatable().pickerStyle(.segmented).accessibilityIdentifier("quickReadingMode")
-        }
-        .padding(.horizontal, LayoutTokens.page).padding(.top, LayoutTokens.content)
-        .padding(.bottom, LayoutTokens.compact)
-        .accessibilityElement(children: .contain).accessibilityIdentifier("readerQuickSettings")
-    }
-    private func choose(_ source: ReaderPaletteSource) {
-        themes.update { value in
-            if appearance == .light { value.readerLight = source } else { value.readerDark = source }
-        }
-    }
-}
-
 enum ReadingSettingsTab: String, CaseIterable {
     case typography, colors, controls
     var title: LocalizedStringKey {
@@ -86,10 +22,11 @@ enum ReadingSettingsTab: String, CaseIterable {
     var previewPresented = false
     var previewDetent = PresentationDetent.height(60)
     var restingDetent = PresentationDetent.height(60)
-    @ObservationIgnored weak var readerTools: ReaderWideTools?
+    @ObservationIgnored weak var readerUI: ReaderUIState?
+    @ObservationIgnored weak var nativeInstallation: ReaderNativeInstallation?
     private var localEditor: ReaderEditSession?
     var paletteSession: ReaderEditSession? {
-        let value = readerTools.map { $0.editor } ?? localEditor
+        let value = readerUI.map { $0.editor } ?? localEditor
         guard let value, case .palette = value.payload else { return nil }
         return value
     }
@@ -97,16 +34,24 @@ enum ReadingSettingsTab: String, CaseIterable {
         guard let value = paletteSession, case let .palette(draft) = value.payload else { return nil }
         return draft
     }
-    func beginPalette(_ draft: PaletteDraft, presenter: ReaderEditPresenter) {
-        if let readerTools { readerTools.beginEditing(.palette(draft), presenter: presenter, returningTo: .settings) }
-        else if localEditor == nil { localEditor = ReaderEditSession(payload: .palette(draft), presenter: presenter, returnTool: .settings) }
+    func beginPalette(_ draft: PaletteDraft, presenter: ReaderEditOrigin) {
+        if let readerUI { readerUI.beginEditing(.palette(draft), origin: presenter, returning: .settings) }
+        else if localEditor == nil { localEditor = ReaderEditSession(payload: .palette(draft), origin: presenter, returning: .settings) }
     }
     func finishPalette(_ id: UUID) {
-        if let readerTools { readerTools.finishEditing(id) }
+        if let readerUI { readerUI.finishEditing(id) }
         else if localEditor?.id == id { localEditor = nil }
     }
-    func paletteSession(for presenter: ReaderEditPresenter) -> ReaderEditSession? {
-        paletteSession.flatMap { $0.presenter == presenter ? $0 : nil }
+    func paletteSession(for presenter: ReaderEditOrigin) -> ReaderEditSession? {
+        paletteSession.flatMap { $0.origin == presenter ? $0 : nil }
+    }
+    var retainsPreviewParent: Bool {
+        paletteSession?.origin == .preview || paletteSession?.origin == .sheetPreview
+            || nativeInstallation?.children[.preview] != nil || nativeInstallation?.children[.sheetPreview] != nil
+    }
+    func parentRequested(inSheet: Bool) -> Bool {
+        guard let plan = nativeInstallation?.context?.plan else { return true }
+        return inSheet ? plan.root == .sheet(.settings) : plan.settingsPage
     }
     var navigation = NavigationPresentationState()
     var previewPosition = ReadingPreviewPosition()
@@ -129,7 +74,9 @@ struct ReaderSettingsView: View {
     @AppStorage("readingSettingsTab") private var tab = ReadingSettingsTab.typography
     @State private var localEditing = ReadingSettingsEditing()
     let editing: ReadingSettingsEditing?
-    var editorClosed: () -> Void = {}
+    let readerSheet: Bool
+    private var directOrigin: ReaderEditOrigin { readerSheet ? .settingsSheet : .settings }
+    private var previewOrigin: ReaderEditOrigin { readerSheet ? .sheetPreview : .preview }
     private var editor: ReadingSettingsEditing { editing ?? localEditing }
     private var editedAppearance: ThemeAppearance? {
         get { editor.editedAppearance }
@@ -168,10 +115,9 @@ struct ReaderSettingsView: View {
     }
 
     init(settings: Binding<ReaderSettings>, preview: ReadingPreviewSource = .sample, encoding: String? = nil, isRestartingEncoding: Bool = false, changeEncoding: ((String?) -> Void)? = nil,
-         editing: ReadingSettingsEditing? = nil, editorClosed: @escaping () -> Void = {}) {
+         editing: ReadingSettingsEditing? = nil, readerSheet: Bool = false) {
         _settings = settings; self.preview = preview; self.encoding = encoding; self.isRestartingEncoding = isRestartingEncoding; self.changeEncoding = changeEncoding
-        self.editing = editing
-        self.editorClosed = editorClosed
+        self.editing = editing; self.readerSheet = readerSheet
     }
     private var appearance: ThemeAppearance { editedAppearance ?? themes.reader.plan.appearance }
     private var previewExpanded: Bool { verticalSizeClass == .compact || previewDetent == .large }
@@ -202,7 +148,7 @@ struct ReaderSettingsView: View {
                 ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editing.editedAppearance, encoding: encoding, isRestartingEncoding: isRestartingEncoding, changeEncoding: changeEncoding,
                                      editPalette: { value in
                                          if compact && !wide && previewPresented { previewDetent = .large }
-                                         editor.beginPalette(value, presenter: previewVisible ? .preview : .settings)
+                                         editor.beginPalette(value, presenter: (previewVisible || (compact && !wide && previewPresented)) ? previewOrigin : directOrigin)
                                      })
                     .frame(width: wide ? min(400, geometry.size.width * 0.46) : nil)
                     .frame(height: compact
@@ -212,7 +158,7 @@ struct ReaderSettingsView: View {
                         : nil)
                     .clipped()
                     .frame(maxHeight: .infinity, alignment: .top)
-                if wide && editor.paletteSession?.presenter != .preview {
+                if wide && !editor.retainsPreviewParent {
                     readingPreview
                         .background {
                             if let tile = previewPosition.paperTile(previewTheme.paperInput(scale: displayScale)) {
@@ -276,15 +222,14 @@ struct ReaderSettingsView: View {
                     previewPresented = verticalSizeClass != .compact
                 }
             }
-            .sheet(item: paletteBinding(.settings), onDismiss: editorClosed) { value in
-                if case let .palette(draft) = value.payload { paletteEditor(draft) }
-            }
-            .sheet(isPresented: Binding(get: { editor.paletteSession?.presenter == .preview || (compact && !wide && previewPresented && !navigation.isSuspended) }, set: {
-                guard editor.paletteSession?.presenter != .preview else { return }
+            .modifier(ReaderPalettePresentation(editing: editor, origin: directOrigin))
+            .sheet(isPresented: Binding(get: { editor.retainsPreviewParent || (compact && !wide && previewPresented && editor.paletteSession == nil && !navigation.isSuspended && editor.parentRequested(inSheet: readerSheet)) }, set: {
+                guard !editor.retainsPreviewParent else { return }
                 if compact && !wide && !navigation.isSuspended { previewPresented = $0 }
             }), onDismiss: {
                 previewVisible = false
                 navigation.presentationDismissed()
+                editor.nativeInstallation?.reconcile()
             }) {
                 VStack(spacing: 0) {
                     Button {
@@ -330,12 +275,9 @@ struct ReaderSettingsView: View {
                 .preferredColorScheme(previewTheme.scheme)
                 .interactiveDismissDisabled()
                 .onAppear { previewVisible = true }
-                .sheet(item: paletteBinding(.preview), onDismiss: {
+                .modifier(ReaderPalettePresentation(editing: editor, origin: previewOrigin, closed: {
                     if verticalSizeClass != .compact { previewDetent = .height(60) }
-                    editorClosed()
-                }) { value in
-                    if case let .palette(draft) = value.payload { paletteEditor(draft) }
-                }
+                }))
             }
             .onChange(of: previewDetent) { _, value in
                 if value != .large { restingDetent = value }
@@ -347,20 +289,7 @@ struct ReaderSettingsView: View {
         ReadingPreviewPane(source: preview, settings: settings, surface: previewTheme, position: previewPosition)
             .onDisappear { previewPosition.capture() }
     }
-    private func paletteBinding(_ presenter: ReaderEditPresenter) -> Binding<ReaderEditSession?> {
-        let current = editor.paletteSession(for: presenter)
-        return Binding(get: { editor.paletteSession(for: presenter) }, set: {
-            if $0 == nil, let current { editor.finishPalette(current.id) }
-        })
-    }
 
-    private func paletteEditor(_ value: PaletteDraft) -> some View {
-        PaletteEditor(draft: value, showsAppPreview: false)
-        .themeScope(theme)
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Color(uiColor: theme.canvas))
-    }
 }
 
 /// Settings retain their own scroll and focus state while the preview covers them.

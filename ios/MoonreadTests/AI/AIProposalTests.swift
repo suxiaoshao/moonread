@@ -192,10 +192,10 @@ final class AIProposalTests: BookAIFixture {
     let saved = await model.apply()
     XCTAssertTrue(saved)
     XCTAssertEqual(writes, 2)
-    let tools = ReaderWideTools()
-    tools.beginEditing(.rebuild(model), presenter: .reader, returningTo: .chapters)
+    let tools = ReaderUIState()
+    tools.beginEditing(.rebuild(model), origin: .reader, returning: .library)
     for regular in [true, false, true] {
-      tools.regular = regular
+      tools.layout.regular = regular
       model.startIfNeeded()
       XCTAssertTrue(model.canApply, "layout changes must not cancel the rebuild")
     }

@@ -29,11 +29,8 @@ final class AnnotationEditingReaderIntegrationTests: ReaderIntegrationFixture {
     let leftEdit = try await service.prepareAnnotation(book.id, start: offset(1), end: offset(5))
     let left = try await service.saveNote(leftEdit, text: "First comment")
     let position = session.anchor
-    session.selectText(start: offset(4), end: offset(9), action: .comment)
-    let opened = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in session.editor != nil }, object: nil)
-    await fulfillment(of: [opened], timeout: 5)
-    let edit = try XCTUnwrap(session.editor)
+    let prepared = await session.prepareSelection(start: offset(4), end: offset(9), action: .comment)
+    guard case .note(let edit) = try XCTUnwrap(prepared) else { return XCTFail("Expected annotation payload") }
     XCTAssertEqual(edit.note, "First comment\n\nSecond comment")
     XCTAssertEqual(edit.startUtf8, offset(1))
     XCTAssertEqual(edit.endUtf8, offset(12))

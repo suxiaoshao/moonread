@@ -33,7 +33,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 阅读设置当前值、连续修改与串行保存 | Swift `Settings/ReaderSettingsStore.swift`，App 级可观察环境对象 | `ReaderSession` 和设置页共用同一实例，不持有可写副本或各自排队；`AppDataService` 仍负责既有 UserDefaults 编解码和持久化，Rust 校验范围不变 | 单一 owner |
 | 纹理槽本机保存/回滚、最终系统来源禁用 | Swift `UserThemes` / `ThemeStore` / 阅读设置 | 使用既有 UserDefaults；不改 Palette、CloudKit 或备份 | 平台边界 |
 | 正文局部几何、叶页分组、活动叶及原文选区恢复 | Swift `Reader/Rendering/ReadingController` / `PageController` / `ReadingViewport` | 原生字体度量与系统保留区归平台；一个 pager、一份统计输入，源范围仍用 Rust UTF-8 坐标；几何变化不写阅读事实 | 平台排版 |
-| 宽窄工具交接与呈现意图 | Swift `ReaderScreen` / `ReaderInspector`，`ReaderWideTools` 持有唯一编辑会话（稳定 ID、草稿/重建任务引用、呈现宿主与返回工具） | `ReaderRootPresentation` 单源裁决独立编辑、dock、设置页与按需进度 popover 的呈现资格，dock 内编辑保留父链；进度复用既有控件，原生关闭完成后才交接历史等任务；inspector 原生退出前保留内容，关闭完成后才呈现独立编辑或经既有 dismiss→push 路径交接设置；宽窄变化不结束任务，章节输入和识别 job 不随视图消失；compact 外壳保留，偏好经 ReaderSettingsStore 单源保存 | 单一 owner |
+| 阅读任务、编辑父链与宽窄呈现 | Swift `ReaderUIState` / `ReaderPresentationPlan` / `ReaderPresentationHost` | 会话唯一持有前台任务、编辑 ID/草稿与返回上下文；纯函数按当前布局与阅读事实推导唯一根位和导航目的。宿主只保留已安装原生节点、退出中内容引用及转场事实，释放后重读当前 plan，不保存下一项任务。搜索查询/结果/分段仍由 `ReaderToolsModel` 持有；宽窄变化不结束任务、不写手动开合偏好 | 单一 owner |
 | 纸面 tile 与滚动/分页背景 | Swift `ThemeSurface` / `ReadingTextDecorations` / `ReadingController+Pages` / `ReaderTitlePage` | 当前输入与 tile；复用容器/页面，不动正文布局 | 平台绘制 |
 | 解码、normalization-v1、正文/原字节 SHA 计算 | Rust `reading/text.rs`、`identity/source.rs` 及正文导入共用核心 | 和正文缓存/稳定内容身份一致；Swift 不重算规范正文 | 保持 |
 | fileId/bookId/canonical→正式或 pending 阅读键、索引有效性 | Rust `identity/content.rs`，供 user/projection、library/full_index 和 library/bookshelf 共用 | 数据库关联是事实，不能由 UI 看长度猜身份 | 收敛 |
@@ -98,7 +98,7 @@ SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `in
 | `App` | 应用入口和 `MoonreadDelegate`；App 继续持有同一个 `CloudStore` |
 | `Library` | 书架 model/路由、UI、目录操作、云文件与书目搜索；`LibraryPresentation` 保留跨功能复用的 `LibraryBookCover` |
 | `Reader/Session` | 单独的 `ReaderSession.swift`，完整保留现有会话 owner |
-| `Reader/UI` | `ReaderScreen` 保留会话生命周期和私有路由状态；`ReaderTaskContent`、`ReaderPreparationContent`、`ReaderCompactHeader`、`ReaderMoreContent` 分别呈现任务、准备、顶部提示和更多操作；`ReaderTools` 保留 model，目录/笔记/搜索及 NoteEditor 分文件 |
+| `Reader/UI` | `ReaderScreen` 保留阅读生命周期与全尺寸系统命令；`ReaderUIState` 是任务/编辑 owner，`ReaderPresentationPlan` 是纯投影，`ReaderPresentationHost` 落实原生容器；`ReaderTaskContent`、准备、顶部提示与目录/笔记/搜索各按职责分文件，`ReaderTools` 保留查询 model |
 | `Reader/Rendering` | `ReadingView` 是 SwiftUI 适配入口；`ReadingController` 与 Pages/Scroll/Navigation/Selection 扩展共用原控制器状态；`ReadingPagination`、`ReadingViewport`、`ReadingTextDecorations`、`ReadingTextView`、扉页/分页控制器按职责分文件，坐标和设备控制保持原 owner |
 | `Books` | 小说详情与完整 `BookMetadata`；封面展示、加载及服务私有辅助保留原文件边界 |
 | `Statistics` | `StatisticsView` 保留总览/单书详情的状态和路由；models、书目列表、时长条、节奏图、时段图/行、全部时段、日期详情、统计设置按完整类型分文件；`ReadingStatistics` 的 writer、recorder 与日期辅助保持原 owner |

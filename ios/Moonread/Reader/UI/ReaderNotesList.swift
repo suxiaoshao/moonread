@@ -6,6 +6,7 @@ struct ReaderNotesList: View {
     let session: ReaderSession
     let navigate: (UInt64, UInt64?, ReadingTargetPlacement) -> Void
     let edit: (ReaderMark) -> Void
+    var close: () -> Void = {}
     @Environment(\.theme) private var theme
     var body: some View {
         VStack(spacing: 0) {
@@ -44,7 +45,11 @@ struct ReaderNotesList: View {
                     if model.notes.isEmpty && model.loadingNotes {
                         LoadingActivity(fullPage: true, waitingLabel: "正在加载")
                     } else if model.notes.isEmpty && !model.loadingNotes {
-                        ThemedEmptyState(title: model.noteKind == .bookmark ? String(localized: "暂无书签") : String(localized: "暂无笔记"), symbol: model.noteKind == .bookmark ? "bookmark" : "square.and.pencil")
+                        ContentUnavailableView {
+                            Label(model.noteKind == .bookmark ? LocalizedStringKey("还没有书签") : LocalizedStringKey("还没有批注"), systemImage: model.noteKind == .bookmark ? "bookmark" : "highlighter")
+                        } description: {
+                            Text(model.noteKind == .bookmark ? LocalizedStringKey("阅读时轻点页面，再点右上角书签，记下当前位置。") : LocalizedStringKey("长按正文选择文字，可标注或写批注。"))
+                        } actions: { Button("返回阅读", action: close) }
                     }
                 }
         }

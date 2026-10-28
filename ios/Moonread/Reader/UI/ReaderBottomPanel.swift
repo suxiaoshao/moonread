@@ -1,17 +1,13 @@
 import SwiftUI
 
-/// All reading accessories share one presentation. Changing tools resizes this
-/// sheet instead of dismissing one surface and presenting another.
-struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent: View>: View {
+/// Natural-height search/accessory content inside the opening’s one root flow.
+/// This component owns detents/focus geometry, never the foreground task.
+struct ReaderBottomPanel<Compact: View, Details: View>: View {
     @Binding var expanded: Bool
     @Binding var compactHeight: CGFloat
     let canExpand: Bool
-    let taskID: String?
-    let closeTask: () -> Void
     @ViewBuilder let compact: () -> Compact
-    @ViewBuilder let footer: () -> Footer
     @ViewBuilder let details: (_ readyForInput: Bool) -> Details
-    @ViewBuilder let taskContent: () -> TaskContent
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     @Environment(\.theme) private var theme
     @State private var previousHeight: CGFloat?
@@ -20,15 +16,8 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
     @State private var readyForInput = false
     @State private var measuredCompactHeight: CGFloat?
     @State private var expansionRevision = 0
-    @State private var conversationDetent: PresentationDetent = .medium
 
     private var detents: Set<PresentationDetent> {
-        if taskID == "ai" { return [.medium, .large] }
-        if taskID != nil {
-            // Keep the selected starting detent while expanding; removing it
-            // makes UIKit snap to large instead of animating from the dock.
-            return [.height(compactHeight), .large]
-        }
         var values: Set<PresentationDetent> = [.height(compactHeight)]
         if canExpand { values.insert(.large) }
         if let previousHeight { values.insert(.height(previousHeight)) }
@@ -37,17 +26,7 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
 
     var body: some View {
         GeometryReader { geometry in
-            ZStack(alignment: .bottom) {
-                if let taskID {
-                    taskContent()
-                        .id(taskID)
-                        .frame(width: geometry.size.width, height: geometry.size.height)
-                        .transition(MotionTokens.accessoryContent(reduced: reduceMotion))
-                } else {
-                    accessoryContent(in: geometry)
-                        .transition(MotionTokens.accessoryContent(reduced: reduceMotion))
-                }
-            }
+            accessoryContent(in: geometry)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                 if abs(height - compactHeight) < 2 { resizing = false }
             }
@@ -55,13 +34,8 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
         }
         .presentationSizing(.page)
         .presentationDetents(detents, selection: Binding(get: {
-            taskID == "ai" ? conversationDetent : (taskID != nil || (presentedExpanded && canExpand) ? .large : .height(compactHeight))
+            presentedExpanded && canExpand ? .large : .height(compactHeight)
         }, set: { value in
-            if taskID == "ai" { conversationDetent = value; return }
-            if taskID != nil {
-                if value == .height(compactHeight) { closeTask() }
-                return
-            }
             // The system writes this binding when the person drags the sheet.
             // Height measurement changes do not feed back into search state.
             if canExpand, value == .large || (value == .height(compactHeight) && !resizing) {
@@ -71,21 +45,13 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
                 expanded = value == .large
             }
         }))
-        .presentationBackgroundInteraction(taskID == nil ? .enabled(upThrough: .height(max(compactHeight, previousHeight ?? compactHeight))) : .disabled)
+        .presentationBackgroundInteraction(.enabled(upThrough: .height(max(compactHeight, previousHeight ?? compactHeight))))
         .presentationContentInteraction(.scrolls)
         .presentationCornerRadius(32)
         .presentationBackground(Color(uiColor: theme.surface))
         .presentationDragIndicator(.visible)
-        .onChange(of: expanded && canExpand && taskID == nil, initial: true) { _, value in setExpanded(value) }
-        .onChange(of: taskID) { old, new in
-            if new != nil { readyForInput = false }
-            if new == "ai" { conversationDetent = .medium }
-            // Collapsing a task should reveal the search capsule, not briefly
-            // interpret the departing large height as expanded search results.
-            if old != nil, new == nil, !expanded { resizing = true }
-        }
-        .animation(MotionTokens.accessoryResize(reduced: reduceMotion), value: taskID)
-        .accessibilityElement(children: .contain).accessibilityIdentifier("readerBottomPanel")
+        .onChange(of: expanded && canExpand, initial: true) { _, value in setExpanded(value) }
+        .accessibilityElement(children: .contain).accessibilityIdentifier("readerAccessories")
     }
 
     private func accessoryContent(in geometry: GeometryProxy) -> some View {
@@ -112,23 +78,9 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
                     }
             }
             .scrollBounceBehavior(.basedOnSize).scrollIndicators(.hidden)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                // The actions belong to the sheet's bottom edge, never to
-                // the scrolling accessory whose height is being replaced.
-                footer()
-                    .fixedSize(horizontal: false, vertical: true)
-                    .background {
-                        GeometryReader { footer in
-                            Color.clear.preference(key: ReaderPanelHeight.self, value: footer.size.height)
-                        }
-                    }
-                    // Keep outgoing content behind the fixed controls.
-                    .background(Color(uiColor: theme.surface))
-                    .transaction { $0.animation = nil }
-            }
             .onPreferenceChange(ReaderPanelHeight.self) { measured in
                 let height = max(60, measured)
-                guard taskID == nil, measured > 0 else { return }
+                guard measured > 0 else { return }
                 measuredCompactHeight = height
                 // Keep the expansion's starting detent and crossfade baseline
                 // fixed. The hidden capsule's new height is used on collapse.
@@ -164,8 +116,7 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
     }
 }
 
-/// Sum the accessory's natural height and the independently anchored footer in
-/// one layout pass, so a content swap requests only one new sheet height.
+/// Measure the accessory once; commands live in the system toolbar.
 private struct ReaderPanelHeight: PreferenceKey {
     static var defaultValue: CGFloat { 0 }
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value += nextValue() }

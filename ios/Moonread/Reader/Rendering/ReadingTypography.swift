@@ -22,6 +22,7 @@ extension NSAttributedString.Key {
 
 @MainActor
 enum ReadingTypography {
+    static func minimumColumnWidth(_ settings: ReaderSettings) -> CGFloat { max(320, 16 * font(settings).pointSize) }
     static let layoutVersion = 3
 
     static func font(_ settings: ReaderSettings, heading: Bool = false) -> UIFont {

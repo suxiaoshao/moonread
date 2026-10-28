@@ -273,7 +273,7 @@ struct ReaderSearchContent: View {
     private func select(_ hit: SearchHit) {
         model.searchListPosition = hit.startUtf8
         session.browse(to: hit.startUtf8, end: hit.endUtf8, bottomObstruction: compactHeight)
-        if inspector { queryFocused = false } else { collapse() }
+        collapse()
     }
     private func moveResult(_ direction: Int) {
         let index = activeIndex.map { $0 + direction } ?? 0

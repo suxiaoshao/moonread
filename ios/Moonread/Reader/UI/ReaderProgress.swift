@@ -91,7 +91,7 @@ struct ReaderProgressControls: View {
         .onDisappear { locationTask?.cancel() }
         .onChange(of: editingPercentage) { _, focused in if !focused { isEditing = false } }
         .onChange(of: session.anchor, initial: true) { _, offset in
-            if !scrubbing, !isEditing { percentage = Double(offset) / Double(max(1, session.book?.byteCount ?? 0)) * 100 }
+            if !scrubbing, !isEditing { percentage = session.displayedProgress ?? 0 }
         }
         .task(id: session.chapter?.startUtf8) {
             session.synchronizeHistory()

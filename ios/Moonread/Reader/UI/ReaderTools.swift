@@ -1,8 +1,6 @@
 import SwiftUI
 import UIKit
 
-enum ReaderPanel: String { case library, search, settings, history, chapterEditor, details, ai, progress }
-extension ReaderPanel { var isPage: Bool { self == .settings || self == .details } }
 enum ReaderLibraryTab: Hashable { case chapters, bookmarks, notes }
 enum ReaderSelectionAction: Equatable {
     case highlight, comment, paragraph, beginRange, chapter, search, copy
@@ -27,6 +25,7 @@ extension AnnotationEdit {
 
 @MainActor @Observable
 final class ReaderToolsModel {
+    var searchSession: ReaderSearchSession?
     var tab: ReaderLibraryTab = .chapters
     var chapterFilter = ""
     var chapters: [ChapterEntry] = []

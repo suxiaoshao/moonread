@@ -83,8 +83,8 @@ import XCTest
   }
   private func list(_ name: String) {
     controls()
-    app.buttons["readerMore"].tap()
-    ready(app.buttons[name == "书签" ? "openBookmarks" : "openNotes"]).tap()
+    app.buttons["showChapters"].tap()
+    ready(app.segmentedControls["readerLibraryTabs"].buttons[name == "书签" ? "书签" : "批注"]).tap()
   }
   private func closeList() { ready(app.buttons["closeReaderLibrary"]).tap() }
   private func replace(_ field: XCUIElement, with value: String) {
@@ -374,8 +374,9 @@ import XCTest
     list("笔记")
     ready(app.staticTexts["合成批注"])
     closeList()
+    controls()
     ready(app.buttons["toggleBookmark"]).tap()
-    ready(app.buttons["openBookmarks"]).tap()
+    list("书签")
     ready(app.otherElements["readerBottomPanel"].buttons["第一章 星灯"])
   }
   func testU17SearchPreviewCommitsOnlyOnContinue() {

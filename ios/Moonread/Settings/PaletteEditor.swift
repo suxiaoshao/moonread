@@ -8,9 +8,10 @@ struct PaletteEditor: View {
     @FocusState private var nameFocused: Bool
     private var creating: Bool { draft.creating }
     let showsAppPreview: Bool
-    init(draft: PaletteDraft, showsAppPreview: Bool = true) {
+    let completed: (() -> Void)?
+    init(draft: PaletteDraft, showsAppPreview: Bool = true, completed: (() -> Void)? = nil) {
         self.draft = draft
-        self.showsAppPreview = showsAppPreview
+        self.showsAppPreview = showsAppPreview; self.completed = completed
     }
     private var palette: ThemePalette { draft.palette }
     private var previewTheme: ThemeSurface {
@@ -23,12 +24,12 @@ struct PaletteEditor: View {
             .navigationTitle(creating ? "新建配色" : "编辑配色").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消", systemImage: "xmark") { dismiss() }
+                    Button("取消", systemImage: "xmark") { close() }
                         .labelStyle(.titleOnly).tint(Color(uiColor: theme.ink))
                         .disabled(themes.saving).accessibilityIdentifier("cancelPalette")
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成", systemImage: "checkmark") { Task { do { try await themes.savePalette(palette, creating: creating); dismiss() } catch { draft.error = ReaderMessages.error(error) } } }
+                    Button("完成", systemImage: "checkmark") { Task { do { try await themes.savePalette(palette, creating: creating); close() } catch { draft.error = ReaderMessages.error(error) } } }
                         .labelStyle(.titleOnly).disabled(!palette.isValidDraft || themes.saving).accessibilityIdentifier("savePalette")
                 }
             }
@@ -38,6 +39,7 @@ struct PaletteEditor: View {
         }
         .interactiveDismissDisabled(themes.saving).preferredColorScheme(theme.scheme)
     }
+    private func close() { if let completed { completed() } else { dismiss() } }
 }
 
 extension ThemePalette {

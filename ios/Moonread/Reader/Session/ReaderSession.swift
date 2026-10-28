@@ -50,8 +50,6 @@ final class ReaderSession {
     var bookmarked = false
     private(set) var changingBookmark = false
     var selectionStart: UInt64?
-    var editor: AnnotationEdit?
-    var chapterDraft: ChapterEditDraft?
     var marksRevision = 0
     private var annotationTask: Task<Void, Never>?
     private var selectionTask: Task<Void, Never>?
@@ -366,7 +364,7 @@ final class ReaderSession {
                 navigationTask?.cancel(); navigationTask = nil; navigationGeneration += 1; navigating = false
                 windowTask = nil; chapterTask = nil; pendingChapterAnchor = nil
                 browseOrigin = nil; browseViewport = nil; navigation = nil
-                history = emptyReadingHistory(); chapterDraft = nil
+                history = emptyReadingHistory()
                 focusRange = nil; selectionStart = nil; annotations = []; bookmarkPositions = []
                 // Transfer ownership and clear old projection before any more await.
                 readingLease = next; decodingPolicy = nil
@@ -440,8 +438,7 @@ final class ReaderSession {
         // Keep the presented panel's content stable until its dismissal ends.
         // The exit flag hides reader overlays immediately and blocks late work.
         browseOrigin = nil; browseViewport = nil; focusRange = nil
-        selectionStart = nil; editor = nil; navigation = nil
-        chapterDraft = nil
+        selectionStart = nil; navigation = nil
         history = emptyReadingHistory()
     }
 
@@ -675,53 +672,58 @@ final class ReaderSession {
         }
     }
 
-    func selectText(start: UInt64, end: UInt64, action: ReaderSelectionAction) {
-        guard !isLeaving, let id = readingID else { return }
-        if action == .beginRange { selectionStart = start; refreshAnnotations(); return }
-        Task {
-            do {
-                if action == .chapter {
-                    guard !incomplete else { return }
-                    let line = try await service.paragraph(id, at: start)
-                    guard !isLeaving, line.text.trimmingCharacters(in: .whitespacesAndNewlines).count <= 80 else {
-                        if !isLeaving { error = String(localized: "请选择单独的章节标题行。") }; return
-                    }
-                    chapterDraft = ChapterEditDraft(start: line.startUtf8, title: line.text.trimmingCharacters(in: .whitespacesAndNewlines), level: 1)
-                    return
+    enum PreparedSelection { case chapter(ChapterEditDraft), note(AnnotationEdit) }
+
+    /// Returns a prepared payload; the UI task owner atomically adopts it.
+    func prepareSelection(start: UInt64, end: UInt64, action: ReaderSelectionAction) async -> PreparedSelection? {
+        guard !isLeaving, let id = readingID else { return nil }
+        if action == .beginRange { selectionStart = start; refreshAnnotations(); return nil }
+        do {
+            if action == .chapter {
+                guard !incomplete else { return nil }
+                let line = try await service.paragraph(id, at: start)
+                guard !isLeaving, readingID == id else { return nil }
+                guard line.text.trimmingCharacters(in: .whitespacesAndNewlines).count <= 80 else {
+                    error = String(localized: "请选择单独的章节标题行。"); return nil
                 }
-                let range: TextRange
-                if action == .paragraph {
-                    range = try await service.paragraph(id, at: start)
-                } else {
-                    let from = selectionStart.map { min($0, start) } ?? start
-                    let to = selectionStart.map { max($0, end) } ?? end
-                    range = try await service.textRange(id, start: from, end: to)
-                }
-                if action == .highlight {
-                    _ = try await service.annotate(id, start: range.startUtf8, end: range.endUtf8)
-                } else {
-                    let value = try await service.prepareAnnotation(id, start: range.startUtf8, end: range.endUtf8)
-                    guard !isLeaving else { return }
-                    editor = value
-                }
-                guard !isLeaving else { return }
-                selectionStart = nil
-                marksRevision += 1; refreshAnnotations()
-            } catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
-        }
+                return .chapter(ChapterEditDraft(start: line.startUtf8, title: line.text.trimmingCharacters(in: .whitespacesAndNewlines), level: 1))
+            }
+            let range: TextRange
+            if action == .paragraph { range = try await service.paragraph(id, at: start) }
+            else {
+                let from = selectionStart.map { min($0, start) } ?? start
+                let to = selectionStart.map { max($0, end) } ?? end
+                range = try await service.textRange(id, start: from, end: to)
+            }
+            let prepared: PreparedSelection?
+            if action == .highlight {
+                _ = try await service.annotate(id, start: range.startUtf8, end: range.endUtf8)
+                prepared = nil
+            } else {
+                prepared = .note(try await service.prepareAnnotation(id, start: range.startUtf8, end: range.endUtf8))
+            }
+            guard !isLeaving, readingID == id else { return nil }
+            selectionStart = nil; marksRevision += 1; refreshAnnotations()
+            return prepared
+        } catch { if !isLeaving { self.error = ReaderMessages.error(error) }; return nil }
     }
 
-    func openAnnotation(_ id: String) {
-        guard !isLeaving else { return }
-        Task {
-            do {
-                let value = try await service.mark(id)
-                guard !isLeaving, let bookID = readingID else { return }
-                let edit = try await service.prepareAnnotation(bookID, start: value.startUtf8, end: value.endUtf8)
-                if !isLeaving { editor = edit }
-            }
-            catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
-        }
+    func prepareAnnotation(_ id: String) async -> AnnotationEdit? {
+        guard !isLeaving, let bookID = readingID else { return nil }
+        do {
+            let value = try await service.mark(id)
+            guard !isLeaving, readingID == bookID else { return nil }
+            let edit = try await service.prepareAnnotation(bookID, start: value.startUtf8, end: value.endUtf8)
+            return !isLeaving && readingID == bookID ? edit : nil
+        } catch { if !isLeaving { self.error = ReaderMessages.error(error) }; return nil }
+    }
+
+    var displayedProgress: Double? {
+        guard !incomplete, let book, book.byteCount > 0 else { return nil }
+        return Double(displayAnchor ?? anchor) / Double(book.byteCount) * 100
+    }
+    var displayedProgressText: String {
+        displayedProgress.map { ($0 / 100).formatted(.percent.precision(.fractionLength(1))) } ?? String(localized: "进度")
     }
 
     func notesChanged() { if !isLeaving { marksRevision += 1; refreshAnnotations() } }

@@ -1,6 +1,150 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+  "目录、书签与批注": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Contents, Bookmarks & Annotations"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "目錄、書籤與批註"
+        }
+      }
+    }
+  },
+  "阅读资料": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reading Materials"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "閱讀資料"
+        }
+      }
+    }
+  },
+  "还没有书签": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "No Bookmarks Yet"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "還沒有書籤"
+        }
+      }
+    }
+  },
+  "还没有批注": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "No Annotations Yet"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "還沒有批註"
+        }
+      }
+    }
+  },
+  "阅读时轻点页面，再点右上角书签，记下当前位置。": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Tap the page, then the bookmark at the top right to save your place."
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "閱讀時輕點頁面，再點右上角書籤，記下目前位置。"
+        }
+      }
+    }
+  },
+  "长按正文选择文字，可标注或写批注。": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Touch and hold the text to highlight it or add a note."
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "長按正文選取文字，可標記或寫批註。"
+        }
+      }
+    }
+  },
+  "添加当前位置书签": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Bookmark This Position"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "為目前位置加入書籤"
+        }
+      }
+    }
+  },
+  "移除当前位置书签": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Remove This Bookmark"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "移除目前位置書籤"
+        }
+      }
+    }
+  },
+  "进度": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Progress"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "進度"
+        }
+      }
+    }
+  },
   "宽屏阅读": {
     "localizations": {
       "zh-Hans": {

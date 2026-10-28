@@ -8,6 +8,7 @@ final class NoteEditorModel {
     private var conflictBaselines: [String: [AnnotationCandidate]] = [:]
     let service: AppDataService
     var conflictChoice = false
+    var saving = false
     var loadingConflicts = true
     var deleteChoice = false
     var text: String
@@ -77,11 +78,14 @@ final class NoteEditorModel {
 struct NoteEditor: View {
     @Environment(\.theme) private var theme
     @State private var model: NoteEditorModel
-    @State private var saving = false
+    private var saving: Bool { get { model.saving } nonmutating set { model.saving = newValue } }
     let close: () -> Void
     init(edit: AnnotationEdit, onCommitted: (() -> Void)? = nil, aiCommit: AIAnnotationCommitHooks? = nil, close: @escaping () -> Void) {
         _model = State(initialValue: NoteEditorModel(edit: edit, onCommitted: onCommitted, aiCommit: aiCommit))
         self.close = close
+    }
+    init(model: NoteEditorModel, close: @escaping () -> Void) {
+        _model = State(initialValue: model); self.close = close
     }
     var body: some View {
         NavigationStack {

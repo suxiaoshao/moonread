@@ -57,6 +57,8 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         didSet { if guideHeight != oldValue { view.setNeedsLayout() } }
     }
     var headerPositionChanged: (CGFloat) -> Void = { _ in }
+    var bodyLayoutChanged: (ReaderBodyLayout) -> Void = { _ in }
+    private var reportedBodyLayout: ReaderBodyLayout?
     private var reportedHeaderTop: CGFloat?
     private var localInsetHeight: CGFloat?
     var contentGeometry: ReadingContentGeometry? {
@@ -331,7 +333,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         var nextFrames = [CGRect(origin: .zero, size: surface.size)]
         if contentGeometry != nil, settings?.mode == .pages, settings?.widePageMode == .double,
            let settings {
-            let minimum = max(320, 16 * ReadingTypography.font(settings).pointSize)
+            let minimum = ReadingTypography.minimumColumnWidth(settings)
             let candidates: [CGRect]
             if regions.count == 1, regions[0] == surface {
                 let width = (surface.width - 24) / 2
@@ -360,6 +362,14 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         let pageLayoutChanged = leafFrames != nextFrames
         readingSurface.frame = nextSurface
         leafFrames = nextFrames
+        let bodyLayout = ReaderBodyLayout(width: nextSurface.width, leafCount: nextFrames.count)
+        if reportedBodyLayout != bodyLayout {
+            reportedBodyLayout = bodyLayout
+            Task { @MainActor [weak self] in
+                guard let self, self.reportedBodyLayout == bodyLayout else { return }
+                self.bodyLayoutChanged(bodyLayout)
+            }
+        }
         if contentGeometry != nil {
             let headerTop = max(0, nextSurface.minY - compactHeaderHeight)
             if reportedHeaderTop != headerTop {

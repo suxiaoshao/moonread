@@ -16,11 +16,12 @@ struct ChapterEditor: View {
     let bookID: String
     @Bindable var draft: ChapterEditDraft
     let saved: () async -> Void
+    let finished: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @FocusState private var focused: Bool
-    init(bookID: String, draft: ChapterEditDraft, saved: @escaping () async -> Void) {
-        self.bookID = bookID; self.draft = draft; self.saved = saved
+    init(bookID: String, draft: ChapterEditDraft, saved: @escaping () async -> Void, finished: (() -> Void)? = nil) {
+        self.bookID = bookID; self.draft = draft; self.saved = saved; self.finished = finished
     }
     var body: some View {
         Form {
@@ -50,7 +51,7 @@ struct ChapterEditor: View {
             defer { draft.saving = false }
             do {
                 try await AppDataService.shared.correctChapter(bookID, offset: draft.start, title: draft.title, level: draft.level)
-                focused = false; await saved(); dismiss()
+                focused = false; await saved(); if let finished { finished() } else { dismiss() }
             } catch { draft.error = ReaderMessages.error(error) }
         }
     }
@@ -141,11 +142,12 @@ struct ChapterEditor: View {
 
 struct ChapterRebuildView: View {
     let applied: () async -> Void
+    let finished: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @Bindable var model: ChapterRebuildModel
-    init(model: ChapterRebuildModel, applied: @escaping () async -> Void) {
-        self.model = model; self.applied = applied
+    init(model: ChapterRebuildModel, applied: @escaping () async -> Void, finished: (() -> Void)? = nil) {
+        self.model = model; self.applied = applied; self.finished = finished
     }
     var body: some View {
         List {
@@ -181,7 +183,7 @@ struct ChapterRebuildView: View {
         .themedPage().navigationTitle("目录预览").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) {
             Button("应用目录", systemImage: "checkmark") {
-                Task { if await model.apply() { await applied(); dismiss() } }
+                Task { if await model.apply() { await applied(); if let finished { finished() } else { dismiss() } } }
             }.labelStyle(.titleOnly).disabled(!model.canApply).accessibilityIdentifier("applyChapterRebuild")
         } }
         .onAppear { model.startIfNeeded() }
