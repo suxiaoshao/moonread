@@ -146,6 +146,16 @@ struct ReaderScreen: View {
             .toolbarBackground(Color(uiColor: theme.paper), for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar { readerToolbar }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !isWide, readerNavigationVisible, let chapter = session.chapter?.title {
+                    Text(verbatim: chapter)
+                        .font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                        .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 24).padding(.vertical, 6)
+                        .background(Color(uiColor: theme.paper))
+                        .accessibilityIdentifier("readerToolbarChapter")
+                }
+            }
             .toolbarVisibility(readerNavigationVisible ? .visible : .hidden, for: .navigationBar)
             .toolbarVisibility(readerNavigationVisible ? .visible : .hidden, for: .bottomBar)
             .toolbarVisibility(.hidden, for: .tabBar)
@@ -319,21 +329,15 @@ struct ReaderScreen: View {
         }
         ToolbarItemGroup(placement: .bottomBar) {
             Button("目录、书签与批注", systemImage: "list.bullet.rectangle") { openLibrary() }
-                .accessibilityIdentifier("showChapters")
-            Spacer()
-            Button("搜索", systemImage: "magnifyingglass") { openTool(.search) }.accessibilityIdentifier("showSearch")
-            Spacer()
-            Button("阅读设置", systemImage: "textformat") { openTool(.settings) }.accessibilityIdentifier("readingSettings")
-            Spacer()
+                .labelStyle(.iconOnly).tint(Color(uiColor: theme.ink)).foregroundStyle(Color(uiColor: theme.ink)).accessibilityIdentifier("showChapters")
+            Button("搜索", systemImage: "magnifyingglass") { openTool(.search) }.labelStyle(.iconOnly).tint(Color(uiColor: theme.ink)).foregroundStyle(Color(uiColor: theme.ink)).accessibilityIdentifier("showSearch")
+            Button { openTool(.settings) } label: {
+                Image(systemName: "textformat").environment(\.locale, Locale(identifier: "en"))
+            }.tint(Color(uiColor: theme.ink)).foregroundStyle(Color(uiColor: theme.ink)).accessibilityLabel(Text(verbatim: String(localized: "阅读设置"))).accessibilityIdentifier("readingSettings")
             progressButton
-            Spacer()
-        }
-        if #available(iOS 27, *) {
-            ToolbarOverflowMenu { moreActions }
-        } else {
-            ToolbarItem(placement: .bottomBar) {
-                Menu { moreActions } label: { Label("更多", systemImage: "ellipsis") }.accessibilityIdentifier("readerMore")
-            }
+                .tint(Color(uiColor: theme.ink)).foregroundStyle(Color(uiColor: theme.ink))
+            Menu { moreActions } label: { Label("更多", systemImage: "ellipsis") }
+                .labelStyle(.iconOnly).tint(Color(uiColor: theme.ink)).foregroundStyle(Color(uiColor: theme.ink)).accessibilityIdentifier("readerMore")
         }
     }
     private var progressButton: some View {
