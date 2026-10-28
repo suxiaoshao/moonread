@@ -260,7 +260,7 @@ struct ReaderScreen: View {
                     .opacity(navigationPresentation.isSuspended ? 0 : 1)
             }
         }
-        .navigationDestination(isPresented: Binding(get: { panel == .settings && !session.isLeaving }, set: { shown in
+        .navigationDestination(isPresented: Binding(get: { rootPresentation == .settings }, set: { shown in
             if wideTools.editor != nil && !session.isLeaving { return }
             if !shown, panel == .settings { panel = searchActive ? .search : nil; sheetDismissRequested = false }
         })) {
@@ -286,16 +286,15 @@ struct ReaderScreen: View {
         // The presentation has one identity. Routes change inside it, including
         // library, history and notes; they never dismiss and re-present the dock.
         .sheet(isPresented: Binding(get: {
-            !session.isLeaving && !navigationPresentation.isSuspended && !sheetDismissRequested
-                && panel?.isPage != true && wideTools.compactToolPending == nil
-                && (taskID != nil || (!isWide && (controlsVisible || hasReadingAccessory)))
+            rootPresentation == .dock
         }, set: { shown in
             guard !shown, !navigationPresentation.isSuspended, !sheetDismissRequested else { return }
             sheetDismissRequested = true
             controlsVisible = false; dock = .progress
             if taskID == nil, searchActive { closeSearch() }
         }), onDismiss: presentationDismissed) { readerSheet }
-        .modifier(ReaderWideEditorPresentation(state: wideTools, session: session, tools: tools, closed: readerEditorClosed))
+        .modifier(ReaderWideEditorPresentation(state: wideTools, session: session, tools: tools, closed: readerEditorClosed,
+                                              eligible: rootPresentation == .editor))
         .overlay(alignment: .top) {
             if !session.isLeaving, session.selectionStart != nil {
                 HStack {
@@ -386,7 +385,7 @@ struct ReaderScreen: View {
             wideTools.regular = wide
             // Keep the actual presenter and all of its parents while editing.
             // Only the native sheet adapts; reconcile the underlying tool later.
-            if wideTools.editor != nil {
+            if wideTools.presentationEditor != nil {
                 if wide, panel == .settings { wideTools.compactSettingsHandoff = true }
                 refreshWideInspector()
             } else { reconcileToolPresentation() }
@@ -396,7 +395,7 @@ struct ReaderScreen: View {
             if isWide { inspector?.presented = expanded == true && wideInspectorAllowed }
         }
         .onChange(of: theme.plan) { _, _ in refreshWideInspector() }
-        .onChange(of: wideTools.editor?.id) { _, _ in refreshWideInspector() }
+        .onChange(of: wideTools.presentationEditor?.id) { _, _ in refreshWideInspector() }
         .onChange(of: wideInspectorAllowed) { _, _ in refreshWideInspector() }
     }
 
@@ -556,6 +555,14 @@ struct ReaderScreen: View {
         return nil
     }
 
+    private var rootPresentation: ReaderRootPresentation {
+        .resolve(editor: wideTools.presentationEditor?.presenter,
+                 available: !session.isLeaving && !navigationPresentation.isSuspended && !sheetDismissRequested,
+                 page: panel, handingOff: wideTools.compactToolPending != nil || pageAfterDismiss != nil,
+                 inspectorActive: inspector?.isActive == true, dockPresented: sheetPresented,
+                 wantsDock: taskID != nil || (!isWide && (controlsVisible || hasReadingAccessory)))
+    }
+
     private var readerSheet: some View {
         ReaderBottomPanel(expanded: $searchExpanded, compactHeight: $dockHeight,
                           canExpand: searchActive && dock == .progress, taskID: taskID,
@@ -635,6 +642,7 @@ struct ReaderScreen: View {
         guard exitPhase == .reading else { finishReturning(); return }
         if let next = pageAfterDismiss {
             pageAfterDismiss = nil
+            sheetDismissRequested = false
             withAnimation(reduceMotion ? nil : .default) { panel = next }
         } else {
             clearTask()
@@ -705,6 +713,10 @@ struct ReaderScreen: View {
             default: break
             }
         }
+        presentCompactPanel(next)
+    }
+
+    private func presentCompactPanel(_ next: ReaderPanel) {
         if next == .details {
             detailOrigin = (panel, controlsVisible, dock, searchExpanded)
             session.activity.update(readable: false, preview: session.browseOrigin != nil)
@@ -903,7 +915,7 @@ struct ReaderScreen: View {
         isWide && session.opening.phase == .reading && session.opening.navigationSettled && !session.isLeaving
             && !navigationPresentation.isSuspended && panel?.isPage != true
             && !wideTools.settingsReturningToInspector && !wideTools.toolSheetHandoff
-            && ((wideTools.editor == nil && taskID == nil) || inspector?.presented == true)
+            && wideTools.presentationEditor == nil && taskID == nil
     }
 
     private func refreshWideInspector() {
@@ -914,7 +926,10 @@ struct ReaderScreen: View {
         }
         inspector.owner = inspectorOwner
         inspector.readingControlsVisible = readerChromeVisibility
-        guard isWide else { inspector.presented = false; inspector.content = nil; return }
+        // Keep the outgoing native inspector's content until viewDidDisappear.
+        // Close it before presenting an independent reader editor, so it cannot
+        // adapt into a competing modal parent when the device folds.
+        guard isWide, wideTools.presentationEditor == nil else { inspector.presented = false; return }
         inspector.content = ReaderInspectorContent(session: session, tools: tools, state: wideTools,
             settings: readingSettings, surface: theme,
             navigate: navigateFromLibrary, edit: editFromLibrary, close: closeWideInspector, dismissed: wideInspectorDismissed,
@@ -924,8 +939,9 @@ struct ReaderScreen: View {
     }
 
     private func reconcileToolPresentation() {
-        guard wideTools.editor == nil, !session.isLeaving else { return }
+        guard wideTools.presentationEditor == nil, !session.isLeaving else { return }
         if isWide {
+            wideTools.compactToolPending = nil
             if wideTools.compactSettingsHandoff, panel == .settings {
                 wideTools.compactSettingsHandoff = false
                 wideTools.settingsReturningToInspector = true
@@ -939,16 +955,16 @@ struct ReaderScreen: View {
             let active = session.settings?.wideToolsExpanded != false
             let task: ReaderWideTool? = active && wideTools.tool == .settings && session.editor == nil ? .settings
                 : (active && wideTools.tool == .search && searchActive ? .search : nil)
-            if let task, wideTools.inspectorMounted { wideTools.compactToolPending = task }
+            if let task { wideTools.compactToolPending = task }
             inspector?.presented = false
-            if let task, !wideTools.inspectorMounted { showCompactTool(task) }
+            if inspector?.isActive != true { wideInspectorDismissed() }
         }
     }
 
     private func readerEditorClosed() {
         guard wideTools.editor == nil, !session.isLeaving, let tool = wideTools.takeCompletedTool() else { return }
         wideTools.tool = tool
-        if isWide {
+        if wideTools.regular {
             if panel == .settings { wideTools.compactSettingsHandoff = true }
             reconcileToolPresentation()
         } else if tool == .settings, panel != .settings {
@@ -966,7 +982,7 @@ struct ReaderScreen: View {
         switch tool {
         case .settings:
             wideTools.compactSettingsHandoff = true
-            panel = .settings
+            if panel != .settings { presentCompactPanel(.settings) }
         case .search:
             panel = .search; searchExpanded = true
         default: break // Passive tools never open a compact sheet on folding.

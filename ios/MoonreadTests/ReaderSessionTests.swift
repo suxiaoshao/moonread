@@ -534,7 +534,43 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
 
 final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
   func testReaderEditorKeepsItsOwnerAndInputUntilThatSessionFinishes() throws {
+    func presentation(_ editor: ReaderEditPresenter?, page: ReaderPanel? = nil,
+                      inspector: Bool = false, dock: Bool = false, handingOff: Bool = false) -> ReaderRootPresentation {
+      .resolve(editor: editor, available: true, page: page, handingOff: handingOff,
+               inspectorActive: inspector, dockPresented: dock, wantsDock: true)
+    }
+    XCTAssertEqual(presentation(.reader), .editor, "folding cannot replace a root editor with the dock")
+    XCTAssertEqual(presentation(.reader, inspector: true), .none, "wait for the native inspector to finish closing")
+    XCTAssertEqual(presentation(.reader, dock: true), .none)
+    XCTAssertEqual(presentation(.preview), .none)
+    XCTAssertEqual(presentation(.settings), .none)
+    XCTAssertEqual(presentation(.library), .dock, "nested editors must keep their dock parent")
+    XCTAssertEqual(presentation(.readerTask), .dock)
+    XCTAssertEqual(presentation(nil, inspector: true), .none)
+    XCTAssertEqual(presentation(nil, page: .settings, dock: true), .none, "dismiss the native dock before pushing settings")
+    XCTAssertEqual(presentation(nil, page: .settings, inspector: true), .none)
+    XCTAssertEqual(presentation(nil, page: .settings), .settings)
+    XCTAssertEqual(presentation(.preview, page: .settings), .settings, "keep the nested editor's settings parent")
+    XCTAssertEqual(presentation(nil, handingOff: true), .none)
+    XCTAssertEqual(presentation(nil, page: .search, inspector: true), .none)
+    XCTAssertEqual(presentation(nil, page: .search), .dock, "resume compact search after the inspector closes")
     let tools = ReaderWideTools()
+    let inspector = ReaderInspectorPresentation()
+    var dismissals = 0
+    inspector.content = ReaderInspectorContent(session: ReaderSession(), tools: ReaderToolsModel(), state: tools,
+      settings: .constant(defaultReaderSettings()), surface: .initial,
+      navigate: { _, _, _ in }, edit: { _ in }, close: {}, dismissed: { dismissals += 1 },
+      showHistory: {}, changeEncoding: { _ in }, searchExpanded: .constant(false))
+    inspector.presented = true
+    inspector.visibilityChanged(true)
+    inspector.presented = false
+    XCTAssertTrue(inspector.isActive, "changing the request is not native dismissal completion")
+    XCTAssertNotNil(inspector.content, "keep the outgoing content until native dismissal finishes")
+    XCTAssertEqual(dismissals, 0)
+    inspector.visibilityChanged(false)
+    XCTAssertFalse(inspector.isActive)
+    XCTAssertNil(inspector.content)
+    XCTAssertEqual(dismissals, 1)
     let palette = PaletteDraft(palette: try XCTUnwrap(defaultThemeSnapshot().palettes.first), creating: true)
     tools.settingsEditing.beginPalette(palette, presenter: .preview)
     let first = try XCTUnwrap(tools.editor)
@@ -552,7 +588,10 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     XCTAssertTrue(tools.editor === first, "an unrelated host callback cannot cancel this task")
     tools.finishEditing(first.id)
     XCTAssertNil(tools.settingsEditing.draft)
+    XCTAssertTrue(tools.presentationEditor === first, "keep the presentation slot until native onDismiss")
+    XCTAssertEqual(presentation(tools.presentationEditor?.presenter), .none)
     XCTAssertEqual(tools.takeCompletedTool(), .settings)
+    XCTAssertNil(tools.presentationEditor)
 
     let chapter = ChapterEditDraft(start: 4, title: "原名", level: 1)
     tools.libraryEditing.beginChapter(chapter)

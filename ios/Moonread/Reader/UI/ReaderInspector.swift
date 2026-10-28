@@ -5,11 +5,23 @@ import SwiftUI
     var owner: UUID?
     var content: ReaderInspectorContent?
     var presented = false
+    private(set) var mounted = false
     var readingControlsVisible: Bool?
+    var isActive: Bool { presented || mounted }
+
+    func visibilityChanged(_ visible: Bool) {
+        mounted = visible
+        guard !visible, !presented else { return }
+        let dismissed = content?.dismissed
+        content = nil
+        if readingControlsVisible == nil { owner = nil }
+        dismissed?()
+    }
 
     func remove(_ owner: UUID) {
         guard self.owner == owner else { return }
-        presented = false; content = nil; readingControlsVisible = nil; self.owner = nil
+        presented = false; readingControlsVisible = nil
+        if !mounted { content = nil; self.owner = nil }
     }
 }
 
@@ -34,6 +46,9 @@ struct ReaderInspectorHost: ViewModifier {
                     }
                     .themeScope(tools.surface).preferredColorScheme(tools.surface.scheme)
                     .inspectorColumnWidth(min: 320, ideal: 320, max: 400)
+                    .background(NavigationTransitionObserver(
+                        visibilityChanged: presentation.visibilityChanged,
+                        willLeave: { _ in }, completed: { _, _ in }))
                 }
             }
             .statusBarHidden(presentation.readingControlsVisible == false)
@@ -57,10 +72,10 @@ enum ReaderWideTool: CaseIterable {
     var compactSettingsHandoff = false
     var settingsReturningToInspector = false
     var toolSheetHandoff = false
-    var inspectorMounted = false
     var compactToolPending: ReaderWideTool?
     private(set) var editor: ReaderEditSession?
-    private(set) var completedTool: ReaderWideTool?
+    private(set) var completedEditor: ReaderEditSession?
+    var presentationEditor: ReaderEditSession? { editor ?? completedEditor }
     let libraryEditing = ReaderLibraryEditing()
     let settingsEditing = ReadingSettingsEditing()
     init() {
@@ -68,18 +83,18 @@ enum ReaderWideTool: CaseIterable {
         settingsEditing.readerTools = self
     }
     func beginEditing(_ payload: ReaderEditSession.Payload, presenter: ReaderEditPresenter, returningTo tool: ReaderWideTool) {
-        guard editor == nil else { return }
+        guard presentationEditor == nil else { return }
         editor = ReaderEditSession(payload: payload, presenter: presenter, returnTool: tool)
     }
     func finishEditing(_ id: UUID) {
         guard let current = editor, current.id == id else { return }
         if case let .rebuild(model) = current.payload { model.cancel() }
-        completedTool = current.returnTool
+        completedEditor = current
         editor = nil
     }
     func takeCompletedTool() -> ReaderWideTool? {
-        defer { completedTool = nil }
-        return completedTool
+        defer { completedEditor = nil }
+        return completedEditor?.returnTool
     }
     var isActive: Bool {
         tool == .search || tool == .settings || inputFocused
@@ -126,8 +141,6 @@ struct ReaderInspectorContent: View {
                     changeEncoding: changeEncoding)
             }
         }
-        .onAppear { state.inspectorMounted = true }
-        .onDisappear { state.inspectorMounted = false; dismissed() }
         .background(Color(uiColor: surface.canvas))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("readerInspector")
@@ -174,6 +187,29 @@ private struct ReaderInspectorSettings: View {
 
 enum ReaderEditPresenter { case reader, settings, preview, library, readerTask }
 
+enum ReaderRootPresentation {
+    case none, dock, editor, settings
+
+    /// Nested library/task editors retain their dock parent. Independent editors
+    /// own the root presentation, including while their inspector is closing.
+    static func resolve(editor: ReaderEditPresenter?, available: Bool, page: ReaderPanel?,
+                        handingOff: Bool, inspectorActive: Bool, dockPresented: Bool,
+                        wantsDock: Bool) -> Self {
+        guard available else { return .none }
+        if editor == .reader { return inspectorActive || dockPresented ? .none : .editor }
+        guard !handingOff else { return .none }
+        if page == .settings {
+            return inspectorActive || dockPresented ? .none : .settings
+        }
+        guard page?.isPage != true else { return .none }
+        switch editor {
+        case .reader: return .editor // Handled before page/dock handoff eligibility.
+        case .settings, .preview: return .none
+        case .library, .readerTask, nil: return wantsDock && !inspectorActive ? .dock : .none
+        }
+    }
+}
+
 /// A task has one identity and one payload. Its native presenter is chosen by
 /// the opening action and remains unchanged until the user finishes editing.
 @MainActor final class ReaderEditSession: Identifiable {
@@ -196,12 +232,13 @@ struct ReaderWideEditorPresentation: ViewModifier {
     let session: ReaderSession
     let tools: ReaderToolsModel
     let closed: () -> Void
+    var eligible: Bool
     @Environment(\.theme) private var theme
 
     func body(content: Content) -> some View {
-        let current = state.editor
+        let current = eligible && state.editor?.presenter == .reader ? state.editor : nil
         content
-            .sheet(item: Binding(get: { state.editor?.presenter == .reader ? state.editor : nil }, set: {
+            .sheet(item: Binding(get: { eligible && state.editor?.presenter == .reader ? state.editor : nil }, set: {
                 if $0 == nil, let current, current.presenter == .reader { state.finishEditing(current.id) }
             }), onDismiss: closed) { editor in
                 Group {
