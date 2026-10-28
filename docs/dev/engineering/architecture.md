@@ -33,7 +33,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 阅读设置当前值、连续修改与串行保存 | Swift `Settings/ReaderSettingsStore.swift`，App 级可观察环境对象 | `ReaderSession` 和设置页共用同一实例，不持有可写副本或各自排队；`AppDataService` 仍负责既有 UserDefaults 编解码和持久化，Rust 校验范围不变 | 单一 owner |
 | 纹理槽本机保存/回滚、最终系统来源禁用 | Swift `UserThemes` / `ThemeStore` / 阅读设置 | 使用既有 UserDefaults；不改 Palette、CloudKit 或备份 | 平台边界 |
 | 正文局部几何、叶页分组、活动叶及原文选区恢复 | Swift `Reader/Rendering/ReadingController` / `PageController` / `ReadingViewport` | 原生字体度量与系统保留区归平台；一个 pager、一份统计输入，源范围仍用 Rust UTF-8 坐标；几何变化不写阅读事实 | 平台排版 |
-| 宽窄工具交接与呈现意图 | Swift `ReaderScreen` / `ReaderInspector`，共用既有工具与编辑引用 | inspector 属于来源系统导航宿主；compact 外壳保留，内容不复制业务与查询；宽屏偏好经 ReaderSettingsStore 单源保存 | 单一 owner |
+| 宽窄工具交接与呈现意图 | Swift `ReaderScreen` / `ReaderInspector`，`ReaderWideTools` 持有唯一编辑会话（稳定 ID、草稿/重建任务引用、呈现宿主与返回工具） | 编辑动作直接登记；编辑期间保留 presenter 及父链，宽窄变化不结束任务，保存/取消后的原生关闭回执才交接底层工具；章节实际输入和识别 job 不随视图消失；compact 外壳保留，偏好经 ReaderSettingsStore 单源保存 | 单一 owner |
 | 纸面 tile 与滚动/分页背景 | Swift `ThemeSurface` / `ReadingTextDecorations` / `ReadingController+Pages` / `ReaderTitlePage` | 当前输入与 tile；复用容器/页面，不动正文布局 | 平台绘制 |
 | 解码、normalization-v1、正文/原字节 SHA 计算 | Rust `reading/text.rs`、`identity/source.rs` 及正文导入共用核心 | 和正文缓存/稳定内容身份一致；Swift 不重算规范正文 | 保持 |
 | fileId/bookId/canonical→正式或 pending 阅读键、索引有效性 | Rust `identity/content.rs`，供 user/projection、library/full_index 和 library/bookshelf 共用 | 数据库关联是事实，不能由 UI 看长度猜身份 | 收敛 |

@@ -36,7 +36,25 @@ extension ReadingController {
         }
     }
     func lastPageIndex(_ controller: UIViewController?) -> Int? {
-        (controller as? ReadingPageGroupController)?.leaves.last?.index ?? pageIndex(controller)
+        if let last = (controller as? ReadingPageGroupController)?.leaves.last { return sourceIndex(of: last.page) }
+        return pageIndex(controller)
+    }
+
+    private func sourceIndex(of page: TextPage) -> Int? {
+        pages.firstIndex { $0.start == page.start && $0.end == page.end }
+    }
+
+    /// A single page is a one-leaf group. Check the whole group before updating
+    /// any indices; an adjacent spread sharing just one leaf cannot be reused.
+    func reuseCurrentPageGroup(containing index: Int, startingAt requiredStart: Int? = nil) -> Bool {
+        let leaves = currentLeaves
+        guard let first = leaves.first, let start = requiredStart ?? sourceIndex(of: first.page),
+              pages.indices.contains(start) else { return false }
+        let range = start..<min(pages.count, start + max(1, leafFrames.count))
+        guard range.contains(index), leaves.count == range.count,
+              zip(leaves, range).allSatisfy({ $0.page.start == pages[$1].start && $0.page.end == pages[$1].end }) else { return false }
+        for (leaf, index) in zip(leaves, range) { leaf.update(page: pages[index], index: index) }
+        return true
     }
 
     func makeCover() -> ReaderCoverController {
@@ -95,7 +113,8 @@ extension ReadingController {
 
     func pageIndex(_ controller: UIViewController?) -> Int? {
         if controller is ReaderCoverController { return -1 }
-        return (controller as? ReadingPageGroupController)?.leaves.first?.index ?? (controller as? PageController)?.index
+        let first = (controller as? ReadingPageGroupController)?.leaves.first ?? (controller as? PageController)
+        return first.flatMap { sourceIndex(of: $0.page) }
     }
 
     private func reportPage(_ index: Int) {

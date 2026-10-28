@@ -59,9 +59,28 @@ enum ReaderWideTool: CaseIterable {
     var toolSheetHandoff = false
     var inspectorMounted = false
     var compactToolPending: ReaderWideTool?
-    var editor: ReaderWideEditor?
+    private(set) var editor: ReaderEditSession?
+    private(set) var completedTool: ReaderWideTool?
     let libraryEditing = ReaderLibraryEditing()
     let settingsEditing = ReadingSettingsEditing()
+    init() {
+        libraryEditing.readerTools = self
+        settingsEditing.readerTools = self
+    }
+    func beginEditing(_ payload: ReaderEditSession.Payload, presenter: ReaderEditPresenter, returningTo tool: ReaderWideTool) {
+        guard editor == nil else { return }
+        editor = ReaderEditSession(payload: payload, presenter: presenter, returnTool: tool)
+    }
+    func finishEditing(_ id: UUID) {
+        guard let current = editor, current.id == id else { return }
+        if case let .rebuild(model) = current.payload { model.cancel() }
+        completedTool = current.returnTool
+        editor = nil
+    }
+    func takeCompletedTool() -> ReaderWideTool? {
+        defer { completedTool = nil }
+        return completedTool
+    }
     var isActive: Bool {
         tool == .search || tool == .settings || inputFocused
             || libraryEditing.editingOutline || libraryEditing.restoringOutline || libraryEditing.chapterEdit != nil || libraryEditing.rebuildingOutline
@@ -116,7 +135,7 @@ struct ReaderInspectorContent: View {
     @ToolbarContentBuilder var inspectorToolbar: some ToolbarContent {
         if state.tool == .chapters {
             ToolbarItem(placement: .topBarLeading) {
-                ReaderChapterActions(editing: state.libraryEditing, incomplete: session.incomplete)
+                ReaderChapterActions(editing: state.libraryEditing, bookID: session.readingID, incomplete: session.incomplete)
             }
         }
         ToolbarItem(placement: .confirmationAction) {
@@ -147,15 +166,27 @@ private struct ReaderInspectorSettings: View {
     var body: some View {
         ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editing.editedAppearance,
             encoding: encoding, isRestartingEncoding: isRestarting, changeEncoding: changeEncoding,
-            editPalette: { editing.draft = $0 }, wideControls: true)
+            editPalette: { editing.beginPalette($0, presenter: .reader) }, wideControls: true)
 
     }
 }
 
 
-enum ReaderWideEditor: String, Identifiable {
-    case chapter, rebuild, palette
-    var id: Self { self }
+enum ReaderEditPresenter { case reader, settings, preview, library, readerTask }
+
+/// A task has one identity and one payload. Its native presenter is chosen by
+/// the opening action and remains unchanged until the user finishes editing.
+@MainActor final class ReaderEditSession: Identifiable {
+    enum Payload {
+        case palette(PaletteDraft), chapter(ChapterEditDraft), rebuild(ChapterRebuildModel)
+    }
+    let id = UUID()
+    let payload: Payload
+    let presenter: ReaderEditPresenter
+    let returnTool: ReaderWideTool
+    init(payload: Payload, presenter: ReaderEditPresenter, returnTool: ReaderWideTool) {
+        self.payload = payload; self.presenter = presenter; self.returnTool = returnTool
+    }
 }
 
 /// Complex tasks belong to the stable reader, not to the inspector subtree
@@ -168,35 +199,33 @@ struct ReaderWideEditorPresentation: ViewModifier {
     @Environment(\.theme) private var theme
 
     func body(content: Content) -> some View {
+        let current = state.editor
         content
-            .onChange(of: state.libraryEditing.chapterEdit != nil) { _, editing in
-                if state.regular && editing { state.editor = .chapter }
-            }
-            .onChange(of: state.libraryEditing.rebuildingOutline) { _, rebuilding in
-                if state.regular && rebuilding { state.editor = .rebuild }
-            }
-            .onChange(of: state.settingsEditing.draft != nil) { _, editing in
-                if state.regular && editing { state.editor = .palette }
-            }
-            .sheet(item: Binding(get: { state.editor }, set: { if $0 == nil { finish() } }), onDismiss: closed) { editor in
+            .sheet(item: Binding(get: { state.editor?.presenter == .reader ? state.editor : nil }, set: {
+                if $0 == nil, let current, current.presenter == .reader { state.finishEditing(current.id) }
+            }), onDismiss: closed) { editor in
                 Group {
-                    switch editor {
-                    case .chapter:
+                    switch editor.payload {
+                    case let .chapter(draft):
                         NavigationStack {
-                            if let id = session.readingID, let draft = state.libraryEditing.chapterEdit {
+                            if let id = session.readingID {
                                 ChapterEditor(bookID: id, draft: draft, saved: refreshOutline)
+                                    .toolbar { ToolbarItem(placement: .cancellationAction) {
+                                        Button("取消") { state.finishEditing(editor.id) }
+                                    } }
                             }
                         }
-                    case .rebuild:
+                    case let .rebuild(model):
                         NavigationStack {
-                            if let id = session.readingID { ChapterRebuildView(bookID: id, applied: refreshOutline) }
+                            ChapterRebuildView(model: model, applied: refreshOutline)
+                                .toolbar { ToolbarItem(placement: .cancellationAction) {
+                                    Button("取消") { state.finishEditing(editor.id) }
+                                } }
                         }
-                    case .palette:
-                        if let draft = state.settingsEditing.draft {
-                            PaletteEditor(draft: draft, showsAppPreview: false)
-                                .presentationDetents([.medium, .large])
-                                .presentationBackground(Color(uiColor: theme.canvas))
-                        }
+                    case let .palette(draft):
+                        PaletteEditor(draft: draft, showsAppPreview: false)
+                            .presentationDetents([.medium, .large])
+                            .presentationBackground(Color(uiColor: theme.canvas))
                     }
                 }.themeScope(theme).preferredColorScheme(theme.scheme)
             }
@@ -204,14 +233,5 @@ struct ReaderWideEditorPresentation: ViewModifier {
     private func refreshOutline() async {
         await session.refreshOutline()
         await tools.refreshChapters(jumpTo: session.anchor)
-    }
-    private func finish() {
-        switch state.editor {
-        case .chapter: state.libraryEditing.chapterEdit = nil
-        case .rebuild: state.libraryEditing.rebuildingOutline = false
-        case .palette: state.settingsEditing.draft = nil
-        case nil: break
-        }
-        state.editor = nil
     }
 }

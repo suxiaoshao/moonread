@@ -40,17 +40,25 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
     var visibilityChanged: (Bool) -> Void = { _ in }
     var willLeave: (_ popping: Bool) -> Void
     var completed: (_ popping: Bool, _ cancelled: Bool) -> Void
+    var removed: () -> Void = {}
 
     func makeUIViewController(context: Context) -> Controller { Controller() }
+    // Unlike a modal's disappear, dismantling ends this navigation owner's
+    // identity, including removal without an animated pop or scene teardown.
+    static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
+        controller.removed()
+    }
     func updateUIViewController(_ controller: Controller, context: Context) {
         controller.willLeave = willLeave; controller.completed = completed
         controller.visibilityChanged = visibilityChanged
+        controller.removed = removed
         controller.setOpening(openingID, appeared: appeared)
     }
 
     final class Controller: UIViewController {
         var willLeave: (Bool) -> Void = { _ in }
         var completed: (Bool, Bool) -> Void = { _, _ in }
+        var removed: () -> Void = {}
         private var openingID: UUID?
         private var appeared: (UUID, String) -> Void = { _, _ in }
         private var initialAppearanceCompleted = false

@@ -1,33 +1,33 @@
 import SwiftUI
 
-struct ChapterEditDraft: Identifiable, Hashable {
+@MainActor @Observable final class ChapterEditDraft: Identifiable, Hashable {
+    nonisolated let id = UUID()
     let start: UInt64
-    let title: String
-    let level: UInt32
-    var id: UInt64 { start }
+    var title: String
+    var level: UInt32
+    var saving = false
+    var error: String?
+    init(start: UInt64, title: String, level: UInt32) { self.start = start; self.title = title; self.level = level }
+    nonisolated static func == (lhs: ChapterEditDraft, rhs: ChapterEditDraft) -> Bool { lhs.id == rhs.id }
+    nonisolated func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
 
 struct ChapterEditor: View {
     let bookID: String
-    let draft: ChapterEditDraft
+    @Bindable var draft: ChapterEditDraft
     let saved: () async -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @FocusState private var focused: Bool
-    @State private var title: String
-    @State private var level: UInt32
-    @State private var saving = false
-    @State private var error: String?
     init(bookID: String, draft: ChapterEditDraft, saved: @escaping () async -> Void) {
         self.bookID = bookID; self.draft = draft; self.saved = saved
-        _title = State(initialValue: draft.title); _level = State(initialValue: draft.level)
     }
     var body: some View {
         Form {
             Section {
-                TextField("章节名称", text: $title, axis: .vertical).focused($focused)
+                TextField("章节名称", text: $draft.title, axis: .vertical).focused($focused)
                     .keyboardInputRegion().accessibilityIdentifier("chapterEditTitle")
-                Picker("层级", selection: $level) {
+                Picker("层级", selection: $draft.level) {
                     Text("章").tag(UInt32(1)); Text("卷").tag(UInt32(0))
                 }.pickerStyle(.segmented).accessibilityIdentifier("chapterEditLevel")
             }.listRowBackground(Color(uiColor: theme.surface))
@@ -36,22 +36,22 @@ struct ChapterEditor: View {
         .navigationTitle("编辑目录项").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) {
             Button("保存", systemImage: "checkmark") { save() }.labelStyle(.titleOnly)
-                .disabled(saving || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .disabled(draft.saving || draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityIdentifier("saveChapterEdit")
         } }
         .onAppear { focused = true }
-        .alert("暂时无法完成", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-            Button("知道了", role: .cancel) { error = nil }
-        } message: { Text(error ?? "") }
+        .alert("暂时无法完成", isPresented: Binding(get: { draft.error != nil }, set: { if !$0 { draft.error = nil } })) {
+            Button("知道了", role: .cancel) { draft.error = nil }
+        } message: { Text(draft.error ?? "") }
     }
     private func save() {
-        guard !saving else { return }; saving = true
+        guard !draft.saving else { return }; draft.saving = true
         Task {
-            defer { saving = false }
+            defer { draft.saving = false }
             do {
-                try await AppDataService.shared.correctChapter(bookID, offset: draft.start, title: title, level: level)
+                try await AppDataService.shared.correctChapter(bookID, offset: draft.start, title: draft.title, level: draft.level)
                 focused = false; await saved(); dismiss()
-            } catch { self.error = ReaderMessages.error(error) }
+            } catch { draft.error = ReaderMessages.error(error) }
         }
     }
 }
@@ -70,6 +70,8 @@ struct ChapterEditor: View {
     #endif
     var rebuildError: String?
     var actionError: String?
+    @ObservationIgnored private var loadingTask: Task<Void, Never>?
+    private var started = false
     var canApply: Bool { job != nil && progress?.done == true && progress?.cancelled != true && !invalid && !applying && !loadingMore }
     @ObservationIgnored private let start: @MainActor (String) async throws -> ChapterRebuild
     @ObservationIgnored private let advance: @MainActor (ChapterRebuild) async throws -> ChapterRebuildProgress
@@ -87,8 +89,12 @@ struct ChapterEditor: View {
         self.commit = commit ?? { try await reader.applyRebuild($0) }
     }
     func load() async {
+        guard !started, !invalid else { return }
+        started = true
         do {
-            let value = try await start(bookID); job = value
+            let value = try await start(bookID)
+            guard !invalid, !Task.isCancelled else { value.cancel(); return }
+            job = value
             while !Task.isCancelled {
                 let result = try await advance(value)
                 guard !Task.isCancelled else { cancel(); return }
@@ -101,7 +107,11 @@ struct ChapterEditor: View {
         } catch is CancellationError { cancel() }
         catch { invalid = true; rebuildError = ReaderMessages.error(error) }
     }
-    func cancel() { invalid = true; job?.cancel() }
+    func startIfNeeded() {
+        guard loadingTask == nil, !started, !invalid else { return }
+        loadingTask = Task { await load() }
+    }
+    func cancel() { invalid = true; loadingTask?.cancel(); loadingTask = nil; job?.cancel() }
     func loadMore() async {
         guard let job, !loadingMore, !invalid else { return }
         loadingMore = true; actionError = nil; defer { loadingMore = false }
@@ -133,9 +143,9 @@ struct ChapterRebuildView: View {
     let applied: () async -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
-    @State private var model: ChapterRebuildModel
-    init(bookID: String, model: ChapterRebuildModel? = nil, applied: @escaping () async -> Void) {
-        _model = State(initialValue: model ?? ChapterRebuildModel(bookID: bookID)); self.applied = applied
+    @Bindable var model: ChapterRebuildModel
+    init(model: ChapterRebuildModel, applied: @escaping () async -> Void) {
+        self.model = model; self.applied = applied
     }
     var body: some View {
         List {
@@ -174,8 +184,7 @@ struct ChapterRebuildView: View {
                 Task { if await model.apply() { await applied(); dismiss() } }
             }.labelStyle(.titleOnly).disabled(!model.canApply).accessibilityIdentifier("applyChapterRebuild")
         } }
-        .task { await model.load() }
-        .onDisappear { model.cancel() }
+        .onAppear { model.startIfNeeded() }
         .overlay { if model.applying { LoadingActivity(size: 32, waitingLabel: "正在应用目录") } }
     }
 }

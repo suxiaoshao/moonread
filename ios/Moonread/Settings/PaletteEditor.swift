@@ -5,7 +5,6 @@ struct PaletteEditor: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @Bindable var draft: PaletteDraft
-    @State private var error: String?
     @FocusState private var nameFocused: Bool
     private var creating: Bool { draft.creating }
     let showsAppPreview: Bool
@@ -29,13 +28,13 @@ struct PaletteEditor: View {
                         .disabled(themes.saving).accessibilityIdentifier("cancelPalette")
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成", systemImage: "checkmark") { Task { do { try await themes.savePalette(palette, creating: creating); dismiss() } catch { self.error = ReaderMessages.error(error) } } }
+                    Button("完成", systemImage: "checkmark") { Task { do { try await themes.savePalette(palette, creating: creating); dismiss() } catch { draft.error = ReaderMessages.error(error) } } }
                         .labelStyle(.titleOnly).disabled(!palette.isValidDraft || themes.saving).accessibilityIdentifier("savePalette")
                 }
             }
-            .alert("暂时无法保存", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) {
-                Button("知道了", role: .cancel) { error = nil }
-            } message: { Text(error ?? "") }
+            .alert("暂时无法保存", isPresented: Binding(get: { draft.error != nil }, set: { if !$0 { draft.error = nil } })) {
+                Button("知道了", role: .cancel) { draft.error = nil }
+            } message: { Text(draft.error ?? "") }
         }
         .interactiveDismissDisabled(themes.saving).preferredColorScheme(theme.scheme)
     }

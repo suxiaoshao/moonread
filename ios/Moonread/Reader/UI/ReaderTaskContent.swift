@@ -5,7 +5,7 @@ struct ReaderTaskContent: View {
     let panel: ReaderPanel?
     let session: ReaderSession
     let tools: ReaderToolsModel
-    let libraryEditing: ReaderLibraryEditing
+    let toolSession: ReaderWideTools
     let aiEntrySnapshot: AIEntryContext?
     let aiContext: () -> AIEntryContext
     @Binding var aiConversationID: String?
@@ -13,6 +13,7 @@ struct ReaderTaskContent: View {
     let closeTask: () -> Void
     let navigate: (UInt64, UInt64?, ReadingTargetPlacement) -> Void
     let edit: (ReaderMark) -> Void
+    let editorClosed: () -> Void
     @Environment(AIService.self) private var ai
     @ViewBuilder var body: some View {
         if panel == .ai, ai.availability.isAvailable {
@@ -21,7 +22,8 @@ struct ReaderTaskContent: View {
             NoteEditor(edit: mark, close: closeTask)
         } else if panel == .history {
             ReaderHistorySheet(session: session, close: closeTask)
-        } else if panel == .chapterEditor, let draft = session.chapterDraft, let id = session.readingID {
+        } else if panel == .chapterEditor, let editor = toolSession.editor,
+                  case let .chapter(draft) = editor.payload, let id = session.readingID {
             NavigationStack {
                 ChapterEditor(bookID: id, draft: draft) { await session.refreshOutline(); closeTask() }
                     .toolbar { ToolbarItem(placement: .topBarLeading) {
@@ -29,7 +31,7 @@ struct ReaderTaskContent: View {
                     } }
             }
         } else if panel == .library {
-            ReaderLibrarySheet(model: tools, session: session, navigate: navigate, edit: edit, close: closeTask, editing: libraryEditing)
+            ReaderLibrarySheet(model: tools, session: session, navigate: navigate, edit: edit, close: closeTask, editing: toolSession.libraryEditing, editorClosed: editorClosed)
             .disabled(session.navigating)
         }
     }

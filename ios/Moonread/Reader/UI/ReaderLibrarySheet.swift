@@ -6,8 +6,24 @@ final class ReaderLibraryEditing {
     var visibleChapters: Set<UInt64> = []
     var chapterVisibilityKnown = false
     var editingOutline = false
-    var chapterEdit: ChapterEditDraft?
-    var rebuildingOutline = false
+    @ObservationIgnored weak var readerTools: ReaderWideTools?
+    var chapterEdit: ChapterEditDraft? {
+        guard let editor = readerTools?.editor, case let .chapter(draft) = editor.payload else { return nil }
+        return draft
+    }
+    func beginChapter(_ draft: ChapterEditDraft) {
+        guard let readerTools else { return }
+        readerTools.beginEditing(.chapter(draft), presenter: readerTools.regular ? .reader : .library, returningTo: .chapters)
+    }
+    var rebuildModel: ChapterRebuildModel? {
+        guard let editor = readerTools?.editor, case let .rebuild(model) = editor.payload else { return nil }
+        return model
+    }
+    var rebuildingOutline: Bool { rebuildModel != nil }
+    func beginRebuild(_ bookID: String) {
+        guard let readerTools else { return }
+        readerTools.beginEditing(.rebuild(ChapterRebuildModel(bookID: bookID)), presenter: readerTools.regular ? .reader : .library, returningTo: .chapters)
+    }
     var restoringOutline = false
     var removedChapter: ChapterEntry?
 }
@@ -19,9 +35,10 @@ struct ReaderLibrarySheet: View {
     let edit: (ReaderMark) -> Void
     let close: () -> Void
     let editing: ReaderLibraryEditing
+    var editorClosed: () -> Void = {}
     var body: some View {
         NavigationStack {
-            ReaderLibraryContent(model: model, session: session, navigate: navigate, edit: edit, close: close, editing: editing)
+            ReaderLibraryContent(model: model, session: session, navigate: navigate, edit: edit, close: close, editing: editing, editorClosed: editorClosed)
         }
     }
 }
@@ -38,6 +55,7 @@ struct ReaderLibraryContent: View {
     @Bindable var editing: ReaderLibraryEditing
     var inspector = false
     var focusChanged: (Bool) -> Void = { _ in }
+    var editorClosed: () -> Void = {}
 
     private var listTitle: String {
         switch model.tab {
@@ -47,7 +65,7 @@ struct ReaderLibraryContent: View {
         }
     }
     private var outlineActions: some View {
-        ReaderChapterActions(editing: editing, incomplete: session.incomplete)
+        ReaderChapterActions(editing: editing, bookID: session.readingID, incomplete: session.incomplete)
     }
     private var closeButton: some View {
         Button("关闭", systemImage: "xmark", action: close)
@@ -97,7 +115,7 @@ struct ReaderLibraryContent: View {
                     }.padding().background(Color(uiColor: theme.raised))
                 }
             }
-            .modifier(ReaderLibraryEditorPresentation(editing: editing, session: session, inspector: inspector, refreshOutline: refreshOutline))
+            .modifier(ReaderLibraryEditorPresentation(editing: editing, session: session, inspector: inspector, refreshOutline: refreshOutline, closed: editorClosed))
             .confirmationDialog("恢复自动目录？", isPresented: $editing.restoringOutline, titleVisibility: .visible) {
                 Button("清除人工修正", role: .destructive) {
                     guard let id = session.readingID else { return }
@@ -131,6 +149,9 @@ struct ReaderLibraryContent: View {
                 chapterFilterFocused = false
                 if value != .chapters { Task { await model.loadNotes(reset: true) } }
             }
+            .onChange(of: session.marksRevision) { _, _ in
+                Task { await model.refreshVisibleMarks() }
+            }
             .alert("暂时无法完成", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
                 Button("知道了", role: .cancel) { model.error = nil }
             } message: { Text(model.error ?? "") }
@@ -139,7 +160,7 @@ struct ReaderLibraryContent: View {
     private var chapterList: some View {
         ReaderChapterList(model: model, session: session, navigate: navigate,
                           visibleChapters: $editing.visibleChapters, chapterVisibilityKnown: $editing.chapterVisibilityKnown,
-                          editingOutline: $editing.editingOutline, chapterEdit: $editing.chapterEdit, removedChapter: $editing.removedChapter,
+                          editingOutline: $editing.editingOutline, editChapter: editing.beginChapter, removedChapter: $editing.removedChapter,
                           chapterFilterFocused: $chapterFilterFocused, refreshOutline: refreshOutline, restoringOffset: inspector ? editing.visibleChapters.min() : nil)
     }
     private var notesList: some View {
@@ -157,28 +178,48 @@ private struct ReaderLibraryEditorPresentation: ViewModifier {
     let session: ReaderSession
     let inspector: Bool
     let refreshOutline: () async -> Void
+    let closed: () -> Void
     @ViewBuilder func body(content: Content) -> some View {
         if inspector {
             content // The stable reader owns wide editing sheets across folds.
         } else {
             content
-                .navigationDestination(item: $editing.chapterEdit) { draft in
-                    if let id = session.readingID { ChapterEditor(bookID: id, draft: draft) { await refreshOutline() } }
+                .navigationDestination(item: chapterBinding) { draft in
+                    if let id = session.readingID {
+                        ChapterEditor(bookID: id, draft: draft) { await refreshOutline() }
+                            .onDisappear(perform: closed)
+                    }
                 }
-                .navigationDestination(isPresented: $editing.rebuildingOutline) {
-                    if let id = session.readingID { ChapterRebuildView(bookID: id) { await refreshOutline() } }
+                .navigationDestination(isPresented: rebuildBinding) {
+                    if let model = editing.rebuildModel {
+                        ChapterRebuildView(model: model) { await refreshOutline() }
+                            .onDisappear(perform: closed)
+                    }
                 }
         }
+    }
+    private var chapterBinding: Binding<ChapterEditDraft?> {
+        let current = editing.readerTools?.editor
+        return Binding(get: { current?.presenter == .library ? editing.chapterEdit : nil }, set: {
+            if $0 == nil, let current { editing.readerTools?.finishEditing(current.id) }
+        })
+    }
+    private var rebuildBinding: Binding<Bool> {
+        let current = editing.readerTools?.editor
+        return Binding(get: { current?.presenter == .library && editing.rebuildingOutline }, set: {
+            if !$0, let current { editing.readerTools?.finishEditing(current.id) }
+        })
     }
 }
 
 struct ReaderChapterActions: View {
     @Bindable var editing: ReaderLibraryEditing
+    let bookID: String?
     let incomplete: Bool
     var body: some View {
         Menu {
             Button(editing.editingOutline ? "结束整理" : "整理目录", systemImage: "pencil") { editing.editingOutline.toggle() }
-            Button("重新识别目录", systemImage: "arrow.clockwise") { editing.rebuildingOutline = true }
+            Button("重新识别目录", systemImage: "arrow.clockwise") { if let bookID { editing.beginRebuild(bookID) } }
             Button("恢复自动目录", systemImage: "arrow.uturn.backward") { editing.restoringOutline = true }
         } label: {
             Label("目录操作", systemImage: editing.editingOutline ? "pencil.circle.fill" : "ellipsis")

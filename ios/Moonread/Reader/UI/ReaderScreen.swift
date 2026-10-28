@@ -241,7 +241,7 @@ struct ReaderScreen: View {
             guard popping else { return }
             navigationPresentation.finish(cancelled: cancelled)
             if !cancelled { completeReturning() }
-        }))
+        }, removed: completeReturning))
         .toolbarVisibility(.hidden, for: .tabBar)
         .statusBarHidden(!controlsVisible)
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -261,9 +261,10 @@ struct ReaderScreen: View {
             }
         }
         .navigationDestination(isPresented: Binding(get: { panel == .settings && !session.isLeaving }, set: { shown in
+            if wideTools.editor != nil && !session.isLeaving { return }
             if !shown, panel == .settings { panel = searchActive ? .search : nil; sheetDismissRequested = false }
         })) {
-                ReaderSettingsView(settings: readingSettings, preview: settingsPreview, encoding: session.encodingLabel, isRestartingEncoding: session.restartingEncoding, changeEncoding: changeEncoding, editing: wideTools.settingsEditing)
+                ReaderSettingsView(settings: readingSettings, preview: settingsPreview, encoding: session.encodingLabel, isRestartingEncoding: session.restartingEncoding, changeEncoding: changeEncoding, editing: wideTools.settingsEditing, editorClosed: readerEditorClosed)
                 .themeScope(theme)
                 .preferredColorScheme(theme.scheme)
                 .onDisappear {
@@ -294,12 +295,7 @@ struct ReaderScreen: View {
             controlsVisible = false; dock = .progress
             if taskID == nil, searchActive { closeSearch() }
         }), onDismiss: presentationDismissed) { readerSheet }
-        .modifier(ReaderWideEditorPresentation(state: wideTools, session: session, tools: tools) {
-            if !wideTools.regular, wideTools.tool == .settings {
-                wideTools.compactSettingsHandoff = true
-                panel = .settings
-            }
-        })
+        .modifier(ReaderWideEditorPresentation(state: wideTools, session: session, tools: tools, closed: readerEditorClosed))
         .overlay(alignment: .top) {
             if !session.isLeaving, session.selectionStart != nil {
                 HStack {
@@ -388,31 +384,19 @@ struct ReaderScreen: View {
         }
         .onChange(of: isWide) { _, wide in
             wideTools.regular = wide
-            if wide {
-                if wideTools.compactSettingsHandoff, panel == .settings {
-                    wideTools.compactSettingsHandoff = false
-                    wideTools.settingsReturningToInspector = true
-                    panel = searchActive ? .search : nil
-                } else if sheetPresented, taskID == nil {
-                    wideTools.toolSheetHandoff = true
-                    sheetDismissRequested = true
-                }
+            // Keep the actual presenter and all of its parents while editing.
+            // Only the native sheet adapts; reconcile the underlying tool later.
+            if wideTools.editor != nil {
+                if wide, panel == .settings { wideTools.compactSettingsHandoff = true }
                 refreshWideInspector()
-            } else {
-                let active = session.settings?.wideToolsExpanded != false && wideTools.editor == nil
-                let task: ReaderWideTool? = active && wideTools.tool == .settings && session.editor == nil ? .settings
-                    : (active && wideTools.tool == .search && searchActive ? .search : nil)
-                if let task, wideTools.inspectorMounted { wideTools.compactToolPending = task }
-                inspector?.presented = false
-                if let task, !wideTools.inspectorMounted { showCompactTool(task) }
-            }
+            } else { reconcileToolPresentation() }
         }
         .onChange(of: session.opening.phase) { _, _ in refreshWideInspector() }
         .onChange(of: session.settings?.wideToolsExpanded) { _, expanded in
             if isWide { inspector?.presented = expanded == true && wideInspectorAllowed }
         }
         .onChange(of: theme.plan) { _, _ in refreshWideInspector() }
-        .onChange(of: wideTools.editor) { _, _ in refreshWideInspector() }
+        .onChange(of: wideTools.editor?.id) { _, _ in refreshWideInspector() }
         .onChange(of: wideInspectorAllowed) { _, _ in refreshWideInspector() }
     }
 
@@ -434,7 +418,13 @@ struct ReaderScreen: View {
                 if session.browseOrigin != nil { controlsVisible = false }
             }
         }
-        .onChange(of: session.chapterDraft) { _, draft in if draft != nil { presentPanel(.chapterEditor) } }
+        .onChange(of: session.chapterDraft?.id) { _, id in
+            if id != nil, let draft = session.chapterDraft {
+                wideTools.beginEditing(.chapter(draft), presenter: .readerTask, returningTo: .chapters)
+                session.chapterDraft = nil
+                presentPanel(.chapterEditor)
+            }
+        }
         .onChange(of: session.editor?.presentationID) { _, id in
             if id != nil { controlsVisible = false; dock = .progress; searchExpanded = false; libraryReturnsToMore = false }
         }
@@ -458,7 +448,7 @@ struct ReaderScreen: View {
             battery.stop()
             // Settings are pushed above the reader in the same navigation stack.
             // Only leaving its navigation destination ends the reading session.
-            if panel?.isPage != true, !navigationPresentation.isSuspended { library.systemReading.unregister(session); completeReturning() }
+            if session.isLeaving || (wideTools.editor == nil && panel?.isPage != true && !navigationPresentation.isSuspended) { completeReturning() }
         }
     }
 
@@ -599,15 +589,16 @@ struct ReaderScreen: View {
     }
 
     private var readerTask: some View {
-        ReaderTaskContent(panel: panel, session: session, tools: tools, libraryEditing: wideTools.libraryEditing, aiEntrySnapshot: aiEntrySnapshot,
+        ReaderTaskContent(panel: panel, session: session, tools: tools, toolSession: wideTools, aiEntrySnapshot: aiEntrySnapshot,
                           aiContext: { aiContext() }, aiConversationID: $aiConversationID,
                           openingIsActive: { exitPhase == .reading && !session.isLeaving }, closeTask: closeTask,
-                          navigate: navigateFromLibrary, edit: editFromLibrary)
+                          navigate: navigateFromLibrary, edit: editFromLibrary, editorClosed: readerEditorClosed)
     }
 
     private func clearTask() {
         libraryNavigationRevision = nil; libraryReturnsToMore = false
         session.editor = nil; session.chapterDraft = nil
+        if let editor = wideTools.editor, editor.presenter == .readerTask { wideTools.finishEditing(editor.id) }
         panel = searchActive ? .search : nil
         session.notesChanged()
     }
@@ -649,11 +640,13 @@ struct ReaderScreen: View {
             clearTask()
             searchExpanded = false
             sheetDismissRequested = false
+            readerEditorClosed()
         }
     }
 
     private func completeReturning() {
         guard exitPhase == .reading else { return }
+        if let editor = wideTools.editor { wideTools.finishEditing(editor.id) }
         navigationPresentation.begin(hasPresentation: sheetPresented)
         exitPhase = .saving
         pageAfterDismiss = nil; detailOrigin = nil; searchActive = false
@@ -661,6 +654,7 @@ struct ReaderScreen: View {
         tools.leave()
         reviewExitIsNormal = session.error == nil && session.book != nil
         let saved = session.leave()
+        library.systemReading.unregister(session)
         panel = nil
         Task {
             await saved.value
@@ -927,6 +921,39 @@ struct ReaderScreen: View {
             showHistory: { presentPanel(.history) }, changeEncoding: changeEncoding,
             searchExpanded: $searchExpanded)
         inspector.presented = wideInspectorAllowed && (session.settings?.wideToolsExpanded ?? true)
+    }
+
+    private func reconcileToolPresentation() {
+        guard wideTools.editor == nil, !session.isLeaving else { return }
+        if isWide {
+            if wideTools.compactSettingsHandoff, panel == .settings {
+                wideTools.compactSettingsHandoff = false
+                wideTools.settingsReturningToInspector = true
+                panel = searchActive ? .search : nil
+            } else if sheetPresented, taskID == nil {
+                wideTools.toolSheetHandoff = true
+                sheetDismissRequested = true
+            }
+            refreshWideInspector()
+        } else {
+            let active = session.settings?.wideToolsExpanded != false
+            let task: ReaderWideTool? = active && wideTools.tool == .settings && session.editor == nil ? .settings
+                : (active && wideTools.tool == .search && searchActive ? .search : nil)
+            if let task, wideTools.inspectorMounted { wideTools.compactToolPending = task }
+            inspector?.presented = false
+            if let task, !wideTools.inspectorMounted { showCompactTool(task) }
+        }
+    }
+
+    private func readerEditorClosed() {
+        guard wideTools.editor == nil, !session.isLeaving, let tool = wideTools.takeCompletedTool() else { return }
+        wideTools.tool = tool
+        if isWide {
+            if panel == .settings { wideTools.compactSettingsHandoff = true }
+            reconcileToolPresentation()
+        } else if tool == .settings, panel != .settings {
+            showCompactTool(.settings)
+        }
     }
 
     private func wideInspectorDismissed() {

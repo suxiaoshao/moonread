@@ -517,10 +517,56 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     controller.pendingNavigation = (ReadingNavigation(restoring: savedGroup), false)
     controller.applyNavigation()
     XCTAssertTrue(pager.viewControllers?.first === restoredGroup, "an exact spread can be reused")
+
+    // A nearby .start jump retains the spread while a new bounded window moves
+    // both leaves to earlier array indices. The next group must not skip a page.
+    controller.pages = Array(pages.dropFirst())
+    controller.anchor = pages[2].firstVisibleOffset
+    controller.pendingNavigation = (ReadingNavigation(), true)
+    controller.applyNavigation()
+    XCTAssertTrue(pager.viewControllers?.first === restoredGroup)
+    XCTAssertEqual(controller.currentLeaves.map(\.index), [0, 1])
+    let nextGroup = try XCTUnwrap(controller.pageViewController(pager, viewControllerAfter: try XCTUnwrap(restoredGroup)))
+    XCTAssertEqual(controller.pageIndex(nextGroup), 2)
+    XCTAssertEqual((nextGroup as? ReadingPageGroupController)?.leaves.first?.page.start, pages[3].start)
   }
 }
 
 final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
+  func testReaderEditorKeepsItsOwnerAndInputUntilThatSessionFinishes() throws {
+    let tools = ReaderWideTools()
+    let palette = PaletteDraft(palette: try XCTUnwrap(defaultThemeSnapshot().palettes.first), creating: true)
+    tools.settingsEditing.beginPalette(palette, presenter: .preview)
+    let first = try XCTUnwrap(tools.editor)
+    palette.palette.name = "未保存的输入"
+    palette.error = "保存失败"
+    for regular in [true, false, true] {
+      tools.regular = regular
+      XCTAssertTrue(tools.editor === first)
+      XCTAssertEqual(tools.editor?.presenter, .preview)
+      XCTAssertTrue(tools.settingsEditing.draft === palette)
+      XCTAssertEqual(tools.settingsEditing.draft?.palette.name, "未保存的输入")
+      XCTAssertEqual(tools.settingsEditing.draft?.error, "保存失败")
+    }
+    tools.finishEditing(UUID())
+    XCTAssertTrue(tools.editor === first, "an unrelated host callback cannot cancel this task")
+    tools.finishEditing(first.id)
+    XCTAssertNil(tools.settingsEditing.draft)
+    XCTAssertEqual(tools.takeCompletedTool(), .settings)
+
+    let chapter = ChapterEditDraft(start: 4, title: "原名", level: 1)
+    tools.libraryEditing.beginChapter(chapter)
+    let next = try XCTUnwrap(tools.editor)
+    chapter.title = "实际输入"; chapter.level = 0
+    tools.regular = false
+    XCTAssertEqual(tools.libraryEditing.chapterEdit?.title, "实际输入")
+    XCTAssertEqual(tools.libraryEditing.chapterEdit?.level, 0)
+    tools.finishEditing(first.id)
+    XCTAssertTrue(tools.editor === next, "a late callback cannot cancel a newer task")
+    tools.finishEditing(next.id)
+    XCTAssertNil(tools.libraryEditing.chapterEdit)
+  }
+
   // S440: 取消搜索返回实际入口 tab，不把统计入口错误送回书架。
   func testSearchCancelReturnsToActualOriginAndSettingsTabRemainsValid() {
     let model = LibraryModel()

@@ -206,20 +206,7 @@ extension ReadingController {
             guard !pages.isEmpty else { return }
             let target = restoration?.offset ?? anchor
             let index = pending.request.pageIndex(in: pages, anchor: restoration?.groupStart ?? target)
-            let leaves = currentLeaves
-            let expectedGroup = pages[index..<min(pages.count, index + leafFrames.count)]
-            // A saved first leaf in the current right slot is not the saved
-            // spread: [9, 10] must be rebuilt before restoring [10, 11].
-            let matchesGroup = restoration?.groupStart == nil ||
-                (leaves.count == expectedGroup.count && zip(leaves, expectedGroup).allSatisfy {
-                    $0.page.start == $1.start && $0.page.end == $1.end
-                })
-            if matchesGroup, let leaf = leaves.first(where: { $0.page.start == pages[index].start && $0.page.end == pages[index].end }) {
-                if restoration?.groupStart != nil {
-                    for (offset, leaf) in leaves.enumerated() { leaf.update(page: pages[index + offset], index: index + offset) }
-                } else { leaf.update(page: pages[index], index: index) }
-                if let text = leaf.view as? UITextView { activateLeaf(text) }
-            } else {
+            if !reuseCurrentPageGroup(containing: index, startingAt: restoration?.groupStart == nil ? nil : index) {
                 let current = pageIndex(paging.viewControllers?.first) ?? index
                 paging.setViewControllers([makePage(at: index)], direction: index >= current ? .forward : .reverse, animated: false)
             }
@@ -292,15 +279,14 @@ extension ReadingController {
             let visible = current.page.firstVisibleOffset
             pages = paginate(window,preserving:pages,keeping:visible)
             guard !pages.isEmpty else { return }
-            let index = pages.lastIndex(where:{$0.start<=visible}) ?? 0
+            let index = ReadingNavigation().pageIndex(in: pages, anchor: visible)
             let active = anchorLeaf?.page.firstVisibleOffset
-            if paging.viewControllers?.first is ReadingPageGroupController {
+            if !reuseCurrentPageGroup(containing: index) {
                 paging.setViewControllers([makePage(at: index)], direction: .forward, animated: false)
-                if let active, let leaf = currentLeaves.first(where: { $0.page.start <= active && $0.page.end > active }), let text = leaf.view as? UITextView { activateLeaf(text) }
-            } else {
-                current.update(page: pages[index], index: index)
-                paging.setViewControllers([current], direction: .forward, animated: false)
+            } else if let group = paging.viewControllers?.first {
+                paging.setViewControllers([group], direction: .forward, animated: false)
             }
+            if let active, let leaf = currentLeaves.first(where: { $0.page.start <= active && $0.page.end > active }), let text = leaf.view as? UITextView { activateLeaf(text) }
             updateEdge(lastPageIndex(paging.viewControllers?.first) == pages.count - 1)
         } else if let paging = pageController, paging.viewControllers?.first is ReaderCoverController {
             pages = paginate(window, preserving: pages)
@@ -387,7 +373,7 @@ extension ReadingController {
             readingSurface.addSubview(paging.view)
             paging.didMove(toParent: self)
             pageController = paging
-            let index = hasCover && isCoverVisible ? -1 : (pages.lastIndex(where: { $0.start <= anchor }) ?? 0)
+            let index = hasCover && isCoverVisible ? -1 : ReadingNavigation().pageIndex(in: pages, anchor: anchor)
             paging.setViewControllers([makePage(at: index)], direction: .forward, animated: false)
         }
         decorateVisibleText()

@@ -126,7 +126,7 @@ final class ReaderToolsModel {
         guard library else { return }
         self.currentChapter = currentChapter
         if preservingPosition && !changed && !allChapters.isEmpty {
-            if notesKind != noteKind { await loadNotes(reset: true) }
+            await loadNotes(reset: true)
             return
         }
         await refreshChapters(jumpTo: currentChapter)
@@ -215,6 +215,11 @@ final class ReaderToolsModel {
             guard id == bookID, kind == noteKind, generation == notesGeneration else { return }
             notes = reset ? value.items : notes + value.items; notesKind = kind; moreNotes = value.hasMore
         } catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
+    }
+
+    func refreshVisibleMarks() async {
+        guard tab != .chapters else { return }
+        await loadNotes(reset: true)
     }
 
     func delete(_ mark: ReaderMark) async {

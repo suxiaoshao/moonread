@@ -16,6 +16,7 @@ func paletteDisplayName(_ value: ThemePalette) -> String {
 @MainActor @Observable final class PaletteDraft: Identifiable {
     let id = UUID()
     var palette: ThemePalette
+    var error: String?
     let creating: Bool
     init(palette: ThemePalette, creating: Bool) { self.palette = palette; self.creating = creating }
 }
