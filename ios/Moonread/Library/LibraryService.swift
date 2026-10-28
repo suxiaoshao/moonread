@@ -3,6 +3,8 @@ import CryptoKit
 import Darwin
 
 #if DEBUG
+import WidgetKit
+
 enum ReaderSmokeFixture {
     static var enabled: Bool {
         let args = ProcessInfo.processInfo.arguments
@@ -1184,6 +1186,35 @@ extension AppDataService {
                     display.synopsis = original.components(separatedBy: "\n\n").first(where: { $0.count > 45 }) ?? ""
                     try await saveMetadata(base: edited, edited: display)
                 }
+                if let scene = StoreShotScene.requested {
+                    let chapter = original.range(of: f.mainChapters[1])!
+                    var start = chapter.lowerBound
+                    if scene == .annotation, let note = original.range(of: f.notes[0][0]) {
+                        // Start at the preceding paragraph, not an arbitrary
+                        // character in a line, keeping complete reading lines.
+                        start = original[..<note.lowerBound].dropLast(2)
+                            .range(of: "\n\n", options: .backwards)?.upperBound ?? original.startIndex
+                    }
+                    if scene == .recap {
+                        start = original.index(original.range(of: f.mainChapters[2])!.lowerBound, offsetBy: -2)
+                    }
+                    let offset = UInt64(original[..<start].utf8.count)
+                    try await savePosition(bookID: book.id, offset: offset)
+                    if scene == .continuation {
+                        let ahead = original.range(of: f.mainChapters[2])!.lowerBound
+                        let winner = PositionValue(content_key: book.contentSha256,
+                                                   offset: UInt64(original[..<ahead].utf8.count))
+                        // Same persisted candidate path as sync, without changing
+                        // this device's just-written local resume baseline.
+                        let json = String(decoding: try JSONEncoder().encode(winner), as: UTF8.self)
+                        try await userStore().put("position/" + book.contentSha256, value: json, device: "store-shot-other-device")
+                        dataChanged()
+                    }
+                    if scene == .statistics { try await createStoreShotStatistics(bookID: book.id) }
+                    if scene == .widget {
+                        try await publishStoreShotWidget(book: book, fixture: f)
+                    }
+                }
             }
         }
         let inventory = try await readingDataInventory()
@@ -1194,6 +1225,42 @@ extension AppDataService {
             try await createStatisticsFixture(bookID: id)
         }
         sourceDefaults.set(true, forKey: "StoreShots.seeded")
+    }
+
+    private func createStoreShotStatistics(bookID: String) async throws {
+        // Frozen original sample, using the same clock and writer as reading.
+        for (index, minutes) in [18, 0, 28, 36, 45, 39, 32].enumerated() where minutes > 0 {
+            let day = Calendar.current.date(byAdding: .day, value: index - 6, to: StoreShotScene.statisticsDate)!
+            let start = Calendar.current.date(bySettingHour: 10, minute: 0, second: 0, of: day)!
+            let clock = ReadingClock(bookId: bookID)
+            var point = ReadingMoment(monotonicMs: 0, unixMs: Int64(start.timeIntervalSince1970 * 1000),
+                utcOffsetSeconds: Int32(TimeZone.current.secondsFromGMT(for: start)), readable: true,
+                interaction: true, preview: false, startUtf8: 0, endUtf8: 30)
+            _ = clock.update(moment: point)
+            for minute in 1...minutes {
+                point.monotonicMs = UInt64(minute * 60_000)
+                point.unixMs = Int64(start.timeIntervalSince1970 * 1000) + Int64(minute * 60_000)
+                point.readable = minute != minutes
+                try await saveReading(clock.update(moment: point), generation: statisticsPreferences().generation)
+            }
+        }
+    }
+
+    private func publishStoreShotWidget(book: ImportText, fixture: StoreShotFixture) async throws {
+        #if targetEnvironment(simulator)
+        guard let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: SystemReadingSnapshotFile.groupIdentifier) else {
+            throw LibraryFileError.invalidDestination
+        }
+        let id = try SystemReadingBookID(sha: book.contentSha256).rawValue
+        let entry = SystemReadingSnapshot.Book(id: id, title: book.title, author: fixture.author, tags: [],
+            availability: .available, sourceCount: 1, naturalOrdinal: 0, progress: 42,
+            chapterLabel: fixture.mainChapters[1], recentRank: 0, allowsAutomaticExposure: true)
+        let file = SystemReadingSnapshotFile(directory: root.appendingPathComponent("StoreScreenshots", isDirectory: true))
+        try file.publish(.init(storeScope: "synthetic-store-screenshots", books: [entry], recentIDs: [id],
+                               appearance: await systemWidgetAppearance()))
+        UserDefaults(suiteName: SystemReadingSnapshotFile.groupIdentifier)?.set(fixture.language, forKey: "StoreScreenshots.language")
+        await MainActor.run { WidgetCenter.shared.reloadAllTimelines() }
+        #endif
     }
 }
 #endif

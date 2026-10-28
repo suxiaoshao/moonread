@@ -97,12 +97,12 @@ nix develop --no-update-lock-file -c xcodebuild \
   -derivedDataPath build/DerivedData -parallel-testing-enabled NO \
   -collect-test-diagnostics never \
   STORE_SCREENSHOT_DEVICE=iphone-medium \
-  STORE_SCREENSHOT_LANGUAGES=zh-Hans,zh-Hant,en \
-  STORE_SCREENSHOT_SCENES=01,02,03,04,05,06 \
+  STORE_SCREENSHOT_LANGUAGES=zh-Hans STORE_SCREENSHOT_STOREFRONT=CHN \
+  STORE_SCREENSHOT_SCENES=01,02,03,04,05,06,07,08 MARKETING_VERSION=1.3 \
   CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES test
 ```
 
-`STORE_SCREENSHOT_LANGUAGES` 传到测试进程后，按语言设置 App 的 `-AppleLanguages` / `-AppleLocale` 和对应原创正文、书名、批注；可只填 `zh-Hans`、`zh-Hant` 或 `en`。`STORE_SCREENSHOT_SCENES` 是逗号分隔的场景 ID，可只填 `01`，不会跑其他页面。未指定语言时默认三语，未指定场景时手机/iPad 默认 01–06，Duo 默认 01/02/03/06。
+`STORE_SCREENSHOT_LANGUAGES` 传到测试进程后，按语言设置 App 的 `-AppleLanguages` / `-AppleLocale` 和对应原创正文、书名、批注。店面单独由 `STORE_SCREENSHOT_STOREFRONT` 指定（默认 USA），与界面语言无关；简中正式素材用 CHN，繁中/英文 AI 回顾用 TWN/USA。`STORE_SCREENSHOT_SCENES` 可只填一个场景；不指定时为 01–08。01 自动拍三张相同阅读位置的纹理图，也可只指定 `01-paper`、`01-kraft` 或 `01-linen`；07 同时拍文件夹与 `07-tags` 候选，后者也可单独指定。仅重拍需要变化的场景，不重复跑全部流程。截图版本目录取构建的 MARKETING_VERSION，开发分支尚未升级版本号时可像上例显式覆盖。
 
 | 设备组 | 已有模拟器 | 原生 PNG 尺寸 | 阅读字号与准备 |
 | --- | --- | --- | --- |
@@ -113,16 +113,20 @@ nix develop --no-update-lock-file -c xcodebuild \
 
 | 场景 | 内容 |
 | --- | --- |
-| 01 | 素白 + 宣纸（中），正文 |
-| 02 | 纯黑夜读，无纹理，保留书签标记 |
-| 03 | 豆沙绿 + 细麻布（中），配色设置展开阅读预览 |
-| 04 | 书架，文件夹有书 |
-| 05 | 标注与笔记 |
-| 06 | 数据管理与备份入口 |
+| 01 | 同书同位置的素白+宣纸、杏桃浅+牛皮纸、豆沙绿+细麻布（均中档）；分别导出 01-paper / 01-kraft / 01-linen |
+| 02 | 原创书的同步续读提示；隔离库写入本机基线及另一设备候选，复用正式候选判断 |
+| 03 | 真实桌面上的继续阅读小组件（合成书、章节、42%）；不是 App 内预览 |
+| 04 | 简中为数据管理；繁中/英文为已审原创样书问答的 AI 回顾，不发网络请求 |
+| 05 | 固定 2026-10-25 的全局阅读统计，使用真实统计写入和查询 |
+| 06 | 原创正文中的划线与批注 |
+| 07 | 真实文件夹书架，以及「全部小说→标签」分组的独立候选（07-tags），不拼接两种页面 |
+| 08 | 原创书内的实际搜索结果 |
+
+03 拍摄前在所选模拟器的系统主屏幕手动添加一个中尺寸「继续阅读」组件，完成编辑并停在该页；这是每轮拍摄开始前的一次桌面准备，避免 SpringBoard 编辑动画令 XCUITest 长时间等待空闲。截图场景只负责切回主屏幕并导出，拍完由操作者移除测试组件。03 只在 DEBUG 模拟器中把独立的 `StoreScreenshots/catalog.json` 提供给真实小组件，结束时自动删除该夹具文件，正常目录不被覆盖。全流程仍只操作 destination 对应的设备；iPad/Duo 的 1.3 商店构图须另行确认，不能把 iPhone 场景直接认定为已验收。
 
 scheme 的 pre-action 启动 `ios/StoreScreenshots/export.py` 拍摄/导出协作器，post-action 停止它并关闭所选模拟器；构建本身仍全部由 xcodebuild/Nix 管理，没有独立 shell 构建脚本。App 每个场景使用随机 UUID 隔离会话，只在自己的临时目录写原创 TXT，拒绝 iCloud/Downloads 路径。固定系统状态栏为 9:41、满电满格；阅读器中的当前时间保持真实路径。
 
-PNG 自动保存到 `build/Release/<MARKETING_VERSION>-screenshots/<语言>/<设备组>/01.png` 等路径，只覆盖本次指定的场景，其余图片保留。导出原生截图，不缩放、不叠标题；按实际 RGB 像素排除黑图，不把 alpha 算成画面。尺寸或 DeviceHub 展开状态不符时直接失败，日志见 `build/StoreScreenshots/export.log`。失败截图不能当作交付，交付前仍需目视检查正文、构图和全屏状态。若用户强制中断 xcodebuild，先执行 `touch build/StoreScreenshots/stop` 停止导出协作器，再手动关闭本次使用的模拟器，不保留空闲 Booted 设备。
+PNG 自动保存到 `build/Release/<MARKETING_VERSION>-screenshots/<语言>/<设备组>/01-paper.png`、`02.png` 等路径，`manifest.json` 记录来源提交、语言/店面、配色与纹理、独立会话、设备尺寸和 PNG 摘要，只覆盖本次指定的场景，其余图片保留。导出原生截图，不缩放、不叠标题；按实际 RGB 像素排除黑图，不把 alpha 算成画面。尺寸或 DeviceHub 展开状态不符时直接失败，日志见 `build/StoreScreenshots/export.log`。失败截图不能当作交付，交付前仍需目视检查正文、构图和全屏状态。若用户强制中断 xcodebuild，执行 `python3 ios/StoreScreenshots/export.py finish --root .` 停止导出、清理小组件夹具并关闭本次使用的模拟器，不保留空闲 Booted 设备。
 
 ### TestFlight 手动 CI
 
@@ -210,7 +214,7 @@ nix develop --no-update-lock-file -c xcodebuild \
 
 `PAGE_SHOT_SCENE` 可选 `book-details`（小说详情）、`reader-settings`（阅读设置）、`settings`（设置，regular 宽度自动两栏）、`library-home`（书架首页）、`reader`（单页阅读器）。每次只运行指定页面；`PAGE_SHOT_APPEARANCE=light|dark` 选择杏桃浅／深，页面模式默认只用简中，也可通过 `STORE_SCREENSHOT_LANGUAGES` 指定一个语言。`PAGE_SHOT_ORIENTATION=portrait|landscape|current` 控制方向，默认 iPad 横屏、iPhone 竖屏、Duo 保持当前姿态。沿用现有四个设备组与 UUID destination；Duo 内屏须先手动在 DeviceHub 展开，再用 `duo-inner`，不自动折叠或创建模拟器。
 
-PNG 保存到 `build/PageShots/<设备组>/<场景>-浅.png` 或 `-深.png`；simctl 按实际 display 导出横屏像素，去掉会让查看器再次旋转的方向元数据，不缩放，不从 XCTest attachment 转图。scheme 会在结束时关闭所选模拟器。未设置 `PAGE_SHOT_SCENE` 时，原商店 01–06 流程与输出路径不变。
+PNG 保存到 `build/PageShots/<设备组>/<场景>-浅.png` 或 `-深.png`；simctl 按实际 display 导出横屏像素，去掉会让查看器再次旋转的方向元数据，不缩放，不从 XCTest attachment 转图。scheme 会在结束时关闭所选模拟器。未设置 `PAGE_SHOT_SCENE` 时，商店场景流程与输出路径不变。
 
 按改动选受影响的核心测试、原生排版回归和必要交互流程；需要时使用 `-only-testing:` 限定测试，不因小修自动重复全部验收。UI 用例各自使用独立测试存储，同一用例重启仍复用该目录，不覆盖正常书库。DEBUG 下同时提供 `--ui-testing` 和有效 UUID `--ui-test-session` 时，新会话重置标准 defaults 的阅读设置及设置分类，从默认滚动模式、20 号字开始；相同 UUID 的重启保留修改以验证持久化，正常启动不重置。
 

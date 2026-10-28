@@ -2,6 +2,19 @@ import Foundation
 
 // Original stories shared by the DEBUG fixture and the separate screenshot tests.
 #if DEBUG
+enum StoreShotScene: String {
+    case paper = "texture-paper", kraft = "texture-kraft", linen = "texture-linen"
+    case continuation, widget, backup, recap, statistics, annotation, shelf, search
+    case tags = "shelf-tags"
+
+    static var requested: Self? {
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("--ui-testing"), args.contains("--ui-test-store-screenshots"),
+              let i = args.firstIndex(of: "--ui-test-store-scene"), args.indices.contains(i + 1) else { return nil }
+        return Self(rawValue: args[i + 1])
+    }
+    static let statisticsDate = Date(timeIntervalSince1970: 1_792_929_600) // 2026-10-25 12:00 UTC
+}
 enum StoreShotPage: String, CaseIterable {
     case bookDetails = "book-details", readerSettings = "reader-settings"
     case settings, libraryHome = "library-home", reader

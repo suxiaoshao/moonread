@@ -59,10 +59,10 @@ actor AppDataService {
         if arguments.contains("--ui-test-store-screenshots"), arguments.contains("--ui-testing"),
            let i = arguments.firstIndex(of: "--ui-test-session"), arguments.indices.contains(i + 1),
            let session = UUID(uuidString: arguments[i + 1])?.uuidString {
-            UserDefaults(suiteName: "Moonread.AI.UITest-" + session)!.set(false, forKey: "Moonread.ai.enabled.v1")
             let suite = "Moonread.StoreShots." + session
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-StoreShots-" + session, isDirectory: true)
             let mode = arguments.firstIndex(of: "--ui-test-store-scene").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil } ?? "paper"
+            UserDefaults(suiteName: "Moonread.AI.UITest-" + session)!.set(mode == "recap", forKey: "Moonread.ai.enabled.v1")
             var snapshot = defaultThemeSnapshot()
             snapshot.preferences.appMode = .light
             snapshot.preferences.readerMode = mode == "night" ? .dark : .light
@@ -70,6 +70,20 @@ actor AppDataService {
             snapshot.preferences.readerDark = .palette(id: "black-dark")
             snapshot.preferences.readerLightTexture = ReaderTextureChoice(id: mode == "appearance" ? .linen : .paper, strength: mode == "notes" ? .light : .medium)
             snapshot.preferences.readerDarkTexture = nil
+            switch StoreShotScene.requested {
+            case .paper: snapshot.preferences.readerLight = .palette(id: "white-light")
+            case .kraft: snapshot.preferences.readerLight = .palette(id: "apricot-light")
+            case .linen: snapshot.preferences.readerLight = .palette(id: "bean-light")
+            default: break
+            }
+            if let scene = StoreShotScene.requested {
+                snapshot.preferences.readerLightTexture = switch scene {
+                case .paper: .init(id: .paper, strength: .medium)
+                case .kraft: .init(id: .kraft, strength: .medium)
+                case .linen: .init(id: .linen, strength: .medium)
+                default: nil
+                }
+            }
             if StoreShotPage.requested != nil {
                 // This path returns before the general UI-test defaults reset.
                 UserDefaults.standard.set(ReadingSettingsTab.typography.rawValue, forKey: "readingSettingsTab")

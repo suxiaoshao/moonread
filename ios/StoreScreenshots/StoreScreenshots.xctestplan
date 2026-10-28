@@ -39,6 +39,10 @@
       {
         "key": "PAGE_SHOT_ORIENTATION",
         "value": "$(PAGE_SHOT_ORIENTATION)"
+      },
+      {
+        "key": "STORE_SCREENSHOT_STOREFRONT",
+        "value": "$(STORE_SCREENSHOT_STOREFRONT)"
       }
     ],
     "language": "zh-Hans",

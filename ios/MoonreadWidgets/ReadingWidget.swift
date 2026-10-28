@@ -70,6 +70,9 @@ private struct ReadingWidgetView: View {
             }
         }.containerBackground(for: .widget) { SystemWidgetPaper(appearance: entry.appearance) }.widgetURL(entry.url)
             .modifier(SystemWidgetAppearanceMode(appearance: entry.appearance, enabled: rendering == .fullColor && (family == .systemSmall || family == .systemMedium)))
+            #if DEBUG && targetEnvironment(simulator)
+            .environment(\.locale, Locale(identifier: UserDefaults(suiteName: SystemReadingSnapshotFile.groupIdentifier)?.string(forKey: "StoreScreenshots.language") ?? Locale.current.identifier))
+            #endif
     }
     private func accessory(includeChapter: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {

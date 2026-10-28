@@ -329,7 +329,7 @@ struct StatisticsView: View {
         }.foregroundStyle(Color(uiColor: theme.secondary)).padding(.vertical, 4)
     }
     private func periodSummary(_ overview: StatisticsOverview) -> some View {
-        let today = StatisticsDates.day(Date())
+        let today = StatisticsDates.day(StatisticsWindow.currentDate)
         let rhythm = StatisticsRhythm(window: window, days: overview.days, today: today, book: target == nil ? nil : model.key) { openedDay = $0 }
         return VStack(alignment: .leading, spacing: 18) {
             if target != nil {
