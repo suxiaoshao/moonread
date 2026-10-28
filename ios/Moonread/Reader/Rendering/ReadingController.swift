@@ -57,8 +57,6 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         didSet { if guideHeight != oldValue { view.setNeedsLayout() } }
     }
     var headerPositionChanged: (CGFloat) -> Void = { _ in }
-    var bodyLayoutChanged: (ReaderBodyLayout) -> Void = { _ in }
-    private var reportedBodyLayout: ReaderBodyLayout?
     private var reportedHeaderTop: CGFloat?
     private var localInsetHeight: CGFloat?
     var contentGeometry: ReadingContentGeometry? {
@@ -331,7 +329,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         let regions = contentGeometry == nil ? [surface] : readingRegions(in: surface)
         var nextSurface = surface
         var nextFrames = [CGRect(origin: .zero, size: surface.size)]
-        if contentGeometry != nil, settings?.mode == .pages, settings?.widePageMode == .double,
+        if contentGeometry != nil, ReadingContainerRegions.permitsSpread(in: surface.size), settings?.mode == .pages, settings?.widePageMode == .double,
            let settings {
             let minimum = ReadingTypography.minimumColumnWidth(settings)
             let candidates: [CGRect]
@@ -362,14 +360,6 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         let pageLayoutChanged = leafFrames != nextFrames
         readingSurface.frame = nextSurface
         leafFrames = nextFrames
-        let bodyLayout = ReaderBodyLayout(width: nextSurface.width, leafCount: nextFrames.count)
-        if reportedBodyLayout != bodyLayout {
-            reportedBodyLayout = bodyLayout
-            Task { @MainActor [weak self] in
-                guard let self, self.reportedBodyLayout == bodyLayout else { return }
-                self.bodyLayoutChanged(bodyLayout)
-            }
-        }
         if contentGeometry != nil {
             let headerTop = max(0, nextSurface.minY - compactHeaderHeight)
             if reportedHeaderTop != headerTop {
@@ -408,29 +398,10 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
 
     private func readingRegions(in surface: CGRect) -> [CGRect] {
         guard #available(iOS 27.1, *) else { return [surface] }
-        var regions = [surface]
-        for kind in [UIView.ReservedRegion.Kind.division, .occlusion] {
-            for reserved in view.reservedRegions(kind: kind) where reserved.isActive {
-                let frame = reserved.frame
-                let margins = reserved.margins
-                let blocked = CGRect(x: frame.minX - margins.left, y: frame.minY - margins.top,
-                    width: frame.width + margins.left + margins.right,
-                    height: frame.height + margins.top + margins.bottom)
-                regions = regions.flatMap { region -> [CGRect] in
-                    let overlap = region.intersection(blocked)
-                    guard !overlap.isNull, overlap.width > 0, overlap.height > 0 else { return [region] }
-                    // Text stays in complete rectangles. A horizontal fold yields
-                    // one reading region, never a lower-screen control console.
-                    if overlap.height >= overlap.width {
-                        return [CGRect(x: region.minX, y: region.minY, width: overlap.minX-region.minX, height: region.height),
-                                CGRect(x: overlap.maxX, y: region.minY, width: region.maxX-overlap.maxX, height: region.height)].filter { $0.width > 0 }
-                    }
-                    return [CGRect(x: region.minX, y: region.minY, width: region.width, height: overlap.minY-region.minY),
-                            CGRect(x: region.minX, y: overlap.maxY, width: region.width, height: region.maxY-overlap.maxY)].filter { $0.height > 0 }
-                }
-            }
+        let blocked = [UIView.ReservedRegion.Kind.division, .occlusion].flatMap { kind in
+            view.reservedRegions(kind: kind).filter(\.isActive).map(\.frame)
         }
-        return regions
+        return ReadingContainerRegions.available(surface, blocked: blocked)
     }
 
     private func preferredReadingRegion(_ regions: [CGRect]) -> CGRect? {

@@ -565,12 +565,6 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
   }
 
   func testReaderEditorKeepsItsOwnerAndInputUntilThatSessionFinishes() throws {
-    let layoutSettings = defaultReaderSettings()
-    XCTAssertTrue(ReaderInspectorGeometry.canFit(regular: true, hostWidth: 1024, body: .init(width: 1000), inspectorWidth: 0, settings: layoutSettings))
-    XCTAssertTrue(ReaderInspectorGeometry.canFit(regular: true, hostWidth: 1024, body: .init(width: 660), inspectorWidth: 340, settings: layoutSettings))
-    XCTAssertFalse(ReaderInspectorGeometry.canFit(regular: true, hostWidth: 600, body: .init(width: 600), inspectorWidth: 0, settings: layoutSettings))
-    XCTAssertTrue(ReaderInspectorGeometry.canFit(regular: true, hostWidth: 1400, body: .init(width: 1400, leafCount: 2), inspectorWidth: 0, settings: layoutSettings))
-
     func presentation(_ editor: ReaderEditPresenter?, page: ReaderPanel? = nil,
                       inspector: Bool = false, dock: Bool = false, handingOff: Bool = false) -> ReaderRootPresentation {
       .resolve(editor: editor, available: true, page: page, handingOff: handingOff,

@@ -1,25 +1,5 @@
 import SwiftUI
 
-struct ReaderUndoAction: View {
-    let session: ReaderSession
-    let tools: ReaderToolsModel
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 6) {
-                Image(systemName: "trash").accessibilityHidden(true)
-                Text("已删除")
-            }.foregroundStyle(Color(uiColor: theme.secondary))
-            Spacer(minLength: 12)
-            Button { Task { await tools.undoDelete(); session.notesChanged() } } label: {
-                Text("撤销").frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit)
-                    .contentShape(.rect)
-            }.accessibilityIdentifier("undoDeletedAnnotation")
-        }
-        .font(.subheadline).padding(.horizontal, LayoutTokens.page).padding(.vertical, 4)
-    }
-}
 
 struct ReaderProgressControls: View {
     @Bindable var session: ReaderSession

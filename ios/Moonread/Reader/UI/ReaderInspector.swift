@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The source stack owns native presentation; the reader owns its tool state.
 @MainActor @Observable final class ReaderInspectorPresentation {
-    var hostWidth: CGFloat = 0
+    var metrics = ReaderContainerMetrics()
     var width: CGFloat = 320
     var owner: UUID?
     var content: ReaderInspectorContent?
@@ -34,9 +34,9 @@ extension EnvironmentValues {
 struct ReaderInspectorHost: ViewModifier {
     @State private var presentation = ReaderInspectorPresentation()
     func body(content: Content) -> some View {
-        content.environment(\.readerInspector, presentation)
-            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { presentation.hostWidth = $0 }
-            .inspector(isPresented: $presentation.presented) {
+        ZStack {
+            content.environment(\.readerInspector, presentation)
+                .inspector(isPresented: $presentation.presented) {
                 if let tools = presentation.content {
                     NavigationStack {
                         tools
@@ -55,7 +55,10 @@ struct ReaderInspectorHost: ViewModifier {
                         willLeave: { _ in }, completed: { _, _ in }))
                 }
             }
-            .statusBarHidden(presentation.readingControlsVisible == false)
+                .statusBarHidden(presentation.readingControlsVisible == false)
+            ReaderContainerProbe { presentation.metrics = $0 }
+                .allowsHitTesting(false).accessibilityHidden(true)
+        }
     }
 }
 
@@ -316,12 +319,55 @@ struct ReaderWideEditorPresentation: ViewModifier {
     }
 }
 
-struct ReaderInspectorGeometry {
-    @MainActor static func canFit(regular: Bool, hostWidth: CGFloat, body: ReaderBodyLayout, inspectorWidth: CGFloat, settings: ReaderSettings?) -> Bool {
-        guard regular, body.width > 0, let settings else { return false }
-        let proseWidth = min(hostWidth, body.width + inspectorWidth) - 340
-        guard proseWidth > 0 else { return false }
-        let insets = ReadingTypography.insets(settings, width: proseWidth)
-        return proseWidth - insets.left - insets.right >= ReadingTypography.minimumColumnWidth(settings)
+/// Window-level input: the reader and inspector are descendants of the queried
+/// window, so their measured frames are never used as capacity facts.
+private struct ReaderContainerProbe: UIViewRepresentable {
+    let changed: (ReaderContainerMetrics) -> Void
+    final class Probe: UIView {
+        var changed: (ReaderContainerMetrics) -> Void = { _ in }
+        private var reported = ReaderContainerMetrics()
+        override func didMoveToWindow() { super.didMoveToWindow(); setNeedsLayout() }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            guard let window else { return }
+            var blocked: [CGRect] = []
+            if #available(iOS 27.1, *) {
+                blocked = [UIView.ReservedRegion.Kind.division, .occlusion].flatMap { kind in
+                    window.reservedRegions(kind: kind).filter(\.isActive).map(\.frame)
+                }
+            }
+            let next = ReaderContainerMetrics(bounds: window.bounds, safeArea: window.safeAreaInsets,
+                blocked: blocked, regular: window.traitCollection.horizontalSizeClass == .regular)
+            guard reported != next else { return }; reported = next
+            Task { @MainActor [weak self] in
+                guard let self, self.window != nil, self.reported == next else { return }
+                self.changed(next)
+            }
+        }
+        override func safeAreaInsetsDidChange() { super.safeAreaInsetsDidChange(); setNeedsLayout() }
+    }
+    func makeUIView(context: Context) -> Probe { let view = Probe(); view.isUserInteractionEnabled = false; return view }
+    func updateUIView(_ view: Probe, context: Context) { view.changed = changed; view.setNeedsLayout() }
+}
+
+struct ReaderUndoAction: View {
+    let session: ReaderSession
+    let tools: ReaderToolsModel
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "trash").accessibilityHidden(true)
+                Text("已删除")
+            }.foregroundStyle(Color(uiColor: theme.secondary))
+            Spacer(minLength: 12)
+            Button { Task { await tools.undoDelete(); session.notesChanged() } } label: {
+                Text("撤销").frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit)
+                    .contentShape(.rect)
+            }.accessibilityIdentifier("undoDeletedAnnotation")
+        }
+        .font(.subheadline).padding(.horizontal, LayoutTokens.page).padding(.vertical, 4)
     }
 }
+

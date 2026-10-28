@@ -36,11 +36,10 @@ struct ReaderScreen: View {
     @State private var pendingProgressNavigation = false
     @State private var libraryNavigationRevision: Int?
     @State private var settingsPreview = ReadingPreviewSource.sample
-    @State private var bodyLayout = ReaderBodyLayout()
-    private var wideToolsAvailable: Bool {
-        ReaderInspectorGeometry.canFit(regular: isWide, hostWidth: inspector?.hostWidth ?? readerWidth, body: bodyLayout,
-            inspectorWidth: inspector?.isActive == true ? (inspector?.width ?? 320) : 0, settings: session.settings)
+    private var toolContainer: ReaderToolContainer {
+        ReaderContainerPolicy.container(inspector?.metrics ?? ReaderContainerMetrics(), settings: session.settings)
     }
+    private var wideToolsAvailable: Bool { toolContainer == .inspector }
     @State private var readerWidth: CGFloat = 390
     @State private var localHeaderTop: CGFloat = 0
     @State private var battery = ReaderBattery()
@@ -90,7 +89,7 @@ struct ReaderScreen: View {
                             .opacity(navigationPresentation.isSuspended ? 0 : 1)
                     }
                 }
-        }.ignoresSafeArea(.container, edges: isWide ? [.top, .bottom] : [])
+        }.ignoresSafeArea(.container, edges: isWide ? [.top] : [])
     }
 
     private func readingView(window: ReadingWindow, settings: ReaderSettings, geometry: ReadingContentGeometry?) -> some View {
@@ -125,7 +124,6 @@ struct ReaderScreen: View {
                             guideHeight: Onboarding.shared.enabled && !Onboarding.shared.revealedControls && !controlsVisible ? controlsTipHeight : 0,
                             contentGeometry: geometry,
                             headerPositionChanged: { localHeaderTop = $0 },
-                            bodyLayoutChanged: { bodyLayout = $0 },
                             controlsVisible: controlsVisible,
                             toggleControls: { if panel == nil || panel == .search { controlsVisible.toggle() } },
                             readingBegan: { session.beganReadingInteraction(); controlsVisible = false },
