@@ -83,7 +83,17 @@ enum ReadingSettingsTab: String, CaseIterable {
 
 @MainActor @Observable final class ReadingSettingsEditing {
     var editedAppearance: ThemeAppearance?
-    var previewPresented = false
+    private var localPreviewPresented = false
+    let previewID = UUID()
+    var previewPresented: Bool {
+        get { readerTools.map { $0.presentation.location.path.contains(.preview(previewID)) } ?? localPreviewPresented }
+        set {
+            if let readerTools {
+                if newValue { readerTools.presentation.push(.preview(previewID)) }
+                else { readerTools.presentation.close(.preview(previewID)) }
+            } else { localPreviewPresented = newValue }
+        }
+    }
     var previewDetent = PresentationDetent.height(60)
     var restingDetent = PresentationDetent.height(60)
     @ObservationIgnored weak var readerTools: ReaderWideTools?
@@ -98,8 +108,8 @@ enum ReadingSettingsTab: String, CaseIterable {
         return draft
     }
     func beginPalette(_ draft: PaletteDraft, presenter: ReaderEditPresenter) {
-        if let readerTools { readerTools.beginEditing(.palette(draft), presenter: presenter, returningTo: .settings) }
-        else if localEditor == nil { localEditor = ReaderEditSession(payload: .palette(draft), presenter: presenter, returnTool: .settings) }
+        if let readerTools { readerTools.beginEditing(.palette(draft), presenter: presenter) }
+        else if localEditor == nil { localEditor = ReaderEditSession(payload: .palette(draft), presenter: presenter) }
     }
     func finishPalette(_ id: UUID) {
         if let readerTools { readerTools.finishEditing(id) }
@@ -349,7 +359,10 @@ struct ReaderSettingsView: View {
     }
     private func paletteBinding(_ presenter: ReaderEditPresenter) -> Binding<ReaderEditSession?> {
         let current = editor.paletteSession(for: presenter)
+        let token = editor.readerTools?.host.token
+        let generation = editor.readerTools?.presentation.revision ?? 0
         return Binding(get: { editor.paletteSession(for: presenter) }, set: {
+            guard editor.readerTools.map({ $0.acceptsNativeInput(token, generation: generation, compactOnly: true) }) ?? true else { return }
             if $0 == nil, let current { editor.finishPalette(current.id) }
         })
     }

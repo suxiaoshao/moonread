@@ -103,7 +103,16 @@ struct NoteEditor: View {
     }
     init(model: NoteEditorModel, close: @escaping () -> Void) { _model = State(initialValue: model); self.close = close }
     var body: some View {
-        NavigationStack {
+        NavigationStack { NoteEditorContent(model: model, close: close) }
+    }
+}
+
+struct NoteEditorContent: View {
+    @Environment(\.theme) private var theme
+    @Bindable var model: NoteEditorModel
+    let close: () -> Void
+    private var saving: Bool { model.saving }
+    var body: some View {
             VStack(spacing: 0) {
                 if !model.conflicts.isEmpty && model.conflictChoice {
                     HStack {
@@ -169,7 +178,6 @@ struct NoteEditor: View {
             .alert("暂时无法保存", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
                 Button("知道了", role: .cancel) { model.error = nil }
             } message: { Text(model.error ?? "") }
-        }
     }
     private func finish() {
         guard let write = model.beginCommit() else { return }

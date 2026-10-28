@@ -41,6 +41,7 @@ final class ReaderToolsModel {
     var regex = false
     var caseSensitive = false
     var hits: [SearchHit] = []
+    private(set) var searchActive = false
     var searching = false
     var partialSearch = false
     var searchFinished = false
@@ -119,7 +120,7 @@ final class ReaderToolsModel {
         guard !isLeaving else { return }
         let changed = self.bookID != bookID
         if changed {
-            stopSearch(); self.bookID = bookID
+            cancelSearchJob(); self.bookID = bookID
             chapters = []; allChapters = []; collapsedVolumes = []; chapterFilter = ""
             notes = []; notesKind = nil; hits = []; query = ""
         }
@@ -262,13 +263,16 @@ final class ReaderToolsModel {
         deletedIDs = nil
     }
 
-    func stopSearch() {
+    func beginSearchSession() { searchActive = true }
+    func stopSearch() { searchActive = false; cancelSearchJob() }
+    private func cancelSearchJob() {
         searchGeneration += 1
         job?.cancel(); searchTask?.cancel(); job = nil; searchTask = nil; searching = false
     }
     func startSearch() {
         guard !isLeaving else { return }
-        stopSearch()
+        cancelSearchJob()
+        searchActive = true
         guard let id = bookID else { return }
         hits = []; error = nil; searchFinished = false; truncatedSearch = false; partialSearch = false; searchProgress = 0
         searchListPosition = nil

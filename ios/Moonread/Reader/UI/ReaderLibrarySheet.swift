@@ -13,7 +13,7 @@ final class ReaderLibraryEditing {
     }
     func beginChapter(_ draft: ChapterEditDraft) {
         guard let readerTools else { return }
-        readerTools.beginEditing(.chapter(draft), presenter: readerTools.regular ? .reader : .library, returningTo: .chapters)
+        readerTools.beginEditing(.chapter(draft), presenter: .library)
     }
     var rebuildModel: ChapterRebuildModel? {
         guard let editor = readerTools?.editor, case let .rebuild(model) = editor.payload else { return nil }
@@ -22,7 +22,7 @@ final class ReaderLibraryEditing {
     var rebuildingOutline: Bool { rebuildModel != nil }
     func beginRebuild(_ bookID: String) {
         guard let readerTools else { return }
-        readerTools.beginEditing(.rebuild(ChapterRebuildModel(bookID: bookID)), presenter: readerTools.regular ? .reader : .library, returningTo: .chapters)
+        readerTools.beginEditing(.rebuild(ChapterRebuildModel(bookID: bookID)), presenter: .library)
     }
     var restoringOutline = false
     var removedChapter: ChapterEntry?
@@ -200,14 +200,22 @@ private struct ReaderLibraryEditorPresentation: ViewModifier {
     }
     private var chapterBinding: Binding<ChapterEditDraft?> {
         let current = editing.readerTools?.editor
+        let token = editing.readerTools?.host.token
+        let generation = editing.readerTools?.presentation.revision ?? 0
         return Binding(get: { current?.presenter == .library ? editing.chapterEdit : nil }, set: {
-            if $0 == nil, let current { editing.readerTools?.finishEditing(current.id) }
+            if $0 == nil, let current, editing.readerTools?.acceptsNativeInput(token, generation: generation, compactOnly: true) == true {
+                editing.readerTools?.finishEditing(current.id)
+            }
         })
     }
     private var rebuildBinding: Binding<Bool> {
         let current = editing.readerTools?.editor
+        let token = editing.readerTools?.host.token
+        let generation = editing.readerTools?.presentation.revision ?? 0
         return Binding(get: { current?.presenter == .library && editing.rebuildingOutline }, set: {
-            if !$0, let current { editing.readerTools?.finishEditing(current.id) }
+            if !$0, let current, editing.readerTools?.acceptsNativeInput(token, generation: generation, compactOnly: true) == true {
+                editing.readerTools?.finishEditing(current.id)
+            }
         })
     }
 }

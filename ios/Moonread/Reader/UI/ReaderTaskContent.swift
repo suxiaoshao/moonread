@@ -6,6 +6,8 @@ struct ReaderTaskContent: View {
     let session: ReaderSession
     let tools: ReaderToolsModel
     let toolSession: ReaderWideTools
+    let retainedNote: NoteEditorModel?
+    let retainedEditor: ReaderEditSession?
     let aiEntrySnapshot: AIEntryContext?
     let aiContext: () -> AIEntryContext
     @Binding var aiConversationID: String?
@@ -19,11 +21,11 @@ struct ReaderTaskContent: View {
     @ViewBuilder private var taskContent: some View {
         if panel == .ai, ai.availability.isAvailable {
             AIReadingConversation(context: aiEntrySnapshot ?? aiContext(), close: closeTask, selected: $aiConversationID, openingIsActive: openingIsActive)
-        } else if let model = session.noteEditorModel {
+        } else if let model = retainedNote ?? session.noteEditorModel {
             NoteEditor(model: model, close: closeTask)
         } else if panel == .history {
             ReaderHistorySheet(session: session, close: closeTask)
-        } else if panel == .chapterEditor, let editor = toolSession.editor,
+        } else if panel == .chapterEditor, let editor = retainedEditor ?? toolSession.editor,
                   case let .chapter(draft) = editor.payload, let id = session.readingID {
             NavigationStack {
                 ChapterEditor(bookID: id, draft: draft) { await session.refreshOutline(); closeTask() }

@@ -565,106 +565,53 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
   }
 
   func testReaderEditorKeepsItsOwnerAndInputUntilThatSessionFinishes() throws {
-    func presentation(_ editor: ReaderEditPresenter?, page: ReaderPanel? = nil,
-                      inspector: Bool = false, dock: Bool = false, handingOff: Bool = false) -> ReaderRootPresentation {
-      .resolve(editor: editor, available: true, page: page, handingOff: handingOff,
-               inspectorActive: inspector, dockPresented: dock, wantsDock: true)
-    }
-    XCTAssertEqual(presentation(.reader), .editor, "folding cannot replace a root editor with the dock")
-    XCTAssertEqual(presentation(.reader, inspector: true), .none, "wait for the native inspector to finish closing")
-    XCTAssertEqual(presentation(.reader, dock: true), .none)
-    XCTAssertEqual(presentation(.preview), .none)
-    XCTAssertEqual(presentation(.settings), .none)
-    XCTAssertEqual(presentation(.library), .dock, "nested editors must keep their dock parent")
-    XCTAssertEqual(presentation(.readerTask), .dock)
-    XCTAssertEqual(presentation(nil, inspector: true), .none)
-    XCTAssertEqual(presentation(nil, page: .settings, dock: true), .none, "dismiss the native dock before pushing settings")
-    XCTAssertEqual(presentation(nil, page: .settings, inspector: true), .none)
-    XCTAssertEqual(presentation(nil, page: .settings), .settings)
-    XCTAssertEqual(presentation(.preview, page: .settings), .settings, "keep the nested editor's settings parent")
-    XCTAssertEqual(presentation(nil, handingOff: true), .none)
-    XCTAssertEqual(presentation(nil, page: .search, inspector: true), .none)
-    XCTAssertEqual(presentation(nil, page: .search), .dock, "resume compact search after the inspector closes")
-    XCTAssertEqual(presentation(nil, page: .progress, inspector: true), .none,
-                   "close the inspector before showing progress")
-    XCTAssertEqual(presentation(nil, page: .progress), .progress)
-    XCTAssertEqual(presentation(nil, page: .progress, dock: true), .progress,
-                   "the popover keeps its slot when adapting to a sheet")
-    XCTAssertEqual(presentation(nil, page: .progress, dock: true, handingOff: true), .none,
-                   "dismiss progress before opening its history")
-    XCTAssertEqual(presentation(.preview, page: .progress), .none)
     let tools = ReaderWideTools()
-    let inspector = ReaderInspectorPresentation()
-    var dismissals = 0
-    inspector.content = ReaderInspectorContent(session: ReaderSession(), tools: ReaderToolsModel(), state: tools,
-      settings: .constant(defaultReaderSettings()), surface: .initial,
-      navigate: { _, _, _ in }, edit: { _ in }, close: {}, dismissed: { dismissals += 1 },
-      showHistory: {}, changeEncoding: { _ in }, searchExpanded: .constant(false))
-    inspector.presented = true
-    inspector.visibilityChanged(true)
-    inspector.presented = false
-    XCTAssertTrue(inspector.isActive, "changing the request is not native dismissal completion")
-    XCTAssertNotNil(inspector.content, "keep the outgoing content until native dismissal finishes")
-    XCTAssertEqual(dismissals, 0)
-    inspector.visibilityChanged(false)
-    XCTAssertFalse(inspector.isActive)
-    XCTAssertNil(inspector.content)
-    XCTAssertEqual(dismissals, 1)
-    let colors = try XCTUnwrap(defaultThemeSnapshot().palettes.first)
-    let existing = PaletteDraft(palette: colors, creating: false)
-    XCTAssertFalse(existing.hasUnsavedChanges)
-    existing.palette.name = "changed"; XCTAssertTrue(existing.hasUnsavedChanges)
-    existing.palette = colors; XCTAssertFalse(existing.hasUnsavedChanges)
-    let originalChapter = ChapterEditDraft(start: 0, title: "original", level: 1)
-    XCTAssertFalse(originalChapter.hasUnsavedChanges)
-    originalChapter.title = "changed"; XCTAssertTrue(originalChapter.hasUnsavedChanges)
-    originalChapter.title = "original"; XCTAssertFalse(originalChapter.hasUnsavedChanges)
+    let state = tools.presentation
+    state.choose(.settings, exposure: .expanded)
+    state.push(.fullSettings)
+    tools.settingsEditing.previewPresented = true
+    let parent = state.location
     let palette = PaletteDraft(palette: try XCTUnwrap(defaultThemeSnapshot().palettes.first), creating: true)
-    XCTAssertTrue(palette.hasUnsavedChanges)
-    palette.saving = true; XCTAssertFalse(palette.hasUnsavedChanges)
-    palette.saving = false
     tools.settingsEditing.beginPalette(palette, presenter: .preview)
     let first = try XCTUnwrap(tools.editor)
-    palette.palette.name = "未保存的输入"
-    palette.error = "保存失败"
+    palette.palette.name = "未保存的输入"; palette.error = "保存失败"
+    state.choose(.library, exposure: .reference)
+    XCTAssertEqual(state.location.selection, .settings, "switching tools cannot silently discard an editor")
     for regular in [true, false, true] {
-      tools.regular = regular
+      let metrics = ReaderContainerMetrics(bounds: CGRect(x: 0, y: 0, width: 1400, height: 900), regular: regular)
+      _ = ReaderContainerPolicy.container(metrics, settings: defaultReaderSettings())
       XCTAssertTrue(tools.editor === first)
-      XCTAssertEqual(tools.editor?.presenter, .preview)
       XCTAssertTrue(tools.settingsEditing.draft === palette)
-      XCTAssertEqual(tools.settingsEditing.draft?.palette.name, "未保存的输入")
-      XCTAssertEqual(tools.settingsEditing.draft?.error, "保存失败")
+      XCTAssertEqual(palette.palette.name, "未保存的输入")
+      XCTAssertEqual(palette.error, "保存失败")
     }
     tools.finishEditing(UUID())
-    XCTAssertTrue(tools.editor === first, "an unrelated host callback cannot cancel this task")
+    XCTAssertTrue(tools.editor === first)
     tools.finishEditing(first.id)
     XCTAssertNil(tools.settingsEditing.draft)
-    XCTAssertTrue(tools.presentationEditor === first, "keep the presentation slot until native onDismiss")
-    XCTAssertEqual(presentation(tools.presentationEditor?.presenter), .none)
-    XCTAssertEqual(tools.takeCompletedTool(), .settings)
-    XCTAssertNil(tools.presentationEditor)
-
-    // A readerTask cancelled in place keeps the search dock, so no native
-    // onDismiss will arrive to consume the completed editor.
-    tools.beginEditing(.chapter(ChapterEditDraft(start: 1, title: "第一次", level: 1)), presenter: .readerTask, returningTo: .search)
+    XCTAssertEqual(state.location, parent, "finishing pops only the editor; its preview/settings remain")
+    XCTAssertTrue(tools.editor(first.id) === first, "outgoing native content retains its object until released")
+    tools.releaseEditor(first.id)
+    XCTAssertNil(tools.editor(first.id))
+    tools.settingsEditing.previewPresented = false
+    XCTAssertEqual(state.location.path, [.fullSettings])
+    state.location.path = []; state.choose(.search, exposure: .expanded)
+    tools.beginEditing(.chapter(ChapterEditDraft(start: 1, title: "第一次", level: 1)), presenter: .readerTask)
     let inline = try XCTUnwrap(tools.editor)
     tools.finishEditing(inline.id)
-    XCTAssertEqual(tools.takeCompletedTool(), .search)
-    tools.beginEditing(.chapter(ChapterEditDraft(start: 1, title: "第二次", level: 1)), presenter: .readerTask, returningTo: .search)
-    XCTAssertNotNil(tools.editor)
-    tools.finishEditing(try XCTUnwrap(tools.editor).id)
-    _ = tools.takeCompletedTool()
+    XCTAssertEqual(state.location.selection, .search)
     let chapter = ChapterEditDraft(start: 4, title: "原名", level: 1)
     tools.libraryEditing.beginChapter(chapter)
     let next = try XCTUnwrap(tools.editor)
     chapter.title = "实际输入"; chapter.level = 0
-    tools.regular = false
+    tools.finishEditing(first.id)
+    XCTAssertTrue(tools.editor === next, "a late callback cannot finish a replacement draft")
     XCTAssertEqual(tools.libraryEditing.chapterEdit?.title, "实际输入")
     XCTAssertEqual(tools.libraryEditing.chapterEdit?.level, 0)
-    tools.finishEditing(first.id)
-    XCTAssertTrue(tools.editor === next, "a late callback cannot cancel a newer task")
     tools.finishEditing(next.id)
+    tools.releaseFinishedEditors()
     XCTAssertNil(tools.libraryEditing.chapterEdit)
+    XCTAssertEqual(state.location.selection, .search)
   }
 
   // S440: 取消搜索返回实际入口 tab，不把统计入口错误送回书架。
@@ -689,7 +636,7 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     loading.finish(new)
     XCTAssertFalse(loading.active)
   }
-  func testPresentationIntentDoesNotFollowBodyLayoutAndRejectsOldHostInput() {
+  func testPresentationIntentDoesNotFollowBodyLayoutAndRejectsOldHostInput() async throws {
     let state = ReaderPresentationState()
     state.choose(.settings, exposure: .expanded)
     let draft = UUID(); state.push(.palette(draft))
@@ -717,6 +664,54 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     let replacement = native.install(opening: opening, generation: state.revision)
     XCTAssertFalse(native.completed(old))
     XCTAssertEqual(native.token, replacement)
+    let host = ReaderPresentationHost()
+    state.location.path = [.fullSettings]; state.exposure = .expanded
+    XCTAssertEqual(ReaderPresentationProjection.target(state: state, container: .compact, editorParent: nil,
+      hasNote: false, hasAccessory: false, available: true), .settings)
+    host.update(.dock, opening: opening, generation: state.revision)
+    let dock = try XCTUnwrap(host.token)
+    host.retain(ReaderInstalledNode(location: state.location, exposure: state.exposure, controls: false,
+      searchActive: false, noteID: nil, noteEditor: nil, editor: nil))
+    host.update(.settings, opening: opening, generation: state.revision)
+    XCTAssertTrue(host.dismissing)
+    XCTAssertEqual(host.showing, .none, "release the sheet before the source stack pushes")
+    XCTAssertEqual(host.node?.panel, .settings, "retain the outgoing node until actual completion")
+    XCTAssertTrue(host.completed(dock))
+    host.update(.settings, opening: opening, generation: state.revision)
+    XCTAssertEqual(host.showing, .settings)
+    XCTAssertFalse(host.completed(dock))
+    state.choose(.library, exposure: .reference)
+    XCTAssertEqual(ReaderPresentationProjection.target(state: state, container: .compact, editorParent: nil,
+      hasNote: false, hasAccessory: false, available: true), .none)
+    state.choose(.settings, exposure: .expanded); state.push(.palette(UUID()))
+    XCTAssertEqual(ReaderPresentationProjection.target(state: state, container: .compact, editorParent: .reader,
+      hasNote: false, hasAccessory: false, available: true), .editor)
+
+    let tools = ReaderWideTools()
+    let source = ReaderInspectorPresentation(); tools.source = source
+    source.metrics.regular = true
+    let nativeToken = tools.host.installation.install(opening: opening, generation: tools.presentation.revision)
+    XCTAssertFalse(tools.acceptsNativeInput(nativeToken, generation: tools.presentation.revision, compactOnly: true),
+      "adaptation's early false callback must not cancel the old compact editor")
+    source.metrics.regular = false
+    XCTAssertTrue(tools.acceptsNativeInput(nativeToken, generation: tools.presentation.revision, compactOnly: true))
+    let intent = ReaderPresentationState()
+    intent.controlsVisible = true; intent.choose(.search, exposure: .expanded)
+    XCTAssertFalse(intent.controlsVisible)
+    intent.expandSearch(false); intent.setControlsVisible(false); intent.expandSearch(true)
+    XCTAssertEqual(intent.location.selection, .search)
+    XCTAssertEqual(intent.exposure, .expanded, "collapsed search reopens through the same binding")
+    intent.choose(.settings, exposure: .accessory); intent.setControlsVisible(false)
+    XCTAssertEqual(intent.location.selection, .library, "hiding phone quick tools restores progress")
+    intent.choose(.settings, exposure: .expanded); intent.setControlsVisible(false)
+    XCTAssertEqual(intent.location.selection, .settings, "hiding reader chrome does not replace a wide tool")
+    let search = ReaderToolsModel()
+    search.beginSearchSession()
+    await search.prepare(bookID: "search-fixture", currentChapter: 0, library: false)
+    XCTAssertTrue(search.searchActive, "preparing the first window is not closing the search session")
+    search.query = ""; search.startSearch()
+    XCTAssertTrue(search.searchActive, "an empty query is still an active search")
+    search.stopSearch(); XCTAssertFalse(search.searchActive)
     XCTAssertFalse(ReadingContainerRegions.permitsSpread(in: CGSize(width: 900, height: 900)))
     XCTAssertTrue(ReadingContainerRegions.permitsSpread(in: CGSize(width: 1000, height: 900)))
   }

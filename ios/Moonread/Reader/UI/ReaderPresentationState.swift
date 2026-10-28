@@ -25,9 +25,13 @@ struct ReaderToolLocation: Equatable {
     private(set) var revision: UInt64 = 0
 
     func choose(_ tool: ReaderTool, exposure: ReaderToolExposure) {
+        guard !location.path.contains(where: { route in
+            if case .note = route { return true }; return route.editorID != nil
+        }) else { return }
         guard location.selection != tool || self.exposure != exposure else { return }
         location = ReaderToolLocation(selection: tool)
         self.exposure = exposure
+        if tool == .search, exposure == .expanded { controlsVisible = false }
     }
     func push(_ destination: ReaderDestination) {
         guard location.path.last != destination else { return }
@@ -43,9 +47,10 @@ struct ReaderToolLocation: Equatable {
     }
     func setControlsVisible(_ visible: Bool) {
         controlsVisible = visible
-        if !visible, location.path.isEmpty { location.selection = .library }
+        if !visible, exposure == .accessory, location.path.isEmpty, location.selection != .search { location.selection = .library }
     }
     func expandSearch(_ expanded: Bool) {
+        if expanded { location.selection = .search }
         exposure = expanded ? .expanded : .accessory
         if expanded { controlsVisible = false }
     }
@@ -110,5 +115,94 @@ struct ReaderHostToken: Equatable {
     }
     func acceptsInput(_ value: ReaderHostToken, opening: UUID, generation: UInt64) -> Bool {
         token == value && !dismissing && value.opening == opening && value.generation == generation
+    }
+}
+
+enum ReaderPresentationTarget: Equatable { case none, dock, settings, details, editor, progress, inspector, toolSheet }
+
+@MainActor enum ReaderPresentationProjection {
+    static func target(state: ReaderPresentationState, container: ReaderToolContainer,
+                       editorParent: ReaderEditPresenter?, hasNote: Bool,
+                       hasAccessory: Bool, available: Bool) -> ReaderPresentationTarget {
+        guard available else { return .none }
+        let path = state.location.path
+        if path.contains(.details) { return .details }
+        if path.last == .progress { return .progress }
+        if path.last == .history || path.last == .ai { return .dock }
+        if container != .compact {
+            if state.exposure == .hidden, path.isEmpty, !hasNote { return .none }
+            return container == .inspector ? .inspector : .toolSheet
+        }
+        if editorParent == .reader { return .editor }
+        if path.contains(.fullSettings) || (state.location.selection == .settings && state.exposure == .expanded) { return .settings }
+        if editorParent == .settings || editorParent == .preview { return .settings }
+        if !path.isEmpty || hasNote { return .dock }
+        if state.exposure == .reference { return .none }
+        return state.controlsVisible || hasAccessory ? .dock : .none
+    }
+}
+
+/// Native occupancy only. A changing target requests release; the completion
+/// installs nothing itself. The reader reprojects the latest intent afterwards.
+@MainActor @Observable final class ReaderPresentationHost {
+    let installation = ReaderNativeInstallation()
+    private(set) var target = ReaderPresentationTarget.none
+    var hasModalChild = false
+    private(set) var node: ReaderInstalledNode?
+    func retain(_ node: ReaderInstalledNode) { if !dismissing { self.node = node } }
+    var token: ReaderHostToken? { installation.token }
+    var dismissing: Bool { installation.dismissing }
+    var showing: ReaderPresentationTarget { dismissing ? .none : target }
+    func update(_ desired: ReaderPresentationTarget, opening: UUID, generation: UInt64, force: Bool = false) {
+        if token == nil {
+            target = desired
+            if desired != .none { _ = installation.install(opening: opening, generation: generation) }
+        } else if target == desired, token?.opening == opening {
+            _ = installation.install(opening: opening, generation: generation)
+        } else if force || !hasModalChild { installation.beginDismissal() }
+    }
+    @discardableResult func completed(_ token: ReaderHostToken) -> Bool {
+        guard installation.completed(token) else { return false }
+        target = .none; hasModalChild = false; node = nil
+        return true
+    }
+    func acceptsInput(_ token: ReaderHostToken, opening: UUID, generation: UInt64) -> Bool {
+        installation.acceptsInput(token, opening: opening, generation: generation)
+    }
+}
+
+/// The currently installed node is retained only while its native container
+/// exits. It never drives intent or supplies a return destination.
+@MainActor struct ReaderInstalledNode {
+    let location: ReaderToolLocation
+    let exposure: ReaderToolExposure
+    let controls: Bool
+    let searchActive: Bool
+    let noteID: String?
+    let noteEditor: NoteEditorModel?
+    let editor: ReaderEditSession?
+    var dock: ReaderDock {
+        switch location.selection { case .settings: .settings; case .more: .more; default: .progress }
+    }
+    var searchExpanded: Bool { location.selection == .search && exposure == .expanded }
+    var panel: ReaderPanel? {
+        for route in location.path.reversed() {
+            switch route {
+            case .library, .rebuild: return .library
+            case .fullSettings, .preview, .palette: return .settings
+            case .chapter: return editor?.presenter == .readerTask ? .chapterEditor : .library
+            case .note: break
+            case .progress: return .progress
+            case .history: return .history
+            case .details: return .details
+            case .ai: return .ai
+            }
+        }
+        return searchActive ? .search : nil
+    }
+    var taskID: String? {
+        if let noteID { return "note-\(noteID)" }
+        if let panel, [.library, .history, .chapterEditor, .ai].contains(panel) { return panel.rawValue }
+        return nil
     }
 }

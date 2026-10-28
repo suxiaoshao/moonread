@@ -1,6 +1,5 @@
 import SwiftUI
 
-
 struct ReaderProgressControls: View {
     @Bindable var session: ReaderSession
     let didNavigate: () -> Void
