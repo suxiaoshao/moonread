@@ -623,12 +623,12 @@ struct ReaderScreen: View {
         if panel == .library, libraryReturnsToMore {
             // The list collapses into the same sheet, back to the 更多 content it grew from.
             controlsVisible = true; dock = .more
-            withAnimation(MotionTokens.panel(reduced: reduceMotion)) { clearTask() }
+            withAnimation(MotionTokens.panel(reduced: reduceMotion)) { clearTask(); readerEditorClosed() }
             return
         }
         controlsVisible = false; dock = .progress
         if hasReadingAccessory {
-            withAnimation(MotionTokens.panel(reduced: reduceMotion)) { clearTask() }
+            withAnimation(MotionTokens.panel(reduced: reduceMotion)) { clearTask(); readerEditorClosed() }
         } else {
             // Keep the outgoing task intact until native dismissal finishes.
             sheetDismissRequested = true

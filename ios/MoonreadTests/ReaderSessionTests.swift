@@ -601,6 +601,16 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     XCTAssertEqual(tools.takeCompletedTool(), .settings)
     XCTAssertNil(tools.presentationEditor)
 
+    // A readerTask cancelled in place keeps the search dock, so no native
+    // onDismiss will arrive to consume the completed editor.
+    tools.beginEditing(.chapter(ChapterEditDraft(start: 1, title: "第一次", level: 1)), presenter: .readerTask, returningTo: .search)
+    let inline = try XCTUnwrap(tools.editor)
+    tools.finishEditing(inline.id)
+    XCTAssertEqual(tools.takeCompletedTool(), .search)
+    tools.beginEditing(.chapter(ChapterEditDraft(start: 1, title: "第二次", level: 1)), presenter: .readerTask, returningTo: .search)
+    XCTAssertNotNil(tools.editor)
+    tools.finishEditing(try XCTUnwrap(tools.editor).id)
+    _ = tools.takeCompletedTool()
     let chapter = ChapterEditDraft(start: 4, title: "原名", level: 1)
     tools.libraryEditing.beginChapter(chapter)
     let next = try XCTUnwrap(tools.editor)
