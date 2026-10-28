@@ -36,6 +36,11 @@ struct ReaderScreen: View {
     @State private var pendingProgressNavigation = false
     @State private var libraryNavigationRevision: Int?
     @State private var settingsPreview = ReadingPreviewSource.sample
+    @State private var bodyLayout = ReaderBodyLayout()
+    private var wideToolsAvailable: Bool {
+        ReaderInspectorGeometry.canFit(regular: isWide, hostWidth: inspector?.hostWidth ?? readerWidth, body: bodyLayout,
+            inspectorWidth: inspector?.isActive == true ? (inspector?.width ?? 320) : 0, settings: session.settings)
+    }
     @State private var readerWidth: CGFloat = 390
     @State private var localHeaderTop: CGFloat = 0
     @State private var battery = ReaderBattery()
@@ -120,6 +125,7 @@ struct ReaderScreen: View {
                             guideHeight: Onboarding.shared.enabled && !Onboarding.shared.revealedControls && !controlsVisible ? controlsTipHeight : 0,
                             contentGeometry: geometry,
                             headerPositionChanged: { localHeaderTop = $0 },
+                            bodyLayoutChanged: { bodyLayout = $0 },
                             controlsVisible: controlsVisible,
                             toggleControls: { if panel == nil || panel == .search { controlsVisible.toggle() } },
                             readingBegan: { session.beganReadingInteraction(); controlsVisible = false },
@@ -372,7 +378,7 @@ struct ReaderScreen: View {
     private var widthAwareReader: some View {
         monitoredReader
         .onAppear {
-            wideTools.regular = isWide
+            wideTools.regular = wideToolsAvailable
             refreshWideInspector()
             contentVisible = true; session.opening.visibility(true, active: scenePhase == .active)
             session.opening.reduceMotion(reduceMotion)
@@ -389,7 +395,7 @@ struct ReaderScreen: View {
             wideTools.inputFocused = false
             searchExpanded = shown == true && wideTools.tool == .search
         }
-        .onChange(of: isWide) { _, wide in
+        .onChange(of: wideToolsAvailable) { _, wide in
             wideTools.regular = wide
             // Keep the actual presenter and all of its parents while editing.
             // Only the native sheet adapts; reconcile the underlying tool later.
@@ -568,7 +574,7 @@ struct ReaderScreen: View {
                  available: !session.isLeaving && !navigationPresentation.isSuspended && !sheetDismissRequested,
                  page: panel, handingOff: wideTools.compactToolPending != nil || pageAfterDismiss != nil,
                  inspectorActive: inspector?.isActive == true, dockPresented: sheetPresented,
-                 wantsDock: taskID != nil || (!isWide && (controlsVisible || hasReadingAccessory)))
+                 wantsDock: taskID != nil || (!wideToolsAvailable && (controlsVisible || hasReadingAccessory)))
     }
 
     private var readerSheet: some View {
@@ -697,7 +703,7 @@ struct ReaderScreen: View {
     }
 
     private func openLibrary(_ destination: ReaderLibraryTab, fromMore: Bool = false) {
-        if isWide {
+        if wideToolsAvailable {
             openWideTool(destination == .chapters ? .chapters : .notes, libraryTab: destination)
             return
         }
@@ -716,7 +722,7 @@ struct ReaderScreen: View {
     }
 
     private func presentPanel(_ next: ReaderPanel) {
-        if isWide {
+        if wideToolsAvailable {
             switch next {
             case .library: openWideTool(.chapters); return
             case .search: openWideTool(.search); return
@@ -913,7 +919,7 @@ struct ReaderScreen: View {
         exitPhase == .reading && !navigationPresentation.isSuspended && panel?.isPage != true ? controlsVisible : nil
     }
     private var wideInspectorAllowed: Bool {
-        isWide && session.opening.phase == .reading && session.opening.navigationSettled && !session.isLeaving
+        wideToolsAvailable && session.opening.phase == .reading && session.opening.navigationSettled && !session.isLeaving
             && !navigationPresentation.isSuspended && panel?.isPage != true && panel != .progress
             && !wideTools.settingsReturningToInspector && !wideTools.toolSheetHandoff
             && wideTools.presentationEditor == nil && taskID == nil
@@ -943,7 +949,7 @@ struct ReaderScreen: View {
         guard wideTools.presentationEditor == nil, !session.isLeaving else { return }
         // The native progress popover adapts itself; do not replace it with a dock.
         guard panel != .progress else { refreshWideInspector(); return }
-        if isWide {
+        if wideToolsAvailable {
             wideTools.compactToolPending = nil
             if wideTools.compactSettingsHandoff, panel == .settings {
                 wideTools.compactSettingsHandoff = false

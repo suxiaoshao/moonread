@@ -2,6 +2,8 @@ import SwiftUI
 
 /// The source stack owns native presentation; the reader owns its tool state.
 @MainActor @Observable final class ReaderInspectorPresentation {
+    var hostWidth: CGFloat = 0
+    var width: CGFloat = 320
     var owner: UUID?
     var content: ReaderInspectorContent?
     var presented = false
@@ -33,6 +35,7 @@ struct ReaderInspectorHost: ViewModifier {
     @State private var presentation = ReaderInspectorPresentation()
     func body(content: Content) -> some View {
         content.environment(\.readerInspector, presentation)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { presentation.hostWidth = $0 }
             .inspector(isPresented: $presentation.presented) {
                 if let tools = presentation.content {
                     NavigationStack {
@@ -45,6 +48,7 @@ struct ReaderInspectorHost: ViewModifier {
                             .toolbarVisibility(.hidden, for: .tabBar)
                     }
                     .themeScope(tools.surface).preferredColorScheme(tools.surface.scheme)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { presentation.width = $0 }
                     .inspectorColumnWidth(min: 320, ideal: 320, max: 400)
                     .background(NavigationTransitionObserver(
                         visibilityChanged: presentation.visibilityChanged,
@@ -289,5 +293,15 @@ struct ReaderWideEditorPresentation: ViewModifier {
     private func refreshOutline() async {
         await session.refreshOutline()
         await tools.refreshChapters(jumpTo: session.anchor)
+    }
+}
+
+struct ReaderInspectorGeometry {
+    @MainActor static func canFit(regular: Bool, hostWidth: CGFloat, body: ReaderBodyLayout, inspectorWidth: CGFloat, settings: ReaderSettings?) -> Bool {
+        guard regular, body.width > 0, let settings else { return false }
+        let proseWidth = min(hostWidth, body.width + inspectorWidth) - 340
+        guard proseWidth > 0 else { return false }
+        let insets = ReadingTypography.insets(settings, width: proseWidth)
+        return proseWidth - insets.left - insets.right >= ReadingTypography.minimumColumnWidth(settings)
     }
 }
