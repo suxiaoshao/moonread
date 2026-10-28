@@ -173,7 +173,7 @@ struct ReaderScreen: View {
                             guard !sheetPresented, wideTools.presentationEditor == nil else { return }
                             panel = .progress
                         }
-                        label: { Text(session.book.map { String(format: "%.1f%%", Double(session.displayAnchor ?? session.anchor) / Double(max(1, $0.byteCount)) * 100) } ?? "—").monospacedDigit() }
+                        label: { Text(session.incomplete ? "—" : (session.book.map { String(format: "%.1f%%", Double(session.displayAnchor ?? session.anchor) / Double(max(1, $0.byteCount)) * 100) } ?? "—")).monospacedDigit() }
                         .accessibilityLabel("阅读进度").accessibilityIdentifier("readerProgress")
                         .disabled(session.window == nil)
                         .popover(isPresented: Binding(get: { rootPresentation == .progress }, set: { shown in

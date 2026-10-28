@@ -143,7 +143,7 @@ struct ReaderInspectorContent: View {
                 VStack(spacing: 0) {
                     HStack {
                         if let chapter = session.chapter?.title { Text(chapter).lineLimit(1) }
-                        if let book = session.book, book.byteCount > 0 {
+                        if !session.incomplete, let book = session.book, book.byteCount > 0 {
                             Text(Double(session.displayAnchor ?? session.anchor) / Double(book.byteCount), format: .percent.precision(.fractionLength(1)))
                         }
                     }.font(.caption).foregroundStyle(Color(uiColor: surface.secondary)).padding(.top, 8)
