@@ -154,6 +154,20 @@ struct ReaderScreen: View {
                 }
             }
             .toolbar {
+                // Retain the popover's presenter while it adapts across widths.
+                if isWide || panel == .progress {
+                    ToolbarItem(placement: .bottomBar) {
+                        Button("阅读进度", systemImage: "slider.horizontal.3") {
+                            guard !sheetPresented, wideTools.presentationEditor == nil else { return }
+                            panel = .progress
+                        }
+                        .accessibilityIdentifier("readerProgress")
+                        .disabled(session.window == nil)
+                        .popover(isPresented: Binding(get: { rootPresentation == .progress }, set: { shown in
+                            if !shown, panel == .progress { sheetDismissRequested = true }
+                        }), arrowEdge: nil) { wideProgress }
+                    }
+                }
                 if isWide {
                     ToolbarItemGroup(placement: .bottomBar) {
                         ForEach(ReaderWideTool.allCases, id: \.self) { tool in
@@ -209,12 +223,6 @@ struct ReaderScreen: View {
             }
         }
         .overlay { aiMoon }
-        .overlay(alignment: .bottom) {
-            if isWide, !session.isLeaving, panel?.isPage != true, taskID == nil,
-               controlsVisible || session.browseOrigin != nil || tools.deletedIDs != nil {
-                wideAccessory
-            }
-        }
         #if DEBUG
         .overlay(alignment: .bottomTrailing) {
             if ReaderSmokeFixture.enabled {
@@ -681,7 +689,10 @@ struct ReaderScreen: View {
 
     private var undoCapsuleVisible: Bool {
         guard !session.isLeaving, !navigationPresentation.isSuspended, scenePhase == .active, session.editor == nil else { return false }
-        if isWide { return taskID == nil && (controlsVisible || tools.deletedIDs != nil) }
+        if isWide || panel == .progress {
+            return (inspector?.presented == true && inspector?.mounted == true)
+                || (panel == .progress && sheetPresented && !sheetDismissRequested)
+        }
         return taskID == nil && sheetPresented && !searchExpanded && dock != .settings && !sheetDismissRequested
     }
 
@@ -733,7 +744,7 @@ struct ReaderScreen: View {
             return
         }
         searchExpanded = false
-        if next.isPage, sheetPresented {
+        if sheetPresented, next.isPage || panel == .progress {
             // Only the navigation push is animated. The native dismissal
             // callback still coordinates ownership of the presentation.
             pageAfterDismiss = next
@@ -777,22 +788,11 @@ struct ReaderScreen: View {
     }
 
     private var undoCapsule: some View {
-        HStack(spacing: 12) {
-            HStack(spacing: 6) {
-                Image(systemName: "trash").accessibilityHidden(true)
-                Text("已删除")
-            }.foregroundStyle(Color(uiColor: theme.secondary))
-            Spacer(minLength: 12)
-            Button { Task { await tools.undoDelete(); session.notesChanged() } } label: {
-                Text("撤销").frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit)
-                    .contentShape(.rect)
-            }.accessibilityIdentifier("undoDeletedAnnotation")
-        }
-        .font(.subheadline).padding(.horizontal, LayoutTokens.page).padding(.vertical, 4)
+        ReaderUndoAction(session: session, tools: tools)
     }
 
     private var browsePanel: some View {
-        ReaderBrowseActions(session: session, showsHistory: controlsVisible,
+        ReaderBrowseActions(session: session, showsHistory: controlsVisible || panel == .progress,
                             showHistory: { presentPanel(.history) }, finished: { controlsVisible = false })
             .padding(.horizontal, LayoutTokens.page).padding(.top, LayoutTokens.page)
         .accessibilityElement(children: .contain)
@@ -805,7 +805,7 @@ struct ReaderScreen: View {
     }
     private var readerNavigationVisible: Bool {
         !session.isLeaving && !navigationPresentation.isSuspended
-            && (controlsVisible || session.window == nil)
+            && (controlsVisible || panel == .progress || session.window == nil)
     }
 
     private var readingSettings: Binding<ReaderSettings> {
@@ -913,7 +913,7 @@ struct ReaderScreen: View {
     }
     private var wideInspectorAllowed: Bool {
         isWide && session.opening.phase == .reading && session.opening.navigationSettled && !session.isLeaving
-            && !navigationPresentation.isSuspended && panel?.isPage != true
+            && !navigationPresentation.isSuspended && panel?.isPage != true && panel != .progress
             && !wideTools.settingsReturningToInspector && !wideTools.toolSheetHandoff
             && wideTools.presentationEditor == nil && taskID == nil
     }
@@ -940,6 +940,8 @@ struct ReaderScreen: View {
 
     private func reconcileToolPresentation() {
         guard wideTools.presentationEditor == nil, !session.isLeaving else { return }
+        // The native progress popover adapts itself; do not replace it with a dock.
+        guard panel != .progress else { refreshWideInspector(); return }
         if isWide {
             wideTools.compactToolPending = nil
             if wideTools.compactSettingsHandoff, panel == .settings {
@@ -1040,17 +1042,21 @@ struct ReaderScreen: View {
             }
     }
 
-    private var wideAccessory: some View {
+    private var wideProgress: some View {
         VStack(spacing: 4) {
-            if controlsVisible { continuationControl }
+            continuationControl
+            ReaderProgressControls(session: session) { pendingProgressNavigation = true }
             if session.browseOrigin != nil { browsePanel }
-            else if controlsVisible {
-                ReaderProgressControls(session: session) { pendingProgressNavigation = true }
-            }
             if tools.deletedIDs != nil { undoCapsule }
-        }.padding(.bottom, 8).frame(maxWidth: 560)
-            .background(theme.floatingBackground(), in: .rect(cornerRadius: 20))
-            .padding(.horizontal, 16).padding(.bottom, 8)
+        }
+        .padding(.vertical, LayoutTokens.compact)
+        .frame(idealWidth: 360)
+        .themeScope(theme).preferredColorScheme(theme.scheme)
+        .background(NavigationTransitionObserver(
+            visibilityChanged: { visible in
+                if visible { sheetPresented = true }
+                else { presentationDismissed() }
+            }, willLeave: { _ in }, completed: { _, _ in }))
     }
 
     private var preparationView: some View {

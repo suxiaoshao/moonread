@@ -554,6 +554,14 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     XCTAssertEqual(presentation(nil, handingOff: true), .none)
     XCTAssertEqual(presentation(nil, page: .search, inspector: true), .none)
     XCTAssertEqual(presentation(nil, page: .search), .dock, "resume compact search after the inspector closes")
+    XCTAssertEqual(presentation(nil, page: .progress, inspector: true), .none,
+                   "close the inspector before showing progress")
+    XCTAssertEqual(presentation(nil, page: .progress), .progress)
+    XCTAssertEqual(presentation(nil, page: .progress, dock: true), .progress,
+                   "the popover keeps its slot when adapting to a sheet")
+    XCTAssertEqual(presentation(nil, page: .progress, dock: true, handingOff: true), .none,
+                   "dismiss progress before opening its history")
+    XCTAssertEqual(presentation(.preview, page: .progress), .none)
     let tools = ReaderWideTools()
     let inspector = ReaderInspectorPresentation()
     var dismissals = 0

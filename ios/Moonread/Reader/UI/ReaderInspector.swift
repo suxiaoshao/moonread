@@ -141,6 +141,21 @@ struct ReaderInspectorContent: View {
                     changeEncoding: changeEncoding)
             }
         }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if session.browseOrigin != nil || tools.deletedIDs != nil {
+                VStack(spacing: 0) {
+                    ThemedDivider()
+                    if session.browseOrigin != nil {
+                        ReaderBrowseActions(session: session, showsHistory: false,
+                                            showHistory: showHistory, finished: {})
+                            .padding(.horizontal, LayoutTokens.page)
+                            .padding(.vertical, LayoutTokens.compact)
+                    }
+                    if tools.deletedIDs != nil { ReaderUndoAction(session: session, tools: tools) }
+                }
+                .background(Color(uiColor: surface.surface))
+            }
+        }
         .background(Color(uiColor: surface.canvas))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("readerInspector")
@@ -188,7 +203,7 @@ private struct ReaderInspectorSettings: View {
 enum ReaderEditPresenter { case reader, settings, preview, library, readerTask }
 
 enum ReaderRootPresentation {
-    case none, dock, editor, settings
+    case none, dock, editor, settings, progress
 
     /// Nested library/task editors retain their dock parent. Independent editors
     /// own the root presentation, including while their inspector is closing.
@@ -198,6 +213,10 @@ enum ReaderRootPresentation {
         guard available else { return .none }
         if editor == .reader { return inspectorActive || dockPresented ? .none : .editor }
         guard !handingOff else { return .none }
+        if page == .progress {
+            // This native presentation keeps its slot when adapting to a sheet.
+            return editor == nil && !inspectorActive ? .progress : .none
+        }
         if page == .settings {
             return inspectorActive || dockPresented ? .none : .settings
         }

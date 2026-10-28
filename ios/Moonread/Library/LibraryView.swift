@@ -22,6 +22,10 @@ struct LibraryView: View {
             } else { ProgressView("正在加载书架").frame(maxWidth: .infinity, maxHeight: .infinity).themedPage() }
         }
         .navigationTitle("书架").navigationBarTitleDisplayMode(.large)
+        // The iPad's top tab/navigation area needs the same canvas as the page;
+        // an automatic transparent bar otherwise exposes scrolling headings.
+        .toolbarBackground(Color(uiColor: theme.canvas), for: .navigationBar, .tabBar)
+        .toolbarBackground(.visible, for: .navigationBar, .tabBar)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Menu {
