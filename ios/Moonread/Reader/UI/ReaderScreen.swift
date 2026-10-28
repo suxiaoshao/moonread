@@ -728,6 +728,7 @@ struct ReaderScreen: View {
     }
 
     private func presentCompactPanel(_ next: ReaderPanel) {
+        guard panel != next || (next == .search && !searchExpanded) else { return }
         if next == .details {
             detailOrigin = (panel, controlsVisible, dock, searchExpanded)
             session.activity.update(readable: false, preview: session.browseOrigin != nil)
@@ -1010,6 +1011,8 @@ struct ReaderScreen: View {
     }
 
     private func openWideTool(_ tool: ReaderWideTool, libraryTab: ReaderLibraryTab? = nil) {
+        guard wideTools.tool != tool || session.settings?.wideToolsExpanded != true
+            || (tool == .search && !searchExpanded) || (libraryTab != nil && tools.tab != libraryTab) else { return }
         wideTools.tool = tool; wideTools.inputFocused = false
         if tool == .chapters || tool == .notes { tools.select(libraryTab ?? (tool == .chapters ? .chapters : .notes)) }
         if tool == .search { searchActive = true; searchExpanded = true }
