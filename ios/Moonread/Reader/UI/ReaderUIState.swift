@@ -38,6 +38,7 @@ enum ReaderTask {
     private(set) var foreground: ReaderTask = .reading
     private(set) var intentID = UUID()
     private var taskIDs = Dictionary(uniqueKeysWithValues: ReaderTool.allCases.map { ($0, UUID()) })
+    var reduceMotion = false
     var controlsVisible = false
     var layout = ReaderLayoutFacts()
     let tools = ReaderToolsModel()
@@ -67,8 +68,15 @@ enum ReaderTask {
         default: return search == nil ? .reading : .search
         }
     }
+    func animatePresentation(page: Bool = false, _ changes: () -> Void) {
+        guard !layout.regular else { changes(); return }
+        withAnimation(page ? (reduceMotion ? nil : .default) : MotionTokens.panel(reduced: reduceMotion), changes)
+    }
     private func set(_ task: ReaderTask) { intentID = UUID(); foreground = task }
     func show(_ tool: ReaderTool) {
+        animatePresentation(page: tool == .settings || tool == .details) { showNow(tool) }
+    }
+    private func showNow(_ tool: ReaderTool) {
         guard editor == nil, foreground.tool != tool else { return }
         let returning = context
         if tool != .search { taskIDs[tool] = UUID() }
@@ -80,12 +88,18 @@ enum ReaderTask {
         set(.tool(tool, returning: returning))
     }
     func toggleCompactTool(_ tool: ReaderTool) {
+        animatePresentation(page: false) { toggleCompactToolNow(tool) }
+    }
+    private func toggleCompactToolNow(_ tool: ReaderTool) {
         guard editor == nil else { return }
         if foreground.tool == tool { set(.reading) }
         else { set(.tool(tool, returning: .reading)) }
         controlsVisible = true
     }
     func restore(_ context: ReaderReturnContext) {
+        animatePresentation(page: context == .settings) { restoreNow(context) }
+    }
+    private func restoreNow(_ context: ReaderReturnContext) {
         switch context {
         case .more: set(.tool(.more, returning: .reading)); controlsVisible = true
         case .quickSettings: set(.tool(.quickSettings, returning: .reading)); controlsVisible = true
@@ -98,6 +112,9 @@ enum ReaderTask {
         }
     }
     func closeTask() {
+        animatePresentation(page: false) { closeTaskNow() }
+    }
+    private func closeTaskNow() {
         controlsVisible = false; inputFocused = false
         switch foreground {
         case .editing(let current): finishEditing(current.id)
@@ -107,10 +124,16 @@ enum ReaderTask {
         }
     }
     func closeSearch() {
+        animatePresentation(page: false) { closeSearchNow() }
+    }
+    private func closeSearchNow() {
         tools.searchSession = nil; tools.stopSearch()
         if foreground.tool == .search { set(.reading) }
     }
     func beginEditing(_ payload: ReaderEditSession.Payload, origin: ReaderEditOrigin, returning: ReaderReturnContext? = nil) {
+        animatePresentation(page: false) { beginEditingNow(payload, origin: origin, returning: returning) }
+    }
+    private func beginEditingNow(_ payload: ReaderEditSession.Payload, origin: ReaderEditOrigin, returning: ReaderReturnContext? = nil) {
         guard editor == nil else { return }
         controlsVisible = false; inputFocused = false
         set(.editing(ReaderEditSession(payload: payload, origin: origin, returning: returning ?? context)))
@@ -119,6 +142,9 @@ enum ReaderTask {
         beginEditing(payload, origin: layout.canInspect ? .reader : .library, returning: .library)
     }
     func finishEditing(_ id: UUID) {
+        animatePresentation(page: false) { finishEditingNow(id) }
+    }
+    private func finishEditingNow(_ id: UUID) {
         guard let current = editor, current.id == id else { return }
         if case .rebuild(let model) = current.payload { model.cancel() }
         restore(current.returning)

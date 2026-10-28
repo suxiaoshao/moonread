@@ -7,6 +7,18 @@ struct ReaderTaskContent: View {
     private var context: ReaderPresentationContext { flow.context }
     private var ui: ReaderUIState { context.ui }
     private var session: ReaderSession { context.session }
+    private var dockTool: ReaderTool? {
+        switch ui.foreground.tool {
+        case .quickSettings, .more: ui.foreground.tool
+        default: nil
+        }
+    }
+    private var taskTransitionID: ReaderPresentationPlan.Sheet {
+        switch flow.role {
+        case .search, .accessory: .accessory
+        default: flow.role
+        }
+    }
     private var searchExpanded: Binding<Bool> {
         Binding(get: { ui.search?.expanded ?? false }, set: { ui.search?.expanded = $0 })
     }
@@ -48,15 +60,22 @@ struct ReaderTaskContent: View {
                         }
                         ReaderTransientAccessories(context: context)
                     }
+                    .transaction { if !ui.layout.regular { $0.animation = nil } }
+                    .id(dockTool)
+                    .transition(ui.layout.regular ? .identity : MotionTokens.accessoryContent(reduced: ui.reduceMotion))
+                    .animation(ui.layout.regular ? nil : MotionTokens.accessoryResize(reduced: ui.reduceMotion), value: dockTool)
                 } footer: {
                     if !ui.layout.regular, ui.controlsVisible { compactControls }
                 } details: { search(details: true, ready: $0) }
             }
         }
+        .id(ui.layout.regular ? nil : taskTransitionID)
+        .transition(ui.layout.regular ? .identity : MotionTokens.accessoryContent(reduced: ui.reduceMotion))
         .accessibilityElement(children: .contain).accessibilityIdentifier("readerBottomPanel")
         .presentationSizing(.page)
         .presentationBackground(Color(uiColor: context.surface.surface))
         .modifier(ReaderTaskDetents(role: flow.role))
+        .animation(ui.layout.regular ? nil : MotionTokens.accessoryResize(reduced: ui.reduceMotion), value: taskTransitionID)
         .overlay {
             if session.navigating { LoadingActivity(size: 24, waitingLabel: "正在定位").allowsHitTesting(false) }
         }

@@ -30,7 +30,7 @@ struct ReaderPresentationPlan: Equatable {
     enum Surface: Equatable {
         case none, inspector(ReaderTool), sheet(Sheet), progressPopover
     }
-    enum Sheet: Equatable { case library, search, accessory, settings, history, ai, progress, editor(UUID) }
+    enum Sheet: Hashable { case library, search, accessory, settings, history, ai, progress, editor(UUID) }
     var root: Surface = .none
     var navigation: ReaderPageRoute?
     var settingsPage: Bool { navigation?.kind == .settings }

@@ -234,6 +234,7 @@ struct ReaderScreen: View {
                 if let context, !session.isLeaving { native?.attach(context) }
                 updateLayout(); battery.start()
                 contentVisible = true; session.opening.visibility(true, active: scenePhase == .active)
+                ui.reduceMotion = reduceMotion
                 session.opening.reduceMotion(reduceMotion)
             }
             .onChange(of: horizontalSizeClass) { _, _ in updateLayout() }
@@ -273,7 +274,7 @@ struct ReaderScreen: View {
             .onChange(of: session.browseOrigin != nil) { _, preview in session.activity.update(readable: statisticsReadable, preview: preview) }
             .onReceive(NotificationCenter.default.publisher(for: .statisticsPreferencesChanged).receive(on: DispatchQueue.main)) { _ in Task { await session.activity.reloadPreferences() } }
             .onChange(of: undoVisible, initial: true) { _, visible in ui.tools.setUndoVisible(visible) }
-            .onChange(of: reduceMotion) { _, value in session.opening.reduceMotion(value) }
+            .onChange(of: reduceMotion) { _, value in ui.reduceMotion = value; session.opening.reduceMotion(value) }
             .onChange(of: scenePhase) { _, phase in
                 session.opening.visibility(contentVisible, active: phase == .active)
                 guard !session.isLeaving else { return }

@@ -104,6 +104,17 @@ import SwiftUI
         context = nil; reconcile()
     }
     func reconcile() {
+        guard let ui = context?.ui ?? root?.context.ui else { reconcileNow(); return }
+        if !ui.layout.regular, context?.plan.navigation != nil, root != nil {
+            // Match the old page handoff: dismiss the dock without animation,
+            // then animate the native push when the installed sheet releases.
+            var transaction = Transaction(); transaction.disablesAnimations = true
+            withTransaction(transaction) { reconcileNow() }
+        } else {
+            ui.animatePresentation(page: context?.plan.navigation != nil) { reconcileNow() }
+        }
+    }
+    private func reconcileNow() {
         let target = suspended ? ReaderPresentationPlan.Surface.none : (context?.plan.root ?? .none)
         if let root {
             if case .sheet(let role) = target, root.context === context, rootRequested {
@@ -140,7 +151,9 @@ import SwiftUI
     }
     func rootDismissed(_ token: UUID?) {
         guard let root, token == root.token else { return }
-        self.root = nil; rootRequested = false; reconcile()
+        root.context.ui.animatePresentation(page: context?.plan.navigation != nil) {
+            self.root = nil; rootRequested = false; reconcile()
+        }
     }
     func inspectorBindingChanged(_ shown: Bool) {
         // Adaptation is a native fact, not cancellation of an editor/search.
