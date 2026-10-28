@@ -241,6 +241,7 @@ private struct MoonreadRoot: View {
             // Library sheets read the app theme, so they are presented inside its scope.
             .modifier(LibraryPresentations(model: library))
             .themeScope(appTheme).environment(themes).environment(library)
+            .environment(\.systemReadingRouter, library.systemReading)
             .environment(\.moonreadReduceMotion, reduceMotion)
             .environment(\.readerTheme, readerTheme)
             .onChange(of: library.libraryPath) { _, _ in library.cancelOpeningForNavigationChange(); library.returnedToLibrary() }

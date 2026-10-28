@@ -338,6 +338,19 @@ struct ReaderScreen: View {
         .allowsHitTesting(!session.isLeaving)
         .task {
             library.systemReading.register(session, navigationID: openingRequest?.id)
+            library.systemReading.savingEdits = { [weak session, weak wideTools] in
+                session?.noteEditorModel?.saving == true || session?.chapterDraft?.saving == true || wideTools?.savingDraft == true
+            }
+            library.systemReading.hasUnsavedEdits = { [weak session, weak wideTools] in
+                session?.noteEditorModel?.hasUnsavedChanges == true || session?.chapterDraft?.hasUnsavedChanges == true || wideTools?.hasUnsavedChanges == true
+            }
+            library.systemReading.hasEditor = { [weak session, weak wideTools] in
+                session?.noteEditorModel != nil || wideTools?.hasEditableDraft == true
+            }
+            library.systemReading.discardEdits = { [weak session, weak wideTools] in
+                session?.editor = nil; session?.chapterDraft = nil
+                if let current = wideTools?.editor { wideTools?.finishEditing(current.id); _ = wideTools?.takeCompletedTool() }
+            }
             await session.open(route, request: openingRequest)
         }
         .onChange(of: library.systemReading.pending) { _, request in
@@ -348,9 +361,7 @@ struct ReaderScreen: View {
                 controlsVisible = false
             }
         }
-        .onChange(of: sheetPresented || panel != nil || session.editor != nil || session.chapterDraft != nil || wideTools.editor != nil || (isWide && inspector?.presented == true && wideTools.isActive), initial: true) { _, blocked in
-            library.systemReading.presentationBlocked = blocked
-        }
+
         .onChange(of: session.opening.request?.id) { _, id in
             if let id, completedOpeningID == id { session.opening.settled(id, reason: "observedAppearance") }
         }
@@ -479,6 +490,7 @@ struct ReaderScreen: View {
 
     var body: some View {
         lifecycleReader
+        .modifier(SystemReadingConfirmation(active: !sheetPresented))
         .alert("阅读遇到问题", isPresented: readingErrorPresented) {
             Button("知道了", role: .cancel) { session.error = nil }
         } message: { Text(session.error ?? "") }

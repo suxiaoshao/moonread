@@ -19,6 +19,7 @@ struct PaletteEditor: View {
     var body: some View {
         NavigationStack {
             PaletteFields(palette: $draft.palette, nameFocused: $nameFocused, appPreview: showsAppPreview ? previewTheme : nil)
+            .disabled(draft.saving)
             .dismissKeyboardOnOutsideTap($nameFocused)
             .navigationTitle(creating ? "新建配色" : "编辑配色").navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -28,7 +29,13 @@ struct PaletteEditor: View {
                         .disabled(themes.saving).accessibilityIdentifier("cancelPalette")
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("完成", systemImage: "checkmark") { Task { do { try await themes.savePalette(palette, creating: creating); dismiss() } catch { draft.error = ReaderMessages.error(error) } } }
+                    Button("完成", systemImage: "checkmark") {
+                        guard !draft.saving else { return }; draft.saving = true
+                        Task { defer { draft.saving = false }
+                            do { try await themes.savePalette(palette, creating: creating); draft.markSaved(); dismiss() }
+                            catch { draft.error = ReaderMessages.error(error) }
+                        }
+                    }
                         .labelStyle(.titleOnly).disabled(!palette.isValidDraft || themes.saving).accessibilityIdentifier("savePalette")
                 }
             }
@@ -36,6 +43,7 @@ struct PaletteEditor: View {
                 Button("知道了", role: .cancel) { draft.error = nil }
             } message: { Text(draft.error ?? "") }
         }
+        .modifier(SystemReadingConfirmation(editor: true))
         .interactiveDismissDisabled(themes.saving).preferredColorScheme(theme.scheme)
     }
 }

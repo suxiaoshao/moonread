@@ -5,9 +5,15 @@ import SwiftUI
     let start: UInt64
     var title: String
     var level: UInt32
+    private let baselineTitle: String
+    private let baselineLevel: UInt32
+    let creating: Bool
+    private(set) var saved = false
+    var hasUnsavedChanges: Bool { !saving && !saved && (creating || title != baselineTitle || level != baselineLevel) }
+    func markSaved() { saved = true }
     var saving = false
     var error: String?
-    init(start: UInt64, title: String, level: UInt32) { self.start = start; self.title = title; self.level = level }
+    init(start: UInt64, title: String, level: UInt32, creating: Bool = false) { self.start = start; self.title = title; self.level = level; baselineTitle = title; baselineLevel = level; self.creating = creating }
     nonisolated static func == (lhs: ChapterEditDraft, rhs: ChapterEditDraft) -> Bool { lhs.id == rhs.id }
     nonisolated func hash(into hasher: inout Hasher) { hasher.combine(id) }
 }
@@ -32,6 +38,7 @@ struct ChapterEditor: View {
                 }.pickerStyle(.segmented).accessibilityIdentifier("chapterEditLevel")
             }.listRowBackground(Color(uiColor: theme.surface))
         }
+        .disabled(draft.saving)
         .themedPage().dismissKeyboardOnOutsideTap($focused)
         .navigationTitle("编辑目录项").navigationBarTitleDisplayMode(.inline)
         .toolbar { ToolbarItem(placement: .topBarTrailing) {
@@ -39,6 +46,7 @@ struct ChapterEditor: View {
                 .disabled(draft.saving || draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityIdentifier("saveChapterEdit")
         } }
+        .modifier(SystemReadingConfirmation(editor: true))
         .onAppear { focused = true }
         .alert("暂时无法完成", isPresented: Binding(get: { draft.error != nil }, set: { if !$0 { draft.error = nil } })) {
             Button("知道了", role: .cancel) { draft.error = nil }
@@ -50,7 +58,7 @@ struct ChapterEditor: View {
             defer { draft.saving = false }
             do {
                 try await AppDataService.shared.correctChapter(bookID, offset: draft.start, title: draft.title, level: draft.level)
-                focused = false; await saved(); dismiss()
+                draft.markSaved(); focused = false; await saved(); dismiss()
             } catch { draft.error = ReaderMessages.error(error) }
         }
     }

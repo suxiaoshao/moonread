@@ -533,6 +533,37 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
 }
 
 final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
+  func testSystemRequestConfirmsDirtyStateAndCancellationConsumesIt() {
+    let library = LibraryModel()
+    let router = library.systemReading
+    router.hasUnsavedEdits = { true }
+    router.submit(.showLibrary)
+    XCTAssertFalse(router.admit(title: "test", library: library))
+    XCTAssertEqual(router.confirmationTitle, "test")
+    router.answerConfirmation(discard: false)
+    XCTAssertNil(router.pending)
+    router.resume()
+    XCTAssertNil(router.pending, "A cancelled request must not replay on later presentation events")
+    router.submit(.showLibrary)
+    XCTAssertFalse(router.admit(title: "first", library: library))
+    let oldRequest = router.requestID
+    router.submit(.showStatistics)
+    XCTAssertFalse(router.admit(title: "second", library: library))
+    router.answerConfirmation(discard: false, expectedID: oldRequest)
+    XCTAssertEqual(router.pending, .showStatistics, "An old alert callback cannot consume the replacement")
+    router.answerConfirmation(discard: false, expectedID: router.requestID)
+    XCTAssertNil(router.pending)
+    router.savingEdits = { true }
+    router.submit(.showLibrary)
+    XCTAssertFalse(router.admit(title: "saving", library: library))
+    XCTAssertNil(router.pending, "An in-flight save is not cancelled or queued behind")
+    XCTAssertNotNil(router.requestError)
+    router.savingEdits = { false }
+    router.requestError = nil
+    router.hasUnsavedEdits = { false }
+    XCTAssertTrue(router.admit(title: "test", library: library), "An open but clean editor does not block a request")
+  }
+
   func testReaderEditorKeepsItsOwnerAndInputUntilThatSessionFinishes() throws {
     func presentation(_ editor: ReaderEditPresenter?, page: ReaderPanel? = nil,
                       inspector: Bool = false, dock: Bool = false, handingOff: Bool = false) -> ReaderRootPresentation {
@@ -579,7 +610,19 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     XCTAssertFalse(inspector.isActive)
     XCTAssertNil(inspector.content)
     XCTAssertEqual(dismissals, 1)
+    let colors = try XCTUnwrap(defaultThemeSnapshot().palettes.first)
+    let existing = PaletteDraft(palette: colors, creating: false)
+    XCTAssertFalse(existing.hasUnsavedChanges)
+    existing.palette.name = "changed"; XCTAssertTrue(existing.hasUnsavedChanges)
+    existing.palette = colors; XCTAssertFalse(existing.hasUnsavedChanges)
+    let originalChapter = ChapterEditDraft(start: 0, title: "original", level: 1)
+    XCTAssertFalse(originalChapter.hasUnsavedChanges)
+    originalChapter.title = "changed"; XCTAssertTrue(originalChapter.hasUnsavedChanges)
+    originalChapter.title = "original"; XCTAssertFalse(originalChapter.hasUnsavedChanges)
     let palette = PaletteDraft(palette: try XCTUnwrap(defaultThemeSnapshot().palettes.first), creating: true)
+    XCTAssertTrue(palette.hasUnsavedChanges)
+    palette.saving = true; XCTAssertFalse(palette.hasUnsavedChanges)
+    palette.saving = false
     tools.settingsEditing.beginPalette(palette, presenter: .preview)
     let first = try XCTUnwrap(tools.editor)
     palette.palette.name = "未保存的输入"

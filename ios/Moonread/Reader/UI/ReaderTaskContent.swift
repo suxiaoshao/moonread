@@ -15,11 +15,12 @@ struct ReaderTaskContent: View {
     let edit: (ReaderMark) -> Void
     let editorClosed: () -> Void
     @Environment(AIService.self) private var ai
-    @ViewBuilder var body: some View {
+    var body: some View { taskContent.modifier(SystemReadingConfirmation()) }
+    @ViewBuilder private var taskContent: some View {
         if panel == .ai, ai.availability.isAvailable {
             AIReadingConversation(context: aiEntrySnapshot ?? aiContext(), close: closeTask, selected: $aiConversationID, openingIsActive: openingIsActive)
-        } else if let mark = session.editor {
-            NoteEditor(edit: mark, close: closeTask)
+        } else if let model = session.noteEditorModel {
+            NoteEditor(model: model, close: closeTask)
         } else if panel == .history {
             ReaderHistorySheet(session: session, close: closeTask)
         } else if panel == .chapterEditor, let editor = toolSession.editor,

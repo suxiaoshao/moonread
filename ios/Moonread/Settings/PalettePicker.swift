@@ -18,7 +18,12 @@ func paletteDisplayName(_ value: ThemePalette) -> String {
     var palette: ThemePalette
     var error: String?
     let creating: Bool
-    init(palette: ThemePalette, creating: Bool) { self.palette = palette; self.creating = creating }
+    private let baseline: ThemePalette
+    var saving = false
+    private(set) var saved = false
+    var hasUnsavedChanges: Bool { !saving && !saved && (creating || palette != baseline) }
+    func markSaved() { saved = true }
+    init(palette: ThemePalette, creating: Bool) { self.palette = palette; baseline = palette; self.creating = creating }
 }
 
 struct PalettePicker: View {

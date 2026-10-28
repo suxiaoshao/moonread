@@ -100,6 +100,22 @@ enum ReaderWideTool: CaseIterable {
         defer { completedEditor = nil }
         return completedEditor?.returnTool
     }
+    var savingDraft: Bool {
+        guard let editor else { return false }
+        switch editor.payload { case .palette(let draft): return draft.saving; case .chapter(let draft): return draft.saving; case .rebuild: return false }
+    }
+    var hasEditableDraft: Bool {
+        guard let editor else { return false }
+        switch editor.payload { case .palette, .chapter: return true; case .rebuild: return false }
+    }
+    var hasUnsavedChanges: Bool {
+        guard let editor else { return false }
+        switch editor.payload {
+        case .palette(let draft): return draft.hasUnsavedChanges
+        case .chapter(let draft): return draft.hasUnsavedChanges
+        case .rebuild: return false
+        }
+    }
     var isActive: Bool {
         tool == .search || tool == .settings || inputFocused
             || libraryEditing.editingOutline || libraryEditing.restoringOutline || libraryEditing.chapterEdit != nil || libraryEditing.rebuildingOutline
