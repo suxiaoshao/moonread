@@ -125,12 +125,17 @@ struct ReaderInspectorContent: View {
             switch state.tool {
             case .chapters, .notes:
                 VStack(spacing: 0) {
-                    if state.tool == .notes {
-                        Picker("批注分类", selection: Binding(get: { tools.tab }, set: { tools.select($0) })) {
-                            Text("标注与笔记").tag(ReaderLibraryTab.notes)
-                            Text("书签").tag(ReaderLibraryTab.bookmarks)
-                        }.pickerStyle(.segmented).padding()
-                    }
+                    HStack {
+                        if let chapter = session.chapter?.title { Text(chapter).lineLimit(1) }
+                        if let book = session.book, book.byteCount > 0 {
+                            Text(Double(session.displayAnchor ?? session.anchor) / Double(book.byteCount), format: .percent.precision(.fractionLength(1)))
+                        }
+                    }.font(.caption).foregroundStyle(Color(uiColor: surface.secondary)).padding(.top, 8)
+                    Picker("阅读资料", selection: Binding(get: { tools.tab }, set: tools.select)) {
+                        Text("章节").tag(ReaderLibraryTab.chapters)
+                        Text("书签").tag(ReaderLibraryTab.bookmarks)
+                        Text("批注").tag(ReaderLibraryTab.notes)
+                    }.pickerStyle(.segmented).padding().accessibilityIdentifier("readerLibraryTabs")
                     ReaderLibraryContent(model: tools, session: session, navigate: navigate, edit: edit,
                                          close: close, editing: state.libraryEditing, inspector: true, focusChanged: { state.inputFocused = $0 })
                 }
@@ -165,7 +170,7 @@ struct ReaderInspectorContent: View {
         .accessibilityIdentifier("readerInspector")
     }
     @ToolbarContentBuilder var inspectorToolbar: some ToolbarContent {
-        if state.tool == .chapters {
+        if (state.tool == .chapters || state.tool == .notes), tools.tab == .chapters {
             ToolbarItem(placement: .topBarLeading) {
                 ReaderChapterActions(editing: state.libraryEditing, bookID: session.readingID, incomplete: session.incomplete)
             }
@@ -178,8 +183,7 @@ struct ReaderInspectorContent: View {
     }
     var inspectorTitle: LocalizedStringKey {
         switch state.tool {
-        case .chapters: "目录"
-        case .notes: tools.tab == .bookmarks ? "书签" : "批注"
+        case .chapters, .notes: LocalizedStringKey(session.book?.title ?? "")
         case .search: "搜索"
         case .settings: "阅读设置"
         }

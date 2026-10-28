@@ -160,14 +160,21 @@ struct ReaderScreen: View {
                 }
             }
             .toolbar {
+                if isWide {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button(session.bookmarked ? "移除当前位置书签" : "添加当前位置书签", systemImage: session.bookmarked ? "bookmark.fill" : "bookmark") { Task { await session.toggleBookmark() } }
+                            .disabled(session.showingCover || session.changingBookmark).accessibilityIdentifier("toggleBookmark")
+                    }
+                }
                 // Retain the popover's presenter while it adapts across widths.
                 if isWide || panel == .progress {
                     ToolbarItem(placement: .bottomBar) {
-                        Button("阅读进度", systemImage: "slider.horizontal.3") {
+                        Button {
                             guard !sheetPresented, wideTools.presentationEditor == nil else { return }
                             panel = .progress
                         }
-                        .accessibilityIdentifier("readerProgress")
+                        label: { Text(session.book.map { String(format: "%.1f%%", Double(session.displayAnchor ?? session.anchor) / Double(max(1, $0.byteCount)) * 100) } ?? "—").monospacedDigit() }
+                        .accessibilityLabel("阅读进度").accessibilityIdentifier("readerProgress")
                         .disabled(session.window == nil)
                         .popover(isPresented: Binding(get: { rootPresentation == .progress }, set: { shown in
                             if !shown, panel == .progress { sheetDismissRequested = true }
@@ -176,8 +183,8 @@ struct ReaderScreen: View {
                 }
                 if isWide {
                     ToolbarItemGroup(placement: .bottomBar) {
-                        ForEach(ReaderWideTool.allCases, id: \.self) { tool in
-                            Button { openWideTool(tool) } label: { Label(tool.title, systemImage: tool.symbol) }
+                        ForEach([ReaderWideTool.chapters, .search, .settings], id: \.self) { tool in
+                            Button { openWideTool(tool) } label: { Label(tool == .chapters ? LocalizedStringKey("目录、书签与批注") : tool.title, systemImage: tool == .chapters ? "list.bullet.rectangle" : tool.symbol) }
                                 .tint(Color(uiColor: inspector?.presented == true && wideTools.tool == tool ? theme.accent : theme.ink))
                                 .accessibilityIdentifier("wideTool-\(tool.symbol)")
                                 .disabled(session.window == nil)
