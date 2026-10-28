@@ -7,11 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		4C8BF65601CA4114841B5D6B /* ReaderToolLabelStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 938B7199F7BA4FF48580021A /* ReaderToolLabelStyle.swift */; };
-		920111E653264DBDB7FC1858 /* ReaderMoreContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C1F21EBD02E4ED7BBD3B00E /* ReaderMoreContent.swift */; };
-		16B56CC08FA443BCADC4FF70 /* ReaderPresentationHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 274370CEA51740AC938B7D13 /* ReaderPresentationHost.swift */; };
-		00D6D1855AE74518B587017B /* ReaderPresentationPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA7E86164B2C427298E87829 /* ReaderPresentationPlan.swift */; };
-		6141AE2B804C4E4487A9C02E /* ReaderUIState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32F5AB0A68DF4323AC007765 /* ReaderUIState.swift */; };
 		3D1C1E4B0133473A9A1C7DC4 /* ReaderInspector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 383925FAF2394CAEBB958065 /* ReaderInspector.swift */; };
         F14100000000000000000001 /* ReaderSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F14100000000000000000002 /* ReaderSettingsStore.swift */; };
 		4DF6E88FEFC27B5FF2E847AD /* ProtectedFileAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */; };
@@ -51,8 +46,10 @@
 		87B3FE2BFDD04847AE5A02CA /* ReaderLibrarySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3D73220A89040FF91FC9A23 /* ReaderLibrarySheet.swift */; };
 		48A7297CFF794C178D1242D0 /* ReaderBattery.swift in Sources */ = {isa = PBXBuildFile; fileRef = F985A452EFF8466E81960075 /* ReaderBattery.swift */; };
 		308165AED1DF4230A31FF52B /* ReaderEncodingMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 224B7CD539DE4B36838B5C59 /* ReaderEncodingMenu.swift */; };
+		4C8BF65601CA4114841B5D6B /* ReaderToolLabelStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 938B7199F7BA4FF48580021A /* ReaderToolLabelStyle.swift */; };
 		2DD74B5821B64531B506A916 /* ReaderCompactHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA08168B927640AD88AB7979 /* ReaderCompactHeader.swift */; };
 		AA51DD835A184821B465CFD4 /* ReaderPreparationContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5866FC7E25D04023BA807A6A /* ReaderPreparationContent.swift */; };
+		920111E653264DBDB7FC1858 /* ReaderMoreContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C1F21EBD02E4ED7BBD3B00E /* ReaderMoreContent.swift */; };
 		4C49B0B7AF064FE799DE604A /* ReaderTaskContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3110BC3341AD464FA40E7DD1 /* ReaderTaskContent.swift */; };
 
 		CD0100000000000000000001 = {isa = PBXBuildFile; fileRef = CD0200000000000000000001; };
@@ -330,11 +327,6 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		938B7199F7BA4FF48580021A /* ReaderToolLabelStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderToolLabelStyle.swift"; sourceTree = "<group>"; };
-		1C1F21EBD02E4ED7BBD3B00E /* ReaderMoreContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderMoreContent.swift"; sourceTree = "<group>"; };
-		274370CEA51740AC938B7D13 /* ReaderPresentationHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderPresentationHost.swift; sourceTree = "<group>"; };
-		BA7E86164B2C427298E87829 /* ReaderPresentationPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderPresentationPlan.swift; sourceTree = "<group>"; };
-		32F5AB0A68DF4323AC007765 /* ReaderUIState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderUIState.swift; sourceTree = "<group>"; };
 		383925FAF2394CAEBB958065 /* ReaderInspector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderInspector.swift; sourceTree = "<group>"; };
         F14100000000000000000002 /* ReaderSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSettingsStore.swift; sourceTree = "<group>"; };
 		80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectedFileAccess.swift; sourceTree = "<group>"; };
@@ -374,8 +366,10 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		A3D73220A89040FF91FC9A23 /* ReaderLibrarySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderLibrarySheet.swift"; sourceTree = "<group>"; };
 		F985A452EFF8466E81960075 /* ReaderBattery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderBattery.swift"; sourceTree = "<group>"; };
 		224B7CD539DE4B36838B5C59 /* ReaderEncodingMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderEncodingMenu.swift"; sourceTree = "<group>"; };
+		938B7199F7BA4FF48580021A /* ReaderToolLabelStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderToolLabelStyle.swift"; sourceTree = "<group>"; };
 		AA08168B927640AD88AB7979 /* ReaderCompactHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderCompactHeader.swift"; sourceTree = "<group>"; };
 		5866FC7E25D04023BA807A6A /* ReaderPreparationContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderPreparationContent.swift"; sourceTree = "<group>"; };
+		1C1F21EBD02E4ED7BBD3B00E /* ReaderMoreContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderMoreContent.swift"; sourceTree = "<group>"; };
 		3110BC3341AD464FA40E7DD1 /* ReaderTaskContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderTaskContent.swift"; sourceTree = "<group>"; };
 
 		CD0200000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = StoreScreenshotFixture.swift; path = ../Moonread/Library/StoreScreenshotFixture.swift; sourceTree = "<group>"; };
@@ -876,17 +870,14 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 				22ECFC9087614B5699133F80 /* ReaderNotesList.swift */,
 				A3D73220A89040FF91FC9A23 /* ReaderLibrarySheet.swift */,
 				383925FAF2394CAEBB958065 /* ReaderInspector.swift */,
-				274370CEA51740AC938B7D13 /* ReaderPresentationHost.swift */,
-				BA7E86164B2C427298E87829 /* ReaderPresentationPlan.swift */,
-				32F5AB0A68DF4323AC007765 /* ReaderUIState.swift */,
 				F985A452EFF8466E81960075 /* ReaderBattery.swift */,
 				224B7CD539DE4B36838B5C59 /* ReaderEncodingMenu.swift */,
+				938B7199F7BA4FF48580021A /* ReaderToolLabelStyle.swift */,
 				AA08168B927640AD88AB7979 /* ReaderCompactHeader.swift */,
 				B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */,
 				5866FC7E25D04023BA807A6A /* ReaderPreparationContent.swift */,
-				3110BC3341AD464FA40E7DD1 /* ReaderTaskContent.swift */,
-				938B7199F7BA4FF48580021A /* ReaderToolLabelStyle.swift */,
 				1C1F21EBD02E4ED7BBD3B00E /* ReaderMoreContent.swift */,
+				3110BC3341AD464FA40E7DD1 /* ReaderTaskContent.swift */,
 
 				AD2000000000000000000001 /* ReaderBackNavigation.swift */,
 				AD2000000000000000000008 /* ReaderBottomPanel.swift */,
@@ -1360,16 +1351,13 @@ F01900000000000000000001,
 				CC9B3BCAE0EA4013878D9BA4 /* ReaderNotesList.swift in Sources */,
 				87B3FE2BFDD04847AE5A02CA /* ReaderLibrarySheet.swift in Sources */,
 				3D1C1E4B0133473A9A1C7DC4 /* ReaderInspector.swift in Sources */,
-				16B56CC08FA443BCADC4FF70 /* ReaderPresentationHost.swift in Sources */,
-				00D6D1855AE74518B587017B /* ReaderPresentationPlan.swift in Sources */,
-				6141AE2B804C4E4487A9C02E /* ReaderUIState.swift in Sources */,
 				48A7297CFF794C178D1242D0 /* ReaderBattery.swift in Sources */,
 				308165AED1DF4230A31FF52B /* ReaderEncodingMenu.swift in Sources */,
+				4C8BF65601CA4114841B5D6B /* ReaderToolLabelStyle.swift in Sources */,
 				2DD74B5821B64531B506A916 /* ReaderCompactHeader.swift in Sources */,
 				AA51DD835A184821B465CFD4 /* ReaderPreparationContent.swift in Sources */,
-				4C49B0B7AF064FE799DE604A /* ReaderTaskContent.swift in Sources */,
-				4C8BF65601CA4114841B5D6B /* ReaderToolLabelStyle.swift in Sources */,
 				920111E653264DBDB7FC1858 /* ReaderMoreContent.swift in Sources */,
+				4C49B0B7AF064FE799DE604A /* ReaderTaskContent.swift in Sources */,
 				65ECA15E2CC74AE98456F117 /* ReadingModePicker.swift in Sources */,
 				CE9F8CE75AFE42C28ECC1229 /* AppThemePreferencesView.swift in Sources */,
 				BA82A3CBA86846ECB5AE63D2 /* PalettePicker.swift in Sources */,

@@ -39,7 +39,6 @@ struct ReadingView: UIViewControllerRepresentable {
     var guideHeight: CGFloat = 0
     var contentGeometry: ReadingContentGeometry? = nil
     var headerPositionChanged: (CGFloat) -> Void = { _ in }
-    var bodyLayoutChanged: (ReaderBodyLayout) -> Void = { _ in }
     let controlsVisible: Bool
     let toggleControls: () -> Void
     let readingBegan: () -> Void
@@ -52,7 +51,6 @@ struct ReadingView: UIViewControllerRepresentable {
     }
     func updateUIViewController(_ controller: ReadingController, context: Context) {
         controller.headerPositionChanged = headerPositionChanged
-        controller.bodyLayoutChanged = bodyLayoutChanged
         controller.contentGeometry = contentGeometry
         controller.guideHeight = guideHeight
         controller.requestWindow = requestWindow

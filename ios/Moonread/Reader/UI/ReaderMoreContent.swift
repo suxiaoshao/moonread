@@ -4,7 +4,7 @@ import UIKit
 struct ReaderMoreContent: View {
     let session: ReaderSession
     let openLibrary: (ReaderLibraryTab, Bool) -> Void
-    let presentPanel: (ReaderTool) -> Void
+    let presentPanel: (ReaderPanel) -> Void
     let changeEncoding: (String?) -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.moonreadReduceMotion) private var reduceMotion

@@ -110,6 +110,7 @@ import XCTest
                     ready(app.buttons["continueFromHere"]).tap()
                     readableBody()
                     controls(); app.buttons["readingSettings"].tap()
+                    ready(app.buttons["moreReadingSettings"]).tap()
                     ready(app.segmentedControls["readerThemeTabs"]).buttons[language == "en" ? "Colors & Textures" : language == "zh-Hant" ? "配色與紋理" : "配色与纹理"].tap()
                     ready(app.segmentedControls["readerPaletteSlots"]).buttons[language == "en" ? "When Light" : (language == "zh-Hant" ? "淺色時" : "浅色时")].tap()
                     ready(element("readerTexture")); ready(element("readerTextureStrength"))
@@ -124,8 +125,8 @@ import XCTest
                     settled(app.buttons["toggleReadingPreview"])
                 case "05":
                     controls()
-                    app.buttons["showChapters"].tap()
-                    ready(app.segmentedControls["readerLibraryTabs"]).buttons[language == "en" ? "Notes" : language == "zh-Hant" ? "批註" : "批注"].tap()
+                    if !app.buttons["openNotes"].exists { app.buttons["readerMore"].tap() }
+                    ready(app.buttons["openNotes"]).tap()
                     ready(app.staticTexts[f.notes[0][1]])
                     settled(ready(app.buttons["closeReaderLibrary"]))
                 default: break
