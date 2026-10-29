@@ -331,9 +331,7 @@ fn released_reader_settings_keep_their_values_and_default_wide_preferences() {
     assert_eq!(value.brightness, Some(0.4));
     assert_eq!(value.orientation, ReadingOrientation::Portrait);
     assert!(value.wide_tools_expanded);
-    assert_eq!(value.wide_page_mode, WidePageMode::Double);
     value.wide_tools_expanded = false;
-    value.wide_page_mode = WidePageMode::Single;
     assert_eq!(
         decode_reader_settings(encode_reader_settings(value.clone()).unwrap()).unwrap(),
         value

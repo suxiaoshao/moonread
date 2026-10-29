@@ -176,7 +176,6 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         let oldWindow = self.window
         let navigating = self.navigationRevision != navigationRevision
         let layoutChanged = !settings.hasSameLayout(as: self.settings) || self.typeSize != typeSize
-            || (contentGeometry != nil && settings.widePageMode != self.settings?.widePageMode)
             || (self.window?.chunks == window.chunks && self.window?.paragraphs != window.paragraphs)
             || self.compactHeaderHeight != compactHeaderHeight
         if navigating {
@@ -348,7 +347,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         }
         var nextSurface = surface
         var nextFrames = [CGRect(origin: .zero, size: surface.size)]
-        if contentGeometry != nil, ReadingContainerRegions.permitsSpread(in: surface.size), settings?.mode == .pages, settings?.widePageMode == .double,
+        if contentGeometry != nil, ReadingContainerRegions.permitsSpread(in: surface.size), settings?.mode == .pages,
            let settings {
             let minimum = ReadingTypography.minimumColumnWidth(settings)
             let candidates: [CGRect]

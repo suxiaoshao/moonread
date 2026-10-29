@@ -447,10 +447,6 @@ struct ReadingSettingsControls: View {
             if wideControls {
                 Section("宽屏阅读") {
                     Toggle("展开阅读工具", isOn: binding(\.wideToolsExpanded))
-                    Picker("分页版式", selection: binding(\.widePageMode)) {
-                        Text("单页").tag(WidePageMode.single)
-                        Text("双页").tag(WidePageMode.double)
-                    }
                 }.listRowBackground(Color(uiColor: theme.surface))
             }
             if let encoding, let changeEncoding {

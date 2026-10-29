@@ -29,13 +29,6 @@ pub enum ReadingOrientation {
     Landscape,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
-pub enum WidePageMode {
-    Single,
-    #[default]
-    Double,
-}
-
 fn default_wide_tools_expanded() -> bool {
     true
 }
@@ -56,8 +49,6 @@ pub struct ReaderSettings {
     pub orientation: ReadingOrientation,
     #[serde(default = "default_wide_tools_expanded")]
     pub wide_tools_expanded: bool,
-    #[serde(default)]
-    pub wide_page_mode: WidePageMode,
 }
 
 /// Shared control metadata; native and web renderers still own font metrics.
@@ -118,7 +109,6 @@ pub fn default_reader_settings() -> ReaderSettings {
         brightness: None,
         orientation: ReadingOrientation::System,
         wide_tools_expanded: default_wide_tools_expanded(),
-        wide_page_mode: WidePageMode::default(),
     }
 }
 
