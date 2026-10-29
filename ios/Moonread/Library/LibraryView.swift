@@ -830,11 +830,9 @@ struct LibraryShelfDropDelegate: DropDelegate {
 private struct LibraryWideBarBackground: ViewModifier {
     let regular: Bool
     @Environment(\.theme) private var theme
-    @ViewBuilder func body(content: Content) -> some View {
-        if regular {
-            content
-                .toolbarBackground(Color(uiColor: theme.canvas), for: .navigationBar, .tabBar)
-                .toolbarBackground(.visible, for: .navigationBar, .tabBar)
-        } else { content }
+    func body(content: Content) -> some View {
+        content
+            .toolbarBackground(regular ? Color(uiColor: theme.canvas) : .clear, for: .navigationBar, .tabBar)
+            .toolbarBackground(regular ? .visible : .automatic, for: .navigationBar, .tabBar)
     }
 }
