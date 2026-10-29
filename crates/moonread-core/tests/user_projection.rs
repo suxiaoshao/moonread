@@ -315,10 +315,10 @@ fn settings_codec_preserves_device_preferences_and_validates_ranges() {
 }
 
 #[test]
-fn released_reader_settings_keep_their_values_and_default_wide_preferences() {
+fn released_reader_settings_keep_their_values() {
     // Published 1.2 (10), 6ceef33: no wide-screen fields. Keep every old choice.
     let json = r#"{"mode":"Pages","font_size":24.0,"line_spacing":10.0,"font":"Serif","paragraph_spacing":9.0,"indent":"Original","horizontal_margin":20.0,"maximum_line_width":720.0,"keep_awake":true,"brightness":0.4,"orientation":"Portrait"}"#;
-    let mut value = decode_reader_settings(json.to_owned()).unwrap();
+    let value = decode_reader_settings(json.to_owned()).unwrap();
     assert_eq!(value.mode, ReadingMode::Pages);
     assert_eq!(value.font_size, 24.0);
     assert_eq!(value.line_spacing, 10.0);
@@ -330,8 +330,6 @@ fn released_reader_settings_keep_their_values_and_default_wide_preferences() {
     assert!(value.keep_awake);
     assert_eq!(value.brightness, Some(0.4));
     assert_eq!(value.orientation, ReadingOrientation::Portrait);
-    assert!(value.wide_tools_expanded);
-    value.wide_tools_expanded = false;
     assert_eq!(
         decode_reader_settings(encode_reader_settings(value.clone()).unwrap()).unwrap(),
         value

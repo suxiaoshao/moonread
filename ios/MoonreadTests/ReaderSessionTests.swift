@@ -571,7 +571,7 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
   }
 
   func testReaderEditorKeepsItsOwnerAndInputUntilThatSessionFinishes() throws {
-    let tools = ReaderWideTools()
+    let tools = ReaderToolSession()
     let state = tools.presentation
     state.choose(.settings, exposure: .expanded)
     state.push(.fullSettings)
@@ -581,16 +581,12 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     tools.settingsEditing.beginPalette(palette, presenter: .preview)
     let first = try XCTUnwrap(tools.editor)
     palette.palette.name = "未保存的输入"; palette.error = "保存失败"
-    state.choose(.library, exposure: .reference)
+    state.choose(.library, exposure: .accessory)
     XCTAssertEqual(state.location.selection, .settings, "switching tools cannot silently discard an editor")
-    for regular in [true, false, true] {
-      let metrics = ReaderContainerMetrics(bounds: CGRect(x: 0, y: 0, width: 1400, height: 900), regular: regular)
-      _ = ReaderContainerPolicy.container(metrics, settings: defaultReaderSettings())
-      XCTAssertTrue(tools.editor === first)
-      XCTAssertTrue(tools.settingsEditing.draft === palette)
-      XCTAssertEqual(palette.palette.name, "未保存的输入")
-      XCTAssertEqual(palette.error, "保存失败")
-    }
+    XCTAssertTrue(tools.editor === first)
+    XCTAssertTrue(tools.settingsEditing.draft === palette)
+    XCTAssertEqual(palette.palette.name, "未保存的输入")
+    XCTAssertEqual(palette.error, "保存失败")
     tools.finishEditing(UUID())
     XCTAssertTrue(tools.editor === first)
     tools.finishEditing(first.id)
@@ -647,19 +643,12 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     state.choose(.settings, exposure: .expanded)
     let draft = UUID(); state.push(.palette(draft))
     let location = state.location
-    var metrics = ReaderContainerMetrics(bounds: CGRect(x: 0, y: 0, width: 1400, height: 900), regular: true)
-    let settings = defaultReaderSettings()
-    XCTAssertEqual(ReaderContainerPolicy.container(metrics, settings: settings), .inspector)
-    metrics.bounds.size.width = 600
-    XCTAssertEqual(ReaderContainerPolicy.container(metrics, settings: settings), .sheet)
-    metrics.regular = false
-    XCTAssertEqual(ReaderContainerPolicy.container(metrics, settings: settings), .compact)
     XCTAssertEqual(state.location, location)
     state.choose(.settings, exposure: .expanded)
     XCTAssertEqual(state.location, location, "reselecting the same tool preserves its child")
     let native = ReaderNativeInstallation(); let opening = UUID()
     let old = native.install(opening: opening, generation: state.revision)
-    state.push(.progress)
+    state.push(.history)
     let current = native.install(opening: opening, generation: state.revision)
     XCTAssertEqual(old.id, current.id, "content changes do not replace a native presenter")
     XCTAssertFalse(native.acceptsInput(old, opening: opening, generation: state.revision))
@@ -676,7 +665,7 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     XCTAssertEqual(native.token, replacement)
     let host = ReaderPresentationHost()
     state.location.path = [.fullSettings]; state.exposure = .expanded
-    XCTAssertEqual(ReaderPresentationProjection.target(state: state, container: .compact, editorParent: nil,
+    XCTAssertEqual(ReaderPresentationProjection.target(state: state, editorParent: nil,
       hasNote: false, hasAccessory: false, available: true), .settings)
     host.update(.dock, opening: opening, generation: state.revision)
     let dock = try XCTUnwrap(host.token)
@@ -691,22 +680,13 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     host.update(.settings, opening: opening, generation: state.revision)
     XCTAssertEqual(host.showing, .settings)
     XCTAssertFalse(host.completed(dock))
-    state.choose(.library, exposure: .reference)
-    XCTAssertEqual(ReaderPresentationProjection.target(state: state, container: .compact, editorParent: nil,
+    state.reset()
+    XCTAssertEqual(ReaderPresentationProjection.target(state: state, editorParent: nil,
       hasNote: false, hasAccessory: false, available: true), .none)
-    state.choose(.settings, exposure: .expanded); state.push(.palette(UUID()))
-    XCTAssertEqual(ReaderPresentationProjection.target(state: state, container: .compact, editorParent: .reader,
-      hasNote: false, hasAccessory: false, available: true), .editor)
-
-    let tools = ReaderWideTools()
-    let source = ReaderInspectorPresentation(); tools.source = source
-    source.metrics.regular = true
+    let tools = ReaderToolSession()
     let nativeToken = tools.host.installation.install(opening: opening, generation: tools.presentation.revision)
     tools.host.confirmed(nativeToken)
-    XCTAssertFalse(tools.acceptsNativeInput(nativeToken, generation: tools.presentation.revision, compactOnly: true),
-      "adaptation's early false callback must not cancel the old compact editor")
-    source.metrics.regular = false
-    XCTAssertTrue(tools.acceptsNativeInput(nativeToken, generation: tools.presentation.revision, compactOnly: true))
+    XCTAssertTrue(tools.acceptsNativeInput(nativeToken, generation: tools.presentation.revision))
     let intent = ReaderPresentationState()
     intent.controlsVisible = true; intent.choose(.search, exposure: .expanded)
     XCTAssertFalse(intent.controlsVisible)
@@ -716,7 +696,7 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     intent.choose(.settings, exposure: .accessory); intent.setControlsVisible(false)
     XCTAssertEqual(intent.location.selection, .library, "hiding phone quick tools restores progress")
     intent.choose(.settings, exposure: .expanded); intent.setControlsVisible(false)
-    XCTAssertEqual(intent.location.selection, .settings, "hiding reader chrome does not replace a wide tool")
+    XCTAssertEqual(intent.location.selection, .settings, "hiding reader chrome does not replace the active task")
     let search = ReaderToolsModel()
     search.beginSearchSession()
     await search.prepare(bookID: "search-fixture", currentChapter: 0, library: false)
@@ -738,6 +718,16 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     unmounted.confirm(unused)
     XCTAssertEqual(unmounted.phase, .requested, "a late mount cannot confirm the replacement opening")
     XCTAssertEqual(unmounted.token, nextRequest)
+    let shared = ReaderPresentationState()
+    shared.controlsVisible = true
+    XCTAssertEqual(ReaderPresentationProjection.target(state: shared, editorParent: nil,
+      hasNote: false, hasAccessory: false, available: true), .dock)
+    shared.push(.library)
+    XCTAssertEqual(ReaderPresentationProjection.target(state: shared, editorParent: .library,
+      hasNote: false, hasAccessory: false, available: true), .dock)
+    shared.push(.chapter(UUID()))
+    XCTAssertEqual(ReaderPresentationProjection.target(state: shared, editorParent: .library,
+      hasNote: false, hasAccessory: false, available: true), .dock)
     let sourcePage = ReaderSourceNavigation()
     sourcePage.update(.details, opening: opening, generation: 1)
     let pageToken = try XCTUnwrap(sourcePage.token)
@@ -755,16 +745,6 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     XCTAssertEqual(sourcePage.installation.phase, .dismissing)
     XCTAssertTrue(sourcePage.completed(pageToken))
     XCTAssertFalse(sourcePage.active)
-    let preview = ReaderDestination.preview(UUID())
-    var projected = ReaderToolLocation(selection: .settings, path: [.fullSettings, preview, .palette(draft), .details])
-    XCTAssertEqual(projected.columnDestination, .palette(draft))
-    XCTAssertEqual(projected.path, [.fullSettings, preview, .palette(draft), .details], "projection does not strip compact/source prefixes")
-    projected.path = [.fullSettings, preview]
-    XCTAssertNil(projected.columnDestination)
-    projected = ReaderToolLocation(selection: .more, path: [.library, .chapter(draft)])
-    XCTAssertEqual(projected.columnDestination, .chapter(draft))
-    projected.path.removeLast()
-    XCTAssertEqual(projected.columnDestination, .library, "finishing an editor restores the typed parent")
     XCTAssertFalse(ReadingContainerRegions.permitsSpread(in: CGSize(width: 900, height: 900)))
     XCTAssertTrue(ReadingContainerRegions.permitsSpread(in: CGSize(width: 1000, height: 900)))
   }

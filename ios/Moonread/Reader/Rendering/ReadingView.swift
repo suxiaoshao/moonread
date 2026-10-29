@@ -4,8 +4,6 @@ import UIKit
 
 struct ReadingContentGeometry: Equatable {
     let size: CGSize
-    var canCommit = true
-    var blockedInWindow: [CGRect] = []
 }
 
 struct ReadingView: UIViewControllerRepresentable {

@@ -5,7 +5,7 @@ struct ReaderTaskContent: View {
     let panel: ReaderPanel?
     let session: ReaderSession
     let tools: ReaderToolsModel
-    let toolSession: ReaderWideTools
+    let toolSession: ReaderToolSession
     let retainedNote: NoteEditorModel?
     let retainedEditor: ReaderEditSession?
     let aiEntrySnapshot: AIEntryContext?

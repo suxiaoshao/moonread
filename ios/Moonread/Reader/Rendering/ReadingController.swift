@@ -276,9 +276,6 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         var contentInsets: UIEdgeInsets
         view.clipsToBounds = contentGeometry != nil
         if let geometry = contentGeometry {
-            guard geometry.canCommit else {
-                recordLayout("layout.suspended"); return
-            }
             if let transition = transitionCoordinator, transition.isAnimated, !transition.isCancelled, transition.percentComplete < 1 {
                 if !waitingForNativeLayout {
                     waitingForNativeLayout = true
@@ -294,45 +291,30 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             guard visibleCanvas.insetBy(dx: -1, dy: -1).contains(view.bounds) else {
                 recordLayout("layout.awaitingOnscreenCanvas"); return
             }
-            // The native parent allocates this local canvas. Its safe-area
-            // guide already accounts for intersecting bars on either axis.
-            // Never substitute window height or add another bar's bounds.
-            viewport = view.bounds.intersection(view.safeAreaLayoutGuide.layoutFrame)
             guard abs(view.bounds.width - geometry.size.width) < 1,
                   abs(view.bounds.height - geometry.size.height) < 1 else {
                 recordLayout("layout.awaitingLocalCanvas"); return
             }
-            stableInsets = .zero // native safe-area exclusion is already in viewport
-            contentInsets = UIEdgeInsets(top: compactHeaderHeight, left: 0, bottom: 0, right: 0)
-            // The SwiftUI safe-area inset for the controls tip is already part
-            // of this local allocation; do not subtract guideHeight again.
-        } else {
-            // SwiftUI fills the window even when the status bar appears. Reserve the
-            // hardware safe area here, independently of the overlay controls. Keep
-            // the larger inset for this size so status-bar changes cannot reflow text.
-            let insets = window.safeAreaInsets
-            // This controller is the full-screen reader. A presented sheet can
-            // animate SwiftUI's container height by the bottom safe area; that is
-            // chrome motion, not a new text viewport. Use this scene's actual size.
-            viewport = CGRect(origin: .zero, size: window.bounds.size)
-            if insetSize != viewport.size {
-                insetSize = viewport.size
-                stableInsets = insets
-            }
-            stableInsets.top = max(stableInsets.top, insets.top)
-            stableInsets.bottom = max(stableInsets.bottom, insets.bottom)
-            stableInsets.left = max(stableInsets.left, insets.left)
-            stableInsets.right = max(stableInsets.right, insets.right)
-            if viewport.height > viewport.width {
-                stableInsets.top = max(stableInsets.top, 20)
-            }
-            contentInsets = stableInsets
-            contentInsets.top += compactHeaderHeight
-            // The bottom safe area is a drawing overlay in scroll mode, not an
-            // empty strip removed from the text viewport.
-            if settings?.mode == .scroll { contentInsets.bottom = 0 }
-            if guideHeight > 0 { contentInsets.bottom = max(contentInsets.bottom, guideHeight + insets.bottom) }
         }
+        // ReaderScreen fills this scene at every width. Sheet/background motion
+        // and navigation visibility do not change the reading canvas. Actual
+        // scene resizing still changes these bounds and restores the text anchor.
+        viewport = CGRect(origin: .zero, size: window.bounds.size)
+        let insets = window.safeAreaInsets
+        if insetSize != viewport.size {
+            insetSize = viewport.size
+            stableInsets = insets
+        }
+        stableInsets.top = max(stableInsets.top, insets.top)
+        stableInsets.bottom = max(stableInsets.bottom, insets.bottom)
+        stableInsets.left = max(stableInsets.left, insets.left)
+        stableInsets.right = max(stableInsets.right, insets.right)
+        if viewport.height > viewport.width { stableInsets.top = max(stableInsets.top, 20) }
+        contentInsets = stableInsets
+        contentInsets.top += compactHeaderHeight
+        if settings?.mode == .scroll { contentInsets.bottom = 0 }
+        if guideHeight > 0 { contentInsets.bottom = max(contentInsets.bottom, guideHeight + insets.bottom) }
+
         if contentGeometry != nil { hadWideLayout = true }
         let surface = viewport.inset(by: contentInsets)
         if contentGeometry != nil {
@@ -453,7 +435,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             "canvas": String(describing: view.bounds), "safeRegion": String(describing: view.safeAreaLayoutGuide.layoutFrame),
             "window": String(describing: view.window?.bounds), "windowInCanvas": String(describing: view.window.map { view.convert($0.bounds, from: $0) }),
             "geometry": String(describing: contentGeometry), "bars": bars, "guideHeight": guideHeight,
-            "reserved": reserved, "toolBlockersInWindow": (contentGeometry?.blockedInWindow ?? []).map { String(describing: $0) }, "proposed": String(describing: proposed), "surface": String(describing: readingSurface.frame),
+            "reserved": reserved, "proposed": String(describing: proposed), "surface": String(describing: readingSurface.frame),
             "leaves": leafFrames.map { String(describing: $0) }, "cover": isCoverVisible,
             "anchor": anchor, "epoch": layoutEpoch, "typography": String(describing: settings)])
         #endif
@@ -465,9 +447,6 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             blocked = [UIView.ReservedRegion.Kind.division, .occlusion].flatMap { kind in
                 view.reservedRegions(kind: kind).filter(\.isActive).map(\.frame)
             }
-        }
-        if let window = view.window {
-            blocked += (contentGeometry?.blockedInWindow ?? []).map { view.convert($0, from: window) }
         }
         return ReadingContainerRegions.available(surface, blocked: blocked)
     }

@@ -22,7 +22,6 @@ struct PaletteEditorContent: View {
     @Bindable var draft: PaletteDraft
     let showsAppPreview: Bool
     let close: () -> Void
-    var usesNavigation = true
     @FocusState private var nameFocused: Bool
     private var creating: Bool { draft.creating }
     private var palette: ThemePalette { draft.palette }
@@ -36,21 +35,12 @@ struct PaletteEditorContent: View {
             .dismissKeyboardOnOutsideTap($nameFocused)
     }
     var body: some View {
-        Group {
-            if usesNavigation {
-                fields
-                    .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) { cancelButton }
-                        ToolbarItem(placement: .confirmationAction) { saveButton }
-                    }
-            } else {
-                VStack(spacing: 0) {
-                    ReaderToolPageHeader(title) { cancelButton; saveButton }
-                    fields
+        fields
+                .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { cancelButton }
+                    ToolbarItem(placement: .confirmationAction) { saveButton }
                 }
-            }
-        }
         .alert("暂时无法保存", isPresented: Binding(get: { draft.error != nil }, set: { if !$0 { draft.error = nil } })) {
             Button("知道了", role: .cancel) { draft.error = nil }
         } message: { Text(draft.error ?? "") }

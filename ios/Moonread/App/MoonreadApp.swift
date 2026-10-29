@@ -303,17 +303,17 @@ private struct MoonreadRoot: View {
     private var libraryStack: some View {
         NavigationStack(path: $library.libraryPath) {
             LibraryView(model: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.modifier(ReaderContainerHost(path: library.libraryPath))
+        }.toolbarVisibility(library.libraryPath.contains(where: \.isReader) ? .hidden : .automatic, for: .tabBar)
     }
     private var statisticsStack: some View {
         NavigationStack(path: $library.statisticsPath) {
             StatisticsView(library: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.modifier(ReaderContainerHost(path: library.statisticsPath))
+        }.toolbarVisibility(library.statisticsPath.contains(where: \.isReader) ? .hidden : .automatic, for: .tabBar)
     }
     private var searchStack: some View {
         NavigationStack(path: $library.searchPath) {
             AppSearchView(model: library, search: library.search).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.modifier(ReaderContainerHost(path: library.searchPath))
+        }.toolbarVisibility(library.searchPath.contains(where: \.isReader) ? .hidden : .automatic, for: .tabBar)
         .modifier(AppSearchField(model: library, search: library.search, quickEntry: true))
     }
     private var settingsStack: some View {

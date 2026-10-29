@@ -5,9 +5,8 @@ import UIKit
 final class ReaderLibraryEditing {
     var visibleChapters: Set<UInt64> = []
     var chapterVisibilityKnown = false
-    var notePositions: [ReaderLibraryTab: String] = [:]
     var editingOutline = false
-    @ObservationIgnored weak var readerTools: ReaderWideTools?
+    @ObservationIgnored weak var readerTools: ReaderToolSession?
     var chapterEdit: ChapterEditDraft? {
         guard let editor = readerTools?.editor, case let .chapter(draft) = editor.payload else { return nil }
         return draft
@@ -54,8 +53,6 @@ struct ReaderLibraryContent: View {
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     @FocusState private var chapterFilterFocused: Bool
     @Bindable var editing: ReaderLibraryEditing
-    var inspector = false
-    var focusChanged: (Bool) -> Void = { _ in }
     var editorClosed: () -> Void = {}
 
     private var listTitle: String {
@@ -73,22 +70,17 @@ struct ReaderLibraryContent: View {
             .labelStyle(.iconOnly).toolbarGlyph().accessibilityIdentifier("closeReaderLibrary")
     }
     @ToolbarContentBuilder private var libraryToolbar: some ToolbarContent {
-        if !inspector {
-            if model.tab == .chapters { ToolbarItem(placement: .topBarLeading) { outlineActions } }
-            ToolbarItem(placement: .topBarTrailing) { closeButton }
-        }
+        if model.tab == .chapters { ToolbarItem(placement: .topBarLeading) { outlineActions } }
+        ToolbarItem(placement: .topBarTrailing) { closeButton }
     }
 
     private var preparedBookID: String? { session.opening.phase == .reading ? session.readingID : nil }
 
-    @ViewBuilder var body: some View {
-        if inspector { libraryContent }
-        else {
-            libraryContent
-                .navigationTitle(listTitle)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { libraryToolbar }
-        }
+    var body: some View {
+        libraryContent
+            .navigationTitle(listTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { libraryToolbar }
     }
 
     private var libraryContent: some View {
@@ -116,7 +108,7 @@ struct ReaderLibraryContent: View {
                     }.padding().background(Color(uiColor: theme.raised))
                 }
             }
-            .modifier(ReaderLibraryEditorPresentation(editing: editing, session: session, inspector: inspector, refreshOutline: refreshOutline, closed: editorClosed))
+            .modifier(ReaderLibraryEditorPresentation(editing: editing, session: session, refreshOutline: refreshOutline, closed: editorClosed))
             .confirmationDialog("恢复自动目录？", isPresented: $editing.restoringOutline, titleVisibility: .visible) {
                 Button("清除人工修正", role: .destructive) {
                     guard let id = session.readingID else { return }
@@ -131,7 +123,7 @@ struct ReaderLibraryContent: View {
                 var available = session.book?.byteCount
                 var complete = !session.incomplete
                 await session.activity.flush()
-                await model.prepare(bookID: id, currentChapter: session.chapter?.startUtf8 ?? 0, library: true, preservingPosition: inspector)
+                await model.prepare(bookID: id, currentChapter: session.chapter?.startUtf8 ?? 0, library: true, preservingPosition: true)
                 // While this sheet is open, publish newly parsed headings/counts
                 // without scrolling the reader's current directory viewport.
                 while !Task.isCancelled {
@@ -145,7 +137,6 @@ struct ReaderLibraryContent: View {
                 }
             }
             .onDisappear { session.notesChanged() }
-            .onChange(of: chapterFilterFocused) { _, focused in focusChanged(focused) }
             .onChange(of: model.tab) { _, value in
                 chapterFilterFocused = false
                 if value != .chapters { Task { await model.loadNotes(reset: true) } }
@@ -162,12 +153,10 @@ struct ReaderLibraryContent: View {
         ReaderChapterList(model: model, session: session, navigate: navigate,
                           visibleChapters: $editing.visibleChapters, chapterVisibilityKnown: $editing.chapterVisibilityKnown,
                           editingOutline: $editing.editingOutline, editChapter: editing.beginChapter, removedChapter: $editing.removedChapter,
-                          chapterFilterFocused: $chapterFilterFocused, refreshOutline: refreshOutline, restoringOffset: inspector ? editing.visibleChapters.min() : nil)
+                          chapterFilterFocused: $chapterFilterFocused, refreshOutline: refreshOutline)
     }
     private var notesList: some View {
-        ReaderNotesList(model: model, session: session, navigate: navigate, edit: edit,
-            preservedPosition: inspector ? Binding(get: { editing.notePositions[model.tab] },
-                set: { editing.notePositions[model.tab] = $0 }) : nil)
+        ReaderNotesList(model: model, session: session, navigate: navigate, edit: edit)
     }
     private func refreshOutline() async {
         await session.refreshOutline()
@@ -179,34 +168,29 @@ struct ReaderLibraryContent: View {
 private struct ReaderLibraryEditorPresentation: ViewModifier {
     @Bindable var editing: ReaderLibraryEditing
     let session: ReaderSession
-    let inspector: Bool
     let refreshOutline: () async -> Void
     let closed: () -> Void
     @ViewBuilder func body(content: Content) -> some View {
-        if inspector {
-            content // The stable reader owns wide editing sheets across folds.
-        } else {
-            content
-                .navigationDestination(item: chapterBinding) { draft in
-                    if let id = session.readingID {
-                        ChapterEditor(bookID: id, draft: draft) { await refreshOutline() }
-                            .onDisappear(perform: closed)
-                    }
+        content
+            .navigationDestination(item: chapterBinding) { draft in
+                if let id = session.readingID {
+                    ChapterEditor(bookID: id, draft: draft) { await refreshOutline() }
+                        .onDisappear(perform: closed)
                 }
-                .navigationDestination(isPresented: rebuildBinding) {
-                    if let model = editing.rebuildModel {
-                        ChapterRebuildView(model: model) { await refreshOutline() }
-                            .onDisappear(perform: closed)
-                    }
+            }
+            .navigationDestination(isPresented: rebuildBinding) {
+                if let model = editing.rebuildModel {
+                    ChapterRebuildView(model: model) { await refreshOutline() }
+                        .onDisappear(perform: closed)
                 }
-        }
+            }
     }
     private var chapterBinding: Binding<ChapterEditDraft?> {
         let current = editing.readerTools?.editor
         let token = editing.readerTools?.host.token
         let generation = editing.readerTools?.presentation.revision ?? 0
         return Binding(get: { current?.presenter == .library ? editing.chapterEdit : nil }, set: {
-            if $0 == nil, let current, editing.readerTools?.acceptsNativeInput(token, generation: generation, compactOnly: true) == true {
+            if $0 == nil, let current, editing.readerTools?.acceptsNativeInput(token, generation: generation) == true {
                 editing.readerTools?.finishEditing(current.id)
             }
         })
@@ -216,7 +200,7 @@ private struct ReaderLibraryEditorPresentation: ViewModifier {
         let token = editing.readerTools?.host.token
         let generation = editing.readerTools?.presentation.revision ?? 0
         return Binding(get: { current?.presenter == .library && editing.rebuildingOutline }, set: {
-            if !$0, let current, editing.readerTools?.acceptsNativeInput(token, generation: generation, compactOnly: true) == true {
+            if !$0, let current, editing.readerTools?.acceptsNativeInput(token, generation: generation) == true {
                 editing.readerTools?.finishEditing(current.id)
             }
         })

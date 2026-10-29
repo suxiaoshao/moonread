@@ -109,7 +109,7 @@ enum ReadingContainerRegions {
     static func permitsSpread(in size: CGSize) -> Bool { size.width > size.height }
 }
 
-/// Readiness and epoch of the local renderer, never an inspector capacity input.
+/// Readiness of the local renderer, independent of tool presentation.
 @MainActor @Observable final class ReadingLayoutStatus {
     private(set) var hasValidLayout = false
     func committed() { hasValidLayout = true }

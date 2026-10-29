@@ -111,7 +111,6 @@ struct NoteEditorContent: View {
     @Environment(\.theme) private var theme
     @Bindable var model: NoteEditorModel
     let close: () -> Void
-    var usesNavigation = true
     private var saving: Bool { model.saving }
     private var fields: some View {
             VStack(spacing: 0) {
@@ -160,20 +159,11 @@ struct NoteEditorContent: View {
                 .ignoresSafeArea(.keyboard)
     }
     var body: some View {
-        Group {
-            if usesNavigation {
-                fields.navigationTitle("批注").navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) { cancelButton }
-                        ToolbarItem(placement: .confirmationAction) { saveButton }
-                    }
-            } else {
-                VStack(spacing: 0) {
-                    ReaderToolPageHeader("批注") { cancelButton; saveButton }
-                    fields
+        fields.navigationTitle("批注").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { cancelButton }
+                    ToolbarItem(placement: .confirmationAction) { saveButton }
                 }
-            }
-        }
             .task { await model.loadConflicts() }
             .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in Task { await model.loadConflicts() } }
             .onChange(of: model.text) { _, _ in model.error = nil }

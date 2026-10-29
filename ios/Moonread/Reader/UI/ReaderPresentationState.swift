@@ -2,12 +2,12 @@ import SwiftUI
 import UIKit
 
 /// Intent belongs to this reading opening. Geometry and native lifecycle never
-/// write the location; they only choose where that location is presented.
+/// write the location. All sizes use the same sheet and source navigation.
 enum ReaderTool: Hashable { case library, search, settings, more }
-enum ReaderToolExposure: Equatable { case hidden, accessory, reference, expanded }
+enum ReaderToolExposure: Equatable { case hidden, accessory, expanded }
 enum ReaderDestination: Hashable {
     case library, fullSettings, preview(UUID), palette(UUID), chapter(UUID)
-    case note(String), rebuild(UUID), progress, history, details, ai
+    case note(String), rebuild(UUID), history, details, ai
 
     var editorID: UUID? {
         switch self { case .palette(let id), .chapter(let id), .rebuild(let id): id; default: nil }
@@ -16,17 +16,6 @@ enum ReaderDestination: Hashable {
 struct ReaderToolLocation: Equatable {
     var selection: ReaderTool = .library
     var path: [ReaderDestination] = []
-    /// A read-only projection; source/modal destinations and compact prefixes
-    /// stay in the canonical path even while a regular tool page is visible.
-    var columnDestination: ReaderDestination? {
-        path.last(where: {
-            switch $0 {
-            case .details, .progress, .history, .ai, .preview: false
-            case .fullSettings: selection != .settings
-            default: true
-            }
-        })
-    }
 }
 
 @MainActor @Observable final class ReaderPresentationState {
@@ -66,32 +55,6 @@ struct ReaderToolLocation: Equatable {
         if expanded { controlsVisible = false }
     }
     func reset() { location = ReaderToolLocation(); exposure = .hidden; controlsVisible = false }
-}
-
-/// Values come from the source scene window, before reader/inspector layout.
-struct ReaderContainerMetrics: Equatable {
-    var bounds = CGRect.zero
-    var safeArea = UIEdgeInsets.zero
-    var blocked: [CGRect] = []
-    var regular = false
-}
-enum ReaderToolContainer: Equatable { case compact, inspector, sheet }
-
-@MainActor enum ReaderContainerPolicy {
-    static func container(_ metrics: ReaderContainerMetrics, settings: ReaderSettings?) -> ReaderToolContainer {
-        guard metrics.regular else { return .compact }
-        guard let settings else { return .sheet }
-        // Reserve the maximum preferred column (400), plus a 24pt separation.
-        // Never reconstruct this budget from mounted inspector/body widths.
-        let regions = ReadingContainerRegions.available(metrics.bounds.inset(by: metrics.safeArea), blocked: metrics.blocked)
-        let fits = regions.contains { region in
-            let remaining = region.width - 424
-            guard remaining > 0 else { return false }
-            let insets = ReadingTypography.insets(settings, width: remaining)
-            return remaining - insets.left - insets.right >= ReadingTypography.minimumColumnWidth(settings)
-        }
-        return fits ? .inspector : .sheet
-    }
 }
 
 /// A native callback can release only the installation that produced it. Route
@@ -141,26 +104,19 @@ enum ReaderNativePhase: String { case released, requested, confirmed, dismissing
     }
 }
 
-enum ReaderPresentationTarget: Equatable { case none, dock, settings, details, editor, progress, inspector, toolSheet }
+enum ReaderPresentationTarget: Equatable { case none, dock, settings, details }
 
 @MainActor enum ReaderPresentationProjection {
-    static func target(state: ReaderPresentationState, container: ReaderToolContainer,
+    static func target(state: ReaderPresentationState,
                        editorParent: ReaderEditPresenter?, hasNote: Bool,
                        hasAccessory: Bool, available: Bool) -> ReaderPresentationTarget {
         guard available else { return .none }
         let path = state.location.path
         if path.contains(.details) { return .details }
-        if path.last == .progress { return .progress }
         if path.last == .history || path.last == .ai { return .dock }
-        if container != .compact {
-            if state.exposure == .hidden, path.isEmpty, !hasNote { return .none }
-            return container == .inspector ? .inspector : .toolSheet
-        }
-        if editorParent == .reader { return .editor }
         if path.contains(.fullSettings) || (state.location.selection == .settings && state.exposure == .expanded) { return .settings }
         if editorParent == .settings || editorParent == .preview { return .settings }
         if !path.isEmpty || hasNote { return .dock }
-        if state.exposure == .reference { return .none }
         return state.controlsVisible || hasAccessory ? .dock : .none
     }
 }
@@ -217,7 +173,6 @@ enum ReaderPresentationTarget: Equatable { case none, dock, settings, details, e
             case .fullSettings, .preview, .palette: return .settings
             case .chapter: return editor?.presenter == .readerTask ? .chapterEditor : .library
             case .note: break
-            case .progress: return .progress
             case .history: return .history
             case .details: return .details
             case .ai: return .ai

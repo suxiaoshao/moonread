@@ -12,8 +12,6 @@ struct ReaderChapterList: View {
     @Binding var removedChapter: ChapterEntry?
     @FocusState.Binding var chapterFilterFocused: Bool
     let refreshOutline: () async -> Void
-    var restoringOffset: UInt64? = nil
-    @State private var restoredViewport = false
     @Environment(\.theme) private var theme
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     var body: some View {
@@ -66,9 +64,7 @@ struct ReaderChapterList: View {
                 .scrollDismissesKeyboard(.interactively)
                 .accessibilityIdentifier("chapterList")
                 .onScrollTargetVisibilityChange(idType: UInt64.self, threshold: 0.6) { ids in
-                    // A removed regular tool page reports an empty viewport;
-                    // retain its last anchor for the same directory on return.
-                    if restoringOffset == nil || !ids.isEmpty { visibleChapters = Set(ids) }
+                    visibleChapters = Set(ids)
                     chapterVisibilityKnown = true
                 }
                 // Reserved below the list, so the last rows scroll clear of the action.
@@ -92,12 +88,10 @@ struct ReaderChapterList: View {
                     }
                 }
                 .onChange(of: model.chapterJumpRevision, initial: true) { _, _ in
-                    if !restoredViewport, let restoringOffset { proxy.scrollTo(restoringOffset, anchor: .top) }
-                    else if session.showingCover && model.chapterFilter.isEmpty { proxy.scrollTo("reader-cover", anchor: .top) }
+                    if session.showingCover && model.chapterFilter.isEmpty { proxy.scrollTo("reader-cover", anchor: .top) }
                     else if let target = model.chapterTarget {
                         proxy.scrollTo(target, anchor: model.chapterTargetCentered ? .center : .top)
                     }
-                    restoredViewport = true
                 }
                 .overlay {
                     if model.chapters.isEmpty {

@@ -11,8 +11,6 @@ struct ReaderSearchContent: View {
     let showsHistory: Bool
     let showHistory: () -> Void
     let closeSearch: () -> Void
-    var inspector = false
-    var focusChanged: (Bool) -> Void = { _ in }
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     @Environment(\.theme) private var theme
     @FocusState private var queryFocused: Bool
@@ -35,7 +33,6 @@ struct ReaderSearchContent: View {
             if let id = session.readingID { await model.prepare(bookID: id, currentChapter: 0, library: false) }
             if !Task.isCancelled, readyForInput, expanded, model.query.isEmpty { queryFocused = true }
         }
-        .onChange(of: queryFocused) { _, focused in focusChanged(focused) }
         .onChange(of: expanded) { _, value in
             if !value { queryFocused = false }
         }
@@ -46,7 +43,7 @@ struct ReaderSearchContent: View {
 
     private var searchDetails: some View {
         VStack(spacing: 0) {
-            if !inspector { HStack {
+            HStack {
                 Button("收起搜索结果", systemImage: "chevron.down", action: collapse)
                     .labelStyle(.iconOnly).frame(width: 44, height: 44)
                     .accessibilityIdentifier("collapseSearch")
@@ -58,22 +55,14 @@ struct ReaderSearchContent: View {
                     .tint(Color(uiColor: theme.ink))
                     .accessibilityIdentifier("closeSearch")
             }
-            .padding(.horizontal, 12).padding(.top, 16) }
+            .padding(.horizontal, 12).padding(.top, 16)
             searchField.padding(.horizontal, 16).padding(.top, 4)
             if !model.query.isEmpty || model.error != nil {
                 searchStatus.padding(.horizontal, 20)
                 ThemedDivider().padding(.horizontal, 20)
             }
             searchList
-            if inspector {
-                HStack {
-                    Button("上一个结果", systemImage: "chevron.up") { moveResult(-1) }
-                        .disabled(activeIndex == nil || activeIndex == 0)
-                    Spacer()
-                    Button("下一个结果", systemImage: "chevron.down") { moveResult(1) }
-                        .disabled(model.hits.isEmpty || (activeIndex.map { $0 + 1 >= model.hits.count } ?? false))
-                }.labelStyle(.iconOnly).padding().tint(Color(uiColor: theme.accent))
-            }
+
         }
     }
 
