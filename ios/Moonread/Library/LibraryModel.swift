@@ -18,7 +18,8 @@ enum LibraryRoute: Hashable {
     case search(AppSearchScope)
     /// A conversation opened from search, anchored at the matching message.
     case conversation(String, anchor: AIConversationAnchor?)
-    var isReader: Bool { if case .reader = self { true } else { false } }
+    var readerOpeningID: UUID? { if case .reader(let request) = self { request.id } else { nil } }
+    var isReader: Bool { readerOpeningID != nil }
 }
 
 struct HomeSnapshot: Equatable {
@@ -625,10 +626,17 @@ final class LibraryModel {
             }
         }
     }
+    func readerDestinationDepth(_ id: UUID) -> Int? {
+        for path in [libraryPath, statisticsPath, searchPath, settingsNavigation.path] {
+            if let index = path.firstIndex(where: { $0.readerOpeningID == id }) { return index + 2 }
+        }
+        return nil
+    }
+    func containsReaderDestination(_ id: UUID) -> Bool { readerDestinationDepth(id) != nil }
     func removeReaderDestination(_ id: UUID) {
         func removing(_ path: [LibraryRoute]) -> [LibraryRoute] {
             guard let index = path.firstIndex(where: { route in
-                if case .reader(let request) = route { return request.id == id }; return false
+                route.readerOpeningID == id
             }) else { return path }
             return Array(path[..<index])
         }

@@ -4,6 +4,8 @@ import UIKit
 
 struct ReadingContentGeometry: Equatable {
     let size: CGSize
+    var canCommit = true
+    var blockedInWindow: [CGRect] = []
 }
 
 struct ReadingView: UIViewControllerRepresentable {
@@ -39,6 +41,7 @@ struct ReadingView: UIViewControllerRepresentable {
     let compactHeaderHeight: CGFloat
     var guideHeight: CGFloat = 0
     var contentGeometry: ReadingContentGeometry? = nil
+    var layoutStatus: ReadingLayoutStatus? = nil
     var headerPositionChanged: (CGFloat) -> Void = { _ in }
     let controlsVisible: Bool
     let toggleControls: () -> Void
@@ -53,6 +56,7 @@ struct ReadingView: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: ReadingController, context: Context) {
         controller.headerPositionChanged = headerPositionChanged
         controller.contentGeometry = contentGeometry
+        controller.layoutStatus = layoutStatus
         controller.guideHeight = guideHeight
         controller.requestWindow = requestWindow
         controller.openingID = openingID

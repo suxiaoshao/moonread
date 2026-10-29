@@ -58,7 +58,9 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     }
     var headerPositionChanged: (CGFloat) -> Void = { _ in }
     private var reportedHeaderTop: CGFloat?
-    private var localInsetHeight: CGFloat?
+    var layoutStatus: ReadingLayoutStatus?
+    private var waitingForNativeLayout = false
+    private var layoutEpoch: UInt64 = 0
     var contentGeometry: ReadingContentGeometry? {
         didSet { if contentGeometry != oldValue { viewIfLoaded?.setNeedsLayout() } }
     }
@@ -275,26 +277,37 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         var contentInsets: UIEdgeInsets
         view.clipsToBounds = contentGeometry != nil
         if let geometry = contentGeometry {
-            // Native chrome overlays a stable window-height reading column.
-            // Converting its origin compensates any navigation host translation;
-            // inspector width still comes from the actual local column.
-            let windowFrame = view.convert(window.bounds, from: window)
-            viewport = ReadingContainerRegions.immersiveViewport(localWidth: geometry.size.width, windowFrame: windowFrame)
-            if localInsetHeight != window.bounds.height {
-                localInsetHeight = window.bounds.height
-                let hardware = window.safeAreaInsets
-                // Keep the native bars' measured space even while they are
-                // hidden. Tapping the text must not repaginate or move it.
-                let topBar = navigationController?.navigationBar.bounds.height ?? 0
-                let bottomBar = navigationController?.toolbar.bounds.height ?? 0
-                stableInsets = UIEdgeInsets(top: hardware.top + topBar, left: 0,
-                    bottom: hardware.bottom + bottomBar, right: 0)
+            guard geometry.canCommit else {
+                recordLayout("layout.suspended"); return
             }
-            contentInsets = stableInsets
-            contentInsets.top += compactHeaderHeight
-            if guideHeight > 0 { contentInsets.bottom = max(contentInsets.bottom, guideHeight + stableInsets.bottom) }
+            if let transition = transitionCoordinator, transition.isAnimated, !transition.isCancelled, transition.percentComplete < 1 {
+                if !waitingForNativeLayout {
+                    waitingForNativeLayout = true
+                    transition.animate(alongsideTransition: nil) { [weak self] _ in
+                        self?.waitingForNativeLayout = false; self?.view.setNeedsLayout()
+                    }
+                }
+                return
+            }
+            // On-screen membership is a native readiness fact, not a source of
+            // viewport height or a compensation for the parent's navigation.
+            let visibleCanvas = view.convert(window.bounds, from: window)
+            guard visibleCanvas.insetBy(dx: -1, dy: -1).contains(view.bounds) else {
+                recordLayout("layout.awaitingOnscreenCanvas"); return
+            }
+            // The native parent allocates this local canvas. Its safe-area
+            // guide already accounts for intersecting bars on either axis.
+            // Never substitute window height or add another bar's bounds.
+            viewport = view.bounds.intersection(view.safeAreaLayoutGuide.layoutFrame)
+            guard abs(view.bounds.width - geometry.size.width) < 1,
+                  abs(view.bounds.height - geometry.size.height) < 1 else {
+                recordLayout("layout.awaitingLocalCanvas"); return
+            }
+            stableInsets = .zero // native safe-area exclusion is already in viewport
+            contentInsets = UIEdgeInsets(top: compactHeaderHeight, left: 0, bottom: 0, right: 0)
+            // The SwiftUI safe-area inset for the controls tip is already part
+            // of this local allocation; do not subtract guideHeight again.
         } else {
-            localInsetHeight = nil
             // SwiftUI fills the window even when the status bar appears. Reserve the
             // hardware safe area here, independently of the overlay controls. Keep
             // the larger inset for this size so status-bar changes cannot reflow text.
@@ -322,10 +335,13 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             if guideHeight > 0 { contentInsets.bottom = max(contentInsets.bottom, guideHeight + insets.bottom) }
         }
         if contentGeometry != nil { hadWideLayout = true }
-        let savedViewport = captureViewport()
-        let savedSelection = selectedSourceRange()
-        let selectionFocused = activeTextView?.isFirstResponder == true
         let surface = viewport.inset(by: contentInsets)
+        if contentGeometry != nil {
+            let font = settings.map { ReadingTypography.font($0) } ?? UIFont.preferredFont(forTextStyle: .body)
+            guard ReadingContainerRegions.valid(surface, inside: view.bounds, minimumHeight: font.lineHeight + 20) else {
+                recordLayout("layout.rejected", proposed: surface); return
+            }
+        }
         let regions = contentGeometry == nil ? [surface] : readingRegions(in: surface)
         var nextSurface = surface
         var nextFrames = [CGRect(origin: .zero, size: surface.size)]
@@ -356,6 +372,16 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             }
             nextFrames = [CGRect(origin: .zero, size: nextSurface.size)]
         }
+        if contentGeometry != nil {
+            let font = settings.map { ReadingTypography.font($0) } ?? UIFont.preferredFont(forTextStyle: .body)
+            guard ReadingContainerRegions.valid(nextSurface, inside: view.bounds, minimumHeight: font.lineHeight + 20),
+                  nextFrames.allSatisfy({ ReadingContainerRegions.valid($0, inside: CGRect(origin: .zero, size: nextSurface.size), minimumHeight: font.lineHeight + 20) }) else {
+                recordLayout("layout.rejectedRegion", proposed: nextSurface); return
+            }
+        }
+        let savedViewport = captureViewport()
+        let savedSelection = selectedSourceRange()
+        let selectionFocused = activeTextView?.isFirstResponder == true
         readingRegion = nextSurface
         let pageLayoutChanged = leafFrames != nextFrames
         readingSurface.frame = nextSurface
@@ -372,7 +398,9 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         }
         updatePaperBackdrop()
         updateBottomFade()
-        if needsRebuild || renderedSize != readingSurface.bounds.size || pageLayoutChanged {
+        let committedLayoutChanged = needsRebuild || renderedSize != readingSurface.bounds.size || pageLayoutChanged
+        if committedLayoutChanged {
+            layoutEpoch &+= 1
             if pendingNavigation == nil, let savedViewport {
                 anchor = hadWideLayout ? (layoutAnchor ?? savedViewport.offset) : savedViewport.offset
                 isCoverVisible = savedViewport.isCover
@@ -386,6 +414,11 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             pendingNavigation?.keepVisible = false
         }
         applyNavigation()
+        if contentGeometry != nil, layoutStatus?.hasValidLayout != true {
+            let status = layoutStatus
+            Task { @MainActor in status?.committed() }
+        }
+        recordLayout("layout.committed", proposed: nextSurface)
         if let id = openingID, diagnosedOpening != id, !needsRebuild {
             diagnosedOpening = id
             ReaderOpenDiagnostics.mark(id, "layoutCompleted")
@@ -396,10 +429,43 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         }
     }
 
+    private func recordLayout(_ event: String, proposed: CGRect? = nil) {
+        #if DEBUG
+        guard ProcessInfo.processInfo.environment["MOONREAD_READER_EVENTS"] == "1" else { return }
+        var bars: [[String: String]] = []
+        for (name, bar) in [("navigation", navigationController?.navigationBar as UIView?), ("toolbar", navigationController?.toolbar as UIView?)] {
+            if let bar {
+                let rect = view.convert(bar.bounds, from: bar)
+                let intersection = view.bounds.intersection(rect)
+                bars.append(["name": name, "frame": String(describing: rect), "intersection": String(describing: intersection),
+                    "axis": intersection.isNull ? "none" : (intersection.height > intersection.width ? "vertical" : "horizontal")])
+            }
+        }
+        var reserved: [String] = []
+        if #available(iOS 27.1, *) {
+            reserved = [UIView.ReservedRegion.Kind.division, .occlusion].flatMap { kind in
+                view.reservedRegions(kind: kind).filter(\.isActive).map { String(describing: $0.frame) }
+            }
+        }
+        ReaderSceneDiagnostics.record(event, opening: openingID, fields: [
+            "canvas": String(describing: view.bounds), "safeRegion": String(describing: view.safeAreaLayoutGuide.layoutFrame),
+            "window": String(describing: view.window?.bounds), "windowInCanvas": String(describing: view.window.map { view.convert($0.bounds, from: $0) }),
+            "geometry": String(describing: contentGeometry), "bars": bars, "guideHeight": guideHeight,
+            "reserved": reserved, "toolBlockersInWindow": (contentGeometry?.blockedInWindow ?? []).map { String(describing: $0) }, "proposed": String(describing: proposed), "surface": String(describing: readingSurface.frame),
+            "leaves": leafFrames.map { String(describing: $0) }, "cover": isCoverVisible,
+            "anchor": anchor, "epoch": layoutEpoch, "typography": String(describing: settings)])
+        #endif
+    }
+
     private func readingRegions(in surface: CGRect) -> [CGRect] {
-        guard #available(iOS 27.1, *) else { return [surface] }
-        let blocked = [UIView.ReservedRegion.Kind.division, .occlusion].flatMap { kind in
-            view.reservedRegions(kind: kind).filter(\.isActive).map(\.frame)
+        var blocked: [CGRect] = []
+        if #available(iOS 27.1, *) {
+            blocked = [UIView.ReservedRegion.Kind.division, .occlusion].flatMap { kind in
+                view.reservedRegions(kind: kind).filter(\.isActive).map(\.frame)
+            }
+        }
+        if let window = view.window {
+            blocked += (contentGeometry?.blockedInWindow ?? []).map { view.convert($0, from: window) }
         }
         return ReadingContainerRegions.available(surface, blocked: blocked)
     }

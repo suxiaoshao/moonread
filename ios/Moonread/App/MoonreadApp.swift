@@ -303,17 +303,17 @@ private struct MoonreadRoot: View {
     private var libraryStack: some View {
         NavigationStack(path: $library.libraryPath) {
             LibraryView(model: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.modifier(ReaderInspectorHost())
+        }.modifier(ReaderContainerHost(path: library.libraryPath))
     }
     private var statisticsStack: some View {
         NavigationStack(path: $library.statisticsPath) {
             StatisticsView(library: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.modifier(ReaderInspectorHost())
+        }.modifier(ReaderContainerHost(path: library.statisticsPath))
     }
     private var searchStack: some View {
         NavigationStack(path: $library.searchPath) {
             AppSearchView(model: library, search: library.search).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.modifier(ReaderInspectorHost())
+        }.modifier(ReaderContainerHost(path: library.searchPath))
         .modifier(AppSearchField(model: library, search: library.search, quickEntry: true))
     }
     private var settingsStack: some View {

@@ -140,6 +140,7 @@ struct ReaderSettingsView: View {
     @State private var localEditing = ReadingSettingsEditing()
     let editing: ReadingSettingsEditing?
     var editorClosed: () -> Void = {}
+    var nativeNavigation: ReaderSourceNavigation? = nil
     private var editor: ReadingSettingsEditing { editing ?? localEditing }
     private var editedAppearance: ThemeAppearance? {
         get { editor.editedAppearance }
@@ -178,10 +179,10 @@ struct ReaderSettingsView: View {
     }
 
     init(settings: Binding<ReaderSettings>, preview: ReadingPreviewSource = .sample, encoding: String? = nil, isRestartingEncoding: Bool = false, changeEncoding: ((String?) -> Void)? = nil,
-         editing: ReadingSettingsEditing? = nil, editorClosed: @escaping () -> Void = {}) {
+         editing: ReadingSettingsEditing? = nil, editorClosed: @escaping () -> Void = {}, nativeNavigation: ReaderSourceNavigation? = nil) {
         _settings = settings; self.preview = preview; self.encoding = encoding; self.isRestartingEncoding = isRestartingEncoding; self.changeEncoding = changeEncoding
         self.editing = editing
-        self.editorClosed = editorClosed
+        self.editorClosed = editorClosed; self.nativeNavigation = nativeNavigation
     }
     private var appearance: ThemeAppearance { editedAppearance ?? themes.reader.plan.appearance }
     private var previewExpanded: Bool { verticalSizeClass == .compact || previewDetent == .large }
@@ -200,6 +201,8 @@ struct ReaderSettingsView: View {
         return ThemeSurface(plan: plan.reader, readerTexture: texture)
     }
     var body: some View {
+        let sourceToken = nativeNavigation?.token
+        let sourceGeneration = editor.readerTools?.presentation.revision ?? 0
         @Bindable var editing = editor
         GeometryReader { geometry in
             // Keep enough room for both native controls and readable text.
@@ -290,7 +293,7 @@ struct ReaderSettingsView: View {
                 if case let .palette(draft) = value.payload { paletteEditor(draft) }
             }
             .sheet(isPresented: Binding(get: { editor.paletteSession?.presenter == .preview || (compact && !wide && previewPresented && !navigation.isSuspended) }, set: {
-                guard editor.paletteSession?.presenter != .preview else { return }
+                guard allowsNativeInput(sourceToken, generation: sourceGeneration), editor.paletteSession?.presenter != .preview else { return }
                 if compact && !wide && !navigation.isSuspended { previewPresented = $0 }
             }), onDismiss: {
                 previewVisible = false
@@ -357,12 +360,17 @@ struct ReaderSettingsView: View {
         ReadingPreviewPane(source: preview, settings: settings, surface: previewTheme, position: previewPosition)
             .onDisappear { previewPosition.capture() }
     }
+    private func allowsNativeInput(_ token: ReaderHostToken?, generation: UInt64) -> Bool {
+        guard let nativeNavigation else { return true }
+        guard let token, generation == editor.readerTools?.presentation.revision else { return false }
+        return nativeNavigation.installation.acceptsInput(token, opening: token.opening, generation: generation)
+    }
     private func paletteBinding(_ presenter: ReaderEditPresenter) -> Binding<ReaderEditSession?> {
         let current = editor.paletteSession(for: presenter)
-        let token = editor.readerTools?.host.token
+        let token = nativeNavigation?.token
         let generation = editor.readerTools?.presentation.revision ?? 0
         return Binding(get: { editor.paletteSession(for: presenter) }, set: {
-            guard editor.readerTools.map({ $0.acceptsNativeInput(token, generation: generation, compactOnly: true) }) ?? true else { return }
+            guard allowsNativeInput(token, generation: generation) else { return }
             if $0 == nil, let current { editor.finishPalette(current.id) }
         })
     }

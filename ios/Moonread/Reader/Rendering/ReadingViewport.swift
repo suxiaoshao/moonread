@@ -88,8 +88,9 @@ struct ReadingFrontierAdmissions {
 /// One local rectangle policy for both capacity prediction and native text.
 /// UIKit's reserved-region frame already contains its interactive margins.
 enum ReadingContainerRegions {
-    static func immersiveViewport(localWidth: CGFloat, windowFrame: CGRect) -> CGRect {
-        CGRect(x: 0, y: windowFrame.minY, width: localWidth, height: windowFrame.height)
+    static func valid(_ surface: CGRect, inside canvas: CGRect, minimumHeight: CGFloat) -> Bool {
+        [surface.minX, surface.minY, surface.width, surface.height].allSatisfy(\.isFinite)
+            && surface.width >= 80 && surface.height >= minimumHeight && canvas.contains(surface)
     }
     static func available(_ surface: CGRect, blocked: [CGRect]) -> [CGRect] {
         blocked.reduce([surface]) { regions, frame in
@@ -106,4 +107,10 @@ enum ReadingContainerRegions {
         }
     }
     static func permitsSpread(in size: CGSize) -> Bool { size.width > size.height }
+}
+
+/// Readiness and epoch of the local renderer, never an inspector capacity input.
+@MainActor @Observable final class ReadingLayoutStatus {
+    private(set) var hasValidLayout = false
+    func committed() { hasValidLayout = true }
 }

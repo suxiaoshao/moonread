@@ -536,6 +536,12 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
   func testSystemRequestConfirmsDirtyStateAndCancellationConsumesIt() {
     let library = LibraryModel()
     let router = library.systemReading
+    let opening = OpeningRequest(target: .book("source-boundary-fixture"))
+    library.libraryPath = [.folder(.init(shelfID: "builtin")), .reader(opening)]
+    XCTAssertEqual(library.readerDestinationDepth(opening.id), 3, "the folder's appearance cannot settle the following reader push")
+    XCTAssertTrue(library.containsReaderDestination(opening.id))
+    library.removeReaderDestination(opening.id)
+    XCTAssertNil(library.readerDestinationDepth(opening.id))
     router.hasUnsavedEdits = { true }
     router.submit(.showLibrary)
     XCTAssertFalse(router.admit(title: "test", library: library))
@@ -657,6 +663,10 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     let current = native.install(opening: opening, generation: state.revision)
     XCTAssertEqual(old.id, current.id, "content changes do not replace a native presenter")
     XCTAssertFalse(native.acceptsInput(old, opening: opening, generation: state.revision))
+    XCTAssertEqual(native.phase, .requested)
+    XCTAssertFalse(native.acceptsInput(current, opening: opening, generation: state.revision))
+    native.confirm(current)
+    XCTAssertEqual(native.phase, .confirmed)
     XCTAssertTrue(native.acceptsInput(current, opening: opening, generation: state.revision))
     native.beginDismissal()
     XCTAssertFalse(native.acceptsInput(current, opening: opening, generation: state.revision))
@@ -670,6 +680,7 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
       hasNote: false, hasAccessory: false, available: true), .settings)
     host.update(.dock, opening: opening, generation: state.revision)
     let dock = try XCTUnwrap(host.token)
+    host.confirmed(dock)
     host.retain(ReaderInstalledNode(location: state.location, exposure: state.exposure, controls: false,
       searchActive: false, noteID: nil, noteEditor: nil, editor: nil))
     host.update(.settings, opening: opening, generation: state.revision)
@@ -691,6 +702,7 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     let source = ReaderInspectorPresentation(); tools.source = source
     source.metrics.regular = true
     let nativeToken = tools.host.installation.install(opening: opening, generation: tools.presentation.revision)
+    tools.host.confirmed(nativeToken)
     XCTAssertFalse(tools.acceptsNativeInput(nativeToken, generation: tools.presentation.revision, compactOnly: true),
       "adaptation's early false callback must not cancel the old compact editor")
     source.metrics.regular = false
@@ -712,10 +724,29 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     search.query = ""; search.startSearch()
     XCTAssertTrue(search.searchActive, "an empty query is still an active search")
     search.stopSearch(); XCTAssertFalse(search.searchActive)
-    let hidden = ReadingContainerRegions.immersiveViewport(localWidth: 700, windowFrame: CGRect(x: 0, y: 0, width: 1000, height: 1200))
-    let shown = ReadingContainerRegions.immersiveViewport(localWidth: 700, windowFrame: CGRect(x: 0, y: -44, width: 1000, height: 1200))
-    XCTAssertEqual(hidden.size, shown.size)
-    XCTAssertEqual(hidden.minY, shown.minY + 44, "native host translation is compensated without moving window-space prose")
+    let canvas = CGRect(x: 0, y: 0, width: 1200, height: 900)
+    XCTAssertFalse(ReadingContainerRegions.valid(CGRect(x: 0, y: 71, width: 1200, height: 5), inside: canvas, minimumHeight: 44))
+    XCTAssertFalse(ReadingContainerRegions.valid(CGRect(x: 0, y: -50, width: 1200, height: 900), inside: canvas, minimumHeight: 44))
+    let region = try XCTUnwrap(ReadingContainerRegions.available(canvas, blocked: [CGRect(x: 900, y: 0, width: 300, height: 900)]).first)
+    XCTAssertEqual(region, CGRect(x: 0, y: 0, width: 900, height: 900), "a vertical reservation must not become a bottom inset")
+    XCTAssertTrue(ReadingContainerRegions.valid(region, inside: canvas, minimumHeight: 44))
+    let unmounted = ReaderNativeInstallation()
+    let unused = unmounted.install(opening: opening, generation: 0)
+    unmounted.beginDismissal()
+    XCTAssertNil(unmounted.token, "an unconfirmed request cancels without waiting for disappear")
+    let nextRequest = unmounted.install(opening: UUID(), generation: 1)
+    unmounted.confirm(unused)
+    XCTAssertEqual(unmounted.phase, .requested, "a late mount cannot confirm the replacement opening")
+    XCTAssertEqual(unmounted.token, nextRequest)
+    let sourcePage = ReaderSourceNavigation()
+    sourcePage.update(.details, opening: opening, generation: 1)
+    let pageToken = try XCTUnwrap(sourcePage.token)
+    sourcePage.confirm(pageToken)
+    sourcePage.installation.beginDismissal()
+    sourcePage.installation.cancelDismissal()
+    XCTAssertEqual(sourcePage.showing, .details, "cancelled native pop retains the source page")
+    XCTAssertEqual(sourcePage.installation.phase, .confirmed)
+    XCTAssertFalse(sourcePage.completed(unused), "a tool callback cannot release source navigation")
     XCTAssertFalse(ReadingContainerRegions.permitsSpread(in: CGSize(width: 900, height: 900)))
     XCTAssertTrue(ReadingContainerRegions.permitsSpread(in: CGSize(width: 1000, height: 900)))
   }

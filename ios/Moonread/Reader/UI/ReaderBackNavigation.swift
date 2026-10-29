@@ -36,11 +36,13 @@ final class NavigationPresentationState {
 /// gestures. SwiftUI onDisappear is too late to start hiding a presented sheet.
 struct NavigationTransitionObserver: UIViewControllerRepresentable {
     var openingID: UUID? = nil
+    var expectedDepth: Int? = nil
     var appeared: (UUID, String) -> Void = { _, _ in }
     var visibilityChanged: (Bool) -> Void = { _ in }
     var willLeave: (_ popping: Bool) -> Void
     var completed: (_ popping: Bool, _ cancelled: Bool) -> Void
     var removed: () -> Void = {}
+    var becameCurrent: () -> Void = {}
 
     func makeUIViewController(context: Context) -> Controller { Controller() }
     // Unlike a modal's disappear, dismantling ends this navigation owner's
@@ -51,7 +53,8 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: Controller, context: Context) {
         controller.willLeave = willLeave; controller.completed = completed
         controller.visibilityChanged = visibilityChanged
-        controller.removed = removed
+        controller.removed = removed; controller.becameCurrent = becameCurrent
+        controller.expectedDepth = expectedDepth
         controller.setOpening(openingID, appeared: appeared)
     }
 
@@ -59,6 +62,8 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
         var willLeave: (Bool) -> Void = { _ in }
         var completed: (Bool, Bool) -> Void = { _, _ in }
         var removed: () -> Void = {}
+        var becameCurrent: () -> Void = {}
+        var expectedDepth: Int?
         private var openingID: UUID?
         private var appeared: (UUID, String) -> Void = { _, _ in }
         private var initialAppearanceCompleted = false
@@ -75,7 +80,9 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
             guard let navigation = navigationController else { return nil }
             var owner: UIViewController = self
             while let parent = owner.parent, parent !== navigation { owner = parent }
-            return owner.parent === navigation ? owner : nil
+            guard owner.parent === navigation else { return nil }
+            if let expectedDepth, navigation.viewControllers.firstIndex(of: owner) != expectedDepth - 1 { return nil }
+            return owner
         }
         private func finishAppearance(_ id: UUID?, reason: String) {
             guard !initialAppearanceCompleted, let owner = destination,
@@ -98,6 +105,12 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
         override func viewDidAppear(_ animated: Bool) {
             super.viewDidAppear(animated); visible = true; visibilityChanged(true)
             finishAppearance(openingID, reason: "didAppear")
+            if let owner = destination, let navigation = navigationController, navigation.topViewController === owner {
+                ReaderSceneDiagnostics.record("native.sourceAppeared", opening: openingID, fields: [
+                    "expectedDepth": expectedDepth ?? -1, "topTitle": owner.title ?? "",
+                    "stack": navigation.viewControllers.map { ["type": String(describing: type(of: $0)), "title": $0.title ?? ""] }])
+                becameCurrent()
+            }
         }
         override func viewDidDisappear(_ animated: Bool) { super.viewDidDisappear(animated); visible = false; visibilityChanged(false) }
         private var tracking = false
@@ -111,8 +124,14 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
                   let source = transition.viewController(forKey: .from) else { return }
             var ancestor: UIViewController? = self
             while let value = ancestor, value !== source { ancestor = value.parent }
-            guard ancestor === source, source.parent === navigation else { return }
+            guard ancestor === source, source.parent === navigation,
+                  destination === source else { return }
             let popping = source.isMovingFromParent || !navigation.viewControllers.contains(source)
+            ReaderSceneDiagnostics.record("native.navigationWillDisappear", opening: openingID, fields: [
+                "fromType": String(describing: type(of: source)), "fromTitle": source.title ?? "",
+                "toType": transition.viewController(forKey: .to).map { String(describing: type(of: $0)) } ?? "none",
+                "toTitle": transition.viewController(forKey: .to)?.title ?? "none", "popping": popping, "expectedDepth": expectedDepth ?? -1,
+                "stack": navigation.viewControllers.map { ["type": String(describing: type(of: $0)), "title": $0.title ?? ""] }])
             tracking = true
             willLeave(popping)
             let finished = completed

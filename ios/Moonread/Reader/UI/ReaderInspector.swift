@@ -1,24 +1,38 @@
 import SwiftUI
 
-/// The source stack owns native presentation; the reader owns its tool state.
+/// One reader destination owns its native column and logical tool state.
 @MainActor @Observable final class ReaderInspectorPresentation {
     var metrics = ReaderContainerMetrics()
+    var sourceCurrent = false
+    var container = ReaderToolContainer.compact
     weak var window: UIWindow?
     func refreshMetrics() { if let window { metrics = ReaderContainerProbe.metrics(in: window) } }
     var owner: UUID?
     var content: ReaderInspectorContent?
     var host: ReaderPresentationHost?
     var readingControlsVisible: Bool?
+    var columnWindowFrame: CGRect?
     private(set) var mounted = false
     var presented: Bool { host?.showing == .inspector }
     var isActive: Bool { host?.target == .inspector && host?.token != nil }
     func visibilityChanged(_ visible: Bool, token: ReaderHostToken) {
         guard host?.token?.id == token.id else { return }
         mounted = visible
-        if !visible {
-            _ = host?.completed(token)
-            if readingControlsVisible == nil { content = nil; owner = nil; host = nil }
-        }
+        ReaderSceneDiagnostics.record("inspector.visibility", opening: token.opening,
+            fields: ["visible": visible, "phase": host?.phase.rawValue ?? "released", "token": token.id.uuidString])
+        if visible { host?.confirmed(token) }
+    }
+    func detached(_ token: ReaderHostToken) {
+        guard host?.dismissing == true, host?.token?.id == token.id else { return }
+        _ = host?.completed(token); mounted = false; columnWindowFrame = nil
+        ReaderSceneDiagnostics.record("inspector.released", opening: token.opening, fields: ["token": token.id.uuidString])
+    }
+    func nativeBinding(_ visible: Bool) {
+        refreshMetrics()
+        ReaderSceneDiagnostics.record("inspector.binding", opening: host?.token?.opening,
+            fields: ["visible": visible, "phase": host?.phase.rawValue ?? "released"])
+        if !visible, host?.phase == .confirmed, sourceCurrent, metrics.regular,
+           container == .inspector, presented { content?.close() }
     }
     func remove(_ owner: UUID) {
         guard self.owner == owner else { return }
@@ -28,33 +42,72 @@ import SwiftUI
     }
 }
 
-extension EnvironmentValues { @Entry var readerInspector: ReaderInspectorPresentation? = nil }
+@MainActor @Observable final class ReaderContainerSource {
+    var metrics = ReaderContainerMetrics()
+    weak var window: UIWindow?
+}
+extension EnvironmentValues { @Entry var readerContainerSource: ReaderContainerSource? = nil }
 
-struct ReaderInspectorHost: ViewModifier {
-    @State private var presentation = ReaderInspectorPresentation()
+/// Outer scene scope supplies capacity facts only, never a tool column.
+struct ReaderContainerHost: ViewModifier {
+    let path: [LibraryRoute]
+    @State private var source = ReaderContainerSource()
     func body(content: Content) -> some View {
         ZStack {
-            content.environment(\.readerInspector, presentation)
-                .inspector(isPresented: Binding(get: { presentation.presented }, set: { _ in
-                    // Adaptation is a native fact, not a new user selection.
-                    // The column's explicit close action changes intent.
-                })) {
-                    if let tools = presentation.content, let token = presentation.host?.token {
-                        ReaderWideToolNavigation(content: tools)
-                            .themeScope(tools.surface).preferredColorScheme(tools.surface.scheme)
-                            .inspectorColumnWidth(min: 320, ideal: 320, max: 400)
-                            .background(NavigationTransitionObserver(
-                                visibilityChanged: { presentation.visibilityChanged($0, token: token) },
-                                willLeave: { _ in }, completed: { _, _ in }))
-                    }
-                }
-                .statusBarHidden(presentation.readingControlsVisible == false)
-                .toolbarVisibility(presentation.owner == nil ? .automatic : .hidden, for: .tabBar)
-                .toolbarBackground(Color(uiColor: presentation.content?.surface.paper ?? .systemBackground), for: .navigationBar)
-                .toolbarBackground(presentation.owner == nil ? .automatic : .visible, for: .navigationBar)
-            ReaderContainerProbe { window, metrics in presentation.window = window; presentation.metrics = metrics }
+            content.environment(\.readerContainerSource, source)
+                .toolbarVisibility(path.contains(where: \.isReader) ? .hidden : .automatic, for: .tabBar)
+            ReaderContainerProbe { window, metrics in source.window = window; source.metrics = metrics }
                 .allowsHitTesting(false).accessibilityHidden(true)
         }
+    }
+}
+
+/// This modifier is inside the reader destination, below source navigation.
+struct ReaderInspectorHost: ViewModifier {
+    let presentation: ReaderInspectorPresentation
+    func body(content: Content) -> some View {
+        content.inspector(isPresented: Binding(get: { presentation.presented }, set: presentation.nativeBinding)) {
+            if let tools = presentation.content, let token = presentation.host?.token {
+                ReaderToolPages(content: tools)
+                    .themeScope(tools.surface).preferredColorScheme(tools.surface.scheme)
+                    .inspectorColumnWidth(min: 320, ideal: 320, max: 400)
+                    .background(ReaderColumnWitness(presentation: presentation, token: token))
+            }
+        }
+    }
+}
+
+/// A column's content visibility confirms installation; physical detachment,
+/// not arbitrary disappear, releases an already dismissing installation.
+private struct ReaderColumnWitness: UIViewRepresentable {
+    let presentation: ReaderInspectorPresentation
+    let token: ReaderHostToken
+    final class Probe: UIView {
+        var presentation: ReaderInspectorPresentation?
+        var token: ReaderHostToken?
+        override func didMoveToWindow() { super.didMoveToWindow(); publish() }
+        override func layoutSubviews() { super.layoutSubviews(); publish() }
+        private func publish() {
+            guard let token, let presentation else { return }
+            let attached = window != nil
+            let frame = window.map { convert(bounds, to: $0) } ?? .zero
+            let visible = window.map { $0.bounds.intersects(frame) } == true && bounds.width > 0 && bounds.height > 0 && !isHidden
+            Task { @MainActor [weak self, weak presentation] in
+                guard let presentation, presentation.host?.token?.id == token.id else { return }
+                ReaderSceneDiagnostics.record("inspector.columnLayout", opening: token.opening,
+                    fields: ["attached": attached, "visible": visible, "frame": String(describing: frame)])
+                if visible, self?.window != nil, presentation.sourceCurrent {
+                    if presentation.columnWindowFrame != frame { presentation.columnWindowFrame = frame }
+                    presentation.visibilityChanged(true, token: token)
+                }
+                else if !attached { presentation.detached(token) }
+            }
+        }
+    }
+    func makeUIView(context: Context) -> Probe { let view = Probe(); view.isUserInteractionEnabled = false; return view }
+    func updateUIView(_ view: Probe, context: Context) { view.presentation = presentation; view.token = token; view.setNeedsLayout() }
+    static func dismantleUIView(_ view: Probe, coordinator: ()) {
+        if let token = view.token { view.presentation?.detached(token) }
     }
 }
 
@@ -314,6 +367,7 @@ struct ReaderWideEditorPresentation: ViewModifier {
                     }
                 }.themeScope(theme).preferredColorScheme(theme.scheme)
                     .background(ReaderModalChildProbe(host: state.host))
+                    .onAppear { if let token { state.host.confirmed(token) } }
             }
     }
     private func refreshOutline() async {
@@ -379,112 +433,56 @@ struct ReaderUndoAction: View {
 }
 
 
-/// One typed stack for both a column and the regular-capacity fallback sheet.
-struct ReaderWideToolNavigation: View {
+/// Ordinary content pages inside either native regular-capacity container.
+/// The canonical typed path remains the only navigation intent.
+struct ReaderToolPages: View {
     let content: ReaderInspectorContent
     private var state: ReaderWideTools { content.state }
-    private var path: Binding<[ReaderDestination]> {
-        let token = state.host.token
-        let generation = state.presentation.revision
-        return Binding(get: {
-            state.presentation.location.path.filter {
-                switch $0 {
-                case .details, .history, .ai, .progress, .preview: false
-                case .fullSettings: state.presentation.location.selection != .settings
-                default: true
-                }
+    private var destination: ReaderDestination? {
+        state.presentation.location.path.last(where: {
+            switch $0 {
+            case .details, .progress, .history, .ai, .preview: false
+            case .fullSettings: state.presentation.location.selection != .settings
+            default: true
             }
-        }, set: { value in
-            guard state.acceptsNativeInput(token, generation: generation) else { return }
-            // A native stack can write its old path back before SwiftUI has
-            // published the window's new traits. That is host teardown, not pop.
-            let container = ReaderContainerPolicy.container(state.source?.metrics ?? ReaderContainerMetrics(),
-                settings: content.settings.wrappedValue)
-            let expected: ReaderPresentationTarget = container == .inspector ? .inspector : .toolSheet
-            guard container != .compact, state.host.target == expected else { return }
-            let removedNotes = state.presentation.location.path.contains { if case .note = $0 { true } else { false } }
-                && !value.contains { if case .note = $0 { true } else { false } }
-            if removedNotes { content.session.editor = nil }
-            let logicalPrefix = state.presentation.location.path.filter {
-                switch $0 {
-                case .preview: true
-                case .fullSettings: state.presentation.location.selection == .settings
-                default: false
-                }
-            }
-            state.setPath(logicalPrefix + value)
         })
     }
     var body: some View {
-        NavigationStack(path: path) {
-            content
-                .navigationTitle(content.inspectorTitle).navigationBarTitleDisplayMode(.inline)
-                .toolbar { content.inspectorToolbar }
-                .navigationDestination(for: ReaderDestination.self) { destination in
-                    page(destination).onDisappear {
-                        if let id = destination.editorID { state.releaseEditor(id) }
-                        if case .note(let id) = destination { state.releaseNote(id) }
-                    }
-                }
+        VStack(spacing: 0) {
+            ViewThatFits(in: .horizontal) {
+                HStack { actions; Spacer(minLength: 8); title }
+                VStack(alignment: .leading, spacing: 8) { title; HStack { actions } }
+            }.padding(12).background(Color(uiColor: content.surface.surface))
+            ThemedDivider()
+            // Gate A deliberately uses two finite content pages before editors.
+            if destination != nil {
+                ScrollView { Text("目录").frame(maxWidth: .infinity, alignment: .leading).padding() }
+            } else {
+                VStack {
+                    Button("目录") { state.presentation.push(.library) }.accessibilityIdentifier("gateToolChild")
+                    Spacer()
+                }.padding()
+            }
         }
-        .toolbarBackground(Color(uiColor: content.surface.surface), for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarVisibility(.hidden, for: .tabBar)
+        .background(Color(uiColor: content.surface.canvas))
         .background(ReaderModalChildProbe(host: state.host))
-    }
-    @ViewBuilder private func page(_ destination: ReaderDestination) -> some View {
-        switch destination {
-        case .palette(let id):
-            if let value = state.editor(id), case .palette(let draft) = value.payload {
-                PaletteEditorContent(draft: draft, showsAppPreview: false, close: { state.finishEditing(id) })
-                    .modifier(SystemReadingConfirmation(editor: true))
-            } else { missing(destination) }
-        case .chapter(let id):
-            if let value = state.editor(id), case .chapter(let draft) = value.payload, let book = content.session.readingID {
-                ChapterEditor(bookID: book, draft: draft) { await refreshOutline(); state.finishEditing(id) }
-                    .toolbar { ToolbarItem(placement: .cancellationAction) {
-                        Button("取消") { state.finishEditing(id) }.disabled(draft.saving)
-                    } }
-            } else { missing(destination) }
-        case .rebuild(let id):
-            if let value = state.editor(id), case .rebuild(let model) = value.payload {
-                ChapterRebuildView(model: model) { await refreshOutline(); state.finishEditing(id) }
-                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { state.finishEditing(id) }.disabled(model.applying) } }
-            } else { missing(destination) }
-        case .note(let id):
-            if let model = state.note(id) {
-                NoteEditorContent(model: model, close: {
-                    if content.session.editor?.presentationID == id { content.session.editor = nil }
-                    state.presentation.close(destination)
-                })
-            } else { missing(destination) }
-        case .library:
-            ReaderLibraryContent(model: content.tools, session: content.session, navigate: content.navigate,
-                edit: content.edit, close: { state.presentation.close(destination) }, editing: state.libraryEditing, inspector: true)
-                .navigationTitle(content.session.book?.title ?? "")
-                .toolbar { ToolbarItem(placement: .topBarLeading) {
-                    ReaderChapterActions(editing: state.libraryEditing, bookID: content.session.readingID, incomplete: content.session.incomplete)
-                } }
-        case .fullSettings:
-            ReaderInspectorSettings(settings: content.settings, editing: state.settingsEditing,
-                encoding: content.session.encodingLabel, isRestarting: content.session.restartingEncoding, changeEncoding: content.changeEncoding)
-                .navigationTitle("阅读设置")
-        case .preview:
-            // No new wide preview page (W3). The existing compact preview owns
-            // this route; adapting the host retains its owner and source.
-            ReaderInspectorSettings(settings: content.settings, editing: state.settingsEditing,
-                encoding: content.session.encodingLabel, isRestarting: content.session.restartingEncoding, changeEncoding: content.changeEncoding)
-                .navigationTitle("阅读设置")
-        case .history, .details, .progress, .ai: missing(destination)
+        .onChange(of: state.presentation.location, initial: true) { _, location in
+            ReaderSceneDiagnostics.record("tool.page", opening: content.session.opening.request?.id,
+                fields: ["route": String(describing: location), "container": String(describing: state.host.target)])
         }
     }
-    private func missing(_ destination: ReaderDestination) -> some View {
-        ContentUnavailableView {
-            Label("阅读遇到问题", systemImage: "exclamationmark.triangle")
-        } actions: { Button("关闭") { state.presentation.close(destination) } }
+    private var title: some View {
+        Text(destination == nil ? content.inspectorTitle : "目录")
+            .font(.headline).accessibilityAddTraits(.isHeader).accessibilityIdentifier("readerToolTitle")
     }
-    private func refreshOutline() async {
-        await content.session.refreshOutline(); await content.tools.refreshChapters(jumpTo: content.session.anchor)
+    @ViewBuilder private var actions: some View {
+        if let destination {
+            Button("返回", systemImage: "chevron.backward") { state.presentation.close(destination) }
+                .accessibilityIdentifier("readerToolBack")
+        } else {
+            Button("关闭阅读工具", systemImage: "xmark", action: content.close)
+                .labelStyle(.iconOnly).accessibilityIdentifier("closeReaderLibrary")
+        }
     }
 }
 
@@ -493,8 +491,10 @@ struct ReaderWideToolNavigation: View {
 /// reprojected afterwards. Never queues a future tool or changes a draft.
 struct ReaderModalChildProbe: UIViewControllerRepresentable {
     let host: ReaderPresentationHost
+    var source: ReaderSourceNavigation? = nil
     final class Probe: UIViewController {
         weak var host: ReaderPresentationHost?
+        weak var source: ReaderSourceNavigation?
         var installationID: UUID?
         override func loadView() { view = UIView(); view.isUserInteractionEnabled = false }
         override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); publish() }
@@ -502,18 +502,57 @@ struct ReaderModalChildProbe: UIViewControllerRepresentable {
         private func publish() {
             let controller = navigationController ?? parent
             let hasChild = controller?.presentedViewController != nil
-            guard let host, let installationID, host.token?.id == installationID, host.hasModalChild != hasChild else { return }
+            guard let host, let installationID, (source?.token?.id ?? host.token?.id) == installationID, (source?.hasModalChild ?? host.hasModalChild) != hasChild else { return }
             Task { @MainActor [weak self, weak host] in
-                guard self?.viewIfLoaded?.window != nil, host?.token?.id == installationID else { return }
-                host?.hasModalChild = hasChild
+                guard self?.viewIfLoaded?.window != nil, (self?.source?.token?.id ?? host?.token?.id) == installationID else { return }
+                if let source = self?.source { source.hasModalChild = hasChild } else { host?.hasModalChild = hasChild }
             }
         }
     }
     func makeUIViewController(context: Context) -> Probe {
-        let value = Probe(); value.host = host; value.installationID = host.token?.id; return value
+        let value = Probe(); value.host = host; value.source = source; value.installationID = source?.token?.id ?? host.token?.id; return value
     }
     func updateUIViewController(_ controller: Probe, context: Context) {
-        controller.host = host
-        if controller.installationID == nil { controller.installationID = host.token?.id }
+        controller.host = host; controller.source = source
+        if controller.installationID == nil { controller.installationID = source?.token?.id ?? host.token?.id }
     }
+}
+
+/// The popover is released only after its actual presented controller detaches.
+struct ReaderPopoverWitness: UIViewControllerRepresentable {
+    let host: ReaderPresentationHost
+    let token: ReaderHostToken?
+    let released: () -> Void
+    final class Controller: UIViewController {
+        var host: ReaderPresentationHost?
+        var token: ReaderHostToken?
+        var released: () -> Void = {}
+        weak var presentedRoot: UIViewController?
+        override func loadView() { view = UIView(); view.isUserInteractionEnabled = false }
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            var node: UIViewController? = self
+            while let current = node {
+                if current.presentingViewController != nil { presentedRoot = current; break }
+                node = current.parent
+            }
+            if let token { host?.confirmed(token) }
+        }
+        private func finishIfDetached() {
+            guard host?.dismissing == true, let token, host?.token?.id == token.id,
+                  presentedRoot?.presentingViewController == nil else { return }
+            released()
+        }
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            if presentedRoot?.isBeingDismissed == true, let coordinator = transitionCoordinator {
+                coordinator.animate(alongsideTransition: nil) { [weak self] context in
+                    if !context.isCancelled { self?.finishIfDetached() }
+                }
+            }
+        }
+        override func viewDidDisappear(_ animated: Bool) { super.viewDidDisappear(animated); finishIfDetached() }
+    }
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) { controller.host = host; controller.token = token; controller.released = released }
 }

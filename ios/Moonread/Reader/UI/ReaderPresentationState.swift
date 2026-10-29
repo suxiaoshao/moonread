@@ -93,9 +93,12 @@ struct ReaderHostToken: Equatable {
     private init(id: UUID, opening: UUID, generation: UInt64) { self.id = id; self.opening = opening; self.generation = generation }
     func updating(generation: UInt64) -> Self { Self(id: id, opening: opening, generation: generation) }
 }
+enum ReaderNativePhase: String { case released, requested, confirmed, dismissing }
+
 @MainActor @Observable final class ReaderNativeInstallation {
     private(set) var token: ReaderHostToken?
-    private(set) var dismissing = false
+    private(set) var phase = ReaderNativePhase.released
+    var dismissing: Bool { phase == .dismissing }
     func install(opening: UUID, generation: UInt64) -> ReaderHostToken {
         if let token {
             guard token.opening == opening, !dismissing else { return token }
@@ -104,17 +107,26 @@ struct ReaderHostToken: Equatable {
             return updated
         }
         let value = ReaderHostToken(opening: opening, generation: generation)
-        token = value; dismissing = false
+        token = value; phase = .requested
         return value
     }
-    func beginDismissal() { if token != nil { dismissing = true } }
+    func confirm(_ value: ReaderHostToken) {
+        guard token?.id == value.id, token?.opening == value.opening, phase == .requested else { return }
+        phase = .confirmed
+    }
+    func cancelDismissal() { if phase == .dismissing { phase = .confirmed } }
+    func beginDismissal() {
+        guard token != nil else { return }
+        if phase == .requested { token = nil; phase = .released }
+        else { phase = .dismissing }
+    }
     @discardableResult func completed(_ value: ReaderHostToken) -> Bool {
         guard token?.id == value.id, token?.opening == value.opening else { return false }
-        token = nil; dismissing = false
+        token = nil; phase = .released
         return true
     }
     func acceptsInput(_ value: ReaderHostToken, opening: UUID, generation: UInt64) -> Bool {
-        token == value && !dismissing && value.opening == opening && value.generation == generation
+        token == value && phase == .confirmed && value.opening == opening && value.generation == generation
     }
 }
 
@@ -152,7 +164,9 @@ enum ReaderPresentationTarget: Equatable { case none, dock, settings, details, e
     func retain(_ node: ReaderInstalledNode) { if !dismissing { self.node = node } }
     var token: ReaderHostToken? { installation.token }
     var dismissing: Bool { installation.dismissing }
-    var showing: ReaderPresentationTarget { dismissing ? .none : target }
+    var phase: ReaderNativePhase { installation.phase }
+    func confirmed(_ token: ReaderHostToken) { installation.confirm(token) }
+    var showing: ReaderPresentationTarget { token == nil || dismissing ? .none : target }
     func update(_ desired: ReaderPresentationTarget, opening: UUID, generation: UInt64, force: Bool = false) {
         if token == nil {
             target = desired
@@ -204,5 +218,51 @@ enum ReaderPresentationTarget: Equatable { case none, dock, settings, details, e
         if let noteID { return "note-\(noteID)" }
         if let panel, [.library, .history, .chapterEditor, .ai].contains(panel) { return panel.rawValue }
         return nil
+    }
+}
+
+/// Source NavigationStack suffix, independent of the reader's tool slot.
+@MainActor @Observable final class ReaderSourceNavigation {
+    let installation = ReaderNativeInstallation()
+    var hasModalChild = false
+    private(set) var target = ReaderPresentationTarget.none
+    var token: ReaderHostToken? { installation.token }
+    var active: Bool { token != nil }
+    var showing: ReaderPresentationTarget { installation.dismissing ? .none : (active ? target : .none) }
+    func update(_ desired: ReaderPresentationTarget, opening: UUID, generation: UInt64) {
+        if desired == .none { if !hasModalChild { installation.beginDismissal() }; return }
+        guard desired == .settings || desired == .details else { return }
+        if token == nil { target = desired }
+        if target == desired { _ = installation.install(opening: opening, generation: generation) }
+        else { installation.beginDismissal() }
+    }
+    func confirm(_ value: ReaderHostToken) { installation.confirm(value) }
+    @discardableResult func completed(_ value: ReaderHostToken) -> Bool {
+        guard installation.completed(value) else { return false }
+        target = .none; return true
+    }
+}
+
+/// Opt-in DEBUG evidence only. One ordered stream shared by native and rendering.
+@MainActor enum ReaderSceneDiagnostics {
+    #if DEBUG
+    private static var sequence: UInt64 = 0
+    #endif
+    static func record(_ event: String, opening: UUID?, fields: [String: Any] = [:]) {
+        #if DEBUG
+        guard ProcessInfo.processInfo.environment["MOONREAD_READER_EVENTS"] == "1" else { return }
+        sequence &+= 1
+        var value = fields
+        value["event"] = event; value["sequence"] = sequence
+        value["time"] = Date().timeIntervalSince1970
+        value["opening"] = opening?.uuidString ?? "none"
+        guard var data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) else { return }
+        data.append(10)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("reader-events.jsonl")
+        if !FileManager.default.fileExists(atPath: url.path) { FileManager.default.createFile(atPath: url.path, contents: nil) }
+        if let file = try? FileHandle(forWritingTo: url) {
+            defer { try? file.close() }; _ = try? file.seekToEnd(); try? file.write(contentsOf: data)
+        }
+        #endif
     }
 }
