@@ -22,10 +22,7 @@ struct LibraryView: View {
             } else { ProgressView("正在加载书架").frame(maxWidth: .infinity, maxHeight: .infinity).themedPage() }
         }
         .navigationTitle("书架").navigationBarTitleDisplayMode(.large)
-        // The iPad's top tab/navigation area needs the same canvas as the page;
-        // an automatic transparent bar otherwise exposes scrolling headings.
-        .toolbarBackground(Color(uiColor: theme.canvas), for: .navigationBar, .tabBar)
-        .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+        .modifier(LibraryWideBarBackground(regular: sizeClass == .regular))
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Menu {
@@ -826,5 +823,18 @@ struct LibraryShelfDropDelegate: DropDelegate {
     func accept(_ providers: [NSItemProvider]) -> Bool {
         guard let request = LibraryDropPolicy.request(providers, at: destination) else { return false }
         return model.acceptDrop(request, at: destination)
+    }
+}
+
+/// Keep the wide top tabs opaque without covering compact scroll-edge titles.
+private struct LibraryWideBarBackground: ViewModifier {
+    let regular: Bool
+    @Environment(\.theme) private var theme
+    @ViewBuilder func body(content: Content) -> some View {
+        if regular {
+            content
+                .toolbarBackground(Color(uiColor: theme.canvas), for: .navigationBar, .tabBar)
+                .toolbarBackground(.visible, for: .navigationBar, .tabBar)
+        } else { content }
     }
 }
