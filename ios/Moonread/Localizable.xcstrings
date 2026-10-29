@@ -1,6 +1,7 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "全书进度": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Book progress"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"全书进度"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"全書進度"}}}},
     "添加当前位置书签": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Bookmark This Position"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "為目前位置加入書籤"}}}},
     "移除当前位置书签": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Remove This Bookmark"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "移除目前位置書籤"}}}},
     "阅读资料": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Reading Materials"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀資料"}}}},
