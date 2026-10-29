@@ -22,7 +22,7 @@ struct LibraryView: View {
             } else { ProgressView("正在加载书架").frame(maxWidth: .infinity, maxHeight: .infinity).themedPage() }
         }
         .navigationTitle("书架").navigationBarTitleDisplayMode(.large)
-        .modifier(LibraryWideBarBackground(regular: sizeClass == .regular))
+        .background(Color(uiColor: theme.canvas).ignoresSafeArea(.container))
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Menu {
@@ -823,16 +823,5 @@ struct LibraryShelfDropDelegate: DropDelegate {
     func accept(_ providers: [NSItemProvider]) -> Bool {
         guard let request = LibraryDropPolicy.request(providers, at: destination) else { return false }
         return model.acceptDrop(request, at: destination)
-    }
-}
-
-/// Keep the wide top tabs opaque without covering compact scroll-edge titles.
-private struct LibraryWideBarBackground: ViewModifier {
-    let regular: Bool
-    @Environment(\.theme) private var theme
-    func body(content: Content) -> some View {
-        content
-            .toolbarBackground(regular ? Color(uiColor: theme.canvas) : .clear, for: .navigationBar, .tabBar)
-            .toolbarBackground(regular ? .visible : .automatic, for: .navigationBar, .tabBar)
     }
 }
