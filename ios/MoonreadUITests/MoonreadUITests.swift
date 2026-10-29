@@ -486,17 +486,20 @@ import XCTest
     app.navigationBars.buttons.firstMatch.tap()
     ready(app.buttons["exportAllReadingData"]).tap()
     ready(app.buttons["confirmExportAllReadingData"].firstMatch).tap()
-    let closeShare = app.buttons.matching(NSPredicate(format: "label IN %@", ["关闭", "Close"])).firstMatch
-    ready(closeShare, timeout: 30).tap()
-    ready(app.buttons["readingDataList"]).tap()
+    // Export/restore our bytes; do not drive the system share UI in this test.
+    waitUntil { self.app.buttons["exportAllReadingData"].value as? String == "backup-ready" }
+    let readingData = ready(app.buttons["readingDataList"])
+    waitUntil { readingData.isHittable }
+    readingData.tap()
     let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reading-data-"))
+    ready(rows.firstMatch)
     XCTAssertEqual(rows.count, 1)
     XCTAssertTrue(rows.firstMatch.label.contains("上次来源："))
     XCTAssertTrue(rows.firstMatch.label.contains("读到 50%"))
     ready(app.buttons["selectReadingData"]).tap()
     XCTAssertEqual(app.buttons["selectReadingData"].label, "完成")
     XCTAssertTrue(app.buttons["readingDataSort"].exists)
-    XCTAssertTrue(app.otherElements["readingDataSelectionBar"].exists)
+    XCTAssertTrue(ready(app.buttons["selectAllReadingData"]).exists)
     XCTAssertTrue(app.navigationBars.buttons["BackButton"].exists)
     XCTAssertFalse(app.tabBars.buttons["书架"].isHittable)
     XCTAssertFalse(app.buttons["readingDataSelectionMenu"].exists)
@@ -508,7 +511,8 @@ import XCTest
     XCTAssertFalse(element("readingDataEmpty").exists)
     snapshot("reading-data-unlinked-selection")
     app.buttons["readingDataFilterAll"].tap()
-    rows.firstMatch.tap()
+    // Native List selection exposes row content as text, not a Button.
+    ready(app.staticTexts.matching(NSPredicate(format: "identifier BEGINSWITH %@", "reading-data-")).firstMatch).tap()
     ready(app.buttons["deleteSelectedReadingData"]).tap()
     ready(app.buttons["confirmDeleteReadingData"].firstMatch).tap()
     waitUntil { rows.count == 0 && !self.app.otherElements["readingDataWorking"].exists }
@@ -533,7 +537,7 @@ import XCTest
     menu(sample)
     app.buttons["小说详情"].tap()
     ready(app.buttons["星灯"])
-    ready(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "全书位置", "50.0%" )).firstMatch)
+    XCTAssertEqual(ready(app.progressIndicators["全书位置"].firstMatch).value as? String, "50%")
     ready(app.buttons["继续阅读"]).tap()
     readableBody()
     controls()

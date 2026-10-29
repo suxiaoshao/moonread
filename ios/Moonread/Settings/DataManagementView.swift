@@ -221,6 +221,11 @@ struct DataManagementView: View {
         .confirmationDialog(Text("导出全部阅读数据？", tableName: "DataManagement"), isPresented: $exportConfirmation, titleVisibility: .visible) {
             Button { Task {
                 await model.exportAll()
+                #if DEBUG
+                // U21 reimports this real export through its existing isolated
+                // backup fixture; system sharing is outside the business flow.
+                if await model.chooseBackup() != nil { return }
+                #endif
                 if model.exported != nil { do { sharing = try await model.shareBackup() } catch { model.error = ReaderMessages.error(error) } }
             } } label: { Text("生成全部备份", tableName: "DataManagement") }.accessibilityIdentifier("confirmExportAllReadingData")
         } message: { Text("全部 \(model.inventory.items.count) 本阅读数据与配色；身份未完成或附件缺失时将提示重试。", tableName: "DataManagement") }
@@ -234,6 +239,9 @@ struct DataManagementView: View {
         Button { exportConfirmation = true } label: {
             Label { Text("导出全部", tableName: "DataManagement") } icon: { Image(systemName: "square.and.arrow.up") }.frame(maxWidth: .infinity)
         }.buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).accessibilityIdentifier("exportAllReadingData")
+        #if DEBUG
+        .accessibilityValue(model.exported == nil ? "not-ready" : "backup-ready")
+        #endif
     }
 }
 private struct ReadingDataWorking: ViewModifier {

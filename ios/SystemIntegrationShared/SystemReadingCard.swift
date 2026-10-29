@@ -11,12 +11,22 @@ struct SystemTextBookCover: View {
         ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: compact ? 3 : 6).fill(surface)
             Rectangle().fill(accent.opacity(0.18)).frame(width: 1).padding(.leading, compact ? 4 : 7)
-            Text(verbatim: title)
-                .font(compact ? .system(size: 10, weight: .medium, design: .serif) : .system(.headline, design: .serif))
+            GeometryReader { geometry in
+              Text(verbatim: title)
+                .font(.system(size: titleSize(width: geometry.size.width), weight: compact ? .medium : .semibold, design: .serif))
                 .foregroundStyle(accent).multilineTextAlignment(.center).lineLimit(compact ? 4 : 5)
                 .minimumScaleFactor(0.8).frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding(compact ? 6 : 12)
+            }.padding(compact ? 6 : 12)
         }.accessibilityHidden(true)
+    }
+    private func titleSize(width: CGFloat) -> CGFloat {
+        let base: CGFloat = compact ? 10 : UIFont.preferredFont(forTextStyle: .headline).pointSize
+        let font = UIFont(descriptor: (UIFont.systemFont(ofSize: base, weight: compact ? .medium : .semibold).fontDescriptor.withDesign(.serif) ?? UIFont.systemFont(ofSize: base, weight: compact ? .medium : .semibold).fontDescriptor), size: base)
+        // Fit whole Latin words before wrapping, rather than splitting a word
+        // across cover lines. CJK continues to use its natural character wraps.
+        let longest = title.split(whereSeparator: \.isWhitespace).filter { $0.unicodeScalars.allSatisfy(\.isASCII) }
+            .map { ($0.description as NSString).size(withAttributes: [.font: font]).width }.max() ?? 0
+        return longest > width && longest > 0 ? base * width / longest : base
     }
 }
 
