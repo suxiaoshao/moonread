@@ -712,6 +712,10 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     search.query = ""; search.startSearch()
     XCTAssertTrue(search.searchActive, "an empty query is still an active search")
     search.stopSearch(); XCTAssertFalse(search.searchActive)
+    let hidden = ReadingContainerRegions.immersiveViewport(localWidth: 700, windowFrame: CGRect(x: 0, y: 0, width: 1000, height: 1200))
+    let shown = ReadingContainerRegions.immersiveViewport(localWidth: 700, windowFrame: CGRect(x: 0, y: -44, width: 1000, height: 1200))
+    XCTAssertEqual(hidden.size, shown.size)
+    XCTAssertEqual(hidden.minY, shown.minY + 44, "native host translation is compensated without moving window-space prose")
     XCTAssertFalse(ReadingContainerRegions.permitsSpread(in: CGSize(width: 900, height: 900)))
     XCTAssertTrue(ReadingContainerRegions.permitsSpread(in: CGSize(width: 1000, height: 900)))
   }

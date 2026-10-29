@@ -135,7 +135,7 @@ struct ReaderScreen: View {
                             .opacity(navigationPresentation.isSuspended ? 0 : 1)
                     }
                 }
-        }.ignoresSafeArea(.container, edges: isWide ? [.top] : [])
+        }.ignoresSafeArea(.container, edges: isWide ? .all : [])
     }
 
     private func readingView(window: ReadingWindow, settings: ReaderSettings, geometry: ReadingContentGeometry?) -> some View {

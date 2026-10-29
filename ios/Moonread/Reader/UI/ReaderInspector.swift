@@ -49,6 +49,9 @@ struct ReaderInspectorHost: ViewModifier {
                     }
                 }
                 .statusBarHidden(presentation.readingControlsVisible == false)
+                .toolbarVisibility(presentation.owner == nil ? .automatic : .hidden, for: .tabBar)
+                .toolbarBackground(Color(uiColor: presentation.content?.surface.paper ?? .systemBackground), for: .navigationBar)
+                .toolbarBackground(presentation.owner == nil ? .automatic : .visible, for: .navigationBar)
             ReaderContainerProbe { window, metrics in presentation.window = window; presentation.metrics = metrics }
                 .allowsHitTesting(false).accessibilityHidden(true)
         }

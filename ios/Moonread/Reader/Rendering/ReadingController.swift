@@ -275,23 +275,23 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         var contentInsets: UIEdgeInsets
         view.clipsToBounds = contentGeometry != nil
         if let geometry = contentGeometry {
-            // The regular host provides the immersive local layout target. Bars
-            // overlay it; inspector animation can change UIView bounds every
-            // frame, but only a new target repaginates. Clip during that motion.
-            viewport = CGRect(origin: .zero, size: geometry.size)
-            // Freeze the vertical safe boundary for this immersive height. A
-            // status/navigation bar animation is an overlay, not a new body
-            // viewport. Width-only inspector motion keeps the same boundary;
-            // a genuinely different height replaces it (never a historical max).
-            if localInsetHeight != geometry.size.height {
-                localInsetHeight = geometry.size.height
-                let hardware = view.convert(window.safeAreaLayoutGuide.layoutFrame, from: window)
-                stableInsets = UIEdgeInsets(top: max(0, hardware.minY), left: 0,
-                    bottom: max(0, viewport.maxY - hardware.maxY), right: 0)
+            // Native chrome overlays a stable window-height reading column.
+            // Converting its origin compensates any navigation host translation;
+            // inspector width still comes from the actual local column.
+            let windowFrame = view.convert(window.bounds, from: window)
+            viewport = ReadingContainerRegions.immersiveViewport(localWidth: geometry.size.width, windowFrame: windowFrame)
+            if localInsetHeight != window.bounds.height {
+                localInsetHeight = window.bounds.height
+                let hardware = window.safeAreaInsets
+                // Keep the native bars' measured space even while they are
+                // hidden. Tapping the text must not repaginate or move it.
+                let topBar = navigationController?.navigationBar.bounds.height ?? 0
+                let bottomBar = navigationController?.toolbar.bounds.height ?? 0
+                stableInsets = UIEdgeInsets(top: hardware.top + topBar, left: 0,
+                    bottom: hardware.bottom + bottomBar, right: 0)
             }
             contentInsets = stableInsets
             contentInsets.top += compactHeaderHeight
-            if settings?.mode == .scroll { contentInsets.bottom = 0 }
             if guideHeight > 0 { contentInsets.bottom = max(contentInsets.bottom, guideHeight + stableInsets.bottom) }
         } else {
             localInsetHeight = nil

@@ -88,6 +88,9 @@ struct ReadingFrontierAdmissions {
 /// One local rectangle policy for both capacity prediction and native text.
 /// UIKit's reserved-region frame already contains its interactive margins.
 enum ReadingContainerRegions {
+    static func immersiveViewport(localWidth: CGFloat, windowFrame: CGRect) -> CGRect {
+        CGRect(x: 0, y: windowFrame.minY, width: localWidth, height: windowFrame.height)
+    }
     static func available(_ surface: CGRect, blocked: [CGRect]) -> [CGRect] {
         blocked.reduce([surface]) { regions, frame in
             regions.flatMap { region -> [CGRect] in
