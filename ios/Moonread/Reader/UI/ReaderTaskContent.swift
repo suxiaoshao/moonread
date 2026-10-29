@@ -5,6 +5,9 @@ struct ReaderTaskContent: View {
     let panel: ReaderPanel?
     let session: ReaderSession
     let tools: ReaderToolsModel
+    let toolSession: ReaderToolSession
+    let retainedNote: NoteEditorModel?
+    let retainedEditor: ReaderEditSession?
     let aiEntrySnapshot: AIEntryContext?
     let aiContext: () -> AIEntryContext
     @Binding var aiConversationID: String?
@@ -12,15 +15,18 @@ struct ReaderTaskContent: View {
     let closeTask: () -> Void
     let navigate: (UInt64, UInt64?, ReadingTargetPlacement) -> Void
     let edit: (ReaderMark) -> Void
+    let editorClosed: () -> Void
     @Environment(AIService.self) private var ai
-    @ViewBuilder var body: some View {
+    var body: some View { taskContent.modifier(SystemReadingConfirmation()) }
+    @ViewBuilder private var taskContent: some View {
         if panel == .ai, ai.availability.isAvailable {
             AIReadingConversation(context: aiEntrySnapshot ?? aiContext(), close: closeTask, selected: $aiConversationID, openingIsActive: openingIsActive)
-        } else if let mark = session.editor {
-            NoteEditor(edit: mark, close: closeTask)
+        } else if let model = retainedNote ?? session.noteEditorModel {
+            NoteEditor(model: model, close: closeTask)
         } else if panel == .history {
             ReaderHistorySheet(session: session, close: closeTask)
-        } else if panel == .chapterEditor, let draft = session.chapterDraft, let id = session.readingID {
+        } else if panel == .chapterEditor, let editor = retainedEditor ?? toolSession.editor,
+                  case let .chapter(draft) = editor.payload, let id = session.readingID {
             NavigationStack {
                 ChapterEditor(bookID: id, draft: draft) { await session.refreshOutline(); closeTask() }
                     .toolbar { ToolbarItem(placement: .topBarLeading) {
@@ -28,7 +34,7 @@ struct ReaderTaskContent: View {
                     } }
             }
         } else if panel == .library {
-            ReaderLibrarySheet(model: tools, session: session, navigate: navigate, edit: edit, close: closeTask)
+            ReaderLibrarySheet(model: tools, session: session, navigate: navigate, edit: edit, close: closeTask, editing: toolSession.libraryEditing, editorClosed: editorClosed)
             .disabled(session.navigating)
         }
     }

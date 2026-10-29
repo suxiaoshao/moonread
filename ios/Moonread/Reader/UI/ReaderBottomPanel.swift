@@ -48,6 +48,10 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
                         .transition(MotionTokens.accessoryContent(reduced: reduceMotion))
                 }
             }
+            // GeometryReader reports this sheet's available safe-area proposal.
+            // Fill it explicitly so asymmetric host insets cannot leave the
+            // natural-height accessory anchored to the leading/top corner.
+            .frame(width: geometry.size.width, height: geometry.size.height, alignment: .bottom)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                 if abs(height - compactHeight) < 2 { resizing = false }
             }
@@ -123,6 +127,7 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
                         }
                     }
                     // Keep outgoing content behind the fixed controls.
+                    .frame(maxWidth: .infinity, alignment: .center)
                     .background(Color(uiColor: theme.surface))
                     .transaction { $0.animation = nil }
             }

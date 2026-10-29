@@ -172,6 +172,25 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertTrue(model.chapters.isEmpty)
     model.showChapter(current.startUtf8)
     XCTAssertEqual(model.chapterTarget, current.startUtf8)
+
+    let savedJump = model.chapterJumpRevision
+    model.select(.bookmarks)
+    await model.prepare(bookID: book.id, currentChapter: current.startUtf8, library: true, preservingPosition: true)
+    _ = try await service.toggleBookmark(book.id, at: current.startUtf8)
+    await model.prepare(bookID: book.id, currentChapter: current.startUtf8, library: true, preservingPosition: true)
+    XCTAssertTrue(model.notes.contains { $0.startUtf8 == current.startUtf8 })
+    XCTAssertEqual(model.chapterJumpRevision, savedJump, "reopening marks does not move the directory")
+
+    model.select(.notes)
+    await model.prepare(bookID: book.id, currentChapter: current.startUtf8, library: true, preservingPosition: true)
+    let mark = try await service.annotate(book.id, start: 0, end: 3)
+    await model.refreshVisibleMarks()
+    XCTAssertTrue(model.notes.contains { $0.id == mark.id })
+    let edit = try await service.prepareAnnotation(book.id, start: 0, end: 3)
+    _ = try await service.saveNote(edit, text: "更新后的笔记")
+    await model.refreshVisibleMarks()
+    XCTAssertEqual(model.notes.first { $0.id == mark.id }?.note, "更新后的笔记")
+    XCTAssertEqual(model.chapterJumpRevision, savedJump)
   }
 }
 

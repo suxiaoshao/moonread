@@ -39,7 +39,20 @@ final class AnnotationEditingReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(edit.endUtf8, offset(12))
     let unchanged = try await service.mark(left.id)
     XCTAssertEqual(unchanged.endUtf8, offset(5), "Opening must not commit range changes")
-    _ = try await service.saveNote(edit, text: "Edited together")
+    let draft = try XCTUnwrap(session.noteEditorModel)
+    XCTAssertTrue(draft.hasUnsavedChanges, "The uncommitted range merge is itself a change")
+    draft.text = "Edited together"
+    let write = try XCTUnwrap(draft.beginCommit())
+    XCTAssertTrue(draft.saving, "Save admission is synchronous before task scheduling")
+    let saved = await write.value
+    XCTAssertTrue(saved)
+    XCTAssertFalse(draft.hasUnsavedChanges)
+    let persisted = try await service.prepareAnnotation(book.id, start: edit.startUtf8, end: edit.endUtf8)
+    let existing = NoteEditorModel(edit: persisted, service: service)
+    XCTAssertFalse(existing.hasUnsavedChanges)
+    existing.text += "changed"; XCTAssertTrue(existing.hasUnsavedChanges)
+    existing.text = persisted.note; XCTAssertFalse(existing.hasUnsavedChanges)
+    existing.conflictChoice = true; XCTAssertTrue(existing.hasUnsavedChanges)
     let marks = try await service.marks(book.id, kind: .annotation, offset: 0).items
     XCTAssertEqual(marks.count, 1)
     XCTAssertEqual(marks.first?.note, "Edited together")

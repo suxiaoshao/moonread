@@ -22,6 +22,7 @@ struct LibraryView: View {
             } else { ProgressView("正在加载书架").frame(maxWidth: .infinity, maxHeight: .infinity).themedPage() }
         }
         .navigationTitle("书架").navigationBarTitleDisplayMode(.large)
+        .background(Color(uiColor: theme.canvas).ignoresSafeArea(.container))
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
                 Menu {
