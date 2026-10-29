@@ -52,7 +52,7 @@ private struct StatisticsBarChart: View {
     var body: some View {
         Chart(buckets) { bucket in
             BarMark(x: .value(String(localized: "日期"), String(bucket.first)), y: .value(String(localized: "阅读分钟"), Double(bucket.durationMs) / 60_000), width: .ratio(0.6))
-                .foregroundStyle(Color(uiColor: theme.accent).opacity(bucket.last == StatisticsDates.day(Date()) ? 1 : 0.18))
+                .foregroundStyle(Color(uiColor: theme.accent).opacity(bucket.last == StatisticsDates.day(StatisticsWindow.currentDate) ? 1 : 0.18))
                 .cornerRadius(5)
         }
         .chartXScale(domain: keys)

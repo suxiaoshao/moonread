@@ -166,6 +166,34 @@ struct MoonreadApp: App {
 
     #if DEBUG
     private func openPageShot() async {
+        if let scene = StoreShotScene.requested {
+            do {
+                switch scene {
+                case .shelf: library.libraryPath = [.folder(LibraryLocation(shelfID: "builtin"))]
+                case .tags:
+                    library.grouping = .tags
+                    library.libraryPath = [.allBooks("builtin")]
+                case .backup: library.openSettings(target: .data)
+                case .statistics: library.selectedTab = .statistics
+                case .recap:
+                    let args = ProcessInfo.processInfo.arguments
+                    let i = args.firstIndex(of: "--ui-test-store-language")!
+                    let fixture = try StoreShotFixture.localized(args[i + 1])
+                    await ai.load()
+                    try await ai.seedStoreShotRecap(fixture)
+                    library.selectedTab = .conversations
+                case .widget: break
+                default:
+                    let args = ProcessInfo.processInfo.arguments
+                    let i = args.firstIndex(of: "--ui-test-store-language")!
+                    let fixture = try StoreShotFixture.localized(args[i + 1])
+                    guard let entry = try await library.service.libraryEntries(LibraryLocation(shelfID: "builtin"))
+                        .first(where: { $0.title == fixture.books[0].title }) else { throw ReaderError.NotFound }
+                    library.open(entry)
+                }
+            } catch { library.error = ReaderMessages.error(error) }
+            return
+        }
         guard let page = StoreShotPage.requested else { return }
         library.selectedTab = page == .settings ? .settings : .library
         do {

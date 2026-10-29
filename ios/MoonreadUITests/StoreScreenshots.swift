@@ -6,6 +6,7 @@ import XCTest
     private let environment = ProcessInfo.processInfo.environment
     private var language = "zh-Hans"
     private var group = "iphone-medium"
+    private var captureMetadata: [String: String] = [:]
 
     private func option(_ name: String) -> String? {
         guard let value = environment[name], !value.isEmpty, !value.hasPrefix("$(") else { return nil }
@@ -26,11 +27,11 @@ import XCTest
         }
         if !group.hasPrefix("duo-") { XCUIDevice.shared.orientation = .portrait }
         let languages = (option("STORE_SCREENSHOT_LANGUAGES") ?? "zh-Hans,zh-Hant,en").split(separator: ",").map(String.init)
-        let defaults = group.hasPrefix("duo-") ? "01,02,03,06" : "01,02,03,04,05,06"
+        let defaults = "01,02,03,04,05,06,07,08"
         let scenes = (option("STORE_SCREENSHOT_SCENES") ?? defaults).split(separator: ",").map(String.init)
         guard !languages.isEmpty, !scenes.isEmpty,
               languages.allSatisfy({ ["zh-Hans", "zh-Hant", "en"].contains($0) }),
-              scenes.allSatisfy({ ["01", "02", "03", "04", "05", "06"].contains($0) }) else {
+              scenes.allSatisfy({ ["01", "01-paper", "01-kraft", "01-linen", "02", "03", "04", "05", "06", "07", "07-tags", "08"].contains($0) }) else {
             return XCTFail("Invalid screenshot languages/scenes")
         }
         for selectedLanguage in languages {
@@ -38,7 +39,10 @@ import XCTest
             let fixture = try StoreShotFixture.localized(language)
             for scene in scenes {
                 try XCTContext.runActivity(named: "\(language)/\(group)/\(scene)") { _ in
-                    try capture(scene, fixture: fixture, session: UUID().uuidString)
+                    let variants = scene == "01" ? ["01-paper", "01-kraft", "01-linen"] : scene == "07" ? ["07", "07-tags"] : [scene]
+                    for variant in variants {
+                        try capture(variant, fixture: fixture, session: UUID().uuidString)
+                    }
                 }
             }
         }
@@ -71,69 +75,71 @@ import XCTest
         try photograph(scene, appearance: appearance, orientation: orientation)
     }
     private func capture(_ scene: String, fixture f: StoreShotFixture, session: String) throws {
-        let mode = ["01": "paper", "02": "night", "03": "appearance", "04": "library", "05": "notes", "06": "backup"][scene]!
+        let modes = ["01-paper": "texture-paper", "01-kraft": "texture-kraft", "01-linen": "texture-linen",
+                     "02": "continuation", "03": "widget", "04": language == "zh-Hans" ? "backup" : "recap",
+                     "05": "statistics", "06": "annotation", "07": "shelf", "07-tags": "shelf-tags", "08": "search"]
+        let mode = try XCTUnwrap(modes[scene])
+        let storefront = option("STORE_SCREENSHOT_STOREFRONT") ?? "USA"
+        let appScene = ["backup", "statistics", "shelf", "shelf-tags", "recap", "widget"].contains(mode)
+        captureMetadata = ["fixture": "StoreShotFixture/" + language, "session": session, "mode": mode,
+            "storefront": storefront, "palette": appScene || scene == "01-kraft" ? "apricot-light" : scene == "01-linen" ? "bean-light" : "white-light",
+            "texture": scene == "01-paper" ? "paper-v1" : scene == "01-kraft" ? "kraft-v1" : scene == "01-linen" ? "linen-v1" : "none",
+            "strength": scene.hasPrefix("01-") ? "medium" : "none",
+            "library_root": "tmp/Moonread-StoreShots-" + session]
         app.terminate()
         app.launchArguments = [
             "--ui-testing", "--ui-test-session", session, "--ui-test-reader-fixture",
             "--ui-test-store-screenshots", "--ui-test-store-language", language, "--ui-test-store-scene", mode,
-            "--disable-tips", "--ui-test-storefront", language == "zh-Hans" ? "CHN" : (language == "en" ? "USA" : "TWN"),
-            "-AppleLanguages", "(\(language))", "-AppleLocale", language == "en" ? "en_US" : (language == "zh-Hans" ? "zh_CN" : "zh_TW"),
+            "--disable-tips", "--ui-test-storefront", storefront,
+            "-AppleLanguages", "(\(language))", "-AppleLocale", language == "en" ? "en_US" : language == "zh-Hant" ? "zh_TW" : "zh_CN",
         ]
         if group == "ipad-13" { app.launchArguments.append("--ui-test-store-ipad") }
         app.launchEnvironment["MOONREAD_TEST_CREDENTIALS"] = "memory"
         app.launch()
-        ready(app.buttons[settingsTitle].firstMatch, timeout: 30)
-        ready(app.buttons["shelf-builtin"], timeout: 30)
-        if scene == "06" {
-            app.buttons[settingsTitle].firstMatch.tap()
-            ready(element("dataManagementSettings")).tap()
-            ready(app.buttons["readingDataCaches"])
-            settled(ready(app.buttons["exportAllReadingData"]))
-        } else {
-            app.buttons["shelf-builtin"].tap()
-            let book = ready(file(f.books[0].title + ".txt"))
-            if scene == "04" { settled(book) }
-            else {
-                book.tap(); readableBody()
-                switch scene {
-                case "01", "02":
-                    controls(); app.buttons["showChapters"].tap()
-                    ready(app.buttons[f.mainChapters[scene == "01" ? 1 : 2]]).tap()
-                    ready(app.buttons["continueFromHere"]).tap()
-                    readableBody()
-                    if app.buttons["readingSettings"].exists { body().tap() }
-                    waitUntil { !self.app.buttons["readingSettings"].exists }
-                    settled(body()); nudge(body())
-                case "03":
-                    controls(); app.buttons["showChapters"].tap()
-                    ready(app.buttons[f.mainChapters[2]]).tap()
-                    ready(app.buttons["continueFromHere"]).tap()
-                    readableBody()
-                    controls(); app.buttons["readingSettings"].tap()
-                    ready(app.buttons["moreReadingSettings"]).tap()
-                    ready(app.segmentedControls["readerThemeTabs"]).buttons[language == "en" ? "Colors & Textures" : language == "zh-Hant" ? "配色與紋理" : "配色与纹理"].tap()
-                    ready(app.segmentedControls["readerPaletteSlots"]).buttons[language == "en" ? "When Light" : (language == "zh-Hant" ? "淺色時" : "浅色时")].tap()
-                    ready(element("readerTexture")); ready(element("readerTextureStrength"))
-                    ready(app.buttons["toggleReadingPreview"]).tap()
-                    waitUntil { self.app.buttons["toggleReadingPreview"].value as? String == "half" }
-                    nudge(ready(element("readingPreviewText")))
-                    if app.buttons["toggleReadingPreview"].value as? String == "full" {
-                        app.buttons["toggleReadingPreview"].tap(); app.buttons["toggleReadingPreview"].tap()
-                        waitUntil { self.app.buttons["toggleReadingPreview"].value as? String == "half" }
-                    }
-                    if group == "ipad-13" { XCTAssertTrue((element("readingPreviewText").value as? String)?.hasPrefix("24|") == true) }
-                    settled(app.buttons["toggleReadingPreview"])
-                case "05":
-                    controls()
-                    if !app.buttons["openNotes"].exists { app.buttons["readerMore"].tap() }
-                    ready(app.buttons["openNotes"]).tap()
-                    ready(app.staticTexts[f.notes[0][1]])
-                    settled(ready(app.buttons["closeReaderLibrary"]))
-                default: break
-                }
+        switch mode {
+        case "backup":
+            settled(ready(app.buttons["exportAllReadingData"], timeout: 40))
+        case "statistics":
+            settled(ready(element("statisticsRhythmChart"), timeout: 40))
+        case "shelf":
+            settled(ready(file(f.books[0].title + ".txt"), timeout: 40))
+        case "shelf-tags":
+            settled(ready(element("libraryTagList"), timeout: 40))
+        case "recap":
+            ready(app.buttons["aiConversation-store-shot-recap"], timeout: 40).tap()
+            settled(ready(app.tables["aiMessages"], timeout: 20))
+            app.tables["aiMessages"].swipeDown()
+        case "widget":
+            ready(app.buttons["shelf-builtin"], timeout: 40)
+            try homeWidget(fixture: f)
+        default:
+            readableBody()
+            if mode == "search" {
+                controls(); ready(app.buttons["showSearch"]).tap()
+                let query = ready(app.textFields["bookSearchQuery"])
+                query.tap(); query.typeText((language == "en" ? "Lin Zhou" : "林舟") + "\n")
+                // The actual search results, never injected hits.
+                ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'searchHit-'" )).firstMatch, timeout: 20)
+                settled(ready(element("searchStatus"), timeout: 20))
+            } else if mode == "continuation" {
+                settled(ready(app.buttons["acceptSyncedProgress"]))
+            } else {
+                settled(body())
+                if mode.hasPrefix("texture-") { nudge(body()) }
             }
         }
         try photograph(scene)
+    }
+
+    private func homeWidget(fixture: StoreShotFixture) throws {
+        // Prepare a real medium Continue Reading widget once in the simulator's
+        // Home Screen. SpringBoard's editing animations never become idle on
+        // some runtimes, so photography does not automate its edit/gallery UI.
+        XCUIDevice.shared.press(.home)
+        let home = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let widget = home.descendants(matching: .any).matching(NSPredicate(
+            format: "label IN %@ AND value IN %@", ["月读", "月讀", "Moonread"], ["小组件", "小工具", "Widget"])).firstMatch
+        settled(ready(widget, timeout: 30))
     }
     private var settingsTitle: String { language == "en" ? "Settings" : (language == "zh-Hant" ? "設定" : "设置") }
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
@@ -183,7 +189,7 @@ import XCTest
         let request = gate.appendingPathComponent("request.json"), ack = gate.appendingPathComponent("ack")
         if FileManager.default.fileExists(atPath: ack.path) { try FileManager.default.removeItem(at: ack) }
         let token = UUID().uuidString
-        var item = ["token": token, "language": language, "scene": scene]
+        var item = captureMetadata.merging(["token": token, "language": language, "scene": scene]) { _, new in new }
         if let appearance { item["kind"] = "page"; item["appearance"] = appearance; item["orientation"] = orientation }
         try JSONSerialization.data(withJSONObject: item).write(to: request, options: .atomic)
         let received = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in

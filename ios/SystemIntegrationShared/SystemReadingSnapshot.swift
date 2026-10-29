@@ -61,6 +61,12 @@ struct SystemReadingSnapshotFile: Sendable {
         guard let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: groupIdentifier) else {
             throw CocoaError(.fileNoSuchFile)
         }
+        #if DEBUG && targetEnvironment(simulator)
+        // Only synthetic simulator photography may override the widget reader.
+        // Never overwrite the ordinary catalog or touch a real device's data.
+        let fixture = Self(directory: root.appendingPathComponent("StoreScreenshots", isDirectory: true))
+        if FileManager.default.fileExists(atPath: fixture.url.path) { return fixture }
+        #endif
         return Self(directory: root.appendingPathComponent("SystemReading/v1", isDirectory: true))
     }
     func read() throws -> SystemReadingSnapshot {

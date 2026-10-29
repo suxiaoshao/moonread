@@ -1,9 +1,11 @@
 """Scheme pre/post action: capture/export only; builds remain owned by xcodebuild."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import shutil
 import struct
 import subprocess
 import sys
@@ -115,7 +117,7 @@ def capture(root):
             time.sleep(.2)
             continue
         page = item.get('kind') == 'page'
-        scenes = ('book-details', 'reader-settings', 'settings', 'library-home', 'reader') if page else ('01', '02', '03', '04', '05', '06')
+        scenes = ('book-details', 'reader-settings', 'settings', 'library-home', 'reader') if page else ('01', '01-paper', '01-kraft', '01-linen', '02', '03', '04', '05', '06', '07', '07-tags', '08')
         if item['language'] not in ('zh-Hans', 'zh-Hant', 'en') or item['scene'] not in scenes:
             raise ValueError('Invalid capture request')
         expected = dimensions
@@ -149,6 +151,13 @@ def capture(root):
             time.sleep(.5)
             continue  # Never acknowledge black frames.
         raw.unlink()
+        if not page:
+            manifest = folder / 'manifest.json'
+            values = json.loads(manifest.read_text()) if manifest.exists() else {}
+            values[name] = {key: value for key, value in item.items() if key != 'token'}
+            values[name].update(source_commit=config['source_commit'], device=uid, dimensions=size,
+                                sha256=hashlib.sha256(target.read_bytes()).hexdigest())
+            manifest.write_text(json.dumps(values, ensure_ascii=False, indent=2) + '\n')
         seen.add(item['token'])
         (gate / 'ack').write_text(item['token'])
         print(f'Exported {item["language"]}/{group}/{target.name} ({size[0]}x{size[1]})', flush=True)
@@ -172,7 +181,8 @@ def prepare(root, device, group, version):
     state = root / 'build/StoreScreenshots'
     state.mkdir(parents=True, exist_ok=True)
     (state / 'stop').unlink(missing_ok=True)
-    (state / 'session.json').write_text(json.dumps({'device': device, 'group': group, 'version': version}))
+    (state / 'session.json').write_text(json.dumps({'device': device, 'group': group, 'version': version,
+        'source_commit': run('git', '-C', str(root), 'rev-parse', 'HEAD')}))
     try:
         container = Path(run('xcrun', 'simctl', 'get_app_container', device, 'dev.moonread.MoonreadUITests.xctrunner', 'data'))
         for name in ('ack', 'request.json'):
@@ -194,6 +204,16 @@ def finish(root):
         return
     (state / 'stop').touch()
     config = json.loads((state / 'session.json').read_text())
+    try:
+        group = Path(run('xcrun', 'simctl', 'get_app_container', config['device'],
+                         'dev.moonread.Moonread', 'group.dev.moonread.Moonread'))
+        # Only our separately named, synthetic widget fixture; not SystemReading/v1.
+        shutil.rmtree(group / 'StoreScreenshots', ignore_errors=True)
+        subprocess.run(['defaults', 'delete', str(group / 'Library/Preferences/group.dev.moonread.Moonread'),
+                        'StoreScreenshots.language'],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except subprocess.CalledProcessError:
+        pass  # No App/Group installed if the build failed before running.
     subprocess.run(['xcrun', 'simctl', 'shutdown', config['device']], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 

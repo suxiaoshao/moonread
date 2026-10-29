@@ -24,10 +24,16 @@ enum StatisticsPeriod: String, CaseIterable, Identifiable {
 }
 
 struct StatisticsWindow: Hashable {
+    static var currentDate: Date {
+        #if DEBUG
+        if StoreShotScene.requested == .statistics { return StoreShotScene.statisticsDate }
+        #endif
+        return Date()
+    }
     var period: StatisticsPeriod = .recent
-    var date = Date()
+    var date = StatisticsWindow.currentDate
     /// Inclusive local calendar days. The recent window is the last seven days, ending with today.
-    func bounds(today: Int64 = StatisticsDates.day(Date()), calendar: Calendar = .current) -> ClosedRange<Int64> {
+    func bounds(today: Int64 = StatisticsDates.day(StatisticsWindow.currentDate), calendar: Calendar = .current) -> ClosedRange<Int64> {
         switch period {
         case .recent: return (today - 6)...today
         case .all: return 0...today
@@ -37,7 +43,7 @@ struct StatisticsWindow: Hashable {
         }
     }
     var bounds: ClosedRange<Int64> { bounds() }
-    func label(today: Int64 = StatisticsDates.day(Date())) -> String {
+    func label(today: Int64 = StatisticsDates.day(StatisticsWindow.currentDate)) -> String {
         let range = bounds(today: today)
         switch period {
         case .recent: return StatisticsDates.rangeLabel(range, today: today)
@@ -51,7 +57,7 @@ struct StatisticsWindow: Hashable {
         guard period.browsable else { return }
         date = calendar.date(byAdding: period == .month ? .month : .year, value: direction, to: date) ?? date
     }
-    func canAdvance(today: Int64 = StatisticsDates.day(Date())) -> Bool { period.browsable && bounds(today: today).upperBound < today }
+    func canAdvance(today: Int64 = StatisticsDates.day(StatisticsWindow.currentDate)) -> Bool { period.browsable && bounds(today: today).upperBound < today }
     var canAdvance: Bool { canAdvance() }
 }
 

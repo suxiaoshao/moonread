@@ -6,6 +6,27 @@ import AISDKProviderUtils
 
 extension Notification.Name { static let aiTaskFixtureReady = Notification.Name("Moonread.aiTaskFixtureReady") }
 extension AIService {
+    /// Approved original-story recap; installs committed messages, never sends a request.
+    func seedStoreShotRecap(_ fixture: StoreShotFixture) async throws {
+        guard StoreShotScene.requested == .recap, await AppDataService.shared.testSession != nil else { return }
+        let question: String
+        let answer: String
+        if fixture.language == "en" {
+            question = "Only up to this chapter — remind me how Lin Zhou and Uncle Xu know each other."
+            answer = "Up to Chapter 2: Uncle Xu runs the bookshop on the old street, where Lin Zhou used to sit by the door and read before he left. Coming home late, Lin finds the shop still lit, and Xu asks him to carry in a box of books. Inside is the old book Lin left half-read, with his bus ticket still tucked between the pages. Xu won't take any money for it and only asks him to bring back a bowl of wontons from the corner next time. They have known each other for years."
+        } else {
+            question = "只看到目前這章，幫我回顧林舟和許叔的關係。"
+            answer = "到第二章為止：許叔在老街開書店，林舟離開前常坐在店門邊讀書。這次林舟深夜回來，書店還亮著燈，許叔請他幫忙把一箱書搬進來。箱子裡正好有林舟當年讀到一半的舊書，書頁間還夾著他留下的車票。許叔沒收錢，讓他把書帶走，只託他下回帶一碗街口的餛飩。兩人是相識多年的老熟人。"
+        }
+        let value = AISessionValue(id: "store-shot-recap", title: fixture.books[0].title,
+            context: .init(title: fixture.books[0].title, chapter: fixture.mainChapters[1]))
+        let user = AIAgentEntry(sequence: 0, turn: "store-recap", provider: "fixture", model: "fixture",
+            message: .object(["role": .string("user"), "content": .object(["value": .string(question)])]), userText: question)
+        let assistant = AIAgentEntry(sequence: 1, turn: "store-recap", provider: "fixture", model: "fixture",
+            message: .object(["role": .string("assistant"), "content": .object(["value": .string(answer)])]), outcome: .completed)
+        try await installFixtureSession(value, entries: [user, assistant])
+    }
+
     /// Runs only in the existing isolated UUID UI-test library/store. No Agent request is started.
     func seedTaskFixturesIfReady() async throws {
         guard !fixtureSeeded, !fixtureSeeding, let session = await AppDataService.shared.testSession,
