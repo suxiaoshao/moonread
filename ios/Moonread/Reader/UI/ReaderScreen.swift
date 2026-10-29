@@ -376,6 +376,7 @@ struct ReaderScreen: View {
             session.activity.update(readable: statisticsReadable, preview: session.browseOrigin != nil)
         }
         .onChange(of: containerSource?.metrics) { _, _ in synchronizeNativePresentation() }
+        .onChange(of: library.selectedTab) { _, _ in synchronizeNativePresentation() }
         .onChange(of: session.opening.navigationSettled) { _, _ in synchronizeNativePresentation() }
         .onChange(of: sourceCurrent) { _, _ in synchronizeNativePresentation() }
         .onChange(of: layoutStatus.hasValidLayout) { _, _ in synchronizeNativePresentation() }
@@ -414,12 +415,12 @@ struct ReaderScreen: View {
             if id != nil, let draft = session.chapterDraft {
                 wideTools.beginEditing(.chapter(draft), presenter: .readerTask)
                 session.chapterDraft = nil
-                presentPanel(.chapterEditor)
+                if !isWide { presentPanel(.chapterEditor) }
             }
         }
         .onChange(of: session.editor?.presentationID) { _, id in
             if let id {
-                controlsVisible = false; dock = .progress; searchExpanded = false
+                if !isWide { controlsVisible = false; dock = .progress; searchExpanded = false }
                 if let model = session.noteEditorModel { wideTools.retainNote(id, model: model) }
                 presentation.push(.note(id))
             } else if let route = presentation.location.path.last, case .note = route { presentation.close(route) }
@@ -541,7 +542,7 @@ struct ReaderScreen: View {
                 .themeScope(theme)
                 .preferredColorScheme(theme.scheme)
                 .background(ReaderModalChildProbe(host: nativeHost, source: sourceNavigation))
-                .background(NavigationTransitionObserver(expectedDepth: sourceDepth.map { $0 + 1 }, willLeave: { _ in }, completed: { popping, cancelled in
+                .background(NavigationTransitionObserver(openingID: session.opening.request?.id, expectedDepth: sourceDepth.map { $0 + 1 }, willLeave: { _ in }, completed: { popping, cancelled in
                     if popping { sourcePageFinished(.fullSettings, token: pageToken, cancelled: cancelled) }
                 }, becameCurrent: { if let pageToken { sourceNavigation.confirm(pageToken) } }))
         }
@@ -554,7 +555,7 @@ struct ReaderScreen: View {
                 // Pages pushed from details (a search) can return straight to this book.
                 .environment(\.returnToReading, returnToReading)
                 .onAppear { returnToReading.close = closeBookDetails }
-                .background(NavigationTransitionObserver(expectedDepth: sourceDepth.map { $0 + 1 }, willLeave: { _ in }, completed: { popping, cancelled in
+                .background(NavigationTransitionObserver(openingID: session.opening.request?.id, expectedDepth: sourceDepth.map { $0 + 1 }, willLeave: { _ in }, completed: { popping, cancelled in
                     if popping { sourcePageFinished(.details, token: pageToken, cancelled: cancelled) }
                 }, becameCurrent: { if let pageToken { sourceNavigation.confirm(pageToken) } }))
         }
@@ -663,15 +664,17 @@ struct ReaderScreen: View {
             available: !session.isLeaving && exitPhase == .reading && !navigationPresentation.isSuspended)
     }
     private var rootPresentation: ReaderPresentationTarget { nativeHost.showing }
-    private var sourceDepth: Int? {
-        (openingRequest?.id ?? session.opening.request?.id).flatMap { library.readerDestinationDepth($0) }
+    private var sourceLocation: (tab: AppTab, depth: Int)? {
+        (openingRequest?.id ?? session.opening.request?.id).flatMap { library.readerDestinationLocation($0) }
     }
+    private var sourceDepth: Int? { sourceLocation?.depth }
+    private var sourceSelected: Bool { sourceLocation.map { $0.tab == library.selectedTab } ?? true }
     private var sourceRoutePresent: Bool {
         guard let id = openingRequest?.id ?? session.opening.request?.id else { return true }
         return library.containsReaderDestination(id)
     }
     private var readerNativeReady: Bool {
-        sourceRoutePresent && sourceCurrent && session.opening.navigationSettled && !sourceNavigation.active
+        sourceRoutePresent && sourceSelected && sourceCurrent && session.opening.navigationSettled && !sourceNavigation.active
             && !navigationPresentation.isSuspended && !session.isLeaving
     }
 
@@ -944,7 +947,7 @@ struct ReaderScreen: View {
         ReaderCompactHeader(session: session, battery: battery, book: book, readerWidth: readerWidth,
                             compactHeaderHeight: compactHeaderHeight, showControls: { controlsVisible = true })
     }
-    private var readerOwnsChrome: Bool { sourceCurrent && !sourceNavigation.active && !navigationPresentation.isSuspended && !session.isLeaving }
+    private var readerOwnsChrome: Bool { sourceSelected && sourceCurrent && !sourceNavigation.active && !navigationPresentation.isSuspended && !session.isLeaving }
     private var readerNavigationVisible: Bool {
         !session.isLeaving && !navigationPresentation.isSuspended
             && (controlsVisible || panel == .progress || session.window == nil)
@@ -1061,6 +1064,8 @@ struct ReaderScreen: View {
     }
     private func synchronizeNativePresentation(animatePage: Bool = false) {
         guard let inspector else { return }
+        guard exitPhase == .reading, !session.isLeaving else { inspector.remove(inspectorOwner); return }
+        inspector.library = library; inspector.openingID = openingRequest?.id ?? session.opening.request?.id
         inspector.metrics = containerSource?.metrics ?? ReaderContainerMetrics()
         inspector.window = containerSource?.window
         inspector.sourceCurrent = readerNativeReady; inspector.container = toolContainer
@@ -1081,7 +1086,7 @@ struct ReaderScreen: View {
             if nativeHost.token == nil || (nativeHost.target == toolTarget && !nativeHost.dismissing) { nativeHost.retain(currentNode) }
             nativeHost.update(toolTarget, opening: opening, generation: presentation.revision,
                 force: session.isLeaving || exitPhase != .reading || navigationPresentation.isSuspended)
-            if page, !modalBusy, sourceCurrent || sourceNavigation.active {
+            if page, !modalBusy, sourceSelected, sourceCurrent || sourceNavigation.active {
                 sourceNavigation.update(desired, opening: opening, generation: presentation.revision)
             } else if !page { sourceNavigation.update(.none, opening: opening, generation: presentation.revision) }
             ReaderSceneDiagnostics.record("presentation.project", opening: opening, fields: [

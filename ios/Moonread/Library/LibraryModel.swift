@@ -626,13 +626,15 @@ final class LibraryModel {
             }
         }
     }
-    func readerDestinationDepth(_ id: UUID) -> Int? {
-        for path in [libraryPath, statisticsPath, searchPath, settingsNavigation.path] {
-            if let index = path.firstIndex(where: { $0.readerOpeningID == id }) { return index + 2 }
+    func readerDestinationLocation(_ id: UUID) -> (tab: AppTab, depth: Int)? {
+        for (tab, path) in [(AppTab.library, libraryPath), (.statistics, statisticsPath),
+                            (.search, searchPath), (.settings, settingsNavigation.path)] {
+            if let index = path.firstIndex(where: { $0.readerOpeningID == id }) { return (tab, index + 2) }
         }
         return nil
     }
-    func containsReaderDestination(_ id: UUID) -> Bool { readerDestinationDepth(id) != nil }
+    func readerDestinationDepth(_ id: UUID) -> Int? { readerDestinationLocation(id)?.depth }
+    func containsReaderDestination(_ id: UUID) -> Bool { readerDestinationLocation(id) != nil }
     func removeReaderDestination(_ id: UUID) {
         func removing(_ path: [LibraryRoute]) -> [LibraryRoute] {
             guard let index = path.firstIndex(where: { route in

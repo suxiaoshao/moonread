@@ -22,38 +22,55 @@ struct PaletteEditorContent: View {
     @Bindable var draft: PaletteDraft
     let showsAppPreview: Bool
     let close: () -> Void
+    var usesNavigation = true
     @FocusState private var nameFocused: Bool
     private var creating: Bool { draft.creating }
     private var palette: ThemePalette { draft.palette }
     private var previewTheme: ThemeSurface {
         ThemeSurface(plan: ResolvedTheme(appearance: palette.appearance, highContrast: themes.highContrast, colors: palette.colors, paletteId: palette.id))
     }
-    var body: some View {
-            PaletteFields(palette: $draft.palette, nameFocused: $nameFocused, appPreview: showsAppPreview ? previewTheme : nil)
+    private var title: LocalizedStringKey { creating ? "新建配色" : "编辑配色" }
+    private var fields: some View {
+        PaletteFields(palette: $draft.palette, nameFocused: $nameFocused, appPreview: showsAppPreview ? previewTheme : nil)
             .disabled(draft.saving)
             .dismissKeyboardOnOutsideTap($nameFocused)
-            .navigationTitle(creating ? "新建配色" : "编辑配色").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消", systemImage: "xmark") { close() }
-                        .labelStyle(.titleOnly).tint(Color(uiColor: theme.ink))
-                        .disabled(themes.saving).accessibilityIdentifier("cancelPalette")
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成", systemImage: "checkmark") {
-                        guard !draft.saving else { return }; draft.saving = true
-                        Task { defer { draft.saving = false }
-                            do { try await themes.savePalette(palette, creating: creating); draft.markSaved(); close() }
-                            catch { draft.error = ReaderMessages.error(error) }
-                        }
+    }
+    var body: some View {
+        Group {
+            if usesNavigation {
+                fields
+                    .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { cancelButton }
+                        ToolbarItem(placement: .confirmationAction) { saveButton }
                     }
-                        .labelStyle(.titleOnly).disabled(!palette.isValidDraft || themes.saving).accessibilityIdentifier("savePalette")
+            } else {
+                VStack(spacing: 0) {
+                    ReaderToolPageHeader(title) { cancelButton; saveButton }
+                    fields
                 }
             }
-            .alert("暂时无法保存", isPresented: Binding(get: { draft.error != nil }, set: { if !$0 { draft.error = nil } })) {
-                Button("知道了", role: .cancel) { draft.error = nil }
-            } message: { Text(draft.error ?? "") }
+        }
+        .alert("暂时无法保存", isPresented: Binding(get: { draft.error != nil }, set: { if !$0 { draft.error = nil } })) {
+            Button("知道了", role: .cancel) { draft.error = nil }
+        } message: { Text(draft.error ?? "") }
     }
+    private var cancelButton: some View {
+        Button("取消", systemImage: "xmark") { close() }
+            .labelStyle(.titleOnly).tint(Color(uiColor: theme.ink))
+            .disabled(themes.saving).accessibilityIdentifier("cancelPalette")
+    }
+    private var saveButton: some View {
+        Button("完成", systemImage: "checkmark") {
+            guard !draft.saving else { return }; draft.saving = true
+            Task { defer { draft.saving = false }
+                do { try await themes.savePalette(palette, creating: creating); draft.markSaved(); close() }
+                catch { draft.error = ReaderMessages.error(error) }
+            }
+        }
+        .labelStyle(.titleOnly).disabled(!palette.isValidDraft || themes.saving).accessibilityIdentifier("savePalette")
+    }
+
 }
 
 extension ThemePalette {

@@ -22,13 +22,17 @@ struct ChapterEditor: View {
     let bookID: String
     @Bindable var draft: ChapterEditDraft
     let saved: () async -> Void
+    let usesNavigation: Bool
+    let close: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @FocusState private var focused: Bool
-    init(bookID: String, draft: ChapterEditDraft, saved: @escaping () async -> Void) {
+    init(bookID: String, draft: ChapterEditDraft, usesNavigation: Bool = true,
+         close: (() -> Void)? = nil, saved: @escaping () async -> Void) {
         self.bookID = bookID; self.draft = draft; self.saved = saved
+        self.usesNavigation = usesNavigation; self.close = close
     }
-    var body: some View {
+    private var fields: some View {
         Form {
             Section {
                 TextField("章节名称", text: $draft.title, axis: .vertical).focused($focused)
@@ -40,25 +44,41 @@ struct ChapterEditor: View {
         }
         .disabled(draft.saving)
         .themedPage().dismissKeyboardOnOutsideTap($focused)
-        .navigationTitle("编辑目录项").navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) {
-            Button("保存", systemImage: "checkmark") { save() }.labelStyle(.titleOnly)
-                .disabled(draft.saving || draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .accessibilityIdentifier("saveChapterEdit")
-        } }
+    }
+    var body: some View {
+        Group {
+            if usesNavigation {
+                fields.navigationTitle("编辑目录项").navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .topBarTrailing) { saveButton } }
+            } else {
+                VStack(spacing: 0) {
+                    ReaderToolPageHeader("编辑目录项") {
+                        Button("取消") { finish() }.disabled(draft.saving)
+                        saveButton
+                    }
+                    fields
+                }
+            }
+        }
         .modifier(SystemReadingConfirmation(editor: true))
         .onAppear { focused = true }
         .alert("暂时无法完成", isPresented: Binding(get: { draft.error != nil }, set: { if !$0 { draft.error = nil } })) {
             Button("知道了", role: .cancel) { draft.error = nil }
         } message: { Text(draft.error ?? "") }
     }
+    private var saveButton: some View {
+        Button("保存", systemImage: "checkmark") { save() }.labelStyle(.titleOnly)
+            .disabled(draft.saving || draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .accessibilityIdentifier("saveChapterEdit")
+    }
+    private func finish() { if let close { close() } else { dismiss() } }
     private func save() {
         guard !draft.saving else { return }; draft.saving = true
         Task {
             defer { draft.saving = false }
             do {
                 try await AppDataService.shared.correctChapter(bookID, offset: draft.start, title: draft.title, level: draft.level)
-                draft.markSaved(); focused = false; await saved(); dismiss()
+                draft.markSaved(); focused = false; await saved(); finish()
             } catch { draft.error = ReaderMessages.error(error) }
         }
     }
@@ -149,13 +169,17 @@ struct ChapterEditor: View {
 
 struct ChapterRebuildView: View {
     let applied: () async -> Void
+    let usesNavigation: Bool
+    let close: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @Bindable var model: ChapterRebuildModel
-    init(model: ChapterRebuildModel, applied: @escaping () async -> Void) {
+    init(model: ChapterRebuildModel, usesNavigation: Bool = true,
+         close: (() -> Void)? = nil, applied: @escaping () async -> Void) {
         self.model = model; self.applied = applied
+        self.usesNavigation = usesNavigation; self.close = close
     }
-    var body: some View {
+    private var fields: some View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 12) {
@@ -186,13 +210,31 @@ struct ChapterRebuildView: View {
                 }
             }
         }
-        .themedPage().navigationTitle("目录预览").navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) {
-            Button("应用目录", systemImage: "checkmark") {
-                Task { if await model.apply() { await applied(); dismiss() } }
-            }.labelStyle(.titleOnly).disabled(!model.canApply).accessibilityIdentifier("applyChapterRebuild")
-        } }
+        .themedPage()
+    }
+    var body: some View {
+        Group {
+            if usesNavigation {
+                fields.navigationTitle("目录预览").navigationBarTitleDisplayMode(.inline)
+                    .toolbar { ToolbarItem(placement: .topBarTrailing) { applyButton } }
+            } else {
+                VStack(spacing: 0) {
+                    ReaderToolPageHeader("目录预览") {
+                        Button("取消") { finish() }.disabled(model.applying)
+                        applyButton
+                    }
+                    fields
+                }
+            }
+        }
         .onAppear { model.startIfNeeded() }
         .overlay { if model.applying { LoadingActivity(size: 32, waitingLabel: "正在应用目录") } }
     }
+    private var applyButton: some View {
+        Button("应用目录", systemImage: "checkmark") {
+            Task { if await model.apply() { await applied(); finish() } }
+        }.labelStyle(.titleOnly).disabled(!model.canApply).accessibilityIdentifier("applyChapterRebuild")
+    }
+    private func finish() { if let close { close() } else { dismiss() } }
+
 }

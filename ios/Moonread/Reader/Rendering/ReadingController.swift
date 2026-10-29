@@ -343,6 +343,9 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             }
         }
         let regions = contentGeometry == nil ? [surface] : readingRegions(in: surface)
+        guard !regions.isEmpty else {
+            recordLayout("layout.rejectedRegion", proposed: surface); return
+        }
         var nextSurface = surface
         var nextFrames = [CGRect(origin: .zero, size: surface.size)]
         if contentGeometry != nil, ReadingContainerRegions.permitsSpread(in: surface.size), settings?.mode == .pages, settings?.widePageMode == .double,

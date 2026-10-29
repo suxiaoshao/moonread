@@ -66,7 +66,10 @@ struct ReaderChapterList: View {
                 .scrollDismissesKeyboard(.interactively)
                 .accessibilityIdentifier("chapterList")
                 .onScrollTargetVisibilityChange(idType: UInt64.self, threshold: 0.6) { ids in
-                    visibleChapters = Set(ids); chapterVisibilityKnown = true
+                    // A removed regular tool page reports an empty viewport;
+                    // retain its last anchor for the same directory on return.
+                    if restoringOffset == nil || !ids.isEmpty { visibleChapters = Set(ids) }
+                    chapterVisibilityKnown = true
                 }
                 // Reserved below the list, so the last rows scroll clear of the action.
                 .safeAreaInset(edge: .bottom) {

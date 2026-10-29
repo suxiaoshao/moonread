@@ -126,8 +126,9 @@ final class ReaderToolsModel {
         }
         guard library else { return }
         self.currentChapter = currentChapter
-        if preservingPosition && !changed && !allChapters.isEmpty {
-            await loadNotes(reset: true)
+        if preservingPosition && !changed {
+            if allChapters.isEmpty { await refreshChapters(jumpTo: currentChapter) }
+            await loadNotes(reset: true, preservingCount: notes.count)
             return
         }
         await refreshChapters(jumpTo: currentChapter)
@@ -203,7 +204,7 @@ final class ReaderToolsModel {
         } catch { if !Task.isCancelled && generation == chapterGeneration { self.error = ReaderMessages.error(error) } }
     }
 
-    func loadNotes(reset: Bool) async {
+    func loadNotes(reset: Bool, preservingCount: Int = 0) async {
         guard !isLeaving, let id = bookID else { return }
         if !reset && loadingNotes { return }
         if reset { notesGeneration += 1 }
@@ -212,9 +213,16 @@ final class ReaderToolsModel {
         loadingNotes = true
         defer { if generation == notesGeneration { loadingNotes = false } }
         do {
-            let value = try await service.marks(id, kind: kind, offset: reset ? 0 : UInt32(notes.count))
-            guard id == bookID, kind == noteKind, generation == notesGeneration else { return }
-            notes = reset ? value.items : notes + value.items; notesKind = kind; moreNotes = value.hasMore
+            var items: [ReaderMark] = []
+            var more = false
+            repeat {
+                let offset = (reset ? 0 : notes.count) + items.count
+                let value = try await service.marks(id, kind: kind, offset: UInt32(offset))
+                guard !isLeaving, !Task.isCancelled, id == bookID, kind == noteKind, generation == notesGeneration else { return }
+                items += value.items; more = value.hasMore
+                if value.items.isEmpty { break }
+            } while reset && more && items.count < preservingCount
+            notes = reset ? items : notes + items; notesKind = kind; moreNotes = more
         } catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
     }
 

@@ -4,6 +4,8 @@ import SwiftUI
 @MainActor @Observable final class ReaderInspectorPresentation {
     var metrics = ReaderContainerMetrics()
     var sourceCurrent = false
+    @ObservationIgnored weak var library: LibraryModel?
+    var openingID: UUID?
     var container = ReaderToolContainer.compact
     weak var window: UIWindow?
     func refreshMetrics() { if let window { metrics = ReaderContainerProbe.metrics(in: window) } }
@@ -17,7 +19,7 @@ import SwiftUI
     var isActive: Bool { host?.target == .inspector && host?.token != nil }
     func visibilityChanged(_ visible: Bool, token: ReaderHostToken) {
         guard host?.token?.id == token.id else { return }
-        mounted = visible
+        if mounted != visible { mounted = visible }
         ReaderSceneDiagnostics.record("inspector.visibility", opening: token.opening,
             fields: ["visible": visible, "phase": host?.phase.rawValue ?? "released", "token": token.id.uuidString])
         if visible { host?.confirmed(token) }
@@ -25,18 +27,20 @@ import SwiftUI
     func detached(_ token: ReaderHostToken) {
         guard host?.dismissing == true, host?.token?.id == token.id else { return }
         _ = host?.completed(token); mounted = false; columnWindowFrame = nil
+        if owner == nil { content = nil; host = nil }
         ReaderSceneDiagnostics.record("inspector.released", opening: token.opening, fields: ["token": token.id.uuidString])
     }
     func nativeBinding(_ visible: Bool) {
         refreshMetrics()
         ReaderSceneDiagnostics.record("inspector.binding", opening: host?.token?.opening,
             fields: ["visible": visible, "phase": host?.phase.rawValue ?? "released"])
+        if let library, let openingID, library.readerDestinationLocation(openingID)?.tab != library.selectedTab { return }
         if !visible, host?.phase == .confirmed, sourceCurrent, metrics.regular,
            container == .inspector, presented { content?.close() }
     }
     func remove(_ owner: UUID) {
         guard self.owner == owner else { return }
-        readingControlsVisible = nil
+        self.owner = nil; readingControlsVisible = nil
         if let token = host?.token { host?.update(.none, opening: token.opening, generation: token.generation, force: true) }
         if !isActive { content = nil; self.owner = nil; host = nil }
     }
@@ -100,7 +104,10 @@ private struct ReaderColumnWitness: UIViewRepresentable {
                     if presentation.columnWindowFrame != frame { presentation.columnWindowFrame = frame }
                     presentation.visibilityChanged(true, token: token)
                 }
-                else if !attached { presentation.detached(token) }
+                else {
+                    if presentation.mounted { presentation.visibilityChanged(false, token: token) }
+                    if !attached { presentation.detached(token) }
+                }
             }
         }
     }
@@ -263,18 +270,6 @@ struct ReaderInspectorContent: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("readerInspector")
     }
-    @ToolbarContentBuilder var inspectorToolbar: some ToolbarContent {
-        if state.presentation.location.selection == .library, tools.tab == .chapters {
-            ToolbarItem(placement: .topBarLeading) {
-                ReaderChapterActions(editing: state.libraryEditing, bookID: session.readingID, incomplete: session.incomplete)
-            }
-        }
-        ToolbarItem(placement: .confirmationAction) {
-            Button("关闭阅读工具", systemImage: "xmark", action: close)
-                .labelStyle(.iconOnly)
-                .accessibilityIdentifier(state.presentation.location.selection == .library ? "closeReaderLibrary" : "closeReaderInspector")
-        }
-    }
     var inspectorTitle: LocalizedStringKey {
         switch state.presentation.location.selection {
         case .library: LocalizedStringKey(session.book?.title ?? "")
@@ -297,7 +292,9 @@ private struct ReaderInspectorSettings: View {
     var body: some View {
         ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editing.editedAppearance,
             encoding: encoding, isRestartingEncoding: isRestarting, changeEncoding: changeEncoding,
-            editPalette: { editing.beginPalette($0, presenter: .reader) }, wideControls: true)
+            editPalette: { editing.beginPalette($0, presenter: .reader) }, wideControls: true,
+            palettePosition: { appearance in Binding(get: { editing.palettePositions[appearance] },
+                set: { editing.palettePositions[appearance] = $0 }) })
 
     }
 }
@@ -433,56 +430,130 @@ struct ReaderUndoAction: View {
 }
 
 
-/// Ordinary content pages inside either native regular-capacity container.
-/// The canonical typed path remains the only navigation intent.
-struct ReaderToolPages: View {
-    let content: ReaderInspectorContent
-    private var state: ReaderWideTools { content.state }
-    private var destination: ReaderDestination? {
-        state.presentation.location.path.last(where: {
-            switch $0 {
-            case .details, .progress, .history, .ai, .preview: false
-            case .fullSettings: state.presentation.location.selection != .settings
-            default: true
-            }
-        })
+/// Content chrome only: it never writes navigation or Tab toolbar preferences.
+struct ReaderToolPageHeader<Actions: View>: View {
+    let title: LocalizedStringKey
+    let actions: Actions
+    @Environment(\.theme) private var theme
+    init(_ title: LocalizedStringKey, @ViewBuilder actions: () -> Actions) {
+        self.title = title; self.actions = actions()
     }
     var body: some View {
         VStack(spacing: 0) {
             ViewThatFits(in: .horizontal) {
-                HStack { actions; Spacer(minLength: 8); title }
-                VStack(alignment: .leading, spacing: 8) { title; HStack { actions } }
-            }.padding(12).background(Color(uiColor: content.surface.surface))
+                HStack(spacing: 12) { heading; Spacer(minLength: 8); actions }
+                    .fixedSize(horizontal: true, vertical: false).frame(maxWidth: .infinity)
+                VStack(alignment: .leading, spacing: 8) {
+                    heading
+                    HStack(spacing: 12) { actions }
+                }.frame(maxWidth: .infinity, alignment: .leading)
+            }.padding(12)
             ThemedDivider()
-            // Gate A deliberately uses two finite content pages before editors.
-            if destination != nil {
-                ScrollView { Text("目录").frame(maxWidth: .infinity, alignment: .leading).padding() }
-            } else {
-                VStack {
-                    Button("目录") { state.presentation.push(.library) }.accessibilityIdentifier("gateToolChild")
-                    Spacer()
-                }.padding()
+        }.background(Color(uiColor: theme.surface))
+    }
+    private var heading: some View { Text(title).font(.headline).accessibilityAddTraits(.isHeader) }
+}
+
+/// The same plain pages serve the native column and regular fallback sheet.
+/// Pages derive from the one typed path; there is no second navigation stack.
+struct ReaderToolPages: View {
+    let content: ReaderInspectorContent
+    private var state: ReaderWideTools { content.state }
+    private var destination: ReaderDestination? { state.presentation.location.columnDestination }
+    var body: some View {
+        Group {
+            if let destination { page(destination) }
+            else {
+                VStack(spacing: 0) {
+                    ReaderToolPageHeader(content.inspectorTitle) {
+                        if state.presentation.location.selection == .library, content.tools.tab == .chapters {
+                            chapterActions
+                        }
+                        Button("关闭阅读工具", systemImage: "xmark", action: content.close)
+                            .labelStyle(.iconOnly).frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit)
+                            .accessibilityIdentifier(state.presentation.location.selection == .library ? "closeReaderLibrary" : "closeReaderInspector")
+                    }
+                    content
+                }
             }
         }
         .background(Color(uiColor: content.surface.canvas))
+        .interactiveDismissDisabled(state.editor != nil || content.session.noteEditorModel != nil)
         .background(ReaderModalChildProbe(host: state.host))
         .onChange(of: state.presentation.location, initial: true) { _, location in
             ReaderSceneDiagnostics.record("tool.page", opening: content.session.opening.request?.id,
                 fields: ["route": String(describing: location), "container": String(describing: state.host.target)])
+            state.releaseFinishedEditors()
         }
     }
-    private var title: some View {
-        Text(destination == nil ? content.inspectorTitle : "目录")
-            .font(.headline).accessibilityAddTraits(.isHeader).accessibilityIdentifier("readerToolTitle")
+    private var chapterActions: some View {
+        ReaderChapterActions(editing: state.libraryEditing, bookID: content.session.readingID,
+            incomplete: content.session.incomplete)
     }
-    @ViewBuilder private var actions: some View {
-        if let destination {
-            Button("返回", systemImage: "chevron.backward") { state.presentation.close(destination) }
-                .accessibilityIdentifier("readerToolBack")
-        } else {
-            Button("关闭阅读工具", systemImage: "xmark", action: content.close)
-                .labelStyle(.iconOnly).accessibilityIdentifier("closeReaderLibrary")
+    @ViewBuilder private func page(_ destination: ReaderDestination) -> some View {
+        switch destination {
+        case .palette(let id):
+            if let editor = state.editor(id), case let .palette(draft) = editor.payload {
+                PaletteEditorContent(draft: draft, showsAppPreview: false,
+                    close: { state.finishEditing(id) }, usesNavigation: false)
+                    .modifier(SystemReadingConfirmation(editor: true))
+            } else { missing(destination) }
+        case .chapter(let id):
+            if let editor = state.editor(id), case let .chapter(draft) = editor.payload,
+               let book = content.session.readingID {
+                ChapterEditor(bookID: book, draft: draft, usesNavigation: false,
+                    close: { state.finishEditing(id) }, saved: refreshOutline)
+            } else { missing(destination) }
+        case .rebuild(let id):
+            if let editor = state.editor(id), case let .rebuild(model) = editor.payload {
+                ChapterRebuildView(model: model, usesNavigation: false,
+                    close: { state.finishEditing(id) }, applied: refreshOutline)
+            } else { missing(destination) }
+        case .note(let id):
+            if let model = state.note(id) {
+                NoteEditorContent(model: model, close: {
+                    if content.session.editor?.presentationID == id { content.session.editor = nil }
+                    state.presentation.close(destination)
+                }, usesNavigation: false)
+            } else { missing(destination) }
+        case .library:
+            VStack(spacing: 0) {
+                ReaderToolPageHeader(libraryTitle) {
+                    Button("返回", systemImage: "chevron.backward") { state.presentation.close(destination) }
+                        .accessibilityIdentifier("readerToolBack")
+                    if content.tools.tab == .chapters { chapterActions }
+                }
+                ReaderLibraryContent(model: content.tools, session: content.session,
+                    navigate: content.navigate, edit: content.edit,
+                    close: { state.presentation.close(destination) }, editing: state.libraryEditing,
+                    inspector: true, focusChanged: { state.inputFocused = $0 })
+            }
+        case .fullSettings:
+            VStack(spacing: 0) {
+                ReaderToolPageHeader("阅读设置") {
+                    Button("返回", systemImage: "chevron.backward") { state.presentation.close(destination) }
+                        .accessibilityIdentifier("readerToolBack")
+                }
+                ReaderInspectorSettings(settings: content.settings, editing: state.settingsEditing,
+                    encoding: content.session.encodingLabel, isRestarting: content.session.restartingEncoding,
+                    changeEncoding: content.changeEncoding)
+            }
+        case .preview, .history, .details, .progress, .ai:
+            // These are source/modal projections and cannot become column pages.
+            missing(destination)
         }
+    }
+    private var libraryTitle: LocalizedStringKey {
+        switch content.tools.tab { case .chapters: "目录"; case .bookmarks: "书签"; case .notes: "标注与笔记" }
+    }
+    private func missing(_ destination: ReaderDestination) -> some View {
+        ContentUnavailableView {
+            Label("阅读遇到问题", systemImage: "exclamationmark.triangle")
+        } actions: { Button("关闭") { state.presentation.close(destination) } }
+    }
+    private func refreshOutline() async {
+        await content.session.refreshOutline()
+        await content.tools.refreshChapters(jumpTo: content.session.anchor)
     }
 }
 
@@ -499,9 +570,13 @@ struct ReaderModalChildProbe: UIViewControllerRepresentable {
         override func loadView() { view = UIView(); view.isUserInteractionEnabled = false }
         override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); publish() }
         override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); publish() }
-        private func publish() {
-            let controller = navigationController ?? parent
-            let hasChild = controller?.presentedViewController != nil
+        func publish() {
+            var ancestor = parent
+            var hasChild = false
+            while let controller = ancestor {
+                if controller.presentedViewController != nil { hasChild = true; break }
+                ancestor = controller.parent
+            }
             guard let host, let installationID, (source?.token?.id ?? host.token?.id) == installationID, (source?.hasModalChild ?? host.hasModalChild) != hasChild else { return }
             Task { @MainActor [weak self, weak host] in
                 guard self?.viewIfLoaded?.window != nil, (self?.source?.token?.id ?? host?.token?.id) == installationID else { return }
@@ -514,7 +589,8 @@ struct ReaderModalChildProbe: UIViewControllerRepresentable {
     }
     func updateUIViewController(_ controller: Probe, context: Context) {
         controller.host = host; controller.source = source
-        if controller.installationID == nil { controller.installationID = source?.token?.id ?? host.token?.id }
+        controller.installationID = source?.token?.id ?? host.token?.id
+        if controller.viewIfLoaded?.window != nil { controller.publish() }
     }
 }
 
@@ -536,7 +612,7 @@ struct ReaderPopoverWitness: UIViewControllerRepresentable {
                 if current.presentingViewController != nil { presentedRoot = current; break }
                 node = current.parent
             }
-            if let token { host?.confirmed(token) }
+            if presentedRoot != nil, let token { host?.confirmed(token) }
         }
         private func finishIfDetached() {
             guard host?.dismissing == true, let token, host?.token?.id == token.id,

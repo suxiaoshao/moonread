@@ -111,8 +111,9 @@ struct NoteEditorContent: View {
     @Environment(\.theme) private var theme
     @Bindable var model: NoteEditorModel
     let close: () -> Void
+    var usesNavigation = true
     private var saving: Bool { model.saving }
-    var body: some View {
+    private var fields: some View {
             VStack(spacing: 0) {
                 if !model.conflicts.isEmpty && model.conflictChoice {
                     HStack {
@@ -157,19 +158,22 @@ struct NoteEditorContent: View {
                 // UIKit owns keyboard avoidance for this form. There must not
                 // be a second SwiftUI resize while the sheet is closing.
                 .ignoresSafeArea(.keyboard)
-            .navigationTitle("批注").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消", systemImage: "xmark") { close() }
-                        .labelStyle(.titleOnly)
-                        .disabled(saving).accessibilityIdentifier("closeNote")
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成", systemImage: "checkmark") { finish() }
-                        .labelStyle(.titleOnly)
-                        .disabled(saving || (!model.conflicts.isEmpty && !model.conflictChoice)).accessibilityIdentifier("saveNote")
+    }
+    var body: some View {
+        Group {
+            if usesNavigation {
+                fields.navigationTitle("批注").navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) { cancelButton }
+                        ToolbarItem(placement: .confirmationAction) { saveButton }
+                    }
+            } else {
+                VStack(spacing: 0) {
+                    ReaderToolPageHeader("批注") { cancelButton; saveButton }
+                    fields
                 }
             }
+        }
             .task { await model.loadConflicts() }
             .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in Task { await model.loadConflicts() } }
             .onChange(of: model.text) { _, _ in model.error = nil }
@@ -178,6 +182,15 @@ struct NoteEditorContent: View {
             .alert("暂时无法保存", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
                 Button("知道了", role: .cancel) { model.error = nil }
             } message: { Text(model.error ?? "") }
+    }
+    private var cancelButton: some View {
+        Button("取消", systemImage: "xmark") { close() }
+            .labelStyle(.titleOnly).disabled(saving).accessibilityIdentifier("closeNote")
+    }
+    private var saveButton: some View {
+        Button("完成", systemImage: "checkmark") { finish() }
+            .labelStyle(.titleOnly)
+            .disabled(saving || (!model.conflicts.isEmpty && !model.conflictChoice)).accessibilityIdentifier("saveNote")
     }
     private func finish() {
         guard let write = model.beginCommit() else { return }

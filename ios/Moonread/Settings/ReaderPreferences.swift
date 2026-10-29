@@ -83,6 +83,7 @@ enum ReadingSettingsTab: String, CaseIterable {
 
 @MainActor @Observable final class ReadingSettingsEditing {
     var editedAppearance: ThemeAppearance?
+    var palettePositions: [ThemeAppearance: String] = [:]
     private var localPreviewPresented = false
     let previewID = UUID()
     var previewPresented: Bool {
@@ -394,6 +395,7 @@ struct ReadingSettingsControls: View {
     let changeEncoding: ((String?) -> Void)?
     let editPalette: (PaletteDraft) -> Void
     var wideControls = false
+    var palettePosition: ((ThemeAppearance) -> Binding<String?>)? = nil
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
     private var appearance: ThemeAppearance { editedAppearance ?? themes.reader.plan.appearance }
@@ -431,7 +433,8 @@ struct ReadingSettingsControls: View {
                 Text("深色时").tag(ThemeAppearance.dark).accessibilityIdentifier("paletteSlot-dark")
             }.pickerStyle(.segmented).padding(.horizontal, LayoutTokens.content).padding(.bottom, LayoutTokens.compact)
                 .accessibilityIdentifier("readerPaletteSlots")
-            PalettePicker(reader: true, appearance: appearance, embedded: true, editPalette: editPalette)
+            PalettePicker(reader: true, appearance: appearance, embedded: true, editPalette: editPalette,
+                preservedPosition: palettePosition?(appearance))
         }
     }
     private func binding<Value>(_ key: WritableKeyPath<ReaderSettings, Value>) -> Binding<Value> {

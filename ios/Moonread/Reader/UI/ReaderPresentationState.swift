@@ -16,6 +16,17 @@ enum ReaderDestination: Hashable {
 struct ReaderToolLocation: Equatable {
     var selection: ReaderTool = .library
     var path: [ReaderDestination] = []
+    /// A read-only projection; source/modal destinations and compact prefixes
+    /// stay in the canonical path even while a regular tool page is visible.
+    var columnDestination: ReaderDestination? {
+        path.last(where: {
+            switch $0 {
+            case .details, .progress, .history, .ai, .preview: false
+            case .fullSettings: selection != .settings
+            default: true
+            }
+        })
+    }
 }
 
 @MainActor @Observable final class ReaderPresentationState {

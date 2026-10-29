@@ -68,6 +68,8 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
         private var appeared: (UUID, String) -> Void = { _, _ in }
         private var initialAppearanceCompleted = false
         private var visible = false
+        private weak var observedNavigation: UINavigationController?
+        private weak var observedDestination: UIViewController?
         var visibilityChanged: (Bool) -> Void = { _ in }
         func setOpening(_ id: UUID?, appeared: @escaping (UUID, String) -> Void) {
             self.appeared = appeared
@@ -81,7 +83,12 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
             var owner: UIViewController = self
             while let parent = owner.parent, parent !== navigation { owner = parent }
             guard owner.parent === navigation else { return nil }
-            if let expectedDepth, navigation.viewControllers.firstIndex(of: owner) != expectedDepth - 1 { return nil }
+            if let expectedDepth {
+                let index = navigation.viewControllers.firstIndex(of: owner)
+                let popped = index == nil && owner.isMovingFromParent && navigation.viewControllers.count == expectedDepth - 1
+                guard index == expectedDepth - 1 || popped else { return nil }
+            }
+            observedNavigation = navigation; observedDestination = owner
             return owner
         }
         private func finishAppearance(_ id: UUID?, reason: String) {
@@ -112,7 +119,15 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
                 becameCurrent()
             }
         }
-        override func viewDidDisappear(_ animated: Bool) { super.viewDidDisappear(animated); visible = false; visibilityChanged(false) }
+        override func viewDidDisappear(_ animated: Bool) {
+            super.viewDidDisappear(animated); visible = false; visibilityChanged(false)
+            // Unanimated source suffix removal has no transition coordinator.
+            // A covered page still belongs to its stack and must not release.
+            if !tracking, let navigation = observedNavigation, let owner = observedDestination,
+               !navigation.viewControllers.contains(where: { $0 === owner }) {
+                completed(true, false)
+            }
+        }
         private var tracking = false
         override func loadView() {
             view = UIView(); view.isUserInteractionEnabled = false

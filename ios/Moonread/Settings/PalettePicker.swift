@@ -31,6 +31,7 @@ struct PalettePicker: View {
     let appearance: ThemeAppearance
     var embedded = false
     var editPalette: ((PaletteDraft) -> Void)?
+    var preservedPosition: Binding<String?>? = nil
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
     @State private var draft: PaletteDraft?
@@ -74,26 +75,30 @@ struct PalettePicker: View {
             }
         } message: { Text("使用此配色的应用槽位将恢复杏桃，阅读槽位将恢复跟随应用。") }
     }
-    private var embeddedPalettes: some View {
+    @ViewBuilder private var embeddedPalettes: some View {
+        if let preservedPosition { paletteScrollContent.scrollPosition(id: preservedPosition, anchor: .top) }
+        else { paletteScrollContent }
+    }
+    private var paletteScrollContent: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                textureSection
+                textureSection.id("palette-textures")
                 VStack(spacing: 0) {
                     sourceRow("跟随应用", id: "app", icon: "arrow.turn.down.right").padding(14)
                     ThemedDivider()
                     sourceRow("系统配色", id: "system", icon: "circle.lefthalf.filled").padding(14)
                 }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 16))
-                Text("预设").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
+                Text("预设").id("palette-presets").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
                 VStack(spacing: 0) {
                     ForEach(palettes.filter { !$0.custom }, id: \.id) { palette in
-                        paletteRow(palette).padding(.horizontal, 14).padding(.vertical, 6)
+                        paletteRow(palette).padding(.horizontal, 14).padding(.vertical, 6).id(palette.id)
                         if palette.id != palettes.last(where: { !$0.custom })?.id { ThemedDivider() }
                     }
-                }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 16))
-                Text("自定义").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
+                }.scrollTargetLayout().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 16))
+                Text("自定义").id("palette-custom").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
                 VStack(spacing: 0) {
                     ForEach(palettes.filter(\.custom), id: \.id) { palette in
-                        paletteRow(palette).padding(14)
+                        paletteRow(palette).padding(14).id(palette.id)
                             .contextMenu {
                                 Button("编辑", systemImage: "pencil") { edit(PaletteDraft(palette: palette, creating: false)) }
                                 Button("删除", systemImage: "trash", role: .destructive) { deleting = palette }
@@ -104,9 +109,9 @@ struct PalettePicker: View {
                         guard var base = palettes.first(where: { $0.id == selected }) ?? palettes.first else { return }
                         base.name = ""; base.custom = true
                         edit(PaletteDraft(palette: base, creating: true))
-                    }.frame(maxWidth: .infinity, minHeight: LayoutTokens.hit).padding(6).accessibilityIdentifier("createPalette")
-                }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 16))
-            }.padding(.horizontal, LayoutTokens.content).padding(.vertical, LayoutTokens.compact)
+                    }.frame(maxWidth: .infinity, minHeight: LayoutTokens.hit).padding(6).id("palette-create").accessibilityIdentifier("createPalette")
+                }.scrollTargetLayout().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 16))
+            }.scrollTargetLayout().padding(.horizontal, LayoutTokens.content).padding(.vertical, LayoutTokens.compact)
         }.pageScrollMargins().disabled(themes.saving).themedPage().accessibilityIdentifier("paletteOptions")
     }
     private var paletteList: some View {

@@ -747,6 +747,24 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     XCTAssertEqual(sourcePage.showing, .details, "cancelled native pop retains the source page")
     XCTAssertEqual(sourcePage.installation.phase, .confirmed)
     XCTAssertFalse(sourcePage.completed(unused), "a tool callback cannot release source navigation")
+    sourcePage.hasModalChild = true
+    sourcePage.update(.none, opening: opening, generation: 2)
+    XCTAssertEqual(sourcePage.installation.phase, .confirmed, "a real child modal pins its source parent")
+    sourcePage.hasModalChild = false
+    sourcePage.update(.none, opening: opening, generation: 2)
+    XCTAssertEqual(sourcePage.installation.phase, .dismissing)
+    XCTAssertTrue(sourcePage.completed(pageToken))
+    XCTAssertFalse(sourcePage.active)
+    let preview = ReaderDestination.preview(UUID())
+    var projected = ReaderToolLocation(selection: .settings, path: [.fullSettings, preview, .palette(draft), .details])
+    XCTAssertEqual(projected.columnDestination, .palette(draft))
+    XCTAssertEqual(projected.path, [.fullSettings, preview, .palette(draft), .details], "projection does not strip compact/source prefixes")
+    projected.path = [.fullSettings, preview]
+    XCTAssertNil(projected.columnDestination)
+    projected = ReaderToolLocation(selection: .more, path: [.library, .chapter(draft)])
+    XCTAssertEqual(projected.columnDestination, .chapter(draft))
+    projected.path.removeLast()
+    XCTAssertEqual(projected.columnDestination, .library, "finishing an editor restores the typed parent")
     XCTAssertFalse(ReadingContainerRegions.permitsSpread(in: CGSize(width: 900, height: 900)))
     XCTAssertTrue(ReadingContainerRegions.permitsSpread(in: CGSize(width: 1000, height: 900)))
   }

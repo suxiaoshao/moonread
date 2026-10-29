@@ -5,6 +5,7 @@ import UIKit
 final class ReaderLibraryEditing {
     var visibleChapters: Set<UInt64> = []
     var chapterVisibilityKnown = false
+    var notePositions: [ReaderLibraryTab: String] = [:]
     var editingOutline = false
     @ObservationIgnored weak var readerTools: ReaderWideTools?
     var chapterEdit: ChapterEditDraft? {
@@ -164,7 +165,9 @@ struct ReaderLibraryContent: View {
                           chapterFilterFocused: $chapterFilterFocused, refreshOutline: refreshOutline, restoringOffset: inspector ? editing.visibleChapters.min() : nil)
     }
     private var notesList: some View {
-        ReaderNotesList(model: model, session: session, navigate: navigate, edit: edit)
+        ReaderNotesList(model: model, session: session, navigate: navigate, edit: edit,
+            preservedPosition: inspector ? Binding(get: { editing.notePositions[model.tab] },
+                set: { editing.notePositions[model.tab] = $0 }) : nil)
     }
     private func refreshOutline() async {
         await session.refreshOutline()
