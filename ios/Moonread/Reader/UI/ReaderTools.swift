@@ -41,6 +41,7 @@ final class ReaderToolsModel {
     var regex = false
     var caseSensitive = false
     var hits: [SearchHit] = []
+    private(set) var searchActive = false
     var searching = false
     var partialSearch = false
     var searchFinished = false
@@ -115,16 +116,21 @@ final class ReaderToolsModel {
         }
     }
 
-    func prepare(bookID: String, currentChapter: UInt64, library: Bool) async {
+    func prepare(bookID: String, currentChapter: UInt64, library: Bool, preservingPosition: Bool = false) async {
         guard !isLeaving else { return }
         let changed = self.bookID != bookID
         if changed {
-            stopSearch(); self.bookID = bookID
+            cancelSearchJob(); self.bookID = bookID
             chapters = []; allChapters = []; collapsedVolumes = []; chapterFilter = ""
             notes = []; notesKind = nil; hits = []; query = ""
         }
         guard library else { return }
         self.currentChapter = currentChapter
+        if preservingPosition && !changed {
+            if allChapters.isEmpty { await refreshChapters(jumpTo: currentChapter) }
+            await loadNotes(reset: true, preservingCount: notes.count)
+            return
+        }
         await refreshChapters(jumpTo: currentChapter)
         await loadNotes(reset: true)
     }
@@ -198,7 +204,7 @@ final class ReaderToolsModel {
         } catch { if !Task.isCancelled && generation == chapterGeneration { self.error = ReaderMessages.error(error) } }
     }
 
-    func loadNotes(reset: Bool) async {
+    func loadNotes(reset: Bool, preservingCount: Int = 0) async {
         guard !isLeaving, let id = bookID else { return }
         if !reset && loadingNotes { return }
         if reset { notesGeneration += 1 }
@@ -207,10 +213,22 @@ final class ReaderToolsModel {
         loadingNotes = true
         defer { if generation == notesGeneration { loadingNotes = false } }
         do {
-            let value = try await service.marks(id, kind: kind, offset: reset ? 0 : UInt32(notes.count))
-            guard id == bookID, kind == noteKind, generation == notesGeneration else { return }
-            notes = reset ? value.items : notes + value.items; notesKind = kind; moreNotes = value.hasMore
+            var items: [ReaderMark] = []
+            var more = false
+            repeat {
+                let offset = (reset ? 0 : notes.count) + items.count
+                let value = try await service.marks(id, kind: kind, offset: UInt32(offset))
+                guard !isLeaving, !Task.isCancelled, id == bookID, kind == noteKind, generation == notesGeneration else { return }
+                items += value.items; more = value.hasMore
+                if value.items.isEmpty { break }
+            } while reset && more && items.count < preservingCount
+            notes = reset ? items : notes + items; notesKind = kind; moreNotes = more
         } catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
+    }
+
+    func refreshVisibleMarks() async {
+        guard tab != .chapters else { return }
+        await loadNotes(reset: true)
     }
 
     func delete(_ mark: ReaderMark) async {
@@ -253,13 +271,16 @@ final class ReaderToolsModel {
         deletedIDs = nil
     }
 
-    func stopSearch() {
+    func beginSearchSession() { searchActive = true }
+    func stopSearch() { searchActive = false; cancelSearchJob() }
+    private func cancelSearchJob() {
         searchGeneration += 1
         job?.cancel(); searchTask?.cancel(); job = nil; searchTask = nil; searching = false
     }
     func startSearch() {
         guard !isLeaving else { return }
-        stopSearch()
+        cancelSearchJob()
+        searchActive = true
         guard let id = bookID else { return }
         hits = []; error = nil; searchFinished = false; truncatedSearch = false; partialSearch = false; searchProgress = 0
         searchListPosition = nil

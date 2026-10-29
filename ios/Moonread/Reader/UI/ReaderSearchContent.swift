@@ -62,6 +62,7 @@ struct ReaderSearchContent: View {
                 ThemedDivider().padding(.horizontal, 20)
             }
             searchList
+
         }
     }
 

@@ -1,6 +1,57 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "添加当前位置书签": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Bookmark This Position"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "為目前位置加入書籤"}}}},
+    "移除当前位置书签": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Remove This Bookmark"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "移除目前位置書籤"}}}},
+    "阅读资料": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Reading Materials"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀資料"}}}},
+    "目录、书签与批注": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Contents, Bookmarks & Annotations"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目錄、書籤與批註"}}}},
+    "正在保存，请稍后重试": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Saving. Please try again shortly."}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "正在保存，请稍后重试"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在儲存，請稍後重試"}}}},
+    "放弃修改并打开": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Discard and Open"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "放弃修改并打开"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "放棄修改並打開"}}}},
+    "放弃未保存的修改并打开《%@》？": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Discard unsaved changes and open “%@”?"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "放弃未保存的修改并打开《%@》？"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "放棄未儲存的修改並打開《%@》？"}}}},
+  "批注分类": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "批注分类"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Annotation Category"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "批註分類"
+        }
+      }
+    }
+  },
+  "关闭阅读工具": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "关闭阅读工具"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Close Reading Tools"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "關閉閱讀工具"
+        }
+      }
+    }
+  },
   "刚刚": {
     "localizations": {
       "zh-Hans": {

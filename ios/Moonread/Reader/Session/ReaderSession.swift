@@ -50,7 +50,10 @@ final class ReaderSession {
     var bookmarked = false
     private(set) var changingBookmark = false
     var selectionStart: UInt64?
-    var editor: AnnotationEdit?
+    var noteEditorModel: NoteEditorModel?
+    var editor: AnnotationEdit? {
+        didSet { noteEditorModel = editor.map { NoteEditorModel(edit: $0, service: service) } }
+    }
     var chapterDraft: ChapterEditDraft?
     var marksRevision = 0
     private var annotationTask: Task<Void, Never>?
@@ -686,7 +689,7 @@ final class ReaderSession {
                     guard !isLeaving, line.text.trimmingCharacters(in: .whitespacesAndNewlines).count <= 80 else {
                         if !isLeaving { error = String(localized: "请选择单独的章节标题行。") }; return
                     }
-                    chapterDraft = ChapterEditDraft(start: line.startUtf8, title: line.text.trimmingCharacters(in: .whitespacesAndNewlines), level: 1)
+                    chapterDraft = ChapterEditDraft(start: line.startUtf8, title: line.text.trimmingCharacters(in: .whitespacesAndNewlines), level: 1, creating: true)
                     return
                 }
                 let range: TextRange

@@ -3,6 +3,15 @@ import UIKit
 
 @MainActor @Observable
 final class NoteEditorModel {
+    private let baseline: AnnotationEdit
+    var saving = false
+    var hasUnsavedChanges: Bool {
+        !saving && !committed && (initiallyChanged || conflictChoice || deleteChoice || text != baseline.note || edit.startUtf8 != baseline.startUtf8 || edit.endUtf8 != baseline.endUtf8 || edit.excerpt != baseline.excerpt)
+    }
+    private var initiallyChanged: Bool {
+        guard baseline.marks.count == 1, let mark = baseline.marks.first else { return true }
+        return baseline.startUtf8 != mark.startUtf8 || baseline.endUtf8 != mark.endUtf8 || baseline.note != mark.note
+    }
     var edit: AnnotationEdit
     var conflicts: [AnnotationCandidate] = []
     private var conflictBaselines: [String: [AnnotationCandidate]] = [:]
@@ -16,7 +25,7 @@ final class NoteEditorModel {
     @ObservationIgnored private let aiCommit: AIAnnotationCommitHooks?
     @ObservationIgnored private let onCommitted: (() -> Void)?
     init(edit: AnnotationEdit, service: AppDataService = .shared, onCommitted: (() -> Void)? = nil, aiCommit: AIAnnotationCommitHooks? = nil) {
-        self.edit = edit; self.service = service; text = edit.note; self.onCommitted = onCommitted; self.aiCommit = aiCommit
+        self.edit = edit; baseline = edit; self.service = service; text = edit.note; self.onCommitted = onCommitted; self.aiCommit = aiCommit
     }
     func loadConflicts() async {
         defer { loadingConflicts = false }
@@ -50,7 +59,16 @@ final class NoteEditorModel {
             deleteChoice = false; conflictChoice = true
         } catch { self.error = ReaderMessages.error(error) }
     }
+    func beginCommit() -> Task<Bool, Never>? {
+        guard !saving else { return nil }
+        saving = true
+        return Task { defer { saving = false }; return await commitContents() }
+    }
     func commit() async -> Bool {
+        guard let write = beginCommit() else { return false }
+        return await write.value
+    }
+    private func commitContents() async -> Bool {
         guard !committed else { return true }
         guard error == nil else { return false }
         var ticket: AIAnnotationCommitTicket?
@@ -77,14 +95,24 @@ final class NoteEditorModel {
 struct NoteEditor: View {
     @Environment(\.theme) private var theme
     @State private var model: NoteEditorModel
-    @State private var saving = false
+    private var saving: Bool { model.saving }
     let close: () -> Void
     init(edit: AnnotationEdit, onCommitted: (() -> Void)? = nil, aiCommit: AIAnnotationCommitHooks? = nil, close: @escaping () -> Void) {
         _model = State(initialValue: NoteEditorModel(edit: edit, onCommitted: onCommitted, aiCommit: aiCommit))
         self.close = close
     }
+    init(model: NoteEditorModel, close: @escaping () -> Void) { _model = State(initialValue: model); self.close = close }
     var body: some View {
-        NavigationStack {
+        NavigationStack { NoteEditorContent(model: model, close: close) }
+    }
+}
+
+struct NoteEditorContent: View {
+    @Environment(\.theme) private var theme
+    @Bindable var model: NoteEditorModel
+    let close: () -> Void
+    private var saving: Bool { model.saving }
+    private var fields: some View {
             VStack(spacing: 0) {
                 if !model.conflicts.isEmpty && model.conflictChoice {
                     HStack {
@@ -129,36 +157,37 @@ struct NoteEditor: View {
                 // UIKit owns keyboard avoidance for this form. There must not
                 // be a second SwiftUI resize while the sheet is closing.
                 .ignoresSafeArea(.keyboard)
-            .navigationTitle("批注").navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("取消", systemImage: "xmark") { close() }
-                        .labelStyle(.titleOnly)
-                        .disabled(saving).accessibilityIdentifier("closeNote")
+    }
+    var body: some View {
+        fields.navigationTitle("批注").navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { cancelButton }
+                    ToolbarItem(placement: .confirmationAction) { saveButton }
                 }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("完成", systemImage: "checkmark") { finish() }
-                        .labelStyle(.titleOnly)
-                        .disabled(saving || (!model.conflicts.isEmpty && !model.conflictChoice)).accessibilityIdentifier("saveNote")
-                }
-            }
             .task { await model.loadConflicts() }
             .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in Task { await model.loadConflicts() } }
             .onChange(of: model.text) { _, _ in model.error = nil }
+            .modifier(SystemReadingConfirmation(editor: true))
             .interactiveDismissDisabled(saving)
             .alert("暂时无法保存", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
                 Button("知道了", role: .cancel) { model.error = nil }
             } message: { Text(model.error ?? "") }
-        }
+    }
+    private var cancelButton: some View {
+        Button("取消", systemImage: "xmark") { close() }
+            .labelStyle(.titleOnly).disabled(saving).accessibilityIdentifier("closeNote")
+    }
+    private var saveButton: some View {
+        Button("完成", systemImage: "checkmark") { finish() }
+            .labelStyle(.titleOnly)
+            .disabled(saving || (!model.conflicts.isEmpty && !model.conflictChoice)).accessibilityIdentifier("saveNote")
     }
     private func finish() {
-        guard !saving else { return }
-        saving = true
+        guard let write = model.beginCommit() else { return }
         Task {
-            if await model.commit() {
+            if await write.value {
                 close()
             }
-            saving = false
         }
     }
 }

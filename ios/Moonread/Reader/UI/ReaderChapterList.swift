@@ -8,7 +8,7 @@ struct ReaderChapterList: View {
     @Binding var visibleChapters: Set<UInt64>
     @Binding var chapterVisibilityKnown: Bool
     @Binding var editingOutline: Bool
-    @Binding var chapterEdit: ChapterEditDraft?
+    let editChapter: (ChapterEditDraft) -> Void
     @Binding var removedChapter: ChapterEntry?
     @FocusState.Binding var chapterFilterFocused: Bool
     let refreshOutline: () async -> Void
@@ -64,7 +64,8 @@ struct ReaderChapterList: View {
                 .scrollDismissesKeyboard(.interactively)
                 .accessibilityIdentifier("chapterList")
                 .onScrollTargetVisibilityChange(idType: UInt64.self, threshold: 0.6) { ids in
-                    visibleChapters = Set(ids); chapterVisibilityKnown = true
+                    visibleChapters = Set(ids)
+                    chapterVisibilityKnown = true
                 }
                 // Reserved below the list, so the last rows scroll clear of the action.
                 .safeAreaInset(edge: .bottom) {
@@ -153,7 +154,7 @@ struct ReaderChapterList: View {
         let accessibilitySummary = chapter.level == 0 ? summary : String(localized: "\(summary)，\(chapter.coverageLabel)")
         return Button {
             chapterFilterFocused = false
-            if editingOutline { chapterEdit = ChapterEditDraft(start: chapter.startUtf8, title: chapter.title, level: chapter.level) }
+            if editingOutline { editChapter(ChapterEditDraft(start: chapter.startUtf8, title: chapter.title, level: chapter.level)) }
             else if chapter.level == 0 { toggleVolume(chapter.startUtf8) }
             else { navigate(chapter.startUtf8, nil, .start) }
         } label: {
@@ -189,7 +190,7 @@ struct ReaderChapterList: View {
         .contextMenu {
             Button("从这里阅读", systemImage: "book") { navigate(chapter.startUtf8, nil, .start) }
             if !session.incomplete {
-                Button("编辑目录项", systemImage: "pencil") { chapterEdit = ChapterEditDraft(start: chapter.startUtf8, title: chapter.title, level: chapter.level) }
+                Button("编辑目录项", systemImage: "pencil") { editChapter(ChapterEditDraft(start: chapter.startUtf8, title: chapter.title, level: chapter.level)) }
                 Button("从目录移除", systemImage: "trash", role: .destructive) { removeChapter(chapter) }
             }
         }

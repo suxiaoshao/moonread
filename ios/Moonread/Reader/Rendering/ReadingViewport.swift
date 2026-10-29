@@ -35,6 +35,9 @@ struct ReadingViewport {
     let typeSize: DynamicTypeSize
     let pages: [TextPage]
     var isCover = false
+    var pageSize: CGSize? = nil
+    var leafCount = 1
+    var groupStart: UInt64? = nil
 }
 
 
@@ -43,8 +46,8 @@ struct ReadingNavigation {
     var placement: ReadingTargetPlacement = .start
     var bottomObstruction: CGFloat = 0
     var restoring: ReadingViewport?
-    func restoration(size: CGSize, settings: ReaderSettings?, typeSize: DynamicTypeSize) -> ReadingViewport? {
-        guard let saved = restoring, saved.size == size, saved.settings == settings, saved.typeSize == typeSize else { return nil }
+    func restoration(size: CGSize, settings: ReaderSettings?, typeSize: DynamicTypeSize, pageSize: CGSize? = nil, leafCount: Int = 1) -> ReadingViewport? {
+        guard let saved = restoring, saved.size == size, saved.settings == settings, saved.typeSize == typeSize, saved.pageSize == pageSize, saved.leafCount == leafCount else { return nil }
         return saved
     }
     func pageIndex(in pages: [TextPage], anchor: UInt64) -> Int { pages.lastIndex { $0.start <= anchor } ?? 0 }
@@ -80,4 +83,34 @@ struct ReadingFrontierAdmissions {
         guard !accepted.contains(key) else { return }
         if admit() { accepted.insert(key) }
     }
+}
+
+/// One local rectangle policy for both capacity prediction and native text.
+/// UIKit's reserved-region frame already contains its interactive margins.
+enum ReadingContainerRegions {
+    static func valid(_ surface: CGRect, inside canvas: CGRect, minimumHeight: CGFloat) -> Bool {
+        [surface.minX, surface.minY, surface.width, surface.height].allSatisfy(\.isFinite)
+            && surface.width >= 80 && surface.height >= minimumHeight && canvas.contains(surface)
+    }
+    static func available(_ surface: CGRect, blocked: [CGRect]) -> [CGRect] {
+        blocked.reduce([surface]) { regions, frame in
+            regions.flatMap { region -> [CGRect] in
+                let overlap = region.intersection(frame)
+                guard !overlap.isNull, overlap.width > 0, overlap.height > 0 else { return [region] }
+                if overlap.height >= overlap.width {
+                    return [CGRect(x: region.minX, y: region.minY, width: overlap.minX - region.minX, height: region.height),
+                            CGRect(x: overlap.maxX, y: region.minY, width: region.maxX - overlap.maxX, height: region.height)].filter { $0.width > 0 }
+                }
+                return [CGRect(x: region.minX, y: region.minY, width: region.width, height: overlap.minY - region.minY),
+                        CGRect(x: region.minX, y: overlap.maxY, width: region.width, height: region.maxY - overlap.maxY)].filter { $0.height > 0 }
+            }
+        }
+    }
+    static func permitsSpread(in size: CGSize) -> Bool { size.width > size.height }
+}
+
+/// Readiness of the local renderer, independent of tool presentation.
+@MainActor @Observable final class ReadingLayoutStatus {
+    private(set) var hasValidLayout = false
+    func committed() { hasValidLayout = true }
 }

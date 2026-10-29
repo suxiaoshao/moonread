@@ -110,19 +110,22 @@ final class ReadingPaperView: UIView {
 extension ReadingController {
     var visibleTextViews: [UITextView] {
         if let scrollText { return [scrollText] }
-        return pageController?.children.compactMap { $0.viewIfLoaded as? UITextView } ?? []
+        return currentLeaves.compactMap { $0.viewIfLoaded as? UITextView }
     }
 
     func decorateVisibleText() {
         if let text = scrollText { decorate(text, base: window?.start ?? 0) }
-        for case let page as PageController in pageController?.children ?? [] {
-            if let text = page.viewIfLoaded as? UITextView { decorate(text, base: page.page.start) }
+        for controller in pageController?.children ?? [] {
+            let leaves = (controller as? ReadingPageGroupController)?.leaves ?? (controller as? PageController).map { [$0] } ?? []
+            controller.viewIfLoaded?.backgroundColor = paperBackground
+            for page in leaves {
+                if let text = page.viewIfLoaded as? UITextView { decorate(text, base: page.page.start) }
+            }
         }
     }
     func decorate(_ text: UITextView, base: UInt64) {
         guard let layout = text.layoutManager as? ReadingLayoutManager else { return }
-        text.backgroundColor = text is ScrollReadingTextView ? .clear : paperBackground
-        text.isOpaque = !(text is ScrollReadingTextView)
+        paintPaper(on: text)
         text.tintColor = theme.selection
         let mapping = textCoordinates(text)
         let end = base + UInt64(mapping.byteCount)
@@ -158,6 +161,13 @@ extension ReadingController {
         if let focusRange, let range = local(focusRange.startUtf8, focusRange.endUtf8) {
             add(range, color: theme.searchCurrent)
         }
+        // Native handles stay in the active UITextView; the complete source
+        // selection can still paint its part in the other visible leaf.
+        if text !== activeTextView,
+           let selected = retainedSelection ?? (selectionStart != nil ? selectedSourceRange() : nil),
+           let range = local(selected.0, selected.1) {
+            add(range, color: theme.selection.withAlphaComponent(0.25))
+        }
         layout.setDecorations(decorations)
         if let text = text as? ReadingTextView {
             // Page storage includes hidden lookahead for typography. Its marks
@@ -172,6 +182,14 @@ extension ReadingController {
         }
     }
 
+    func paintPaper(on text: UITextView) {
+        // A spread owns one moving sheet of paper, continuous with its header
+        // at rest. Transparent leaf views must not restart the tile at the gutter.
+        let clear = text is ScrollReadingTextView || (text.next as? PageController)?.parent is ReadingPageGroupController
+        text.backgroundColor = clear ? .clear : paperBackground
+        text.isOpaque = !clear
+    }
+
     func updatePaperSurface() {
         let input = theme.paperInput(scale: traitCollection.displayScale)
         if input != paperInput {
@@ -183,9 +201,11 @@ extension ReadingController {
         updatePaperBackdrop()
         readingSurface.backgroundColor = settings?.mode == .scroll ? .clear : theme.paper
         pageController?.view.backgroundColor = theme.paper
+        for case let group as ReadingPageGroupController in pageController?.children ?? [] {
+            group.viewIfLoaded?.backgroundColor = paperBackground
+        }
         for text in visibleTextViews {
-            text.backgroundColor = text is ScrollReadingTextView ? .clear : paperBackground
-            text.isOpaque = !(text is ScrollReadingTextView)
+            paintPaper(on: text)
         }
         scrollCover?.view.backgroundColor = .clear
         for case let cover as ReaderCoverController in pageController?.children ?? [] { cover.viewIfLoaded?.backgroundColor = paperBackground }
