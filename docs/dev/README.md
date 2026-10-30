@@ -36,8 +36,9 @@
 
 - [后续安排](roadmap.md)：已定稿待实施、候选和暂缓范围的索引。
 - [1.3 交付范围与原实施顺序](plans/1.3.md)。
-- 活跃专题计划：[AI 未完成工作](plans/ai.md)、[统计回看与历史位置](plans/statistics.md)。
+- 活跃专题计划：[AI 未完成工作](plans/ai.md)、[统计回看与历史位置](plans/statistics.md)、[索引进度说明](plans/index-progress.md)（#140，设计待审）。
 - [CloudKit 同步测试研究](research/cloudkit-sync-testing.md)：模拟器、真机、schema 与私有库证据边界。
+- 历史调研：[CI 缓存与测量边界](research/ci-cache-history.md)、[元数据交换格式取舍](research/metadata-exchange-history.md)；旧建议不构成当前实施承诺。
 - 固定版本研究：[开源阅读器](research/readers.md)、[主题参考](research/theme-references.md)。
 
 ## 维护方式
