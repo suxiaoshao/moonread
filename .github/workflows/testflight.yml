@@ -163,7 +163,7 @@ jobs:
           PY
           # This helper exists only in the ephemeral runner, never as a repository script/artifact.
           cat > "$RUNNER_TEMP/testflight-private/asc.py" <<'PY'
-          import base64, json, os, pathlib, re, subprocess, time, urllib.error, urllib.parse, urllib.request
+          import base64, html, json, os, pathlib, plistlib, re, subprocess, tempfile, time, urllib.error, urllib.parse, urllib.request
           ROOT = pathlib.Path(os.environ['RUNNER_TEMP']) / 'testflight-private'
           PUBLIC = ROOT.parent / 'testflight-public'
           APP = '6823849812'
@@ -230,6 +230,107 @@ jobs:
               print(f'ASC maximum build: {maximum}; candidate: {metadata["build"]}; already used/older: {conflict}.')
               if os.environ['MODE'] == 'upload' and conflict:
                   raise SystemExit('Upload blocked: candidate must exceed the global ASC maximum.')
+          def sanitize_diagnostic(text):
+              # Only error excerpts leave this runner, never raw logs. Mask known
+              # injected values as well as credentials not known to GitHub masking.
+              text = html.unescape(urllib.parse.unquote(text)).replace('\\"', '"')
+              for name in ['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_API_KEY_BASE64', 'GH_TOKEN', 'GITHUB_TOKEN']:
+                  value = os.environ.get(name)
+                  if value: text = text.replace(value, '[redacted]')
+              text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', text)
+              text = re.sub(r'(?s)-----BEGIN [^-]+-----.*?(?:-----END [^-]+-----|\Z)', '[key material omitted]', text)
+              text = re.sub(r'(?is)<data>.*?</data>', '[binary data omitted]', text)
+              # Strip opaque blobs before scanning field labels; bounded labels
+              # avoid pathological matching on large/unfamiliar log payloads.
+              text = re.sub(r'\b[A-Za-z0-9_+/=-]{48,}\b', '[opaque value omitted]', text)
+              sensitive = r'(?:[\w.-]{0,64}(?:token|secret|password|credential|cookie|authorization|private.?key|api.?key|key.?id|authentication.?key|issuer|apple.?id|account)[\w.-]{0,64}|key)'
+              text = re.sub(r'(?im)^.*(?:authorization|proxy-authorization|set-cookie|cookie|x-[\w-]*(?:token|key|session))\s*:.*$', '[sensitive header omitted]', text)
+              text = re.sub(r'(?is)<key>\s*' + sensitive + r'\s*</key>\s*<string>.*?</string>', '[credential omitted]', text)
+              text = re.sub(r'''(?i)(["']?''' + sensitive + r'''["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}]+)''', r'\1[redacted]', text)
+              text = re.sub(r'(?i)\b(?:bearer|basic)\s+\S+', '[authorization omitted]', text)
+              text = re.sub(r'\beyJ[\w-]+\.[\w-]+\.[\w-]+\b', '[JWT omitted]', text)
+              text = re.sub(r'(?i)\b(?:https?|file)://[^\s<>"\']+', '[URL omitted]', text)
+              # Remove complete quoted paths first, including spaces in filenames.
+              text = re.sub(r'''["'](?:/|~/|[A-Za-z]:\\)[^"'\n]*["']''', '[path omitted]', text)
+              text = re.sub(r'''(?<![\w])(?:/|~/|[A-Za-z]:\\)[^\n"'<>;,}]+''', '[path omitted]', text)
+              text = re.sub(r'''\b(?:[\w.%+~-]+/)+[^\s"'<>;,}]+''', '[path omitted]', text)
+              text = re.sub(r'(?i)\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b', '[email omitted]', text)
+              text = re.sub(r'(?i)\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b', '[UUID omitted]', text)
+              text = re.sub(r'(?i)(?:Apple Development|Apple Distribution|Developer ID Application):[^\n,;}]+', '[signing identity omitted]', text)
+              return ''.join(c for c in text if c in '\n\t' or c.isprintable()).replace('`', "'")
+
+          def failure_diagnostics(stage):
+              messages, sources, raw, truncated, unreadable = [], [], '', False, 0
+              def read_log(path, label):
+                  nonlocal raw, truncated, unreadable
+                  try:
+                      # Bounded tails, not entire distribution/debug logs or blobs.
+                      with path.open('rb') as stream:
+                          size = stream.seek(0, 2)
+                          stream.seek(max(0, size - 2 * 1024 * 1024))
+                          text = stream.read().decode('utf-8', errors='replace')
+                      truncated |= size > 2 * 1024 * 1024
+                  except OSError:
+                      unreadable += 1
+                      return
+                  sources.append(label)
+                  if label.startswith('stage-'): raw += '\n' + text
+                  clean = sanitize_diagnostic(text)
+                  lines = clean.splitlines()
+                  for index, line in enumerate(lines):
+                      if re.search(r'error|fail(?:ed|ure)?|invalid|missing|ITMS-\d+|Error Domain=|Code=|NSLocalized|description\s*[:=]|message\s*[:=]|reason\s*[:=]', line, re.I):
+                          if re.search(r'^\s*(?:/.*xcodebuild|command line invocation:|code_sign_style\s*=)|-authenticationKey', line): continue
+                          # Keep two continuation lines too: a future Apple error
+                          # can put its actual explanation below an unknown code.
+                          value = '\n'.join(part.strip() for part in lines[index:index + 3]
+                                            if not re.search(r'-authenticationKey|^\s*command line invocation:', part, re.I)).strip()
+                          truncated |= len(value) > 1600
+                          record = {'source': label, 'message': value[:1600]}
+                          if record in messages: continue
+                          if len(messages) >= 200:
+                              truncated = True
+                              if not re.search(r'ITMS-\d+|Error Domain=|NSLocalized', value): continue
+                              messages.pop(next((i for i, item in enumerate(messages)
+                                                 if not re.search(r'ITMS-\d+|Error Domain=|NSLocalized', item['message'])), 0))
+                          messages.append(record)
+              for suffix in ['.log', '.stderr.log']:
+                  path = ROOT / (stage + suffix)
+                  if path.is_file(): read_log(path, 'stage-' + suffix.lstrip('.'))
+              # Xcode puts the useful Apple upload errors in an external temporary
+              # .xcdistributionlogs bundle. Only follow paths named by THIS stage.
+              roots = {ROOT.resolve(), pathlib.Path(os.environ['RUNNER_TEMP']).resolve(), pathlib.Path(tempfile.gettempdir()).resolve()}
+              bundles = set()
+              for value in re.findall(r'''Created bundle at path\s+["']?(/[^"'\n]+?\.xcdistributionlogs)(?=["'\s.]|$)''', raw):
+                  path = pathlib.Path(value).resolve()
+                  if path.is_dir() and any(path.is_relative_to(parent) for parent in roots): bundles.add(path)
+              for index, bundle in enumerate(sorted(bundles)[:4], 1):
+                  logs = sorted(path for path in bundle.rglob('*.log') if path.is_file() and not path.is_symlink() and path.resolve().is_relative_to(bundle))
+                  truncated |= len(logs) > 16
+                  for number, path in enumerate(logs[:16], 1):
+                      name = path.name if path.name in ('IDEDistribution.critical.log', 'IDEDistribution.standard.log', 'IDEDistribution.verbose.log') else 'log-' + str(number)
+                      read_log(path, 'distribution-' + str(index) + '/' + name)
+              truncated |= len(bundles) > 4 or len(messages) > 40
+              # Prefer specific Apple/NSError details over repeated generic failures.
+              messages.sort(key=lambda item: not bool(re.search(r'ITMS-\d+|Error Domain=|NSLocalized', item['message'])))
+              result = {'diagnostics': messages[:40], 'diagnosticSources': sources,
+                        'diagnosticsTruncated': truncated, 'diagnosticReadFailures': unreadable,
+                        'distributionLogBundles': len(bundles),
+                        'diagnosticsStatus': 'excerpts' if messages else 'no-error-records-found'}
+              status = ROOT / (stage + '.exit-code')
+              if status.is_file() and re.fullmatch(r'\d{1,3}\n?', status.read_text()): result['exitCode'] = int(status.read_text())
+              # Field presence only: no account, profile, Info payload or private path.
+              result['bundleInfo'] = []
+              app = ROOT / 'unpacked/Payload/Moonread.app'
+              for name, identifier in [('Moonread', 'dev.moonread.Moonread'), ('MoonreadShare', 'dev.moonread.Moonread.Share'), ('MoonreadWidgets', 'dev.moonread.Moonread.Widgets')]:
+                  path = app / 'Info.plist' if name == 'Moonread' else app / 'PlugIns' / (name + '.appex') / 'Info.plist'
+                  if not path.is_file(): continue
+                  try: info = plistlib.loads(path.read_bytes())
+                  except (OSError, ValueError): continue
+                  fields = ['CFBundleDisplayName', 'CFBundleName', 'CFBundleExecutable', 'CFBundleShortVersionString', 'CFBundleVersion']
+                  result['bundleInfo'].append({'bundle': name, 'identifierMatchesExpected': info.get('CFBundleIdentifier') == identifier,
+                                              'fieldsPresent': {key: isinstance(info.get(key), str) and bool(info[key].strip()) for key in fields}})
+              return result
+
           def report_failure(stage):
               log = ''.join(path.read_text(errors='replace') for path in
                             [ROOT / (stage + '.log'), ROOT / (stage + '.stderr.log')] if path.exists()).lower()
@@ -247,6 +348,10 @@ jobs:
                           'export' if stage in ('upload', 'export') else 'build')
               result = {'stage': stage, 'category': category,
                         'action': 'Stop for user review. No automatic retry, certificate revocation or provisioning loop.'}
+              try: result.update(failure_diagnostics(stage))
+              except Exception as error:
+                  # Never serialize raw exceptions (which can contain paths/secrets).
+                  result.update({'diagnosticsStatus': 'collector-failed', 'diagnosticsErrorType': type(error).__name__})
               if stage in ('upload', 'processing'):
                   result['uploadOutcome'] = 'unconfirmed; user must check ASC before retrying'
               temporary = PUBLIC / 'failure.json.tmp'
@@ -400,6 +505,10 @@ jobs:
               info = plistlib.loads((bundle / 'Info.plist').read_bytes())
               require((info['CFBundleIdentifier'], info['CFBundleShortVersionString'], info['CFBundleVersion']) ==
                       (identifier, meta['version'], meta['build']), 'bundle identity/version mismatch')
+              # All three Moonread bundles declare a localized display name;
+              # Apple rejected the Widget without this base Info.plist value.
+              require(isinstance(info.get('CFBundleDisplayName'), str) and info['CFBundleDisplayName'].strip(),
+                      'missing or empty CFBundleDisplayName: ' + identifier)
               command('codesign', '--verify', '--deep', '--strict', str(bundle))
               ent = plistlib.loads(command('codesign', '-d', '--entitlements', ':-', str(bundle)))
               require(ent.get('get-task-allow') is False, 'get-task-allow must be false')
@@ -496,6 +605,7 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" CODE_SIGN_STYLE=Automatic \
             > "$private/upload.log" 2>&1 || status=$?
           if [ "$status" -ne 0 ]; then
+            printf '%s\n' "$status" > "$private/upload.exit-code"
             python3 "$private/asc.py" failure upload
             exit "$status"
           else
