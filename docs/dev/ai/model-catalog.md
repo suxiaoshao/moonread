@@ -1,6 +1,6 @@
 # AI 模型目录与能力卡片
 
-目录服务、能力卡片及缓存已接入。这里维护模型字段与获取规则；Pi 的固定版本调查见[历史依据](../research/ai-integration-history.md)。
+目录服务、能力卡片及缓存已接入。这里维护模型字段与获取规则；Pi/Zed 的固定版本调查及证据边界见[历史依据](../research/ai-integration-history.md)。
 
 ## 页面与数据契约
 

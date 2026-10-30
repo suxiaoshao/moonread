@@ -2,6 +2,13 @@
 
 整理基线：release/1.3 `6dc282a`，2026-10-25。下表压缩原有逐轮记录，保留能力、环境、结果和限制；不是本次重跑，也不证明当前 HEAD 在全部环境通过。完整当时日志说明和旧函数名可查 [6dc282a 验证记录](https://github.com/suxiaoshao/moonread/blob/6dc282a/docs/dev/engineering/verification.md)，本机 build 证据不随仓库发布。当前门禁与缺口见[验证原则](verification.md)。
 
+## 1.3 发布候选与素材（2026-10-30）
+
+- 来源 `457ea531c84e612dc344b67c30138854e58e01f0`，1.3 (11)：[verify 41009024365](https://github.com/suxiaoshao/moonread/actions/runs/41009024365) 与 [upload 41010526199](https://github.com/suxiaoshao/moonread/actions/runs/41010526199) 成功，上传处理记录为 VALID。用户随后确认 TestFlight 试用通过；未提供逐项测试记录，不扩大为全部设备或真实云同步矩阵通过。
+- 2026-10-30 15:33 CST 提交审核，当时 ASC 读回“等待审核”。这份历史记录不代表后来审核结论或实际上线；版本、地区与上线状态继续以 ASC 当次核对为准。
+- 三语四设备组合共 99 张原图、12 张总览；商店提交三语 × iPhone/Duo/iPad × 8，共 72 张成图。原图来源为 `a49d7fc` 的既有 Debug 产物，不能冒充最终 Release 的设备回归。组件内部三语已核对，系统桌面仍为简中。每张来源、尺寸与哈希留在本机 `build/Release/1.3-screenshots/` manifest，发布操作与素材索引留在 `build/Release/1.3-launch/`。
+- Duo 默认截图曾捕获外屏，最终内屏截图按当次只读 display 枚举选择；显示器编号不是跨会话固定合同。既往 xcodebuild/simctl 挂起在补拍中未复现，不能由补拍成功推断根因已修复。截图完成后设备正常关闭，数据与桌面组件保留。
+
 ## 数据、文件与发布
 
 | 日期 / 能力 | 当时证据与结果 | 限制 / 本机证据 |
