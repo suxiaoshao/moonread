@@ -32,6 +32,26 @@ SDK 源码来自 `build/AIDerivedData/SourcePackages/checkouts/swift-ai-sdk/Sour
 因此，Pi 有本地记录；“打开界面触发刷新”不等于“每次重新下载”。4 小时规则属于上述远端目录包装层，并非所有自定义 provider 必须遵守的通用规则。
 
 
+## 2026-10-30 模型目录补充调查
+
+以下整理自 Grok 的只读源码回报，未在本次文档整理中逐项复核调用链，也未发真实目录请求、读取凭据或运行应用。固定来源为 [Pi e7a0df27](https://github.com/earendil-works/pi/tree/e7a0df27c09d11bf4161d3605246cbf57a129cb2) 与 [Zed 025d2a06](https://github.com/zed-industries/zed/tree/025d2a06ee7920777bf4947f11e46a1f52e62cbb)。上文 `200387122` 和 `generate-models.ts` 是旧版本依据，不作为这两个新快照的路径说明。
+
+**两者没有统一的“公开目录非空便跳过账户目录”或“所有供应商优先账户 /models”规则。** 按供应商和认证方式区分资料、可访问型号与元数据来源。月读的候选改进由 [#149](https://github.com/suxiaoshao/moonread/issues/149) 跟踪；研究不改变[当前模型目录契约](../ai/model-catalog.md)。
+
+| 层次 / 通道 | Pi 固定快照 | Zed 固定快照 |
+| --- | --- | --- |
+| 内置与公开目录 | `catalog/generate.ts` 构建期获取 models.dev v2 及部分供应商目录；models.dev 筛 tool-capable chat，缺省容量填 4096。coding-agent 为除 Radius 外的内置供应商包装 pi.dev 目录，4 小时与 ETag 缓存；无凭据刷新只恢复缓存，PI_OFFLINE 禁网 | 没有共同的 models.dev 运行时目录；OpenCode 使用 models.opencode.ai，磁盘新鲜期 5 分钟、每小时刷新 |
+| OpenRouter | 公共目录之后请求 `/models/user`；401/403/404 保留全目录 | 只请求 `/models/user`，没有先公开目录再过滤 |
+| Copilot | 登录/token 刷新时请求账户 `/models`，只过滤 ID，不替换元数据 | 请求 endpoint 的 `/models`，筛 picker、chat、policy enabled；失败没有静态回退 |
+| Anthropic、Google | 普通内置供应商沿公共目录包装，不能推导为账户目录替换 | 账户 `/v1/models`、`v1beta/models` 为主源，设置追加/覆盖；Anthropic 缺 token 上限丢弃，不从公开资料补；Google 部分思考档位按 ID 推断 |
+| OpenAI API 等 | 普通 OpenAI API 运行时没有用户 `/models`；`models.json` 自定义模型手写 | OpenAI API、xAI、Mistral、DeepSeek、Bedrock 使用内置枚举和 settings available_models，不请求 `/models` |
+| ChatGPT / Codex | openai OAuth 仍用 API 目录，仅对 OAuth 隐藏 classifier；openai-codex 是另一份手写订阅列表，注释中的端点不是运行时请求 | ChatGPT 初始静态表；加载凭据或登录时成功请求 `chatgpt.com/backend-api/codex/models?client_version=0.999.0` 后整表替换，筛 visibility=list 并按 priority 排序；失败留旧表，未实现 refresh_models |
+| 本机与其他来源 | llama.cpp 扩展、Radius 使用本机/账户目录替换 | Ollama、LM Studio、llama.cpp 用本机目录；compatible 连接手写；Zed Cloud 登录后取自有 `/models`，签出清空 |
+
+月读非 ChatGPT 且公开目录非空时跳过 `auth.models` 是自己的分支；24 小时缓存、models.dev v1 及容量策略也是自选。月读 SIWC 的 `api.openai.com/v1/models` 与 Zed Codex 的目录端点不同，不能互换。Pi/Zed 的目录也不能授予账户调用权限。
+
+未在线核对 pi.dev 与 models.dev v1/v2 字段差异、Copilot 企业端点、OpenRouter 区域代理和 SIWC/Codex 目录同构性。上述回报没有完整逐项行号；实现 #149 前需按供应商补查，不把摘要当作线上验收。
+
 ## 选型与退出的路径
 
 - 早期调研曾推荐 SwiftStreamingMarkdown；正式界面已经采用 UITableView 块列表 + MarkdownView，旧建议不再是实施依据。技术选择和性能候选分别见[消息呈现](../ai/rendering.md)与[性能](../engineering/performance.md)。

@@ -1,10 +1,10 @@
 # 开发文档
 
-月读以舒服、连续的本地小说阅读为目标。产品介绍见[项目 README](../../README.md)，开发起步见[CONTRIBUTING](../../CONTRIBUTING.md)，取舍见[产品方向](product.md)，工作规则见[AGENTS.md](../../AGENTS.md)。当前开发版本为 1.3；已实现行为以专题与源码为准，已确认但未实现的范围见[后续安排](roadmap.md)。发布不等于所有设备、云端和长时场景已验收，具体证据见[验证记录](engineering/verification.md)。
+月读以舒服、连续的本地小说阅读为目标。产品介绍见[项目 README](../../README.md)，开发起步见[CONTRIBUTING](../../CONTRIBUTING.md)，取舍见[产品方向](product.md)，工作规则见[AGENTS.md](../../AGENTS.md)。当前开发分支为 `release/1.4`；1.3 已于 2026-10-30 提审，提审不等于上线。已实现行为以专题与源码为准，已确认但未实现的范围见[后续安排](roadmap.md)。发布不等于所有设备、云端和长时场景已验收，具体证据见[验证记录](engineering/verification.md)。
 
 ## 开发与发布
 
-- [系统集成技术合同（1.3 待实现）](engineering/system-integration.md)。
+- [系统集成技术合同](engineering/system-integration.md)。
 - [架构与规则归属](engineering/architecture.md)：Rust/Swift 单一 owner、正文身份、坐标与持久化演进。
 - [开发环境与分支协作](engineering/development.md)、[仓库与持续集成](engineering/repository.md)、[iOS 支持策略](engineering/ios-support.md)。
 - [性能设计与待优化](engineering/performance.md)、[测试原则与验证边界](engineering/verification.md)、[验证历史](engineering/verification-history.md)。
@@ -35,8 +35,9 @@
 ## 计划与研究
 
 - [后续安排](roadmap.md)：已定稿待实施、候选和暂缓范围的索引。
-- [1.3 已确认范围与 PR 顺序](plans/1.3.md)。
+- [1.3 交付范围与原实施顺序](plans/1.3.md)。
 - 活跃专题计划：[AI 未完成工作](plans/ai.md)、[统计回看与历史位置](plans/statistics.md)。
+- [CloudKit 同步测试研究](research/cloudkit-sync-testing.md)：模拟器、真机、schema 与私有库证据边界。
 - 固定版本研究：[开源阅读器](research/readers.md)、[主题参考](research/theme-references.md)。
 
 ## 维护方式

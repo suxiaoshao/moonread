@@ -163,3 +163,11 @@ Readest 本轮核实的是计时、数据、同步和阅读速度估计路径，
 这些统计路径以页为单位，未看到按滚动速度分类或稳定正文范围的停留聚合。Readest 的闲置定时器由页信息更新路径重置，不能概括成已验证所有正文交互。KOReader 还按总页数比例映射重排前后的页统计（[页统计视图](https://github.com/koreader/koreader/blob/1f780ac65ff20f67a997a502828d62a66e1fb488/plugins/statistics.koplugin/main.lua#L435)）；这不等于精确的正文字符覆盖，也不证明一个范围被完整读了几遍。
 
 月读已确认并接入：保留 120 秒闲置规则，以原文范围连续可见 3 秒作为估算覆盖门槛，慢滚重叠范围延续停留，回看时长增加而覆盖取并集。不照搬短页事件丢弃规则去减少总阅读时长。覆盖不因检查点或重复回调重复累计，独立回看次数仍需处理边界微调；当前规则见[小说详情](../design/statistics.md#章节覆盖计算)。不新增速度估算、摄像头检测、阈值设置页或独立阅读轨迹。
+
+## 锁屏媒体与实时活动的区别（2026-10-24–25 调研）
+
+本节由当时只读公开资料压缩整理，2026-10-30 未重新核对网页，也未安装参考 App。不能将未查到描述写成产品没有该能力；这不是月读新增实时活动的承诺。
+
+- Audible 的官方资料分别描述锁屏播放控制与睡眠定时 Live Activity：前者继续播放，后者展示倒计时并可进入定时。两者不是同一系统组件。[播放](https://help.audible.com/s/article/listen-in-the-app?language=en_US)、[定时](https://help.audible.com/s/article/use-timer?language=en_US)。
+- Book Tracker 官方教程描述阅读计时 Live Activity，可显示已用时间并暂停/继续。这是计时，不证明小说正文阅读需要持续上岛。[官方教程](https://booktrack.app/tutorial/how-to-use-live-activity-with-the-reading-timer/)。
+- Android 的前台通知、厂商“灵动岛”、主屏小组件与 iOS Live Activity 分开记录；媒体键支持也不证明锁屏卡片提供所有操作。系统朗读的候选范围见 [#17](https://github.com/suxiaoshao/moonread/issues/17)，不由竞品列表直接决定实现。

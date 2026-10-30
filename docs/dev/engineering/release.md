@@ -26,6 +26,14 @@
 - 无 DEBUG/UI 测试开关、测试夹具、`.storekit` 或凭据；Release 条件编译审计与产物检查一起完成。
 - 检查 IPA/归档导出、架构和日志；workflow 的失败分类区分构建/签名/核验与上传服务失败，不把失败当成上传成功。
 
+源工程决定本次应有的扩展集合：旧版本只有 Share，新版本为 Share 与 Widget；缺少或出现未知扩展均拒绝。逐一核对 App、Share、Widget 的版本、签名、profile、App Group、arm64、隐私清单及 Release 测试入口；三个 bundle 的 `CFBundleDisplayName` 必须是非空字符串。不能只检查主 App，或认为 archive/export 成功就已满足上传要求。
+
+### 上传失败的诊断
+
+先读失败阶段、退出码及脱敏 Apple/NSError 描述，再决定修复还是重试。`exit 70` 本身不能区分网络偶发与包元数据错误。1.3 的一次本机上传明确被 Apple 以 Widget 缺少 `CFBundleDisplayName` 拒绝；补齐基础名称并复用既有三语 `InfoPlist.xcstrings` 后，再走固定提交的 verify/upload。此前 CI 私有日志已清理的失败不能据此倒推为同一根因。
+
+工作流清理私有材料前，从本阶段明确引用的 `.xcdistributionlogs` 提取有界脱敏摘要；不公开原始分发日志、凭据或 profile。查看 `truncated`、`readFailures`、`collector-failed` 等标记，区分“没有错误”和“没有完整采集到”。未知格式补充摘要规则，不以公开原日志兜底。实现及审查依据：[诊断修复 #158](https://github.com/suxiaoshao/moonread/pull/158)、[Widget 修复 #159](https://github.com/suxiaoshao/moonread/pull/159)。
+
 CloudKit 模型变更使用[生产 schema 核对](../data/cloudkit-release-checklist.md)，只增不删。签名、schema 部署、上传成功和跨设备交付是四种不同证据。
 
 ## TestFlight 与 App Store
@@ -52,3 +60,7 @@ nix develop --no-update-lock-file -c xcodebuild \
 ```
 
 先用 `xcodebuild -exportArchive` 本地导出并核对分发包。ExportOptions 使用 `method=app-store-connect`、`signingStyle=automatic`、`iCloudContainerEnvironment=Production`、`manageAppVersionAndBuildNumber=false`；预检用 `destination=export`，上传时改为 `destination=upload`，两次均允许自动签名更新，并使用同一归档。每次新上传先按构建号规则递增；遇账号登录或钥匙串授权，由用户本人处理。
+
+## 商店资料的核对口径
+
+2026-10-17 的产品页调查曾发现 App Store 展示的新年龄档与 Lookup 返回的旧档不同；`languageCodesISO2A` 的 `ZH` 也不能区分简繁。这里只保留数据源差异的经验，不维护会过期的竞品分级/语言数量榜。每次提交按 ASC 当前问卷、实际功能和明确语言资源核对，不从竞品标签推导月读分级，不因有 AI 就自行改年龄档。
