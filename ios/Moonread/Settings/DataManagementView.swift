@@ -259,14 +259,21 @@ private struct ReadingDataWorking: ViewModifier {
     }
 }
 private struct ReadingDataListView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.theme) private var theme
     @Bindable var model: DataManagementModel
     @State private var detail: ReadingDataItem?
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                filterButton(false)
-                filterButton(true)
+                if dynamicTypeSize.isAccessibilitySize {
+                    readingDataFilter.pickerStyle(.menu)
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        readingDataFilter.pickerStyle(.segmented).fixedSize(horizontal: true, vertical: false)
+                        readingDataFilter.pickerStyle(.menu)
+                    }
+                }
                 Spacer(minLength: 0)
                 Menu {
                     Picker(selection: $model.recent) {
@@ -352,17 +359,14 @@ private struct ReadingDataListView: View {
             }
         }
     }
-    private func filterButton(_ unlinked: Bool) -> some View {
-        let selected = model.unlinkedOnly == unlinked
-        return Button { model.unlinkedOnly = unlinked } label: {
-            Group {
-                if unlinked { Text("不在书架上 \(model.inventory.items.filter { !$0.linked }.count)", tableName: "DataManagement") }
-                else { Text("全部 \(model.inventory.items.count)", tableName: "DataManagement") }
-            }.font(.subheadline).padding(.horizontal, 12).padding(.vertical, 8)
-                .foregroundStyle(Color(uiColor: selected ? theme.accent : theme.secondary))
-                .background(Color(uiColor: selected ? theme.selected : theme.surface), in: .capsule)
-        }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
-            .accessibilityIdentifier(unlinked ? "readingDataFilterUnlinked" : "readingDataFilterAll")
+    private var readingDataFilter: some View {
+        Picker(selection: $model.unlinkedOnly) {
+            Text("全部 \(model.inventory.items.count)", tableName: "DataManagement")
+                .tag(false).accessibilityIdentifier("readingDataFilterAll")
+            Text("不在书架上 \(model.inventory.items.filter { !$0.linked }.count)", tableName: "DataManagement")
+                .tag(true).accessibilityIdentifier("readingDataFilterUnlinked")
+        } label: { Text("阅读数据", tableName: "DataManagement") }
+        .accessibilityIdentifier("readingDataFilter")
     }
 
 }
