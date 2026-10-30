@@ -1637,7 +1637,6 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 					"@executable_path/Frameworks",
 				);
 				OTHER_LDFLAGS = (
-                    "-lsqlite3",
 					"$(inherited)",
 					"$(SRCROOT)/../target/$(MOONREAD_RUST_TARGET)/$(MOONREAD_CARGO_OUTPUT)/libmoonread_core.a",
 				);
@@ -1670,7 +1669,6 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 					"@executable_path/Frameworks",
 				);
 				OTHER_LDFLAGS = (
-                    "-lsqlite3",
 					"$(inherited)",
 					"$(SRCROOT)/../target/$(MOONREAD_RUST_TARGET)/$(MOONREAD_CARGO_OUTPUT)/libmoonread_core.a",
 				);
