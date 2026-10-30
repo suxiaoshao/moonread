@@ -211,6 +211,7 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		E4FBAEE53BD05822ADA6F920 /* Share Privacy in Resources */ = { isa = PBXBuildFile; fileRef = 18807E292E245C3D81736D90;  };
 		5A465E51B64F5138BF6CF41C /* Embed MoonreadShare */ = { isa = PBXBuildFile; fileRef = 44920FD9D2A9541EA0D84A3B; settings = {ATTRIBUTES = (RemoveHeadersOnCopy,);}; };
 		C14A00000000000000000003 /* Share InfoPlist in Resources */ = {isa = PBXBuildFile; fileRef = C14A00000000000000000002; };
+		C14A00000000000000000004 /* Widget InfoPlist in Resources */ = {isa = PBXBuildFile; fileRef = C14A00000000000000000002; };
 		14EBF385EEB12E8854251B0C /* AIAgentPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FECAE1F1197902C7933F3209; };
 		8ECACDBA0D7E7C50A82DCB52 /* AIAgentQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9885E1115585BFC576D92B57; };
 		E4A6194DE08E299191611D3F /* AIAuthenticationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5B1F1DDF46216CE59BA4F14; };
@@ -1226,6 +1227,7 @@ E51000000000000000000009,D41000000000000000000001,
 		};
 		CA0C3527F96E5A318EE28FC7 /* Share Resources */ = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (C14A00000000000000000003,395542A1DDDA57A6B2AC983D,E4FBAEE53BD05822ADA6F920,); runOnlyForDeploymentPostprocessing = 0; };
 		EC1986FEC42C4A9A940AE0B0 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (
+                C14A00000000000000000004 /* Widget InfoPlist in Resources */,
                 B135F2963E3B47819FE2FC73 /* WidgetDefaultAppearance.json */,
                 3590C0DA176B4ADBBFB73708 /* PrivacyInfo.xcprivacy */,
                 F02F8D5E092D48BEBAF2CBBB /* Localizable.xcstrings */,
