@@ -103,7 +103,8 @@ jobs:
       contents: read
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
-      CARGO_TARGET_DIR: ${{ github.workspace }}/build/cargo
+      # Each source project's Rust build phase owns its output path (legacy
+      # build/cargo or current target); do not override it from the workflow.
       SOURCE_BRANCH: ${{ needs.prepare.outputs.branch }}
       EXPECTED_SHA: ${{ needs.prepare.outputs.sha }}
       MODE: ${{ inputs.mode }}
@@ -295,8 +296,28 @@ jobs:
               return 1
             fi
           }
+          set_stage versions
+          # The checked-out source declares the contract: released sources have
+          # App + Share; sources with the Widget target must also ship that bundle.
+          # Unknown extension targets/products remain forbidden.
+          python3 - > "$private/target-contract.log" 2> "$private/versions.stderr.log" <<'PY'
+          import json, os, pathlib, subprocess
+          project = json.loads(subprocess.check_output(['plutil', '-convert', 'json', '-o', '-',
+                                                       'ios/Moonread.xcodeproj/project.pbxproj']))
+          targets = [obj for obj in project['objects'].values() if obj.get('isa') == 'PBXNativeTarget']
+          apps = [t['name'] for t in targets if t.get('productType') == 'com.apple.product-type.application']
+          extensions = [t['name'] for t in targets if t.get('productType') == 'com.apple.product-type.app-extension']
+          if apps != ['Moonread'] or sorted(extensions) not in (['MoonreadShare'], ['MoonreadShare', 'MoonreadWidgets']):
+              raise SystemExit('Unexpected source application/extension contract.')
+          allowed = {'Moonread': 'dev.moonread.Moonread', 'MoonreadShare': 'dev.moonread.Moonread.Share',
+                     'MoonreadWidgets': 'dev.moonread.Moonread.Widgets'}
+          expected = {name: allowed[name] for name in ['Moonread', *sorted(extensions)]}
+          (pathlib.Path(os.environ['TF_PRIVATE']) / 'expected-targets.json').write_text(json.dumps(expected))
+          print('Expected targets: ' + ', '.join(expected))
+          PY
+          targets="$(python3 -c 'import json,os,pathlib; print(" ".join(json.loads((pathlib.Path(os.environ["TF_PRIVATE"])/"expected-targets.json").read_text())))')"
           for config in Debug Release; do
-            for target in Moonread MoonreadShare; do
+            for target in $targets; do
               run_xcode "settings-$config-$target" -project ios/Moonread.xcodeproj -target "$target" \
                 -sdk iphoneos -configuration "$config" -disableAutomaticPackageResolution \
                 -onlyUsePackageVersionsFromResolvedFile -showBuildSettings -json
@@ -307,7 +328,7 @@ jobs:
           import json, os, pathlib, re, subprocess
           root = pathlib.Path(os.environ['TF_PRIVATE'])
           versions = set()
-          expected = {'Moonread': 'dev.moonread.Moonread', 'MoonreadShare': 'dev.moonread.Moonread.Share'}
+          expected = json.loads((root / 'expected-targets.json').read_text())
           for config in ['Debug', 'Release']:
               for name in expected:
                   settings = json.loads((root / f'settings-{config}-{name}.log').read_text())
@@ -318,7 +339,7 @@ jobs:
                   versions.add((s['MARKETING_VERSION'], s['CURRENT_PROJECT_VERSION']))
                   if config == 'Release' and 'DEBUG' in s.get('SWIFT_ACTIVE_COMPILATION_CONDITIONS', '').split():
                       raise SystemExit('DEBUG is enabled in Release.')
-          if len(versions) != 1: raise SystemExit('Debug/Release and App/Share versions differ.')
+          if len(versions) != 1: raise SystemExit('Debug/Release and application/extension versions differ.')
           version, build = versions.pop()
           if version != os.environ['SOURCE_BRANCH'].split('/')[1]: raise SystemExit('Marketing version differs from branch version.')
           if not re.fullmatch(r'[1-9][0-9]*', build): raise SystemExit('Build must be a positive integer.')
@@ -329,7 +350,7 @@ jobs:
                          'teamID': os.environ['APPLE_TEAM_ID'], 'iCloudContainerEnvironment': 'Production',
                          'manageAppVersionAndBuildNumber': False}
               (root / f'{destination}.plist').write_bytes(plistlib.dumps(options))
-          print(f'Committed App + Share: {version} ({build}).')
+          print(f'Committed {", ".join(expected)}: {version} ({build}).')
           PY
           set_stage number-gate
           python3 "$private/asc.py" number-gate > "$private/number-gate.log" 2> "$private/number-gate.stderr.log"
@@ -340,7 +361,9 @@ jobs:
           root = pathlib.Path(os.environ['TF_PRIVATE'])
           meta = json.loads((root / 'metadata.json').read_text())
           app = root / 'Moonread.xcarchive/Products/Applications/Moonread.app'
-          for bundle in [app, app / 'PlugIns/MoonreadShare.appex']:
+          expected = json.loads((root / 'expected-targets.json').read_text())
+          for name in expected:
+              bundle = app if name == 'Moonread' else app / 'PlugIns' / (name + '.appex')
               info = plistlib.loads((bundle / 'Info.plist').read_bytes())
               if (info['CFBundleShortVersionString'], info['CFBundleVersion']) != (meta['version'], meta['build']):
                   raise SystemExit('Archive versions differ from committed settings.')
@@ -365,11 +388,15 @@ jobs:
           apps = list((unpack / 'Payload').glob('*.app'))
           require(len(apps) == 1, 'expected one app')
           app = apps[0]
-          require([p.name for p in app.glob('PlugIns/*.appex')] == ['MoonreadShare.appex'], 'unexpected extensions')
+          expected = json.loads((root / 'expected-targets.json').read_text())
+          require(sorted(p.name for p in app.glob('PlugIns/*.appex')) ==
+                  sorted(name + '.appex' for name in expected if name != 'Moonread'), 'unexpected or missing extensions')
           team = os.environ['APPLE_TEAM_ID']
           group = 'group.dev.moonread.Moonread'
           container = 'iCloud.dev.moonread.Moonread'
-          for bundle, identifier in [(app, 'dev.moonread.Moonread'), (app / 'PlugIns/MoonreadShare.appex', 'dev.moonread.Moonread.Share')]:
+          bundles = [app if name == 'Moonread' else app / 'PlugIns' / (name + '.appex') for name in expected]
+          for name, bundle in zip(expected, bundles):
+              identifier = expected[name]
               info = plistlib.loads((bundle / 'Info.plist').read_bytes())
               require((info['CFBundleIdentifier'], info['CFBundleShortVersionString'], info['CFBundleVersion']) ==
                       (identifier, meta['version'], meta['build']), 'bundle identity/version mismatch')
@@ -389,6 +416,8 @@ jobs:
               profile = plistlib.loads(command('security', 'cms', '-D', '-i', str(bundle / 'embedded.mobileprovision')))
               require(profile.get('TeamIdentifier') == [team], 'profile team')
               require(profile['Entitlements'].get('application-identifier') == team + '.' + identifier, 'profile application identifier')
+              require(profile['Entitlements'].get('get-task-allow') is False, 'profile permits debugging')
+              require(group in profile['Entitlements'].get('com.apple.security.application-groups', []), 'profile missing App Group')
               require(not profile.get('ProvisionedDevices') and not profile.get('ProvisionsAllDevices'), 'not an App Store profile')
               require(profile['ExpirationDate'].replace(tzinfo=datetime.timezone.utc) > datetime.datetime.now(datetime.timezone.utc), 'expired profile')
               prefix = root / ('cert-' + bundle.name)
@@ -403,15 +432,16 @@ jobs:
           privacy = sorted(str(p.relative_to(app)) for p in app.rglob('PrivacyInfo.xcprivacy'))
           expected_privacy = {'PrivacyInfo.xcprivacy', 'PlugIns/MoonreadShare.appex/PrivacyInfo.xcprivacy',
                               'SwiftAISDK_SwiftAISDK.bundle/PrivacyInfo.xcprivacy', 'Litext_Litext.bundle/PrivacyInfo.xcprivacy'}
+          if 'MoonreadWidgets' in expected:
+              expected_privacy.add('PlugIns/MoonreadWidgets.appex/PrivacyInfo.xcprivacy')
           require(expected_privacy.issubset(privacy), 'missing expected privacy manifests')
           for path in privacy: require(isinstance(plistlib.loads((app / path).read_bytes()), dict), 'invalid privacy plist')
           require(not any(p.suffix in ('.storekit', '.xctest') or p.name.endswith('.debug.dylib') or p.name == '__preview.dylib'
                           for p in app.rglob('*')), 'test/DEBUG resource in IPA')
-          # Prefix rejection covers all current and future UI-test launch arguments,
-          # including --ui-testing / --ui-test-session / --ui-test-tips /
-          # --ui-test-introduction. Audit both executable owners, not just the App.
+          # Audit the App and every declared extension, including Widget fixtures.
           markers = [b'--ui-test', b'--disable-tips', b'--initialize-cloudkit-development-schema', b'--reader-open-benchmark']
-          for bundle in [app, app / 'PlugIns/MoonreadShare.appex']:
+          markers += [b'--reader-open-session', b'--store-shot', b'StoreScreenshots.language', b'STORE_SCREENSHOT_SCENE', b'PAGE_SHOT_SCENE']
+          for bundle in bundles:
               info = plistlib.loads((bundle / 'Info.plist').read_bytes())
               strings = command('strings', '-a', str(bundle / info['CFBundleExecutable']))
               require(not any(marker in strings for marker in markers), 'diagnostic/test entry in ' + info['CFBundleIdentifier'])
@@ -422,6 +452,7 @@ jobs:
                    'xcode': command('xcodebuild', '-version').decode().strip(),
                    'sdk': command('xcrun', '--sdk', 'iphoneos', '--show-sdk-version').decode().strip(),
                    'privacyManifests': privacy, 'signatureVerified': True, 'productionCapabilitiesVerified': True, 'releaseTestArgumentsAbsent': True,
+                   'bundleIdentifiers': list(expected.values()),
                    'mode': os.environ['MODE']}
           (root.parent / 'testflight-public' / 'audit.json').write_text(json.dumps(audit, indent=2) + '\n')
           # Freeze every archive file (and symlink) before a possible second export.
@@ -488,7 +519,7 @@ jobs:
           except (OSError, UnicodeError):
               stage = 'prepare'
           # Never publish arbitrary file contents, exception messages, paths or credentials.
-          if not re.fullmatch(r'prepare|versions|number-gate|archive|archive-validation|export|audit|upload|processing|settings-(?:Debug|Release)-(?:Moonread|MoonreadShare)', stage):
+          if not re.fullmatch(r'prepare|versions|number-gate|archive|archive-validation|export|audit|upload|processing|settings-(?:Debug|Release)-(?:Moonread|MoonreadShare|MoonreadWidgets)', stage):
               stage = 'prepare'
           if not failure.exists():
               try:
