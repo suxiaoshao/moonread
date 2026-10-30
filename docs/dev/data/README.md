@@ -1,6 +1,6 @@
 # 数据、文件书架与正文身份
 
-更新：2026-10-14。统一文件书架、本地导入和最近删除已实现；固定 iCloud Documents 与 CloudKit 代码已接入，本地回归与真实云端验收分开记录。平台条件见[接入实施](icloud-implementation.md)，签名、安装与跨设备结果只在[验证记录](../engineering/verification.md)维护。同步细节见[同步设计](sync.md)，界面见[首页与书架](../design/library.md)。
+更新：2026-10-14。统一文件书架、本地导入和最近删除已实现；固定 iCloud Documents 与 CloudKit 代码已接入，本地回归与真实云端验收分开记录。平台条件见[接入实施](sync.md)，签名、安装与跨设备结果只在[验证记录](../engineering/verification.md)维护。同步细节见[同步设计](sync.md)，界面见[首页与书架](../design/library.md)。
 
 ## 统一文件夹书架
 
@@ -39,7 +39,7 @@ TEMP 视图 `file_identities(file_id, content_sha256)` 是文件到正文身份�
 
 正文规范化 SHA 是唯一内容身份。文件行 UUID、授权根和相对路径用于定位一份副本；大小、修改时间用于显示、排序、下载状态及已索引文件的跳过判断，不能代替正文 SHA。没有平台文件 ID、版本指纹或 xattr。用户已决定本版不在原件写扩展属性，不以尚未验证的同步上传、冲突副本或未下载文件行为建立另一套身份。扫描按路径对齐，同路径同类型保留最后已知的 book_id，文件与目录互换不继承；枚举失败保留已知清单。
 
-每次打开在后台协调访问中读取完整原始 SHA，按“原始 SHA + 解码策略（自动或手选编码）”查已准备正文。未命中时记录期望原始 SHA，导入那一遍同时哈希实际送入解码器的字节，一致才原子发布快开映射。最终正文 SHA 决定归并或新书；原书用户数据独立保留。 自动编码按 BOM、合法且不含 ESC 的 UTF-8、固定版本 chardetng 顺序识别，GBK 统一到 GB18030；正文仍由 encoding_rs 与 normalization-v1 生成。发布后升级识别/解码依赖须通过固定原创样本与旧 SHA 回归，不得改变已支持文件的正文结果。手选编码仅保存在本机文件行，不经 CloudKit 同步；另一台设备仍自动识别，结果不同时需手选相同编码，详见[编码与恢复](../reader/import.md#编码恢复和失败)。暂停续读先验证完整原始 SHA，再重放核对前缀；源变化保留旧任务、前缀和位置，由用户显式“重新准备”。任务 generation 继续防止旧 worker 发布。
+每次打开在后台协调访问中读取完整原始 SHA，按“原始 SHA + 解码策略（自动或手选编码）”查已准备正文。未命中时记录期望原始 SHA，导入那一遍同时哈希实际送入解码器的字节，一致才原子发布快开映射。最终正文 SHA 决定归并或新书；原书用户数据独立保留。 自动编码按 BOM、合法且不含 ESC 的 UTF-8、固定版本 chardetng 顺序识别，GBK 统一到 GB18030；正文仍由 encoding_rs 与 normalization-v1 生成。发布后升级识别/解码依赖须通过固定原创样本与旧 SHA 回归，不得改变已支持文件的正文结果。手选编码以完整原始 SHA 为作用域，通过现有 UserValue `source-decoding/<rawSHA>` 同步；开书、全量索引与最近恢复共用 resolver，选择“自动”也保存显式值。运行中的解码任务冻结其策略，下次开书/索引才采用新选择；详见[编码与恢复](../reader/import.md#编码恢复和失败)。暂停续读先验证完整原始 SHA，再重放核对前缀；源变化保留旧任务、前缀和位置，由用户显式“重新准备”。任务 generation 继续防止旧 worker 发布。
 
 应用内移动、改名、目录移动携带最后已知关联，立即按 file id 重绑定暂停任务定位；重启续读再从当前文件索引解析。移动不创建原始 SHA 映射。外部移动按旧路径消失、新路径新增处理，建立索引或打开后按 SHA 接回；旧 fileRef 失效，不替换成另一副本。失效首选文件可回退到已关联副本，正式阅读新路径后更新首选。
 
@@ -51,7 +51,7 @@ AI 文件提案以已下载源的原始 SHA 复核，缺少可读字节时提示
 
 ## 已确定的书架行为
 
-下表是产品约定；同步代码的本地验证与云端限制见[接入实施](icloud-implementation.md)，多选交互见[书架操作](../design/library.md#操作入口)。
+下表是产品约定；同步代码的本地验证与云端限制见[接入实施](sync.md)，多选交互见[书架操作](../design/library.md#操作入口)。
 
 | 内容 | 产品约定 |
 | --- | --- |
@@ -116,7 +116,7 @@ SQLite v22 新增 `source_identities`（原文件 SHA＋解码策略为键）与
 | TXT 原件及目录树 | 固定本机 Documents、自身 iCloud Documents 或用户授权的外部目录；文件操作作用于实际原件 |
 | 身份索引 | Rust SQLite `source_identities` / `library_identities`；派生身份与文件快照，不缓存正文 |
 | 授权与文件索引 | Rust SQLite `library_shelves` / `library_files`；设备数据，成功扫描更新，失败保护已知索引 |
-| 正文、自动章节与任务 | Rust `reader.sqlite3`，schema 22：`books`、`chunks`、`reading_blanks`、`import_chapters`、`source_imports`、`import_jobs` |
+| 正文、自动章节与任务 | Rust `reader.sqlite3`，schema 23：`books`、`chunks`、`reading_blanks`、`import_chapters`、`source_imports`、`import_jobs` |
 | 小说信息、标签、状态、配色方案 | SwiftData `UserValue`；字段或成员最终快照，按 SHA 或配色 ID 关联 |
 | 正式位置 | SwiftData `UserPosition`；取最后更新并淘汰旧更新，不保留位置历史 |
 | 书签与批注 | SwiftData `AnnotationOperation`；完整内容候选和操作基线，正式保存后不维护内容历史 |
@@ -124,6 +124,9 @@ SQLite v22 新增 `source_identities`（原文件 SHA＋解码策略为键）与
 | 分享接收 | App Group `ShareInbox`，原字节与 `schemaVersion: 1` 清单；已发布项跨启动保留，不参与缓存清理 |
 | 用户封面 | SwiftData `UserCover.bytes` 外部存储；权威图片不是缓存，附件暂缺时文字封面 |
 | SHA 完成前的阅读数据 | 设备 SwiftData `pending-users.store`，禁止云同步；完成后转入 SHA 用户存储并回收暂存 |
+| 原文件编码选择 | SwiftData UserValue `source-decoding/<rawSHA>`，整值 LWW；导出全部包含，整书删除不删除此全局设置 |
+| 旧手选升级待办 | SQLite v23 `source_decoding_migration`，只登记升级前非 auto 值；未知 raw 的离线原件暂留，保存 epoch 候选后才删除 |
+| 本机续读提示基线 | UserDefaults `Moonread.localReadingResume.v1`，schemaVersion 1，按 storeScope/SHA 保存实际写入 offset/token，不同步 |
 | 当前配色/明暗、排版/模式、设备控制、动效、记录开关 | 本机 UserDefaults；不随配色方案一起同步 |
 | 任务源描述、最近隐藏、上次文件入口 | 本机 UserDefaults；任务按持有期回收；批注未提交编辑仅在内存 |
 | 缩略图及图片读出副本 | 本机可重建缓存；SwiftData 附件是封面的唯一权威来源 |
@@ -134,13 +137,13 @@ SQLite v22 新增 `source_identities`（原文件 SHA＋解码策略为键）与
 
 SwiftData 正式用户存储为 `Application Support/Moonread/user-data.store`，按照阅读数据同步开关使用 `.none` 或固定 CloudKit 私有容器。附件由框架管理；不存在应用自建上传队列。读取入口与账户边界见[同步设计](sync.md)，封面编辑见[小说详情](../design/book-details.md#封面如何保存)。
 
-SQLite 不是可整体删除的纯缓存。`books`、`chunks`、`reading_blanks`、自动 `import_chapters` 与 `source_imports` 是正文派生数据，在原文件和相同解码策略仍可访问时可重建；原件暂不可访问时不得自动丢弃唯一可读缓存。`library_files` 的目录元数据可重扫，但文件 ID、`book_id` 关联及用户选择的 `decoding` 不能随重建遗失。`library_shelves.bookmark`、书架名称/ID、外部根授权不可从小说正文恢复，必须迁移保留。`import_jobs` 含暂停/继续代次、来源映射和待交接状态，不能当作可随时删除的缓存；需与 SwiftData `pending-users.store` 一起保持中断恢复契约。SwiftData 中的进度、批注、书签、统计、主题、封面，以及 AI 会话/资产、UserDefaults 偏好/许可和 Keychain 凭据均非正文可重建数据。迁移入口与降级错误见[持久化演进](../engineering/architecture.md#持久化演进与发布兼容)。
+SQLite 不是可整体删除的纯缓存。`books`、`chunks`、`reading_blanks`、自动 `import_chapters` 与 `source_imports` 是正文派生数据，在原文件和相同解码策略仍可访问时可重建；原件暂不可访问时不得自动丢弃唯一可读缓存。`library_files` 的目录元数据可重扫，但文件 ID 与 `book_id` 关联不能随重建遗失；`decoding` 仅描述实际缓存/任务策略，不再作为偏好读取。v23 的 `source_decoding_migration` 是尚未可靠转存的旧手选，不能按缓存清理。`library_shelves.bookmark`、书架名称/ID、外部根授权不可从小说正文恢复，必须迁移保留。`import_jobs` 含暂停/继续代次、来源映射和待交接状态，不能当作可随时删除的缓存；需与 SwiftData `pending-users.store` 一起保持中断恢复契约。SwiftData 中的进度、批注、书签、统计、主题、封面，以及 AI 会话/资产、UserDefaults 偏好/许可和 Keychain 凭据均非正文可重建数据。迁移入口与降级错误见[持久化演进](../engineering/architecture.md#持久化演进与发布兼容)。
 
-Rust `books` 不再保存正式位置或最近阅读时间。`user_projection.rs` 在各计算连接中建立临时位置、元信息、事实和目录修正视图；输入来自 SwiftData，可以随时重建。`effective_chapters` 同样是临时计算视图。用户记录不依赖文件索引或正文缓存的外键级联。
+Rust `books` 不再保存正式位置或最近阅读时间。`user/projection.rs` 在各计算连接中建立临时位置、元信息、事实和目录修正视图；输入来自 SwiftData，可以随时重建。`effective_chapters` 同样是临时计算视图。用户记录不依赖文件索引或正文缓存的外键级联。
 
 首次使用本地空目录仍复制自带原创短篇；已注册内置根不会因文件被删除而再次预置。目录扫描仍只读取元数据，跳过隐藏项、包内容与符号链接；按实际目录权限工作，不主动读取整库正文。
 
-源码入口：[SwiftData 存储](../../../ios/Moonread/Data/UserData.swift)、[用户业务接口](../../../ios/Moonread/Data/UserDataService.swift)、[Rust 计算输入](../../../crates/moonread-core/src/user_projection.rs)、[平台文件操作](../../../ios/Moonread/Library/LibraryService.swift)。
+源码入口：[SwiftData 存储](../../../ios/Moonread/Data/UserData.swift)、[用户业务接口](../../../ios/Moonread/Data/UserDataService.swift)、[Rust 计算输入](../../../crates/moonread-core/src/user/projection.rs)、[平台文件操作](../../../ios/Moonread/Library/LibraryService.swift)。
 
 ## 先统一术语
 
@@ -220,14 +223,4 @@ Rust 管理正文身份、计算与索引；SwiftData 管理用户数据，Swift
 
 ## 阅读数据管理与可移植备份
 
-设置「数据管理」以 SwiftData 的正式正文 SHA 事实集合列书，包含暂无本机小说的记录；pending 身份另提示。列表可搜索、排序和选择删除，导出始终是「导出全部」，不受筛选或多选影响。书架内小说详情的清除入口调用同一服务；从阅读器进入的详情不显示该按钮。配色不属于整书删除范围。
-
-阅读数据列表展示上次来源线索、最后阅读时间和可确认的全文进度；同名记录用序号区分，不按标题合并身份。未知全文长度只提示有进度/统计，不猜百分比。“需要处理”只查任务和授权元数据：已完成任务进页重试一次晋升，未完成任务可继续原 bookId，失效外部书架可直接重新授权；缺失来源不按文件名自动重绑。用户可确认丢弃指定的原始 pending 键，保留对应正式 SHA 的数据和小说原件；看不懂的记录仅说明原因。删除全部是总览页独立危险操作，列表全选只作用于当前筛选/搜索结果。
-
-`.moonread-backup` v1 是 ZIP，manifest 固定 `scope=all`、`identityVersion=normalization-v1`。五个 JSONL 成员保存原始位置 token、资料/人工目录（包括 excluded/null）、完整批注候选、事实与统计清除载荷；封面以不可变 ID 和原字节附带。配色随全部导出；小说、AI、凭据、书架授权和偏好不导出。缺附件、pending 或未知必需载荷不能生成声称完整的备份。未知可选传输扩展只留在暂存，不作用于用户事实。
-
-Rust 负责 ZIP/路径/摘要安全，Swift 复用 UserSyncJSON 与用户事实接入。拒绝越界、链接、重复/大小写碰撞、未列成员、截断及摘要不符；压缩包上限 512 MiB、解包 2 GiB、成员 100000、单记录 16 MiB、资产 32 MiB。流式解包和记录读取；SwiftData 原子提交当前另限成员合计 128 MiB，超限提示无法一次处理，不称为损坏或部分成功。预览只读，账户/configuration 变化后拒绝旧预览；确认时在事务里重新校验并合并，不以进程级 projectionVersion 拒绝；位置压缩不另行保存，只在最后提交一次，保留原时钟、因果和 ID，重复导入不累计统计，旧备份不会强制覆盖较新位置。
-
-清缓存与删阅读数据分别确认。普通清缓存必须在协调访问中核验可读原件、原字节与规范正文身份，执行事务重验文件快照；不可访问原件的唯一可读正文、活跃阅读/准备/导入任务都保留。不移除 iCloud 下载，不清授权、手选编码、ShareInbox、待交接数据或封面 draft。只删能从权威 UserCover 还原的读出副本和缩略图，身份索引保留。正文可重建，缓存清理量不是文件系统即时释放量。主动删阅读数据可另回收选中 SHA 的离线正文，确认说明此风险；失败只报告部分缓存未清，不回滚事实删除。
-
-导出和删除先等待 StatisticsWriter 的当前写入结束（drain）；统计每批只写一次，失败批次丢弃并提示错误，不影响之后的导出或删除。导出随后取得 userDataOperation 检查 pending 并完成同步 actor 快照；不在持有该操作时等待统计写入，避免相互等待。删除只在 drain 后检查仍然开着的阅读器，没有统计 discard 或重试批次。App 启动及新导出前回收旧 export-* / import-*，保护进行中的解包／导出、当前预览暂存和当前备份；系统分享复用 LibraryExport 的独立副本及完成回调，不让目录回收影响活跃分享。导入成功复用现有 received-data 通知刷新主题 snapshot。封面资产的实际摘要必须同时匹配 manifest 和 assets/<sha>.bin 文件名。
+数据管理页面、全量备份格式、安全限额与可重建缓存边界见[备份与清理](backup-and-cleanup.md)；事实合并和删除传播见[同步设计](sync.md#整书阅读数据删除与备份恢复)。

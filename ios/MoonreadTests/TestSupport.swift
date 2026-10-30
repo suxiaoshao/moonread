@@ -196,7 +196,7 @@ final class OfflineTestProtocol: URLProtocol, @unchecked Sendable {
   static func service(
     repository: AIRepository? = nil, defaults: UserDefaults? = nil,
     storefront: AIStorefrontSource = .fixed("USA"), auth: AIAuthentication? = nil,
-    reader: ReaderService = .shared,
+    reader: AppDataService = .shared,
     makeTransport: @escaping @Sendable () -> AITransport = {
       AITransport(configuration: TestAI.configuration())
     }

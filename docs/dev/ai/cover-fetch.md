@@ -47,7 +47,7 @@
 
 ### Rust 提取器（moonread-core）
 
-`cover_page.rs` 通过 UniFFI 导出：
+`reading/cover_page.rs` 通过 UniFFI 导出：
 
 ```
 extract_page_images(body: Vec<u8>, response_url: String, charset: Option<String>, title: Option<String>) -> Vec<String>

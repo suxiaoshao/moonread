@@ -442,13 +442,13 @@ struct AIEnvironmentResult: Codable, Sendable {
 }
 
 actor AIReadingTools {
-  private let reader: ReaderService
+  private let reader: AppDataService
   private struct Cursor: Codable {
     var signature: String
     var offset: Int
   }
   private let lineLimit: Int
-  init(reader: ReaderService = .shared, lineLimit: Int = 2000) {
+  init(reader: AppDataService = .shared, lineLimit: Int = 2000) {
     precondition((1...2000).contains(lineLimit))
     self.reader = reader; self.lineLimit = lineLimit
   }
@@ -1056,7 +1056,7 @@ actor AIReadingTools {
   }
 }
 
-extension ReaderService {
+extension AppDataService {
   func aiLibraryEntries(_ location: LibraryLocation, sort: LibrarySort) async throws
     -> [LibraryEntry]
   {
@@ -1120,7 +1120,7 @@ extension ReaderService {
   }
   private func aiPrepareUnshared(_ file: SourceFile) async throws -> ReadingLease {
     try await prepareSourceFile(file)
-    let lease = try openSourceFile(file, trackReadingSource: false)
+    let lease = try await openSourceFile(file, trackReadingSource: false)
     while true {
       try Task.checkCancellation()
       let state = try await snapshot(lease.id)

@@ -52,7 +52,7 @@ struct AIResultCard: View {
             .accessibilityIdentifier("aiResult-\(resultID)")
             .task(id: resultID) {
                 await ai.proposals.openResult(result)
-                if let shelves = try? await ReaderService.shared.shelves() { shelfNames = Dictionary(uniqueKeysWithValues: shelves.map { ($0.id, $0.name) }) }
+                if let shelves = try? await AppDataService.shared.shelves() { shelfNames = Dictionary(uniqueKeysWithValues: shelves.map { ($0.id, $0.name) }) }
             }
             .onDisappear { if !metadataSheet && !coverSheet { ai.proposals.closeResult(resultID) } }
             .sheet(isPresented: $metadataSheet) { AIMetadataResultReview(result: result).themeScope(theme) }
@@ -106,7 +106,7 @@ struct AIResultCard: View {
                 }
             }
             AIResultFeedback(resultID: resultID)
-            Divider()
+            ThemedDivider()
             HStack { Text("查看并应用"); Spacer(); Image(systemName: "chevron.right") }.font(.subheadline.weight(.semibold)).foregroundStyle(Color(uiColor: theme.accent))
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -122,7 +122,7 @@ struct AIResultCard: View {
                 }
             }
             AIResultFeedback(resultID: resultID)
-            Divider()
+            ThemedDivider()
             HStack { Text("选择封面"); Spacer(); Image(systemName: "chevron.right") }.font(.subheadline.weight(.semibold)).foregroundStyle(Color(uiColor: theme.accent))
         }.frame(maxWidth: .infinity, alignment: .leading)
     }

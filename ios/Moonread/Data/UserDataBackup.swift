@@ -126,7 +126,7 @@ enum BackupRows {
     static func valueKey(_ key: String) throws -> String? {
         let parts = key.split(separator: "/")
         guard let type = parts.first else { throw ReadingDataError.invalid }
-        if type == "palette" { return nil }
+        if type == "palette" || type == "source-decoding" { return nil }
         guard ["metadata", "chapter", "position"].contains(String(type)) else { throw ReadingDataError.updateRequired }
         guard parts.count >= 2 else { throw ReadingDataError.invalid }
         let book = String(parts[1]); _ = try parseReadingKey(value: book); return book
@@ -421,6 +421,23 @@ extension UserDataStore {
               let right = try? JSONSerialization.jsonObject(with: Data(b.utf8)) as? NSDictionary else { return false }
         return left.isEqual(right)
     }
+    /// Immutable value intake shared by backup import and upgrade candidates.
+    /// The existing value projection remains the only winner selection.
+    func mergeValueRecord(key: String, device: String, payload: String) throws {
+        let incoming = try UserSyncJSON.storedValue(payload, key: key)
+        _ = try value(key) // Unknown siblings remain isolated.
+        let old = try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate { $0.key == key }))
+        var exists = false
+        for row in old {
+            let parsed = try UserSyncJSON.storedValue(row.payload, key: key)
+            if parsed.token == incoming.token {
+                let same = key.hasPrefix("position/") ? try PositionCandidate.sameUpdate(parsed, incoming) : Self.samePayload(row.payload, payload)
+                guard same else { throw ReadingDataError.invalid }
+                exists = true
+            }
+        }
+        if !exists { modelContext.insert(UserValue(key: key, device: device, payload: payload)) }
+    }
     func mergeBackup(directory: URL, manifest: BackupManifest, beforeSave: @Sendable () throws -> Void = {}) throws {
         try transaction {
             // Final validation and every write/compaction share one save boundary.
@@ -429,18 +446,7 @@ extension UserDataStore {
                 try BackupRows.forEach(directory.appendingPathComponent("records/" + kind + ".jsonl")) { row in
                     switch kind {
                     case "values":
-                        let incoming = try UserSyncJSON.storedValue(row.payload, key: row.key)
-                        let key = row.key
-                        let old = try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate { $0.key == key }))
-                        var exists = false
-                        for value in old {
-                            let parsed = try UserSyncJSON.storedValue(value.payload, key: key)
-                            if parsed.token == incoming.token {
-                                let same = key.hasPrefix("position/") ? try PositionCandidate.sameUpdate(parsed, incoming) : Self.samePayload(value.payload, row.payload)
-                                guard same else { throw ReadingDataError.invalid }; exists = true
-                            }
-                        }
-                        if !exists { modelContext.insert(UserValue(key: row.key, device: row.device, payload: row.payload)) }
+                        try mergeValueRecord(key: row.key, device: row.device, payload: row.payload)
                     case "positions": try mergePositionRecord(key: row.key, payload: row.payload)
                     case "annotations": try mergeOperationRecord(key: row.key, id: row.id, mark: row.mark, payload: row.payload)
                     case "facts": try mergeFactRecord(key: row.key, id: row.id, payload: row.payload)

@@ -1,7 +1,630 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "全书进度": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Book progress"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"全书进度"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"全書進度"}}}},
+    "添加当前位置书签": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Bookmark This Position"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "為目前位置加入書籤"}}}},
+    "移除当前位置书签": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Remove This Bookmark"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "移除目前位置書籤"}}}},
+    "阅读资料": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Reading Materials"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "閱讀資料"}}}},
+    "目录、书签与批注": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Contents, Bookmarks & Annotations"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "目錄、書籤與批註"}}}},
+    "正在保存，请稍后重试": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Saving. Please try again shortly."}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "正在保存，请稍后重试"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "正在儲存，請稍後重試"}}}},
+    "放弃修改并打开": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Discard and Open"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "放弃修改并打开"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "放棄修改並打開"}}}},
+    "放弃未保存的修改并打开《%@》？": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Discard unsaved changes and open “%@”?"}}, "zh-Hans": {"stringUnit": {"state": "translated", "value": "放弃未保存的修改并打开《%@》？"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "放棄未儲存的修改並打開《%@》？"}}}},
+  "批注分类": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "批注分类"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Annotation Category"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "批註分類"
+        }
+      }
+    }
+  },
+  "关闭阅读工具": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "关闭阅读工具"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Close Reading Tools"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "關閉閱讀工具"
+        }
+      }
+    }
+  },
+  "刚刚": {
+    "localizations": {
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "刚刚"
+        }
+      },
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Just now"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "剛剛"
+        }
+      }
+    }
+  },
+  "有一个同名文件需要处理": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "A file with the same name needs attention"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "有一個同名檔案需要處理"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "有一个同名文件需要处理"
+        }
+      }
+    }
+  },
+  "本机与 iCloud 中都有这个文件。处理前，两处原件都会保留。": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "This file exists both on this device and in iCloud. Both originals will be kept until you choose how to proceed."
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "此裝置與 iCloud 中都有這個檔案。處理前，兩處原件都會保留。"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "本机与 iCloud 中都有这个文件。处理前，两处原件都会保留。"
+        }
+      }
+    }
+  },
+  "阅读数据仍然保留": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Your reading data is still here"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "閱讀資料仍然保留"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "阅读数据仍然保留"
+        }
+      }
+    }
+  },
+  "约 %llu%%": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "About %llu%%"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "約 %llu%%"
+        }
+      }
+    }
+  },
+  "不足 1%": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Less than 1%"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "不足 1%"
+        }
+      }
+    }
+  },
+  "读到全书 %@": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Read %@ of book"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "讀到全書 %@"
+        }
+      }
+    }
+  },
+  "本章覆盖 %@": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Chapter coverage %@"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "本章覆蓋 %@"
+        }
+      }
+    }
+  },
+  "本章覆盖尚未计算完成，不影响继续阅读。": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Chapter coverage is not ready yet. You can keep reading."
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "本章覆蓋尚未計算完成，不影響繼續閱讀。"
+        }
+      }
+    }
+  },
+  "清除本书阅读数据": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Clear This Book’s Reading Data"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "清除本書閱讀資料"
+        }
+      }
+    }
+  },
+  "不删除小说文件。删除会随阅读数据同步到其他设备。": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "The book file is kept. Deletions sync to other devices with reading data."
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "不刪除小說檔案。刪除會隨閱讀資料同步到其他裝置。"
+        }
+      }
+    }
+  },
+  "所选范围阅读": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reading in this period"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "所選範圍閱讀"
+        }
+      }
+    }
+  },
+  "当天阅读节奏": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reading rhythm for the day"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "當天閱讀節奏"
+        }
+      }
+    }
+  },
+  "按当天的时间顺序排列阅读时段。": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reading sessions in chronological order."
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "按當天的時間順序排列閱讀時段。"
+        }
+      }
+    }
+  },
+  "当天累计": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Day’s total"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "當天累計"
+        }
+      }
+    }
+  },
+  "阅读预览 · %lld pt": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reading preview · %lld pt"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "閱讀預覽 · %lld pt"
+        }
+      }
+    }
+  },
+  "配色与纹理": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Colors & Textures"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "配色與紋理"
+        }
+      }
+    }
+  },
+  "屏幕": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Screen"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "螢幕"
+        }
+      }
+    }
+  },
+  "减小": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Decrease"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "減小"
+        }
+      }
+    }
+  },
+  "增大": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Increase"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "增大"
+        }
+      }
+    }
+  },
+  "纹理与配色独立。选择保存在此设备。": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Textures are independent of colors. Your choice stays on this device."
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "紋理與配色獨立。選擇儲存在此裝置。"
+        }
+      }
+    }
+  },
+  "正文身份尚未确定": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Text identity is not yet available"
+        }
+      },
+      "zh-Hans": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "正文身份尚未确定"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "正文身分尚未確定"
+        }
+      }
+    }
+  },
+  "推理 %@": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reasoning %@"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "推理 %@"
+        }
+      }
+    }
+  },
+  "推理强度": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Reasoning Effort"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "推理強度"
+        }
+      }
+    }
+  },
+  "不支持该用途": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Not supported for this purpose"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "不支援此用途"
+        }
+      }
+    }
+  },
+  "未登录": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Not signed in"
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "未登入"
+        }
+      }
+    }
+  },
+  "按用途选择默认模型，具体对话仍可单独更换。": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Choose defaults by purpose. Individual conversations can use a different model."
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "按用途選擇預設模型，個別對話仍可單獨更換。"
+        }
+      }
+    }
+  },
+  "%lld 个模型": {
+    "localizations": {
+      "en": {
+        "variations": {
+          "plural": {
+            "one": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%lld model"
+              }
+            },
+            "other": {
+              "stringUnit": {
+                "state": "translated",
+                "value": "%lld models"
+              }
+            }
+          }
+        }
+      },
+      "zh-Hant": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "%lld 個模型"
+        }
+      }
+    }
+  },
+    "识别未完成": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Recognition Incomplete"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"識別未完成"}}}},
+    "处理": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Manage"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"處理"}}}},
+    "最大输出不能超过上下文容量。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Maximum output must not exceed the context capacity."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"最大輸出不能超過上下文容量。"}}}},
+    "账户目录未提供容量，请按服务说明填写。这是你配置的上下文预算，不代表服务端确认的模型上限。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The account catalog does not provide a capacity. Enter a budget based on the service documentation; this does not confirm the server’s model limit."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"帳戶目錄未提供容量，請按服務說明填寫。這是你設定的上下文預算，不代表伺服器確認的模型上限。"}}}},
+    "暂时无法读取对话": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Couldn’t Load Conversations"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"暫時無法讀取對話"}}}},
+    "正在读取对话": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Loading conversations"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在讀取對話"}}}},
+    "搜索暂时失败": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Search Failed"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"搜尋暫時失敗"}}}},
+    "识别完成": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Recognition Complete"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"識別完成"}}}},
+    "正在识别目录": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Recognizing chapters"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在識別目錄"}}}},
+    "重新选择原来的文件夹，即可恢复对此书架的访问。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Select the original folder again to restore access to this bookshelf."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"重新選擇原來的資料夾，即可恢復對此書架的存取。"}}}},
+    "还没有连接": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"No Connections Yet"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"還沒有連線"}}}},
+    "添加一个 AI 连接后，选择用于对话和工具的模型。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Add an AI connection, then choose models for conversations and tools."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"新增 AI 連線後，選擇用於對話和工具的模型。"}}}},
+    "模型目录尚未加载": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Model catalog not loaded yet"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"模型目錄尚未載入"}}}},
+    "正在加载模型": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Loading models"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在載入模型"}}}},
+    "绘图模型由服务决定。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The service chooses the image model."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"繪圖模型由服務決定。"}}}},
+    "同步进度、书签、批注、小说信息、配色方案、手选编码和阅读统计。显示与阅读偏好留在此设备；此开关不控制小说文件。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sync reading positions, bookmarks, notes, book information, palettes, selected encodings, and reading statistics. Display and reading preferences stay on this device. This switch does not control book files."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"同步進度、書籤、批註、小說資訊、配色方案、手選編碼和閱讀統計。顯示與閱讀偏好留在此裝置；此開關不控制小說檔案。"}}}},
+    "有 %lld 个书架需要重新连接": {"localizations":{"en":{"variations":{"plural":{"one":{"stringUnit":{"state":"translated","value":"%lld bookshelf needs reconnecting"}},"other":{"stringUnit":{"state":"translated","value":"%lld bookshelves need reconnecting"}}}}},"zh-Hant":{"stringUnit":{"state":"translated","value":"有 %lld 個書架需要重新連接"}}}},
+    "已启用 %lld 个模型": {"localizations":{"en":{"variations":{"plural":{"one":{"stringUnit":{"state":"translated","value":"%lld model enabled"}},"other":{"stringUnit":{"state":"translated","value":"%lld models enabled"}}}}},"zh-Hant":{"stringUnit":{"state":"translated","value":"已啟用 %lld 個模型"}}}},
+    "跳过去": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Jump There"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"跳過去"}}}},
+    "同步进度": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Synced Position"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"同步進度"}}}},
+    "已同步到%@（约 %@%%）": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Synced to %@ (about %@%%)"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"已同步到%@（約 %@%%）"}}}},
+    "已同步到约 %@%%": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Synced to about %@%%"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"已同步到約 %@%%"}}}},
     "无": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"None"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"無"}}}},
+    "正在准备系统搜索…": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Preparing system search…"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"正在准备系统搜索…"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在準備系統搜尋…"}}}},
+    "正在提交系统搜索：%lld / %lld 本": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Updating system search: %1$lld / %2$lld"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"正在提交系统搜索：%lld / %lld 本"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在提交系統搜尋：%lld / %lld 本"}}}},
+    "系统搜索已关闭。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"System search is off."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"系统搜索已关闭。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"系統搜尋已關閉。"}}}},
+    "系统搜索提交失败，请重试。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"System search could not be updated. Try again."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"系统搜索提交失败，请重试。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"系統搜尋提交失敗，請重試。"}}}},
+    "已向系统搜索提交 %lld 本，等待系统处理。": {"localizations":{"en":{"variations":{"plural":{"one":{"stringUnit":{"state":"translated","value":"Submitted %lld book to system search. Waiting for iOS to process it."}},"other":{"stringUnit":{"state":"translated","value":"Submitted %lld books to system search. Waiting for iOS to process them."}}}}},"zh-Hans":{"stringUnit":{"state":"translated","value":"已向系统搜索提交 %lld 本，等待系统处理。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"已向系統搜尋提交 %lld 本，等待系統處理。"}}}},
+    "月读 · %@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Moonread · %@"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"月读 · %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"月讀 · %@"}}}},
+    "记录已暂停": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Recording paused"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"记录已暂停"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"記錄已暫停"}}}},
+    "连续": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Streak"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"连续"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"連續"}}}},
+    "打开月读更新统计": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Open Moonread to refresh statistics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"打开月读更新统计"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"打開月讀更新統計"}}}},
+    "需更新月读": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Update Moonread"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"需更新月读"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"請更新月讀"}}}},
+    "统计暂不可用": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Statistics unavailable"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"统计暂不可用"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"統計暫不可用"}}}},
+    "打开月读开启阅读统计": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Open Moonread to enable reading statistics"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"打开月读开启阅读统计"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"打開月讀開啟閱讀統計"}}}},
+    "按最近阅读顺序": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Most recently read first"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"按最近阅读顺序"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"按最近閱讀順序"}}}},
+    "查看全部 ›": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"See all ›"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"查看全部 ›"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"查看全部 ›"}}}},
+    "从最近阅读的小说中，选一本接着读。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Choose a recently read book and carry on."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"从最近阅读的小说中，选一本接着读。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"從最近閱讀的小說中，選一本接著讀。"}}}},
+    "今天、本周、连续阅读与最近七天。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Today, this week, your streak, and the last seven days."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"今天、本周、连续阅读与最近七天。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"今天、本週、連續閱讀與最近七天。"}}}},
+    "长街慢行": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"A Walk Along the Street"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"长街慢行"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"長街慢行"}}}},
+    "海边邮局": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The Seaside Post Office"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"海边邮局"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"海邊郵局"}}}},
+    "沿河而行": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Along the River"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"沿河而行"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"沿河而行"}}}},
+    "第十二章": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Chapter 12"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"第十二章"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"第十二章"}}}},
+    "长按主屏幕或锁屏，添加月读小组件。可选继续阅读、最近阅读和阅读统计；继续阅读可显示最近一本或指定书籍。锁屏与待机沿用系统支持的布局。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Touch and hold the Home Screen or Lock Screen to add Moonread widgets. Choose Continue Reading, Recent Reading, or Reading Statistics. Continue Reading shows your latest book or a selected book. Lock Screen and StandBy use supported system layouts."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"长按主屏幕或锁屏，添加月读小组件。可选继续阅读、最近阅读和阅读统计；继续阅读可显示最近一本或指定书籍。锁屏与待机沿用系统支持的布局。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"長按主畫面或鎖定畫面，加入月讀小工具。可選繼續閱讀、最近閱讀和閱讀統計；繼續閱讀可顯示最近一本或指定書籍。鎖定畫面與待機沿用系統支援的佈局。"}}}},
+    "%llu 天": {"localizations":{"en":{"variations":{"plural":{"one":{"stringUnit":{"state":"translated","value":"%llu day"}},"other":{"stringUnit":{"state":"translated","value":"%llu days"}}}}},"zh-Hans":{"stringUnit":{"state":"translated","value":"%llu 天"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"%llu 天"}}}},
+    "关键词": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"关键词"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"關鍵詞"}},"en":{"stringUnit":{"state":"translated","value":"Keywords"}}}},
+    "使用已识别书籍的书名、作者、标签、封面及章节和进度，不索引正文。读过的书可出现在系统续读建议中。排除书架不会影响在快捷指令或小组件中主动选书。": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"使用已识别书籍的书名、作者、标签、封面及章节和进度，不索引正文。读过的书可出现在系统续读建议中。排除书架不会影响在快捷指令或小组件中主动选书。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"使用已識別書籍的書名、作者、標籤、封面及章節和進度，不索引正文。讀過的書可出現在系統續讀建議中。排除書架不會影響在捷徑或小工具中主動選書。"}},"en":{"stringUnit":{"state":"translated","value":"Uses recognized books’ titles, authors, tags, covers, chapters, and progress, without indexing the text. Books you have read may appear in system suggestions. Excluded shelves remain available when you choose a book in Shortcuts or widgets."}}}},
+    "可用“继续阅读”“我的书架”“搜索书籍”“阅读统计”和“打开书籍”。搜索可带关键词，统计可回答今天或本周的阅读时长。也可以在支持的控制中心、锁屏或操作按钮中添加“继续阅读”。": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"可用“继续阅读”“我的书架”“搜索书籍”“阅读统计”和“打开书籍”。搜索可带关键词，统计可回答今天或本周的阅读时长。也可以在支持的控制中心、锁屏或操作按钮中添加“继续阅读”。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"可用「繼續閱讀」「我的書架」「搜尋書籍」「閱讀統計」和「打開書籍」。搜尋可帶關鍵詞，統計可回答今天或本週的閱讀時長。也可以在支援的控制中心、鎖定畫面或動作按鈕中加入「繼續閱讀」。"}},"en":{"stringUnit":{"state":"translated","value":"Use Continue Reading, My Bookshelf, Search Books, Reading Statistics, and Open Book. Search accepts optional keywords; statistics reports today’s or this week’s reading time. You can also add Continue Reading to supported Control Center, Lock Screen, or Action button controls."}}}},
+    "请先打开月读，刷新可用书籍。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Open Moonread to refresh available books."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"请先打开月读，刷新可用书籍。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"請先打開月讀，重新整理可用書籍。"}}}},
+    "小组件内容": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Widget Content"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"小组件内容"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"小工具內容"}}}},
+    "指定书籍": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Selected Book"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"指定书籍"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"指定書籍"}}}},
+    "选择最近阅读，或指定一本已识别的书。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show your recent book or choose an identified book."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"选择最近阅读，或指定一本已识别的书。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"選擇最近閱讀，或指定一本已識別的書。"}}}},
+    "显示内容": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Content"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"显示内容"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"顯示內容"}}}},
+    "显示 %@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show %@"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"显示 %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"顯示 %@"}}}},
+    "显示最近阅读": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show Recent Book"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"显示最近阅读"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"顯示最近閱讀"}}}},
+    "显示书名和进度，点一下接着读。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show the title and progress. Tap to continue reading."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"显示书名和进度，点一下接着读。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"顯示書名和進度，點一下接著讀。"}}}},
+    "打开月读继续阅读": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Open Moonread to Read"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"打开月读继续阅读"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"打開月讀繼續閱讀"}}}},
+    "打开月读查找此书": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Open Moonread to Find This Book"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"打开月读查找此书"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"打開月讀尋找此書"}}}},
+    "月下归舟": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Moonlit Crossing"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"月下归舟"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"月下歸舟"}}}},
+    "小组件": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Widgets"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"小组件"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"小工具"}}}},
+    "小组件合成示例：月下归舟，42%": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Synthetic widget example: Moonlit Crossing, 42%"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"小组件合成示例：月下归舟，42%"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"小工具合成範例：月下歸舟，42%"}}}},
+    "长按主屏幕或锁屏，添加月读小组件；待机沿用系统支持的布局。在小组件配置中选择最近阅读或指定书籍，默认显示书名和进度。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Touch and hold the Home or Lock Screen to add a Moonread widget. StandBy uses supported system layouts. Configure a recent or selected book; widgets show its title and progress."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"长按主屏幕或锁屏，添加月读小组件；待机沿用系统支持的布局。在小组件配置中选择最近阅读或指定书籍，默认显示书名和进度。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"長按主畫面或鎖定畫面，加入月讀小工具；待機沿用系統支援的版面。在小工具設定中選擇最近閱讀或指定書籍，預設顯示書名和進度。"}}}},
+    "在系统搜索中显示书籍": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show Books in System Search"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"在系统搜索中显示书籍"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"在系統搜尋中顯示書籍"}}}},
+    "排除的书架": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Excluded Shelves"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"排除的书架"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"排除的書架"}}}},
+    "系统搜索与建议": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"System Search and Suggestions"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"系统搜索与建议"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"系統搜尋與建議"}}}},
+    "只使用已识别书籍的书名、作者和标签，不索引正文。读过的书可出现在系统续读建议中。排除书架不会影响在快捷指令或小组件中主动选书。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Only titles, authors, and tags of identified books are used; book text is never indexed. Books you read may appear in system suggestions. Excluding a shelf does not prevent choosing its books in shortcuts or widgets."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"只使用已识别书籍的书名、作者和标签，不索引正文。读过的书可出现在系统续读建议中。排除书架不会影响在快捷指令或小组件中主动选书。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"只使用已識別書籍的書名、作者和標籤，不索引正文。讀過的書可出現在系統續讀建議中。排除書架不會影響在捷徑或小工具中主動選書。"}}}},
+    "可用“继续阅读”“打开书籍”和“查看阅读统计”；统计可回答今天或本周的阅读时长。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Use Continue Reading, Open Book, and Reading Statistics. Ask for your reading time today or this week."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"可用“继续阅读”“打开书籍”和“查看阅读统计”；统计可回答今天或本周的阅读时长。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"可用「繼續閱讀」「打開書籍」和「查看閱讀統計」；統計可回答今天或本週的閱讀時間。"}}}},
+    "Siri 与快捷指令": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Siri and Shortcuts"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"Siri 与快捷指令"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"Siri 與捷徑"}}}},
+    "也可以在支持的控制中心、锁屏或操作按钮中添加“继续阅读”。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"You can also add Continue Reading to supported Control Center, Lock Screen, or Action Button controls."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"也可以在支持的控制中心、锁屏或操作按钮中添加“继续阅读”。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"也可以在支援的控制中心、鎖定畫面或動作按鈕中加入「繼續閱讀」。"}}}},
+    "系统集成": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"System Integration"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"系统集成"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"系統整合"}}}},
+    "系统搜索、快捷指令、小组件": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Search, Shortcuts, Widgets"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"系统搜索、快捷指令、小组件"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"系統搜尋、捷徑、小工具"}}}},
+    "月读页面": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Moonread destination"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"月读页面"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"月讀頁面"}}}},
+    "打开月读": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Open Moonread"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"打开月读"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"打開月讀"}}}},
+    "打开书籍": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Open Book"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"打开书籍"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"打開書籍"}}}},
+    "打开 %@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Open %@"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"打开 %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"打開 %@"}}}},
+    "正在打开《%@》。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Opening “%@”."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"正在打开《%@》。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在打開《%@》。"}}}},
+    "统计时段": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Statistics Period"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"统计时段"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"統計時段"}}}},
+    "本周": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"This Week"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"本周"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"本週"}}}},
+    "时段": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Period"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"时段"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"時段"}}}},
+    "查看 %@ 的阅读统计": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading statistics for %@"}},"zh-Hans":{"stringUnit":{"state":"translated","value":"查看 %@ 的阅读统计"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"查看 %@ 的閱讀統計"}}}},
+    "正在打开月读继续阅读。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Opening Moonread to continue reading."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"正在打开月读继续阅读。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在打開月讀繼續閱讀。"}}}},
+    "打开月读，接着读最近的一本书。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Open Moonread and continue your most recent book."}},"zh-Hans":{"stringUnit":{"state":"translated","value":"打开月读，接着读最近的一本书。"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"打開月讀，接著讀最近的一本書。"}}}},
     "部分统计暂不可用": {"localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"部分统计暂不可用"}},"en":{"stringUnit":{"state":"translated","value":"Some statistics are temporarily unavailable"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"部分統計暫時無法使用"}}}},
     "书架与数据": {"extractionState":"manual","localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"书架与数据"}},"en":{"stringUnit":{"state":"translated","value":"Bookshelves & Data"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"書架與資料"}}}},
     "外观与语言": {"extractionState":"manual","localizations":{"zh-Hans":{"stringUnit":{"state":"translated","value":"外观与语言"}},"en":{"stringUnit":{"state":"translated","value":"Appearance & Language"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"外觀與語言"}}}},

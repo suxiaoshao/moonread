@@ -6,7 +6,7 @@ import Foundation
     private let store: AIAgentStore
     private let providers: AIConnectionService
     private let proposals: AIProposalRegistry
-    private let reader: ReaderService
+    private let reader: AppDataService
     private let makeTransport: @Sendable () -> AITransport
     private var sessions: [String: AIAgentRuntime] = [:]
     private struct Construction { let id: UUID; let work: Task<AIAgentRuntime, Error> }
@@ -14,7 +14,7 @@ import Foundation
     private let entriesCommitted: @MainActor (String, [AIAgentEntry], AIAgentHead) -> Void
     private let isOpen: @MainActor (String) -> Bool
     typealias Selection = AIAgentSelection
-    init(repository: AIRepository, providers: AIConnectionService, reader: ReaderService = .shared, proposals: AIProposalRegistry, isOpen: @escaping @MainActor (String) -> Bool = { _ in true }, entriesCommitted: @escaping @MainActor (String, [AIAgentEntry], AIAgentHead) -> Void = { _, _, _ in }, makeTransport: @escaping @Sendable () -> AITransport = { AITransport() }) {
+    init(repository: AIRepository, providers: AIConnectionService, reader: AppDataService = .shared, proposals: AIProposalRegistry, isOpen: @escaping @MainActor (String) -> Bool = { _ in true }, entriesCommitted: @escaping @MainActor (String, [AIAgentEntry], AIAgentHead) -> Void = { _, _, _ in }, makeTransport: @escaping @Sendable () -> AITransport = { AITransport() }) {
         store = AIAgentStore(repository: repository); self.providers = providers; self.reader = reader
         self.proposals = proposals; self.makeTransport = makeTransport; self.isOpen = isOpen; self.entriesCommitted = entriesCommitted
         proposals.history = { [store] id in try await store.all(id) }

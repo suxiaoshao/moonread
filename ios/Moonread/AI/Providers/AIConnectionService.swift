@@ -74,8 +74,11 @@ enum AIConnectionState: Equatable {
             var second = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection(); second.id = "fixture-second"; second.name = "测试连接乙"
             second.models = [AIModelOption(id: "shared", name: "Same Model", thinking: [], defaultThinking: nil)]
             second.modelID = "shared"
-            connections = [first, second]; defaultTextConnectionID = first.id
-            authenticatedConnections = [first.id, second.id]
+            var image = AIProviderPreset.all.first { $0.id == "google" }!.connection()
+            image.id = "fixture-image"; image.name = "测试绘图连接"
+            image.models = [AIModelOption(id: "image", name: "Image Model", thinking: [], capabilities: .init(text: false, imageOutput: true))]
+            connections = [first, second, image]; defaultTextConnectionID = first.id
+            authenticatedConnections = [first.id, second.id, image.id]
         }
         if arguments.contains("--ui-testing"), session != nil, arguments.contains("--ui-test-ai-key-write-failure") {
             var connection = AIConnection(name: "离线密钥连接", billing: .usage, baseURL: "https://example.com", providerID: "fixture", providerName: "Fixture", wireProtocol: .chat, authMethod: .apiKey)

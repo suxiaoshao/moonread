@@ -2,10 +2,14 @@ import Foundation
 import SwiftUI
 
 extension ChapterEntry {
-    var coverageLabel: String {
+    var coverageLabel: String { coverageLabel(readingPrefix: true) }
+    func coverageLabel(readingPrefix: Bool) -> String {
         guard countComplete, wordCount > 0, let coveredCharacters else { return "—" }
-        if coveredCharacters > 0, coveredCharacters * 100 < wordCount { return String(localized: "已读不足 1%") }
-        return String(localized: "已读约 \(min(100, coveredCharacters * 100 / wordCount))%")
+        if coveredCharacters > 0, coveredCharacters * 100 < wordCount {
+            return readingPrefix ? String(localized: "已读不足 1%") : String(localized: "不足 1%")
+        }
+        let percentage = min(100, coveredCharacters * 100 / wordCount)
+        return readingPrefix ? String(localized: "已读约 \(percentage)%") : String(localized: "约 \(percentage)%")
     }
     /// The chapter list's caption omits coverage only when a fully counted chapter has
     /// none recorded; unknown, partial and under-1% values keep their wording.
@@ -20,7 +24,7 @@ extension Notification.Name {
     static let statisticsPreferencesChanged = Notification.Name("Moonread.statisticsPreferencesChanged")
 }
 
-extension ReaderService {
+extension AppDataService {
     func statisticsPreferences() -> StatisticsPreferences {
         ReaderOpenDiagnostics.background("statisticsPreferences.actor.begin"); defer { ReaderOpenDiagnostics.background("statisticsPreferences.actor.return") }
         return StatisticsPreferences(enabled: sourceDefaults.object(forKey: "Moonread.statisticsEnabled") as? Bool ?? true, generation: UInt64(sourceDefaults.integer(forKey: "Moonread.statisticsGeneration")))
@@ -31,6 +35,7 @@ extension ReaderService {
         try await userStore(pending: true).setRecording(generation: generation, enabled: enabled)
         sourceDefaults.set(enabled, forKey: "Moonread.statisticsEnabled")
         sourceDefaults.set(Int(generation), forKey: "Moonread.statisticsGeneration")
+        scheduleSystemReadingCatalog(statisticsChanged: true)
         NotificationCenter.default.post(name: .statisticsPreferencesChanged, object: nil)
     }
     func saveReading(_ slices: [ReadingSlice], generation: UInt64) async throws {
@@ -51,6 +56,7 @@ extension ReaderService {
         pendingFacts = pendingFacts.filter { leases[$0.1] == localReadingWriteLease($0.1) }
         try await userStore().saveFacts(facts, generation: generation, current: preferences.generation, enabled: preferences.enabled)
         try await userStore(pending: true).saveFacts(pendingFacts, generation: generation, current: preferences.generation, enabled: preferences.enabled)
+        scheduleSystemReadingCatalog(statisticsChanged: true)
         NotificationCenter.default.post(name: .statisticsChanged, object: nil)
     }
     func statistics(first: Int64, last: Int64, book: String? = nil) async throws -> StatisticsOverview {
@@ -86,7 +92,9 @@ extension ReaderService {
         try await userStore().clear(book: book, session: session, newGeneration: generation)
         try await userStore(pending: true).clear(book: book, session: session, newGeneration: generation)
         sourceDefaults.set(Int(generation), forKey: "Moonread.statisticsGeneration")
+        scheduleSystemReadingCatalog(statisticsChanged: true)
         NotificationCenter.default.post(name: .statisticsPreferencesChanged, object: nil)
+        scheduleSystemReadingCatalog(statisticsChanged: true)
         NotificationCenter.default.post(name: .statisticsChanged, object: nil)
     }
 }
@@ -97,7 +105,7 @@ final class StatisticsWriter {
     static let shared = StatisticsWriter()
     private let save: @MainActor ([ReadingSlice], UInt64) async throws -> Void
     init(save: @escaping @MainActor ([ReadingSlice], UInt64) async throws -> Void = { slices, generation in
-        try await ReaderService.shared.saveReading(slices, generation: generation)
+        try await AppDataService.shared.saveReading(slices, generation: generation)
     }) { self.save = save }
     private var task: Task<Void, Never>?
     private(set) var error: String?
@@ -164,7 +172,7 @@ final class ReadingActivityRecorder {
     private(set) var effectiveReadingMilliseconds: UInt64 = 0
 
     convenience init(writer: StatisticsWriter = .shared, preferences: @escaping @MainActor () async throws -> StatisticsPreferences = {
-        await ReaderService.shared.statisticsPreferences()
+        await AppDataService.shared.statisticsPreferences()
     }) { self.init(writer: writer, time: { .current() }, preferences: preferences) }
 
     init(writer: StatisticsWriter, time: @escaping @MainActor () -> ReadingActivityTime,
@@ -275,6 +283,11 @@ final class ReadingActivityRecorder {
 }
 
 enum StatisticsDates {
+    static func systemReadingBounds(week: Bool, now: Date, calendar: Calendar) -> ClosedRange<Int64> {
+        let today = day(now, calendar: calendar)
+        let start = week ? calendar.dateInterval(of: .weekOfYear, for: now)!.start : now
+        return day(start, calendar: calendar)...today
+    }
     static var civilCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
@@ -337,13 +350,13 @@ enum StatisticsDates {
 }
 
 #if DEBUG
-extension ReaderService {
+extension AppDataService {
     /// Synthetic events live exclusively in the isolated UI-test store.
-    func createStatisticsFixture() async throws {
+    func createStatisticsFixture(bookID: String? = nil) async throws {
         guard testSession != nil else { return }
         let core = try textCore(), now = Date()
         guard try await statistics(first: 0, last: 100_000).books.isEmpty else { return }
-        let entries = try core.sourceFiles(shelfId: "builtin").filter { $0.bookId != nil }.prefix(3)
+        let entries = try core.sourceFiles(shelfId: "builtin").filter { $0.bookId != nil && (bookID == nil || $0.bookId == bookID) }.prefix(3)
         for (index, entry) in entries.enumerated() {
             guard let id = entry.bookId else { continue }
             for daysAgo in [0, 1, 3, 5, 9] {

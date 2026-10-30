@@ -76,8 +76,8 @@ struct ReaderProgressControls: View {
             session.synchronizeHistory()
             guard let id = session.readingID else { return }
             do {
-                let previous = try await ReaderService.shared.adjacentChapter(id, offset: session.anchor, forward: false)
-                let next = try await ReaderService.shared.adjacentChapter(id, offset: session.anchor, forward: true)
+                let previous = try await AppDataService.shared.adjacentChapter(id, offset: session.anchor, forward: false)
+                let next = try await AppDataService.shared.adjacentChapter(id, offset: session.anchor, forward: true)
                 guard !Task.isCancelled else { return }
                 self.previous = previous; self.next = next
             } catch { if !Task.isCancelled { self.error = ReaderMessages.error(error) } }
@@ -86,7 +86,7 @@ struct ReaderProgressControls: View {
             guard scrubbing, let id = session.readingID, !session.incomplete else { return }
             do {
                 try await Task.sleep(for: .milliseconds(60))
-                let target = try await ReaderService.shared.location(id, percentage: percentage)
+                let target = try await AppDataService.shared.location(id, percentage: percentage)
                 if !Task.isCancelled { preview = target }
             } catch is CancellationError {} catch { if !Task.isCancelled { self.error = ReaderMessages.error(error) } }
         }
@@ -105,7 +105,7 @@ struct ReaderProgressControls: View {
         locationTask = Task {
             defer { locating = false }
             do {
-                let value = try await ReaderService.shared.location(id, percentage: percentage)
+                let value = try await AppDataService.shared.location(id, percentage: percentage)
                 guard !session.isLeaving, !Task.isCancelled else { return }
                 jump(value.offsetUtf8)
             } catch { self.error = ReaderMessages.error(error) }

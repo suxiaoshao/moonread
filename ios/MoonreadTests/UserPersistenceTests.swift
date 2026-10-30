@@ -13,7 +13,7 @@ final class UserPersistenceReaderIntegrationTests: ReaderIntegrationFixture {
   @MainActor func testLibraryInitializationRetriesAndConcurrentCallersWait() async throws {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
-    let service = ReaderService(
+    let service = AppDataService(
       core: try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path),
       libraryDirectory: directory.appendingPathComponent("books"))
     let entered = expectation(description: "Retry is preparing")
@@ -50,7 +50,7 @@ final class UserPersistenceReaderIntegrationTests: ReaderIntegrationFixture {
 
       for pending in [false, true] {
         let probe = BootstrapProbe(store: try makeInMemoryUserStore())
-        let service = ReaderService(userStoreFactory: { name, cloud in
+        let service = AppDataService(userStoreFactory: { name, cloud in
           try await probe.make(name, cloud: cloud)
         })
         let first = Task { try await service.userStore(pending: pending) }
@@ -180,7 +180,7 @@ final class UserPersistenceUserDataTests: UserDataFixture {
   // S475: 旧初始化失败不能清掉替换存储或回退新云配置；正式/pending 各一个入口共用断言。
   func testOldFailureCannotClearReplacementOrRevertCloudConfiguration() async throws {
     let probe = BootstrapProbe(store: try store())
-    let service = ReaderService(
+    let service = AppDataService(
       sourceDefaultsSuite: "Bootstrap-\(UUID().uuidString)",
       userStoreFactory: { name, cloud in try await probe.make(name, cloud: cloud) })
     let old = Task { try await service.configureUserCloud(true, account: "fixture") }
@@ -200,7 +200,7 @@ final class UserPersistenceUserDataTests: UserDataFixture {
     do {
 
       let probe = BootstrapProbe(store: try store())
-      let service = ReaderService(userStoreFactory: { name, cloud in
+      let service = AppDataService(userStoreFactory: { name, cloud in
         try await probe.make(name, cloud: cloud)
       })
       let old = Task { try await service.userStore(pending: true) }

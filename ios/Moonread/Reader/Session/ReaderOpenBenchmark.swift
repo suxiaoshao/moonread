@@ -15,7 +15,7 @@ final class ReaderOpenBenchmark {
             return
         }
         do {
-            let service = ReaderService.shared
+            let service = AppDataService.shared
             let core = try await service.textCore()
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("ReaderOpenFixture-" + session)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

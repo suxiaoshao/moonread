@@ -3,6 +3,7 @@ import AISDKProvider
 import AISDKProviderUtils
 
 struct AIConversationsView: View {
+    @Environment(LibraryModel.self) private var library
     @Environment(AIService.self) private var ai
     @Environment(\.theme) private var theme
     @State private var path = NavigationPath()
@@ -11,7 +12,7 @@ struct AIConversationsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
-                if let error = ai.error {
+                if !ai.conversations.isEmpty, let error = ai.error {
                     HStack(spacing: LayoutTokens.compact) {
                         Label(error, systemImage: "exclamationmark.circle").font(.footnote)
                             .foregroundStyle(Color(uiColor: theme.destructive))
@@ -27,18 +28,25 @@ struct AIConversationsView: View {
                 }.onDelete { offsets in for id in offsets.map({ ai.conversations[$0].id }) { ai.delete(id) } }
             }.listStyle(.plain).themedPage().navigationTitle("对话")
                 .overlay {
-                    if ai.loaded && ai.conversations.isEmpty {
-                        VStack(spacing: LayoutTokens.control) {
-                            MoonView(size: 56)
-                            Text("还没有对话").foregroundStyle(Color(uiColor: theme.secondary))
-                        }.allowsHitTesting(false)
+                    if ai.conversations.isEmpty {
+                        if let error = ai.error {
+                            ContentUnavailableView {
+                                Label("暂时无法读取对话", systemImage: "exclamationmark.bubble")
+                            } description: { Text(error).foregroundStyle(Color(uiColor: theme.secondary)) } actions: {
+                                Button("重试") { Task { await ai.load() } }.buttonStyle(ThemedProminentButtonStyle())
+                            }.accessibilityIdentifier("aiConversationLoadError")
+                        } else if ai.loaded {
+                            VStack(spacing: LayoutTokens.control) {
+                                MoonView(size: 56)
+                                Text("还没有对话").foregroundStyle(Color(uiColor: theme.secondary))
+                            }.allowsHitTesting(false)
+                        } else { LoadingActivity(fullPage: true, waitingLabel: "正在读取对话") }
                     }
                 }
                 .toolbar {
-                    ToolbarItem(placement: .topBarLeading) { NavigationLink { AISettingsView() } label: { Label("AI 助手", systemImage: "slider.horizontal.3") }.toolbarGlyph().accessibilityIdentifier("aiAssistantSettings") }
+                    ToolbarItem(placement: .topBarLeading) { Button { library.openSettings(target: .ai) } label: { Label("AI 助手", systemImage: "slider.horizontal.3") }.toolbarGlyph().accessibilityIdentifier("aiAssistantSettings") }
                     ToolbarItemGroup(placement: .topBarTrailing) {
                         Button("新对话", systemImage: "square.and.pencil") { Task { if let value = await ai.openDraft() { path.append(value.id) } } }.toolbarGlyph().accessibilityIdentifier("newAIConversation")
-                        AppSettingsLink()
                     }
                 }
                 .navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
@@ -535,8 +543,8 @@ private struct AIReadingObjectPicker: View {
         loaded = false; error = nil
         do {
             var result: [AIReadingAttachment] = []; var seen = Set<String>()
-            for shelf in try await ReaderService.shared.shelves() {
-                for row in try await ReaderService.shared.aiLibraryBooks(shelf.id) {
+            for shelf in try await AppDataService.shared.shelves() {
+                for row in try await AppDataService.shared.aiLibraryBooks(shelf.id) {
                     let bookRef = (row.metadata?.sha).flatMap { (try? parseSha256(value: $0)) != nil ? AIReadingTools.bookRef($0) : nil }
                     let fileRef = AIReadingTools.ref("f", row.id)
                     guard seen.insert(bookRef ?? fileRef).inserted else { continue }
@@ -594,7 +602,7 @@ private struct AIReadingMarkPicker: View {
 
         do {
             guard let ref = book.bookRef else { loaded = true; return }
-            let groups = try await ReaderService.shared.aiMarks(sha: String(ref.dropFirst(2)))
+            let groups = try await AppDataService.shared.aiMarks(sha: String(ref.dropFirst(2)))
             items = groups.compactMap { id, heads in
                 let live = heads.filter { $0.content != nil }
                 guard let first = live.first, let content = first.content, first.bookmark == (kind == .bookmark) else { return nil }

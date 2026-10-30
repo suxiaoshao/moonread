@@ -14,8 +14,9 @@ struct IdentityInventory: Sendable {
     var cloudBytes: UInt64 { pending.filter(\.needsDownload).reduce(0) { $0 + $1.size } }
 }
 
-extension ReaderService {
-    func identityInventory(_ shelfID: String, scannedOnly: Bool = false) throws -> IdentityInventory {
+extension AppDataService {
+    func identityInventory(_ shelfID: String, scannedOnly: Bool = false) async throws -> IdentityInventory {
+        try await refreshIndexedSourceDecodings(shelfID)
         let core = try textCore()
         let value = try core.libraryIdentityInventory(shelfId: shelfID)
         return try IdentityInventory(shelf: libraryShelf(shelfID), total: Int(clamping: value.total), pending: value.pending,
@@ -24,24 +25,20 @@ extension ReaderService {
     func identityCore() throws -> ReaderCore { try textCore() }
 }
 
-/// One coordinated read; cancellation is shared with the Rust bounded decoder.
+/// Coordinated hash and decode surround the single synced policy resolution.
 private final class IdentityFileWork: @unchecked Sendable {
-    let probe = SourceIdentityProbe()
-    let coordinator = NSFileCoordinator()
+    let read = SourceDecodingRead()
     private let cancellation = OSAllocatedUnfairLock(initialState: false)
     var isCancelled: Bool { cancellation.withLock { $0 } }
-    func cancel() { cancellation.withLock { $0 = true }; probe.cancel(); coordinator.cancel() }
-    func run(file: SourceFileSnapshot, shelf: LibraryShelf, core: ReaderCore, includeCloud: Bool) async throws {
+    func cancel() { cancellation.withLock { $0 = true }; read.cancel() }
+    func run(file: SourceFileSnapshot, shelf: LibraryShelf, core: ReaderCore, includeCloud: Bool, service: AppDataService) async throws {
         try await withTaskCancellationHandler {
             try await Task.detached(priority: .utility) { [self] in
                 try Task.checkCancellation()
-                var stale = false
-                let root = try URL(resolvingBookmarkData: Data(shelf.bookmark), options: .withoutUI, bookmarkDataIsStale: &stale)
-                let scoped = root.startAccessingSecurityScopedResource()
-                defer { if scoped { root.stopAccessingSecurityScopedResource() } }
-                let url = root.appendingPathComponent(file.relativePath)
-                let canonical = root.resolvingSymlinksInPath().standardizedFileURL.path + "/"
-                guard url.resolvingSymlinksInPath().standardizedFileURL.path.hasPrefix(canonical) else { throw LibraryFileError.invalidDestination }
+                let source = try ProtectedFileAccess.Source(bookmark: Data(shelf.bookmark), relativePath: file.relativePath)
+                defer { withExtendedLifetime(source) {} }
+                try source.requireContained()
+                let url = source.url
                 let keys: Set<URLResourceKey> = [.fileSizeKey,.contentModificationDateKey,.isRegularFileKey,.isSymbolicLinkKey,.isUbiquitousItemKey,.ubiquitousItemDownloadingStatusKey,.ubiquitousItemIsUploadedKey]
                 let initial = try url.resourceValues(forKeys: keys)
                 let missing = initial.isUbiquitousItem == true && initial.ubiquitousItemDownloadingStatus == .notDownloaded
@@ -55,21 +52,15 @@ private final class IdentityFileWork: @unchecked Sendable {
                         catch { NotificationCenter.default.post(name: .libraryIdentityChanged, object: String(localized: "索引已保存，但未能移除下载。", table: "FullIndex")) }
                     }
                 }
-                var coordinationError: NSError?
-                var failure: Error?
-                coordinator.coordinate(readingItemAt: url, options: [], error: &coordinationError) { readable in
-                    do {
-                        let before = try readable.resourceValues(forKeys: keys)
-                        guard before.isRegularFile == true, before.isSymbolicLink != true,
-                              UInt64(before.fileSize ?? 0) == file.size,
-                              Int64((before.contentModificationDate?.timeIntervalSince1970 ?? 0) * 1000) == file.modified else { throw ReaderError.NotFound }
-                        let identity = try probe.identify(filePath: readable.path, decoding: file.decoding)
-                        let after = try readable.resourceValues(forKeys: keys)
-                        guard before.fileSize == after.fileSize, before.contentModificationDate == after.contentModificationDate else { throw ReaderError.NotFound }
-                        guard try core.publishSourceIdentity(file: file, identity: identity) else { throw ReaderError.NotFound }
-                    } catch { failure = error }
-                }
-                if let coordinationError { throw coordinationError }; if let failure { throw failure }
+                let raw = try await read.hash(at: url)
+                guard raw.size == file.size, raw.modifiedMilliseconds == file.modified else { throw ReaderError.SourceChanged }
+                let decoding = try await service.prepareSourceDecoding(raw: raw, fileID: file.id)
+                let identity = try await read.identify(at: url, raw: raw, decoding: decoding)
+                try read.checkCancellation()
+                var resolved = file; resolved.decoding = decoding
+                try core.setSourceDecoding(fileId: file.id, decoding: decoding)
+                guard try core.publishSourceIdentity(file: resolved, identity: identity) else { throw ReaderError.SourceChanged }
+
             }.value
         } onCancel: { self.cancel() }
     }
@@ -136,7 +127,7 @@ final class FullIndexController {
         var scannedOnly: Bool? = nil
     }
     @ObservationIgnored private let defaults: UserDefaults
-    @ObservationIgnored private let service: ReaderService
+    @ObservationIgnored private let service: AppDataService
     @ObservationIgnored private var request: Request?
     @ObservationIgnored private var runner: Task<Void, Never>?
     @ObservationIgnored private var work: IdentityFileWork?
@@ -160,6 +151,10 @@ final class FullIndexController {
         if failures.contains(where: { $0.file.shelfId == shelf }) { return .retry }
         return .none
     }
+    func sheetIncludeCloud(_ shelf: String, selection: Bool) -> Bool {
+        if running && shelfID == shelf { return request?.includeCloud ?? selection }
+        return selection
+    }
     func sheetProgress(_ shelf: String, inventory: IdentityInventory?) -> (indexed: Int, total: Int)? {
         if running && shelfID == shelf && hasInventory { return (indexed, total) }
         return inventory.map { ($0.total - $0.pending.count, $0.total) }
@@ -175,7 +170,7 @@ final class FullIndexController {
             if automatic && !oldValue { admissions.removeAll() }
         }
     }
-    init(defaults: UserDefaults = .standard, service: ReaderService = .shared, registerTasks: Bool = true) {
+    init(defaults: UserDefaults = .standard, service: AppDataService = .shared, registerTasks: Bool = true) {
         self.defaults = defaults; self.service = service
         automatic = defaults.bool(forKey: "Moonread.fullIndex.automatic")
         if let data = defaults.data(forKey: "Moonread.fullIndex.request.v1"), let saved = try? JSONDecoder().decode(Request.self, from: data), saved.schemaVersion == 1 { request = saved; shelfID = saved.shelf }
@@ -301,7 +296,7 @@ final class FullIndexController {
                     do {
                         let core = try await service.identityCore()
                         try await service.withReadingIdleWork(cancel: { nextWork.cancel() }) {
-                            try await nextWork.run(file: next, shelf: inventory.shelf, core: core, includeCloud: request.includeCloud)
+                            try await nextWork.run(file: next, shelf: inventory.shelf, core: core, includeCloud: request.includeCloud, service: service)
                         }
                         failures.removeAll { $0.id == next.id }
                         NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
@@ -360,7 +355,10 @@ struct FullIndexView: View {
                     if let inventory, inventory.pending.contains(where: \.needsDownload) {
                         let cloud = inventory.pending.filter(\.needsDownload)
                         VStack(alignment: .leading, spacing: 8) {
-                            Toggle(isOn: $includeCloud) { Text("包含未下载的 iCloud 文件", tableName: "FullIndex") }.disabled(active)
+                            Toggle(isOn: Binding(get: { controller.sheetIncludeCloud(shelfID, selection: includeCloud) },
+                                                 set: { if !active { includeCloud = $0 } })) {
+                                Text("包含未下载的 iCloud 文件", tableName: "FullIndex")
+                            }.disabled(active)
                                 .accessibilityIdentifier("fullIndexIncludeCloud")
                             Text("\(cloud.count) 本，已知下载量 \(ByteCountFormatter.string(fromByteCount: Int64(clamping: inventory.cloudBytes), countStyle: .file))", tableName: "FullIndex").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                             if cloud.contains(where: { $0.size == 0 }) { Text("部分文件大小未知", tableName: "ShelfRecovery").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
@@ -385,7 +383,7 @@ struct FullIndexView: View {
                         }
                     }
                 }.padding().frame(maxWidth: .infinity, alignment: .leading)
-            }.themedPage().navigationTitle(Text("建立索引", tableName: "FullIndex"))
+            }.pageScrollMargins().themedPage().navigationTitle(Text("建立索引", tableName: "FullIndex"))
             .safeAreaInset(edge: .bottom) { primaryButton.padding().frame(maxWidth: .infinity).background(Color(uiColor: theme.canvas)) }
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button { dismiss() } label: { Text("完成") } } }
             .task(id: controller.running) { await loadInventory() }
@@ -404,7 +402,7 @@ struct FullIndexView: View {
     }
     private func start() { controller.start(shelfID, includeCloud: includeCloud, userInitiated: true, files: inventory?.pending) }
     private func loadInventory() async {
-        do { inventory = try await ReaderService.shared.identityInventory(shelfID); loadError = nil }
+        do { inventory = try await AppDataService.shared.identityInventory(shelfID); loadError = nil }
         catch { loadError = ReaderMessages.error(error) }
     }
 }

@@ -65,7 +65,7 @@ actor CoverCallGate {
 }
 
 @MainActor class BookAIFixture: XCTestCase {
-  func fixture() async throws -> (URL, ReaderService, ImportText, UserDataStore, String) {
+  func fixture() async throws -> (URL, AppDataService, ImportText, UserDataStore, String) {
     let root = FileManager.default.temporaryDirectory.appending(path: "AITest-" + UUID().uuidString)
     let library = root.appending(path: "library")
     try FileManager.default.createDirectory(at: library, withIntermediateDirectories: true)
@@ -80,7 +80,7 @@ actor CoverCallGate {
           schema: UserDataStore.schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
       ])
     let users = UserDataStore(modelContainer: container)
-    let reader = ReaderService(
+    let reader = AppDataService(
       core: core, libraryDirectory: library,
       sourceDefaultsSuite: "AI-FollowUp-" + root.lastPathComponent,
       userStoreFactory: { _, _ in users })
@@ -97,7 +97,7 @@ actor CoverCallGate {
       context.fill(CGRect(x: 0, y: 0, width: 8, height: 12))
     }
   }
-  func registry(_ repository: AIRepository, reader: ReaderService, owner: String) async
+  func registry(_ repository: AIRepository, reader: AppDataService, owner: String) async
     -> AIProposalRegistry
   {
     let registry = AIProposalRegistry(reader: reader)

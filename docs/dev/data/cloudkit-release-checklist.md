@@ -1,7 +1,8 @@
 # CloudKit 发布核对
 
-状态：2026-10-17 开发 schema 已按下文 DEBUG 入口初始化，开发者本人在 Console 执行 Deploy Schema Changes 部署到生产；部署后架构师只读核对 Production：6 个记录类型的字段与索引和 Development 一致，封面为 asset，数据类型、索引、权限的待部署差异均为 0。未读取私人记录。真机生产同步（写入、读回、修改/删除、封面、跨设备）另按第 5 条验收。1.0.0 起生产 schema 只增不删。
+操作必须有当轮授权；生产 schema 只增不删。部署结构不等于真实写入、读回和跨设备同步验收。历史部署记录见[验证记录](../engineering/verification.md)。
 
+- 平台前置：App ID `dev.moonread.Moonread` 关联固定容器，工程签名具备 iCloud Documents、CloudKit、推送与后台通知；`Configuration.xcconfig` 默认启用云能力。Personal Team 无云备用构建不能用于证明生产同步。
 - 容器：`iCloud.dev.moonread.Moonread`；阅读数据只用私有库。小说文件是 iCloud Documents，不随 schema 部署迁移。
 - 唯一模型来源为 `UserDataStore.modelTypes`：UserPosition、UserValue、AnnotationOperation、ReadingFact、StatisticsClear、UserCover。AI 会话和 Rust 正文缓存排除。UserCover.bytes 为 external storage。
 - DEBUG `--cloud-schema-report` 只打印同一 SwiftData 类型生成的 Core Data 实体／字段／类型／optional／external 标记，不连接云。生成实体名不代替 Console 实际记录名或系统字段。

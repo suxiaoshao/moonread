@@ -15,12 +15,13 @@ open ios/Moonread.xcodeproj
 | 平台 | Rust target |
 | --- | --- |
 | Apple Silicon 模拟器 | `aarch64-apple-ios-sim` |
-| Intel 模拟器 | `x86_64-apple-ios` |
 | iPhone 真机 | `aarch64-apple-ios` |
 
 Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资源编译、签名及设备运行。macOS 使用 `mkShellNoCC`，移除 Rust overlay 隐式传播的 Nix 编译器和目标库，避免与 Xcode SDK 混用。iOS App 不宣称是完全可复现的 `nix build` 产物；Linux 环境仅供 Rust 核心开发。个人签名配置与小说不进入 Nix store。
 
 更新依赖显式执行 `nix flake update` 并检查锁文件变化；构建不会自行更新锁文件。新增 Nix 文件须加入 Git 跟踪后供本地 flake 使用，不能用 `path:.` 把含本地凭据的整个工作目录作为输入。
+
+项目级 [SwiftUI Expert skill](../../../.agents/skills/swiftui-expert-skill/SKILL.md) 用于 SwiftUI 开发与审阅。来源为 [AvdLee/SwiftUI-Agent-Skill](https://github.com/AvdLee/SwiftUI-Agent-Skill)，固定 `4.2.0` / `9692ec5c3e78a0acc7757de2dbe8e64e519a72fb`，保留上游 [MIT 许可](../../../.agents/skills/swiftui-expert-skill/LICENSE)；更新时显式选择版本。
 
 ## 本地化
 
@@ -31,9 +32,8 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 ## 分支与协作
 
 - `main` 的 App 代码始终对应 App Store 最新发布版本，不承载下一版本 App 的日常开发；正式发布后，在对应提交打版本 tag（如 `v1.1`）。TestFlight 上传不等于 App Store 发布。
-- `docs/site/**` 是版本分支规则的例外：隐私政策、支持页等版本所需的网站改动，在提交 App Store 审核前用小 PR 直接合进 `main`，由 Pages 即时部署，不等待 App 版本上线。网站检查通过后再合并；“main 等于线上版本”只约束 App 代码。
-- 发布工作流等不含 App 功能代码的发布基础设施可通过小 PR 直接进入 `main`，使默认分支上的手动工作流可用；合入后同步到当前 release 分支。此例外不提前发布下一版 App 代码。
-- 通常从 `main` 建立 `release/x.y`。上一版已提审但未上线时，可从其固定提审提交建立下一版分支并行开发；上一版上线或追加修复后，再把发布结果同步到下一版，不能提前把未上线 App 代码合入 `main`。功能、修复与文档使用独立开发分支，PR 以当前 `release/x.y` 为目标，通过检查后 **squash** 合并。
+- 所有改动（含官网、文档和发布基础设施）都进入当前 `release/x.y`；不直接向 `main` 提交开发 PR，`main` 只接收发布后的版本分支合并。审核前确需提前上线的隐私政策、支持页等网站页面，须先向用户申请，不自动视为例外。
+- 每个版本从 `main` 建立 `release/x.y`，在该分支开发。功能、修复、官网与文档使用独立开发分支，PR 以当前 `release/x.y` 为目标，通过检查后 **squash** 合并。
 - App Store 发布后，`release/x.y` 通过 PR 以普通 **merge commit** 合回 `main`，保留版本开发历史；发布回合使用普通 merge，不 squash 发布分支；下述已上线 hotfix 回合也使用普通 merge。
 - 线上问题从 `main` 建立 `hotfix/x.y.z`，在该分支修复、打包并提审；App Store 上线后才通过 PR 以普通 merge 回 `main` 并打补丁 tag（如 `v1.1.1`），随后把 `main` 合进当前 `release/x.y`。补丁审核及等待上线期间不提前合回 main，确保 main 的 App 代码始终对应线上版本。
 - PR 合入 `release/x.y` 或 `hotfix` 分支时，GitHub 不会根据 `Closes` 自动关闭 issue。合并后需手动关闭对应 issue，评论注明合入的分支与提交，并把看板状态改为「完成」。
@@ -45,7 +45,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 - 新开 `release/x.y` 时，同步修改 [Dependabot](../../../.github/dependabot.yml) 两个更新项的 `target-branch`，让常规依赖版本更新 PR 指向当前版本分支。
 - Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 PR 的 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 `hotfix/x.y.z` 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。
-- 当前开发目标为 `release/1.4`，从 1.3 已提审提交 `457ea531c84e612dc344b67c30138854e58e01f0` 建立；`release/1.3` 保留用于审核修复与上线后的发布合并。Dependabot 两项常规更新目标均为 `release/1.4`。
+- 当前常规依赖更新目标为 `release/1.4`，以 `.github/dependabot.yml` 为准；新版本分支切换后需核对实际配置。
 
 签名配置、小说原件、构建产物与凭据不随代码推送。CI、仓库保护、模板及依赖更新见[仓库与持续集成](repository.md)，测试范围与推送前要求见[测试原则](verification.md#测试原则)。
 
@@ -55,12 +55,13 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 工程使用 Swift 6 及完整并发检查。在 Xcode 选择 `Moonread` scheme；从 Finder 打开工程也会通过 `nix develop --no-update-lock-file` 使用锁定 Cargo。
 
+- 构建阶段先进入 Nix devShell，再在本机按 PATH、`$HOME/.cargo/bin/mbx` 的顺序寻找 mbx；找到时用 `mbx build`，否则用 `cargo build`。CI 始终直接用 Cargo。mbx 使用 devShell 中锁定的 Cargo/Rust（含 iOS targets），不选系统 rustup 工具链；UniFFI 绑定生成仍用 Cargo。
 - 构建阶段执行编译与生成绑定两条工具调用。target、Debug/Release、链接路径声明在 [Rust.xcconfig](../../../ios/Rust.xcconfig)。
 - UniFFI 从 [uniffi.toml](../../../crates/moonread-core/uniffi.toml) 读取输出名称；使用 `--no-format` 生成，避免每次构建格式化自动生成代码。
 - 链接明确指定 `libmoonread_core.a`，避免同目录动态库被优先选中或把 Mac 路径带进 iPhone。
-- Rust 输出位于 `build/cargo/`，绑定位于 `build/ios/Generated/<Configuration>/`，均不提交。模拟器只编译 `aarch64-apple-ios-sim`（arm64）。
+- Rust 输出位于仓库默认的 `target/`，绑定位于 `build/ios/Generated/<Configuration>/`，均不提交。模拟器只编译 `aarch64-apple-ios-sim`（arm64）。
 - Xcode 构建缓存只用两份：模拟器构建和测试统一 `-derivedDataPath build/DerivedData`，真机构建统一 `build/DeviceDerivedData`。不按任务另建缓存目录；任务的日志、截图等验证记录可以放在 `build/<任务名>/`，任务合并后删除。
-- 不使用 git worktree；在主目录切分支，共用 `build/cargo`、`build/DerivedData` 和 `build/DeviceDerivedData`。
+- 不使用 git worktree；在主目录切分支，共用 `target`、`build/DerivedData` 和 `build/DeviceDerivedData`。
 - Nix 默认路径为 `/nix/var/nix/profiles/default/bin/nix`；非标准安装可在本地 `LocalSigning.xcconfig` 覆盖 `MOONREAD_NIX`。
 
 首次运行需要下载工具链和 Cargo 依赖，之后复用缓存。
@@ -81,21 +82,51 @@ App 的营销版本（`MARKETING_VERSION`，用户可见）和构建号（`CURRE
 
 ### TestFlight 打包与上传
 
-使用干净提交和本机 `LocalSigning.xcconfig`，在 Nix 环境执行 Release archive，真机缓存统一为 `build/DeviceDerivedData`。自动签名的原始归档通常使用开发签名，导出时由 Xcode 重签为 App Store Connect 分发包，这是正常流程；不要给自动开发签名的归档强行指定 Apple Distribution 身份。
+统一见[发布手册](release.md)：main 手动触发、branch+SHA、verify 后授权 upload，或本机同归档导出核验。
+
+### 商店截图（独立 DEBUG 测试）
+
+先对比本地上一版截图，只拍有变化的页面。使用独立的 `StoreScreenshots` scheme；它不进入日常 `Moonread` 测试计划的关键 UI 用例，不改变正常用户的书库、云设置或阅读数据。所有拍摄启动参数、原创样书和 App 处理代码均由 `#if DEBUG` 包围，Release 不识别这些参数（沿用 #83 的约定）。
+
+从主目录执行一条命令；`-destination` 选择已经存在的模拟器，不能用设备组代替 UUID：
 
 ```sh
 nix develop --no-update-lock-file -c xcodebuild \
-  -project ios/Moonread.xcodeproj -scheme Moonread -configuration Release \
-  -xcconfig ios/LocalSigning.xcconfig -destination 'generic/platform=iOS' \
-  -derivedDataPath build/DeviceDerivedData \
-  -archivePath build/TestFlight/Moonread.xcarchive -allowProvisioningUpdates archive
+  -project ios/Moonread.xcodeproj -scheme StoreScreenshots -configuration Debug \
+  -destination 'platform=iOS Simulator,id=FFA6F448-E09C-4885-B59C-53C5E07185F5' \
+  -derivedDataPath build/DerivedData -parallel-testing-enabled NO \
+  -collect-test-diagnostics never \
+  STORE_SCREENSHOT_DEVICE=iphone-medium \
+  STORE_SCREENSHOT_LANGUAGES=zh-Hans STORE_SCREENSHOT_STOREFRONT=CHN \
+  STORE_SCREENSHOT_SCENES=01,02,03,04,05,06,07,08 MARKETING_VERSION=1.3 \
+  CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES test
 ```
 
-先用 `xcodebuild -exportArchive` 本地导出并核对分发包。ExportOptions 使用 `method=app-store-connect`、`signingStyle=automatic`、`iCloudContainerEnvironment=Production`、`manageAppVersionAndBuildNumber=false`；预检用 `destination=export`，上传时改为 `destination=upload`，两次均允许自动签名更新，并使用同一归档。每次新上传先按上一节递增构建号；遇账号登录或钥匙串授权，由用户本人处理。
+`STORE_SCREENSHOT_LANGUAGES` 传到测试进程后，按语言设置 App 的 `-AppleLanguages` / `-AppleLocale` 和对应原创正文、书名、批注。店面单独由 `STORE_SCREENSHOT_STOREFRONT` 指定（默认 USA），与界面语言无关；简中正式素材用 CHN，繁中/英文 AI 回顾用 TWN/USA。`STORE_SCREENSHOT_SCENES` 可只填一个场景；不指定时为 01–08。01 自动拍三张相同阅读位置的纹理图，也可只指定 `01-paper`、`01-kraft` 或 `01-linen`；07 同时拍文件夹与 `07-tags` 候选，后者也可单独指定。仅重拍需要变化的场景，不重复跑全部流程。截图版本目录取构建的 MARKETING_VERSION，开发分支尚未升级版本号时可像上例显式覆盖。
 
-上传前检查 Bundle ID、版本/构建号、`ITSAppUsesNonExemptEncryption=NO`、隐私清单、无 DEBUG/诊断入口、无 `.storekit` 文件，以及签名完整性。生产权限应在**导出分发包**核对：`aps-environment=production`、CloudKit 环境 Production、`get-task-allow=false`，容器为 `iCloud.dev.moonread.Moonread`，服务同时包含 CloudKit 与 CloudDocuments。不要拿原始开发签名归档的权限代替分发包结论。
+| 设备组 | 已有模拟器 | 原生 PNG 尺寸 | 阅读字号与准备 |
+| --- | --- | --- | --- |
+| `iphone-medium` | iPhone 18 Pro（上例 UUID） | 1206×2622 | 20 pt |
+| `ipad-13` | iPad Pro 13-inch (M5)，`0F4A5FC1-EA80-4A88-81C2-D1650CFCA791` | 2064×2752 | 24 pt；先在系统「设置 → 多任务与手势」选择全屏 App，确认没有窗口缩放手柄 |
+| `duo-outer` | iPhone Duo，`6E42EBA5-DA26-4E2C-BF50-0CA9DC193893` | 1398×2034 | 20 pt；DeviceHub 选择 Closed |
+| `duo-inner` | 同一台 Duo | 2853×2007（横向） | 20 pt；先启动 Duo，在 DeviceHub 打开该设备窗口并选择 Open，确认横向内屏能显示 App，再执行命令；本轮不自动旋转/折叠 |
 
-`TipJar.storekit` 仅保留 Debug scheme 的 StoreKit Configuration 引用，不属于任何 target 的 Copy Bundle Resources；普通 Release 归档不需要资源排除参数。本地 StoreKitTest 自动化在模拟器通过源文件 URL 读取同一配置，不依赖 App 或测试 bundle 内的副本。上传成功与 ASC 处理完成／可测试分别记录；上传不等于提交审核或正式发布。归档、分发包核验和上传日志保存在 `build/TestFlight/`。
+| 场景 | 内容 |
+| --- | --- |
+| 01 | 同书同位置的素白+宣纸、杏桃浅+牛皮纸、豆沙绿+细麻布（均中档）；分别导出 01-paper / 01-kraft / 01-linen |
+| 02 | 原创书的同步续读提示；隔离库写入本机基线及另一设备候选，复用正式候选判断 |
+| 03 | 真实桌面上的继续阅读小组件（合成书、章节、42%）；不是 App 内预览 |
+| 04 | 简中为数据管理；繁中/英文为已审原创样书问答的 AI 回顾，不发网络请求 |
+| 05 | 固定 2026-10-25 的全局阅读统计，使用真实统计写入和查询 |
+| 06 | 原创正文中的划线与批注 |
+| 07 | 真实文件夹书架，以及「全部小说→标签」分组的独立候选（07-tags），不拼接两种页面 |
+| 08 | 原创书内的实际搜索结果 |
+
+03 拍摄前在所选模拟器的系统主屏幕手动添加一个中尺寸「继续阅读」组件，完成编辑并停在该页；这是每轮拍摄开始前的一次桌面准备，避免 SpringBoard 编辑动画令 XCUITest 长时间等待空闲。截图场景只负责切回主屏幕并导出，拍完由操作者移除测试组件。03 只在 DEBUG 模拟器中把独立的 `StoreScreenshots/catalog.json` 提供给真实小组件，结束时自动删除该夹具文件，正常目录不被覆盖。全流程仍只操作 destination 对应的设备；iPad/Duo 的 1.3 商店构图须另行确认，不能把 iPhone 场景直接认定为已验收。
+
+scheme 的 pre-action 启动 `ios/StoreScreenshots/export.py` 拍摄/导出协作器，post-action 停止它并关闭所选模拟器；构建本身仍全部由 xcodebuild/Nix 管理，没有独立 shell 构建脚本。App 每个场景使用随机 UUID 隔离会话，只在自己的临时目录写原创 TXT，拒绝 iCloud/Downloads 路径。固定系统状态栏为 9:41、满电满格；阅读器中的当前时间保持真实路径。
+
+PNG 自动保存到 `build/Release/<MARKETING_VERSION>-screenshots/<语言>/<设备组>/01-paper.png`、`02.png` 等路径，`manifest.json` 记录来源提交、语言/店面、配色与纹理、独立会话、设备尺寸和 PNG 摘要，只覆盖本次指定的场景，其余图片保留。导出原生截图，不缩放、不叠标题；按实际 RGB 像素排除黑图，不把 alpha 算成画面。尺寸或 DeviceHub 展开状态不符时直接失败，日志见 `build/StoreScreenshots/export.log`。失败截图不能当作交付，交付前仍需目视检查正文、构图和全屏状态。若用户强制中断 xcodebuild，执行 `python3 ios/StoreScreenshots/export.py finish --root .` 停止导出、清理小组件夹具并关闭本次使用的模拟器，不保留空闲 Booted 设备。
 
 ### TestFlight 手动 CI
 
@@ -127,7 +158,9 @@ xcodebuild -project ios/Moonread.xcodeproj -scheme Moonread \
 
 2026-10-02 已验证描述文件和应用签名包含云容器及推送权限。以下无云签名流程仅适用于没有相应权限的 Personal Team。
 
-需要让本机真机试用包读取用户现有的正式 iCloud 数据时，在 PR CI 通过后使用 Release 配置，复制主 App 的 entitlements 到忽略的 `build/`，仅在该副本加入 `com.apple.developer.icloud-container-environment=Production`，通过现有的主 App 参数 `MOONREAD_ENTITLEMENTS` 指向该副本（绝对路径），扩展沿用自己的权限文件；不修改或提交普通 Debug 的权限配置。覆盖安装前用 `codesign -d --entitlements :-` 检查实际签名的环境确为 Production、容器为 `iCloud.dev.moonread.Moonread`，并确认 `get-task-allow` 与本次使用的开发/分发描述文件一致（本机开发调试签名为 true，分发签名为 false）。自动签名如不允许该组合，停止报告，不改用 Development 云数据。核验后用 `devicectl` 覆盖安装并启动，保留 App 和数据，不卸载；连接、解锁或人工授权由用户处理。试用安装不等于发版或合并。
+1.3 按可独立试用的功能批次组织 PR；重大功能或 UI 先完成本地相关测试和真机试用，由用户确认后一次推送开 PR，CI 运行全量测试，合并仍由用户安排。
+
+需要让本机真机试用包读取用户现有的正式 iCloud 数据时，按当轮已确认的验收顺序使用 Release 配置，复制主 App 的 entitlements 到忽略的 `build/`，仅在该副本加入 `com.apple.developer.icloud-container-environment=Production`，通过现有的主 App 参数 `MOONREAD_ENTITLEMENTS` 指向该副本（绝对路径），扩展沿用自己的权限文件；不修改或提交普通 Debug 的权限配置。覆盖安装前用 `codesign -d --entitlements :-` 检查实际签名的环境确为 Production、容器为 `iCloud.dev.moonread.Moonread`，并确认 `get-task-allow` 与本次使用的开发/分发描述文件一致（本机开发调试签名为 true，分发签名为 false）。自动签名如不允许该组合，停止报告，不改用 Development 云数据。核验后用 `devicectl` 覆盖安装并启动，保留 App 和数据，不卸载；连接、解锁或人工授权由用户处理。试用安装不等于发版或合并。
 
 ### Personal Team 本地试用包
 
@@ -163,6 +196,25 @@ done
   -destination 'platform=iOS Simulator,id=<SIMULATOR_UUID>' \
   -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO test
 ```
+
+### 按页面截图对照效果图
+
+沿用独立的 `StoreScreenshots` scheme，通过 DEBUG 夹具直接打开指定页面，不走点击长流程，也不进入每 PR 的关键 UI 用例。先对比已有页面图，只截需要核对的页面；例如在现有 iPad 上只拍一张浅色横屏小说详情：
+
+```sh
+nix develop --no-update-lock-file -c xcodebuild \
+  -project ios/Moonread.xcodeproj -scheme StoreScreenshots -configuration Debug \
+  -destination 'platform=iOS Simulator,id=0F4A5FC1-EA80-4A88-81C2-D1650CFCA791' \
+  -derivedDataPath build/DerivedData -parallel-testing-enabled NO \
+  -collect-test-diagnostics never STORE_SCREENSHOT_DEVICE=ipad-13 \
+  STORE_SCREENSHOT_LANGUAGES=zh-Hans PAGE_SHOT_SCENE=book-details \
+  PAGE_SHOT_APPEARANCE=light PAGE_SHOT_ORIENTATION=landscape \
+  CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES test
+```
+
+`PAGE_SHOT_SCENE` 可选 `book-details`（小说详情）、`reader-settings`（阅读设置）、`settings`（设置，regular 宽度自动两栏）、`library-home`（书架首页）、`reader`（单页阅读器）。每次只运行指定页面；`PAGE_SHOT_APPEARANCE=light|dark` 选择杏桃浅／深，页面模式默认只用简中，也可通过 `STORE_SCREENSHOT_LANGUAGES` 指定一个语言。`PAGE_SHOT_ORIENTATION=portrait|landscape|current` 控制方向，默认 iPad 横屏、iPhone 竖屏、Duo 保持当前姿态。沿用现有四个设备组与 UUID destination；Duo 内屏须先手动在 DeviceHub 展开，再用 `duo-inner`，不自动折叠或创建模拟器。
+
+PNG 保存到 `build/PageShots/<设备组>/<场景>-浅.png` 或 `-深.png`；simctl 按实际 display 导出横屏像素，去掉会让查看器再次旋转的方向元数据，不缩放，不从 XCTest attachment 转图。scheme 会在结束时关闭所选模拟器。未设置 `PAGE_SHOT_SCENE` 时，商店场景流程与输出路径不变。
 
 按改动选受影响的核心测试、原生排版回归和必要交互流程；需要时使用 `-only-testing:` 限定测试，不因小修自动重复全部验收。UI 用例各自使用独立测试存储，同一用例重启仍复用该目录，不覆盖正常书库。DEBUG 下同时提供 `--ui-testing` 和有效 UUID `--ui-test-session` 时，新会话重置标准 defaults 的阅读设置及设置分类，从默认滚动模式、20 号字开始；相同 UUID 的重启保留修改以验证持久化，正常启动不重置。
 

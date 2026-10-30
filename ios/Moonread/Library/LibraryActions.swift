@@ -283,9 +283,9 @@ private struct LibraryMoveDestination: View {
             guard let location else { return }
             let request = loading.begin(); defer { loading.finish(request) }
             do {
-                try await ReaderService.libraryTestLatency()
+                try await AppDataService.libraryTestLatency()
                 let excluded = Set(entries.map(\.id))
-                let values = try await ReaderService.shared.libraryEntries(location).filter { $0.directory && !excluded.contains($0.id) }
+                let values = try await AppDataService.shared.libraryEntries(location).filter { $0.directory && !excluded.contains($0.id) }
                 try Task.checkCancellation(); folders = values
             } catch is CancellationError { } catch { model.error = ReaderMessages.error(error) }
         }

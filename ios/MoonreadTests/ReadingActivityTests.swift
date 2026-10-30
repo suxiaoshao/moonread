@@ -12,7 +12,7 @@ final class ReadingActivityReadingReviewTests: ReadingReviewFixture {
   @MainActor func testEffectiveSessionDurationUsesReadingClockIdleAndPauseRules() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    let service = ReaderService(core: try ReaderCore(dataDirectory: root.path))
+    let service = AppDataService(core: try ReaderCore(dataDirectory: root.path))
     let clock = ReviewTestTime()
     let viewport = ReadingViewportAccess(
       capture: {
@@ -60,7 +60,7 @@ final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
   @MainActor func testActivityStartCancellationAndStopReleaseLateLease() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    let service = ReaderService(core: try ReaderCore(dataDirectory: root.path))
+    let service = AppDataService(core: try ReaderCore(dataDirectory: root.path))
     let entered = expectation(description: "preferences suspended")
     let gate = SourceReadinessGate(entered: entered)
     let recorder = ReadingActivityRecorder {
@@ -93,7 +93,7 @@ final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
   @MainActor func testActivityOldAttemptCannotOverwriteNewClock() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    let service = ReaderService(core: try ReaderCore(dataDirectory: root.path))
+    let service = AppDataService(core: try ReaderCore(dataDirectory: root.path))
     let entered = expectation(description: "old preferences")
     let gate = SourceReadinessGate(entered: entered)
     var calls = 0
@@ -130,7 +130,7 @@ final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
   {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
-    let service = ReaderService(core: try ReaderCore(dataDirectory: root.path))
+    let service = AppDataService(core: try ReaderCore(dataDirectory: root.path))
     let entered = expectation(description: "pending writer")
     let gate = SourceReadinessGate(entered: entered)
     let writer = StatisticsWriter { _, _ in await gate.wait() }

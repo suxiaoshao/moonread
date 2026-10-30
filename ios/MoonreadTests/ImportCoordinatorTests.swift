@@ -138,7 +138,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     XCTAssertEqual(notes.items.map(\.note), ["Original annotation"])
     XCTAssertEqual(try core.sourceDecoding(fileId: file.id), "UTF-8")
     XCTAssertEqual(try Data(contentsOf: path), Data(original.utf8))
-    let reopenedService = ReaderService(
+    let reopenedService = AppDataService(
       core: core, libraryDirectory: root, sourceDefaultsSuite: suite,
       userStoreFactory: { name, _ in name == "pending-users.store" ? pending : formal })
     let reopened = try await reopenedService.aiPrepare(entry.source)
@@ -148,98 +148,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     withExtendedLifetime([first, changed, restored, reopened]) {}
   }
 
-  // S373: 用户暂停在 metadata 准备/重启后仍有效，只有明确 resume 才继续，取消不解除用户暂停。
-  @MainActor func testUserPausedImportStaysPausedAcrossReopenAndRestartUntilExplicitResume()
-    async throws
-  {
-    let (root, service, core, source, id, defaults, suite) = try await Self.pausedSourceFixture()
-    defer {
-      defaults.removePersistentDomain(forName: suite)
-      try? FileManager.default.removeItem(at: root)
-    }
-    await service.pauseImport(id, reason: .user)
-    XCTAssertTrue(defaults.bool(forKey: "Moonread.importUserPaused.v1.library." + id))
-    await service.pauseImports()
-    await service.resumePausedImports()
-    let first = try await service.openSourceFile(source)
-    XCTAssertEqual(first.id, id)
-    XCTAssertEqual(try core.importStatus(bookId: id).phase, .paused)
-    let restartedCore = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let restarted = ReaderService(
-      core: restartedCore, libraryDirectory: root.appendingPathComponent("local"),
-      sourceDefaultsSuite: suite)
-    let reopened = try await restarted.openSourceFile(source)
-    XCTAssertEqual(reopened.id, id)
-    XCTAssertEqual(try restartedCore.importStatus(bookId: id).phase, .paused)
-    let running = await restarted.hasRunningImports
-    XCTAssertFalse(running)
-    try await restarted.resumeImport(id)
-    XCTAssertNil(defaults.object(forKey: "Moonread.importUserPaused.v1.library." + id))
-    try await restarted.waitForImportFinish(id)
-    XCTAssertEqual(try restartedCore.importStatus(bookId: id).phase, .complete)
-    withExtendedLifetime((first, reopened)) {}
-    // Preparing metadata must preserve an explicit user pause, including cancellation.
-    do {
-
-      for fromReader in [false, true] {
-        let (root, service, core, source, id, defaults, suite) =
-          try await Self.pausedSourceFixture()
-        defer {
-          defaults.removePersistentDomain(forName: suite)
-          try? FileManager.default.removeItem(at: root)
-        }
-        await service.pauseImport(id, reason: .user)
-        let target = StatisticsRoute(
-          bookID: id, title: "暂停语义样本", fileID: source.id, fromReader: fromReader)
-        let model = BookInformationModel(service: service)
-        await model.load(target)
-        model.edit(target)
-        try await waitForMetadataPreparation(model) {
-          model.preparationPaused || model.error != nil
-        }
-        XCTAssertNil(model.error)
-        XCTAssertTrue(model.preparationPaused)
-        XCTAssertNil(model.draft)
-        XCTAssertEqual(try core.importStatus(bookId: id).phase, .paused)
-        XCTAssertTrue(defaults.bool(forKey: "Moonread.importUserPaused.v1.library." + id))
-        let running = await service.hasRunningImports
-        XCTAssertFalse(running)
-        model.resumePreparation()
-        try await waitForMetadataPreparation(model) { !model.preparing }
-        XCTAssertNil(model.error)
-        XCTAssertNotNil(model.draft)
-        XCTAssertFalse(model.preparationPaused)
-        XCTAssertEqual(try core.importStatus(bookId: id).phase, .complete)
-        XCTAssertNil(defaults.object(forKey: "Moonread.importUserPaused.v1.library." + id))
-      }
-
-    }
-    do {
-
-      let (root, service, core, _, id, defaults, suite) = try await Self.pausedSourceFixture()
-      defer {
-        defaults.removePersistentDomain(forName: suite)
-        try? FileManager.default.removeItem(at: root)
-      }
-      await service.pauseImport(id, reason: .user)
-      let target = StatisticsRoute(bookID: id, title: "暂停语义样本", fromReader: true)
-      let model = BookInformationModel(service: service)
-      await model.load(target)
-      model.edit(target)
-      try await waitForMetadataPreparation(model) { model.preparationPaused || model.error != nil }
-      XCTAssertTrue(model.preparationPaused)
-      XCTAssertNil(model.error)
-      model.cancelPreparation()
-      try await waitForMetadataPreparation(model) { !model.preparing }
-      XCTAssertNil(model.draft)
-      XCTAssertNil(model.error)
-      XCTAssertEqual(try core.importStatus(bookId: id).phase, .paused)
-      XCTAssertTrue(defaults.bool(forKey: "Moonread.importUserPaused.v1.library." + id))
-
-    }
-  }
-
-  // S374: 系统中断暂停可自动续接，不能与用户暂停混为一类。
+  // S374: 系统中断重开自动续接；升级后旧主动暂停键统一退役，不保留运行时分支。
   @MainActor func testSystemInterruptedImportAutomaticallyResumesOnReopen() async throws {
     do {
       let (root, _, _, source, id, defaults, suite) = try await Self.pausedSourceFixture()
@@ -247,10 +156,16 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
         defaults.removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: root)
       }
+      let legacy = "Moonread.importUserPaused.v1.library." + id
+      let obsolete = "Moonread.importUserPaused.v1.previous-session.orphan"
+      defaults.set(true, forKey: legacy); defaults.set(true, forKey: obsolete)
+      defaults.set("kept", forKey: "UnrelatedFixturePreference")
       let restartedCore = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-      let restarted = ReaderService(
+      let restarted = AppDataService(
         core: restartedCore, libraryDirectory: root.appendingPathComponent("local"),
         sourceDefaultsSuite: suite)
+      XCTAssertNil(defaults.object(forKey: legacy)); XCTAssertNil(defaults.object(forKey: obsolete))
+      XCTAssertEqual(defaults.string(forKey: "UnrelatedFixturePreference"), "kept")
       let lease = try await restarted.openSourceFile(source)
       XCTAssertEqual(lease.id, id)
       try await restarted.waitForImportFinish(id)
@@ -272,41 +187,9 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
       try await waitForMetadataPreparation(model) { !model.preparing }
       XCTAssertNil(model.error)
       XCTAssertNotNil(model.draft)
-      XCTAssertFalse(model.preparationPaused)
       XCTAssertEqual(try core.importStatus(bookId: id).phase, .complete)
 
     }
-  }
-
-  // S375: 明确编码重启/完成回收消除旧暂停标记，不让新任务被旧意图卡住。
-  func testUserPauseMarkerClearsOnEncodingRestartAndCompletedReclamation() async throws {
-    let (root, service, core, source, id, defaults, suite) = try await Self.pausedSourceFixture()
-    defer {
-      defaults.removePersistentDomain(forName: suite)
-      try? FileManager.default.removeItem(at: root)
-    }
-    await service.pauseImport(id, reason: .user)
-    let lease = try await service.restartImport(id, encoding: "UTF-8")
-    XCTAssertNotEqual(lease.id, id)
-    XCTAssertNil(defaults.object(forKey: "Moonread.importUserPaused.v1.library." + id))
-    try await service.waitForImportFinish(lease.id)
-    XCTAssertEqual(try core.importStatus(bookId: lease.id).phase, .complete)
-    // Simulate a crash between completing the cache transaction and clearing
-    // the device-only flag. Startup reclamation must repair that residue.
-    let completedKey = "Moonread.importUserPaused.v1.library." + lease.id
-    defaults.set(true, forKey: completedKey)
-    let discardedKey = "Moonread.importUserPaused.v1.library.discarded-task"
-    defaults.set(true, forKey: discardedKey)
-    let other = try core.createImport(title: "另一本暂停样本")
-    await service.pauseImport(other.bookId(), reason: .user)
-    try await service.reclaimImports(core)
-    XCTAssertNil(defaults.object(forKey: completedKey))
-    XCTAssertNil(defaults.object(forKey: discardedKey))
-    XCTAssertTrue(defaults.bool(forKey: "Moonread.importUserPaused.v1.library." + other.bookId()))
-    let current = try await service.openSourceFile(source)
-    XCTAssertNotEqual(current.id, id)
-    try await service.waitForImportFinish(current.id)
-    withExtendedLifetime((lease, current)) {}
   }
 
   // S386: 文件夹接受事件先进入目标书架，晚到 dismissal 不重放扫描/导入；假事件，不操作 picker。
@@ -316,7 +199,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     let folder = directory.appendingPathComponent("selected")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     try Data("第一章\n正文".utf8).write(to: folder.appendingPathComponent("小说.txt"))
-    let service = ReaderService(
+    let service = AppDataService(
       core: try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path),
       libraryDirectory: directory.appendingPathComponent("books"))
     try await service.prepareLibrary()
@@ -364,7 +247,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let books = directory.appendingPathComponent("books")
-    let service = ReaderService(
+    let service = AppDataService(
       core: try ReaderCore(dataDirectory: directory.appendingPathComponent("db").path),
       libraryDirectory: books)
     try await service.prepareLibrary()

@@ -1,0 +1,116 @@
+{
+  "sourceLanguage": "zh-Hans",
+  "strings": {
+    "用${applicationName}继续阅读": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Continue reading in ${applicationName}"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用${applicationName}继续阅读"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用${applicationName}繼續閱讀"
+          }
+        }
+      }
+    },
+    "用${applicationName}打开${target}": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open ${target} in ${applicationName}"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用${applicationName}打开${target}"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用${applicationName}打開${target}"
+          }
+        }
+      }
+    },
+    "查看${applicationName}阅读统计": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Show reading statistics in ${applicationName}"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看${applicationName}阅读统计"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看${applicationName}閱讀統計"
+          }
+        }
+      }
+    },
+    "打开${applicationName}我的书架": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打开${applicationName}我的书架"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "打開${applicationName}我的書架"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Open my bookshelf in ${applicationName}"
+          }
+        }
+      }
+    },
+    "用${applicationName}搜索书籍": {
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用${applicationName}搜索书籍"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "用${applicationName}搜尋書籍"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search books in ${applicationName}"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

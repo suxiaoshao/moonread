@@ -94,14 +94,14 @@ struct AIOrganizationTreeItem: Codable, Identifiable, Sendable {
     var results: [AIFileExecutionResult] { nodes.compactMap(\.result) }
     var pendingCount: Int { nodes.filter { $0.result?.stage != .completed }.count }
     var includedCount: Int { nodes.filter { $0.included }.count }
-    @ObservationIgnored private let reader: ReaderService
+    @ObservationIgnored private let reader: AppDataService
     @ObservationIgnored private let references: AIReadingReferences
     @ObservationIgnored private let scope: LibraryLocation
     @ObservationIgnored private var snapshots: [String: AIFileSnapshot] = [:]
     @ObservationIgnored private var entries: [String: LibraryEntry] = [:]
     @ObservationIgnored private var occupied: [String: Set<String>] = [:]
     @ObservationIgnored private let moveItem: @MainActor (LibraryEntry, LibraryLocation, String, AIFileMoveCheck) async -> AIFileExecutionResult
-    init(proposal: AIOrganizationProposal, scope: LibraryLocation, reader: ReaderService = .shared, historical: Bool = false,
+    init(proposal: AIOrganizationProposal, scope: LibraryLocation, reader: AppDataService = .shared, historical: Bool = false,
          moveItem: (@MainActor (LibraryEntry, LibraryLocation, String, AIFileMoveCheck) async -> AIFileExecutionResult)? = nil) {
         canExecute = !historical
         self.proposal = proposal; self.scope = scope; self.reader = reader

@@ -195,7 +195,7 @@ struct AppSearchView: View {
         List {
             if !search.hasCriteria { browse }
             else {
-                if let error {
+                if !books.isEmpty || !folders.isEmpty || (ai.availability.isAvailable && !conversations.isEmpty), let error {
                     VStack(alignment: .leading, spacing: LayoutTokens.compact) {
                         Label(error, systemImage: "exclamationmark.circle").foregroundStyle(Color(uiColor: theme.destructive))
                         Button("重试") { retry += 1 }.accessibilityIdentifier("searchRetry")
@@ -231,14 +231,20 @@ struct AppSearchView: View {
         .accessibilityIdentifier("appSearchResults")
         .navigationTitle("搜索").navigationBarTitleDisplayMode(.inline)
         .overlay {
-            if search.hasCriteria && completedKey == key && error == nil && entries.isEmpty && conversations.isEmpty {
-                ContentUnavailableView.search(text: search.term)
+            if search.hasCriteria && books.isEmpty && folders.isEmpty && (!ai.availability.isAvailable || conversations.isEmpty) {
+                if let error {
+                    ContentUnavailableView {
+                        Label("搜索暂时失败", systemImage: "exclamationmark.magnifyingglass")
+                    } description: { Text(error).foregroundStyle(Color(uiColor: theme.secondary)) } actions: {
+                        Button("重试") { retry += 1 }.buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("searchRetry")
+                    }
+                } else if completedKey == key { ContentUnavailableView.search(text: search.term) }
             }
         }
         .modifier(PageLoadingOverlay(request: search.hasCriteria ? loading.request : nil,
                                      hasContent: !entries.isEmpty || !conversations.isEmpty, label: "正在搜索"))
         .task(id: OptionsKey(shelfID: search.shelfID, revision: model.revision)) {
-            search.options = try? await ReaderService.shared.metadataOptions(shelfID: search.shelfID)
+            search.options = try? await AppDataService.shared.metadataOptions(shelfID: search.shelfID)
         }
         .task(id: key) { await run(key) }
     }
@@ -246,8 +252,8 @@ struct AppSearchView: View {
     private func run(_ key: SearchKey) async {
         await results.run(key, hasCriteria: search.hasCriteria) {
             try await Task.sleep(for: .milliseconds(120))
-            try await ReaderService.libraryTestLatency()
-            let found = try await ReaderService.shared.searchLibrary(shelfID: search.shelfID, query: key.term,
+            try await AppDataService.libraryTestLatency()
+            let found = try await AppDataService.shared.searchLibrary(shelfID: search.shelfID, query: key.term,
                                                                    author: search.author, tag: search.tag)
             let talks = search.tokens.isEmpty ? try await ai.searchConversations(key.term) : []
             return (found, talks)

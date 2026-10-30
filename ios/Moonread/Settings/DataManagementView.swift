@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 extension UTType { static let moonreadBackup = UTType(exportedAs: "dev.moonread.backup", conformingTo: .zip) }
 
 @MainActor @Observable final class DataManagementModel {
-    let service: ReaderService
+    let service: AppDataService
     var inventory = ReadingDataInventory(items: [], pending: 0, unsupported: 0)
     var cache = CacheSummary()
     var busy = false
@@ -39,7 +39,7 @@ extension UTType { static let moonreadBackup = UTType(exportedAs: "dev.moonread.
     }
     private var nameOrder: [String] = []
     private var recentOrder: [String] = []
-    init(service: ReaderService = .shared) { self.service = service }
+    init(service: AppDataService = .shared) { self.service = service }
     var visible: [ReadingDataItem] {
         let items = Dictionary(uniqueKeysWithValues: inventory.items.map { ($0.id, $0) })
         return (recent ? recentOrder : nameOrder).compactMap { items[$0] }.filter {
@@ -205,8 +205,9 @@ struct DataManagementView: View {
                     Text("删除全部阅读数据", tableName: "DataManagement").frame(maxWidth: .infinity, minHeight: 44)
                 }.buttonStyle(.bordered).tint(Color(uiColor: theme.destructive)).accessibilityIdentifier("deleteAllReadingData")
             }.padding()
-        }
+        }.pageScrollMargins()
         .themedPage().navigationTitle(Text("数据管理", tableName: "DataManagement"))
+        .navigationBarTitleDisplayMode(.large)
         .modifier(ReadingDataWorking(model: model))
         .modifier(ReadingDataDeletionPrompt(model: model))
         .refreshable { await model.load() }
@@ -220,6 +221,11 @@ struct DataManagementView: View {
         .confirmationDialog(Text("导出全部阅读数据？", tableName: "DataManagement"), isPresented: $exportConfirmation, titleVisibility: .visible) {
             Button { Task {
                 await model.exportAll()
+                #if DEBUG
+                // U21 reimports this real export through its existing isolated
+                // backup fixture; system sharing is outside the business flow.
+                if await model.chooseBackup() != nil { return }
+                #endif
                 if model.exported != nil { do { sharing = try await model.shareBackup() } catch { model.error = ReaderMessages.error(error) } }
             } } label: { Text("生成全部备份", tableName: "DataManagement") }.accessibilityIdentifier("confirmExportAllReadingData")
         } message: { Text("全部 \(model.inventory.items.count) 本阅读数据与配色；身份未完成或附件缺失时将提示重试。", tableName: "DataManagement") }
@@ -233,6 +239,9 @@ struct DataManagementView: View {
         Button { exportConfirmation = true } label: {
             Label { Text("导出全部", tableName: "DataManagement") } icon: { Image(systemName: "square.and.arrow.up") }.frame(maxWidth: .infinity)
         }.buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).accessibilityIdentifier("exportAllReadingData")
+        #if DEBUG
+        .accessibilityValue(model.exported == nil ? "not-ready" : "backup-ready")
+        #endif
     }
 }
 private struct ReadingDataWorking: ViewModifier {
@@ -278,15 +287,18 @@ private struct ReadingDataListView: View {
                     .padding(.horizontal).padding(.vertical, 8).accessibilityIdentifier("readingDataResult")
             }
             if !model.visible.isEmpty {
-                List {
+                List(selection: $model.selected) {
                     Section {
                         ForEach(model.visible) { item in
-                            Button {
-                                if model.selecting { if !model.selected.insert(item.id).inserted { model.selected.remove(item.id) } }
-                                else { detail = item }
-                            } label: {
-                                DataManagementRow(item: item, duplicate: model.duplicateNames[item.id], selected: model.selected.contains(item.id), selecting: model.selecting)
-                            }.buttonStyle(.plain).accessibilityIdentifier("reading-data-" + item.id)
+                            Group {
+                                if model.selecting {
+                                    DataManagementRow(item: item, duplicate: model.duplicateNames[item.id])
+                                } else {
+                                    Button { detail = item } label: {
+                                        DataManagementRow(item: item, duplicate: model.duplicateNames[item.id])
+                                    }.buttonStyle(.plain)
+                                }
+                            }.tag(item.id).accessibilityIdentifier("reading-data-" + item.id)
                                 .swipeActions { Button(role: .destructive) { model.deleting = [item.id] } label: { Text("删除", tableName: "DataManagement") } }
                         }
                     } footer: {
@@ -310,21 +322,28 @@ private struct ReadingDataListView: View {
         .navigationTitle(model.selecting ? Text("已选 \(model.selected.count) 本", tableName: "DataManagement") : Text("阅读数据", tableName: "DataManagement"))
         .navigationBarTitleDisplayMode(model.selecting ? .inline : .large)
         .searchable(text: $model.query, prompt: Text("搜索书名、作者或标签", tableName: "DataManagement"))
+        .environment(\.editMode, .constant(model.selecting ? .active : .inactive))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Button { model.selecting.toggle(); model.selected.removeAll() } label: { Text(model.selecting ? "完成" : "选择", tableName: "DataManagement") }.accessibilityIdentifier("selectReadingData")
             }
+            if model.selecting {
+                ToolbarItemGroup(placement: .bottomBar) {
+                    Button { model.toggleVisibleSelection() } label: { Text(model.allVisibleSelected ? "取消全选" : "全选", tableName: "DataManagement") }
+                        .accessibilityIdentifier("selectAllReadingData")
+                    Spacer()
+                    Button(role: .destructive) { model.deleting = model.selected } label: { Text("删除 \(model.selected.count) 本", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.destructive)) }
+                        .disabled(model.selected.isEmpty).accessibilityIdentifier("deleteSelectedReadingData")
+                }
+            }
         }
         .toolbar(model.selecting ? .hidden : .automatic, for: .tabBar)
-        .safeAreaInset(edge: .bottom) {
-            if model.selecting { selectionBar }
-        }
         .onDisappear { model.selecting = false; model.selected.removeAll() }
         .modifier(ReadingDataWorking(model: model)).modifier(ReadingDataDeletionPrompt(model: model))
         .sheet(item: $detail) { item in
             NavigationStack {
                 VStack(alignment: .leading, spacing: 20) {
-                    DataManagementRow(item: item, duplicate: model.duplicateNames[item.id], selected: false, selecting: false)
+                    DataManagementRow(item: item, duplicate: model.duplicateNames[item.id])
                     Text("书签 \(item.bookmarks) · 批注 \(item.annotations)", tableName: "DataManagement").font(.footnote)
                     Spacer()
                 }.padding().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).themedPage()
@@ -345,33 +364,12 @@ private struct ReadingDataListView: View {
         }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
             .accessibilityIdentifier(unlinked ? "readingDataFilterUnlinked" : "readingDataFilterAll")
     }
-    private var selectionBar: some View {
-        HStack(spacing: 8) {
-            Button { model.toggleVisibleSelection() } label: { Text(model.allVisibleSelected ? "取消全选" : "全选", tableName: "DataManagement") }
-                .foregroundStyle(Color(uiColor: theme.accent))
-                .accessibilityIdentifier("selectAllReadingData")
-            Spacer(minLength: 0)
-            VStack(spacing: 0) {
-                Text(model.unlinkedOnly ? "不在书架上" : "全部", tableName: "DataManagement")
-                Text("\(model.visible.count) 本", tableName: "DataManagement")
-            }.font(.caption2).foregroundStyle(Color(uiColor: theme.secondary))
-            Spacer(minLength: 0)
-            Button(role: .destructive) { model.deleting = model.selected } label: { Text("删除 \(model.selected.count) 本", tableName: "DataManagement") }
-                .buttonStyle(.borderedProminent).buttonBorderShape(.capsule).tint(Color(uiColor: theme.destructive))
-                .foregroundStyle(Color(uiColor: model.selected.isEmpty ? theme.secondary : theme.onAccent))
-                .disabled(model.selected.isEmpty).accessibilityIdentifier("deleteSelectedReadingData")
-        }.frame(minHeight: 58).padding(.horizontal, 16)
-            .background(Color(uiColor: theme.raised), in: .capsule).padding(.horizontal, 14).padding(.bottom, 8)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("readingDataSelectionBar")
-    }
+
 }
 private struct DataManagementRow: View {
     @Environment(\.theme) private var theme
     let item: ReadingDataItem
     var duplicate: (index: Int, count: Int)? = nil
-    let selected: Bool
-    let selecting: Bool
     private var sourceLabel: String {
         guard let hint = item.sourceHint else { return String(localized: "来源未知", table: "DataManagement") }
         var parts = [hint.relative_path]
@@ -393,7 +391,6 @@ private struct DataManagementRow: View {
     }
     var body: some View {
         HStack {
-            if selecting { Image(systemName: selected ? "checkmark.circle.fill" : "circle").foregroundStyle(Color(uiColor: selected ? theme.accent : theme.secondary)) }
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .firstTextBaseline) {
                     if !item.title.isEmpty { Text(verbatim: item.title) } else { Text("书架上没有这本小说", tableName: "DataManagement") }
@@ -487,8 +484,12 @@ private struct ReadingDataIssuesView: View {
                                 Button { library.chooseFiles(.folder(shelf)) } label: { Text("重新连接书架", tableName: "DataManagement") }
                                     .buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("reconnectPending-" + item.id)
                             }
-                            Button(role: .destructive) { discarding = item } label: { Text("丢弃记录", tableName: "DataManagement") }
-                                .buttonStyle(.bordered).tint(Color(uiColor: theme.destructive)).foregroundStyle(Color(uiColor: theme.destructive)).accessibilityIdentifier("discardPending-" + item.id)
+                            Spacer(minLength: 8)
+                            Menu {
+                                Button(role: .destructive) { discarding = item } label: { Text("丢弃记录", tableName: "DataManagement") }
+                                    .accessibilityIdentifier("discardPending-" + item.id)
+                            } label: { Label("更多", systemImage: "ellipsis").labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44) }
+                                .foregroundStyle(Color(uiColor: theme.secondary)).accessibilityIdentifier("pendingMore-" + item.id)
                         }.disabled(model.busy)
                     }.padding(.vertical, 4)
                 }
@@ -548,7 +549,7 @@ private struct ReadingDataCacheView: View {
                 if let error = model.error { Text(verbatim: error).foregroundStyle(Color(uiColor: theme.destructive)) }
                 Spacer()
             }.padding()
-        }.themedPage().navigationTitle(Text("可重建缓存", tableName: "DataManagement"))
+        }.pageScrollMargins().themedPage().navigationTitle(Text("可重建缓存", tableName: "DataManagement"))
         .modifier(ReadingDataWorking(model: model))
         .confirmationDialog(Text("清理可重建缓存？", tableName: "DataManagement"), isPresented: $confirmation, titleVisibility: .visible) {
             Button { Task { await model.clearCache() } } label: { Text("确认清理缓存", tableName: "DataManagement") }
@@ -582,7 +583,7 @@ private struct BackupImportPreviewView: View {
                         if preview.preview.conflicts > 0 { Text("\(preview.preview.conflicts) 处批注有冲突", tableName: "DataManagement") }
                     }
                 }.padding().frame(maxWidth: .infinity, alignment: .leading)
-            }.themedPage().navigationTitle(Text("导入预览", tableName: "DataManagement"))
+            }.pageScrollMargins().themedPage().navigationTitle(Text("导入预览", tableName: "DataManagement"))
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 12) {
                     if let error = model.error { Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }

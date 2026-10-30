@@ -20,7 +20,7 @@ defaults:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_TARGET_DIR: ${{ github.workspace }}/build/cargo
+  CARGO_TARGET_DIR: ${{ github.workspace }}/target
 
 jobs:
   changes:
@@ -58,8 +58,8 @@ jobs:
                      (b'/' not in path and path.startswith((b'Cargo.', b'flake.')))
                      for path in paths)
           site_inputs = (
-              b'crates/moonread-core/src/themes.rs',
-              b'crates/moonread-core/src/reading_layout.rs',
+              b'crates/moonread-core/src/user/themes.rs',
+              b'crates/moonread-core/src/reading/layout.rs',
               b'crates/moonread-core/src/bin/site-theme-data.rs',
               b'ios/Moonread/Localizable.xcstrings',
           )
@@ -90,7 +90,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
       - name: Scan committed history for secrets
         run: nix develop --no-update-lock-file -c gitleaks git --redact --no-banner --log-opts=HEAD .
 
@@ -104,7 +104,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
       - name: Check workflow syntax
         run: nix develop --no-update-lock-file -c actionlint
 
@@ -118,7 +118,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
       - name: Check generated reader preview data
         run: nix develop --no-update-lock-file -c cargo run --locked -p moonread-core --bin site-theme-data -- --check
       - name: Build site
@@ -142,16 +142,16 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: restore-linux-cargo
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            build/cargo
-          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'Cargo.toml') }}
-          restore-keys: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', 'Cargo.lock') }}-
+            target
+          key: cargo-target-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'Cargo.toml') }}
+          restore-keys: cargo-target-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', 'Cargo.lock') }}-
       - name: Check formatting
         run: |
           nix develop --no-update-lock-file -c cargo fmt --all -- --check
@@ -166,7 +166,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            build/cargo
+            target
           key: ${{ steps.restore-linux-cargo.outputs.cache-primary-key }}
       - name: Test Rust
         run: nix develop --no-update-lock-file -c cargo test --locked --workspace --all-features
@@ -200,16 +200,16 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('udid=' + matches[0] + '\n')
           PY
-      - uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: restore-ios-cargo
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            build/cargo
-          key: ios-cargo-${{ runner.arch }}-xcode27.1-${{ hashFiles('flake.lock', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'Cargo.toml') }}
-          restore-keys: ios-cargo-${{ runner.arch }}-xcode27.1-${{ hashFiles('flake.lock', 'Cargo.lock') }}-
+            target
+          key: ios-cargo-target-v2-${{ runner.arch }}-xcode27.1-${{ hashFiles('flake.lock', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'Cargo.toml') }}
+          restore-keys: ios-cargo-target-v2-${{ runner.arch }}-xcode27.1-${{ hashFiles('flake.lock', 'Cargo.lock') }}-
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         id: restore-ios-derived
         with:
@@ -222,6 +222,8 @@ jobs:
           SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
         run: |
           mkdir -p build/CI
+          # Boot overlaps compilation. A shutdown or already-booted device must not fail this step.
+          nohup xcrun simctl boot "$SIMULATOR_UDID" >build/CI/simulator-boot.log 2>&1 &
           nix develop --no-update-lock-file -c xcodebuild \
             -project ios/Moonread.xcodeproj -scheme Moonread -configuration Debug \
             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
@@ -239,7 +241,7 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            build/cargo
+            target
           key: ${{ steps.restore-ios-cargo.outputs.cache-primary-key }}
       - name: Save compiled iOS DerivedData cache
         if: ${{ !cancelled() && steps.ios-build.outcome == 'success' && steps.restore-ios-derived.outputs.cache-hit != 'true' }}
@@ -266,7 +268,7 @@ jobs:
             2>&1 | tee build/CI/MoonreadTests.log
       - name: Preserve test results
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: MoonreadTests-${{ github.run_attempt }}
           path: build/CI
