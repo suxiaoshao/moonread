@@ -240,7 +240,10 @@ jobs:
               text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', text)
               text = re.sub(r'(?s)-----BEGIN [^-]+-----.*?(?:-----END [^-]+-----|\Z)', '[key material omitted]', text)
               text = re.sub(r'(?is)<data>.*?</data>', '[binary data omitted]', text)
-              sensitive = r'(?:[\w.-]*(?:token|secret|password|credential|cookie|authorization|private.?key|api.?key|key.?id|authentication.?key|issuer|apple.?id|account)[\w.-]*|key)'
+              # Strip opaque blobs before scanning field labels; bounded labels
+              # avoid pathological matching on large/unfamiliar log payloads.
+              text = re.sub(r'\b[A-Za-z0-9_+/=-]{48,}\b', '[opaque value omitted]', text)
+              sensitive = r'(?:[\w.-]{0,64}(?:token|secret|password|credential|cookie|authorization|private.?key|api.?key|key.?id|authentication.?key|issuer|apple.?id|account)[\w.-]{0,64}|key)'
               text = re.sub(r'(?im)^.*(?:authorization|proxy-authorization|set-cookie|cookie|x-[\w-]*(?:token|key|session))\s*:.*$', '[sensitive header omitted]', text)
               text = re.sub(r'(?is)<key>\s*' + sensitive + r'\s*</key>\s*<string>.*?</string>', '[credential omitted]', text)
               text = re.sub(r'''(?i)(["']?''' + sensitive + r'''["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}]+)''', r'\1[redacted]', text)
@@ -253,7 +256,6 @@ jobs:
               text = re.sub(r'''\b(?:[\w.%+~-]+/)+[^\s"'<>;,}]+''', '[path omitted]', text)
               text = re.sub(r'(?i)\b[\w.+-]+@[\w.-]+\.[a-z]{2,}\b', '[email omitted]', text)
               text = re.sub(r'(?i)\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b', '[UUID omitted]', text)
-              text = re.sub(r'\b[A-Za-z0-9_+/=-]{48,}\b', '[opaque value omitted]', text)
               text = re.sub(r'(?i)(?:Apple Development|Apple Distribution|Developer ID Application):[^\n,;}]+', '[signing identity omitted]', text)
               return ''.join(c for c in text if c in '\n\t' or c.isprintable()).replace('`', "'")
 
