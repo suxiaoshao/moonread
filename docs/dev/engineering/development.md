@@ -33,7 +33,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 - `main` 的 App 代码始终对应 App Store 最新发布版本，不承载下一版本 App 的日常开发；正式发布后，在对应提交打版本 tag（如 `v1.1`）。TestFlight 上传不等于 App Store 发布。
 - `docs/site/**` 是版本分支规则的例外：隐私政策、支持页等版本所需的网站改动，在提交 App Store 审核前用小 PR 直接合进 `main`，由 Pages 即时部署，不等待 App 版本上线。网站检查通过后再合并；“main 等于线上版本”只约束 App 代码。
 - 发布工作流等不含 App 功能代码的发布基础设施可通过小 PR 直接进入 `main`，使默认分支上的手动工作流可用；合入后同步到当前 release 分支。此例外不提前发布下一版 App 代码。
-- 每个版本从 `main` 建立 `release/x.y`，在该分支开发。功能、修复与文档使用独立开发分支，PR 以当前 `release/x.y` 为目标，通过检查后 **squash** 合并。
+- 通常从 `main` 建立 `release/x.y`。上一版已提审但未上线时，可从其固定提审提交建立下一版分支并行开发；上一版上线或追加修复后，再把发布结果同步到下一版，不能提前把未上线 App 代码合入 `main`。功能、修复与文档使用独立开发分支，PR 以当前 `release/x.y` 为目标，通过检查后 **squash** 合并。
 - App Store 发布后，`release/x.y` 通过 PR 以普通 **merge commit** 合回 `main`，保留版本开发历史；发布回合使用普通 merge，不 squash 发布分支；下述已上线 hotfix 回合也使用普通 merge。
 - 线上问题从 `main` 建立 `hotfix/x.y.z`，在该分支修复、打包并提审；App Store 上线后才通过 PR 以普通 merge 回 `main` 并打补丁 tag（如 `v1.1.1`），随后把 `main` 合进当前 `release/x.y`。补丁审核及等待上线期间不提前合回 main，确保 main 的 App 代码始终对应线上版本。
 - PR 合入 `release/x.y` 或 `hotfix` 分支时，GitHub 不会根据 `Closes` 自动关闭 issue。合并后需手动关闭对应 issue，评论注明合入的分支与提交，并把看板状态改为「完成」。
@@ -45,7 +45,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 - 新开 `release/x.y` 时，同步修改 [Dependabot](../../../.github/dependabot.yml) 两个更新项的 `target-branch`，让常规依赖版本更新 PR 指向当前版本分支。
 - Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 PR 的 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 `hotfix/x.y.z` 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。
-- 当前目标配置为 `release/1.2`，该分支在本流程 PR 合并后才创建；新目标分支的 CI 触发与 Dependabot 实际校验以合并并创建分支后为准，不能以本 PR 的 CI 通过代替。
+- 当前开发目标为 `release/1.4`，从 1.3 已提审提交 `457ea531c84e612dc344b67c30138854e58e01f0` 建立；`release/1.3` 保留用于审核修复与上线后的发布合并。Dependabot 两项常规更新目标均为 `release/1.4`。
 
 签名配置、小说原件、构建产物与凭据不随代码推送。CI、仓库保护、模板及依赖更新见[仓库与持续集成](repository.md)，测试范围与推送前要求见[测试原则](verification.md#测试原则)。
 
