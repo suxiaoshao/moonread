@@ -147,7 +147,7 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     let book = try core.importBook(filePath: file.path, title: "Outline")
     let outline = try core.querySnapshot(json: "{}").chapterOutline(bookId: book.id)
     let current = try XCTUnwrap(outline.items.first { $0.title == "第150章 月" })
-    let service = ReaderService(core: core)
+    let service = AppDataService(core: core)
     let model = ReaderToolsModel(service: service)
     await model.prepare(bookID: book.id, currentChapter: current.startUtf8, library: true)
     XCTAssertEqual(model.chapters.count, 202)
@@ -172,6 +172,25 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertTrue(model.chapters.isEmpty)
     model.showChapter(current.startUtf8)
     XCTAssertEqual(model.chapterTarget, current.startUtf8)
+
+    let savedJump = model.chapterJumpRevision
+    model.select(.bookmarks)
+    await model.prepare(bookID: book.id, currentChapter: current.startUtf8, library: true, preservingPosition: true)
+    _ = try await service.toggleBookmark(book.id, at: current.startUtf8)
+    await model.prepare(bookID: book.id, currentChapter: current.startUtf8, library: true, preservingPosition: true)
+    XCTAssertTrue(model.notes.contains { $0.startUtf8 == current.startUtf8 })
+    XCTAssertEqual(model.chapterJumpRevision, savedJump, "reopening marks does not move the directory")
+
+    model.select(.notes)
+    await model.prepare(bookID: book.id, currentChapter: current.startUtf8, library: true, preservingPosition: true)
+    let mark = try await service.annotate(book.id, start: 0, end: 3)
+    await model.refreshVisibleMarks()
+    XCTAssertTrue(model.notes.contains { $0.id == mark.id })
+    let edit = try await service.prepareAnnotation(book.id, start: 0, end: 3)
+    _ = try await service.saveNote(edit, text: "更新后的笔记")
+    await model.refreshVisibleMarks()
+    XCTAssertEqual(model.notes.first { $0.id == mark.id }?.note, "更新后的笔记")
+    XCTAssertEqual(model.chapterJumpRevision, savedJump)
   }
 }
 
@@ -188,7 +207,7 @@ final class ReaderQueryAdapterUserDataTests: UserDataFixture {
     let book = try core.importBook(filePath: file.path, title: "Book")
     let formal = try store()
     let pending = try store()
-    let service = ReaderService(
+    let service = AppDataService(
       core: core, sourceDefaultsSuite: "Query-\(root.lastPathComponent)",
       userStoreFactory: { name, _ in name == "pending-users.store" ? pending : formal })
     let before = try await service.details(bookID: book.id).metadata

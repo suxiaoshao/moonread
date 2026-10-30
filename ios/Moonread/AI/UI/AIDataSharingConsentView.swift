@@ -35,7 +35,7 @@ struct AIDataSharingConsentView: View {
                         }
                     }.foregroundStyle(Color(uiColor: theme.accent)).tint(Color(uiColor: theme.accent))
                 }.padding(LayoutTokens.page).frame(maxWidth: 640, alignment: .leading).frame(maxWidth: .infinity)
-            }.themedPage()
+            }.pageScrollMargins().themedPage()
                 .safeAreaInset(edge: .bottom, spacing: 0) { actions }
                 .navigationTitle("数据共享许可").navigationBarTitleDisplayMode(.inline)
         }.accessibilityIdentifier("aiDataSharingConsent")

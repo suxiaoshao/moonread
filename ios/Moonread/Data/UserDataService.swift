@@ -2,7 +2,7 @@ import Foundation
 import SwiftData
 import CryptoKit
 
-extension ReaderService {
+extension AppDataService {
     func userStore(pending: Bool = false, diagnostic: ReaderOpenTrace? = nil) async throws -> UserDataStore {
         let label = pending ? "pendingStore" : "formalStore"
         diagnostic?.mark(label + ".service.begin")
@@ -71,6 +71,8 @@ extension ReaderService {
             cancelRecentRestoration()
             userStoreTask = nil; userCloudEnabled = enabled
             userCloudConfigurationRevision = UUID()
+            resetSystemReadingCatalog()
+            NotificationCenter.default.post(name: .readingContinuationInvalidated, object: nil)
             let revision = userCloudConfigurationRevision
             // The configuration switch is serialized with deletion, not store
             // bootstrap: a newer configuration must be able to replace a stuck
@@ -82,7 +84,7 @@ extension ReaderService {
                 throw error
             }
             guard userCloudConfigurationRevision == revision else { return }
-            scheduleRecentRestoration()
+            scheduleRecentRestoration(); scheduleSystemReadingCatalog(immediate: true)
         }
     }
     func startUserRecovery() {
@@ -122,7 +124,7 @@ extension ReaderService {
         diagnostic?.mark("effectiveQuery.resumed")
         return query
     }
-    func effectiveQuery(facts: Bool = false, keys: [String]? = nil, positionsOnly: Bool = false, statisticsBook: String? = nil, scope: String = "batch", diagnostic: ReaderOpenTrace? = nil) async throws -> ReaderQuery {
+    func effectiveQuery(facts: Bool = false, keys: [String]? = nil, positionsOnly: Bool = false, statisticsBook: String? = nil, scope: String = "batch", sparseCatalogue: Bool = false, diagnostic: ReaderOpenTrace? = nil) async throws -> ReaderQuery {
         diagnostic?.mark("effectiveQuery.actor.begin")
         defer { diagnostic?.mark("effectiveQuery.actor.return") }
         diagnostic?.mark("formalStore.queued")
@@ -146,15 +148,15 @@ extension ReaderService {
                 if item.key.hasPrefix(prefix), let file = item.value as? String { result[String(item.key.dropFirst(prefix.count))] = file }
             }
         }
-        let cacheKey = scope + "-\(facts)-\(positionsOnly)-\(statisticsBook ?? "all")-" + (keys?.sorted().joined(separator: ",") ?? "all")
+        let cacheKey = scope + "-\(facts)-\(positionsOnly)-\(statisticsBook ?? "all")-\(sparseCatalogue)-" + (keys?.sorted().joined(separator: ",") ?? "all")
         let signature = "\(userCloudConfigurationRevision)-\(formalVersion)-\(pendingVersion)-\(preferences.generation)-\(preferences.enabled)-" + hidden.sorted().joined(separator: ",") + preferred.sorted { $0.key < $1.key }.map { $0.key + "=" + $0.value }.joined(separator: ",")
         diagnostic?.mark("inputSignature.return")
         if let cached = queryCache[cacheKey], cached.signature == signature { diagnostic?.mark("query.cacheHit"); return cached.query }
         diagnostic?.mark("formalProjection.queued")
-        let formalJSON = try await store.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: keys, positionsOnly: positionsOnly, statisticsBook: statisticsBook, diagnostic: diagnostic, diagnosticScope: "formalProjection")
+        let formalJSON = try await store.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: keys, positionsOnly: positionsOnly, statisticsBook: statisticsBook, diagnostic: diagnostic, diagnosticScope: "formalProjection", sparseCatalogue: sparseCatalogue)
         diagnostic?.mark("formalProjection.resumed")
         diagnostic?.mark("pendingProjection.queued")
-        let pendingJSON = try await pending.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: keys, positionsOnly: positionsOnly, statisticsBook: statisticsBook, diagnostic: diagnostic, diagnosticScope: "pendingProjection")
+        let pendingJSON = try await pending.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: keys, positionsOnly: positionsOnly, statisticsBook: statisticsBook, diagnostic: diagnostic, diagnosticScope: "pendingProjection", sparseCatalogue: sparseCatalogue)
         diagnostic?.mark("pendingProjection.resumed")
         // Full JSON/TEMP work runs independently, so an exiting reader's batch cannot occupy this actor.
         diagnostic?.mark("queryBuild.queued")
@@ -237,8 +239,9 @@ extension ReaderService {
         if case .formal = try parseReadingKey(value: key) { return try await userStore(pending: true).compatibilityNotice(key: serializeReadingKey(key: .pending(bookId: id))) }
         return nil
     }
-    func writePosition(_ id: String, offset: UInt64) async throws {
+    func writePosition(_ id: String, offset: UInt64, expectedConfiguration: UUID? = nil) async throws {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        if let expectedConfiguration, expectedConfiguration != userCloudConfigurationRevision { throw CancellationError() }
         try await promoteUserDataLocked(id)
         let core = try textCore(), key = try userKey(id)
         let normalized = try core.normalizedPosition(bookId: id, offsetUtf8: offset)
@@ -252,7 +255,11 @@ extension ReaderService {
         }
         let value = PositionValue(content_key: key, offset: normalized, source_hint: hint)
         let json = String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
-        try await store.put("position/\(key)", value: json, device: userDevice)
+        let stored = try await store.put("position/\(key)", value: json, device: userDevice)
+        // A missing device receipt may suppress a hint, but cannot turn a
+        // committed position into a failed write or rewrite that sync fact.
+        do { try rememberLocalReadingPosition(key: key, offset: normalized, token: stored.token) }
+        catch { UserSyncJSON.quarantined("local reading baseline") }
         dataChanged()
     }
     func userMarks(_ id: String, kind: MarkKind? = nil) async throws -> [ReaderMark] {

@@ -25,7 +25,7 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
         options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil),
       location: "icloud", builtin: true)
     UserDefaults(suiteName: suite)?.set("synthetic-account", forKey: "Moonread.cloudLibraryOwner")
-    let service = ReaderService(core: core, sourceDefaultsSuite: suite)
+    let service = AppDataService(core: core, sourceDefaultsSuite: suite)
     try core.scanLibraryShelf(
       shelfId: "builtin",
       items: [
@@ -57,7 +57,7 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
     let source = local.appendingPathComponent("book.txt")
     try Data("合成交接输入".utf8).write(to: source)
     let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let service = ReaderService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
+    let service = AppDataService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
     try await service.prepareLibrary()
     try await service.scanLibraryShelf("builtin")
     let roots = CloudLibraryRoots(
@@ -81,7 +81,7 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
     let intent = CloudHandoffReceipt(
       bytesHash: try CloudDocumentHandoff.bytesHash(local.appendingPathComponent("next.txt")))
     try JSONEncoder().encode(["next.txt": intent]).write(to: roots.journal)
-    let restarted = ReaderService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
+    let restarted = AppDataService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
     await restarted.restoreCloudLibraryRoot(owner: roots.owner)
     try await restarted.updateCloudLibrary(
       roots: roots, makeUbiquitous: { try FileManager.default.moveItem(at: $0, to: $1) })
@@ -154,7 +154,7 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
     try "第一章 月光\n\n这是合成交接测试正文。\n".write(to: source, atomically: true, encoding: .utf8)
     try Data("another unknown file".utf8).write(to: second)
     let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let service = ReaderService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
+    let service = AppDataService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
     try await service.prepareLibrary()
     try await service.scanLibraryShelf("builtin")
     let entry = try XCTUnwrap(
@@ -206,7 +206,7 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
     let owner = UUID().uuidString
     UserDefaults(suiteName: suite)?.set(owner, forKey: "Moonread.cloudLibraryOwner")
     let reopenedCore = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let restarted = ReaderService(
+    let restarted = AppDataService(
       core: reopenedCore, libraryDirectory: local, sourceDefaultsSuite: suite)
     await restarted.restoreCloudLibraryRoot(owner: owner)
     try await restarted.refreshLibraryShelf("builtin")
@@ -255,7 +255,7 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
       let source = local.appendingPathComponent("book.txt")
       try "第一章 月\n暂停任务的合成正文。\n".write(to: source, atomically: true, encoding: .utf8)
       let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-      let service = ReaderService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
+      let service = AppDataService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
       try await service.prepareLibrary()
       try await service.scanLibraryShelf("builtin")
       let entry = try XCTUnwrap(
@@ -316,7 +316,7 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
     try fm.createDirectory(at: local, withIntermediateDirectories: true)
     try Data("first".utf8).write(to: local.appendingPathComponent("first.txt"))
     let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let service = ReaderService(
+    let service = AppDataService(
       core: core, libraryDirectory: local, sourceDefaultsSuite: "NewFile-\(UUID().uuidString)")
     try await service.prepareLibrary()
     try await service.scanLibraryShelf("builtin")
@@ -380,7 +380,7 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
       persist: { _ in }, makeUbiquitous: { try fm.moveItem(at: $0, to: $1) })
     XCTAssertTrue(fm.fileExists(atPath: source.path))
     let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
-    let service = ReaderService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
+    let service = AppDataService(core: core, libraryDirectory: local, sourceDefaultsSuite: suite)
     try await service.prepareLibrary()
     try await service.scanLibraryShelf("builtin")
     try await service.publishCloudHandoff(

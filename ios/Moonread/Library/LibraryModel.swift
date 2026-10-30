@@ -10,12 +10,16 @@ enum ReaderRoute: Hashable, Sendable {
 enum LibraryRoute: Hashable {
     case folder(LibraryLocation), allBooks(String), reader(OpeningRequest), recent, manage
     case statistics(StatisticsRoute)
-    case settings, dataManagement
+    case settingsPalette(ThemeAppearance)
+    #if DEBUG
+    case screenshotReaderSettings
+    #endif
     /// A contextual search pushed on the current stack, with its own session.
     case search(AppSearchScope)
     /// A conversation opened from search, anchored at the matching message.
     case conversation(String, anchor: AIConversationAnchor?)
-    var isReader: Bool { if case .reader = self { true } else { false } }
+    var readerOpeningID: UUID? { if case .reader(let request) = self { request.id } else { nil } }
+    var isReader: Bool { readerOpeningID != nil }
 }
 
 struct HomeSnapshot: Equatable {
@@ -74,15 +78,18 @@ final class LibraryModel {
     private(set) var readingInputRevision: UInt64 = 0
     var revision = 0
     var selectedTab = AppTab.library {
-        didSet { if selectedTab == .search && oldValue != .search { searchOrigin = oldValue } }
+        didSet {
+            if selectedTab == .search && oldValue != .search { searchOrigin = oldValue }
+        }
     }
     /// Search is a quick entry: leaving it returns to the tab it was entered from.
     private(set) var searchOrigin = AppTab.library
     func updateAvailableTabs(aiAvailable: Bool) {
         func existing(_ tab: AppTab) -> AppTab {
-            if tab == .conversations && !aiAvailable || tab == .settings && aiAvailable { return .library }
+            if tab == .conversations && !aiAvailable { return .library }
             return tab
         }
+        settingsNavigation.aiAvailabilityChanged(aiAvailable)
         selectedTab = existing(selectedTab)
         searchOrigin = existing(searchOrigin)
         if !aiAvailable { dismissAIPaths() }
@@ -92,19 +99,19 @@ final class LibraryModel {
             Array(path.prefix { if case .conversation = $0 { return false }; return true })
         }
         libraryPath = withoutAI(libraryPath); statisticsPath = withoutAI(statisticsPath); searchPath = withoutAI(searchPath)
-        settingsPath = withoutAI(settingsPath)
+        settingsNavigation.path = withoutAI(settingsNavigation.path)
         aiRequest = nil
     }
     var libraryPath: [LibraryRoute] = []
     var statisticsPath: [LibraryRoute] = []
-    var settingsPath: [LibraryRoute] = []
     var searchPath: [LibraryRoute] = []
+    var settingsNavigation = SettingsNavigation()
     var path: [LibraryRoute] {
         get {
-            switch selectedTab {
+            return switch selectedTab {
             case .library, .conversations: libraryPath
             case .statistics: statisticsPath
-            case .settings: settingsPath
+            case .settings: settingsNavigation.path
             case .search: searchPath
             }
         }
@@ -112,10 +119,16 @@ final class LibraryModel {
             switch selectedTab {
             case .library, .conversations: libraryPath = newValue
             case .statistics: statisticsPath = newValue
-            case .settings: settingsPath = newValue
+            case .settings: settingsNavigation.path = newValue
             case .search: searchPath = newValue
             }
         }
+    }
+    func openSettings(target: SettingsTask? = nil) {
+        selectedTab = .settings
+        // An external entry must not replace an unsaved palette edit.
+        guard !settingsNavigation.hasDraft else { return }
+        if let target { settingsNavigation.select(target) }
     }
     /// The one search session, owned here so library pages can open it with a scope.
     let search = AppSearch()
@@ -215,12 +228,14 @@ final class LibraryModel {
     private var fileWork: FileWork?
     private var systemImports: [SystemImport] = []
     private let lookupDropEntry: @MainActor (String) async throws -> LibraryEntry
-    let service: ReaderService
+    @ObservationIgnored lazy var systemReading = SystemReadingRouter(library: self, service: service)
+    let service: AppDataService
     private let fileMutationReload: (@Sendable () async throws -> Void)?
     private let prepareLibrary: @Sendable () async throws -> Void
     private let scanShelf: @Sendable (String) async throws -> Void
     private let refreshLibrary: @Sendable () async throws -> Void
     private let prepareSource: @Sendable (SourceFile, @escaping @Sendable (Double?) -> Void) async throws -> Void
+    private var openingOrigin: (AppTab, [LibraryRoute])?
     private var openingTask: Task<Void, Never>?
     private var openingRequest: UUID?
     private(set) var openingFileID: String?
@@ -228,12 +243,12 @@ final class LibraryModel {
     private(set) var showsFileLoading = false
     private(set) var fileProgress: Double?
 
-    init(service: ReaderService = .shared, fullIndex: FullIndexController? = nil,
+    init(service: AppDataService = .shared, fullIndex: FullIndexController? = nil,
          prepareLibrary: (@Sendable () async throws -> Void)? = nil,
          scanShelf: (@Sendable (String) async throws -> Void)? = nil,
          refreshLibrary: (@Sendable () async throws -> Void)? = nil,
          fileMutationReload: (@Sendable () async throws -> Void)? = nil,
-         prepareSource: @escaping @Sendable (SourceFile, @escaping @Sendable (Double?) -> Void) async throws -> Void = { try await ReaderService.shared.prepareSourceFile($0, progress: $1) },
+         prepareSource: @escaping @Sendable (SourceFile, @escaping @Sendable (Double?) -> Void) async throws -> Void = { try await AppDataService.shared.prepareSourceFile($0, progress: $1) },
          lookupDropEntry: (@MainActor (String) async throws -> LibraryEntry)? = nil,
          defaults: UserDefaults = .standard,
          cloudDiscoveryRequired: Bool? = nil,
@@ -567,7 +582,7 @@ final class LibraryModel {
             catch { self.error = ReaderMessages.error(error) }
         }
     }
-    func open(_ entry: LibraryEntry, push: ((LibraryRoute) -> Void)? = nil, isCurrent: @escaping () -> Bool = { true }) {
+    func open(_ entry: LibraryEntry, expectedContentSHA: String? = nil, push: ((LibraryRoute) -> Void)? = nil, isCurrent: @escaping () -> Bool = { true }) {
         let tap = ProcessInfo.processInfo.systemUptime
         if entry.id == openingFileID { return }
         cancelOpening()
@@ -575,6 +590,7 @@ final class LibraryModel {
         let origin = path, tab = selectedTab
         let request = UUID()
         openingRequest = request
+        openingOrigin = (tab, origin)
         openingFileID = entry.id
         openingSource = entry.source
         showsFileLoading = entry.needsDownload; fileProgress = nil
@@ -599,10 +615,10 @@ final class LibraryModel {
                 try Task.checkCancellation()
                 if let push {
                     guard isCurrent() else { return }
-                    push(.reader(OpeningRequest(target: .source(entry.source), tap: tap))); return
+                    push(.reader(OpeningRequest(target: .source(entry.source), tap: tap, expectedContentSHA: expectedContentSHA))); return
                 }
                 guard selectedTab == tab, path == origin else { return }
-                path.append(.reader(OpeningRequest(target: .source(entry.source), tap: tap)))
+                path.append(.reader(OpeningRequest(target: .source(entry.source), tap: tap, expectedContentSHA: expectedContentSHA)))
             } catch is CancellationError { }
             catch {
                 guard !Task.isCancelled, openingRequest == request, push == nil ? (selectedTab == tab && path == origin) : isCurrent() else { return }
@@ -610,7 +626,31 @@ final class LibraryModel {
             }
         }
     }
+    func readerDestinationLocation(_ id: UUID) -> (tab: AppTab, depth: Int)? {
+        for (tab, path) in [(AppTab.library, libraryPath), (.statistics, statisticsPath),
+                            (.search, searchPath), (.settings, settingsNavigation.path)] {
+            if let index = path.firstIndex(where: { $0.readerOpeningID == id }) { return (tab, index + 2) }
+        }
+        return nil
+    }
+    func readerDestinationDepth(_ id: UUID) -> Int? { readerDestinationLocation(id)?.depth }
+    func containsReaderDestination(_ id: UUID) -> Bool { readerDestinationLocation(id) != nil }
+    func removeReaderDestination(_ id: UUID) {
+        func removing(_ path: [LibraryRoute]) -> [LibraryRoute] {
+            guard let index = path.firstIndex(where: { route in
+                route.readerOpeningID == id
+            }) else { return path }
+            return Array(path[..<index])
+        }
+        libraryPath = removing(libraryPath); statisticsPath = removing(statisticsPath)
+        settingsNavigation.path = removing(settingsNavigation.path); searchPath = removing(searchPath)
+    }
+    func cancelOpeningForNavigationChange() {
+        guard let (tab, origin) = openingOrigin, selectedTab != tab || path != origin else { return }
+        cancelOpening()
+    }
     func cancelOpening() {
+        openingOrigin = nil
         openingTask?.cancel(); openingTask = nil
         openingFileID = nil; openingSource = nil; showsFileLoading = false; fileProgress = nil; openingRequest = nil
     }

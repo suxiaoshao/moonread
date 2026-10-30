@@ -232,6 +232,67 @@ fn chapter_corrections_are_inputs_and_rebuild_retains_text_integrity() {
 }
 
 #[test]
+fn continuation_uses_whole_book_percentage_and_effective_chapter_boundaries() {
+    let root = TempDir::new().unwrap();
+    let core = ReaderCore::new(root.path().join("db").to_string_lossy().into()).unwrap();
+    let file = root.path().join("continuation.txt");
+    let first = "Chapter 1\n";
+    let second = "Chapter 2\n";
+    let text = format!(
+        "{first}{}\n{second}{}\n",
+        "a".repeat(4999 - first.len()),
+        "b".repeat(4999 - second.len())
+    );
+    std::fs::write(&file, text).unwrap();
+    let book = core
+        .import_book(file.to_string_lossy().into(), "Continuation".into())
+        .unwrap();
+    assert_eq!(book.byte_count, 10000);
+    let query = core.query_snapshot("{}".into()).unwrap();
+    assert!(
+        query
+            .reading_continuation(book.id.clone(), 1000, 1000)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        query
+            .reading_continuation(book.id.clone(), 1000, 900)
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        query
+            .reading_continuation(book.id.clone(), 1000, 1099)
+            .unwrap()
+            .is_none()
+    );
+    let one_percent = query
+        .reading_continuation(book.id.clone(), 1000, 1100)
+        .unwrap()
+        .unwrap();
+    assert_eq!(one_percent.percentage, 11.0);
+    assert!(
+        query
+            .reading_continuation(book.id.clone(), 4990, 5009)
+            .unwrap()
+            .is_none()
+    );
+    let chapter = query
+        .reading_continuation(book.id.clone(), 4990, 5010)
+        .unwrap()
+        .unwrap();
+    assert_eq!(chapter.chapter.unwrap().title, "Chapter 2");
+    let excluded = core.query_snapshot(json!({"corrections":[{"content_key":book.content_sha256,"offset":5000,"title":"Chapter 2","level":1,"excluded":true}]}).to_string()).unwrap();
+    assert!(
+        excluded
+            .reading_continuation(book.id, 4990, 5010)
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
 fn settings_codec_preserves_device_preferences_and_validates_ranges() {
     let mut value = default_reader_settings();
     let controls = reader_typography_controls();
@@ -251,6 +312,28 @@ fn settings_codec_preserves_device_preferences_and_validates_ranges() {
     assert!(decode_reader_settings(encode_reader_settings(value.clone()).unwrap()).is_ok());
     value.font_size += controls.font_size.step;
     assert!(decode_reader_settings(encode_reader_settings(value).unwrap()).is_err());
+}
+
+#[test]
+fn released_reader_settings_keep_their_values() {
+    // Published 1.2 (10), 6ceef33: no wide-screen fields. Keep every old choice.
+    let json = r#"{"mode":"Pages","font_size":24.0,"line_spacing":10.0,"font":"Serif","paragraph_spacing":9.0,"indent":"Original","horizontal_margin":20.0,"maximum_line_width":720.0,"keep_awake":true,"brightness":0.4,"orientation":"Portrait"}"#;
+    let value = decode_reader_settings(json.to_owned()).unwrap();
+    assert_eq!(value.mode, ReadingMode::Pages);
+    assert_eq!(value.font_size, 24.0);
+    assert_eq!(value.line_spacing, 10.0);
+    assert_eq!(value.font, ReaderFont::Serif);
+    assert_eq!(value.paragraph_spacing, 9.0);
+    assert_eq!(value.indent, ReadingIndent::Original);
+    assert_eq!(value.horizontal_margin, 20.0);
+    assert_eq!(value.maximum_line_width, 720.0);
+    assert!(value.keep_awake);
+    assert_eq!(value.brightness, Some(0.4));
+    assert_eq!(value.orientation, ReadingOrientation::Portrait);
+    assert_eq!(
+        decode_reader_settings(encode_reader_settings(value.clone()).unwrap()).unwrap(),
+        value
+    );
 }
 
 #[test]
@@ -414,6 +497,7 @@ fn filtered_fact_snapshots_update_overview_book_and_days_without_duplicate_ids()
             .query_snapshot(json!({"facts": facts}).to_string())
             .unwrap();
         let overview = query.statistics_overview(20000, 20001, None).unwrap();
+        assert_eq!(overview.total_duration_ms, total);
         assert_eq!(
             overview.books.iter().map(|b| b.duration_ms).sum::<u64>(),
             total

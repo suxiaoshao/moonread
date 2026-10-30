@@ -19,7 +19,7 @@ extension BookMetadata {
     }
 }
 
-extension ReaderService {
+extension AppDataService {
     func details(bookID: String? = nil, sha: String? = nil) async throws -> BookDetails {
         let result: BookDetails
         if let bookID { result = try await bookQuery(bookID).bookDetails(bookId: bookID, contentSha: sha) }
@@ -113,14 +113,18 @@ extension ReaderService {
             try bytes.write(to: main, options: .atomic)
         }
         let url = FileManager.default.fileExists(atPath: main.path) ? main : coverDraftURL(cover)
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                  kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: pixels] as CFDictionary) else { return nil }
-        try Task.checkCancellation()
-        if let output = CGImageDestinationCreateWithURL(cached as CFURL, (cover.extension == "png" ? UTType.png : .jpeg).identifier as CFString, 1, nil) {
-            CGImageDestinationAddImage(output, image, nil); CGImageDestinationFinalize(output)
-        }
-        return UIImage(cgImage: image)
+        return await Task.detached(priority: .utility) {
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+                  let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                      kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: pixels] as CFDictionary) else { return nil as UIImage? }
+            guard !Task.isCancelled else { return nil }
+            let bytes = NSMutableData()
+            if let output = CGImageDestinationCreateWithData(bytes, (cover.extension == "png" ? UTType.png : .jpeg).identifier as CFString, 1, nil) {
+                CGImageDestinationAddImage(output, image, nil)
+                if CGImageDestinationFinalize(output) { try? (bytes as Data).write(to: cached, options: .atomic) }
+            }
+            return UIImage(cgImage: image)
+        }.value
     }
 
 }
@@ -161,7 +165,7 @@ private final class CoverObservationTokens: @unchecked Sendable {
     private let observers = CoverObservationTokens()
     private let load: @Sendable (BookCoverAsset, Int) async throws -> UIImage?
     init(load: @escaping @Sendable (BookCoverAsset, Int) async throws -> UIImage? = { cover, pixels in
-        try await ReaderService.shared.coverImage(cover, pixels: pixels)
+        try await AppDataService.shared.coverImage(cover, pixels: pixels)
     }) {
         self.load = load
         for name in [ModelContext.didSave, .NSPersistentStoreRemoteChange, .cloudDataReceived, .bookMetadataChanged] {

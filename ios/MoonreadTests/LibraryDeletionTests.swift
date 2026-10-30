@@ -92,7 +92,7 @@ final class LibraryDeletionTests: LibraryTrashFixture {
       },
       scan: { root, _ in
         if let error = probe.scanFailure() { throw error }
-        return try ReaderService.libraryDirectoryItems(root)
+        return try AppDataService.libraryDirectoryItems(root)
       })
     defer { try? FileManager.default.removeItem(at: temporary) }
     let model = LibraryModel(

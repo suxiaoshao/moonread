@@ -36,7 +36,10 @@
         "containerPath": "container:Moonread.xcodeproj",
         "identifier": "A80000000000000000000002",
         "name": "MoonreadUITests"
-      }
+      },
+      "skippedTests": [
+        "StoreScreenshots"
+      ]
     }
   ],
   "version": 1

@@ -170,14 +170,19 @@ final class AIProposalTests: BookAIFixture {
     let (root, reader, book, _, _) = try await fixture()
     defer { try? FileManager.default.removeItem(at: root) }
     var writes = 0
+    var starts = 0
     let model = ChapterRebuildModel(
-      bookID: book.id, reader: reader, preview: { _, _ in throw CocoaError(.fileReadUnknown) },
+      bookID: book.id, reader: reader,
+      start: { id in starts += 1; return try await reader.rebuildChapters(id) },
+      preview: { _, _ in throw CocoaError(.fileReadUnknown) },
       commit: { job in
         writes += 1
         if writes == 1 { throw CocoaError(.fileWriteUnknown) }
         try await reader.applyRebuild(job)
       })
     await model.load()
+    await model.load()
+    XCTAssertEqual(starts, 1, "reappearing does not start another rebuild")
     XCTAssertNotNil(model.actionError)
     XCTAssertTrue(model.canApply)
     XCTAssertTrue(model.hasMore)
@@ -187,7 +192,12 @@ final class AIProposalTests: BookAIFixture {
     let saved = await model.apply()
     XCTAssertTrue(saved)
     XCTAssertEqual(writes, 2)
-    model.cancel()
+    let tools = ReaderToolSession()
+    tools.beginEditing(.rebuild(model), presenter: .library)
+    model.startIfNeeded()
+    XCTAssertTrue(model.canApply, "reappearing must not cancel the rebuild")
+    XCTAssertEqual(starts, 1)
+    tools.finishEditing(try XCTUnwrap(tools.editor).id)
     XCTAssertFalse(model.canApply)
     let ignored = await model.apply()
     XCTAssertFalse(ignored)

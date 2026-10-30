@@ -1,6 +1,6 @@
 # 官网
 
-使用项目 Nix 环境的 Zola，中英文静态生成；不引入外部字体、脚本或统计。部署与分支例外流程见 [repository.md](../dev/engineering/repository.md#政策与支持网站)。
+使用项目 Nix 环境的 Zola，中英文静态生成；不引入外部字体、脚本或统计。部署与分支流程见 [repository.md](../dev/engineering/repository.md#政策与支持网站)。
 
 ## 1.2 阅读预览
 

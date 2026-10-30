@@ -77,7 +77,7 @@ final class OnboardingStateTests: ReaderIntegrationFixture {
       let data = temporary.appendingPathComponent("db")
       let root = temporary.appendingPathComponent("books")
       let core = try ReaderCore(dataDirectory: data.path)
-      let service = ReaderService(
+      let service = AppDataService(
         core: core, libraryDirectory: root,
         libraryDeletion: { url, _ in try TrashIOProbe.move(url) })
       try await service.prepareLibrary()
@@ -91,7 +91,7 @@ final class OnboardingStateTests: ReaderIntegrationFixture {
       let file = root.appendingPathComponent(entries[0].name)
       XCTAssertTrue(try String(contentsOf: file, encoding: .utf8).contains("第三章 灯下"))
       try await service.deleteLibraryItem(entries[0])
-      let reopened = ReaderService(
+      let reopened = AppDataService(
         core: try ReaderCore(dataDirectory: data.path), libraryDirectory: root)
       try await reopened.prepareLibrary()
       try await reopened.refreshLibrary()

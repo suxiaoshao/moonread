@@ -55,3 +55,24 @@ extension AIService {
 extension AIModelSelectionTarget {
     var isDefault: Bool { if case .defaults = self { true } else { false } }
 }
+
+/// Shared selectors present capability-compatible models (and a stale selected value),
+/// while credential/model state explains why a visible choice cannot be used.
+@MainActor enum AIModelAvailability {
+    static func supports(_ model: AIModelOption, purpose: AIModelPurpose?, connection: AIConnection) -> Bool {
+        if let purpose { return AINativeCapabilities.supports(purpose, connection: connection, model: model) }
+        return model.capabilities?.text != false
+    }
+    static func reason(_ model: AIModelOption, purpose: AIModelPurpose?, connection: AIConnection, providers: AIConnectionService) -> String? {
+        guard supports(model, purpose: purpose, connection: connection) else { return String(localized: "不支持该用途") }
+        switch providers.connectionState(connection) {
+        case .signedOut, .expired, .needsLogin, .loginFailed, .authorizing, .browser:
+            return String(localized: "未登录")
+        case .planPermissionRequired: return String(localized: "你没有允许月读使用 ChatGPT 套餐")
+        default: break
+        }
+        if !providers.isLoggedIn(connection) { return String(localized: "未登录") }
+        if !providers.isEnabled(modelID: model.id, in: connection) { return String(localized: "未启用") }
+        return nil
+    }
+}

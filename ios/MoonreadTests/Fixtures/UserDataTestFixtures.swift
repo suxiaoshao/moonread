@@ -68,7 +68,7 @@ class UserDataFixture: XCTestCase {
   }
   struct PositionWinnerFixture {
     let root: URL, core: ReaderCore, book: ImportText, aliases: [String]
-    let formal: UserDataStore, pending: UserDataStore, service: ReaderService, suite: String
+    let formal: UserDataStore, pending: UserDataStore, service: AppDataService, suite: String
     func clean() {
       UserDefaults.standard.removePersistentDomain(forName: suite)
       try? FileManager.default.removeItem(at: root)
@@ -96,7 +96,7 @@ class UserDataFixture: XCTestCase {
     let formal = try store()
     let pending = try store()
     let suite = "PositionWinner-" + UUID().uuidString
-    let service = ReaderService(
+    let service = AppDataService(
       core: core, sourceDefaultsSuite: suite,
       userStoreFactory: { name, _ in name == "pending-users.store" ? pending : formal })
     return PositionWinnerFixture(
@@ -122,7 +122,7 @@ class UserDataFixture: XCTestCase {
     AnnotationCandidate(id: id, ancestors: parents, content: content, created: 1, bookmark: false)
   }
 
-  @MainActor func editorFixture() async throws -> (URL, ReaderService, BookInfo, UserDataStore) {
+  @MainActor func editorFixture() async throws -> (URL, AppDataService, BookInfo, UserDataStore) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let file = root.appendingPathComponent("book.txt")
@@ -132,7 +132,7 @@ class UserDataFixture: XCTestCase {
     let book = try core.importBook(filePath: file.path, title: "Fixture")
     let formal = try store()
     let pending = try store()
-    let service = ReaderService(
+    let service = AppDataService(
       core: core, sourceDefaultsSuite: "Review-\(root.lastPathComponent)",
       userStoreFactory: { name, _ in name == "pending-users.store" ? pending : formal })
     return (root, service, try await service.book(book.id), formal)
@@ -166,7 +166,7 @@ actor BootstrapProbe {
     first = nil
   }
 }
-extension ReaderService {
+extension AppDataService {
   func invalidatePendingFixture() { pendingUserStoreTask = nil }
 }
 
@@ -217,7 +217,7 @@ actor SyncAccountProbe {
 }
 class CloudAccountFixture: XCTestCase {
   func fixture(available: Bool = true) throws -> (
-    ReaderService, CloudSyncCoordinator, SyncAccountProbe, String
+    AppDataService, CloudSyncCoordinator, SyncAccountProbe, String
   ) {
     let suite = "CloudAccount-\(UUID().uuidString)"
     let config = ModelConfiguration(
@@ -225,7 +225,7 @@ class CloudAccountFixture: XCTestCase {
     let probe = SyncAccountProbe(
       UserDataStore(
         modelContainer: try ModelContainer(for: UserDataStore.schema, configurations: [config])))
-    let service = ReaderService(
+    let service = AppDataService(
       sourceDefaultsSuite: suite, userStoreFactory: { _, cloud in try await probe.make(cloud) })
     let coordinator = CloudSyncCoordinator(
       service: service, available: available, observeEvents: false,

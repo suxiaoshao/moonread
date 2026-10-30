@@ -55,7 +55,7 @@ struct ShelfRecoverySnapshot: Sendable, Equatable {
     var guidance: Set<String> = []
 }
 
-extension ReaderService {
+extension AppDataService {
     private var shelfReferenceScope: String {
         userDirectoryName + "/" + (sourceDefaults.string(forKey: "Moonread.userOwner") ?? "local")
     }
@@ -287,6 +287,30 @@ struct ShelfIndexGuidance: View {
     }
 }
 
+/// The home only summarizes; per-source authorization stays in management.
+struct ShelfRecoverySummary: View {
+    let model: LibraryModel
+    @Environment(\.theme) private var theme
+    var body: some View {
+        if !model.shelfRecovery.references.isEmpty {
+            HStack(alignment: .center, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle").foregroundStyle(Color(uiColor: theme.accent))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("有 \(model.shelfRecovery.references.count) 个书架需要重新连接")
+                        .accessibilityIdentifier("shelfRecoverySummary")
+                        .font(.subheadline.weight(.semibold)).foregroundStyle(Color(uiColor: theme.ink))
+                    Text("阅读数据仍然保留").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                }.fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                NavigationLink(value: LibraryRoute.manage) {
+                    HStack(spacing: 4) { Text("处理"); Image(systemName: "chevron.right") }.font(.subheadline)
+                }.buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.accent))
+                    .accessibilityIdentifier("manageShelfRecovery")
+            }.padding(14).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
+        }
+    }
+}
+
 struct ShelfReferenceHints: View {
     @Environment(\.theme) private var theme
     let model: LibraryModel
@@ -298,13 +322,16 @@ struct ShelfReferenceHints: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(verbatim: reference.value.name).font(.headline)
                         Text(reference.locationLabel).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                        Text("需要重新授权", tableName: "ShelfRecovery").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                        Button { model.reauthorizeShelf(reference) } label: { Text("重新授权", tableName: "ShelfRecovery") }
+                        Button { model.reauthorizeShelf(reference) } label: { Text("重新连接", tableName: "Localizable") }
+                            .buttonStyle(ThemedSecondaryButtonStyle())
                             .accessibilityIdentifier("reauthorizeShelf-" + reference.id)
                             .disabled(!model.canAcceptFileWork)
                     }.padding(.vertical, 6)
                 }
-            } header: { Text("你之前添加过这些书架", tableName: "ShelfRecovery") }
+            } header: { Text("你之前添加过这些书架", tableName: "ShelfRecovery") } footer: {
+                Text("重新选择原来的文件夹，即可恢复对此书架的访问。")
+                    .foregroundStyle(Color(uiColor: theme.secondary))
+            }
                 .listRowBackground(grouped ? Color(uiColor: theme.surface) : Color.clear)
                 .listRowSeparatorTint(Color(uiColor: theme.separator))
         }

@@ -7,6 +7,55 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F13000000000000000000001 /* ReaderPresentationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = F13000000000000000000002 /* ReaderPresentationState.swift */; };
+		3D1C1E4B0133473A9A1C7DC4 /* ReaderToolSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 383925FAF2394CAEBB958065 /* ReaderToolSession.swift */; };
+        F14100000000000000000001 /* ReaderSettingsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F14100000000000000000002 /* ReaderSettingsStore.swift */; };
+		4DF6E88FEFC27B5FF2E847AD /* ProtectedFileAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */; };
+		6FE466A10D361A647F688D3A /* SourceDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */; };
+		FF97A598EBE17BAA6A938B5F /* SourceDecodingPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F3544F22AA3B4C3242F849D /* SourceDecodingPreferences.swift */; };
+		65ECA15E2CC74AE98456F117 /* ReadingModePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8E428810AD14CC69F07A0DC /* ReadingModePicker.swift */; };
+		CE9F8CE75AFE42C28ECC1229 /* AppThemePreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF7A36A33FED40B1B0F6D237 /* AppThemePreferencesView.swift */; };
+		BA82A3CBA86846ECB5AE63D2 /* PalettePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2FC43F5CF31408684F519A8 /* PalettePicker.swift */; };
+		6C7083940065499F8C0487BB /* PalettePreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C09A37A925A455A99296F73 /* PalettePreview.swift */; };
+		F587C1E1155B48F9AEAC88ED /* PaletteEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAB14494517A4B36B6E9A470 /* PaletteEditor.swift */; };
+		A454A845E962475DB9521518 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC34429CDFF645F5BAE7F6D8 /* AboutView.swift */; };
+		DEC2BEC0985D4462A3DFFD5B /* ThirdPartyLicensesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10228DEB2BD941C69E7913EA /* ThirdPartyLicensesView.swift */; };
+		5D04F75C81604F72B1B2B5D7 /* StatisticsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 843D6CEA0CEA4CCA9AF02AE8 /* StatisticsModels.swift */; };
+		29A6B7ABAE5F498383369043 /* StatisticsBookList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DB4842B3A754C71A06C635E /* StatisticsBookList.swift */; };
+		DBED821EB4A6440D9732F774 /* StatisticsDurationBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E34349A15174B0B96CF5ED2 /* StatisticsDurationBar.swift */; };
+		D40DDEFC45D0459C95B0AC51 /* StatisticsRhythm.swift in Sources */ = {isa = PBXBuildFile; fileRef = 219DD27FBAD14D52B0C6126E /* StatisticsRhythm.swift */; };
+		29AAD3F529884B28913015CC /* ReadingSessionsChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 950900AFC89A493D8BACE3EB /* ReadingSessionsChart.swift */; };
+		15CFAA04BB604325A6F7B91C /* StatisticsDayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF633098CC3047F3B4C9FD53 /* StatisticsDayView.swift */; };
+		BC404FD2C78B4E67B20B56A2 /* StatisticsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A103F3A708D4F35A64FFE37 /* StatisticsSettingsView.swift */; };
+		180EAB5E6B1F402795800E0D /* StatisticsSessionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 569E074D07FB4F80B6BF0E1C /* StatisticsSessionsView.swift */; };
+
+		E34C8E660FB8402F9D808D83 /* ReadingViewport.swift in Sources */ = {isa = PBXBuildFile; fileRef = B366E511A14B4057A2530C62 /* ReadingViewport.swift */; };
+		C6E02235F2BC49C99652D6ED /* ReadingPagination.swift in Sources */ = {isa = PBXBuildFile; fileRef = 458B0A398F7C438EA28DEEE7 /* ReadingPagination.swift */; };
+		D1D21C97FB7B4DC9ABAC60C8 /* ReadingTextView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74FA7B4B76DC4862A844072D /* ReadingTextView.swift */; };
+		F9146A65FABC49229CE8AFBE /* ReaderCoverController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C364284297DE4F0EA83F563E /* ReaderCoverController.swift */; };
+		0E8B143793A847D18B946668 /* PageController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E319626F4A44AF7A3D79CF0 /* PageController.swift */; };
+		AD2E4CEA11114B348BD4001C /* ReadingController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1BA926631B40A984117791 /* ReadingController.swift */; };
+		5D3597B4FF844A3FAECAB599 /* ReadingController+Selection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31DD7DA228F74AF7BF5CF2BF /* ReadingController+Selection.swift */; };
+		6815BF660F5E4ADCA0560E68 /* ReadingController+Pages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84865B4171AD4E3FA50E0C27 /* ReadingController+Pages.swift */; };
+		7EFE92CC1E2F4EABA11F303E /* ReadingController+Navigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E544CBFC00B4DC4933A41F6 /* ReadingController+Navigation.swift */; };
+		56A29F1440F34C9BA64DD055 /* ReadingController+Scroll.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15890ED074464D47AAEC9260 /* ReadingController+Scroll.swift */; };
+		BCA9FC224516449E85299411 /* ReadingTextDecorations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 877FD187DC584201993EB368 /* ReadingTextDecorations.swift */; };
+		68B923012B624E04B44EA7E3 /* ReaderSearchContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DFDEA98F6244BFCB5585222 /* ReaderSearchContent.swift */; };
+		8BE0A1CCE83D4C5C83A75AD8 /* NoteEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA87A42C5E9B498293DC1520 /* NoteEditor.swift */; };
+		79080AE9A8A340A1B99ACC83 /* ReaderChapterList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DD24446A106474B8CE31B7C /* ReaderChapterList.swift */; };
+		CC9B3BCAE0EA4013878D9BA4 /* ReaderNotesList.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22ECFC9087614B5699133F80 /* ReaderNotesList.swift */; };
+		87B3FE2BFDD04847AE5A02CA /* ReaderLibrarySheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3D73220A89040FF91FC9A23 /* ReaderLibrarySheet.swift */; };
+		48A7297CFF794C178D1242D0 /* ReaderBattery.swift in Sources */ = {isa = PBXBuildFile; fileRef = F985A452EFF8466E81960075 /* ReaderBattery.swift */; };
+		308165AED1DF4230A31FF52B /* ReaderEncodingMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = 224B7CD539DE4B36838B5C59 /* ReaderEncodingMenu.swift */; };
+		4C8BF65601CA4114841B5D6B /* ReaderToolLabelStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 938B7199F7BA4FF48580021A /* ReaderToolLabelStyle.swift */; };
+		2DD74B5821B64531B506A916 /* ReaderCompactHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA08168B927640AD88AB7979 /* ReaderCompactHeader.swift */; };
+		AA51DD835A184821B465CFD4 /* ReaderPreparationContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5866FC7E25D04023BA807A6A /* ReaderPreparationContent.swift */; };
+		920111E653264DBDB7FC1858 /* ReaderMoreContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C1F21EBD02E4ED7BBD3B00E /* ReaderMoreContent.swift */; };
+		4C49B0B7AF064FE799DE604A /* ReaderTaskContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3110BC3341AD464FA40E7DD1 /* ReaderTaskContent.swift */; };
+
+		CD0100000000000000000001 = {isa = PBXBuildFile; fileRef = CD0200000000000000000001; };
+		CD0100000000000000000002 = {isa = PBXBuildFile; fileRef = CD0200000000000000000002; };
+		CD0100000000000000000003 = {isa = PBXBuildFile; fileRef = CD0200000000000000000001; };
 		660000000000000000000006 = {isa = PBXBuildFile; fileRef = 660000000000000000000005; };
 		660000000000000000000004 = {isa = PBXBuildFile; fileRef = 660000000000000000000003; };
 		660000000000000000000002 = {isa = PBXBuildFile; fileRef = 660000000000000000000001; };
@@ -95,7 +144,7 @@ C21000000000000000000001 = {isa = PBXBuildFile; fileRef = C220000000000000000000
         AC1000000000000000000005 = {isa = PBXBuildFile; fileRef = AC2000000000000000000005; };
         AC1000000000000000000006 = {isa = PBXBuildFile; fileRef = AC2000000000000000000006; };
 		A10000000000000000000001 /* MoonreadApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* MoonreadApp.swift */; };
-		A10000000000000000000002 /* ReaderService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* ReaderService.swift */; };
+		A10000000000000000000002 /* AppDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* AppDataService.swift */; };
 		A10000000000000000000003 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* LibraryView.swift */; };
 		A10000000000000000000004 /* ReaderScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* ReaderScreen.swift */; };
 		A10000000000000000000005 /* ReadingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* ReadingView.swift */; };
@@ -162,6 +211,7 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		E4FBAEE53BD05822ADA6F920 /* Share Privacy in Resources */ = { isa = PBXBuildFile; fileRef = 18807E292E245C3D81736D90;  };
 		5A465E51B64F5138BF6CF41C /* Embed MoonreadShare */ = { isa = PBXBuildFile; fileRef = 44920FD9D2A9541EA0D84A3B; settings = {ATTRIBUTES = (RemoveHeadersOnCopy,);}; };
 		C14A00000000000000000003 /* Share InfoPlist in Resources */ = {isa = PBXBuildFile; fileRef = C14A00000000000000000002; };
+		C14A00000000000000000004 /* Widget InfoPlist in Resources */ = {isa = PBXBuildFile; fileRef = C14A00000000000000000002; };
 		14EBF385EEB12E8854251B0C /* AIAgentPersistenceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FECAE1F1197902C7933F3209; };
 		8ECACDBA0D7E7C50A82DCB52 /* AIAgentQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9885E1115585BFC576D92B57; };
 		E4A6194DE08E299191611D3F /* AIAuthenticationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5B1F1DDF46216CE59BA4F14; };
@@ -221,6 +271,37 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
         D50610000000000000000005 /* DataManagement.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000005; };
         D50610000000000000000006 /* DataManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000006; };
         D50610000000000000000007 /* CacheManagementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D50620000000000000000007; };
+		7B9630E623C04ED8BB311275 /* SystemReadingSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E155E91D8B34C16AFEB2F94 /* SystemReadingSnapshot.swift */; };
+		D96AA4CE1D4740298CEB37E3 /* SystemReadingCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21B61C6DDA05486692B7E164 /* SystemReadingCatalog.swift */; };
+		7C27F97BAC8E4D479B8F5F0C /* SystemReadingRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDF91CB9E9184CA3BF5287FC /* SystemReadingRouter.swift */; };
+		D720FF62FEF54991885AE8D3 /* SystemReading.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 5F785348B3B2446E889C0D8F; };
+		5CFA5E7E0D364B50B1EF3A9C = {isa = PBXBuildFile; fileRef = 62E1DE86580044548A03C0AA; settings = {ATTRIBUTES = (RemoveHeadersOnCopy,);}; };
+		DB1FD46172074EF9A1016624 /* MoonreadWidgets.swift */ = {isa = PBXBuildFile; fileRef = F790FD22094446BB9D2C8798; };
+		DD96C5C6D7644E1BA3EC0764 /* SystemReadingEntities.swift */ = {isa = PBXBuildFile; fileRef = D7ABB22416B94A80A0741820; };
+		174FF1DA006A482FA274E861 /* SystemReadingEntities.swift */ = {isa = PBXBuildFile; fileRef = D7ABB22416B94A80A0741820; };
+		B56C2D6C1C9A4E179056846B /* SystemReadingSnapshot.swift */ = {isa = PBXBuildFile; fileRef = 3E155E91D8B34C16AFEB2F94; };
+		010EFBB7F2A045A3A50FBC84 /* SystemReading.xcstrings */ = {isa = PBXBuildFile; fileRef = 5F785348B3B2446E889C0D8F; };
+		F02F8D5E092D48BEBAF2CBBB /* Localizable.xcstrings */ = {isa = PBXBuildFile; fileRef = 751125BDDAAA459CA29C7F1D; };
+		1B506102BF4B408999F282DE /* SystemReadingIntents.swift */ = {isa = PBXBuildFile; fileRef = F756EB1D8CB74351A3734567; };
+		3A970D96D5C34B91AD51685B /* SystemReadingDonations.swift */ = {isa = PBXBuildFile; fileRef = 85EA54F55F414881875C8E6B; };
+		005AC664DBAF46D4BDDD504A /* AppShortcuts.xcstrings */ = {isa = PBXBuildFile; fileRef = E82B5CEE6CCE405993FF6B63; };
+		637E8D49F3D84FECA7E48556 /* SystemSpotlightIndexer.swift */ = {isa = PBXBuildFile; fileRef = 6F59DF87BB644F99AE184A7C; };
+		A674F357DD104E0393C79ACC /* SystemIntegrationSettingsView.swift */ = {isa = PBXBuildFile; fileRef = DF9898CA5D68423AB9936975; };
+		CB5D24E426C74DB28C409E79 /* SystemReadingLink.swift */ = {isa = PBXBuildFile; fileRef = 7B12A4C9A1BD4B6CB7B43312; };
+		58F94938188043B8B65F2209 /* SystemReadingLink.swift */ = {isa = PBXBuildFile; fileRef = 7B12A4C9A1BD4B6CB7B43312; };
+		83977DC4948F48748061915D /* SystemReadingCard.swift */ = {isa = PBXBuildFile; fileRef = 930DD47374D548D2A44CEC28; };
+		CB6A7FD1BF984A79B8586F5E /* SystemReadingCard.swift */ = {isa = PBXBuildFile; fileRef = 930DD47374D548D2A44CEC28; };
+		E473A3CD4DBB45B7AB184A3D /* ReadingWidget.swift */ = {isa = PBXBuildFile; fileRef = 18545B46D1CF43D98A0D7F6D; };
+		3590C0DA176B4ADBBFB73708 /* PrivacyInfo.xcprivacy */ = {isa = PBXBuildFile; fileRef = CE0214FA08B84EE38BFA0704; };
+		BB8ABFEE74F04456A4BE070E /* SystemWidgetSnapshot.swift */ = {isa = PBXBuildFile; fileRef = 98A93E7440E64AE0B11216AC; };
+		4FB012E703494D00A03A92E4 /* SystemWidgetSnapshot.swift */ = {isa = PBXBuildFile; fileRef = 98A93E7440E64AE0B11216AC; };
+		2474CD360E81483DBDA43BE3 /* SystemStatisticsCard.swift */ = {isa = PBXBuildFile; fileRef = 66ECAE43656B4E6FA118B88B; };
+		74CBED75A4D04FC1A1E2382C /* SystemStatisticsCard.swift */ = {isa = PBXBuildFile; fileRef = 66ECAE43656B4E6FA118B88B; };
+		9AD8D099CCC74446903914B8 /* SystemWidgetPublishing.swift */ = {isa = PBXBuildFile; fileRef = F304E7CD71124E5D9F7DEC91; };
+		2A49E75FB62D455EA40547D4 /* WidgetDefaultAppearance.json */ = {isa = PBXBuildFile; fileRef = 1FC26519733A4A86A5C69068; };
+		B135F2963E3B47819FE2FC73 /* WidgetDefaultAppearance.json */ = {isa = PBXBuildFile; fileRef = 1FC26519733A4A86A5C69068; };
+		A24F794D4BB7412191A19329 /* ReadingContinuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FE1A12BC743430DA09B92A0 /* ReadingContinuation.swift */; };
+		1513FFF184D943E0B24401D6 /* ReadingContinuationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -239,13 +320,63 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 			remoteInfo = Moonread;
 		};
 		72DACA4B8D1E5727AAF77721 /* Share Target Proxy */ = { isa = PBXContainerItemProxy; containerPortal = A90000000000000000000001; proxyType = 1; remoteGlobalIDString = 04C2476D974D589BB2C7513F; remoteInfo = MoonreadShare; };
+		37E2CAB8FF304630B382A542 = {isa = PBXContainerItemProxy; containerPortal = A90000000000000000000001; proxyType = 1; remoteGlobalIDString = AF656EF2055C4EDC80ED01F9; remoteInfo = MoonreadWidgets; };
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		6502577E2278509DB864FF63 /* Embed App Extensions */ = { isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (5A465E51B64F5138BF6CF41C,); name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0; };
+		6502577E2278509DB864FF63 /* Embed App Extensions */ = { isa = PBXCopyFilesBuildPhase; buildActionMask = 2147483647; dstPath = ""; dstSubfolderSpec = 13; files = (
+                5CFA5E7E0D364B50B1EF3A9C /* Embed MoonreadWidgets */,5A465E51B64F5138BF6CF41C,); name = "Embed App Extensions"; runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		F13000000000000000000002 /* ReaderPresentationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderPresentationState.swift; sourceTree = "<group>"; };
+		383925FAF2394CAEBB958065 /* ReaderToolSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderToolSession.swift; sourceTree = "<group>"; };
+        F14100000000000000000002 /* ReaderSettingsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSettingsStore.swift; sourceTree = "<group>"; };
+		80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProtectedFileAccess.swift; sourceTree = "<group>"; };
+		B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceDecodingTests.swift; sourceTree = "<group>"; };
+		2F3544F22AA3B4C3242F849D /* SourceDecodingPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceDecodingPreferences.swift; sourceTree = "<group>"; };
+		B8E428810AD14CC69F07A0DC /* ReadingModePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingModePicker.swift"; sourceTree = "<group>"; };
+		FF7A36A33FED40B1B0F6D237 /* AppThemePreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AppThemePreferencesView.swift"; sourceTree = "<group>"; };
+		D2FC43F5CF31408684F519A8 /* PalettePicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PalettePicker.swift"; sourceTree = "<group>"; };
+		4C09A37A925A455A99296F73 /* PalettePreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PalettePreview.swift"; sourceTree = "<group>"; };
+		CAB14494517A4B36B6E9A470 /* PaletteEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PaletteEditor.swift"; sourceTree = "<group>"; };
+		EC34429CDFF645F5BAE7F6D8 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AboutView.swift"; sourceTree = "<group>"; };
+		10228DEB2BD941C69E7913EA /* ThirdPartyLicensesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ThirdPartyLicensesView.swift"; sourceTree = "<group>"; };
+		843D6CEA0CEA4CCA9AF02AE8 /* StatisticsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsModels.swift"; sourceTree = "<group>"; };
+		1DB4842B3A754C71A06C635E /* StatisticsBookList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsBookList.swift"; sourceTree = "<group>"; };
+		7E34349A15174B0B96CF5ED2 /* StatisticsDurationBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsDurationBar.swift"; sourceTree = "<group>"; };
+		219DD27FBAD14D52B0C6126E /* StatisticsRhythm.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsRhythm.swift"; sourceTree = "<group>"; };
+		950900AFC89A493D8BACE3EB /* ReadingSessionsChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingSessionsChart.swift"; sourceTree = "<group>"; };
+		BF633098CC3047F3B4C9FD53 /* StatisticsDayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsDayView.swift"; sourceTree = "<group>"; };
+		0A103F3A708D4F35A64FFE37 /* StatisticsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsSettingsView.swift"; sourceTree = "<group>"; };
+		569E074D07FB4F80B6BF0E1C /* StatisticsSessionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "StatisticsSessionsView.swift"; sourceTree = "<group>"; };
+
+		B366E511A14B4057A2530C62 /* ReadingViewport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingViewport.swift"; sourceTree = "<group>"; };
+		458B0A398F7C438EA28DEEE7 /* ReadingPagination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingPagination.swift"; sourceTree = "<group>"; };
+		74FA7B4B76DC4862A844072D /* ReadingTextView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingTextView.swift"; sourceTree = "<group>"; };
+		C364284297DE4F0EA83F563E /* ReaderCoverController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderCoverController.swift"; sourceTree = "<group>"; };
+		1E319626F4A44AF7A3D79CF0 /* PageController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PageController.swift"; sourceTree = "<group>"; };
+		AA1BA926631B40A984117791 /* ReadingController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingController.swift"; sourceTree = "<group>"; };
+		31DD7DA228F74AF7BF5CF2BF /* ReadingController+Selection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingController+Selection.swift"; sourceTree = "<group>"; };
+		84865B4171AD4E3FA50E0C27 /* ReadingController+Pages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingController+Pages.swift"; sourceTree = "<group>"; };
+		3E544CBFC00B4DC4933A41F6 /* ReadingController+Navigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingController+Navigation.swift"; sourceTree = "<group>"; };
+		15890ED074464D47AAEC9260 /* ReadingController+Scroll.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingController+Scroll.swift"; sourceTree = "<group>"; };
+		877FD187DC584201993EB368 /* ReadingTextDecorations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingTextDecorations.swift"; sourceTree = "<group>"; };
+		5DFDEA98F6244BFCB5585222 /* ReaderSearchContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderSearchContent.swift"; sourceTree = "<group>"; };
+		DA87A42C5E9B498293DC1520 /* NoteEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NoteEditor.swift"; sourceTree = "<group>"; };
+		2DD24446A106474B8CE31B7C /* ReaderChapterList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderChapterList.swift"; sourceTree = "<group>"; };
+		22ECFC9087614B5699133F80 /* ReaderNotesList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderNotesList.swift"; sourceTree = "<group>"; };
+		A3D73220A89040FF91FC9A23 /* ReaderLibrarySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderLibrarySheet.swift"; sourceTree = "<group>"; };
+		F985A452EFF8466E81960075 /* ReaderBattery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderBattery.swift"; sourceTree = "<group>"; };
+		224B7CD539DE4B36838B5C59 /* ReaderEncodingMenu.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderEncodingMenu.swift"; sourceTree = "<group>"; };
+		938B7199F7BA4FF48580021A /* ReaderToolLabelStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderToolLabelStyle.swift"; sourceTree = "<group>"; };
+		AA08168B927640AD88AB7979 /* ReaderCompactHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderCompactHeader.swift"; sourceTree = "<group>"; };
+		5866FC7E25D04023BA807A6A /* ReaderPreparationContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderPreparationContent.swift"; sourceTree = "<group>"; };
+		1C1F21EBD02E4ED7BBD3B00E /* ReaderMoreContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderMoreContent.swift"; sourceTree = "<group>"; };
+		3110BC3341AD464FA40E7DD1 /* ReaderTaskContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderTaskContent.swift"; sourceTree = "<group>"; };
+
+		CD0200000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = StoreScreenshotFixture.swift; path = ../Moonread/Library/StoreScreenshotFixture.swift; sourceTree = "<group>"; };
+		CD0200000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreScreenshots.swift; sourceTree = "<group>"; };
 		660000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = text.json; path = "../crates/moonread-core/tests/fixtures/library-input-contract-v1.json"; sourceTree = SOURCE_ROOT; };
 		660000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/LibraryQueryRulesTests.swift"; sourceTree = SOURCE_ROOT; };
 		660000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/Library/LibraryQueryRules.swift"; sourceTree = SOURCE_ROOT; };
@@ -336,7 +467,7 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
         AC2000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = file.storyboard; path = LaunchScreen.storyboard; sourceTree = "<group>"; };
         AC2000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputFocus.swift; sourceTree = "<group>"; };
 		A20000000000000000000001 /* MoonreadApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonreadApp.swift; sourceTree = "<group>"; };
-		A20000000000000000000002 /* ReaderService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderService.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* AppDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataService.swift; sourceTree = "<group>"; };
 		A20000000000000000000003 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		A20000000000000000000004 /* ReaderScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderScreen.swift; sourceTree = "<group>"; };
 		A20000000000000000000005 /* ReadingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingView.swift; sourceTree = "<group>"; };
@@ -458,6 +589,31 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
         D50620000000000000000005 /* DataManagement.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = DataManagement.xcstrings; sourceTree = "<group>"; };
         D50620000000000000000006 /* DataManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementTests.swift; sourceTree = "<group>"; };
         D50620000000000000000007 /* CacheManagementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CacheManagementTests.swift; sourceTree = "<group>"; };
+		3E155E91D8B34C16AFEB2F94 /* SystemReadingSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemReadingSnapshot.swift; sourceTree = "<group>"; };
+		21B61C6DDA05486692B7E164 /* SystemReadingCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemReadingCatalog.swift; sourceTree = "<group>"; };
+		CDF91CB9E9184CA3BF5287FC /* SystemReadingRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemReadingRouter.swift; sourceTree = "<group>"; };
+		5F785348B3B2446E889C0D8F /* SystemReading.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = SystemReading.xcstrings; sourceTree = "<group>"; };
+		62E1DE86580044548A03C0AA /* MoonreadWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MoonreadWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F790FD22094446BB9D2C8798 /* MoonreadWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadWidgets.swift"; sourceTree = "<group>"; };
+		47DCD4CE1E2440B39068C495 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "Info.plist"; sourceTree = "<group>"; };
+		F52184EFA80149EE9D516ADF /* MoonreadWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "MoonreadWidgets.entitlements"; sourceTree = "<group>"; };
+		D7ABB22416B94A80A0741820 /* SystemReadingEntities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemReadingEntities.swift"; sourceTree = "<group>"; };
+		751125BDDAAA459CA29C7F1D /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = "Localizable.xcstrings"; sourceTree = "<group>"; };
+		F756EB1D8CB74351A3734567 /* SystemReadingIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemReadingIntents.swift"; sourceTree = "<group>"; };
+		85EA54F55F414881875C8E6B /* SystemReadingDonations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemReadingDonations.swift"; sourceTree = "<group>"; };
+		E82B5CEE6CCE405993FF6B63 /* AppShortcuts.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = "AppShortcuts.xcstrings"; sourceTree = "<group>"; };
+		6F59DF87BB644F99AE184A7C /* SystemSpotlightIndexer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemSpotlightIndexer.swift"; sourceTree = "<group>"; };
+		DF9898CA5D68423AB9936975 /* SystemIntegrationSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemIntegrationSettingsView.swift"; sourceTree = "<group>"; };
+		7B12A4C9A1BD4B6CB7B43312 /* SystemReadingLink.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemReadingLink.swift"; sourceTree = "<group>"; };
+		930DD47374D548D2A44CEC28 /* SystemReadingCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemReadingCard.swift"; sourceTree = "<group>"; };
+		18545B46D1CF43D98A0D7F6D /* ReadingWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingWidget.swift"; sourceTree = "<group>"; };
+		CE0214FA08B84EE38BFA0704 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		98A93E7440E64AE0B11216AC /* SystemWidgetSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemWidgetSnapshot.swift"; sourceTree = "<group>"; };
+		66ECAE43656B4E6FA118B88B /* SystemStatisticsCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemStatisticsCard.swift"; sourceTree = "<group>"; };
+		F304E7CD71124E5D9F7DEC91 /* SystemWidgetPublishing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SystemWidgetPublishing.swift"; sourceTree = "<group>"; };
+		1FC26519733A4A86A5C69068 /* WidgetDefaultAppearance.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "WidgetDefaultAppearance.json"; sourceTree = "<group>"; };
+		7FE1A12BC743430DA09B92A0 /* ReadingContinuation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingContinuation.swift"; sourceTree = "<group>"; };
+		B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingContinuationBanner.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -488,12 +644,16 @@ D35000000000000000000001,
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		C3E05493EB5F54BB9BFA12EA /* Share Frameworks */ = { isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		3FC6D6EDD8194024ADBFC58B = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		A50000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
+                E983876392444DAC9F3E2609 /* MoonreadWidgets */,
+				A1DE5DFDB223BC4D95971F4F /* SystemIntegration */,
+				A2E6EE44E97CC74D11961166 /* SystemIntegrationShared */,
                 C14A00000000000000000001,
                 F94762692B4A52B5A2524BF1,
 				A2000000000000000000000E /* Configuration.xcconfig */,
@@ -508,6 +668,7 @@ D35000000000000000000001,
 		A50000000000000000000002 /* Moonread */ = {
 			isa = PBXGroup;
 			children = (
+                751125BDDAAA459CA29C7F1D /* Localizable.xcstrings */,
                 AP2000000000000000000001,
                 OS2000000000000000000001,
 				C69F370A1A8A46EDAB23B47D /* App */,
@@ -536,6 +697,8 @@ D35000000000000000000001,
                 10332C17C92A416A96E3B55A,
                 EC14CE0E00934BB682B83B4D,
                 5C7A519CEC4946EDB0957CC2,
+CD0200000000000000000001,
+                CD0200000000000000000002,
 A20000000000000000000009 /* MoonreadUITests.swift */,
 			);
 			path = MoonreadUITests;
@@ -552,6 +715,7 @@ A20000000000000000000009 /* MoonreadUITests.swift */,
 		A50000000000000000000005 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+                62E1DE86580044548A03C0AA /* MoonreadWidgets.appex */,
                 44920FD9D2A9541EA0D84A3B,
 				A2000000000000000000000A /* Moonread.app */,
 				A2000000000000000000000B /* MoonreadUITests-Runner.app */,
@@ -563,6 +727,7 @@ A20000000000000000000009 /* MoonreadUITests.swift */,
 		A50000000000000000000006 /* MoonreadTests */ = {isa = PBXGroup; children = (
                 D50620000000000000000007 /* CacheManagementTests.swift */,
                 D50620000000000000000006 /* DataManagementTests.swift */,
+				B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */,
 				660000000000000000000005,
 				660000000000000000000003,
                 9CD5D1790E1F4ABF94A8E63F /* AI */,
@@ -702,6 +867,22 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000004 /* ReaderScreen.swift */,
+				5DFDEA98F6244BFCB5585222 /* ReaderSearchContent.swift */,
+				DA87A42C5E9B498293DC1520 /* NoteEditor.swift */,
+				2DD24446A106474B8CE31B7C /* ReaderChapterList.swift */,
+				22ECFC9087614B5699133F80 /* ReaderNotesList.swift */,
+				A3D73220A89040FF91FC9A23 /* ReaderLibrarySheet.swift */,
+				383925FAF2394CAEBB958065 /* ReaderToolSession.swift */,
+				F13000000000000000000002 /* ReaderPresentationState.swift */,
+				F985A452EFF8466E81960075 /* ReaderBattery.swift */,
+				224B7CD539DE4B36838B5C59 /* ReaderEncodingMenu.swift */,
+				938B7199F7BA4FF48580021A /* ReaderToolLabelStyle.swift */,
+				AA08168B927640AD88AB7979 /* ReaderCompactHeader.swift */,
+				B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */,
+				5866FC7E25D04023BA807A6A /* ReaderPreparationContent.swift */,
+				1C1F21EBD02E4ED7BBD3B00E /* ReaderMoreContent.swift */,
+				3110BC3341AD464FA40E7DD1 /* ReaderTaskContent.swift */,
+
 				AD2000000000000000000001 /* ReaderBackNavigation.swift */,
 				AD2000000000000000000008 /* ReaderBottomPanel.swift */,
 				AD2000000000000000000006 /* ReaderChapters.swift */,
@@ -716,6 +897,18 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000005 /* ReadingView.swift */,
+				B366E511A14B4057A2530C62 /* ReadingViewport.swift */,
+				458B0A398F7C438EA28DEEE7 /* ReadingPagination.swift */,
+				74FA7B4B76DC4862A844072D /* ReadingTextView.swift */,
+				C364284297DE4F0EA83F563E /* ReaderCoverController.swift */,
+				1E319626F4A44AF7A3D79CF0 /* PageController.swift */,
+				AA1BA926631B40A984117791 /* ReadingController.swift */,
+				31DD7DA228F74AF7BF5CF2BF /* ReadingController+Selection.swift */,
+				84865B4171AD4E3FA50E0C27 /* ReadingController+Pages.swift */,
+				3E544CBFC00B4DC4933A41F6 /* ReadingController+Navigation.swift */,
+				15890ED074464D47AAEC9260 /* ReadingController+Scroll.swift */,
+				877FD187DC584201993EB368 /* ReadingTextDecorations.swift */,
+
 				AD2000000000000000000002 /* ReadingTypography.swift */,
 				A20000000000000000000006 /* TextCoordinates.swift */,
 				AD2000000000000000000004 /* ReaderDeviceControls.swift */,
@@ -735,6 +928,14 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 		204EB727B33D4FF6B1F4A5B7 /* Statistics */ = {
 			isa = PBXGroup;
 			children = (
+				843D6CEA0CEA4CCA9AF02AE8 /* StatisticsModels.swift */,
+				1DB4842B3A754C71A06C635E /* StatisticsBookList.swift */,
+				7E34349A15174B0B96CF5ED2 /* StatisticsDurationBar.swift */,
+				219DD27FBAD14D52B0C6126E /* StatisticsRhythm.swift */,
+				950900AFC89A493D8BACE3EB /* ReadingSessionsChart.swift */,
+				BF633098CC3047F3B4C9FD53 /* StatisticsDayView.swift */,
+				0A103F3A708D4F35A64FFE37 /* StatisticsSettingsView.swift */,
+				569E074D07FB4F80B6BF0E1C /* StatisticsSessionsView.swift */,
 				B12000000000000000000002 /* StatisticsView.swift */,
 				B12000000000000000000001 /* ReadingStatistics.swift */,
 			);
@@ -744,6 +945,13 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 		3076A470656A4497AB8E9918 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				B8E428810AD14CC69F07A0DC /* ReadingModePicker.swift */,
+				FF7A36A33FED40B1B0F6D237 /* AppThemePreferencesView.swift */,
+				D2FC43F5CF31408684F519A8 /* PalettePicker.swift */,
+				4C09A37A925A455A99296F73 /* PalettePreview.swift */,
+				CAB14494517A4B36B6E9A470 /* PaletteEditor.swift */,
+				EC34429CDFF645F5BAE7F6D8 /* AboutView.swift */,
+				10228DEB2BD941C69E7913EA /* ThirdPartyLicensesView.swift */,
                 D50620000000000000000005 /* DataManagement.xcstrings */,
                 D50620000000000000000004 /* DataManagementView.swift */,
 				AC2000000000000000000002 /* SettingsView.swift */,
@@ -751,6 +959,7 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
                 F01700000000000000000004,
                 F01700000000000000000002,
 				AD2000000000000000000003 /* ReaderPreferences.swift */,
+                F14100000000000000000002 /* ReaderSettingsStore.swift */,
 				AD2000000000000000000007 /* ReadingPreview.swift */,
 				42742C82EEF942DE87A817BA /* CloudSettingsView.swift */,
 				5CD01275239A4B0EA525197E /* CloudStore.swift */,
@@ -764,7 +973,10 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
                 D50620000000000000000003 /* CacheManagement.swift */,
                 D50620000000000000000002 /* ReadingDataManagement.swift */,
                 D50620000000000000000001 /* UserDataBackup.swift */,
-				A20000000000000000000002 /* ReaderService.swift */,
+				A20000000000000000000002 /* AppDataService.swift */,
+				7FE1A12BC743430DA09B92A0 /* ReadingContinuation.swift */,
+				80581A8E2E721206AC486573 /* ProtectedFileAccess.swift */,
+				2F3544F22AA3B4C3242F849D /* SourceDecodingPreferences.swift */,
 				C22000000000000000000001 /* UserData.swift */,
                 FF2000000000000000000001,
 				C22000000000000000000002 /* UserDataService.swift */,
@@ -825,6 +1037,32 @@ F01900000000000000000002,
                 F01700000000000000000006 /* TipJarTestFixtures.swift */,
                 C22000000000000000000004 /* UserDataTestFixtures.swift */,
             ); path = Fixtures; sourceTree = "<group>"; };
+		A1DE5DFDB223BC4D95971F4F /* SystemIntegration */ = {isa = PBXGroup; children = (
+                F304E7CD71124E5D9F7DEC91 /* SystemWidgetPublishing.swift */,
+                DF9898CA5D68423AB9936975 /* SystemIntegrationSettingsView.swift */,
+                6F59DF87BB644F99AE184A7C /* SystemSpotlightIndexer.swift */,
+                E82B5CEE6CCE405993FF6B63 /* AppShortcuts.xcstrings */,
+                85EA54F55F414881875C8E6B /* SystemReadingDonations.swift */,
+                F756EB1D8CB74351A3734567 /* SystemReadingIntents.swift */,
+				21B61C6DDA05486692B7E164 /* SystemReadingCatalog.swift */,
+				CDF91CB9E9184CA3BF5287FC /* SystemReadingRouter.swift */,
+			); path = Moonread/SystemIntegration; sourceTree = "<group>"; };
+		A2E6EE44E97CC74D11961166 /* SystemIntegrationShared */ = {isa = PBXGroup; children = (
+                1FC26519733A4A86A5C69068 /* WidgetDefaultAppearance.json */,
+                66ECAE43656B4E6FA118B88B /* SystemStatisticsCard.swift */,
+                98A93E7440E64AE0B11216AC /* SystemWidgetSnapshot.swift */,
+                930DD47374D548D2A44CEC28 /* SystemReadingCard.swift */,
+                7B12A4C9A1BD4B6CB7B43312 /* SystemReadingLink.swift */,
+                D7ABB22416B94A80A0741820 /* SystemReadingEntities.swift */,
+                5F785348B3B2446E889C0D8F /* SystemReading.xcstrings */,
+				3E155E91D8B34C16AFEB2F94 /* SystemReadingSnapshot.swift */,
+			); path = SystemIntegrationShared; sourceTree = "<group>"; };
+		E983876392444DAC9F3E2609 /* MoonreadWidgets */ = {isa = PBXGroup; children = (
+                CE0214FA08B84EE38BFA0704 /* PrivacyInfo.xcprivacy */,
+                18545B46D1CF43D98A0D7F6D /* ReadingWidget.swift */,
+                F52184EFA80149EE9D516ADF /* MoonreadWidgets.entitlements */,
+                47DCD4CE1E2440B39068C495 /* Info.plist */,
+                F790FD22094446BB9D2C8798 /* MoonreadWidgets.swift */,); path = MoonreadWidgets; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -841,6 +1079,7 @@ F01900000000000000000002,
 			buildRules = (
 			);
 			dependencies = (
+                F1C19004BB32432C8F23B23B,
                 24EC65B9F10B59B19FF49005,
 			);
 			packageProductDependencies = (D34000000000000000000001,D34000000000000000000002,D34000000000000000000003,D34000000000000000000004,D34000000000000000000006,D34000000000000000000007,D34000000000000000000008,FB4000000000000000000001);
@@ -886,6 +1125,7 @@ F01900000000000000000002,
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		04C2476D974D589BB2C7513F /* MoonreadShare */ = { isa = PBXNativeTarget; buildConfigurationList = B0A8488C9CD75E49AB087C16; buildPhases = (67F838CFAF2F527F8C8EE359,C3E05493EB5F54BB9BFA12EA,CA0C3527F96E5A318EE28FC7,); buildRules = (); dependencies = (); name = MoonreadShare; productName = MoonreadShare; productReference = 44920FD9D2A9541EA0D84A3B; productType = "com.apple.product-type.app-extension"; };
+		AF656EF2055C4EDC80ED01F9 /* MoonreadWidgets */ = {isa = PBXNativeTarget; buildConfigurationList = 0E91A9D300784A34AE232948; buildPhases = (D68B24CD446A49FDAD76CC77,3FC6D6EDD8194024ADBFC58B,EC1986FEC42C4A9A940AE0B0,); buildRules = (); dependencies = (); name = MoonreadWidgets; productName = MoonreadWidgets; productReference = 62E1DE86580044548A03C0AA; productType = "com.apple.product-type.app-extension"; };
 /* End PBXNativeTarget section */
 
 /* Begin PBXVariantGroup section */
@@ -899,6 +1139,7 @@ F01900000000000000000002,
 				BuildIndependentTargetsInParallel = 1;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
+                    AF656EF2055C4EDC80ED01F9 = { CreatedOnToolsVersion = 27.1; SystemCapabilities = {com.apple.ApplicationGroups.iOS = {enabled = 1;};}; };
                     04C2476D974D589BB2C7513F = { CreatedOnToolsVersion = 27.0; SystemCapabilities = {com.apple.ApplicationGroups.iOS = {enabled = 1;};}; };
 					A80000000000000000000001 = {
 						CreatedOnToolsVersion = 27.0;
@@ -935,6 +1176,7 @@ F01900000000000000000002,
 			projectRoot = "";
             packageReferences = (AP3000000000000000000001,D33000000000000000000001,FB3000000000000000000001);
 			targets = (
+                AF656EF2055C4EDC80ED01F9 /* MoonreadWidgets */,
                 04C2476D974D589BB2C7513F,
 				A80000000000000000000001 /* Moonread */,
 				A80000000000000000000002 /* MoonreadUITests */,
@@ -948,6 +1190,9 @@ F01900000000000000000002,
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                2A49E75FB62D455EA40547D4 /* WidgetDefaultAppearance.json */,
+                005AC664DBAF46D4BDDD504A /* AppShortcuts.xcstrings */,
+                D720FF62FEF54991885AE8D3 /* SystemReading.xcstrings in Resources */,
                 D50610000000000000000005 /* DataManagement.xcstrings in Resources */,
                 B39A10000000000000000002 /* ShelfRecovery.xcstrings in Resources */,
                 F14900000000000000000003 /* FullIndex.xcstrings in Resources */,
@@ -981,6 +1226,12 @@ E51000000000000000000009,D41000000000000000000001,
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		CA0C3527F96E5A318EE28FC7 /* Share Resources */ = { isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (C14A00000000000000000003,395542A1DDDA57A6B2AC983D,E4FBAEE53BD05822ADA6F920,); runOnlyForDeploymentPostprocessing = 0; };
+		EC1986FEC42C4A9A940AE0B0 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (
+                C14A00000000000000000004 /* Widget InfoPlist in Resources */,
+                B135F2963E3B47819FE2FC73 /* WidgetDefaultAppearance.json */,
+                3590C0DA176B4ADBBFB73708 /* PrivacyInfo.xcprivacy */,
+                F02F8D5E092D48BEBAF2CBBB /* Localizable.xcstrings */,
+                010EFBB7F2A045A3A50FBC84 /* SystemReading.xcstrings */,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -1001,7 +1252,7 @@ E51000000000000000000009,D41000000000000000000001,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -eu\ncd \"${SRCROOT}/..\"\nexport CARGO_TARGET_DIR=\"${MOONREAD_CARGO_DIR}\"\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command cargo build --locked --package moonread-core --lib --profile \"${MOONREAD_CARGO_PROFILE}\" ${MOONREAD_RUST_TARGET_FLAGS}\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command cargo run --locked --package moonread-core --features cli --bin uniffi-bindgen -- generate --library \"${MOONREAD_BINDGEN_LIBRARY}\" --language swift --no-format --out-dir \"${MOONREAD_BINDINGS_DIR}\"\n";
+			shellScript = "set -eu\ncd \"${SRCROOT}/..\"\nexport CARGO_TARGET_DIR=\"$PWD/target\"\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command bash -c '\n  builder=cargo\n  if [ -z \"${CI:-}\" ]; then\n    if command -v mbx >/dev/null 2>&1; then\n      builder=$(command -v mbx)\n    elif [ -x \"$HOME/.cargo/bin/mbx\" ]; then\n      builder=\"$HOME/.cargo/bin/mbx\"\n    fi\n  fi\n  echo \"Rust builder: $builder; rustc: $(command -v rustc)\"\n  exec \"$builder\" build --locked --package moonread-core --lib --profile \"$1\" ${2}\n' bash \"${MOONREAD_CARGO_PROFILE}\" \"${MOONREAD_RUST_TARGET_FLAGS}\"\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command cargo run --locked --package moonread-core --features cli --bin uniffi-bindgen -- generate --library \"${MOONREAD_BINDGEN_LIBRARY}\" --language swift --no-format --out-dir \"${MOONREAD_BINDINGS_DIR}\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -1010,6 +1261,19 @@ E51000000000000000000009,D41000000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                9AD8D099CCC74446903914B8 /* SystemWidgetPublishing.swift */,
+                2474CD360E81483DBDA43BE3 /* SystemStatisticsCard.swift */,
+                BB8ABFEE74F04456A4BE070E /* SystemWidgetSnapshot.swift */,
+                83977DC4948F48748061915D /* SystemReadingCard.swift */,
+                CB5D24E426C74DB28C409E79 /* SystemReadingLink.swift */,
+                A674F357DD104E0393C79ACC /* SystemIntegrationSettingsView.swift */,
+                637E8D49F3D84FECA7E48556 /* SystemSpotlightIndexer.swift */,
+                3A970D96D5C34B91AD51685B /* SystemReadingDonations.swift */,
+                1B506102BF4B408999F282DE /* SystemReadingIntents.swift */,
+                DD96C5C6D7644E1BA3EC0764 /* SystemReadingEntities.swift */,
+				7C27F97BAC8E4D479B8F5F0C /* SystemReadingRouter.swift in Sources */,
+				D96AA4CE1D4740298CEB37E3 /* SystemReadingCatalog.swift in Sources */,
+				7B9630E623C04ED8BB311275 /* SystemReadingSnapshot.swift in Sources */,
                 D50610000000000000000004 /* DataManagementView.swift in Sources */,
                 D50610000000000000000003 /* CacheManagement.swift in Sources */,
                 D50610000000000000000002 /* ReadingDataManagement.swift in Sources */,
@@ -1074,6 +1338,47 @@ F01900000000000000000001,
                 B13000000000000000000002,
                 B13000000000000000000003,
                 B01000000000000000000002,
+				CD0100000000000000000003,
+				E34C8E660FB8402F9D808D83 /* ReadingViewport.swift in Sources */,
+				C6E02235F2BC49C99652D6ED /* ReadingPagination.swift in Sources */,
+				D1D21C97FB7B4DC9ABAC60C8 /* ReadingTextView.swift in Sources */,
+				F9146A65FABC49229CE8AFBE /* ReaderCoverController.swift in Sources */,
+				0E8B143793A847D18B946668 /* PageController.swift in Sources */,
+				AD2E4CEA11114B348BD4001C /* ReadingController.swift in Sources */,
+				5D3597B4FF844A3FAECAB599 /* ReadingController+Selection.swift in Sources */,
+				6815BF660F5E4ADCA0560E68 /* ReadingController+Pages.swift in Sources */,
+				7EFE92CC1E2F4EABA11F303E /* ReadingController+Navigation.swift in Sources */,
+				56A29F1440F34C9BA64DD055 /* ReadingController+Scroll.swift in Sources */,
+				BCA9FC224516449E85299411 /* ReadingTextDecorations.swift in Sources */,
+				68B923012B624E04B44EA7E3 /* ReaderSearchContent.swift in Sources */,
+				8BE0A1CCE83D4C5C83A75AD8 /* NoteEditor.swift in Sources */,
+				79080AE9A8A340A1B99ACC83 /* ReaderChapterList.swift in Sources */,
+				CC9B3BCAE0EA4013878D9BA4 /* ReaderNotesList.swift in Sources */,
+				87B3FE2BFDD04847AE5A02CA /* ReaderLibrarySheet.swift in Sources */,
+				3D1C1E4B0133473A9A1C7DC4 /* ReaderToolSession.swift in Sources */,
+				F13000000000000000000001 /* ReaderPresentationState.swift in Sources */,
+				48A7297CFF794C178D1242D0 /* ReaderBattery.swift in Sources */,
+				308165AED1DF4230A31FF52B /* ReaderEncodingMenu.swift in Sources */,
+				4C8BF65601CA4114841B5D6B /* ReaderToolLabelStyle.swift in Sources */,
+				2DD74B5821B64531B506A916 /* ReaderCompactHeader.swift in Sources */,
+				AA51DD835A184821B465CFD4 /* ReaderPreparationContent.swift in Sources */,
+				920111E653264DBDB7FC1858 /* ReaderMoreContent.swift in Sources */,
+				4C49B0B7AF064FE799DE604A /* ReaderTaskContent.swift in Sources */,
+				65ECA15E2CC74AE98456F117 /* ReadingModePicker.swift in Sources */,
+				CE9F8CE75AFE42C28ECC1229 /* AppThemePreferencesView.swift in Sources */,
+				BA82A3CBA86846ECB5AE63D2 /* PalettePicker.swift in Sources */,
+				6C7083940065499F8C0487BB /* PalettePreview.swift in Sources */,
+				F587C1E1155B48F9AEAC88ED /* PaletteEditor.swift in Sources */,
+				A454A845E962475DB9521518 /* AboutView.swift in Sources */,
+				DEC2BEC0985D4462A3DFFD5B /* ThirdPartyLicensesView.swift in Sources */,
+				5D04F75C81604F72B1B2B5D7 /* StatisticsModels.swift in Sources */,
+				29A6B7ABAE5F498383369043 /* StatisticsBookList.swift in Sources */,
+				DBED821EB4A6440D9732F774 /* StatisticsDurationBar.swift in Sources */,
+				D40DDEFC45D0459C95B0AC51 /* StatisticsRhythm.swift in Sources */,
+				29AAD3F529884B28913015CC /* ReadingSessionsChart.swift in Sources */,
+				15CFAA04BB604325A6F7B91C /* StatisticsDayView.swift in Sources */,
+				BC404FD2C78B4E67B20B56A2 /* StatisticsSettingsView.swift in Sources */,
+				180EAB5E6B1F402795800E0D /* StatisticsSessionsView.swift in Sources */,
 				A10000000000000000000001 /* MoonreadApp.swift in Sources */,
                 AC1000000000000000000001,
                 AC1000000000000000000002,
@@ -1081,7 +1386,11 @@ F01900000000000000000001,
                 AC1000000000000000000003,
                 AC1000000000000000000077,
                 AC1000000000000000000006,
-				A10000000000000000000002 /* ReaderService.swift in Sources */,
+				A10000000000000000000002 /* AppDataService.swift in Sources */,
+				1513FFF184D943E0B24401D6 /* ReadingContinuationBanner.swift in Sources */,
+				A24F794D4BB7412191A19329 /* ReadingContinuation.swift in Sources */,
+				4DF6E88FEFC27B5FF2E847AD /* ProtectedFileAccess.swift in Sources */,
+				FF97A598EBE17BAA6A938B5F /* SourceDecodingPreferences.swift in Sources */,
 				A10000000000000000000003 /* LibraryView.swift in Sources */,
                 AF1000000000000000000002 /* LibraryPresentation.swift in Sources */,
                 AF1000000000000000000003 /* LibraryCollection.swift in Sources */,
@@ -1092,6 +1401,7 @@ F01900000000000000000001,
                 AD1000000000000000000001,
                 AD1000000000000000000002,
                 AD1000000000000000000003,
+                F14100000000000000000001 /* ReaderSettingsStore.swift in Sources */,
                 AD1000000000000000000004,
                 AD1000000000000000000005,
                 AD1000000000000000000006,
@@ -1110,6 +1420,8 @@ F01900000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CD0100000000000000000001,
+                CD0100000000000000000002,
 				A10000000000000000000009 /* MoonreadUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1117,6 +1429,7 @@ F01900000000000000000001,
 		A60000000000000000000006 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
                 D50610000000000000000007 /* CacheManagementTests.swift in Sources */,
                 D50610000000000000000006 /* DataManagementTests.swift in Sources */,
+				6FE466A10D361A647F688D3A /* SourceDecodingTests.swift in Sources */,
 				660000000000000000000004,
                 1324E15761CF5ED68712722E,
                 2E2559685C214716AEE5F325,
@@ -1187,6 +1500,15 @@ F01900000000000000000001,
                 9F8DE62685C2F88403C6ECD7,
             ); runOnlyForDeploymentPostprocessing = 0; };
 		67F838CFAF2F527F8C8EE359 /* Share Sources */ = { isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (906A74D1BD2A5FAD9BE897E1,0804D0B539CB5AB19A9DB8FF,); runOnlyForDeploymentPostprocessing = 0; };
+		D68B24CD446A49FDAD76CC77 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
+                74CBED75A4D04FC1A1E2382C /* SystemStatisticsCard.swift */,
+                4FB012E703494D00A03A92E4 /* SystemWidgetSnapshot.swift */,
+                E473A3CD4DBB45B7AB184A3D /* ReadingWidget.swift */,
+                CB6A7FD1BF984A79B8586F5E /* SystemReadingCard.swift */,
+                58F94938188043B8B65F2209 /* SystemReadingLink.swift */,
+                B56C2D6C1C9A4E179056846B /* SystemReadingSnapshot.swift */,
+                174FF1DA006A482FA274E861 /* SystemReadingEntities.swift */,
+                DB1FD46172074EF9A1016624 /* MoonreadWidgets.swift */,); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -1201,6 +1523,7 @@ F01900000000000000000001,
 			targetProxy = A30000000000000000000003 /* PBXContainerItemProxy */;
 		};
 		24EC65B9F10B59B19FF49005 /* Share Target Dependency */ = { isa = PBXTargetDependency; target = 04C2476D974D589BB2C7513F; targetProxy = 72DACA4B8D1E5727AAF77721; };
+		F1C19004BB32432C8F23B23B = {isa = PBXTargetDependency; target = AF656EF2055C4EDC80ED01F9; targetProxy = 37E2CAB8FF304630B382A542; };
 /* End PBXTargetDependency section */
 
 
@@ -1225,8 +1548,8 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
-                CURRENT_PROJECT_VERSION = 10;
-                MARKETING_VERSION = 1.2;
+                CURRENT_PROJECT_VERSION = 11;
+                MARKETING_VERSION = 1.3;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -1276,8 +1599,8 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
-                CURRENT_PROJECT_VERSION = 10;
-                MARKETING_VERSION = 1.2;
+                CURRENT_PROJECT_VERSION = 11;
+                MARKETING_VERSION = 1.3;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -1316,7 +1639,7 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 				OTHER_LDFLAGS = (
                     "-lsqlite3",
 					"$(inherited)",
-					"$(MOONREAD_CARGO_DIR)/$(MOONREAD_RUST_TARGET)/$(MOONREAD_CARGO_OUTPUT)/libmoonread_core.a",
+					"$(SRCROOT)/../target/$(MOONREAD_RUST_TARGET)/$(MOONREAD_CARGO_OUTPUT)/libmoonread_core.a",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.Moonread;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1349,7 +1672,7 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 				OTHER_LDFLAGS = (
                     "-lsqlite3",
 					"$(inherited)",
-					"$(MOONREAD_CARGO_DIR)/$(MOONREAD_RUST_TARGET)/$(MOONREAD_CARGO_OUTPUT)/libmoonread_core.a",
+					"$(SRCROOT)/../target/$(MOONREAD_RUST_TARGET)/$(MOONREAD_CARGO_OUTPUT)/libmoonread_core.a",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.Moonread;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1454,6 +1777,40 @@ SWIFT_STRICT_CONCURRENCY = complete;
 SWIFT_VERSION = 6.0;
 TARGETED_DEVICE_FAMILY = "1,2";
 }; name = Release; };
+		D169C1A3633B4A5AA938943E = {isa = XCBuildConfiguration; buildSettings = {
+APPLICATION_EXTENSION_API_ONLY = YES;
+CODE_SIGN_STYLE = Automatic;
+CODE_SIGN_ENTITLEMENTS = MoonreadWidgets/MoonreadWidgets.entitlements;
+GENERATE_INFOPLIST_FILE = YES;
+INFOPLIST_FILE = MoonreadWidgets/Info.plist;
+LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks",);
+PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.Moonread.Widgets;
+PRODUCT_NAME = "$(TARGET_NAME)";
+SKIP_INSTALL = YES;
+SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) MOONREAD_WIDGET";
+SWIFT_EMIT_LOC_STRINGS = YES;
+SWIFT_STRICT_CONCURRENCY = complete;
+SWIFT_VERSION = 6.0;
+TARGETED_DEVICE_FAMILY = "1,2";
+}; name = Debug; };
+		9731E3AA1E41424182A5C9A4 = {isa = XCBuildConfiguration; buildSettings = {
+APPLICATION_EXTENSION_API_ONLY = YES;
+CODE_SIGN_STYLE = Automatic;
+CODE_SIGN_ENTITLEMENTS = MoonreadWidgets/MoonreadWidgets.entitlements;
+GENERATE_INFOPLIST_FILE = YES;
+INFOPLIST_FILE = MoonreadWidgets/Info.plist;
+LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks", "@executable_path/../../Frameworks",);
+PRODUCT_BUNDLE_IDENTIFIER = dev.moonread.Moonread.Widgets;
+PRODUCT_NAME = "$(TARGET_NAME)";
+SKIP_INSTALL = YES;
+SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) MOONREAD_WIDGET";
+SWIFT_EMIT_LOC_STRINGS = YES;
+SWIFT_STRICT_CONCURRENCY = complete;
+SWIFT_VERSION = 6.0;
+TARGETED_DEVICE_FAMILY = "1,2";
+}; name = Release; };
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1494,6 +1851,7 @@ TARGETED_DEVICE_FAMILY = "1,2";
 			defaultConfigurationName = Release;
 		};
 		B0A8488C9CD75E49AB087C16 /* Share Build Configurations */ = { isa = XCConfigurationList; buildConfigurations = (1FF0DD6CEC3B5A399A673FEA,5F615DEDBAA3557AB5E6B48D,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		0E91A9D300784A34AE232948 = {isa = XCConfigurationList; buildConfigurations = (D169C1A3633B4A5AA938943E,9731E3AA1E41424182A5C9A4,); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
 /* End XCConfigurationList section */
 	};
 	rootObject = A90000000000000000000001 /* Project object */;

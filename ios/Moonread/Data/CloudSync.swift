@@ -38,7 +38,7 @@ final class CloudSyncIntent: @unchecked Sendable {
 /// owns upload, download and retries; there is no second record transport.
 actor CloudSyncCoordinator {
     static let shared = CloudSyncCoordinator()
-    private let service: ReaderService
+    private let service: AppDataService
     private let available: Bool
     private let observeEvents: Bool
     private let account: @Sendable () async throws -> String?
@@ -46,7 +46,7 @@ actor CloudSyncCoordinator {
     private var observing = false
     private var operation = UUID()
 
-    init(service: ReaderService = .shared, available: Bool = CloudConfiguration.availableInBuild, observeEvents: Bool = true,
+    init(service: AppDataService = .shared, available: Bool = CloudConfiguration.availableInBuild, observeEvents: Bool = true,
          account: @escaping @Sendable () async throws -> String? = {
              let container = CKContainer(identifier: CloudConfiguration.containerID)
              guard try await container.accountStatus() == .available else { throw CKError(.notAuthenticated) }
@@ -64,6 +64,7 @@ actor CloudSyncCoordinator {
         await resume()
     }
     func identityChanged() async {
+        await service.setSystemReadingAccountPending(true)
         operation = UUID()
         let current = operation
         do { try await service.configureUserCloud(false, account: nil) }
@@ -79,6 +80,7 @@ actor CloudSyncCoordinator {
         guard operation == current else { return }
         publish()
         if !status.requested {
+            await service.setSystemReadingAccountPending(false)
             await pause(current, message: nil); return
         }
         guard available else {
@@ -106,6 +108,7 @@ actor CloudSyncCoordinator {
             guard try await account() == target else { throw ReaderError.CloudAccountChanged }
             guard operation == current else { return }
             try await service.configureUserCloud(true, account: target)
+            await service.setSystemReadingAccountPending(false)
             guard operation == current else { return }
             status.enabled = true; status.accountToConfirm = nil; status.message = nil; publish()
         } catch {
@@ -130,6 +133,7 @@ actor CloudSyncCoordinator {
                 await pause(current, message: String(localized: "账户已再次变化，请重新确认。"), account: verified); return
             }
             try await service.configureUserCloud(true, account: target, allowAccountChange: true)
+            await service.setSystemReadingAccountPending(false)
             guard operation == current else { return }
             status.enabled = true; status.accountToConfirm = nil; status.message = nil; status.lastSync = nil; publish()
         } catch {
@@ -138,12 +142,15 @@ actor CloudSyncCoordinator {
         }
     }
     private func pause(_ current: UUID, message: String?, account: String? = nil) async {
+        if account != nil { await service.setSystemReadingAccountPending(true) }
         var reason = message
         do { try await service.configureUserCloud(false, account: nil) }
         catch {
             guard operation == current else { return }
             reason = Self.message(error)
         }
+        guard operation == current else { return }
+        await service.setSystemReadingAccountPending(account != nil)
         guard operation == current else { return }
         status.enabled = false; status.syncing = false; status.accountToConfirm = account
         status.message = reason; publish()
@@ -159,6 +166,7 @@ actor CloudSyncCoordinator {
             status.lastSync = end; status.message = nil
             if event.type == .import {
                 await service.receivedUserImport()
+                NotificationCenter.default.post(name: .cloudReadingPositionsReceived, object: nil)
                 NotificationCenter.default.post(name: .cloudDataReceived, object: nil)
                 NotificationCenter.default.post(name: .statisticsChanged, object: nil)
                 NotificationCenter.default.post(name: .bookMetadataChanged, object: nil)
@@ -179,9 +187,9 @@ actor CloudSyncCoordinator {
         return ReaderMessages.error(error)
     }
 }
-extension ReaderService {
+extension AppDataService {
     func cloudSyncRequested() -> Bool { cloudSyncIntent.requested }
     func setCloudSyncRequested(_ requested: Bool) { cloudSyncIntent.set(requested) }
     func userCloudOwner() -> String? { sourceDefaults.string(forKey: "Moonread.userOwner") }
-    func dataChanged() { NotificationCenter.default.post(name: .readingDataChanged, object: nil) }
+    func dataChanged() { scheduleSystemReadingCatalog(); NotificationCenter.default.post(name: .readingDataChanged, object: nil) }
 }

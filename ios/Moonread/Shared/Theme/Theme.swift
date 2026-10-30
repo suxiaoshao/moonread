@@ -7,6 +7,7 @@ enum LayoutTokens {
     static let content: CGFloat = 16
     static let page: CGFloat = 20
     static let section: CGFloat = 24
+    static let pageBottomSpacing: CGFloat = 32
     static let hit: CGFloat = 44
     static let inputRadius: CGFloat = 16
     static let floatingRadius: CGFloat = 20
@@ -61,6 +62,8 @@ struct ThemeSurface: Equatable {
     var searchCurrent: UIColor { ui(\.searchCurrent, system: .systemBlue.withAlphaComponent(0.28)) }
     var selection: UIColor { ui(\.selection, system: .systemBlue) }
     var destructive: UIColor { ui(\.destructive, system: .systemRed) }
+    var warning: UIColor { ui(\.warning, system: .systemOrange) }
+    var onDestructive: UIColor { ui(\.onDestructive, system: .white) }
     var success: UIColor { ui(\.success, system: .systemGreen) }
     var moon: UIColor { ui(\.moon, system: .tertiaryLabel) }
     var maria: UIColor { ui(\.maria, system: .secondaryLabel) }
@@ -160,7 +163,7 @@ final class ThemeStore {
     private let persistPreferences: @MainActor (ThemePreferences) async throws -> ThemeSnapshot
 
     convenience init() {
-        self.init { preferences in try await ReaderService.shared.saveThemes(preferences) }
+        self.init { preferences in try await AppDataService.shared.saveThemes(preferences) }
     }
 
     init(persistPreferences: @escaping @MainActor (ThemePreferences) async throws -> ThemeSnapshot) {
@@ -195,7 +198,7 @@ final class ThemeStore {
 
     func load() async {
         await preferencesTask?.value
-        do { accept(try await ReaderService.shared.themes()); loaded = true }
+        do { accept(try await AppDataService.shared.themes()); loaded = true }
         catch { self.error = ReaderMessages.error(error) }
     }
     private func accept(_ value: ThemeSnapshot) {
@@ -238,15 +241,15 @@ final class ThemeStore {
         saving = true
         defer { saving = false }
         await flushPreferences()
-        _ = try await ReaderService.shared.savePalette(palette, creating: creating)
-        accept(try await ReaderService.shared.themes())
+        _ = try await AppDataService.shared.savePalette(palette, creating: creating)
+        accept(try await AppDataService.shared.themes())
     }
     func deletePalette(_ id: String) async {
         guard !saving else { return }
         saving = true
         defer { saving = false }
         await flushPreferences()
-        do { accept(try await ReaderService.shared.deletePalette(id)) }
+        do { accept(try await AppDataService.shared.deletePalette(id)) }
         catch { self.error = ReaderMessages.error(error) }
     }
 }
@@ -336,5 +339,13 @@ extension View {
     func themeScope(_ theme: ThemeSurface) -> some View {
         environment(\.theme, theme).environment(\.colorScheme, theme.scheme)
             .foregroundStyle(Color(uiColor: theme.ink)).tint(Color(uiColor: theme.accent))
+    }
+}
+
+// Opt in only at a page's scrolling container. Theme styling also wraps Lists,
+// reader tools and nested content, so it must not add scroll margins globally.
+extension ScrollView {
+    func pageScrollMargins() -> some View {
+        contentMargins(.bottom, LayoutTokens.pageBottomSpacing, for: .scrollContent)
     }
 }

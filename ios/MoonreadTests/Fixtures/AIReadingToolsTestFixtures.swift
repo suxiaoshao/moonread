@@ -6,7 +6,7 @@ import XCTest
 
 @MainActor class AIReadingToolsFixture: XCTestCase {
   func fixture(paragraphs: Int = 8, text: String? = nil) async throws -> (
-    URL, ReaderService, ImportText, UserDataStore, AIReadingTools
+    URL, AppDataService, ImportText, UserDataStore, AIReadingTools
   ) {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -22,7 +22,7 @@ import XCTest
           schema: UserDataStore.schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
       ])
     let store = UserDataStore(modelContainer: container)
-    let reader = ReaderService(
+    let reader = AppDataService(
       core: core, sourceDefaultsSuite: "AI-\(root.lastPathComponent)",
       userStoreFactory: { _, _ in store })
     let shelf = try await reader.registerLibraryShelf(root)

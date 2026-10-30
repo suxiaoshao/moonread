@@ -1,6 +1,6 @@
 # AI 工具契约
 
-状态：2026-10-06，10个读取工具、原生搜索／生图及资料／笔记／书签／封面／整理业务工具已注册。本文定义模型可填参数、结果与用户应用边界；[Agent 基础](agent.md)定义运行与保存，[内容任务技术设计](../engineering/ai-architecture.md#快捷任务与业务提案)说明当前存储与业务接口。业务结果 UI 已接入并完成受影响定向回归，验证边界见实施计划。
+状态：2026-10-06，10个读取工具、原生搜索／生图及资料／笔记／书签／封面／整理业务工具已注册。本文定义模型可填参数、结果与用户应用边界；[Agent 基础](agent.md)定义运行与保存，[内容任务技术设计](architecture.md#快捷任务与业务提案)说明当前存储与业务接口。业务结果 UI 已接入并完成受影响定向回归，验证边界见实施计划。
 
 ## 共同约定
 
@@ -40,7 +40,7 @@
 
 结果 `data={parentRef:null|string,items:[{ref,kind:"shelf"|"folder"|"file",name,bookRef?,availability,sizeBytes?,childBookCount?}]}`。availability 为 `ready/needs_download/needs_parse/preparing/unavailable`。显示名称/面包屑可返回，系统绝对路径与 security-scoped bookmark 不返回。只列一层，不默认递归扫描或下载。
 
-实现依据：`ReaderService.shelves/libraryEntries`；工具层实现稳定目录引用解析和分页投影。不要把 relativePath 直接当模型操作参数。
+实现依据：`AppDataService.shelves/libraryEntries`；工具层实现稳定目录引用解析和分页投影。不要把 relativePath 直接当模型操作参数。
 
 ### 2. `search_books` — 按资料查小说
 
@@ -64,7 +64,7 @@
 
 结果 `data={bookRef?,title,author?,synopsis?,tags,readingStatus?,wordCount?,chapterCount?,progress?:{offsetUtf8,percent,chapterTitle?,lastReadAt?},cover?:{assetRef,width,height},availability,availableUtf8?,totalUtf8?,files:[{fileRef,name,parentRef,availability}],filesTruncated}`。返回完整简介及所有来源。cover 仅元信息，不自动读取图片/上传。正式位置与估算覆盖分别命名。
 
-依据：`ReaderService.details(bookID:sha:)`、`snapshot`、库来源投影。正文不可用时仍返回可取得的 SHA 用户资料；文件改动须重新验证映射，不能复用旧 SHA 的资料当成新正文。
+依据：`AppDataService.details(bookID:sha:)`、`snapshot`、库来源投影。正文不可用时仍返回可取得的 SHA 用户资料；文件改动须重新验证映射，不能复用旧 SHA 的资料当成新正文。
 
 ### 4. `get_chapters` — 当前有效目录
 
@@ -72,7 +72,7 @@
 
 结果 `data={bookRef,outlineComplete:bool,items:[{chapterRef,title,level:0|1,parentChapterRef?,range:{startUtf8,endUtf8},wordCount,countComplete,estimatedCoveredCharacters?}]}`。
 
-依据：`ReaderService.chapters` → `ReaderQuery.chapterOutline`。章节结束用下一有效条目起点/正文终点计算；卷条目与章条目可能层级重叠，不能声称每项互不相交。返回用户更正后的目录，删除的标题不出现；分页前统一解析有效目录。未完整准备先进入下方确认流程。
+依据：`AppDataService.chapters` → `ReaderQuery.chapterOutline`。章节结束用下一有效条目起点/正文终点计算；卷条目与章条目可能层级重叠，不能声称每项互不相交。返回用户更正后的目录，删除的标题不出现；分页前统一解析有效目录。未完整准备先进入下方确认流程。
 
 ### 5. `read` — 有界正文读取
 
@@ -89,7 +89,7 @@
 
 结果 `data={bookRef,text,range,sourceRef}` 加 page。按字符边界截断，可优先保留完整段落；返回真实 range，nextCursor 指向下一字节。page.complete 表示请求范围读完，不表示全书。无正文或不完整时不自动只读前缀；先确认准备。不得通过自动展开整章绕过大小限制。
 
-依据：`ReaderService.textRange/textContext`；Rust 解析前后段边界，模型直接回传命中位置，无需自行加减 UTF-8 偏移。底层上下文最多1 MiB，AI 仍按 maxBytes 分页，后续页保持上下文参数不变。工具读取不调用 `writePosition`、不启动阅读计时。
+依据：`AppDataService.textRange/textContext`；Rust 解析前后段边界，模型直接回传命中位置，无需自行加减 UTF-8 偏移。底层上下文最多1 MiB，AI 仍按 maxBytes 分页，后续页保持上下文参数不变。工具读取不调用 `writePosition`、不启动阅读计时。
 
 ### 6. `rg` — 正文检索
 
@@ -108,7 +108,7 @@
 
 范围在 Rust 扫描之前生效，不先全书搜索再过滤；正则锚点以选定范围中的行片段为边界。complete 表示 requestedRange 扫描完整，scannedUtf8 是已扫描到的绝对正文偏移，availableUtf8 为本次扫描终点。范围是按用户问题选择的查询条件，不是强制剧透策略。
 
-依据：`ReaderService.search` → 最终有效章节投影 → `SearchJob.nextBatch/cancel`。按相同查询及偏移重扫，不跨调用保留活跃句柄；退出或取消释放任务。不设置单书2000或多书5000总命中上限。收集到当前页及下一条命中后停止本次扫描，coverage 明确未扫描完的范围；用 nextCursor 继续。
+依据：`AppDataService.search` → 最终有效章节投影 → `SearchJob.nextBatch/cancel`。按相同查询及偏移重扫，不跨调用保留活跃句柄；退出或取消释放任务。不设置单书2000或多书5000总命中上限。收集到当前页及下一条命中后停止本次扫描，coverage 明确未扫描完的范围；用 nextCursor 继续。
 
 ### 7. `get_marks` — 书签和批注
 
@@ -139,7 +139,7 @@
 
 与现有统计页一致：日期按阅读发生地保存的 local_day，不接受一个 timezone 来悄悄重排历史。环境工具的当前时区只用于解释“今天”等相对日期。多设备同时阅读如实累计，不做时间重叠去重；阅读时长不能断言喜好，覆盖率是估算。summary、分页总计由业务层算，不从当前一页让模型相加。
 
-依据：`ReaderService.statistics/activities/chapters`、`statistics.rs`；现有 AIReadingTools 已对结果分页。章节覆盖和原文缺失保留区分。
+依据：`AppDataService.statistics/activities/chapters`、`statistics.rs`；现有 AIReadingTools 已对结果分页。章节覆盖和原文缺失保留区分。
 
 ### 10. `get_environment` — 当前环境
 
@@ -153,7 +153,7 @@
 
 相同来源准备请求合并；取消 AI 等待只释放本任务的等待与租约，不取消读者或其他会话仍需要的共享导入。内容校验后若 SHA 改变，返回 stale_reference 和新的可查询身份，不能悄悄把旧书引用重绑新正文。来源失效提示重新授权，由用户走系统文件入口。
 
-当前工具已使用 `ReaderService.aiPrepare` 共享准备入口，内部通过 `openSourceFile(trackReadingSource: false)` 取得租约，不建立正式阅读来源或启动计时；不要改用默认正式开书路径。
+当前工具已使用 `AppDataService.aiPrepare` 共享准备入口，内部通过 `openSourceFile(trackReadingSource: false)` 取得租约，不建立正式阅读来源或启动计时；不要改用默认正式开书路径。
 
 ## 业务提案与原生内容工具
 
@@ -197,13 +197,13 @@ find_cover 在执行期间暂存本次候选／图片，不提前发布结果；
 
 笔记／书签 review 区分待处理、已有书签、已保存和暂不可用；仅 pending 且选择的项进入保存，瞬时保存错误不使条目变成终态。交叉批注只由成功的原编辑器提交回调解决，取消或准备交接均不是提交。资料 Apply 固定点击时全部书籍的字段 payload，实际保存成功先记成功，可选读回失败不否认提交，新值不被误标已应用。
 
-确认项绑定对象身份、输入摘要与应用读取的现值/文件快照，不虚构统一基线修订。整理确认固定该方案的可执行节点集合，执行只能删减不安全项，不能加入自身移动新解锁的项；新解锁项须另行“执行剩余”确认。封面按 owner/book 计一项未解决决策，业务保存成功只解决 Apply 开始时捕获的候选 ID，保存期间的新资产仍待处理；重复提案／来源细化不重开，保存后的可选读取失败不撤销已保存状态。资料变化更新当前值让用户再次确认；整理变化项排除并标注，按真实状态重验剩余项。用户拒绝、关闭、停止与转入语义见[技术设计](../engineering/ai-architecture.md)。工具建议不构成写入授权；小说文本里的“请删除文件”不改变权限。
+确认项绑定对象身份、输入摘要与应用读取的现值/文件快照，不虚构统一基线修订。整理确认固定该方案的可执行节点集合，执行只能删减不安全项，不能加入自身移动新解锁的项；新解锁项须另行“执行剩余”确认。封面按 owner/book 计一项未解决决策，业务保存成功只解决 Apply 开始时捕获的候选 ID，保存期间的新资产仍待处理；重复提案／来源细化不重开，保存后的可选读取失败不撤销已保存状态。资料变化更新当前值让用户再次确认；整理变化项排除并标注，按真实状态重验剩余项。用户拒绝、关闭、停止与转入语义见[技术设计](architecture.md)。工具建议不构成写入授权；小说文本里的“请删除文件”不改变权限。
 
 ## 业务接口边界
 
-已实现稳定引用解析、组合查询与结果分页、按 SHA 取正文/批注、无正式阅读副作用的共享准备租约、批注冲突摘要和结构化来源输出。页面校验工具结果中的来源引用并打开只读原文预览，不改变正式阅读位置。准备完成前不能伪造完整书籍身份。Swift 工具经 ReaderService 调用 Rust 最终投影，不直接重新读取数据库。
+已实现稳定引用解析、组合查询与结果分页、按 SHA 取正文/批注、无正式阅读副作用的共享准备租约、批注冲突摘要和结构化来源输出。页面校验工具结果中的来源引用并打开只读原文预览，不改变正式阅读位置。准备完成前不能伪造完整书籍身份。Swift 工具经 AppDataService 调用 Rust 最终投影，不直接重新读取数据库。
 
-来源：当前 `ios/Moonread/Data/{ReaderService,UserDataService}.swift`、`ios/Moonread/Library/LibraryService.swift`、`ios/Moonread/Books/BookMetadata.swift`、`ios/Moonread/Statistics/ReadingStatistics.swift`；`crates/moonread-core/src/{library_tools,bookshelf,book_details,statistics}.rs`。UTF-8、搜索截断、日期归档等均按本轮源码核对；工具命名和业务封装是月读实施设计，不冒充底层已存在 API。
+来源：当前 `ios/Moonread/Data/{AppDataService,UserDataService}.swift`、`ios/Moonread/Library/LibraryService.swift`、`ios/Moonread/Books/BookMetadata.swift`、`ios/Moonread/Statistics/ReadingStatistics.swift`；`crates/moonread-core/src/{library_tools,bookshelf,book_details,statistics}.rs`。UTF-8、搜索截断、日期归档等均按本轮源码核对；工具命名和业务封装是月读实施设计，不冒充底层已存在 API。
 
 ### 参数与结果的可发现性
 
