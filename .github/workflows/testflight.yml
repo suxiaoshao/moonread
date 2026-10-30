@@ -278,7 +278,7 @@ jobs:
                   clean = sanitize_diagnostic(text)
                   lines = clean.splitlines()
                   for index, line in enumerate(lines):
-                      if re.search(r'error|fail(?:ed|ure)?|invalid|ITMS-\d+|Error Domain=|Code=|NSLocalized|description\s*[:=]|message\s*[:=]|reason\s*[:=]', line, re.I):
+                      if re.search(r'error|fail(?:ed|ure)?|invalid|missing|ITMS-\d+|Error Domain=|Code=|NSLocalized|description\s*[:=]|message\s*[:=]|reason\s*[:=]', line, re.I):
                           if re.search(r'^\s*(?:/.*xcodebuild|command line invocation:|code_sign_style\s*=)|-authenticationKey', line): continue
                           # Keep two continuation lines too: a future Apple error
                           # can put its actual explanation below an unknown code.
