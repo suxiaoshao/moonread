@@ -69,11 +69,12 @@ private struct StatisticsBarChart: View {
             if let open {
                 GeometryReader { geometry in
                     Rectangle().fill(.clear).contentShape(Rectangle()).onTapGesture { location in
-                        // The whole column belongs to its bucket, including the gaps between bars.
                         guard let frame = proxy.plotFrame else { return }
                         let plot = geometry[frame]
-                        let column = Int(((location.x - plot.minX) / max(1, plot.width) * CGFloat(keys.count)).rounded(.down))
-                        guard keys.indices.contains(column), let bucket = bucket(keys[column]) else { return }
+                        let x = location.x - plot.minX
+                        guard x >= 0, x < plot.width,
+                              let key = proxy.value(atX: x, as: String.self),
+                              let bucket = bucket(key) else { return }
                         open(bucket)
                     }
                 }
