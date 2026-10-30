@@ -505,6 +505,10 @@ jobs:
               info = plistlib.loads((bundle / 'Info.plist').read_bytes())
               require((info['CFBundleIdentifier'], info['CFBundleShortVersionString'], info['CFBundleVersion']) ==
                       (identifier, meta['version'], meta['build']), 'bundle identity/version mismatch')
+              # All three Moonread bundles declare a localized display name;
+              # Apple rejected the Widget without this base Info.plist value.
+              require(isinstance(info.get('CFBundleDisplayName'), str) and info['CFBundleDisplayName'].strip(),
+                      'missing or empty CFBundleDisplayName: ' + identifier)
               command('codesign', '--verify', '--deep', '--strict', str(bundle))
               ent = plistlib.loads(command('codesign', '-d', '--entitlements', ':-', str(bundle)))
               require(ent.get('get-task-allow') is False, 'get-task-allow must be false')
