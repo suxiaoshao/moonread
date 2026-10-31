@@ -341,6 +341,30 @@ final class UserDataConflictTests: UserDataFixture {
     XCTAssertThrowsError(try snapshot.checked(nil))
     do { _ = try await service.noteDocument(book.id); XCTFail("Incomplete export must stop") }
     catch is NoteReadError {}
+
+    // A completed source can still have unpromoted facts. Export must promote
+    // first, and must not bypass a later unreadable pending record via the cache.
+    let f = try positionWinnerFixture()
+    defer { f.clean() }
+    let id = f.aliases[0], pendingKey = "pending:" + id
+    let staged = candidate("staged-note", content: content("pending note"))
+    try await f.pending.receiveFixture(key: pendingKey, mark: "staged", candidate: staged)
+    let promotedDocument = try await f.service.noteDocument(id)
+    XCTAssertEqual(promotedDocument.records.map { $0.mark.note }, ["pending note"])
+    let pendingAfter = try await f.pending.noteCandidates(key: pendingKey)
+    XCTAssertTrue(pendingAfter.groups.isEmpty)
+    let unknown = try syncJSON(UserSyncJSON.encode(candidate("future-pending", content: content("future")), envelope: true)) { $0["v"] = 2 }
+    try await f.pending.receiveSyncFixture("mark", key: pendingKey, id: "future-pending", mark: "future", payload: unknown)
+    let beforeBlockedExport = try await f.pending.syncFixturePayloads("mark")
+    let selections: [Set<String>?] = [nil, ["staged"]]
+    for selected in selections {
+      do {
+        _ = try await f.service.noteDocument(id, ids: selected)
+        XCTFail("Failed pending promotion must block whole and selected export")
+      } catch is UserSyncCompatibilityError {}
+    }
+    let afterBlockedExport = try await f.pending.syncFixturePayloads("mark")
+    XCTAssertEqual(afterBlockedExport, beforeBlockedExport, "Unreadable pending facts are retained")
   }
 
   @MainActor

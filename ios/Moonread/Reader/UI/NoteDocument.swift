@@ -98,6 +98,7 @@ struct NoteDocument: Sendable {
 }
 extension AppDataService {
     func noteCandidates(_ id: String) async throws -> NoteCandidates {
+        try await promoteUserData(id)
         let revision = userCloudConfigurationRevision
         let key = try userKey(id)
         let snapshot = try await userStore(for: key).noteCandidates(key: key)
@@ -226,6 +227,6 @@ struct NoteExportView: View {
     private func load() async {
         loading = true; error = nil; incompatible = false; defer { loading = false }
         do { document = try await AppDataService.shared.noteDocument(bookID) }
-        catch { incompatible = error is NoteReadError; self.error = ReaderMessages.error(error) }
+        catch { incompatible = error is NoteReadError || error is UserSyncCompatibilityError; self.error = ReaderMessages.error(error) }
     }
 }
