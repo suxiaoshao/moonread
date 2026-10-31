@@ -376,9 +376,25 @@ final class UserDataConflictTests: UserDataFixture {
     let b = candidate("b", content: content("second"))
     try await store.receiveFixture(key: key, mark: "first", candidate: a)
     try await store.receiveFixture(key: key, mark: "second", candidate: b)
-    let selected = try await service.noteCandidates(book.id)
+    for index in 0..<60 {
+      try await store.receiveFixture(key: key, mark: "page-\(index)",
+        candidate: candidate("page-op-\(index)", content: content("later page", start: UInt64(10 + index), end: UInt64(11 + index))))
+    }
+    let tools = ReaderToolsModel(service: service)
+    tools.select(.notes)
+    await tools.prepare(bookID: book.id, currentChapter: 0, library: true)
+    XCTAssertEqual(tools.notes.count, 60)
+    XCTAssertTrue(tools.moreNotes)
+    tools.toggleNote(try XCTUnwrap(tools.notes.first { $0.id == "first" }))
+    tools.toggleNote(try XCTUnwrap(tools.notes.first { $0.id == "second" }))
     let changed = candidate("changed", parents: ["b"], content: content("edited remotely"))
     try await store.receiveFixture(key: key, mark: "second", candidate: changed)
+    await tools.loadNotes(reset: false)
+    XCTAssertEqual(tools.notes.count, 62)
+    XCTAssertEqual(tools.notes.first { $0.id == "second" }?.note, "second")
+    XCTAssertEqual(tools.selectedCandidates["second"]?.map(\.id), ["b"])
+    XCTAssertEqual(tools.noteSnapshot?.groups["second"]?.map(\.id), ["b"])
+    let selected = NoteCandidates(key: key, groups: tools.selectedCandidates, blocked: [])
     let before = try await store.syncFixturePayloads("mark")
     do {
       try await service.deleteNoteSelection(book.id, expected: selected, ids: ["first", "second"])
@@ -389,7 +405,10 @@ final class UserDataConflictTests: UserDataFixture {
     let latest = try await service.noteCandidates(book.id)
     try await service.deleteNoteSelection(book.id, expected: latest, ids: ["first", "second"])
     let deleted = try await store.noteCandidates(key: key)
-    XCTAssertTrue(deleted.groups.values.allSatisfy { $0.allSatisfy { $0.content == nil } })
+    for id in ["first", "second"] {
+      XCTAssertTrue(try XCTUnwrap(deleted.groups[id]).allSatisfy { $0.content == nil })
+    }
+    XCTAssertEqual(deleted.groups.filter { $0.key.hasPrefix("page-") && $0.value.first?.content != nil }.count, 60)
     try await service.deleteMarks(["first", "second"], deleted: false)
     let restored = try await store.noteCandidates(key: key)
     XCTAssertEqual(restored.groups["first"]?.first?.content, a.content)

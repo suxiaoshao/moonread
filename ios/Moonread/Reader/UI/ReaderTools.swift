@@ -250,13 +250,25 @@ final class ReaderToolsModel {
             } while reset && more && items.count < preservingCount
             if notesKind != kind { clearNoteSelection(); selectingNotes = false }
             notes = reset ? items : notes + items; notesKind = kind; moreNotes = more
-            noteSnapshot = snapshot
+            // Appended pages do not replace the rows already on screen. Keep
+            // their candidates too, including rows selected after pagination.
+            var displayedGroups = reset ? [:] : (noteSnapshot?.groups ?? [:])
+            for item in items where reset || displayedGroups[item.id] == nil {
+                displayedGroups[item.id] = snapshot.groups[item.id]
+            }
+            noteSnapshot = NoteCandidates(key: snapshot.key, groups: displayedGroups, blocked: snapshot.blocked)
             let locations = (try? await service.noteLocations(id, marks: items)) ?? [:]
             guard !isLeaving, id == bookID, kind == noteKind, generation == notesGeneration else { return }
             if reset { noteLocations = locations } else { noteLocations.merge(locations) { _, new in new } }
             let valid = Set(snapshot.groups.filter { $0.value.contains { $0.content != nil } }.keys).union(snapshot.blocked)
             selectedNotes.formIntersection(valid)
-            selectedCandidates = snapshot.groups.filter { selectedNotes.contains($0.key) }
+            selectedCandidates = selectedCandidates.filter { selectedNotes.contains($0.key) }
+            if reset {
+                // Only refreshed, displayed rows may advance an existing baseline.
+                for item in items where selectedNotes.contains(item.id) {
+                    selectedCandidates[item.id] = snapshot.groups[item.id]
+                }
+            }
         } catch { if !isLeaving { notesLoadError = ReaderMessages.error(error) } }
     }
 
