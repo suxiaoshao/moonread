@@ -206,7 +206,7 @@ struct AIToolDetailView: View {
                             }
                         }
                     }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding([.horizontal, .top], 20).padding(.bottom)
                     .foregroundStyle(Color(uiColor: theme.ink))
             }.themedPage().navigationTitle(AIToolPresentation.title(item.name, output: item.output))
                 .navigationBarTitleDisplayMode(.inline)

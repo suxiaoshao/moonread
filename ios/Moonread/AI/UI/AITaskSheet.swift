@@ -37,8 +37,8 @@ struct AITaskSetup<Setup: View>: View {
                     label: { Text("开始").frame(maxWidth: .infinity) }
                     .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
                     .disabled(selection == nil || !canStart || starting).accessibilityIdentifier("startAITask")
-            }.padding(LayoutTokens.content)
-        }.pageScrollMargins().scrollDismissesKeyboard(.interactively)
+            }.padding([.horizontal, .top], LayoutTokens.content).padding(.bottom)
+        }.scrollDismissesKeyboard(.interactively)
             .onAppear { if selection == nil { selection = ai.modelSelection(for: .defaults) } }
     }
 }

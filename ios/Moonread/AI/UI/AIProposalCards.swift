@@ -63,7 +63,7 @@ struct AIResultCard: View {
                             if let review, case .cover(let cover) = review.body { coverContent(cover) }
                             else if ai.proposals.lastErrors[resultID] == nil { ProgressView().frame(maxWidth: .infinity) }
                             AIResultFeedback(resultID: resultID)
-                        }.padding(LayoutTokens.content)
+                        }.padding([.horizontal, .top], LayoutTokens.content).padding(.bottom)
                     }.themedPage().navigationTitle("选择封面").navigationBarTitleDisplayMode(.inline)
                         // Like the metadata review, the sheet owns its review: the card's copy can be closed while it is up.
                         .task { if review == nil { await ai.proposals.openResult(result) } }

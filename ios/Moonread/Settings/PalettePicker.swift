@@ -106,8 +106,8 @@ struct PalettePicker: View {
                         edit(PaletteDraft(palette: base, creating: true))
                     }.frame(maxWidth: .infinity, minHeight: LayoutTokens.hit).padding(6).accessibilityIdentifier("createPalette")
                 }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 16))
-            }.padding(.horizontal, LayoutTokens.content).padding(.vertical, LayoutTokens.compact)
-        }.pageScrollMargins().disabled(themes.saving).themedPage().accessibilityIdentifier("paletteOptions")
+            }.padding(.horizontal, LayoutTokens.content).padding(.top, LayoutTokens.compact).padding(.bottom)
+        }.disabled(themes.saving).themedPage().accessibilityIdentifier("paletteOptions")
     }
     private var paletteList: some View {
         List {

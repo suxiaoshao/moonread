@@ -205,7 +205,7 @@ struct DataManagementView: View {
                     Text("删除全部阅读数据", tableName: "DataManagement").frame(maxWidth: .infinity, minHeight: 44)
                 }.buttonStyle(.bordered).tint(Color(uiColor: theme.destructive)).accessibilityIdentifier("deleteAllReadingData")
             }.padding()
-        }.pageScrollMargins()
+        }
         .themedPage().navigationTitle(Text("数据管理", tableName: "DataManagement"))
         .navigationBarTitleDisplayMode(.large)
         .modifier(ReadingDataWorking(model: model))
@@ -553,7 +553,7 @@ private struct ReadingDataCacheView: View {
                 if let error = model.error { Text(verbatim: error).foregroundStyle(Color(uiColor: theme.destructive)) }
                 Spacer()
             }.padding()
-        }.pageScrollMargins().themedPage().navigationTitle(Text("可重建缓存", tableName: "DataManagement"))
+        }.themedPage().navigationTitle(Text("可重建缓存", tableName: "DataManagement"))
         .modifier(ReadingDataWorking(model: model))
         .confirmationDialog(Text("清理可重建缓存？", tableName: "DataManagement"), isPresented: $confirmation, titleVisibility: .visible) {
             Button { Task { await model.clearCache() } } label: { Text("确认清理缓存", tableName: "DataManagement") }
@@ -587,7 +587,7 @@ private struct BackupImportPreviewView: View {
                         if preview.preview.conflicts > 0 { Text("\(preview.preview.conflicts) 处批注有冲突", tableName: "DataManagement") }
                     }
                 }.padding().frame(maxWidth: .infinity, alignment: .leading)
-            }.pageScrollMargins().themedPage().navigationTitle(Text("导入预览", tableName: "DataManagement"))
+            }.themedPage().navigationTitle(Text("导入预览", tableName: "DataManagement"))
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 12) {
                     if let error = model.error { Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }

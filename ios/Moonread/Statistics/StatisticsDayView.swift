@@ -26,8 +26,8 @@ struct StatisticsDayView: View {
                         VStack(alignment: .leading, spacing: 24) { summary; sessions }
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                }.padding(20).frame(maxWidth: 1200).frame(maxWidth: .infinity)
-            }.pageScrollMargins()
+                }.padding([.horizontal, .top], 20).padding(.bottom).frame(maxWidth: 1200).frame(maxWidth: .infinity)
+            }
         }
         .themedPage()
         .navigationTitle(StatisticsDates.dateLabel(route.day, full: true)).navigationBarTitleDisplayMode(.inline)

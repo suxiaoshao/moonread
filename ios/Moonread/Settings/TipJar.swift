@@ -181,8 +181,8 @@ struct TipJarView: View {
                 }
                 Text("打赏不会解锁任何功能。付款由 Apple 处理。")
                     .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)).multilineTextAlignment(.center)
-            }.padding(LayoutTokens.page).frame(maxWidth: 640).frame(maxWidth: .infinity)
-        }.pageScrollMargins().themedPage().navigationTitle("支持月读").navigationBarTitleDisplayMode(.inline)
+            }.padding([.horizontal, .top], LayoutTokens.page).padding(.bottom).frame(maxWidth: 640).frame(maxWidth: .infinity)
+        }.themedPage().navigationTitle("支持月读").navigationBarTitleDisplayMode(.inline)
             .accessibilityIdentifier("tipJar")
             .task { await store.enterPage() }
             .onDisappear { store.leavePage() }
