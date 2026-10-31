@@ -376,15 +376,24 @@ struct FullIndexView: View {
                                 }
                             }
                         }
-                    }.frame(maxWidth: 400).frame(maxWidth: .infinity)
-                        .frame(minHeight: max(0, geometry.size.height - 32))
-                        .padding(.horizontal, 20).padding(.vertical, 16)
+                    }.frame(maxWidth: 400)
+                        .padding(.horizontal, 20).padding(.vertical)
+                        .frame(maxWidth: .infinity, minHeight: geometry.size.height)
                 }
             }.themedPage().navigationTitle(Text("建立索引", tableName: "FullIndex"))
             .navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .bottom) {
-                primaryButton.frame(maxWidth: 400).frame(maxWidth: .infinity)
-                    .padding(.horizontal, 20).padding(.vertical, 12).background(Color(uiColor: theme.canvas))
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                ZStack {
+                    // Reserve the largest native action at the current language
+                    // and Dynamic Type size, without exposing an inactive button.
+                    ZStack {
+                        actionButton(.start)
+                        actionButton(.stop)
+                        actionButton(.retry)
+                    }.hidden().allowsHitTesting(false).accessibilityHidden(true)
+                    actionButton(controller.sheetAction(shelfID, inventory: loadError == nil ? inventory : nil, includeCloud: includeCloud))
+                }.frame(maxWidth: 400).frame(maxWidth: .infinity)
+                    .padding(.horizontal, 20).padding(.vertical).background(Color(uiColor: theme.canvas))
             }
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button { dismiss() } label: { Text("完成") } } }
             .task(id: controller.running) { await loadInventory() }
@@ -453,8 +462,8 @@ struct FullIndexView: View {
         if let range = label.range(of: String(indexed)) { label[range].font = .system(size: indexedSize, weight: .semibold) }
         return label
     }
-    @ViewBuilder private var primaryButton: some View {
-        switch controller.sheetAction(shelfID, inventory: loadError == nil ? inventory : nil, includeCloud: includeCloud) {
+    @ViewBuilder private func actionButton(_ action: FullIndexController.SheetAction) -> some View {
+        switch action {
         case .stop:
             Button { controller.cancel() } label: { Text("停止", tableName: "FullIndex").font(.body.weight(.medium)).frame(maxWidth: .infinity) }.buttonStyle(.bordered).foregroundStyle(Color(uiColor: theme.accent)).controlSize(.large).accessibilityIdentifier("fullIndexStop")
         case .start:
