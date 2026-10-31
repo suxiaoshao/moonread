@@ -121,7 +121,7 @@ struct SystemIntegrationSettingsView: View {
                         .accessibilityLabel("小组件合成示例：月下归舟，42%")
                         .accessibilityIdentifier("systemWidgetPreview")
                 }
-            }.padding(24).frame(maxWidth: 720, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading)
+            }.padding([.horizontal, .top], 24).padding(.bottom).frame(maxWidth: 720, alignment: .leading).frame(maxWidth: .infinity, alignment: .leading)
         }.tint(Color(uiColor: theme.accent))
     }
 

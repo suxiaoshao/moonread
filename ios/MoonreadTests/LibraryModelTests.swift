@@ -22,6 +22,8 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
     XCTAssertFalse(controller.canContinue(inventory, includeCloud: true))
     XCTAssertEqual(controller.sheetAction("builtin", inventory: nil, includeCloud: true), .none)
     XCTAssertEqual(controller.sheetAction("builtin", inventory: inventory, includeCloud: true), .retry)
+    XCTAssertNil(controller.currentFile)
+    XCTAssertFalse(controller.waitingForReader)
     XCTAssertTrue(controller.hasInventory)
     XCTAssertEqual(controller.indexed, inventory.total - inventory.pending.count)
     XCTAssertFalse(controller.failures[0].message.contains("更换编码"))
@@ -45,6 +47,12 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
     XCTAssertNil(controller.sheetProgress("builtin", inventory: nil), "Unknown counts must not use a previous run's totals")
     XCTAssertEqual(controller.sheetProgress("builtin", inventory: refreshed)?.total, 3)
     XCTAssertEqual(controller.sheetProgress("builtin", inventory: refreshed)?.indexed, 2)
+    var cloudFile = try XCTUnwrap(refreshed.pending.first)
+    cloudFile.needsDownload = true
+    let cloudOnly = IdentityInventory(shelf: refreshed.shelf, total: refreshed.total, pending: [cloudFile])
+    XCTAssertEqual(controller.sheetAction("builtin", inventory: cloudOnly, includeCloud: false), .none)
+    XCTAssertEqual(controller.sheetAction("builtin", inventory: cloudOnly, includeCloud: true), .start)
+    XCTAssertEqual(controller.sheetAction("builtin", inventory: cloudOnly, includeCloud: false), .none)
   }
 
   @MainActor func testBackgroundTaskCallbacksHopToMainActor() async {

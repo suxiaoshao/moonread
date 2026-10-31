@@ -70,7 +70,7 @@ struct LibraryView: View {
                         shelves
                         recentBooks
                     }
-                }.padding(20).frame(maxWidth: 1040).frame(maxWidth: .infinity)
+                }.padding([.horizontal, .top], 20).padding(.bottom).frame(maxWidth: 1040).frame(maxWidth: .infinity)
             }
             .refreshable { await model.refresh(showIndicator: false, userInitiated: true) }
         }.themedPage()
@@ -438,8 +438,8 @@ struct LibraryAllBooksView: View {
                                 }
                             }
                         }.padding(.leading, LayoutTokens.page).padding(.trailing, LayoutTokens.page + 20)
-                            .padding(.vertical, LayoutTokens.control)
-                    }.pageScrollMargins().themedPage().accessibilityIdentifier("libraryGrid")
+                            .padding(.top, LayoutTokens.control).padding(.bottom)
+                    }.themedPage().accessibilityIdentifier("libraryGrid")
                         .modifier(LibraryGridTestGeometry())
                 }
             }
@@ -527,8 +527,8 @@ struct LibraryAllBooksView: View {
                             }
                         }
                     }
-                }.padding(.horizontal, LayoutTokens.page).padding(.vertical, LayoutTokens.control)
-            }.pageScrollMargins().themedPage().accessibilityIdentifier("libraryTagGrid")
+                }.padding(.horizontal, LayoutTokens.page).padding(.top, LayoutTokens.control).padding(.bottom)
+            }.themedPage().accessibilityIdentifier("libraryTagGrid")
         }
     }
 

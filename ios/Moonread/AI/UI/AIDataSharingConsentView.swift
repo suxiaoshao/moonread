@@ -34,8 +34,8 @@ struct AIDataSharingConsentView: View {
                             Link(destination: policy) { Label("服务商隐私政策", systemImage: "arrow.up.right") }
                         }
                     }.foregroundStyle(Color(uiColor: theme.accent)).tint(Color(uiColor: theme.accent))
-                }.padding(LayoutTokens.page).frame(maxWidth: 640, alignment: .leading).frame(maxWidth: .infinity)
-            }.pageScrollMargins().themedPage()
+                }.padding([.horizontal, .top], LayoutTokens.page).padding(.bottom).frame(maxWidth: 640, alignment: .leading).frame(maxWidth: .infinity)
+            }.themedPage()
                 .safeAreaInset(edge: .bottom, spacing: 0) { actions }
                 .navigationTitle("数据共享许可").navigationBarTitleDisplayMode(.inline)
         }.accessibilityIdentifier("aiDataSharingConsent")

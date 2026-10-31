@@ -94,10 +94,10 @@ struct AIMetadataResultReview: View {
                             Text(verbatim: synopsis).font(.subheadline)
                         }
                         AIResultFeedback(resultID: resultID)
-                    }.padding(LayoutTokens.content).disabled(saving)
+                    }.padding([.horizontal, .top], LayoutTokens.content).padding(.bottom).disabled(saving)
                 } else if let error = ai.proposals.lastErrors[resultID] { Text(verbatim: error).padding() }
                 else { ProgressView().padding() }
-            }.pageScrollMargins().accessibilityIdentifier("aiMetadataReviewScroll").themedPage().navigationTitle("资料建议").navigationBarTitleDisplayMode(.inline)
+            }.accessibilityIdentifier("aiMetadataReviewScroll").themedPage().navigationTitle("资料建议").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("关闭", systemImage: "xmark") { dismiss() }.disabled(saving) } }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if let review, case .metadata(let metadata) = review.body {

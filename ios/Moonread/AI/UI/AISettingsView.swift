@@ -141,8 +141,8 @@ private struct AIUsageHelpView: View {
             VStack(alignment: .leading, spacing: 20) {
                 Text("问题与相关阅读上下文发送给所选服务，使用该连接的账户权限与额度。月读不提供额度，也不自动切换计费连接。")
                 Text("订阅授权在服务商页面完成，API Key 保存在本机钥匙串中。")
-            }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
-        }.pageScrollMargins().themedPage().navigationTitle("AI 使用帮助").navigationBarTitleDisplayMode(.inline)
+            }.padding([.horizontal, .top], 20).padding(.bottom).frame(maxWidth: .infinity, alignment: .leading)
+        }.themedPage().navigationTitle("AI 使用帮助").navigationBarTitleDisplayMode(.inline)
     }
 }
 private struct AIAddConnectionView: View {
