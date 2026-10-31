@@ -36,10 +36,40 @@ struct NoteDocument: Sendable {
     let author: String?
     let records: [Record]
     static func escape(_ value: String) -> String {
-        var result = ""
-        for c in value { if "\\`*_{}[]<>()#+-.!|~&".contains(c) { result.append("\\") }; result.append(c) }
-        return result
+        value.components(separatedBy: "\n").map { line in
+            let chars = Array(line)
+            let start = chars.prefix { $0 == " " }.count
+            var marker: Int?
+            func boundary(_ index: Int) -> Bool {
+                index == chars.count || chars[index] == " " || chars[index] == "\t"
+            }
+            // Block markers are meaningful only at the start (up to three spaces).
+            if start < chars.count, start <= 3 {
+                let first = chars[start]
+                if first == "#" {
+                    let end = start + chars[start...].prefix { $0 == "#" }.count
+                    if end - start <= 6, boundary(end) { marker = start }
+                } else if first == "-" || first == "+" {
+                    if boundary(start + 1) { marker = start }
+                }
+                if first == "-" || first == "=" {
+                    // Setext headings and thematic breaks must remain literal too.
+                    if chars[start...].allSatisfy({ $0 == first || $0 == " " || $0 == "\t" }) { marker = start }
+                }
+                let digits = chars[start...].prefix { $0 >= "0" && $0 <= "9" }.count
+                let end = start + digits
+                if (1...9).contains(digits), end < chars.count,
+                   chars[end] == "." || chars[end] == ")", boundary(end + 1) { marker = end }
+            }
+            var result = ""
+            for (index, c) in chars.enumerated() {
+                if "\\`*_[]<>".contains(c) || index == marker { result.append("\\") }
+                result.append(c)
+            }
+            return result
+        }.joined(separator: "\n")
     }
+
     func excerpt(_ record: Record) -> String {
         record.mark.excerpt + "\n\n——《" + title + "》" + [author, record.position.isEmpty ? nil : record.position].compactMap { $0 }.map { " · " + $0 }.joined()
     }
