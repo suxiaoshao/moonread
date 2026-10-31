@@ -35,61 +35,29 @@ struct NoteDocument: Sendable {
     let title: String
     let author: String?
     let records: [Record]
-    static func escape(_ value: String) -> String {
-        value.components(separatedBy: "\n").map { line in
-            let chars = Array(line)
-            let start = chars.prefix { $0 == " " }.count
-            var marker: Int?
-            func boundary(_ index: Int) -> Bool {
-                index == chars.count || chars[index] == " " || chars[index] == "\t"
-            }
-            // Block markers are meaningful only at the start (up to three spaces).
-            if start < chars.count, start <= 3 {
-                let first = chars[start]
-                if first == "#" {
-                    let end = start + chars[start...].prefix { $0 == "#" }.count
-                    if end - start <= 6, boundary(end) { marker = start }
-                } else if first == "-" || first == "+" {
-                    if boundary(start + 1) { marker = start }
-                }
-                if first == "-" || first == "=" {
-                    // Setext headings and thematic breaks must remain literal too.
-                    if chars[start...].allSatisfy({ $0 == first || $0 == " " || $0 == "\t" }) { marker = start }
-                }
-                let digits = chars[start...].prefix { $0 >= "0" && $0 <= "9" }.count
-                let end = start + digits
-                if (1...9).contains(digits), end < chars.count,
-                   chars[end] == "." || chars[end] == ")", boundary(end + 1) { marker = end }
-            }
-            var result = ""
-            for (index, c) in chars.enumerated() {
-                if "\\`*_[]<>".contains(c) || index == marker { result.append("\\") }
-                result.append(c)
-            }
-            return result
-        }.joined(separator: "\n")
-    }
-
     func excerpt(_ record: Record) -> String {
         record.mark.excerpt + "\n\n——《" + title + "》" + [author, record.position.isEmpty ? nil : record.position].compactMap { $0 }.map { " · " + $0 }.joined()
     }
     func render(_ format: Format, file: Bool = true) -> String {
         let md = format == .markdown
-        func plain(_ s: String) -> String { md ? Self.escape(s) : s }
-        var lines = [(md ? "# " : "") + plain(title)]
-        if let author, !author.isEmpty { lines.append(String(localized: "作者：") + plain(author)) }
+        func body(_ value: String) -> String {
+            md ? value.components(separatedBy: "\n").map { "> " + $0 }.joined(separator: "\n") : value
+        }
+        var lines = [(md ? "# " : "") + title]
+        if let author, !author.isEmpty { lines.append(String(localized: "作者：") + author) }
         var previousChapter: UInt64?
         for r in records {
             if let start = r.chapterStart, start != previousChapter, let chapter = r.chapter {
-                lines += ["", (md ? "## " : "") + plain(chapter)]
+                lines += ["", (md ? "## " : "") + chapter]
             }
             previousChapter = r.chapterStart
             let kind = r.mark.kind == .bookmark ? String(localized: "书签 · 定位摘录") : String(localized: "标注与笔记")
-            lines += ["", (md ? "### " : "") + plain([r.chapterStart == nil ? r.chapter : nil, kind, r.percentage.map { String(format: "%.0f%%", $0) }].compactMap { $0 }.joined(separator: " · "))]
+            lines += ["", (md ? "### " : "") + [r.chapterStart == nil ? r.chapter : nil, kind, r.percentage.map { String(format: "%.0f%%", $0) }].compactMap { $0 }.joined(separator: " · ")]
             if let version = r.version { lines.append(String(localized: "未合并版本") + " \(version)") }
             if r.deletionVersion { lines.append(String(localized: "另有删除版本")) }
-            lines.append(md ? r.mark.excerpt.components(separatedBy: "\n").map { "> " + Self.escape($0) }.joined(separator: "\n") : r.mark.excerpt)
-            if !r.mark.note.isEmpty { lines += ["", String(localized: "笔记：") + plain(r.mark.note)] }
+            lines.append(body(r.mark.excerpt))
+            if !r.mark.note.isEmpty { lines += ["", String(localized: "笔记：") + (md ? "\n" : "") + body(r.mark.note)] }
+            if md { lines.append("") }
             lines.append(String(localized: "创建于：") + Date(timeIntervalSince1970: Double(r.mark.created) / 1000).formatted(date: .numeric, time: .omitted))
         }
         if file { lines += ["", md ? "---" : "", String(localized: "月读笔记导出 · 格式 1")] }

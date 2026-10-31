@@ -303,22 +303,20 @@ final class UserDataConflictTests: UserDataFixture {
     let md = document.render(.markdown)
     XCTAssertTrue(raw.contains("line 61\n<quote>*"))
     XCTAssertTrue(raw.contains("[note]\n`code`"))
-    XCTAssertTrue(md.contains("> line 61\n> \\<quote\\>\\*"))
-    XCTAssertTrue(md.contains("\\[note\\]\n\\`code\\`"))
-    // Ordinary punctuation stays readable in the file; only Markdown syntax is escaped.
-    let punctuation = "句中 (括号). foo-bar! a+b #话题 {文字} | & ~"
-    XCTAssertEqual(NoteDocument.escape(punctuation), punctuation)
-    for (source, escaped) in [
-      ("# 标题", "\\# 标题"), ("  - 列表", "  \\- 列表"), ("+ 列表", "\\+ 列表"),
-      ("1. 列表", "1\\. 列表"), ("12) 列表", "12\\) 列表"),
-      ("段落\n---", "段落\n\\---"), ("段落\n===", "段落\n\\==="),
-      ("#普通文字", "#普通文字"), ("1.23 和 2)句中", "1.23 和 2)句中"),
-      ("[笔记] *强调* _文字_ <tag> `code`", "\\[笔记\\] \\*强调\\* \\_文字\\_ \\<tag\\> \\`code\\`"),
-    ] { XCTAssertEqual(NoteDocument.escape(source), escaped) }
-    for source in [punctuation, "# 标题", "- 列表", "1. 列表", "[链接](URL) *强调* <tag>"] {
-      let rendered = try AttributedString(markdown: NoteDocument.escape(source))
-      XCTAssertEqual(String(rendered.characters), source, "Rendered text preserves the original")
-    }
+    XCTAssertTrue(md.contains("> line 61\n> <quote>*"))
+    XCTAssertTrue(md.contains("> [note]\n> `code`"))
+    let literal = "# 标题 *强调* _文字_ [链接](URL) <tag> &amp; \\路径\n\n1. 列表 - + ! ."
+    let literalMark = ReaderMark(id: "literal", kind: .annotation, startUtf8: 0, endUtf8: 1,
+      excerpt: literal, note: literal, created: 1)
+    let literalDocument = NoteDocument(title: "Title * &amp;", author: "Author _",
+      records: [.init(id: "literal", mark: literalMark, chapter: "Chapter [1]", chapterStart: 0,
+        percentage: nil, version: nil, deletionVersion: false)])
+    let exported = literalDocument.render(.markdown)
+    XCTAssertTrue(exported.hasPrefix("# Title * &amp;\n"))
+    XCTAssertTrue(exported.contains("## Chapter [1]"))
+    let quoted = "> # 标题 *强调* _文字_ [链接](URL) <tag> &amp; \\路径\n> \n> 1. 列表 - + ! ."
+    XCTAssertEqual(exported.components(separatedBy: quoted).count - 1, 2, "Excerpt and note are raw per-line block quotes")
+    XCTAssertTrue(literalDocument.render(.text).contains(literal))
     XCTAssertFalse(raw.contains(key))
     XCTAssertFalse(raw.contains("version-a"))
     let after = try await store.syncFixturePayloads("mark")
