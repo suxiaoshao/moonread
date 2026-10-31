@@ -332,6 +332,9 @@ struct FullIndexView: View {
     @State private var includeCloud = false
     @State private var loadError: String?
     @Environment(\.dismiss) private var dismiss
+    @ScaledMetric(relativeTo: .largeTitle) private var indexedSize = 38.0
+    @ScaledMetric(relativeTo: .title) private var totalSize = 28.0
+    @ScaledMetric(relativeTo: .body) private var unitSize = 17.0
     private var active: Bool { controller.shelfID == shelfID && controller.running }
     private var failures: [IndexFailure] { controller.failures.filter { $0.file.shelfId == shelfID } }
     private var counts: (indexed: Int, total: Int)? { controller.sheetProgress(shelfID, inventory: inventory) }
@@ -339,7 +342,7 @@ struct FullIndexView: View {
         NavigationStack {
             GeometryReader { geometry in
                 ScrollView {
-                    VStack(spacing: 24) {
+                    VStack(spacing: 16) {
                         Spacer(minLength: 0)
                         status
                         Spacer(minLength: 0)
@@ -353,7 +356,7 @@ struct FullIndexView: View {
                                     .accessibilityIdentifier("fullIndexIncludeCloud")
                                 Text("\(cloud.count) 本，已知下载量 \(ByteCountFormatter.string(fromByteCount: Int64(clamping: inventory.cloudBytes), countStyle: .file))", tableName: "FullIndex").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                                 if cloud.contains(where: { $0.size == 0 }) { Text("部分文件大小未知", tableName: "ShelfRecovery").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
-                            }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
+                            }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 16))
                         }
 
                         if !failures.isEmpty {
@@ -374,8 +377,8 @@ struct FullIndexView: View {
                             }
                         }
                     }.frame(maxWidth: 400).frame(maxWidth: .infinity)
-                        .frame(minHeight: max(0, geometry.size.height - 48))
-                        .padding(.horizontal, 20).padding(.vertical, 24)
+                        .frame(minHeight: max(0, geometry.size.height - 32))
+                        .padding(.horizontal, 20).padding(.vertical, 16)
                 }
             }.themedPage().navigationTitle(Text("建立索引", tableName: "FullIndex"))
             .navigationBarTitleDisplayMode(.inline)
@@ -399,7 +402,7 @@ struct FullIndexView: View {
         return "已索引"
     }
     private var status: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 14) {
             if let inventory {
                 Text(inventory.shelf.builtin ? String(localized: "我的书架") : inventory.shelf.name)
                     .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
@@ -411,10 +414,10 @@ struct FullIndexView: View {
                 Button { Task { await loadInventory() } } label: { Text("重试", tableName: "FullIndex") }
                     .buttonStyle(.bordered).accessibilityIdentifier("fullIndexLoadError")
             } else if let counts {
-                Text(statusTitle, tableName: "FullIndex").font(.headline)
+                Text(statusTitle, tableName: "FullIndex").font(.title3.weight(.semibold))
                 if counts.total > 0 {
-                    Text("\(counts.indexed) / \(counts.total) 本", tableName: "FullIndex")
-                        .font(.largeTitle.bold()).monospacedDigit().accessibilityIdentifier("fullIndexProgress")
+                    Text(progressLabel(indexed: counts.indexed, total: counts.total))
+                        .monospacedDigit().accessibilityIdentifier("fullIndexProgress")
                     if active && !waiting && !paused {
                         ProgressView(value: Double(counts.indexed), total: Double(max(1, counts.total)))
                             .frame(maxWidth: 260).accessibilityLabel(Text("索引进度", tableName: "FullIndex"))
@@ -442,10 +445,18 @@ struct FullIndexView: View {
             }
         }.multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
     }
+    private func progressLabel(indexed: Int, total: Int) -> AttributedString {
+        var label = AttributedString(String(localized: "\(indexed) / \(total) 本", table: "FullIndex"))
+        label.font = .system(size: unitSize)
+        if let range = label.range(of: "/") { label[range].font = .system(size: totalSize, weight: .medium) }
+        if let range = label.range(of: String(total), options: .backwards) { label[range].font = .system(size: totalSize, weight: .medium) }
+        if let range = label.range(of: String(indexed)) { label[range].font = .system(size: indexedSize, weight: .semibold) }
+        return label
+    }
     @ViewBuilder private var primaryButton: some View {
         switch controller.sheetAction(shelfID, inventory: loadError == nil ? inventory : nil, includeCloud: includeCloud) {
         case .stop:
-            Button { controller.cancel() } label: { Text("停止", tableName: "FullIndex").frame(maxWidth: .infinity) }.buttonStyle(.bordered).controlSize(.large).accessibilityIdentifier("fullIndexStop")
+            Button { controller.cancel() } label: { Text("停止", tableName: "FullIndex").font(.body.weight(.medium)).frame(maxWidth: .infinity) }.buttonStyle(.bordered).foregroundStyle(Color(uiColor: theme.accent)).controlSize(.large).accessibilityIdentifier("fullIndexStop")
         case .start:
             Button { start() } label: { Text("开始建立索引", tableName: "FullIndex").frame(maxWidth: .infinity) }.buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).accessibilityIdentifier("fullIndexStart")
         case .retry:
