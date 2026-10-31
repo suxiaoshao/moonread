@@ -157,15 +157,19 @@ import XCTest
   func testU05DeleteOnlySelectedBook() {
     launch()
     shelf()
+    XCTAssertTrue(app.tabBars.buttons["书架"].isHittable)
     app.buttons["folderActions"].tap()
     app.buttons["选择项目"].tap()
+    waitUntil { !self.app.tabBars.buttons["书架"].isHittable }
     file(sample).tap()
     app.buttons["删除"].tap()
     ready(app.buttons["移到最近删除"]).tap()
     XCTAssertTrue(file(sample).waitForNonExistence(timeout: 8))
     XCTAssertTrue(file("同名.txt").exists)
     app.buttons["librarySelectionDone"].tap()
+    waitUntil { self.app.tabBars.buttons["书架"].isHittable }
     open("同名.txt")
+    XCTAssertFalse(app.tabBars.buttons["书架"].isHittable)
   }
   func testU06CopyAndSkipConflict() {
     launch()
@@ -386,7 +390,13 @@ import XCTest
     closeList()
     ready(app.buttons["toggleBookmark"]).tap()
     ready(app.buttons["openBookmarks"]).tap()
-    ready(app.otherElements["readerBottomPanel"].buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'noteRow-'")).firstMatch)
+    let bookmark = ready(app.otherElements["readerBottomPanel"].buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'noteRow-'")).firstMatch)
+    ready(app.buttons["选择书签"]).tap()
+    bookmark.tap()
+    ready(app.staticTexts["已选 1 项"])
+    app.buttons["完成"].tap()
+    closeList()
+    ready(app.buttons["openNotes"])
   }
   func testU17SearchPreviewCommitsOnlyOnContinue() {
     launch()

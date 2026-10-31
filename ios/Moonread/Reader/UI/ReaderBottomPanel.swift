@@ -44,7 +44,11 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .transition(MotionTokens.accessoryContent(reduced: reduceMotion))
                 } else {
+                    // Clip only accessory animations. System navigation/toolbar
+                    // backgrounds may draw beyond the safe-area layout proposal.
                     accessoryContent(in: geometry)
+                        .frame(width: geometry.size.width, height: geometry.size.height, alignment: .bottom)
+                        .clipped()
                         .transition(MotionTokens.accessoryContent(reduced: reduceMotion))
                 }
             }
@@ -55,7 +59,6 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                 if abs(height - compactHeight) < 2 { resizing = false }
             }
-            .clipped()
         }
         .presentationSizing(.page)
         .presentationDetents(detents, selection: Binding(get: {

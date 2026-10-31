@@ -65,6 +65,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 统计总览总时长 | Rust `user/statistics.rs::statistics_overview` | 与已投影书目一次计算为只读 DTO 字段，App 总览和 Siri 直接读取，不来回搬运整个列表重复求和 | 单源 |
 | 统计事实保存/去重裁决、日历展示桶/连续行视觉合并、显示格式 | Swift `ReadingStatistics.swift`、`StatisticsView.swift`，按各自职责单源 | 写入/界面组织与 Rust 数值汇总是不同规则；展示合并应消费已算 duration | 保持平台/状态规则，数值副本后续删除 |
 | 备份 ZIP 布局、受限解包、路径/摘要与正文缓存 SQL 驱逐 | Rust `storage/backup_archive.rs`、`storage/cache_management.rs` | Swift 不另写 ZIP 或数据库清理规则，驱逐保留索引/授权/任务 | 新增单源 |
+| 来源栈 Tab 显隐 | Swift `LibrarySourceTabVisibility` | 按该栈路径中的阅读器及当前叶子目录的选择 preference 统一判定；目录只上报选择位置，不另提交相反显隐策略，不持久化全局选择标志 | 单一 owner |
 | 笔记快照与可读导出 | Swift `NoteDocument.swift`、`UserDataStore.noteCandidates` | 三入口共用摘录/出处与 TXT/Markdown 输出；快照不压缩候选，未知记录按范围阻止不完整导出，位置/章节/百分比复用 Rust | 不增同步格式 |
 | 用户备份 envelope、原 payload 接入、对象级删除 | Swift `UserDataBackup.swift`、`ReadingDataManagement.swift` | SwiftData 权威与既有裁决不迁到 Rust；整书删除无本机删除回执或启动补删 | 共用接入 |
 | 受保护来源的 bookmark 解析、安全作用域、协调读取与物理路径边界 | Swift `Data/ProtectedFileAccess.swift` | 开书、导入、索引、恢复、缓存和备份共用；沿用 `.withoutUI` 与可解析的陈旧书签，不增加拒绝条件；作用域覆盖各阶段，accessor 内不等待 actor | 平台边界 |
