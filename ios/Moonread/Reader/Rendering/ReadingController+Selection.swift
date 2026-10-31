@@ -39,17 +39,39 @@ extension ReadingController {
     private func showAnnotations(_ ids: [String], in text: UITextView, choosing: Bool = false) {
         guard let first = annotations.first(where: { ids.contains($0.id) }) else { return }
         if !choosing || ids.count == 1 { showAnnotationMenu(first, in: text); return }
+        guard annotationChooser == nil, presentedViewController == nil, viewIfLoaded?.window != nil else { return }
         let menu = UIAlertController(title: String(localized: "选择标注"), message: nil, preferredStyle: .actionSheet)
         for mark in annotations where ids.contains(mark.id) {
             let summary = (mark.note.isEmpty ? mark.excerpt : mark.note)
-            menu.addAction(UIAlertAction(title: String(summary.prefix(80)), style: .default) { [weak self, weak text] _ in
-                if let text { self?.showAnnotationMenu(mark, in: text) }
+            menu.addAction(UIAlertAction(title: String(summary.prefix(80)), style: .default) { [weak self, weak text, weak menu] _ in
+                menu?.dismiss(animated: true) { [weak self, weak text, weak menu] in
+                    guard let self, let menu else { return }
+                    self.finishAnnotationChooser(menu)
+                    if let text { self.showAnnotationMenu(mark, in: text) }
+                }
             })
         }
-        menu.addAction(UIAlertAction(title: String(localized: "取消"), style: .cancel))
+        menu.addAction(UIAlertAction(title: String(localized: "取消"), style: .cancel) { [weak self, weak menu] _ in
+            menu?.dismiss(animated: true) { [weak self, weak menu] in
+                if let menu { self?.finishAnnotationChooser(menu) }
+            }
+        })
         menu.popoverPresentationController?.sourceView = text
         menu.popoverPresentationController?.sourceRect = CGRect(x: text.bounds.midX, y: text.bounds.midY, width: 1, height: 1)
+        let delegate = AnnotationChooserDelegate { [weak self, weak menu] in
+            if let menu { self?.finishAnnotationChooser(menu) }
+        }
+        menu.presentationController?.delegate = delegate
+        menu.popoverPresentationController?.delegate = delegate
+        annotationChooser = menu; annotationChooserDelegate = delegate
+        annotationChooserChanged(true)
         present(menu, animated: true)
+    }
+
+    func finishAnnotationChooser(_ menu: UIAlertController) {
+        guard annotationChooser === menu else { return }
+        annotationChooser = nil; annotationChooserDelegate = nil
+        annotationChooserChanged(false)
     }
 
     func showAnnotationMenu(_ mark: ReaderMark, in text: UITextView) {
@@ -284,4 +306,12 @@ extension ReadingController {
         return merged
     }
 
+}
+
+/// Scoped to the VoiceOver chooser; not a general presented-controller observer.
+@MainActor final class AnnotationChooserDelegate: NSObject, UIPopoverPresentationControllerDelegate {
+    let dismissed: () -> Void
+    init(dismissed: @escaping () -> Void) { self.dismissed = dismissed }
+    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) { dismissed() }
+    func popoverPresentationControllerDidDismissPopover(_ popoverPresentationController: UIPopoverPresentationController) { dismissed() }
 }

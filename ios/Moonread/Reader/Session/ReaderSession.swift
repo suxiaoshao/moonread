@@ -661,11 +661,12 @@ final class ReaderSession {
 
     /// Own the async selection read for copy, search and AI alike. The original
     /// envelope survives page/window changes; no last-page excerpt is cached.
-    func readSelection(start: UInt64, end: UInt64, perform: @escaping (TextRange) async -> Void) {
+    func readSelection(start: UInt64, end: UInt64, finished: @escaping () -> Void = {}, perform: @escaping (TextRange) async -> Void) {
         selectionTask?.cancel()
-        guard !isLeaving, let id = readingID else { return }
+        guard !isLeaving, let id = readingID else { finished(); return }
         let from = min(selectionStart ?? start, start), to = max(selectionStart ?? end, end)
         selectionTask = Task {
+            defer { finished() }
             do {
                 let range = try await service.displayTextRange(id, start: from, end: to)
                 guard !Task.isCancelled, !isLeaving, readingID == id else { return }

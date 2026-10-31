@@ -163,6 +163,7 @@ struct ReaderScreen: View {
                                 session.error = String(localized: "当前无法切换屏幕方向，已恢复跟随系统。")
                             },
                             statisticsInteraction: { session.activity.interacted() },
+                            annotationChooserChanged: { choosingAnnotations = $0 },
                             edgeChanged: { session.nearEdge = $0 },
                             compactHeaderHeight: compactHeaderHeight,
                             guideHeight: Onboarding.shared.enabled && !Onboarding.shared.revealedControls && !controlsVisible ? controlsTipHeight : 0,
@@ -499,6 +500,8 @@ struct ReaderScreen: View {
 
     @State private var excerptShare: NoteSharePayload?
     @State private var sharingExcerpt = false
+    @State private var choosingAnnotations = false
+    @Environment(\.systemReadingRouter) private var systemReadingRouter
     var body: some View {
         sourceReader
         .onChange(of: panel) { old, new in
@@ -579,11 +582,14 @@ struct ReaderScreen: View {
     }
 
     private var statisticsReadable: Bool {
-        scenePhase == .active && !session.isLeaving && session.opening.phase == .reading && session.window != nil && !session.showingCover
+        ReaderStatisticsVisibility.isReadable(body: scenePhase == .active && !session.isLeaving && session.opening.phase == .reading && session.window != nil && !session.showingCover
             && !session.isLoading && !session.navigating && session.error == nil
             && !navigationPresentation.isSuspended && !controlsVisible && !searchExpanded
             && dock == .progress && taskID == nil && panel?.isPage != true
-            && toolSession.editor == nil
+            && toolSession.editor == nil,
+            preparingExcerpt: sharingExcerpt, excerptPresented: excerptShare != nil,
+            confirmationPresented: systemReadingRouter?.presentsConfirmation(active: !sheetPresented, editor: false) == true,
+            choosingAnnotations: choosingAnnotations)
     }
 
     private func loadCoverInformation() async {
@@ -835,10 +841,15 @@ struct ReaderScreen: View {
         }
         guard action == .search || action == .copy || action == .shareExcerpt else { session.selectText(start: start, end: end, action: action); return }
         guard !session.isLeaving, let id = session.readingID else { return }
-        session.readSelection(start: start, end: end) { range in
+        if action == .shareExcerpt {
+            guard !sharingExcerpt, excerptShare == nil else { return }
+            sharingExcerpt = true
+        }
+        session.readSelection(start: start, end: end, finished: {
+            if action == .shareExcerpt { sharingExcerpt = false }
+        }) { range in
             if action == .copy { UIPasteboard.general.string = range.text; return }
             if action == .shareExcerpt {
-                guard !sharingExcerpt, excerptShare == nil else { return }; sharingExcerpt = true; defer { sharingExcerpt = false }
                 do {
                     let text = try await AppDataService.shared.shareExcerpt(id, range: range)
                     guard !Task.isCancelled, !session.isLeaving, session.readingID == id else { return }

@@ -379,3 +379,11 @@ extension AppDataService {
     }
 }
 #endif
+
+/// Presentation facts only. The recorder/Rust clock retains credit and read kind.
+enum ReaderStatisticsVisibility {
+    static func isReadable(body: Bool, preparingExcerpt: Bool, excerptPresented: Bool,
+                           confirmationPresented: Bool, choosingAnnotations: Bool) -> Bool {
+        body && !preparingExcerpt && !excerptPresented && !confirmationPresented && !choosingAnnotations
+    }
+}

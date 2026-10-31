@@ -14,6 +14,9 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     private var displayProbe: ReaderDisplayProbe?
     #endif
     var statisticsInteraction: () -> Void = {}
+    var annotationChooserChanged: (Bool) -> Void = { _ in }
+    var annotationChooser: UIAlertController?
+    var annotationChooserDelegate: AnnotationChooserDelegate?
 
     func statisticsRange() -> (UInt64, UInt64)? {
         guard !isCoverVisible, !rebuilding, !needsRebuild, !pageTransitioning,
