@@ -100,11 +100,13 @@ struct ReaderNotesList: View {
                 }
             }
             if model.selectingNotes {
-                ToolbarItemGroup(placement: .bottomBar) {
+                ToolbarItem(placement: .bottomBar) {
                     Button("分享", systemImage: "square.and.arrow.up") { Task { await shareSelected() } }.disabled(busy || model.selectedNotes.isEmpty)
-                    Spacer()
-                    if busy { ProgressView() } else { Text("已选 \(model.selectedNotes.count) 项") }
-                    Spacer()
+                }
+                ToolbarItem(placement: .bottomBar) { Spacer() }
+                selectionStatusItem
+                ToolbarItem(placement: .bottomBar) { Spacer() }
+                ToolbarItem(placement: .bottomBar) {
                     Button("删除", systemImage: "trash", role: .destructive) {
                         guard let snapshot = model.noteSnapshot else { return }
                         deletingIDs = model.selectedNotes
@@ -125,6 +127,19 @@ struct ReaderNotesList: View {
             Button("取消", role: .cancel) {}
         } message: { Text("会同步删除其他设备上的这些记录，小说原文件不受影响。") }
         .sheet(item: $sharing) { LibraryShareSheet(files: $0.files, text: $0.text) }
+    }
+    private var selectionStatus: some View {
+        Group {
+            if busy { ProgressView() } else { Text("已选 \(model.selectedNotes.count) 项") }
+        }.font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+    }
+    @ToolbarContentBuilder private var selectionStatusItem: some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            ToolbarItem(placement: .bottomBar) { selectionStatus }
+                .sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .bottomBar) { selectionStatus }
+        }
     }
     private func shareSelected() async {
         guard !busy, let id = model.noteBookID else { return }
