@@ -497,8 +497,15 @@ struct ReaderScreen: View {
         }
     }
 
+    @State private var excerptShare: NoteSharePayload?
+    @State private var sharingExcerpt = false
     var body: some View {
         sourceReader
+        .onChange(of: panel) { old, new in
+            if old == .library, new != .library { tools.clearNoteSelection(); tools.selectingNotes = false }
+        }
+        .overlay { if sharingExcerpt { ProgressView().padding().background(Color(uiColor: theme.surface), in: .capsule) } }
+        .sheet(item: $excerptShare) { LibraryShareSheet(files: $0.files, text: $0.text) }
         .modifier(SystemReadingConfirmation(active: !sheetPresented))
         .alert("阅读遇到问题", isPresented: readingErrorPresented) {
             Button("知道了", role: .cancel) { session.error = nil }
@@ -815,7 +822,7 @@ struct ReaderScreen: View {
     }
 
     private func selectText(start: UInt64, end: UInt64, action: ReaderSelectionAction) {
-        session.beganReadingInteraction()
+        if action != .shareExcerpt { session.beganReadingInteraction() }
         if action == .removeAnnotations {
             guard !session.isLeaving, let bookID = session.readingID else { return }
             Task {
@@ -826,10 +833,19 @@ struct ReaderScreen: View {
             }
             return
         }
-        guard action == .search || action == .copy else { session.selectText(start: start, end: end, action: action); return }
+        guard action == .search || action == .copy || action == .shareExcerpt else { session.selectText(start: start, end: end, action: action); return }
         guard !session.isLeaving, let id = session.readingID else { return }
         session.readSelection(start: start, end: end) { range in
             if action == .copy { UIPasteboard.general.string = range.text; return }
+            if action == .shareExcerpt {
+                guard !sharingExcerpt, excerptShare == nil else { return }; sharingExcerpt = true; defer { sharingExcerpt = false }
+                do {
+                    let text = try await AppDataService.shared.shareExcerpt(id, range: range)
+                    guard !Task.isCancelled, !session.isLeaving, session.readingID == id else { return }
+                    excerptShare = NoteSharePayload(text: text)
+                } catch { session.error = ReaderMessages.error(error) }
+                return
+            }
             await tools.prepare(bookID: id, currentChapter: 0, library: false)
             guard !Task.isCancelled, !session.isLeaving, session.readingID == id else { return }
             tools.regex = false

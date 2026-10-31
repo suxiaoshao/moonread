@@ -243,7 +243,8 @@ extension ReadingController {
                action(String(localized: "移除批注"), "trash", .removeAnnotations, destructive: true)]
             : [action(String(localized: "标注"), "highlighter", .highlight)]
         primary += [action(String(localized: "拷贝"), "doc.on.doc", .copy),
-                    action(String(localized: "全文搜索"), "magnifyingglass", .search)]
+                    action(String(localized: "全文搜索"), "magnifyingglass", .search),
+                    action(String(localized: "分享摘录"), "square.and.arrow.up", .shareExcerpt)]
         // Preserve the native lookup group, including deferred system commands
         // such as Search Web. Both entry points reach UITextView's responder chain.
         var lookup: [UIMenuElement] = [], secondary: [UIMenuElement] = []

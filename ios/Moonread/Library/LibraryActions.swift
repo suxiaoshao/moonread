@@ -311,13 +311,14 @@ private struct LibraryExportPicker: UIViewControllerRepresentable {
 }
 
 struct LibraryShareSheet: UIViewControllerRepresentable {
-    let files: LibraryExport
+    let files: LibraryExport?
+    var text: String? = nil
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        let controller = UIActivityViewController(activityItems: files.urls, applicationActivities: nil)
+        let controller = UIActivityViewController(activityItems: files?.urls.map { $0 as Any } ?? [text ?? ""], applicationActivities: nil)
         // An activity can outlive the SwiftUI sheet. Keep its input alive until
         // the activity completes, or the controller itself is released.
         controller.completionWithItemsHandler = { [files, weak controller] _, _, _, _ in
-            files.finish()
+            files?.finish()
             controller?.completionWithItemsHandler = nil
         }
         return controller

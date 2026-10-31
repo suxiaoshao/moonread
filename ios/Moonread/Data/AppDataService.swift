@@ -478,8 +478,8 @@ actor AppDataService {
     }
 
     func chapters(_ id: String) async throws -> ChapterOutline { try await effectiveQuery(facts: true).chapterOutline(bookId: id) }
-    func marks(_ id: String, kind: MarkKind, offset: UInt32) async throws -> MarkPage {
-        let values = try await userMarks(id, kind: kind), start = min(Int(offset), values.count), end = min(start + 60, values.count)
+    func marks(_ id: String, kind: MarkKind, offset: UInt32, snapshot: NoteCandidates? = nil) async throws -> MarkPage {
+        let values = try await userMarks(id, kind: kind, snapshot: snapshot), start = min(Int(offset), values.count), end = min(start + 60, values.count)
         return MarkPage(items: Array(values[start..<end]), hasMore: end < values.count)
     }
     func annotations(_ id: String, start: UInt64, end: UInt64) async throws -> [ReaderMark] { try await userAnnotationRanges(id, start: start, end: end) }
