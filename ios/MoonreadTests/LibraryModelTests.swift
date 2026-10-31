@@ -22,6 +22,8 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
     XCTAssertFalse(controller.canContinue(inventory, includeCloud: true))
     XCTAssertEqual(controller.sheetAction("builtin", inventory: nil, includeCloud: true), .none)
     XCTAssertEqual(controller.sheetAction("builtin", inventory: inventory, includeCloud: true), .retry)
+    XCTAssertNil(controller.currentFile)
+    XCTAssertFalse(controller.waitingForReader)
     XCTAssertTrue(controller.hasInventory)
     XCTAssertEqual(controller.indexed, inventory.total - inventory.pending.count)
     XCTAssertFalse(controller.failures[0].message.contains("更换编码"))
