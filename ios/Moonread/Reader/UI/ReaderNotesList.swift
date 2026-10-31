@@ -96,12 +96,12 @@ struct ReaderNotesList: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         if let id = model.noteBookID { NavigationLink("导出整本笔记") { NoteExportView(bookID: id) } }
-                    } label: { Image(systemName: "ellipsis") }.accessibilityLabel("小说选项")
+                    } label: { Image(systemName: "ellipsis") }.accessibilityLabel("小说选项").accessibilityIdentifier("noteOptions")
                 }
             }
             if model.selectingNotes {
                 ToolbarItemGroup(placement: .bottomBar) {
-                    Button("分享", systemImage: "square.and.arrow.up") { Task { await shareSelected() } }.disabled(busy || model.selectedNotes.isEmpty)
+                    Button("分享", systemImage: "square.and.arrow.up") { Task { await shareSelected() } }.disabled(busy || model.selectedNotes.isEmpty).accessibilityIdentifier("shareSelectedNotes")
                     Spacer()
                     if busy { ProgressView() } else { Text("已选 \(model.selectedNotes.count) 项") }
                     Spacer()
@@ -110,7 +110,7 @@ struct ReaderNotesList: View {
                         deletingIDs = model.selectedNotes
                         deleting = NoteCandidates(key: snapshot.key, groups: model.selectedCandidates, blocked: snapshot.blocked)
                         confirmDelete = true
-                    }.disabled(busy || model.selectedNotes.isEmpty).tint(Color(uiColor: theme.destructive))
+                    }.disabled(busy || model.selectedNotes.isEmpty).tint(Color(uiColor: theme.destructive)).accessibilityIdentifier("deleteSelectedNotes")
                 }
             }
         }
