@@ -157,15 +157,19 @@ import XCTest
   func testU05DeleteOnlySelectedBook() {
     launch()
     shelf()
+    XCTAssertTrue(app.tabBars.buttons["书架"].isHittable)
     app.buttons["folderActions"].tap()
     app.buttons["选择项目"].tap()
+    waitUntil { !self.app.tabBars.buttons["书架"].isHittable }
     file(sample).tap()
     app.buttons["删除"].tap()
     ready(app.buttons["移到最近删除"]).tap()
     XCTAssertTrue(file(sample).waitForNonExistence(timeout: 8))
     XCTAssertTrue(file("同名.txt").exists)
     app.buttons["librarySelectionDone"].tap()
+    waitUntil { self.app.tabBars.buttons["书架"].isHittable }
     open("同名.txt")
+    XCTAssertFalse(app.tabBars.buttons["书架"].isHittable)
   }
   func testU06CopyAndSkipConflict() {
     launch()
@@ -368,15 +372,31 @@ import XCTest
     open()
     app.buttons["smokeAddNote"].tap()
     let editor = ready(app.textViews["noteEditorText"])
+    editor.tap()
     editor.typeText("合成批注")
+    waitUntil { (editor.value as? String)?.contains("合成批注") == true }
     app.buttons["saveNote"].tap()
     XCTAssertTrue(editor.waitForNonExistence(timeout: 5))
     list("笔记")
-    ready(app.staticTexts["合成批注"])
+    let saved = ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'noteRow-'")).firstMatch)
+    XCTAssertTrue(saved.label.contains("合成批注"))
+    ready(app.buttons["选择标注与笔记"]).tap()
+    let row = ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'noteRow-'")).firstMatch)
+    row.tap()
+    ready(app.staticTexts["已选 1 项"])
+    XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'editNote-'")).firstMatch.exists)
+    app.buttons["完成"].tap()
+    ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'editNote-'")).firstMatch)
     closeList()
     ready(app.buttons["toggleBookmark"]).tap()
     ready(app.buttons["openBookmarks"]).tap()
-    ready(app.otherElements["readerBottomPanel"].buttons["第一章 星灯"])
+    let bookmark = ready(app.otherElements["readerBottomPanel"].buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'noteRow-'")).firstMatch)
+    ready(app.buttons["选择书签"]).tap()
+    bookmark.tap()
+    ready(app.staticTexts["已选 1 项"])
+    app.buttons["完成"].tap()
+    closeList()
+    ready(app.buttons["openNotes"])
   }
   func testU17SearchPreviewCommitsOnlyOnContinue() {
     launch()

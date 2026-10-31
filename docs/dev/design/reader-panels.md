@@ -10,6 +10,8 @@
 
 沿用 e9ee1fe 手机的 ReaderBottomPanel、ReaderLibrarySheet、ReaderTaskContent 原生导航链；不再使用 inspector、独立宽屏工具 sheet、进度 popover 或手画页头。所有尺寸沿用同一 detents、`.presentationSizing(.page)`、主题背景、32pt 圆角和拖动指示；不增加机型宽高与姿态分支，由系统决定模态形态。完整设置/详情仍在来源栈 push，预览/配色编辑保持既有子 sheet。
 
+ReaderBottomPanel 只裁剪 compact accessory 的动画内容，不裁剪包含原生导航栏、底部 toolbar 的任务导航栈。系统栏可在安全区布局矩形之外绘制，不能以固定底距补偿或强制横排来避免裁切。
+
 ReaderToolSession 保留草稿对象，查询、筛选与列表数据仍由原 owner 管理；章节、笔记与配色使用原系统标题、toolbar、保存和取消动作。真实编辑结束才取消识别任务。没有被记住的工具展开偏好，开书不自动弹工具；所有尺寸按手机原控制显隐与阅读计时规则工作。
 
 ## 为什么要调整

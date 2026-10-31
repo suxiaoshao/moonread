@@ -272,4 +272,145 @@ final class UserDataConflictTests: UserDataFixture {
     XCTAssertEqual(remaining["m"]?.count, 3)
     XCTAssertEqual(remaining["new"]?.count, 1)
   }
+  @MainActor
+  func testNoteExportUsesWholeReadOnlySnapshotAndPreservesVersions() async throws {
+    let (root, service, book, store) = try await editorFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let key = book.contentSha256
+    for index in 0..<62 {
+      let value = AnnotationCandidate(id: "operation-\(index)", ancestors: [],
+        content: .init(start: UInt64(index), end: UInt64(index + 1), excerpt: "line \(index)\n<quote>*", note: "[note]\n`code`"),
+        created: 1_000, bookmark: index == 0)
+      try await store.receiveFixture(key: key, mark: "m\(index)", candidate: value)
+    }
+    let base = candidate("base", content: content("old"))
+    let a = candidate("version-a", parents: ["base"], content: content("version A"))
+    let b = candidate("version-b", parents: ["base"], content: content("version B"))
+    let deletion = candidate("deleted-version", parents: ["base"], content: nil)
+    for value in [base, a, b, deletion] {
+      try await store.receiveFixture(key: key, mark: "conflict", candidate: value)
+    }
+    let before = try await store.syncFixturePayloads("mark")
+    let listSnapshot = try await service.noteCandidates(book.id)
+    let page = try await service.marks(book.id, kind: .annotation, offset: 0, snapshot: listSnapshot)
+    XCTAssertTrue(page.hasMore)
+    let document = try await service.noteDocument(book.id)
+    XCTAssertEqual(document.records.count, 64, "Export bypasses list pagination and keeps both live versions")
+    let conflict = document.records.filter { $0.mark.id == "conflict" }
+    XCTAssertEqual(Set(conflict.compactMap(\.version)), [1, 2])
+    XCTAssertTrue(conflict.allSatisfy(\.deletionVersion))
+    let raw = document.render(.text)
+    let md = document.render(.markdown)
+    XCTAssertTrue(raw.contains("line 61\n<quote>*"))
+    XCTAssertTrue(raw.contains("[note]\n`code`"))
+    XCTAssertTrue(md.contains("> line 61\n> <quote>*"))
+    XCTAssertTrue(md.contains("> [note]\n> `code`"))
+    let literal = "# 标题 *强调* _文字_ [链接](URL) <tag> &amp; \\路径\n\n1. 列表 - + ! ."
+    let literalMark = ReaderMark(id: "literal", kind: .annotation, startUtf8: 0, endUtf8: 1,
+      excerpt: literal, note: literal, created: 1)
+    let literalDocument = NoteDocument(title: "Title * &amp;", author: "Author _",
+      records: [.init(id: "literal", mark: literalMark, chapter: "Chapter [1]", chapterStart: 0,
+        percentage: nil, version: nil, deletionVersion: false)])
+    let exported = literalDocument.render(.markdown)
+    XCTAssertTrue(exported.hasPrefix("# Title * &amp;\n"))
+    XCTAssertTrue(exported.contains("## Chapter [1]"))
+    let quoted = "> # 标题 *强调* _文字_ [链接](URL) <tag> &amp; \\路径\n> \n> 1. 列表 - + ! ."
+    XCTAssertEqual(exported.components(separatedBy: quoted).count - 1, 2, "Excerpt and note are raw per-line block quotes")
+    XCTAssertTrue(literalDocument.render(.text).contains(literal))
+    XCTAssertFalse(raw.contains(key))
+    XCTAssertFalse(raw.contains("version-a"))
+    let after = try await store.syncFixturePayloads("mark")
+    XCTAssertEqual(after, before, "Export does not compact operations or mutate facts")
+    let mark = try XCTUnwrap(document.records.first)
+    let excerpt = NoteDocument(title: "Title", author: "Author", records: []).excerpt(
+      .init(id: mark.id, mark: mark.mark, chapter: "Chapter", percentage: 42, version: nil, deletionVersion: false))
+    XCTAssertEqual(excerpt, mark.mark.excerpt + "\n\n——《Title》 · Author · Chapter · 42%")
+    let payload = try NoteSharePayload(document: document, format: .text)
+    let url = try XCTUnwrap(payload.url)
+    XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), raw)
+    payload.clean()
+    XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    var future = candidate("future", content: content("unreadable"))
+    future.bookmark = false
+    let json = try syncJSON(UserSyncJSON.encode(future, envelope: true)) { $0["v"] = 2 }
+    try await store.receiveSyncFixture("mark", key: key, id: future.id, mark: "unknown", payload: json)
+    let snapshot = try await service.noteCandidates(book.id)
+    XCTAssertNoThrow(try snapshot.checked(["m0"]))
+    XCTAssertThrowsError(try snapshot.checked(nil))
+    do { _ = try await service.noteDocument(book.id); XCTFail("Incomplete export must stop") }
+    catch is NoteReadError {}
+
+    // A completed source can still have unpromoted facts. Export must promote
+    // first, and must not bypass a later unreadable pending record via the cache.
+    let f = try positionWinnerFixture()
+    defer { f.clean() }
+    let id = f.aliases[0], pendingKey = "pending:" + id
+    let staged = candidate("staged-note", content: content("pending note"))
+    try await f.pending.receiveFixture(key: pendingKey, mark: "staged", candidate: staged)
+    let promotedDocument = try await f.service.noteDocument(id)
+    XCTAssertEqual(promotedDocument.records.map { $0.mark.note }, ["pending note"])
+    let pendingAfter = try await f.pending.noteCandidates(key: pendingKey)
+    XCTAssertTrue(pendingAfter.groups.isEmpty)
+    let unknown = try syncJSON(UserSyncJSON.encode(candidate("future-pending", content: content("future")), envelope: true)) { $0["v"] = 2 }
+    try await f.pending.receiveSyncFixture("mark", key: pendingKey, id: "future-pending", mark: "future", payload: unknown)
+    let beforeBlockedExport = try await f.pending.syncFixturePayloads("mark")
+    let selections: [Set<String>?] = [nil, ["staged"]]
+    for selected in selections {
+      do {
+        _ = try await f.service.noteDocument(id, ids: selected)
+        XCTFail("Failed pending promotion must block whole and selected export")
+      } catch is UserSyncCompatibilityError {}
+    }
+    let afterBlockedExport = try await f.pending.syncFixturePayloads("mark")
+    XCTAssertEqual(afterBlockedExport, beforeBlockedExport, "Unreadable pending facts are retained")
+  }
+
+  @MainActor
+  func testSelectedNoteDeletionRejectsEntireChangedBatchAndReusesUndo() async throws {
+    let (root, service, book, store) = try await editorFixture()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let key = book.contentSha256
+    let a = candidate("a", content: content("first"))
+    let b = candidate("b", content: content("second"))
+    try await store.receiveFixture(key: key, mark: "first", candidate: a)
+    try await store.receiveFixture(key: key, mark: "second", candidate: b)
+    for index in 0..<60 {
+      try await store.receiveFixture(key: key, mark: "page-\(index)",
+        candidate: candidate("page-op-\(index)", content: content("later page", start: UInt64(10 + index), end: UInt64(11 + index))))
+    }
+    let tools = ReaderToolsModel(service: service)
+    tools.select(.notes)
+    await tools.prepare(bookID: book.id, currentChapter: 0, library: true)
+    XCTAssertEqual(tools.notes.count, 60)
+    XCTAssertTrue(tools.moreNotes)
+    tools.toggleNote(try XCTUnwrap(tools.notes.first { $0.id == "first" }))
+    tools.toggleNote(try XCTUnwrap(tools.notes.first { $0.id == "second" }))
+    let changed = candidate("changed", parents: ["b"], content: content("edited remotely"))
+    try await store.receiveFixture(key: key, mark: "second", candidate: changed)
+    await tools.loadNotes(reset: false)
+    XCTAssertEqual(tools.notes.count, 62)
+    XCTAssertEqual(tools.notes.first { $0.id == "second" }?.note, "second")
+    XCTAssertEqual(tools.selectedCandidates["second"]?.map(\.id), ["b"])
+    XCTAssertEqual(tools.noteSnapshot?.groups["second"]?.map(\.id), ["b"])
+    let selected = NoteCandidates(key: key, groups: tools.selectedCandidates, blocked: [])
+    let before = try await store.syncFixturePayloads("mark")
+    do {
+      try await service.deleteNoteSelection(book.id, expected: selected, ids: ["first", "second"])
+      XCTFail("Stale selection must not delete even the unchanged first record")
+    } catch is UserDataConflict {}
+    let after = try await store.syncFixturePayloads("mark")
+    XCTAssertEqual(after, before)
+    let latest = try await service.noteCandidates(book.id)
+    try await service.deleteNoteSelection(book.id, expected: latest, ids: ["first", "second"])
+    let deleted = try await store.noteCandidates(key: key)
+    for id in ["first", "second"] {
+      XCTAssertTrue(try XCTUnwrap(deleted.groups[id]).allSatisfy { $0.content == nil })
+    }
+    XCTAssertEqual(deleted.groups.filter { $0.key.hasPrefix("page-") && $0.value.first?.content != nil }.count, 60)
+    try await service.deleteMarks(["first", "second"], deleted: false)
+    let restored = try await store.noteCandidates(key: key)
+    XCTAssertEqual(restored.groups["first"]?.first?.content, a.content)
+    XCTAssertEqual(restored.groups["second"]?.first?.content, changed.content)
+  }
+
 }

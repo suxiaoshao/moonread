@@ -409,6 +409,9 @@ enum AnnotationReduction {
         if !obsolete.isEmpty { try transaction { for row in obsolete { modelContext.delete(row) } } }
         return result
     }
+    func noteCandidates(key: String) throws -> NoteCandidates {
+        NoteCandidates(key: key, groups: try candidates(key: key, compacting: false), blocked: try blockedMarks(key: key))
+    }
     func markCandidates(_ id: String) throws -> (String, [AnnotationCandidate]) {
         let rows = try modelContext.fetch(FetchDescriptor<AnnotationOperation>(predicate: #Predicate { $0.markID == id }))
         guard let key = rows.first?.contentKey else { throw ReaderError.NotFound }
@@ -502,8 +505,17 @@ enum AnnotationReduction {
         let (key, _) = try markCandidates(id)
         _ = try applyDeletions([MarkDeletion(id: id, key: key, baseline: baseline, content: restoring, deleted: deleted)])
     }
-    func applyDeletions(_ commands: [MarkDeletion]) throws -> [String: AnnotationCandidate] {
+    func applyDeletions(_ commands: [MarkDeletion], checkingBaseline: Bool = false) throws -> [String: AnnotationCandidate] {
         try transaction {
+            if checkingBaseline {
+                for command in commands {
+                    try requireMarksReadable(key: command.key, ids: [command.id])
+                    let current = try candidates(key: command.key, markID: command.id, compacting: false)[command.id] ?? []
+                    guard Set(current.map(\.id)) == Set(command.baseline.map(\.id)), !AnnotationReduction.conflicts(current) else {
+                        throw UserDataConflict(candidates: current)
+                    }
+                }
+            }
             var result: [String: AnnotationCandidate] = [:]
             for command in commands {
                 result[command.id] = try append(key: command.key, markID: command.id, baseline: command.baseline,

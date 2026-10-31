@@ -267,9 +267,8 @@ struct LibraryFolderView: View {
         browser
         .navigationTitle(editing.isEditing ? selectionTitle : title).navigationBarTitleDisplayMode(.inline)
         .navigationBarBackButtonHidden(editing.isEditing)
-        // Selection is a focused file task; its bottom toolbar takes the place
-        // of app navigation until Done returns to ordinary browsing.
-        .toolbarVisibility(editing.isEditing ? .hidden : .automatic, for: .tabBar)
+        // The source stack combines this page's selection with reader visibility.
+        .preference(key: LibrarySelectingFolders.self, value: editing.isEditing ? [location] : [])
         .toolbar {
             if editing.isEditing {
                 ToolbarItem(placement: .topBarLeading) {
@@ -823,5 +822,12 @@ struct LibraryShelfDropDelegate: DropDelegate {
     func accept(_ providers: [NSItemProvider]) -> Bool {
         guard let request = LibraryDropPolicy.request(providers, at: destination) else { return false }
         return model.acceptDrop(request, at: destination)
+    }
+}
+
+struct LibrarySelectingFolders: PreferenceKey {
+    static var defaultValue: Set<LibraryLocation> { [] }
+    static func reduce(value: inout Set<LibraryLocation>, nextValue: () -> Set<LibraryLocation>) {
+        value.formUnion(nextValue())
     }
 }

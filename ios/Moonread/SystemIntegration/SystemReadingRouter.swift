@@ -75,6 +75,9 @@ final class SystemReadingRouter {
     var requestID: UUID { token }
     var confirmationTitle: String?
     var requestError: String?
+    func presentsConfirmation(active: Bool, editor: Bool) -> Bool {
+        active && (hasEditor?() == true) == editor && (confirmationTitle != nil || requestError != nil)
+    }
     func admit(title: String, library: LibraryModel) -> Bool {
         if savingEdits?() == true {
             pending = nil
@@ -193,7 +196,7 @@ struct SystemReadingConfirmation: ViewModifier {
     func body(content: Content) -> some View {
         let requestID = router?.requestID
         return content.alert(Text(router?.confirmationTitle.map { String(format: String(localized: "放弃未保存的修改并打开《%@》？"), $0) } ?? String(localized: "暂时无法完成")), isPresented: Binding(get: {
-            active && (router?.hasEditor?() == true) == editor && (router?.confirmationTitle != nil || router?.requestError != nil)
+            router?.presentsConfirmation(active: active, editor: editor) == true
         }, set: { if !$0, router?.requestID == requestID { router?.answerConfirmation(discard: false, expectedID: requestID); router?.requestError = nil } })) {
             if router?.confirmationTitle != nil {
                 Button("取消", role: .cancel) { router?.answerConfirmation(discard: false, expectedID: requestID) }

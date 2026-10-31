@@ -564,6 +564,9 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     XCTAssertFalse(router.admit(title: "saving", library: library))
     XCTAssertNil(router.pending, "An in-flight save is not cancelled or queued behind")
     XCTAssertNotNil(router.requestError)
+    XCTAssertTrue(router.presentsConfirmation(active: true, editor: false))
+    XCTAssertFalse(router.presentsConfirmation(active: false, editor: false))
+    XCTAssertFalse(router.presentsConfirmation(active: true, editor: true))
     router.savingEdits = { false }
     router.requestError = nil
     router.hasUnsavedEdits = { false }

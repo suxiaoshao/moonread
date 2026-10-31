@@ -331,17 +331,17 @@ private struct MoonreadRoot: View {
     private var libraryStack: some View {
         NavigationStack(path: $library.libraryPath) {
             LibraryView(model: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.toolbarVisibility(library.libraryPath.contains(where: \.isReader) ? .hidden : .automatic, for: .tabBar)
+        }.modifier(LibrarySourceTabVisibility(path: library.libraryPath))
     }
     private var statisticsStack: some View {
         NavigationStack(path: $library.statisticsPath) {
             StatisticsView(library: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.toolbarVisibility(library.statisticsPath.contains(where: \.isReader) ? .hidden : .automatic, for: .tabBar)
+        }.modifier(LibrarySourceTabVisibility(path: library.statisticsPath))
     }
     private var searchStack: some View {
         NavigationStack(path: $library.searchPath) {
             AppSearchView(model: library, search: library.search).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.toolbarVisibility(library.searchPath.contains(where: \.isReader) ? .hidden : .automatic, for: .tabBar)
+        }.modifier(LibrarySourceTabVisibility(path: library.searchPath))
         .modifier(AppSearchField(model: library, search: library.search, quickEntry: true))
     }
     private var settingsStack: some View {
@@ -442,5 +442,21 @@ private struct MoonLaunchCover: View {
             let active = identifier; identifier = .invalid
             UIApplication.shared.endBackgroundTask(active)
         }
+    }
+}
+
+/// One owner per source stack: selection replaces tabs; reading keeps them hidden.
+private struct LibrarySourceTabVisibility: ViewModifier {
+    let path: [LibraryRoute]
+    @State private var selectingFolders: Set<LibraryLocation> = []
+    private var hidesTabs: Bool {
+        if path.contains(where: \.isReader) { return true }
+        if case let .folder(location) = path.last { return selectingFolders.contains(location) }
+        return false
+    }
+    func body(content: Content) -> some View {
+        content
+            .onPreferenceChange(LibrarySelectingFolders.self) { selectingFolders = $0 }
+            .toolbarVisibility(hidesTabs ? .hidden : .automatic, for: .tabBar)
     }
 }

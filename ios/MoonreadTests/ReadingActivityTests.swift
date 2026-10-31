@@ -10,6 +10,25 @@ import XCTest
 final class ReadingActivityReadingReviewTests: ReadingReviewFixture {
   // S274: 只测 recorder 把暂停/预览/停止事件正确传给 Rust 并只提交返回 slices；idle 时长算法仅 R048/R049，删 Swift 重算。
   @MainActor func testEffectiveSessionDurationUsesReadingClockIdleAndPauseRules() async throws {
+    func readable(_ body: Bool = true, _ preparation: Bool = false, _ share: Bool = false,
+                  _ alert: Bool = false, _ chooser: Bool = false) -> Bool {
+      ReaderStatisticsVisibility.isReadable(body: body, preparingExcerpt: preparation,
+        excerptPresented: share, confirmationPresented: alert, choosingAnnotations: chooser)
+    }
+    XCTAssertTrue(readable())
+    XCTAssertFalse(readable(true, true)) // Before the selection read starts.
+    XCTAssertFalse(readable(true, false, true)) // Sheet after preparation ends.
+    XCTAssertFalse(readable(true, false, false, true))
+    XCTAssertFalse(readable(true, false, false, false, true))
+    XCTAssertFalse(readable(false), "Dismissing a task cannot override another unreadable condition")
+    let controller = ReadingController(), chooser = UIAlertController()
+    var chooserVisible = true
+    controller.annotationChooser = chooser
+    controller.annotationChooserChanged = { chooserVisible = $0 }
+    let dismissed = AnnotationChooserDelegate { controller.finishAnnotationChooser(chooser) }
+    dismissed.presentationControllerDidDismiss(UIPresentationController(presentedViewController: chooser, presenting: controller))
+    XCTAssertFalse(chooserVisible)
+    XCTAssertNil(controller.annotationChooser)
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let service = AppDataService(core: try ReaderCore(dataDirectory: root.path))

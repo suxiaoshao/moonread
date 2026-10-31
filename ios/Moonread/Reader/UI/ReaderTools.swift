@@ -5,7 +5,7 @@ enum ReaderPanel: String { case library, search, settings, history, chapterEdito
 extension ReaderPanel { var isPage: Bool { self == .settings || self == .details } }
 enum ReaderLibraryTab: Hashable { case chapters, bookmarks, notes }
 enum ReaderSelectionAction: Equatable {
-    case highlight, comment, paragraph, beginRange, chapter, search, copy
+    case highlight, comment, paragraph, beginRange, chapter, search, copy, shareExcerpt
     case removeAnnotations
 }
 
@@ -50,6 +50,29 @@ final class ReaderToolsModel {
     var searchListPosition: UInt64?
     var noteKind: MarkKind { tab == .bookmarks ? .bookmark : .annotation }
     var notes: [ReaderMark] = []
+    var selectingNotes = false
+    var selectedNotes: Set<String> = []
+    var selectedCandidates: [String: [AnnotationCandidate]] = [:]
+    var noteLocations: [String: String] = [:]
+    var notesLoadError: String?
+    var noteSnapshot: NoteCandidates?
+    var noteBookID: String? { bookID }
+    func toggleNote(_ mark: ReaderMark) {
+        if selectedNotes.remove(mark.id) != nil { selectedCandidates[mark.id] = nil }
+        else { selectedNotes.insert(mark.id); selectedCandidates[mark.id] = noteSnapshot?.groups[mark.id] }
+    }
+    func clearNoteSelection() { selectedNotes = []; selectedCandidates = [:] }
+    func deleteSelectedNotes(_ expected: NoteCandidates, ids: Set<String>) async {
+        guard let id = bookID else { return }
+        do {
+            try await service.deleteNoteSelection(id, expected: expected, ids: ids)
+            deletedIDs = ids.sorted(); clearNoteSelection()
+            await loadNotes(reset: true)
+        } catch is UserDataConflict {
+            clearNoteSelection(); await loadNotes(reset: true)
+            error = String(localized: "这些记录已变化，本次未删除，请重新选择。")
+        } catch { self.error = ReaderMessages.error(error) }
+    }
     /// The kind `notes` holds; bookmarks and annotations share the list.
     private var notesKind: MarkKind?
     var moreNotes = false
@@ -122,7 +145,8 @@ final class ReaderToolsModel {
         if changed {
             cancelSearchJob(); self.bookID = bookID
             chapters = []; allChapters = []; collapsedVolumes = []; chapterFilter = ""
-            notes = []; notesKind = nil; hits = []; query = ""
+            clearNoteSelection(); selectingNotes = false; noteSnapshot = nil
+            notes = []; notesKind = nil; noteLocations = [:]; notesLoadError = nil; hits = []; query = ""
         }
         guard library else { return }
         self.currentChapter = currentChapter
@@ -138,6 +162,7 @@ final class ReaderToolsModel {
     /// Chooses the list before it is shown, so its first frame already has the right
     /// title. Rows of the other mark kind are dropped at once; the list waits for its own.
     func select(_ destination: ReaderLibraryTab) {
+        if tab != destination { clearNoteSelection(); selectingNotes = false }
         tab = destination
         guard destination != .chapters, notesKind != noteKind else { return }
         notesGeneration += 1
@@ -210,20 +235,41 @@ final class ReaderToolsModel {
         if reset { notesGeneration += 1 }
         let generation = notesGeneration
         let kind = noteKind
-        loadingNotes = true
+        loadingNotes = true; notesLoadError = nil
         defer { if generation == notesGeneration { loadingNotes = false } }
         do {
+            let snapshot = try await service.noteCandidates(id)
             var items: [ReaderMark] = []
             var more = false
             repeat {
                 let offset = (reset ? 0 : notes.count) + items.count
-                let value = try await service.marks(id, kind: kind, offset: UInt32(offset))
+                let value = try await service.marks(id, kind: kind, offset: UInt32(offset), snapshot: snapshot)
                 guard !isLeaving, !Task.isCancelled, id == bookID, kind == noteKind, generation == notesGeneration else { return }
                 items += value.items; more = value.hasMore
                 if value.items.isEmpty { break }
             } while reset && more && items.count < preservingCount
+            if notesKind != kind { clearNoteSelection(); selectingNotes = false }
             notes = reset ? items : notes + items; notesKind = kind; moreNotes = more
-        } catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
+            // Appended pages do not replace the rows already on screen. Keep
+            // their candidates too, including rows selected after pagination.
+            var displayedGroups = reset ? [:] : (noteSnapshot?.groups ?? [:])
+            for item in items where reset || displayedGroups[item.id] == nil {
+                displayedGroups[item.id] = snapshot.groups[item.id]
+            }
+            noteSnapshot = NoteCandidates(key: snapshot.key, groups: displayedGroups, blocked: snapshot.blocked)
+            let locations = (try? await service.noteLocations(id, marks: items)) ?? [:]
+            guard !isLeaving, id == bookID, kind == noteKind, generation == notesGeneration else { return }
+            if reset { noteLocations = locations } else { noteLocations.merge(locations) { _, new in new } }
+            let valid = Set(snapshot.groups.filter { $0.value.contains { $0.content != nil } }.keys).union(snapshot.blocked)
+            selectedNotes.formIntersection(valid)
+            selectedCandidates = selectedCandidates.filter { selectedNotes.contains($0.key) }
+            if reset {
+                // Only refreshed, displayed rows may advance an existing baseline.
+                for item in items where selectedNotes.contains(item.id) {
+                    selectedCandidates[item.id] = snapshot.groups[item.id]
+                }
+            }
+        } catch { if !isLeaving { notesLoadError = ReaderMessages.error(error) } }
     }
 
     func refreshVisibleMarks() async {
@@ -267,6 +313,7 @@ final class ReaderToolsModel {
         isLeaving = true
         stopSearch()
         chapterGeneration += 1; notesGeneration += 1
+        clearNoteSelection(); selectingNotes = false; noteSnapshot = nil
         bookID = nil
         deletedIDs = nil
     }
