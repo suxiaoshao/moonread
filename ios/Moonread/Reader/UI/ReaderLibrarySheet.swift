@@ -81,7 +81,6 @@ struct ReaderLibraryContent: View {
             .navigationTitle(listTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { libraryToolbar }
-            .modifier(ReaderLibraryToolbarLayout(horizontal: model.tab != .chapters))
     }
 
     private var libraryContent: some View {
@@ -220,19 +219,5 @@ struct ReaderChapterActions: View {
         } label: {
             Label("目录操作", systemImage: editing.editingOutline ? "pencil.circle.fill" : "ellipsis")
         }.disabled(incomplete).toolbarGlyph().accessibilityIdentifier("chapterActions")
-    }
-}
-
-/// Notes keep navigation above the list and selection actions below it on every
-/// display. The Duo outer display otherwise moves symbol items to its vertical
-/// bar while leaving text items (Done/count) in the horizontal bar.
-private struct ReaderLibraryToolbarLayout: ViewModifier {
-    let horizontal: Bool
-    @ViewBuilder func body(content: Content) -> some View {
-        if #available(iOS 27.1, *) {
-            content.toolbarVerticalBehavior(horizontal ? .disabled : .automatic)
-        } else {
-            content
-        }
     }
 }

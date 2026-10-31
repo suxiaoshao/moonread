@@ -380,16 +380,6 @@ import XCTest
     let row = ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'noteRow-'")).firstMatch)
     row.tap()
     ready(app.staticTexts["已选 1 项"])
-    let navigation = ready(app.navigationBars["标注与笔记"])
-    for button in [app.buttons["完成"], app.buttons["closeReaderLibrary"], app.buttons["noteOptions"]] {
-      XCTAssertTrue(button.isHittable)
-      XCTAssertTrue(navigation.frame.contains(button.frame), "Navigation actions stay in the top bar")
-    }
-    for button in [app.buttons["shareSelectedNotes"], app.buttons["deleteSelectedNotes"]] {
-      XCTAssertTrue(button.isEnabled && button.isHittable)
-      XCTAssertTrue(app.frame.contains(button.frame))
-      XCTAssertGreaterThan(button.frame.minY, row.frame.maxY, "Selection actions stay below the list")
-    }
     XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'editNote-'")).firstMatch.exists)
     app.buttons["完成"].tap()
     ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'editNote-'")).firstMatch)
