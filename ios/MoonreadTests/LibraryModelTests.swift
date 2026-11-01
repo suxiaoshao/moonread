@@ -260,8 +260,8 @@ final class LibraryModelApplicationStateTests: ApplicationStateFixture {
   // S439: 搜索只发布当前 query 代次结果，清空条件清结果，打开内容不丢搜索 scope。
   func testSearchPublishesOnlyLatestGenerationAndContentDismissalKeepsScope() async {
     let state = AppSearchResults()
-    let old = SearchKey(term: "old", tokens: [], revision: 0, retry: 0, aiAvailable: false)
-    let new = SearchKey(term: "new", tokens: [], revision: 0, retry: 0, aiAvailable: false)
+    let old = SearchKey(term: "old", revision: 0, retry: 0, aiAvailable: false)
+    let new = SearchKey(term: "new", revision: 0, retry: 0, aiAvailable: false)
     let started = expectation(description: "Old search suspended")
     var release: CheckedContinuation<Void, Never>?
     let pending = Task {
@@ -274,23 +274,25 @@ final class LibraryModelApplicationStateTests: ApplicationStateFixture {
       }
     }
     await fulfillment(of: [started], timeout: 3)
-    await state.run(new, hasCriteria: true) { ([], []) }
+    await state.run(new, hasCriteria: true) { ([], [], 0) }
     release?.resume()
     await pending.value
     XCTAssertEqual(state.completedKey, new)
     XCTAssertNil(state.error)
     XCTAssertFalse(state.loading.active)
-    let search = AppSearch(tokens: [.shelf("builtin"), .tag("星灯")])
+    let search = AppSearch(seeds: [.shelf("builtin"), .tag("星灯")])
     search.query = " Moonread "
     search.keyboardDismissals += 1
     XCTAssertEqual(search.term, "Moonread")
-    XCTAssertEqual(search.tag, "星灯")
-    search.apply(.tag("归途"))
-    XCTAssertEqual(search.tag, "归途")
-    XCTAssertTrue(search.query.isEmpty)
+    XCTAssertEqual(search.configuration.root.children[1].values, [.text("星灯")])
+    search.configuration.root.children[1].values = [.text("归途")]
+    XCTAssertEqual(search.term, "Moonread", "Applying filters preserves text")
+    XCTAssertEqual(search.configuration.root.children[0].values, [.text("builtin")])
+    search.configuration = BookSearchConfiguration()
+    XCTAssertEqual(search.term, "Moonread", "Resetting filters preserves text")
     await state.run(new, hasCriteria: false) {
       XCTFail("Empty search must not load")
-      return ([], [])
+      return ([], [], 0)
     }
     XCTAssertNil(state.completedKey)
     XCTAssertTrue(state.entries.isEmpty)

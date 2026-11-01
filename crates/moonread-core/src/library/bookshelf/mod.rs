@@ -297,10 +297,19 @@ impl ReaderCore {
         let reading: HashSet<String> = statement
             .query_map([], |r| r.get(0))?
             .collect::<std::result::Result<_, _>>()?;
+        let mut previous_name = None::<String>;
+        let mut name_ordinal = 0_u64;
         values
             .into_iter()
             .enumerate()
             .map(|(i, entry)| {
+                if previous_name
+                    .as_ref()
+                    .is_some_and(|name| !natural_cmp(name, &entry.name).is_eq())
+                {
+                    name_ordinal += 1;
+                }
+                previous_name = Some(entry.name.clone());
                 let resolved_metadata = entry
                     .content_sha256
                     .as_ref()
@@ -315,6 +324,7 @@ impl ReaderCore {
                 Ok(LibrarySearchCandidate {
                     entry,
                     natural_order_ordinal: i as u64,
+                    natural_name_ordinal: name_ordinal,
                     resolved_metadata,
                 })
             })
@@ -430,6 +440,8 @@ pub struct SourceFileLocation {
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct LibrarySearchCandidate {
     pub entry: LibraryEntry,
+    /// Equal natural names share a rank, so later explicit sort keys can break ties.
+    pub natural_name_ordinal: u64,
     pub natural_order_ordinal: u64,
     pub resolved_metadata: Option<crate::BookMetadata>,
 }

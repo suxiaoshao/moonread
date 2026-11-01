@@ -2,44 +2,24 @@ import SwiftUI
 
 enum AppTab: Hashable { case library, conversations, statistics, settings, search }
 
-/// Author, tag and shelf narrow book results; each kind holds at most one value.
-enum AppSearchToken: Identifiable, Hashable {
+/// Context entry seeds are immediately translated into the same condition tree.
+enum AppSearchSeed: Hashable {
     case author(String), tag(String), shelf(String)
-    var id: Self { self }
-    fileprivate var kind: Int {
-        switch self { case .author: 0; case .tag: 1; case .shelf: 2 }
+    var node: BookSearchNode {
+        switch self {
+        case .author(let value): BookSearchNode(field: .author, values: [.text(value)])
+        case .tag(let value): BookSearchNode(field: .tag, values: [.text(value)], match: .all)
+        case .shelf(let value): BookSearchNode(field: .shelf, values: [.text(value)])
+        }
     }
 }
-
-/// One search session, owned by its host and kept in memory only: the Search tab's
-/// quick entry, or a contextual search pushed from a folder or book details.
-/// Opening a result and coming Back keeps it.
 @MainActor @Observable final class AppSearch {
     var query = ""
-    var tokens: [AppSearchToken] = []
-    init(tokens: [AppSearchToken] = []) { self.tokens = tokens }
-    /// Author and tag choices for suggestions and the empty-field browse lists.
-    var options: BookFilterOptions?
-    /// Content taps ask the field to give up focus: the keyboard goes, Search stays.
+    var configuration = BookSearchConfiguration()
     var keyboardDismissals = 0
+    init(seeds: [AppSearchSeed] = []) { configuration.root.children = seeds.map(\.node) }
     var term: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
-    var author: String? { tokens.lazy.compactMap { if case let .author(value) = $0 { value } else { nil } }.first }
-    var tag: String? { tokens.lazy.compactMap { if case let .tag(value) = $0 { value } else { nil } }.first }
-    var shelfID: String? { tokens.lazy.compactMap { if case let .shelf(value) = $0 { value } else { nil } }.first }
-    /// A shelf only scopes; results need text, an author or a tag.
-    var hasCriteria: Bool { !term.isEmpty || author != nil || tag != nil }
-    /// A new choice replaces the earlier token of its kind, keeping its place.
-    func normalizeTokens() {
-        var seen = Set<Int>(), result: [AppSearchToken] = []
-        for token in tokens.reversed() where seen.insert(token.kind).inserted { result.insert(token, at: 0) }
-        if result != tokens { tokens = result }
-    }
-    func apply(_ token: AppSearchToken) {
-        tokens.append(token); normalizeTokens(); query = ""
-    }
-    fileprivate func setTokens(_ value: [AppSearchToken]) {
-        tokens = value; normalizeTokens()
-    }
+    var hasCriteria: Bool { !term.isEmpty || configuration.booksOnly }
 }
 
 /// On iOS 26+ choosing Search focuses its field at once: a quick entry, not a landing page first.
@@ -49,64 +29,46 @@ struct AppSearchActivation: ViewModifier {
     }
 }
 
-/// The field, tokens and suggestions of one search session. The Search tab attaches it
+/// The system-managed text field of one search session. The Search tab attaches it
 /// to its navigation stack and reports presentation so Cancel returns to the origin tab;
 /// a contextual search attaches it to its own page and is left with Back.
 struct AppSearchField: ViewModifier {
     @Environment(AIService.self) private var ai
-    private var searchPrompt: Text { ai.availability.isAvailable ? Text("书名、作者、文件夹或对话") : Text("书名、作者或文件夹") }
+    private var searchPrompt: Text { search.configuration.booksOnly ? Text("搜索小说：书名或作者") : ai.availability.isAvailable ? Text("书名、作者、文件夹或对话") : Text("书名、作者或文件夹") }
     let model: LibraryModel
     let search: AppSearch
     var quickEntry = false
     @FocusState private var focused: Bool
     func body(content: Content) -> some View {
         let text = Binding(get: { search.query }, set: { search.query = $0 })
-        let tokens = Binding(get: { search.tokens }, set: { search.setTokens($0) })
         return Group {
             if quickEntry {
-                content.searchable(text: text, tokens: tokens,
+                content.searchable(text: text,
                                    isPresented: Binding(get: { model.searchPresented }, set: { model.setSearchPresented($0) }),
-                                   prompt: searchPrompt, token: tokenLabel)
+                                   prompt: searchPrompt)
             } else {
-                // A contextual search keeps its scope token in view.
-                content.searchable(text: text, tokens: tokens, placement: .navigationBarDrawer(displayMode: .always),
-                                   prompt: searchPrompt, token: tokenLabel)
+                // A contextual search retains its condition tree while editing text.
+                content.searchable(text: text, placement: .navigationBarDrawer(displayMode: .always),
+                                   prompt: searchPrompt)
             }
         }
         .onChange(of: search.keyboardDismissals) { _, _ in focused = false }
-        .searchSuggestions { suggestions(search) }
         .searchFocused($focused)
+        .modifier(AppSearchToolbarVisibility())
     }
-    private func tokenLabel(_ token: AppSearchToken) -> some View {
-        switch token {
-        case .author(let value): Label(value, systemImage: "person")
-        case .tag(let value): Label(value, systemImage: "tag")
-        case .shelf(let id): Label(model.shelfTitle(id), systemImage: "books.vertical")
-        }
-    }
-    @ViewBuilder private func suggestions(_ search: AppSearch) -> some View {
-        let term = search.term
-        if !term.isEmpty {
-            ForEach(matches(search.options?.authors ?? [], term), id: \.self) { author in
-                Label(author, systemImage: "person").searchCompletion(AppSearchToken.author(author))
-            }
-            ForEach(matches(search.options?.tags ?? [], term), id: \.self) { tag in
-                Label(tag, systemImage: "tag").searchCompletion(AppSearchToken.tag(tag))
-            }
-            ForEach(model.shelves.filter { LibraryQueryRules.selectionMatches(model.shelfTitle($0.id), query: term) }, id: \.id) { shelf in
-                Label(model.shelfTitle(shelf.id), systemImage: "books.vertical").searchCompletion(AppSearchToken.shelf(shelf.id))
-            }
-        }
-    }
-    private func matches(_ values: [String], _ term: String) -> [String] {
-        Array(LibraryQueryRules.filterSuggestions(values, query: term).prefix(3))
+}
+
+private struct AppSearchToolbarVisibility: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) { content.searchPresentationToolbarBehavior(.avoidHidingContent) }
+        else { content }
     }
 }
 
 /// Books, folders and listed conversations in one place. Results stay usable
 /// while a newer query runs; an error replaces nothing that was already shown.
 struct AppSearchScope: Hashable {
-    var tokens: [AppSearchToken]
+    var seeds: [AppSearchSeed]
 }
 
 /// Where a search's results lead. Without `push`, results navigate in the current
@@ -128,7 +90,7 @@ struct AppSearchPage: View {
     @State private var search: AppSearch
     init(model: LibraryModel, scope: AppSearchScope, host: AppSearchHost = AppSearchHost()) {
         self.model = model; self.host = host
-        _search = State(initialValue: AppSearch(tokens: scope.tokens))
+        _search = State(initialValue: AppSearch(seeds: scope.seeds))
     }
     var body: some View {
         AppSearchView(model: model, search: search, host: host)
@@ -180,6 +142,8 @@ struct AppSearchView: View {
     @Environment(\.theme) private var theme
     @State private var results = AppSearchResults()
     @State private var retry = 0
+    @State private var editor: BookSearchDraft?
+    @State private var expanded = false
     private var entries: [LibraryEntry] { results.entries }
     private var conversations: [AIConversationSearchHit] { results.conversations }
     private var completedKey: SearchKey? { results.completedKey }
@@ -189,17 +153,54 @@ struct AppSearchView: View {
     private var folders: [LibraryEntry] { host.showsFolders ? entries.filter(\.directory) : [] }
     private var groupCount: Int { [!books.isEmpty, !folders.isEmpty, ai.availability.isAvailable && !conversations.isEmpty].filter { $0 }.count }
     private var key: SearchKey {
-        SearchKey(term: search.term, tokens: search.tokens, revision: model.revision, retry: retry, aiAvailable: ai.availability.isAvailable)
+        SearchKey(term: search.term, configuration: search.configuration, revision: model.revision, retry: retry, aiAvailable: ai.availability.isAvailable)
     }
     var body: some View {
         List {
-            if !search.hasCriteria { browse }
-            else {
+            if search.configuration.booksOnly {
+                BookSearchSummary(configuration: search.configuration, term: search.term, shelfTitle: model.shelfTitle, expanded: expanded)
+                    .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                HStack {
+                    Button { expanded.toggle() } label: { Text(expanded ? "收起摘要" : "展开全部").frame(minHeight: 44) }
+                    Spacer()
+                    Button { openEditor() } label: { Text("编辑").frame(minHeight: 44) }
+                }.font(.subheadline).buttonStyle(.borderless).listRowBackground(Color.clear)
+            }
+            if search.hasCriteria {
+                if let completedKey, completedKey != key, !entries.isEmpty || !conversations.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("以下仍是上次条件的结果").font(.subheadline.weight(.semibold))
+                        Text(completedKey.term).font(.subheadline)
+                        if completedKey.configuration.booksOnly {
+                            BookSearchSummary(configuration: completedKey.configuration, term: completedKey.term, shelfTitle: model.shelfTitle)
+                        }
+                    }.listRowBackground(Color.clear)
+                }
+                if results.unknownCount > 0 && completedKey == key {
+                    Text("有 \(results.unknownCount) 本因身份或相关数据尚未确定，未参与当前条件的结果。")
+                        .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)).listRowBackground(Color.clear)
+                }
                 if !books.isEmpty || !folders.isEmpty || (ai.availability.isAvailable && !conversations.isEmpty), let error {
                     VStack(alignment: .leading, spacing: LayoutTokens.compact) {
                         Label(error, systemImage: "exclamationmark.circle").foregroundStyle(Color(uiColor: theme.destructive))
                         Button("重试") { retry += 1 }.accessibilityIdentifier("searchRetry")
                     }.font(.subheadline).modifier(LibraryListHeading())
+                }
+                if search.configuration.booksOnly, books.isEmpty, folders.isEmpty, conversations.isEmpty {
+                    if error != nil || completedKey == key {
+                        VStack(alignment: .leading, spacing: 12) {
+                            if let error {
+                                Label("搜索暂时失败", systemImage: "exclamationmark.magnifyingglass").font(.headline)
+                                Text(error).foregroundStyle(Color(uiColor: theme.destructive))
+                                Button("重试") { retry += 1 }.accessibilityIdentifier("searchRetry")
+                            } else {
+                                Label("没有匹配的小说或项目", systemImage: "magnifyingglass").font(.headline)
+                                Text("试试其他文字，或编辑筛选条件。").foregroundStyle(Color(uiColor: theme.secondary))
+                                Button("编辑筛选") { openEditor() }
+                                Button("清除筛选与排序（保留文字）") { search.configuration = BookSearchConfiguration() }
+                            }
+                        }.buttonStyle(.borderless).padding(.vertical).listRowBackground(Color.clear).listRowSeparator(.hidden)
+                    }
                 }
                 if !books.isEmpty { section("书籍", count: books.count) { rows(books) } }
                 if !folders.isEmpty { section("文件夹", count: folders.count) { rows(folders) } }
@@ -222,62 +223,52 @@ struct AppSearchView: View {
                 }
             }
         }
-        .listStyle(.plain).themedPage()
+        .listStyle(.plain).frame(maxWidth: 680).frame(maxWidth: .infinity).themedPage()
         .environment(\.defaultMinListRowHeight, 0)
         // Tapping or dragging the content only puts the keyboard away; rows keep their actions.
-        .simultaneousGesture(TapGesture().onEnded { search.keyboardDismissals += 1 })
         .scrollDismissesKeyboard(.immediately)
         .scrollBounceBehavior(.always)
         .accessibilityIdentifier("appSearchResults")
         .navigationTitle("搜索").navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) {
+            Button("筛选与排序", systemImage: "line.3.horizontal.decrease") { openEditor() }
+                .accessibilityIdentifier("searchFilters")
+        } }
+        .sheet(item: $editor) { draft in BookSearchEditor(search: search, model: model, draft: draft) }
         .overlay {
-            if search.hasCriteria && books.isEmpty && folders.isEmpty && (!ai.availability.isAvailable || conversations.isEmpty) {
+            if !search.hasCriteria {
+                ContentUnavailableView("找一本想读的书", systemImage: "magnifyingglass", description: Text("输入书名，或设置筛选条件"))
+            }
+            if search.hasCriteria && !search.configuration.booksOnly && books.isEmpty && folders.isEmpty && (!ai.availability.isAvailable || conversations.isEmpty) {
                 if let error {
                     ContentUnavailableView {
                         Label("搜索暂时失败", systemImage: "exclamationmark.magnifyingglass")
                     } description: { Text(error).foregroundStyle(Color(uiColor: theme.secondary)) } actions: {
                         Button("重试") { retry += 1 }.buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("searchRetry")
                     }
-                } else if completedKey == key { ContentUnavailableView.search(text: search.term) }
+                } else if completedKey == key {
+                    ContentUnavailableView {
+                        Label("没有匹配的小说或项目", systemImage: "magnifyingglass")
+                    } description: { Text("试试其他文字，或编辑筛选条件。") }
+                }
             }
         }
         .modifier(PageLoadingOverlay(request: search.hasCriteria ? loading.request : nil,
-                                     hasContent: !entries.isEmpty || !conversations.isEmpty, label: "正在搜索"))
-        .task(id: OptionsKey(shelfID: search.shelfID, revision: model.revision)) {
-            search.options = try? await AppDataService.shared.metadataOptions(shelfID: search.shelfID)
-        }
+                                     hasContent: search.configuration.booksOnly || !entries.isEmpty || !conversations.isEmpty, label: "正在搜索"))
         .task(id: key) { await run(key) }
+        .simultaneousGesture(TapGesture().onEnded { search.keyboardDismissals += 1 })
     }
-
+    private func openEditor() {
+        search.keyboardDismissals += 1
+        editor = BookSearchDraft(search.configuration)
+    }
     private func run(_ key: SearchKey) async {
         await results.run(key, hasCriteria: search.hasCriteria) {
             try await Task.sleep(for: .milliseconds(120))
             try await AppDataService.libraryTestLatency()
-            let found = try await AppDataService.shared.searchLibrary(shelfID: search.shelfID, query: key.term,
-                                                                   author: search.author, tag: search.tag)
-            let talks = search.tokens.isEmpty ? try await ai.searchConversations(key.term) : []
-            return (found, talks)
-        }
-    }
-
-    @ViewBuilder private var browse: some View {
-        if let options = search.options, !options.authors.isEmpty || !options.tags.isEmpty {
-            if !options.authors.isEmpty {
-                section("作者", count: nil) {
-                    ForEach(options.authors, id: \.self) { author in
-                        Button { search.apply(.author(author)) } label: { Label(author, systemImage: "person") }
-                            .listRowBackground(Color.clear)
-                    }
-                }
-            }
-            if !options.tags.isEmpty {
-                section("标签", count: nil) {
-                    ForEach(options.tags, id: \.self) { tag in
-                        Button { search.apply(.tag(tag)) } label: { Label(tag, systemImage: "tag") }
-                            .listRowBackground(Color.clear)
-                    }
-                }
-            }
+            let found = try await AppDataService.shared.searchLibrary(query: key.term, configuration: key.configuration)
+            let talks = !key.configuration.booksOnly && key.aiAvailable && !key.term.isEmpty ? try await ai.searchConversations(key.term) : []
+            return (found.entries, talks, found.unknownCount)
         }
     }
 
@@ -316,14 +307,9 @@ struct AppSearchView: View {
     }
 }
 
-private struct OptionsKey: Hashable {
-    let shelfID: String?
-    let revision: Int
-}
-
 struct SearchKey: Hashable {
     let term: String
-    let tokens: [AppSearchToken]
+    var configuration = BookSearchConfiguration()
     let revision: Int
     let retry: Int
     let aiAvailable: Bool
@@ -362,23 +348,24 @@ private struct AIConversationSearchRow: View {
     private(set) var entries: [LibraryEntry] = []
     private(set) var conversations: [AIConversationSearchHit] = []
     private(set) var completedKey: SearchKey?
+    private(set) var unknownCount = 0
     private(set) var error: String?
     let loading = LoadingState()
     private var generation = UUID()
     func run(_ key: SearchKey, hasCriteria: Bool,
-             operation: () async throws -> ([LibraryEntry], [AIConversationSearchHit])) async {
+             operation: () async throws -> ([LibraryEntry], [AIConversationSearchHit], Int)) async {
         let token = UUID(); generation = token
-        guard hasCriteria else { if let request = loading.request { loading.finish(request) }; completedKey = nil; error = nil; entries = []; conversations = []; return }
+        guard hasCriteria else { if let request = loading.request { loading.finish(request) }; completedKey = nil; error = nil; entries = []; conversations = []; unknownCount = 0; return }
         let request = loading.begin(); defer { loading.finish(request) }
         do {
-            let (books, talks) = try await operation()
+            let (books, talks, unknown) = try await operation()
             try Task.checkCancellation()
             guard generation == token else { return }
-            entries = books; conversations = talks; error = nil; completedKey = key
+            entries = books; conversations = talks; unknownCount = unknown; error = nil; completedKey = key
         } catch is CancellationError { }
         catch {
             guard generation == token, !Task.isCancelled else { return }
-            self.error = ReaderMessages.error(error); completedKey = key
+            self.error = ReaderMessages.error(error)
         }
     }
 }

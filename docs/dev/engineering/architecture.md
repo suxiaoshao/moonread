@@ -52,8 +52,8 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 系统元数据匹配 | Swift 共享 `LibraryQueryRules.systemMetadataBooks` | 只匹配书名/作者/标签及其分词、词边界前缀、拼音全拼/首字母，复用 Rust ordinal；App Entity 与 Spotlight 共享词表，不带 AI 简介 profile | 新增具名契约 |
 | 系统书目派生快照与统一开书路由 | Swift `SystemIntegration`、`SystemIntegrationShared` | 主 App 唯一生产者；共享 DTO 不含正文、路径、位置 token/偏移，不成为事实权威；身份、代表副本、顺序与进度沿既有 Rust 查询 | 平台边界 |
 | 查询范围、身份/metadata 关联、目录后代最近时间、最近副本选择 | Rust `library/bookshelf/`、`user/projection.rs` | 需要完整索引/快照，不能由限量 recents 再聚合 | 收敛，删除 Swift 目录聚合 |
-| 书目文本/作者/标签/状态筛选、搜索排名和建议匹配 | Swift `LibraryQueryRules`（`Library/LibraryQueryRules.swift` 与共享系统元数据 profile） | Foundation 本地化能力合适；UI literal 与 AI/建议模式显式保留 | 删除 Rust search_rank/metadata filter 与各 Swift 调用点副本 |
-| 文件自然比较、目录/全书/标签自然排序 | Rust `library/order.rs`（从 bookshelf 提取） | 已服务 SQL 查询和目录；按完整快照一次计算 | Swift 搜索使用批量 ordinal，不复制自然 comparator |
+| 书目文本/作者/标签/状态筛选、搜索排名和建议匹配 | Swift `LibraryQueryRules`（`Library/LibraryQueryRules.swift` 与共享系统元数据 profile） | 条件树的三值求值、无标签、自定义多键排序与摘要使用同一查询；UI literal 与 AI/建议模式显式保留 | 删除 Rust search_rank/metadata filter 与各 Swift 调用点副本 |
+| 文件自然比较、目录/全书/标签自然排序 | Rust `library/order.rs`（从 bookshelf 提取） | 已服务 SQL 查询和目录；按完整快照一次计算 | Swift 搜索使用批量 ordinal 和同名分档，不复制自然 comparator |
 | 搜索排名组合、AI 名称字典序/recent 平手顺序 | Swift `LibraryQueryRules.swift` | 与匹配结果一同完成，AI 原生字符串比较不迁语言 | AI 私有 sort 收入单一模块；Rust 不留搜索组合副本 |
 | 拼音 key、字母分组及组内 localized collation | Swift `LibraryPresentation.swift::LibraryNameGroup` | 唯一实现且依赖 Foundation；不是原文件自然序副本 | 原位保留 |
 | 多标签分组/未标注/未索引分区 | Rust `library/bookshelf/::all_library_tag_groups` | 已单源，依赖索引身份 | 保持 |

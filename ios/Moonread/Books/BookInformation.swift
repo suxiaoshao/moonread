@@ -312,9 +312,9 @@ struct BookInformationSections: View {
         }
     }
     /// Author and tag start a contextual search on this stack; Back returns here.
-    private func search(_ token: AppSearchToken) {
+    private func search(_ token: AppSearchSeed) {
         guard let library else { return }
-        let scope = AppSearchScope(tokens: [token])
+        let scope = AppSearchScope(seeds: [token])
         if target.fromReader { readerSearch = scope } else { library.path.append(.search(scope)) }
     }
     var body: some View {
