@@ -279,6 +279,13 @@ import XCTest
     ready(app.tabBars.buttons["设置"]).tap()
     ready(app.buttons["readerThemeSettings"])
     snapshot("settings-home")
+    ready(app.buttons["readerThemeSettings"]).tap()
+    ready(app.buttons["readingFont"]).tap()
+    ready(app.buttons["readerFont-serif"]).tap()
+    waitUntil { self.app.buttons["readerFont-serif"].isSelected }
+    XCTAssertTrue(app.buttons["readerFont-system"].exists) // Immediate save leaves the list open.
+    app.navigationBars.buttons.firstMatch.tap()
+    app.navigationBars.buttons.firstMatch.tap()
     XCTAssertFalse(app.buttons["aiSettings"].exists)
     XCTAssertFalse(element("automaticFullIndex").exists)
     ready(app.buttons["statisticsSettings"]).tap()

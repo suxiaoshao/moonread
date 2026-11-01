@@ -11,7 +11,7 @@ extension ReaderSettings {
     func hasSameLayout(as other: ReaderSettings?) -> Bool {
         guard let other else { return false }
         return mode == other.mode && fontSize == other.fontSize && lineSpacing == other.lineSpacing
-            && font == other.font && paragraphSpacing == other.paragraphSpacing && indent == other.indent
+            && font == other.font && importedFont == other.importedFont && paragraphSpacing == other.paragraphSpacing && indent == other.indent
             && horizontalMargin == other.horizontalMargin && maximumLineWidth == other.maximumLineWidth
     }
 }
@@ -23,10 +23,14 @@ extension NSAttributedString.Key {
 @MainActor
 enum ReadingTypography {
     static func minimumColumnWidth(_ settings: ReaderSettings) -> CGFloat { max(320, 16 * font(settings).pointSize) }
-    static let layoutVersion = 3
+    static var layoutVersion: Int { 3 + ReaderFontLibrary.shared.revision }
 
-    static func font(_ settings: ReaderSettings, heading: Bool = false) -> UIFont {
+    static func font(_ settings: ReaderSettings, heading: Bool = false, library: ReaderFontLibrary = .shared) -> UIFont {
         let size = settings.fontSize * (heading ? 1.2 : 1)
+        if let imported = settings.importedFont {
+            let base = library.isAvailable(imported) ? UIFont(name: imported.face, size: size) : nil
+            return UIFontMetrics(forTextStyle: .body).scaledFont(for: base ?? .systemFont(ofSize: size, weight: heading ? .medium : .regular))
+        }
         let base: UIFont
         switch settings.font {
         case .system: base = .systemFont(ofSize: size, weight: heading ? .medium : .regular)

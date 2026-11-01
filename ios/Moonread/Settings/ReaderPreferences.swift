@@ -438,6 +438,14 @@ struct ReadingSettingsControls: View {
             var next = settings; next[keyPath: key] = value; settings = next
         })
     }
+    private var fontName: String {
+        if let font = settings.importedFont { return ReaderFontLibrary.shared.name(for: font) }
+        switch settings.font {
+        case .system: return String(localized: "系统")
+        case .serif: return String(localized: "宋体")
+        case .rounded: return String(localized: "圆体")
+        }
+    }
     private var typography: some View {
         Form {
             if let encoding, let changeEncoding {
@@ -447,10 +455,12 @@ struct ReadingSettingsControls: View {
                 }.listRowBackground(Color(uiColor: theme.surface))
             }
             Section("文字") {
-                Picker("字体", selection: binding(\.font)) {
-                    Text("系统").tag(ReaderFont.system)
-                    Text("宋体").tag(ReaderFont.serif)
-                    Text("圆体").tag(ReaderFont.rounded)
+                NavigationLink {
+                    ReaderFontPicker()
+                } label: {
+                    LabeledContent("字体") {
+                        Text(verbatim: fontName).foregroundStyle(Color(uiColor: theme.secondary))
+                    }
                 }.accessibilityIdentifier("readingFont")
                 numberRow("字号", value: binding(\.fontSize), range: typographyControls.fontSize.range, step: typographyControls.fontSize.step, id: "fontSize")
                 numberRow("行距", value: binding(\.lineSpacing), range: typographyControls.lineSpacing.range, step: typographyControls.lineSpacing.step, id: "lineSpacing")

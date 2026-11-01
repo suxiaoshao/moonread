@@ -323,6 +323,7 @@ fn released_reader_settings_keep_their_values() {
     assert_eq!(value.font_size, 24.0);
     assert_eq!(value.line_spacing, 10.0);
     assert_eq!(value.font, ReaderFont::Serif);
+    assert_eq!(value.imported_font, None);
     assert_eq!(value.paragraph_spacing, 9.0);
     assert_eq!(value.indent, ReadingIndent::Original);
     assert_eq!(value.horizontal_margin, 20.0);

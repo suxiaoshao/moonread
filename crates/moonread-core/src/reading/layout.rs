@@ -35,6 +35,8 @@ pub struct ReaderSettings {
     pub font_size: f64,
     pub line_spacing: f64,
     pub font: ReaderFont,
+    #[serde(default)]
+    pub imported_font: Option<ImportedReaderFont>,
     pub paragraph_spacing: f64,
     pub indent: ReadingIndent,
     pub horizontal_margin: f64,
@@ -95,6 +97,7 @@ pub fn default_reader_settings() -> ReaderSettings {
         font_size: controls.font_size.default_value,
         line_spacing: controls.line_spacing.default_value,
         font: ReaderFont::System,
+        imported_font: None,
         paragraph_spacing: controls.paragraph_spacing.default_value,
         indent: ReadingIndent::Smart,
         horizontal_margin: 16.0,
@@ -128,6 +131,10 @@ pub(crate) fn valid(settings: &ReaderSettings) -> bool {
     ]
     .iter()
     .all(|&(value, min, max)| value.is_finite() && (min..=max).contains(&value))
+        && settings
+            .imported_font
+            .as_ref()
+            .is_none_or(ImportedReaderFont::valid)
         && settings
             .brightness
             .is_none_or(|v| v.is_finite() && (0.0..=1.0).contains(&v))
