@@ -78,7 +78,7 @@ struct BookSearchEditor: View {
                 case .fields(let parent):
                     List(BookSearchField.allCases) { field in
                         Button(field.title) { path.append(.rule(parent: parent, node: BookSearchNode(field: field))) }
-                            .frame(minHeight: 44).listRowBackground(Color(uiColor: theme.surface))
+                            .frame(minHeight: 44).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                     }.scrollContentBackground(.hidden).themedPage().navigationTitle("添加条件").navigationBarTitleDisplayMode(.inline)
                 case .rule(let parent, let node): BookSearchRulePage(draft: draft, parent: parent, initial: node, model: model, path: $path)
                 case .sortFields:
@@ -87,7 +87,7 @@ struct BookSearchEditor: View {
                             Button(field.title) {
                                 draft.value.sorts.append(.init(field: field, descending: field == .recent))
                                 path.removeLast()
-                            }.frame(minHeight: 44).listRowBackground(Color(uiColor: theme.surface))
+                            }.frame(minHeight: 44).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                         }
                     }.scrollContentBackground(.hidden).themedPage().navigationTitle("添加排序").navigationBarTitleDisplayMode(.inline)
                 case .preview:
@@ -110,7 +110,11 @@ struct BookSearchEditor: View {
     private var sortPage: some View {
         List {
             Section {
-                if draft.value.sorts.isEmpty { Text("默认：匹配程度 → 最近阅读 → 自然名称").foregroundStyle(Color(uiColor: theme.secondary)) }
+                if draft.value.sorts.isEmpty {
+                    Text("默认：匹配程度 → 最近阅读 → 自然名称")
+                        .foregroundStyle(Color(uiColor: theme.secondary))
+                        .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                }
                 ForEach(draft.value.sorts) { item in
                     VStack(alignment: .leading) {
                         HStack {
@@ -124,16 +128,16 @@ struct BookSearchEditor: View {
                     }
                     .accessibilityAction(named: Text("上移")) { move(item.field, by: -1) }
                     .accessibilityAction(named: Text("下移")) { move(item.field, by: 1) }
-                    .listRowBackground(Color(uiColor: theme.surface))
+                    .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                 }
                 .onMove { draft.value.sorts.move(fromOffsets: $0, toOffset: $1) }
                 .onDelete { draft.value.sorts.remove(atOffsets: $0) }
-            } footer: { Text("自定义顺序会替代默认匹配优先级；前一项相同时才比较下一项。缺少作者或阅读时间的小说始终排在最后。") }
+            } footer: { Text("自定义顺序会替代默认匹配优先级；前一项相同时才比较下一项。缺少作者或阅读时间的小说始终排在最后。").foregroundStyle(Color(uiColor: theme.secondary)) }
             Section {
-                Button("恢复默认排序") { draft.value.sorts = [] }.listRowBackground(Color(uiColor: theme.surface))
+                Button("恢复默认排序") { draft.value.sorts = [] }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                 NavigationLink("添加排序", value: BookSearchEditorRoute.sortFields)
                     .disabled(draft.value.sorts.count == BookSearchSortField.allCases.count)
-                    .environment(\.editMode, .constant(.inactive)).listRowBackground(Color(uiColor: theme.surface))
+                    .environment(\.editMode, .constant(.inactive)).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
         }.environment(\.editMode, .constant(.active)).scrollContentBackground(.hidden)
     }
@@ -160,8 +164,8 @@ private struct BookSearchGroupPage: View {
                     ForEach(BookSearchGroup.allCases, id: \.self) { Text($0.title).tag($0) }
                 }.pickerStyle(.segmented)
                 Toggle("排除本组", isOn: Binding(get: { node.excluded }, set: { value in draft.edit(id) { $0.excluded = value } }))
-            } footer: { if node.excluded { Text("排除：满足本组的小说不显示") } }
-            .listRowBackground(Color(uiColor: theme.surface))
+            } footer: { if node.excluded { Text("排除：满足本组的小说不显示").foregroundStyle(Color(uiColor: theme.secondary)) } }
+            .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             Section {
                 ForEach(node.children) { child in
                     NavigationLink(value: child.field == nil ? BookSearchEditorRoute.group(child.id) : .rule(parent: id, node: child)) {
@@ -169,14 +173,14 @@ private struct BookSearchGroupPage: View {
                             Text(child.summary(shelfTitle: model.shelfTitle))
                             if let error = child.validation() { Text(error).font(.caption).foregroundStyle(Color(uiColor: theme.destructive)) }
                         }.padding(.vertical, 4)
-                    }.listRowBackground(Color(uiColor: theme.surface))
+                    }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                 }.onDelete { offsets in deleting = offsets.map { node.children[$0].id } }
                 NavigationLink("添加条件", value: BookSearchEditorRoute.fields(id))
-                    .accessibilityIdentifier("addSearchCondition").listRowBackground(Color(uiColor: theme.surface))
+                    .accessibilityIdentifier("addSearchCondition").listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                 Button("添加条件组", systemImage: "rectangle.stack.badge.plus") {
                     draft.edit(id) { $0.children.append(BookSearchNode()) }
-                }.listRowBackground(Color(uiColor: theme.surface))
-            } footer: { if node.children.isEmpty { Text("添加条件，或保留空的根组以取消筛选。") } }
+                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+            } footer: { if node.children.isEmpty { Text("添加条件，或保留空的根组以取消筛选。").foregroundStyle(Color(uiColor: theme.secondary)) } }
         }
         .scrollContentBackground(.hidden).themedPage()
         .navigationBarTitleDisplayMode(.inline)
@@ -228,11 +232,11 @@ private struct BookSearchRulePage: View {
                         ForEach(BookSearchMatch.allCases, id: \.self) { Text($0.title).tag($0) }
                     }.pickerStyle(.segmented)
                 }
-            }.listRowBackground(Color(uiColor: theme.surface))
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             if let error {
                 Section { Text(error).foregroundStyle(Color(uiColor: theme.destructive)); Button("重试") { retry += 1 } }
-                    .listRowBackground(Color(uiColor: theme.surface))
-            } else if loading { ProgressView().listRowBackground(Color(uiColor: theme.surface)) }
+                    .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+            } else if loading { ProgressView().listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
             Section {
                 ForEach(choices, id: \.self) { value in
                     Button {
@@ -247,14 +251,14 @@ private struct BookSearchRulePage: View {
                             if node.values.contains(value) { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)) }
                         }.frame(minHeight: 44)
                     }.accessibilityAddTraits(node.values.contains(value) ? .isSelected : [])
-                    .listRowBackground(Color(uiColor: theme.surface))
+                    .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                 }
             }
             if choices.isEmpty && !loading && error == nil {
                 Section { Text(query.isEmpty ? "暂无可选项" : "没有匹配的选项").foregroundStyle(Color(uiColor: theme.secondary)) }
-                    .listRowBackground(Color(uiColor: theme.surface))
+                    .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
             }
-            if let validation = node.validation() { Text(validation).foregroundStyle(Color(uiColor: theme.destructive)).listRowBackground(Color(uiColor: theme.surface)) }
+            if let validation = node.validation() { Text(validation).foregroundStyle(Color(uiColor: theme.destructive)).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
         }
         .scrollContentBackground(.hidden).themedPage()
         .navigationTitle(field.title).navigationBarTitleDisplayMode(.inline)
@@ -293,14 +297,14 @@ struct BookSearchSummary: View {
                 ForEach(Array(configuration.root.children.prefix(expanded ? configuration.root.children.count : 3))) { node in
                     summary(node)
                 }
-                if !expanded && configuration.root.children.count > 3 { Text("另有 \(configuration.root.children.count - 3) 条条件").font(.caption) }
+                if !expanded && configuration.root.children.count > 3 { Text("另有 \(configuration.root.children.count - 3) 条条件").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
                 if !expanded && configuration.root.hasExclusion { Text("含排除组").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
             }
-            if configuration.sorts.isEmpty { Text("默认：匹配程度 → 最近阅读 → 自然名称").font(.caption) }
+            if configuration.sorts.isEmpty { Text("默认：匹配程度 → 最近阅读 → 自然名称").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
             else {
                 Text(configuration.sorts.enumerated().map { i, key in
                     "\(i + 1). " + key.field.title + (key.field == .rank && term.isEmpty ? String(localized: "（无文字时跳过）") : key.descending ? " ↓" : " ↑")
-                }.joined(separator: " → ")).font(.caption)
+                }.joined(separator: " → ")).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
             }
         }.frame(maxWidth: .infinity, alignment: .leading).padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
     }
