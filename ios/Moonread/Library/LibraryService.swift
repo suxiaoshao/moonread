@@ -23,6 +23,7 @@ enum ReaderSmokeFixture {
 
 extension Notification.Name {
     static let libraryFilesChanged = Notification.Name("Moonread.libraryFilesChanged")
+    static let libraryIndexChanged = Notification.Name("Moonread.libraryIndexChanged")
 }
 
 /// The presenter only signals invalidation. Coordinated scans and all content
@@ -593,8 +594,15 @@ extension AppDataService {
     private func publishIndexScan(_ id: String, root: URL, items: [ScannedLibraryItem]) {
         let revision = UUID(), files = Set(items.filter { !$0.directory }.map(\.relativePath))
         indexScanFiles[id] = files; indexScanRoots[id] = root.standardizedFileURL; indexScanRevisions[id] = revision
-        scheduleSystemReadingCatalog(immediate: true)
+        publishLibraryIndexChange()
         NotificationCenter.default.post(name: .libraryIndexScanCommitted, object: LibraryIndexScan(shelfID: id, revision: revision, files: files))
+    }
+
+    /// The index is already committed. Consumers reread it without triggering
+    /// filesystem scans or automatic-index admission for a source-only update.
+    func publishLibraryIndexChange() {
+        scheduleSystemReadingCatalog(immediate: true)
+        NotificationCenter.default.post(name: .libraryIndexChanged, object: self)
     }
 
     func observeLibraryRoot(_ id: String, root: URL) {

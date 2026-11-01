@@ -165,6 +165,22 @@ impl ReaderCore {
         Ok(())
     }
 
+    /// A platform-coordinated original became available. Only the exact existing
+    /// source row changes; this is not a scan or a text/user-data association.
+    pub fn set_source_file_availability(
+        &self,
+        file: SourceFileLocation,
+        needs_download: bool,
+    ) -> Result<bool> {
+        if file.directory {
+            return Ok(false);
+        }
+        Ok(self.lock()?.execute(
+            "UPDATE library_files SET needs_download=?1 WHERE id=?2 AND shelf_id=?3 AND relative_path=?4 AND directory=0 AND needs_download<>?1",
+            params![needs_download, file.id, file.shelf_id, file.relative_path],
+        )? == 1)
+    }
+
     pub fn link_library_file(&self, file_id: String, book_id: String) -> Result<()> {
         let db = self.lock()?;
         let canonical = crate::library::tools::content_key(&db, &book_id)?;
