@@ -34,8 +34,8 @@ pub struct ReaderSettings {
     pub mode: ReadingMode,
     pub font_size: f64,
     pub line_spacing: f64,
-    #[serde(default = "default_auto_reading_seconds")]
-    pub auto_reading_seconds: f64,
+    #[serde(default = "default_auto_reading_speed")]
+    pub auto_reading_speed: f64,
     pub font: ReaderFont,
     #[serde(default)]
     pub imported_font: Option<ImportedReaderFont>,
@@ -91,19 +91,35 @@ pub fn reader_typography_controls() -> ReaderTypographyControls {
     }
 }
 
-fn default_auto_reading_seconds() -> f64 {
-    90.0
+fn default_auto_reading_speed() -> f64 {
+    9.0
 }
 
-/// Seconds per usable reading screen; device-local, independent of typography.
+/// Unitless device-local speed levels; the platform supplies reading geometry.
 #[uniffi::export]
 pub fn auto_reading_control() -> ReaderNumberControl {
     ReaderNumberControl {
-        minimum: 20.0,
-        maximum: 240.0,
-        step: 5.0,
-        default_value: default_auto_reading_seconds(),
+        minimum: 1.0,
+        maximum: 20.0,
+        step: 1.0,
+        default_value: default_auto_reading_speed(),
     }
+}
+
+fn valid_auto_reading_speed(speed: f64) -> bool {
+    let control = auto_reading_control();
+    speed.is_finite()
+        && (control.minimum..=control.maximum).contains(&speed)
+        && speed.fract() == 0.0
+}
+
+/// Full-line equivalent layout advance, not measured words or characters.
+#[uniffi::export]
+pub fn auto_reading_em_per_minute(speed: f64) -> Result<f64> {
+    if !valid_auto_reading_speed(speed) {
+        return Err(ReaderError::InvalidSettings);
+    }
+    Ok(100.0 + 50.0 * speed)
 }
 
 #[uniffi::export]
@@ -113,7 +129,7 @@ pub fn default_reader_settings() -> ReaderSettings {
         mode: ReadingMode::Scroll,
         font_size: controls.font_size.default_value,
         line_spacing: controls.line_spacing.default_value,
-        auto_reading_seconds: default_auto_reading_seconds(),
+        auto_reading_speed: default_auto_reading_speed(),
         font: ReaderFont::System,
         imported_font: None,
         paragraph_spacing: controls.paragraph_spacing.default_value,
@@ -128,7 +144,6 @@ pub fn default_reader_settings() -> ReaderSettings {
 
 pub(crate) fn valid(settings: &ReaderSettings) -> bool {
     let controls = reader_typography_controls();
-    let auto = auto_reading_control();
     [
         (
             settings.font_size,
@@ -147,10 +162,10 @@ pub(crate) fn valid(settings: &ReaderSettings) -> bool {
         ),
         (settings.horizontal_margin, 12.0, 48.0),
         (settings.maximum_line_width, 320.0, 1200.0),
-        (settings.auto_reading_seconds, auto.minimum, auto.maximum),
     ]
     .iter()
     .all(|&(value, min, max)| value.is_finite() && (min..=max).contains(&value))
+        && valid_auto_reading_speed(settings.auto_reading_speed)
         && settings
             .imported_font
             .as_ref()

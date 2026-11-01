@@ -47,11 +47,11 @@ final class ReaderSettingsReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(store.binding.wrappedValue.fontSize, 23)
     var settings = store.binding.wrappedValue
     settings.lineSpacing = 9
-    settings.autoReadingSeconds = 120
+    settings.autoReadingSpeed = 12
     store.binding.wrappedValue = settings
     XCTAssertEqual(session.settings?.fontSize, 23)
     XCTAssertEqual(session.settings?.lineSpacing, 9)
-    XCTAssertEqual(session.settings?.autoReadingSeconds, 120)
+    XCTAssertEqual(session.settings?.autoReadingSpeed, 12)
     for size in 24...28 { session.update(fontSize: Double(size)) }
     settings.fontSize = 28
     await store.flush()

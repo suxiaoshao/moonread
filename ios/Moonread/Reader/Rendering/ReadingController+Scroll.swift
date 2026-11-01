@@ -14,7 +14,7 @@ extension ReadingController {
             endAnnotationMenu(clearSelection: false)
         }
         if !rebuilding {
-            if textView.selectedRange.length > 0 { autoReading?.pause() }
+            if textView.selectedRange.length > 0 { autoReading?.end() }
             if let selected = retainedSelection {
                 let expected = Self.annotationRange(AnnotationSelection(start: selected.0, end: selected.1, annotations: []),
                     mapping: textCoordinates(textView), base: textBase(textView))
@@ -39,7 +39,7 @@ extension ReadingController {
         DispatchQueue.main.async { [weak self] in self?.applyPendingWindow(); self?.reevaluateWindowRequests() }
     }
 
-    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { autoReading?.pause(); endAnnotationMenu(clearSelection: true); statisticsInteraction(); readingBegan?() }
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { autoReading?.end(); endAnnotationMenu(clearSelection: true); statisticsInteraction(); readingBegan?() }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         if scrollView.isDragging { statisticsInteraction() }
@@ -51,7 +51,7 @@ extension ReadingController {
         if !decelerate { reportScroll(settled: true); applyPendingWindow() }
     }
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { reportScroll(settled: true); applyPendingWindow() }
-    func scrollViewDidScrollToTop(_ scrollView: UIScrollView) { reportScroll(settled: true) }
+    func scrollViewDidScrollToTop(_ scrollView: UIScrollView) { autoReading?.end(); reportScroll(settled: true) }
 
     func reportScroll(settled: Bool) {
         guard let text = scrollText, window != nil, text.textStorage.length > 0 else { return }
@@ -65,16 +65,23 @@ extension ReadingController {
         if text.contentOffset.y < height { requestMore(.backward) }
     }
 
-    func automaticScreenHeight() -> CGFloat? {
+    func automaticLayoutAvailable() -> Bool {
         guard settings?.mode == .scroll, !isCoverVisible, !rebuilding, !needsRebuild,
               let text = scrollText, text.bounds.height > 0, text.window != nil,
-              text.selectedRange.length == 0, !isInteracting else { return nil }
-        if let scene = text.window?.windowScene, scene.activationState != .foregroundActive { return nil }
-        return max(1, text.bounds.height - text.contentInset.bottom)
+              text.selectedRange.length == 0, !isInteracting else { return false }
+        if let scene = text.window?.windowScene, scene.activationState != .foregroundActive { return false }
+        return true
+    }
+
+    func automaticReadingGeometry() -> ReaderAutoReading.Geometry? {
+        guard automaticLayoutAvailable(), let text = scrollText, let settings else { return nil }
+        let metrics = ReadingTypography.bodyMetrics(settings)
+        return .init(bodyWidth: text.textContainer.size.width - 2 * text.textContainer.lineFragmentPadding,
+            fontPointSize: metrics.pointSize, lineAdvance: metrics.lineAdvance)
     }
 
     func advanceAutomaticReading(by distance: CGFloat) -> AutomaticReadingStep {
-        guard automaticScreenHeight() != nil, let text = scrollText, let window else { return .blocked }
+        guard automaticLayoutAvailable(), let text = scrollText, let window else { return .blocked }
         let end = max(0, text.contentSize.height + text.contentInset.bottom - text.bounds.height)
         let remaining = end - text.contentOffset.y
         if remaining <= 0.01 { return window.isEndOfBook ? .end : .preparing }

@@ -19,6 +19,7 @@ struct ReadingView: UIViewControllerRepresentable {
     let dynamicTypeSize: DynamicTypeSize
     var navigationRevision: Int = 0
     var navigation: ReadingNavigation?
+    var resumeAutomaticReading: () -> Void = {}
     var autoReading: ReaderAutoReading?
     var viewportAccess: ReadingViewportAccess?
     var annotations: [ReaderMark] = []
@@ -56,6 +57,7 @@ struct ReadingView: UIViewControllerRepresentable {
         return controller
     }
     func updateUIViewController(_ controller: ReadingController, context: Context) {
+        controller.resumeAutomaticReading = resumeAutomaticReading
         controller.autoReading = autoReading
         controller.deviceControls.willSuspend = { [weak autoReading] in autoReading?.pause() }
         controller.headerPositionChanged = headerPositionChanged

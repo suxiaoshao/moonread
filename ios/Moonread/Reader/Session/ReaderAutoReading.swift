@@ -25,13 +25,32 @@ import UIKit
     init(viewport: ReadingViewportAccess) { self.viewport = viewport }
 
     func requestStart() { failure = nil; transition(.starting) }
-    func startAfterDismissal(opening: UUID?, seconds: Double) {
+    struct Geometry {
+        let bodyWidth: CGFloat
+        let fontPointSize: CGFloat
+        let lineAdvance: CGFloat
+    }
+    static func velocity(emPerMinute: Double, geometry: Geometry) -> CGFloat? {
+        let values = [CGFloat(emPerMinute), geometry.bodyWidth, geometry.fontPointSize, geometry.lineAdvance]
+        guard values.allSatisfy({ $0.isFinite && $0 > 0 }) else { return nil }
+        let points = CGFloat(emPerMinute) / (geometry.bodyWidth / geometry.fontPointSize) * geometry.lineAdvance / 60
+        return points.isFinite && points > 0 ? points : nil
+    }
+    enum BodyTapAction: Equatable { case pause, resume, ordinary }
+    func bodyTapAction(wasRunning: Bool) -> BodyTapAction {
+        if wasRunning, phase == .paused { return .pause }
+        return phase == .paused || phase == .ready ? .resume : .ordinary
+    }
+
+    func startAfterDismissal(opening: UUID?, speed: Double) {
         guard phase == .starting else { return }
         guard let opening, let controller = viewport?.controller, controller.openingID == opening,
-              readable(), let height = controller.automaticScreenHeight(), seconds.isFinite, seconds > 0 else {
+              readable(), let geometry = controller.automaticReadingGeometry(),
+              let em = try? autoReadingEmPerMinute(speed: speed),
+              let velocity = Self.velocity(emPerMinute: em, geometry: geometry) else {
             transition(.paused); return
         }
-        self.opening = opening; pointsPerSecond = height / seconds
+        self.opening = opening; pointsPerSecond = velocity
         lastFrame = nil; lastCheckpoint = nil
         transition(.running)
         let target = DisplayTarget(self)

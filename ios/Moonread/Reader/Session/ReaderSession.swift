@@ -525,6 +525,7 @@ final class ReaderSession {
     func browse(to start: UInt64, end: UInt64? = nil, placement: ReadingTargetPlacement = .context,
                 bottomObstruction: CGFloat = 0, restoring: ReadingViewport? = nil, historyID: String? = nil) {
         guard !isLeaving, let id = readingID else { return }
+        autoReading.end()
         hasLocalReadingInteraction = true
         activity.breakVisit()
         saveTask?.cancel()
@@ -584,6 +585,7 @@ final class ReaderSession {
 
     func continueReading() async {
         guard !isLeaving, !navigating, let id = readingID else { return }
+        autoReading.end()
         do {
             if !showingCover {
                 try await service.savePosition(bookID: id, offset: anchor)
@@ -649,7 +651,7 @@ final class ReaderSession {
         guard !isLeaving, !navigating, let id = readingID, let candidate = continuation else { return }
         let attempt = opening.request?.id
         let previous = (snapshot, window, anchor, displayAnchor, showingCover, history, navigation, browseOrigin)
-        autoReading.pause()
+        autoReading.end()
         navigating = true; saveTask?.cancel(); activity.breakVisit()
         defer { navigating = false }
         do {
@@ -682,6 +684,7 @@ final class ReaderSession {
     func readSelection(start: UInt64, end: UInt64, finished: @escaping () -> Void = {}, perform: @escaping (TextRange) async -> Void) {
         selectionTask?.cancel()
         guard !isLeaving, let id = readingID else { finished(); return }
+        autoReading.end()
         let from = min(selectionStart ?? start, start), to = max(selectionStart ?? end, end)
         selectionTask = Task {
             defer { finished() }
@@ -699,6 +702,7 @@ final class ReaderSession {
 
     func selectText(start: UInt64, end: UInt64, action: ReaderSelectionAction) {
         guard !isLeaving, let id = readingID else { return }
+        autoReading.end()
         if action == .beginRange { selectionStart = start; refreshAnnotations(); return }
         Task {
             do {
@@ -735,6 +739,7 @@ final class ReaderSession {
 
     func openAnnotation(_ id: String) {
         guard !isLeaving else { return }
+        autoReading.end()
         Task {
             do {
                 let value = try await service.mark(id)

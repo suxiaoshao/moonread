@@ -434,6 +434,10 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     scroll.contentInsetAdjustmentBehavior = .never // Same policy as the real reader.
     scroll.contentInset.bottom = 20 // The final line must clear the existing fade/home area.
     reader.view.addSubview(scroll)
+    scroll.textContainerInset = UIEdgeInsets(top: 8, left: 17, bottom: 4, right: 19)
+    scroll.textContainer.size.width = 280
+    scroll.textContainer.lineFragmentPadding = 5
+    scroll.layoutIfNeeded() // Finish empty UITextView layout before assigning this fixture's scroll range.
     scroll.contentSize = CGSize(width: 320, height: 2000)
     scroll.contentOffset = .zero
     reader.scrollText = scroll; reader.settings = defaultReaderSettings()
@@ -445,8 +449,20 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     defer { automatic.end() }
     var readable = true
     automatic.readable = { readable }
+    let geometry = try XCTUnwrap(reader.automaticReadingGeometry())
+    XCTAssertEqual(geometry.bodyWidth, 274, "The 320pt view minus 17+19pt external insets and 5pt padding on each side")
+    UITraitCollection(preferredContentSizeCategory: .accessibilityLarge).performAsCurrent {
+      let scaled = reader.automaticReadingGeometry()!
+      let actual = ReadingTypography.font(reader.settings!)
+      XCTAssertEqual(scaled.fontPointSize, actual.pointSize)
+      XCTAssertEqual(scaled.lineAdvance, actual.lineHeight + reader.settings!.lineSpacing)
+    }
+    XCTAssertEqual(try XCTUnwrap(ReaderAutoReading.velocity(emPerMinute: 550,
+      geometry: .init(bodyWidth: 370, fontPointSize: 20, lineAdvance: 32))), 550 / (370.0 / 20) * 32 / 60, accuracy: 0.001)
+    XCTAssertNil(ReaderAutoReading.velocity(emPerMinute: 550, geometry: .init(bodyWidth: 0, fontPointSize: 20, lineAdvance: 32)))
+    XCTAssertEqual(automatic.bodyTapAction(wasRunning: false), .ordinary)
     automatic.requestStart()
-    automatic.startAfterDismissal(opening: opening, seconds: 90)
+    automatic.startAfterDismissal(opening: opening, speed: 9)
     XCTAssertTrue(automatic.running)
     automatic.frame(at: 0); automatic.frame(at: 1) // A stall advances at most one bounded frame.
     XCTAssertGreaterThan(scroll.contentOffset.y, 0)
@@ -454,29 +470,37 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     readable = false; automatic.frame(at: 2)
     let paused = scroll.contentOffset.y
     XCTAssertEqual(automatic.phase, .paused)
+    XCTAssertEqual(automatic.bodyTapAction(wasRunning: true), .pause, "One running touch cannot pause and resume")
+    XCTAssertEqual(automatic.bodyTapAction(wasRunning: false), .resume, "A subsequent plain tap uses the Continue route")
     readable = true; automatic.frame(at: 3)
     XCTAssertEqual(scroll.contentOffset.y, paused, "Dismissing a task must not restart movement")
-    automatic.requestStart(); automatic.startAfterDismissal(opening: opening, seconds: 20)
+    automatic.requestStart(); automatic.startAfterDismissal(opening: opening, speed: 20)
     scroll.contentOffset.y = 1620
     automatic.frame(at: 4); automatic.frame(at: 4.1)
     XCTAssertEqual(automatic.phase, .preparing)
+    XCTAssertEqual(automatic.bodyTapAction(wasRunning: false), .ordinary)
     scroll.contentSize.height = 2400
     reader.updateAutomaticReadingEdge()
     XCTAssertEqual(automatic.phase, .ready)
+    XCTAssertEqual(automatic.bodyTapAction(wasRunning: false), .resume)
     automatic.frame(at: 5)
     XCTAssertEqual(scroll.contentOffset.y, 1620, "Prepared content still waits for Continue")
-    automatic.requestStart(); automatic.startAfterDismissal(opening: opening, seconds: 20)
+    automatic.requestStart(); automatic.startAfterDismissal(opening: opening, speed: 20)
     reader.window?.isEndOfBook = true
     scroll.contentOffset.y = 2020
     automatic.frame(at: 6); automatic.frame(at: 6.1)
     XCTAssertEqual(automatic.phase, .finished)
     automatic.end()
     XCTAssertEqual(automatic.phase, .idle)
-    automatic.requestStart(); automatic.startAfterDismissal(opening: opening, seconds: 90)
+    XCTAssertEqual(automatic.bodyTapAction(wasRunning: false), .ordinary)
+    automatic.requestStart(); automatic.startAfterDismissal(opening: opening, speed: 9)
     reader.contentGeometry = ReadingContentGeometry(size: CGSize(width: 600, height: 400))
     XCTAssertEqual(automatic.phase, .paused, "A real size/pose input change interrupts before relayout")
+    automatic.requestStart(); automatic.startAfterDismissal(opening: opening, speed: 9)
+    reader.scrollViewWillBeginDragging(scroll)
+    XCTAssertEqual(automatic.phase, .idle, "Manual dragging ends the automatic session")
     automatic.requestStart(); automatic.pause()
-    automatic.startAfterDismissal(opening: opening, seconds: 90)
+    automatic.startAfterDismissal(opening: opening, speed: 9)
     XCTAssertFalse(automatic.running, "An interrupted pending start is consumed")
   }
 
@@ -780,6 +804,22 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     XCTAssertEqual(intent.location.selection, .library, "hiding phone quick tools restores progress")
     intent.choose(.settings, exposure: .expanded); intent.setControlsVisible(false)
     XCTAssertEqual(intent.location.selection, .settings, "hiding reader chrome does not replace the active task")
+    intent.reset(); intent.choose(.automatic, exposure: .accessory)
+    let autoHost = ReaderPresentationHost()
+    autoHost.update(.dock, opening: opening, generation: intent.revision)
+    let autoToken = try XCTUnwrap(autoHost.token); autoHost.confirmed(autoToken)
+    for target: ReaderTool in [.more, .settings] {
+      intent.controlsVisible = false; intent.choose(.automatic, exposure: .accessory)
+      XCTAssertTrue(intent.leaveAutomaticAccessory(for: target))
+      XCTAssertTrue(intent.controlsVisible, "A footer selection restores the ordinary four tools")
+      XCTAssertEqual(intent.location.selection, target)
+      let projection = ReaderPresentationProjection.target(state: intent, editorParent: nil,
+        hasNote: false, hasAccessory: false, available: true)
+      XCTAssertEqual(projection, .dock)
+      autoHost.update(projection, opening: opening, generation: intent.revision)
+      XCTAssertEqual(autoHost.token?.id, autoToken.id, "Switch content without dismissing the sheet")
+      XCTAssertFalse(autoHost.dismissing)
+    }
     let search = ReaderToolsModel()
     search.beginSearchSession()
     await search.prepare(bookID: "search-fixture", currentChapter: 0, library: false)

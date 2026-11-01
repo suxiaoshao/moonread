@@ -26,16 +26,18 @@ struct ReaderMoreContent: View {
                     }
                 }
             } else {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 4), spacing: 8) {
-                    ForEach(moreActions) { action in
-                        moreButton(action) { label in
-                            label.labelStyle(ReaderToolLabelStyle())
-                                .frame(maxWidth: .infinity, minHeight: 56)
-                        }
+                VStack(spacing: 8) {
+                    HStack(spacing: 0) {
+                        ForEach(Array(moreActions.prefix(4))) { action in actionCell(action) }
                     }
-                    if session.encodingLabel != nil {
-                        moreEncodingMenu.labelStyle(ReaderToolLabelStyle())
-                            .frame(maxWidth: .infinity, minHeight: 56)
+                    HStack(spacing: 0) {
+                        actionCell(.automatic)
+                        if session.encodingLabel != nil {
+                            moreEncodingMenu.labelStyle(ReaderToolLabelStyle())
+                                .frame(maxWidth: .infinity, minHeight: 56)
+                        } else { emptyCell }
+                        emptyCell
+                        emptyCell
                     }
                 }
             }
@@ -43,6 +45,16 @@ struct ReaderMoreContent: View {
         .padding(.horizontal, 24).padding(.top, LayoutTokens.content)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("readerMorePanel")
+    }
+
+    private func actionCell(_ action: MoreAction) -> some View {
+        moreButton(action) { label in
+            label.labelStyle(ReaderToolLabelStyle()).frame(maxWidth: .infinity, minHeight: 56)
+        }
+    }
+    private var emptyCell: some View {
+        Color.clear.frame(maxWidth: .infinity, minHeight: 56)
+            .allowsHitTesting(false).accessibilityHidden(true)
     }
 
     private var moreEncodingMenu: some View {

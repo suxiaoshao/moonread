@@ -33,6 +33,14 @@ struct ReaderToolLocation: Equatable {
         self.exposure = exposure
         if tool == .search, exposure == .expanded { controlsVisible = false }
     }
+    /// A footer intent leaves the auto accessory within the same sheet. Restore
+    /// the ordinary tools explicitly; generic projection must not invent them.
+    @discardableResult func leaveAutomaticAccessory(for tool: ReaderTool) -> Bool {
+        guard location.selection == .automatic else { return false }
+        controlsVisible = true
+        choose(tool, exposure: .accessory)
+        return true
+    }
     func push(_ destination: ReaderDestination) {
         guard location.path.last != destination else { return }
         location.path.append(destination)

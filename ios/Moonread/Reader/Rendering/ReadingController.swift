@@ -15,6 +15,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     #endif
     var autoReading: ReaderAutoReading?
     var pausedAutomaticTouch = false
+    var resumeAutomaticReading: () -> Void = {}
     var statisticsInteraction: () -> Void = {}
     var statisticsPresentationChanged: () -> Void = {}
     var annotationChooserChanged: (Bool) -> Void = { _ in }
@@ -134,7 +135,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         observer.cancelsTouchesInView = false; observer.delaysTouchesBegan = false; observer.delaysTouchesEnded = false
         observer.began = { [weak self] in
             guard let self else { return }
-            pausedAutomaticTouch = autoReading?.running == true
+            pausedAutomaticTouch = autoReading?.running == true || autoReading?.phase == .starting
             autoReading?.pause()
         }
         readingSurface.addGestureRecognizer(observer)

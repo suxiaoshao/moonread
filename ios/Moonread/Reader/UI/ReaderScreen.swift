@@ -159,7 +159,7 @@ struct ReaderScreen: View {
                             requestWindow: { direction,keep in session.requestWindow(direction,retaining:keep) },
                             dark: colorScheme == .dark, dynamicTypeSize: dynamicTypeSize,
                             navigationRevision: session.navigationRevision,
-                            navigation: session.navigation, autoReading: automatic, viewportAccess: session.viewportAccess,
+                            navigation: session.navigation, resumeAutomaticReading: requestAutomaticStart, autoReading: automatic, viewportAccess: session.viewportAccess,
                             annotations: session.annotations, bookmarkPositions: session.bookmarkPositions, focusRange: session.focusRange,
                             selectionStart: session.selectionStart, selection: selectText,
                             allowsBackGesture: allowsReaderBack,
@@ -193,6 +193,7 @@ struct ReaderScreen: View {
                             controlsVisible: controlsVisible,
                             toggleControls: {
                                 if panel == nil || panel == .search {
+                                    if automaticSelected && !automaticHidden { closeAutomaticReading(); return }
                                     if automaticHidden { presentation.choose(.library, exposure: .accessory) }
                                     controlsVisible.toggle()
                                 }
@@ -582,6 +583,7 @@ struct ReaderScreen: View {
     }
     private func openAI(selection: TextRange? = nil) {
         guard ai.availability.isAvailable, !session.isLeaving else { return }
+        automatic.end()
         aiEntrySnapshot = aiContext(selection: selection)
         controlsVisible = false; sheetDismissRequested = false; panel = .ai
     }
@@ -828,7 +830,7 @@ struct ReaderScreen: View {
     private func closeBookDetails() { presentation.close(.details) }
 
     private func presentPanel(_ next: ReaderPanel) {
-        automatic.pause()
+        automatic.end()
         guard panel != next || (next == .search && !searchExpanded) else { return }
         if next == .details {
             session.activity.update(visibility: .init(body: false), preview: session.browseOrigin != nil)
@@ -879,6 +881,7 @@ struct ReaderScreen: View {
     }
 
     private func selectText(start: UInt64, end: UInt64, action: ReaderSelectionAction) {
+        automatic.end()
         if action != .shareExcerpt { session.beganReadingInteraction() }
         if action == .removeAnnotations {
             guard !session.isLeaving, let bookID = session.readingID else { return }
@@ -1003,10 +1006,10 @@ struct ReaderScreen: View {
                 toolButton("目录", symbol: "list.bullet", id: "showChapters") { openLibrary(.chapters) }
                 toolButton("搜索", symbol: "magnifyingglass", id: "showSearch") { presentPanel(.search) }
                 toolButton("设置", symbol: "textformat.size", id: "readingSettings", selected: dock == .settings) {
-                    dock.toggle(.settings)
+                    selectFooterDock(.settings)
                 }
                 toolButton("更多", symbol: "ellipsis", id: "readerMore", selected: dock == .more) {
-                    dock.toggle(.more)
+                    selectFooterDock(.more)
                 }
             }
             .labelStyle(ReaderToolLabelStyle())
@@ -1016,6 +1019,12 @@ struct ReaderScreen: View {
         .padding(.horizontal, 24)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("readerBottomControls")
+    }
+
+    private func selectFooterDock(_ destination: ReaderDock) {
+        if destination == .more { automatic.pause() } else { automatic.end() }
+        let tool: ReaderTool = destination == .more ? .more : .settings
+        if !presentation.leaveAutomaticAccessory(for: tool) { dock.toggle(destination) }
     }
 
     private func toolButton(_ title: LocalizedStringKey, symbol: String, id: String, selected: Bool = false, action: @escaping () -> Void) -> some View {
@@ -1058,14 +1067,14 @@ struct ReaderScreen: View {
         session.activity.update(visibility: statisticsVisibility, preview: session.browseOrigin != nil)
         session.beganReadingInteraction() // Permit ordinary checkpoints; not a statistics interaction.
         automatic.startAfterDismissal(opening: session.opening.request?.id,
-            seconds: session.settings?.autoReadingSeconds ?? autoReadingControl().defaultValue)
+            speed: session.settings?.autoReadingSpeed ?? autoReadingControl().defaultValue)
     }
 
     private func automaticContent(expanded: Bool) -> some View {
         ReaderAutoReadingContent(state: automatic, mode: session.settings?.mode ?? .scroll,
-            seconds: Binding(get: { session.settings?.autoReadingSeconds ?? autoReadingControl().defaultValue }, set: { value in
+            speed: Binding(get: { session.settings?.autoReadingSpeed ?? autoReadingControl().defaultValue }, set: { value in
                 guard var settings = session.settings else { return }
-                settings.autoReadingSeconds = value; session.updateSettings(settings)
+                settings.autoReadingSpeed = value; session.updateSettings(settings)
             }), expanded: expanded, collapse: { attachmentExpanded = false }, close: closeAutomaticReading,
             canStart: session.opening.phase == .reading && session.window != nil && !session.showingCover
                 && !session.isLoading && !session.navigating && session.error == nil,
