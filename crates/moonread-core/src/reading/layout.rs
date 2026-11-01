@@ -92,7 +92,7 @@ pub fn reader_typography_controls() -> ReaderTypographyControls {
 }
 
 fn default_auto_reading_speed() -> f64 {
-    9.0
+    10.0
 }
 
 /// Unitless device-local speed levels; the platform supplies reading geometry.
@@ -100,7 +100,7 @@ fn default_auto_reading_speed() -> f64 {
 pub fn auto_reading_control() -> ReaderNumberControl {
     ReaderNumberControl {
         minimum: 1.0,
-        maximum: 20.0,
+        maximum: 30.0,
         step: 1.0,
         default_value: default_auto_reading_speed(),
     }
@@ -119,7 +119,7 @@ pub fn auto_reading_em_per_minute(speed: f64) -> Result<f64> {
     if !valid_auto_reading_speed(speed) {
         return Err(ReaderError::InvalidSettings);
     }
-    Ok(100.0 + 50.0 * speed)
+    Ok(150.0 * 1.16_f64.powf(speed - 1.0))
 }
 
 #[uniffi::export]

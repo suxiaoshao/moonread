@@ -19,12 +19,14 @@ enum MotionTokens {
     static func accessoryResize(reduced: Bool) -> Animation {
         .easeInOut(duration: reduced ? 0.10 : 0.20)
     }
+    static func accessoryInsertion(reduced: Bool) -> Animation { .easeOut(duration: reduced ? 0.10 : 0.12) }
+    static var accessoryRemoval: Animation { .easeOut(duration: 0.08) }
     static func accessoryContent(reduced: Bool) -> AnyTransition {
         // Fade through within the resizing sheet, without moving or scaling
         // the controls. SwiftUI owns interruption and reversal of transitions.
         .asymmetric(
-            insertion: .opacity.animation(.easeOut(duration: reduced ? 0.10 : 0.12)),
-            removal: .opacity.animation(.easeOut(duration: 0.08))
+            insertion: .opacity.animation(accessoryInsertion(reduced: reduced)),
+            removal: .opacity.animation(accessoryRemoval)
         )
     }
     static let color = Animation.easeInOut(duration: 0.18)

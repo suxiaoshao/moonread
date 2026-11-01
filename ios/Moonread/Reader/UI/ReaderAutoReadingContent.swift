@@ -12,6 +12,7 @@ struct ReaderAutoReadingContent: View {
     let end: () -> Void
     let retry: () -> Void
     @Environment(\.theme) private var theme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     private var control: ReaderNumberControl { autoReadingControl() }
     private var speedVisible: Bool { mode == .scroll && state.phase != .finished }
 
@@ -51,20 +52,19 @@ struct ReaderAutoReadingContent: View {
                         .foregroundStyle(Color(uiColor: theme.secondary))
                     if let failure = state.failure { Text(failure).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
                 }
-                HStack {
-                    if state.phase != .idle {
-                        Button("结束", action: end).buttonStyle(.bordered)
-                            .tint(Color(uiColor: theme.accent))
+                if state.phase == .idle {
+                    primaryButton.disabled(!canStart)
+                } else {
+                    let layout = dynamicTypeSize.isAccessibilitySize
+                        ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
+                    layout {
+                        Button(action: end) { Text("结束").frame(maxWidth: .infinity) }
+                            .buttonStyle(ThemedSecondaryButtonStyle()).controlSize(.large)
                             .accessibilityLabel("结束自动阅读")
                             .accessibilityInputLabels([Text("结束"), Text("结束自动阅读")])
+                        primaryButton.disabled(!canStart || state.phase == .preparing || state.phase == .starting || state.phase == .failed)
                     }
-                    Spacer()
-                    if state.phase == .failed {
-                        Button("重试", action: retry)
-                        primaryButton.disabled(true)
-                    } else {
-                        primaryButton.disabled(!canStart || state.phase == .preparing || state.phase == .starting)
-                    }
+                    if state.phase == .failed { Button("重试", action: retry) }
                 }
             }
         }
@@ -73,9 +73,11 @@ struct ReaderAutoReadingContent: View {
     }
     private var primaryButton: some View {
         Button(action: start) {
-            if state.phase == .idle { Text("开始") } else { Text("继续") }
+            Group {
+                if state.phase == .idle { Text("开始") } else { Text("继续") }
+            }.frame(maxWidth: .infinity)
         }
-        .buttonStyle(.borderedProminent).tint(Color(uiColor: theme.accent))
+        .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
         .accessibilityLabel(state.phase == .idle ? Text("开始自动阅读") : Text("继续自动阅读"))
         .accessibilityInputLabels(state.phase == .idle ? [Text("开始"), Text("开始自动阅读")] : [Text("继续"), Text("继续自动阅读")])
         .accessibilityIdentifier("startAutoReading")
