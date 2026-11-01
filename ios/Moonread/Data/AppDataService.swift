@@ -546,21 +546,37 @@ actor AppDataService {
     /// Materialize provider files before navigation. This does not create an
     /// import, read the full text, or change formal reading activity.
     func prepareSourceFile(_ file: SourceFile, progress: @escaping @Sendable (Double?) -> Void = { _ in }) async throws {
-        try await withForegroundOpening {
-            #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--ui-test-download-progress") {
-                progress(0.25); try await Task.sleep(for: .seconds(4))
-                progress(0.75); try await Task.sleep(for: .seconds(4))
-            }
-            #endif
-            let entry = try await self.textCore().sourceFileLocation(fileId: file.id)
-            let shelf = try await self.libraryShelf(entry.shelfId)
-            let access = SourceFileAccess(bookmark: Data(shelf.bookmark), path: entry.relativePath, progress: progress)
-            try await withTaskCancellationHandler {
-                try Task.checkCancellation()
-                try await access.prepare()
-                try Task.checkCancellation()
-            } onCancel: { access.cancel() }
+        try await withForegroundOpening { try await self.prepareOriginalSourceFile(file, progress: progress) }
+    }
+
+    private func prepareOriginalSourceFile(_ file: SourceFile, progress: @escaping @Sendable (Double?) -> Void) async throws {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-download-progress") {
+            progress(0.25); try await Task.sleep(for: .seconds(4))
+            progress(0.75); try await Task.sleep(for: .seconds(4))
+        }
+        #endif
+        let core = try textCore()
+        let entry = try core.sourceFileLocation(fileId: file.id)
+        guard !entry.directory else { throw ReaderError.NotFound }
+        let shelf = try libraryShelf(entry.shelfId)
+        let configuration = userCloudConfigurationRevision
+        let access = SourceFileAccess(bookmark: Data(shelf.bookmark), path: entry.relativePath, progress: progress)
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await access.prepare()
+            try Task.checkCancellation()
+        } onCancel: { access.cancel() }
+
+        // The actor can reenter during provider I/O. Do not publish an old
+        // completion against a removed/renamed source or a reauthorized root.
+        let currentShelf = try libraryShelf(entry.shelfId)
+        guard configuration == userCloudConfigurationRevision,
+              currentShelf.bookmark == shelf.bookmark, currentShelf.location == shelf.location else { throw CancellationError() }
+        let current = try core.sourceFileLocation(fileId: entry.id)
+        guard !current.directory, current.shelfId == entry.shelfId, current.relativePath == entry.relativePath else { throw CancellationError() }
+        if try core.setSourceFileAvailability(file: entry, needsDownload: false) {
+            publishLibraryIndexChange()
         }
     }
 

@@ -337,14 +337,28 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     try await service.prepareLibrary()
     try await service.refreshLibrary()
     let entries = try await service.libraryEntries(LibraryLocation(shelfID: "builtin"))
+    let location = try core.sourceFileLocation(fileId: entries[0].id)
+    XCTAssertTrue(try core.setSourceFileAvailability(file: location, needsDownload: true))
+    let published = expectation(description: "Available index is published before preparation returns")
+    published.assertForOverFulfill = true
+    let token = NotificationCenter.default.addObserver(forName: .libraryIndexChanged, object: service, queue: nil) { @Sendable _ in
+      XCTAssertFalse((try? core.querySnapshot(json: "{}").libraryEntry(fileId: location.id).needsDownload) ?? true)
+      published.fulfill()
+    }
+    defer { NotificationCenter.default.removeObserver(token) }
     try await service.prepareSourceFile(entries[0].source)
+    await fulfillment(of: [published], timeout: 0)
+    XCTAssertFalse(try core.querySnapshot(json: "{}").libraryEntry(fileId: entries[0].id).needsDownload)
+    try await service.prepareSourceFile(entries[0].source) // No change, no second publication.
     XCTAssertTrue(try core.sourceFiles(shelfId: "builtin").allSatisfy { $0.bookId == nil })
     XCTAssertTrue(try core.querySnapshot(json: "{}").recentLibraryEntries(limit: 3).isEmpty)
+    XCTAssertTrue(try core.setSourceFileAvailability(file: location, needsDownload: true))
     try FileManager.default.removeItem(at: root.appendingPathComponent(entries[0].name))
     do {
       try await service.prepareSourceFile(entries[0].source)
       XCTFail("Missing originals must fail on the shelf before opening a reader")
     } catch {}
+    XCTAssertTrue(try core.querySnapshot(json: "{}").libraryEntry(fileId: entries[0].id).needsDownload)
     XCTAssertTrue(try core.sourceFiles(shelfId: "builtin").allSatisfy { $0.bookId == nil })
   }
 

@@ -9,6 +9,38 @@ import XCTest
 @testable import Moonread
 
 final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationFixture {
+  func testDownloadOnlyIndexPublicationRefreshesCatalogueRevision() async throws {
+    let f = try await fixture(["download.txt": Data("第一章 月光\n原创下载样本。".utf8)])
+    defer { f.clean() }
+    var items = try AppDataService.libraryDirectoryItems(f.directory)
+    items[0].needsDownload = true
+    try await f.service.applyLibraryScan("builtin", root: f.directory, items: items, observe: false)
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: f.suite))
+    let controller = FullIndexController(defaults: defaults, service: f.service, registerTasks: false)
+    let model = LibraryModel(service: f.service, fullIndex: controller, defaults: defaults, cloudDiscoveryRequired: false)
+    try await model.reload()
+    let revision = model.revision
+    let before = try f.core.sourceFiles(shelfId: "builtin")
+    let changed = expectation(description: "Committed index drives the existing model reload entry")
+    // Same MainActor forwarding as the app host; no filesystem refresh is needed.
+    let token = NotificationCenter.default.addObserver(forName: .libraryIndexChanged, object: f.service, queue: nil) { @Sendable _ in
+      Task { @MainActor in await model.reloadBooks(); changed.fulfill() }
+    }
+    defer { NotificationCenter.default.removeObserver(token) }
+    items[0].needsDownload = false
+    try await f.service.applyLibraryScan("builtin", root: f.directory, items: items, observe: false)
+    await fulfillment(of: [changed], timeout: 2)
+    XCTAssertGreaterThan(model.revision, revision)
+    XCTAssertEqual(try f.core.sourceFiles(shelfId: "builtin"), before)
+    let folder = try await f.service.libraryEntries(.init(shelfID: "builtin"))
+    let all = try await f.service.allLibraryBooks("builtin")
+    let search = try await f.service.searchCatalogue(nil, spec: .init(profile: .library, query: "download"))
+    for entries in [folder, all, search] {
+      XCTAssertEqual(entries.count, 1)
+      XCTAssertFalse(try XCTUnwrap(entries.first).needsDownload)
+    }
+  }
+
   func testIndexFailuresRemainActionableWithoutOfferingContinue() async throws {
     let f = try await fixture(["readable.txt": Data("第一章 月光\n原创正文\u{b}\u{c}。".utf8), "binary.txt": Data(repeating: 0, count: 100)])
     defer { f.clean() }

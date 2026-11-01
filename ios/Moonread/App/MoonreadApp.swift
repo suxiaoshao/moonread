@@ -94,6 +94,9 @@ struct MoonreadApp: App {
     }
     private var appContent: some View {
         indexedAppContent
+            .onReceive(NotificationCenter.default.publisher(for: .libraryIndexChanged, object: library.service).receive(on: DispatchQueue.main)) { _ in
+                Task { await library.reloadBooks() }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .libraryIdentityChanged).receive(on: DispatchQueue.main)) { note in
                 Task {
                     await library.reloadBooks()

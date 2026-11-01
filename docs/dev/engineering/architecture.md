@@ -70,6 +70,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 笔记快照与可读导出 | Swift `NoteDocument.swift`、`UserDataStore.noteCandidates` | 三入口共用摘录/出处与 TXT/Markdown 输出；快照不压缩候选，未知记录按范围阻止不完整导出，位置/章节/百分比复用 Rust | 不增同步格式 |
 | 用户备份 envelope、原 payload 接入、对象级删除 | Swift `UserDataBackup.swift`、`ReadingDataManagement.swift` | SwiftData 权威与既有裁决不迁到 Rust；整书删除无本机删除回执或启动补删 | 共用接入 |
 | 受保护来源的 bookmark 解析、安全作用域、协调读取与物理路径边界 | Swift `Data/ProtectedFileAccess.swift` | 开书、导入、索引、恢复、缓存和备份共用；沿用 `.withoutUI` 与可解析的陈旧书签，不增加拒绝条件；作用域覆盖各阶段，accessor 内不等待 actor | 平台边界 |
+| 本机来源下载可用性与目录发布 | Swift `AppDataService.prepareSourceFile` / `LibraryService` 提供协调访问或扫描事实；Rust `bookshelf/mutations` 仅更新匹配来源的既有 needs_download | 原文件协调访问成功后清除单行标记，复核原定位/授权配置；已提交索引通知复用 `LibraryModel.reloadBooks` 与系统目录快照调度，不触发文件扫描或新增自动索引范围 | 平台事实与单源索引 |
 | 缓存来源可读性证明与清理准入 | Swift `CacheManagement.swift` | 借用公共文件访问组件，证明期内调用 Rust 重验事务；页面不判断可清性 | 平台边界 |
 
 维护约定：新增规则先查本表；已存在则调用 owner。新增或改变归属必须在同一 PR 更新表、实现入口及测试位置。两个策略若故意不同，命名其输入/输出契约；不能仅以语言或调用入口不同为理由再实现一份。
