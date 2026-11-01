@@ -163,6 +163,7 @@ struct ReaderScreen: View {
                                 session.error = String(localized: "当前无法切换屏幕方向，已恢复跟随系统。")
                             },
                             statisticsInteraction: { session.activity.interacted() },
+                            statisticsPresentationChanged: { [weak activity = session.activity] in activity?.sample() },
                             annotationChooserChanged: { choosingAnnotations = $0 },
                             edgeChanged: { session.nearEdge = $0 },
                             compactHeaderHeight: compactHeaderHeight,
@@ -334,12 +335,12 @@ struct ReaderScreen: View {
         .onReceive(NotificationCenter.default.publisher(for: .readingContinuationInvalidated).receive(on: DispatchQueue.main)) { _ in
             session.invalidateSyncedContinuation()
         }
-        .onChange(of: statisticsReadable, initial: true) { _, readable in
-            session.activity.update(readable: readable, preview: session.browseOrigin != nil)
-            if readable { session.systemReadingBecameReadable() }
+        .onChange(of: statisticsVisibility, initial: true) { _, visibility in
+            session.activity.update(visibility: visibility, preview: session.browseOrigin != nil)
+            if statisticsReadable { session.systemReadingBecameReadable() }
         }
         .onChange(of: session.browseOrigin != nil) { _, preview in
-            session.activity.update(readable: statisticsReadable, preview: preview)
+            session.activity.update(visibility: statisticsVisibility, preview: preview)
         }
         .onReceive(NotificationCenter.default.publisher(for: .statisticsPreferencesChanged).receive(on: DispatchQueue.main)) { _ in
             Task { await session.activity.reloadPreferences() }
@@ -353,7 +354,7 @@ struct ReaderScreen: View {
             contentVisible = true; session.opening.visibility(true, active: scenePhase == .active)
             session.opening.reduceMotion(reduceMotion)
             battery.start()
-            session.activity.update(readable: statisticsReadable, preview: session.browseOrigin != nil)
+            session.activity.update(visibility: statisticsVisibility, preview: session.browseOrigin != nil)
         }
         .onChange(of: library.selectedTab) { _, _ in synchronizeNativePresentation() }
         .onChange(of: session.opening.navigationSettled) { _, _ in synchronizeNativePresentation() }
@@ -417,7 +418,7 @@ struct ReaderScreen: View {
         }
         .onDisappear {
             contentVisible = false; session.opening.visibility(false, active: false)
-            session.activity.update(readable: false, preview: session.browseOrigin != nil)
+            session.activity.update(visibility: .init(body: false), preview: session.browseOrigin != nil)
             battery.stop()
             // Settings are pushed above the reader in the same navigation stack.
             // Only leaving its navigation destination ends the reading session.
@@ -581,15 +582,22 @@ struct ReaderScreen: View {
         return AIEntryContext(association: AIContext(contentSHA: sha, title: title, chapter: session.chapter?.title), attachments: attachments)
     }
 
-    private var statisticsReadable: Bool {
-        ReaderStatisticsVisibility.isReadable(body: scenePhase == .active && !session.isLeaving && session.opening.phase == .reading && session.window != nil && !session.showingCover
+    private var statisticsVisibility: ReaderStatisticsVisibility {
+        ReaderStatisticsVisibility(body: scenePhase == .active && !session.isLeaving && session.opening.phase == .reading && session.window != nil && !session.showingCover
             && !session.isLoading && !session.navigating && session.error == nil
             && !navigationPresentation.isSuspended && !controlsVisible && !searchExpanded
             && dock == .progress && taskID == nil && panel?.isPage != true
             && toolSession.editor == nil,
             preparingExcerpt: sharingExcerpt, excerptPresented: excerptShare != nil,
             confirmationPresented: systemReadingRouter?.presentsConfirmation(active: !sheetPresented, editor: false) == true,
-            choosingAnnotations: choosingAnnotations)
+            choosingAnnotations: choosingAnnotations,
+            readerAccessoryPresented: sheetPresented && nativeHost.phase == .confirmed
+                && taskID == nil && (panel == nil || panel == .search) && dock == .progress && !searchExpanded && !controlsVisible)
+    }
+
+    private var statisticsReadable: Bool {
+        statisticsVisibility.isReadable(nativeTaskPresented: session.viewportAccess.hasBlockingPresentation(
+            allowingReaderAccessory: statisticsVisibility.readerAccessoryPresented))
     }
 
     private func loadCoverInformation() async {
@@ -780,7 +788,7 @@ struct ReaderScreen: View {
     private func presentPanel(_ next: ReaderPanel) {
         guard panel != next || (next == .search && !searchExpanded) else { return }
         if next == .details {
-            session.activity.update(readable: false, preview: session.browseOrigin != nil)
+            session.activity.update(visibility: .init(body: false), preview: session.browseOrigin != nil)
             if sheetPresented {
                 presentation.push(.details)
                 var transaction = Transaction(); transaction.disablesAnimations = true

@@ -121,6 +121,9 @@ extension ReadingController {
     }
 
     func textView(_ textView: UITextView, willPresentEditMenuWith animator: any UIEditMenuInteractionAnimating) {
+        // The edit menu itself is not a blocker. Completion merely asks the
+        // recorder to reread the public modal chain, without adding idle credit.
+        animator.addCompletion { [weak self] in self?.statisticsPresentationChanged() }
         guard textView === annotationMenuText else { return }
         setSelectionDisplay(textView, active: false)
         animator.addCompletion { [weak self, weak textView] in
@@ -129,6 +132,7 @@ extension ReadingController {
     }
 
     func textView(_ textView: UITextView, willDismissEditMenuWith animator: any UIEditMenuInteractionAnimating) {
+        animator.addCompletion { [weak self] in self?.statisticsPresentationChanged() }
         if !preparingAnnotationMenu, textView === annotationMenuText { endAnnotationMenu(clearSelection: true) }
     }
 

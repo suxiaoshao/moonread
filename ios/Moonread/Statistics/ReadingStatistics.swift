@@ -164,7 +164,7 @@ final class ReadingActivityRecorder {
     private var generation: UInt64 = 0
     private var enabled = false
     private var stopped = false
-    private var readable = false
+    private var visibility = ReaderStatisticsVisibility(body: false)
     private var preview = false
     private var lastInteraction: TimeInterval = -.infinity
     private weak var viewport: ReadingViewportAccess?
@@ -183,9 +183,9 @@ final class ReadingActivityRecorder {
     /// Invalidates suspended starts before the next attempt is scheduled.
     func prepareStart(_ attempt: UUID) {
         guard !stopped else { return }
-        readable = false
+        visibility = ReaderStatisticsVisibility(body: false)
         if clock != nil { sample() }
-        timer?.cancel(); timer = nil; clock = nil; lease = nil
+        timer?.cancel(); timer = nil; clock = nil; lease = nil; viewport = nil
         startToken = attempt
     }
 
@@ -216,8 +216,8 @@ final class ReadingActivityRecorder {
     var recordingBookID: String? { clock == nil ? nil : lease?.id }
     var hasSamplingTimer: Bool { timer != nil }
 
-    func update(readable: Bool, preview: Bool) {
-        self.readable = readable; self.preview = preview
+    func update(visibility: ReaderStatisticsVisibility, preview: Bool) {
+        self.visibility = visibility; self.preview = preview
         sample()
     }
 
@@ -243,8 +243,11 @@ final class ReadingActivityRecorder {
         await writer.drain()
     }
 
-    private func sample(interaction: Bool = false, capture: Bool = true) {
+    func sample(interaction: Bool = false, capture: Bool = true) {
         guard !stopped, let clock, let lease else { return }
+        // UIKit can present/dismiss without a SwiftUI update. Every sampling
+        // path (including capture:false interaction) reads the current chain.
+        let nativeTask = viewport?.hasBlockingPresentation(allowingReaderAccessory: visibility.readerAccessoryPresented) ?? false
         let visible = capture ? viewport?.statisticsRange() : (range.1 > range.0 ? range : nil)
         if capture, let visible { range = visible }
         let instant = time(), now = instant.date
@@ -252,7 +255,7 @@ final class ReadingActivityRecorder {
             monotonicMs: UInt64(instant.uptime * 1000),
             unixMs: Int64(now.timeIntervalSince1970 * 1000),
             utcOffsetSeconds: Int32(TimeZone.current.secondsFromGMT(for: now)),
-            readable: enabled && readable && visible != nil,
+            readable: enabled && visibility.isReadable(nativeTaskPresented: nativeTask) && visible != nil,
             interaction: interaction, preview: preview, startUtf8: range.0, endUtf8: range.1))
         enqueue(slices, lease: lease)
     }
@@ -276,9 +279,9 @@ final class ReadingActivityRecorder {
 
     func stop() {
         guard !stopped else { return }
-        readable = false; sample(); stopped = true
+        visibility = ReaderStatisticsVisibility(body: false); sample(); stopped = true
         startToken = nil
-        timer?.cancel(); timer = nil; clock = nil; lease = nil
+        timer?.cancel(); timer = nil; clock = nil; lease = nil; viewport = nil
     }
 }
 
@@ -381,9 +384,15 @@ extension AppDataService {
 #endif
 
 /// Presentation facts only. The recorder/Rust clock retains credit and read kind.
-enum ReaderStatisticsVisibility {
-    static func isReadable(body: Bool, preparingExcerpt: Bool, excerptPresented: Bool,
-                           confirmationPresented: Bool, choosingAnnotations: Bool) -> Bool {
-        body && !preparingExcerpt && !excerptPresented && !confirmationPresented && !choosingAnnotations
+struct ReaderStatisticsVisibility: Equatable {
+    var body: Bool
+    var preparingExcerpt = false
+    var excerptPresented = false
+    var confirmationPresented = false
+    var choosingAnnotations = false
+    var readerAccessoryPresented = false
+
+    func isReadable(nativeTaskPresented: Bool = false) -> Bool {
+        body && !preparingExcerpt && !excerptPresented && !confirmationPresented && !choosingAnnotations && !nativeTaskPresented
     }
 }
