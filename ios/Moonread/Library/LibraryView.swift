@@ -306,7 +306,7 @@ struct LibraryFolderView: View {
                                 Label("全部小说", systemImage: "books.vertical")
                             }
                         }
-                        Button("在此书架中搜索", systemImage: "magnifyingglass") { model.path.append(.search(AppSearchScope(tokens: [.shelf(location.shelfID)]))) }
+                        Button("在此书架中搜索", systemImage: "magnifyingglass") { model.path.append(.search(AppSearchScope(seeds: [.shelf(location.shelfID)]))) }
                             .accessibilityIdentifier("searchShelf")
                     } label: { Label("文件夹操作", systemImage: "ellipsis") }.menuOrder(.fixed).toolbarGlyph().accessibilityIdentifier("folderActions").disabled(fileActionsDisabled)
                 }
@@ -534,7 +534,7 @@ struct LibraryAllBooksView: View {
     @ViewBuilder private func tagHeading(_ group: LibraryTagGroup) -> some View {
         if group.kind == .tag {
             Button {
-                model.path.append(.search(AppSearchScope(tokens: [.shelf(shelfID), .tag(group.tag)])))
+                model.path.append(.search(AppSearchScope(seeds: [.shelf(shelfID), .tag(group.tag)])))
             } label: {
                 tagHeadingLabel(group)
             }.buttonStyle(.plain).accessibilityIdentifier("library-tag-\(group.tag)")

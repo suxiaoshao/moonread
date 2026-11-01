@@ -345,8 +345,8 @@ extension AppDataService {
         #endif
         return try await catalogueQuery(location, recursive: recursive).libraryEntries(shelfId: location?.shelfID, parentPath: recursive ? nil : location?.path, sort: sort)
     }
-    func searchLibrary(shelfID: String?, query: String, author: String?, tag: String?) async throws -> [LibraryEntry] {
-        try await searchCatalogue(shelfID.map { LibraryLocation(shelfID: $0) }, spec: .init(profile: .library, query: query, author: author, tags: tag.map { [$0] } ?? []))
+    func searchLibrary(query: String, configuration: BookSearchConfiguration) async throws -> LibraryQueryRules.SearchOutcome {
+        try await searchCatalogueOutcome(nil, spec: .init(profile: .library, query: query, configuration: configuration))
     }
     /// AI previously read details before matching. Preserve its unknown-metadata
     /// barrier in one store call, without doing a details lookup for each file.
@@ -358,15 +358,18 @@ extension AppDataService {
         try await userStore().requireMetadataReadable(keys: formal)
     }
     func searchCatalogue(_ location: LibraryLocation?, spec: LibraryQueryRules.SearchSpec) async throws -> [LibraryEntry] {
+        try await searchCatalogueOutcome(location, spec: spec).entries
+    }
+    private func searchCatalogueOutcome(_ location: LibraryLocation?, spec: LibraryQueryRules.SearchSpec) async throws -> LibraryQueryRules.SearchOutcome {
         let query = try await catalogueQuery(location, recursive: true)
-        let candidates = try query.librarySearchCandidates(scope: catalogueScope(location, recursive: true), booksOnly: spec.profile == .ai)
+        let candidates = try query.librarySearchCandidates(scope: catalogueScope(location, recursive: true), booksOnly: spec.profile == .ai || spec.configuration.booksOnly)
         if spec.profile == .ai { try await requireAIMetadataReadable(nil, recursive: true) }
-        var entries = LibraryQueryRules.filterAndRank(candidates, spec: spec)
-        for index in entries.indices where entries[index].directory {
-            entries[index].coverPreviews = try query.libraryFolderCoverPreviews(
-                shelfId: entries[index].shelfId, relativePath: entries[index].relativePath)
+        var found = LibraryQueryRules.searchOutcome(candidates, spec: spec)
+        for index in found.entries.indices where found.entries[index].directory {
+            found.entries[index].coverPreviews = try query.libraryFolderCoverPreviews(
+                shelfId: found.entries[index].shelfId, relativePath: found.entries[index].relativePath)
         }
-        return entries
+        return found
     }
 
     func allLibraryBooks(_ shelfID: String) async throws -> [LibraryEntry] {

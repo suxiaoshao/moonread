@@ -211,7 +211,20 @@ import XCTest
     ready(file(sample))
     XCTAssertTrue((query.value as? String)?.hasSuffix("排版") == true)
     XCTAssertTrue(
-      (query.value as? String)?.contains("我的书架") == true, "Returning must preserve the shelf scope")
+      element("appSearchResults").staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "我的书架")).count > 0, "Returning must preserve the shelf condition summary")
+    ready(app.buttons["searchFilters"]).tap()
+    ready(app.buttons["addSearchCondition"]).tap()
+    ready(app.buttons["阅读状态"]).tap()
+    // Closing a just-opened book can publish its first reading position here.
+    // Exercise multi-select without assuming whether that async projection has arrived.
+    ready(app.buttons["阅读中"]).tap()
+    ready(app.buttons["未读"]).tap()
+    ready(app.buttons["saveSearchCondition"]).tap()
+    ready(app.buttons["applySearchFilters"]).tap()
+    ready(file(sample))
+    XCTAssertTrue((query.value as? String)?.hasSuffix("排版") == true, "Applying filters keeps search text")
+    XCTAssertTrue(app.staticTexts.containing(NSPredicate(format: "label CONTAINS %@", "未读")).count > 0)
+
   }
   func testU08BrowseTagAndUnindexedGroup() {
     launch()

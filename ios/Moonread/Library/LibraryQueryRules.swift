@@ -11,6 +11,7 @@ extension LibraryQueryRules {
         var tags: [String] = []
         var status: String?
         var nameOrder = false
+        var configuration = BookSearchConfiguration()
     }
     static func selectionMatches(_ title: String, query: String) -> Bool {
         query.isEmpty || title.localizedStandardContains(query)
@@ -50,14 +51,20 @@ extension LibraryQueryRules {
         Data(value.utf8).range(of: Data(query.utf8)) != nil
     }
     static func filterAndRank(_ candidates: [LibrarySearchCandidate], spec: SearchSpec) -> [LibraryEntry] {
+        searchOutcome(candidates, spec: spec).entries
+    }
+    struct SearchOutcome { var entries: [LibraryEntry]; var unknownCount: Int }
+    static func searchOutcome(_ candidates: [LibrarySearchCandidate], spec: SearchSpec) -> SearchOutcome {
         let literal = spec.profile == .library
         let query = literal ? literalQuery(spec.query) : spec.query
-        if literal && query.isEmpty && spec.author == nil && spec.tags.isEmpty { return [] }
+        if literal && query.isEmpty && spec.author == nil && spec.tags.isEmpty && spec.status == nil && !spec.configuration.booksOnly { return .init(entries: [], unknownCount: 0) }
+        var unknownCount = 0
         let ranked = candidates.compactMap { candidate -> (LibrarySearchCandidate, LibraryEntry, Int)? in
             var row = candidate.entry
             if !literal { row.metadata = candidate.resolvedMetadata }
             let metadata = row.metadata
             if literal {
+                if spec.configuration.booksOnly || spec.status != nil { guard !row.directory else { return nil } }
                 if spec.author != nil || !spec.tags.isEmpty {
                     guard !row.directory, spec.author.map({ metadata?.author.utf8.elementsEqual($0.utf8) == true }) ?? true,
                           spec.tags.allSatisfy({ tag in metadata?.tags.contains(where: { $0.utf8.elementsEqual(tag.utf8) }) == true }) else { return nil }
@@ -68,6 +75,16 @@ extension LibraryQueryRules {
                 else if literalContains(title, query) { rank = 1 }
                 else if !row.directory, metadata.map({ literalContains($0.author.lowercased(), query) }) == true { rank = 2 }
                 else { return nil }
+                if let status = spec.status {
+                    guard let metadata = candidate.resolvedMetadata, statusName(metadata.status) != "other" else { unknownCount += 1; return nil }
+                    guard statusName(metadata.status) == status else { return nil }
+                }
+                if spec.configuration.booksOnly {
+                    let truth = evaluate(spec.configuration.root, candidate: candidate)
+                    if truth == .unknown { unknownCount += 1 }
+                    guard truth == .yes else { return nil }
+                }
+                row.metadata = candidate.resolvedMetadata
                 return (candidate, row, rank)
             }
             guard !row.directory,
@@ -77,7 +94,30 @@ extension LibraryQueryRules {
                   spec.status.map({ status in metadata.map { statusName($0.status) == status } ?? false }) ?? true else { return nil }
             return (candidate, row, 0)
         }
-        return ranked.sorted { a, b in
+        let entries = ranked.sorted { a, b in
+            if literal && !spec.configuration.sorts.isEmpty {
+                for key in spec.configuration.sorts {
+                    var order: ComparisonResult = .orderedSame
+                    switch key.field {
+                    case .rank:
+                        if !query.isEmpty { order = a.2 == b.2 ? .orderedSame : a.2 < b.2 ? .orderedAscending : .orderedDescending }
+                    case .name:
+                        let av = a.0.naturalNameOrdinal, bv = b.0.naturalNameOrdinal
+                        order = av == bv ? .orderedSame : av < bv ? .orderedAscending : .orderedDescending
+                    case .recent:
+                        let av = a.1.lastRead, bv = b.1.lastRead
+                        if (av == 0) != (bv == 0) { return av != 0 }
+                        order = av == bv ? .orderedSame : av < bv ? .orderedAscending : .orderedDescending
+                    case .author:
+                        let av = a.0.resolvedMetadata?.author ?? "", bv = b.0.resolvedMetadata?.author ?? ""
+                        if av.isEmpty != bv.isEmpty { return !av.isEmpty }
+                        order = compareAuthors(av, bv)
+                    }
+                    if order != .orderedSame { return key.descending ? order == .orderedDescending : order == .orderedAscending }
+                }
+                if a.0.naturalOrderOrdinal != b.0.naturalOrderOrdinal { return a.0.naturalOrderOrdinal < b.0.naturalOrderOrdinal }
+                return a.1.id < b.1.id
+            }
             if literal {
                 if a.1.directory != b.1.directory { return !a.1.directory }
                 if a.2 != b.2 { return a.2 < b.2 }
@@ -87,6 +127,7 @@ extension LibraryQueryRules {
             if spec.nameOrder { return (a.1.name, a.1.id) < (b.1.name, b.1.id) }
             return a.1.lastRead == b.1.lastRead ? a.1.id < b.1.id : a.1.lastRead > b.1.lastRead
         }.map { $0.1 }
+        return .init(entries: entries, unknownCount: unknownCount)
     }
 }
 

@@ -151,7 +151,7 @@ final class SystemReadingRouter {
                     case .showLibrary:
                         library.selectedTab = .library; library.libraryPath = [.folder(LibraryLocation(shelfID: "builtin"))]
                     case .searchBooks(let query):
-                        library.search.query = query; library.search.tokens = []; library.searchPath = []
+                        library.search.query = query; library.search.configuration = BookSearchConfiguration(); library.searchPath = []
                         library.selectedTab = .search; library.setSearchPresented(true)
                     default: break
                     }

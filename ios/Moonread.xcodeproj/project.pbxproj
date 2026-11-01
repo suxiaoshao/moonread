@@ -303,6 +303,8 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		B135F2963E3B47819FE2FC73 /* WidgetDefaultAppearance.json */ = {isa = PBXBuildFile; fileRef = 1FC26519733A4A86A5C69068; };
 		A24F794D4BB7412191A19329 /* ReadingContinuation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FE1A12BC743430DA09B92A0 /* ReadingContinuation.swift */; };
 		1513FFF184D943E0B24401D6 /* ReadingContinuationBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */; };
+		154000000000000000000002 = {isa = PBXBuildFile; fileRef = 154000000000000000000001; };
+		154000000000000000000004 = {isa = PBXBuildFile; fileRef = 154000000000000000000003; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -616,6 +618,8 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		1FC26519733A4A86A5C69068 /* WidgetDefaultAppearance.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "WidgetDefaultAppearance.json"; sourceTree = "<group>"; };
 		7FE1A12BC743430DA09B92A0 /* ReadingContinuation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingContinuation.swift"; sourceTree = "<group>"; };
 		B0FE8677173148A3A6F4FFE5 /* ReadingContinuationBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingContinuationBanner.swift"; sourceTree = "<group>"; };
+		154000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/Library/BookSearchQuery.swift"; sourceTree = SOURCE_ROOT; };
+		154000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Moonread/Library/BookSearchEditor.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -827,6 +831,8 @@ E62000000000000000000005,F71000000000000000000003,F71000000000000000000004,F7100
 			isa = PBXGroup;
 			children = (
 				660000000000000000000001,
+				154000000000000000000003,
+				154000000000000000000001,
 				AE2000000000000000000002 /* LibraryActions.swift */,
 				AF2000000000000000000003 /* LibraryCollection.swift */,
                 AF2000000000000000000004 /* LibraryDrop.swift */,
@@ -1282,6 +1288,8 @@ E51000000000000000000009,D41000000000000000000001,
                 D50610000000000000000002 /* ReadingDataManagement.swift in Sources */,
                 D50610000000000000000001 /* UserDataBackup.swift in Sources */,
 				660000000000000000000002,
+				154000000000000000000004,
+				154000000000000000000002,
                 FD64F53149DE5DBFB6AA04F1,
                 344233D679E94ACDA4FA2A11,
                 FC1100000000000000000001,

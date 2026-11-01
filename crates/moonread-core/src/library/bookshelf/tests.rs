@@ -50,7 +50,8 @@ fn search_candidates_leave_unmatched_folder_covers_unqueried() {
         .unwrap();
     core.lock().unwrap().execute_batch(
             "INSERT INTO library_files VALUES('folder','s','folder','','folder',1,0,1,0,NULL,'auto');
-             INSERT INTO library_files VALUES('book','s','folder/book.txt','folder','book.txt',0,100,1,0,NULL,'auto');"
+             INSERT INTO library_files VALUES('book','s','folder/book.txt','folder','book.txt',0,100,1,0,NULL,'auto');
+             INSERT INTO library_files VALUES('copy','s','other/book.txt','other','book.txt',0,100,1,0,NULL,'auto');"
         ).unwrap();
     let query = core.query_snapshot("{}".into()).unwrap();
     let before = FOLDER_COVER_QUERIES.with(|count| count.get());
@@ -66,6 +67,19 @@ fn search_candidates_leave_unmatched_folder_covers_unqueried() {
         .unwrap();
     assert!(candidates.iter().any(|c| c.entry.directory));
     assert!(candidates.iter().all(|c| c.entry.cover_previews.is_empty()));
+    let originals: Vec<_> = candidates
+        .iter()
+        .filter(|c| c.entry.name == "book.txt")
+        .collect();
+    assert_eq!(originals.len(), 2);
+    assert_eq!(
+        originals[0].natural_name_ordinal,
+        originals[1].natural_name_ordinal
+    );
+    assert_ne!(
+        originals[0].natural_order_ordinal,
+        originals[1].natural_order_ordinal
+    );
     // Matching happens in Swift; an unmatched search stops here without any cover SQL.
     assert_eq!(FOLDER_COVER_QUERIES.with(|count| count.get()), before);
     let covers = query
