@@ -1,6 +1,13 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "字号 · %lld": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Font size · %lld"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"字級 · %lld"}}}},
+    "阅读预览 · %lld": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading preview · %lld"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"閱讀預覽 · %lld"}}}},
+    "正在下载字体": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Downloading font"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在下載字體"}}}},
+    "需要下载，点选后获取": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Download on selection"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"需要下載，點選後取得"}}}},
+    "字体下载未完成，请检查网络后重试。原字体保持不变。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The font download did not finish. Check your connection and try again. Your original font is unchanged."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"字體下載未完成，請檢查網路後重試。原字體保持不變。"}}}},
+    "当前字体需要重新下载，已暂用系统字体。请在阅读设置中重新选择宋体或圆体。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The selected font needs to be downloaded again. System is used temporarily. Select Songti or Yuanti again in Reading Settings."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"目前字體需要重新下載，已暫用系統字體。請在閱讀設定中重新選擇宋體或圓體。"}}}},
+    "字体需要下载": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Font download required"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"字體需要下載"}}}},
     "未能导入的字体": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Fonts that could not be imported"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"未能匯入的字體"}}}},
     "将删除“%@”。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Delete “%@”."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"將刪除「%@」。"}}}},
     "内置": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Built-in"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"內建"}}}},

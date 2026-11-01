@@ -7,6 +7,8 @@ final class ReaderSettingsStore {
 
     private(set) var value: ReaderSettings?
     var error: String?
+    var fontNotice: String?
+    private var lastMissingBuiltin: ReaderFont?
     private let service: AppDataService
     @ObservationIgnored private let persist: (ReaderSettings) async throws -> Void
     private(set) var fontSaving = false
@@ -22,6 +24,7 @@ final class ReaderSettingsStore {
         guard value == nil else { return }
         ReaderFontLibrary.shared.loadIfNeeded()
         value = try service.settings()
+        refreshBuiltinFonts()
     }
 
     var binding: Binding<ReaderSettings> {
@@ -62,6 +65,23 @@ final class ReaderSettingsStore {
         latest.font = font; latest.importedFont = imported
         value = latest
         if pending != nil { pending = latest }
+        refreshBuiltinFonts()
+    }
+
+    func selectBuiltinFont(_ font: ReaderFont, fonts: ReaderBuiltinFonts = .shared, progress: (Double) -> Void = { _ in }) async throws {
+        try await fonts.prepare(font, progress: progress)
+        try Task.checkCancellation()
+        try await selectFont(font, imported: nil)
+    }
+
+    func refreshBuiltinFonts() {
+        let fonts = ReaderBuiltinFonts.shared
+        fonts.refresh()
+        let missing = value.flatMap { $0.importedFont == nil && !fonts.isAvailable($0.font) ? $0.font : nil }
+        if missing != lastMissingBuiltin {
+            lastMissingBuiltin = missing
+            fontNotice = missing == nil ? nil : String(localized: "当前字体需要重新下载，已暂用系统字体。请在阅读设置中重新选择宋体或圆体。")
+        }
     }
 
     func flush() async { await writeTask?.value }

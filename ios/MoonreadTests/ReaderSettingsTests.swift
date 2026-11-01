@@ -86,6 +86,29 @@ final class ReaderSettingsReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(try service.settings().importedFont, ref)
     XCTAssertEqual(store.value?.importedFont, ref)
     let selected = try XCTUnwrap(store.value)
+    let failedDownload = ReaderBuiltinFonts(lookup: { _, _ in nil }, match: { names in
+      XCTAssertEqual(names, ["STYuanti-SC-Regular"])
+      return AsyncThrowingStream { $0.finish(throwing: URLError(.notConnectedToInternet)) }
+    })
+    do { try await store.selectBuiltinFont(.rounded, fonts: failedDownload); XCTFail("Download failure must retain the choice") }
+    catch { }
+    XCTAssertEqual(store.value, selected)
+    XCTAssertEqual(try service.settings(), selected)
+
+    let started = expectation(description: "System font matching started")
+    var continuation: AsyncThrowingStream<Double, Error>.Continuation?
+    let pendingDownload = ReaderBuiltinFonts(lookup: { _, _ in nil }, match: { names in
+      XCTAssertEqual(names, ["STSongti-SC-Regular"])
+      return AsyncThrowingStream { continuation = $0; started.fulfill() }
+    })
+    let downloading = Task { try await store.selectBuiltinFont(.serif, fonts: pendingDownload) }
+    await fulfillment(of: [started], timeout: 2)
+    downloading.cancel()
+    continuation?.finish()
+    do { try await downloading.value; XCTFail("Leaving the picker must not apply a late choice") }
+    catch { }
+    XCTAssertEqual(store.value, selected)
+    XCTAssertEqual(try service.settings(), selected)
     XCTAssertFalse(selected.hasSameLayout(as: defaultReaderSettings()))
 
     // Resource availability is a platform fact, never a preference rewrite.

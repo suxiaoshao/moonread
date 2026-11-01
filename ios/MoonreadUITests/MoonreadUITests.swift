@@ -281,8 +281,8 @@ import XCTest
     snapshot("settings-home")
     ready(app.buttons["readerThemeSettings"]).tap()
     ready(app.buttons["readingFont"]).tap()
-    ready(app.buttons["readerFont-serif"]).tap()
-    waitUntil { self.app.buttons["readerFont-serif"].isSelected }
+    ready(app.buttons["readerFont-system"]).tap()
+    waitUntil { self.app.buttons["readerFont-system"].isSelected }
     XCTAssertTrue(app.buttons["readerFont-system"].exists) // Immediate save leaves the list open.
     app.navigationBars.buttons.firstMatch.tap()
     app.navigationBars.buttons.firstMatch.tap()

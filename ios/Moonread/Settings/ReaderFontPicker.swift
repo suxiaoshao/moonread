@@ -5,6 +5,11 @@ struct ReaderFontPicker: View {
     @Environment(ReaderSettingsStore.self) private var settings
     @Environment(\.theme) private var theme
     @State private var library = ReaderFontLibrary.shared
+    @State private var builtinFonts = ReaderBuiltinFonts.shared
+    @State private var fontSelection: Task<Void, Never>?
+    @State private var fontSelectionID: UUID?
+    @State private var downloadingFont: ReaderFont?
+    @State private var downloadProgress: Double?
     @State private var choosingFile = false
     @State private var importing: Task<Void, Never>?
     @State private var deleting: ReaderFontResource?
@@ -53,7 +58,7 @@ struct ReaderFontPicker: View {
                             Button("取消") { importing?.cancel() }
                         }
                     } else {
-                        Button("导入", systemImage: "square.and.arrow.down") { choosingFile = true }.disabled(working)
+                        Button("导入", systemImage: "square.and.arrow.down") { cancelFontSelection(); choosingFile = true }.disabled(working)
                     }
                 }
             }
@@ -85,29 +90,59 @@ struct ReaderFontPicker: View {
                 if let id { withAnimation { scroll.scrollTo(id, anchor: .center) } }
             }
         }
-        .onAppear { library.loadIfNeeded() }
-        .onDisappear { importing?.cancel() }
+        .onAppear { library.loadIfNeeded(); settings.refreshBuiltinFonts() }
+        .onDisappear { importing?.cancel(); cancelFontSelection() }
     }
 
     private func builtin(_ font: ReaderFont, title: LocalizedStringKey) -> some View {
         var sample = defaultReaderSettings()
         sample.font = font
-        return Button {
-            Task { do { try await settings.selectFont(font, imported: nil) } catch { message = error.localizedDescription } }
-        } label: {
+        let available = builtinFonts.isAvailable(font)
+        return Button { selectBuiltin(font) } label: {
             HStack {
-                Text(title).font(Font(ReadingTypography.font(sample)))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title).font(Font(ReadingTypography.font(sample)))
+                    if !available {
+                        Text(downloadingFont == font ? LocalizedStringKey("正在下载字体") : LocalizedStringKey("需要下载，点选后获取"))
+                            .font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                    }
+                }
                 Spacer()
-                if selection == nil && settings.value?.font == font { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)) }
+                if downloadingFont == font {
+                    ProgressView(value: downloadProgress).frame(width: 44)
+                        .accessibilityLabel("正在下载字体")
+                } else if selection == nil && settings.value?.font == font {
+                    Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent))
+                }
             }.foregroundStyle(Color(uiColor: theme.ink))
         }.disabled(working)
             .accessibilityAddTraits(selection == nil && settings.value?.font == font ? .isSelected : [])
             .accessibilityIdentifier("readerFont-\(font)")
     }
+    private func cancelFontSelection() {
+        fontSelection?.cancel(); fontSelection = nil
+        fontSelectionID = nil; downloadingFont = nil; downloadProgress = nil
+    }
+    private func selectBuiltin(_ font: ReaderFont) {
+        cancelFontSelection()
+        let id = UUID(); fontSelectionID = id
+        if !builtinFonts.isAvailable(font) { downloadingFont = font }
+        fontSelection = Task {
+            defer { if fontSelectionID == id { fontSelection = nil; downloadingFont = nil; downloadProgress = nil } }
+            do {
+                try await settings.selectBuiltinFont(font, fonts: builtinFonts) { progress in
+                    if fontSelectionID == id { downloadProgress = progress }
+                }
+            } catch {
+                if !Task.isCancelled, fontSelectionID == id { message = error.localizedDescription }
+            }
+        }
+    }
     private func importedRow(_ resource: ReaderFontResource, face: ReaderFontFace) -> some View {
         let ref = ImportedReaderFont(resourceSha256: resource.sha256, face: face.postscriptName)
         let available = library.isAvailable(ref)
         return Button {
+            cancelFontSelection()
             guard available else { message = String(localized: "所选字体不可用，暂用系统字体"); return }
             Task {
                 do { try await settings.selectFont(.system, imported: ref) }
@@ -126,8 +161,8 @@ struct ReaderFontPicker: View {
         }
         .disabled(working)
         .accessibilityAddTraits(selection == ref ? .isSelected : [])
-        .swipeActions(allowsFullSwipe: false) { Button("删除", role: .destructive) { deleting = resource }.disabled(working) }
-        .accessibilityAction(named: Text("删除")) { if !working { deleting = resource } }
+        .swipeActions(allowsFullSwipe: false) { Button("删除", role: .destructive) { cancelFontSelection(); deleting = resource }.disabled(working) }
+        .accessibilityAction(named: Text("删除")) { if !working { cancelFontSelection(); deleting = resource } }
     }
     private func importFiles(_ urls: [URL]) {
         guard importing == nil, !urls.isEmpty else { return }

@@ -23,7 +23,7 @@ extension NSAttributedString.Key {
 @MainActor
 enum ReadingTypography {
     static func minimumColumnWidth(_ settings: ReaderSettings) -> CGFloat { max(320, 16 * font(settings).pointSize) }
-    static var layoutVersion: Int { 3 + ReaderFontLibrary.shared.revision }
+    static var layoutVersion: Int { 3 + ReaderFontLibrary.shared.revision + ReaderBuiltinFonts.shared.revision }
 
     static func font(_ settings: ReaderSettings, heading: Bool = false, library: ReaderFontLibrary = .shared) -> UIFont {
         let size = settings.fontSize * (heading ? 1.2 : 1)
@@ -31,16 +31,8 @@ enum ReadingTypography {
             let base = library.isAvailable(imported) ? UIFont(name: imported.face, size: size) : nil
             return UIFontMetrics(forTextStyle: .body).scaledFont(for: base ?? .systemFont(ofSize: size, weight: heading ? .medium : .regular))
         }
-        let base: UIFont
-        switch settings.font {
-        case .system: base = .systemFont(ofSize: size, weight: heading ? .medium : .regular)
-        case .serif:
-            base = UIFont(name: heading ? "SongtiSC-Bold" : "SongtiSC-Regular", size: size)
-                ?? UIFont(descriptor: UIFont.systemFont(ofSize: size).fontDescriptor.withDesign(.serif) ?? UIFont.systemFont(ofSize: size).fontDescriptor, size: size)
-        case .rounded:
-            base = UIFont(descriptor: UIFont.systemFont(ofSize: size, weight: heading ? .medium : .regular).fontDescriptor.withDesign(.rounded)
-                          ?? UIFont.systemFont(ofSize: size).fontDescriptor, size: size)
-        }
+        let base = ReaderBuiltinFonts.shared.font(settings.font, size: size, heading: heading)
+            ?? .systemFont(ofSize: size, weight: heading ? .medium : .regular)
         return UIFontMetrics(forTextStyle: .body).scaledFont(for: base)
     }
 

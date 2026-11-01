@@ -133,6 +133,9 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .NSUbiquityIdentityDidChange).receive(on: DispatchQueue.main)) { _ in
                 Task { library.startCloudDiscovery(reset: true); await cloud.identityChanged(); await library.refresh(); await cloud.refresh() }
             }
+            .onReceive(NotificationCenter.default.publisher(for: ReaderBuiltinFonts.changed).receive(on: DispatchQueue.main)) { _ in
+                readerSettings.refreshBuiltinFonts()
+            }
             .onReceive(NotificationCenter.default.publisher(for: .CKAccountChanged).receive(on: DispatchQueue.main)) { _ in
                 Task { await cloud.identityChanged() }
             }
@@ -145,6 +148,7 @@ struct MoonreadApp: App {
                     Task { await AppDataService.shared.pauseImports() }
                 }
                 if phase == .active {
+                    readerSettings.refreshBuiltinFonts()
                     Task { await library.service.refreshSystemWidgetConfigurations() }
                     Task { if ai.providers.catalogActivated { await ai.providers.refreshCatalogsIfNeeded() } }
                     Task {
@@ -236,6 +240,7 @@ struct MoonreadApp: App {
 }
 
 private struct MoonreadRoot: View {
+    @Environment(ReaderSettingsStore.self) private var readerSettings
     @Environment(AIService.self) private var ai
     @Bindable var library: LibraryModel
     let themes: ThemeStore
@@ -282,6 +287,9 @@ private struct MoonreadRoot: View {
                 Button("知道了", role: .cancel) { themes.error = nil }
                 if !themes.loaded { Button("重试") { Task { await themes.load() } } }
             } message: { Text(themes.error ?? "") }
+            .alert("字体需要下载", isPresented: Binding(get: { readerSettings.fontNotice != nil }, set: { if !$0 { readerSettings.fontNotice = nil } })) {
+                Button("知道了", role: .cancel) { readerSettings.fontNotice = nil }
+            } message: { Text(readerSettings.fontNotice ?? "") }
             .alert("阅读遇到问题", isPresented: Binding(get: { library.readerExitError != nil }, set: { if !$0 { library.readerExitError = nil } })) {
                 Button("知道了", role: .cancel) { library.readerExitError = nil }
             } message: { Text(library.readerExitError ?? "") }

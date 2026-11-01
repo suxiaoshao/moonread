@@ -70,7 +70,7 @@ struct ReadingPreviewPane: View {
             HStack {
                 Text(verbatim: source.title).font(.caption).lineLimit(1)
                 Spacer()
-                Text("\(Int(settings.fontSize)) pt").font(.caption).monospacedDigit()
+                Text(settings.fontSize, format: .number.precision(.fractionLength(0))).font(.caption).monospacedDigit()
             }
             .padding(.vertical, 12)
             .foregroundStyle(Color(uiColor: surface.secondary))
@@ -86,7 +86,7 @@ struct ReadingPreviewText: UIViewRepresentable {
     let settings: ReaderSettings
     let surface: ThemeSurface
     var position: ReadingPreviewPosition?
-    var fontRevision = ReaderFontLibrary.shared.revision
+    var fontRevision = ReadingTypography.layoutVersion
     @Environment(\.dynamicTypeSize) private var typeSize
     func makeUIView(context: Context) -> ReadingPreviewTextView { ReadingPreviewTextView() }
     func updateUIView(_ view: ReadingPreviewTextView, context: Context) {

@@ -26,7 +26,7 @@ struct ReaderQuickSettings: View {
                 }.font(.subheadline)
                     .accessibilityIdentifier("moreReadingSettings")
             }
-            Stepper("字号 · \(Int(settings.fontSize)) pt", value: Binding(get: { settings.fontSize }, set: {
+            Stepper("字号 · \(Int(settings.fontSize))", value: Binding(get: { settings.fontSize }, set: {
                 var value = settings; value.fontSize = $0; settings = value
             }), in: typographyControls.fontSize.range, step: typographyControls.fontSize.step).accessibilityIdentifier("quickFontSize")
             HStack(spacing: LayoutTokens.content) {
@@ -245,7 +245,7 @@ struct ReaderSettingsView: View {
                             }
                         } label: {
                             HStack {
-                                Text("阅读预览 · \(Int(settings.fontSize)) pt").font(.caption.weight(.medium))
+                                Text("阅读预览 · \(Int(settings.fontSize))").font(.caption.weight(.medium))
                                 Spacer()
                                 Image(systemName: previewDetent == .height(60) ? "chevron.up" : "chevron.down")
                             }.frame(minHeight: LayoutTokens.hit).contentShape(.rect)
@@ -308,7 +308,7 @@ struct ReaderSettingsView: View {
                         } }
                     } label: {
                         HStack {
-                            Text("阅读预览 · \(Int(settings.fontSize)) pt").font(.caption.weight(.medium))
+                            Text("阅读预览 · \(Int(settings.fontSize))").font(.caption.weight(.medium))
                             Spacer()
                             Text(previewExpanded ? "收起" : "展开").font(.caption)
                             Image(systemName: previewExpanded ? "chevron.down" : "chevron.up")
@@ -481,19 +481,13 @@ struct ReadingSettingsControls: View {
         .themedPage().accessibilityIdentifier("readerTypographyControls")
     }
     private func numberRow(_ title: LocalizedStringKey, value: Binding<Double>, range: ClosedRange<Double>, step: Double, id: String) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            HStack(spacing: 8) {
-                Button { value.wrappedValue = max(range.lowerBound, value.wrappedValue - step) } label: {
-                    Image(systemName: "minus").frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit)
-                }.disabled(value.wrappedValue <= range.lowerBound).accessibilityLabel("减小")
-                Text("\(Int(value.wrappedValue)) pt").monospacedDigit().font(.subheadline)
-                Button { value.wrappedValue = min(range.upperBound, value.wrappedValue + step) } label: {
-                    Image(systemName: "plus").frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit)
-                }.disabled(value.wrappedValue >= range.upperBound).accessibilityLabel("增大")
-            }.buttonStyle(.borderless)
-        }.accessibilityElement(children: .contain).accessibilityIdentifier(id)
+        Stepper(value: value, in: range, step: step) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(value.wrappedValue, format: .number.precision(.fractionLength(0)))
+            }
+        }.accessibilityIdentifier(id)
     }
 
 }

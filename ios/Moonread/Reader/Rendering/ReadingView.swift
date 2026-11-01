@@ -7,7 +7,7 @@ struct ReadingContentGeometry: Equatable {
 }
 
 struct ReadingView: UIViewControllerRepresentable {
-    var fontRevision = ReaderFontLibrary.shared.revision
+    var fontRevision = ReadingTypography.layoutVersion
     @Environment(\.theme) private var theme
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     let window: ReadingWindow
