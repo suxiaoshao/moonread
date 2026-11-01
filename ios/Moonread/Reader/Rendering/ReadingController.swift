@@ -13,6 +13,8 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     #if READER_OPEN_DIAGNOSTICS
     private var displayProbe: ReaderDisplayProbe?
     #endif
+    var autoReading: ReaderAutoReading?
+    var pausedAutomaticTouch = false
     var statisticsInteraction: () -> Void = {}
     var statisticsPresentationChanged: () -> Void = {}
     var annotationChooserChanged: (Bool) -> Void = { _ in }
@@ -66,7 +68,9 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     private var waitingForNativeLayout = false
     private var layoutEpoch: UInt64 = 0
     var contentGeometry: ReadingContentGeometry? {
-        didSet { if contentGeometry != oldValue { viewIfLoaded?.setNeedsLayout() } }
+        didSet {
+            if contentGeometry != oldValue { autoReading?.pause(); viewIfLoaded?.setNeedsLayout() }
+        }
     }
     var controlsVisible = false
     var toggleControls: (() -> Void)?
@@ -126,6 +130,14 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         view.contentMode = .redraw
         view.backgroundColor = theme.paper
         view.addSubview(readingSurface)
+        let observer = ReaderTouchObserver()
+        observer.cancelsTouchesInView = false; observer.delaysTouchesBegan = false; observer.delaysTouchesEnded = false
+        observer.began = { [weak self] in
+            guard let self else { return }
+            pausedAutomaticTouch = autoReading?.running == true
+            autoReading?.pause()
+        }
+        readingSurface.addGestureRecognizer(observer)
         let singleTap = UITapGestureRecognizer(target: self, action: #selector(tappedBody(_:)))
         let doubleTap = UITapGestureRecognizer(target: self, action: #selector(ignoredDoubleTap))
         doubleTap.numberOfTapsRequired = 2
@@ -161,6 +173,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        autoReading?.pause()
         backNavigation.uninstall()
         deviceControls.stop()
     }
@@ -185,6 +198,8 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         let layoutChanged = fontLayoutVersion != ReadingTypography.layoutVersion || !settings.hasSameLayout(as: self.settings) || self.typeSize != typeSize
             || (self.window?.chunks == window.chunks && self.window?.paragraphs != window.paragraphs)
             || self.compactHeaderHeight != compactHeaderHeight
+        if navigating || layoutChanged { autoReading?.pause() }
+        if settings.mode != .scroll { autoReading?.end() }
         if navigating {
             layoutAnchor = anchor
             retainedSelection = nil
@@ -280,6 +295,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         super.viewDidLayoutSubviews()
         updatePaperSurface()
         guard let window = view.window, view.bounds.width > 60, view.bounds.height > 60 else { return }
+        if autoReading?.running == true, insetSize != window.bounds.size { autoReading?.pause() }
         let viewport: CGRect
         var contentInsets: UIEdgeInsets
         view.clipsToBounds = contentGeometry != nil
@@ -392,6 +408,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         updateBottomFade()
         let committedLayoutChanged = needsRebuild || renderedSize != readingSurface.bounds.size || pageLayoutChanged
         if committedLayoutChanged {
+            autoReading?.pause()
             layoutEpoch &+= 1
             if pendingNavigation == nil, let savedViewport {
                 anchor = hadWideLayout ? (layoutAnchor ?? savedViewport.offset) : savedViewport.offset

@@ -323,6 +323,22 @@ fn released_reader_settings_keep_their_values() {
     assert_eq!(value.font_size, 24.0);
     assert_eq!(value.line_spacing, 10.0);
     assert_eq!(value.font, ReaderFont::Serif);
+    assert_eq!(value.auto_reading_seconds, 90.0);
+    let control = auto_reading_control();
+    assert_eq!(
+        (control.minimum, control.maximum, control.step),
+        (20.0, 240.0, 5.0)
+    );
+    for seconds in [20.0, 240.0] {
+        let mut next = value.clone();
+        next.auto_reading_seconds = seconds;
+        assert!(decode_reader_settings(encode_reader_settings(next).unwrap()).is_ok());
+    }
+    for seconds in [19.0, 241.0, f64::NAN] {
+        let mut next = value.clone();
+        next.auto_reading_seconds = seconds;
+        assert!(decode_reader_settings(encode_reader_settings(next).unwrap()).is_err());
+    }
     assert_eq!(value.imported_font, None);
     assert_eq!(value.paragraph_spacing, 9.0);
     assert_eq!(value.indent, ReadingIndent::Original);

@@ -3,12 +3,15 @@ import UIKit
 
 extension ReadingController {
     @objc func tappedBody(_ gesture: UITapGestureRecognizer) {
+        let pausedAutomatically = pausedAutomaticTouch
+        pausedAutomaticTouch = false
         statisticsInteraction()
         if let text = visibleTextViews.first(where: { $0.bounds.contains(gesture.location(in: $0)) }) {
             activateLeaf(text, userInitiated: true)
             let ids = annotationIDs(at: gesture.location(in: text), in: text)
             if !ids.isEmpty { showAnnotations(ids, in: text); return }
         }
+        if pausedAutomatically { autoReading?.pause(showPanel: true); return }
         if controlsVisible || settings?.mode != .pages { toggleControls?(); return }
         let fraction = gesture.location(in: readingSurface).x / max(1, readingSurface.bounds.width)
         if fraction < 0.28 { movePage(-1) }
@@ -191,6 +194,12 @@ extension ReadingController {
                 return true
             })
             return
+        }
+        if let autoReading, autoReading.phase != .idle && autoReading.phase != .finished {
+            text.accessibilityCustomActions?.append(contentsOf: [
+                UIAccessibilityCustomAction(name: String(localized: "暂停自动阅读")) { [weak autoReading] _ in autoReading?.pause(showPanel: true); return true },
+                UIAccessibilityCustomAction(name: String(localized: "结束自动阅读")) { [weak autoReading] _ in autoReading?.end(); return true }
+            ])
         }
         if settings?.mode == .pages {
             text.accessibilityCustomActions?.append(contentsOf: [

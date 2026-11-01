@@ -228,8 +228,7 @@ final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
     weak var retained = lease
     let clock = ReadingClock(bookId: "pending-write")
     var moment = ReadingMoment(
-      monotonicMs: 0, unixMs: 0, utcOffsetSeconds: 0, readable: true, interaction: true,
-      preview: false, startUtf8: 0, endUtf8: 9)
+      monotonicMs: 0, unixMs: 0, utcOffsetSeconds: 0, readable: true, interaction: true, automaticMoving: false, automaticMilliseconds: 0, preview: false, startUtf8: 0, endUtf8: 9)
     _ = clock.update(moment: moment)
     moment.monotonicMs = 1000
     moment.unixMs = 1000

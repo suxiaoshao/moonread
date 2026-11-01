@@ -412,6 +412,72 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     controls.stop()
     XCTAssertEqual(awake, [true, false, true, false])
     XCTAssertNil(orientation.last!)
+    settings.keepAwake = false; controls.update(settings)
+    controls.sceneActive(true)
+    controls.setAutomaticReading(true)
+    XCTAssertEqual(awake.last, true)
+    controls.setAutomaticReading(false)
+    XCTAssertEqual(awake.last, false)
+    settings.keepAwake = true; controls.update(settings)
+    controls.setAutomaticReading(true); controls.setAutomaticReading(false)
+    XCTAssertEqual(awake.last, true, "Automatic pause preserves the saved keep-awake preference")
+    controls.stop()
+  }
+
+  @MainActor func testAutomaticReadingRequiresExplicitResumeAndStopsAtPreparedEdges() throws {
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 800))
+    let reader = ReadingController()
+    window.rootViewController = reader; window.isHidden = false
+    defer { window.isHidden = true }
+    reader.loadViewIfNeeded()
+    let scroll = ScrollReadingTextView(frame: CGRect(x: 0, y: 0, width: 320, height: 400))
+    scroll.contentInsetAdjustmentBehavior = .never // Same policy as the real reader.
+    scroll.contentInset.bottom = 20 // The final line must clear the existing fade/home area.
+    reader.view.addSubview(scroll)
+    scroll.contentSize = CGSize(width: 320, height: 2000)
+    scroll.contentOffset = .zero
+    reader.scrollText = scroll; reader.settings = defaultReaderSettings()
+    reader.window = ReadingWindow(chunks: readingChunks())
+    reader.needsRebuild = false
+    let opening = UUID(); reader.openingID = opening
+    let viewport = ReadingViewportAccess(); viewport.controller = reader
+    let automatic = ReaderAutoReading(viewport: viewport); reader.autoReading = automatic
+    defer { automatic.end() }
+    var readable = true
+    automatic.readable = { readable }
+    automatic.requestStart()
+    automatic.startAfterDismissal(opening: opening, seconds: 90)
+    XCTAssertTrue(automatic.running)
+    automatic.frame(at: 0); automatic.frame(at: 1) // A stall advances at most one bounded frame.
+    XCTAssertGreaterThan(scroll.contentOffset.y, 0)
+    XCTAssertLessThanOrEqual(automatic.milliseconds, 50)
+    readable = false; automatic.frame(at: 2)
+    let paused = scroll.contentOffset.y
+    XCTAssertEqual(automatic.phase, .paused)
+    readable = true; automatic.frame(at: 3)
+    XCTAssertEqual(scroll.contentOffset.y, paused, "Dismissing a task must not restart movement")
+    automatic.requestStart(); automatic.startAfterDismissal(opening: opening, seconds: 20)
+    scroll.contentOffset.y = 1620
+    automatic.frame(at: 4); automatic.frame(at: 4.1)
+    XCTAssertEqual(automatic.phase, .preparing)
+    scroll.contentSize.height = 2400
+    reader.updateAutomaticReadingEdge()
+    XCTAssertEqual(automatic.phase, .ready)
+    automatic.frame(at: 5)
+    XCTAssertEqual(scroll.contentOffset.y, 1620, "Prepared content still waits for Continue")
+    automatic.requestStart(); automatic.startAfterDismissal(opening: opening, seconds: 20)
+    reader.window?.isEndOfBook = true
+    scroll.contentOffset.y = 2020
+    automatic.frame(at: 6); automatic.frame(at: 6.1)
+    XCTAssertEqual(automatic.phase, .finished)
+    automatic.end()
+    XCTAssertEqual(automatic.phase, .idle)
+    automatic.requestStart(); automatic.startAfterDismissal(opening: opening, seconds: 90)
+    reader.contentGeometry = ReadingContentGeometry(size: CGSize(width: 600, height: 400))
+    XCTAssertEqual(automatic.phase, .paused, "A real size/pose input change interrupts before relayout")
+    automatic.requestStart(); automatic.pause()
+    automatic.startAfterDismissal(opening: opening, seconds: 90)
+    XCTAssertFalse(automatic.running, "An interrupted pending start is consumed")
   }
 
   // S414: 离开阅读冻结正式位置，晚到排版/展示事件不得再提交位置。

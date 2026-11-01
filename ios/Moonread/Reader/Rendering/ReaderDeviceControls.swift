@@ -17,6 +17,8 @@ final class ReaderDeviceControls {
     private weak var scene: UIWindowScene?
     private var observers: [NSObjectProtocol] = []
     private var active = false
+    private var automaticReading = false
+    var willSuspend: () -> Void = {}
     private var originalBrightness: CGFloat?
     private var expectedBrightness: CGFloat?
     private var settings = defaultReaderSettings()
@@ -32,9 +34,15 @@ final class ReaderDeviceControls {
         let previous = settings
         settings = value
         guard active else { return }
-        if previous.keepAwake != value.keepAwake { setAwake(value.keepAwake) }
+        if previous.keepAwake != value.keepAwake { setAwake(value.keepAwake || automaticReading) }
         if previous.brightness != value.brightness { applyBrightness() }
         if previous.orientation != value.orientation { applyOrientation() }
+    }
+
+    func setAutomaticReading(_ value: Bool) {
+        guard automaticReading != value else { return }
+        automaticReading = value
+        if active { setAwake(settings.keepAwake || value) }
     }
 
     func start(in scene: UIWindowScene?) {
@@ -63,13 +71,14 @@ final class ReaderDeviceControls {
     private func activate() {
         guard !active else { return }
         active = true
-        setAwake(settings.keepAwake)
+        setAwake(settings.keepAwake || automaticReading)
         applyBrightness()
         applyOrientation()
     }
 
     private func suspend() {
         guard active else { return }
+        willSuspend()
         active = false
         setAwake(false)
         restoreBrightness()

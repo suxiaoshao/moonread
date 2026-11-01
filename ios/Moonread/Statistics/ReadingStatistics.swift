@@ -243,11 +243,15 @@ final class ReadingActivityRecorder {
         await writer.drain()
     }
 
+    func bodyReadable(through readerViewport: ReadingViewportAccess? = nil) -> Bool {
+        visibility.isReadable(nativeTaskPresented: (readerViewport ?? viewport)?.hasBlockingPresentation(
+            allowingReaderAccessory: visibility.readerAccessoryPresented) ?? false)
+    }
+
     func sample(interaction: Bool = false, capture: Bool = true) {
         guard !stopped, let clock, let lease else { return }
         // UIKit can present/dismiss without a SwiftUI update. Every sampling
         // path (including capture:false interaction) reads the current chain.
-        let nativeTask = viewport?.hasBlockingPresentation(allowingReaderAccessory: visibility.readerAccessoryPresented) ?? false
         let visible = capture ? viewport?.statisticsRange() : (range.1 > range.0 ? range : nil)
         if capture, let visible { range = visible }
         let instant = time(), now = instant.date
@@ -255,8 +259,9 @@ final class ReadingActivityRecorder {
             monotonicMs: UInt64(instant.uptime * 1000),
             unixMs: Int64(now.timeIntervalSince1970 * 1000),
             utcOffsetSeconds: Int32(TimeZone.current.secondsFromGMT(for: now)),
-            readable: enabled && visibility.isReadable(nativeTaskPresented: nativeTask) && visible != nil,
-            interaction: interaction, preview: preview, startUtf8: range.0, endUtf8: range.1))
+            readable: enabled && bodyReadable() && visible != nil,
+            interaction: interaction, automaticMoving: viewport?.controller?.autoReading?.running == true,
+            automaticMilliseconds: viewport?.controller?.autoReading?.milliseconds ?? 0, preview: preview, startUtf8: range.0, endUtf8: range.1))
         enqueue(slices, lease: lease)
     }
 
@@ -369,7 +374,7 @@ extension AppDataService {
                 let clock = ReadingClock(bookId: id)
                 var point = ReadingMoment(monotonicMs: 0, unixMs: Int64(start.timeIntervalSince1970 * 1000),
                     utcOffsetSeconds: Int32(TimeZone.current.secondsFromGMT(for: start)), readable: true,
-                    interaction: true, preview: false, startUtf8: 0, endUtf8: 30)
+                    interaction: true, automaticMoving: false, automaticMilliseconds: 0, preview: false, startUtf8: 0, endUtf8: 30)
                 _ = clock.update(moment: point)
                 for minute in 1...count {
                     point.monotonicMs = UInt64(minute * 60_000)

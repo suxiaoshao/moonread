@@ -3,7 +3,7 @@ import UIKit
 
 /// Intent belongs to this reading opening. Geometry and native lifecycle never
 /// write the location. All sizes use the same sheet and source navigation.
-enum ReaderTool: Hashable { case library, search, settings, more }
+enum ReaderTool: Hashable { case library, search, settings, more, automatic }
 enum ReaderToolExposure: Equatable { case hidden, accessory, expanded }
 enum ReaderDestination: Hashable {
     case library, fullSettings, preview(UUID), palette(UUID), chapter(UUID)
@@ -117,7 +117,7 @@ enum ReaderPresentationTarget: Equatable { case none, dock, settings, details }
         if path.contains(.fullSettings) || (state.location.selection == .settings && state.exposure == .expanded) { return .settings }
         if editorParent == .settings || editorParent == .preview { return .settings }
         if !path.isEmpty || hasNote { return .dock }
-        return state.controlsVisible || hasAccessory ? .dock : .none
+        return state.controlsVisible || hasAccessory || (state.location.selection == .automatic && state.exposure != .hidden) ? .dock : .none
     }
 }
 
@@ -163,7 +163,7 @@ enum ReaderPresentationTarget: Equatable { case none, dock, settings, details }
     let noteEditor: NoteEditorModel?
     let editor: ReaderEditSession?
     var dock: ReaderDock {
-        switch location.selection { case .settings: .settings; case .more: .more; default: .progress }
+        switch location.selection { case .settings: .settings; case .more: .more; case .automatic: .automatic; default: .progress }
     }
     var searchExpanded: Bool { location.selection == .search && exposure == .expanded }
     var panel: ReaderPanel? {

@@ -5,6 +5,7 @@ struct ReaderMoreContent: View {
     let session: ReaderSession
     let openLibrary: (ReaderLibraryTab, Bool) -> Void
     let presentPanel: (ReaderPanel) -> Void
+    let automaticReading: () -> Void
     let changeEncoding: (String?) -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.moonreadReduceMotion) private var reduceMotion
@@ -25,7 +26,7 @@ struct ReaderMoreContent: View {
                     }
                 }
             } else {
-                HStack(spacing: 0) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 4), spacing: 8) {
                     ForEach(moreActions) { action in
                         moreButton(action) { label in
                             label.labelStyle(ReaderToolLabelStyle())
@@ -51,11 +52,11 @@ struct ReaderMoreContent: View {
     }
 
     private enum MoreAction: String, Identifiable {
-        case bookmark, bookmarks, notes, details
+        case bookmark, bookmarks, notes, details, automatic
         var id: Self { self }
     }
 
-    private var moreActions: [MoreAction] { [.bookmark, .bookmarks, .notes, .details] }
+    private var moreActions: [MoreAction] { [.bookmark, .bookmarks, .notes, .details, .automatic] }
 
     /// One 更多 action: the visible names stay short; VoiceOver and Voice Control get the full ones.
     private func moreButton(_ action: MoreAction, @ViewBuilder layout: (MoreLabel) -> some View) -> some View {
@@ -65,12 +66,14 @@ struct ReaderMoreContent: View {
         case .bookmarks: "list.bullet.rectangle"
         case .notes: "highlighter"
         case .details: "info.circle"
+        case .automatic: "play.circle"
         }
         let title: LocalizedStringKey = switch action {
         case .bookmark: "书签"
         case .bookmarks: "书签列表"
         case .notes: "笔记"
         case .details: "详情"
+        case .automatic: "自动阅读"
         }
         let label = MoreLabel(title: title, symbol: symbol, bookmarked: session.bookmarked, reduceMotion: reduceMotion)
         return Button {
@@ -79,6 +82,7 @@ struct ReaderMoreContent: View {
             case .bookmarks: openLibrary(.bookmarks, true)
             case .notes: openLibrary(.notes, true)
             case .details: presentPanel(.details)
+            case .automatic: automaticReading()
             }
         } label: {
             layout(label).foregroundStyle(Color(uiColor: marked ? theme.accent : theme.ink)).contentShape(.rect)
@@ -123,6 +127,8 @@ struct ReaderMoreContent: View {
                 content.accessibilityLabel("标注与笔记")
                     .accessibilityInputLabels([Text("笔记"), Text("标注与笔记")])
                     .accessibilityIdentifier("openNotes")
+            case .automatic:
+                content.accessibilityLabel("自动阅读").accessibilityIdentifier("openAutoReading")
             case .details:
                 content.accessibilityLabel("小说详情")
                     .accessibilityInputLabels([Text("详情"), Text("小说详情")])
