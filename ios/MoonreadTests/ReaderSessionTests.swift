@@ -342,13 +342,13 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     let published = expectation(description: "Available index is published before preparation returns")
     published.assertForOverFulfill = true
     let token = NotificationCenter.default.addObserver(forName: .libraryIndexChanged, object: service, queue: nil) { @Sendable _ in
-      XCTAssertFalse((try? core.libraryEntry(fileId: location.id).needsDownload) ?? true)
+      XCTAssertFalse((try? core.querySnapshot(json: "{}").libraryEntry(fileId: location.id).needsDownload) ?? true)
       published.fulfill()
     }
     defer { NotificationCenter.default.removeObserver(token) }
     try await service.prepareSourceFile(entries[0].source)
     await fulfillment(of: [published], timeout: 0)
-    XCTAssertFalse(try core.libraryEntry(fileId: entries[0].id).needsDownload)
+    XCTAssertFalse(try core.querySnapshot(json: "{}").libraryEntry(fileId: entries[0].id).needsDownload)
     try await service.prepareSourceFile(entries[0].source) // No change, no second publication.
     XCTAssertTrue(try core.sourceFiles(shelfId: "builtin").allSatisfy { $0.bookId == nil })
     XCTAssertTrue(try core.querySnapshot(json: "{}").recentLibraryEntries(limit: 3).isEmpty)
@@ -358,7 +358,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
       try await service.prepareSourceFile(entries[0].source)
       XCTFail("Missing originals must fail on the shelf before opening a reader")
     } catch {}
-    XCTAssertTrue(try core.libraryEntry(fileId: entries[0].id).needsDownload)
+    XCTAssertTrue(try core.querySnapshot(json: "{}").libraryEntry(fileId: entries[0].id).needsDownload)
     XCTAssertTrue(try core.sourceFiles(shelfId: "builtin").allSatisfy { $0.bookId == nil })
   }
 
