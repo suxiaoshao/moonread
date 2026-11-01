@@ -34,6 +34,7 @@ struct ReadingViewport {
     let settings: ReaderSettings
     let typeSize: DynamicTypeSize
     let pages: [TextPage]
+    var layoutVersion = ReadingTypography.layoutVersion
     var isCover = false
     var pageSize: CGSize? = nil
     var leafCount = 1
@@ -47,7 +48,7 @@ struct ReadingNavigation {
     var bottomObstruction: CGFloat = 0
     var restoring: ReadingViewport?
     func restoration(size: CGSize, settings: ReaderSettings?, typeSize: DynamicTypeSize, pageSize: CGSize? = nil, leafCount: Int = 1) -> ReadingViewport? {
-        guard let saved = restoring, saved.size == size, saved.settings == settings, saved.typeSize == typeSize, saved.pageSize == pageSize, saved.leafCount == leafCount else { return nil }
+        guard let saved = restoring, saved.layoutVersion == ReadingTypography.layoutVersion, saved.size == size, saved.settings == settings, saved.typeSize == typeSize, saved.pageSize == pageSize, saved.leafCount == leafCount else { return nil }
         return saved
     }
     func pageIndex(in pages: [TextPage], anchor: UInt64) -> Int { pages.lastIndex { $0.start <= anchor } ?? 0 }

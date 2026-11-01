@@ -61,6 +61,89 @@ final class ReaderSettingsReaderIntegrationTests: ReaderIntegrationFixture {
         json: UserDefaults(suiteName: suite)!.string(forKey: "Moonread.readerSettings")!), settings)
   }
 
+  @MainActor func testImportedFontSelectionDeletionAndMissingResourceKeepDurableChoice() async throws {
+    let (root, service, _, _, _, _, _, suite) = try singleBookFixture()
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      UserDefaults.standard.removePersistentDomain(forName: suite)
+    }
+    let fonts = root.appendingPathComponent("Fonts")
+    try FileManager.default.createDirectory(at: fonts, withIntermediateDirectories: true)
+    let face = ReaderFontFace(postscriptName: "Sample-Regular", displayName: "Sample")
+    let resource = try makeReaderFontResource(sha256: String(repeating: "a", count: 64), extension: "ttc", sourceName: "sample.ttc", faces: [face])
+    let file = fonts.appendingPathComponent(resource.relativePath)
+    let manifest = fonts.appendingPathComponent("manifest.json")
+    try Data("private font fixture".utf8).write(to: file)
+    try Data(encodeReaderFontManifest(resources: [resource]).utf8).write(to: manifest)
+    var fails = false
+    let store = ReaderSettingsStore(service: service, persist: { next in
+      if fails { throw CocoaError(.fileWriteOutOfSpace) }
+      try await service.saveSettings(next)
+    })
+    try store.load()
+    let ref = ImportedReaderFont(resourceSha256: resource.sha256, face: face.postscriptName)
+    try await store.selectFont(.system, imported: ref)
+    XCTAssertEqual(try service.settings().importedFont, ref)
+    XCTAssertEqual(store.value?.importedFont, ref)
+    let selected = try XCTUnwrap(store.value)
+    let failedDownload = ReaderBuiltinFonts(lookup: { _, _ in nil }, match: { names in
+      XCTAssertEqual(names, ["STYuanti-SC-Regular"])
+      return AsyncThrowingStream { $0.finish(throwing: URLError(.notConnectedToInternet)) }
+    })
+    do { try await store.selectBuiltinFont(.rounded, fonts: failedDownload); XCTFail("Download failure must retain the choice") }
+    catch { }
+    XCTAssertEqual(store.value, selected)
+    XCTAssertEqual(try service.settings(), selected)
+
+    let started = expectation(description: "System font matching started")
+    var continuation: AsyncThrowingStream<Double, Error>.Continuation?
+    let pendingDownload = ReaderBuiltinFonts(lookup: { _, _ in nil }, match: { names in
+      XCTAssertEqual(names, ["STSongti-SC-Regular"])
+      return AsyncThrowingStream { continuation = $0; started.fulfill() }
+    })
+    let downloading = Task { try await store.selectBuiltinFont(.serif, fonts: pendingDownload) }
+    await fulfillment(of: [started], timeout: 2)
+    downloading.cancel()
+    continuation?.finish()
+    do { try await downloading.value; XCTFail("Leaving the picker must not apply a late choice") }
+    catch { }
+    XCTAssertEqual(store.value, selected)
+    XCTAssertEqual(try service.settings(), selected)
+    XCTAssertFalse(selected.hasSameLayout(as: defaultReaderSettings()))
+
+    // Resource availability is a platform fact, never a preference rewrite.
+    let missing = ReaderFontLibrary(root: fonts, register: { _ in throw CocoaError(.fileReadNoSuchFile) }, unregister: { _ in })
+    missing.loadIfNeeded()
+    XCTAssertFalse(missing.isAvailable(ref))
+    XCTAssertEqual(ReadingTypography.font(selected, library: missing).fontName, ReadingTypography.font(defaultReaderSettings()).fontName)
+    XCTAssertEqual(try service.settings().importedFont, ref)
+
+    let library = ReaderFontLibrary(root: fonts, register: { _ in }, unregister: { _ in })
+    library.loadIfNeeded()
+    fails = true
+    do { try await library.remove(resource, settings: store); XCTFail("Save must precede resource deletion") }
+    catch { }
+    XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+    XCTAssertTrue(library.isAvailable(ref))
+    XCTAssertEqual(store.value?.importedFont, ref)
+    XCTAssertEqual(try decodeReaderFontManifest(json: String(contentsOf: manifest, encoding: .utf8)), [resource])
+    fails = false
+    let inUse = ReaderFontLibrary(root: fonts, register: { _ in }, unregister: { _ in throw CocoaError(.fileWriteNoPermission) })
+    inUse.loadIfNeeded()
+    do { try await inUse.remove(resource, settings: store); XCTFail("Unregister failure must retain the file") }
+    catch { }
+    XCTAssertNil(store.value?.importedFont)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
+    XCTAssertTrue(inUse.isAvailable(ref))
+    try await store.selectFont(.system, imported: ref)
+    try await library.remove(resource, settings: store)
+    XCTAssertNil(store.value?.importedFont)
+    XCTAssertEqual(store.value?.font, .system)
+    XCTAssertNil(try service.settings().importedFont)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: file.path))
+    XCTAssertTrue(try decodeReaderFontManifest(json: String(contentsOf: manifest, encoding: .utf8)).isEmpty)
+  }
+
   // S418: 设置连续编辑只发布最终已保存值，保存失败回退最后成功值；不锁 coalescing 写次数。
   @MainActor
   func testThemePreferenceFailureRollsBackToLastSavedEdit() async {

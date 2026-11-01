@@ -70,7 +70,7 @@ struct ReadingPreviewPane: View {
             HStack {
                 Text(verbatim: source.title).font(.caption).lineLimit(1)
                 Spacer()
-                Text("\(Int(settings.fontSize)) pt").font(.caption).monospacedDigit()
+                Text(settings.fontSize, format: .number.precision(.fractionLength(0))).font(.caption).monospacedDigit()
             }
             .padding(.vertical, 12)
             .foregroundStyle(Color(uiColor: surface.secondary))
@@ -86,6 +86,7 @@ struct ReadingPreviewText: UIViewRepresentable {
     let settings: ReaderSettings
     let surface: ThemeSurface
     var position: ReadingPreviewPosition?
+    var fontRevision = ReadingTypography.layoutVersion
     @Environment(\.dynamicTypeSize) private var typeSize
     func makeUIView(context: Context) -> ReadingPreviewTextView { ReadingPreviewTextView() }
     func updateUIView(_ view: ReadingPreviewTextView, context: Context) {
@@ -101,6 +102,7 @@ final class ReadingPreviewTextView: UITextView {
     private var settings: ReaderSettings?
     private var surface = ThemeSurface.initial
     private var typeSize: DynamicTypeSize?
+    private var fontLayoutVersion = -1
     private var readingText = ReadingText(text: "")
     private var coordinates: TextCoordinates { readingText.coordinates }
     private var layoutWidth: CGFloat = 0
@@ -134,10 +136,11 @@ final class ReadingPreviewTextView: UITextView {
         if self.source != source {
             pendingAnchor = restored?.anchor ?? source.anchor; pendingPosition = restored; needsTextLayout = true
             accessibilityLabel = ReadingText(source.window).text
-        } else if !settings.hasSameLayout(as: self.settings) || self.typeSize != typeSize {
+        } else if fontLayoutVersion != ReadingTypography.layoutVersion || !settings.hasSameLayout(as: self.settings) || self.typeSize != typeSize {
             pendingAnchor = projectionAnchor(); needsTextLayout = true
         }
         self.source = source; self.settings = settings; self.surface = surface; self.typeSize = typeSize
+        fontLayoutVersion = ReadingTypography.layoutVersion
         paint.set(surface.ink)
         overrideUserInterfaceStyle = surface.style
         updateDecorations()

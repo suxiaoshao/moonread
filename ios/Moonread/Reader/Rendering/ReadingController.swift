@@ -163,6 +163,8 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         deviceControls.stop()
     }
 
+    private var fontLayoutVersion = -1
+
     func configure(window: ReadingWindow, settings: ReaderSettings, anchor: UInt64,
                    dark: Bool, typeSize: DynamicTypeSize, theme: ThemeSurface? = nil, reduceMotion: Bool = false,
                    navigationRevision: Int = 0, navigation: ReadingNavigation? = nil,
@@ -178,7 +180,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         if contentsChanged { requestedFrontiers.reset() }
         let oldWindow = self.window
         let navigating = self.navigationRevision != navigationRevision
-        let layoutChanged = !settings.hasSameLayout(as: self.settings) || self.typeSize != typeSize
+        let layoutChanged = fontLayoutVersion != ReadingTypography.layoutVersion || !settings.hasSameLayout(as: self.settings) || self.typeSize != typeSize
             || (self.window?.chunks == window.chunks && self.window?.paragraphs != window.paragraphs)
             || self.compactHeaderHeight != compactHeaderHeight
         if navigating {
@@ -199,6 +201,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         if layoutChanged { preservePageBoundaries = false }
         else if contentsChanged { preservePageBoundaries = true }
         self.settings = settings
+        fontLayoutVersion = ReadingTypography.layoutVersion
         updatePaperSurface()
         self.anchor = anchor
         self.dark = dark
