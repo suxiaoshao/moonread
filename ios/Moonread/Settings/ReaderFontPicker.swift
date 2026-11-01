@@ -100,17 +100,14 @@ struct ReaderFontPicker: View {
         let available = builtinFonts.isAvailable(font)
         return Button { selectBuiltin(font) } label: {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(Font(ReadingTypography.font(sample)))
-                    if !available {
-                        Text(downloadingFont == font ? LocalizedStringKey("正在下载字体") : LocalizedStringKey("需要下载，点选后获取"))
-                            .font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                    }
-                }
+                Text(title).font(Font(ReadingTypography.font(sample)))
                 Spacer()
                 if downloadingFont == font {
                     ProgressView(value: downloadProgress).frame(width: 44)
                         .accessibilityLabel("正在下载字体")
+                } else if !available {
+                    Image(systemName: "icloud.and.arrow.down")
+                        .foregroundStyle(Color(uiColor: theme.accent)).accessibilityLabel("下载")
                 } else if selection == nil && settings.value?.font == font {
                     Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent))
                 }
