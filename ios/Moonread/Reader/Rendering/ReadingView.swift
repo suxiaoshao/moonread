@@ -36,6 +36,7 @@ struct ReadingView: UIViewControllerRepresentable {
     var brightnessChanged: (Double) -> Void = { _ in }
     var orientationFailed: () -> Void = {}
     var statisticsInteraction: () -> Void = {}
+    var statisticsPresentationChanged: () -> Void = {}
     var annotationChooserChanged: (Bool) -> Void = { _ in }
     var edgeChanged: (Bool) -> Void = { _ in }
     let compactHeaderHeight: CGFloat
@@ -68,6 +69,7 @@ struct ReadingView: UIViewControllerRepresentable {
         controller.deviceControls.update(settings)
         controller.annotationChooserChanged = annotationChooserChanged
         controller.statisticsInteraction = statisticsInteraction
+        controller.statisticsPresentationChanged = statisticsPresentationChanged
         controller.configure(window: window, settings: settings, anchor: anchor,
                              dark: dark, typeSize: dynamicTypeSize, theme: theme, reduceMotion: reduceMotion,
                              navigationRevision: navigationRevision, navigation: navigation, annotations: annotations,

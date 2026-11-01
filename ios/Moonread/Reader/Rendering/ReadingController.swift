@@ -14,6 +14,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     private var displayProbe: ReaderDisplayProbe?
     #endif
     var statisticsInteraction: () -> Void = {}
+    var statisticsPresentationChanged: () -> Void = {}
     var annotationChooserChanged: (Bool) -> Void = { _ in }
     var annotationChooser: UIAlertController?
     var annotationChooserDelegate: AnnotationChooserDelegate?
@@ -155,6 +156,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         super.viewDidAppear(animated)
         backNavigation.install(on: self)
         deviceControls.start(in: view.window?.windowScene)
+        statisticsPresentationChanged()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
