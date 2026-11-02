@@ -24,44 +24,33 @@ struct ReaderNotesList: View {
                     Button("重试") { Task { await model.loadNotes(reset: true) } }
                 }.padding()
             }
-            List {
+            List(selection: Binding(get: { model.selectedNotes }, set: { model.updateNoteSelection($0) })) {
                 if let title = session.book?.title {
                     Text(verbatim: title).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                         .frame(maxWidth: 680, alignment: .leading).frame(maxWidth: .infinity)
-                        .listRowBackground(Color(uiColor: theme.surface)).listRowSeparator(.hidden)
+                        .listRowBackground(Color(uiColor: theme.surface)).listRowSeparator(.hidden).selectionDisabled()
                 }
                 ForEach(model.notes, id: \.id) { mark in
                     HStack(alignment: .top, spacing: 12) {
-                        if model.selectingNotes {
-                            Button { model.toggleNote(mark) } label: {
-                                Image(systemName: model.selectedNotes.contains(mark.id) ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(Color(uiColor: model.selectedNotes.contains(mark.id) ? theme.accent : theme.secondary))
-                                    .frame(minWidth: 44, minHeight: 44).contentShape(.rect)
-                            }.buttonStyle(.plain).accessibilityLabel("选择")
-                                .accessibilityAddTraits(model.selectedNotes.contains(mark.id) ? .isSelected : [])
-                        }
                         if mark.kind == .annotation {
                             RoundedRectangle(cornerRadius: 2).fill(Color(uiColor: theme.annotation))
                                 .frame(width: 3).frame(maxHeight: .infinity)
                         }
-                        Button {
-                            if model.selectingNotes { model.toggleNote(mark) }
-                            else { navigate(mark.startUtf8, mark.kind == .annotation ? mark.endUtf8 : nil, mark.kind == .annotation ? .context : .start) }
-                        } label: {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text(verbatim: mark.excerpt).foregroundStyle(Color(uiColor: theme.ink)).lineLimit(3)
-                                if !mark.note.isEmpty { Text(verbatim: mark.note).foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(2) }
-                                Text(verbatim: [model.noteLocations[mark.id], Date(timeIntervalSince1970: Double(mark.created) / 1000).formatted(date: .abbreviated, time: .omitted)]
-                                    .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
-                                    .font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                            }.frame(maxWidth: .infinity, alignment: .leading).contentShape(.rect)
-                        }.buttonStyle(.plain).accessibilityIdentifier("noteRow-\(mark.id)")
+                        Group {
+                            if model.selectingNotes { noteContent(mark) }
+                            else {
+                                Button {
+                                    navigate(mark.startUtf8, mark.kind == .annotation ? mark.endUtf8 : nil, mark.kind == .annotation ? .context : .start)
+                                } label: { noteContent(mark) }.buttonStyle(.plain)
+                            }
+                        }.accessibilityIdentifier("noteRow-\(mark.id)")
                         if mark.kind == .annotation && !model.selectingNotes {
                             Button { edit(mark) } label: { Image(systemName: "square.and.pencil").frame(minWidth: 44, minHeight: 44) }
                                 .buttonStyle(.borderless).accessibilityLabel("编辑批注").accessibilityIdentifier("editNote-\(mark.id)")
                         }
                     }.frame(maxWidth: 680).frame(maxWidth: .infinity).padding(.vertical, 8)
-                        .listRowBackground(Color(uiColor: model.selectedNotes.contains(mark.id) ? theme.selected : theme.surface))
+                        .tag(mark.id).selectionDisabled(!model.selectingNotes)
+                        .listRowBackground(Color(uiColor: theme.surface))
                         .listRowSeparatorTint(Color(uiColor: theme.separator))
                         .swipeActions {
                             if !model.selectingNotes { Button("删除", systemImage: "trash", role: .destructive) {
@@ -71,8 +60,9 @@ struct ReaderNotesList: View {
                             .tint(Color(uiColor: theme.destructive)) }
                         }
                 }
-                if model.moreNotes { LoadingActivity().task(id: model.notes.count) { await model.loadNotes(reset: false) }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
+                if model.moreNotes { LoadingActivity().selectionDisabled().task(id: model.notes.count) { await model.loadNotes(reset: false) }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
             }.listStyle(.plain).scrollContentBackground(.hidden)
+                .environment(\.editMode, .constant(model.selectingNotes ? .active : .inactive))
                 .overlay {
                     if model.notes.isEmpty && model.loadingNotes {
                         LoadingActivity(fullPage: true, waitingLabel: "正在加载")
@@ -127,6 +117,15 @@ struct ReaderNotesList: View {
             Button("取消", role: .cancel) {}
         } message: { Text("会同步删除其他设备上的这些记录，小说原文件不受影响。") }
         .sheet(item: $sharing) { LibraryShareSheet(files: $0.files, text: $0.text) }
+    }
+    private func noteContent(_ mark: ReaderMark) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(verbatim: mark.excerpt).foregroundStyle(Color(uiColor: theme.ink)).lineLimit(3)
+            if !mark.note.isEmpty { Text(verbatim: mark.note).foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(2) }
+            Text(verbatim: [model.noteLocations[mark.id], Date(timeIntervalSince1970: Double(mark.created) / 1000).formatted(date: .abbreviated, time: .omitted)]
+                .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                .font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+        }.frame(maxWidth: .infinity, alignment: .leading).contentShape(.rect)
     }
     private var selectionStatus: some View {
         Group {

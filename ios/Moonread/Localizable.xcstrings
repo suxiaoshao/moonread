@@ -1,6 +1,7 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "模型与思考强度": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Model and Reasoning"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"模型與思考強度"}}}},
     "结束选择": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Finish Selection"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"結束選取"}}}},
     "保存配色": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Save Palette"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"儲存配色"}}}},
     "保存批注": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Save Note"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"儲存註記"}}}},

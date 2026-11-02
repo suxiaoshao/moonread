@@ -51,17 +51,20 @@ final class ReaderToolsModel {
     var noteKind: MarkKind { tab == .bookmarks ? .bookmark : .annotation }
     var notes: [ReaderMark] = []
     var selectingNotes = false
-    var selectedNotes: Set<String> = []
-    var selectedCandidates: [String: [AnnotationCandidate]] = [:]
+    private(set) var selectedNotes: Set<String> = []
+    private(set) var selectedCandidates: [String: [AnnotationCandidate]] = [:]
     var noteLocations: [String: String] = [:]
     var notesLoadError: String?
     var noteSnapshot: NoteCandidates?
     var noteBookID: String? { bookID }
-    func toggleNote(_ mark: ReaderMark) {
-        if selectedNotes.remove(mark.id) != nil { selectedCandidates[mark.id] = nil }
-        else { selectedNotes.insert(mark.id); selectedCandidates[mark.id] = noteSnapshot?.groups[mark.id] }
+    /// List selection records the candidates the user actually saw. Retained
+    /// selections keep their baseline when later pages or remote edits arrive.
+    func updateNoteSelection(_ ids: Set<String>) {
+        for id in ids.subtracting(selectedNotes) { selectedCandidates[id] = noteSnapshot?.groups[id] }
+        selectedCandidates = selectedCandidates.filter { ids.contains($0.key) }
+        selectedNotes = ids
     }
-    func clearNoteSelection() { selectedNotes = []; selectedCandidates = [:] }
+    func clearNoteSelection() { updateNoteSelection([]) }
     func deleteSelectedNotes(_ expected: NoteCandidates, ids: Set<String>) async {
         guard let id = bookID else { return }
         do {

@@ -59,8 +59,7 @@ struct PalettePicker: View {
     }
     var body: some View {
         Group {
-            if reader && embedded { embeddedPalettes }
-            else if embedded { paletteList }
+            if embedded { paletteList }
             else {
                 paletteList.navigationTitle(appearance == .light ? "浅色时的配色" : "深色时的配色")
                     .navigationBarTitleDisplayMode(.inline)
@@ -74,47 +73,14 @@ struct PalettePicker: View {
             }
         } message: { Text("使用此配色的应用槽位将恢复杏桃，阅读槽位将恢复跟随应用。") }
     }
-    private var embeddedPalettes: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                textureSection
-                VStack(spacing: 0) {
-                    sourceRow("跟随应用", id: "app", icon: "arrow.turn.down.right").padding(14)
-                    ThemedDivider()
-                    sourceRow("系统配色", id: "system", icon: "circle.lefthalf.filled").padding(14)
-                }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 16))
-                Text("预设").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
-                VStack(spacing: 0) {
-                    ForEach(palettes.filter { !$0.custom }, id: \.id) { palette in
-                        paletteRow(palette).padding(.horizontal, 14).padding(.vertical, 6)
-                        if palette.id != palettes.last(where: { !$0.custom })?.id { ThemedDivider() }
-                    }
-                }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 16))
-                Text("自定义").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
-                VStack(spacing: 0) {
-                    ForEach(palettes.filter(\.custom), id: \.id) { palette in
-                        paletteRow(palette).padding(14)
-                            .contextMenu {
-                                Button("编辑", systemImage: "pencil") { edit(PaletteDraft(palette: palette, creating: false)) }
-                                Button("删除", systemImage: "trash", role: .destructive) { deleting = palette }
-                            }
-                        ThemedDivider()
-                    }
-                    Button("新建配色", systemImage: "plus") {
-                        guard var base = palettes.first(where: { $0.id == selected }) ?? palettes.first else { return }
-                        base.name = ""; base.custom = true
-                        edit(PaletteDraft(palette: base, creating: true))
-                    }.frame(maxWidth: .infinity, minHeight: LayoutTokens.hit).padding(6).accessibilityIdentifier("createPalette")
-                }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 16))
-            }.padding(.horizontal, LayoutTokens.content).padding(.top, LayoutTokens.compact).padding(.bottom)
-        }.disabled(themes.saving).themedPage().accessibilityIdentifier("paletteOptions")
-    }
     private var paletteList: some View {
         List {
             if !embedded { Section {
                 PalettePreview(theme: previewTheme).listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
             } }
-            if reader && embedded { textureSection }
+            if reader && embedded {
+                textureSection
+            }
             Section {
                 if reader { sourceRow("跟随应用", id: "app", icon: "arrow.turn.down.right") }
                 sourceRow("系统配色", id: "system", icon: "circle.lefthalf.filled")
@@ -154,8 +120,7 @@ struct PalettePicker: View {
         }
     }
     private var textureSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("纸张纹理").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
+        Section {
             VStack(alignment: .leading, spacing: 18) {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 72))], spacing: 12) {
                     textureOption(nil)
@@ -168,15 +133,17 @@ struct PalettePicker: View {
                 })) {
                     ForEach(readerTextureStrengths(), id: \.self) { value in Text(value.label).tag(value) }
                 }.pickerStyle(.segmented).disabled(texture == nil).accessibilityIdentifier("readerTextureStrength")
-            }.padding(14).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 16))
-                .disabled(previewTheme.plan.colors == nil)
+            }.disabled(previewTheme.plan.colors == nil)
+        } header: {
+            Text("纸张纹理").foregroundStyle(Color(uiColor: theme.secondary))
+        } footer: {
             if previewTheme.plan.colors == nil {
                 Text("请选择具体配色后使用纹理").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                     .accessibilityIdentifier("readerTextureUnavailable")
             } else {
                 Text("纹理与配色独立。选择保存在此设备。").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
             }
-        }
+        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
     }
     private func textureOption(_ id: ReaderTextureId?) -> some View {
         let choice = id.map { readerTextureChoice(id: $0) }
