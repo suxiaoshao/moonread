@@ -683,7 +683,7 @@ struct ReaderScreen: View {
     private var readerSheet: some View {
         let token = nativeHost.token
         return ReaderBottomPanel(expanded: Binding(get: { attachmentExpanded }, set: { attachmentExpanded = $0 }), compactHeight: $dockHeight,
-                          canExpand: automaticSelected || (searchActive && dock == .progress), taskID: taskID,
+                          canExpand: automaticSelected || (searchActive && dock == .progress), dismissing: nativeHost.dismissing, taskID: taskID,
                           closeTask: closeTask, chrome: sheetChrome, showsControls: controlsVisible) {
             ReaderCompactLayout(selection: dock) {
                 bottomDock

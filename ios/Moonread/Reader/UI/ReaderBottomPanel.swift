@@ -7,6 +7,7 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
     @Binding var expanded: Bool
     @Binding var compactHeight: CGFloat
     let canExpand: Bool
+    let dismissing: Bool
     let taskID: String?
     let closeTask: () -> Void
     let chrome: ReaderSheetChrome
@@ -48,7 +49,7 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
                 if abs(height - compactHeight) < 2 { resizing = false }
             }
         }
-        .background(ReaderSheetConfiguration(reference: nativeSheet, height: compactHeight, canExpand: canExpand,
+        .background(ReaderSheetConfiguration(reference: nativeSheet, height: compactHeight, canExpand: canExpand, dismissing: dismissing,
             expanded: presentedExpanded, taskID: taskID, chrome: chrome, showsControls: showsControls) { large in
                 if taskID != nil { if !large { closeTask() }; return }
                 guard canExpand else { return }
@@ -108,7 +109,7 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
             }
             .onPreferenceChange(ReaderPanelHeight.self) { measured in
                 let height = max(60, measured)
-                guard taskID == nil, measured > 0 else { return }
+                guard !dismissing, taskID == nil, measured > 0 else { return }
                 measuredCompactHeight = height
                 // Keep the expansion's starting detent and crossfade baseline
                 // fixed. The hidden capsule's new height is used on collapse.
@@ -181,6 +182,7 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
     let reference: ReaderSheetReference
     var height: CGFloat
     var canExpand: Bool
+    var dismissing: Bool
     var expanded: Bool
     var taskID: String?
     let chrome: ReaderSheetChrome
@@ -227,7 +229,7 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
         }
 
         func configure() {
-            guard !applying, let configuration else { return }
+            guard !applying, let configuration, !configuration.dismissing else { return }
             var owner: UIViewController? = self
             while let current = owner, current.presentingViewController == nil { owner = current.parent }
             guard let owner, !owner.isBeingDismissed, let sheet = owner.sheetPresentationController else { return }
@@ -315,9 +317,9 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
     @ObservationIgnored private var activeTarget: Bool?
     @ObservationIgnored private var revision = 0
 
-    private func apply(_ value: Bool) {
+    private func apply(_ value: Bool, animated: Bool = true) {
         visible = value
-        navigation?.setNavigationBarHidden(!value, animated: true)
+        navigation?.setNavigationBarHidden(!value, animated: animated)
         navigation?.setNeedsStatusBarAppearanceUpdate()
     }
     func synchronizeNavigation(visible: Bool) {
@@ -340,11 +342,17 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
         guard let coordinator, let navigation else {
             apply(visible); activeTarget = nil; return
         }
+        coordinator.notifyWhenInteractionChanges { [weak self] context in
+            guard let self, self.revision == revision, context.isCancelled else { return }
+            // Restore the intent when the system starts reversing the drag,
+            // not after reversal, which would replay a second bar animation.
+            self.apply(original)
+        }
         let accepted = coordinator.animateAlongsideTransition(in: navigation.view) { [weak self] _ in
             self?.apply(visible)
         } completion: { [weak self] context in
             guard let self, self.revision == revision else { return }
-            self.apply(context.isCancelled ? original : visible)
+            self.apply(context.isCancelled ? original : visible, animated: false)
             self.activeTarget = nil
         }
         if !accepted { apply(visible); activeTarget = nil }
