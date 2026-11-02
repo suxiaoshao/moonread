@@ -18,7 +18,7 @@ struct AIReadingConversation: View {
                     AIConversationTitleMenu(currentID: selected, create: { Task { await createConversation() } },
                                             select: { selected = $0; seed() })
                 }
-                ToolbarItem(placement: .topBarTrailing) { Button("关闭", systemImage: "xmark", action: close).labelStyle(.iconOnly).toolbarGlyph().accessibilityIdentifier("closeAIChat") }
+                ToolbarItem(placement: .topBarTrailing) { SystemToolbarButton("关闭", role: .close, action: close).labelStyle(.iconOnly).toolbarGlyph().accessibilityIdentifier("closeAIChat") }
             }
         }
         .onAppear { visible = true }.onDisappear { visible = false; notice = nil }

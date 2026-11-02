@@ -183,7 +183,7 @@ struct ReaderHistorySheet: View {
                     .accessibilityIdentifier("readingHistory-\(visit.id)")
             }.themedPage().navigationTitle("跳转历史").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .topBarTrailing) {
-                    Button("关闭", systemImage: "xmark", action: close).labelStyle(.iconOnly)
+                    SystemToolbarButton("关闭", role: .close, action: close).labelStyle(.iconOnly)
                         .accessibilityIdentifier("closeReadingHistory")
                 } }
         }

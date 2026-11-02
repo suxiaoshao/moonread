@@ -64,7 +64,7 @@ struct AIQuickTaskSheet: View {
                 }
             }
             .navigationTitle(request.title).navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("关闭", systemImage: "xmark") { dismiss() }.toolbarGlyph().accessibilityIdentifier("closeAITask") } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { SystemToolbarButton("关闭", role: .close) { dismiss() }.toolbarGlyph().accessibilityIdentifier("closeAITask") } }
 
         }
         .presentationDetents([.medium, .large], selection: $detent).presentationDragIndicator(.visible)

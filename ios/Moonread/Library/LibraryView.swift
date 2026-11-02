@@ -281,8 +281,8 @@ struct LibraryFolderView: View {
             }
             ToolbarItem(placement: .topBarTrailing) {
                 if editing.isEditing {
-                    Button("完成", systemImage: "checkmark") { editing = .inactive; selection = [] }
-                        .labelStyle(.titleOnly).accessibilityIdentifier("librarySelectionDone")
+                    SystemToolbarButton("结束选择", role: .confirm) { editing = .inactive; selection = [] }
+                        .accessibilityIdentifier("librarySelectionDone")
                         .disabled(fileActionsDisabled)
                 }
                 else {
@@ -562,16 +562,16 @@ struct LibraryAllBooksView: View {
 }
 
 struct LibraryEmptyFolder: View {
+    @Environment(\.theme) private var theme
     let model: LibraryModel
     let location: LibraryLocation
     @State private var guide = false
     private var builtinRoot: Bool { location.shelfID == "builtin" && location.path.isEmpty }
     var body: some View {
-        GeometryReader { geometry in
         ScrollView {
-            VStack(spacing: 16) {
-                MoonView(size: 64).accessibilityHidden(true)
-                if builtinRoot && model.builtinDiscovery == .discovering {
+            if builtinRoot && model.builtinDiscovery == .discovering {
+                VStack {
+                    MoonView(size: 64).accessibilityHidden(true)
                     ProgressView("正在发现云端小说").accessibilityIdentifier("builtinDiscoveryLoading")
                     #if DEBUG
                     if ProcessInfo.processInfo.arguments.contains("--ui-testing"), ProcessInfo.processInfo.arguments.contains("--ui-test-onboarding-cloud") {
@@ -579,28 +579,34 @@ struct LibraryEmptyFolder: View {
                             .accessibilityIdentifier("onboardingDeliverSnapshot")
                     }
                     #endif
-                } else if builtinRoot && model.builtinDiscovery == .unavailable {
-                    Text("暂未完成发现").font(.headline)
-                    Button("重试") { model.retryCloudDiscovery() }
-                } else {
-                    Text(builtinRoot ? "还没有小说" : "空文件夹").font(.headline)
-                        .accessibilityIdentifier(builtinRoot ? "builtinEmptyLibrary" : "emptyFolder")
-                    if builtinRoot { Text("导入 TXT，或从“文件”App 拖进来").multilineTextAlignment(.center) }
+                    emptyActions
+                }.padding()
+            } else {
+                ContentUnavailableView {
+                    Label {
+                        Text(builtinRoot && model.builtinDiscovery == .unavailable ? "暂未完成发现" : builtinRoot ? "还没有小说" : "空文件夹")
+                            .accessibilityIdentifier(builtinRoot && model.builtinDiscovery == .unavailable ? "builtinDiscoveryUnavailable" : builtinRoot ? "builtinEmptyLibrary" : "emptyFolder")
+                    } icon: { MoonView(size: 64).accessibilityHidden(true) }
+                } description: {
+                    if builtinRoot && model.builtinDiscovery != .unavailable { Text("导入 TXT，或从“文件”App 拖进来") }
+                } actions: {
+                    if builtinRoot && model.builtinDiscovery == .unavailable { Button("重试") { model.retryCloudDiscovery() } }
+                    emptyActions
                 }
-                if location.shelfID == "builtin" {
-                    Button("导入小说", systemImage: "square.and.arrow.down") { model.chooseFiles(.novels(location)) }
-                        .buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("emptyFolderImport")
-                    if builtinRoot {
-                        Button("使用指南") { guide = true }.accessibilityIdentifier("emptyLibraryGuide")
-                    }
-                }
-            }.padding().frame(maxWidth: .infinity).frame(minHeight: geometry.size.height)
-        }
+            }
         }.sheet(isPresented: $guide) {
             NavigationStack { UsageGuideView().toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("完成") { guide = false } }
+                ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("关闭", role: .close) { guide = false } }
             } }
         }.allowsHitTesting(location.shelfID == "builtin")
+    }
+    @ViewBuilder private var emptyActions: some View {
+        if location.shelfID == "builtin" {
+            Button("导入小说", systemImage: "square.and.arrow.down") { model.chooseFiles(.novels(location)) }
+                .buttonStyle(.borderedProminent).tint(Color(uiColor: theme.accent))
+                .foregroundStyle(Color(uiColor: theme.onAccent)).accessibilityIdentifier("emptyFolderImport")
+            if builtinRoot { Button("使用指南") { guide = true }.accessibilityIdentifier("emptyLibraryGuide") }
+        }
     }
 }
 

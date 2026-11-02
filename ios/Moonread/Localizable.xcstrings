@@ -1,6 +1,11 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "结束选择": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Finish Selection"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"結束選取"}}}},
+    "保存配色": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Save Palette"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"儲存配色"}}}},
+    "保存批注": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Save Note"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"儲存註記"}}}},
+    "保存章节": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Save Chapter"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"儲存章節"}}}},
+    "结束搜索": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"End Search"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"結束搜尋"}}}},
     "结束": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"End"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"結束"}}}},
     "暂时无法继续": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Unable to continue"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"暫時無法繼續"}}}},
     "继续自动阅读": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Continue Auto Read"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"繼續自動閱讀"}}}},

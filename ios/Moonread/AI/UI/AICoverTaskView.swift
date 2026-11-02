@@ -147,7 +147,7 @@ struct AICoverPreview: View {
                 }.padding(LayoutTokens.content).background(Color(uiColor: theme.canvas))
             }
             .themedPage().navigationTitle("封面").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("关闭", systemImage: "xmark") { dismiss() }.accessibilityIdentifier("closeAICoverPreview") } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { SystemToolbarButton("关闭", role: .close) { dismiss() }.accessibilityIdentifier("closeAICoverPreview") } }
         }
     }
 }

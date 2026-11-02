@@ -30,7 +30,7 @@ struct ReaderTaskContent: View {
             NavigationStack {
                 ChapterEditor(bookID: id, draft: draft) { await session.refreshOutline(); closeTask() }
                     .toolbar { ToolbarItem(placement: .topBarLeading) {
-                        Button("取消", systemImage: "xmark", action: closeTask).labelStyle(.titleOnly)
+                        SystemToolbarButton("取消", role: .cancel, action: closeTask)
                     } }
             }
         } else if panel == .library {

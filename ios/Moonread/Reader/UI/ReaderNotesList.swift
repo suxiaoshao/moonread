@@ -83,14 +83,14 @@ struct ReaderNotesList: View {
         }.disabled(busy)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    model.selectingNotes.toggle()
-                    if !model.selectingNotes { model.clearNoteSelection() }
-                } label: {
-                    if model.selectingNotes { Text("完成") }
-                    else { Image(systemName: "checklist") }
+                Group {
+                    if model.selectingNotes {
+                        SystemToolbarButton("结束选择", role: .confirm) { model.selectingNotes = false; model.clearNoteSelection() }
+                    } else {
+                        Button { model.selectingNotes = true } label: { Image(systemName: "checklist") }
+                            .accessibilityLabel(model.noteKind == .bookmark ? String(localized: "选择书签") : String(localized: "选择标注与笔记"))
+                    }
                 }.disabled(busy || (model.notes.isEmpty && !model.selectingNotes))
-                    .accessibilityLabel(model.selectingNotes ? String(localized: "完成") : model.noteKind == .bookmark ? String(localized: "选择书签") : String(localized: "选择标注与笔记"))
             }
             if model.noteKind == .annotation {
                 ToolbarItem(placement: .topBarTrailing) {

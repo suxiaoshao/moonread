@@ -93,9 +93,9 @@ struct AIConnectionView: View {
                         .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                     }.themedPage().navigationTitle("添加模型")
                         .toolbar {
-                            ToolbarItem(placement: .cancellationAction) { Button("取消") { addingModel = false } }
+                            ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("取消", role: .cancel) { addingModel = false } }
                             ToolbarItem(placement: .confirmationAction) {
-                                Button("保存") {
+                                SystemToolbarButton("保存", role: .confirm) {
                                     manualError = !ai.providers.addManualModel(connectionID: connectionID, id: manualModel, context: manualContext, output: manualOutput)
                                     if !manualError { addingModel = false }
                                 }.disabled(manualModel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || manualContext.isEmpty)

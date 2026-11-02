@@ -174,12 +174,12 @@ struct NoteEditorContent: View {
             } message: { Text(model.error ?? "") }
     }
     private var cancelButton: some View {
-        Button("取消", systemImage: "xmark") { close() }
-            .labelStyle(.titleOnly).disabled(saving).accessibilityIdentifier("closeNote")
+        SystemToolbarButton("取消", role: .cancel) { close() }
+            .disabled(saving).accessibilityIdentifier("closeNote")
     }
     private var saveButton: some View {
-        Button("完成", systemImage: "checkmark") { finish() }
-            .labelStyle(.titleOnly)
+        SystemToolbarButton("保存批注", role: .confirm) { finish() }
+
             .disabled(saving || (!model.conflicts.isEmpty && !model.conflictChoice)).accessibilityIdentifier("saveNote")
     }
     private func finish() {
