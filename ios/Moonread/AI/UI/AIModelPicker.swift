@@ -60,13 +60,14 @@ struct AIModelPickerButton: View {
     }
     init(draft: Binding<AIModelSelection?>) { destination = .draft(draft) }
     init(purpose: AIModelPurpose, title: LocalizedStringKey? = nil) { destination = .purpose(purpose); self.title = title }
+    @State private var completePicker = false
     @State private var panel = false
     @State private var showing = false
     @State private var detent = PresentationDetent.medium
     @State private var saveFailed = false
     var body: some View {
         Button {
-            if destination.purpose != nil { showing = true } else { panel = true }
+            if destination.purpose != nil { showing = true } else { completePicker = false; detent = .medium; panel = true }
         } label: {
             if let title {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -84,38 +85,54 @@ struct AIModelPickerButton: View {
             .accessibilityIdentifier("openAIModelPanel" + (destination.purpose.map { "-" + $0.rawValue } ?? ""))
             // Let the system fit top settings rows and bottom reader controls.
             .popover(isPresented: $panel, arrowEdge: nil) {
-                VStack(spacing: 8) {
-                    Button { panel = false; showing = true } label: {
-                        HStack { modelLabel; Image(systemName: "chevron.right").font(.caption) }
-                            .frame(maxWidth: .infinity)
-                    }.buttonStyle(.plain).accessibilityIdentifier("openAIModelPicker")
-                    if let value = destination.selection(ai), let model = ai.providers.model(connectionID: value.connectionID, modelID: value.modelID), model.thinking.count > 1 {
-                        AIThinkingSlider(levels: model.thinking, selection: Binding(get: { destination.selection(ai)?.thinking ?? AIModelSelection.defaultThinking(model) ?? "" }, set: { effort in
-                            var selection = value; selection.thinking = effort
-                            Task { saveFailed = !(await destination.apply(selection, ai)) }
-                        }))
+                // Keep the full picker in this presentation; no competing dismissal/presentation.
+                Group {
+                    if completePicker {
+                        AIModelPicker(destination: destination, detent: $detent)
+                            // List has no intrinsic height. Suggest a viewport;
+                            // the system still fits it to the available space.
+                            .frame(idealHeight: 540)
+                            .presentationDetents([.medium, .large], selection: $detent)
+                            .presentationDragIndicator(.visible)
+                    } else {
+                        quickControls
                     }
-                    if destination.running(ai) {
-                        Text("本次选择将在下一次请求生效").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                    }
-                    if let value = destination.selection(ai), let connection = ai.providers.connections.first(where: { $0.id == value.connectionID }), ai.providers.isUsingChatGPTPlan(connection) {
-                        Text("正在使用 ChatGPT 套餐").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                        Link("管理 ChatGPT 用量", destination: URL(string: "https://chatgpt.com/settings/usage")!)
-                            .font(.caption).foregroundStyle(Color(uiColor: theme.accent))
-                    }
-                    if saveFailed { Text("模型目录已变化，请重新选择。").font(.caption).foregroundStyle(Color(uiColor: theme.destructive)) }
-                }.padding(16).frame(width: 290).foregroundStyle(Color(uiColor: theme.ink))
-                    .tint(Color(uiColor: theme.accent))
-                    .background(Color(uiColor: theme.surface))
-                    .environment(\.theme, theme).preferredColorScheme(theme.scheme)
-                    .presentationBackground(Color(uiColor: theme.surface))
-                    .presentationCompactAdaptation(.popover)
+                }.frame(idealWidth: 360)
+                    .environment(ai).environment(\.theme, theme).preferredColorScheme(theme.scheme)
+                    .presentationBackground(Color(uiColor: completePicker ? theme.canvas : theme.surface))
             }
             .sheet(isPresented: $showing, onDismiss: { detent = .medium }) {
                 AIModelPicker(destination: destination, detent: $detent).environment(ai).environment(\.theme, theme).preferredColorScheme(theme.scheme)
                     .presentationDetents([.medium, .large], selection: $detent).presentationDragIndicator(.visible)
                     .presentationBackground(Color(uiColor: theme.canvas))
             }
+    }
+    private var quickControls: some View {
+        ScrollView {
+            VStack(spacing: 8) {
+                Button { completePicker = true } label: {
+                    HStack { modelLabel; Image(systemName: "chevron.right").font(.caption) }
+                        .frame(maxWidth: .infinity)
+                }.buttonStyle(.plain).accessibilityIdentifier("openAIModelPicker")
+                if let value = destination.selection(ai), let model = ai.providers.model(connectionID: value.connectionID, modelID: value.modelID), model.thinking.count > 1 {
+                    AIThinkingSlider(levels: model.thinking, selection: Binding(get: { destination.selection(ai)?.thinking ?? AIModelSelection.defaultThinking(model) ?? "" }, set: { effort in
+                        var selection = value; selection.thinking = effort
+                        Task { saveFailed = !(await destination.apply(selection, ai)) }
+                    }))
+                }
+                if destination.running(ai) {
+                    Text("本次选择将在下一次请求生效").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                }
+                if let value = destination.selection(ai), let connection = ai.providers.connections.first(where: { $0.id == value.connectionID }), ai.providers.isUsingChatGPTPlan(connection) {
+                    Text("正在使用 ChatGPT 套餐").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                    Link("管理 ChatGPT 用量", destination: URL(string: "https://chatgpt.com/settings/usage")!)
+                        .font(.caption).foregroundStyle(Color(uiColor: theme.accent))
+                }
+                if saveFailed { Text("模型目录已变化，请重新选择。").font(.caption).foregroundStyle(Color(uiColor: theme.destructive)) }
+            }.padding(16).frame(maxWidth: .infinity).foregroundStyle(Color(uiColor: theme.ink))
+                .tint(Color(uiColor: theme.accent))
+                .background(Color(uiColor: theme.surface))
+        }
     }
     private var summary: String {
         guard let value = destination.selection(ai),
