@@ -10,8 +10,6 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
     let dismissing: Bool
     let taskID: String?
     let closeTask: () -> Void
-    let chrome: ReaderSheetChrome
-    let showsControls: Bool
     @ViewBuilder let compact: () -> Compact
     @ViewBuilder let footer: () -> Footer
     @ViewBuilder let details: (_ readyForInput: Bool) -> Details
@@ -53,7 +51,7 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
             }
         }
         .overlay(ReaderSheetConfiguration(reference: nativeSheet, height: compactHeight, canExpand: canExpand, dismissing: dismissing,
-            expanded: presentedExpanded, taskID: taskID, chrome: chrome, showsControls: showsControls,
+            expanded: presentedExpanded, taskID: taskID,
             footer: AnyView(footer().frame(maxWidth: .infinity).background(Color(uiColor: theme.surface))),
             footerHeight: footerHeight, footerOpacity: taskID == nil ? 1 - expansionFraction(availableHeight) : 0) { large in
                 if taskID != nil { if !large { closeTask() }; return }
@@ -71,7 +69,6 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
             // interpret the departing large height as expanded search results.
             if old != nil, new == nil, !expanded { resizing = true }
         }
-        .onChange(of: showsControls) { _, value in chrome.updateBetweenTransitions(visible: value) }
         .animation(MotionTokens.accessoryResize(reduced: reduceMotion), value: taskID)
         .accessibilityElement(children: .contain).accessibilityIdentifier("readerBottomPanel")
     }
@@ -207,8 +204,6 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
     var dismissing: Bool
     var expanded: Bool
     var taskID: String?
-    let chrome: ReaderSheetChrome
-    var showsControls: Bool
     var footer: AnyView
     var footerHeight: CGFloat
     var footerOpacity: CGFloat
@@ -256,13 +251,6 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
         override func didMove(toParent parent: UIViewController?) { super.didMove(toParent: parent); configure() }
         override func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated); configure()
-            guard sheet?.presentedViewController.isBeingPresented == true else { return }
-            configuration?.chrome.transition(visible: configuration?.showsControls ?? false, coordinator: transitionCoordinator)
-        }
-        override func viewWillDisappear(_ animated: Bool) {
-            super.viewWillDisappear(animated)
-            guard let sheet, sheet.presentedViewController.isBeingDismissed else { return }
-            configuration?.chrome.transition(visible: false, coordinator: transitionCoordinator)
         }
         override func viewDidLayoutSubviews() {
             super.viewDidLayoutSubviews(); configure()
@@ -376,56 +364,5 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
         override func forwardingTarget(for selector: Selector!) -> Any? {
             forwardedDelegate?.responds(to: selector) == true ? forwardedDelegate : super.forwardingTarget(for: selector)
         }
-    }
-}
-
-/// Visual chrome follows the sheet's actual system transition, independently
-/// of the outgoing content retained by ReaderPresentationHost. Cancellation
-/// restores it in that same interactive transition; there is no 0.4s timer.
-@MainActor @Observable final class ReaderSheetChrome {
-    private(set) var visible = false
-    @ObservationIgnored weak var navigation: UINavigationController?
-    @ObservationIgnored private var activeTarget: Bool?
-    @ObservationIgnored private var revision = 0
-
-    private func apply(_ value: Bool, animated: Bool = true) {
-        visible = value
-        navigation?.setNavigationBarHidden(!value, animated: animated)
-        navigation?.setNeedsStatusBarAppearanceUpdate()
-    }
-    func synchronizeNavigation(visible: Bool) {
-        guard activeTarget == nil, let navigation,
-              navigation.isNavigationBarHidden == visible else { return }
-        navigation.setNavigationBarHidden(!visible, animated: false)
-    }
-    func updateBetweenTransitions(visible: Bool) {
-        guard activeTarget == nil, self.visible != visible else { return }
-        apply(visible)
-    }
-    func transition(visible: Bool, coordinator: (any UIViewControllerTransitionCoordinator)?) {
-        // willDisappear and adaptive willDismiss can report the same native
-        // transition. Register once, and reject an older completion on reversal.
-        guard activeTarget != visible else { return }
-        let original = self.visible
-        revision += 1
-        let revision = revision
-        activeTarget = visible
-        guard let coordinator, let navigation else {
-            apply(visible); activeTarget = nil; return
-        }
-        coordinator.notifyWhenInteractionChanges { [weak self] context in
-            guard let self, self.revision == revision, context.isCancelled else { return }
-            // Restore the intent when the system starts reversing the drag,
-            // not after reversal, which would replay a second bar animation.
-            self.apply(original)
-        }
-        let accepted = coordinator.animateAlongsideTransition(in: navigation.view) { [weak self] _ in
-            self?.apply(visible)
-        } completion: { [weak self] context in
-            guard let self, self.revision == revision else { return }
-            self.apply(context.isCancelled ? original : visible, animated: false)
-            self.activeTarget = nil
-        }
-        if !accepted { apply(visible); activeTarget = nil }
     }
 }
