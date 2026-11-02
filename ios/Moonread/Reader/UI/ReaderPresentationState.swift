@@ -1,8 +1,9 @@
 import SwiftUI
 import UIKit
 
-/// Intent belongs to this reading opening. Geometry and native lifecycle never
-/// write the location. All sizes use the same sheet and source navigation.
+/// Intent belongs to this reading opening. Geometry and native completion never
+/// write the location; the system page Binding is direct navigation input.
+/// All sizes use the same sheet and source navigation.
 enum ReaderTool: Hashable { case library, search, settings, more, automatic }
 enum ReaderToolExposure: Equatable { case hidden, accessory, expanded }
 enum ReaderDestination: Hashable {
@@ -23,6 +24,17 @@ struct ReaderToolLocation: Equatable {
     var exposure = ReaderToolExposure.hidden { didSet { if oldValue != exposure { revision &+= 1 } } }
     var controlsVisible = false { didSet { if oldValue != controlsVisible { revision &+= 1 } } }
     private(set) var revision: UInt64 = 0
+
+    /// The source page is part of the same logical path, not another native
+    /// installation. System navigation writes this value directly.
+    var sourcePage: ReaderDestination? {
+        get { location.path.first { $0 == .fullSettings || $0 == .details } }
+        set {
+            guard sourcePage != newValue else { return }
+            if let old = sourcePage { close(old) }
+            if let newValue { push(newValue) }
+        }
+    }
 
     func choose(_ tool: ReaderTool, exposure: ReaderToolExposure) {
         guard !location.path.contains(where: { route in
@@ -192,28 +204,6 @@ enum ReaderPresentationTarget: Equatable { case none, dock, settings, details }
         if let noteID { return "note-\(noteID)" }
         if let panel, [.library, .history, .chapterEditor, .ai].contains(panel) { return panel.rawValue }
         return nil
-    }
-}
-
-/// Source NavigationStack suffix, independent of the reader's tool slot.
-@MainActor @Observable final class ReaderSourceNavigation {
-    let installation = ReaderNativeInstallation()
-    var hasModalChild = false
-    private(set) var target = ReaderPresentationTarget.none
-    var token: ReaderHostToken? { installation.token }
-    var active: Bool { token != nil }
-    var showing: ReaderPresentationTarget { installation.dismissing ? .none : (active ? target : .none) }
-    func update(_ desired: ReaderPresentationTarget, opening: UUID, generation: UInt64) {
-        if desired == .none { if !hasModalChild { installation.beginDismissal() }; return }
-        guard desired == .settings || desired == .details else { return }
-        if token == nil { target = desired }
-        if target == desired { _ = installation.install(opening: opening, generation: generation) }
-        else { installation.beginDismissal() }
-    }
-    func confirm(_ value: ReaderHostToken) { installation.confirm(value) }
-    @discardableResult func completed(_ value: ReaderHostToken) -> Bool {
-        guard installation.completed(value) else { return false }
-        target = .none; return true
     }
 }
 

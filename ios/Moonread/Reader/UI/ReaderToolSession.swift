@@ -97,10 +97,8 @@ struct ReaderUndoAction: View {
 
 struct ReaderModalChildProbe: UIViewControllerRepresentable {
     let host: ReaderPresentationHost
-    var source: ReaderSourceNavigation? = nil
     final class Probe: UIViewController {
         weak var host: ReaderPresentationHost?
-        weak var source: ReaderSourceNavigation?
         var installationID: UUID?
         override func loadView() { view = UIView(); view.isUserInteractionEnabled = false }
         override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); publish() }
@@ -112,19 +110,19 @@ struct ReaderModalChildProbe: UIViewControllerRepresentable {
                 if controller.presentedViewController != nil { hasChild = true; break }
                 ancestor = controller.parent
             }
-            guard let host, let installationID, (source?.token?.id ?? host.token?.id) == installationID, (source?.hasModalChild ?? host.hasModalChild) != hasChild else { return }
+            guard let host, let installationID, host.token?.id == installationID, host.hasModalChild != hasChild else { return }
             Task { @MainActor [weak self, weak host] in
-                guard self?.viewIfLoaded?.window != nil, (self?.source?.token?.id ?? host?.token?.id) == installationID else { return }
-                if let source = self?.source { source.hasModalChild = hasChild } else { host?.hasModalChild = hasChild }
+                guard self?.viewIfLoaded?.window != nil, host?.token?.id == installationID else { return }
+                host?.hasModalChild = hasChild
             }
         }
     }
     func makeUIViewController(context: Context) -> Probe {
-        let value = Probe(); value.host = host; value.source = source; value.installationID = source?.token?.id ?? host.token?.id; return value
+        let value = Probe(); value.host = host; value.installationID = host.token?.id; return value
     }
     func updateUIViewController(_ controller: Probe, context: Context) {
-        controller.host = host; controller.source = source
-        controller.installationID = source?.token?.id ?? host.token?.id
+        controller.host = host
+        controller.installationID = host.token?.id
         if controller.viewIfLoaded?.window != nil { controller.publish() }
     }
 }

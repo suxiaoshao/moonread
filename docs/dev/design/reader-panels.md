@@ -152,7 +152,7 @@ V4 A：窄屏保留上拉正文预览，页面可用宽度达到 760pt 时左控
 
 `ReaderPresentationState` 单源保存 selection、有类型路径、exposure 和栏显隐；ReaderToolSession 保留编辑对象，批注权威仍在 ReaderSession。没有宽窄容器投影、reference/passive-column、列注册或跨容器交接；窗口变化不修改用户意图。
 
-`ReaderPresentationHost` 只记录共同工具 sheet 的请求、确认、退出和系统子模态事实；来源栈后缀由 ReaderSourceNavigation 承载。旧 opening/token/代次回调不能清新路径。退出内容及草稿引用保留到原生完成，不保存下一工具队列；sheet 关闭后才 push 完整设置/详情。搜索 detent、footer、taskID 与 MotionTokens 沿用手机链，重复工具请求不清子路径。
+`ReaderPresentationHost` 只记录共同工具 sheet 的请求、确认、退出和系统子模态事实；完整设置/详情直接由同一逻辑路径的 sourcePage 绑定系统 push，原生返回立即更新该路径，不校验工具 revision、不等待转场完成再确认或补发 pop。工具 sheet 的旧 opening/token/代次回调仍不能清新路径。退出内容及草稿引用保留到原生完成，不保存下一工具队列；sheet 关闭后才 push 完整设置/详情。搜索 detent、footer、taskID 与 MotionTokens 沿用手机链，重复工具请求不清子路径。
 
 正文使用本窗口稳定的全幅 canvas、硬件安全区域与系统 active division/occlusion；不减工具列或 sheet 大小，不以工具开关触发重排。保留有效区域检查及转场中的上一布局，真实窗口/排版改变才恢复锚点。自动双页仍要求候选区域宽>高及既有每叶最小行宽；滚动始终单栏。来源 Tab 在阅读及其子页期间隐藏，退出后恢复。
 

@@ -851,23 +851,18 @@ final class ReaderSessionApplicationStateTests: ApplicationStateFixture {
     shared.push(.chapter(UUID()))
     XCTAssertEqual(ReaderPresentationProjection.target(state: shared, editorParent: .library,
       hasNote: false, hasAccessory: false, available: true), .dock)
-    let sourcePage = ReaderSourceNavigation()
-    sourcePage.update(.details, opening: opening, generation: 1)
-    let pageToken = try XCTUnwrap(sourcePage.token)
-    sourcePage.confirm(pageToken)
-    sourcePage.installation.beginDismissal()
-    sourcePage.installation.cancelDismissal()
-    XCTAssertEqual(sourcePage.showing, .details, "cancelled native pop retains the source page")
-    XCTAssertEqual(sourcePage.installation.phase, .confirmed)
-    XCTAssertFalse(sourcePage.completed(unused), "a tool callback cannot release source navigation")
-    sourcePage.hasModalChild = true
-    sourcePage.update(.none, opening: opening, generation: 2)
-    XCTAssertEqual(sourcePage.installation.phase, .confirmed, "a real child modal pins its source parent")
-    sourcePage.hasModalChild = false
-    sourcePage.update(.none, opening: opening, generation: 2)
-    XCTAssertEqual(sourcePage.installation.phase, .dismissing)
-    XCTAssertTrue(sourcePage.completed(pageToken))
-    XCTAssertFalse(sourcePage.active)
+    shared.reset()
+    shared.sourcePage = .fullSettings
+    shared.push(.preview(UUID()))
+    shared.controlsVisible.toggle() // unrelated tool revisions never veto Back
+    shared.sourcePage = nil
+    XCTAssertNil(shared.sourcePage)
+    XCTAssertTrue(shared.location.path.isEmpty)
+    shared.sourcePage = .details
+    shared.push(.history)
+    XCTAssertEqual(shared.sourcePage, .details, "a deeper child does not end its reader-owned page")
+    shared.sourcePage = nil // also the programmatic return-to-reading path
+    XCTAssertTrue(shared.location.path.isEmpty)
     XCTAssertFalse(ReadingContainerRegions.permitsSpread(in: CGSize(width: 900, height: 900)))
     XCTAssertTrue(ReadingContainerRegions.permitsSpread(in: CGSize(width: 1000, height: 900)))
   }
