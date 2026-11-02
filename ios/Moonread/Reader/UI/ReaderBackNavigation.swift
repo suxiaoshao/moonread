@@ -37,6 +37,7 @@ final class NavigationPresentationState {
 struct NavigationTransitionObserver: UIViewControllerRepresentable {
     var openingID: UUID? = nil
     var expectedDepth: Int? = nil
+    var navigationAvailable: (UINavigationController) -> Void = { _ in }
     var appeared: (UUID, String) -> Void = { _, _ in }
     var visibilityChanged: (Bool) -> Void = { _ in }
     var willLeave: (_ popping: Bool) -> Void
@@ -51,11 +52,13 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
         controller.removed()
     }
     func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.navigationAvailable = navigationAvailable
         controller.willLeave = willLeave; controller.completed = completed
         controller.visibilityChanged = visibilityChanged
         controller.removed = removed; controller.becameCurrent = becameCurrent
         controller.expectedDepth = expectedDepth
         controller.setOpening(openingID, appeared: appeared)
+        if let navigation = controller.navigationController { navigationAvailable(navigation) }
     }
 
     final class Controller: UIViewController {
@@ -64,6 +67,7 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
         var removed: () -> Void = {}
         var becameCurrent: () -> Void = {}
         var expectedDepth: Int?
+        var navigationAvailable: (UINavigationController) -> Void = { _ in }
         private var openingID: UUID?
         private var appeared: (UUID, String) -> Void = { _, _ in }
         private var initialAppearanceCompleted = false
@@ -89,6 +93,7 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
                 guard index == expectedDepth - 1 || popped else { return nil }
             }
             observedNavigation = navigation; observedDestination = owner
+            navigationAvailable(navigation)
             return owner
         }
         private func finishAppearance(_ id: UUID?, reason: String) {

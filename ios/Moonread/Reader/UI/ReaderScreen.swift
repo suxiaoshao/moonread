@@ -24,6 +24,7 @@ struct ReaderScreen: View {
     private var isWide: Bool { horizontalSizeClass == .regular }
     @State private var controlsTipHeight: CGFloat = 0
     @State private var dockHeight: CGFloat = 220
+    @State private var sheetChrome = ReaderSheetChrome()
     @State private var pendingProgressNavigation = false
     @State private var libraryNavigationRevision: Int?
     @State private var settingsPreview = ReadingPreviewSource.sample
@@ -196,6 +197,7 @@ struct ReaderScreen: View {
                                     if automaticSelected && !automaticHidden { closeAutomaticReading(); return }
                                     if automaticHidden { presentation.choose(.library, exposure: .accessory) }
                                     controlsVisible.toggle()
+                                    synchronizeNativePresentation()
                                 }
                             },
                             readingBegan: { session.beganReadingInteraction(); controlsVisible = false },
@@ -271,7 +273,7 @@ struct ReaderScreen: View {
         .modifier(ReaderOpenLegacyFade(ready: session.window != nil, reduced: reduceMotion))
         .background(Color(uiColor: theme.paper))
         .toolbarVisibility(.hidden, for: .tabBar)
-        .statusBarHidden(!controlsVisible)
+        .statusBarHidden(!(sheetChrome.visible || (!sheetPresented && presentation.controlsVisible)))
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if Onboarding.shared.enabled, !Onboarding.shared.revealedControls, !controlsVisible,
                session.opening.phase == .reading, !session.isLeaving {
@@ -471,6 +473,10 @@ struct ReaderScreen: View {
 
     private var sourceObserver: some View {
         NavigationTransitionObserver(openingID: session.opening.request?.id ?? openingRequest?.id, expectedDepth: sourceDepth,
+                                                   navigationAvailable: {
+                                                       sheetChrome.navigation = $0
+                                                       if readerOwnsChrome { sheetChrome.synchronizeNavigation(visible: readerNavigationVisible) }
+                                                   },
                                                    appeared: { id, reason in
                                                        completedOpeningID = id; session.opening.settled(id, reason: reason)
                                                    },
@@ -509,7 +515,7 @@ struct ReaderScreen: View {
                         .accessibilityIdentifier("readerBookDetails")
                 }
             }
-            .toolbarVisibility(readerOwnsChrome ? (readerNavigationVisible ? .visible : .hidden) : .automatic, for: .navigationBar)
+            .toolbarVisibility(.automatic, for: .navigationBar)
         .navigationDestination(isPresented: Binding(get: { sourceNavigation.showing == .settings }, set: { shown in
             guard !shown, toolSession.editor == nil else { return }
             nativePageClosed(.fullSettings, token: pageToken, generation: generation)
@@ -678,10 +684,11 @@ struct ReaderScreen: View {
         let token = nativeHost.token
         return ReaderBottomPanel(expanded: Binding(get: { attachmentExpanded }, set: { attachmentExpanded = $0 }), compactHeight: $dockHeight,
                           canExpand: automaticSelected || (searchActive && dock == .progress), taskID: taskID,
-                          closeTask: closeTask) {
-            ZStack(alignment: .top) {
+                          closeTask: closeTask, chrome: sheetChrome, showsControls: controlsVisible) {
+            ReaderCompactLayout(selection: dock) {
                 bottomDock
                     .transaction { $0.animation = nil }
+                    .layoutValue(key: ReaderCompactIdentity.self, value: dock)
                     .id(dock)
                     .transition(MotionTokens.accessoryContent(reduced: reduceMotion))
             }
@@ -939,7 +946,7 @@ struct ReaderScreen: View {
     private var readerOwnsChrome: Bool { sourceSelected && sourceCurrent && !sourceNavigation.active && !navigationPresentation.isSuspended && !session.isLeaving }
     private var readerNavigationVisible: Bool {
         !session.isLeaving && !navigationPresentation.isSuspended
-            && (controlsVisible || session.window == nil)
+            && (sheetChrome.visible || session.window == nil)
     }
 
     private var readingSettings: Binding<ReaderSettings> {
