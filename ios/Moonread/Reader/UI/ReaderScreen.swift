@@ -18,7 +18,6 @@ struct ReaderScreen: View {
     @State private var toolSession = ReaderToolSession()
     @State private var presentationOwner = UUID()
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @State private var sourceNavigation = ReaderSourceNavigation()
     @State private var sourceCurrent = false
     @State private var layoutStatus = ReadingLayoutStatus()
     private var isWide: Bool { horizontalSizeClass == .regular }
@@ -388,14 +387,11 @@ struct ReaderScreen: View {
         .onChange(of: automatic.panelRequest) { _, _ in
             guard scenePhase == .active, !session.isLeaving, !sheetPresented,
                   !session.viewportAccess.hasBlockingPresentation(allowingReaderAccessory: false),
-                  !sourceNavigation.active else { return }
+                  presentation.sourcePage == nil else { return }
             openAutomaticReading()
         }
         .onChange(of: session.opening.navigationSettled) { _, _ in synchronizeNativePresentation() }
         .onChange(of: sourceCurrent) { _, _ in synchronizeNativePresentation() }
-        .onChange(of: sourceNavigation.token?.id) { _, token in if token == nil { synchronizeNativePresentation(animatePage: true) } }
-        .onChange(of: sourceNavigation.installation.phase) { _, _ in synchronizeNativePresentation() }
-        .onChange(of: sourceNavigation.hasModalChild) { _, child in if !child { synchronizeNativePresentation() } }
         .onChange(of: nativeHost.phase) { _, _ in synchronizeNativePresentation() }
         .onChange(of: desiredPresentation, initial: true) { _, _ in synchronizeNativePresentation() }
         .onChange(of: presentation.revision) { _, _ in synchronizeNativePresentation() }
@@ -480,7 +476,7 @@ struct ReaderScreen: View {
                                                    },
                                                    willLeave: { popping in
             if popping { navigationPresentation.begin(hasPresentation: sheetPresented) }
-            if popping || sourceNavigation.active || !sourceRoutePresent { sourceCurrent = false }
+            if popping || presentation.sourcePage != nil || !sourceRoutePresent { sourceCurrent = false }
             ReaderSceneDiagnostics.record("source.willLeave", opening: session.opening.request?.id, fields: ["popping": popping])
         }, completed: { popping, cancelled in
             if cancelled { sourceCurrent = true }
@@ -495,9 +491,7 @@ struct ReaderScreen: View {
     }
 
     private var sourceReader: some View {
-        let pageToken = sourceNavigation.token
-        let generation = presentation.revision
-        return lifecycleReader
+        lifecycleReader
             .background(sourceObserver)
             .navigationTitle(session.book?.title ?? route.title)
             .navigationBarTitleDisplayMode(.inline)
@@ -511,31 +505,34 @@ struct ReaderScreen: View {
                 }
             }
             .toolbarVisibility(readerOwnsChrome ? (readerNavigationVisible ? .visible : .hidden) : .automatic, for: .navigationBar)
-        .navigationDestination(isPresented: Binding(get: { sourceNavigation.showing == .settings }, set: { shown in
-            guard !shown, toolSession.editor == nil else { return }
-            nativePageClosed(.fullSettings, token: pageToken, generation: generation)
-        })) {
-                ReaderSettingsView(settings: readingSettings, preview: settingsPreview, encoding: session.encodingLabel, isRestartingEncoding: session.restartingEncoding, changeEncoding: changeEncoding, editing: toolSession.settingsEditing, editorClosed: readerEditorClosed, nativeNavigation: sourceNavigation)
+        .navigationDestination(isPresented: sourcePageBinding(.fullSettings)) {
+            ReaderSettingsView(settings: readingSettings, preview: settingsPreview, encoding: session.encodingLabel, isRestartingEncoding: session.restartingEncoding, changeEncoding: changeEncoding, editing: toolSession.settingsEditing, editorClosed: readerEditorClosed)
                 .themeScope(theme)
                 .preferredColorScheme(theme.scheme)
-                .background(ReaderModalChildProbe(host: nativeHost, source: sourceNavigation))
-                .background(NavigationTransitionObserver(openingID: session.opening.request?.id, expectedDepth: sourceDepth.map { $0 + 1 }, willLeave: { _ in }, completed: { popping, cancelled in
-                    if popping { sourcePageFinished(.fullSettings, token: pageToken, cancelled: cancelled) }
-                }, becameCurrent: { if let pageToken { sourceNavigation.confirm(pageToken) } }))
         }
-        .navigationDestination(isPresented: Binding(get: { sourceNavigation.showing == .details && !session.isLeaving }, set: { shown in
-            if !shown { nativePageClosed(.details, token: pageToken, generation: generation) }
-        })) {
+        .navigationDestination(isPresented: sourcePageBinding(.details)) {
             // Like reading settings, the pushed page's UIKit chrome follows the reader appearance.
             StatisticsView(library: library, target: bookDetailsTarget)
                 .themeScope(theme).preferredColorScheme(theme.scheme).toolbarVisibility(.hidden, for: .tabBar)
-                // Pages pushed from details (a search) can return straight to this book.
                 .environment(\.returnToReading, returnToReading)
                 .onAppear { returnToReading.close = closeBookDetails }
-                .background(NavigationTransitionObserver(openingID: session.opening.request?.id, expectedDepth: sourceDepth.map { $0 + 1 }, willLeave: { _ in }, completed: { popping, cancelled in
-                    if popping { sourcePageFinished(.details, token: pageToken, cancelled: cancelled) }
-                }, becameCurrent: { if let pageToken { sourceNavigation.confirm(pageToken) } }))
         }
+    }
+
+    private func sourcePageBinding(_ destination: ReaderDestination) -> Binding<Bool> {
+        Binding(get: {
+            // This gate only sequences entry: finish dismissing the tool sheet
+            // before the system pushes. There is no installed source-page mirror.
+            presentation.sourcePage == destination && !sheetPresented
+        }, set: { shown in
+            guard !shown, presentation.sourcePage == destination else { return }
+            presentation.sourcePage = nil
+            if destination == .fullSettings {
+                presentation.location.selection = tools.searchActive ? .search : .library
+                presentation.exposure = tools.searchActive ? .accessory : .hidden
+            }
+            toolSession.releaseFinishedEditors()
+        })
     }
 
     @State private var excerptShare: NoteSharePayload?
@@ -671,7 +668,7 @@ struct ReaderScreen: View {
         return library.containsReaderDestination(id)
     }
     private var readerNativeReady: Bool {
-        sourceRoutePresent && sourceSelected && sourceCurrent && session.opening.navigationSettled && !sourceNavigation.active
+        sourceRoutePresent && sourceSelected && sourceCurrent && session.opening.navigationSettled && presentation.sourcePage == nil
             && !navigationPresentation.isSuspended && !session.isLeaving
     }
 
@@ -760,29 +757,6 @@ struct ReaderScreen: View {
         nativeHost.installation.beginDismissal()
         clearTask(); if tools.searchActive { closeSearch() }
     }
-    private func nativePageClosed(_ destination: ReaderDestination, token: ReaderHostToken?, generation: UInt64) {
-        guard let token, sourceNavigation.token?.id == token.id,
-              token.opening == session.opening.request?.id, generation == presentation.revision else { return }
-        // The native pop is not committed to intent until its coordinator completes.
-        sourceNavigation.installation.beginDismissal()
-    }
-    private func sourcePageFinished(_ destination: ReaderDestination, token: ReaderHostToken?, cancelled: Bool) {
-        guard let token, sourceNavigation.token?.id == token.id else { return }
-        ReaderSceneDiagnostics.record("source.pageFinished", opening: token.opening,
-            fields: ["destination": String(describing: destination), "cancelled": cancelled])
-        if cancelled { sourceNavigation.installation.cancelDismissal(); return }
-        // A completed native pop closes the still-current logical destination.
-        if desiredPresentation == sourceNavigation.target {
-            presentation.close(destination)
-            if destination == .fullSettings {
-                presentation.location.selection = tools.searchActive ? .search : .library
-                presentation.exposure = tools.searchActive ? .accessory : .hidden
-            }
-        }
-        _ = sourceNavigation.completed(token)
-        synchronizeNativePresentation()
-    }
-
     private func presentationDismissed(_ token: ReaderHostToken?) {
         guard let token, nativeHost.completed(token) else { return }
         toolSession.releaseFinishedEditors()
@@ -938,7 +912,7 @@ struct ReaderScreen: View {
         ReaderCompactHeader(session: session, battery: battery, book: book, readerWidth: readerWidth,
                             compactHeaderHeight: compactHeaderHeight, showControls: { controlsVisible = true })
     }
-    private var readerOwnsChrome: Bool { sourceSelected && sourceCurrent && !sourceNavigation.active && !navigationPresentation.isSuspended && !session.isLeaving }
+    private var readerOwnsChrome: Bool { sourceSelected && sourceCurrent && presentation.sourcePage == nil && !navigationPresentation.isSuspended && !session.isLeaving }
     private var readerNavigationVisible: Bool {
         !session.isLeaving && !navigationPresentation.isSuspended
             && (presentation.controlsVisible || session.window == nil)
@@ -1103,19 +1077,14 @@ struct ReaderScreen: View {
             let desired = desiredPresentation
             let opening = session.opening.request?.id ?? presentationOwner
             let page = desired == .details || desired == .settings
-            let modalBusy = sheetPresented
             // Release the tool sheet before pushing on the source stack.
             let toolTarget: ReaderPresentationTarget = page || !readerNativeReady ? .none : desired
             if nativeHost.token == nil || (nativeHost.target == toolTarget && !nativeHost.dismissing) { nativeHost.retain(currentNode) }
             nativeHost.update(toolTarget, opening: opening, generation: presentation.revision,
                 force: session.isLeaving || exitPhase != .reading || navigationPresentation.isSuspended)
-            if page, !modalBusy, sourceSelected, sourceCurrent || sourceNavigation.active {
-                sourceNavigation.update(desired, opening: opening, generation: presentation.revision)
-            } else if !page { sourceNavigation.update(.none, opening: opening, generation: presentation.revision) }
             ReaderSceneDiagnostics.record("presentation.project", opening: opening, fields: [
                 "sourceTab": String(describing: library.selectedTab), "sourceCurrent": sourceCurrent,
-                "sourceRouteCount": library.path.count, "sourcePage": String(describing: sourceNavigation.target),
-                "sourcePhase": sourceNavigation.installation.phase.rawValue,
+                "sourceRouteCount": library.path.count, "sourcePage": String(describing: presentation.sourcePage),
                 "navigationSettled": session.opening.navigationSettled, "location": String(describing: presentation.location),
                 "desired": String(describing: desired), "toolRequested": String(describing: nativeHost.showing),
                 "toolPhase": nativeHost.phase.rawValue, "token": nativeHost.token?.id.uuidString ?? "none"])
