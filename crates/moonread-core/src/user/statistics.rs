@@ -102,6 +102,12 @@ impl ReadingClock {
                     state.remaining -= charged;
                 }
             }
+            // append assumes contiguous wall time. Automatic motion can cover
+            // only part (or none) of this interval; do not join the next motion
+            // to the pending slice across the uncharged gap.
+            if previous.automatic_moving && charged < elapsed {
+                state.finish(&mut output);
+            }
             let clock_changed = (moment.unix_ms.saturating_sub(previous.unix_ms)
                 - i64::try_from(elapsed).unwrap_or(i64::MAX))
             .unsigned_abs()
@@ -495,6 +501,49 @@ mod tests {
         hidden.unix_ms = 620_000;
         hidden.automatic_milliseconds = 10_000;
         assert_eq!(duration(&clock.update(hidden)), 0);
+
+        for base in [0, DAY_MS - 10_000] {
+            // Both a fully stalled interval and a partially charged interval
+            // leave a gap before motion resumes at 10 seconds.
+            for (during_gap, first_end) in [(1_000, 1_000), (2_000, 2_000)] {
+                let clock = ReadingClock::new("book".into());
+                let mut slices = Vec::new();
+                for (ms, moving_ms) in [
+                    (0, 0),
+                    (1_000, 1_000),
+                    (10_000, during_gap),
+                    (11_000, during_gap + 1_000),
+                ] {
+                    let mut point = moment(ms, ms != 11_000, false);
+                    point.unix_ms = base + ms as i64;
+                    point.utc_offset_seconds = 0;
+                    point.automatic_moving = true;
+                    point.automatic_milliseconds = moving_ms;
+                    slices.extend(clock.update(point));
+                }
+                assert_eq!(slices.len(), 2);
+                assert_eq!(
+                    (slices[0].started_ms, slices[0].ended_ms),
+                    (base, base + first_end)
+                );
+                assert_eq!(
+                    (slices[1].started_ms, slices[1].ended_ms),
+                    (base + 10_000, base + 11_000)
+                );
+                assert_eq!(duration(&slices), first_end + 1_000);
+                assert_eq!(slices[0].local_day, base.div_euclid(DAY_MS));
+                assert_eq!(slices[1].local_day, (base + 10_000).div_euclid(DAY_MS));
+                assert_eq!(slices[0].visit_id, slices[1].visit_id);
+                assert_eq!(
+                    slices
+                        .iter()
+                        .flat_map(|s| &s.exposures)
+                        .map(|e| e.duration_ms)
+                        .sum::<u64>(),
+                    (first_end + 1_000) as u64
+                );
+            }
+        }
     }
 
     #[test]
