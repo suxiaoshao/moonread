@@ -79,8 +79,7 @@ struct PalettePicker: View {
                 PalettePreview(theme: previewTheme).listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
             } }
             if reader && embedded {
-                Section { textureSection }
-                    .listRowInsets(EdgeInsets()).listRowBackground(Color.clear).listRowSeparator(.hidden)
+                textureSection
             }
             Section {
                 if reader { sourceRow("跟随应用", id: "app", icon: "arrow.turn.down.right") }
@@ -121,8 +120,7 @@ struct PalettePicker: View {
         }
     }
     private var textureSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("纸张纹理").font(.headline).foregroundStyle(Color(uiColor: theme.secondary))
+        Section {
             VStack(alignment: .leading, spacing: 18) {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 72))], spacing: 12) {
                     textureOption(nil)
@@ -135,15 +133,17 @@ struct PalettePicker: View {
                 })) {
                     ForEach(readerTextureStrengths(), id: \.self) { value in Text(value.label).tag(value) }
                 }.pickerStyle(.segmented).disabled(texture == nil).accessibilityIdentifier("readerTextureStrength")
-            }.padding(14).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 16))
-                .disabled(previewTheme.plan.colors == nil)
+            }.disabled(previewTheme.plan.colors == nil)
+        } header: {
+            Text("纸张纹理").foregroundStyle(Color(uiColor: theme.secondary))
+        } footer: {
             if previewTheme.plan.colors == nil {
                 Text("请选择具体配色后使用纹理").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                     .accessibilityIdentifier("readerTextureUnavailable")
             } else {
                 Text("纹理与配色独立。选择保存在此设备。").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
             }
-        }
+        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
     }
     private func textureOption(_ id: ReaderTextureId?) -> some View {
         let choice = id.map { readerTextureChoice(id: $0) }

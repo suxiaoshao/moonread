@@ -77,7 +77,7 @@ struct AIModelPickerButton: View {
                     Image(systemName: "chevron.right").font(.footnote.weight(.semibold)).foregroundStyle(Color(uiColor: theme.secondary)).accessibilityHidden(true)
                 }.frame(maxWidth: .infinity, minHeight: 44).contentShape(.rect)
             } else {
-                modelLabel.frame(maxWidth: destination.isDefault && !compact ? .infinity : nil, alignment: .trailing).contentShape(Rectangle())
+                modelLabel(showsThinking: true).frame(maxWidth: destination.isDefault && !compact ? .infinity : nil, alignment: .trailing).contentShape(Rectangle())
             }
         }
             .buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.ink))
@@ -85,21 +85,28 @@ struct AIModelPickerButton: View {
             .accessibilityIdentifier("openAIModelPanel" + (destination.purpose.map { "-" + $0.rawValue } ?? ""))
             // Let the system fit top settings rows and bottom reader controls.
             .popover(isPresented: $panel, arrowEdge: nil) {
-                // Keep the full picker in this presentation; no competing dismissal/presentation.
-                Group {
-                    if completePicker {
-                        AIModelPicker(destination: destination, detent: $detent)
-                            // List has no intrinsic height. Suggest a viewport;
-                            // the system still fits it to the available space.
-                            .frame(idealHeight: 540)
-                            .presentationDetents([.medium, .large], selection: $detent)
-                            .presentationDragIndicator(.visible)
-                    } else {
-                        quickControls
-                    }
-                }.frame(idealWidth: 360)
-                    .environment(ai).environment(\.theme, theme).preferredColorScheme(theme.scheme)
-                    .presentationBackground(Color(uiColor: completePicker ? theme.canvas : theme.surface))
+                NavigationStack {
+                    quickControls
+                        .navigationTitle("模型与思考强度").navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            if !completePicker {
+                                ToolbarItem(placement: .cancellationAction) {
+                                    SystemToolbarButton("关闭", role: .close) { panel = false }
+                                        .accessibilityIdentifier("closeAIModelPanel")
+                                }
+                            }
+                        }
+                        .navigationDestination(isPresented: $completePicker) {
+                            AIModelPickerContent(destination: destination, detent: $detent, close: { panel = false }, isRoot: false)
+                        }
+                }
+                // Both pages share one native host and its scrollable viewport.
+                .frame(idealWidth: 360, idealHeight: 540)
+                .presentationDetents([.medium, .large], selection: $detent)
+                .presentationDragIndicator(.visible)
+                .environment(ai).environment(\.theme, theme).preferredColorScheme(theme.scheme)
+                .presentationBackground(Color(uiColor: theme.canvas))
+                .onChange(of: ai.availability.isAvailable) { _, available in if !available { panel = false } }
             }
             .sheet(isPresented: $showing, onDismiss: { detent = .medium }) {
                 AIModelPicker(destination: destination, detent: $detent).environment(ai).environment(\.theme, theme).preferredColorScheme(theme.scheme)
@@ -108,43 +115,54 @@ struct AIModelPickerButton: View {
             }
     }
     private var quickControls: some View {
-        ScrollView {
-            VStack(spacing: 8) {
+        Form {
+            Section {
                 Button { completePicker = true } label: {
-                    HStack { modelLabel; Image(systemName: "chevron.right").font(.caption) }
-                        .frame(maxWidth: .infinity)
+                    HStack {
+                        modelLabel(showsThinking: false)
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                    }.frame(maxWidth: .infinity).contentShape(.rect)
                 }.buttonStyle(.plain).accessibilityIdentifier("openAIModelPicker")
                 if let value = destination.selection(ai), let model = ai.providers.model(connectionID: value.connectionID, modelID: value.modelID), model.thinking.count > 1 {
-                    AIThinkingSlider(levels: model.thinking, selection: Binding(get: { destination.selection(ai)?.thinking ?? AIModelSelection.defaultThinking(model) ?? "" }, set: { effort in
-                        var selection = value; selection.thinking = effort
-                        Task { saveFailed = !(await destination.apply(selection, ai)) }
-                    }))
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("思考强度")
+                            Spacer(minLength: 8)
+                            Text(AIThinkingLabel.label(value.thinking ?? AIModelSelection.defaultThinking(model) ?? ""))
+                                .foregroundStyle(Color(uiColor: theme.secondary))
+                                .accessibilityIdentifier("aiThinkingLevel")
+                        }
+                        AIThinkingSlider(levels: model.thinking, selection: Binding(get: { destination.selection(ai)?.thinking ?? AIModelSelection.defaultThinking(model) ?? "" }, set: { effort in
+                            var selection = value; selection.thinking = effort
+                            Task { saveFailed = !(await destination.apply(selection, ai)) }
+                        }))
+                    }
                 }
-                if destination.running(ai) {
-                    Text("本次选择将在下一次请求生效").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                }
-                if let value = destination.selection(ai), let connection = ai.providers.connections.first(where: { $0.id == value.connectionID }), ai.providers.isUsingChatGPTPlan(connection) {
-                    Text("正在使用 ChatGPT 套餐").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                    Link("管理 ChatGPT 用量", destination: URL(string: "https://chatgpt.com/settings/usage")!)
-                        .font(.caption).foregroundStyle(Color(uiColor: theme.accent))
-                }
-                if saveFailed { Text("模型目录已变化，请重新选择。").font(.caption).foregroundStyle(Color(uiColor: theme.destructive)) }
-            }.padding(16).frame(maxWidth: .infinity).foregroundStyle(Color(uiColor: theme.ink))
-                .tint(Color(uiColor: theme.accent))
-                .background(Color(uiColor: theme.surface))
-        }
+            } footer: {
+                VStack(alignment: .leading, spacing: 8) {
+                    if destination.running(ai) { Text("本次选择将在下一次请求生效") }
+                    if let value = destination.selection(ai), let connection = ai.providers.connections.first(where: { $0.id == value.connectionID }), ai.providers.isUsingChatGPTPlan(connection) {
+                        Text("正在使用 ChatGPT 套餐")
+                        Link("管理 ChatGPT 用量", destination: URL(string: "https://chatgpt.com/settings/usage")!)
+                            .foregroundStyle(Color(uiColor: theme.accent))
+                    }
+                    if saveFailed { Text("模型目录已变化，请重新选择。").foregroundStyle(Color(uiColor: theme.destructive)) }
+                }.foregroundStyle(Color(uiColor: theme.secondary))
+            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+        }.themedPage().accessibilityIdentifier("aiModelQuickControls")
     }
     private var summary: String {
         guard let value = destination.selection(ai),
               let model = ai.providers.model(connectionID: value.connectionID, modelID: value.modelID) else { return String(localized: "未设置") }
         return model.name + (value.thinking.map { " · " + AIThinkingLabel.label($0) } ?? "")
     }
-    private var modelLabel: some View {
+    private func modelLabel(showsThinking: Bool) -> some View {
         HStack(spacing: 6) {
             if let value = destination.selection(ai), let connection = ai.providers.connections.first(where: { $0.id == value.connectionID }), let model = ai.providers.model(value.modelID, in: connection) {
                 AIProviderIcon(providerID: connection.catalogID)
                 Text(verbatim: model.name).font(.subheadline.weight(.semibold))
-                if let effort = value.thinking { Text(AIThinkingLabel.label(effort)).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary)) }
+                if showsThinking, let effort = value.thinking { Text(AIThinkingLabel.label(effort)).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary)) }
             } else { Image(systemName: "sparkles"); Text("选择模型") }
         }.padding(.horizontal, 4).frame(minHeight: 44)
     }
@@ -186,10 +204,24 @@ struct AIModelRowLabel: View {
 }
 struct AIModelPicker: View {
     @Environment(AIService.self) private var ai
-    @Environment(\.theme) private var theme
     @Environment(\.dismiss) private var dismiss
     let destination: AIModelPickerDestination
     @Binding var detent: PresentationDetent
+    var body: some View {
+        NavigationStack {
+            AIModelPickerContent(destination: destination, detent: $detent, close: { dismiss() })
+        }
+        .onChange(of: ai.availability.isAvailable) { _, available in if !available { dismiss() } }
+    }
+}
+
+private struct AIModelPickerContent: View {
+    @Environment(AIService.self) private var ai
+    @Environment(\.theme) private var theme
+    let destination: AIModelPickerDestination
+    @Binding var detent: PresentationDetent
+    let close: () -> Void
+    var isRoot = true
     @State private var error = false
     @State private var adding = false
     @State private var saving = false
@@ -204,69 +236,68 @@ struct AIModelPicker: View {
     }
     private var running: Bool { destination.running(ai) }
     var body: some View {
-        NavigationStack {
-            Group {
-                if ai.providers.connections.allSatisfy({ offered($0).isEmpty }) {
-                    ContentUnavailableView {
-                        Label("还没有可用模型", systemImage: "sparkles")
-                    } description: { Text("先连接一个 AI 账户并加载模型。") } actions: {
-                        Button("添加连接", systemImage: "plus") { adding = true }.accessibilityIdentifier("aiModelPickerSettings")
-                    }
-                } else if ai.providers.connections.allSatisfy({ shown($0).isEmpty }) {
-                    ContentUnavailableView {
-                        Label("没有匹配的模型", systemImage: "magnifyingglass")
-                    } description: { Text("试试其他搜索词。") } actions: {
-                        Button("清除搜索") { query = ""; searching = false }
-                    }
-                } else {
-                    List {
-                        ForEach(ai.providers.connections) { connection in
-                            let models = shown(connection)
-                            if !models.isEmpty {
-                                let duplicates = AIModelSearch.duplicateNames(offered(connection))
-                                Section {
-                                    ForEach(models) { model in modelRow(model, connection: connection, duplicate: duplicates.contains(model.name)) }
-                                } header: { AIConnectionHeader(connection: connection) }
-                                    .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-                            }
+        Group {
+            if ai.providers.connections.allSatisfy({ offered($0).isEmpty }) {
+                ContentUnavailableView {
+                    Label("还没有可用模型", systemImage: "sparkles")
+                } description: { Text("先连接一个 AI 账户并加载模型。") } actions: {
+                    Button("添加连接", systemImage: "plus") { adding = true }.accessibilityIdentifier("aiModelPickerSettings")
+                }
+            } else if ai.providers.connections.allSatisfy({ shown($0).isEmpty }) {
+                ContentUnavailableView {
+                    Label("没有匹配的模型", systemImage: "magnifyingglass")
+                } description: { Text("试试其他搜索词。") } actions: {
+                    Button("清除搜索") { query = ""; searching = false }
+                }
+            } else {
+                List {
+                    ForEach(ai.providers.connections) { connection in
+                        let models = shown(connection)
+                        if !models.isEmpty {
+                            let duplicates = AIModelSearch.duplicateNames(offered(connection))
+                            Section {
+                                ForEach(models) { model in modelRow(model, connection: connection, duplicate: duplicates.contains(model.name)) }
+                            } header: { AIConnectionHeader(connection: connection) }
+                                .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                         }
                     }
                 }
-            }.listStyle(.insetGrouped).themedPage().accessibilityIdentifier("aiModelList")
-                .searchable(text: $query, isPresented: $searching, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("搜索"))
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
-                .onChange(of: searching) { _, active in if active { detent = .large } }
-                .aiAddConnectionFlow(isPresented: $adding)
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    if let purpose = destination.purpose {
-                        Button {
-                            if ai.providers.setPurpose(purpose, selection: nil) { dismiss() }
-                            else { error = true }
-                        } label: {
-                            HStack {
-                                Text("不使用"); Spacer()
-                                if current == nil { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)) }
-                            }.padding().frame(maxWidth: .infinity)
-                                .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
-                        }.buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.ink))
-                            .padding(.horizontal, 20).padding(.vertical, 8).background(Color(uiColor: theme.canvas))
-                            .accessibilityIdentifier("aiPurposeNone")
-                    }
+            }
+        }.listStyle(.insetGrouped).themedPage().accessibilityIdentifier("aiModelList")
+            .searchable(text: $query, isPresented: $searching, placement: .navigationBarDrawer(displayMode: .always), prompt: Text("搜索"))
+            .textInputAutocapitalization(.never).autocorrectionDisabled()
+            .onChange(of: searching) { _, active in if active { detent = .large } }
+            .aiAddConnectionFlow(isPresented: $adding)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let purpose = destination.purpose {
+                    Button {
+                        if ai.providers.setPurpose(purpose, selection: nil) { close() }
+                        else { error = true }
+                    } label: {
+                        HStack {
+                            Text("不使用"); Spacer()
+                            if current == nil { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)) }
+                        }.padding().frame(maxWidth: .infinity)
+                            .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
+                    }.buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.ink))
+                        .padding(.horizontal, 20).padding(.vertical, 8).background(Color(uiColor: theme.canvas))
+                        .accessibilityIdentifier("aiPurposeNone")
                 }
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if running || error {
-                        VStack(spacing: 8) {
-                            if running { Text("本次选择将在下一次请求生效") }
-                            if error { Text("模型目录已变化，请重新选择。").foregroundStyle(Color(uiColor: theme.destructive)) }
-                        }.font(.footnote).padding(16).frame(maxWidth: .infinity).background(Color(uiColor: theme.canvas))
-                    }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if running || error {
+                    VStack(spacing: 8) {
+                        if running { Text("本次选择将在下一次请求生效") }
+                        if error { Text("模型目录已变化，请重新选择。").foregroundStyle(Color(uiColor: theme.destructive)) }
+                    }.font(.footnote).padding(16).frame(maxWidth: .infinity).background(Color(uiColor: theme.canvas))
                 }
-                .navigationTitle(destination.purpose?.title ?? String(localized: "选择模型")).navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("关闭", role: .close) { dismiss() }.accessibilityIdentifier("cancelAIModelPicker") }
+            }
+            .navigationTitle(destination.purpose?.title ?? String(localized: "选择模型")).navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if isRoot {
+                    ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("关闭", role: .close, action: close).accessibilityIdentifier("cancelAIModelPicker") }
                 }
-                .onChange(of: ai.availability.isAvailable) { _, available in if !available { dismiss() } }
-        }
+            }
     }
     private func modelRow(_ model: AIModelOption, connection: AIConnection, duplicate: Bool) -> some View {
         let reason = AIModelAvailability.reason(model, purpose: destination.purpose, connection: connection, providers: ai.providers)
@@ -279,7 +310,7 @@ struct AIModelPicker: View {
             Task {
                 let saved = await destination.apply(value, ai)
                 saving = false; error = !saved
-                if saved { dismiss() }
+                if saved { close() }
             }
         } label: {
             HStack {
