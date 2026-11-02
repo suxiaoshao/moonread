@@ -13,7 +13,7 @@ final class TextCoordinatesReaderSelectionTests: ReaderSelectionFixture {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-    let raw = "甲🌙段。\n \t　\n乙段。\n"
+    let raw = "    甲🌙段。\n \t　\n乙段。\n"
     let expected = "甲🌙段。\n乙段。\n"
     let file = root.appendingPathComponent("选取.txt")
     try Data(raw.utf8).write(to: file)
@@ -37,6 +37,37 @@ final class TextCoordinatesReaderSelectionTests: ReaderSelectionFixture {
     session.readSelection(start: 0, end: book.byteCount) { clipboard.append($0.text) }
     await session.leave().value
     XCTAssertEqual(clipboard, [expected], "Leaving invalidates the pending selection owner")
+  }
+
+  func testSmartIndentProjectionAndGeometryPreserveSourceCoordinates() throws {
+    let raw = "    甲段 内 空格。\n\u{3000}\u{3000}乙段。\n\t\u{a0}丙段。\n  - 列表\n"
+    let frame = try window(raw)
+    let smart = ReadingText(frame, indent: .smart)
+    XCTAssertEqual(smart.text, "甲段 内 空格。\n乙段。\n丙段。\n  - 列表\n")
+    XCTAssertEqual(ReadingText(frame, indent: .original).text, raw)
+    XCTAssertEqual(smart.coordinates.displayPoint(0), 0)
+    XCTAssertEqual(smart.coordinates.sourcePoint(0), 4)
+    var settings = defaultReaderSettings()
+    let styled = ReadingTypography.text(frame, settings: settings, ink: .black)
+    XCTAssertEqual(styled.string, smart.text)
+    for paragraph in frame.paragraphs where paragraph.kind == .body {
+      let range = try XCTUnwrap(smart.coordinates.displayRange(Int(paragraph.startUtf8)..<Int(paragraph.endUtf8)))
+      let style = try XCTUnwrap(styled.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle)
+      XCTAssertEqual(style.firstLineHeadIndent, ReadingTypography.font(settings).pointSize * 2)
+    }
+    let pages = TextPage.paginate(frame, size: CGSize(width: 180, height: 45), attributes: ReadingTypography.attributes(settings, ink: .black), source: styled, indent: .smart)
+    XCTAssertEqual(pages.map { $0.text.string }.joined(), smart.text)
+    XCTAssertEqual(pages.first?.start, frame.start)
+    XCTAssertEqual(pages.last?.end, frame.end)
+    let heads = readingIndentOmissions(chunks: frame.chunks, paragraphs: frame.paragraphs, indent: .smart).map(\.endUtf8)
+    let startingPages = pages.filter { heads.contains($0.firstVisibleOffset) }
+    XCTAssertGreaterThan(startingPages.count, 1)
+    for page in startingPages {
+      let style = try XCTUnwrap(page.layoutText.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)
+      XCTAssertEqual(style.firstLineHeadIndent, ReadingTypography.font(settings).pointSize * 2)
+    }
+    settings.indent = .original
+    XCTAssertEqual(ReadingTypography.text(frame, settings: settings, ink: .black).string, raw)
   }
 
   // S304: 投影与原文 UTF-8/UTF-16 映射往返一致，省略区间亲和性不移动正式锚点；纯 mapping 输入。

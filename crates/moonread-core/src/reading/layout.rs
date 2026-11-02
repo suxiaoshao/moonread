@@ -194,6 +194,67 @@ pub struct ReadingParagraph {
     pub indented: bool,
 }
 
+/// Unicode horizontal whitespace only: never paragraph boundaries or zero-width text.
+pub(crate) fn horizontal_indent(c: char) -> bool {
+    matches!(
+        c,
+        '\t' | ' ' | '\u{00a0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200a}' | '\u{202f}' | '\u{205f}' | '\u{3000}'
+    )
+}
+
+/// Runtime display omissions, not normalization or persisted source coordinates.
+#[uniffi::export]
+pub fn reading_indent_omissions(
+    chunks: Vec<TextChunk>,
+    paragraphs: Vec<ReadingParagraph>,
+    indent: ReadingIndent,
+) -> Vec<SourceSpan> {
+    indent_omissions(&chunks, &paragraphs, indent)
+}
+pub(crate) fn indent_omissions(
+    chunks: &[TextChunk],
+    paragraphs: &[ReadingParagraph],
+    indent: ReadingIndent,
+) -> Vec<SourceSpan> {
+    if indent != ReadingIndent::Smart {
+        return Vec::new();
+    }
+    paragraphs
+        .iter()
+        .filter(|p| p.kind == ParagraphKind::Body && !p.continuation)
+        .filter_map(|p| {
+            let mut end = p.start_utf8;
+            let mut resolved = false;
+            'prefix: for chunk in chunks {
+                if chunk.end_utf8 <= end {
+                    continue;
+                }
+                if chunk.start_utf8 > end || end >= p.end_utf8 {
+                    break;
+                }
+                let from = (end - chunk.start_utf8) as usize;
+                let to = (p.end_utf8.min(chunk.end_utf8) - chunk.start_utf8) as usize;
+                let Some(text) = chunk.text.get(from..to) else {
+                    break;
+                };
+                for c in text.chars() {
+                    if !horizontal_indent(c) {
+                        resolved = true;
+                        break 'prefix;
+                    }
+                    end += c.len_utf8() as u64;
+                }
+            }
+            // An all-horizontal window suffix has no confirmed body yet.
+            (end > p.start_utf8 && resolved).then_some(SourceSpan {
+                start_utf8: p.start_utf8,
+                end_utf8: end,
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn paragraphs(
     db: &Connection,
     id: &str,

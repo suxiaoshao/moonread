@@ -66,7 +66,7 @@ extension ReadingController {
                 if let text = scrollText {
                     readingBegan?()
                     text.setContentOffset(CGPoint(x: 0, y: self.scrollCoverHeight), animated: !reduceMotion)
-                    reportCover(false); report(window.flatMap { ReadingText($0).firstVisibleOffset } ?? anchor, settled: true)
+                    reportCover(false); report(window.flatMap { ReadingText($0, indent: (settings ?? defaultReaderSettings()).indent).firstVisibleOffset } ?? anchor, settled: true)
                 } else { movePage(1) }
                 return true
             }

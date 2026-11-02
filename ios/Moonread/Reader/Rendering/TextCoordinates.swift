@@ -118,7 +118,7 @@ struct TextCoordinates: Equatable, Sendable {
 }
 
 /// Text and mapping are sliced/prefixed together; no view reconstructs a map from
-/// compressed text. The source envelope includes proven omitted paragraphs.
+/// compressed text. The source envelope includes confirmed blank and indentation omissions.
 struct ReadingText: Equatable, Sendable {
     let text: String
     let sourceStart: UInt64
@@ -139,9 +139,10 @@ struct ReadingText: Equatable, Sendable {
     init(text: String, sourceStart: UInt64, sourceEnd: UInt64, coordinates: TextCoordinates, revision: UInt64 = 0) {
         self.text = text; self.sourceStart = sourceStart; self.sourceEnd = sourceEnd; self.coordinates = coordinates; self.revision = revision
     }
-    init(_ window: ReadingWindow) {
+    init(_ window: ReadingWindow, indent: ReadingIndent = .original) {
         var text = "", segments: [TextCoordinates.Segment] = [], cursor = window.start, display = 0
-        let ranges = (window.omitted.map { $0.startUtf8..<$0.endUtf8 } + window.paragraphs.filter { $0.kind == .blank }.map { $0.startUtf8..<$0.endUtf8 }).sorted { $0.lowerBound < $1.lowerBound }
+        let prefixes = readingIndentOmissions(chunks: window.chunks, paragraphs: window.paragraphs, indent: indent)
+        let ranges = (prefixes.map { $0.startUtf8..<$0.endUtf8 } + window.omitted.map { $0.startUtf8..<$0.endUtf8 } + window.paragraphs.filter { $0.kind == .blank }.map { $0.startUtf8..<$0.endUtf8 }).sorted { $0.lowerBound < $1.lowerBound }
         var confirmed: [Range<UInt64>] = []
         for range in ranges {
             if let last=confirmed.last, last.upperBound>=range.lowerBound { confirmed[confirmed.count-1]=last.lowerBound..<max(last.upperBound,range.upperBound) }
@@ -150,11 +151,11 @@ struct ReadingText: Equatable, Sendable {
         func omitted(_ from: UInt64, _ to: UInt64) -> TextCoordinates.Segment {
             var low=0, high=confirmed.count
             while low<high { let mid=(low+high)/2; if confirmed[mid].upperBound<=from { low=mid+1 } else { high=mid } }
-            precondition(low<confirmed.count && confirmed[low].lowerBound<=from && confirmed[low].upperBound>=to,"Only confirmed blank source ranges may be omitted")
+            precondition(low<confirmed.count && confirmed[low].lowerBound<=from && confirmed[low].upperBound>=to,"Only confirmed display omissions may be omitted")
             return .init(display:NSRange(location:display,length:0),source:Int(from-window.start)..<Int(to-window.start),boundaries:[])
         }
         for chunk in window.chunks {
-            let blanks = window.paragraphs.filter { $0.kind == .blank && $0.endUtf8 > chunk.startUtf8 && $0.startUtf8 < chunk.endUtf8 }
+            let blanks = confirmed.filter { $0.upperBound > chunk.startUtf8 && $0.lowerBound < chunk.endUtf8 }
             var source = chunk.startUtf8
             let bytes = Array(chunk.text.utf8)
             func append(_ start: UInt64, _ end: UInt64) {
@@ -166,7 +167,7 @@ struct ReadingText: Equatable, Sendable {
                 text += value; display += length; cursor = end
             }
             for blank in blanks {
-                let a = max(source, blank.startUtf8), b = min(chunk.endUtf8, blank.endUtf8)
+                let a = max(source, blank.lowerBound), b = min(chunk.endUtf8, blank.upperBound)
                 append(source, a); source = b
             }
             append(source, chunk.endUtf8)

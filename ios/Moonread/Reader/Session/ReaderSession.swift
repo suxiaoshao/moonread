@@ -689,7 +689,7 @@ final class ReaderSession {
         selectionTask = Task {
             defer { finished() }
             do {
-                let range = try await service.displayTextRange(id, start: from, end: to)
+                let range = try await service.displayTextRange(id, start: from, end: to, indent: (settings ?? defaultReaderSettings()).indent)
                 guard !Task.isCancelled, !isLeaving, readingID == id else { return }
                 await perform(range)
             } catch is CancellationError {

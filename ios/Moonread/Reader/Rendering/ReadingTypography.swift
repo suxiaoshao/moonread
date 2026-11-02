@@ -23,7 +23,7 @@ extension NSAttributedString.Key {
 @MainActor
 enum ReadingTypography {
     static func minimumColumnWidth(_ settings: ReaderSettings) -> CGFloat { max(320, 16 * font(settings).pointSize) }
-    static var layoutVersion: Int { 3 + ReaderFontLibrary.shared.revision + ReaderBuiltinFonts.shared.revision }
+    static var layoutVersion: Int { 4 + ReaderFontLibrary.shared.revision + ReaderBuiltinFonts.shared.revision }
 
     static func font(_ settings: ReaderSettings, heading: Bool = false, library: ReaderFontLibrary = .shared) -> UIFont {
         let size = settings.fontSize * (heading ? 1.2 : 1)
@@ -55,7 +55,7 @@ enum ReadingTypography {
     }
 
     static func text(_ window: ReadingWindow, settings: ReaderSettings, ink: UIColor) -> NSAttributedString {
-        let projection = ReadingText(window)
+        let projection = ReadingText(window, indent: settings.indent)
         let text = projection.text
         let source = NSMutableAttributedString(string: text, attributes: attributes(settings, ink: ink))
         let coordinates = projection.coordinates
@@ -75,10 +75,10 @@ enum ReadingTypography {
                 paragraph.paragraphSpacing = font.pointSize * 0.45
             } else if block.kind == .body || block.kind == .list {
                 paragraph.paragraphSpacing = settings.paragraphSpacing
-                if block.kind == .body, settings.indent == .smart, !block.indented, !continues { paragraph.firstLineHeadIndent = font.pointSize * 2 }
+                if block.kind == .body, settings.indent == .smart, !continues { paragraph.firstLineHeadIndent = font.pointSize * 2 }
             }
             source.addAttributes([.font: font, .paragraphStyle: paragraph,
-                                  .readingParagraphStart: NSNumber(value: continues ? start.saturatingPrevious : block.startUtf8)], range: range)
+                                  .readingParagraphStart: NSNumber(value: continues ? start.saturatingPrevious : window.start + UInt64(coordinates.sourcePoint(range.location) ?? Int(start-window.start)))], range: range)
         }
         return source
     }

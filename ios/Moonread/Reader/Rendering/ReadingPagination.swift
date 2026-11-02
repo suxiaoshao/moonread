@@ -65,9 +65,10 @@ struct TextPage {
                          attributes: [NSAttributedString.Key: Any], source styled: NSAttributedString? = nil,
                          insets: UIEdgeInsets = ReadingTextMetrics.insets,
                          preserving previous: [TextPage] = [], keeping anchor: UInt64? = nil,
+                         indent: ReadingIndent = .original,
                          layout: ((ReadingText, Bool) -> [NSRange])? = nil) -> [TextPage] {
         guard !window.chunks.isEmpty else { return [] }
-        let projection = ReadingText(window)
+        let projection = ReadingText(window, indent: indent)
         let coordinates = projection.coordinates
         let source = styled ?? NSAttributedString(string: projection.text, attributes: attributes)
         func slice(from start: UInt64, to end: UInt64) -> (NSAttributedString, ReadingText) {

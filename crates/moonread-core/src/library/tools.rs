@@ -111,12 +111,14 @@ fn range_text(db: &Connection, id: &str, start: u64, end: u64) -> Result<String>
 impl ReaderCore {
     /// The reader's display projection for an original selection envelope.
     /// Retained paragraph separators (LF) stay intact; only confirmed semantic
-    /// blank runs are omitted. Read retained spans, never concatenate a UI window.
+    /// blank runs and smart body-indent prefixes are omitted. Read retained spans,
+    /// never concatenate a UI window.
     pub fn display_text_range(
         &self,
         book_id: String,
         start_utf8: u64,
         end_utf8: u64,
+        indent: ReadingIndent,
     ) -> Result<TextRange> {
         let mut db = self.read_lock()?;
         let tx = db.transaction()?;
@@ -145,7 +147,84 @@ impl ReaderCore {
                 }
             }
         }
-        let blanks = crate::reading::layout::blank_ranges(&tx, &id, start_utf8, end_utf8)?;
+        let mut blanks = crate::reading::layout::blank_ranges(&tx, &id, start_utf8, end_utf8)?;
+        if indent == ReadingIndent::Smart && start_utf8 < end_utf8 {
+            // Preserve the existing 1 MiB retained-selection budget before
+            // loading context (confirmed blank runs do not consume it).
+            let retained = blanks
+                .iter()
+                .fold(end_utf8 - start_utf8, |left, &(lo, hi)| {
+                    left.saturating_sub(hi.min(end_utf8).saturating_sub(lo.max(start_utf8)))
+                });
+            if retained > 1024 * 1024 {
+                return Err(ReaderError::InvalidRange);
+            }
+
+            // Skip whole confirmed blank chunks, as the display window does.
+            let mut stmt = tx.prepare("SELECT chunk_index,start_utf8,end_utf8,text FROM chunks c WHERE book_id=?1 AND end_utf8>?2 AND start_utf8<?3 AND COALESCE((SELECT b.end_utf8 FROM reading_blanks b WHERE b.book_id=c.book_id AND b.start_utf8<=c.start_utf8 ORDER BY b.start_utf8 DESC LIMIT 1),-1)<c.end_utf8 ORDER BY chunk_index")?;
+            let mut chunks = stmt
+                .query_map(params![id, start_utf8 as i64, end_utf8 as i64], |r| {
+                    Ok(TextChunk {
+                        index: r.get(0)?,
+                        start_utf8: unsigned_column(r, 1)?,
+                        end_utf8: unsigned_column(r, 2)?,
+                        text: r.get(3)?,
+                    })
+                })?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            if let Some(first) = chunks.first() {
+                let before = &first.text[..start_utf8.saturating_sub(first.start_utf8) as usize];
+                if before
+                    .chars()
+                    .all(crate::reading::layout::horizontal_indent)
+                    && crate::reading::layout::blank_ranges(
+                        &tx,
+                        &id,
+                        first.start_utf8,
+                        first.start_utf8 + 1,
+                    )?
+                    .is_empty()
+                {
+                    let mut context = Vec::new();
+                    let mut index = first.index;
+                    // A remote paragraph head is not needed for a continuation.
+                    // Keep context bounded; unresolved heads retain their bytes.
+                    let mut budget: usize = 1024 * 1024;
+                    while index > 0 && budget > 0 {
+                        index -= 1;
+                        let value = chunk(&tx, &id, index)?;
+                        budget = budget.saturating_sub(value.text.len());
+                        let boundary = value
+                            .text
+                            .chars()
+                            .any(|c| !crate::reading::layout::horizontal_indent(c));
+                        context.push(value);
+                        if boundary {
+                            break;
+                        }
+                    }
+                    context.reverse();
+                    context.append(&mut chunks);
+                    chunks = context;
+                }
+            }
+            let mut from = 0;
+            while from < chunks.len() {
+                let mut to = from + 1;
+                while to < chunks.len() && chunks[to - 1].end_utf8 == chunks[to].start_utf8 {
+                    to += 1;
+                }
+                let group = &chunks[from..to];
+                let semantics = crate::reading::layout::paragraphs(&tx, &id, group)?;
+                blanks.extend(
+                    crate::reading::layout::indent_omissions(group, &semantics, indent)
+                        .into_iter()
+                        .map(|r| (r.start_utf8, r.end_utf8)),
+                );
+                from = to;
+            }
+            blanks.sort_unstable();
+        }
         let mut cursor = start_utf8;
         let mut text = String::new();
         for (lo, hi) in blanks

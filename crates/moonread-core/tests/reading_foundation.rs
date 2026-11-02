@@ -20,7 +20,7 @@ fn display_selection_range_matches_retained_pages_and_preserves_lf() {
     let start = raw.find('甲').unwrap() as u64;
     let end = book.byte_count;
     let value = core
-        .display_text_range(book.id.clone(), start, end)
+        .display_text_range(book.id.clone(), start, end, ReadingIndent::Original)
         .unwrap();
     assert_eq!(value.text, "甲🌙。\n乙段。\n末段。");
     assert_eq!((value.start_utf8, value.end_utf8), (start, end));
@@ -35,23 +35,173 @@ fn display_selection_range_matches_retained_pages_and_preserves_lf() {
     );
     let one_end = start + "甲🌙。".len() as u64;
     assert_eq!(
-        core.display_text_range(book.id.clone(), start, one_end)
+        core.display_text_range(book.id.clone(), start, one_end, ReadingIndent::Original)
             .unwrap()
             .text,
         "甲🌙。"
     );
     assert!(
-        core.display_text_range(book.id.clone(), start + 1, one_end)
+        core.display_text_range(book.id.clone(), start + 1, one_end, ReadingIndent::Original)
             .is_err()
     );
     let blank_start = raw.find(" \t").unwrap() as u64;
     let blank_end = raw.find("乙段").unwrap() as u64;
     assert_eq!(
-        core.display_text_range(book.id, blank_start, blank_end)
+        core.display_text_range(book.id, blank_start, blank_end, ReadingIndent::Original)
             .unwrap()
             .text,
         ""
     );
+}
+
+#[test]
+fn smart_indent_omits_only_true_body_prefixes_and_preserves_source_ranges() {
+    let raw = "第一章 合成\n    甲段 内 空格。\n\u{3000}\u{3000}乙段。\n\t\u{a0}\u{202f}丙段。\n  - 列表\n\u{200b}保留零宽。\n";
+    let (_dir, core, book) = fixture(raw);
+    let smart = core
+        .display_text_range(book.id.clone(), 0, book.byte_count, ReadingIndent::Smart)
+        .unwrap();
+    assert_eq!(
+        smart.text,
+        "第一章 合成\n甲段 内 空格。\n乙段。\n丙段。\n  - 列表\n\u{200b}保留零宽。\n"
+    );
+    assert_eq!((smart.start_utf8, smart.end_utf8), (0, book.byte_count));
+    assert_eq!(
+        core.display_text_range(book.id.clone(), 0, book.byte_count, ReadingIndent::Original)
+            .unwrap()
+            .text,
+        raw
+    );
+    let start = raw.find("    ").unwrap() as u64;
+    assert_eq!(
+        core.display_text_range(
+            book.id.clone(),
+            start + 2,
+            start + "    甲段".len() as u64,
+            ReadingIndent::Smart
+        )
+        .unwrap()
+        .text,
+        "甲段"
+    );
+    for prefix in [
+        " ",
+        "\t",
+        "\u{3000}",
+        "\u{a0}",
+        "\u{1680}",
+        "\u{2000}\u{200a}",
+        "\u{202f}",
+        "\u{205f}",
+        "\n",
+        "\r",
+        "\u{2028}",
+        "\u{2029}",
+        "\u{200b}",
+        "\u{feff}",
+    ] {
+        let text = format!("{prefix}正文");
+        let horizontal = !matches!(
+            prefix,
+            "\n" | "\r" | "\u{2028}" | "\u{2029}" | "\u{200b}" | "\u{feff}"
+        );
+        let ranges = reading_indent_omissions(
+            vec![TextChunk {
+                index: 0,
+                start_utf8: 0,
+                end_utf8: text.len() as u64,
+                text,
+            }],
+            vec![ReadingParagraph {
+                start_utf8: 0,
+                end_utf8: 128,
+                kind: ParagraphKind::Body,
+                continuation: false,
+                indented: false,
+            }],
+            ReadingIndent::Smart,
+        );
+        assert_eq!(ranges.len(), usize::from(horizontal));
+        if horizontal {
+            assert_eq!(ranges[0].end_utf8, prefix.len() as u64);
+        }
+    }
+    assert!(
+        reading_indent_omissions(
+            vec![TextChunk {
+                index: 0,
+                start_utf8: 0,
+                end_utf8: 2,
+                text: "  ".into()
+            }],
+            vec![ReadingParagraph {
+                start_utf8: 0,
+                end_utf8: 2,
+                kind: ParagraphKind::Body,
+                continuation: false,
+                indented: true
+            }],
+            ReadingIndent::Smart
+        )
+        .is_empty()
+    );
+    let oversized = "x".repeat(1024 * 1024 + 1);
+    let (_large_dir, large_core, large_book) = fixture(&oversized);
+    for mode in [ReadingIndent::Original, ReadingIndent::Smart] {
+        assert!(
+            large_core
+                .display_text_range(large_book.id.clone(), 0, large_book.byte_count, mode)
+                .is_err()
+        );
+    }
+    let first = "  ";
+    let second = "\t\u{a0}合成正文。";
+    let chunks = vec![
+        TextChunk {
+            index: 0,
+            start_utf8: 0,
+            end_utf8: 2,
+            text: first.into(),
+        },
+        TextChunk {
+            index: 1,
+            start_utf8: 2,
+            end_utf8: (2 + second.len()) as u64,
+            text: second.into(),
+        },
+    ];
+    let body = ReadingParagraph {
+        start_utf8: 0,
+        end_utf8: (2 + second.len()) as u64,
+        kind: ParagraphKind::Body,
+        continuation: false,
+        indented: true,
+    };
+    let prefix = reading_indent_omissions(chunks, vec![body.clone()], ReadingIndent::Smart);
+    assert_eq!((prefix[0].start_utf8, prefix[0].end_utf8), (0, 5));
+    for kind in [
+        ParagraphKind::Body,
+        ParagraphKind::List,
+        ParagraphKind::Heading,
+        ParagraphKind::Volume,
+    ] {
+        let mut part = body.clone();
+        part.kind = kind;
+        part.continuation = kind == ParagraphKind::Body;
+        assert!(
+            reading_indent_omissions(
+                vec![TextChunk {
+                    index: 0,
+                    start_utf8: 0,
+                    end_utf8: "  正文".len() as u64,
+                    text: "  正文".into()
+                }],
+                vec![part],
+                ReadingIndent::Smart
+            )
+            .is_empty()
+        );
+    }
 }
 
 #[test]
