@@ -135,7 +135,7 @@ final class ReadingPreviewTextView: UITextView {
                    restored: ReadingPreviewPosition.Saved? = nil) {
         if self.source != source {
             pendingAnchor = restored?.anchor ?? source.anchor; pendingPosition = restored; needsTextLayout = true
-            accessibilityLabel = ReadingText(source.window, indent: settings.indent).text
+            accessibilityLabel = nil
         } else if fontLayoutVersion != ReadingTypography.layoutVersion || !settings.hasSameLayout(as: self.settings) || self.typeSize != typeSize {
             pendingAnchor = projectionAnchor(); needsTextLayout = true
         }
@@ -167,8 +167,9 @@ final class ReadingPreviewTextView: UITextView {
             rendering = true
             let anchor = pendingAnchor ?? projectionAnchor()
             textContainerInset = ReadingTypography.insets(settings, width: bounds.width)
-            textStorage.setAttributedString(ReadingTypography.text(source.window, settings: settings, ink: paint.dynamic))
-            readingText = ReadingText(source.window, indent: settings.indent)
+            let prepared = ReadingTypography.prepare(source.window, settings: settings, ink: paint.dynamic)
+            textStorage.setAttributedString(prepared.attributedText)
+            readingText = prepared.readingText
             accessibilityLabel = readingText.text
             layoutWidth = bounds.width; needsTextLayout = false; pendingAnchor = nil
             super.layoutSubviews()
