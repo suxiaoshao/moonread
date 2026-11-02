@@ -190,7 +190,7 @@ private struct AIAddConnectionView: View {
                         .disabled(customName.isEmpty || URL(string: endpoint)?.scheme != "https" || URL(string: endpoint)?.host == nil)
                 }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator)) }
             }.themedPage().searchable(text: $query).navigationTitle("添加连接")
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
+                .toolbar { ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("取消", role: .cancel) { dismiss() } } }
         }
     }
 }

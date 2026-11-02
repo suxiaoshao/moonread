@@ -332,7 +332,13 @@ private struct ReadingDataListView: View {
         .environment(\.editMode, .constant(model.selecting ? .active : .inactive))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { model.selecting.toggle(); model.selected.removeAll() } label: { Text(model.selecting ? "完成" : "选择", tableName: "DataManagement") }.accessibilityIdentifier("selectReadingData")
+                Group {
+                    if model.selecting {
+                        SystemToolbarButton("结束选择", role: .confirm) { model.selecting = false; model.selected.removeAll() }
+                    } else {
+                        Button { model.selecting = true; model.selected.removeAll() } label: { Text("选择", tableName: "DataManagement") }
+                    }
+                }.accessibilityIdentifier("selectReadingData")
             }
             if model.selecting {
                 ToolbarItemGroup(placement: .bottomBar) {
@@ -355,7 +361,7 @@ private struct ReadingDataListView: View {
                     Spacer()
                 }.padding().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).themedPage()
                     .navigationTitle(Text("阅读数据", tableName: "DataManagement"))
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { detail = nil } } }
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("关闭", role: .close) { detail = nil } } }
             }
         }
     }
@@ -596,7 +602,7 @@ private struct BackupImportPreviewView: View {
                 }.padding().background(Color(uiColor: theme.canvas))
             }
             .modifier(ReadingDataWorking(model: model))
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { if !model.busy { model.preview = nil } }.disabled(model.busy) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("取消", role: .cancel) { if !model.busy { model.preview = nil } }.disabled(model.busy) } }
             .interactiveDismissDisabled(model.busy)
         }
     }

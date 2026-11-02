@@ -395,7 +395,7 @@ struct FullIndexView: View {
                 }.frame(maxWidth: 400).frame(maxWidth: .infinity)
                     .padding(.horizontal, 20).padding(.vertical).background(Color(uiColor: theme.canvas))
             }
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button { dismiss() } label: { Text("完成") } } }
+            .toolbar { ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("关闭", role: .close) { dismiss() }.accessibilityIdentifier("closeFullIndex") } }
             .task(id: controller.running) { await loadInventory() }
         }.presentationSizing(.form)
     }

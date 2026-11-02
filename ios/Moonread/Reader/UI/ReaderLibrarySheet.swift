@@ -66,7 +66,7 @@ struct ReaderLibraryContent: View {
         ReaderChapterActions(editing: editing, bookID: session.readingID, incomplete: session.incomplete)
     }
     private var closeButton: some View {
-        Button("关闭", systemImage: "xmark", action: close)
+        SystemToolbarButton("关闭", role: .close, action: close)
             .labelStyle(.iconOnly).toolbarGlyph().accessibilityIdentifier("closeReaderLibrary")
     }
     @ToolbarContentBuilder private var libraryToolbar: some ToolbarContent {

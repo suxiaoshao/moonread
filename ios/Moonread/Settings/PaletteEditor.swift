@@ -46,19 +46,19 @@ struct PaletteEditorContent: View {
         } message: { Text(draft.error ?? "") }
     }
     private var cancelButton: some View {
-        Button("取消", systemImage: "xmark") { close() }
-            .labelStyle(.titleOnly).tint(Color(uiColor: theme.ink))
+        SystemToolbarButton("取消", role: .cancel) { close() }
+            .tint(Color(uiColor: theme.ink))
             .disabled(themes.saving).accessibilityIdentifier("cancelPalette")
     }
     private var saveButton: some View {
-        Button("完成", systemImage: "checkmark") {
+        SystemToolbarButton("保存配色", role: .confirm) {
             guard !draft.saving else { return }; draft.saving = true
             Task { defer { draft.saving = false }
                 do { try await themes.savePalette(palette, creating: creating); draft.markSaved(); close() }
                 catch { draft.error = ReaderMessages.error(error) }
             }
         }
-        .labelStyle(.titleOnly).disabled(!palette.isValidDraft || themes.saving).accessibilityIdentifier("savePalette")
+        .disabled(!palette.isValidDraft || themes.saving).accessibilityIdentifier("savePalette")
     }
 
 }

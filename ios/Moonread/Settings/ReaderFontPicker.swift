@@ -80,7 +80,7 @@ struct ReaderFontPicker: View {
                         Text(verbatim: failure.message).listRowBackground(Color(uiColor: theme.surface))
                             .listRowSeparatorTint(Color(uiColor: theme.separator))
                     }.themedPage().navigationTitle("未能导入的字体").navigationBarTitleDisplayMode(.inline)
-                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { importReport = nil } } }
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("关闭", role: .close) { importReport = nil } } }
                 }
             }
             .alert("字体", isPresented: Binding(get: { message != nil }, set: { if !$0 { message = nil } })) {

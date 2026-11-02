@@ -25,7 +25,7 @@ struct ReaderAutoReadingContent: View {
                 if state.phase == .preparing { ProgressView().controlSize(.small) }
                 Text(expanded ? String(localized: "自动阅读") : title).font(.headline)
                 Spacer()
-                Button("关闭", systemImage: "xmark", action: close).labelStyle(.iconOnly)
+                SystemToolbarButton("关闭", role: .close, action: close).labelStyle(.iconOnly)
                     .accessibilityIdentifier("closeAutoReading")
             }
             if expanded && state.phase != .idle { Text(title).font(.headline) }

@@ -246,7 +246,7 @@ struct AIModelPicker: View {
                 }
                 .navigationTitle(destination.purpose?.title ?? String(localized: "选择模型")).navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() }.accessibilityIdentifier("cancelAIModelPicker") }
+                    ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("关闭", role: .close) { dismiss() }.accessibilityIdentifier("cancelAIModelPicker") }
                 }
                 .onChange(of: ai.availability.isAvailable) { _, available in if !available { dismiss() } }
         }
@@ -471,9 +471,9 @@ struct AIModelDetailView: View {
                         }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                     }.themedPage().navigationTitle("上下文预算")
                         .toolbar {
-                            ToolbarItem(placement: .cancellationAction) { Button("取消") { editingContextBudget = false } }
+                            ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("取消", role: .cancel) { editingContextBudget = false } }
                             ToolbarItem(placement: .confirmationAction) {
-                                Button("保存") {
+                                SystemToolbarButton("保存", role: .confirm) {
                                     invalidContextBudget = !ai.providers.setChatGPTContextBudget(connectionID: connectionID, modelID: modelID, value: contextBudget)
                                     if !invalidContextBudget { editingContextBudget = false }
                                 }.accessibilityIdentifier("saveChatGPTContextBudget")

@@ -405,7 +405,7 @@ import XCTest
     row.tap()
     ready(app.staticTexts["已选 1 项"])
     XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'editNote-'")).firstMatch.exists)
-    app.buttons["完成"].tap()
+    app.buttons["结束选择"].tap()
     ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'editNote-'")).firstMatch)
     closeList()
     ready(app.buttons["toggleBookmark"]).tap()
@@ -414,7 +414,7 @@ import XCTest
     ready(app.buttons["选择书签"]).tap()
     bookmark.tap()
     ready(app.staticTexts["已选 1 项"])
-    app.buttons["完成"].tap()
+    app.buttons["结束选择"].tap()
     closeList()
     ready(app.buttons["openNotes"])
   }
@@ -497,7 +497,7 @@ import XCTest
     app.buttons["fullIndexStart"].tap()
     let progress = app.staticTexts["fullIndexProgress"]
     waitUntil { progress.exists && progress.label.contains("1 / 1") }
-    app.buttons["完成"].firstMatch.tap()
+    app.buttons["closeFullIndex"].tap()
     ready(file("复原样本.txt"))
     let restoredCard = app.cells.containing(.button, identifier: "library-file-复原样本.txt").firstMatch
     XCTAssertTrue(ready(restoredCard.staticTexts["50.0%"]).exists)

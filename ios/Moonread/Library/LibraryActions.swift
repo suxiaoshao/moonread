@@ -232,8 +232,8 @@ private struct LibraryNameEditor: View {
             }.themedPage().dismissKeyboardOnOutsideTap($focused).scrollDismissesKeyboard(.interactively)
                 .navigationTitle(entry == nil ? "新建文件夹" : "重命名").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("取消", systemImage: "xmark") { dismiss() }.labelStyle(.titleOnly) }
-                    ToolbarItem(placement: .confirmationAction) { Button("完成", systemImage: "checkmark") { submit() }.labelStyle(.titleOnly).disabled(!isValid || !model.canAcceptFileWork).accessibilityIdentifier("saveLibraryName") }
+                    ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("取消", role: .cancel) { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("完成", role: .confirm) { submit() }.disabled(!isValid || !model.canAcceptFileWork).accessibilityIdentifier("saveLibraryName") }
                 }
         }
         .presentationDetents([.medium]).presentationDragIndicator(.visible)
@@ -271,7 +271,7 @@ private struct LibraryMoveDestination: View {
         .navigationTitle(location.map { $0.path.isEmpty ? model.shelfTitle($0.shelfID) : URL(fileURLWithPath: $0.path).lastPathComponent } ?? String(localized: "移动到"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .cancellationAction) { Button("取消", systemImage: "xmark") { model.sheet = nil }.labelStyle(.titleOnly) }
+            ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("取消", role: .cancel) { model.sheet = nil } }
             if let location {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("移到这里") { model.runAfterSheetDismiss { model.runBatch(entries.map { .move($0, location) }) } }
@@ -357,7 +357,7 @@ private struct LibraryImportResultsView: View {
             }.themedPage().navigationTitle(String(localized: "导入结果", table: "ShareReceive"))
                 .toolbar {
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("完成") { model.sheet = nil }.accessibilityIdentifier("finishImportResults")
+                        SystemToolbarButton("关闭", role: .close) { model.sheet = nil }.accessibilityIdentifier("finishImportResults")
                     }
                 }
         }

@@ -67,7 +67,7 @@ struct AIResultCard: View {
                     }.themedPage().navigationTitle("选择封面").navigationBarTitleDisplayMode(.inline)
                         // Like the metadata review, the sheet owns its review: the card's copy can be closed while it is up.
                         .task { if review == nil { await ai.proposals.openResult(result) } }
-                        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("关闭", systemImage: "xmark") { coverSheet = false }.accessibilityIdentifier("closeAICoverSelection") } }
+                        .toolbar { ToolbarItem(placement: .topBarTrailing) { SystemToolbarButton("关闭", role: .close) { coverSheet = false }.accessibilityIdentifier("closeAICoverSelection") } }
                         .sheet(item: $imagePreview) { candidate in coverPreview(candidate) }
                 }.themeScope(theme)
             }

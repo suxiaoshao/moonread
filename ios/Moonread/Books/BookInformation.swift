@@ -240,18 +240,18 @@ struct BookMetadataEditor: View {
                 .navigationTitle("编辑小说信息").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button("取消", systemImage: "xmark") { if draft.changed { discard = true } else { dismiss() } }
-                            .labelStyle(.titleOnly).disabled(draft.saving)
+                        SystemToolbarButton("取消", role: .cancel) { if draft.changed { discard = true } else { dismiss() } }
+                            .disabled(draft.saving)
                     }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("保存", systemImage: "checkmark") {
+                        SystemToolbarButton("保存", role: .confirm) {
                             addTag(); focused = false; draft.saving = true
                             Task {
                                 defer { draft.saving = false }
                                 do { try await AppDataService.shared.saveMetadata(base: draft.base, edited: draft.value); dismiss() }
                                 catch { draft.error = ReaderMessages.error(error) }
                             }
-                        }.labelStyle(.titleOnly).disabled(draft.saving || draft.choosingImage).accessibilityIdentifier("saveBookMetadata")
+                        }.disabled(draft.saving || draft.choosingImage).accessibilityIdentifier("saveBookMetadata")
                     }
                 }
                 .confirmationDialog("放弃未保存的修改？", isPresented: $discard, titleVisibility: .visible) {
@@ -336,9 +336,7 @@ struct BookInformationSections: View {
                 AIFlowLayout(spacing: 8) {
                     ForEach(tags, id: \.self) { tag in
                         Button(tag) { search(.tag(tag)) }
-                            .font(.subheadline).buttonStyle(.plain)
-                            .padding(.horizontal, 9).padding(.vertical, 6)
-                            .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 7))
+                            .font(.subheadline).buttonStyle(.bordered)
                             .disabled(library == nil)
                     }
                 }
@@ -435,12 +433,10 @@ struct BookReadingDataClearSection: View {
                     manager.deleting = [key]
                 }
             } label: {
-                Text("清除本书阅读数据").frame(maxWidth: .infinity, minHeight: LayoutTokens.hit)
-                    .contentShape(.rect)
-                    .overlay { RoundedRectangle(cornerRadius: 12).strokeBorder(Color(uiColor: theme.destructive), lineWidth: 1) }
+                Text("清除本书阅读数据").frame(maxWidth: .infinity)
             }
-                .buttonStyle(.plain)
-                .foregroundStyle(Color(uiColor: theme.destructive)).disabled(manager.busy).accessibilityIdentifier("clearBookReadingData")
+                .buttonStyle(.bordered).tint(Color(uiColor: theme.destructive)).foregroundStyle(Color(uiColor: theme.destructive))
+                .disabled(manager.busy).accessibilityIdentifier("clearBookReadingData")
             Text("不删除小说文件。删除会随阅读数据同步到其他设备。").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
             if let message = manager.message { Text(verbatim: message).font(.footnote) }
         }.padding(.top, 8)

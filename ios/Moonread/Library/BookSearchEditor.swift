@@ -52,9 +52,9 @@ struct BookSearchEditor: View {
             .frame(idealWidth: 620).themedPage().navigationTitle("筛选与排序").navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 if path.isEmpty {
-                    ToolbarItem(placement: .cancellationAction) { Button("取消") { cancel() } }
+                    ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("取消", role: .cancel) { cancel() } }
                     ToolbarItem(placement: .confirmationAction) {
-                        Button("应用") {
+                        SystemToolbarButton("应用", role: .confirm) {
                             if let validation = draft.value.validation { error = validation; segment = 0; return }
                             var value = draft.value
                             if value.root.children.isEmpty { value.root = BookSearchNode() }
@@ -266,7 +266,7 @@ private struct BookSearchRulePage: View {
         .onChange(of: node) { _, value in draft.pendingRuleChanged = value != initial }
         .onDisappear { draft.pendingRuleChanged = false }
         .toolbar { ToolbarItem(placement: .confirmationAction) {
-            Button("完成") {
+            SystemToolbarButton("完成", role: .confirm) {
                 draft.save(node, parent: parent)
                 if !path.isEmpty { path.removeLast() }
                 if case .fields = path.last { path.removeLast() }

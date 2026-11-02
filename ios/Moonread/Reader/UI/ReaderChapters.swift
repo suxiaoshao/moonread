@@ -51,7 +51,7 @@ struct ChapterEditor: View {
         } message: { Text(draft.error ?? "") }
     }
     private var saveButton: some View {
-        Button("保存", systemImage: "checkmark") { save() }.labelStyle(.titleOnly)
+        SystemToolbarButton("保存章节", role: .confirm) { save() }
             .disabled(draft.saving || draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .accessibilityIdentifier("saveChapterEdit")
     }
@@ -199,9 +199,9 @@ struct ChapterRebuildView: View {
         .overlay { if model.applying { LoadingActivity(size: 32, waitingLabel: "正在应用目录") } }
     }
     private var applyButton: some View {
-        Button("应用目录", systemImage: "checkmark") {
+        SystemToolbarButton("应用目录", role: .confirm) {
             Task { if await model.apply() { await applied(); finish() } }
-        }.labelStyle(.titleOnly).disabled(!model.canApply).accessibilityIdentifier("applyChapterRebuild")
+        }.disabled(!model.canApply).accessibilityIdentifier("applyChapterRebuild")
     }
     private func finish() { dismiss() }
 
