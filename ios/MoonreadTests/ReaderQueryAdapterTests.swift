@@ -250,8 +250,7 @@ final class ReaderQueryAdapterUserDataTests: UserDataFixture {
     XCTAssertEqual(try restored.nextBatch().hits.first?.chapter, "第二章 星")
     let clock = ReadingClock(bookId: book.id)
     var moment = ReadingMoment(
-      monotonicMs: 0, unixMs: 0, utcOffsetSeconds: 0, readable: true, interaction: true,
-      preview: false, startUtf8: added, endUtf8: added + 3)
+      monotonicMs: 0, unixMs: 0, utcOffsetSeconds: 0, readable: true, interaction: true, automaticMoving: false, automaticMilliseconds: 0, preview: false, startUtf8: added, endUtf8: added + 3)
     _ = clock.update(moment: moment)
     moment.monotonicMs = 5000
     moment.unixMs = 5000

@@ -36,6 +36,11 @@ enum ReadingTypography {
         return UIFontMetrics(forTextStyle: .body).scaledFont(for: base)
     }
 
+    static func bodyMetrics(_ settings: ReaderSettings) -> (pointSize: CGFloat, lineAdvance: CGFloat) {
+        let body = font(settings)
+        return (body.pointSize, body.lineHeight + settings.lineSpacing)
+    }
+
     static func insets(_ settings: ReaderSettings, width: CGFloat) -> UIEdgeInsets {
         let horizontal = min(max(settings.horizontalMargin, (width - settings.maximumLineWidth) / 2), max(12, (width - 80) / 2))
         return UIEdgeInsets(top: 16, left: horizontal, bottom: 4, right: horizontal)

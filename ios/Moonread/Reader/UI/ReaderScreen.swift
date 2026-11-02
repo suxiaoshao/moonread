@@ -32,6 +32,18 @@ struct ReaderScreen: View {
     @State private var battery = ReaderBattery()
     @State private var exitPhase = ReaderExitPhase.reading
     @State private var navigationPresentation = NavigationPresentationState()
+    private var automatic: ReaderAutoReading { session.autoReading }
+    private var automaticSelected: Bool { renderedNode.location.selection == .automatic }
+    private var automaticHidden: Bool { automaticSelected && renderedNode.exposure == .hidden }
+    private var attachmentExpanded: Bool {
+        get { automaticSelected ? renderedNode.exposure == .expanded : searchExpanded }
+        nonmutating set {
+            if automaticSelected {
+                guard !nativeHost.dismissing, !automatic.hidingTools else { return }
+                presentation.exposure = newValue ? .expanded : .accessory
+            } else { searchExpanded = newValue }
+        }
+    }
     private var presentation: ReaderPresentationState { toolSession.presentation }
     private var nativeHost: ReaderPresentationHost { toolSession.host }
     private var currentNode: ReaderInstalledNode {
@@ -44,12 +56,17 @@ struct ReaderScreen: View {
     }
     private var controlsVisible: Bool {
         get { renderedNode.controls }
-        nonmutating set { presentation.setControlsVisible(newValue) }
+        nonmutating set {
+            if newValue { automatic.pause() }
+            presentation.setControlsVisible(newValue)
+        }
     }
     private var dock: ReaderDock {
         get { renderedNode.dock }
         nonmutating set {
-            switch newValue { case .settings: presentation.location.selection = .settings; case .more: presentation.location.selection = .more
+            automatic.pause()
+            switch newValue { case .automatic: presentation.location.selection = .automatic
+            case .settings: presentation.location.selection = .settings; case .more: presentation.location.selection = .more
             case .progress: presentation.location.selection = tools.searchActive ? .search : .library }
             presentation.exposure = .accessory
         }
@@ -142,7 +159,7 @@ struct ReaderScreen: View {
                             requestWindow: { direction,keep in session.requestWindow(direction,retaining:keep) },
                             dark: colorScheme == .dark, dynamicTypeSize: dynamicTypeSize,
                             navigationRevision: session.navigationRevision,
-                            navigation: session.navigation, viewportAccess: session.viewportAccess,
+                            navigation: session.navigation, resumeAutomaticReading: requestAutomaticStart, autoReading: automatic, viewportAccess: session.viewportAccess,
                             annotations: session.annotations, bookmarkPositions: session.bookmarkPositions, focusRange: session.focusRange,
                             selectionStart: session.selectionStart, selection: selectText,
                             allowsBackGesture: allowsReaderBack,
@@ -163,7 +180,10 @@ struct ReaderScreen: View {
                                 session.error = String(localized: "当前无法切换屏幕方向，已恢复跟随系统。")
                             },
                             statisticsInteraction: { session.activity.interacted() },
-                            statisticsPresentationChanged: { [weak activity = session.activity] in activity?.sample() },
+                            statisticsPresentationChanged: { [weak activity = session.activity, weak automatic, weak viewport = session.viewportAccess] in
+                                activity?.sample()
+                                if automatic?.running == true, activity?.bodyReadable(through: viewport) != true { automatic?.pause() }
+                            },
                             annotationChooserChanged: { choosingAnnotations = $0 },
                             edgeChanged: { session.nearEdge = $0 },
                             compactHeaderHeight: compactHeaderHeight,
@@ -171,7 +191,14 @@ struct ReaderScreen: View {
                             contentGeometry: geometry, layoutStatus: layoutStatus,
                             headerPositionChanged: { localHeaderTop = $0 },
                             controlsVisible: controlsVisible,
-                            toggleControls: { if panel == nil || panel == .search { controlsVisible.toggle() } },
+                            toggleControls: {
+                                if panel == nil || panel == .search {
+                                    if automaticSelected && !automaticHidden { closeAutomaticReading(); return }
+                                    if automaticHidden { presentation.choose(.library, exposure: .accessory) }
+                                    controlsVisible.toggle()
+                                    synchronizeNativePresentation()
+                                }
+                            },
                             readingBegan: { session.beganReadingInteraction(); controlsVisible = false },
                             positionChanged: { offset, end in
                                 if !navigationPresentation.isSuspended { session.moved(to: offset, settled: end, userInitiated: false) }
@@ -245,7 +272,7 @@ struct ReaderScreen: View {
         .modifier(ReaderOpenLegacyFade(ready: session.window != nil, reduced: reduceMotion))
         .background(Color(uiColor: theme.paper))
         .toolbarVisibility(.hidden, for: .tabBar)
-        .statusBarHidden(!controlsVisible)
+        .statusBarHidden(!presentation.controlsVisible)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if Onboarding.shared.enabled, !Onboarding.shared.revealedControls, !controlsVisible,
                session.opening.phase == .reading, !session.isLeaving {
@@ -308,6 +335,7 @@ struct ReaderScreen: View {
             await session.open(route, request: openingRequest)
         }
         .onChange(of: library.systemReading.pending) { _, request in
+            if request != nil { automatic.pause() }
             // A plain reading toolbar can close through its normal onDismiss
             // path. Editors, searches and AI work keep their draft/presentation.
             if request != nil, !session.isLeaving, panel == nil, taskID == nil,
@@ -356,7 +384,13 @@ struct ReaderScreen: View {
             battery.start()
             session.activity.update(visibility: statisticsVisibility, preview: session.browseOrigin != nil)
         }
-        .onChange(of: library.selectedTab) { _, _ in synchronizeNativePresentation() }
+        .onChange(of: library.selectedTab) { _, _ in automatic.pause(); synchronizeNativePresentation() }
+        .onChange(of: automatic.panelRequest) { _, _ in
+            guard scenePhase == .active, !session.isLeaving, !sheetPresented,
+                  !session.viewportAccess.hasBlockingPresentation(allowingReaderAccessory: false),
+                  !sourceNavigation.active else { return }
+            openAutomaticReading()
+        }
         .onChange(of: session.opening.navigationSettled) { _, _ in synchronizeNativePresentation() }
         .onChange(of: sourceCurrent) { _, _ in synchronizeNativePresentation() }
         .onChange(of: sourceNavigation.token?.id) { _, token in if token == nil { synchronizeNativePresentation(animatePage: true) } }
@@ -366,7 +400,10 @@ struct ReaderScreen: View {
         .onChange(of: desiredPresentation, initial: true) { _, _ in synchronizeNativePresentation() }
         .onChange(of: presentation.revision) { _, _ in synchronizeNativePresentation() }
         .onChange(of: nativeHost.token?.id) { _, token in
-            if token == nil { synchronizeNativePresentation(animatePage: true) }
+            if token == nil {
+                synchronizeNativePresentation(animatePage: true)
+                startAutomaticAfterDismissal()
+            }
         }
         .onChange(of: nativeHost.hasModalChild) { _, child in if !child { synchronizeNativePresentation() } }
         .onChange(of: session.opening.phase) { _, _ in synchronizeNativePresentation() }
@@ -406,6 +443,7 @@ struct ReaderScreen: View {
         .onChange(of: reduceMotion) { _, value in session.opening.reduceMotion(value) }
         .onChange(of: scenePhase) { _, phase in
             session.opening.visibility(contentVisible, active: phase == .active)
+            if phase != .active { automatic.pause() }
             guard !session.isLeaving else { return }
             if phase == .active {
                 battery.refresh()
@@ -417,6 +455,7 @@ struct ReaderScreen: View {
             }
         }
         .onDisappear {
+            automatic.pause()
             contentVisible = false; session.opening.visibility(false, active: false)
             session.activity.update(visibility: .init(body: false), preview: session.browseOrigin != nil)
             battery.stop()
@@ -545,6 +584,7 @@ struct ReaderScreen: View {
     }
     private func openAI(selection: TextRange? = nil) {
         guard ai.availability.isAvailable, !session.isLeaving else { return }
+        automatic.end()
         aiEntrySnapshot = aiContext(selection: selection)
         controlsVisible = false; sheetDismissRequested = false; panel = .ai
     }
@@ -586,7 +626,7 @@ struct ReaderScreen: View {
         ReaderStatisticsVisibility(body: scenePhase == .active && !session.isLeaving && session.opening.phase == .reading && session.window != nil && !session.showingCover
             && !session.isLoading && !session.navigating && session.error == nil
             && !navigationPresentation.isSuspended && !controlsVisible && !searchExpanded
-            && dock == .progress && taskID == nil && panel?.isPage != true
+            && (dock == .progress || automaticHidden) && taskID == nil && panel?.isPage != true
             && toolSession.editor == nil,
             preparingExcerpt: sharingExcerpt, excerptPresented: excerptShare != nil,
             confirmationPresented: systemReadingRouter?.presentsConfirmation(active: !sheetPresented, editor: false) == true,
@@ -617,7 +657,7 @@ struct ReaderScreen: View {
     private var desiredPresentation: ReaderPresentationTarget {
         ReaderPresentationProjection.target(state: presentation,
             editorParent: toolSession.editor?.presenter, hasNote: session.noteEditorModel != nil,
-            hasAccessory: tools.searchActive || session.browseOrigin != nil || tools.deletedIDs != nil,
+            hasAccessory: !automatic.hidingTools && !automaticHidden && (tools.searchActive || session.browseOrigin != nil || tools.deletedIDs != nil),
             available: !session.isLeaving && exitPhase == .reading && !navigationPresentation.isSuspended)
     }
     private var rootPresentation: ReaderPresentationTarget { nativeHost.showing }
@@ -637,29 +677,32 @@ struct ReaderScreen: View {
 
     private var readerSheet: some View {
         let token = nativeHost.token
-        return ReaderBottomPanel(expanded: Binding(get: { searchExpanded }, set: { searchExpanded = $0 }), compactHeight: $dockHeight,
-                          canExpand: searchActive && dock == .progress, taskID: taskID,
+        return ReaderBottomPanel(expanded: Binding(get: { attachmentExpanded }, set: { attachmentExpanded = $0 }), compactHeight: $dockHeight,
+                          canExpand: automaticSelected || (searchActive && dock == .progress), dismissing: nativeHost.dismissing, taskID: taskID,
                           closeTask: closeTask) {
-            ZStack(alignment: .top) {
+            ReaderCompactLayout(selection: dock) {
                 bottomDock
                     .transaction { $0.animation = nil }
+                    .layoutValue(key: ReaderCompactIdentity.self, value: dock)
                     .id(dock)
                     .transition(MotionTokens.accessoryContent(reduced: reduceMotion))
             }
             .animation(MotionTokens.accessoryResize(reduced: reduceMotion), value: dock)
         } footer: {
             VStack(spacing: 0) {
-                if controlsVisible, session.book != nil {
+                if (controlsVisible || automaticSelected), session.book != nil {
                     bottomControls.padding(.top, LayoutTokens.compact)
                 }
             }.padding(.bottom, LayoutTokens.compact)
         } details: { readyForInput in
-            searchContent(details: true, readyForInput: readyForInput)
+            if automaticSelected {
+                ScrollView { automaticContent(expanded: true) }.scrollBounceBehavior(.basedOnSize)
+            } else { searchContent(details: true, readyForInput: readyForInput) }
         } taskContent: {
             readerTask
         }
         .onAppear { if let token { nativeHost.confirmed(token) } }
-        .interactiveDismissDisabled(taskID == nil && session.browseOrigin != nil)
+        .interactiveDismissDisabled(!automaticSelected && taskID == nil && session.browseOrigin != nil)
         .themeScope(theme).preferredColorScheme(theme.scheme)
         .background(ReaderModalChildProbe(host: nativeHost))
         .overlay {
@@ -710,6 +753,9 @@ struct ReaderScreen: View {
     }
     private func nativeDockClosed(token: ReaderHostToken?, generation: UInt64) {
         guard nativeInputAllowed(token, generation: generation) else { return }
+        if automaticSelected {
+            closeAutomaticReading(); nativeHost.installation.beginDismissal(); return
+        }
         controlsVisible = false; dock = .progress
         nativeHost.installation.beginDismissal()
         clearTask(); if tools.searchActive { closeSearch() }
@@ -786,6 +832,7 @@ struct ReaderScreen: View {
     private func closeBookDetails() { presentation.close(.details) }
 
     private func presentPanel(_ next: ReaderPanel) {
+        automatic.end()
         guard panel != next || (next == .search && !searchExpanded) else { return }
         if next == .details {
             session.activity.update(visibility: .init(body: false), preview: session.browseOrigin != nil)
@@ -836,6 +883,7 @@ struct ReaderScreen: View {
     }
 
     private func selectText(start: UInt64, end: UInt64, action: ReaderSelectionAction) {
+        automatic.end()
         if action != .shareExcerpt { session.beganReadingInteraction() }
         if action == .removeAnnotations {
             guard !session.isLeaving, let bookID = session.readingID else { return }
@@ -893,7 +941,7 @@ struct ReaderScreen: View {
     private var readerOwnsChrome: Bool { sourceSelected && sourceCurrent && !sourceNavigation.active && !navigationPresentation.isSuspended && !session.isLeaving }
     private var readerNavigationVisible: Bool {
         !session.isLeaving && !navigationPresentation.isSuspended
-            && (controlsVisible || session.window == nil)
+            && (presentation.controlsVisible || session.window == nil)
     }
 
     private var readingSettings: Binding<ReaderSettings> {
@@ -913,7 +961,9 @@ struct ReaderScreen: View {
             if Onboarding.shared.enabled, Onboarding.shared.revealedControls, !Onboarding.shared.selectedText, controlsVisible {
                 TipView(Onboarding.shared.selection).tipViewStyle(ThemedTipStyle(titleOverride: ai.availability.isAvailable ? nil : Text("长按文字可以标注、写批注或拷贝"))).accessibilityIdentifier("readerSelectionTip")
             }
-            if dock == .settings {
+            if dock == .automatic {
+                automaticContent(expanded: false)
+            } else if dock == .settings {
                 ReaderQuickSettings(settings: readingSettings) { presentPanel(.settings) }
             } else if dock == .more {
                 moreContent
@@ -958,10 +1008,10 @@ struct ReaderScreen: View {
                 toolButton("目录", symbol: "list.bullet", id: "showChapters") { openLibrary(.chapters) }
                 toolButton("搜索", symbol: "magnifyingglass", id: "showSearch") { presentPanel(.search) }
                 toolButton("设置", symbol: "textformat.size", id: "readingSettings", selected: dock == .settings) {
-                    dock.toggle(.settings)
+                    selectFooterDock(.settings)
                 }
                 toolButton("更多", symbol: "ellipsis", id: "readerMore", selected: dock == .more) {
-                    dock.toggle(.more)
+                    selectFooterDock(.more)
                 }
             }
             .labelStyle(ReaderToolLabelStyle())
@@ -971,6 +1021,12 @@ struct ReaderScreen: View {
         .padding(.horizontal, 24)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("readerBottomControls")
+    }
+
+    private func selectFooterDock(_ destination: ReaderDock) {
+        if destination == .more { automatic.pause() } else { automatic.end() }
+        let tool: ReaderTool = destination == .more ? .more : .settings
+        if !presentation.leaveAutomaticAccessory(for: tool) { dock.toggle(destination) }
     }
 
     private func toolButton(_ title: LocalizedStringKey, symbol: String, id: String, selected: Bool = false, action: @escaping () -> Void) -> some View {
@@ -985,8 +1041,54 @@ struct ReaderScreen: View {
     /// label style, columns and targets as the tools below; at accessibility sizes the
     /// same labels stack as rows so they stay readable.
     private var moreContent: some View {
-        ReaderMoreContent(session: session, openLibrary: openLibrary, presentPanel: presentPanel, changeEncoding: changeEncoding)
+        ReaderMoreContent(session: session, openLibrary: openLibrary, presentPanel: presentPanel, automaticReading: openAutomaticReading, changeEncoding: changeEncoding)
     }
+    private func openAutomaticReading() {
+        automatic.pause()
+        controlsVisible = false
+        tools.stopSearch()
+        toolSession.setPath([])
+        presentation.choose(.automatic, exposure: .accessory)
+    }
+
+    private func closeAutomaticReading() {
+        presentation.setControlsVisible(false)
+        presentation.choose(.automatic, exposure: .hidden)
+    }
+
+    private func requestAutomaticStart() {
+        guard session.settings?.mode == .scroll else { return }
+        automatic.requestStart()
+        closeAutomaticReading()
+        if nativeHost.token == nil { startAutomaticAfterDismissal() }
+    }
+
+    private func startAutomaticAfterDismissal() {
+        guard automatic.phase == .starting else { return }
+        guard scenePhase == .active, readerNativeReady, automaticHidden else { automatic.pause(); return }
+        session.activity.update(visibility: statisticsVisibility, preview: session.browseOrigin != nil)
+        session.beganReadingInteraction() // Permit ordinary checkpoints; not a statistics interaction.
+        automatic.startAfterDismissal(opening: session.opening.request?.id,
+            speed: session.settings?.autoReadingSpeed ?? autoReadingControl().defaultValue)
+    }
+
+    private func automaticContent(expanded: Bool) -> some View {
+        ReaderAutoReadingContent(state: automatic, mode: session.settings?.mode ?? .scroll,
+            speed: Binding(get: { session.settings?.autoReadingSpeed ?? autoReadingControl().defaultValue }, set: { value in
+                guard var settings = session.settings else { return }
+                settings.autoReadingSpeed = value; session.updateSettings(settings)
+            }), expanded: expanded, collapse: { attachmentExpanded = false }, close: closeAutomaticReading,
+            canStart: session.opening.phase == .reading && session.window != nil && !session.showingCover
+                && !session.isLoading && !session.navigating && session.error == nil,
+            start: requestAutomaticStart, end: { automatic.end(); closeAutomaticReading() }, retry: {
+                automatic.retrying()
+                session.retryPreparation()
+                session.viewportAccess.controller?.requestedFrontiers.reset()
+                session.viewportAccess.controller?.requestMore(.forward)
+            })
+            .accessibilityAction(named: Text("展开自动阅读")) { attachmentExpanded = true }
+    }
+
     private func changeEncoding(_ encoding: String?) {
         controlsVisible = false; dock = .progress
         closeSearch()

@@ -3,11 +3,18 @@ import UIKit
 
 extension ReadingController {
     @objc func tappedBody(_ gesture: UITapGestureRecognizer) {
+        let pausedAutomatically = pausedAutomaticTouch
+        pausedAutomaticTouch = false
         statisticsInteraction()
         if let text = visibleTextViews.first(where: { $0.bounds.contains(gesture.location(in: $0)) }) {
             activateLeaf(text, userInitiated: true)
             let ids = annotationIDs(at: gesture.location(in: text), in: text)
             if !ids.isEmpty { showAnnotations(ids, in: text); return }
+        }
+        switch autoReading?.bodyTapAction(wasRunning: pausedAutomatically) ?? .ordinary {
+        case .pause: autoReading?.pause(showPanel: true); return
+        case .resume: resumeAutomaticReading(); return
+        case .ordinary: break
         }
         if controlsVisible || settings?.mode != .pages { toggleControls?(); return }
         let fraction = gesture.location(in: readingSurface).x / max(1, readingSurface.bounds.width)
@@ -15,7 +22,7 @@ extension ReadingController {
         else if fraction > 0.72 { movePage(1) }
         else { toggleControls?() }
     }
-    @objc func ignoredDoubleTap() { statisticsInteraction() }
+    @objc func ignoredDoubleTap() { autoReading?.end(); statisticsInteraction() }
 
     // Glyph hit testing rejects the blank margin and line spacing. A tap on
     // highlighted text wins over edge paging, while long presses still select.
@@ -38,6 +45,7 @@ extension ReadingController {
 
     private func showAnnotations(_ ids: [String], in text: UITextView, choosing: Bool = false) {
         guard let first = annotations.first(where: { ids.contains($0.id) }) else { return }
+        autoReading?.end()
         if !choosing || ids.count == 1 { showAnnotationMenu(first, in: text); return }
         guard annotationChooser == nil, presentedViewController == nil, viewIfLoaded?.window != nil else { return }
         let menu = UIAlertController(title: String(localized: "选择标注"), message: nil, preferredStyle: .actionSheet)
@@ -75,6 +83,7 @@ extension ReadingController {
     }
 
     func showAnnotationMenu(_ mark: ReaderMark, in text: UITextView) {
+        autoReading?.end()
         guard let text = text as? ReadingTextView else { return }
         let context = AnnotationSelection(start: mark.startUtf8, end: mark.endUtf8, annotations: annotations)
         guard !context.marks.isEmpty else { return }
@@ -121,6 +130,7 @@ extension ReadingController {
     }
 
     func textView(_ textView: UITextView, willPresentEditMenuWith animator: any UIEditMenuInteractionAnimating) {
+        autoReading?.end()
         // The edit menu itself is not a blocker. Completion merely asks the
         // recorder to reread the public modal chain, without adding idle credit.
         animator.addCompletion { [weak self] in self?.statisticsPresentationChanged() }
@@ -191,6 +201,12 @@ extension ReadingController {
                 return true
             })
             return
+        }
+        if let autoReading, autoReading.phase != .idle && autoReading.phase != .finished {
+            text.accessibilityCustomActions?.append(contentsOf: [
+                UIAccessibilityCustomAction(name: String(localized: "暂停自动阅读")) { [weak autoReading] _ in autoReading?.pause(showPanel: true); return true },
+                UIAccessibilityCustomAction(name: String(localized: "结束自动阅读")) { [weak autoReading] _ in autoReading?.end(); return true }
+            ])
         }
         if settings?.mode == .pages {
             text.accessibilityCustomActions?.append(contentsOf: [

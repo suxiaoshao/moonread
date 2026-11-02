@@ -1246,7 +1246,7 @@ extension AppDataService {
             let clock = ReadingClock(bookId: bookID)
             var point = ReadingMoment(monotonicMs: 0, unixMs: Int64(start.timeIntervalSince1970 * 1000),
                 utcOffsetSeconds: Int32(TimeZone.current.secondsFromGMT(for: start)), readable: true,
-                interaction: true, preview: false, startUtf8: 0, endUtf8: 30)
+                interaction: true, automaticMoving: false, automaticMilliseconds: 0, preview: false, startUtf8: 0, endUtf8: 30)
             _ = clock.update(moment: point)
             for minute in 1...minutes {
                 point.monotonicMs = UInt64(minute * 60_000)

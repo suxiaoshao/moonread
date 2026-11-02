@@ -34,6 +34,8 @@ pub struct ReaderSettings {
     pub mode: ReadingMode,
     pub font_size: f64,
     pub line_spacing: f64,
+    #[serde(default = "default_auto_reading_speed")]
+    pub auto_reading_speed: f64,
     pub font: ReaderFont,
     #[serde(default)]
     pub imported_font: Option<ImportedReaderFont>,
@@ -89,6 +91,37 @@ pub fn reader_typography_controls() -> ReaderTypographyControls {
     }
 }
 
+fn default_auto_reading_speed() -> f64 {
+    10.0
+}
+
+/// Unitless device-local speed levels; the platform supplies reading geometry.
+#[uniffi::export]
+pub fn auto_reading_control() -> ReaderNumberControl {
+    ReaderNumberControl {
+        minimum: 1.0,
+        maximum: 30.0,
+        step: 1.0,
+        default_value: default_auto_reading_speed(),
+    }
+}
+
+fn valid_auto_reading_speed(speed: f64) -> bool {
+    let control = auto_reading_control();
+    speed.is_finite()
+        && (control.minimum..=control.maximum).contains(&speed)
+        && speed.fract() == 0.0
+}
+
+/// Full-line equivalent layout advance, not measured words or characters.
+#[uniffi::export]
+pub fn auto_reading_em_per_minute(speed: f64) -> Result<f64> {
+    if !valid_auto_reading_speed(speed) {
+        return Err(ReaderError::InvalidSettings);
+    }
+    Ok(150.0 * 1.16_f64.powf(speed - 1.0))
+}
+
 #[uniffi::export]
 pub fn default_reader_settings() -> ReaderSettings {
     let controls = reader_typography_controls();
@@ -96,6 +129,7 @@ pub fn default_reader_settings() -> ReaderSettings {
         mode: ReadingMode::Scroll,
         font_size: controls.font_size.default_value,
         line_spacing: controls.line_spacing.default_value,
+        auto_reading_speed: default_auto_reading_speed(),
         font: ReaderFont::System,
         imported_font: None,
         paragraph_spacing: controls.paragraph_spacing.default_value,
@@ -131,6 +165,7 @@ pub(crate) fn valid(settings: &ReaderSettings) -> bool {
     ]
     .iter()
     .all(|&(value, min, max)| value.is_finite() && (min..=max).contains(&value))
+        && valid_auto_reading_speed(settings.auto_reading_speed)
         && settings
             .imported_font
             .as_ref()

@@ -19,6 +19,8 @@ struct ReadingView: UIViewControllerRepresentable {
     let dynamicTypeSize: DynamicTypeSize
     var navigationRevision: Int = 0
     var navigation: ReadingNavigation?
+    var resumeAutomaticReading: () -> Void = {}
+    var autoReading: ReaderAutoReading?
     var viewportAccess: ReadingViewportAccess?
     var annotations: [ReaderMark] = []
     var bookmarkPositions: [UInt64] = []
@@ -55,6 +57,9 @@ struct ReadingView: UIViewControllerRepresentable {
         return controller
     }
     func updateUIViewController(_ controller: ReadingController, context: Context) {
+        controller.resumeAutomaticReading = resumeAutomaticReading
+        controller.autoReading = autoReading
+        controller.deviceControls.willSuspend = { [weak autoReading] in autoReading?.pause() }
         controller.headerPositionChanged = headerPositionChanged
         controller.contentGeometry = contentGeometry
         controller.layoutStatus = layoutStatus
@@ -80,5 +85,6 @@ struct ReadingView: UIViewControllerRepresentable {
                              compactHeaderHeight: compactHeaderHeight,
                              controlsVisible: controlsVisible, toggleControls: toggleControls,
                              readingBegan: readingBegan, changed: positionChanged)
+        controller.updateAutomaticReadingEdge()
     }
 }
