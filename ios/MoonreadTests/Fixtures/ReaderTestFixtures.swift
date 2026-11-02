@@ -236,8 +236,9 @@ class ReaderIntegrationFixture: XCTestCase {
   @MainActor func syntheticPages(
     _ window: ReadingWindow, preserving: [TextPage] = [], keeping: UInt64? = nil
   ) -> [TextPage] {
-    TextPage.paginate(
-      window, size: .zero, attributes: [:], preserving: preserving, keeping: keeping
+    var settings = defaultReaderSettings(); settings.indent = .original
+    return TextPage.paginate(
+      ReadingTypography.prepare(window, settings: settings, ink: .black), size: .zero, preserving: preserving, keeping: keeping
     ) { projection, backward in
       let text = projection.text as NSString
       var ranges: [NSRange] = []

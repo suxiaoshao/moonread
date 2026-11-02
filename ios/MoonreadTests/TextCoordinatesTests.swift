@@ -48,17 +48,34 @@ final class TextCoordinatesReaderSelectionTests: ReaderSelectionFixture {
     XCTAssertEqual(smart.coordinates.displayPoint(0), 0)
     XCTAssertEqual(smart.coordinates.sourcePoint(0), 4)
     var settings = defaultReaderSettings()
-    let styled = ReadingTypography.text(frame, settings: settings, ink: .black)
+    let prepared = ReadingTypography.prepare(frame, settings: settings, ink: .black)
+    let styled = prepared.attributedText
+    XCTAssertEqual(prepared.readingText, smart)
     XCTAssertEqual(styled.string, smart.text)
     for paragraph in frame.paragraphs where paragraph.kind == .body {
       let range = try XCTUnwrap(smart.coordinates.displayRange(Int(paragraph.startUtf8)..<Int(paragraph.endUtf8)))
       let style = try XCTUnwrap(styled.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle)
       XCTAssertEqual(style.firstLineHeadIndent, ReadingTypography.font(settings).pointSize * 2)
     }
-    let pages = TextPage.paginate(frame, size: CGSize(width: 180, height: 45), attributes: ReadingTypography.attributes(settings, ink: .black), source: styled, indent: .smart)
+    let pages = TextPage.paginate(prepared, size: CGSize(width: 180, height: 45))
     XCTAssertEqual(pages.map { $0.text.string }.joined(), smart.text)
+    XCTAssertTrue(pages.allSatisfy { $0.layoutVersion == prepared.layoutVersion && $0.readingText.revision == smart.revision })
+    let prefixed = prepared.prefixed(NSAttributedString(string: "\u{fffc}\n"))
+    XCTAssertEqual(prefixed.attributedText.string, prefixed.readingText.text)
+    XCTAssertEqual(prefixed.readingText.sourceStart, smart.sourceStart)
+    XCTAssertEqual(prefixed.readingText.sourceEnd, smart.sourceEnd)
+    XCTAssertEqual(prefixed.readingText.firstVisibleOffset, smart.firstVisibleOffset)
+    XCTAssertEqual(prefixed.layoutVersion, prepared.layoutVersion)
+    XCTAssertNil(prefixed.readingText.coordinates.sourcePoint(0))
     XCTAssertEqual(pages.first?.start, frame.start)
     XCTAssertEqual(pages.last?.end, frame.end)
+    let page = try XCTUnwrap(pages.first)
+    let firstView = page.makeTextView(frame: CGRect(x: 0, y: 0, width: 180, height: 45))
+    let duplicate = page.makeTextView(frame: firstView.frame)
+    XCTAssertFalse(firstView.textStorage === duplicate.textStorage)
+    XCTAssertFalse(firstView.textContainer === duplicate.textContainer)
+    XCTAssertEqual((firstView as? PageReadingTextView)?.visibleLength, page.text.length)
+    XCTAssertEqual(firstView.accessibilityLabel, page.readingText.text)
     let heads = readingIndentOmissions(chunks: frame.chunks, paragraphs: frame.paragraphs, indent: .smart).map(\.endUtf8)
     let startingPages = pages.filter { heads.contains($0.firstVisibleOffset) }
     XCTAssertGreaterThan(startingPages.count, 1)
@@ -67,7 +84,7 @@ final class TextCoordinatesReaderSelectionTests: ReaderSelectionFixture {
       XCTAssertEqual(style.firstLineHeadIndent, ReadingTypography.font(settings).pointSize * 2)
     }
     settings.indent = .original
-    XCTAssertEqual(ReadingTypography.text(frame, settings: settings, ink: .black).string, raw)
+    XCTAssertEqual(ReadingTypography.prepare(frame, settings: settings, ink: .black).attributedText.string, raw)
   }
 
   // S304: 投影与原文 UTF-8/UTF-16 映射往返一致，省略区间亲和性不移动正式锚点；纯 mapping 输入。
@@ -128,7 +145,7 @@ final class TextCoordinatesReaderSelectionTests: ReaderSelectionFixture {
     XCTAssertNil(projection.coordinates.displayPoint(0))
     XCTAssertTrue(
       TextPage.paginate(
-        window, size: .zero, attributes: [:],
+        ReadingTypography.prepare(window, settings: defaultReaderSettings(), ink: .black), size: .zero,
         layout: { _, _ in
           return []
         }
@@ -240,6 +257,7 @@ final class TextCoordinatesReaderIntegrationTests: ReaderIntegrationFixture {
     let firstPages = syntheticPages(first)
     let forward = syntheticPages(next, preserving: firstPages)
     assertCoverage(forward, window: next)
+    XCTAssertTrue(forward.contains { page in firstPages.contains { $0.text === page.text } }, "unchanged middle pages retain the prepared value")
     assertCoverage(syntheticPages(first, preserving: forward), window: first)
   }
 }
