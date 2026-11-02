@@ -233,6 +233,16 @@ impl ReaderQuery {
     pub fn recent_readings(&self) -> Result<Vec<ReadingSnapshot>> {
         self.core.recent_readings()
     }
+    pub fn display_text_range(
+        &self,
+        book_id: String,
+        start_utf8: u64,
+        end_utf8: u64,
+        indent: ReadingIndent,
+    ) -> Result<TextRange> {
+        self.core
+            .display_text_range(book_id, start_utf8, end_utf8, indent)
+    }
     pub fn reading_frame(&self, book_id: String, offset_utf8: u64) -> Result<ReadingFrame> {
         self.core.reading_frame(book_id, offset_utf8)
     }

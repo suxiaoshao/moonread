@@ -499,11 +499,11 @@ actor AppDataService {
     }
     func hasBookmark(_ id: String, at offset: UInt64) async throws -> Bool { try await userMarks(id, kind: .bookmark).contains { $0.startUtf8 == offset } }
     func textRange(_ id: String, start: UInt64, end: UInt64) throws -> TextRange { try textCore().textRange(bookId: id, startUtf8: start, endUtf8: end) }
-    func displayTextRange(_ id: String, start: UInt64, end: UInt64) async throws -> TextRange {
-        let core = try textCore()
+    func displayTextRange(_ id: String, start: UInt64, end: UInt64, indent: ReadingIndent = .original) async throws -> TextRange {
+        let core = try await bookQuery(id)
         let read = Task.detached {
             try Task.checkCancellation()
-            let value = try core.displayTextRange(bookId: id, startUtf8: start, endUtf8: end)
+            let value = try core.displayTextRange(bookId: id, startUtf8: start, endUtf8: end, indent: indent)
             try Task.checkCancellation()
             return value
         }

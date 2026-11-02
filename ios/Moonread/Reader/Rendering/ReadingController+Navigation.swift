@@ -15,7 +15,7 @@ extension ReadingController {
     }
 
     private func scrollProjection(_ window: ReadingWindow) -> ReadingText {
-        let body = ReadingText(window)
+        let body = ReadingText(window, indent: (settings ?? defaultReaderSettings()).indent)
         return hasCover ? body.prefixed("\u{fffc}\n") : body
     }
 
@@ -38,7 +38,7 @@ extension ReadingController {
     private func paginate(_ window: ReadingWindow, preserving previous: [TextPage] = [], keeping anchor: UInt64? = nil,
                          layout: ((ReadingText, Bool) -> [NSRange])? = nil) -> [TextPage] {
         TextPage.paginate(window, size: pageSize, attributes: attributes(), source: styledText(window),
-                          insets: textInsets, preserving: previous, keeping: anchor)
+                          insets: textInsets, preserving: previous, keeping: anchor, indent: (settings ?? defaultReaderSettings()).indent)
     }
 
     var isInteracting: Bool {
