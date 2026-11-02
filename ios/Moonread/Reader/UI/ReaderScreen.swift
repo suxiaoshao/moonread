@@ -678,14 +678,14 @@ struct ReaderScreen: View {
         let token = nativeHost.token
         return ReaderBottomPanel(expanded: Binding(get: { attachmentExpanded }, set: { attachmentExpanded = $0 }), compactHeight: $dockHeight,
                           canExpand: automaticSelected || (searchActive && dock == .progress), taskID: taskID,
-                          closeTask: closeTask, compactID: dock) { displayed, ordered in
+                          closeTask: closeTask) {
             ZStack(alignment: .top) {
-                bottomDock(displayed)
+                bottomDock
                     .transaction { $0.animation = nil }
-                    .id(displayed)
-                    .transition(ordered ? .identity : MotionTokens.accessoryContent(reduced: reduceMotion))
+                    .id(dock)
+                    .transition(MotionTokens.accessoryContent(reduced: reduceMotion))
             }
-            .animation(ordered ? nil : MotionTokens.accessoryResize(reduced: reduceMotion), value: displayed)
+            .animation(MotionTokens.accessoryResize(reduced: reduceMotion), value: dock)
         } footer: {
             VStack(spacing: 0) {
                 if (controlsVisible || automaticSelected), session.book != nil {
@@ -953,17 +953,17 @@ struct ReaderScreen: View {
                             showHistory: { presentPanel(.history) }, closeSearch: closeSearch)
     }
 
-    private func bottomDock(_ displayed: ReaderDock) -> some View {
+    private var bottomDock: some View {
         VStack(spacing: LayoutTokens.compact) {
             if controlsVisible, !session.isLeaving { continuationControl }
             if Onboarding.shared.enabled, Onboarding.shared.revealedControls, !Onboarding.shared.selectedText, controlsVisible {
                 TipView(Onboarding.shared.selection).tipViewStyle(ThemedTipStyle(titleOverride: ai.availability.isAvailable ? nil : Text("长按文字可以标注、写批注或拷贝"))).accessibilityIdentifier("readerSelectionTip")
             }
-            if displayed == .automatic {
+            if dock == .automatic {
                 automaticContent(expanded: false)
-            } else if displayed == .settings {
+            } else if dock == .settings {
                 ReaderQuickSettings(settings: readingSettings) { presentPanel(.settings) }
-            } else if displayed == .more {
+            } else if dock == .more {
                 moreContent
             } else if searchActive {
                 searchContent(details: false)
@@ -978,7 +978,7 @@ struct ReaderScreen: View {
                         .accessibilityIdentifier("showReadingHistory")
                 }
             }
-            if displayed != .settings, tools.deletedIDs != nil { undoCapsule }
+            if dock != .settings, tools.deletedIDs != nil { undoCapsule }
         }
     }
 
