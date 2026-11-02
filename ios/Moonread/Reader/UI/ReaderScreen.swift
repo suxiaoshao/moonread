@@ -272,7 +272,7 @@ struct ReaderScreen: View {
         .modifier(ReaderOpenLegacyFade(ready: session.window != nil, reduced: reduceMotion))
         .background(Color(uiColor: theme.paper))
         .toolbarVisibility(.hidden, for: .tabBar)
-        .statusBarHidden(!controlsVisible)
+        .statusBarHidden(!presentation.controlsVisible)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if Onboarding.shared.enabled, !Onboarding.shared.revealedControls, !controlsVisible,
                session.opening.phase == .reading, !session.isLeaving {
@@ -941,7 +941,7 @@ struct ReaderScreen: View {
     private var readerOwnsChrome: Bool { sourceSelected && sourceCurrent && !sourceNavigation.active && !navigationPresentation.isSuspended && !session.isLeaving }
     private var readerNavigationVisible: Bool {
         !session.isLeaving && !navigationPresentation.isSuspended
-            && (controlsVisible || session.window == nil)
+            && (presentation.controlsVisible || session.window == nil)
     }
 
     private var readingSettings: Binding<ReaderSettings> {
