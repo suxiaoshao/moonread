@@ -70,6 +70,14 @@ import XCTest
     controls()
     app.navigationBars.buttons.firstMatch.tap()
   }
+  private func selectTab(_ title: String) {
+    let tab = ready(app.tabBars.buttons[title])
+    waitUntil { tab.isHittable }
+    // XCTest can choose a rounded tab's noninteractive corner after a reader pop.
+    // Tap its relative center once, then verify the actual selection.
+    tab.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+    waitUntil { tab.isSelected }
+  }
   private func anchor() -> UInt64 { UInt64(body().value as? String ?? "") ?? UInt64.max }
   private func waitUntil(_ predicate: @escaping () -> Bool) {
     if predicate() { return }
@@ -280,6 +288,7 @@ import XCTest
     ready(app.buttons["readerThemeSettings"])
     snapshot("settings-home")
     ready(app.buttons["readerThemeSettings"]).tap()
+    app.segmentedControls["readerThemeTabs"].buttons["排版"].tap()
     ready(app.buttons["readingFont"]).tap()
     ready(app.buttons["readerFont-system"]).tap()
     waitUntil { self.app.buttons["readerFont-system"].isSelected }
@@ -312,7 +321,8 @@ import XCTest
     body().swipeUp()
     let saved = anchor()
     backFromReader()
-    app.tabBars.buttons["设置"].tap()
+    waitUntil { self.file(self.sample).isHittable }
+    selectTab("设置")
     ready(app.buttons["readerThemeSettings"]).tap()
     app.segmentedControls["readerThemeTabs"].buttons["配色与纹理"].tap()
     app.segmentedControls["readerPaletteSlots"].buttons["浅色时"].tap()
@@ -336,7 +346,8 @@ import XCTest
     app.tabBars.buttons["书架"].tap(); open()
     waitUntil { self.anchor() == saved }
     backFromReader()
-    app.tabBars.buttons["设置"].tap()
+    waitUntil { self.file(self.sample).isHittable }
+    selectTab("设置")
     ready(app.buttons["readerThemeSettings"]).tap()
     app.segmentedControls["readerThemeTabs"].buttons["配色与纹理"].tap()
     element("paletteOptions").swipeDown(); element("paletteOptions").swipeDown()
