@@ -300,25 +300,25 @@
         }
       }
     },
-    "阅读结束后继续建立索引": {
+    "当前操作完成后继续建立索引": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "阅读结束后继续建立索引"
+            "value": "当前操作完成后继续建立索引"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "閱讀結束後繼續建立索引"
+            "value": "目前操作完成後繼續建立索引"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Indexing will continue after reading"
+            "value": "Indexing will continue after the current operation finishes"
           }
         }
       }
@@ -724,25 +724,25 @@
         }
       }
     },
-    "等待阅读结束": {
+    "等待当前操作完成": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "等待阅读结束"
+            "value": "等待当前操作完成"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "等待閱讀結束"
+            "value": "等待目前操作完成"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Waiting for reading to finish"
+            "value": "Waiting for the current operation"
           }
         }
       }

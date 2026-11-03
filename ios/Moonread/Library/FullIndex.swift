@@ -284,10 +284,6 @@ final class FullIndexController {
                     hasInventory = true
                     total = inventory.total
                     indexed = total - inventory.pending.count
-                    waitingForReader = !(await service.identityMayRun())
-                    if waitingForReader { currentFile = nil }
-                    try await service.waitForReadingIdle()
-                    waitingForReader = false
                     if #available(iOS 26.0, *), let task = background as? BGContinuedProcessingTask {
                         task.progress.totalUnitCount = Int64(max(total,1)); task.progress.completedUnitCount = Int64(indexed)
                     }
@@ -298,6 +294,15 @@ final class FullIndexController {
                         completed = inventory.admittedPending.allSatisfy { !request.includeCloud && $0.needsDownload }
                         self.request?.resume = false; save(); break
                     }
+                    // Nothing eligible means the shelf is finished, even while
+                    // foreground opening/editing/reading holds the shared gate.
+                    waitingForReader = !(await service.identityMayRun())
+                    if waitingForReader { currentFile = nil }
+                    let waitedForReader = waitingForReader
+                    try await service.waitForReadingIdle()
+                    waitingForReader = false
+                    // The foreground operation may have changed or removed next.
+                    if waitedForReader { continue }
                     attempted.insert(IndexInput(next))
                     let nextWork = IdentityFileWork(); work = nextWork
                     do {
@@ -406,7 +411,7 @@ struct FullIndexView: View {
     private var paused: Bool { ownsTask && controller.paused }
     private var statusTitle: LocalizedStringKey {
         if paused { return "已暂停" }
-        if waiting { return "等待阅读结束" }
+        if waiting { return "等待当前操作完成" }
         if active { return "正在建立索引" }
         if let counts, counts.total == 0 { return "书架中还没有小说" }
         if let counts, counts.total == counts.indexed { return "索引已完成" }
@@ -434,7 +439,7 @@ struct FullIndexView: View {
                             .frame(maxWidth: 260).accessibilityLabel(Text("索引进度", tableName: "FullIndex"))
                     }
                     if waiting {
-                        Text("阅读结束后继续建立索引", tableName: "FullIndex").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                        Text("当前操作完成后继续建立索引", tableName: "FullIndex").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                     } else if active && !paused {
                         VStack(spacing: 6) {
                             Text(controller.currentFile == nil ? "正在准备" : "正在处理", tableName: "FullIndex")
