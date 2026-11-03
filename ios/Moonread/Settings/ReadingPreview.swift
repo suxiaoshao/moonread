@@ -10,14 +10,10 @@ final class ReadingPreviewPosition {
     }
     weak var view: ReadingPreviewTextView?
     private(set) var saved: Saved?
-    private var paperInput: ThemeSurface.PaperInput?
-    private var image: UIImage?
-    func paperImage(_ input: ThemeSurface.PaperInput) -> UIImage? {
-        if paperInput != input {
-            paperInput = input
-            image = ThemeSurface.paperImage(input)
-        }
-        return image
+    private var paper: PreparedReadingPaper?
+    func paperImage(_ input: ThemeSurface.PaperInput, landscape: Bool) -> UIImage? {
+        if paper?.input != input { paper = PreparedReadingPaper.resolve(input) }
+        return paper?.image(landscape: landscape)
     }
     func capture() { if let view { saved = view.capturePosition() } }
 }
@@ -26,11 +22,14 @@ final class ReadingPreviewPosition {
 struct ReadingPreviewBackdrop: View {
     let surface: ThemeSurface
     let position: ReadingPreviewPosition
-    @Environment(\.displayScale) private var scale
+    let landscape: Bool
     var body: some View {
+        let image = position.paperImage(surface.paperInput(), landscape: landscape)
         GeometryReader { geometry in
-            let image = position.paperImage(surface.paperInput(size: geometry.size, scale: scale))
-            if let image { Image(uiImage: image).resizable() }
+            if let image {
+                Image(uiImage: image).resizable().scaledToFill()
+                    .frame(width: geometry.size.width, height: geometry.size.height).clipped()
+            }
             else { Color(uiColor: surface.paper) }
         }.allowsHitTesting(false).accessibilityHidden(true)
     }

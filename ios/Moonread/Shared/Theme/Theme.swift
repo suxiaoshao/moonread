@@ -83,46 +83,29 @@ struct ThemeSurface: Equatable {
     }
     struct PaperInput: Equatable {
         let paper: UInt32
-        let asset: ReaderTextureAsset?
-        let blend: ReaderTextureBlend?
-        let opacity: CGFloat
-        let size: CGSize
-        let scale: CGFloat
+        let descriptor: ReaderTextureDescriptor?
     }
-    func paperInput(size: CGSize, scale: CGFloat) -> PaperInput {
-        let descriptor = readerTexture?.enabled == true ? readerTexture?.descriptor : nil
-        let asset = size.width > size.height ? descriptor?.landscape ?? descriptor?.portrait : descriptor?.portrait
-        return PaperInput(paper: paper.opaqueRGB, asset: asset, blend: descriptor?.blend,
-                          opacity: CGFloat(descriptor?.opacity ?? 0), size: size, scale: max(1, scale))
+    func paperInput() -> PaperInput {
+        PaperInput(paper: paper.opaqueRGB, descriptor: readerTexture?.enabled == true ? readerTexture?.descriptor : nil)
     }
-    /// One sRGB / SDR compositor shared by the fixed reader canvas and previews.
-    /// Artwork contains baked CSS filters, never paper, ink tint or global opacity.
-    static func paperImage(_ input: PaperInput) -> UIImage? {
-        guard input.asset != nil, input.size.width > 0, input.size.height > 0 else { return nil }
-        let width = Int(ceil(input.size.width * input.scale)), height = Int(ceil(input.size.height * input.scale))
-        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
-              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
-                                      bytesPerRow: width * 4, space: space,
+    /// Prepare at the artwork's fixed reference resolution, independently of
+    /// view bounds/display scale. Resizing only places this already mixed image.
+    static func paperImage(_ input: PaperInput, asset: ReaderTextureAsset) -> UIImage? {
+        guard let image = UIImage(named: asset.name)?.cgImage, let descriptor = input.descriptor,
+              let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+                                      bytesPerRow: image.width * 4, space: space,
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return nil }
-        context.scaleBy(x: input.scale, y: input.scale)
-        context.translateBy(x: 0, y: input.size.height); context.scaleBy(x: 1, y: -1)
-        let bounds = CGRect(origin: .zero, size: input.size)
+        let bounds = CGRect(x: 0, y: 0, width: CGFloat(image.width), height: CGFloat(image.height))
         context.setFillColor(UIColor(rgb: input.paper).cgColor); context.fill(bounds)
-        if let asset = input.asset, let image = UIImage(named: asset.name)?.cgImage {
-            let reference = CGSize(width: CGFloat(asset.referenceWidth), height: CGFloat(asset.referenceHeight))
-            let ratio = max(bounds.width / reference.width, bounds.height / reference.height)
-            let size = CGSize(width: reference.width * ratio, height: reference.height * ratio)
-            let rect = CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2, width: size.width, height: size.height)
-            let blend: CGBlendMode
-            switch input.blend { case .multiply: blend = .multiply; case .screen: blend = .screen; case .softLight: blend = .softLight; default: blend = .normal }
-            if input.blend == .softLight { context.clear(bounds) }
-            context.setBlendMode(input.blend == .softLight ? .normal : blend)
-            context.setAlpha(input.blend == .softLight ? 1 : input.opacity); context.interpolationQuality = .high
-            context.saveGState(); context.translateBy(x: rect.minX, y: rect.maxY); context.scaleBy(x: 1, y: -1)
-            context.draw(image, in: CGRect(origin: .zero, size: rect.size)); context.restoreGState()
-        }
-        if input.blend == .softLight { cssSoftLight(context, paper: input.paper, opacity: input.opacity) }
-        return context.makeImage().map { UIImage(cgImage: $0, scale: input.scale, orientation: .up) }
+        let blend: CGBlendMode
+        switch descriptor.blend { case .multiply: blend = .multiply; case .screen: blend = .screen; case .softLight: blend = .softLight; default: blend = .normal }
+        if descriptor.blend == .softLight { context.clear(bounds) }
+        context.setBlendMode(descriptor.blend == .softLight ? .normal : blend)
+        context.setAlpha(descriptor.blend == .softLight ? 1 : CGFloat(descriptor.opacity))
+        context.draw(image, in: bounds)
+        if descriptor.blend == .softLight { cssSoftLight(context, paper: input.paper, opacity: CGFloat(descriptor.opacity)) }
+        return context.makeImage().map { UIImage(cgImage: $0) }
     }
     /// Quartz soft-light differs visibly from the approved CSS artwork on dark paper.
     /// W3C sRGB, evaluated only on a changed background using channel lookup tables.
@@ -150,6 +133,26 @@ struct ThemeSurface: Equatable {
         }
     }
     static let initial = ThemeSurface(plan: try! resolveThemes(value: defaultThemeSnapshot(), system: .light, highContrast: false).app)
+}
+
+/// One prepared result can be retained by both reader and preview. The factory
+/// only retains the most recent input, never a dictionary of sizes or palettes.
+@MainActor
+final class PreparedReadingPaper {
+    private static var current: PreparedReadingPaper?
+    let input: ThemeSurface.PaperInput
+    private lazy var portrait: UIImage? = input.descriptor.map { ThemeSurface.paperImage(input, asset: $0.portrait) } ?? nil
+    private lazy var landscape: UIImage? = input.descriptor?.landscape.map { ThemeSurface.paperImage(input, asset: $0) } ?? nil
+    private init(_ input: ThemeSurface.PaperInput) { self.input = input }
+    static func resolve(_ input: ThemeSurface.PaperInput) -> PreparedReadingPaper {
+        if let current, current.input == input { return current }
+        let result = PreparedReadingPaper(input)
+        current = result
+        return result
+    }
+    func image(landscape isLandscape: Bool) -> UIImage? {
+        isLandscape && input.descriptor?.landscape != nil ? landscape : portrait
+    }
 }
 
 extension UIColor {

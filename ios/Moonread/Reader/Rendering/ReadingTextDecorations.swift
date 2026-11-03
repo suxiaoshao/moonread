@@ -87,16 +87,30 @@ final class ReadingLayoutManager: NSLayoutManager {
 
 /// One stationary background across header, body and spread; never a page child.
 final class ReadingPaperView: UIView {
-    private var input: ThemeSurface.PaperInput?
+    private var paper: PreparedReadingPaper?
     private var image: UIImage?
-    func update(_ value: ThemeSurface.PaperInput) {
-        guard input != value else { return }
-        input = value; image = ThemeSurface.paperImage(value); setNeedsDisplay()
+    private let backdrop = CALayer()
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backdrop.contentsGravity = .resizeAspectFill
+        backdrop.masksToBounds = true
+        layer.insertSublayer(backdrop, at: 0)
     }
-    override func draw(_ rect: CGRect) {
-        guard let input else { return }
-        UIColor(rgb: input.paper).setFill(); UIRectFill(rect)
-        image?.draw(in: bounds)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    func update(_ input: ThemeSurface.PaperInput, landscape: Bool) {
+        if paper?.input != input { paper = PreparedReadingPaper.resolve(input) }
+        let next = paper?.image(landscape: landscape)
+        guard image !== next else { return }
+        image = next
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        backdrop.contents = next?.cgImage
+        CATransaction.commit()
+    }
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        backdrop.frame = bounds
+        CATransaction.commit()
     }
 }
 
@@ -187,7 +201,7 @@ extension ReadingController {
         scrollCover?.view.backgroundColor = .clear
     }
     func updatePaperBackdrop() {
-        (view as? ReadingPaperView)?.update(theme.paperInput(size: view.bounds.size, scale: traitCollection.displayScale))
+        (view as? ReadingPaperView)?.update(theme.paperInput(), landscape: view.bounds.width > view.bounds.height)
     }
 
     func updateBottomFade() {
