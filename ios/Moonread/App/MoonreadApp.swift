@@ -177,23 +177,16 @@ struct MoonreadApp: App {
             do {
                 switch scene {
                 case .shelf: library.libraryPath = [.folder(LibraryLocation(shelfID: "builtin"))]
-                case .tags:
-                    library.grouping = .tags
-                    library.libraryPath = [.allBooks("builtin")]
                 case .backup: library.openSettings(target: .data)
                 case .statistics: library.selectedTab = .statistics
                 case .recap:
-                    let args = ProcessInfo.processInfo.arguments
-                    let i = args.firstIndex(of: "--ui-test-store-language")!
-                    let fixture = try StoreShotFixture.localized(args[i + 1])
+                    let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
                     await ai.load()
                     try await ai.seedStoreShotRecap(fixture)
                     library.selectedTab = .conversations
                 case .widget: break
                 default:
-                    let args = ProcessInfo.processInfo.arguments
-                    let i = args.firstIndex(of: "--ui-test-store-language")!
-                    let fixture = try StoreShotFixture.localized(args[i + 1])
+                    let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
                     guard let entry = try await library.service.libraryEntries(LibraryLocation(shelfID: "builtin"))
                         .first(where: { $0.title == fixture.books[0].title }) else { throw ReaderError.NotFound }
                     library.open(entry)
@@ -208,10 +201,7 @@ struct MoonreadApp: App {
             case .settings, .libraryHome: break
             case .readerSettings: library.libraryPath = [.screenshotReaderSettings]
             case .bookDetails, .reader:
-                let args = ProcessInfo.processInfo.arguments
-                let index = args.firstIndex(of: "--ui-test-store-language")
-                let language = index.flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil } ?? "zh-Hans"
-                let fixture = try StoreShotFixture.localized(language)
+                let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
                 guard let entry = try await library.service.libraryEntries(LibraryLocation(shelfID: "builtin"))
                     .first(where: { $0.title == fixture.books[0].title }) else { throw ReaderError.NotFound }
                 if page == .bookDetails {

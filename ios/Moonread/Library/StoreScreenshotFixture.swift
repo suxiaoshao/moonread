@@ -2,29 +2,49 @@ import Foundation
 
 // Original stories shared by the DEBUG fixture and the separate screenshot tests.
 #if DEBUG
-enum StoreShotScene: String {
-    case paper = "texture-paper", kraft = "texture-kraft", linen = "texture-linen"
-    case continuation, widget, backup, recap, statistics, annotation, shelf, search
-    case tags = "shelf-tags"
-
-    static var requested: Self? {
-        let args = ProcessInfo.processInfo.arguments
-        guard args.contains("--ui-testing"), args.contains("--ui-test-store-screenshots"),
-              let i = args.firstIndex(of: "--ui-test-store-scene"), args.indices.contains(i + 1) else { return nil }
-        return Self(rawValue: args[i + 1])
-    }
+enum StoreShotScene: String, CaseIterable {
+    case paper = "R01", typography = "R02", continuation = "R03", widget = "R04"
+    case shelf = "R05", notes = "R06", statistics = "R07", annotation = "R08"
+    case search = "R09", backup = "R10", recap = "R11", mint = "R12", bamboo = "R13"
+    static var requested: Self? { StoreShotCapture.requested.flatMap { Self(rawValue: $0.scene) } }
     static let statisticsDate = Date(timeIntervalSince1970: 1_792_929_600) // 2026-10-25 12:00 UTC
 }
 enum StoreShotPage: String, CaseIterable {
     case bookDetails = "book-details", readerSettings = "reader-settings"
     case settings, libraryHome = "library-home", reader
+    static var requested: Self? { StoreShotCapture.requested.flatMap { Self(rawValue: $0.scene) } }
+}
 
+/// One DEBUG-only request contract for matrix captures and individual page shots.
+/// Palette IDs are production IDs; their colors/support remain Rust-owned.
+struct StoreShotCapture: Codable {
+    static let fixtureVersion = "StoreShotFixture/1.4-v1"
+    let id: String
+    let scene: String
+    let language: String
+    let group: String
+    let appearance: String
+    let systemAppearance: String
+    let appPalette: String
+    let readerPalette: String
+    let readerTextureEnabled: Bool
+    let orientation: String
+    let storefront: String
+    var rawPath: String?
+
+    var isPage: Bool { StoreShotPage(rawValue: scene) != nil }
+    var isPad: Bool { group.hasPrefix("ipad-") }
+    var locale: String { language == "en" ? "en_US" : language == "zh-Hant" ? "zh_TW" : "zh_CN" }
+    var fontSize: Double { isPad ? 24 : 20 }
+    var paged: Bool { ["R01", "R12", "R13", "reader"].contains(scene) }
     static var requested: Self? {
         let args = ProcessInfo.processInfo.arguments
         guard args.contains("--ui-testing"), args.contains("--ui-test-store-screenshots"),
-              let index = args.firstIndex(of: "--ui-test-page-scene"), args.indices.contains(index + 1) else { return nil }
-        return Self(rawValue: args[index + 1])
+              let i = args.firstIndex(of: "--ui-test-store-capture"), args.indices.contains(i + 1),
+              let data = args[i + 1].data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(Self.self, from: data)
     }
+
 }
 struct StoreShotBook: Decodable { let title: String; let text: String }
 struct StoreShotFixture: Decodable {

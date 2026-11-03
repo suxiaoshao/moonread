@@ -1145,17 +1145,16 @@ extension AppDataService {
 #if DEBUG
 extension AppDataService {
     private func createLocalizedStoreShotFixture() async throws {
-        let arguments = ProcessInfo.processInfo.arguments
-        guard let i = arguments.firstIndex(of: "--ui-test-store-language"), arguments.indices.contains(i + 1) else { throw ReaderError.InvalidRange }
-        let f = try StoreShotFixture.localized(arguments[i + 1])
+        guard let capture = StoreShotCapture.requested else { throw ReaderError.InvalidSettings }
+        let f = try StoreShotFixture.localized(capture.language)
         guard let session = testSession, libraryDirectoryOverride != nil, cloudLibraryRoot == nil else { throw LibraryFileError.invalidDestination }
         let root = try builtinLibraryURL().resolvingSymlinksInPath(), temp = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
         guard root.path.hasPrefix(temp.path + "/"), root.lastPathComponent == "Moonread-StoreShots-" + session,
               !root.path.contains("Mobile Documents"), !root.path.contains("CloudDocs"), !root.pathComponents.contains("Downloads") else { throw LibraryFileError.invalidDestination }
-        var settings = defaultReaderSettings(); settings.font = .serif; settings.mode = .scroll
+        var settings = defaultReaderSettings(); settings.font = .system; settings.mode = .scroll
         // Save the ordinary reader preference; no display/font scaling override.
-        if arguments.contains("--ui-test-store-ipad") { settings.fontSize = 24 }
-        if StoreShotPage.requested == .reader { settings.mode = .pages }
+        settings.fontSize = capture.fontSize
+        if capture.paged { settings.mode = .pages }
         try saveSettings(settings)
         guard !sourceDefaults.bool(forKey: "StoreShots.seeded") else { return }
         for folder in f.folders { try FileManager.default.createDirectory(at: root.appendingPathComponent(folder), withIntermediateDirectories: true) }
@@ -1183,7 +1182,7 @@ extension AppDataService {
             try await saveMetadata(base: metadata, edited: edited)
             if title == f.books[0].title {
                 let original = f.books[0].text
-                for pair in f.notes {
+                for pair in (StoreShotScene.requested.map { [StoreShotScene.paper, .mint, .bamboo].contains($0) } == true ? [] : f.notes) {
                     guard let range = original.range(of: pair[0]) else { throw ReaderError.InvalidRange }
                     let start = UInt64(original[..<range.lowerBound].utf8.count), end = start + UInt64(pair[0].utf8.count)
                     let edit = try await prepareAnnotation(book.id, start: start, end: end)
@@ -1209,7 +1208,14 @@ extension AppDataService {
                     if scene == .recap {
                         start = original.index(original.range(of: f.mainChapters[2])!.lowerBound, offsetBy: -2)
                     }
-                    let offset = UInt64(original[..<start].utf8.count)
+                    var offset = UInt64(original[..<start].utf8.count)
+                    if scene == .widget {
+                        // A synthetic resume point, not a second progress rule.
+                        // The widget percentage/chapter is queried below through Rust.
+                        var point = original.utf8.index(original.utf8.startIndex, offsetBy: original.utf8.count * 42 / 100)
+                        while String.Index(point, within: original) == nil { point = original.utf8.index(before: point) }
+                        offset = UInt64(original.utf8.distance(from: original.utf8.startIndex, to: point))
+                    }
                     try await savePosition(bookID: book.id, offset: offset)
                     if scene == .continuation {
                         let ahead = original.range(of: f.mainChapters[2])!.lowerBound
@@ -1235,6 +1241,20 @@ extension AppDataService {
            let id = try core.sourceFiles(shelfId: "builtin").first(where: { $0.relativePath == f.books[0].title + ".txt" })?.bookId {
             try await createStatisticsFixture(bookID: id)
         }
+        let preferences = try decodeThemePreferences(json: sourceDefaults.string(forKey: "Moonread.themePreferences")!)
+        var snapshot = defaultThemeSnapshot(); snapshot.preferences = preferences
+        let resolved = try resolveThemes(value: snapshot, system: capture.systemAppearance == "dark" ? .dark : .light, highContrast: false)
+        let receipt: [String: Any] = ["id": capture.id, "fixtureVersion": StoreShotCapture.fixtureVersion,
+            "appPalette": resolved.app.paletteId, "readerPalette": resolved.reader.paletteId,
+            "readerAppearance": resolved.reader.appearance == .dark ? "dark" : "light",
+            "readerTextureEnabled": resolved.readerTexture.enabled,
+            "fontSize": settings.fontSize, "font": "system", "readingMode": capture.paged ? "pages" : "scroll",
+            "language": capture.language, "locale": capture.locale, "storefront": capture.storefront,
+            "libraryCount": inventory.items.count, "pendingCount": inventory.pending, "unsupportedCount": inventory.unsupported,
+            "library_root": "tmp/" + root.lastPathComponent,
+            "appVersion": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
+            "appBuild": Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""]
+        try JSONSerialization.data(withJSONObject: receipt, options: [.sortedKeys]).write(to: FileManager.default.temporaryDirectory.appendingPathComponent("StoreScreenshots-fixture.json"), options: .atomic)
         sourceDefaults.set(true, forKey: "StoreShots.seeded")
     }
 
@@ -1263,9 +1283,12 @@ extension AppDataService {
             throw LibraryFileError.invalidDestination
         }
         let id = try SystemReadingBookID(sha: book.contentSha256).rawValue
+        let keys = try textCore().catalogueContentKeys(scope: catalogueScope(nil, recursive: true))
+        let query = try await effectiveQuery(keys: keys.map { serializeReadingKey(key: $0) }, scope: "store-shot-widget", sparseCatalogue: true)
+        guard let projected = try query.systemReadingCatalogue().first(where: { $0.contentSha256 == book.contentSha256 }) else { throw ReaderError.NotFound }
         let entry = SystemReadingSnapshot.Book(id: id, title: book.title, author: fixture.author, tags: [],
-            availability: .available, sourceCount: 1, naturalOrdinal: 0, progress: 42,
-            chapterLabel: fixture.mainChapters[1], recentRank: 0, allowsAutomaticExposure: true)
+            availability: .available, sourceCount: 1, naturalOrdinal: 0, progress: projected.percentage,
+            chapterLabel: projected.chapterTitle, recentRank: 0, allowsAutomaticExposure: true)
         let file = SystemReadingSnapshotFile(directory: root.appendingPathComponent("StoreScreenshots", isDirectory: true))
         try file.publish(.init(storeScope: "synthetic-store-screenshots", books: [entry], recentIDs: [id],
                                appearance: await systemWidgetAppearance()))
