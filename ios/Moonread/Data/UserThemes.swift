@@ -3,7 +3,10 @@ import Foundation
 extension AppDataService {
     func themes() async throws -> ThemeSnapshot {
         var snapshot = defaultThemeSnapshot()
-        if let json = sourceDefaults.string(forKey: "Moonread.themePreferences") { snapshot.preferences = try decodeThemePreferences(json: json) }
+        if let stored = sourceDefaults.object(forKey: "Moonread.themePreferences") {
+            guard let json = stored as? String else { throw ReaderError.InvalidSettings }
+            snapshot.preferences = try decodeThemePreferences(json: json)
+        }
         let rows = try await userStore().allValues(prefix: "palette/")
         let custom = try rows.values.filter { $0 != "null" }.map { try decodeThemePalette(json: $0) }.filter(\.custom)
         snapshot.palettes = defaultThemeSnapshot().palettes + custom

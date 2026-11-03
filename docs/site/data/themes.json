@@ -75,9 +75,9 @@
       "en": "Palette",
       "zh": "配色"
     },
-    "strength": {
-      "en": "Texture Strength",
-      "zh": "纹理强度"
+    "showTexture": {
+      "en": "Show Texture",
+      "zh": "显示纹理"
     },
     "texture": {
       "en": "Paper Texture",
@@ -145,13 +145,8 @@
       },
       "id": "apricot-light",
       "name": {
-        "en": "Apricot · Light",
-        "zh": "杏桃 · 浅色"
-      },
-      "textureAlpha": {
-        "light": 0.023816921,
-        "medium": 0.039651745,
-        "strong": 0.05545183
+        "en": "Paper · Light",
+        "zh": "纸色 · 浅色"
       }
     },
     {
@@ -214,13 +209,8 @@
       },
       "id": "apricot-dark",
       "name": {
-        "en": "Apricot · Dark",
-        "zh": "杏桃 · 深色"
-      },
-      "textureAlpha": {
-        "light": 0.020898374,
-        "medium": 0.034740696,
-        "strong": 0.048535787
+        "en": "Paper · Dark",
+        "zh": "纸色 · 深色"
       }
     },
     {
@@ -285,11 +275,6 @@
       "name": {
         "en": "Mint · Light",
         "zh": "薄荷 · 浅色"
-      },
-      "textureAlpha": {
-        "light": 0.022806492,
-        "medium": 0.037971212,
-        "strong": 0.053104039
       }
     },
     {
@@ -354,11 +339,6 @@
       "name": {
         "en": "Mint · Dark",
         "zh": "薄荷 · 深色"
-      },
-      "textureAlpha": {
-        "light": 0.020774231,
-        "medium": 0.034580008,
-        "strong": 0.048366901
       }
     },
     {
@@ -423,11 +403,6 @@
       "name": {
         "en": "Lilac · Light",
         "zh": "雾紫 · 浅色"
-      },
-      "textureAlpha": {
-        "light": 0.022692277,
-        "medium": 0.037780635,
-        "strong": 0.052836918
       }
     },
     {
@@ -492,11 +467,6 @@
       "name": {
         "en": "Lilac · Dark",
         "zh": "雾紫 · 深色"
-      },
-      "textureAlpha": {
-        "light": 0.021078488,
-        "medium": 0.035082412,
-        "strong": 0.049064897
       }
     },
     {
@@ -561,11 +531,6 @@
       "name": {
         "en": "Pure Black · Dark",
         "zh": "纯黑夜间 · 深色"
-      },
-      "textureAlpha": {
-        "light": 0.00445931,
-        "medium": 0.012912863,
-        "strong": 0.024376414
       }
     },
     {
@@ -630,11 +595,6 @@
       "name": {
         "en": "Plain White · Light",
         "zh": "素白 · 浅色"
-      },
-      "textureAlpha": {
-        "light": 0.02088332,
-        "medium": 0.034769537,
-        "strong": 0.048626762
       }
     },
     {
@@ -697,77 +657,115 @@
       },
       "id": "bean-light",
       "name": {
-        "en": "Bean Green · Light",
-        "zh": "豆沙绿 · 浅色"
-      },
-      "textureAlpha": {
-        "light": 0.024626941,
-        "medium": 0.040999129,
-        "strong": 0.057334443
+        "en": "Bamboo Green · Light",
+        "zh": "竹绿 · 浅色"
       }
     }
   ],
-  "schemaVersion": 1,
-  "strengths": [
-    {
-      "id": "light",
-      "name": {
-        "en": "Light",
-        "zh": "淡"
-      }
-    },
-    {
-      "id": "medium",
-      "name": {
-        "en": "Medium",
-        "zh": "中"
-      }
-    },
-    {
-      "id": "strong",
-      "name": {
-        "en": "Strong",
-        "zh": "浓"
-      }
-    }
-  ],
+  "schemaVersion": 2,
   "textures": [
     {
-      "id": "paper-v1",
-      "name": {
-        "en": "Rice Paper",
-        "zh": "宣纸"
-      },
-      "path": "textures/paper-v1.png",
-      "sha256": "51c5d57df8a4b3509fc0634767241ad8eb7a49b21fb84f1daf3ec42b9cab5732"
+      "blend": "multiply",
+      "landscape": null,
+      "opacity": 0.22,
+      "paletteId": "apricot-light",
+      "portrait": {
+        "name": "ReaderBackdropPaperLight",
+        "path": "textures/ReaderBackdropPaperLight.png",
+        "reference_height": 874,
+        "reference_width": 402,
+        "sha256": "e8712927487b3f4885c22d1de16eb6bfcf47af0dbe2ba638989b0287ca805796"
+      }
     },
     {
-      "id": "kraft-v1",
-      "name": {
-        "en": "Kraft Paper",
-        "zh": "牛皮纸"
-      },
-      "path": "textures/kraft-v1.png",
-      "sha256": "64fec3b54f91a4dabb77d035a9a044fceffdb3fd69ca2be25b40378cb1aed102"
+      "blend": "soft-light",
+      "landscape": null,
+      "opacity": 0.65,
+      "paletteId": "apricot-dark",
+      "portrait": {
+        "name": "ReaderBackdropPaperDark",
+        "path": "textures/ReaderBackdropPaperDark.png",
+        "reference_height": 874,
+        "reference_width": 402,
+        "sha256": "9dfcab201aec7f86881c3e6f30ff0299705939284e5e7bf1015a334259c16a94"
+      }
     },
     {
-      "id": "linen-v1",
-      "name": {
-        "en": "Fine Linen",
-        "zh": "细麻布"
+      "blend": "multiply",
+      "landscape": {
+        "name": "ReaderBackdropBambooLandscape",
+        "path": "textures/ReaderBackdropBambooLandscape.png",
+        "reference_height": 1032,
+        "reference_width": 1376,
+        "sha256": "4836bd6cdf89fa0b4f0a138ee1b67ef7c1bc1a326bf00e162c379a8242aefcbf"
       },
-      "path": "textures/linen-v1.png",
-      "sha256": "b1eb579ff917eda25b92d4975a211a33a0d878e950cb38198b06d7209dd77ef6"
+      "opacity": 0.42,
+      "paletteId": "bean-light",
+      "portrait": {
+        "name": "ReaderBackdropBamboo",
+        "path": "textures/ReaderBackdropBamboo.png",
+        "reference_height": 874,
+        "reference_width": 402,
+        "sha256": "5f916c7376ab6a892139c3d1b793f610b6b8dddbbf6acc768fea7af0a707d56a"
+      }
     },
     {
-      "id": "grain-v1",
-      "name": {
-        "en": "Grain",
-        "zh": "颗粒"
+      "blend": "multiply",
+      "landscape": null,
+      "opacity": 0.32,
+      "paletteId": "mint-light",
+      "portrait": {
+        "name": "ReaderBackdropMintLight",
+        "path": "textures/ReaderBackdropMintLight.png",
+        "reference_height": 874,
+        "reference_width": 402,
+        "sha256": "f2b403ef72b6c2d014c7e957f85f43d0f3bf00bec3fac1b3959ef23431508c46"
+      }
+    },
+    {
+      "blend": "normal",
+      "landscape": {
+        "name": "ReaderBackdropMintDarkLandscape",
+        "path": "textures/ReaderBackdropMintDarkLandscape.png",
+        "reference_height": 1032,
+        "reference_width": 1376,
+        "sha256": "04998f838aa60c360f50b93c5c6fa8546676e70cc7a7952aff6a683ad78992a6"
       },
-      "path": "textures/grain-v1.png",
-      "sha256": "20b7438719beb79bf11fa7febeaee700cf1e1e30f4876e32ceeef7e503a13097"
+      "opacity": 0.2,
+      "paletteId": "mint-dark",
+      "portrait": {
+        "name": "ReaderBackdropMintDark",
+        "path": "textures/ReaderBackdropMintDark.png",
+        "reference_height": 874,
+        "reference_width": 402,
+        "sha256": "aae34f21c847fb39e280c9251f4c990502a7599101dc36b5a1ac67b3a0dff3f0"
+      }
+    },
+    {
+      "blend": "multiply",
+      "landscape": null,
+      "opacity": 0.7,
+      "paletteId": "lilac-light",
+      "portrait": {
+        "name": "ReaderBackdropMistLight",
+        "path": "textures/ReaderBackdropMistLight.png",
+        "reference_height": 874,
+        "reference_width": 402,
+        "sha256": "a29fd8d49ed40eace7517d49a153015bafecbc144c3c86eed8bce7bf2ab2b3e1"
+      }
+    },
+    {
+      "blend": "screen",
+      "landscape": null,
+      "opacity": 0.2,
+      "paletteId": "lilac-dark",
+      "portrait": {
+        "name": "ReaderBackdropMistDark",
+        "path": "textures/ReaderBackdropMistDark.png",
+        "reference_height": 874,
+        "reference_width": 402,
+        "sha256": "897366ce280a1a7177e737a4b44339fce8b54ba6a65c0b31947c16ec27d35142"
+      }
     }
-  ],
-  "tileSize": 256
+  ]
 }

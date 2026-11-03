@@ -186,18 +186,15 @@ struct ReaderSettingsView: View {
     private var appearance: ThemeAppearance { editedAppearance ?? themes.reader.plan.appearance }
     private var previewExpanded: Bool { verticalSizeClass == .compact || previewDetent == .large }
     private var previewCollapsed: Bool { verticalSizeClass != .compact && previewDetent == .height(60) }
-    private var texture: ReaderTextureChoice? {
-        appearance == .light ? themes.snapshot.preferences.readerLightTexture : themes.snapshot.preferences.readerDarkTexture
-    }
     private var previewTheme: ThemeSurface {
         if let draft {
             return ThemeSurface(plan: ResolvedTheme(appearance: draft.palette.appearance, highContrast: themes.highContrast,
-                                                   colors: draft.palette.colors, paletteId: draft.palette.id), readerTexture: texture)
+                                                   colors: draft.palette.colors, paletteId: draft.palette.id))
         }
         var snapshot = themes.snapshot
         snapshot.preferences.readerMode = appearance == .light ? .light : .dark
         guard let plan = try? resolveThemes(value: snapshot, system: themes.system, highContrast: themes.highContrast) else { return themes.reader }
-        return ThemeSurface(plan: plan.reader, readerTexture: texture)
+        return ThemeSurface(plan: plan.reader, readerTexture: plan.readerTexture)
     }
     var body: some View {
         @Bindable var editing = editor
@@ -225,9 +222,7 @@ struct ReaderSettingsView: View {
                 if wide && editor.paletteSession?.presenter != .preview {
                     readingPreview
                         .background {
-                            if let tile = previewPosition.paperTile(previewTheme.paperInput(scale: displayScale)) {
-                                Image(uiImage: tile).resizable(resizingMode: .tile)
-                            } else { Color(uiColor: previewTheme.paper) }
+                            ReadingPreviewBackdrop(surface: previewTheme, position: previewPosition)
                         }
                         .clipShape(.rect(cornerRadius: 16))
                         .padding(LayoutTokens.content)
@@ -256,9 +251,7 @@ struct ReaderSettingsView: View {
                         }
                     }
                     .background {
-                        if let tile = previewPosition.paperTile(previewTheme.paperInput(scale: displayScale)) {
-                            Image(uiImage: tile).resizable(resizingMode: .tile)
-                        } else { Color(uiColor: previewTheme.paper) }
+                        ReadingPreviewBackdrop(surface: previewTheme, position: previewPosition)
                     }
                 } else if compact && !wide && !previewPresented {
                     Button("阅读预览", systemImage: "doc.text.magnifyingglass") {
@@ -333,9 +326,7 @@ struct ReaderSettingsView: View {
                 .presentationContentInteraction(.resizes)
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
                 .presentationBackground {
-                    if let tile = previewPosition.paperTile(previewTheme.paperInput(scale: displayScale)) {
-                        Image(uiImage: tile).resizable(resizingMode: .tile).ignoresSafeArea()
-                    } else { Color(uiColor: previewTheme.paper) }
+                    ReadingPreviewBackdrop(surface: previewTheme, position: previewPosition).ignoresSafeArea()
                 }
                 .preferredColorScheme(previewTheme.scheme)
                 .interactiveDismissDisabled()

@@ -68,21 +68,11 @@ actor AppDataService {
             snapshot.preferences.readerMode = mode == "night" ? .dark : .light
             snapshot.preferences.readerLight = .palette(id: mode == "appearance" ? "bean-light" : (mode == "notes" ? "apricot-light" : "white-light"))
             snapshot.preferences.readerDark = .palette(id: "black-dark")
-            snapshot.preferences.readerLightTexture = ReaderTextureChoice(id: mode == "appearance" ? .linen : .paper, strength: mode == "notes" ? .light : .medium)
-            snapshot.preferences.readerDarkTexture = nil
             switch StoreShotScene.requested {
-            case .paper: snapshot.preferences.readerLight = .palette(id: "white-light")
+            case .paper: snapshot.preferences.readerLight = .palette(id: "apricot-light")
             case .kraft: snapshot.preferences.readerLight = .palette(id: "apricot-light")
             case .linen: snapshot.preferences.readerLight = .palette(id: "bean-light")
             default: break
-            }
-            if let scene = StoreShotScene.requested {
-                snapshot.preferences.readerLightTexture = switch scene {
-                case .paper: .init(id: .paper, strength: .medium)
-                case .kraft: .init(id: .kraft, strength: .medium)
-                case .linen: .init(id: .linen, strength: .medium)
-                default: nil
-                }
             }
             if StoreShotPage.requested != nil {
                 // This path returns before the general UI-test defaults reset.
@@ -92,7 +82,6 @@ actor AppDataService {
                 snapshot.preferences.appMode = dark ? .dark : .light
                 snapshot.preferences.readerMode = .app
                 snapshot.preferences.readerLight = .app; snapshot.preferences.readerDark = .app
-                snapshot.preferences.readerLightTexture = nil; snapshot.preferences.readerDarkTexture = nil
             }
             UserDefaults(suiteName: suite)!.set(try! encodeThemePreferences(value: snapshot.preferences), forKey: "Moonread.themePreferences")
             UserDefaults.standard.set(try! encodeThemeSnapshot(value: snapshot), forKey: "Moonread.appearanceCache." + session)

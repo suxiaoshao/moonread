@@ -359,7 +359,7 @@ extension ReadingController {
             pages = paginate(window, preserving: previousPages)
             guard !pages.isEmpty else { return }
             let paging = UIPageViewController(transitionStyle: .scroll, navigationOrientation: .horizontal)
-            paging.view.backgroundColor = theme.paper
+            paging.view.backgroundColor = .clear
             paging.dataSource = self
             paging.delegate = self
             addChild(paging)

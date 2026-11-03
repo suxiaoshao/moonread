@@ -11,15 +11,29 @@ final class ReadingPreviewPosition {
     weak var view: ReadingPreviewTextView?
     private(set) var saved: Saved?
     private var paperInput: ThemeSurface.PaperInput?
-    private var tile: UIImage?
-    func paperTile(_ input: ThemeSurface.PaperInput) -> UIImage? {
+    private var image: UIImage?
+    func paperImage(_ input: ThemeSurface.PaperInput) -> UIImage? {
         if paperInput != input {
             paperInput = input
-            tile = input.choice == nil ? nil : ThemeSurface.paperTile(input)
+            image = ThemeSurface.paperImage(input)
         }
-        return tile
+        return image
     }
     func capture() { if let view { saved = view.capturePosition() } }
+}
+
+/// The background fills its own proposal; it never participates in text layout.
+struct ReadingPreviewBackdrop: View {
+    let surface: ThemeSurface
+    let position: ReadingPreviewPosition
+    @Environment(\.displayScale) private var scale
+    var body: some View {
+        GeometryReader { geometry in
+            let image = position.paperImage(surface.paperInput(size: geometry.size, scale: scale))
+            if let image { Image(uiImage: image).resizable() }
+            else { Color(uiColor: surface.paper) }
+        }.allowsHitTesting(false).accessibilityHidden(true)
+    }
 }
 
 struct ReadingPreviewSource: Equatable {
@@ -122,7 +136,7 @@ final class ReadingPreviewTextView: UITextView {
         isEditable = false; isSelectable = false
         showsVerticalScrollIndicator = false; showsHorizontalScrollIndicator = false
         contentInsetAdjustmentBehavior = .never
-        backgroundColor = .clear
+        backgroundColor = .clear; isOpaque = false
         isAccessibilityElement = true
         accessibilityTraits = .staticText
         accessibilityIdentifier = "readingPreviewText"

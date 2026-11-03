@@ -261,7 +261,7 @@ private struct MoonreadRoot: View {
     private var appTheme: ThemeSurface { ThemeSurface(plan: plans.app) }
     private var readerTheme: ThemeSurface {
         let plan = plans.reader
-        return ThemeSurface(plan: plan, readerTexture: plan.appearance == .light ? themes.snapshot.preferences.readerLightTexture : themes.snapshot.preferences.readerDarkTexture)
+        return ThemeSurface(plan: plan, readerTexture: plans.readerTexture)
     }
 
     var body: some View {

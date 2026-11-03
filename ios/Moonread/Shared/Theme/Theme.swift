@@ -32,7 +32,7 @@ enum MotionTokens {
 
 struct ThemeSurface: Equatable {
     let plan: ResolvedTheme
-    var readerTexture: ReaderTextureChoice? = nil
+    var readerTexture: ResolvedReaderTexture? = nil
     var scheme: ColorScheme { plan.appearance == .dark ? .dark : .light }
     var style: UIUserInterfaceStyle { plan.appearance == .dark ? .dark : .light }
     func ui(_ role: KeyPath<ThemeColors, UInt32>, system: UIColor) -> UIColor {
@@ -83,45 +83,73 @@ struct ThemeSurface: Equatable {
     }
     struct PaperInput: Equatable {
         let paper: UInt32
-        let ink: UInt32
-        let choice: ReaderTextureChoice?
+        let asset: ReaderTextureAsset?
+        let blend: ReaderTextureBlend?
+        let opacity: CGFloat
+        let size: CGSize
         let scale: CGFloat
     }
-    func paperInput(scale: CGFloat) -> PaperInput {
-        PaperInput(paper: paper.opaqueRGB, ink: ink.opaqueRGB, choice: plan.colors == nil ? nil : readerTexture, scale: max(1, scale))
+    func paperInput(size: CGSize, scale: CGFloat) -> PaperInput {
+        let descriptor = readerTexture?.enabled == true ? readerTexture?.descriptor : nil
+        let asset = size.width > size.height ? descriptor?.landscape ?? descriptor?.portrait : descriptor?.portrait
+        return PaperInput(paper: paper.opaqueRGB, asset: asset, blend: descriptor?.blend,
+                          opacity: CGFloat(descriptor?.opacity ?? 0), size: size, scale: max(1, scale))
     }
-    static func paperBackground(_ input: PaperInput) -> UIColor {
-        guard input.choice != nil else { return UIColor(rgb: input.paper) }
-        return UIColor(patternImage: paperTile(input))
+    /// One sRGB / SDR compositor shared by the fixed reader canvas and previews.
+    /// Artwork contains baked CSS filters, never paper, ink tint or global opacity.
+    static func paperImage(_ input: PaperInput) -> UIImage? {
+        guard input.asset != nil, input.size.width > 0, input.size.height > 0 else { return nil }
+        let width = Int(ceil(input.size.width * input.scale)), height = Int(ceil(input.size.height * input.scale))
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: width * 4, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return nil }
+        context.scaleBy(x: input.scale, y: input.scale)
+        context.translateBy(x: 0, y: input.size.height); context.scaleBy(x: 1, y: -1)
+        let bounds = CGRect(origin: .zero, size: input.size)
+        context.setFillColor(UIColor(rgb: input.paper).cgColor); context.fill(bounds)
+        if let asset = input.asset, let image = UIImage(named: asset.name)?.cgImage {
+            let reference = CGSize(width: CGFloat(asset.referenceWidth), height: CGFloat(asset.referenceHeight))
+            let ratio = max(bounds.width / reference.width, bounds.height / reference.height)
+            let size = CGSize(width: reference.width * ratio, height: reference.height * ratio)
+            let rect = CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2, width: size.width, height: size.height)
+            let blend: CGBlendMode
+            switch input.blend { case .multiply: blend = .multiply; case .screen: blend = .screen; case .softLight: blend = .softLight; default: blend = .normal }
+            if input.blend == .softLight { context.clear(bounds) }
+            context.setBlendMode(input.blend == .softLight ? .normal : blend)
+            context.setAlpha(input.blend == .softLight ? 1 : input.opacity); context.interpolationQuality = .high
+            context.saveGState(); context.translateBy(x: rect.minX, y: rect.maxY); context.scaleBy(x: 1, y: -1)
+            context.draw(image, in: CGRect(origin: .zero, size: rect.size)); context.restoreGState()
+        }
+        if input.blend == .softLight { cssSoftLight(context, paper: input.paper, opacity: input.opacity) }
+        return context.makeImage().map { UIImage(cgImage: $0, scale: input.scale, orientation: .up) }
     }
-    static func paperTile(_ input: PaperInput) -> UIImage {
-        let paper = UIColor(rgb: input.paper)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = input.scale; format.opaque = true; format.preferredRange = .standard
-        let side = CGFloat(readerTextureTileSize()), bounds = CGRect(x: 0, y: 0, width: side, height: side)
-        return UIGraphicsImageRenderer(size: bounds.size, format: format).image { context in
-            paper.setFill(); context.fill(bounds)
-            context.cgContext.interpolationQuality = .none
-            if let choice = input.choice, let source = UIImage(named: choice.id.assetName) {
-                source.withTintColor(UIColor(rgb: input.ink), renderingMode: .alwaysOriginal)
-                    .draw(in: bounds, blendMode: .normal,
-                          alpha: CGFloat(readerTextureAlpha(paper: input.paper, ink: input.ink, strength: choice.strength)))
+    /// Quartz soft-light differs visibly from the approved CSS artwork on dark paper.
+    /// W3C sRGB, evaluated only on a changed background using channel lookup tables.
+    /// https://www.w3.org/TR/compositing-1/#blendingsoftlight
+    private static func cssSoftLight(_ context: CGContext, paper: UInt32, opacity: CGFloat) {
+        guard let data = context.data?.assumingMemoryBound(to: UInt8.self) else { return }
+        let base = [16, 8, 0].map { Int((paper >> $0) & 255) }
+        let tables: [[Int]] = base.map { byte in
+            let b = Double(byte) / 255
+            let d = b <= 0.25 ? ((16 * b - 12) * b + 4) * b : sqrt(b)
+            return (0..<256).map { value in
+                let s = Double(value) / 255
+                let blend = s <= 0.5 ? b - (1 - 2 * s) * b * (1 - b) : b + (2 * s - 1) * (d - b)
+                return Int((255 * (b + (blend - b) * Double(opacity))).rounded())
             }
+        }
+        for offset in stride(from: 0, to: context.bytesPerRow * context.height, by: 4) {
+            let alpha = Int(data[offset + 3])
+            for channel in 0..<3 {
+                let source = alpha == 0 ? 0 : min(255, Int(data[offset + channel]) * 255 / alpha)
+                let result = base[channel] + (tables[channel][source] - base[channel]) * alpha / 255
+                data[offset + channel] = UInt8(clamping: result)
+            }
+            data[offset + 3] = 255
         }
     }
     static let initial = ThemeSurface(plan: try! resolveThemes(value: defaultThemeSnapshot(), system: .light, highContrast: false).app)
-}
-
-extension ReaderTextureId {
-    var label: LocalizedStringKey {
-        switch self { case .paper: "宣纸"; case .kraft: "牛皮纸"; case .linen: "细麻布"; case .grain: "颗粒" }
-    }
-    var assetName: String {
-        switch self { case .paper: "ReaderTexturePaper"; case .kraft: "ReaderTextureKraft"; case .linen: "ReaderTextureLinen"; case .grain: "ReaderTextureGrain" }
-    }
-}
-extension ReaderTextureStrength {
-    var label: LocalizedStringKey { switch self { case .light: "淡"; case .medium: "中"; case .strong: "浓" } }
 }
 
 extension UIColor {
@@ -192,7 +220,7 @@ final class ThemeStore {
     var app: ThemeSurface { ThemeSurface(plan: resolved.app) }
     var reader: ThemeSurface {
         let plan = resolved.reader
-        return ThemeSurface(plan: plan, readerTexture: plan.appearance == .light ? snapshot.preferences.readerLightTexture : snapshot.preferences.readerDarkTexture)
+        return ThemeSurface(plan: plan, readerTexture: resolved.readerTexture)
     }
 
     func load() async {

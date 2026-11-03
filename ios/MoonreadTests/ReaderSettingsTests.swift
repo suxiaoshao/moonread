@@ -160,14 +160,13 @@ final class ReaderSettingsReaderIntegrationTests: ReaderIntegrationFixture {
     }
     store.update {
       $0.reduceMotion.toggle()
-      $0.readerLightTexture = ReaderTextureChoice(id: .paper, strength: .medium)
-      $0.readerDarkTexture = nil
+      $0 = try! setReaderPaletteTexture(preferences: $0, paletteId: "apricot-light", enabled: false)
     }
     let saved = store.snapshot.preferences
     await fulfillment(of: [firstWrite], timeout: 2)
     store.update {
       $0.readerMode = $0.readerMode == .dark ? .light : .dark
-      $0.readerDarkTexture = ReaderTextureChoice(id: .grain, strength: .strong)
+      $0 = try! setReaderPaletteTexture(preferences: $0, paletteId: "apricot-dark", enabled: false)
     }
     let newer = store.snapshot.preferences
     writer.succeed()
@@ -176,8 +175,7 @@ final class ReaderSettingsReaderIntegrationTests: ReaderIntegrationFixture {
     writer.fail()
     await store.flushPreferences()
     XCTAssertEqual(store.snapshot.preferences, saved)
-    XCTAssertEqual(store.snapshot.preferences.readerLightTexture, ReaderTextureChoice(id: .paper, strength: .medium))
-    XCTAssertNil(store.snapshot.preferences.readerDarkTexture)
+    XCTAssertEqual(store.snapshot.preferences.readerPaletteTextures, saved.readerPaletteTextures)
     XCTAssertNotNil(store.error)
     XCTAssertFalse(store.saving)
   }
@@ -202,17 +200,25 @@ final class ReaderSettingsUserDataTests: UserDataFixture {
     XCTAssertNil(stored["palettes"])
     var preferences = defaultThemeSnapshot().preferences
     preferences.appLight = .palette(id: palette.id)
-    preferences.readerLightTexture = ReaderTextureChoice(id: .linen, strength: .medium)
-    preferences.readerDarkTexture = ReaderTextureChoice(id: .grain, strength: .strong)
+    preferences = try setReaderPaletteTexture(preferences: preferences, paletteId: "apricot-light", enabled: false)
     let selected = try await service.saveThemes(preferences)
     XCTAssertEqual(selected.preferences.appLight, .palette(id: palette.id))
     let reloaded = try await service.themes()
-    XCTAssertEqual(reloaded.preferences.readerLightTexture, preferences.readerLightTexture)
-    XCTAssertEqual(reloaded.preferences.readerDarkTexture, preferences.readerDarkTexture)
+    XCTAssertEqual(reloaded.preferences.readerPaletteTextures, preferences.readerPaletteTextures)
     let deleted = try await service.deletePalette(palette.id)
     XCTAssertEqual(deleted.preferences.appLight, defaultThemeSnapshot().preferences.appLight)
     XCTAssertFalse(deleted.palettes.contains { $0.id == palette.id })
-    XCTAssertEqual(deleted.preferences.readerLightTexture, preferences.readerLightTexture)
-    XCTAssertEqual(deleted.preferences.readerDarkTexture, preferences.readerDarkTexture)
+    XCTAssertEqual(deleted.preferences.readerPaletteTextures, preferences.readerPaletteTextures)
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: "Review-\(root.lastPathComponent)"))
+    let key = "Moonread.themePreferences"
+    var future = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(try encodeThemePreferences(value: preferences).utf8)) as? [String: Any])
+    future["reader_palette_textures"] = ["version": 2, "enabled_by_palette": [:]]
+    let futureJSON = String(decoding: try JSONSerialization.data(withJSONObject: future), as: UTF8.self)
+    for invalid in ["{", futureJSON] {
+      defaults.set(invalid, forKey: key)
+      do { _ = try await service.saveThemes(preferences); XCTFail("Unreadable preferences must block overwrite") }
+      catch { }
+      XCTAssertEqual(defaults.string(forKey: key), invalid)
+    }
   }
 }

@@ -85,25 +85,18 @@ final class ReadingLayoutManager: NSLayoutManager {
 
 }
 
-/// Fill the existing reader root, including the safe area and quiet header.
-/// Anchor the pattern at the page origin so the header joins page-local paper
-/// without shifting the text viewport or changing the moving page backgrounds.
+/// One stationary background across header, body and spread; never a page child.
 final class ReadingPaperView: UIView {
-    private var paper = UIColor.clear
-    private var paperOrigin = CGPoint.zero
-
-    func update(paper: UIColor, origin: CGPoint) {
-        guard self.paper != paper || paperOrigin != origin else { return }
-        self.paper = paper
-        paperOrigin = origin
-        setNeedsDisplay()
+    private var input: ThemeSurface.PaperInput?
+    private var image: UIImage?
+    func update(_ value: ThemeSurface.PaperInput) {
+        guard input != value else { return }
+        input = value; image = ThemeSurface.paperImage(value); setNeedsDisplay()
     }
-
     override func draw(_ rect: CGRect) {
-        guard let context = UIGraphicsGetCurrentContext() else { return }
-        context.setPatternPhase(CGSize(width: paperOrigin.x, height: paperOrigin.y))
-        paper.setFill()
-        context.fill(rect)
+        guard let input else { return }
+        UIColor(rgb: input.paper).setFill(); UIRectFill(rect)
+        image?.draw(in: bounds)
     }
 }
 
@@ -117,7 +110,7 @@ extension ReadingController {
         if let text = scrollText { decorate(text, base: window?.start ?? 0) }
         for controller in pageController?.children ?? [] {
             let leaves = (controller as? ReadingPageGroupController)?.leaves ?? (controller as? PageController).map { [$0] } ?? []
-            controller.viewIfLoaded?.backgroundColor = paperBackground
+            controller.viewIfLoaded?.backgroundColor = .clear
             for page in leaves {
                 if let text = page.viewIfLoaded as? UITextView { decorate(text, base: page.page.start) }
             }
@@ -183,36 +176,18 @@ extension ReadingController {
     }
 
     func paintPaper(on text: UITextView) {
-        // A spread owns one moving sheet of paper, continuous with its header
-        // at rest. Transparent leaf views must not restart the tile at the gutter.
-        let clear = text is ScrollReadingTextView || (text.next as? PageController)?.parent is ReadingPageGroupController
-        text.backgroundColor = clear ? .clear : paperBackground
-        text.isOpaque = !clear
+        text.backgroundColor = .clear; text.isOpaque = false
     }
-
     func updatePaperSurface() {
-        let input = theme.paperInput(scale: traitCollection.displayScale)
-        if input != paperInput {
-            paperInput = input
-            paperBackground = ThemeSurface.paperBackground(input)
-        }
-        // Scroll text is transparent over one stationary full-screen paper.
-        // Pages keep their own moving paper, aligned with this backdrop at rest.
         updatePaperBackdrop()
-        readingSurface.backgroundColor = settings?.mode == .scroll ? .clear : theme.paper
-        pageController?.view.backgroundColor = theme.paper
-        for case let group as ReadingPageGroupController in pageController?.children ?? [] {
-            group.viewIfLoaded?.backgroundColor = paperBackground
-        }
-        for text in visibleTextViews {
-            paintPaper(on: text)
-        }
+        readingSurface.backgroundColor = .clear
+        pageController?.view.backgroundColor = .clear
+        for controller in pageController?.children ?? [] { controller.viewIfLoaded?.backgroundColor = .clear }
+        for text in visibleTextViews { paintPaper(on: text) }
         scrollCover?.view.backgroundColor = .clear
-        for case let cover as ReaderCoverController in pageController?.children ?? [] { cover.viewIfLoaded?.backgroundColor = paperBackground }
     }
-
     func updatePaperBackdrop() {
-        (view as? ReadingPaperView)?.update(paper: paperBackground, origin: readingSurface.frame.origin)
+        (view as? ReadingPaperView)?.update(theme.paperInput(size: view.bounds.size, scale: traitCollection.displayScale))
     }
 
     func updateBottomFade() {
