@@ -62,9 +62,10 @@ import XCTest
                 readableBody(); controls(); ready(app.buttons["readerMore"]).tap()
                 ready(app.buttons["openNotes"]).tap()
                 settled(ready(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'noteRow-' ")).firstMatch, timeout: 20))
-                // Show the existing export entry, not a screenshot-only control.
-                ready(app.buttons.matching(NSPredicate(format: "label IN %@", ["小说选项", "小說選項", "Book Options"])).firstMatch).tap()
-                settled(ready(app.buttons.matching(NSPredicate(format: "label IN %@", ["导出整本笔记", "匯出整本筆記", "Export All Notes in Book"])).firstMatch))
+                // Keep the production export menu closed so it cannot cover the title.
+                let options = ready(app.buttons.matching(NSPredicate(format: "label IN %@", ["小说选项", "小說選項", "Book Options"])).firstMatch)
+                settled(options)
+                XCTAssertTrue(options.isHittable)
             case .search:
                 readableBody(); controls(); ready(app.buttons["showSearch"]).tap()
                 let query = ready(app.textFields["bookSearchQuery"])
