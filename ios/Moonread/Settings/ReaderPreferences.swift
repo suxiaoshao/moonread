@@ -95,7 +95,6 @@ enum ReadingSettingsTab: String, CaseIterable {
         }
     }
     var previewDetent = PresentationDetent.height(60)
-    var restingDetent = PresentationDetent.height(60)
     @ObservationIgnored weak var readerTools: ReaderToolSession?
     private var localEditor: ReaderEditSession?
     var paletteSession: ReaderEditSession? {
@@ -153,10 +152,7 @@ struct ReaderSettingsView: View {
         get { editor.previewDetent }
         nonmutating set { editor.previewDetent = newValue }
     }
-    private var restingDetent: PresentationDetent {
-        get { editor.restingDetent }
-        nonmutating set { editor.restingDetent = newValue }
-    }
+    @State private var previewHeight: CGFloat = 0
     private var draft: PaletteDraft? {
         get { editor.draft }
     }
@@ -202,22 +198,17 @@ struct ReaderSettingsView: View {
             // Keep enough room for both native controls and readable text.
             let wide = geometry.size.width >= 760
             let compact = horizontalSizeClass == .compact
-            // Match the released compact reading settings, including preview space.
-            let frame = geometry.frame(in: .global)
-            let mediumHeight = max(0, (frame.maxY + geometry.safeAreaInsets.bottom) / 2 - frame.minY - LayoutTokens.control)
+            // The system sheet covers a full-height control viewport. Only the
+            // scrollable content needs room to move its last row above it.
+            let bottomContentInset = compact && !wide && previewVisible
+                ? min(geometry.size.height, max(0, previewHeight - geometry.safeAreaInsets.bottom)) : 0
             HStack(spacing: 0) {
                 ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editing.editedAppearance, encoding: encoding, isRestartingEncoding: isRestartingEncoding, changeEncoding: changeEncoding,
-                                     editPalette: { value in
+                                     bottomContentInset: bottomContentInset, editPalette: { value in
                                          if compact && !wide && previewPresented { previewDetent = .large }
                                          editor.beginPalette(value, presenter: previewVisible ? .preview : .settings)
                                      })
                     .frame(width: wide ? min(400, geometry.size.width * 0.46) : nil)
-                    .frame(height: compact
-                        ? (!wide && previewPresented
-                            ? (restingDetent == .medium ? mediumHeight : max(0, geometry.size.height - 76))
-                            : geometry.size.height)
-                        : nil)
-                    .clipped()
                     .frame(maxHeight: .infinity, alignment: .top)
                 if wide && editor.paletteSession?.presenter != .preview {
                     readingPreview
@@ -320,6 +311,11 @@ struct ReaderSettingsView: View {
                 }
                 .clipped()
                 .padding(.top, LayoutTokens.control)
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height + proxy.safeAreaInsets.bottom
+                } action: { height in
+                    if previewHeight != height { previewHeight = height }
+                }
                 .presentationSizing(.page)
                 .presentationDetents([.height(60), .medium, .large], selection: $editing.previewDetent)
                 .presentationDragIndicator(.visible)
@@ -337,9 +333,6 @@ struct ReaderSettingsView: View {
                 }) { value in
                     if case let .palette(draft) = value.payload { paletteEditor(draft) }
                 }
-            }
-            .onChange(of: previewDetent) { _, value in
-                if value != .large { restingDetent = value }
             }
             .onChange(of: themes.snapshot.preferences.readerMode) { _, _ in editedAppearance = nil }
         }
@@ -372,6 +365,7 @@ struct ReadingSettingsControls: View {
     let encoding: String?
     let isRestartingEncoding: Bool
     let changeEncoding: ((String?) -> Void)?
+    var bottomContentInset: CGFloat = 0
     let editPalette: (PaletteDraft) -> Void
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
@@ -387,7 +381,7 @@ struct ReadingSettingsControls: View {
             switch tab {
             case .colors: colors
             case .typography: typography
-            case .controls: ReaderControlsForm(settings: $settings)
+            case .controls: ReaderControlsForm(settings: $settings, bottomContentInset: bottomContentInset)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -410,7 +404,7 @@ struct ReadingSettingsControls: View {
                 Text("深色时").tag(ThemeAppearance.dark).accessibilityIdentifier("paletteSlot-dark")
             }.pickerStyle(.segmented).padding(.horizontal, LayoutTokens.content).padding(.bottom, LayoutTokens.compact)
                 .accessibilityIdentifier("readerPaletteSlots")
-            PalettePicker(reader: true, appearance: appearance, embedded: true, editPalette: editPalette)
+            PalettePicker(reader: true, appearance: appearance, embedded: true, bottomContentInset: bottomContentInset, editPalette: editPalette)
         }
     }
     private func binding<Value>(_ key: WritableKeyPath<ReaderSettings, Value>) -> Binding<Value> {
@@ -458,6 +452,7 @@ struct ReadingSettingsControls: View {
             }.listRowBackground(Color(uiColor: theme.surface))
         }
         .contentMargins(.top, LayoutTokens.compact, for: .scrollContent)
+        .contentMargins(.bottom, bottomContentInset, for: .scrollContent)
         .themedPage().accessibilityIdentifier("readerTypographyControls")
     }
     private func numberRow(_ title: LocalizedStringKey, value: Binding<Double>, range: ClosedRange<Double>, step: Double, id: String) -> some View {
@@ -474,6 +469,7 @@ struct ReadingSettingsControls: View {
 
 private struct ReaderControlsForm: View {
     @Binding var settings: ReaderSettings
+    var bottomContentInset: CGFloat = 0
     @Environment(\.theme) private var theme
     private func binding<Value>(_ key: WritableKeyPath<ReaderSettings, Value>) -> Binding<Value> {
         Binding(get: { settings[keyPath: key] }, set: { value in var next = settings; next[keyPath: key] = value; settings = next })
@@ -507,6 +503,7 @@ private struct ReaderControlsForm: View {
                 }
             }.listRowBackground(Color(uiColor: theme.surface))
         }.contentMargins(.top, LayoutTokens.compact, for: .scrollContent)
+            .contentMargins(.bottom, bottomContentInset, for: .scrollContent)
             .themedPage().accessibilityIdentifier("readerControlOptions")
     }
 }

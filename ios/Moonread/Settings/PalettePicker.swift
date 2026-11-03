@@ -30,6 +30,7 @@ struct PalettePicker: View {
     let reader: Bool
     let appearance: ThemeAppearance
     var embedded = false
+    var bottomContentInset: CGFloat = 0
     var editPalette: ((PaletteDraft) -> Void)?
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
@@ -109,6 +110,7 @@ struct PalettePicker: View {
         }
         .disabled(themes.saving).themedPage()
         .contentMargins(.top, embedded ? LayoutTokens.compact : LayoutTokens.content, for: .scrollContent)
+        .contentMargins(.bottom, bottomContentInset, for: .scrollContent)
         .accessibilityIdentifier("paletteOptions")
     }
     private var textureSection: some View {

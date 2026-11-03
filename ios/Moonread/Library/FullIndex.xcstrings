@@ -2,6 +2,29 @@
   "sourceLanguage": "zh-Hans",
   "version": "1.0",
   "strings": {
+    "正在准备": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在准备"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在準備"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing"
+          }
+        }
+      }
+    },
     "建立索引": {
       "extractionState": "manual",
       "localizations": {
