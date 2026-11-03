@@ -14,6 +14,6 @@ nix develop --no-update-lock-file -c cargo run --locked -p moonread-core --bin s
 nix develop --no-update-lock-file -c zola --root docs/site build
 ```
 
-导出器直接调用 moonread-core，生成 `data/themes.json`（schemaVersion 1）并逐字节复制 Asset Catalog 的四张原始 PNG 到 `static/textures/`。完整角色色、每配色三档 alpha、控件默认值/范围/步长和平铺周期均来自 App 共享规则；名称读取 `Localizable.xcstrings`，缺少中英文词条则失败。JSON 中同时记录纹理 SHA-256。`--check` 拒绝缺失、过期或多余的生成纹理；CI 与 Pages 只检查，不自动更新文件。
+导出器直接调用 moonread-core，生成 `data/themes.json`（schemaVersion 3），含配色、专属纹理 descriptor、图层/锚点/尺度限制/混合参数、三语资源中的中英文名称、排版控件。逐字节复制正式 Asset Catalog RGBA 并记录 SHA-256；`--check` 同时拒绝过期数据、错误字节和额外旧 mask。CI 将正式 ReaderBackdrop 素材列为生成输入。
 
-`reader-preview-script.html` 只在当前页面内存处理原生选项和步进按钮，写入 CSS 变量，不调用 API、不记录访问、不持久化设置、不改 App。正文是原创合成示例；无脚本时仍显示默认纸面和正文，控件在初始化成功后才出现。纹理层固定在滚动容器外；Web 按 1 App pt≈1 CSS px 示意，字体度量/断行与 UIKit 有差异。
+阅读预览只在支持配色时显示纹理 checkbox，按配色独立开关；没有通用纹理/强度选择。图案固定于阅读预览容器外，由共享 descriptor 按实际容器计算图块：纸纹 cover、云雾上下贴边、植物左右/四角完整等比放置，尺寸变化只改已有图层 frame；不再按横竖换整稿。所有支持项和参数都来自 Rust 数据，不在 JS 复制名单。内联脚本只处理当前页面内存，不调用 API、不记录访问、不持久化、不改 App；没有脚本时仍显示纸色与原创正文。字体度量/断行归浏览器，不能把 Web 当成 TextKit 排版等价物。

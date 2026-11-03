@@ -3,12 +3,12 @@ import SwiftUI
 func paletteDisplayName(_ value: ThemePalette) -> String {
     if value.custom { return value.name }
     switch value.id.split(separator: "-").first {
-    case "apricot": return String(localized: "杏桃")
+    case "apricot": return String(localized: "纸色")
     case "mint": return String(localized: "薄荷")
     case "lilac": return String(localized: "雾紫")
     case "black": return String(localized: "纯黑夜间")
     case "white": return String(localized: "素白")
-    case "bean": return String(localized: "豆沙绿")
+    case "bean": return String(localized: "竹绿")
     default: return value.name
     }
 }
@@ -30,6 +30,7 @@ struct PalettePicker: View {
     let reader: Bool
     let appearance: ThemeAppearance
     var embedded = false
+    var bottomContentInset: CGFloat = 0
     var editPalette: ((PaletteDraft) -> Void)?
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
@@ -55,7 +56,7 @@ struct PalettePicker: View {
         if reader { value.preferences.readerMode = appearance == .light ? .light : .dark }
         else { value.preferences.appMode = appearance == .light ? .light : .dark }
         guard let plan = try? resolveThemes(value: value, system: themes.system, highContrast: themes.highContrast) else { return theme }
-        return ThemeSurface(plan: reader ? plan.reader : plan.app)
+        return ThemeSurface(plan: reader ? plan.reader : plan.app, readerTexture: reader ? plan.readerTexture : nil)
     }
     var body: some View {
         Group {
@@ -71,14 +72,14 @@ struct PalettePicker: View {
                 if let deleting { Task { await themes.deletePalette(deleting.id) } }
                 deleting = nil
             }
-        } message: { Text("使用此配色的应用槽位将恢复杏桃，阅读槽位将恢复跟随应用。") }
+        } message: { Text("使用此配色的应用槽位将恢复纸色，阅读槽位将恢复跟随应用。") }
     }
     private var paletteList: some View {
         List {
             if !embedded { Section {
                 PalettePreview(theme: previewTheme).listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
             } }
-            if reader && embedded {
+            if reader && previewTheme.readerTexture?.descriptor != nil {
                 textureSection
             }
             Section {
@@ -109,61 +110,24 @@ struct PalettePicker: View {
         }
         .disabled(themes.saving).themedPage()
         .contentMargins(.top, embedded ? LayoutTokens.compact : LayoutTokens.content, for: .scrollContent)
+        .contentMargins(.bottom, bottomContentInset, for: .scrollContent)
         .accessibilityIdentifier("paletteOptions")
-    }
-    private var texture: ReaderTextureChoice? {
-        appearance == .light ? themes.snapshot.preferences.readerLightTexture : themes.snapshot.preferences.readerDarkTexture
-    }
-    private func setTexture(_ choice: ReaderTextureChoice?) {
-        themes.update { value in
-            if appearance == .light { value.readerLightTexture = choice } else { value.readerDarkTexture = choice }
-        }
     }
     private var textureSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 18) {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 72))], spacing: 12) {
-                    textureOption(nil)
-                    ForEach(readerTextureIds(), id: \.self) { textureOption($0) }
-                }.accessibilityIdentifier("readerTexture")
-                Text("纹理强度").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                Picker("纹理强度", selection: Binding(get: { texture?.strength ?? .medium }, set: { value in
-                    guard var choice = texture else { return }
-                    choice.strength = value; setTexture(choice)
-                })) {
-                    ForEach(readerTextureStrengths(), id: \.self) { value in Text(value.label).tag(value) }
-                }.pickerStyle(.segmented).disabled(texture == nil).accessibilityIdentifier("readerTextureStrength")
-            }.disabled(previewTheme.plan.colors == nil)
-        } header: {
-            Text("纸张纹理").foregroundStyle(Color(uiColor: theme.secondary))
-        } footer: {
-            if previewTheme.plan.colors == nil {
-                Text("请选择具体配色后使用纹理").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
-                    .accessibilityIdentifier("readerTextureUnavailable")
-            } else {
-                Text("纹理与配色独立。选择保存在此设备。").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
-            }
-        }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-    }
-    private func textureOption(_ id: ReaderTextureId?) -> some View {
-        let choice = id.map { readerTextureChoice(id: $0) }
-        let surface = ThemeSurface(plan: previewTheme.plan, readerTexture: choice)
-        let tile = choice.map { _ in ThemeSurface.paperTile(surface.paperInput(scale: 1)) }
-        return Button {
-            var next = choice
-            if let strength = texture?.strength { next?.strength = strength }
-            setTexture(next)
-        } label: {
-            VStack(spacing: 8) {
-                ZStack {
-                    Color(uiColor: surface.paper)
-                    if let tile { Image(uiImage: tile).resizable(resizingMode: .tile) }
-                }.frame(height: 50).clipShape(.rect(cornerRadius: 10))
-                    .overlay { RoundedRectangle(cornerRadius: 10).strokeBorder(Color(uiColor: texture?.id == id ? theme.accent : theme.separator), lineWidth: texture?.id == id ? 2 : 1) }
-                Text(id?.label ?? "无").font(.caption).foregroundStyle(Color(uiColor: theme.ink))
-            }.frame(maxWidth: .infinity)
-        }.buttonStyle(.plain).accessibilityIdentifier("readerTexture-\(id?.assetName ?? "none")")
-            .accessibilityAddTraits(texture?.id == id ? .isSelected : [])
+            Toggle(isOn: Binding(get: { previewTheme.readerTexture?.enabled == true }, set: { enabled in
+                let id = previewTheme.plan.paletteId
+                themes.update { value in
+                    // The core owns support/defaults; Swift only persists its returned preference.
+                    if let updated = try? setReaderPaletteTexture(preferences: value, paletteId: id, enabled: enabled) { value = updated }
+                }
+            })) {
+                let name = themes.snapshot.palettes.first { $0.id == previewTheme.plan.paletteId }.map(paletteDisplayName) ?? ""
+                Text("显示\(name)纹理")
+            }.accessibilityIdentifier("readerPaletteTexture")
+        } header: { Text("纸张纹理") }
+        footer: { Text("此配色的纹理仅保存在此设备。") }
+        .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
     }
     private func sourceRow(_ title: LocalizedStringKey, id: String, icon: String) -> some View {
         Button { choose(id) } label: {

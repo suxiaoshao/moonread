@@ -284,8 +284,8 @@ final class FullIndexController {
                     hasInventory = true
                     total = inventory.total
                     indexed = total - inventory.pending.count
-                    currentFile = nil
                     waitingForReader = !(await service.identityMayRun())
+                    if waitingForReader { currentFile = nil }
                     try await service.waitForReadingIdle()
                     waitingForReader = false
                     if #available(iOS 26.0, *), let task = background as? BGContinuedProcessingTask {
@@ -310,13 +310,15 @@ final class FullIndexController {
                         NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
                     } catch {
                         if Task.isCancelled { break }
-                        if nextWork.isCancelled { attempted.remove(IndexInput(next)) }
+                        if nextWork.isCancelled { currentFile = nil; attempted.remove(IndexInput(next)) }
                         else {
                             failures.removeAll { $0.id == next.id }
                             failures.append(IndexFailure(file: next, message: ReaderMessages.error(error)))
                         }
                     }
-                    currentFile = nil; work = nil
+                    // Keep the last reported file through normal inventory
+                    // refresh, until actual work on the next file replaces it.
+                    work = nil
                 }
             } catch { if !Task.isCancelled { message = ReaderMessages.error(error) } }
         }
@@ -434,11 +436,14 @@ struct FullIndexView: View {
                     if waiting {
                         Text("阅读结束后继续建立索引", tableName: "FullIndex").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                     } else if active && !paused {
-                        if let file = controller.currentFile {
-                            VStack(spacing: 6) {
-                                Text("正在处理", tableName: "FullIndex").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                                Text(verbatim: file.relativePath).font(.subheadline).accessibilityIdentifier("fullIndexCurrentFile")
-                            }
+                        VStack(spacing: 6) {
+                            Text(controller.currentFile == nil ? "正在准备" : "正在处理", tableName: "FullIndex")
+                                .font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                            Text(verbatim: controller.currentFile?.relativePath ?? " ").font(.subheadline)
+                                .lineLimit(2, reservesSpace: true).truncationMode(.middle)
+                                .accessibilityLabel(Text(verbatim: controller.currentFile?.relativePath ?? ""))
+                                .accessibilityHidden(controller.currentFile == nil)
+                                .accessibilityIdentifier("fullIndexCurrentFile")
                         }
                         Text("关闭此页后，前台仍会继续。", tableName: "FullIndex").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                     } else if counts.total > counts.indexed && !paused {

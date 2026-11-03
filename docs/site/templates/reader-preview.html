@@ -1,6 +1,6 @@
 {% set preview = load_data(path="data/themes.json") %}
 {% set initial = [p for p in preview.palettes if p.id == "apricot-light"] | first %}
-{% set paper = [t for t in preview.textures if t.id == "paper-v1"] | first %}
+{% set paper = [t for t in preview.textures if t.paletteId == "apricot-light"] | first %}
 <section class="section preview-section" id="reading-preview">
   <div class="rule" aria-hidden="true">☾</div>
   <div class="preview-heading">
@@ -23,17 +23,10 @@
         </div>
       {% endfor %}
       </fieldset>
-      <fieldset class="visual-field"><legend>{{ preview.labels.texture[section.lang] }}</legend>
-        <div class="texture-options">
-          <label class="choice"><input type="radio" name="texture" value="none" aria-label="{{ preview.labels.none[section.lang] }}"><span class="texture-swatch" aria-hidden="true">∅</span><span>{{ preview.labels.none[section.lang] }}</span></label>
-        {% for texture in preview.textures %}
-          <label class="choice"><input type="radio" name="texture" value="{{ texture.id }}" aria-label="{{ texture.name[section.lang] }}"{% if texture.id == paper.id %} checked{% endif %}><span class="texture-swatch" aria-hidden="true"><span class="texture-ink" style="mask-image:url('{{ get_url(path=texture.path) }}');-webkit-mask-image:url('{{ get_url(path=texture.path) }}')"></span></span><span>{{ texture.name[section.lang] }}</span></label>
-        {% endfor %}
-        </div>
-      </fieldset>
-      <fieldset class="visual-field compact-field" id="strengthField"><legend>{{ preview.labels.strength[section.lang] }}</legend><div class="segments">
-      {% for strength in preview.strengths %}<label class="choice"><input type="radio" name="strength" value="{{ strength.id }}"{% if strength.id == "light" %} checked{% endif %}><span class="segment">{{ strength.name[section.lang] }}</span></label>{% endfor %}
-      </div></fieldset>
+      <div class="texture-toggle" id="paletteTextureControl">
+        <label><input type="checkbox" id="paletteTextureEnabled" checked> {{ preview.labels.showTexture[section.lang] }}</label>
+      </div>
+
       <fieldset class="visual-field compact-field"><legend>{{ preview.labels.font[section.lang] }}</legend><div class="segments">
       {% for font in preview.fonts %}<label class="choice"><input type="radio" name="font" value="{{ font.id }}"{% if font.id == "serif" %} checked{% endif %}><span class="segment">{{ font.name[section.lang] }}</span></label>{% endfor %}
       </div></fieldset>
@@ -50,8 +43,8 @@
       <p class="control-help">{% if zh %}只在这张纸上试读，不会改动 App 设置。{% else %}Try it here. Your settings in the app stay unchanged.{% endif %}</p>
     </div>
     <div>
-      <div class="reader-paper" id="readerPaper" style="--tile-size:{{ preview.tileSize }}px;background:{{ initial.colors.paper }};color:{{ initial.colors.ink }}">
-        <div class="texture-layer" id="textureLayer" style="background:{{ initial.colors.ink }};opacity:{{ initial.textureAlpha.light }};mask-image:url('{{ get_url(path=paper.path) }}');-webkit-mask-image:url('{{ get_url(path=paper.path) }}')"></div>
+      <div class="reader-paper" id="readerPaper" style="background:{{ initial.colors.paper }};color:{{ initial.colors.ink }}">
+        <div class="texture-layer" id="textureLayer" style="opacity:{{ paper.opacity }};mix-blend-mode:{{ paper.blend }}"><img alt="" src="{{ get_url(path=paper.layers[0].asset.path) }}" style="inset:0;width:100%;height:100%;object-fit:cover"></div>
         <div class="reader-scroll" id="readerScroll" tabindex="0" aria-label="{% if zh %}可滚动的阅读预览{% else %}Scrollable reading preview{% endif %}">
           <div class="reader-kicker">{% if zh %}原创示例 / 月光下的归途{% else %}Original sample / The Way Home by Moonlight{% endif %}</div>
           <article class="reader-text" id="readerText" style="font-size:{{ preview.controls.fontSize.defaultValue }}px;--paragraph:{{ preview.controls.paragraphSpacing.defaultValue }}px">

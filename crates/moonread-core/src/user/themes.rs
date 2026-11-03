@@ -1,6 +1,7 @@
 //! Portable appearance preferences, palette validation and one-way inheritance.
 use crate::{ReaderError, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 pub enum ThemeAppearance {
@@ -63,101 +64,219 @@ fn decode_texture_choice<'de, D: serde::Deserializer<'de>>(
     Ok(Option::<serde_json::Value>::deserialize(decoder)?
         .and_then(|value| serde_json::from_value(value).ok()))
 }
+/// Published 1.3 texture values above are decode-only compatibility fields.
+/// Runtime support and artwork parameters have one owner: this descriptor list.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReaderTextureBlend {
+    Normal,
+    Multiply,
+    Screen,
+    SoftLight,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Record)]
+pub struct ReaderTextureAsset {
+    pub name: String,
+    pub reference_width: u32,
+    pub reference_height: u32,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReaderTexturePlacement {
+    Cover,
+    Edge,
+    Fit,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Record)]
+pub struct ReaderTextureLayer {
+    pub asset: ReaderTextureAsset,
+    pub placement: ReaderTexturePlacement,
+    pub anchor_x: f64,
+    pub anchor_y: f64,
+    pub max_width_fraction: f64,
+    pub max_height_fraction: f64,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Record)]
+pub struct ReaderTextureDescriptor {
+    pub palette_id: String,
+    pub reference_short_side: u32,
+    pub layers: Vec<ReaderTextureLayer>,
+    pub blend: ReaderTextureBlend,
+    pub opacity: f64,
+}
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
+pub struct ResolvedReaderTexture {
+    pub palette_id: String,
+    pub descriptor: Option<ReaderTextureDescriptor>,
+    pub enabled: bool,
+}
 #[uniffi::export]
-pub fn reader_texture_choice(id: ReaderTextureId) -> ReaderTextureChoice {
-    ReaderTextureChoice {
-        id,
-        strength: ReaderTextureStrength::default(),
+pub fn builtin_reader_textures() -> Vec<ReaderTextureDescriptor> {
+    use ReaderTextureBlend::*;
+    use ReaderTexturePlacement::*;
+    let layer =
+        |name: &str, width, height, placement, x, y, max_width, max_height| ReaderTextureLayer {
+            asset: ReaderTextureAsset {
+                name: format!("ReaderBackdrop{name}"),
+                reference_width: width,
+                reference_height: height,
+            },
+            placement,
+            anchor_x: x,
+            anchor_y: y,
+            max_width_fraction: max_width,
+            max_height_fraction: max_height,
+        };
+    [
+        (
+            "apricot-light",
+            Multiply,
+            0.22,
+            vec![layer("PaperLight", 402, 874, Cover, 0.5, 0.5, 1.0, 1.0)],
+        ),
+        (
+            "apricot-dark",
+            SoftLight,
+            0.65,
+            vec![layer("PaperDark", 402, 874, Cover, 0.5, 0.5, 1.0, 1.0)],
+        ),
+        (
+            "bean-light",
+            Multiply,
+            0.42,
+            vec![
+                layer("BambooLeft", 198, 874, Fit, 0.0, 1.0, 0.5, 1.0),
+                layer("BambooRight", 157, 874, Fit, 1.0, 1.0, 0.5, 1.0),
+            ],
+        ),
+        (
+            "mint-light",
+            Multiply,
+            0.32,
+            vec![
+                layer("MintLightTopLeft", 220, 335, Fit, 0.0, 0.0, 0.5, 0.5),
+                layer("MintLightTopRight", 142, 265, Fit, 1.0, 0.0, 0.5, 0.5),
+                layer("MintLightBottomLeft", 112, 244, Fit, 0.0, 1.0, 0.5, 0.5),
+                layer("MintLightBottomRight", 322, 614, Fit, 1.0, 1.0, 0.5, 0.5),
+            ],
+        ),
+        (
+            "mint-dark",
+            Normal,
+            0.20,
+            vec![
+                layer("MintDarkTopLeft", 220, 335, Fit, 0.0, 0.0, 0.5, 0.5),
+                layer("MintDarkTopRight", 142, 265, Fit, 1.0, 0.0, 0.5, 0.5),
+                layer("MintDarkBottomLeft", 112, 244, Fit, 0.0, 1.0, 0.5, 0.5),
+                layer("MintDarkBottomRight", 322, 614, Fit, 1.0, 1.0, 0.5, 0.5),
+            ],
+        ),
+        (
+            "lilac-light",
+            Multiply,
+            0.70,
+            vec![
+                layer("MistLightTop", 402, 306, Edge, 0.0, 0.0, 1.0, 0.38),
+                layer("MistLightBottom", 402, 306, Edge, 0.0, 1.0, 1.0, 0.38),
+            ],
+        ),
+        (
+            "lilac-dark",
+            Screen,
+            0.20,
+            vec![
+                layer("MistDarkTop", 402, 306, Edge, 0.0, 0.0, 1.0, 0.38),
+                layer("MistDarkBottom", 402, 306, Edge, 0.0, 1.0, 1.0, 0.38),
+            ],
+        ),
+    ]
+    .into_iter()
+    .map(|(id, blend, opacity, layers)| ReaderTextureDescriptor {
+        palette_id: id.into(),
+        reference_short_side: 402,
+        layers,
+        blend,
+        opacity,
+    })
+    .collect()
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
+pub struct ReaderPaletteTexturePreferences {
+    pub version: u32,
+    pub enabled_by_palette: HashMap<String, bool>,
+}
+impl Default for ReaderPaletteTexturePreferences {
+    fn default() -> Self {
+        Self::seed(true, true)
     }
 }
-#[uniffi::export]
-pub fn reader_texture_ids() -> Vec<ReaderTextureId> {
-    vec![
-        ReaderTextureId::Paper,
-        ReaderTextureId::Kraft,
-        ReaderTextureId::Linen,
-        ReaderTextureId::Grain,
-    ]
-}
-#[uniffi::export]
-pub fn reader_texture_strengths() -> Vec<ReaderTextureStrength> {
-    vec![
-        ReaderTextureStrength::Light,
-        ReaderTextureStrength::Medium,
-        ReaderTextureStrength::Strong,
-    ]
-}
-/// Logical point/CSS-pixel period. The source mask is sampled at this tile size.
-#[uniffi::export]
-pub fn reader_texture_tile_size() -> u32 {
-    256
-}
-#[uniffi::export]
-pub fn reader_texture_alpha(paper: u32, ink: u32, strength: ReaderTextureStrength) -> f64 {
-    let target = match strength {
-        ReaderTextureStrength::Light => 0.015,
-        ReaderTextureStrength::Medium => 0.025,
-        ReaderTextureStrength::Strong => 0.035,
-    };
-    let paper = srgb_channels(paper);
-    let ink = srgb_channels(ink);
-    let lightness = texture_lightness(paper);
-    // Match normal source-over compositing in the standard sRGB tile. Only
-    // the OKLab conversion linearizes the mixed RGB channels; strength is
-    // measured in toe-corrected Lr to avoid the steep near-black L curve.
-    let delta = |alpha: f64| {
-        let mixed = std::array::from_fn(|i| paper[i] + (ink[i] - paper[i]) * alpha);
-        (texture_lightness(mixed) - lightness).abs()
-    };
-    // Custom paper/ink may be too close to reach the requested change. Use
-    // the available endpoint; this is not a palette-saving restriction.
-    if delta(1.0) <= target {
-        return 1.0;
-    }
-    let (mut low, mut high) = (0.0, 1.0);
-    for _ in 0..48 {
-        let mid = (low + high) / 2.0;
-        if delta(mid) < target {
-            low = mid;
-        } else {
-            high = mid;
+impl ReaderPaletteTexturePreferences {
+    fn seed(light: bool, dark: bool) -> Self {
+        // Seed every supported palette in the old appearance slot, once on decode.
+        // Afterwards only the new per-ID map is authoritative.
+        Self {
+            version: 1,
+            enabled_by_palette: builtin_reader_textures()
+                .into_iter()
+                .map(|d| {
+                    let enabled = if d.palette_id.ends_with("-dark") {
+                        dark
+                    } else {
+                        light
+                    };
+                    (d.palette_id, enabled)
+                })
+                .collect(),
         }
     }
-    (low + high) / 2.0
-}
-
-fn srgb_channels(color: u32) -> [f64; 3] {
-    [16, 8, 0].map(|shift| f64::from((color >> shift) & 255) / 255.0)
-}
-fn srgb_linear(value: f64) -> f64 {
-    if value <= 0.04045 {
-        value / 12.92
-    } else {
-        ((value + 0.055) / 1.055).powf(2.4)
+    fn validate(&self) -> Result<()> {
+        if self.version != 1 {
+            return Err(ReaderError::InvalidSettings);
+        }
+        Ok(())
     }
 }
-fn oklab_lightness(srgb: [f64; 3]) -> f64 {
-    // Björn Ottosson's 2021 linear-sRGB → OKLab matrices (L component).
-    // https://bottosson.github.io/posts/oklab/#converting-from-linear-srgb-to-oklab
-    let [r, g, b] = srgb.map(srgb_linear);
-    let l = (0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b).cbrt();
-    let m = (0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b).cbrt();
-    let s = (0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b).cbrt();
-    0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s
+#[uniffi::export]
+pub fn reader_texture_for_palette(
+    preferences: ThemePreferences,
+    palette_id: String,
+) -> Result<ResolvedReaderTexture> {
+    preferences.reader_palette_textures.validate()?;
+    let descriptor = builtin_reader_textures()
+        .into_iter()
+        .find(|d| d.palette_id == palette_id);
+    let enabled = descriptor.is_some()
+        && preferences
+            .reader_palette_textures
+            .enabled_by_palette
+            .get(&palette_id)
+            .copied()
+            .unwrap_or(true);
+    Ok(ResolvedReaderTexture {
+        palette_id,
+        descriptor,
+        enabled,
+    })
 }
-
-fn texture_lightness(srgb: [f64; 3]) -> f64 {
-    // Ottosson's Okhsl toe function: OKLab L → perceptual lightness Lr.
-    // https://bottosson.github.io/posts/colorpicker/#common-code
-    let lightness = oklab_lightness(srgb);
-    let k1 = 0.206;
-    let k2 = 0.03;
-    let k3 = (1.0 + k1) / (1.0 + k2);
-    let x = k3 * lightness - k1;
-    (x + (x * x + 4.0 * k2 * k3 * lightness).sqrt()) / 2.0
+#[uniffi::export]
+pub fn set_reader_palette_texture(
+    mut preferences: ThemePreferences,
+    palette_id: String,
+    enabled: bool,
+) -> Result<ThemePreferences> {
+    let resolved = reader_texture_for_palette(preferences.clone(), palette_id.clone())?;
+    if resolved.descriptor.is_none() {
+        return Err(ReaderError::InvalidSettings);
+    }
+    preferences
+        .reader_palette_textures
+        .enabled_by_palette
+        .insert(palette_id, enabled);
+    Ok(preferences)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
+#[serde(try_from = "StoredThemePreferences")]
 pub struct ThemePreferences {
     pub app_mode: AppAppearanceMode,
     pub app_light: AppPaletteSource,
@@ -166,10 +285,58 @@ pub struct ThemePreferences {
     pub reader_light: ReaderPaletteSource,
     pub reader_dark: ReaderPaletteSource,
     pub reduce_motion: bool,
-    #[serde(default, deserialize_with = "decode_texture_choice")]
     pub reader_light_texture: Option<ReaderTextureChoice>,
-    #[serde(default, deserialize_with = "decode_texture_choice")]
     pub reader_dark_texture: Option<ReaderTextureChoice>,
+    pub reader_palette_textures: ReaderPaletteTexturePreferences,
+}
+
+#[derive(Deserialize)]
+struct StoredThemePreferences {
+    app_mode: AppAppearanceMode,
+    app_light: AppPaletteSource,
+    app_dark: AppPaletteSource,
+    reader_mode: ReaderAppearanceMode,
+    reader_light: ReaderPaletteSource,
+    reader_dark: ReaderPaletteSource,
+    reduce_motion: bool,
+    #[serde(default, deserialize_with = "decode_texture_choice")]
+    reader_light_texture: Option<ReaderTextureChoice>,
+    #[serde(default, deserialize_with = "decode_texture_choice")]
+    reader_dark_texture: Option<ReaderTextureChoice>,
+    #[serde(default, deserialize_with = "decode_palette_textures")]
+    reader_palette_textures: Option<ReaderPaletteTexturePreferences>,
+}
+fn decode_palette_textures<'de, D: serde::Deserializer<'de>>(
+    decoder: D,
+) -> std::result::Result<Option<ReaderPaletteTexturePreferences>, D::Error> {
+    // Missing is legacy; a present null/broken structure is not a new installation.
+    ReaderPaletteTexturePreferences::deserialize(decoder).map(Some)
+}
+impl TryFrom<StoredThemePreferences> for ThemePreferences {
+    type Error = &'static str;
+    fn try_from(value: StoredThemePreferences) -> std::result::Result<Self, Self::Error> {
+        let textures = value.reader_palette_textures.unwrap_or_else(|| {
+            ReaderPaletteTexturePreferences::seed(
+                value.reader_light_texture.is_some(),
+                value.reader_dark_texture.is_some(),
+            )
+        });
+        if textures.version != 1 {
+            return Err("Unsupported reader palette texture preferences version");
+        }
+        Ok(Self {
+            app_mode: value.app_mode,
+            app_light: value.app_light,
+            app_dark: value.app_dark,
+            reader_mode: value.reader_mode,
+            reader_light: value.reader_light,
+            reader_dark: value.reader_dark,
+            reduce_motion: value.reduce_motion,
+            reader_light_texture: value.reader_light_texture,
+            reader_dark_texture: value.reader_dark_texture,
+            reader_palette_textures: textures,
+        })
+    }
 }
 
 impl Default for ThemePreferences {
@@ -188,6 +355,7 @@ impl Default for ThemePreferences {
             reduce_motion: false,
             reader_light_texture: None,
             reader_dark_texture: None,
+            reader_palette_textures: ReaderPaletteTexturePreferences::default(),
         }
     }
 }
@@ -245,10 +413,11 @@ pub struct ResolvedTheme {
     pub colors: Option<ThemeColors>,
     pub palette_id: String,
 }
-#[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct ResolvedThemes {
     pub app: ResolvedTheme,
     pub reader: ResolvedTheme,
+    pub reader_texture: ResolvedReaderTexture,
 }
 
 fn json_error(e: serde_json::Error) -> ReaderError {
@@ -282,6 +451,7 @@ pub fn decode_theme_snapshot(json: String) -> Result<ThemeSnapshot> {
 
 #[uniffi::export]
 pub fn encode_theme_preferences(value: ThemePreferences) -> Result<String> {
+    value.reader_palette_textures.validate()?;
     serde_json::to_string(&value).map_err(json_error)
 }
 #[uniffi::export]
@@ -392,13 +562,33 @@ pub fn resolve_themes(
         ReaderPaletteSource::System => None,
         ReaderPaletteSource::Palette { id } => Some(id.clone()),
     };
+    let mut texture =
+        reader_texture_for_palette(p.clone(), reader_id.clone().unwrap_or("system".into()))?;
+    if value
+        .palettes
+        .iter()
+        .any(|palette| palette.id == texture.palette_id && palette.custom)
+    {
+        texture.descriptor = None;
+        texture.enabled = false;
+    }
     Ok(ResolvedThemes {
+        reader_texture: texture,
         app: palette(app_mode, app_id(app_source(app_mode)).as_deref())?,
         reader: palette(reader_mode, reader_id.as_deref())?,
     })
 }
 
+fn srgb_linear(value: f64) -> f64 {
+    if value <= 0.04045 {
+        value / 12.92
+    } else {
+        ((value + 0.055) / 1.055).powf(2.4)
+    }
+}
+
 fn validate_preferences(p: &ThemePreferences, palettes: &[ThemePalette]) -> Result<()> {
+    p.reader_palette_textures.validate()?;
     let valid = |id: &str, mode| palettes.iter().any(|v| v.id == id && v.appearance == mode);
     for (source, mode) in [
         (&p.app_light, ThemeAppearance::Light),
@@ -536,7 +726,7 @@ pub fn builtin_theme_palettes() -> Vec<ThemePalette> {
     let rows = [
         (
             "apricot-light",
-            "杏桃",
+            "纸色",
             ThemeAppearance::Light,
             [
                 0xf7efe5, 0xfff9f2, 0xf5ecda, 0x403833, 0x6f6057, 0xa94f3d, 0xd4c2b5, 0xf0d896,
@@ -545,7 +735,7 @@ pub fn builtin_theme_palettes() -> Vec<ThemePalette> {
         ),
         (
             "apricot-dark",
-            "杏桃",
+            "纸色",
             ThemeAppearance::Dark,
             [
                 0x201b19, 0x2b2421, 0x241f1c, 0xd6c8ba, 0xb8a69a, 0xe6a68e, 0x665149, 0x51452f,
@@ -608,7 +798,7 @@ pub fn builtin_theme_palettes() -> Vec<ThemePalette> {
         ),
         (
             "bean-light",
-            "豆沙绿",
+            "竹绿",
             ThemeAppearance::Light,
             [
                 0xdce6d7, 0xeaf0e5, 0xdce8d1, 0x303b2d, 0x55614e, 0x386441, 0xa4b49b, 0xede0aa,
@@ -693,70 +883,4 @@ pub fn make_theme_palette(
         high_contrast: increased_contrast(&colors, appearance),
         colors,
     })
-}
-
-#[cfg(test)]
-mod texture_tests {
-    use super::*;
-
-    #[test]
-    fn textures_share_perceptual_strength_across_all_builtin_palettes() {
-        assert_eq!(
-            reader_texture_ids(),
-            vec![
-                ReaderTextureId::Paper,
-                ReaderTextureId::Kraft,
-                ReaderTextureId::Linen,
-                ReaderTextureId::Grain
-            ]
-        );
-        for id in reader_texture_ids() {
-            assert_eq!(
-                reader_texture_choice(id).strength,
-                ReaderTextureStrength::Light
-            );
-        }
-        assert!((oklab_lightness([1.0; 3]) - 1.0).abs() < 1e-7);
-        assert_eq!(oklab_lightness([0.0; 3]), 0.0);
-        assert!((oklab_lightness([1.0, 0.0, 0.0]) - 0.6279553606).abs() < 1e-7);
-        assert_eq!(texture_lightness([0.0; 3]), 0.0);
-        assert!((texture_lightness([1.0; 3]) - 1.0).abs() < 1e-7);
-        let black = builtin_theme_palettes()
-            .into_iter()
-            .find(|p| p.id == "black-dark")
-            .unwrap();
-        let alpha = reader_texture_alpha(
-            black.colors.paper,
-            black.colors.ink,
-            ReaderTextureStrength::Strong,
-        );
-        assert!(
-            (0.02..0.03).contains(&alpha),
-            "pure-black strong alpha: {alpha}"
-        );
-        for palette in builtin_theme_palettes() {
-            for colors in [palette.colors, palette.high_contrast] {
-                let paper = srgb_channels(colors.paper);
-                let ink = srgb_channels(colors.ink);
-                for (strength, target) in reader_texture_strengths()
-                    .into_iter()
-                    .zip([0.015, 0.025, 0.035])
-                {
-                    let alpha = reader_texture_alpha(colors.paper, colors.ink, strength);
-                    assert!(
-                        (0.0..=1.0).contains(&alpha),
-                        "{} {strength:?}: {alpha}",
-                        palette.id
-                    );
-                    let mixed = std::array::from_fn(|i| paper[i] * (1.0 - alpha) + ink[i] * alpha);
-                    let delta = (texture_lightness(mixed) - texture_lightness(paper)).abs();
-                    assert!(
-                        (delta - target).abs() < 1e-7,
-                        "{} {strength:?}: ΔLr={delta}",
-                        palette.id
-                    );
-                }
-            }
-        }
-    }
 }

@@ -50,28 +50,30 @@ fn colors(value: impl Serialize) -> Result<BTreeMap<String, String>> {
 }
 fn assets(root: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
     let mut result = BTreeMap::new();
-    for texture in reader_texture_ids() {
-        let name = format!("ReaderTexture{texture:?}.imageset");
-        let directory = root.join("ios/Moonread/Assets.xcassets").join(name);
-        let contents: Value = serde_json::from_slice(&fs::read(directory.join("Contents.json"))?)?;
-        let filename = contents["images"]
-            .as_array()
-            .ok_or("Missing texture images")?
-            .iter()
-            .find_map(|image| image["filename"].as_str())
-            .ok_or("Missing texture source filename")?;
-        // Original PNG bytes, never a web-specific recompression or new mask.
-        result.insert(
-            format!("{}.png", id(texture)?),
-            fs::read(directory.join(filename))?,
-        );
+    for texture in builtin_reader_textures() {
+        for asset in texture.layers.into_iter().map(|layer| layer.asset) {
+            let directory = root
+                .join("ios/Moonread/Assets.xcassets")
+                .join(format!("{}.imageset", asset.name));
+            let contents: Value =
+                serde_json::from_slice(&fs::read(directory.join("Contents.json"))?)?;
+            let filename = contents["images"]
+                .as_array()
+                .ok_or("Missing texture images")?
+                .iter()
+                .find_map(|image| image["filename"].as_str())
+                .ok_or("Missing texture source filename")?;
+            result.insert(
+                format!("{}.png", asset.name),
+                fs::read(directory.join(filename))?,
+            );
+        }
     }
     Ok(result)
 }
 fn document(root: &Path, textures: &BTreeMap<String, Vec<u8>>) -> Result<Value> {
     let catalog: Value =
         serde_json::from_slice(&fs::read(root.join("ios/Moonread/Localizable.xcstrings"))?)?;
-    let strengths = reader_texture_strengths();
     let palettes: Vec<Value> = builtin_theme_palettes().into_iter().map(|palette| {
         let appearance = if palette.appearance == ThemeAppearance::Light { "light" } else { "dark" };
         let base = names(&catalog, &palette.name)?;
@@ -79,33 +81,28 @@ fn document(root: &Path, textures: &BTreeMap<String, Vec<u8>>) -> Result<Value> 
         let labels: Names = base.into_iter().map(|(lang, name)| {
             let label = format!("{name} · {}", suffix[&lang]); (lang, label)
         }).collect();
-        let alpha: BTreeMap<String, f64> = strengths.iter().map(|&strength| {
-            let alpha = reader_texture_alpha(palette.colors.paper, palette.colors.ink, strength);
-            // Serialize nine decimal places so macOS/Linux libm last-bit
-            // differences do not stale the artifact. Error is < 2e-7 of an
-            // 8-bit channel; the app keeps the original full-precision alpha.
-            Ok((id(strength)?, (alpha * 1e9).round() / 1e9))
-        }).collect::<Result<_>>()?;
-        Ok(json!({"id":palette.id,"appearance":appearance,"name":labels,"colors":colors(palette.colors)?,"highContrast":colors(palette.high_contrast)?,"textureAlpha":alpha}))
+        Ok(json!({"id":palette.id,"appearance":appearance,"name":labels,"colors":colors(palette.colors)?,"highContrast":colors(palette.high_contrast)?}))
     }).collect::<Result<_>>()?;
-    let texture_data: Vec<Value> = reader_texture_ids().into_iter().map(|texture| {
-        let key = match texture { ReaderTextureId::Paper => "宣纸", ReaderTextureId::Kraft => "牛皮纸", ReaderTextureId::Linen => "细麻布", ReaderTextureId::Grain => "颗粒" };
-        let id = id(texture)?;
-        let filename = format!("{id}.png");
-        let digest: String = Sha256::digest(&textures[&filename]).iter().map(|byte| format!("{byte:02x}")).collect();
-        Ok(json!({"id":id,"name":names(&catalog,key)?,"path":format!("textures/{filename}"),"sha256":digest}))
+    let asset = |asset: ReaderTextureAsset| -> Result<Value> {
+        let filename = format!("{}.png", asset.name);
+        let digest: String = Sha256::digest(&textures[&filename])
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        let mut value = json!({"name":asset.name,"referenceWidth":asset.reference_width,"referenceHeight":asset.reference_height});
+        value["path"] = json!(format!("textures/{filename}"));
+        value["sha256"] = json!(digest);
+        Ok(value)
+    };
+    let texture_data: Vec<Value> = builtin_reader_textures().into_iter().map(|texture| {
+        let layers = texture.layers.into_iter().map(|layer| {
+            Ok(json!({"asset":asset(layer.asset)?,"placement":layer.placement,
+                      "anchorX":layer.anchor_x,"anchorY":layer.anchor_y,
+                      "maxWidth":layer.max_width_fraction,"maxHeight":layer.max_height_fraction}))
+        }).collect::<Result<Vec<Value>>>()?;
+        Ok(json!({"paletteId":texture.palette_id,"blend":texture.blend,"opacity":texture.opacity,
+                  "referenceSide":texture.reference_short_side,"layers":layers}))
     }).collect::<Result<_>>()?;
-    let strength_data: Vec<Value> = strengths
-        .into_iter()
-        .map(|strength| {
-            let key = match strength {
-                ReaderTextureStrength::Light => "淡",
-                ReaderTextureStrength::Medium => "中",
-                ReaderTextureStrength::Strong => "浓",
-            };
-            Ok(json!({"id":id(strength)?,"name":names(&catalog,key)?}))
-        })
-        .collect::<Result<_>>()?;
     let controls = reader_typography_controls();
     let defaults = default_reader_settings();
     let controls: BTreeMap<String, Value> = [
@@ -155,7 +152,7 @@ fn document(root: &Path, textures: &BTreeMap<String, Vec<u8>>) -> Result<Value> 
     let labels: BTreeMap<String, Names> = [
         ("palette", "配色"),
         ("texture", "纸张纹理"),
-        ("strength", "纹理强度"),
+        ("showTexture", "显示纹理"),
         ("font", "字体"),
         ("none", "无"),
         ("light", "浅色"),
@@ -165,7 +162,7 @@ fn document(root: &Path, textures: &BTreeMap<String, Vec<u8>>) -> Result<Value> 
     .map(|(id, key)| Ok((id.into(), names(&catalog, key)?)))
     .collect::<Result<_>>()?;
     Ok(
-        json!({"schemaVersion":1,"palettes":palettes,"textures":texture_data,"strengths":strength_data,"fonts":fonts,"controls":controls,"tileSize":reader_texture_tile_size(),"labels":labels}),
+        json!({"schemaVersion":3,"palettes":palettes,"textures":texture_data,"fonts":fonts,"controls":controls,"labels":labels}),
     )
 }
 fn update(path: &Path, bytes: &[u8], write: bool) -> Result<()> {

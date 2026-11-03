@@ -82,9 +82,8 @@ import XCTest
         let storefront = option("STORE_SCREENSHOT_STOREFRONT") ?? "USA"
         let appScene = ["backup", "statistics", "shelf", "shelf-tags", "recap", "widget"].contains(mode)
         captureMetadata = ["fixture": "StoreShotFixture/" + language, "session": session, "mode": mode,
-            "storefront": storefront, "palette": appScene || scene == "01-kraft" ? "apricot-light" : scene == "01-linen" ? "bean-light" : "white-light",
-            "texture": scene == "01-paper" ? "paper-v1" : scene == "01-kraft" ? "kraft-v1" : scene == "01-linen" ? "linen-v1" : "none",
-            "strength": scene.hasPrefix("01-") ? "medium" : "none",
+            "storefront": storefront, "palette": appScene || scene == "01-kraft" || scene == "01-paper" ? "apricot-light" : scene == "01-linen" ? "bean-light" : "white-light",
+            "texture": scene.hasPrefix("01-") ? "palette-default" : "none",
             "library_root": "tmp/Moonread-StoreShots-" + session]
         app.terminate()
         app.launchArguments = [

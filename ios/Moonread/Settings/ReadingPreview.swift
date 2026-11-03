@@ -10,16 +10,25 @@ final class ReadingPreviewPosition {
     }
     weak var view: ReadingPreviewTextView?
     private(set) var saved: Saved?
-    private var paperInput: ThemeSurface.PaperInput?
-    private var tile: UIImage?
-    func paperTile(_ input: ThemeSurface.PaperInput) -> UIImage? {
-        if paperInput != input {
-            paperInput = input
-            tile = input.choice == nil ? nil : ThemeSurface.paperTile(input)
-        }
-        return tile
-    }
     func capture() { if let view { saved = view.capturePosition() } }
+}
+
+/// The background fills its own proposal; it never participates in text layout.
+struct ReadingPreviewBackdrop: View {
+    let surface: ThemeSurface
+    var body: some View {
+        NativeBackdrop(surface: surface).allowsHitTesting(false).accessibilityHidden(true)
+    }
+    private struct NativeBackdrop: UIViewRepresentable {
+        let surface: ThemeSurface
+        func makeUIView(context: Context) -> ReadingPaperView {
+            let view = ReadingPaperView()
+            view.isUserInteractionEnabled = false
+            view.accessibilityElementsHidden = true
+            return view
+        }
+        func updateUIView(_ view: ReadingPaperView, context: Context) { view.update(surface.paperInput()) }
+    }
 }
 
 struct ReadingPreviewSource: Equatable {
@@ -122,7 +131,7 @@ final class ReadingPreviewTextView: UITextView {
         isEditable = false; isSelectable = false
         showsVerticalScrollIndicator = false; showsHorizontalScrollIndicator = false
         contentInsetAdjustmentBehavior = .never
-        backgroundColor = .clear
+        backgroundColor = .clear; isOpaque = false
         isAccessibilityElement = true
         accessibilityTraits = .staticText
         accessibilityIdentifier = "readingPreviewText"

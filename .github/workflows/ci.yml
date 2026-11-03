@@ -67,7 +67,7 @@ jobs:
               'linux': all_checks or github or rust,
               'ios': all_checks or github or rust or any(path.startswith((b'ios/', b'assets/icon/')) for path in paths),
               'site': all_checks or github or any(
-                  path.startswith((b'docs/site/', b'ios/Moonread/Assets.xcassets/ReaderTexture')) or
+                  path.startswith((b'docs/site/', b'ios/Moonread/Assets.xcassets/ReaderBackdrop')) or
                   path in site_inputs or
                   (b'/' not in path and path.startswith((b'Cargo.', b'flake.'))) or
                   path == b'crates/moonread-core/Cargo.toml' for path in paths),

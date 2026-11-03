@@ -121,8 +121,6 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     var showBookDetails: () -> Void = {}
     var isCoverVisible = false
     var coverChanged: ((Bool) -> Void)?
-    var paperInput: ThemeSurface.PaperInput?
-    var paperBackground = UIColor.clear
     var scrollCover: ReaderCoverController?
     var hasCover: Bool { coverTitle != nil && window?.isStartOfBook == true }
 
@@ -236,7 +234,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         self.coverChanged = coverChanged
         if !isInteracting { isCoverVisible = showingCover }
         scrollCover?.update(title: coverTitle ?? "", information: coverInformation, showDetails: showBookDetails, theme: nextTheme, background: .clear)
-        for case let cover as ReaderCoverController in pageController?.children ?? [] { cover.update(title: coverTitle ?? "", information: coverInformation, showDetails: showBookDetails, theme: nextTheme, background: paperBackground) }
+        for case let cover as ReaderCoverController in pageController?.children ?? [] { cover.update(title: coverTitle ?? "", information: coverInformation, showDetails: showBookDetails, theme: nextTheme, background: .clear) }
         // Note text and drafts do not change the visible highlight ranges.
         let sameRanges = self.annotations.count == annotations.count
             && zip(self.annotations, annotations).allSatisfy {
@@ -392,6 +390,12 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         let savedSelection = selectedSourceRange()
         let selectionFocused = activeTextView?.isFirstResponder == true
         readingRegion = nextSurface
+        // Reuse the region already chosen for text. A spread shares one canvas;
+        // a single folded region gets its full native area, including its header.
+        let paperCanvas = nextFrames.count > 1 || regions == [surface] ? view.bounds : readingRegions(in: view.bounds).first {
+            $0.contains(CGPoint(x: nextSurface.midX, y: nextSurface.midY))
+        } ?? view.bounds
+        (view as? ReadingPaperView)?.drawingBounds = paperCanvas
         let pageLayoutChanged = leafFrames != nextFrames
         readingSurface.frame = nextSurface
         leafFrames = nextFrames

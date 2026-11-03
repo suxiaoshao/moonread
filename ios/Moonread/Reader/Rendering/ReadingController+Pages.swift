@@ -8,7 +8,7 @@ extension ReadingController {
         let indices = index..<min(end ?? pages.count, index + leafFrames.count)
         let group = ReadingPageGroupController(leaves: indices.map(makeLeaf), frames: leafFrames,
             waitingForText: end == nil && indices.count < leafFrames.count && window?.isEndOfBook != true)
-        group.view.backgroundColor = paperBackground
+        group.view.backgroundColor = .clear
         for leaf in group.leaves { if let text = leaf.view as? UITextView { paintPaper(on: text) } }
         return group
     }
@@ -58,7 +58,7 @@ extension ReadingController {
     }
 
     func makeCover() -> ReaderCoverController {
-        let cover = ReaderCoverController(title: coverTitle ?? "", information: coverInformation, showDetails: showBookDetails, theme: theme, background: settings?.mode == .scroll ? .clear : paperBackground)
+        let cover = ReaderCoverController(title: coverTitle ?? "", information: coverInformation, showDetails: showBookDetails, theme: theme, background: .clear)
         cover.view.accessibilityCustomActions = [
             UIAccessibilityCustomAction(name: String(localized: "显示阅读工具")) { [weak self] _ in self?.toggleControls?(); return true },
             UIAccessibilityCustomAction(name: String(localized: "开始阅读")) { [weak self] _ in
