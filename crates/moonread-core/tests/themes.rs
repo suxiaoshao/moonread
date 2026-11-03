@@ -209,6 +209,20 @@ fn reader_texture_preferences_migrate_and_preserve_published_values() {
 fn palette_texture_support_independence_and_resolved_inheritance() {
     let descriptors = builtin_reader_textures();
     assert_eq!(descriptors.len(), 7);
+    assert_eq!(
+        descriptors.iter().map(|d| d.layers.len()).sum::<usize>(),
+        16
+    );
+    for descriptor in &descriptors {
+        assert!((1..=4).contains(&descriptor.layers.len()));
+        assert_eq!(descriptor.reference_short_side, 402);
+        for layer in &descriptor.layers {
+            assert!(layer.asset.reference_width > 0 && layer.asset.reference_height > 0);
+            assert!((0.0..=1.0).contains(&layer.anchor_x) && (0.0..=1.0).contains(&layer.anchor_y));
+            assert!(layer.max_width_fraction > 0.0 && layer.max_width_fraction <= 1.0);
+            assert!(layer.max_height_fraction > 0.0 && layer.max_height_fraction <= 1.0);
+        }
+    }
     let mut snapshot = default_theme_snapshot();
     for palette in &snapshot.palettes {
         let resolved =

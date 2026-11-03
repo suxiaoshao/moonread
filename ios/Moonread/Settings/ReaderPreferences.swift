@@ -222,7 +222,7 @@ struct ReaderSettingsView: View {
                 if wide && editor.paletteSession?.presenter != .preview {
                     readingPreview
                         .background {
-                            ReadingPreviewBackdrop(surface: previewTheme, position: previewPosition, landscape: geometry.size.width > geometry.size.height)
+                            ReadingPreviewBackdrop(surface: previewTheme)
                         }
                         .clipShape(.rect(cornerRadius: 16))
                         .padding(LayoutTokens.content)
@@ -251,7 +251,7 @@ struct ReaderSettingsView: View {
                         }
                     }
                     .background {
-                        ReadingPreviewBackdrop(surface: previewTheme, position: previewPosition, landscape: geometry.size.width > geometry.size.height)
+                        ReadingPreviewBackdrop(surface: previewTheme)
                     }
                 } else if compact && !wide && !previewPresented {
                     Button("阅读预览", systemImage: "doc.text.magnifyingglass") {
@@ -326,7 +326,7 @@ struct ReaderSettingsView: View {
                 .presentationContentInteraction(.resizes)
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
                 .presentationBackground {
-                    ReadingPreviewBackdrop(surface: previewTheme, position: previewPosition, landscape: geometry.size.width > geometry.size.height).ignoresSafeArea()
+                    ReadingPreviewBackdrop(surface: previewTheme).ignoresSafeArea()
                 }
                 .preferredColorScheme(previewTheme.scheme)
                 .interactiveDismissDisabled()

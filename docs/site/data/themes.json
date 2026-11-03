@@ -662,110 +662,287 @@
       }
     }
   ],
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "textures": [
     {
       "blend": "multiply",
-      "landscape": null,
+      "layers": [
+        {
+          "anchorX": 0.5,
+          "anchorY": 0.5,
+          "asset": {
+            "name": "ReaderBackdropPaperLight",
+            "path": "textures/ReaderBackdropPaperLight.png",
+            "referenceHeight": 874,
+            "referenceWidth": 402,
+            "sha256": "e8712927487b3f4885c22d1de16eb6bfcf47af0dbe2ba638989b0287ca805796"
+          },
+          "maxHeight": 1.0,
+          "maxWidth": 1.0,
+          "placement": "cover"
+        }
+      ],
       "opacity": 0.22,
       "paletteId": "apricot-light",
-      "portrait": {
-        "name": "ReaderBackdropPaperLight",
-        "path": "textures/ReaderBackdropPaperLight.png",
-        "reference_height": 874,
-        "reference_width": 402,
-        "sha256": "e8712927487b3f4885c22d1de16eb6bfcf47af0dbe2ba638989b0287ca805796"
-      }
+      "referenceSide": 402
     },
     {
       "blend": "soft-light",
-      "landscape": null,
+      "layers": [
+        {
+          "anchorX": 0.5,
+          "anchorY": 0.5,
+          "asset": {
+            "name": "ReaderBackdropPaperDark",
+            "path": "textures/ReaderBackdropPaperDark.png",
+            "referenceHeight": 874,
+            "referenceWidth": 402,
+            "sha256": "9dfcab201aec7f86881c3e6f30ff0299705939284e5e7bf1015a334259c16a94"
+          },
+          "maxHeight": 1.0,
+          "maxWidth": 1.0,
+          "placement": "cover"
+        }
+      ],
       "opacity": 0.65,
       "paletteId": "apricot-dark",
-      "portrait": {
-        "name": "ReaderBackdropPaperDark",
-        "path": "textures/ReaderBackdropPaperDark.png",
-        "reference_height": 874,
-        "reference_width": 402,
-        "sha256": "9dfcab201aec7f86881c3e6f30ff0299705939284e5e7bf1015a334259c16a94"
-      }
+      "referenceSide": 402
     },
     {
       "blend": "multiply",
-      "landscape": {
-        "name": "ReaderBackdropBambooLandscape",
-        "path": "textures/ReaderBackdropBambooLandscape.png",
-        "reference_height": 1032,
-        "reference_width": 1376,
-        "sha256": "4836bd6cdf89fa0b4f0a138ee1b67ef7c1bc1a326bf00e162c379a8242aefcbf"
-      },
+      "layers": [
+        {
+          "anchorX": 0.0,
+          "anchorY": 1.0,
+          "asset": {
+            "name": "ReaderBackdropBambooLeft",
+            "path": "textures/ReaderBackdropBambooLeft.png",
+            "referenceHeight": 874,
+            "referenceWidth": 198,
+            "sha256": "2f9649bed111872179becc68bc2fc9cba8b791d8c22a5610e767b40e2307977e"
+          },
+          "maxHeight": 1.0,
+          "maxWidth": 0.5,
+          "placement": "fit"
+        },
+        {
+          "anchorX": 1.0,
+          "anchorY": 1.0,
+          "asset": {
+            "name": "ReaderBackdropBambooRight",
+            "path": "textures/ReaderBackdropBambooRight.png",
+            "referenceHeight": 874,
+            "referenceWidth": 157,
+            "sha256": "c64536de214f2c173a9534ca751f8dd9453e5da00b088e714c5be0a5f124b1ec"
+          },
+          "maxHeight": 1.0,
+          "maxWidth": 0.5,
+          "placement": "fit"
+        }
+      ],
       "opacity": 0.42,
       "paletteId": "bean-light",
-      "portrait": {
-        "name": "ReaderBackdropBamboo",
-        "path": "textures/ReaderBackdropBamboo.png",
-        "reference_height": 874,
-        "reference_width": 402,
-        "sha256": "5f916c7376ab6a892139c3d1b793f610b6b8dddbbf6acc768fea7af0a707d56a"
-      }
+      "referenceSide": 402
     },
     {
       "blend": "multiply",
-      "landscape": null,
+      "layers": [
+        {
+          "anchorX": 0.0,
+          "anchorY": 0.0,
+          "asset": {
+            "name": "ReaderBackdropMintLightTopLeft",
+            "path": "textures/ReaderBackdropMintLightTopLeft.png",
+            "referenceHeight": 335,
+            "referenceWidth": 220,
+            "sha256": "3d7e08f8bd2f1abad48e4cf353a09fe60174478f47c177442e10a7fa8ec9eee2"
+          },
+          "maxHeight": 0.5,
+          "maxWidth": 0.5,
+          "placement": "fit"
+        },
+        {
+          "anchorX": 1.0,
+          "anchorY": 0.0,
+          "asset": {
+            "name": "ReaderBackdropMintLightTopRight",
+            "path": "textures/ReaderBackdropMintLightTopRight.png",
+            "referenceHeight": 265,
+            "referenceWidth": 142,
+            "sha256": "afba4e9e32877d411c5aee63ed349d2ca7bff4988aa36e5c2d997a5721a28eec"
+          },
+          "maxHeight": 0.5,
+          "maxWidth": 0.5,
+          "placement": "fit"
+        },
+        {
+          "anchorX": 0.0,
+          "anchorY": 1.0,
+          "asset": {
+            "name": "ReaderBackdropMintLightBottomLeft",
+            "path": "textures/ReaderBackdropMintLightBottomLeft.png",
+            "referenceHeight": 244,
+            "referenceWidth": 112,
+            "sha256": "eba542918bb44829da3941260ceb5f130724342069e8a091186c0416c1cbd11c"
+          },
+          "maxHeight": 0.5,
+          "maxWidth": 0.5,
+          "placement": "fit"
+        },
+        {
+          "anchorX": 1.0,
+          "anchorY": 1.0,
+          "asset": {
+            "name": "ReaderBackdropMintLightBottomRight",
+            "path": "textures/ReaderBackdropMintLightBottomRight.png",
+            "referenceHeight": 614,
+            "referenceWidth": 322,
+            "sha256": "e3aea2130f7858e890294434c825428c3e93a66abc0ddb323cff980011d1470b"
+          },
+          "maxHeight": 0.5,
+          "maxWidth": 0.5,
+          "placement": "fit"
+        }
+      ],
       "opacity": 0.32,
       "paletteId": "mint-light",
-      "portrait": {
-        "name": "ReaderBackdropMintLight",
-        "path": "textures/ReaderBackdropMintLight.png",
-        "reference_height": 874,
-        "reference_width": 402,
-        "sha256": "f2b403ef72b6c2d014c7e957f85f43d0f3bf00bec3fac1b3959ef23431508c46"
-      }
+      "referenceSide": 402
     },
     {
       "blend": "normal",
-      "landscape": {
-        "name": "ReaderBackdropMintDarkLandscape",
-        "path": "textures/ReaderBackdropMintDarkLandscape.png",
-        "reference_height": 1032,
-        "reference_width": 1376,
-        "sha256": "04998f838aa60c360f50b93c5c6fa8546676e70cc7a7952aff6a683ad78992a6"
-      },
+      "layers": [
+        {
+          "anchorX": 0.0,
+          "anchorY": 0.0,
+          "asset": {
+            "name": "ReaderBackdropMintDarkTopLeft",
+            "path": "textures/ReaderBackdropMintDarkTopLeft.png",
+            "referenceHeight": 335,
+            "referenceWidth": 220,
+            "sha256": "8f7a96ab04f9fc6384cf9368d6d561e6d2b96a2c6033267e94ff1488ca020951"
+          },
+          "maxHeight": 0.5,
+          "maxWidth": 0.5,
+          "placement": "fit"
+        },
+        {
+          "anchorX": 1.0,
+          "anchorY": 0.0,
+          "asset": {
+            "name": "ReaderBackdropMintDarkTopRight",
+            "path": "textures/ReaderBackdropMintDarkTopRight.png",
+            "referenceHeight": 265,
+            "referenceWidth": 142,
+            "sha256": "4db1647db4f9a4e6449a02cb0dc5d06e495e1ea4cad5f8ce7a7b4e353dbc0537"
+          },
+          "maxHeight": 0.5,
+          "maxWidth": 0.5,
+          "placement": "fit"
+        },
+        {
+          "anchorX": 0.0,
+          "anchorY": 1.0,
+          "asset": {
+            "name": "ReaderBackdropMintDarkBottomLeft",
+            "path": "textures/ReaderBackdropMintDarkBottomLeft.png",
+            "referenceHeight": 244,
+            "referenceWidth": 112,
+            "sha256": "08a55018012c76713b0901099415b56b1437711f118624c37452775b1cda6e9b"
+          },
+          "maxHeight": 0.5,
+          "maxWidth": 0.5,
+          "placement": "fit"
+        },
+        {
+          "anchorX": 1.0,
+          "anchorY": 1.0,
+          "asset": {
+            "name": "ReaderBackdropMintDarkBottomRight",
+            "path": "textures/ReaderBackdropMintDarkBottomRight.png",
+            "referenceHeight": 614,
+            "referenceWidth": 322,
+            "sha256": "923081c6e96f21bb5cf637cccae5d2fd4f474538a47b56f5d191ed71bf890e35"
+          },
+          "maxHeight": 0.5,
+          "maxWidth": 0.5,
+          "placement": "fit"
+        }
+      ],
       "opacity": 0.2,
       "paletteId": "mint-dark",
-      "portrait": {
-        "name": "ReaderBackdropMintDark",
-        "path": "textures/ReaderBackdropMintDark.png",
-        "reference_height": 874,
-        "reference_width": 402,
-        "sha256": "aae34f21c847fb39e280c9251f4c990502a7599101dc36b5a1ac67b3a0dff3f0"
-      }
+      "referenceSide": 402
     },
     {
       "blend": "multiply",
-      "landscape": null,
+      "layers": [
+        {
+          "anchorX": 0.0,
+          "anchorY": 0.0,
+          "asset": {
+            "name": "ReaderBackdropMistLightTop",
+            "path": "textures/ReaderBackdropMistLightTop.png",
+            "referenceHeight": 306,
+            "referenceWidth": 402,
+            "sha256": "b7cefe99ee77e42e53b8ad82cdb39357991be81af6e9dd9cde847679f7519c4c"
+          },
+          "maxHeight": 0.38,
+          "maxWidth": 1.0,
+          "placement": "edge"
+        },
+        {
+          "anchorX": 0.0,
+          "anchorY": 1.0,
+          "asset": {
+            "name": "ReaderBackdropMistLightBottom",
+            "path": "textures/ReaderBackdropMistLightBottom.png",
+            "referenceHeight": 306,
+            "referenceWidth": 402,
+            "sha256": "a35fb8434c2ede8064d780325864e2d5e8d98488572a894220c5481a1508cea6"
+          },
+          "maxHeight": 0.38,
+          "maxWidth": 1.0,
+          "placement": "edge"
+        }
+      ],
       "opacity": 0.7,
       "paletteId": "lilac-light",
-      "portrait": {
-        "name": "ReaderBackdropMistLight",
-        "path": "textures/ReaderBackdropMistLight.png",
-        "reference_height": 874,
-        "reference_width": 402,
-        "sha256": "a29fd8d49ed40eace7517d49a153015bafecbc144c3c86eed8bce7bf2ab2b3e1"
-      }
+      "referenceSide": 402
     },
     {
       "blend": "screen",
-      "landscape": null,
+      "layers": [
+        {
+          "anchorX": 0.0,
+          "anchorY": 0.0,
+          "asset": {
+            "name": "ReaderBackdropMistDarkTop",
+            "path": "textures/ReaderBackdropMistDarkTop.png",
+            "referenceHeight": 306,
+            "referenceWidth": 402,
+            "sha256": "b30ff73d956776bd566767c4deb56a04245457d9357604023c43ffbe270078ac"
+          },
+          "maxHeight": 0.38,
+          "maxWidth": 1.0,
+          "placement": "edge"
+        },
+        {
+          "anchorX": 0.0,
+          "anchorY": 1.0,
+          "asset": {
+            "name": "ReaderBackdropMistDarkBottom",
+            "path": "textures/ReaderBackdropMistDarkBottom.png",
+            "referenceHeight": 306,
+            "referenceWidth": 402,
+            "sha256": "43da1d93669745e7ce2ddcac4779ea075cbf731d19a055548c7d6a28147e7f3c"
+          },
+          "maxHeight": 0.38,
+          "maxWidth": 1.0,
+          "placement": "edge"
+        }
+      ],
       "opacity": 0.2,
       "paletteId": "lilac-dark",
-      "portrait": {
-        "name": "ReaderBackdropMistDark",
-        "path": "textures/ReaderBackdropMistDark.png",
-        "reference_height": 874,
-        "reference_width": 402,
-        "sha256": "897366ce280a1a7177e737a4b44339fce8b54ba6a65c0b31947c16ec27d35142"
-      }
+      "referenceSide": 402
     }
   ]
 }

@@ -28,7 +28,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 
 | 独立规则 | 唯一归属方 / 文件 | 理由与其他层边界 | #66 动作 |
 | --- | --- | --- | --- |
-| 配色专属纹理支持、descriptor/混合参数、独立开关及发布迁移 | Rust `user/themes.rs` | 按最终有效内置配色 ID 解析；本机 version 1 map；旧 1.3 两槽播种同明暗全部支持项，缺 key 新默认开；App/官网共用 descriptor，不再维护通用纹理/强度/Lr/tile 运行契约 | 单源 |
+| 配色专属纹理支持、descriptor/混合参数、独立开关及发布迁移 | Rust `user/themes.rs` | 分层资源、锚点/尺度限制与混合参数单源；按最终有效内置配色 ID 解析；本机 version 1 map；旧 1.3 两槽播种同明暗全部支持项，缺 key 新默认开；App/官网共用 descriptor，不再维护通用纹理/强度/Lr/tile 运行契约 | 单源 |
 | 导入字体资源身份、引用与清单格式/校验 | Rust `user/reader_fonts.rs` 与 `reading/layout.rs` | 复用 `SourceIdentityProbe.raw_sha256` 标识原字节；Swift `ReaderFontLibrary` 负责协调复制与 Core Text 注册，`ReaderBuiltinFonts` 管已知 Apple 宋体/圆体的按需下载与可用性，`ReadingTypography` 唯一解析正文/预览字体及缺失回退；资源/face 可用性改变使排版缓存失效 | 单源与平台接线 |
 | 字号、行距、段间距的默认值、范围与控件步长 | Rust `reading/layout.rs` | `reader_typography_controls` 同时供设置校验、Swift Stepper 和官网导出器使用；原生/浏览器字体度量各自归平台 | 单源 |
 | 阅读设置当前值、连续修改与串行保存 | Swift `Settings/ReaderSettingsStore.swift`，App 级可观察环境对象 | `ReaderSession` 和设置页共用同一实例，不持有可写副本或各自排队；`AppDataService` 仍负责既有 UserDefaults 编解码和持久化，Rust 校验范围不变 | 单一 owner |
@@ -36,7 +36,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 正文几何、叶页分组、活动叶及原文选区恢复 | Swift `Reader/Rendering/ReadingController` / `PageController` / `ReadingViewport` | 原生字体度量与硬件保留区归平台；一个 pager、一份统计输入，源范围用 Rust UTF-8 坐标。`ReadingContainerRegions` 单源拆分保留区；`ReadingTypography.prepare` 单源装配 `PreparedReadingText`（映射、富文本与当次版本），分页/滚动/预览只消费及派生配套结果，不新增缓存；TextCoordinates 和 Rust 语义不变。正文占满本阅读窗口，sheet/键盘/工具路径不参与几何，不为工具让位；真实窗口或排版改变才按锚点排版。宽>高且每叶满足最小行宽自动双页，保留无效 canvas 与转场检查；几何变化不写阅读事实 | 平台排版 |
 | 阅读呈现意图与原生占用 | Swift `ReaderPresentationState` / `ReaderPresentationProjection` / `ReaderPresentationHost`；`ReaderToolSession` 保留编辑对象引用，批注权威仍为 `ReaderSession` | selection、有类型 path、exposure 与栏显隐单源；所有尺寸用同一手机工具 sheet/原生任务导航，无 inspector、容量投影或手画页头。完整设置/详情直接绑定同一逻辑路径并在来源栈 push，原生 sheet 释放后交接；系统返回直接生效，不等待原生完成或校验工具代次。工具 sheet 的 opening/token/代次仍隔离旧回调，退出内容仅保留渲染引用。系统子模态保留父链，窗口变化不改路径/草稿或写偏好 | 单一 owner |
 | 系统开书与未保存修改确认 | Swift `SystemReadingRouter`；dirty 权威为 `PaletteDraft` / `ChapterEditDraft` / `NoteEditorModel` | 普通面板不排队；比较草稿基线，保存中的请求即时提示并消费，不取消写入或排队；解析错误不离书，取消消费请求，晚到确认按请求 token 隔离 | 平台入口与草稿 owner |
-| 固定阅读背景合成与原生/预览绘制 | Swift `ThemeSurface` / `ReadingPaperView` / `ReadingPreviewBackdrop` | 彩色 RGBA、固定 sRGB；画稿/paper/blend/opacity 准备一次，原生与预览复用结果，尺寸只影响等比缩放/居中裁切；内层分页/滚动透明，不动正文布局或坐标 | 平台绘制 |
+| 固定阅读背景合成与原生/预览绘制 | Swift `ThemeSurface` / `ReadingPaperView` / `ReadingPreviewBackdrop` | 彩色 RGBA、固定 sRGB；图块/paper/blend/opacity 准备一次，原生与预览共用 ReadingPaperView/PreparedReadingPaper；尺寸只更新 descriptor 所定的贴边/靠角/cover CGRect；内层分页/滚动透明，不动正文布局或坐标 | 平台绘制 |
 | 解码、normalization-v1、正文/原字节 SHA 计算 | Rust `reading/text.rs`、`identity/source.rs` 及正文导入共用核心 | 和正文缓存/稳定内容身份一致；Swift 不重算规范正文 | 保持 |
 | fileId/bookId/canonical→正式或 pending 阅读键、索引有效性 | Rust `identity/content.rs`，供 user/projection、library/full_index 和 library/bookshelf 共用 | 数据库关联是事实，不能由 UI 看长度猜身份 | 收敛 |
 | 待索引集合与书架索引 inventory | Rust `library/full_index.rs` | 同一数据库快照返回总量/pending；Swift 不重复身份判定 | 单源扩展 |

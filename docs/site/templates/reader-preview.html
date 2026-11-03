@@ -44,7 +44,7 @@
     </div>
     <div>
       <div class="reader-paper" id="readerPaper" style="background:{{ initial.colors.paper }};color:{{ initial.colors.ink }}">
-        <div class="texture-layer" id="textureLayer" style="background-image:url('{{ get_url(path=paper.portrait.path) }}');opacity:{{ paper.opacity }};mix-blend-mode:{{ paper.blend }}"></div>
+        <div class="texture-layer" id="textureLayer" style="opacity:{{ paper.opacity }};mix-blend-mode:{{ paper.blend }}"><img alt="" src="{{ get_url(path=paper.layers[0].asset.path) }}" style="inset:0;width:100%;height:100%;object-fit:cover"></div>
         <div class="reader-scroll" id="readerScroll" tabindex="0" aria-label="{% if zh %}可滚动的阅读预览{% else %}Scrollable reading preview{% endif %}">
           <div class="reader-kicker">{% if zh %}原创示例 / 月光下的归途{% else %}Original sample / The Way Home by Moonlight{% endif %}</div>
           <article class="reader-text" id="readerText" style="font-size:{{ preview.controls.fontSize.defaultValue }}px;--paragraph:{{ preview.controls.paragraphSpacing.defaultValue }}px">

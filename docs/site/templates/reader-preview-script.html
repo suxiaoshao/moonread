@@ -12,6 +12,7 @@
   const families = {system:'var(--sans)', serif:'var(--serif)', rounded:'ui-rounded, -apple-system, sans-serif'};
   const canvas = document.createElement('canvas').getContext('2d');
   state.textureEnabled = Object.fromEntries(data.textures.map(value => [value.paletteId, true]));
+  let artworkId = null;
   function render() {
     const palette = data.palettes.find(value => value.id === state.palette);
     const texture = data.textures.find(value => value.paletteId === state.palette);
@@ -20,12 +21,31 @@
     document.getElementById('paletteTextureControl').hidden = !texture;
     document.getElementById('paletteTextureEnabled').checked = state.textureEnabled[state.palette] === true;
     layer.hidden = !texture || !state.textureEnabled[state.palette];
+    // Geometry is presentation-only; all artwork, limits and anchors come from Rust.
     if (texture) {
-      const asset = paper.clientWidth > paper.clientHeight && texture.landscape ? texture.landscape : texture.portrait;
-      layer.style.backgroundImage = `url("${new URL(asset.path, layout.dataset.assetRoot).href}")`;
+      const W = paper.clientWidth, H = paper.clientHeight;
+      const unit = Math.min(W, H) / texture.referenceSide;
+      if (artworkId !== texture.paletteId) {
+        layer.replaceChildren(...texture.layers.map(value => {
+          const image = document.createElement('img');
+          image.alt = ''; image.src = new URL(value.asset.path, layout.dataset.assetRoot).href;
+          return image;
+        }));
+        artworkId = texture.paletteId;
+      }
+      texture.layers.forEach((value, index) => {
+        let width = W, height = H;
+        if (value.placement === 'edge') height = Math.min(value.asset.referenceHeight * unit, H * value.maxHeight);
+        if (value.placement === 'fit') {
+          const scale = Math.min(unit, W * value.maxWidth / value.asset.referenceWidth, H * value.maxHeight / value.asset.referenceHeight);
+          width = value.asset.referenceWidth * scale; height = value.asset.referenceHeight * scale;
+        }
+        Object.assign(layer.children[index].style, {left:((W - width) * value.anchorX)+'px',top:((H - height) * value.anchorY)+'px',
+          width:width+'px',height:height+'px',objectFit:value.placement === 'cover' ? 'cover' : 'fill'});
+      });
       layer.style.opacity = texture.opacity;
       layer.style.mixBlendMode = texture.blend;
-    }
+    } else { layer.replaceChildren(); artworkId = null; }
     for (const [key, role] of Object.entries({bg:'canvas',surface:'surface',ink:'ink',secondary:'secondary',accent:'accent',border:'border'})) {
       controls.style.setProperty('--control-' + key, palette.colors[role]);
     }

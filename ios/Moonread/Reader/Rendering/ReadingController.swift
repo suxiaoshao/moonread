@@ -390,6 +390,12 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         let savedSelection = selectedSourceRange()
         let selectionFocused = activeTextView?.isFirstResponder == true
         readingRegion = nextSurface
+        // Reuse the region already chosen for text. A spread shares one canvas;
+        // a single folded region gets its full native area, including its header.
+        let paperCanvas = nextFrames.count > 1 || regions == [surface] ? view.bounds : readingRegions(in: view.bounds).first {
+            $0.contains(CGPoint(x: nextSurface.midX, y: nextSurface.midY))
+        } ?? view.bounds
+        (view as? ReadingPaperView)?.drawingBounds = paperCanvas
         let pageLayoutChanged = leafFrames != nextFrames
         readingSurface.frame = nextSurface
         leafFrames = nextFrames

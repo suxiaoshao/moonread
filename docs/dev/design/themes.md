@@ -169,23 +169,37 @@ Rust `builtin_reader_textures` 是支持项、资源变体、参考画布、blen
 
 一个背景位于 ReadingPaperView 根画布，覆盖顶部安静信息区。滚动、原生分页/双页和扉页的内层背景均透明，图案固定，不随正文/叶页移动；双页共用一张，不从页缝重启。不改变 TextKit、文字范围、正文坐标、折线/单双页决策或页手势。底部 fade 沿用纯 paper。
 
-画稿先在固定参考像素尺寸与 paper/blend/opacity 混合，尺寸与 displayScale 不进入准备 key；原生阅读和预览复用 PreparedReadingPaper 的同一结果，工厂只保留最近输入，使用方保留当前结果及需要的横竖稿。容器改变仅由显示层等比缩放/居中裁切，不逐尺寸建 CGContext 或重跑柔光。预览按宿主方向选择横竖稿，不用短 sheet 的高宽比切换稿。滚动 offset / anchor / 页号不进入 key。预览共享合成器，图像不参与布局。高对比与降低透明度保留用户选择，不运行时关纹理或增加对比门槛。
+画稿先在各图块的固定参考像素尺寸与 paper/blend/opacity 混合，尺寸与 displayScale 不进入准备 key。原生阅读和预览都使用 ReadingPaperView 与 PreparedReadingPaper 的同一准备结果/放置计算；工厂只保留最近输入，使用方保留当前配色最多四块。容器改变仅更新 CALayer frame，不逐尺寸建 CGContext 或重跑柔光。滚动 offset / anchor / 页号不进入 key，不改文字布局。高对比与降低透明度保留用户选择。
 
-按实际阅读容器宽高比选 portrait/landscape；两张独立横向稿使用 1376×1032pt，其余 portrait 为 402×874pt。先把画稿规范到对应参考画布，再等比铺满、居中裁切；不重复植物、不拉伸原稿、不新增避让带。新比例的主体裁切由实际画面记录，交用户判断，不能视为已审定。
+放置描述由 Rust 内置 descriptor 发布（不是本机偏好，不涉及迁移），以实际背景容器 W/H、S=min(W,H) 计算，不用机型、姿态白名单或宽>高换稿：
 
-取材自 #151 v8 定稿，图层内部 alpha 原样保留。以下为一次性来源/烘焙记录（不是第二份运行支持表）；成品 PNG 同字节用于 App 和网站：
+- 纸色一块 cover，保持居中等比铺满；没有植物端点，可裁切。
+- 雾紫上下两块贴边，宽铺满，每块高 min(referenceHeight × S/402, H×0.38)，允许云雾非等比延展；两端不重叠。
+- 竹绿左右完整组贴底，薄荷四个完整组靠角；各块保持比例，scale=min(S/402, W×maxWidth/referenceWidth, H×maxHeight/referenceHeight)，anchor/最大占比由 descriptor 给出。竹各半宽/全高，薄荷各半宽/半高。短容器缩小、宽屏中间更疏，不拉长或切主枝。
+- 层的颜色准备结果可不透明，但槽位不重叠，边缘先在原 RGBA 上渐隐到透明，再与相同 paper 合成，不以不透明块互相遮叶。双页只有根背景的一套，不给每个叶页重复放图。
 
-| 正式资源 | 原画稿（round3 下） | 烘焙滤镜 | 成品像素 | 原稿 SHA-256 / 成品 SHA-256 |
-| --- | --- | --- | --- | --- |
-| ReaderBackdropPaperLight | `assets/paper-v2.png` | grayscale(1) contrast(2.4) | 1206×2622 | `485e6b4ce999303f910a6db02cbfbffa50227167c8045da0410e9a159968dfc8` / `e8712927487b3f4885c22d1de16eb6bfcf47af0dbe2ba638989b0287ca805796` |
-| ReaderBackdropPaperDark | `assets/paper-v2.png` | grayscale(1) contrast(2.2) | 1206×2622 | `485e6b4ce999303f910a6db02cbfbffa50227167c8045da0410e9a159968dfc8` / `9dfcab201aec7f86881c3e6f30ff0299705939284e5e7bf1015a334259c16a94` |
-| ReaderBackdropBamboo | `v4/bamboo-source.png` | none | 1206×2622 | `af62c2bf384a45699365a664295b0b4f508386fd11ab34e29e656446b7d74da3` / `5f916c7376ab6a892139c3d1b793f610b6b8dddbbf6acc768fea7af0a707d56a` |
-| ReaderBackdropMintLight | `v7/mint-source.png` | none | 1206×2622 | `39a9bf59a7b1256875fa42aff7aaa4204711135688275acd21c5682fb84ad6ae` / `f2b403ef72b6c2d014c7e957f85f43d0f3bf00bec3fac1b3959ef23431508c46` |
-| ReaderBackdropMintDark | `v8/mint-dark-source.png` | none | 1206×2622 | `80e31976b2e780154c7c439ab136f180911fbc8086ffa86ee16bacd116ea2e25` / `aae34f21c847fb39e280c9251f4c990502a7599101dc36b5a1ac67b3a0dff3f0` |
-| ReaderBackdropMistLight | `assets/mist.png` | none | 1206×2622 | `6024e14241491efd7ac0da93bb9c834a0789390e3cb7280b3d94648abc8bde09` / `a29fd8d49ed40eace7517d49a153015bafecbc144c3c86eed8bce7bf2ab2b3e1` |
-| ReaderBackdropMistDark | `assets/mist.png` | saturate(.65) | 1206×2622 | `6024e14241491efd7ac0da93bb9c834a0789390e3cb7280b3d94648abc8bde09` / `897366ce280a1a7177e737a4b44339fce8b54ba6a65c0b31947c16ec27d35142` |
-| ReaderBackdropBambooLandscape | `v4/bamboo-wide-source.png` | none | 2752×2064 | `23f3e770db2894f013e9366ec880ffe142a399882a37bad81e93ef4b602eea24` / `4836bd6cdf89fa0b4f0a138ee1b67ef7c1bc1a326bf00e162c379a8242aefcbf` |
-| ReaderBackdropMintDarkLandscape | `v8/mint-dark-wide-source.png` | none | 2752×2064 | `20b5094d5b845183f3650d3d02635f4b45d510d348f5b632025ecfe018d8b3d1` / `04998f838aa60c360f50b93c5c6fa8546676e70cc7a7952aff6a683ad78992a6` |
+素材只从 v8 原画稿拆层：雾紫取上下自然云雾并修整内侧 alpha；竹按中央透明区划出完整左右竹组；薄荷沿自然连通枝叶组整理四角，左下/右下之间沿弱 alpha 走廊分离，不能按半幅矩形截断长主枝。RGB 与全局 opacity 不变；只在原透明边缘做 alpha 羽化。纸色两张原文件保持。旧竹绿/薄荷深的横向整图退出生产资源，作为 v8 对照保留在本地研究材料；所有容器用相同块，不新增横向画稿。
+
+以下为一次性拆层来源记录（不是另一份运行支持表）；坐标为原 402×874 参考画布，所有成品为对应 3× 像素，App/网站逐字节相同。上游 v8 画稿分别为 paper-v2、bamboo-source、v7/mint-source、v8/mint-dark-source、mist；浅深混合参数仍由 Rust 提供。完整输入/输出 hash、alpha 边界与锚点清单留于本次实现报告。
+
+| 正式资源 | v8 纯素材 | 参考裁取区域 x/y/w/h | 成品 SHA-256 |
+| --- | --- | --- | --- |
+| ReaderBackdropPaperLight | paper-v2（既有滤镜/镜像） | 0/0/402/874 | `e8712927487b3f4885c22d1de16eb6bfcf47af0dbe2ba638989b0287ca805796` |
+| ReaderBackdropPaperDark | paper-v2（既有滤镜/镜像） | 0/0/402/874 | `9dfcab201aec7f86881c3e6f30ff0299705939284e5e7bf1015a334259c16a94` |
+| ReaderBackdropMistLightTop | MistLight.png | 0/0/402/306 | `b7cefe99ee77e42e53b8ad82cdb39357991be81af6e9dd9cde847679f7519c4c` |
+| ReaderBackdropMistLightBottom | MistLight.png | 0/568/402/306 | `a35fb8434c2ede8064d780325864e2d5e8d98488572a894220c5481a1508cea6` |
+| ReaderBackdropMistDarkTop | MistDark.png | 0/0/402/306 | `b30ff73d956776bd566767c4deb56a04245457d9357604023c43ffbe270078ac` |
+| ReaderBackdropMistDarkBottom | MistDark.png | 0/568/402/306 | `43da1d93669745e7ce2ddcac4779ea075cbf731d19a055548c7d6a28147e7f3c` |
+| ReaderBackdropBambooLeft | Bamboo.png | 0/0/198/874 | `2f9649bed111872179becc68bc2fc9cba8b791d8c22a5610e767b40e2307977e` |
+| ReaderBackdropBambooRight | Bamboo.png | 245/0/157/874 | `c64536de214f2c173a9534ca751f8dd9453e5da00b088e714c5be0a5f124b1ec` |
+| ReaderBackdropMintLightTopLeft | MintLight.png | 0/0/220/335 | `3d7e08f8bd2f1abad48e4cf353a09fe60174478f47c177442e10a7fa8ec9eee2` |
+| ReaderBackdropMintLightTopRight | MintLight.png | 260/0/142/265 | `afba4e9e32877d411c5aee63ed349d2ca7bff4988aa36e5c2d997a5721a28eec` |
+| ReaderBackdropMintLightBottomLeft | MintLight.png | 0/630/112/244 | `eba542918bb44829da3941260ceb5f130724342069e8a091186c0416c1cbd11c` |
+| ReaderBackdropMintLightBottomRight | MintLight.png | 80/260/322/614 | `e3aea2130f7858e890294434c825428c3e93a66abc0ddb323cff980011d1470b` |
+| ReaderBackdropMintDarkTopLeft | MintDark.png | 0/0/220/335 | `8f7a96ab04f9fc6384cf9368d6d561e6d2b96a2c6033267e94ff1488ca020951` |
+| ReaderBackdropMintDarkTopRight | MintDark.png | 260/0/142/265 | `4db1647db4f9a4e6449a02cb0dc5d06e495e1ea4cad5f8ce7a7b4e353dbc0537` |
+| ReaderBackdropMintDarkBottomLeft | MintDark.png | 0/630/112/244 | `08a55018012c76713b0901099415b56b1437711f118624c37452775b1cda6e9b` |
+| ReaderBackdropMintDarkBottomRight | MintDark.png | 80/260/322/614 | `923081c6e96f21bb5cf637cccae5d2fd4f474538a47b56f5d191ed71bf890e35` |
 
 ## 视觉方向与研究图
 

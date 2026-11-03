@@ -141,8 +141,13 @@ struct ThemeSurface: Equatable {
 final class PreparedReadingPaper {
     private static var current: PreparedReadingPaper?
     let input: ThemeSurface.PaperInput
-    private lazy var portrait: UIImage? = input.descriptor.map { ThemeSurface.paperImage(input, asset: $0.portrait) } ?? nil
-    private lazy var landscape: UIImage? = input.descriptor?.landscape.map { ThemeSurface.paperImage(input, asset: $0) } ?? nil
+    struct Layer {
+        let description: ReaderTextureLayer
+        let image: UIImage?
+    }
+    private(set) lazy var layers: [Layer] = input.descriptor?.layers.map {
+        Layer(description: $0, image: ThemeSurface.paperImage(input, asset: $0.asset))
+    } ?? []
     private init(_ input: ThemeSurface.PaperInput) { self.input = input }
     static func resolve(_ input: ThemeSurface.PaperInput) -> PreparedReadingPaper {
         if let current, current.input == input { return current }
@@ -150,8 +155,28 @@ final class PreparedReadingPaper {
         current = result
         return result
     }
-    func image(landscape isLandscape: Bool) -> UIImage? {
-        isLandscape && input.descriptor?.landscape != nil ? landscape : portrait
+    /// Native reader and preview use this one placement calculation. Only small
+    /// rectangles change during resize; image preparation never receives bounds.
+    func frames(in size: CGSize) -> [CGRect] {
+        guard size.width > 0, size.height > 0, let descriptor = input.descriptor else { return layers.map { _ in .zero } }
+        let unit = min(size.width, size.height) / CGFloat(descriptor.referenceShortSide)
+        return layers.map { layer in
+            let value = layer.description
+            let reference = CGSize(width: CGFloat(value.asset.referenceWidth), height: CGFloat(value.asset.referenceHeight))
+            let width: CGFloat, height: CGFloat
+            switch value.placement {
+            case .cover: return CGRect(origin: .zero, size: size)
+            case .edge:
+                width = size.width
+                height = min(reference.height * unit, size.height * CGFloat(value.maxHeightFraction))
+            case .fit:
+                let scale = min(unit, size.width * CGFloat(value.maxWidthFraction) / reference.width,
+                                size.height * CGFloat(value.maxHeightFraction) / reference.height)
+                width = reference.width * scale; height = reference.height * scale
+            }
+            return CGRect(x: (size.width - width) * CGFloat(value.anchorX),
+                          y: (size.height - height) * CGFloat(value.anchorY), width: width, height: height)
+        }
     }
 }
 

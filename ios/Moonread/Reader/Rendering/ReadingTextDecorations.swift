@@ -88,28 +88,39 @@ final class ReadingLayoutManager: NSLayoutManager {
 /// One stationary background across header, body and spread; never a page child.
 final class ReadingPaperView: UIView {
     private var paper: PreparedReadingPaper?
-    private var image: UIImage?
-    private let backdrop = CALayer()
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        backdrop.contentsGravity = .resizeAspectFill
-        backdrop.masksToBounds = true
-        layer.insertSublayer(backdrop, at: 0)
+    private var backdrops: [CALayer] = []
+    var drawingBounds: CGRect? {
+        didSet { if drawingBounds != oldValue { setNeedsLayout() } }
     }
-    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-    func update(_ input: ThemeSurface.PaperInput, landscape: Bool) {
-        if paper?.input != input { paper = PreparedReadingPaper.resolve(input) }
-        let next = paper?.image(landscape: landscape)
-        guard image !== next else { return }
-        image = next
+    func update(_ input: ThemeSurface.PaperInput) {
+        guard paper?.input != input else { return }
+        let result = PreparedReadingPaper.resolve(input)
+        paper = result
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        backdrop.contents = next?.cgImage
+        backgroundColor = UIColor(rgb: input.paper)
+        if backdrops.count != result.layers.count {
+            for backdrop in backdrops { backdrop.removeFromSuperlayer() }
+            backdrops = result.layers.map { _ in
+                let backdrop = CALayer(); backdrop.masksToBounds = true
+                layer.insertSublayer(backdrop, at: 0)
+                return backdrop
+            }
+        }
+        for (backdrop, prepared) in zip(backdrops, result.layers) {
+            backdrop.contents = prepared.image?.cgImage
+            backdrop.contentsGravity = prepared.description.placement == .cover ? .resizeAspectFill : .resize
+        }
         CATransaction.commit()
+        setNeedsLayout()
     }
     override func layoutSubviews() {
         super.layoutSubviews()
+        guard let paper else { return }
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        backdrop.frame = bounds
+        let canvas = drawingBounds ?? bounds
+        for (backdrop, frame) in zip(backdrops, paper.frames(in: canvas.size)) {
+            backdrop.frame = frame.offsetBy(dx: canvas.minX, dy: canvas.minY)
+        }
         CATransaction.commit()
     }
 }
@@ -201,7 +212,7 @@ extension ReadingController {
         scrollCover?.view.backgroundColor = .clear
     }
     func updatePaperBackdrop() {
-        (view as? ReadingPaperView)?.update(theme.paperInput(), landscape: view.bounds.width > view.bounds.height)
+        (view as? ReadingPaperView)?.update(theme.paperInput())
     }
 
     func updateBottomFade() {

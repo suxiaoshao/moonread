@@ -10,28 +10,24 @@ final class ReadingPreviewPosition {
     }
     weak var view: ReadingPreviewTextView?
     private(set) var saved: Saved?
-    private var paper: PreparedReadingPaper?
-    func paperImage(_ input: ThemeSurface.PaperInput, landscape: Bool) -> UIImage? {
-        if paper?.input != input { paper = PreparedReadingPaper.resolve(input) }
-        return paper?.image(landscape: landscape)
-    }
     func capture() { if let view { saved = view.capturePosition() } }
 }
 
 /// The background fills its own proposal; it never participates in text layout.
 struct ReadingPreviewBackdrop: View {
     let surface: ThemeSurface
-    let position: ReadingPreviewPosition
-    let landscape: Bool
     var body: some View {
-        let image = position.paperImage(surface.paperInput(), landscape: landscape)
-        GeometryReader { geometry in
-            if let image {
-                Image(uiImage: image).resizable().scaledToFill()
-                    .frame(width: geometry.size.width, height: geometry.size.height).clipped()
-            }
-            else { Color(uiColor: surface.paper) }
-        }.allowsHitTesting(false).accessibilityHidden(true)
+        NativeBackdrop(surface: surface).allowsHitTesting(false).accessibilityHidden(true)
+    }
+    private struct NativeBackdrop: UIViewRepresentable {
+        let surface: ThemeSurface
+        func makeUIView(context: Context) -> ReadingPaperView {
+            let view = ReadingPaperView()
+            view.isUserInteractionEnabled = false
+            view.accessibilityElementsHidden = true
+            return view
+        }
+        func updateUIView(_ view: ReadingPaperView, context: Context) { view.update(surface.paperInput()) }
     }
 }
 

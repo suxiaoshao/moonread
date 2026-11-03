@@ -80,11 +80,27 @@ pub struct ReaderTextureAsset {
     pub reference_width: u32,
     pub reference_height: u32,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize, uniffi::Enum)]
+#[serde(rename_all = "kebab-case")]
+pub enum ReaderTexturePlacement {
+    Cover,
+    Edge,
+    Fit,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Record)]
+pub struct ReaderTextureLayer {
+    pub asset: ReaderTextureAsset,
+    pub placement: ReaderTexturePlacement,
+    pub anchor_x: f64,
+    pub anchor_y: f64,
+    pub max_width_fraction: f64,
+    pub max_height_fraction: f64,
+}
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, uniffi::Record)]
 pub struct ReaderTextureDescriptor {
     pub palette_id: String,
-    pub portrait: ReaderTextureAsset,
-    pub landscape: Option<ReaderTextureAsset>,
+    pub reference_short_side: u32,
+    pub layers: Vec<ReaderTextureLayer>,
     pub blend: ReaderTextureBlend,
     pub opacity: f64,
 }
@@ -97,40 +113,88 @@ pub struct ResolvedReaderTexture {
 #[uniffi::export]
 pub fn builtin_reader_textures() -> Vec<ReaderTextureDescriptor> {
     use ReaderTextureBlend::*;
+    use ReaderTexturePlacement::*;
+    let layer =
+        |name: &str, width, height, placement, x, y, max_width, max_height| ReaderTextureLayer {
+            asset: ReaderTextureAsset {
+                name: format!("ReaderBackdrop{name}"),
+                reference_width: width,
+                reference_height: height,
+            },
+            placement,
+            anchor_x: x,
+            anchor_y: y,
+            max_width_fraction: max_width,
+            max_height_fraction: max_height,
+        };
     [
-        ("apricot-light", "PaperLight", None, Multiply, 0.22),
-        ("apricot-dark", "PaperDark", None, SoftLight, 0.65),
+        (
+            "apricot-light",
+            Multiply,
+            0.22,
+            vec![layer("PaperLight", 402, 874, Cover, 0.5, 0.5, 1.0, 1.0)],
+        ),
+        (
+            "apricot-dark",
+            SoftLight,
+            0.65,
+            vec![layer("PaperDark", 402, 874, Cover, 0.5, 0.5, 1.0, 1.0)],
+        ),
         (
             "bean-light",
-            "Bamboo",
-            Some("BambooLandscape"),
             Multiply,
             0.42,
+            vec![
+                layer("BambooLeft", 198, 874, Fit, 0.0, 1.0, 0.5, 1.0),
+                layer("BambooRight", 157, 874, Fit, 1.0, 1.0, 0.5, 1.0),
+            ],
         ),
-        ("mint-light", "MintLight", None, Multiply, 0.32),
+        (
+            "mint-light",
+            Multiply,
+            0.32,
+            vec![
+                layer("MintLightTopLeft", 220, 335, Fit, 0.0, 0.0, 0.5, 0.5),
+                layer("MintLightTopRight", 142, 265, Fit, 1.0, 0.0, 0.5, 0.5),
+                layer("MintLightBottomLeft", 112, 244, Fit, 0.0, 1.0, 0.5, 0.5),
+                layer("MintLightBottomRight", 322, 614, Fit, 1.0, 1.0, 0.5, 0.5),
+            ],
+        ),
         (
             "mint-dark",
-            "MintDark",
-            Some("MintDarkLandscape"),
             Normal,
             0.20,
+            vec![
+                layer("MintDarkTopLeft", 220, 335, Fit, 0.0, 0.0, 0.5, 0.5),
+                layer("MintDarkTopRight", 142, 265, Fit, 1.0, 0.0, 0.5, 0.5),
+                layer("MintDarkBottomLeft", 112, 244, Fit, 0.0, 1.0, 0.5, 0.5),
+                layer("MintDarkBottomRight", 322, 614, Fit, 1.0, 1.0, 0.5, 0.5),
+            ],
         ),
-        ("lilac-light", "MistLight", None, Multiply, 0.70),
-        ("lilac-dark", "MistDark", None, Screen, 0.20),
+        (
+            "lilac-light",
+            Multiply,
+            0.70,
+            vec![
+                layer("MistLightTop", 402, 306, Edge, 0.0, 0.0, 1.0, 0.38),
+                layer("MistLightBottom", 402, 306, Edge, 0.0, 1.0, 1.0, 0.38),
+            ],
+        ),
+        (
+            "lilac-dark",
+            Screen,
+            0.20,
+            vec![
+                layer("MistDarkTop", 402, 306, Edge, 0.0, 0.0, 1.0, 0.38),
+                layer("MistDarkBottom", 402, 306, Edge, 0.0, 1.0, 1.0, 0.38),
+            ],
+        ),
     ]
     .into_iter()
-    .map(|(id, name, wide, blend, opacity)| ReaderTextureDescriptor {
+    .map(|(id, blend, opacity, layers)| ReaderTextureDescriptor {
         palette_id: id.into(),
-        portrait: ReaderTextureAsset {
-            name: format!("ReaderBackdrop{name}"),
-            reference_width: 402,
-            reference_height: 874,
-        },
-        landscape: wide.map(|name| ReaderTextureAsset {
-            name: format!("ReaderBackdrop{name}"),
-            reference_width: 1376,
-            reference_height: 1032,
-        }),
+        reference_short_side: 402,
+        layers,
         blend,
         opacity,
     })

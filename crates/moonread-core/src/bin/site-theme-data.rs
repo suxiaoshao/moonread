@@ -51,7 +51,7 @@ fn colors(value: impl Serialize) -> Result<BTreeMap<String, String>> {
 fn assets(root: &Path) -> Result<BTreeMap<String, Vec<u8>>> {
     let mut result = BTreeMap::new();
     for texture in builtin_reader_textures() {
-        for asset in std::iter::once(texture.portrait).chain(texture.landscape) {
+        for asset in texture.layers.into_iter().map(|layer| layer.asset) {
             let directory = root
                 .join("ios/Moonread/Assets.xcassets")
                 .join(format!("{}.imageset", asset.name));
@@ -89,14 +89,19 @@ fn document(root: &Path, textures: &BTreeMap<String, Vec<u8>>) -> Result<Value> 
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect();
-        let mut value = serde_json::to_value(asset)?;
+        let mut value = json!({"name":asset.name,"referenceWidth":asset.reference_width,"referenceHeight":asset.reference_height});
         value["path"] = json!(format!("textures/{filename}"));
         value["sha256"] = json!(digest);
         Ok(value)
     };
     let texture_data: Vec<Value> = builtin_reader_textures().into_iter().map(|texture| {
+        let layers = texture.layers.into_iter().map(|layer| {
+            Ok(json!({"asset":asset(layer.asset)?,"placement":layer.placement,
+                      "anchorX":layer.anchor_x,"anchorY":layer.anchor_y,
+                      "maxWidth":layer.max_width_fraction,"maxHeight":layer.max_height_fraction}))
+        }).collect::<Result<Vec<Value>>>()?;
         Ok(json!({"paletteId":texture.palette_id,"blend":texture.blend,"opacity":texture.opacity,
-                  "portrait":asset(texture.portrait)?,"landscape":texture.landscape.map(&asset).transpose()?}))
+                  "referenceSide":texture.reference_short_side,"layers":layers}))
     }).collect::<Result<_>>()?;
     let controls = reader_typography_controls();
     let defaults = default_reader_settings();
@@ -157,7 +162,7 @@ fn document(root: &Path, textures: &BTreeMap<String, Vec<u8>>) -> Result<Value> 
     .map(|(id, key)| Ok((id.into(), names(&catalog, key)?)))
     .collect::<Result<_>>()?;
     Ok(
-        json!({"schemaVersion":2,"palettes":palettes,"textures":texture_data,"fonts":fonts,"controls":controls,"labels":labels}),
+        json!({"schemaVersion":3,"palettes":palettes,"textures":texture_data,"fonts":fonts,"controls":controls,"labels":labels}),
     )
 }
 fn update(path: &Path, bytes: &[u8], write: bool) -> Result<()> {
