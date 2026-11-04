@@ -154,6 +154,21 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
       XCTAssertTrue(try f.core.pendingIdentityFiles(shelfId: secondID).isEmpty)
       XCTAssertEqual(controller.shelfID, secondID)
 
+      // No eligible next file: completion must not wait for another foreground
+      // operation. Keep that operation held until the completion is observed.
+      let held = RestorationGate()
+      let operation = Task { try await f.service.withForegroundOpening { await held.wait() } }
+      await held.waitForEntry()
+      controller.start("builtin", includeCloud: false, userInitiated: false)
+      let ended = expectation(description: "empty index finishes while foreground is held")
+      let completion = Task { await controller.waitForCompletion(); ended.fulfill() }
+      await fulfillment(of: [ended], timeout: 3)
+      XCTAssertFalse(controller.running)
+      XCTAssertFalse(controller.waitingForReader)
+      await held.release()
+      try await operation.value
+      await completion.value
+
     }
   }
 }
