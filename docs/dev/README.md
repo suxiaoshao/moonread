@@ -1,6 +1,6 @@
 # 开发文档
 
-月读以舒服、连续的本地小说阅读为目标。产品介绍见[项目 README](../../README.md)，开发起步见[CONTRIBUTING](../../CONTRIBUTING.md)，取舍见[产品方向](product.md)，工作规则见[AGENTS.md](../../AGENTS.md)。当前开发分支为 `release/1.4`；1.3 已于 2026-10-30 提审，提审不等于上线。已实现行为以专题与源码为准，已确认但未实现的范围见[后续安排](roadmap.md)。发布不等于所有设备、云端和长时场景已验收，具体证据见[验证记录](engineering/verification.md)。
+月读以舒服、连续的本地小说阅读为目标。产品介绍见[项目 README](../../README.md)，开发起步见[CONTRIBUTING](../../CONTRIBUTING.md)，取舍见[产品方向](product.md)，工作规则见[AGENTS.md](../../AGENTS.md)。当前开发分支为 `release/1.5`；1.4 已于 2026-11-04 提审，提审不等于上线。已实现行为以专题与源码为准，已确认但未实现的范围见[后续安排](roadmap.md)。发布不等于所有设备、云端和长时场景已验收，具体证据见[验证记录](engineering/verification.md)。
 
 ## 开发与发布
 
