@@ -61,28 +61,25 @@ actor AppDataService {
            let session = UUID(uuidString: arguments[i + 1])?.uuidString {
             let suite = "Moonread.StoreShots." + session
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-StoreShots-" + session, isDirectory: true)
-            let mode = arguments.firstIndex(of: "--ui-test-store-scene").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil } ?? "paper"
-            UserDefaults(suiteName: "Moonread.AI.UITest-" + session)!.set(mode == "recap", forKey: "Moonread.ai.enabled.v1")
+            guard let capture = StoreShotCapture.requested else { preconditionFailure("Missing screenshot capture configuration") }
+            UserDefaults(suiteName: "Moonread.AI.UITest-" + session)!.set(StoreShotScene.requested == .recap, forKey: "Moonread.ai.enabled.v1")
+            UserDefaults.standard.set(ReadingSettingsTab.typography.rawValue, forKey: "readingSettingsTab")
             var snapshot = defaultThemeSnapshot()
-            snapshot.preferences.appMode = .light
-            snapshot.preferences.readerMode = mode == "night" ? .dark : .light
-            snapshot.preferences.readerLight = .palette(id: mode == "appearance" ? "bean-light" : (mode == "notes" ? "apricot-light" : "white-light"))
-            snapshot.preferences.readerDark = .palette(id: "black-dark")
-            switch StoreShotScene.requested {
-            case .paper: snapshot.preferences.readerLight = .palette(id: "apricot-light")
-            case .kraft: snapshot.preferences.readerLight = .palette(id: "apricot-light")
-            case .linen: snapshot.preferences.readerLight = .palette(id: "bean-light")
-            default: break
-            }
-            if StoreShotPage.requested != nil {
-                // This path returns before the general UI-test defaults reset.
-                UserDefaults.standard.set(ReadingSettingsTab.typography.rawValue, forKey: "readingSettingsTab")
-                let index = arguments.firstIndex(of: "--ui-test-page-appearance")
-                let dark = index.map { arguments.indices.contains($0 + 1) && arguments[$0 + 1] == "dark" } ?? false
-                snapshot.preferences.appMode = dark ? .dark : .light
-                snapshot.preferences.readerMode = .app
-                snapshot.preferences.readerLight = .app; snapshot.preferences.readerDark = .app
-            }
+            let dark = capture.appearance == "dark"
+            snapshot.preferences.appMode = dark ? .dark : .light
+            if dark { snapshot.preferences.appDark = .palette(id: capture.appPalette) }
+            else { snapshot.preferences.appLight = .palette(id: capture.appPalette) }
+            guard let reader = snapshot.palettes.first(where: { $0.id == capture.readerPalette }) else { preconditionFailure("Unknown screenshot reader palette") }
+            snapshot.preferences.readerMode = reader.appearance == .dark ? .dark : .light
+            if reader.appearance == .dark { snapshot.preferences.readerDark = .palette(id: reader.id) }
+            else { snapshot.preferences.readerLight = .palette(id: reader.id) }
+            do {
+                let supported = builtinReaderTextures().contains { $0.paletteId == capture.readerPalette }
+                if supported {
+                    snapshot.preferences = try setReaderPaletteTexture(preferences: snapshot.preferences, paletteId: capture.readerPalette, enabled: capture.readerTextureEnabled)
+                } else { precondition(!capture.readerTextureEnabled, "Unsupported screenshot texture palette") }
+                _ = try encodeThemeSnapshot(value: snapshot)
+            } catch { preconditionFailure("Invalid screenshot theme configuration: \(error)") }
             UserDefaults(suiteName: suite)!.set(try! encodeThemePreferences(value: snapshot.preferences), forKey: "Moonread.themePreferences")
             UserDefaults.standard.set(try! encodeThemeSnapshot(value: snapshot), forKey: "Moonread.appearanceCache." + session)
             return AppDataService(libraryDirectory: root, sourceDefaultsSuite: suite)
