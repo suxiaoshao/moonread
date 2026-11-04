@@ -41,6 +41,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 发版清单（分支）：
 
+- 每个版本建立或复用文档整理与代码清理 issue（1.4 为 #173）；发布前核对文档现状、遗留项与验证边界，不为清理而强拆所有长文件。
 - 新开 `release/x.y` 后第一件事：把所有 target 的 `MARKETING_VERSION` 改为 `x.y`，构建号 `CURRENT_PROJECT_VERSION` 递增到大于 ASC 已有最大号；Debug/Release 保持一致。
 
 - 新开 `release/x.y` 时，同步修改 [Dependabot](../../../.github/dependabot.yml) 两个更新项的 `target-branch`，让常规依赖版本更新 PR 指向当前版本分支。
@@ -88,7 +89,7 @@ App 的营销版本（`MARKETING_VERSION`，用户可见）和构建号（`CURRE
 
 使用独立的 `StoreScreenshots` scheme，不进入日常关键 UI 测试。拍摄参数、原创样书与处理入口都只存在于 DEBUG（#83）；每次启动使用随机 UUID 的临时书库，拒绝用户 iCloud / Downloads 路径。不能用用户小说或真实 AI 网络请求作夹具。
 
-一般先对比上一版原图，只重拍变化页面；当发布清单明确要求整批重拍时，以已审定清单为准。官网和商店共用同一份原图，不能按消费者重复拍摄。1.4 的联合清单是 `build/Work/release-1.4/150-site/capture-matrix.json`（196 个唯一 ID；它是计划，不是完成证明）。从主目录执行：
+先对比上一版原图，只拍有变化或旧图里没有的页面；画面未变就复用旧的真实截图，不要求所有图来自同一提交。官网和商店共用同一份原图，不能按消费者重复拍摄。1.4 的联合清单是 `build/Work/release-1.4/150-site/capture-matrix.json`，用于选择所需场景，不是每版整批重拍要求，也不是完成证明。例如从主目录只补拍一张：
 
 ```sh
 nix develop --no-update-lock-file -c xcodebuild \
@@ -98,10 +99,11 @@ nix develop --no-update-lock-file -c xcodebuild \
   -collect-test-diagnostics never \
   STORE_SCREENSHOT_DEVICE=iphone-medium STORE_SCREENSHOT_LANGUAGES=zh-Hans \
   STORE_SCREENSHOT_MATRIX=build/Work/release-1.4/150-site/capture-matrix.json \
+  STORE_SCREENSHOT_IDS=R06-F-zh-Hans-light \
   CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES test
 ```
 
-一次命令处理所选设备组/语言的所有清单条目；按设备姿态分批执行，不能同时开多台。可加 `STORE_SCREENSHOT_SCENES=R01,R12,R13`、`STORE_SCREENSHOT_APPEARANCES=light` 或 `STORE_SCREENSHOT_IDS=<完整ID,...>` 缩小本批。矩阵中的语言、App/阅读配色、纹理开关、系统明暗、方向、店面和输出路径经同一 `StoreShotCapture` 传给夹具。App 用生产 Rust 规则解析配色并返回实际应用的 receipt，导出前核对，不能只改文件名伪装配色。
+按需指定 ID、场景和明暗；未限定时命令会处理所选设备组/语言的全部清单条目，执行前须核对范围。按设备姿态分批执行，不能同时开多台。可用 `STORE_SCREENSHOT_SCENES=R01,R12,R13`、`STORE_SCREENSHOT_APPEARANCES=light` 或 `STORE_SCREENSHOT_IDS=<完整ID,...>` 缩小本批。矩阵中的语言、App/阅读配色、纹理开关、系统明暗、方向、店面和输出路径经同一 `StoreShotCapture` 传给夹具。App 用生产 Rust 规则解析配色并返回实际应用的 receipt，导出前核对，不能只改文件名伪装配色。
 
 不传矩阵时，可用同名 `STORE_SCREENSHOT_SCENES=R01`、`STORE_SCREENSHOT_LANGUAGES=zh-Hans`、`STORE_SCREENSHOT_APPEARANCES=light,dark`、`STORE_SCREENSHOT_ORIENTATION=portrait` 单独拍；可显式指定 `STORE_SCREENSHOT_APP_PALETTE` / `STORE_SCREENSHOT_READER_PALETTE`。店面由 `STORE_SCREENSHOT_STOREFRONT` 独立指定，默认 USA，与语言无关。单页 `PAGE_SHOT_SCENE/APPEARANCE/ORIENTATION` 保留，也走同一配置入口，输出仍在 `build/PageShots/`。旧 kraft/linen 与 01–08 别名不再使用。
 
@@ -124,13 +126,13 @@ nix develop --no-update-lock-file -c xcodebuild \
 | R08 / R09 | 正文高亮 / 原创人物名实际书内搜索，键盘收起 |
 | R10 / R11 | 六本有效记录的数据管理总览 / 已审合成 AI 回顾（不发网络请求） |
 
-R04 需要先在所选模拟器桌面放好中号「继续阅读」，退出编辑状态。主 App 写入独立的 `StoreScreenshots/catalog.json`，正常 `SystemReading/v1` 不变；等待组件实际显示对应书名、章节、进度和语言后才拍。App 的语言参数不会更改 SpringBoard 系统语言，操作者须事先在系统设置切到对应语言；组件未更新或桌面语言不符应停止，不能改截图文字。系统明暗由导出器逐条设置，结束后恢复原值；拍完由操作者移除专用测试组件。
+R04 需要先在所选模拟器桌面放好中号「继续阅读」，退出编辑状态。截图模拟器上专门放月读小组件的那页桌面保留，不清理；该页只放月读小组件。主 App 写入独立的 `StoreScreenshots/catalog.json`，正常 `SystemReading/v1` 不变；等待组件实际显示对应书名、章节、进度和语言后才拍。App 的语言参数不会更改 SpringBoard 系统语言，操作者须事先在系统设置切到对应语言；组件未更新或桌面语言不符应停止，不能改截图文字。系统明暗由导出器逐条设置。模拟器保持测试机和截图机的用途，保留数据与专用组件，不要求拍完恢复系统语言、明暗或关闭设备。
 
-pre-action 复用 `ios/StoreScreenshots/export.py` 展开矩阵、启动导出协作器；测试驱动只按选中的 ID 运行，不按官网/商店重复循环；post-action 清理合成组件快照并关闭本次模拟器。没有新增构建/安装脚本。固定状态栏 9:41、满电满格，阅读器当前时间仍走真实路径。
+pre-action 复用 `ios/StoreScreenshots/export.py` 展开矩阵、启动导出协作器；测试驱动只按选中的 ID 运行，不按官网/商店重复循环。post-action 只通知导出协作器停止，不清理合成组件/快照，不恢复系统设置，也不关闭模拟器。没有新增构建/安装脚本。固定状态栏 9:41、满电满格，阅读器当前时间仍走真实路径。
 
-原图只存一份：`build/Release/<工程MARKETING_VERSION>-screenshots/raw/<语言>/<设备组>/<light|dark>/R01.png`。`raw/manifest.json` 以 capture ID 更新，记录完整来源 SHA、未提交改动标记/摘要、设备/运行时、像素、方向、请求配置与 App 实际 receipt（版本/构建、字体字号/模式、配色/纹理、隔离库计数）、PNG SHA 和时间。消费者引用同一 ID/SHA；重拍后两个用途都须重新派生。未冻结源码的抽查会明确记录 dirty，不能冒充正式来源提交。
+原图只存一份：`build/Release/<工程MARKETING_VERSION>-screenshots/raw/<语言>/<设备组>/<light|dark>/R01.png`。`raw/manifest.json` 以 capture ID 更新，记录完整来源 SHA、未提交改动标记/摘要、设备/运行时、像素、方向、请求配置与 App 实际 receipt（版本/构建、字体字号/模式、配色/纹理、隔离库计数）、PNG SHA 和时间。官网与商店引用同一张原图及其哈希；重拍后两个用途都须重新派生。复用旧图保留其实际来源提交、配置和哈希，与本次补拍逐图记录，不统一改写为新提交。未提交修改须如实记录 dirty，不能冒充干净提交的产物。
 
-只导出原生 PNG，不缩放、不叠标题；按 RGB 排除黑图，去掉误导方向的 EXIF，核对尺寸/姿态。manifest 的像素检查不代替人工审图，默认 `review=pending-visual-review`。错误写入 `build/StoreScreenshots/export.log` 并使当前用例失败。强制中断后执行 `python3 ios/StoreScreenshots/export.py finish --root .`，清理夹具、恢复系统明暗并关闭选中模拟器，不保留空闲 Booted 设备。
+只导出原生 PNG，不缩放、不叠标题；按 RGB 排除黑图，去掉误导方向的 EXIF，核对尺寸/姿态。manifest 的像素检查不代替人工审图，默认 `review=pending-visual-review`。错误写入 `build/StoreScreenshots/export.log` 并使当前用例失败。中断后保留已有原图与证据，继续时只补缺项，不要求清理模拟器或重拍已完成且画面未变的页面。
 
 ### TestFlight 手动 CI
 
@@ -218,7 +220,7 @@ nix develop --no-update-lock-file -c xcodebuild \
 
 `PAGE_SHOT_SCENE` 可选 `book-details`（小说详情）、`reader-settings`（阅读设置）、`settings`（设置，regular 宽度自动两栏）、`library-home`（书架首页）、`reader`（单页阅读器）。每次只运行指定页面；`PAGE_SHOT_APPEARANCE=light|dark` 选择杏桃浅／深，页面模式默认只用简中，也可通过 `STORE_SCREENSHOT_LANGUAGES` 指定一个语言。`PAGE_SHOT_ORIENTATION=portrait|landscape|current` 控制方向，默认 iPad 横屏、iPhone 竖屏、Duo 保持当前姿态。沿用现有四个设备组与 UUID destination；Duo 内屏须先手动在 DeviceHub 展开，再用 `duo-inner`，不自动折叠或创建模拟器。
 
-PNG 保存到 `build/PageShots/<设备组>/<场景>-浅.png` 或 `-深.png`；simctl 按实际 display 导出横屏像素，去掉会让查看器再次旋转的方向元数据，不缩放，不从 XCTest attachment 转图。scheme 会在结束时关闭所选模拟器。未设置 `PAGE_SHOT_SCENE` 时，使用上文 R01–R13 场景及统一 raw 输出目录。
+PNG 保存到 `build/PageShots/<设备组>/<场景>-浅.png` 或 `-深.png`；simctl 按实际 display 导出横屏像素，去掉会让查看器再次旋转的方向元数据，不缩放，不从 XCTest attachment 转图。模拟器按专用测试/截图机保留，不要求结束后关闭或恢复设置。未设置 `PAGE_SHOT_SCENE` 时，使用上文 R01–R13 场景及统一 raw 输出目录。
 
 按改动选受影响的核心测试、原生排版回归和必要交互流程；需要时使用 `-only-testing:` 限定测试，不因小修自动重复全部验收。UI 用例各自使用独立测试存储，同一用例重启仍复用该目录，不覆盖正常书库。DEBUG 下同时提供 `--ui-testing` 和有效 UUID `--ui-test-session` 时，新会话重置标准 defaults 的阅读设置及设置分类，从默认滚动模式、20 号字开始；相同 UUID 的重启保留修改以验证持久化，正常启动不重置。
 

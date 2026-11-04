@@ -5,7 +5,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import struct
 import subprocess
 import sys
@@ -284,7 +283,6 @@ def prepare(root, device, group, version):
         'source_commit': run('git', '-C', str(root), 'rev-parse', 'HEAD'),
         'source_dirty': bool(run('git', '-C', str(root), 'status', '--porcelain')),
         'source_diff_sha256': hashlib.sha256(run('git', '-C', str(root), 'diff', 'HEAD').encode()).hexdigest(),
-        'original_appearance': run('xcrun', 'simctl', 'ui', device, 'appearance').lower(),
         'model': selected['name'], 'runtime': runtime, 'plan': make_plan(root, group)}))
     try:
         container = Path(run('xcrun', 'simctl', 'get_app_container', device, 'dev.moonread.MoonreadUITests.xctrunner', 'data'))
@@ -302,24 +300,11 @@ def prepare(root, device, group, version):
 
 
 def finish(root):
+    """Stop only our export worker; preserve simulator state and widget fixtures."""
     state = root / 'build/StoreScreenshots'
     if not (state / 'session.json').exists():
         return
     (state / 'stop').touch()
-    config = json.loads((state / 'session.json').read_text())
-    try:
-        group = Path(run('xcrun', 'simctl', 'get_app_container', config['device'],
-                         'dev.moonread.Moonread', 'group.dev.moonread.Moonread'))
-        # Only our separately named, synthetic widget fixture; not SystemReading/v1.
-        shutil.rmtree(group / 'StoreScreenshots', ignore_errors=True)
-        subprocess.run(['defaults', 'delete', str(group / 'Library/Preferences/group.dev.moonread.Moonread'),
-                        'StoreScreenshots.language'],
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    except subprocess.CalledProcessError:
-        pass  # No App/Group installed if the build failed before running.
-    if config.get('original_appearance') in ('light', 'dark'):
-        run('xcrun', 'simctl', 'ui', config['device'], 'appearance', config['original_appearance'])
-    subprocess.run(['xcrun', 'simctl', 'shutdown', config['device']], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
 
 
 if __name__ == '__main__':

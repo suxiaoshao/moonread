@@ -354,11 +354,6 @@ enum AIConnectionState: Equatable {
         else { connections[index].disabledModelIDs.formUnion(ids) }
         saveConnections()
     }
-    func supportsImageReference() -> Bool {
-        guard let selection = purposeSelection(.image), let connection = connections.first(where: { $0.id == selection.connectionID }),
-              let model = model(selection.modelID, in: connection) else { return false }
-        return model.capabilities?.imageInput == true && AINativeCapabilities.route(.image, connection: connection, model: model) != nil
-    }
     func isEnabled(modelID: String, in connection: AIConnection) -> Bool {
         !connection.disabledModelIDs.contains(modelID)
     }

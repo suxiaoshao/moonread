@@ -234,7 +234,6 @@ final class FullIndexController {
         request?.resume = false; save(); pause()
         BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.processingID)
     }
-    func continueIndex() { foreground = true; request?.resume = true; save(); resume() }
     func waitForCompletion() async { while let task = runner { await task.value } }
     private func pause() {
         currentFile = nil; waitingForReader = false; paused = constrained

@@ -9,6 +9,25 @@
 - 三语四设备组合共 99 张原图、12 张总览；商店提交三语 × iPhone/Duo/iPad × 8，共 72 张成图。原图来源为 `a49d7fc` 的既有 Debug 产物，不能冒充最终 Release 的设备回归。组件内部三语已核对，系统桌面仍为简中。每张来源、尺寸与哈希留在本机 `build/Release/1.3-screenshots/` manifest，发布操作与素材索引留在 `build/Release/1.3-launch/`。
 - Duo 默认截图曾捕获外屏，最终内屏截图按当次只读 display 枚举选择；显示器编号不是跨会话固定合同。既往 xcodebuild/simctl 挂起在补拍中未复现，不能由补拍成功推断根因已修复。截图完成后设备正常关闭，数据与桌面组件保留。
 
+## 1.3 系统续读与搜索批次（本地，2026-10-26）
+
+- 主模拟器：iPhone 18 Pro / iOS 27.0（FFA6F448-E09C-4885-B59C-53C5E07185F5），只用合成夹具。Rust 相关书架/系统书目 6 条与统计投影合同 1 条通过，Clippy 通过。
+- Swift 相关边界 15 条通过（10 条 SystemReading + 5 条 ReaderQuery 适配器）；涵盖后台旧候选被 scope 重置拒绝、原子快照/未知版本、陈旧 SHA 不显示正文、最小 Entity、显式/自动范围、索引失败仍可撤销与 Widget 原目标保持。使用假系统索引，不测 Apple 搜索/建议调度。
+- 既有 U04 改从首页统一路由续读；U12 覆盖国区仍有系统集成设置与合成 Widget 预览。实际结果与截图保存在 build/SystemReading/。
+- 不以这些本地结果声明 Siri、Control 的真实执行进程、锁屏/待机刷新或 iOS 18 实机已验收；当时安排先作 Production 云能力试用包并交用户确认；这份记录不证明已装机、后续 PR 或 CI 状态。
+
+## 1.3 V7 小组件本地验证（2026-10-26）
+
+- Rust 统计 owner 相关 4 条与既有事实投影合同 1 条通过；新增连续日代表例包括今日未读接昨日、断日、清除及超过七天，不在 Swift 重算。
+- 主模拟器相关 18 条 Swift 单测通过（16 条 SystemReading、2 条封面适配器）；覆盖最终 DTO 往返、显式展示与自动曝光边界、受限图/清理、scope、App 界面配色槽和固定模式、民用午夜/DST/时区/周起点、未知统计状态及按显示变化 reload。既有 U12 通过；使用后关闭模拟器。
+- `build/SystemReading/WidgetV7Final.xcresult` 与 `widget-v7-final-screens/` 保存结果及实际共享视图的合成审图附件。不是 WidgetKit 调度、锁屏低光或 Siri 识别率的自动验收。当时将用户重新添加最终 kind 后的系统实物检查留给试用。
+
+### V7 真机反馈：系统搜索提交与画廊主题（2026-10-26）
+
+相关 18 条 SystemReading 单测及既有 U12（97.213 秒）通过。新增格式变更全量重提、失败不误标完成、默认杏桃导出数据与 Rust owner 相等、画廊只复制界面主题而不复制用户书目/统计断言；attributes 同时填写 displayName。Spotlight 与 Siri donation 独立排队，普通位置刷新不反复取消同 scope 的批次。结果 `build/SystemReading/SearchRebuild.xcresult`。
+
+代码核查不能证明用户真机上此前未重建：旧实现冷启动也会重新提交，只是没有内容格式失效标记或提交状态。画廊未接主题则已由 sample 路径 appearance=nil 确认。当时将“已提交给 Core Spotlight”与“系统检索已可见”分开；真实部分词/拼音与缩略图留待试用确认，不以假适配器测试代替。
+
 ## 数据、文件与发布
 
 | 日期 / 能力 | 当时证据与结果 | 限制 / 本机证据 |
