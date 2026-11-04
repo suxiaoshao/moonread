@@ -1,11 +1,10 @@
 pub(crate) mod book_details;
 pub(crate) mod chapters;
 mod cover_page;
-mod ingest;
+pub(crate) mod input;
 pub(crate) mod layout;
 pub(crate) mod navigation;
 pub(crate) mod progressive;
-pub(crate) mod text;
 pub use crate::reading::book_details::*;
 pub use crate::reading::navigation::*;
 pub use crate::reading::progressive::{

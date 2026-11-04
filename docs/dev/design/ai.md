@@ -269,7 +269,7 @@ StoreKit `Storefront.current` 提供启动查询，`Storefront.updates` 持续�
 
 ## 阅读月亮入口
 
-2026-10-16 起改为「月光」：助手就是桌面图标里那弯月亮，不画五官、不拿道具，状态用月光的亮度和月相表达（取代带表情与道具的「月牙」角色，已实现）。源码：`Shared/Components/MoonCharacter.swift`（形象与状态绘制）、`AI/UI/AIReadingMoon.swift`（阅读页提示与动画）。静态状态稿见 `build/IconExplore/assistant-states.png`（本机预览，不提交）。
+2026-10-16 起改为「月光」：助手就是桌面图标里那弯月亮，不画五官、不拿道具，状态用月光的亮度和月相表达（取代带表情与道具的「月牙」角色，已实现）。源码：`Shared/Components/MoonCharacter.swift`（形象与状态绘制）、`AI/UI/Reading/AIReadingMoon.swift`（阅读页提示与动画）。静态状态稿见 `build/IconExplore/assistant-states.png`（本机预览，不提交）。
 
 ### 形象
 

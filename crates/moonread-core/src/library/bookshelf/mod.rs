@@ -1,5 +1,7 @@
 //! File metadata is an index of the platform's real directories. Content and
 //! reading records remain independently keyed by the normalized text hash.
+pub(crate) mod full_index;
+
 use crate::{ReaderCore, ReaderError, Result, SourceContentKey, valid_source_key};
 use rusqlite::{Connection, params};
 use std::collections::HashSet;

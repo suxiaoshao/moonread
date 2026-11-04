@@ -78,7 +78,7 @@ impl ReaderCore {
     /// Import is transactional; originals are never modified and no external paths persist.
     pub fn import_book(&self, file_path: String, title: String) -> Result<ImportText> {
         let mut file = File::open(file_path)?;
-        let encoding = crate::reading::text::detect_encoding(&mut file)?;
+        let encoding = crate::reading::input::text::detect_encoding(&mut file)?;
         file.seek(SeekFrom::Start(0))?;
         self.ingest(&mut file, title, encoding).map(Into::into)
     }

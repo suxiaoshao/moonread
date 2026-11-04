@@ -227,7 +227,7 @@ mod tests {
     #[test]
     fn full_index_v21_to_current_preserves_files() {
         let mut db = rusqlite::Connection::open_in_memory().unwrap();
-        db.execute_batch(include_str!("../storage/schema.sql"))
+        db.execute_batch(include_str!("../../storage/schema.sql"))
             .unwrap();
         db.execute_batch("ALTER TABLE import_jobs ADD COLUMN purpose TEXT NOT NULL DEFAULT 'reading'; PRAGMA user_version=21; INSERT INTO library_shelves VALUES('s','Shelf',X'0102','local',0,NULL);").unwrap();
         crate::storage::migrations::initialize(&mut db).unwrap();
