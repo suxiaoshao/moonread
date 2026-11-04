@@ -108,7 +108,6 @@ enum ReaderNativePhase: String { case released, requested, confirmed, dismissing
         guard token?.id == value.id, token?.opening == value.opening, phase == .requested else { return }
         phase = .confirmed
     }
-    func cancelDismissal() { if phase == .dismissing { phase = .confirmed } }
     func beginDismissal() {
         guard token != nil else { return }
         if phase == .requested { token = nil; phase = .released }

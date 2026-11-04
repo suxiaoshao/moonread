@@ -335,13 +335,6 @@ enum StatisticsDates {
         let count = Int((maximum / step).rounded(.up))
         return (0...max(1, count)).map { Double($0) * step }
     }
-    /// Compact chart axis values; exact durations are written elsewhere.
-    static func axisMinutes(_ minutes: Double) -> String {
-        if minutes <= 0 { return "0" }
-        if minutes < 60 { return String(localized: "\(Int(minutes.rounded())) 分钟") }
-        let hours = minutes / 60
-        return hours.rounded() == hours ? String(localized: "\(Int(hours)) 小时") : String(localized: "\(hours.formatted(.number.precision(.fractionLength(1)))) 小时")
-    }
     static func duration(_ ms: UInt64) -> String {
         if ms == 0 { return String(localized: "0 分钟") }
         if ms < 60_000 { return String(localized: "不足 1 分钟") }

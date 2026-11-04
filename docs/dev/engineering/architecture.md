@@ -28,7 +28,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 
 | 独立规则 | 唯一归属方 / 文件 | 理由与其他层边界 | 现状 / 边界 |
 | --- | --- | --- | --- |
-| 配色专属纹理支持、descriptor/混合参数、独立开关及发布迁移 | Rust `user/themes.rs` | 分层资源、锚点/尺度限制与混合参数单源；按最终有效内置配色 ID 解析；本机 version 1 map；旧 1.3 两槽播种同明暗全部支持项，缺 key 新默认开；App/官网共用 descriptor，不再维护通用纹理/强度/Lr/tile 运行契约 | 单源 |
+| 配色专属纹理支持、descriptor/混合参数、独立开关及发布迁移 | Rust `user/themes/textures.rs`（descriptor），`preferences.rs`（偏好与迁移），`resolve.rs`（校验/解析） | 分层资源、锚点/尺度限制与混合参数单源；按最终有效内置配色 ID 解析；本机 version 1 map；旧 1.3 两槽播种同明暗全部支持项，缺 key 新默认开；App/官网共用 descriptor，不再维护通用纹理/强度/Lr/tile 运行契约 | 单源 |
 | 导入字体资源身份、引用与清单格式/校验 | Rust `user/reader_fonts.rs` 与 `reading/layout.rs` | 复用 `SourceIdentityProbe.raw_sha256` 标识原字节；Swift `ReaderFontLibrary` 负责协调复制与 Core Text 注册，`ReaderBuiltinFonts` 管已知 Apple 宋体/圆体的按需下载与可用性，`ReadingTypography` 唯一解析正文/预览字体及缺失回退；资源/face 可用性改变使排版缓存失效 | 单源与平台接线 |
 | 字号、行距、段间距的默认值、范围与控件步长 | Rust `reading/layout.rs` | `reader_typography_controls` 同时供设置校验、Swift Stepper 和官网导出器使用；原生/浏览器字体度量各自归平台 | 单源 |
 | 阅读设置当前值、连续修改与串行保存 | Swift `Settings/ReaderSettingsStore.swift`，App 级可观察环境对象 | `ReaderSession` 和设置页共用同一实例，不持有可写副本或各自排队；`AppDataService` 仍负责既有 UserDefaults 编解码和持久化，Rust 校验范围不变 | 单一 owner |
@@ -43,6 +43,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 书架同步描述、本机授权绑定和扫描后准入 | Swift `ShelfRecovery.swift`、`UserSyncJSON.swift`、`FullIndex.swift` | SwiftData 裁决描述，本机 schemaVersion 1 绑定按账户隔离；平台扫描成功范围限制自动任务，不复制 Rust 查询 | 平台边界 |
 | SHA 格式 | Rust `identity/content.rs::parse_sha256` | 身份及资产校验共享严格语法，语义字段仍区分 | 单源 |
 | 默认阅读中状态 | Rust `user/projection.rs::reading_content_positions` + `reading/book_details.rs::project_metadata` | 详情与搜索共用 SHA 位置记录判定；file_identities 提供有效索引身份，不依赖本机 books 正文缓存；显式状态优先 | 单源修复 |
+| AI 工具输入/schema/输出契约与执行 | Swift `AI/Tools/AIReadingToolContracts.swift` / `AIReadingTools.swift` | 只拆契约、执行和 `AppDataService+AIReading.swift` 平台适配的物理文件；引用、SHA、范围与搜索仍调用既有 owner | 单一执行 actor |
 | AI b: 引用协议 | Swift `AI/Tools/AIReadingReferences.swift` | 工具协议只在 Swift；调用 Rust SHA 校验，不再复制 hex 判断 | 共享引用解析 |
 | SwiftData LWW/候选裁决、未知 payload 隔离 | Swift `Data/UserData.swift`、`UserSyncJSON.swift` | 权威写入口；Rust 仅接最终唯一投影 | 保持已修复单源 |
 | 相对路径语法、组件边界匹配、名称合法性 | Rust `storage/validation.rs`，bookshelf 委托 | 索引和真实操作都需要相同底线；具名 profile 保留入口差异 | 共享路径校验 |
@@ -95,7 +96,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | `identity/` | content 阅读键与文件关联、source 原件探测/解码策略、sha |
 | `reading/` | ingest 事务正文导入、chapters 扫描、text 解码/分块、navigation、layout、cover_page、book_details |
 | `reading/progressive/` | 任务类型与状态入口；tasks 生命周期、stream 前缀分块、recovery 恢复/回收、query 不可变读取、原有测试 |
-| `user/` | projection、statistics、coverage、themes；只投影/计算，SwiftData 继续是用户事实权威 |
+| `user/` | projection、statistics、coverage；`themes/` 中 models、preferences、textures、palettes、resolve 分别保留类型、偏好迁移、正式图案、配色/对比度及校验解析，父模块重导出原 API；只投影/计算，SwiftData 继续是用户事实权威 |
 | `storage/` | 原 schema.sql、migrations、backup_archive、cache_management、validation、rows 正文缓存 SQL 行映射 |
 
 SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `include_str!` 路径。章节和渐进准备的既有测试随实现移动，不复制测试或规则。
@@ -107,17 +108,17 @@ SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `in
 | 目录 | 文件职责与保留边界 |
 | --- | --- |
 | `App` | 应用入口和 `MoonreadDelegate`；App 继续持有同一个 `CloudStore` |
-| `Library` | 书架 model/路由、UI、目录操作、云文件与书目搜索；`LibraryPresentation` 保留跨功能复用的 `LibraryBookCover` |
+| `Library` | 书架 model/路由、目录操作、云文件与书目搜索；首页、目录、全部小说、最近阅读、管理页、行/空态及 drop 按完整类型分文件，状态/绑定及层级不变；`LibraryPresentation` 保留跨功能复用的 `LibraryBookCover`，`SourceFileAccess.swift` 保留原协调读取与下载进度类型；`Fixtures/LibraryUIFixtures.swift` 与 `LibraryStoreShotFixtures.swift` 只移动 DEBUG 合成输入，隔离目录及生产初始化顺序不变 |
 | `Reader/Session` | 单独的 `ReaderSession.swift`，完整保留现有会话 owner |
 | `Reader/UI` | `ReaderScreen` 保留会话生命周期，`ReaderPresentationState` 持有阅读器命名空间内的临时意图路径；`ReaderTaskContent`、`ReaderPreparationContent`、`ReaderCompactHeader`、`ReaderMoreContent` 分别呈现任务、准备、顶部提示和更多操作；`ReaderTools` 保留 model，目录/笔记/搜索及 NoteEditor 分文件 |
 | `Reader/Rendering` | `ReadingView` 是 SwiftUI 适配入口；`ReadingController` 与 Pages/Scroll/Navigation/Selection 扩展共用原控制器状态；`ReadingPagination`、`ReadingViewport`、`ReadingTextDecorations`、`ReadingTextView`、扉页/分页控制器按职责分文件，坐标和设备控制保持原 owner |
 | `Books` | 小说详情与完整 `BookMetadata`；封面展示、加载及服务私有辅助保留原文件边界 |
 | `Statistics` | `StatisticsView` 保留总览/单书详情的状态和路由；models、书目列表、时长条、节奏图、时段图/行、全部时段、日期详情、统计设置按完整类型分文件；`ReadingStatistics` 的 writer、recorder 与日期辅助保持原 owner |
-| `Settings` | `SettingsView` 只保留首页与私有入口辅助；应用外观、模式 Picker、配色选择/预览/编辑、关于与第三方许可分文件；设备阅读偏好、阅读预览、`CloudSettingsView` / `CloudStore` 保持原 owner |
+| `Settings` | `SettingsView` 只保留首页与私有入口辅助；应用外观、模式 Picker、配色选择/预览/编辑、关于与第三方许可分文件；设备阅读偏好、阅读预览、`CloudSettingsView` / `CloudStore` 保持原 owner；`ReaderSettingsCache.swift` 只移动原锁保护的设置缓存 |
 | `Data` | `AppDataService`、SwiftData 用户数据及同步协调；正文准备、导入、云目录 owner 与紧耦合私有类型仍在 `AppDataService` |
 | `SystemIntegration` / `SystemIntegrationShared` | 主 App 派生快照、系统入口路由与平台更新；共享部分只有稳定链接、只读 DTO、最小 Entity/配置与无状态文字卡片。Widget/Control 目标不含数据库/正文服务；任意队列系统回调显式 nonisolated / @Sendable 后再交接 |
 | `Shared` | `Theme`、`MoonView`/`MoonCharacter`/`BrandSeal`、输入焦点及跨功能错误文案 `ReaderMessages` |
-| `AI` | 保持现有分层和路径；资源与签名配置路径保持原位 |
+| `AI` | 保持现有分层；`Tools/AIReadingToolContracts.swift` 定义原输入/schema/响应 DTO，`AIReadingTools.swift` 保留唯一执行 actor，`AppDataService+AIReading.swift` 保留原平台正文准备适配；资源与签名配置路径保持原位 |
 
 `ios/MoonreadShare` 是独立分享扩展 target，只负责接收与取消。`ios/ShareReceiveShared` 同时编译进主 App 与扩展，提供版本化 ShareInbox、原字节复制和 provider 生命周期适配；不依赖主 App 的 Rust、SwiftData、AI 或阅读 UI。App Group 只共享待导入原件，主 App 继续独占书架写入和正文准备。
 

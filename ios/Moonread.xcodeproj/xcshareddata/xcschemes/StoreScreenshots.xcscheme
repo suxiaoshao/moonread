@@ -25,7 +25,7 @@
       </PreActions>
       <PostActions>
          <ExecutionAction ActionType="Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
-            <ActionContent title="Store screenshot PostActions" scriptText="mkdir -p &quot;$SRCROOT/../build/StoreScreenshots&quot;&#10;exec &gt; &quot;$SRCROOT/../build/StoreScreenshots/finish.log&quot; 2&gt;&amp;1&#10;set -x&#10;/usr/bin/python3 &quot;$SRCROOT/StoreScreenshots/export.py&quot; finish --root &quot;$SRCROOT/..&quot;&#10;">
+            <ActionContent title="Stop store screenshot exporter" scriptText="mkdir -p &quot;$SRCROOT/../build/StoreScreenshots&quot;&#10;exec &gt; &quot;$SRCROOT/../build/StoreScreenshots/finish.log&quot; 2&gt;&amp;1&#10;set -x&#10;/usr/bin/python3 &quot;$SRCROOT/StoreScreenshots/export.py&quot; finish --root &quot;$SRCROOT/..&quot;&#10;">
                <EnvironmentBuildable>
                   <BuildableReference BuildableIdentifier="primary" BlueprintIdentifier="A80000000000000000000001" BuildableName="Moonread.app" BlueprintName="Moonread" ReferencedContainer="container:Moonread.xcodeproj">
          </BuildableReference>

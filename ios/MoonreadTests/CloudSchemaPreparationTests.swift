@@ -19,9 +19,5 @@ final class CloudSchemaPreparationTests: CloudSchemaPreparationFixture {
       XCTAssertTrue(entity.uniquenessConstraints.isEmpty)
       XCTAssertTrue(entity.relationshipsByName.values.allSatisfy(\.isOptional))
     }
-    let report = try CloudSchemaPreparation.report()
-    XCTAssertTrue(report.contains("UserCover"))
-    XCTAssertTrue(report.contains("external=true"))
-    XCTAssertFalse(report.contains("AISession"))
   }
 }

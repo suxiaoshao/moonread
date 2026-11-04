@@ -328,14 +328,6 @@ struct LibraryCollection: UIViewControllerRepresentable {
             guard let config = configuration else { refresh.endRefreshing(); return }
             Task { await config.model.refresh(showIndicator: false); refresh.endRefreshing() }
         }
-        override func viewDidLayoutSubviews() {
-            super.viewDidLayoutSubviews()
-            #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--ui-test-grid-geometry") {
-                collectionView.accessibilityValue = String(Double(collectionView.contentSize.height))
-            }
-            #endif
-        }
     }
 
 }
