@@ -129,6 +129,8 @@ jobs:
       - name: Prepare isolated signing context and read-only ASC client
         env:
           ASC_API_KEY_BASE64: ${{ secrets.ASC_API_KEY_BASE64 }}
+          IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64: ${{ secrets.IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64 }}
+          IOS_DEVELOPMENT_CERTIFICATE_PASSWORD: ${{ secrets.IOS_DEVELOPMENT_CERTIFICATE_PASSWORD }}
         run: |
           set +x
           umask 077
@@ -136,7 +138,8 @@ jobs:
           printf '%s\n' prepare > "$RUNNER_TEMP/testflight-private/current-stage"
           python3 - <<'PY'
           import base64, os, pathlib, re, secrets, subprocess
-          for name in ['ASC_API_KEY_BASE64', 'ASC_KEY_ID', 'ASC_ISSUER_ID', 'APPLE_TEAM_ID']:
+          for name in ['ASC_API_KEY_BASE64', 'ASC_KEY_ID', 'ASC_ISSUER_ID', 'APPLE_TEAM_ID',
+                       'IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64', 'IOS_DEVELOPMENT_CERTIFICATE_PASSWORD']:
               if not os.environ.get(name): raise SystemExit('Missing Environment setting: ' + name)
           for name in ['ASC_KEY_ID', 'APPLE_TEAM_ID']:
               if not re.fullmatch(r'[A-Z0-9]{10}', os.environ[name]):
@@ -160,6 +163,26 @@ jobs:
           original = shlex.split((root / 'original-keychains.txt').read_text())
           subprocess.run(['security', 'list-keychains', '-d', 'user', '-s', keychain, *original], check=True, capture_output=True)
           subprocess.run(['security', 'default-keychain', '-d', 'user', '-s', keychain], check=True, capture_output=True)
+          # Import the fixed Apple Development identity so automatic signing reuses it
+          # instead of creating a new API development certificate on every run.
+          p12 = root / 'development.p12'
+          p12.write_bytes(base64.b64decode(os.environ['IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64'], validate=True))
+          p12.chmod(0o600)
+          def run_secret(stage, args):
+              # Arguments carry passwords: report only the stage, never the command or exception.
+              if subprocess.run(args, capture_output=True).returncode != 0:
+                  raise SystemExit('Development certificate ' + stage + ' failed.')
+          run_secret('import', ['security', 'import', str(p12), '-k', keychain,
+                                '-P', os.environ['IOS_DEVELOPMENT_CERTIFICATE_PASSWORD'],
+                                '-T', '/usr/bin/codesign', '-T', '/usr/bin/security'])
+          p12.unlink()
+          run_secret('key access', ['security', 'set-key-partition-list', '-S', 'apple-tool:,apple:,codesign:',
+                                    '-s', '-k', password, keychain])
+          identities = subprocess.run(['security', 'find-identity', '-v', '-p', 'codesigning', keychain],
+                                      capture_output=True, text=True).stdout
+          team = '(' + os.environ['APPLE_TEAM_ID'] + ')'
+          if not any('Apple Development' in line and team in line for line in identities.splitlines()):
+              raise SystemExit('No valid Apple Development identity for the team in the imported certificate.')
           PY
           # This helper exists only in the ephemeral runner, never as a repository script/artifact.
           cat > "$RUNNER_TEMP/testflight-private/asc.py" <<'PY'
@@ -234,7 +257,12 @@ jobs:
               # Only error excerpts leave this runner, never raw logs. Mask known
               # injected values as well as credentials not known to GitHub masking.
               text = html.unescape(urllib.parse.unquote(text)).replace('\\"', '"')
-              for name in ['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_API_KEY_BASE64', 'GH_TOKEN', 'GITHUB_TOKEN']:
+              # Xcode prefixes archive diagnostics with an absolute project/source
+              # path. Remove only that prefix before generic path redaction, or
+              # the redactor consumes the error and the collector cannot see it.
+              text = re.sub(r'(?m)^/[^\r\n]*?: (fatal error|error|warning):', r'\1:', text)
+              for name in ['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_API_KEY_BASE64', 'IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64',
+                           'IOS_DEVELOPMENT_CERTIFICATE_PASSWORD', 'GH_TOKEN', 'GITHUB_TOKEN']:
                   value = os.environ.get(name)
                   if value: text = text.replace(value, '[redacted]')
               text = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', text)
