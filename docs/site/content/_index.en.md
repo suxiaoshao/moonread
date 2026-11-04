@@ -3,5 +3,8 @@ title = "Moonread"
 template = "index.html"
 [extra]
 tagline = "A quiet place for your own TXT books"
-lede = "Put your own text files on the shelf, tune the type and colors, and keep reading comfortably late into the night. No ads, no bookstore, and no servers of our own."
+lede = "A local TXT reader with iCloud continuity, dedicated reading backgrounds, font import, notes, and reading-data backups. Free, ad-free, and open source."
+reading_alt = "Actual Moonread reading screenshot"
+widget_alt = "Actual Moonread Home Screen widget"
+library_alt = "Actual Moonread folder library"
 +++

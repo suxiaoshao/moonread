@@ -58,7 +58,7 @@
     const base = (metrics.fontBoundingBoxAscent + metrics.fontBoundingBoxDescent) || state.fontSize * 1.2;
     text.style.lineHeight = (base + state.lineSpacing) + 'px';
     text.style.setProperty('--paragraph', state.paragraphSpacing + 'px');
-    for (const key of Object.keys(data.controls)) document.getElementById(key + 'Value').value = state[key] + ' pt';
+    for (const key of Object.keys(data.controls)) document.getElementById(key + 'Value').value = String(state[key]);
     for (const button of controls.querySelectorAll('[data-adjust]')) {
       const key = button.dataset.adjust, rule = data.controls[key];
       const next = state[key] + Number(button.dataset.direction) * rule.step;
