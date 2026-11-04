@@ -17,7 +17,7 @@ Rust 索引、身份、来源状态 ─────────┴→ AppDataSer
 
 主 App 唯一发布快照；扩展不打开 SwiftData/CloudKit、Rust SQLite 或根 bookmark，不读 TXT、不调用 AI、不写位置/统计。快照不进入同步/用户备份，不能回写权威事实。全库 catalog 不是 recentReadings 的十本截取；分批查询元数据，不加载正文/批注/统计 facts。
 
-拟新增主 App `SystemIntegration/SystemReadingCatalog.swift`、`SystemReadingRouter.swift` 和共享 `ios/SystemIntegrationShared/` DTO，不新增包管理工具或通用事件总线。名称由实现 PR 核定。
+主 App 的 `SystemIntegration/SystemReadingCatalog.swift` 负责生产，`SystemReadingRouter.swift` 负责开书路由，共享 DTO 位于 `ios/SystemIntegrationShared/`；未引入包管理工具或通用事件总线。
 
 ## 身份与字段
 
@@ -36,7 +36,7 @@ Rust 索引、身份、来源状态 ─────────┴→ AppDataSer
 
 ## 发布和失效
 
-App Group `SystemReading/v1/` 同目录暂存后原子替换完整 JSON；串行发布者用配置代次丢弃旧结果。建议初始保护量为总 JSON 8 MiB、单 title/author 1 KiB、tags 总 4 KiB，由合成大库检查再定；这是应用候选限额，不是 Apple API 限制。超额不能无声截断成完整快照。
+App Group `SystemReading/v1/` 同目录暂存后原子替换完整 JSON；串行发布者用配置代次丢弃旧结果。快照保护上限为总 JSON 8 MiB、单 title/author 1 KiB、tags 总 4 KiB；这是应用自身限额，不是 Apple API 限制。超额不能无声截断成完整快照。
 
 | 事件 | 处理 |
 | --- | --- |
