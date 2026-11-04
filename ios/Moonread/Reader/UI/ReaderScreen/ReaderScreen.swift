@@ -31,10 +31,15 @@ struct ReaderScreen: View {
     @State private var battery = ReaderBattery()
     @State private var exitPhase = ReaderExitPhase.reading
     @State private var navigationPresentation = NavigationPresentationState()
-    private var automatic: ReaderAutoReading { session.autoReading }
+    // Same View-owned storage; extensions only read the existing owner/binding values.
+    var readerSession: ReaderSession { session }
+    var readerTools: ReaderToolsModel { tools }
+    var readerDockHeight: CGFloat { dockHeight }
+
+    var automatic: ReaderAutoReading { session.autoReading }
     private var automaticSelected: Bool { renderedNode.location.selection == .automatic }
     private var automaticHidden: Bool { automaticSelected && renderedNode.exposure == .hidden }
-    private var attachmentExpanded: Bool {
+    var attachmentExpanded: Bool {
         get { automaticSelected ? renderedNode.exposure == .expanded : searchExpanded }
         nonmutating set {
             if automaticSelected {
@@ -53,14 +58,14 @@ struct ReaderScreen: View {
     private var renderedNode: ReaderInstalledNode {
         nativeHost.dismissing ? (nativeHost.node ?? currentNode) : currentNode
     }
-    private var controlsVisible: Bool {
+    var controlsVisible: Bool {
         get { renderedNode.controls }
         nonmutating set {
             if newValue { automatic.pause() }
             presentation.setControlsVisible(newValue)
         }
     }
-    private var dock: ReaderDock {
+    var dock: ReaderDock {
         get { renderedNode.dock }
         nonmutating set {
             automatic.pause()
@@ -74,7 +79,7 @@ struct ReaderScreen: View {
         get { renderedNode.searchActive }
         nonmutating set { if newValue { tools.beginSearchSession() } else { tools.stopSearch() } }
     }
-    private var searchExpanded: Bool {
+    var searchExpanded: Bool {
         get { renderedNode.searchExpanded }
         nonmutating set { presentation.expandSearch(newValue) }
     }
@@ -115,25 +120,10 @@ struct ReaderScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.moonreadReduceMotion) private var reduceMotion
-    @Environment(\.theme) private var theme
+    @Environment(\.moonreadReduceMotion) var reduceMotion
+    @Environment(\.theme) var theme
 
-    private var readerContent: some View {
-        Group {
-            if session.opening.phase == .reading, let window = session.window, let settings = session.settings {
-                readingView(window: window, settings: settings)
-            } else if session.opening.phase == .titlePage || !ReaderOpenDiagnostics.deferredPage {
-                preparationView
-                    .background(ReaderPlaceholderWitness {
-                        if let id = session.opening.request?.id { session.opening.placeholderDisplayed(id) }
-                    })
-                    .transition(.opacity)
-            } else { Color(uiColor: theme.paper) }
-        }
-        .modifier(ReaderOpenContentFade(phase: session.opening.phase, enabled: session.opening.fadesContent && !reduceMotion))
-    }
-
-    private func readingView(window: ReadingWindow, settings: ReaderSettings) -> some View {
+    func readingView(window: ReadingWindow, settings: ReaderSettings) -> some View {
         // Keep the representable (and its selection/pager) alive when the native
         // host changes size class; only its geometry input changes.
         GeometryReader { geometry in
@@ -602,23 +592,6 @@ struct ReaderScreen: View {
         aiConversationID.flatMap { ai.conversation($0) }
     }
 
-    private func aiContext(selection: TextRange? = nil) -> AIEntryContext {
-        let sha = session.book?.contentSha256
-        let title = session.book?.title ?? route.title
-        let visible = session.viewportAccess.controller?.statisticsRange()
-        let start = visible?.0 ?? session.anchor
-        var attachments: [AIReadingAttachment] = [
-            .init(kind: .position, origin: "reader", bookRef: sha.map(AIReadingTools.bookRef), title: title,
-                  chapter: session.chapter?.title, startUtf8: start, endUtf8: visible?.1,
-                  progress: session.incomplete ? nil : session.book.map { Double(start) / Double(max(1, $0.byteCount)) })
-        ]
-        if let selection {
-            attachments.append(.init(kind: .selection, origin: "reader", bookRef: sha.map(AIReadingTools.bookRef), title: title,
-                                     chapter: session.chapter?.title, startUtf8: selection.startUtf8, endUtf8: selection.endUtf8, excerpt: selection.text))
-        }
-        return AIEntryContext(association: AIContext(contentSHA: sha, title: title, chapter: session.chapter?.title), attachments: attachments)
-    }
-
     private var statisticsVisibility: ReaderStatisticsVisibility {
         ReaderStatisticsVisibility(body: scenePhase == .active && !session.isLeaving && session.opening.phase == .reading && session.window != nil && !session.showingCover
             && !session.isLoading && !session.navigating && session.error == nil
@@ -796,7 +769,7 @@ struct ReaderScreen: View {
         return taskID == nil && sheetPresented && !searchExpanded && dock != .settings && !sheetDismissRequested
     }
 
-    private func openLibrary(_ destination: ReaderLibraryTab, fromMore: Bool = false) {
+    func openLibrary(_ destination: ReaderLibraryTab, fromMore: Bool = false) {
         // Choose the list before publishing the panel: its first frame is already the target.
         tools.select(destination); presentPanel(.library)
         if fromMore { presentation.location.selection = .more }
@@ -805,7 +778,7 @@ struct ReaderScreen: View {
     /// Ends the details presentation, and every page pushed above it, back to reading.
     private func closeBookDetails() { presentation.close(.details) }
 
-    private func presentPanel(_ next: ReaderPanel) {
+    func presentPanel(_ next: ReaderPanel) {
         automatic.end()
         guard panel != next || (next == .search && !searchExpanded) else { return }
         if next == .details {
@@ -850,7 +823,7 @@ struct ReaderScreen: View {
         }
     }
 
-    private func closeSearch() {
+    func closeSearch() {
         searchActive = false
         searchExpanded = false
         panel = nil
@@ -896,18 +869,6 @@ struct ReaderScreen: View {
         }
     }
 
-    private var undoCapsule: some View {
-        ReaderUndoAction(session: session, tools: tools)
-    }
-
-    private var browsePanel: some View {
-        ReaderBrowseActions(session: session, showsHistory: controlsVisible,
-                            showHistory: { presentPanel(.history) }, finished: { controlsVisible = false })
-            .padding(.horizontal, LayoutTokens.page).padding(.top, LayoutTokens.page)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("readerBrowsePanel")
-    }
-
     private func compactHeader(book: BookInfo) -> some View {
         ReaderCompactHeader(session: session, battery: battery, book: book, readerWidth: readerWidth,
                             compactHeaderHeight: compactHeaderHeight, showControls: { controlsVisible = true })
@@ -920,13 +881,6 @@ struct ReaderScreen: View {
 
     private var readingSettings: Binding<ReaderSettings> {
         Binding(get: { session.settings ?? defaultReaderSettings() }, set: session.updateSettings)
-    }
-
-    private func searchContent(details: Bool, readyForInput: Bool = false) -> some View {
-        ReaderSearchContent(model: tools, session: session, expanded: Binding(get: { searchExpanded }, set: { searchExpanded = $0 }),
-                            showsDetails: details, readyForInput: readyForInput,
-                            compactHeight: dockHeight, showsHistory: controlsVisible,
-                            showHistory: { presentPanel(.history) }, closeSearch: closeSearch)
     }
 
     private var bottomDock: some View {
@@ -958,66 +912,13 @@ struct ReaderScreen: View {
         }
     }
 
-    @ViewBuilder private var continuationControl: some View {
-        if let message = session.continuationMessage {
-            if session.continuationCollapsed {
-                Button("同步进度") { session.expandContinuation() }
-                    .font(.footnote).buttonStyle(.plain)
-                    .foregroundStyle(Color(uiColor: theme.accent))
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .background(Color(uiColor: theme.surface), in: .capsule)
-                    .accessibilityIdentifier("showSyncedProgress")
-            } else {
-                ReadingContinuationBanner(message: message, busy: session.navigating,
-                    accept: { Task { await session.acceptSyncedContinuation() } },
-                    stay: { session.stayAtLocalPosition() })
-            }
-        }
-    }
-
-    private var bottomControls: some View {
-        VStack(spacing: 18) {
-            if session.incomplete { importStatus }
-            HStack(spacing: 0) {
-                toolButton("目录", symbol: "list.bullet", id: "showChapters") { openLibrary(.chapters) }
-                toolButton("搜索", symbol: "magnifyingglass", id: "showSearch") { presentPanel(.search) }
-                toolButton("设置", symbol: "textformat.size", id: "readingSettings", selected: dock == .settings) {
-                    selectFooterDock(.settings)
-                }
-                toolButton("更多", symbol: "ellipsis", id: "readerMore", selected: dock == .more) {
-                    selectFooterDock(.more)
-                }
-            }
-            .labelStyle(ReaderToolLabelStyle())
-            .buttonStyle(.plain)
-
-        }
-        .padding(.horizontal, 24)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("readerBottomControls")
-    }
-
-    private func selectFooterDock(_ destination: ReaderDock) {
+    func selectFooterDock(_ destination: ReaderDock) {
         if destination == .more { automatic.pause() } else { automatic.end() }
         let tool: ReaderTool = destination == .more ? .more : .settings
         if !presentation.leaveAutomaticAccessory(for: tool) { dock.toggle(destination) }
     }
 
-    private func toolButton(_ title: LocalizedStringKey, symbol: String, id: String, selected: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: symbol)
-                .foregroundStyle(Color(uiColor: selected ? theme.accent : theme.ink))
-                .frame(maxWidth: .infinity, minHeight: 56).contentShape(.rect)
-        }.accessibilityIdentifier(id).accessibilityAddTraits(selected ? .isSelected : [])
-    }
-
-    /// 更多 replaces the dock content like quick settings. Its actions use the same
-    /// label style, columns and targets as the tools below; at accessibility sizes the
-    /// same labels stack as rows so they stay readable.
-    private var moreContent: some View {
-        ReaderMoreContent(session: session, openLibrary: openLibrary, presentPanel: presentPanel, automaticReading: openAutomaticReading, changeEncoding: changeEncoding)
-    }
-    private func openAutomaticReading() {
+    func openAutomaticReading() {
         automatic.pause()
         controlsVisible = false
         tools.stopSearch()
@@ -1025,12 +926,12 @@ struct ReaderScreen: View {
         presentation.choose(.automatic, exposure: .accessory)
     }
 
-    private func closeAutomaticReading() {
+    func closeAutomaticReading() {
         presentation.setControlsVisible(false)
         presentation.choose(.automatic, exposure: .hidden)
     }
 
-    private func requestAutomaticStart() {
+    func requestAutomaticStart() {
         guard session.settings?.mode == .scroll else { return }
         automatic.requestStart()
         closeAutomaticReading()
@@ -1046,24 +947,7 @@ struct ReaderScreen: View {
             speed: session.settings?.autoReadingSpeed ?? autoReadingControl().defaultValue)
     }
 
-    private func automaticContent(expanded: Bool) -> some View {
-        ReaderAutoReadingContent(state: automatic, mode: session.settings?.mode ?? .scroll,
-            speed: Binding(get: { session.settings?.autoReadingSpeed ?? autoReadingControl().defaultValue }, set: { value in
-                guard var settings = session.settings else { return }
-                settings.autoReadingSpeed = value; session.updateSettings(settings)
-            }), expanded: expanded, collapse: { attachmentExpanded = false }, close: closeAutomaticReading,
-            canStart: session.opening.phase == .reading && session.window != nil && !session.showingCover
-                && !session.isLoading && !session.navigating && session.error == nil,
-            start: requestAutomaticStart, end: { automatic.end(); closeAutomaticReading() }, retry: {
-                automatic.retrying()
-                session.retryPreparation()
-                session.viewportAccess.controller?.requestedFrontiers.reset()
-                session.viewportAccess.controller?.requestMore(.forward)
-            })
-            .accessibilityAction(named: Text("展开自动阅读")) { attachmentExpanded = true }
-    }
-
-    private func changeEncoding(_ encoding: String?) {
+    func changeEncoding(_ encoding: String?) {
         controlsVisible = false; dock = .progress
         closeSearch()
         // Leaving the pushed settings page programmatically does not run its
@@ -1106,40 +990,5 @@ struct ReaderScreen: View {
         session.openAnnotation(mark.id)
     }
 
-    private var preparationView: some View {
-        ReaderPreparationContent(session: session, route: route, changeEncoding: changeEncoding)
-    }
-    private var importStatus: some View {
-        ReaderPreparationContent(session: session, route: route, statusOnly: true, changeEncoding: changeEncoding)
-    }
 
-}
-
-private struct ReaderOpenLegacyFade: ViewModifier {
-    let ready: Bool
-    let reduced: Bool
-    @ViewBuilder func body(content: Content) -> some View {
-        if ReaderOpenDiagnostics.deferredPage { content }
-        else { content.animation(.easeOut(duration: reduced ? 0.1 : 0.2), value: ready) }
-    }
-}
-
-private struct ReaderOpenContentFade: ViewModifier {
-    let phase: ReaderOpeningPhase
-    let enabled: Bool
-    @ViewBuilder func body(content: Content) -> some View {
-        if ReaderOpenDiagnostics.deferredPage { content.animation(enabled ? .easeOut(duration: 0.2) : nil, value: phase) }
-        else { content }
-    }
-}
-
-private struct ReaderImportDiagnosticStatus: ViewModifier {
-    let complete: Bool
-    func body(content: Content) -> some View {
-        #if READER_OPEN_DIAGNOSTICS
-        content.accessibilityValue(complete ? "import-complete" : "import-pending")
-        #else
-        content
-        #endif
-    }
 }
