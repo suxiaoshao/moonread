@@ -1,0 +1,61 @@
+<script>
+(() => {
+  'use strict';
+  const data = {{ load_data(path="data/screenshots.json") | json_encode | safe }}.images;
+  const base = {{ get_url(path="/", trailing_slash=true) | json_encode | safe }};
+  const lang = {{ section.lang | json_encode | safe }};
+  const zh = lang === 'zh';
+  const media = matchMedia('(prefers-color-scheme: dark)');
+  const figures = [...document.querySelectorAll('.native-shot')];
+  const params = new URLSearchParams(location.search);
+  const automatic = () => /iPad/.test(navigator.userAgent) ? 'ipad' : 'phone';
+  let device = ['phone','duo','ipad'].includes(params.get('device')) ? params.get('device') : automatic();
+  let display = params.get('display') === 'outer' ? 'outer' : 'inner';
+  let manual = params.has('device');
+  const names = {phone:'iPhone', ipad:'iPad', duo:zh ? 'Duo ' + (display === 'inner' ? '内屏' : '外屏') : 'Duo ' + display};
+  const labels = zh ? {R01:'纸色正文',R02:'阅读设置',R03:'跨设备进度',R04:'桌面续读小组件',R05:'文件夹书架',R06:'标注与笔记',R07:'阅读统计',R10:'数据管理'} : {R01:'Reading',R02:'Typography',R03:'Synced progress',R04:'Home Screen widget',R05:'Folder library',R06:'Notes',R07:'Reading statistics',R10:'Data management'};
+  function reflect() {
+    document.querySelectorAll('[data-device]').forEach(b => b.setAttribute('aria-pressed', b.dataset.device === device));
+    document.querySelectorAll('[data-display]').forEach(b => b.setAttribute('aria-pressed', b.dataset.display === display));
+    document.querySelector('.duo-choice').hidden = device !== 'duo';
+    const u = new URL(location.href);
+    if (manual) {u.searchParams.set('device',device); if(device === 'duo') u.searchParams.set('display',display); else u.searchParams.delete('display');}
+    else {u.searchParams.delete('device');u.searchParams.delete('display');}
+    history.replaceState(null,'',u);
+    document.querySelectorAll('a.lang').forEach(a => {const dest = new URL(a.href); for(const k of ['device','display']) {dest.searchParams.delete(k); if(u.searchParams.has(k))dest.searchParams.set(k,u.searchParams.get(k));} a.href=dest.href;});
+  }
+  async function update(f) {
+    if (!f.dataset.visible) return;
+    const generation = (Number(f.dataset.generation)||0)+1;f.dataset.generation = generation;
+    const code = device === 'phone' ? 'F' : device === 'ipad' ? 'L' : display === 'inner' ? 'I' : 'O';
+    const item = data[[lang,code,f.dataset.scene,media.matches?'dark':'light'].join('/')];
+    const link=f.querySelector('.shot-link'),message=f.querySelector('.shot-unavailable');
+    const deviceName=device === 'duo' ? (zh?'Duo '+(display==='inner'?'内屏':'外屏'):'Duo '+display) : names[device];
+    
+    const unavailable = text => {f.querySelector('.shot-device').textContent=deviceName;link.hidden=true;message.textContent=text;message.hidden=false;};
+    if (!item || item.pending) {unavailable(zh?'这张设备截图正在准备中。可切换设备或查看其他画面。':'This device screenshot is being prepared. Choose another device or scene.');return;}
+    const image = new Image();image.alt=(zh?'真实界面：':'Actual interface: ')+labels[f.dataset.scene]+' · '+deviceName;
+    image.width=item.width;image.height=item.height;image.decoding='async';
+    image.sizes='(max-width: 700px) 88vw, 560px';
+    image.srcset=item.variants.map(v => base+v.path+' '+v.width+'w').join(', ');
+    image.src=base+item.variants[Math.min(1,item.variants.length-1)].path;
+    try {await image.decode(); if(Number(f.dataset.generation)!==generation)return;
+      f.querySelector('.shot-device').textContent=deviceName+(item.cropped?(zh?' · 局部':' · detail'):'');link.replaceChildren(image);link.href=base+item.variants.at(-1).path;
+      link.setAttribute('aria-label',(zh?'查看大图：':'View larger: ')+image.alt);
+      link.hidden=false;message.hidden=true;
+      const anchor=f.closest('[data-gallery]')?.querySelector('.scene-choice') || document.querySelector('.device-choice');const before=anchor.getBoundingClientRect().top;f.classList.toggle('landscape',item.width>item.height);const delta=anchor.getBoundingClientRect().top-before;if(Math.abs(delta)>1 && before<innerHeight && before>0)scrollBy(0,delta);
+    } catch {if(Number(f.dataset.generation)===generation)unavailable(zh?'图片暂时无法加载，请稍后再试或切换画面。':'The image could not load. Try again later or choose another scene.');}
+  }
+  const refresh=()=>{reflect();figures.forEach(update);};
+  document.querySelector('.device-choice').hidden=false;document.querySelectorAll('.device-jump').forEach(a=>a.hidden=false);
+  document.querySelectorAll('.scene-choice').forEach(e=>e.hidden=false);
+  document.querySelectorAll('[data-device]').forEach(b=>b.addEventListener('click',()=>{device=b.dataset.device;manual=true;refresh();}));
+  document.querySelectorAll('[data-display]').forEach(b=>b.addEventListener('click',()=>{display=b.dataset.display;manual=true;refresh();}));
+  document.querySelector('.reset-device').addEventListener('click',()=>{device=automatic();display='inner';manual=false;refresh();});
+  document.querySelectorAll('.scene-choice button').forEach(b=>b.addEventListener('click',()=>{const section=b.closest('[data-gallery]');section.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));const f=section.querySelector('.native-shot');f.dataset.scene=b.dataset.scene;update(f);}));
+  media.addEventListener('change',()=>figures.forEach(update));
+  if('IntersectionObserver' in window){const observer=new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting){e.target.dataset.visible='true';update(e.target);}else delete e.target.dataset.visible;}),{rootMargin:'150px'});figures.forEach(f=>observer.observe(f));}
+  else {figures.forEach(f=>{f.dataset.visible='true';update(f);});}
+  reflect();
+})();
+</script>

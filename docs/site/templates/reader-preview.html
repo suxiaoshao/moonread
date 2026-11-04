@@ -35,7 +35,7 @@
         {% set control = preview.controls[key] %}
         <div class="setting-line"><span id="{{ key }}Label">{{ control.name[section.lang] }}</span><div class="stepper" role="group" aria-labelledby="{{ key }}Label">
           <button type="button" data-adjust="{{ key }}" data-direction="-1" aria-label="{% if zh %}减小{% else %}Decrease {% endif %}{{ control.name[section.lang] }}">−</button>
-          <output id="{{ key }}Value" aria-live="polite">{{ control.defaultValue | int }} pt</output>
+          <output id="{{ key }}Value" aria-live="polite">{{ control.defaultValue | int }}</output>
           <button type="button" data-adjust="{{ key }}" data-direction="1" aria-label="{% if zh %}增大{% else %}Increase {% endif %}{{ control.name[section.lang] }}">+</button>
         </div></div>
       {% endfor %}
