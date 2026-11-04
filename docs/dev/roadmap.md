@@ -37,7 +37,7 @@
 | iCloud 同步 | 固定容器配置、文档元数据发现/文件交接、SwiftData 模型、ModelActor、完整批注候选及自动 CloudKit、设置入口 | 云 schema 发布及双设备/离线/账户切换的验证范围见 verification。账户暂停保留同步意愿，不同账户确认后可同步本机仍存在的阅读数据，资料保留遵循系统规则 |
 | 本机下载回收 | 实际删除文件和移除外部书架入口已分开，阅读记录独立保留 | 派生正文缓存清理已接入设置数据管理；全量索引对原先未下载、仍未变化且已上传的 iCloud 副本可在处理后回收。尚无用户主动管理全部本机下载的入口 |
 
-源码依据：[书架列表](../../ios/Moonread/Library/LibraryView.swift)、[书目查询与失败状态](../../crates/moonread-core/src/reading/progressive)。数据现状与来源方案见[数据专题](data/README.md)，已有内容契约见[架构](engineering/architecture.md)，语言规则见[本地化](design/localization.md)。
+源码依据：[书架列表](../../ios/Moonread/Library/Browsing/LibraryView.swift)、[书目查询与失败状态](../../crates/moonread-core/src/reading/progressive)。数据现状与来源方案见[数据专题](data/README.md)，已有内容契约见[架构](engineering/architecture.md)，语言规则见[本地化](design/localization.md)。
 
 ## 已完成的书架基础
 

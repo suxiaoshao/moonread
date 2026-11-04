@@ -1,5 +1,7 @@
 //! Reading facts, not wall-clock time between opening and closing a book.
 //! The platform supplies scene visibility, actual text interaction and a monotonic clock.
+pub(crate) mod coverage;
+
 use crate::*;
 use rusqlite::Connection;
 use rusqlite::params;

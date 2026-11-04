@@ -32,7 +32,7 @@ impl ReaderCore {
         let mut has_visible_text = false;
         let mut scanner = ChapterScanner::default();
         let mut blanks = crate::reading::layout::BlankScanner::default();
-        crate::reading::text::decode_chunks(reader, encoding, |text| {
+        crate::reading::input::text::decode_chunks(reader, encoding, |text| {
             has_visible_text |= text.chars().any(|c| !c.is_whitespace());
             let end = offset
                 .checked_add(text.len() as u64)

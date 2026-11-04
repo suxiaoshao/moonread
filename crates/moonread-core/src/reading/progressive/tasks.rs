@@ -211,7 +211,7 @@ impl ReaderCore {
             } else if decoding != "auto" {
                 Encoding::for_label(decoding.as_bytes()).ok_or(ReaderError::InvalidSettings)?
             } else {
-                crate::reading::text::detect_encoding(&mut file)?
+                crate::reading::input::text::detect_encoding(&mut file)?
             };
             file.seek(SeekFrom::Start(0))?;
             {
