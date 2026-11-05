@@ -68,8 +68,8 @@ struct CloudSettingsView: View {
                     .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 22))
                 Text("我的书架由应用管理固定的本机与 iCloud 目录，小说文件由 iCloud Drive 同步。外部文件夹仍在原位置管理。")
                     .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)).padding(.horizontal, 4)
-            }.padding(20).frame(maxWidth: 680).frame(maxWidth: .infinity)
-        }.pageScrollMargins()
+            }.padding([.horizontal, .top], 20).padding(.bottom).frame(maxWidth: 680).frame(maxWidth: .infinity)
+        }
         .themedPage().navigationTitle("iCloud").navigationBarTitleDisplayMode(.inline)
         .task { await cloud.updateStatus() }
         .confirmationDialog("是否将本机阅读数据同步到此账户？", isPresented: Binding(get: { cloud.confirmationAccount != nil }, set: { if !$0 { cloud.confirmationAccount = nil } }), titleVisibility: .visible, presenting: cloud.confirmationAccount) { account in

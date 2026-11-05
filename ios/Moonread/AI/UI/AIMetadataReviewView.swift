@@ -43,7 +43,7 @@ struct AIProposalSourcesSheet: View {
                 }
             }
             .themedPage().navigationTitle("来源").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("关闭", systemImage: "xmark") { dismiss() } } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { SystemToolbarButton("关闭", role: .close) { dismiss() } } }
             .sheet(item: $preview) { AISourcePreview(source: $0).themeScope(theme) }
         }.presentationDetents([.medium, .large])
     }
@@ -94,11 +94,11 @@ struct AIMetadataResultReview: View {
                             Text(verbatim: synopsis).font(.subheadline)
                         }
                         AIResultFeedback(resultID: resultID)
-                    }.padding(LayoutTokens.content).disabled(saving)
+                    }.padding([.horizontal, .top], LayoutTokens.content).padding(.bottom).disabled(saving)
                 } else if let error = ai.proposals.lastErrors[resultID] { Text(verbatim: error).padding() }
                 else { ProgressView().padding() }
-            }.pageScrollMargins().accessibilityIdentifier("aiMetadataReviewScroll").themedPage().navigationTitle("资料建议").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("关闭", systemImage: "xmark") { dismiss() }.disabled(saving) } }
+            }.accessibilityIdentifier("aiMetadataReviewScroll").themedPage().navigationTitle("资料建议").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { SystemToolbarButton("关闭", role: .close) { dismiss() }.disabled(saving) } }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if let review, case .metadata(let metadata) = review.body {
                     let count = ai.proposals.metadataChangeCount(resultID, metadata)
@@ -249,8 +249,8 @@ private struct AIMetadataTextEditor: View {
                 } else { TextEditor(text: $text).padding().accessibilityIdentifier("aiMetadataEditor") }
             }.themedPage().navigationTitle(edit.kind?.label ?? "书名").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
-                    ToolbarItem(placement: .confirmationAction) { Button("完成") { save(text); dismiss() } }
+                    ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("取消", role: .cancel) { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("完成", role: .confirm) { save(text); dismiss() } }
                 }.onAppear { text = edit.text }
         }
     }

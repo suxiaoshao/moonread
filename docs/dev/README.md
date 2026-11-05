@@ -1,10 +1,10 @@
 # 开发文档
 
-月读以舒服、连续的本地小说阅读为目标。产品介绍见[项目 README](../../README.md)，开发起步见[CONTRIBUTING](../../CONTRIBUTING.md)，取舍见[产品方向](product.md)，工作规则见[AGENTS.md](../../AGENTS.md)。当前开发版本为 1.3；已实现行为以专题与源码为准，已确认但未实现的范围见[后续安排](roadmap.md)。发布不等于所有设备、云端和长时场景已验收，具体证据见[验证记录](engineering/verification.md)。
+月读以舒服、连续的本地小说阅读为目标。产品介绍见[项目 README](../../README.md)，开发起步见[CONTRIBUTING](../../CONTRIBUTING.md)，取舍见[产品方向](product.md)，工作规则见[AGENTS.md](../../AGENTS.md)。当前开发分支为 `release/1.4`；1.3 已于 2026-10-30 提审，提审不等于上线。已实现行为以专题与源码为准，已确认但未实现的范围见[后续安排](roadmap.md)。发布不等于所有设备、云端和长时场景已验收，具体证据见[验证记录](engineering/verification.md)。
 
 ## 开发与发布
 
-- [系统集成技术合同（1.3 待实现）](engineering/system-integration.md)。
+- [系统集成技术合同](engineering/system-integration.md)。
 - [架构与规则归属](engineering/architecture.md)：Rust/Swift 单一 owner、正文身份、坐标与持久化演进。
 - [开发环境与分支协作](engineering/development.md)、[仓库与持续集成](engineering/repository.md)、[iOS 支持策略](engineering/ios-support.md)。
 - [性能设计与待优化](engineering/performance.md)、[测试原则与验证边界](engineering/verification.md)、[验证历史](engineering/verification-history.md)。
@@ -35,13 +35,15 @@
 ## 计划与研究
 
 - [后续安排](roadmap.md)：已定稿待实施、候选和暂缓范围的索引。
-- [1.3 已确认范围与 PR 顺序](plans/1.3.md)。
+- [1.3 交付范围与原实施顺序](plans/1.3.md)。
 - 活跃专题计划：[AI 未完成工作](plans/ai.md)、[统计回看与历史位置](plans/statistics.md)。
+- [CloudKit 同步测试研究](research/cloudkit-sync-testing.md)：模拟器、真机、schema 与私有库证据边界。
+- 历史调研：[CI 缓存与测量边界](research/ci-cache-history.md)、[元数据交换格式取舍](research/metadata-exchange-history.md)；旧建议不构成当前实施承诺。
 - 固定版本研究：[开源阅读器](research/readers.md)、[主题参考](research/theme-references.md)。
 
 ## 维护方式
 
-- 现有行为写在对应专题；未实现、候选和暂缓范围由 `roadmap.md` 索引，详细讨论留在专题；已实现但未验收的环境与场景集中在 `engineering/verification.md`。完成后将实际规则并入专题，删除已结束的阶段计划，不长期维护两套结论。
+- 现有行为写在对应专题；未实现、候选和暂缓范围由 `roadmap.md` 索引，详细讨论留在专题；已实现但未验收的环境与场景集中在 `engineering/verification.md`。已合并的代码和文档就是现状，专题须与源码对齐；删除已结束的阶段计划，不长期维护两套结论。`build/` 中的过程稿不迁入正式文档。
 - `plans/` 只维护在讨论/实施中的分阶段任务、依赖和完成条件；页面与行为规则留在对应设计文档，不复制两套产品定义。
 - 已采用的技术、内容身份和坐标契约放在 `engineering/architecture.md`；存储清单与多来源/导入规则集中在 `data/README.md`，同步细节在 `data/sync.md`，首页布局在 `design/library.md`。其他文档链接引用，不复制多份决定清单。
 - 讨论阶段明确区分“已核对的现状”“已明确的需求”“设计建议”“未确定问题”。先记录问题背景、可选方向、取舍和需要的证据，候选不穷尽方案；未回答的问题不能用推荐选项代替答案。

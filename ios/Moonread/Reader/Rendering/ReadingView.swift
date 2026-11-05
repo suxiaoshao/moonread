@@ -7,6 +7,7 @@ struct ReadingContentGeometry: Equatable {
 }
 
 struct ReadingView: UIViewControllerRepresentable {
+    var fontRevision = ReadingTypography.layoutVersion
     @Environment(\.theme) private var theme
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     let window: ReadingWindow
@@ -18,6 +19,8 @@ struct ReadingView: UIViewControllerRepresentable {
     let dynamicTypeSize: DynamicTypeSize
     var navigationRevision: Int = 0
     var navigation: ReadingNavigation?
+    var resumeAutomaticReading: () -> Void = {}
+    var autoReading: ReaderAutoReading?
     var viewportAccess: ReadingViewportAccess?
     var annotations: [ReaderMark] = []
     var bookmarkPositions: [UInt64] = []
@@ -35,6 +38,8 @@ struct ReadingView: UIViewControllerRepresentable {
     var brightnessChanged: (Double) -> Void = { _ in }
     var orientationFailed: () -> Void = {}
     var statisticsInteraction: () -> Void = {}
+    var statisticsPresentationChanged: () -> Void = {}
+    var annotationChooserChanged: (Bool) -> Void = { _ in }
     var edgeChanged: (Bool) -> Void = { _ in }
     let compactHeaderHeight: CGFloat
     var guideHeight: CGFloat = 0
@@ -52,6 +57,9 @@ struct ReadingView: UIViewControllerRepresentable {
         return controller
     }
     func updateUIViewController(_ controller: ReadingController, context: Context) {
+        controller.resumeAutomaticReading = resumeAutomaticReading
+        controller.autoReading = autoReading
+        controller.deviceControls.willSuspend = { [weak autoReading] in autoReading?.pause() }
         controller.headerPositionChanged = headerPositionChanged
         controller.contentGeometry = contentGeometry
         controller.layoutStatus = layoutStatus
@@ -64,7 +72,9 @@ struct ReadingView: UIViewControllerRepresentable {
         controller.deviceControls.brightnessChanged = brightnessChanged
         controller.deviceControls.orientationFailed = orientationFailed
         controller.deviceControls.update(settings)
+        controller.annotationChooserChanged = annotationChooserChanged
         controller.statisticsInteraction = statisticsInteraction
+        controller.statisticsPresentationChanged = statisticsPresentationChanged
         controller.configure(window: window, settings: settings, anchor: anchor,
                              dark: dark, typeSize: dynamicTypeSize, theme: theme, reduceMotion: reduceMotion,
                              navigationRevision: navigationRevision, navigation: navigation, annotations: annotations,
@@ -75,5 +85,6 @@ struct ReadingView: UIViewControllerRepresentable {
                              compactHeaderHeight: compactHeaderHeight,
                              controlsVisible: controlsVisible, toggleControls: toggleControls,
                              readingBegan: readingBegan, changed: positionChanged)
+        controller.updateAutomaticReadingEdge()
     }
 }

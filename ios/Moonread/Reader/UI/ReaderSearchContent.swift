@@ -50,7 +50,7 @@ struct ReaderSearchContent: View {
                 Spacer()
                 Text("搜索").font(.headline)
                 Spacer()
-                Button("关闭搜索", systemImage: "xmark", action: close)
+                SystemToolbarButton("结束搜索", role: .close, action: close)
                     .labelStyle(.iconOnly).frame(width: 44, height: 44)
                     .tint(Color(uiColor: theme.ink))
                     .accessibilityIdentifier("closeSearch")
@@ -237,7 +237,7 @@ struct ReaderSearchContent: View {
             } else {
                 HStack {
                     Spacer()
-                    Button("关闭搜索", systemImage: "xmark", action: close)
+                    SystemToolbarButton("结束搜索", role: .close, action: close)
                         .labelStyle(.iconOnly).frame(width: 44, height: 44)
                         .tint(Color(uiColor: theme.ink))
                         .accessibilityIdentifier("closeCollapsedSearch")

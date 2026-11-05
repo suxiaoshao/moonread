@@ -20,7 +20,7 @@
 try {
   var chosen = localStorage.getItem("lang");
   var prefersZh = (navigator.languages || [navigator.language]).some(function (l) { return /^zh\b/i.test(l); });
-  if (chosen === "en" || (!chosen && !prefersZh)) location.replace("{{ get_url(path='@/_index.md', lang='en') }}");
+  if (chosen === "en" || (!chosen && !prefersZh)) location.replace("{{ get_url(path='@/_index.md', lang='en') }}" + location.search + location.hash);
 } catch (e) {}
 </script>
 {% endif -%}

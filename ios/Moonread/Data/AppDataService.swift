@@ -61,39 +61,25 @@ actor AppDataService {
            let session = UUID(uuidString: arguments[i + 1])?.uuidString {
             let suite = "Moonread.StoreShots." + session
             let root = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-StoreShots-" + session, isDirectory: true)
-            let mode = arguments.firstIndex(of: "--ui-test-store-scene").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil } ?? "paper"
-            UserDefaults(suiteName: "Moonread.AI.UITest-" + session)!.set(mode == "recap", forKey: "Moonread.ai.enabled.v1")
+            guard let capture = StoreShotCapture.requested else { preconditionFailure("Missing screenshot capture configuration") }
+            UserDefaults(suiteName: "Moonread.AI.UITest-" + session)!.set(StoreShotScene.requested == .recap, forKey: "Moonread.ai.enabled.v1")
+            UserDefaults.standard.set(ReadingSettingsTab.typography.rawValue, forKey: "readingSettingsTab")
             var snapshot = defaultThemeSnapshot()
-            snapshot.preferences.appMode = .light
-            snapshot.preferences.readerMode = mode == "night" ? .dark : .light
-            snapshot.preferences.readerLight = .palette(id: mode == "appearance" ? "bean-light" : (mode == "notes" ? "apricot-light" : "white-light"))
-            snapshot.preferences.readerDark = .palette(id: "black-dark")
-            snapshot.preferences.readerLightTexture = ReaderTextureChoice(id: mode == "appearance" ? .linen : .paper, strength: mode == "notes" ? .light : .medium)
-            snapshot.preferences.readerDarkTexture = nil
-            switch StoreShotScene.requested {
-            case .paper: snapshot.preferences.readerLight = .palette(id: "white-light")
-            case .kraft: snapshot.preferences.readerLight = .palette(id: "apricot-light")
-            case .linen: snapshot.preferences.readerLight = .palette(id: "bean-light")
-            default: break
-            }
-            if let scene = StoreShotScene.requested {
-                snapshot.preferences.readerLightTexture = switch scene {
-                case .paper: .init(id: .paper, strength: .medium)
-                case .kraft: .init(id: .kraft, strength: .medium)
-                case .linen: .init(id: .linen, strength: .medium)
-                default: nil
-                }
-            }
-            if StoreShotPage.requested != nil {
-                // This path returns before the general UI-test defaults reset.
-                UserDefaults.standard.set(ReadingSettingsTab.typography.rawValue, forKey: "readingSettingsTab")
-                let index = arguments.firstIndex(of: "--ui-test-page-appearance")
-                let dark = index.map { arguments.indices.contains($0 + 1) && arguments[$0 + 1] == "dark" } ?? false
-                snapshot.preferences.appMode = dark ? .dark : .light
-                snapshot.preferences.readerMode = .app
-                snapshot.preferences.readerLight = .app; snapshot.preferences.readerDark = .app
-                snapshot.preferences.readerLightTexture = nil; snapshot.preferences.readerDarkTexture = nil
-            }
+            let dark = capture.appearance == "dark"
+            snapshot.preferences.appMode = dark ? .dark : .light
+            if dark { snapshot.preferences.appDark = .palette(id: capture.appPalette) }
+            else { snapshot.preferences.appLight = .palette(id: capture.appPalette) }
+            guard let reader = snapshot.palettes.first(where: { $0.id == capture.readerPalette }) else { preconditionFailure("Unknown screenshot reader palette") }
+            snapshot.preferences.readerMode = reader.appearance == .dark ? .dark : .light
+            if reader.appearance == .dark { snapshot.preferences.readerDark = .palette(id: reader.id) }
+            else { snapshot.preferences.readerLight = .palette(id: reader.id) }
+            do {
+                let supported = builtinReaderTextures().contains { $0.paletteId == capture.readerPalette }
+                if supported {
+                    snapshot.preferences = try setReaderPaletteTexture(preferences: snapshot.preferences, paletteId: capture.readerPalette, enabled: capture.readerTextureEnabled)
+                } else { precondition(!capture.readerTextureEnabled, "Unsupported screenshot texture palette") }
+                _ = try encodeThemeSnapshot(value: snapshot)
+            } catch { preconditionFailure("Invalid screenshot theme configuration: \(error)") }
             UserDefaults(suiteName: suite)!.set(try! encodeThemePreferences(value: snapshot.preferences), forKey: "Moonread.themePreferences")
             UserDefaults.standard.set(try! encodeThemeSnapshot(value: snapshot), forKey: "Moonread.appearanceCache." + session)
             return AppDataService(libraryDirectory: root, sourceDefaultsSuite: suite)
@@ -478,8 +464,8 @@ actor AppDataService {
     }
 
     func chapters(_ id: String) async throws -> ChapterOutline { try await effectiveQuery(facts: true).chapterOutline(bookId: id) }
-    func marks(_ id: String, kind: MarkKind, offset: UInt32) async throws -> MarkPage {
-        let values = try await userMarks(id, kind: kind), start = min(Int(offset), values.count), end = min(start + 60, values.count)
+    func marks(_ id: String, kind: MarkKind, offset: UInt32, snapshot: NoteCandidates? = nil) async throws -> MarkPage {
+        let values = try await userMarks(id, kind: kind, snapshot: snapshot), start = min(Int(offset), values.count), end = min(start + 60, values.count)
         return MarkPage(items: Array(values[start..<end]), hasMore: end < values.count)
     }
     func annotations(_ id: String, start: UInt64, end: UInt64) async throws -> [ReaderMark] { try await userAnnotationRanges(id, start: start, end: end) }
@@ -499,11 +485,11 @@ actor AppDataService {
     }
     func hasBookmark(_ id: String, at offset: UInt64) async throws -> Bool { try await userMarks(id, kind: .bookmark).contains { $0.startUtf8 == offset } }
     func textRange(_ id: String, start: UInt64, end: UInt64) throws -> TextRange { try textCore().textRange(bookId: id, startUtf8: start, endUtf8: end) }
-    func displayTextRange(_ id: String, start: UInt64, end: UInt64) async throws -> TextRange {
-        let core = try textCore()
+    func displayTextRange(_ id: String, start: UInt64, end: UInt64, indent: ReadingIndent = .original) async throws -> TextRange {
+        let core = try await bookQuery(id)
         let read = Task.detached {
             try Task.checkCancellation()
-            let value = try core.displayTextRange(bookId: id, startUtf8: start, endUtf8: end)
+            let value = try core.displayTextRange(bookId: id, startUtf8: start, endUtf8: end, indent: indent)
             try Task.checkCancellation()
             return value
         }
@@ -546,21 +532,37 @@ actor AppDataService {
     /// Materialize provider files before navigation. This does not create an
     /// import, read the full text, or change formal reading activity.
     func prepareSourceFile(_ file: SourceFile, progress: @escaping @Sendable (Double?) -> Void = { _ in }) async throws {
-        try await withForegroundOpening {
-            #if DEBUG
-            if ProcessInfo.processInfo.arguments.contains("--ui-test-download-progress") {
-                progress(0.25); try await Task.sleep(for: .seconds(4))
-                progress(0.75); try await Task.sleep(for: .seconds(4))
-            }
-            #endif
-            let entry = try await self.textCore().sourceFileLocation(fileId: file.id)
-            let shelf = try await self.libraryShelf(entry.shelfId)
-            let access = SourceFileAccess(bookmark: Data(shelf.bookmark), path: entry.relativePath, progress: progress)
-            try await withTaskCancellationHandler {
-                try Task.checkCancellation()
-                try await access.prepare()
-                try Task.checkCancellation()
-            } onCancel: { access.cancel() }
+        try await withForegroundOpening { try await self.prepareOriginalSourceFile(file, progress: progress) }
+    }
+
+    private func prepareOriginalSourceFile(_ file: SourceFile, progress: @escaping @Sendable (Double?) -> Void) async throws {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-download-progress") {
+            progress(0.25); try await Task.sleep(for: .seconds(4))
+            progress(0.75); try await Task.sleep(for: .seconds(4))
+        }
+        #endif
+        let core = try textCore()
+        let entry = try core.sourceFileLocation(fileId: file.id)
+        guard !entry.directory else { throw ReaderError.NotFound }
+        let shelf = try libraryShelf(entry.shelfId)
+        let configuration = userCloudConfigurationRevision
+        let access = SourceFileAccess(bookmark: Data(shelf.bookmark), path: entry.relativePath, progress: progress)
+        try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try await access.prepare()
+            try Task.checkCancellation()
+        } onCancel: { access.cancel() }
+
+        // The actor can reenter during provider I/O. Do not publish an old
+        // completion against a removed/renamed source or a reauthorized root.
+        let currentShelf = try libraryShelf(entry.shelfId)
+        guard configuration == userCloudConfigurationRevision,
+              currentShelf.bookmark == shelf.bookmark, currentShelf.location == shelf.location else { throw CancellationError() }
+        let current = try core.sourceFileLocation(fileId: entry.id)
+        guard !current.directory, current.shelfId == entry.shelfId, current.relativePath == entry.relativePath else { throw CancellationError() }
+        if try core.setSourceFileAvailability(file: entry, needsDownload: false) {
+            publishLibraryIndexChange()
         }
     }
 
@@ -813,112 +815,6 @@ actor AppDataService {
 
 }
 
-/// File coordination asks iCloud / File Provider to materialize the original.
-/// It runs off the service actor so shelf navigation and reading remain usable.
-/// iCloud metadata reports real download progress; other providers may omit it.
-final class SourceFileAccess: @unchecked Sendable {
-    private let bookmark: Data
-    private let path: String
-    private let access = ProtectedFileAccess()
-    private let lock = NSLock()
-    private var cancelled = false
-    private let progress: @Sendable (Double?) -> Void
-    private var monitor: SourceDownloadProgress?
-
-    init(bookmark: Data, path: String, progress: @escaping @Sendable (Double?) -> Void = { _ in }) {
-        self.bookmark = bookmark; self.path = path; self.progress = progress
-    }
-    func cancel() {
-        let monitor = lock.withLock { cancelled = true; return self.monitor }
-        DispatchQueue.main.async { monitor?.stop() }
-        access.cancel()
-    }
-    private func checkCancellation() throws {
-        if lock.withLock({ cancelled }) { throw CancellationError() }
-    }
-    func prepare() async throws {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            DispatchQueue.global(qos: .userInitiated).async { [self] in
-                continuation.resume(with: Result {
-                    try checkCancellation()
-                    let source = try ProtectedFileAccess.Source(bookmark: bookmark, relativePath: path)
-                    defer { withExtendedLifetime(source) {} }
-                    let file = source.url
-                    // Metadata queries need a run loop. Only start/stop runs on
-                    // main; coordinated access continues on this worker queue.
-                    let isCloud = (try? file.resourceValues(forKeys: [.isUbiquitousItemKey]).isUbiquitousItem) == true
-                    let monitor = DispatchQueue.main.sync { () -> SourceDownloadProgress? in
-                        guard isCloud else { return nil }
-                        let monitor = SourceDownloadProgress(url: file, report: progress)
-                        let start = lock.withLock { () -> Bool in
-                            guard !cancelled else { return false }
-                            self.monitor = monitor; return true
-                        }
-                        guard start else { return nil }
-                        monitor.start(); return monitor
-                    }
-                    defer {
-                        lock.withLock { self.monitor = nil }
-                        DispatchQueue.main.async { monitor?.stop() }
-                    }
-                    let result = Result {
-                        try access.read(at: file) { url in
-                            try checkCancellation()
-                            // Opening a handle verifies accessibility without loading the novel.
-                            let handle = try FileHandle(forReadingFrom: url)
-                            try handle.close()
-                        }
-                    }
-                    try checkCancellation()
-                    try result.get()
-                })
-            }
-        }
-    }
-}
-
-@MainActor final class SourceDownloadProgress: NSObject {
-    private let query = NSMetadataQuery()
-    private let url: URL
-    private let report: @Sendable (Double?) -> Void
-    private var lastFraction: Double?
-    private var stopped = false
-
-    init(url: URL, report: @escaping @Sendable (Double?) -> Void) {
-        self.url = url; self.report = report
-        super.init()
-    }
-    func start() {
-        query.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope, NSMetadataQueryAccessibleUbiquitousExternalDocumentsScope]
-        query.searchItems = [url]
-        query.predicate = NSPredicate(format: "%K == %@", NSMetadataItemFSNameKey, url.lastPathComponent)
-        query.notificationBatchingInterval = 0.1
-        query.operationQueue = .main
-        for name in [Notification.Name.NSMetadataQueryDidFinishGathering, .NSMetadataQueryDidUpdate] {
-            NotificationCenter.default.addObserver(self, selector: #selector(changed), name: name, object: query)
-        }
-        query.start()
-    }
-    func stop() {
-        stopped = true
-        query.stop()
-        NotificationCenter.default.removeObserver(self)
-    }
-    @objc private func changed() {
-        guard !stopped else { return }
-        query.disableUpdates(); defer { query.enableUpdates() }
-        guard let item = (query.results as? [NSMetadataItem])?.first(where: {
-            ($0.value(forAttribute: NSMetadataItemURLKey) as? URL)?.standardizedFileURL == url.standardizedFileURL
-        }) else { return }
-        let fraction = Self.fraction(percent: item.value(forAttribute: NSMetadataUbiquitousItemPercentDownloadedKey) as? NSNumber)
-        if fraction != lastFraction { lastFraction = fraction; report(fraction) }
-    }
-    nonisolated static func fraction(percent: NSNumber?) -> Double? {
-        guard let value = percent?.doubleValue, value.isFinite, (0...100).contains(value) else { return nil }
-        return value / 100
-    }
-}
-
 struct ImportSource: Codable, Sendable {
     let rootBookmark: Data
     let relativePath: String
@@ -998,24 +894,4 @@ private final class SourceImportWork: @unchecked Sendable {
             }
         }
     }
-}
-
-/// Only tiny, validated reading settings cross this lock. Opening never queues behind database work.
-final class ReaderSettingsCache: @unchecked Sendable {
-    private let lock = NSLock()
-    private let defaults: UserDefaults
-    private var value: Result<ReaderSettings, Error>
-    private var observer: NSObjectProtocol?
-    init(defaults: UserDefaults) {
-        self.defaults = defaults
-        value = Result { try defaults.string(forKey: "Moonread.readerSettings").map { try decodeReaderSettings(json: $0) } ?? defaultReaderSettings() }
-        observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: defaults, queue: nil) { [weak self] _ in self?.reload() }
-    }
-    deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
-    private func reload() {
-        let next = Result { try defaults.string(forKey: "Moonread.readerSettings").map { try decodeReaderSettings(json: $0) } ?? defaultReaderSettings() }
-        lock.lock(); value = next; lock.unlock()
-    }
-    func get() throws -> ReaderSettings { lock.lock(); defer { lock.unlock() }; return try value.get() }
-    func set(_ settings: ReaderSettings) { lock.lock(); value = .success(settings); lock.unlock() }
 }

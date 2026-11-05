@@ -50,7 +50,8 @@ fn search_candidates_leave_unmatched_folder_covers_unqueried() {
         .unwrap();
     core.lock().unwrap().execute_batch(
             "INSERT INTO library_files VALUES('folder','s','folder','','folder',1,0,1,0,NULL,'auto');
-             INSERT INTO library_files VALUES('book','s','folder/book.txt','folder','book.txt',0,100,1,0,NULL,'auto');"
+             INSERT INTO library_files VALUES('book','s','folder/book.txt','folder','book.txt',0,100,1,0,NULL,'auto');
+             INSERT INTO library_files VALUES('copy','s','other/book.txt','other','book.txt',0,100,1,0,NULL,'auto');"
         ).unwrap();
     let query = core.query_snapshot("{}".into()).unwrap();
     let before = FOLDER_COVER_QUERIES.with(|count| count.get());
@@ -66,6 +67,19 @@ fn search_candidates_leave_unmatched_folder_covers_unqueried() {
         .unwrap();
     assert!(candidates.iter().any(|c| c.entry.directory));
     assert!(candidates.iter().all(|c| c.entry.cover_previews.is_empty()));
+    let originals: Vec<_> = candidates
+        .iter()
+        .filter(|c| c.entry.name == "book.txt")
+        .collect();
+    assert_eq!(originals.len(), 2);
+    assert_eq!(
+        originals[0].natural_name_ordinal,
+        originals[1].natural_name_ordinal
+    );
+    assert_ne!(
+        originals[0].natural_order_ordinal,
+        originals[1].natural_order_ordinal
+    );
     // Matching happens in Swift; an unmatched search stops here without any cover SQL.
     assert_eq!(FOLDER_COVER_QUERIES.with(|count| count.get()), before);
     let covers = query
@@ -232,4 +246,68 @@ fn recent_entries_include_index_only_and_null_visibility() {
     assert_eq!(recent[0].book_id, None);
     assert_eq!(recent[0].content_sha256.as_deref(), Some("indexed-sha"));
     assert_eq!(recent[0].position_utf8, 50);
+}
+
+#[test]
+fn source_availability_updates_only_the_matching_existing_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let core = ReaderCore::new(dir.path().join("cache").to_string_lossy().into()).unwrap();
+    for shelf in ["s", "other"] {
+        core.save_library_shelf(shelf.into(), shelf.into(), vec![], "icloud".into(), false)
+            .unwrap();
+        core.scan_library_shelf(
+            shelf.into(),
+            vec![ScannedLibraryItem {
+                relative_path: "book.txt".into(),
+                directory: false,
+                size: 10,
+                modified: 1,
+                needs_download: true,
+            }],
+        )
+        .unwrap();
+    }
+    let file = core.source_files("s".into()).unwrap().remove(0);
+    let copy = core.source_files("other".into()).unwrap().remove(0);
+    let text = dir.path().join("original.txt");
+    std::fs::write(&text, "第一章 月光\n原创正文。\n").unwrap();
+    let book = core
+        .import_book(text.to_string_lossy().into(), "Sample".into())
+        .unwrap();
+    core.link_library_file(file.id.clone(), book.id.clone())
+        .unwrap();
+    core.set_source_decoding(file.id.clone(), "utf-8".into())
+        .unwrap();
+    let before = core.source_file_location(file.id.clone()).unwrap();
+    assert!(
+        core.set_source_file_availability(before.clone(), false)
+            .unwrap()
+    );
+    assert!(
+        !core
+            .set_source_file_availability(before.clone(), false)
+            .unwrap()
+    );
+    assert!(!core.library_entry(file.id.clone()).unwrap().needs_download);
+    assert!(core.library_entry(copy.id.clone()).unwrap().needs_download);
+    assert_eq!(core.source_decoding(file.id.clone()).unwrap(), "UTF-8");
+    assert_eq!(
+        core.source_file_location(file.id.clone()).unwrap().book_id,
+        before.book_id
+    );
+    for mismatch in [0, 1, 2, 3] {
+        let mut stale = before.clone();
+        match mismatch {
+            0 => stale.id = "missing".into(),
+            1 => stale.shelf_id = "other".into(),
+            2 => stale.relative_path = "renamed.txt".into(),
+            _ => stale.directory = true,
+        }
+        assert!(!core.set_source_file_availability(stale, true).unwrap());
+    }
+    assert!(!core.library_entry(file.id.clone()).unwrap().needs_download);
+    core.scan_library_shelf("s".into(), vec![]).unwrap();
+    assert!(!core.set_source_file_availability(before, true).unwrap());
+    assert!(core.source_files("s".into()).unwrap().is_empty());
+    assert!(core.library_entry(copy.id).unwrap().needs_download);
 }

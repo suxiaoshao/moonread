@@ -66,7 +66,7 @@ struct ReaderLibraryContent: View {
         ReaderChapterActions(editing: editing, bookID: session.readingID, incomplete: session.incomplete)
     }
     private var closeButton: some View {
-        Button("关闭", systemImage: "xmark", action: close)
+        SystemToolbarButton("关闭", role: .close, action: close)
             .labelStyle(.iconOnly).toolbarGlyph().accessibilityIdentifier("closeReaderLibrary")
     }
     @ToolbarContentBuilder private var libraryToolbar: some ToolbarContent {
@@ -90,7 +90,6 @@ struct ReaderLibraryContent: View {
                 case .bookmarks, .notes: notesList
                 }
             }
-            .dismissKeyboardOnOutsideTap($chapterFilterFocused)
             .background(Color(uiColor: theme.surface))
             .safeAreaInset(edge: .bottom) {
                 if let removed = editing.removedChapter, let id = session.readingID {
@@ -154,6 +153,7 @@ struct ReaderLibraryContent: View {
                           visibleChapters: $editing.visibleChapters, chapterVisibilityKnown: $editing.chapterVisibilityKnown,
                           editingOutline: $editing.editingOutline, editChapter: editing.beginChapter, removedChapter: $editing.removedChapter,
                           chapterFilterFocused: $chapterFilterFocused, refreshOutline: refreshOutline)
+            .dismissKeyboardOnOutsideTap($chapterFilterFocused)
     }
     private var notesList: some View {
         ReaderNotesList(model: model, session: session, navigate: navigate, edit: edit)

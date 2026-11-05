@@ -219,7 +219,7 @@ fn blank_window_awaiting_pause_resume_confirms_only_whole_lines() {
         assert_eq!(pending_locate.status, ReadingWindowStatus::Awaiting);
         assert!(pending_locate.chunks.is_empty());
         assert!(matches!(
-            core.display_text_range(token.id.clone(), 0, pending_cursor),
+            core.display_text_range(token.id.clone(), 0, pending_cursor, ReadingIndent::Original),
             Err(ReaderError::ImportBusy)
         ));
         assert!(

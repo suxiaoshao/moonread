@@ -94,6 +94,9 @@ struct MoonreadApp: App {
     }
     private var appContent: some View {
         indexedAppContent
+            .onReceive(NotificationCenter.default.publisher(for: .libraryIndexChanged, object: library.service).receive(on: DispatchQueue.main)) { _ in
+                Task { await library.reloadBooks() }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .libraryIdentityChanged).receive(on: DispatchQueue.main)) { note in
                 Task {
                     await library.reloadBooks()
@@ -133,6 +136,9 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .NSUbiquityIdentityDidChange).receive(on: DispatchQueue.main)) { _ in
                 Task { library.startCloudDiscovery(reset: true); await cloud.identityChanged(); await library.refresh(); await cloud.refresh() }
             }
+            .onReceive(NotificationCenter.default.publisher(for: ReaderBuiltinFonts.changed).receive(on: DispatchQueue.main)) { _ in
+                readerSettings.refreshBuiltinFonts()
+            }
             .onReceive(NotificationCenter.default.publisher(for: .CKAccountChanged).receive(on: DispatchQueue.main)) { _ in
                 Task { await cloud.identityChanged() }
             }
@@ -145,6 +151,7 @@ struct MoonreadApp: App {
                     Task { await AppDataService.shared.pauseImports() }
                 }
                 if phase == .active {
+                    readerSettings.refreshBuiltinFonts()
                     Task { await library.service.refreshSystemWidgetConfigurations() }
                     Task { if ai.providers.catalogActivated { await ai.providers.refreshCatalogsIfNeeded() } }
                     Task {
@@ -170,23 +177,16 @@ struct MoonreadApp: App {
             do {
                 switch scene {
                 case .shelf: library.libraryPath = [.folder(LibraryLocation(shelfID: "builtin"))]
-                case .tags:
-                    library.grouping = .tags
-                    library.libraryPath = [.allBooks("builtin")]
                 case .backup: library.openSettings(target: .data)
                 case .statistics: library.selectedTab = .statistics
                 case .recap:
-                    let args = ProcessInfo.processInfo.arguments
-                    let i = args.firstIndex(of: "--ui-test-store-language")!
-                    let fixture = try StoreShotFixture.localized(args[i + 1])
+                    let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
                     await ai.load()
                     try await ai.seedStoreShotRecap(fixture)
                     library.selectedTab = .conversations
                 case .widget: break
                 default:
-                    let args = ProcessInfo.processInfo.arguments
-                    let i = args.firstIndex(of: "--ui-test-store-language")!
-                    let fixture = try StoreShotFixture.localized(args[i + 1])
+                    let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
                     guard let entry = try await library.service.libraryEntries(LibraryLocation(shelfID: "builtin"))
                         .first(where: { $0.title == fixture.books[0].title }) else { throw ReaderError.NotFound }
                     library.open(entry)
@@ -201,10 +201,7 @@ struct MoonreadApp: App {
             case .settings, .libraryHome: break
             case .readerSettings: library.libraryPath = [.screenshotReaderSettings]
             case .bookDetails, .reader:
-                let args = ProcessInfo.processInfo.arguments
-                let index = args.firstIndex(of: "--ui-test-store-language")
-                let language = index.flatMap { args.indices.contains($0 + 1) ? args[$0 + 1] : nil } ?? "zh-Hans"
-                let fixture = try StoreShotFixture.localized(language)
+                let fixture = try StoreShotFixture.localized(StoreShotCapture.requested!.language)
                 guard let entry = try await library.service.libraryEntries(LibraryLocation(shelfID: "builtin"))
                     .first(where: { $0.title == fixture.books[0].title }) else { throw ReaderError.NotFound }
                 if page == .bookDetails {
@@ -236,6 +233,7 @@ struct MoonreadApp: App {
 }
 
 private struct MoonreadRoot: View {
+    @Environment(ReaderSettingsStore.self) private var readerSettings
     @Environment(AIService.self) private var ai
     @Bindable var library: LibraryModel
     let themes: ThemeStore
@@ -253,7 +251,7 @@ private struct MoonreadRoot: View {
     private var appTheme: ThemeSurface { ThemeSurface(plan: plans.app) }
     private var readerTheme: ThemeSurface {
         let plan = plans.reader
-        return ThemeSurface(plan: plan, readerTexture: plan.appearance == .light ? themes.snapshot.preferences.readerLightTexture : themes.snapshot.preferences.readerDarkTexture)
+        return ThemeSurface(plan: plan, readerTexture: plans.readerTexture)
     }
 
     var body: some View {
@@ -282,6 +280,9 @@ private struct MoonreadRoot: View {
                 Button("知道了", role: .cancel) { themes.error = nil }
                 if !themes.loaded { Button("重试") { Task { await themes.load() } } }
             } message: { Text(themes.error ?? "") }
+            .alert("字体需要下载", isPresented: Binding(get: { readerSettings.fontNotice != nil }, set: { if !$0 { readerSettings.fontNotice = nil } })) {
+                Button("知道了", role: .cancel) { readerSettings.fontNotice = nil }
+            } message: { Text(readerSettings.fontNotice ?? "") }
             .alert("阅读遇到问题", isPresented: Binding(get: { library.readerExitError != nil }, set: { if !$0 { library.readerExitError = nil } })) {
                 Button("知道了", role: .cancel) { library.readerExitError = nil }
             } message: { Text(library.readerExitError ?? "") }
@@ -331,17 +332,17 @@ private struct MoonreadRoot: View {
     private var libraryStack: some View {
         NavigationStack(path: $library.libraryPath) {
             LibraryView(model: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.toolbarVisibility(library.libraryPath.contains(where: \.isReader) ? .hidden : .automatic, for: .tabBar)
+        }.modifier(LibrarySourceTabVisibility(path: library.libraryPath))
     }
     private var statisticsStack: some View {
         NavigationStack(path: $library.statisticsPath) {
             StatisticsView(library: library).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.toolbarVisibility(library.statisticsPath.contains(where: \.isReader) ? .hidden : .automatic, for: .tabBar)
+        }.modifier(LibrarySourceTabVisibility(path: library.statisticsPath))
     }
     private var searchStack: some View {
         NavigationStack(path: $library.searchPath) {
             AppSearchView(model: library, search: library.search).navigationDestination(for: LibraryRoute.self) { LibraryDestination(route: $0) }
-        }.toolbarVisibility(library.searchPath.contains(where: \.isReader) ? .hidden : .automatic, for: .tabBar)
+        }.modifier(LibrarySourceTabVisibility(path: library.searchPath))
         .modifier(AppSearchField(model: library, search: library.search, quickEntry: true))
     }
     private var settingsStack: some View {
@@ -442,5 +443,21 @@ private struct MoonLaunchCover: View {
             let active = identifier; identifier = .invalid
             UIApplication.shared.endBackgroundTask(active)
         }
+    }
+}
+
+/// One owner per source stack: selection replaces tabs; reading keeps them hidden.
+private struct LibrarySourceTabVisibility: ViewModifier {
+    let path: [LibraryRoute]
+    @State private var selectingFolders: Set<LibraryLocation> = []
+    private var hidesTabs: Bool {
+        if path.contains(where: \.isReader) { return true }
+        if case let .folder(location) = path.last { return selectingFolders.contains(location) }
+        return false
+    }
+    func body(content: Content) -> some View {
+        content
+            .onPreferenceChange(LibrarySelectingFolders.self) { selectingFolders = $0 }
+            .toolbarVisibility(hidesTabs ? .hidden : .automatic, for: .tabBar)
     }
 }

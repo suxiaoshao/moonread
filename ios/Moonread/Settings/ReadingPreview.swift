@@ -10,16 +10,25 @@ final class ReadingPreviewPosition {
     }
     weak var view: ReadingPreviewTextView?
     private(set) var saved: Saved?
-    private var paperInput: ThemeSurface.PaperInput?
-    private var tile: UIImage?
-    func paperTile(_ input: ThemeSurface.PaperInput) -> UIImage? {
-        if paperInput != input {
-            paperInput = input
-            tile = input.choice == nil ? nil : ThemeSurface.paperTile(input)
-        }
-        return tile
-    }
     func capture() { if let view { saved = view.capturePosition() } }
+}
+
+/// The background fills its own proposal; it never participates in text layout.
+struct ReadingPreviewBackdrop: View {
+    let surface: ThemeSurface
+    var body: some View {
+        NativeBackdrop(surface: surface).allowsHitTesting(false).accessibilityHidden(true)
+    }
+    private struct NativeBackdrop: UIViewRepresentable {
+        let surface: ThemeSurface
+        func makeUIView(context: Context) -> ReadingPaperView {
+            let view = ReadingPaperView()
+            view.isUserInteractionEnabled = false
+            view.accessibilityElementsHidden = true
+            return view
+        }
+        func updateUIView(_ view: ReadingPaperView, context: Context) { view.update(surface.paperInput()) }
+    }
 }
 
 struct ReadingPreviewSource: Equatable {
@@ -70,7 +79,7 @@ struct ReadingPreviewPane: View {
             HStack {
                 Text(verbatim: source.title).font(.caption).lineLimit(1)
                 Spacer()
-                Text("\(Int(settings.fontSize)) pt").font(.caption).monospacedDigit()
+                Text(settings.fontSize, format: .number.precision(.fractionLength(0))).font(.caption).monospacedDigit()
             }
             .padding(.vertical, 12)
             .foregroundStyle(Color(uiColor: surface.secondary))
@@ -86,6 +95,7 @@ struct ReadingPreviewText: UIViewRepresentable {
     let settings: ReaderSettings
     let surface: ThemeSurface
     var position: ReadingPreviewPosition?
+    var fontRevision = ReadingTypography.layoutVersion
     @Environment(\.dynamicTypeSize) private var typeSize
     func makeUIView(context: Context) -> ReadingPreviewTextView { ReadingPreviewTextView() }
     func updateUIView(_ view: ReadingPreviewTextView, context: Context) {
@@ -101,6 +111,7 @@ final class ReadingPreviewTextView: UITextView {
     private var settings: ReaderSettings?
     private var surface = ThemeSurface.initial
     private var typeSize: DynamicTypeSize?
+    private var fontLayoutVersion = -1
     private var readingText = ReadingText(text: "")
     private var coordinates: TextCoordinates { readingText.coordinates }
     private var layoutWidth: CGFloat = 0
@@ -120,7 +131,7 @@ final class ReadingPreviewTextView: UITextView {
         isEditable = false; isSelectable = false
         showsVerticalScrollIndicator = false; showsHorizontalScrollIndicator = false
         contentInsetAdjustmentBehavior = .never
-        backgroundColor = .clear
+        backgroundColor = .clear; isOpaque = false
         isAccessibilityElement = true
         accessibilityTraits = .staticText
         accessibilityIdentifier = "readingPreviewText"
@@ -133,11 +144,12 @@ final class ReadingPreviewTextView: UITextView {
                    restored: ReadingPreviewPosition.Saved? = nil) {
         if self.source != source {
             pendingAnchor = restored?.anchor ?? source.anchor; pendingPosition = restored; needsTextLayout = true
-            accessibilityLabel = ReadingText(source.window).text
-        } else if !settings.hasSameLayout(as: self.settings) || self.typeSize != typeSize {
+            accessibilityLabel = nil
+        } else if fontLayoutVersion != ReadingTypography.layoutVersion || !settings.hasSameLayout(as: self.settings) || self.typeSize != typeSize {
             pendingAnchor = projectionAnchor(); needsTextLayout = true
         }
         self.source = source; self.settings = settings; self.surface = surface; self.typeSize = typeSize
+        fontLayoutVersion = ReadingTypography.layoutVersion
         paint.set(surface.ink)
         overrideUserInterfaceStyle = surface.style
         updateDecorations()
@@ -164,8 +176,10 @@ final class ReadingPreviewTextView: UITextView {
             rendering = true
             let anchor = pendingAnchor ?? projectionAnchor()
             textContainerInset = ReadingTypography.insets(settings, width: bounds.width)
-            textStorage.setAttributedString(ReadingTypography.text(source.window, settings: settings, ink: paint.dynamic))
-            readingText = ReadingText(source.window)
+            let prepared = ReadingTypography.prepare(source.window, settings: settings, ink: paint.dynamic)
+            textStorage.setAttributedString(prepared.attributedText)
+            readingText = prepared.readingText
+            accessibilityLabel = readingText.text
             layoutWidth = bounds.width; needsTextLayout = false; pendingAnchor = nil
             super.layoutSubviews()
             layoutManager.ensureLayout(for: textContainer)

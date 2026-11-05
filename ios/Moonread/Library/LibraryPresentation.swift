@@ -25,27 +25,6 @@ enum LibraryLayout: String {
     case list, grid
 }
 
-/// Expose content height only in the dedicated scrolling regression. Normal
-/// builds and other UI tests do not observe geometry or update view state.
-struct LibraryGridTestGeometry: ViewModifier {
-    #if DEBUG
-    private static let enabled = ProcessInfo.processInfo.arguments.contains("--ui-test-grid-geometry")
-    @State private var contentHeight = 0.0
-    #endif
-
-    @ViewBuilder func body(content: Content) -> some View {
-        #if DEBUG
-        if Self.enabled {
-            content.onScrollGeometryChange(for: Double.self) { $0.contentSize.height } action: { _, height in
-                contentHeight = height
-            }.accessibilityValue(String(contentHeight))
-        } else { content }
-        #else
-        content
-        #endif
-    }
-}
-
 /// Content headings scroll with the books, without List's pinned section gap.
 struct LibraryListHeading: ViewModifier {
     func body(content: Content) -> some View {

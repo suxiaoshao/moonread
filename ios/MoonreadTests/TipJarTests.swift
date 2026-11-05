@@ -1,5 +1,4 @@
 import Foundation
-import StoreKitTest
 import XCTest
 
 @testable import Moonread

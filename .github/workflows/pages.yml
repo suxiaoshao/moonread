@@ -10,7 +10,7 @@ on:
       - 'flake.lock'
       - 'Cargo.*'
       - 'crates/moonread-core/Cargo.toml'
-      - 'crates/moonread-core/src/user/themes.rs'
+      - 'crates/moonread-core/src/user/themes/**'
       - 'crates/moonread-core/src/reading/layout.rs'
       - 'crates/moonread-core/src/bin/site-theme-data.rs'
       - 'ios/Moonread/Localizable.xcstrings'

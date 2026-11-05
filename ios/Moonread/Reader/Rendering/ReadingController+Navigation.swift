@@ -2,43 +2,34 @@ import SwiftUI
 import UIKit
 
 extension ReadingController {
-    func attributes() -> [NSAttributedString.Key: Any] {
-        ReadingTypography.attributes(settings ?? defaultReaderSettings(), ink: ink.dynamic)
-    }
-
     var textInsets: UIEdgeInsets {
         ReadingTypography.insets(settings ?? defaultReaderSettings(), width: pageSize.width)
     }
 
-    private func styledText(_ window: ReadingWindow) -> NSAttributedString {
-        ReadingTypography.text(window, settings: settings ?? defaultReaderSettings(), ink: ink.dynamic)
+    private func prepareBody(_ window: ReadingWindow) -> PreparedReadingText {
+        ReadingTypography.prepare(window, settings: settings ?? defaultReaderSettings(), ink: ink.dynamic)
     }
 
-    private func scrollProjection(_ window: ReadingWindow) -> ReadingText {
-        let body = ReadingText(window)
-        return hasCover ? body.prefixed("\u{fffc}\n") : body
-    }
-
-    private func styledScrollText(_ window: ReadingWindow) -> NSAttributedString {
-        guard hasCover else { return styledText(window) }
+    private func prepareScrollText(_ window: ReadingWindow) -> PreparedReadingText {
+        let body = prepareBody(window)
+        guard window.isStartOfBook, coverTitle != nil else { return body }
         // A native attachment occupies document layout space. Insets stay small
         // so UIKit can autoscroll selection against the actual viewport edges.
+        let coverHeight = readingSurface.bounds.height
         let attachment = NSTextAttachment()
-        attachment.bounds = CGRect(x: 0, y: 0, width: 1, height: scrollCoverHeight)
+        attachment.bounds = CGRect(x: 0, y: 0, width: 1, height: coverHeight)
         let result = NSMutableAttributedString(attachment: attachment)
         result.append(NSAttributedString(string: "\n"))
         let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = scrollCoverHeight
-        paragraph.maximumLineHeight = scrollCoverHeight
-        result.addAttributes([.font: UIFont.systemFont(ofSize: 1), .paragraphStyle: paragraph], range: NSRange(location: 0, length: result.length))
-        result.append(styledText(window))
-        return result
+        paragraph.minimumLineHeight = coverHeight
+        paragraph.maximumLineHeight = coverHeight
+        result.addAttributes([.font: UIFont.systemFont(ofSize: 1), .paragraphStyle: paragraph.copy() as! NSParagraphStyle], range: NSRange(location: 0, length: result.length))
+        return body.prefixed(result)
     }
 
     private func paginate(_ window: ReadingWindow, preserving previous: [TextPage] = [], keeping anchor: UInt64? = nil,
                          layout: ((ReadingText, Bool) -> [NSRange])? = nil) -> [TextPage] {
-        TextPage.paginate(window, size: pageSize, attributes: attributes(), source: styledText(window),
-                          insets: textInsets, preserving: previous, keeping: anchor)
+        TextPage.paginate(prepareBody(window), size: pageSize, insets: textInsets, preserving: previous, keeping: anchor, layout: layout)
     }
 
     var isInteracting: Bool {
@@ -106,8 +97,9 @@ extension ReadingController {
         if let text = scrollText {
             text.selectedRange = NSRange(location: 0, length: 0)
             updateScrollCover(in: text)
-            text.textStorage.setAttributedString(styledScrollText(window))
-            text.readingText = scrollProjection(window)
+            let prepared = prepareScrollText(window)
+            text.textStorage.setAttributedString(prepared.attributedText)
+            text.readingText = prepared.readingText
             text.layoutManager.ensureLayout(for: text.textContainer)
             text.layoutIfNeeded()
         } else {
@@ -226,11 +218,12 @@ extension ReadingController {
 
     @discardableResult func appendScrollContents(_ next: ReadingWindow) -> Bool {
         guard let previous = window, let text = scrollText, next.start == previous.start else { return false }
-        let projection = scrollProjection(next)
+        let prepared = prepareScrollText(next)
+        let projection = prepared.readingText
         guard let start = projection.coordinates.displayPoint(Int(previous.end-next.start)), start < projection.coordinates.length,
               (projection.text as NSString).substring(to: start) == text.readingText.text else { return false }
         rebuilding = true
-        let styled = styledScrollText(next)
+        let styled = prepared.attributedText
         text.textStorage.append(styled.attributedSubstring(from: NSRange(location: start, length: styled.length - start)))
         text.readingText = projection
         window = next
@@ -261,9 +254,10 @@ extension ReadingController {
                 requestMore(line.offset < window.start ? .backward : .forward)
                 return
             }
-            text.textStorage.setAttributedString(styledScrollText(window))
+            let prepared = prepareScrollText(window)
+            text.textStorage.setAttributedString(prepared.attributedText)
             updateScrollCover(in: text)
-            text.readingText = scrollProjection(window)
+            text.readingText = prepared.readingText
             text.layoutManager.ensureLayout(for: text.textContainer)
             text.layoutIfNeeded()
             if let coverOffset { text.setContentOffset(CGPoint(x: 0, y: coverOffset), animated: false); return }
@@ -336,7 +330,8 @@ extension ReadingController {
             text.textContainerInset = textInsets
             // Populate after UITextView has configured the typesetter, just as
             // for later window replacements (including fallback emoji fonts).
-            storage.setAttributedString(styledScrollText(window))
+            let prepared = prepareScrollText(window)
+            storage.setAttributedString(prepared.attributedText)
             text.accessibilityIdentifier = "scrollText"
             #if DEBUG
             if ProcessInfo.processInfo.arguments.contains("--ui-testing") { text.accessibilityValue = String(anchor) }
@@ -346,7 +341,7 @@ extension ReadingController {
             readingSurface.layer.addSublayer(bottomFade)
             text.layoutManager.ensureLayout(for: container)
             text.layoutIfNeeded()
-            text.readingText = scrollProjection(window)
+            text.readingText = prepared.readingText
             let local = Int(min(anchor - min(anchor, text.readingText.sourceStart), UInt64(text.readingText.coordinates.byteCount)))
             let character = text.readingText.coordinates.displayPoint(local) ?? 0
             if storage.length > 0 {
@@ -364,7 +359,7 @@ extension ReadingController {
             pages = paginate(window, preserving: previousPages)
             guard !pages.isEmpty else { return }
             let paging = UIPageViewController(transitionStyle: .scroll, navigationOrientation: .horizontal)
-            paging.view.backgroundColor = theme.paper
+            paging.view.backgroundColor = .clear
             paging.dataSource = self
             paging.delegate = self
             addChild(paging)

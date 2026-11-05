@@ -125,8 +125,8 @@ struct AICoverPreview: View {
                     if let url = item.sourceURL {
                         Button { openURL(url) } label: { Label("来源", systemImage: "safari") }.frame(minHeight: LayoutTokens.hit)
                     }
-                }.padding(LayoutTokens.content)
-            }.pageScrollMargins()
+                }.padding([.horizontal, .top], LayoutTokens.content).padding(.bottom)
+            }
             // The decision stays reachable without scrolling past the image.
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: LayoutTokens.compact) {
@@ -147,7 +147,7 @@ struct AICoverPreview: View {
                 }.padding(LayoutTokens.content).background(Color(uiColor: theme.canvas))
             }
             .themedPage().navigationTitle("封面").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("关闭", systemImage: "xmark") { dismiss() }.accessibilityIdentifier("closeAICoverPreview") } }
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { SystemToolbarButton("关闭", role: .close) { dismiss() }.accessibilityIdentifier("closeAICoverPreview") } }
         }
     }
 }

@@ -40,6 +40,7 @@ final class ReaderSession {
     var navigationRevision = 0
     var navigation: ReadingNavigation?
     let viewportAccess = ReadingViewportAccess()
+    let autoReading: ReaderAutoReading
     let activity: ReadingActivityRecorder
     private var browseViewport: ReadingViewport?
     var browseOrigin: UInt64?
@@ -86,6 +87,10 @@ final class ReaderSession {
         self.settingsStore = settingsStore ?? (service === AppDataService.shared ? .shared : ReaderSettingsStore(service: service))
         self.restartReading = restartReading ?? { try await service.restartImport($0, encoding: $1) }
         self.readContinuation = readContinuation ?? { try await service.readingResumeContext($0, currentOffset: $1) }
+        autoReading = ReaderAutoReading(viewport: viewportAccess)
+        autoReading.readable = { [weak activity = self.activity, weak viewport = viewportAccess] in activity?.bodyReadable(through: viewport) == true }
+        autoReading.motionChanged = { [weak activity = self.activity] in activity?.sample() }
+
     }
 
     var preparing: Bool {
@@ -190,6 +195,7 @@ final class ReaderSession {
                     guard current(id, attempt: attempt, monitor: token) else { return }
                     ReaderOpenDiagnostics.mark(attempt, "snapshotCompleted")
                     snapshot = value
+                    autoReading.updatePreparationFailure(value.phase == .failed ? value.error.map { ReaderMessages.error($0) } : nil)
                     isLoading = !value.canRead && preparing
                     let expected = opening.request?.expectedContentSHA
                     if let expected, value.phase == .complete, value.book.contentSha256 != expected {
@@ -297,7 +303,12 @@ final class ReaderSession {
                 let frame = try await service.extensionFrame(id,cursor:cursor,direction:direction,retaining:keep)
                 guard current(id, attempt: attempt) else { return }
                 acceptExtension(frame,direction:direction)
-            } catch { if current(id, attempt: attempt) { self.error = ReaderMessages.error(error) } }
+            } catch {
+                if current(id, attempt: attempt) {
+                    if autoReading.phase == .preparing { autoReading.failed(ReaderMessages.error(error)) }
+                    else { self.error = ReaderMessages.error(error) }
+                }
+            }
         }
         return true
     }
@@ -348,6 +359,7 @@ final class ReaderSession {
     }
 
     func restart(encoding: String? = nil) {
+        autoReading.end()
         // Admission is synchronous, before flush/actor hops. No second import can
         // be created until this task ends, including its worker-finish wait.
         guard !isLeaving, restartTask == nil, let id = readingID else { return }
@@ -400,10 +412,11 @@ final class ReaderSession {
 
     func flush() async {
         saveTask?.cancel()
+        let currentAnchor = autoReading.phase == .idle ? anchor : (viewportAccess.capture()?.offset ?? anchor)
         // Capture before any suspension. Exit clears preview state, and settings
         // writes may finish after the reader's UI has started disappearing.
         let progress = leavingProgress ?? readingID.flatMap { id in
-            window == nil || !hasEnteredBody || !hasLocalReadingInteraction ? nil : (bookID: id, offset: browseOrigin ?? anchor)
+            window == nil || !hasEnteredBody || !hasLocalReadingInteraction ? nil : (bookID: id, offset: browseOrigin ?? currentAnchor)
         }
         await settingsStore.flush()
         guard let progress else { return }
@@ -416,6 +429,10 @@ final class ReaderSession {
         if let leaveTask { return leaveTask }
         restartTask?.cancel()
         activityStartTask?.cancel(); activityStartTask = nil
+        if autoReading.phase != .idle, let visible = viewportAccess.capture()?.offset {
+            moved(to: visible, settled: true, userInitiated: false)
+        }
+        autoReading.end()
         activity.stop()
         leavingProgress = readingID.flatMap { id in
             window == nil || !hasEnteredBody || !hasLocalReadingInteraction ? nil : (bookID: id, offset: browseOrigin ?? anchor)
@@ -508,6 +525,7 @@ final class ReaderSession {
     func browse(to start: UInt64, end: UInt64? = nil, placement: ReadingTargetPlacement = .context,
                 bottomObstruction: CGFloat = 0, restoring: ReadingViewport? = nil, historyID: String? = nil) {
         guard !isLeaving, let id = readingID else { return }
+        autoReading.end()
         hasLocalReadingInteraction = true
         activity.breakVisit()
         saveTask?.cancel()
@@ -567,6 +585,7 @@ final class ReaderSession {
 
     func continueReading() async {
         guard !isLeaving, !navigating, let id = readingID else { return }
+        autoReading.end()
         do {
             if !showingCover {
                 try await service.savePosition(bookID: id, offset: anchor)
@@ -632,6 +651,7 @@ final class ReaderSession {
         guard !isLeaving, !navigating, let id = readingID, let candidate = continuation else { return }
         let attempt = opening.request?.id
         let previous = (snapshot, window, anchor, displayAnchor, showingCover, history, navigation, browseOrigin)
+        autoReading.end()
         navigating = true; saveTask?.cancel(); activity.breakVisit()
         defer { navigating = false }
         do {
@@ -661,13 +681,15 @@ final class ReaderSession {
 
     /// Own the async selection read for copy, search and AI alike. The original
     /// envelope survives page/window changes; no last-page excerpt is cached.
-    func readSelection(start: UInt64, end: UInt64, perform: @escaping (TextRange) async -> Void) {
+    func readSelection(start: UInt64, end: UInt64, finished: @escaping () -> Void = {}, perform: @escaping (TextRange) async -> Void) {
         selectionTask?.cancel()
-        guard !isLeaving, let id = readingID else { return }
+        guard !isLeaving, let id = readingID else { finished(); return }
+        autoReading.end()
         let from = min(selectionStart ?? start, start), to = max(selectionStart ?? end, end)
         selectionTask = Task {
+            defer { finished() }
             do {
-                let range = try await service.displayTextRange(id, start: from, end: to)
+                let range = try await service.displayTextRange(id, start: from, end: to, indent: (settings ?? defaultReaderSettings()).indent)
                 guard !Task.isCancelled, !isLeaving, readingID == id else { return }
                 await perform(range)
             } catch is CancellationError {
@@ -680,6 +702,7 @@ final class ReaderSession {
 
     func selectText(start: UInt64, end: UInt64, action: ReaderSelectionAction) {
         guard !isLeaving, let id = readingID else { return }
+        autoReading.end()
         if action == .beginRange { selectionStart = start; refreshAnnotations(); return }
         Task {
             do {
@@ -716,6 +739,7 @@ final class ReaderSession {
 
     func openAnnotation(_ id: String) {
         guard !isLeaving else { return }
+        autoReading.end()
         Task {
             do {
                 let value = try await service.mark(id)

@@ -78,7 +78,7 @@ cd docs/site && zola serve
 
 MoonreadUITests 保留少量独立小样本主路径，具体清单以测试源码为准；U04 真实重启，其余不叠加重启、外观矩阵或系统选择器/菜单验证。U15 从已选文件接收边界导入；U19 经 NSItemProvider 测试适配器发布真实 ShareInbox 清单再由主 App 消费，不声称覆盖第三方宿主的分享面板。默认只附失败截图。原 008、009、105 删除，不另设每 PR 性能通道。
 
-商店截图由独立的 opt-in StoreScreenshots 流程生成，不计入日常关键 UI 流程；入口见[商店截图](development.md#商店截图独立-debug-测试)。UI 按改动范围验证并记录实际用时，不能由测试数量推断全量预算。Linux 与 iOS 单测以同一提交的 CI 结果为准。
+商店截图由独立的 opt-in StoreScreenshots 流程生成，不计入日常关键 UI 流程；入口见[商店截图](development.md#官网与商店原图独立-debug-测试)。UI 按改动范围验证并记录实际用时，不能由测试数量推断全量预算。Linux 与 iOS 单测以同一提交的 CI 结果为准。
 
 ### 网站维护边界
 

@@ -46,3 +46,11 @@
 - [WCAG 对比度说明](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html)：作为 sRGB 文字/背景对比的量化参考；不把一次静态数字当作所有原生状态、材质或夜间舒适度验收。
 
 杏桃、薄荷、雾紫以及其色值、间距和动效参数是月读的设计建议，不是上述来源规定的配方。可发布版本需完整语义色、实际画面和辅助功能检查。
+
+## 纸张纹理调研的可复用结论（2026-10-24）
+
+2026-10-30 从本机调研压缩整理，未重新访问来源或运行参考 App。纯色主题、背景图片、纹理强度、屏幕亮度是不同能力，不能合并统计。月读自己的字段和强度规则仍以[主题设计](../design/themes.md)为准。
+
+微信读书官方帮助只说明背景颜色/夜间模式；第三方脚本描述的纹理数量不能当成官方当前规格。[官方帮助](https://weread.qq.com/wrpage/app/help/detail/qReadingBgAndFront)。Legado 的历史公开源码/更新日志记录了背景文件和透明度，但不能推导当前安装包的数量或滑杆形态。[历史日志](https://github.com/TsaiYongChuan/legado/blob/main/app/src/main/assets/updateLog.md)。没有查到某个产品的纹理说明不等于产品不支持，电纸书前光档位也不等于纹理强度。
+
+后续纹理选择辨识度由 [#151](https://github.com/suxiaoshao/moonread/issues/151) 跟踪；不能只凭竞品数目或静态对比度，宣称深色预览已经可辨。

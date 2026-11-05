@@ -34,6 +34,7 @@ struct ReadingViewport {
     let settings: ReaderSettings
     let typeSize: DynamicTypeSize
     let pages: [TextPage]
+    var layoutVersion = ReadingTypography.layoutVersion
     var isCover = false
     var pageSize: CGSize? = nil
     var leafCount = 1
@@ -47,7 +48,7 @@ struct ReadingNavigation {
     var bottomObstruction: CGFloat = 0
     var restoring: ReadingViewport?
     func restoration(size: CGSize, settings: ReaderSettings?, typeSize: DynamicTypeSize, pageSize: CGSize? = nil, leafCount: Int = 1) -> ReadingViewport? {
-        guard let saved = restoring, saved.size == size, saved.settings == settings, saved.typeSize == typeSize, saved.pageSize == pageSize, saved.leafCount == leafCount else { return nil }
+        guard let saved = restoring, saved.layoutVersion == ReadingTypography.layoutVersion, saved.size == size, saved.settings == settings, saved.typeSize == typeSize, saved.pageSize == pageSize, saved.leafCount == leafCount else { return nil }
         return saved
     }
     func pageIndex(in pages: [TextPage], anchor: UInt64) -> Int { pages.lastIndex { $0.start <= anchor } ?? 0 }
@@ -70,6 +71,28 @@ final class ReadingViewportAccess {
     init(capture: (() -> ReadingViewport?)? = nil, range: (() -> (UInt64, UInt64)?)? = nil) { captureOverride = capture; rangeOverride = range }
     func statisticsRange() -> (UInt64, UInt64)? { rangeOverride.map { $0() } ?? controller?.statisticsRange() }
     func capture() -> ReadingViewport? { captureOverride.map { $0() } ?? controller?.captureViewport() }
+    func hasBlockingPresentation(allowingReaderAccessory: Bool) -> Bool {
+        guard let controller else { return false }
+        func modal(in container: UIViewController) -> UIViewController? {
+            if let presented = container.presentedViewController { return presented }
+            for child in container.children {
+                if let presented = modal(in: child) { return presented }
+            }
+            return nil
+        }
+        // Only this reader's ancestors, never another scene or tab's content.
+        var ancestor = controller.parent
+        var presented = modal(in: controller)
+        while let current = ancestor {
+            if let modal = current.presentedViewController { presented = modal }
+            ancestor = current.parent
+        }
+        guard let presented else { return false }
+        guard allowingReaderAccessory, !presented.isBeingPresented, !presented.isBeingDismissed else { return true }
+        // SwiftUI identifies the current small accessory. Exempt only its own
+        // layer; a task presented above it (even by a contained child) blocks.
+        return modal(in: presented) != nil
+    }
 }
 
 

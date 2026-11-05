@@ -2,27 +2,11 @@ import Foundation
 import CryptoKit
 import Darwin
 
-#if DEBUG
-import WidgetKit
 
-enum ReaderSmokeFixture {
-    static var enabled: Bool {
-        let args = ProcessInfo.processInfo.arguments
-        guard args.contains("--ui-testing"), args.contains("--ui-test-smoke"),
-              let index = args.firstIndex(of: "--ui-test-session"), args.indices.contains(index + 1) else { return false }
-        return UUID(uuidString: args[index + 1]) != nil
-    }
-    static let paragraph = "星灯照着归途，月光落在书页上。这是用于应用测试的合成文字。\n"
-    static var text: String {
-        "第一章 星灯\n" + String(repeating: paragraph, count: 14)
-        + "第二話 归途\n" + String(repeating: paragraph, count: 14)
-        + "終章\n" + paragraph
-    }
-}
-#endif
 
 extension Notification.Name {
     static let libraryFilesChanged = Notification.Name("Moonread.libraryFilesChanged")
+    static let libraryIndexChanged = Notification.Name("Moonread.libraryIndexChanged")
 }
 
 /// The presenter only signals invalidation. Coordinated scans and all content
@@ -269,52 +253,7 @@ extension AppDataService {
         let example = sourceDefaults.string(forKey: "Moonread.seededExampleFileID")
         return try textCore().sourceFiles(shelfId: "builtin").contains { !$0.directory && $0.id != example }
     }
-    #if DEBUG
-    /// The cloud scenarios exercise publication timing only, without a real account.
-    func prepareOnboardingCloudFixture() async throws {
-        guard testSession != nil else { throw LibraryFileError.invalidDestination }
-        if ProcessInfo.processInfo.arguments.contains("--ui-test-onboarding-existing") {
-            let url = try builtinLibraryURL().appendingPathComponent("云端合成小说.txt")
-            try "第一章 合成\n这份文字仅用于发现状态测试。".write(to: url, atomically: true, encoding: .utf8)
-        }
-        try await scanLibraryShelf("builtin")
-    }
-    #endif
-
-    #if DEBUG
-    /// Original text and a delivered-position stand-in in the isolated UI session.
-    /// No real cloud account, external files, or prior local books are used.
-    private func createRecentRestorationFixture() async throws {
-        guard testSession != nil else { return }
-        let root = try builtinLibraryURL(), file = root.appendingPathComponent("原创最近阅读恢复.txt")
-        guard !FileManager.default.fileExists(atPath: file.path) else { return }
-        let heading = "第一章 回到书页\n"
-        let paragraph = "这是一段原创合成文字，用来验证恢复最近阅读后可以回到原来的位置，不需要先逐本打开文件。\n"
-        let text = heading + String(repeating: paragraph, count: 80)
-        try Data(text.utf8).write(to: file)
-        let identity = try SourceIdentityProbe().identify(filePath: file.path, decoding: "auto")
-        let hint = PositionSourceHint(source_kind: .managedLocal, relative_path: file.lastPathComponent,
-            file_name: file.lastPathComponent, byte_size: UInt64(text.utf8.count), decoding: "auto")
-        let position = PositionValue(content_key: identity.contentSha256,
-            offset: UInt64(heading.utf8.count + paragraph.utf8.count * 12), source_hint: hint)
-        try await userStore().put("position/" + identity.contentSha256, value: UserSyncJSON.encode(position), device: "ui-fixture")
-        try refreshLibraryShelf("builtin")
-    }
-    #endif
-
-    #if DEBUG
-    private func createAITaskLibraryFixture() throws {
-        guard testSession != nil else { return }
-        let root = try builtinLibraryURL()
-        for (name, text) in [("AI 待整理甲.txt", "第一章\n离线整理示例甲"), ("AI 待整理乙.txt", "第一章\n离线整理示例乙"), ("AI 已有名称.txt", "第一章\n同名冲突示例")] {
-            let url = root.appendingPathComponent(name)
-            if !FileManager.default.fileExists(atPath: url.path) { try text.write(to: url, atomically: true, encoding: .utf8) }
-        }
-        try refreshLibraryShelf("builtin")
-    }
-    #endif
-
-    private func builtinLibraryURL() throws -> URL {
+    func builtinLibraryURL() throws -> URL {
         if let cloudLibraryRoot { return cloudLibraryRoot }
         if let libraryDirectoryOverride { return libraryDirectoryOverride }
         if let testSession {
@@ -345,8 +284,8 @@ extension AppDataService {
         #endif
         return try await catalogueQuery(location, recursive: recursive).libraryEntries(shelfId: location?.shelfID, parentPath: recursive ? nil : location?.path, sort: sort)
     }
-    func searchLibrary(shelfID: String?, query: String, author: String?, tag: String?) async throws -> [LibraryEntry] {
-        try await searchCatalogue(shelfID.map { LibraryLocation(shelfID: $0) }, spec: .init(profile: .library, query: query, author: author, tags: tag.map { [$0] } ?? []))
+    func searchLibrary(query: String, configuration: BookSearchConfiguration) async throws -> LibraryQueryRules.SearchOutcome {
+        try await searchCatalogueOutcome(nil, spec: .init(profile: .library, query: query, configuration: configuration))
     }
     /// AI previously read details before matching. Preserve its unknown-metadata
     /// barrier in one store call, without doing a details lookup for each file.
@@ -358,15 +297,18 @@ extension AppDataService {
         try await userStore().requireMetadataReadable(keys: formal)
     }
     func searchCatalogue(_ location: LibraryLocation?, spec: LibraryQueryRules.SearchSpec) async throws -> [LibraryEntry] {
+        try await searchCatalogueOutcome(location, spec: spec).entries
+    }
+    private func searchCatalogueOutcome(_ location: LibraryLocation?, spec: LibraryQueryRules.SearchSpec) async throws -> LibraryQueryRules.SearchOutcome {
         let query = try await catalogueQuery(location, recursive: true)
-        let candidates = try query.librarySearchCandidates(scope: catalogueScope(location, recursive: true), booksOnly: spec.profile == .ai)
+        let candidates = try query.librarySearchCandidates(scope: catalogueScope(location, recursive: true), booksOnly: spec.profile == .ai || spec.configuration.booksOnly)
         if spec.profile == .ai { try await requireAIMetadataReadable(nil, recursive: true) }
-        var entries = LibraryQueryRules.filterAndRank(candidates, spec: spec)
-        for index in entries.indices where entries[index].directory {
-            entries[index].coverPreviews = try query.libraryFolderCoverPreviews(
-                shelfId: entries[index].shelfId, relativePath: entries[index].relativePath)
+        var found = LibraryQueryRules.searchOutcome(candidates, spec: spec)
+        for index in found.entries.indices where found.entries[index].directory {
+            found.entries[index].coverPreviews = try query.libraryFolderCoverPreviews(
+                shelfId: found.entries[index].shelfId, relativePath: found.entries[index].relativePath)
         }
-        return entries
+        return found
     }
 
     func allLibraryBooks(_ shelfID: String) async throws -> [LibraryEntry] {
@@ -590,8 +532,15 @@ extension AppDataService {
     private func publishIndexScan(_ id: String, root: URL, items: [ScannedLibraryItem]) {
         let revision = UUID(), files = Set(items.filter { !$0.directory }.map(\.relativePath))
         indexScanFiles[id] = files; indexScanRoots[id] = root.standardizedFileURL; indexScanRevisions[id] = revision
-        scheduleSystemReadingCatalog(immediate: true)
+        publishLibraryIndexChange()
         NotificationCenter.default.post(name: .libraryIndexScanCommitted, object: LibraryIndexScan(shelfID: id, revision: revision, files: files))
+    }
+
+    /// The index is already committed. Consumers reread it without triggering
+    /// filesystem scans or automatic-index admission for a source-only update.
+    func publishLibraryIndexChange() {
+        scheduleSystemReadingCatalog(immediate: true)
+        NotificationCenter.default.post(name: .libraryIndexChanged, object: self)
     }
 
     func observeLibraryRoot(_ id: String, root: URL) {
@@ -885,382 +834,4 @@ extension AppDataService {
         guard let result else { throw CocoaError(.fileWriteUnknown) }; return try result.get()
     }
 
-    #if DEBUG
-    private func createShelfRecoveryFixture() async throws {
-        guard let testSession, ProcessInfo.processInfo.arguments.contains("--ui-test-shelf-recovery") else { return }
-        let marker = "Moonread.shelfRecovery.fixture." + testSession
-        guard !sourceDefaults.bool(forKey: marker) else { return }
-        let root = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Recovery-" + testSession).appendingPathComponent("复原书架")
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let file = root.appendingPathComponent("复原样本.txt")
-        try ("第一話 星光来信\n" + String(repeating: "窗前的灯照着回家的路，这是原创的恢复验证正文。\n", count: 60)).write(to: file, atomically: true, encoding: .utf8)
-        let identity = try SourceIdentityProbe().identify(filePath: file.path, decoding: "auto")
-        let store = try await userStore()
-        try await store.put("shelf-reference/" + testSession, value: UserSyncJSON.encode(ShelfReferenceValue(name: "复原书架", locationDescription: "file-provider")), device: "recovery-fixture")
-        let position = PositionValue(content_key: identity.contentSha256, offset: identity.utf8Bytes / 2, source_hint: nil)
-        try await store.put("position/" + identity.contentSha256, value: UserSyncJSON.encode(position), device: "recovery-fixture")
-        try await store.put("metadata/" + identity.contentSha256 + "/tag-restored", value: UserSyncJSON.encode("复原标签"), device: "recovery-fixture")
-        sourceDefaults.set(true, forKey: marker)
-    }
-    func shelfRecoveryFixtureURL(_ reference: String) -> URL? {
-        guard let testSession, testSession == reference, ProcessInfo.processInfo.arguments.contains("--ui-test-shelf-recovery") else { return nil }
-        return FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Recovery-" + testSession).appendingPathComponent("复原书架")
-    }
-
-    private func createSmokeFixture() async throws {
-        guard let testSession else { return }
-        let marker = "Moonread.smoke.seed.v1." + testSession
-        guard !sourceDefaults.bool(forKey: marker) else { return }
-        let root = try builtinLibraryURL(), core = try textCore()
-        try FileManager.default.createDirectory(at: root.appendingPathComponent("目标"), withIntermediateDirectories: true)
-        try ReaderSmokeFixture.text.write(to: root.appendingPathComponent("月读 · 排版示例.txt"), atomically: true, encoding: .utf8)
-        try ("第一章 同名\n" + String(repeating: "保留原来的目标内容。\n", count: 80)).write(to: root.appendingPathComponent("同名.txt"), atomically: true, encoding: .utf8)
-        if ProcessInfo.processInfo.arguments.contains("--ui-test-encoding") {
-            let text = "Chapter 1\n" + String(repeating: "An original encoding fixture.\n", count: 8)
-            let bytes = text.utf16.flatMap { [UInt8($0 & 255), UInt8($0 >> 8)] }
-            try Data(bytes).write(to: root.appendingPathComponent("编码恢复样本.txt"))
-        }
-        try refreshLibraryShelf("builtin")
-        let file = try core.sourceFileSnapshots(fileId: nil).first { $0.relativePath == "月读 · 排版示例.txt" && $0.shelfId == "builtin" }
-        if let file {
-            let identity = try SourceIdentityProbe().identify(filePath: root.appendingPathComponent(file.relativePath).path, decoding: file.decoding)
-            _ = try core.publishSourceIdentity(file: file, identity: identity)
-            let base = try await details(sha: identity.contentSha256).metadata
-            var edited = base; edited.tags = ["星灯"]
-            try await saveMetadata(base: base, edited: edited)
-            if ProcessInfo.processInfo.arguments.contains("--ui-test-data-management") {
-                let chapter = ChapterValue(content_key: identity.contentSha256, offset: 0, title: "备份目录", level: 1, excluded: false)
-                try await userStore().put("chapter/" + identity.contentSha256 + "/0", value: UserSyncJSON.encode(chapter), device: "data-management-fixture")
-            }
-            if ProcessInfo.processInfo.arguments.contains("--ui-test-smoke-restored") || ProcessInfo.processInfo.arguments.contains("--ui-test-data-management") {
-                let position = PositionValue(content_key: identity.contentSha256, offset: ProcessInfo.processInfo.arguments.contains("--ui-test-data-management") ? identity.utf8Bytes / 2 : 120, source_hint: nil)
-                try await userStore().put("position/" + identity.contentSha256, value: UserSyncJSON.encode(position), device: "smoke-fixture")
-            }
-        }
-        let external = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Smoke-External-" + testSession)
-        try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
-        try "第一章 复制\n保留来源文件。".write(to: external.appendingPathComponent("复制.txt"), atomically: true, encoding: .utf8)
-        try ("第一章 冲突\n" + String(repeating: "不要替换已有目标。\n", count: 80)).write(to: external.appendingPathComponent("同名.txt"), atomically: true, encoding: .utf8)
-        let shelf = try registerLibraryShelf(external)
-        try refreshLibraryShelf(shelf)
-        sourceDefaults.set(true, forKey: marker)
-    }
-
-    private func createReaderFixture() async throws {
-        guard testSession != nil else { return }
-        let core = try textCore(), root = try builtinLibraryURL()
-        let arguments = ProcessInfo.processInfo.arguments
-        if arguments.contains("--ui-test-encoding") {
-            let text = "Chapter 1\n" + String(repeating: "An original sample for manual encoding recovery.\n", count: 80)
-            let bigEndian = arguments.contains("--ui-test-encoding-be")
-            let bytes = text.utf16.flatMap { unit in
-                bigEndian ? [UInt8(unit >> 8), UInt8(unit & 255)] : [UInt8(unit & 255), UInt8(unit >> 8)]
-            }
-            try Data(bytes).write(to: root.appendingPathComponent("编码恢复样本.txt"))
-            try refreshLibraryShelf("builtin")
-            return
-        }
-        if arguments.contains("--ui-test-blank-line-projection") {
-            let gap = String(repeating:" \t　\n",count:15000)
-            let prose = "用于验证真正翻阅的合成正文，正文前后的长空白不应形成空屏或空页。\n"
-            let text = gap+"前段标记。\n"+String(repeating:prose,count:9)+gap+"后段标记。\n"+String(repeating:prose,count:32)+gap
-            let file = root.appendingPathComponent("空行投影合成.txt")
-            try Data(text.utf8).write(to:file)
-            var settings = defaultReaderSettings()
-            if arguments.contains("--ui-test-blank-line-pages") { settings.mode = .pages }
-            try await saveSettings(settings)
-            try refreshLibraryShelf("builtin")
-            guard let entry = try await libraryEntries(LibraryLocation(shelfID:"builtin")).first(where:{$0.name==file.lastPathComponent}) else { throw ReaderError.NotFound }
-            // Prepare through the real source pipeline, including the raw-SHA
-            // reuse cache, before seeding a genuinely resumable position.
-            let prepared = try await aiPrepare(entry.source)
-            if arguments.contains("--ui-test-blank-line-no-cover") {
-                try await savePosition(bookID:prepared.id,offset:UInt64(gap.utf8.count))
-                let saved = try await snapshot(prepared.id)
-                print("BLANK_FIXTURE_PREPARED", saved.phase, "hasStarted", saved.hasStarted, "position", saved.book.positionUtf8)
-            }
-            withExtendedLifetime(prepared) {}
-            return
-        }
-        let book = try core.createSampleBook()
-        let file = root.appendingPathComponent("月读 · 排版示例.txt")
-        if !FileManager.default.fileExists(atPath: file.path) {
-            var text = ""
-            for index in 0..<book.chunkCount { text += try core.readChunk(bookId: book.id, index: index).text }
-            try text.write(to: file, atomically: true, encoding: .utf8)
-        }
-        try refreshLibraryShelf("builtin")
-        guard let entry = try await libraryEntries(LibraryLocation(shelfID: "builtin")).first(where: { $0.name == file.lastPathComponent }) else {
-            throw CocoaError(.fileNoSuchFile)
-        }
-        try core.linkLibraryFile(fileId: entry.id, bookId: book.id)
-        let conflictFixture = "Moonread.conflictFixture." + (testSession ?? "")
-        if ProcessInfo.processInfo.arguments.contains("--ui-test-annotation-conflict"), !sourceDefaults.bool(forKey: conflictFixture) {
-            let range = try core.paragraphRange(bookId: book.id, offsetUtf8: 0)
-            let original = try await prepareAnnotation(book.id, start: range.startUtf8, end: range.endUtf8)
-            _ = try await saveNote(original, text: "原批注")
-            let baseline = try await prepareAnnotation(book.id, start: range.startUtf8, end: range.endUtf8)
-            _ = try await saveNote(baseline, text: "设备甲的评论")
-            if ProcessInfo.processInfo.arguments.contains("--ui-test-annotation-delete-conflict") {
-                let key = try userKey(book.id)
-                try await userStore(for: key).changeDeletion(baseline.id, baseline: baseline.baselines[baseline.id] ?? [], deleted: true, restoring: nil)
-            } else {
-                _ = try await saveNote(baseline, text: "设备乙的评论")
-            }
-            sourceDefaults.set(true, forKey: conflictFixture)
-        }
-    }
-
-    private func createContinuationFixture() async throws {
-        guard let testSession else { return }
-        let marker = "Moonread.syncContinuationFixture." + testSession
-        guard !sourceDefaults.bool(forKey: marker),
-              let entry = try await libraryEntries(LibraryLocation(shelfID: "builtin")).first(where: { $0.name == "月读 · 排版示例.txt" }) else { return }
-        // Seed the actual synthetic file's identity, never an unrelated sample.
-        let prepared = try await aiPrepare(entry.source)
-        let actual = try await snapshot(prepared.id).book
-        let query = try textCore().querySnapshot(json: "{}")
-        let local = try query.readingLocation(bookId: prepared.id, percentage: 10)
-        try await savePosition(bookID: prepared.id, offset: local.offsetUtf8)
-        let target = try query.readingLocation(bookId: prepared.id, percentage: 75)
-        let value = PositionValue(content_key: actual.contentSha256, offset: target.offsetUtf8)
-        try await userStore().put("position/" + actual.contentSha256, value: UserSyncJSON.encode(value), device: "synthetic-remote")
-        sourceDefaults.set(true, forKey: marker)
-        withExtendedLifetime(prepared) {}
-    }
-
-    /// A synthetic catalogue of about 10,000-character chapters with short generic titles and
-    /// one long title. Coverage comes from actually reading it in the UI test.
-    private func createChapterCatalogueFixture() async throws {
-        guard testSession != nil else { return }
-        let file = try builtinLibraryURL().appendingPathComponent("目录样例.txt")
-        guard !FileManager.default.fileExists(atPath: file.path) else { return }
-        var text = ""
-        let line = "月光落在书页上，风轻轻吹过窗边，远处传来一声犬吠。"
-        for index in 1...40 {
-            text += (index == 6 ? "第\(index)章 一个很长的通用测试章节标题，用来检查较窄屏幕上换行显示的效果" : "第\(index)章 通用标题\(index)") + "\n"
-            for _ in 0..<(400 + index % 5 * 20) { text += line + "\n" }
-        }
-        try text.write(to: file, atomically: true, encoding: .utf8)
-        try refreshLibraryShelf("builtin")
-    }
-
-    private func createLibraryFixture() async throws {
-        guard let testSession else { return }
-        let root = try builtinLibraryURL()
-        let external = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-External-\(testSession)/本地小说")
-        for directory in [root.appendingPathComponent("奇幻/东方"), external] { try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true) }
-        let mixedOrder = ProcessInfo.processInfo.arguments.contains("--ui-test-library-mixed")
-        if mixedOrder {
-            for name in ["待读/子目录", "空目录"] {
-                try FileManager.default.createDirectory(at: root.appendingPathComponent(name), withIntermediateDirectories: true)
-            }
-            for name in ["未读.txt", "待读/子目录/待看.txt"] {
-                try "第一章\n混排验证：\(name)".write(to: root.appendingPathComponent(name), atomically: true, encoding: .utf8)
-            }
-            for (name, time) in [("未读.txt", 900.0), ("待读", 800.0), ("空目录", 9999.0)] {
-                try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: time)], ofItemAtPath: root.appendingPathComponent(name).path)
-            }
-        }
-        if ProcessInfo.processInfo.arguments.contains("--ui-test-bookshelf-index") {
-            for name in ["散文", "历史"] {
-                try FileManager.default.createDirectory(at: root.appendingPathComponent(name), withIntermediateDirectories: true)
-            }
-            for index in 1...30 {
-                try "第一章\n字母定位测试 \(index)".write(to: root.appendingPathComponent("山海\(index).txt"), atomically: true, encoding: .utf8)
-            }
-            for name in ["暗河", "白塔", "春山", "冬日来信"] {
-                try "第一章\n封面预览测试：\(name)".write(to: root.appendingPathComponent("奇幻/东方/\(name).txt"), atomically: true, encoding: .utf8)
-            }
-        }
-        if ProcessInfo.processInfo.arguments.contains("--ui-test-grid-geometry") {
-            for index in 1...24 {
-                try FileManager.default.createDirectory(at: root.appendingPathComponent("测试目录\(index)"), withIntermediateDirectories: true)
-            }
-            for index in 1...120 {
-                try "第一章\n网格高度测试 \(index)".write(to: root.appendingPathComponent("测试小说\(index).txt"), atomically: true, encoding: .utf8)
-            }
-        }
-        let tagGroupsFixture = ProcessInfo.processInfo.arguments.contains("--ui-test-tag-groups")
-        if tagGroupsFixture {
-            try "第一章\n尚未建立索引的原创验证样本。".write(to: root.appendingPathComponent("待索引.txt"), atomically: true, encoding: .utf8)
-        }
-        let names = ["夜航", "山海之间", "长街来信"]
-        for (index, name) in names.enumerated() {
-            let parent = index == 1 ? root.appendingPathComponent("奇幻/东方") : root
-            let file = parent.appendingPathComponent(name + ".txt")
-            if !FileManager.default.fileExists(atPath: file.path) {
-                try "第一章 \(name)\n\n\(String(repeating: "这是用于书架验证的原创示例文字。窗外的月光洒在书页上，风轻轻吹过窗边。\n\n", count: 100))".write(to: file, atomically: true, encoding: .utf8)
-            }
-        }
-        let outside = external.appendingPathComponent("山中来信.txt")
-        if !FileManager.default.fileExists(atPath: outside.path) { try "第一章 来信\n\n这是一段原创测试正文。".write(to: outside, atomically: true, encoding: .utf8) }
-        if ProcessInfo.processInfo.arguments.contains("--ui-test-bookshelf-batch") {
-            let folder = external.appendingPathComponent("待整理")
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            for (name, parent) in [("春风", external), ("夜航", external), ("长街来信", external), ("不应递归复制", folder)] {
-                try "第一章\n批量复制验证：\(name)".write(to: parent.appendingPathComponent(name + ".txt"), atomically: true, encoding: .utf8)
-            }
-        }
-        let externalID = try registerLibraryShelf(external)
-        try refreshLibraryShelf(externalID)
-        try refreshLibraryShelf("builtin")
-        for entry in try await libraryEntries(LibraryLocation(shelfID: "builtin"), recursive: true) where !entry.directory {
-            if mixedOrder && !names.contains(entry.title) { continue }
-            if tagGroupsFixture && entry.title == "待索引" { continue }
-            let file = root.appendingPathComponent(entry.relativePath)
-            let book = try textCore().importBook(filePath: file.path, title: entry.title)
-            try textCore().linkLibraryFile(fileId: entry.id, bookId: book.id)
-            if tagGroupsFixture && entry.title == "夜航" {
-                let base = try await details(bookID: book.id).metadata
-                var edited = base; edited.tags = ["奇幻", "旅行"]
-                try await saveMetadata(base: base, edited: edited)
-            }
-            if !mixedOrder { try await writePosition(book.id, offset: min(160, book.byteCount)) }
-        }
-        if mixedOrder {
-            let entries = try await libraryEntries(LibraryLocation(shelfID: "builtin"), recursive: true)
-            for title in ["长街来信", "山海之间", "夜航"] {
-                if let entry = entries.first(where: { $0.title == title }), let id = entry.bookId {
-                    try await writePosition(id, offset: min(160, entry.byteCount))
-                    try await Task.sleep(for: .milliseconds(20))
-                }
-            }
-        }
-    }
-    #endif
 }
-
-#if DEBUG
-extension AppDataService {
-    private func createLocalizedStoreShotFixture() async throws {
-        let arguments = ProcessInfo.processInfo.arguments
-        guard let i = arguments.firstIndex(of: "--ui-test-store-language"), arguments.indices.contains(i + 1) else { throw ReaderError.InvalidRange }
-        let f = try StoreShotFixture.localized(arguments[i + 1])
-        guard let session = testSession, libraryDirectoryOverride != nil, cloudLibraryRoot == nil else { throw LibraryFileError.invalidDestination }
-        let root = try builtinLibraryURL().resolvingSymlinksInPath(), temp = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
-        guard root.path.hasPrefix(temp.path + "/"), root.lastPathComponent == "Moonread-StoreShots-" + session,
-              !root.path.contains("Mobile Documents"), !root.path.contains("CloudDocs"), !root.pathComponents.contains("Downloads") else { throw LibraryFileError.invalidDestination }
-        var settings = defaultReaderSettings(); settings.font = .serif; settings.mode = .scroll
-        // Save the ordinary reader preference; no display/font scaling override.
-        if arguments.contains("--ui-test-store-ipad") { settings.fontSize = 24 }
-        if StoreShotPage.requested == .reader { settings.mode = .pages }
-        try saveSettings(settings)
-        guard !sourceDefaults.bool(forKey: "StoreShots.seeded") else { return }
-        for folder in f.folders { try FileManager.default.createDirectory(at: root.appendingPathComponent(folder), withIntermediateDirectories: true) }
-        for (index,book) in f.books.enumerated() {
-            let parent = index == 3 || index == 4 ? root.appendingPathComponent(f.folders[0]) : (index == 5 ? root.appendingPathComponent(f.folders[1]) : root)
-            try book.text.write(to: parent.appendingPathComponent(book.title + ".txt"), atomically: true, encoding: .utf8)
-        }
-        try refreshLibraryShelf("builtin")
-        let core = try textCore()
-        let files = try core.sourceFileSnapshots(fileId: nil).filter { $0.shelfId == "builtin" }
-        for file in files {
-            let path = root.appendingPathComponent(file.relativePath)
-            let identity = try SourceIdentityProbe().identify(filePath: path.path, decoding: file.decoding)
-            guard try core.publishSourceIdentity(file: file, identity: identity) else { throw ReaderError.InvalidRange }
-            let title = path.deletingPathExtension().lastPathComponent
-            let book = try core.importBook(filePath: path.path, title: title)
-            try core.linkLibraryFile(fileId: file.id, bookId: book.id)
-            if let index = [f.books[1].title, f.books[2].title].firstIndex(of: title) {
-                guard let range = f.books[index + 1].text.range(of: f.progressChapters[index]) else { throw ReaderError.InvalidRange }
-                let offset = UInt64(f.books[index + 1].text[..<range.lowerBound].utf8.count)
-                try await savePosition(bookID: book.id, offset: offset)
-            }
-            let metadata = try await details(bookID: book.id).metadata
-            var edited = metadata; edited.author = f.author; edited.tags = [title == f.books[3].title || title == f.books[5].title ? f.folders[1] : f.folders[0]]
-            try await saveMetadata(base: metadata, edited: edited)
-            if title == f.books[0].title {
-                let original = f.books[0].text
-                for pair in f.notes {
-                    guard let range = original.range(of: pair[0]) else { throw ReaderError.InvalidRange }
-                    let start = UInt64(original[..<range.lowerBound].utf8.count), end = start + UInt64(pair[0].utf8.count)
-                    let edit = try await prepareAnnotation(book.id, start: start, end: end)
-                    _ = try await saveNote(edit, text: pair[1])
-                }
-                guard let range = original.range(of: f.bookmark) else { throw ReaderError.InvalidRange }
-                _ = try await ensureBookmark(book.id, at: UInt64(original[..<range.lowerBound].utf8.count))
-                if StoreShotPage.requested != nil {
-                    try await savePosition(bookID: book.id, offset: UInt64(original[..<range.lowerBound].utf8.count))
-                    var display = edited
-                    display.synopsis = original.components(separatedBy: "\n\n").first(where: { $0.count > 45 }) ?? ""
-                    try await saveMetadata(base: edited, edited: display)
-                }
-                if let scene = StoreShotScene.requested {
-                    let chapter = original.range(of: f.mainChapters[1])!
-                    var start = chapter.lowerBound
-                    if scene == .annotation, let note = original.range(of: f.notes[0][0]) {
-                        // Start at the preceding paragraph, not an arbitrary
-                        // character in a line, keeping complete reading lines.
-                        start = original[..<note.lowerBound].dropLast(2)
-                            .range(of: "\n\n", options: .backwards)?.upperBound ?? original.startIndex
-                    }
-                    if scene == .recap {
-                        start = original.index(original.range(of: f.mainChapters[2])!.lowerBound, offsetBy: -2)
-                    }
-                    let offset = UInt64(original[..<start].utf8.count)
-                    try await savePosition(bookID: book.id, offset: offset)
-                    if scene == .continuation {
-                        let ahead = original.range(of: f.mainChapters[2])!.lowerBound
-                        let winner = PositionValue(content_key: book.contentSha256,
-                                                   offset: UInt64(original[..<ahead].utf8.count))
-                        // Same persisted candidate path as sync, without changing
-                        // this device's just-written local resume baseline.
-                        let json = String(decoding: try JSONEncoder().encode(winner), as: UTF8.self)
-                        try await userStore().put("position/" + book.contentSha256, value: json, device: "store-shot-other-device")
-                        dataChanged()
-                    }
-                    if scene == .statistics { try await createStoreShotStatistics(bookID: book.id) }
-                    if scene == .widget {
-                        try await publishStoreShotWidget(book: book, fixture: f)
-                    }
-                }
-            }
-        }
-        let inventory = try await readingDataInventory()
-        guard inventory.items.count == 6, inventory.pending == 0, inventory.unsupported == 0,
-              try core.libraryShelves().count == 1 else { throw ReaderError.InvalidRange }
-        if StoreShotPage.requested != nil,
-           let id = try core.sourceFiles(shelfId: "builtin").first(where: { $0.relativePath == f.books[0].title + ".txt" })?.bookId {
-            try await createStatisticsFixture(bookID: id)
-        }
-        sourceDefaults.set(true, forKey: "StoreShots.seeded")
-    }
-
-    private func createStoreShotStatistics(bookID: String) async throws {
-        // Frozen original sample, using the same clock and writer as reading.
-        for (index, minutes) in [18, 0, 28, 36, 45, 39, 32].enumerated() where minutes > 0 {
-            let day = Calendar.current.date(byAdding: .day, value: index - 6, to: StoreShotScene.statisticsDate)!
-            let start = Calendar.current.date(bySettingHour: 10, minute: 0, second: 0, of: day)!
-            let clock = ReadingClock(bookId: bookID)
-            var point = ReadingMoment(monotonicMs: 0, unixMs: Int64(start.timeIntervalSince1970 * 1000),
-                utcOffsetSeconds: Int32(TimeZone.current.secondsFromGMT(for: start)), readable: true,
-                interaction: true, preview: false, startUtf8: 0, endUtf8: 30)
-            _ = clock.update(moment: point)
-            for minute in 1...minutes {
-                point.monotonicMs = UInt64(minute * 60_000)
-                point.unixMs = Int64(start.timeIntervalSince1970 * 1000) + Int64(minute * 60_000)
-                point.readable = minute != minutes
-                try await saveReading(clock.update(moment: point), generation: statisticsPreferences().generation)
-            }
-        }
-    }
-
-    private func publishStoreShotWidget(book: ImportText, fixture: StoreShotFixture) async throws {
-        #if targetEnvironment(simulator)
-        guard let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: SystemReadingSnapshotFile.groupIdentifier) else {
-            throw LibraryFileError.invalidDestination
-        }
-        let id = try SystemReadingBookID(sha: book.contentSha256).rawValue
-        let entry = SystemReadingSnapshot.Book(id: id, title: book.title, author: fixture.author, tags: [],
-            availability: .available, sourceCount: 1, naturalOrdinal: 0, progress: 42,
-            chapterLabel: fixture.mainChapters[1], recentRank: 0, allowsAutomaticExposure: true)
-        let file = SystemReadingSnapshotFile(directory: root.appendingPathComponent("StoreScreenshots", isDirectory: true))
-        try file.publish(.init(storeScope: "synthetic-store-screenshots", books: [entry], recentIDs: [id],
-                               appearance: await systemWidgetAppearance()))
-        UserDefaults(suiteName: SystemReadingSnapshotFile.groupIdentifier)?.set(fixture.language, forKey: "StoreScreenshots.language")
-        await MainActor.run { WidgetCenter.shared.reloadAllTimelines() }
-        #endif
-    }
-}
-#endif

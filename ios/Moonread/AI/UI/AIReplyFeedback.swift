@@ -115,7 +115,7 @@ private struct AIReplyFeedbackFallback: View {
                     }.buttonStyle(ThemedProminentButtonStyle()).padding().accessibilityIdentifier("aiFeedbackCopy")
                         .frame(maxWidth: .infinity).background(Color(uiColor: theme.surface))
                 }
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭", systemImage: "xmark") { dismiss() }.toolbarGlyph() } }
+                .toolbar { ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("关闭", role: .close) { dismiss() }.toolbarGlyph() } }
         }
     }
     private func field(_ id: String, title: LocalizedStringKey, copyLabel: LocalizedStringKey, text: String) -> some View {

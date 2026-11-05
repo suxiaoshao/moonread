@@ -19,6 +19,10 @@ pub struct ReadingMoment {
     pub utc_offset_seconds: i32,
     pub readable: bool,
     pub interaction: bool,
+    /// Platform evidence: cumulative time that frames actually advanced text.
+    /// Runtime only; never persisted or interpreted as manual interaction.
+    pub automatic_moving: bool,
+    pub automatic_milliseconds: u64,
     pub preview: bool,
     pub start_utf8: u64,
     pub end_utf8: u64,
@@ -81,13 +85,28 @@ impl ReadingClock {
         if let Some(previous) = state.previous.clone() {
             let elapsed = moment.monotonic_ms.saturating_sub(previous.monotonic_ms);
             let charged = if previous.readable {
-                elapsed.min(state.remaining)
+                if previous.automatic_moving {
+                    moment
+                        .automatic_milliseconds
+                        .saturating_sub(previous.automatic_milliseconds)
+                        .min(elapsed)
+                } else {
+                    elapsed.min(state.remaining)
+                }
             } else {
                 0
             };
             if charged > 0 {
                 state.append(&previous, charged, &mut output);
-                state.remaining -= charged;
+                if !previous.automatic_moving {
+                    state.remaining -= charged;
+                }
+            }
+            // append assumes contiguous wall time. Automatic motion can cover
+            // only part (or none) of this interval; do not join the next motion
+            // to the pending slice across the uncharged gap.
+            if previous.automatic_moving && charged < elapsed {
+                state.finish(&mut output);
             }
             let clock_changed = (moment.unix_ms.saturating_sub(previous.unix_ms)
                 - i64::try_from(elapsed).unwrap_or(i64::MAX))
@@ -97,7 +116,7 @@ impl ReadingClock {
                 || moment.preview != previous.preview
                 || moment.utc_offset_seconds != previous.utc_offset_seconds
                 || clock_changed
-                || state.remaining == 0
+                || (state.remaining == 0 && !moment.automatic_moving)
             {
                 state.finish(&mut output);
                 state.visit_id = Uuid::new_v4().to_string();
@@ -378,6 +397,8 @@ mod tests {
             utc_offset_seconds: 28_800,
             readable,
             interaction,
+            automatic_moving: false,
+            automatic_milliseconds: 0,
             preview: false,
             start_utf8: 0,
             end_utf8: 300,
@@ -451,6 +472,80 @@ mod tests {
             20_000
         );
     }
+    #[test]
+    fn automatic_reading_charges_only_actual_motion_without_refreshing_idle_credit() {
+        let clock = ReadingClock::new("book".into());
+        clock.update(moment(0, true, true));
+        assert_eq!(
+            duration(&clock.update(moment(120_000, true, false))),
+            120_000
+        );
+        let mut point = moment(120_000, true, false);
+        point.automatic_moving = true;
+        clock.update(point.clone());
+        point.monotonic_ms = 300_000;
+        point.unix_ms = 300_000;
+        point.automatic_milliseconds = 180_000;
+        assert_eq!(duration(&clock.update(point.clone())), 180_000);
+        point.monotonic_ms = 600_000;
+        point.unix_ms = 600_000;
+        // No advanced frames during the stall: no elapsed-time backfill.
+        assert_eq!(duration(&clock.update(point.clone())), 0);
+        point.automatic_moving = false;
+        clock.update(point);
+        assert_eq!(duration(&clock.update(moment(610_000, true, false))), 0);
+        let mut hidden = moment(610_000, false, false);
+        hidden.automatic_moving = true;
+        clock.update(hidden.clone());
+        hidden.monotonic_ms = 620_000;
+        hidden.unix_ms = 620_000;
+        hidden.automatic_milliseconds = 10_000;
+        assert_eq!(duration(&clock.update(hidden)), 0);
+
+        for base in [0, DAY_MS - 10_000] {
+            // Both a fully stalled interval and a partially charged interval
+            // leave a gap before motion resumes at 10 seconds.
+            for (during_gap, first_end) in [(1_000, 1_000), (2_000, 2_000)] {
+                let clock = ReadingClock::new("book".into());
+                let mut slices = Vec::new();
+                for (ms, moving_ms) in [
+                    (0, 0),
+                    (1_000, 1_000),
+                    (10_000, during_gap),
+                    (11_000, during_gap + 1_000),
+                ] {
+                    let mut point = moment(ms, ms != 11_000, false);
+                    point.unix_ms = base + ms as i64;
+                    point.utc_offset_seconds = 0;
+                    point.automatic_moving = true;
+                    point.automatic_milliseconds = moving_ms;
+                    slices.extend(clock.update(point));
+                }
+                assert_eq!(slices.len(), 2);
+                assert_eq!(
+                    (slices[0].started_ms, slices[0].ended_ms),
+                    (base, base + first_end)
+                );
+                assert_eq!(
+                    (slices[1].started_ms, slices[1].ended_ms),
+                    (base + 10_000, base + 11_000)
+                );
+                assert_eq!(duration(&slices), first_end + 1_000);
+                assert_eq!(slices[0].local_day, base.div_euclid(DAY_MS));
+                assert_eq!(slices[1].local_day, (base + 10_000).div_euclid(DAY_MS));
+                assert_eq!(slices[0].visit_id, slices[1].visit_id);
+                assert_eq!(
+                    slices
+                        .iter()
+                        .flat_map(|s| &s.exposures)
+                        .map(|e| e.duration_ms)
+                        .sum::<u64>(),
+                    (first_end + 1_000) as u64
+                );
+            }
+        }
+    }
+
     #[test]
     fn pauses_preserve_remaining_credit_and_kind_changes_split() {
         let clock = ReadingClock::new("book".into());

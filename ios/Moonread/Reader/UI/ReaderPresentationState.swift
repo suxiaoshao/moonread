@@ -1,9 +1,10 @@
 import SwiftUI
 import UIKit
 
-/// Intent belongs to this reading opening. Geometry and native lifecycle never
-/// write the location. All sizes use the same sheet and source navigation.
-enum ReaderTool: Hashable { case library, search, settings, more }
+/// Intent belongs to this reading opening. Geometry and native completion never
+/// write the location; the system page Binding is direct navigation input.
+/// All sizes use the same sheet and source navigation.
+enum ReaderTool: Hashable { case library, search, settings, more, automatic }
 enum ReaderToolExposure: Equatable { case hidden, accessory, expanded }
 enum ReaderDestination: Hashable {
     case library, fullSettings, preview(UUID), palette(UUID), chapter(UUID)
@@ -24,6 +25,17 @@ struct ReaderToolLocation: Equatable {
     var controlsVisible = false { didSet { if oldValue != controlsVisible { revision &+= 1 } } }
     private(set) var revision: UInt64 = 0
 
+    /// The source page is part of the same logical path, not another native
+    /// installation. System navigation writes this value directly.
+    var sourcePage: ReaderDestination? {
+        get { location.path.first { $0 == .fullSettings || $0 == .details } }
+        set {
+            guard sourcePage != newValue else { return }
+            if let old = sourcePage { close(old) }
+            if let newValue { push(newValue) }
+        }
+    }
+
     func choose(_ tool: ReaderTool, exposure: ReaderToolExposure) {
         guard !location.path.contains(where: { route in
             if case .note = route { return true }; return route.editorID != nil
@@ -32,6 +44,14 @@ struct ReaderToolLocation: Equatable {
         location = ReaderToolLocation(selection: tool)
         self.exposure = exposure
         if tool == .search, exposure == .expanded { controlsVisible = false }
+    }
+    /// A footer intent leaves the auto accessory within the same sheet. Restore
+    /// the ordinary tools explicitly; generic projection must not invent them.
+    @discardableResult func leaveAutomaticAccessory(for tool: ReaderTool) -> Bool {
+        guard location.selection == .automatic else { return false }
+        controlsVisible = true
+        choose(tool, exposure: .accessory)
+        return true
     }
     func push(_ destination: ReaderDestination) {
         guard location.path.last != destination else { return }
@@ -88,7 +108,6 @@ enum ReaderNativePhase: String { case released, requested, confirmed, dismissing
         guard token?.id == value.id, token?.opening == value.opening, phase == .requested else { return }
         phase = .confirmed
     }
-    func cancelDismissal() { if phase == .dismissing { phase = .confirmed } }
     func beginDismissal() {
         guard token != nil else { return }
         if phase == .requested { token = nil; phase = .released }
@@ -117,7 +136,7 @@ enum ReaderPresentationTarget: Equatable { case none, dock, settings, details }
         if path.contains(.fullSettings) || (state.location.selection == .settings && state.exposure == .expanded) { return .settings }
         if editorParent == .settings || editorParent == .preview { return .settings }
         if !path.isEmpty || hasNote { return .dock }
-        return state.controlsVisible || hasAccessory ? .dock : .none
+        return state.controlsVisible || hasAccessory || (state.location.selection == .automatic && state.exposure != .hidden) ? .dock : .none
     }
 }
 
@@ -163,7 +182,7 @@ enum ReaderPresentationTarget: Equatable { case none, dock, settings, details }
     let noteEditor: NoteEditorModel?
     let editor: ReaderEditSession?
     var dock: ReaderDock {
-        switch location.selection { case .settings: .settings; case .more: .more; default: .progress }
+        switch location.selection { case .settings: .settings; case .more: .more; case .automatic: .automatic; default: .progress }
     }
     var searchExpanded: Bool { location.selection == .search && exposure == .expanded }
     var panel: ReaderPanel? {
@@ -184,28 +203,6 @@ enum ReaderPresentationTarget: Equatable { case none, dock, settings, details }
         if let noteID { return "note-\(noteID)" }
         if let panel, [.library, .history, .chapterEditor, .ai].contains(panel) { return panel.rawValue }
         return nil
-    }
-}
-
-/// Source NavigationStack suffix, independent of the reader's tool slot.
-@MainActor @Observable final class ReaderSourceNavigation {
-    let installation = ReaderNativeInstallation()
-    var hasModalChild = false
-    private(set) var target = ReaderPresentationTarget.none
-    var token: ReaderHostToken? { installation.token }
-    var active: Bool { token != nil }
-    var showing: ReaderPresentationTarget { installation.dismissing ? .none : (active ? target : .none) }
-    func update(_ desired: ReaderPresentationTarget, opening: UUID, generation: UInt64) {
-        if desired == .none { if !hasModalChild { installation.beginDismissal() }; return }
-        guard desired == .settings || desired == .details else { return }
-        if token == nil { target = desired }
-        if target == desired { _ = installation.install(opening: opening, generation: generation) }
-        else { installation.beginDismissal() }
-    }
-    func confirm(_ value: ReaderHostToken) { installation.confirm(value) }
-    @discardableResult func completed(_ value: ReaderHostToken) -> Bool {
-        guard installation.completed(value) else { return false }
-        target = .none; return true
     }
 }
 

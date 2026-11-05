@@ -14,6 +14,7 @@ extension ReadingController {
             endAnnotationMenu(clearSelection: false)
         }
         if !rebuilding {
+            if textView.selectedRange.length > 0 { autoReading?.end() }
             if let selected = retainedSelection {
                 let expected = Self.annotationRange(AnnotationSelection(start: selected.0, end: selected.1, annotations: []),
                     mapping: textCoordinates(textView), base: textBase(textView))
@@ -38,7 +39,7 @@ extension ReadingController {
         DispatchQueue.main.async { [weak self] in self?.applyPendingWindow(); self?.reevaluateWindowRequests() }
     }
 
-    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { endAnnotationMenu(clearSelection: true); statisticsInteraction(); readingBegan?() }
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { autoReading?.end(); endAnnotationMenu(clearSelection: true); statisticsInteraction(); readingBegan?() }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         if scrollView.isDragging { statisticsInteraction() }
@@ -50,9 +51,9 @@ extension ReadingController {
         if !decelerate { reportScroll(settled: true); applyPendingWindow() }
     }
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { reportScroll(settled: true); applyPendingWindow() }
-    func scrollViewDidScrollToTop(_ scrollView: UIScrollView) { reportScroll(settled: true) }
+    func scrollViewDidScrollToTop(_ scrollView: UIScrollView) { autoReading?.end(); reportScroll(settled: true) }
 
-    private func reportScroll(settled: Bool) {
+    func reportScroll(settled: Bool) {
         guard let text = scrollText, window != nil, text.textStorage.length > 0 else { return }
         let cover = hasCover && text.contentOffset.y < scrollCoverHeight / 2
         reportCover(cover)
@@ -62,6 +63,44 @@ extension ReadingController {
         let height = max(1,text.bounds.height)
         if text.contentOffset.y + height*2 >= text.contentSize.height { requestMore(.forward) }
         if text.contentOffset.y < height { requestMore(.backward) }
+    }
+
+    func automaticLayoutAvailable() -> Bool {
+        guard settings?.mode == .scroll, !isCoverVisible, !rebuilding, !needsRebuild,
+              let text = scrollText, text.bounds.height > 0, text.window != nil,
+              text.selectedRange.length == 0, !isInteracting else { return false }
+        if let scene = text.window?.windowScene, scene.activationState != .foregroundActive { return false }
+        return true
+    }
+
+    func automaticReadingGeometry() -> ReaderAutoReading.Geometry? {
+        guard automaticLayoutAvailable(), let text = scrollText, let settings else { return nil }
+        let metrics = ReadingTypography.bodyMetrics(settings)
+        return .init(bodyWidth: text.textContainer.size.width - 2 * text.textContainer.lineFragmentPadding,
+            fontPointSize: metrics.pointSize, lineAdvance: metrics.lineAdvance)
+    }
+
+    func advanceAutomaticReading(by distance: CGFloat) -> AutomaticReadingStep {
+        guard automaticLayoutAvailable(), let text = scrollText, let window else { return .blocked }
+        let end = max(0, text.contentSize.height + text.contentInset.bottom - text.bounds.height)
+        let remaining = end - text.contentOffset.y
+        if remaining <= 0.01 { return window.isEndOfBook ? .end : .preparing }
+        guard distance > 0 else { return .advanced(0) }
+        let previous = text.contentOffset.y
+        text.setContentOffset(CGPoint(x: text.contentOffset.x, y: min(end, previous + distance)), animated: false)
+        updateBottomFade()
+        return .advanced(Double(min(1, max(0, (text.contentOffset.y - previous) / distance))))
+    }
+
+    func updateAutomaticReadingEdge() {
+        guard let autoReading, let text = scrollText, let window else { return }
+        if autoReading.phase == .preparing || autoReading.phase == .failed {
+            text.layoutIfNeeded()
+            if text.contentSize.height + text.contentInset.bottom - text.bounds.height - text.contentOffset.y > 0.5 {
+                autoReading.prepared()
+            } else if window.isEndOfBook { autoReading.reachedEnd() }
+        } else if autoReading.phase == .finished,
+                  text.contentSize.height + text.contentInset.bottom - text.bounds.height - text.contentOffset.y > 1 { autoReading.end() }
     }
 
     func protectedSourceRange() -> SourceSpan? {

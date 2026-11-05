@@ -206,12 +206,12 @@ struct AIToolDetailView: View {
                             }
                         }
                     }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(20)
+                }.frame(maxWidth: .infinity, alignment: .leading).padding([.horizontal, .top], 20).padding(.bottom)
                     .foregroundStyle(Color(uiColor: theme.ink))
             }.themedPage().navigationTitle(AIToolPresentation.title(item.name, output: item.output))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) {
-                    Button("关闭", systemImage: "xmark") { dismiss() }.labelStyle(.iconOnly)
+                    SystemToolbarButton("关闭", role: .close) { dismiss() }.labelStyle(.iconOnly)
                 } }
                 .sheet(item: $sourcePreview) { AISourcePreview(source: $0) }
         }.tint(Color(uiColor: theme.accent)).preferredColorScheme(theme.scheme)
@@ -428,7 +428,7 @@ struct AISourcePreview: View {
                 else if let error { Text(error).padding() }
                 else { ProgressView().padding() }
             }.themedPage().navigationTitle(source.title.isEmpty ? String(localized: "原文") : source.title).navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+                .toolbar { ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("关闭", role: .close) { dismiss() } } }
         }.presentationDetents([.medium, .large]).task(id: source.id) {
             do {
                 let reader = AppDataService.shared
@@ -476,7 +476,7 @@ private struct AIGeneratedImageView: View {
         }.sheet(isPresented: $preview) {
             NavigationStack {
                 if let image { Image(uiImage: image).resizable().scaledToFit().padding().themedPage()
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭", systemImage: "xmark") { preview = false }.labelStyle(.iconOnly) } }
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("关闭", role: .close) { preview = false }.labelStyle(.iconOnly) } }
                 }
             }
         }

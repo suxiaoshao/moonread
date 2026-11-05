@@ -127,7 +127,7 @@ SQLite v22 新增 `source_identities`（原文件 SHA＋解码策略为键）与
 | 原文件编码选择 | SwiftData UserValue `source-decoding/<rawSHA>`，整值 LWW；导出全部包含，整书删除不删除此全局设置 |
 | 旧手选升级待办 | SQLite v23 `source_decoding_migration`，只登记升级前非 auto 值；未知 raw 的离线原件暂留，保存 epoch 候选后才删除 |
 | 本机续读提示基线 | UserDefaults `Moonread.localReadingResume.v1`，schemaVersion 1，按 storeScope/SHA 保存实际写入 offset/token，不同步 |
-| 当前配色/明暗、排版/模式、设备控制、动效、记录开关 | 本机 UserDefaults；不随配色方案一起同步 |
+| 当前配色/明暗、按配色纹理开关、排版/模式、设备控制、动效、记录开关 | 本机 UserDefaults；不随配色方案一起同步 |
 | 任务源描述、最近隐藏、上次文件入口 | 本机 UserDefaults；任务按持有期回收；批注未提交编辑仅在内存 |
 | 缩略图及图片读出副本 | 本机可重建缓存；SwiftData 附件是封面的唯一权威来源 |
 | 统计汇总、章节覆盖 | Rust 从 SwiftData 事实提供的 TEMP 表计算；不写入 `reader.sqlite3` |

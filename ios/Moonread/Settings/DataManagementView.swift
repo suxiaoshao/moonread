@@ -205,7 +205,7 @@ struct DataManagementView: View {
                     Text("删除全部阅读数据", tableName: "DataManagement").frame(maxWidth: .infinity, minHeight: 44)
                 }.buttonStyle(.bordered).tint(Color(uiColor: theme.destructive)).accessibilityIdentifier("deleteAllReadingData")
             }.padding()
-        }.pageScrollMargins()
+        }
         .themedPage().navigationTitle(Text("数据管理", tableName: "DataManagement"))
         .navigationBarTitleDisplayMode(.large)
         .modifier(ReadingDataWorking(model: model))
@@ -259,14 +259,21 @@ private struct ReadingDataWorking: ViewModifier {
     }
 }
 private struct ReadingDataListView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.theme) private var theme
     @Bindable var model: DataManagementModel
     @State private var detail: ReadingDataItem?
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                filterButton(false)
-                filterButton(true)
+                if dynamicTypeSize.isAccessibilitySize {
+                    readingDataFilter.pickerStyle(.menu)
+                } else {
+                    ViewThatFits(in: .horizontal) {
+                        readingDataFilter.pickerStyle(.segmented).fixedSize(horizontal: true, vertical: false)
+                        readingDataFilter.pickerStyle(.menu)
+                    }
+                }
                 Spacer(minLength: 0)
                 Menu {
                     Picker(selection: $model.recent) {
@@ -325,7 +332,13 @@ private struct ReadingDataListView: View {
         .environment(\.editMode, .constant(model.selecting ? .active : .inactive))
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { model.selecting.toggle(); model.selected.removeAll() } label: { Text(model.selecting ? "完成" : "选择", tableName: "DataManagement") }.accessibilityIdentifier("selectReadingData")
+                Group {
+                    if model.selecting {
+                        SystemToolbarButton("结束选择", role: .confirm) { model.selecting = false; model.selected.removeAll() }
+                    } else {
+                        Button { model.selecting = true; model.selected.removeAll() } label: { Text("选择", tableName: "DataManagement") }
+                    }
+                }.accessibilityIdentifier("selectReadingData")
             }
             if model.selecting {
                 ToolbarItemGroup(placement: .bottomBar) {
@@ -348,21 +361,18 @@ private struct ReadingDataListView: View {
                     Spacer()
                 }.padding().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).themedPage()
                     .navigationTitle(Text("阅读数据", tableName: "DataManagement"))
-                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { detail = nil } } }
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("关闭", role: .close) { detail = nil } } }
             }
         }
     }
-    private func filterButton(_ unlinked: Bool) -> some View {
-        let selected = model.unlinkedOnly == unlinked
-        return Button { model.unlinkedOnly = unlinked } label: {
-            Group {
-                if unlinked { Text("不在书架上 \(model.inventory.items.filter { !$0.linked }.count)", tableName: "DataManagement") }
-                else { Text("全部 \(model.inventory.items.count)", tableName: "DataManagement") }
-            }.font(.subheadline).padding(.horizontal, 12).padding(.vertical, 8)
-                .foregroundStyle(Color(uiColor: selected ? theme.accent : theme.secondary))
-                .background(Color(uiColor: selected ? theme.selected : theme.surface), in: .capsule)
-        }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
-            .accessibilityIdentifier(unlinked ? "readingDataFilterUnlinked" : "readingDataFilterAll")
+    private var readingDataFilter: some View {
+        Picker(selection: $model.unlinkedOnly) {
+            Text("全部 \(model.inventory.items.count)", tableName: "DataManagement")
+                .tag(false).accessibilityIdentifier("readingDataFilterAll")
+            Text("不在书架上 \(model.inventory.items.filter { !$0.linked }.count)", tableName: "DataManagement")
+                .tag(true).accessibilityIdentifier("readingDataFilterUnlinked")
+        } label: { Text("阅读数据", tableName: "DataManagement") }
+        .accessibilityIdentifier("readingDataFilter")
     }
 
 }
@@ -549,7 +559,7 @@ private struct ReadingDataCacheView: View {
                 if let error = model.error { Text(verbatim: error).foregroundStyle(Color(uiColor: theme.destructive)) }
                 Spacer()
             }.padding()
-        }.pageScrollMargins().themedPage().navigationTitle(Text("可重建缓存", tableName: "DataManagement"))
+        }.themedPage().navigationTitle(Text("可重建缓存", tableName: "DataManagement"))
         .modifier(ReadingDataWorking(model: model))
         .confirmationDialog(Text("清理可重建缓存？", tableName: "DataManagement"), isPresented: $confirmation, titleVisibility: .visible) {
             Button { Task { await model.clearCache() } } label: { Text("确认清理缓存", tableName: "DataManagement") }
@@ -583,7 +593,7 @@ private struct BackupImportPreviewView: View {
                         if preview.preview.conflicts > 0 { Text("\(preview.preview.conflicts) 处批注有冲突", tableName: "DataManagement") }
                     }
                 }.padding().frame(maxWidth: .infinity, alignment: .leading)
-            }.pageScrollMargins().themedPage().navigationTitle(Text("导入预览", tableName: "DataManagement"))
+            }.themedPage().navigationTitle(Text("导入预览", tableName: "DataManagement"))
             .safeAreaInset(edge: .bottom) {
                 VStack(spacing: 12) {
                     if let error = model.error { Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
@@ -592,7 +602,7 @@ private struct BackupImportPreviewView: View {
                 }.padding().background(Color(uiColor: theme.canvas))
             }
             .modifier(ReadingDataWorking(model: model))
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { if !model.busy { model.preview = nil } }.disabled(model.busy) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("取消", role: .cancel) { if !model.busy { model.preview = nil } }.disabled(model.busy) } }
             .interactiveDismissDisabled(model.busy)
         }
     }

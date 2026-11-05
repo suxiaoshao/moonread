@@ -480,7 +480,7 @@ struct AIReadingAttachmentPreview: View {
                     }
                 }.frame(maxWidth: .infinity, alignment: .leading).padding()
             }.themedPage().navigationTitle("阅读附件").navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } } }
+                .toolbar { ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("关闭", role: .close) { dismiss() } } }
         }.presentationDetents([.medium, .large])
             .task(id: attachment.attachmentRef) {
                 guard attachment.kind == .image else { return }
@@ -535,7 +535,7 @@ private struct AIReadingObjectPicker: View {
                 }
             }.themedPage().navigationTitle(title).navigationBarTitleDisplayMode(.inline)
                 .searchable(text: $query, prompt: "搜索书籍")
-                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } } }
+                .toolbar { ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("关闭", role: .close) { dismiss() } } }
                 .task { await load() }
         }
     }

@@ -217,16 +217,12 @@ struct SystemRecentReadingCard: View {
     }
 }
 
-/// Static display progress, drawn in SwiftUI so WidgetKit and bitmap previews
-/// use the same thin bar without a UIKit progress-view dependency.
+/// Native linear progress; WidgetKit supplies its rendering environment.
 struct SystemWidgetProgress: View {
     let value: Double
     let colors: SystemWidgetColors
     var body: some View {
-        GeometryReader { geometry in
-            Capsule().fill(colors.border).overlay(alignment: .leading) {
-                Capsule().fill(colors.accent).frame(width: geometry.size.width * min(100, max(0, value)) / 100)
-            }
-        }.frame(height: 3).accessibilityHidden(true)
+        ProgressView(value: min(100, max(0, value)), total: 100)
+            .progressViewStyle(.linear).tint(colors.accent).accessibilityHidden(true)
     }
 }

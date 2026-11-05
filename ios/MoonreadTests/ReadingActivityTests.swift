@@ -10,6 +10,25 @@ import XCTest
 final class ReadingActivityReadingReviewTests: ReadingReviewFixture {
   // S274: 只测 recorder 把暂停/预览/停止事件正确传给 Rust 并只提交返回 slices；idle 时长算法仅 R048/R049，删 Swift 重算。
   @MainActor func testEffectiveSessionDurationUsesReadingClockIdleAndPauseRules() async throws {
+    func readable(_ body: Bool = true, _ preparation: Bool = false, _ share: Bool = false,
+                  _ alert: Bool = false, _ chooser: Bool = false) -> Bool {
+      ReaderStatisticsVisibility(body: body, preparingExcerpt: preparation,
+        excerptPresented: share, confirmationPresented: alert, choosingAnnotations: chooser).isReadable()
+    }
+    XCTAssertTrue(readable())
+    XCTAssertFalse(readable(true, true)) // Before the selection read starts.
+    XCTAssertFalse(readable(true, false, true)) // Sheet after preparation ends.
+    XCTAssertFalse(readable(true, false, false, true))
+    XCTAssertFalse(readable(true, false, false, false, true))
+    XCTAssertFalse(readable(false), "Dismissing a task cannot override another unreadable condition")
+    let controller = ReadingController(), chooser = UIAlertController()
+    var chooserVisible = true
+    controller.annotationChooser = chooser
+    controller.annotationChooserChanged = { chooserVisible = $0 }
+    let dismissed = AnnotationChooserDelegate { controller.finishAnnotationChooser(chooser) }
+    dismissed.presentationControllerDidDismiss(UIPresentationController(presentedViewController: chooser, presenting: controller))
+    XCTAssertFalse(chooserVisible)
+    XCTAssertNil(controller.annotationChooser)
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
     let service = AppDataService(core: try ReaderCore(dataDirectory: root.path))
@@ -20,6 +39,9 @@ final class ReadingActivityReadingReviewTests: ReadingReviewFixture {
           offset: 0, lineY: 0, size: .zero, settings: defaultReaderSettings(), typeSize: .large,
           pages: [])
       }, range: { (0, 30) })
+    let host = StatisticsPresentationController()
+    host.addChild(controller); controller.didMove(toParent: host)
+    viewport.controller = controller
     var slices: [ReadingSlice] = []
     var generations: [UInt64] = []
     let writer = StatisticsWriter { values, generation in
@@ -32,27 +54,95 @@ final class ReadingActivityReadingReviewTests: ReadingReviewFixture {
         ReadingActivityTime(uptime: clock.elapsed, date: self.now.addingTimeInterval(clock.elapsed))
       }
     ) { StatisticsPreferences(enabled: true, generation: 17) }
+    controller.statisticsPresentationChanged = { [weak recorder] in recorder?.sample() }
     let attempt = UUID()
     recorder.prepareStart(attempt)
     await recorder.start(
       lease: ReadingLease(id: "activity-fixture", service: service), viewport: viewport,
       attempt: attempt)
-    recorder.update(readable: true, preview: false)
+    recorder.update(visibility: .init(body: true), preview: false)
     recorder.interacted()
     clock.elapsed = 1
-    recorder.update(readable: true, preview: true)
+    recorder.update(visibility: .init(body: true), preview: true)
     clock.elapsed = 2
-    recorder.update(readable: false, preview: true)
+    host.modal = UIViewController()
+    recorder.sample() // No SwiftUI update: native presentation alone pauses.
     await recorder.flush()
+    let beforeTask = recorder.effectiveReadingMilliseconds
+    clock.elapsed = 3
+    recorder.interacted() // capture:false must also observe the native task.
+    clock.elapsed = 30
+    recorder.sample()
+    await recorder.flush()
+    XCTAssertEqual(recorder.effectiveReadingMilliseconds, beforeTask)
+    host.modal = nil
+    recorder.sample() // Programmatic dismissal needs no delegate callback.
+    clock.elapsed = 31
+    await recorder.flush()
+    XCTAssertGreaterThan(recorder.effectiveReadingMilliseconds, beforeTask)
+    recorder.update(visibility: .init(body: false), preview: true)
+    host.modal = UIViewController()
+    clock.elapsed = 32
+    recorder.sample()
+    host.modal = nil
+    clock.elapsed = 33
+    await recorder.flush()
+    let inactive = recorder.effectiveReadingMilliseconds
+    XCTAssertEqual(inactive, beforeTask + 1000, "Closing a task cannot override an inactive scene or other UI blocker")
+    recorder.update(visibility: .init(body: true), preview: true)
+    clock.elapsed = 300
+    await recorder.flush()
+    let exhausted = recorder.effectiveReadingMilliseconds
+    host.modal = UIViewController(); recorder.sample()
+    clock.elapsed = 301
+    host.modal = nil; recorder.sample()
+    clock.elapsed = 310
+    await recorder.flush()
+    XCTAssertEqual(recorder.effectiveReadingMilliseconds, exhausted, "Task dismissal cannot grant new idle credit")
     XCTAssertTrue(slices.contains { !$0.preview }, "formal reading is passed to the writer")
     XCTAssertTrue(slices.contains { $0.preview }, "preview facts remain distinguishable")
     XCTAssertTrue(slices.allSatisfy { $0.bookId == "activity-fixture" })
     XCTAssertTrue(generations.allSatisfy { $0 == 17 })
     let ids = slices.map(\.id)
     recorder.stop()
+    host.modal = nil
+    controller.statisticsPresentationChanged() // A late native callback cannot resume a stopped session.
     await writer.drain()
     XCTAssertEqual(slices.map(\.id), ids, "stop must not resend already flushed facts")
   }
+
+  @MainActor func testNativePresentationExemptsOnlyTheCurrentReadingAccessory() {
+    let host = StatisticsPresentationController(), reader = ReadingController()
+    host.addChild(reader); reader.didMove(toParent: host)
+    let viewport = ReadingViewportAccess()
+    viewport.controller = reader
+    reader.retainedSelection = (0, 10)
+    XCTAssertFalse(viewport.hasBlockingPresentation(allowingReaderAccessory: false), "A text selection/menu without a modal does not pause")
+    let accessory = StatisticsPresentationController()
+    host.modal = accessory
+    XCTAssertTrue(viewport.hasBlockingPresentation(allowingReaderAccessory: false))
+    XCTAssertFalse(viewport.hasBlockingPresentation(allowingReaderAccessory: true))
+    let content = StatisticsPresentationController()
+    accessory.addChild(content); content.didMove(toParent: accessory)
+    content.modal = UIViewController()
+    XCTAssertTrue(viewport.hasBlockingPresentation(allowingReaderAccessory: true), "Only the accessory layer is exempt, not its child tasks")
+    content.modal = nil
+    accessory.dismissing = true
+    XCTAssertTrue(viewport.hasBlockingPresentation(allowingReaderAccessory: true), "Keep pausing until the presentation relation is removed")
+    host.modal = nil
+    XCTAssertFalse(viewport.hasBlockingPresentation(allowingReaderAccessory: true))
+    let leaf = StatisticsPresentationController()
+    reader.addChild(leaf); leaf.didMove(toParent: reader)
+    leaf.modal = UIViewController()
+    XCTAssertTrue(viewport.hasBlockingPresentation(allowingReaderAccessory: false), "A text page can own its own task presentation")
+  }
+}
+
+@MainActor private final class StatisticsPresentationController: UIViewController {
+  var modal: UIViewController?
+  var dismissing = false
+  override var presentedViewController: UIViewController? { modal }
+  override var isBeingDismissed: Bool { dismissing }
 }
 
 final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
@@ -116,7 +206,7 @@ final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
       lease: ReadingLease(id: "new", service: service), viewport: ReadingViewportAccess(),
       attempt: fresh)
     XCTAssertEqual(recorder.recordingBookID, "new")
-    recorder.update(readable: false, preview: false)  // Background state remains authoritative during a late start.
+    recorder.update(visibility: .init(body: false), preview: false)  // Background state remains authoritative during a late start.
     await gate.release()
     await task.value
     XCTAssertEqual(recorder.recordingBookID, "new")
@@ -138,8 +228,7 @@ final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
     weak var retained = lease
     let clock = ReadingClock(bookId: "pending-write")
     var moment = ReadingMoment(
-      monotonicMs: 0, unixMs: 0, utcOffsetSeconds: 0, readable: true, interaction: true,
-      preview: false, startUtf8: 0, endUtf8: 9)
+      monotonicMs: 0, unixMs: 0, utcOffsetSeconds: 0, readable: true, interaction: true, automaticMoving: false, automaticMilliseconds: 0, preview: false, startUtf8: 0, endUtf8: 9)
     _ = clock.update(moment: moment)
     moment.monotonicMs = 1000
     moment.unixMs = 1000

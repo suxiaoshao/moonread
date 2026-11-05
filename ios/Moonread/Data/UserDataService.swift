@@ -262,10 +262,14 @@ extension AppDataService {
         catch { UserSyncJSON.quarantined("local reading baseline") }
         dataChanged()
     }
-    func userMarks(_ id: String, kind: MarkKind? = nil) async throws -> [ReaderMark] {
+    func userMarks(_ id: String, kind: MarkKind? = nil, snapshot: NoteCandidates? = nil) async throws -> [ReaderMark] {
         try await promoteUserData(id)
         let key = try userKey(id)
-        let groups = try await userStore(for: key).candidates(key: key)
+        let groups: [String: [AnnotationCandidate]]
+        if let snapshot {
+            guard snapshot.key == key else { throw UserDataConflict(candidates: []) }
+            groups = snapshot.groups
+        } else { groups = try await userStore(for: key).candidates(key: key) }
         var values: [ReaderMark] = []
         for (markID, heads) in groups {
             guard let candidate = heads.first(where: { $0.content != nil }), let content = candidate.content else { continue }

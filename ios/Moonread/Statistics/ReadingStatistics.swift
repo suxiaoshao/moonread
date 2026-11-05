@@ -164,7 +164,7 @@ final class ReadingActivityRecorder {
     private var generation: UInt64 = 0
     private var enabled = false
     private var stopped = false
-    private var readable = false
+    private var visibility = ReaderStatisticsVisibility(body: false)
     private var preview = false
     private var lastInteraction: TimeInterval = -.infinity
     private weak var viewport: ReadingViewportAccess?
@@ -183,9 +183,9 @@ final class ReadingActivityRecorder {
     /// Invalidates suspended starts before the next attempt is scheduled.
     func prepareStart(_ attempt: UUID) {
         guard !stopped else { return }
-        readable = false
+        visibility = ReaderStatisticsVisibility(body: false)
         if clock != nil { sample() }
-        timer?.cancel(); timer = nil; clock = nil; lease = nil
+        timer?.cancel(); timer = nil; clock = nil; lease = nil; viewport = nil
         startToken = attempt
     }
 
@@ -216,8 +216,8 @@ final class ReadingActivityRecorder {
     var recordingBookID: String? { clock == nil ? nil : lease?.id }
     var hasSamplingTimer: Bool { timer != nil }
 
-    func update(readable: Bool, preview: Bool) {
-        self.readable = readable; self.preview = preview
+    func update(visibility: ReaderStatisticsVisibility, preview: Bool) {
+        self.visibility = visibility; self.preview = preview
         sample()
     }
 
@@ -243,8 +243,15 @@ final class ReadingActivityRecorder {
         await writer.drain()
     }
 
-    private func sample(interaction: Bool = false, capture: Bool = true) {
+    func bodyReadable(through readerViewport: ReadingViewportAccess? = nil) -> Bool {
+        visibility.isReadable(nativeTaskPresented: (readerViewport ?? viewport)?.hasBlockingPresentation(
+            allowingReaderAccessory: visibility.readerAccessoryPresented) ?? false)
+    }
+
+    func sample(interaction: Bool = false, capture: Bool = true) {
         guard !stopped, let clock, let lease else { return }
+        // UIKit can present/dismiss without a SwiftUI update. Every sampling
+        // path (including capture:false interaction) reads the current chain.
         let visible = capture ? viewport?.statisticsRange() : (range.1 > range.0 ? range : nil)
         if capture, let visible { range = visible }
         let instant = time(), now = instant.date
@@ -252,8 +259,9 @@ final class ReadingActivityRecorder {
             monotonicMs: UInt64(instant.uptime * 1000),
             unixMs: Int64(now.timeIntervalSince1970 * 1000),
             utcOffsetSeconds: Int32(TimeZone.current.secondsFromGMT(for: now)),
-            readable: enabled && readable && visible != nil,
-            interaction: interaction, preview: preview, startUtf8: range.0, endUtf8: range.1))
+            readable: enabled && bodyReadable() && visible != nil,
+            interaction: interaction, automaticMoving: viewport?.controller?.autoReading?.running == true,
+            automaticMilliseconds: viewport?.controller?.autoReading?.milliseconds ?? 0, preview: preview, startUtf8: range.0, endUtf8: range.1))
         enqueue(slices, lease: lease)
     }
 
@@ -276,9 +284,9 @@ final class ReadingActivityRecorder {
 
     func stop() {
         guard !stopped else { return }
-        readable = false; sample(); stopped = true
+        visibility = ReaderStatisticsVisibility(body: false); sample(); stopped = true
         startToken = nil
-        timer?.cancel(); timer = nil; clock = nil; lease = nil
+        timer?.cancel(); timer = nil; clock = nil; lease = nil; viewport = nil
     }
 }
 
@@ -327,13 +335,6 @@ enum StatisticsDates {
         let count = Int((maximum / step).rounded(.up))
         return (0...max(1, count)).map { Double($0) * step }
     }
-    /// Compact chart axis values; exact durations are written elsewhere.
-    static func axisMinutes(_ minutes: Double) -> String {
-        if minutes <= 0 { return "0" }
-        if minutes < 60 { return String(localized: "\(Int(minutes.rounded())) 分钟") }
-        let hours = minutes / 60
-        return hours.rounded() == hours ? String(localized: "\(Int(hours)) 小时") : String(localized: "\(hours.formatted(.number.precision(.fractionLength(1)))) 小时")
-    }
     static func duration(_ ms: UInt64) -> String {
         if ms == 0 { return String(localized: "0 分钟") }
         if ms < 60_000 { return String(localized: "不足 1 分钟") }
@@ -366,7 +367,7 @@ extension AppDataService {
                 let clock = ReadingClock(bookId: id)
                 var point = ReadingMoment(monotonicMs: 0, unixMs: Int64(start.timeIntervalSince1970 * 1000),
                     utcOffsetSeconds: Int32(TimeZone.current.secondsFromGMT(for: start)), readable: true,
-                    interaction: true, preview: false, startUtf8: 0, endUtf8: 30)
+                    interaction: true, automaticMoving: false, automaticMilliseconds: 0, preview: false, startUtf8: 0, endUtf8: 30)
                 _ = clock.update(moment: point)
                 for minute in 1...count {
                     point.monotonicMs = UInt64(minute * 60_000)
@@ -379,3 +380,17 @@ extension AppDataService {
     }
 }
 #endif
+
+/// Presentation facts only. The recorder/Rust clock retains credit and read kind.
+struct ReaderStatisticsVisibility: Equatable {
+    var body: Bool
+    var preparingExcerpt = false
+    var excerptPresented = false
+    var confirmationPresented = false
+    var choosingAnnotations = false
+    var readerAccessoryPresented = false
+
+    func isReadable(nativeTaskPresented: Bool = false) -> Bool {
+        body && !preparingExcerpt && !excerptPresented && !confirmationPresented && !choosingAnnotations && !nativeTaskPresented
+    }
+}

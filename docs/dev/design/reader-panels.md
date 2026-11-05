@@ -10,6 +10,8 @@
 
 沿用 e9ee1fe 手机的 ReaderBottomPanel、ReaderLibrarySheet、ReaderTaskContent 原生导航链；不再使用 inspector、独立宽屏工具 sheet、进度 popover 或手画页头。所有尺寸沿用同一 detents、`.presentationSizing(.page)`、主题背景、32pt 圆角和拖动指示；不增加机型宽高与姿态分支，由系统决定模态形态。完整设置/详情仍在来源栈 push，预览/配色编辑保持既有子 sheet。
 
+ReaderBottomPanel 只裁剪 compact accessory 的动画内容，不裁剪包含原生导航栏、底部 toolbar 的任务导航栈。系统栏可在安全区布局矩形之外绘制，不能以固定底距补偿或强制横排来避免裁切。
+
 ReaderToolSession 保留草稿对象，查询、筛选与列表数据仍由原 owner 管理；章节、笔记与配色使用原系统标题、toolbar、保存和取消动作。真实编辑结束才取消识别任务。没有被记住的工具展开偏好，开书不自动弹工具；所有尺寸按手机原控制显隐与阅读计时规则工作。
 
 ## 为什么要调整
@@ -150,7 +152,7 @@ V4 A：窄屏保留上拉正文预览，页面可用宽度达到 760pt 时左控
 
 `ReaderPresentationState` 单源保存 selection、有类型路径、exposure 和栏显隐；ReaderToolSession 保留编辑对象，批注权威仍在 ReaderSession。没有宽窄容器投影、reference/passive-column、列注册或跨容器交接；窗口变化不修改用户意图。
 
-`ReaderPresentationHost` 只记录共同工具 sheet 的请求、确认、退出和系统子模态事实；来源栈后缀由 ReaderSourceNavigation 承载。旧 opening/token/代次回调不能清新路径。退出内容及草稿引用保留到原生完成，不保存下一工具队列；sheet 关闭后才 push 完整设置/详情。搜索 detent、footer、taskID 与 MotionTokens 沿用手机链，重复工具请求不清子路径。
+`ReaderPresentationHost` 只记录共同工具 sheet 的请求、确认、退出和系统子模态事实；完整设置/详情直接由同一逻辑路径的 sourcePage 绑定系统 push，原生返回立即更新该路径，不校验工具 revision、不等待转场完成再确认或补发 pop。工具 sheet 的旧 opening/token/代次回调仍不能清新路径。退出内容及草稿引用保留到原生完成，不保存下一工具队列；sheet 关闭后才 push 完整设置/详情。搜索 detent、footer、taskID 与 MotionTokens 沿用手机链，重复工具请求不清子路径。
 
 正文使用本窗口稳定的全幅 canvas、硬件安全区域与系统 active division/occlusion；不减工具列或 sheet 大小，不以工具开关触发重排。保留有效区域检查及转场中的上一布局，真实窗口/排版改变才恢复锚点。自动双页仍要求候选区域宽>高及既有每叶最小行宽；滚动始终单栏。来源 Tab 在阅读及其子页期间隐藏，退出后恢复。
 

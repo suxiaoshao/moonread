@@ -5,18 +5,16 @@ import UIKit
 struct TextPage {
     // Page views own their text storage/container. UIPageViewController can ask
     // for the same page twice; sharing a container would detach visible text.
-    let text: NSAttributedString
-    let start: UInt64
-    let end: UInt64
+    let prepared: PreparedReadingText
+    var text: NSAttributedString { prepared.attributedText }
+    var start: UInt64 { readingText.sourceStart }
+    var end: UInt64 { readingText.sourceEnd }
     let lineCount: Int
-    let readingText: ReadingText
-    var layoutVersion = ReadingTypography.layoutVersion
+    var readingText: ReadingText { prepared.readingText }
+    var layoutVersion: Int { prepared.layoutVersion }
     var firstVisibleOffset: UInt64 { readingText.firstVisibleOffset ?? start }
-    init(text: NSAttributedString, start: UInt64, end: UInt64, lineCount: Int,
-         projection: ReadingText? = nil, insets: UIEdgeInsets = ReadingTextMetrics.insets) {
-        self.text = text; self.start = start; self.end = end; self.lineCount = lineCount
-        self.readingText = projection ?? ReadingText(text: text.string, sourceStart: start)
-        self.insets = insets
+    init(prepared: PreparedReadingText, lineCount: Int, insets: UIEdgeInsets = ReadingTextMetrics.insets) {
+        self.prepared = prepared; self.lineCount = lineCount; self.insets = insets
     }
     var insets = ReadingTextMetrics.insets
     var continuation = NSAttributedString(string: "")
@@ -32,7 +30,7 @@ struct TextPage {
             continued.firstLineHeadIndent = continued.headIndent
             continued.paragraphSpacingBefore = 0
             let first = (result.string as NSString).paragraphRange(for: NSRange(location: 0, length: 0))
-            result.addAttribute(.paragraphStyle, value: continued, range: first)
+            result.addAttribute(.paragraphStyle, value: continued.copy() as! NSParagraphStyle, range: first)
         }
         return result
     }
@@ -61,48 +59,43 @@ struct TextPage {
         return view
     }
 
-    static func paginate(_ window: ReadingWindow, size: CGSize,
-                         attributes: [NSAttributedString.Key: Any], source styled: NSAttributedString? = nil,
+    static func paginate(_ prepared: PreparedReadingText, size: CGSize,
                          insets: UIEdgeInsets = ReadingTextMetrics.insets,
                          preserving previous: [TextPage] = [], keeping anchor: UInt64? = nil,
                          layout: ((ReadingText, Bool) -> [NSRange])? = nil) -> [TextPage] {
-        guard !window.chunks.isEmpty else { return [] }
-        let projection = ReadingText(window)
+        let projection = prepared.readingText
         let coordinates = projection.coordinates
-        let source = styled ?? NSAttributedString(string: projection.text, attributes: attributes)
-        func slice(from start: UInt64, to end: UInt64) -> (NSAttributedString, ReadingText) {
-            let first = coordinates.displayPoint(Int(start-window.start)) ?? 0
-            let last = end == window.end ? coordinates.length : (coordinates.displayPoint(Int(end-window.start)) ?? coordinates.length)
+        func slice(from start: UInt64, to end: UInt64) -> PreparedReadingText {
+            let first = coordinates.displayPoint(Int(start-projection.sourceStart)) ?? 0
+            let last = end == projection.sourceEnd ? coordinates.length : (coordinates.displayPoint(Int(end-projection.sourceStart)) ?? coordinates.length)
             let range = NSRange(location: first, length: last-first)
-            return (source.attributedSubstring(from: range), projection.slice(range))
+            return prepared.slice(range)
         }
-        var retained = previous.filter { $0.layoutVersion == ReadingTypography.layoutVersion && $0.start >= window.start && $0.end <= window.end && slice(from: $0.start, to: $0.end).1 == $0.readingText }
-        if let oldStart = previous.first?.start, window.start < oldStart,
+        var retained = previous.filter { $0.layoutVersion == prepared.layoutVersion && $0.start >= projection.sourceStart && $0.end <= projection.sourceEnd && slice(from: $0.start, to: $0.end).readingText == $0.readingText }
+        if let oldStart = previous.first?.start, projection.sourceStart < oldStart,
            retained.first?.start == oldStart, retained.first?.firstVisibleOffset != anchor { retained.removeFirst() }
         // The previous window's last page may have ended only because loaded
         // text ran out. Extend it into the new chunk instead of keeping a gap.
-        if let oldEnd = previous.last?.end, window.end > oldEnd,
+        if let oldEnd = previous.last?.end, projection.sourceEnd > oldEnd,
            retained.last?.end == oldEnd, retained.last?.firstVisibleOffset != anchor { retained.removeLast() }
         guard let first = retained.first, let last = retained.last else {
-            return paginate(source, projection: projection, size: size, insets: insets, layout: layout)
+            return paginateForward(prepared, size: size, insets: insets, layout: layout)
         }
-        let earlier = slice(from: window.start, to: first.start), later = slice(from: last.end, to: window.end)
-        let prefix = paginateBackward(earlier.0, projection: earlier.1, size: size, insets: insets, layout: layout)
-        let suffix = paginate(later.0, projection: later.1, size: size, insets: insets, layout: layout)
-        return contextualized(prefix + retained + suffix, source: source, projection: projection)
+        let earlier = slice(from: projection.sourceStart, to: first.start), later = slice(from: last.end, to: projection.sourceEnd)
+        let prefix = paginateBackward(earlier, size: size, insets: insets, layout: layout)
+        let suffix = paginateForward(later, size: size, insets: insets, layout: layout)
+        return contextualized(prefix + retained + suffix, prepared: prepared)
     }
 
-    static func paginate(_ chunk: TextChunk, size: CGSize, attributes: [NSAttributedString.Key: Any]) -> [TextPage] {
-        paginate(NSAttributedString(string: chunk.text, attributes: attributes), projection: ReadingText(text: chunk.text, sourceStart: chunk.startUtf8), size: size, insets: ReadingTextMetrics.insets)
-    }
-
-    private static func paginate(_ source: NSAttributedString, projection: ReadingText, size: CGSize, insets: UIEdgeInsets, layout: ((ReadingText, Bool) -> [NSRange])? = nil) -> [TextPage] {
-        if let layout { return contextualized(layout(projection, false).map { page(source, projection: projection, range: $0, lines: 1, insets: insets) }, source: source, projection: projection) }
+    private static func paginateForward(_ prepared: PreparedReadingText, size: CGSize, insets: UIEdgeInsets, layout: ((ReadingText, Bool) -> [NSRange])? = nil) -> [TextPage] {
+        let projection = prepared.readingText
+        if let layout { return contextualized(layout(projection, false).map { page(prepared, range: $0, lines: 1, insets: insets) }, prepared: prepared) }
         // A suffix can begin inside a paragraph. Apply the same continuation
         // style used by visible pages before asking TextKit for page boundaries.
-        let storage = NSTextStorage(attributedString: TextPage(text: source, start: projection.sourceStart, end: projection.sourceEnd, lineCount: 0, projection: projection).layoutText)
+        let storage = NSTextStorage(attributedString: TextPage(prepared: prepared, lineCount: 0).layoutText)
         let manager = ReadingLayoutManager()
         storage.addLayoutManager(manager)
+        let laidOut = prepared.withLayoutAttributes(storage)
         var result: [TextPage] = []
         var consumed = 0
         while consumed < storage.length {
@@ -117,20 +110,21 @@ struct TextPage {
             guard range.length > 0, NSMaxRange(range) > consumed else { break }
             var lineCount = 0
             manager.enumerateLineFragments(forGlyphRange: glyphRange) { _, _, _, _, _ in lineCount += 1 }
-            result.append(page(storage, projection: projection, range: range, lines: lineCount, insets: insets))
+            result.append(page(laidOut, range: range, lines: lineCount, insets: insets))
             consumed = NSMaxRange(range)
         }
-        return contextualized(result, source: storage, projection: projection)
+        return contextualized(result, prepared: laidOut)
     }
 
     /// Lay newly loaded earlier text backwards from an established page start.
     /// Full lines are grouped from the end, keeping the join page full; only the
     /// temporary window's first page can be partial. Recentring happens before
     /// that edge is reached, and existing overlap pages keep identical ranges.
-    private static func paginateBackward(_ source: NSAttributedString, projection: ReadingText, size: CGSize, insets: UIEdgeInsets, layout: ((ReadingText, Bool) -> [NSRange])? = nil) -> [TextPage] {
-        if let layout { return layout(projection, true).map { page(source, projection: projection, range: $0, lines: 1, insets: insets) } }
-        guard source.length > 0 else { return [] }
-        let storage = NSTextStorage(attributedString: TextPage(text: source, start: projection.sourceStart, end: projection.sourceEnd, lineCount: 0, projection: projection).layoutText)
+    private static func paginateBackward(_ prepared: PreparedReadingText, size: CGSize, insets: UIEdgeInsets, layout: ((ReadingText, Bool) -> [NSRange])? = nil) -> [TextPage] {
+        let projection = prepared.readingText
+        if let layout { return layout(projection, true).map { page(prepared, range: $0, lines: 1, insets: insets) } }
+        guard prepared.attributedText.length > 0 else { return [] }
+        let storage = NSTextStorage(attributedString: TextPage(prepared: prepared, lineCount: 0).layoutText)
         let manager = ReadingLayoutManager()
         let container = NSTextContainer(size: CGSize(width: ReadingTextMetrics.contentSize(in: size, insets: insets).width, height: .greatestFiniteMagnitude))
         container.lineFragmentPadding = 0
@@ -141,6 +135,7 @@ struct TextPage {
         manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) { rect, _, _, glyphs, _ in
             lines.append((manager.characterRange(forGlyphRange: glyphs, actualGlyphRange: nil), rect))
         }
+        let laidOut = prepared.withLayoutAttributes(storage)
         let coordinates = projection.coordinates
         let base = projection.sourceStart
         let height = ReadingTextMetrics.contentSize(in: size, insets: insets).height
@@ -157,22 +152,22 @@ struct TextPage {
             while start > 0, lines[end - 1].rect.maxY - lines[start - 1].rect.minY + leadingSpace(start - 1) <= height { start -= 1 }
             let range = NSRange(location: lines[start].range.location,
                                 length: NSMaxRange(lines[end - 1].range) - lines[start].range.location)
-            result.append(page(storage, projection: projection, range: range, lines: end-start, insets: insets))
+            result.append(page(laidOut, range: range, lines: end-start, insets: insets))
             end = start
         }
         return Array(result.reversed())
     }
 
-    private static func page(_ source: NSAttributedString, projection: ReadingText, range: NSRange, lines: Int, insets: UIEdgeInsets) -> TextPage {
-        let visible = projection.slice(range)
-        return TextPage(text: source.attributedSubstring(from: range), start: visible.sourceStart,
-                        end: visible.sourceEnd, lineCount: lines, projection: visible, insets: insets)
+    private static func page(_ prepared: PreparedReadingText, range: NSRange, lines: Int, insets: UIEdgeInsets) -> TextPage {
+        TextPage(prepared: prepared.slice(range), lineCount: lines, insets: insets)
     }
 
     /// Keep real lookahead for the typesetter when a page ends inside a paragraph.
     /// The line limit excludes it from rendering; selection stays on visible text.
     /// No invented characters enter copying or the UTF-8 anchor coordinates.
-    private static func contextualized(_ pages: [TextPage], source: NSAttributedString, projection: ReadingText) -> [TextPage] {
+    private static func contextualized(_ pages: [TextPage], prepared: PreparedReadingText) -> [TextPage] {
+        let source = prepared.attributedText
+        let projection = prepared.readingText
         let coordinates = projection.coordinates
         let base = projection.sourceStart
         let string = source.string as NSString

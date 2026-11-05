@@ -26,7 +26,7 @@ struct ReaderQuickSettings: View {
                 }.font(.subheadline)
                     .accessibilityIdentifier("moreReadingSettings")
             }
-            Stepper("字号 · \(Int(settings.fontSize)) pt", value: Binding(get: { settings.fontSize }, set: {
+            Stepper("字号 · \(Int(settings.fontSize))", value: Binding(get: { settings.fontSize }, set: {
                 var value = settings; value.fontSize = $0; settings = value
             }), in: typographyControls.fontSize.range, step: typographyControls.fontSize.step).accessibilityIdentifier("quickFontSize")
             HStack(spacing: LayoutTokens.content) {
@@ -95,7 +95,6 @@ enum ReadingSettingsTab: String, CaseIterable {
         }
     }
     var previewDetent = PresentationDetent.height(60)
-    var restingDetent = PresentationDetent.height(60)
     @ObservationIgnored weak var readerTools: ReaderToolSession?
     private var localEditor: ReaderEditSession?
     var paletteSession: ReaderEditSession? {
@@ -140,7 +139,6 @@ struct ReaderSettingsView: View {
     @State private var localEditing = ReadingSettingsEditing()
     let editing: ReadingSettingsEditing?
     var editorClosed: () -> Void = {}
-    var nativeNavigation: ReaderSourceNavigation? = nil
     private var editor: ReadingSettingsEditing { editing ?? localEditing }
     private var editedAppearance: ThemeAppearance? {
         get { editor.editedAppearance }
@@ -154,10 +152,7 @@ struct ReaderSettingsView: View {
         get { editor.previewDetent }
         nonmutating set { editor.previewDetent = newValue }
     }
-    private var restingDetent: PresentationDetent {
-        get { editor.restingDetent }
-        nonmutating set { editor.restingDetent = newValue }
-    }
+    @State private var previewHeight: CGFloat = 0
     private var draft: PaletteDraft? {
         get { editor.draft }
     }
@@ -179,58 +174,46 @@ struct ReaderSettingsView: View {
     }
 
     init(settings: Binding<ReaderSettings>, preview: ReadingPreviewSource = .sample, encoding: String? = nil, isRestartingEncoding: Bool = false, changeEncoding: ((String?) -> Void)? = nil,
-         editing: ReadingSettingsEditing? = nil, editorClosed: @escaping () -> Void = {}, nativeNavigation: ReaderSourceNavigation? = nil) {
+         editing: ReadingSettingsEditing? = nil, editorClosed: @escaping () -> Void = {}) {
         _settings = settings; self.preview = preview; self.encoding = encoding; self.isRestartingEncoding = isRestartingEncoding; self.changeEncoding = changeEncoding
         self.editing = editing
-        self.editorClosed = editorClosed; self.nativeNavigation = nativeNavigation
+        self.editorClosed = editorClosed
     }
     private var appearance: ThemeAppearance { editedAppearance ?? themes.reader.plan.appearance }
     private var previewExpanded: Bool { verticalSizeClass == .compact || previewDetent == .large }
     private var previewCollapsed: Bool { verticalSizeClass != .compact && previewDetent == .height(60) }
-    private var texture: ReaderTextureChoice? {
-        appearance == .light ? themes.snapshot.preferences.readerLightTexture : themes.snapshot.preferences.readerDarkTexture
-    }
     private var previewTheme: ThemeSurface {
         if let draft {
             return ThemeSurface(plan: ResolvedTheme(appearance: draft.palette.appearance, highContrast: themes.highContrast,
-                                                   colors: draft.palette.colors, paletteId: draft.palette.id), readerTexture: texture)
+                                                   colors: draft.palette.colors, paletteId: draft.palette.id))
         }
         var snapshot = themes.snapshot
         snapshot.preferences.readerMode = appearance == .light ? .light : .dark
         guard let plan = try? resolveThemes(value: snapshot, system: themes.system, highContrast: themes.highContrast) else { return themes.reader }
-        return ThemeSurface(plan: plan.reader, readerTexture: texture)
+        return ThemeSurface(plan: plan.reader, readerTexture: plan.readerTexture)
     }
     var body: some View {
-        let sourceToken = nativeNavigation?.token
-        let sourceGeneration = editor.readerTools?.presentation.revision ?? 0
         @Bindable var editing = editor
         GeometryReader { geometry in
             // Keep enough room for both native controls and readable text.
             let wide = geometry.size.width >= 760
             let compact = horizontalSizeClass == .compact
-            // Match the released compact reading settings, including preview space.
-            let frame = geometry.frame(in: .global)
-            let mediumHeight = max(0, (frame.maxY + geometry.safeAreaInsets.bottom) / 2 - frame.minY - LayoutTokens.control)
+            // The system sheet covers a full-height control viewport. Only the
+            // scrollable content needs room to move its last row above it.
+            let bottomContentInset = compact && !wide && previewVisible
+                ? min(geometry.size.height, max(0, previewHeight - geometry.safeAreaInsets.bottom)) : 0
             HStack(spacing: 0) {
                 ReadingSettingsControls(settings: $settings, tab: $tab, editedAppearance: $editing.editedAppearance, encoding: encoding, isRestartingEncoding: isRestartingEncoding, changeEncoding: changeEncoding,
-                                     editPalette: { value in
+                                     bottomContentInset: bottomContentInset, editPalette: { value in
                                          if compact && !wide && previewPresented { previewDetent = .large }
                                          editor.beginPalette(value, presenter: previewVisible ? .preview : .settings)
                                      })
                     .frame(width: wide ? min(400, geometry.size.width * 0.46) : nil)
-                    .frame(height: compact
-                        ? (!wide && previewPresented
-                            ? (restingDetent == .medium ? mediumHeight : max(0, geometry.size.height - 76))
-                            : geometry.size.height)
-                        : nil)
-                    .clipped()
                     .frame(maxHeight: .infinity, alignment: .top)
                 if wide && editor.paletteSession?.presenter != .preview {
                     readingPreview
                         .background {
-                            if let tile = previewPosition.paperTile(previewTheme.paperInput(scale: displayScale)) {
-                                Image(uiImage: tile).resizable(resizingMode: .tile)
-                            } else { Color(uiColor: previewTheme.paper) }
+                            ReadingPreviewBackdrop(surface: previewTheme)
                         }
                         .clipShape(.rect(cornerRadius: 16))
                         .padding(LayoutTokens.content)
@@ -245,7 +228,7 @@ struct ReaderSettingsView: View {
                             }
                         } label: {
                             HStack {
-                                Text("阅读预览 · \(Int(settings.fontSize)) pt").font(.caption.weight(.medium))
+                                Text("阅读预览 · \(Int(settings.fontSize))").font(.caption.weight(.medium))
                                 Spacer()
                                 Image(systemName: previewDetent == .height(60) ? "chevron.up" : "chevron.down")
                             }.frame(minHeight: LayoutTokens.hit).contentShape(.rect)
@@ -259,9 +242,7 @@ struct ReaderSettingsView: View {
                         }
                     }
                     .background {
-                        if let tile = previewPosition.paperTile(previewTheme.paperInput(scale: displayScale)) {
-                            Image(uiImage: tile).resizable(resizingMode: .tile)
-                        } else { Color(uiColor: previewTheme.paper) }
+                        ReadingPreviewBackdrop(surface: previewTheme)
                     }
                 } else if compact && !wide && !previewPresented {
                     Button("阅读预览", systemImage: "doc.text.magnifyingglass") {
@@ -293,7 +274,7 @@ struct ReaderSettingsView: View {
                 if case let .palette(draft) = value.payload { paletteEditor(draft) }
             }
             .sheet(isPresented: Binding(get: { editor.paletteSession?.presenter == .preview || (compact && !wide && previewPresented && !navigation.isSuspended) }, set: {
-                guard allowsNativeInput(sourceToken, generation: sourceGeneration), editor.paletteSession?.presenter != .preview else { return }
+                guard editor.paletteSession?.presenter != .preview else { return }
                 if compact && !wide && !navigation.isSuspended { previewPresented = $0 }
             }), onDismiss: {
                 previewVisible = false
@@ -308,7 +289,7 @@ struct ReaderSettingsView: View {
                         } }
                     } label: {
                         HStack {
-                            Text("阅读预览 · \(Int(settings.fontSize)) pt").font(.caption.weight(.medium))
+                            Text("阅读预览 · \(Int(settings.fontSize))").font(.caption.weight(.medium))
                             Spacer()
                             Text(previewExpanded ? "收起" : "展开").font(.caption)
                             Image(systemName: previewExpanded ? "chevron.down" : "chevron.up")
@@ -330,15 +311,18 @@ struct ReaderSettingsView: View {
                 }
                 .clipped()
                 .padding(.top, LayoutTokens.control)
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height + proxy.safeAreaInsets.bottom
+                } action: { height in
+                    if previewHeight != height { previewHeight = height }
+                }
                 .presentationSizing(.page)
                 .presentationDetents([.height(60), .medium, .large], selection: $editing.previewDetent)
                 .presentationDragIndicator(.visible)
                 .presentationContentInteraction(.resizes)
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
                 .presentationBackground {
-                    if let tile = previewPosition.paperTile(previewTheme.paperInput(scale: displayScale)) {
-                        Image(uiImage: tile).resizable(resizingMode: .tile).ignoresSafeArea()
-                    } else { Color(uiColor: previewTheme.paper) }
+                    ReadingPreviewBackdrop(surface: previewTheme).ignoresSafeArea()
                 }
                 .preferredColorScheme(previewTheme.scheme)
                 .interactiveDismissDisabled()
@@ -350,9 +334,6 @@ struct ReaderSettingsView: View {
                     if case let .palette(draft) = value.payload { paletteEditor(draft) }
                 }
             }
-            .onChange(of: previewDetent) { _, value in
-                if value != .large { restingDetent = value }
-            }
             .onChange(of: themes.snapshot.preferences.readerMode) { _, _ in editedAppearance = nil }
         }
     }
@@ -360,17 +341,9 @@ struct ReaderSettingsView: View {
         ReadingPreviewPane(source: preview, settings: settings, surface: previewTheme, position: previewPosition)
             .onDisappear { previewPosition.capture() }
     }
-    private func allowsNativeInput(_ token: ReaderHostToken?, generation: UInt64) -> Bool {
-        guard let nativeNavigation else { return true }
-        guard let token, generation == editor.readerTools?.presentation.revision else { return false }
-        return nativeNavigation.installation.acceptsInput(token, opening: token.opening, generation: generation)
-    }
     private func paletteBinding(_ presenter: ReaderEditPresenter) -> Binding<ReaderEditSession?> {
         let current = editor.paletteSession(for: presenter)
-        let token = nativeNavigation?.token
-        let generation = editor.readerTools?.presentation.revision ?? 0
         return Binding(get: { editor.paletteSession(for: presenter) }, set: {
-            guard allowsNativeInput(token, generation: generation) else { return }
             if $0 == nil, let current { editor.finishPalette(current.id) }
         })
     }
@@ -392,6 +365,7 @@ struct ReadingSettingsControls: View {
     let encoding: String?
     let isRestartingEncoding: Bool
     let changeEncoding: ((String?) -> Void)?
+    var bottomContentInset: CGFloat = 0
     let editPalette: (PaletteDraft) -> Void
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
@@ -407,7 +381,7 @@ struct ReadingSettingsControls: View {
             switch tab {
             case .colors: colors
             case .typography: typography
-            case .controls: ReaderControlsForm(settings: $settings)
+            case .controls: ReaderControlsForm(settings: $settings, bottomContentInset: bottomContentInset)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -430,13 +404,21 @@ struct ReadingSettingsControls: View {
                 Text("深色时").tag(ThemeAppearance.dark).accessibilityIdentifier("paletteSlot-dark")
             }.pickerStyle(.segmented).padding(.horizontal, LayoutTokens.content).padding(.bottom, LayoutTokens.compact)
                 .accessibilityIdentifier("readerPaletteSlots")
-            PalettePicker(reader: true, appearance: appearance, embedded: true, editPalette: editPalette)
+            PalettePicker(reader: true, appearance: appearance, embedded: true, bottomContentInset: bottomContentInset, editPalette: editPalette)
         }
     }
     private func binding<Value>(_ key: WritableKeyPath<ReaderSettings, Value>) -> Binding<Value> {
         Binding(get: { settings[keyPath: key] }, set: { value in
             var next = settings; next[keyPath: key] = value; settings = next
         })
+    }
+    private var fontName: String {
+        if let font = settings.importedFont { return ReaderFontLibrary.shared.name(for: font) }
+        switch settings.font {
+        case .system: return String(localized: "系统")
+        case .serif: return String(localized: "宋体")
+        case .rounded: return String(localized: "圆体")
+        }
     }
     private var typography: some View {
         Form {
@@ -447,10 +429,12 @@ struct ReadingSettingsControls: View {
                 }.listRowBackground(Color(uiColor: theme.surface))
             }
             Section("文字") {
-                Picker("字体", selection: binding(\.font)) {
-                    Text("系统").tag(ReaderFont.system)
-                    Text("宋体").tag(ReaderFont.serif)
-                    Text("圆体").tag(ReaderFont.rounded)
+                NavigationLink {
+                    ReaderFontPicker()
+                } label: {
+                    LabeledContent("字体") {
+                        Text(verbatim: fontName).foregroundStyle(Color(uiColor: theme.secondary))
+                    }
                 }.accessibilityIdentifier("readingFont")
                 numberRow("字号", value: binding(\.fontSize), range: typographyControls.fontSize.range, step: typographyControls.fontSize.step, id: "fontSize")
                 numberRow("行距", value: binding(\.lineSpacing), range: typographyControls.lineSpacing.range, step: typographyControls.lineSpacing.step, id: "lineSpacing")
@@ -468,28 +452,24 @@ struct ReadingSettingsControls: View {
             }.listRowBackground(Color(uiColor: theme.surface))
         }
         .contentMargins(.top, LayoutTokens.compact, for: .scrollContent)
+        .contentMargins(.bottom, bottomContentInset, for: .scrollContent)
         .themedPage().accessibilityIdentifier("readerTypographyControls")
     }
     private func numberRow(_ title: LocalizedStringKey, value: Binding<Double>, range: ClosedRange<Double>, step: Double, id: String) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            HStack(spacing: 8) {
-                Button { value.wrappedValue = max(range.lowerBound, value.wrappedValue - step) } label: {
-                    Image(systemName: "minus").frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit)
-                }.disabled(value.wrappedValue <= range.lowerBound).accessibilityLabel("减小")
-                Text("\(Int(value.wrappedValue)) pt").monospacedDigit().font(.subheadline)
-                Button { value.wrappedValue = min(range.upperBound, value.wrappedValue + step) } label: {
-                    Image(systemName: "plus").frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit)
-                }.disabled(value.wrappedValue >= range.upperBound).accessibilityLabel("增大")
-            }.buttonStyle(.borderless)
-        }.accessibilityElement(children: .contain).accessibilityIdentifier(id)
+        Stepper(value: value, in: range, step: step) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(value.wrappedValue, format: .number.precision(.fractionLength(0)))
+            }
+        }.accessibilityIdentifier(id)
     }
 
 }
 
 private struct ReaderControlsForm: View {
     @Binding var settings: ReaderSettings
+    var bottomContentInset: CGFloat = 0
     @Environment(\.theme) private var theme
     private func binding<Value>(_ key: WritableKeyPath<ReaderSettings, Value>) -> Binding<Value> {
         Binding(get: { settings[keyPath: key] }, set: { value in var next = settings; next[keyPath: key] = value; settings = next })
@@ -523,6 +503,7 @@ private struct ReaderControlsForm: View {
                 }
             }.listRowBackground(Color(uiColor: theme.surface))
         }.contentMargins(.top, LayoutTokens.compact, for: .scrollContent)
+            .contentMargins(.bottom, bottomContentInset, for: .scrollContent)
             .themedPage().accessibilityIdentifier("readerControlOptions")
     }
 }

@@ -34,7 +34,11 @@ pub struct ReaderSettings {
     pub mode: ReadingMode,
     pub font_size: f64,
     pub line_spacing: f64,
+    #[serde(default = "default_auto_reading_speed")]
+    pub auto_reading_speed: f64,
     pub font: ReaderFont,
+    #[serde(default)]
+    pub imported_font: Option<ImportedReaderFont>,
     pub paragraph_spacing: f64,
     pub indent: ReadingIndent,
     pub horizontal_margin: f64,
@@ -87,6 +91,37 @@ pub fn reader_typography_controls() -> ReaderTypographyControls {
     }
 }
 
+fn default_auto_reading_speed() -> f64 {
+    10.0
+}
+
+/// Unitless device-local speed levels; the platform supplies reading geometry.
+#[uniffi::export]
+pub fn auto_reading_control() -> ReaderNumberControl {
+    ReaderNumberControl {
+        minimum: 1.0,
+        maximum: 30.0,
+        step: 1.0,
+        default_value: default_auto_reading_speed(),
+    }
+}
+
+fn valid_auto_reading_speed(speed: f64) -> bool {
+    let control = auto_reading_control();
+    speed.is_finite()
+        && (control.minimum..=control.maximum).contains(&speed)
+        && speed.fract() == 0.0
+}
+
+/// Full-line equivalent layout advance, not measured words or characters.
+#[uniffi::export]
+pub fn auto_reading_em_per_minute(speed: f64) -> Result<f64> {
+    if !valid_auto_reading_speed(speed) {
+        return Err(ReaderError::InvalidSettings);
+    }
+    Ok(150.0 * 1.16_f64.powf(speed - 1.0))
+}
+
 #[uniffi::export]
 pub fn default_reader_settings() -> ReaderSettings {
     let controls = reader_typography_controls();
@@ -94,7 +129,9 @@ pub fn default_reader_settings() -> ReaderSettings {
         mode: ReadingMode::Scroll,
         font_size: controls.font_size.default_value,
         line_spacing: controls.line_spacing.default_value,
+        auto_reading_speed: default_auto_reading_speed(),
         font: ReaderFont::System,
+        imported_font: None,
         paragraph_spacing: controls.paragraph_spacing.default_value,
         indent: ReadingIndent::Smart,
         horizontal_margin: 16.0,
@@ -128,6 +165,11 @@ pub(crate) fn valid(settings: &ReaderSettings) -> bool {
     ]
     .iter()
     .all(|&(value, min, max)| value.is_finite() && (min..=max).contains(&value))
+        && valid_auto_reading_speed(settings.auto_reading_speed)
+        && settings
+            .imported_font
+            .as_ref()
+            .is_none_or(ImportedReaderFont::valid)
         && settings
             .brightness
             .is_none_or(|v| v.is_finite() && (0.0..=1.0).contains(&v))
@@ -150,6 +192,67 @@ pub struct ReadingParagraph {
     pub kind: ParagraphKind,
     pub continuation: bool,
     pub indented: bool,
+}
+
+/// Unicode horizontal whitespace only: never paragraph boundaries or zero-width text.
+pub(crate) fn horizontal_indent(c: char) -> bool {
+    matches!(
+        c,
+        '\t' | ' ' | '\u{00a0}' | '\u{1680}' | '\u{2000}'
+            ..='\u{200a}' | '\u{202f}' | '\u{205f}' | '\u{3000}'
+    )
+}
+
+/// Runtime display omissions, not normalization or persisted source coordinates.
+#[uniffi::export]
+pub fn reading_indent_omissions(
+    chunks: Vec<TextChunk>,
+    paragraphs: Vec<ReadingParagraph>,
+    indent: ReadingIndent,
+) -> Vec<SourceSpan> {
+    indent_omissions(&chunks, &paragraphs, indent)
+}
+pub(crate) fn indent_omissions(
+    chunks: &[TextChunk],
+    paragraphs: &[ReadingParagraph],
+    indent: ReadingIndent,
+) -> Vec<SourceSpan> {
+    if indent != ReadingIndent::Smart {
+        return Vec::new();
+    }
+    paragraphs
+        .iter()
+        .filter(|p| p.kind == ParagraphKind::Body && !p.continuation)
+        .filter_map(|p| {
+            let mut end = p.start_utf8;
+            let mut resolved = false;
+            'prefix: for chunk in chunks {
+                if chunk.end_utf8 <= end {
+                    continue;
+                }
+                if chunk.start_utf8 > end || end >= p.end_utf8 {
+                    break;
+                }
+                let from = (end - chunk.start_utf8) as usize;
+                let to = (p.end_utf8.min(chunk.end_utf8) - chunk.start_utf8) as usize;
+                let Some(text) = chunk.text.get(from..to) else {
+                    break;
+                };
+                for c in text.chars() {
+                    if !horizontal_indent(c) {
+                        resolved = true;
+                        break 'prefix;
+                    }
+                    end += c.len_utf8() as u64;
+                }
+            }
+            // An all-horizontal window suffix has no confirmed body yet.
+            (end > p.start_utf8 && resolved).then_some(SourceSpan {
+                start_utf8: p.start_utf8,
+                end_utf8: end,
+            })
+        })
+        .collect()
 }
 
 pub(crate) fn paragraphs(
