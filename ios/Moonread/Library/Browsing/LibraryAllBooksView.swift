@@ -3,10 +3,16 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct LibraryAllBooksView: View {
+    private enum ScrollTarget: Hashable { case nameGroup(String) }
+    private struct NameGroupBounds: PreferenceKey {
+        static var defaultValue: [String: [Anchor<CGRect>]] { [:] }
+        static func reduce(value: inout [String: [Anchor<CGRect>]], nextValue: () -> [String: [Anchor<CGRect>]]) {
+            for (letter, bounds) in nextValue() { value[letter, default: []].append(contentsOf: bounds) }
+        }
+    }
     @Bindable var model: LibraryModel
     let shelfID: String
     @State private var groups: [LibraryNameGroup] = []
-    @State private var books: [LibraryEntry] = []
     @State private var tagGroups: [LibraryTagGroup] = []
     @State private var bookCount: UInt64 = 0
     @State private var loaded = false
@@ -34,7 +40,7 @@ struct LibraryAllBooksView: View {
                                 }
                             } header: {
                                 Text(verbatim: group.id).font(.caption.weight(.semibold))
-                                    .foregroundStyle(Color(uiColor: theme.secondary)).id(group.id)
+                                    .foregroundStyle(Color(uiColor: theme.secondary)).id(ScrollTarget.nameGroup(group.id))
                                     .listRowInsets(EdgeInsets(top: LayoutTokens.compact, leading: LayoutTokens.page, bottom: 4, trailing: LayoutTokens.page))
                             }.modifier(LibraryNativeIndexLabel(letter: group.id))
                         }
@@ -47,23 +53,45 @@ struct LibraryAllBooksView: View {
                     ScrollView {
                         VStack(alignment: .leading, spacing: LayoutTokens.content) {
                             summary
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumBookWidth), spacing: LayoutTokens.content)], alignment: .leading, spacing: LayoutTokens.section) {
-                                ForEach(books, id: \.id) { entry in
-                                    LibraryBookTile(model: model, entry: entry, showPath: true)
-                                        .contextMenu { LibraryItemMenu(model: model, entry: entry); LibraryLocationAction(model: model, entry: entry) }
-                                        .id(entry.id)
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumBookWidth), spacing: LayoutTokens.content)], alignment: .leading, spacing: 0) {
+                                ForEach(groups) { group in
+                                    Section {
+                                        ForEach(group.entries, id: \.id) { entry in
+                                            LibraryBookTile(model: model, entry: entry, showPath: true)
+                                                .contextMenu { LibraryItemMenu(model: model, entry: entry); LibraryLocationAction(model: model, entry: entry) }
+                                                .padding(.bottom, LayoutTokens.section)
+                                                .id(entry.id)
+                                                .anchorPreference(key: NameGroupBounds.self, value: .bounds) { [group.id: [$0]] }
+                                        }
+                                    } header: {
+                                        Text(verbatim: group.id)
+                                            .font(.subheadline.weight(.semibold)).foregroundStyle(Color(uiColor: theme.secondary))
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                            .padding(.bottom, LayoutTokens.compact)
+                                            .accessibilityAddTraits(.isHeader)
+                                            .id(ScrollTarget.nameGroup(group.id))
+                                            .anchorPreference(key: NameGroupBounds.self, value: .bounds) { [group.id: [$0]] }
+                                    }
                                 }
                             }
                         }.padding(.leading, LayoutTokens.page).padding(.trailing, LayoutTokens.page + 20)
                             .padding(.top, LayoutTokens.control).padding(.bottom)
-                    }.themedPage().accessibilityIdentifier("libraryGrid")
+                    }
+                    .themedPage().accessibilityIdentifier("libraryGrid")
+                    .overlayPreferenceValue(NameGroupBounds.self) { bounds in
+                        GeometryReader { geometry in
+                            LibraryAlphabetIndex(letters: groups.map(\.id), current: currentNameGroup(bounds, in: geometry)) { letter in
+                                proxy.scrollTo(ScrollTarget.nameGroup(letter), anchor: .top)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                        }
+                    }
                 }
             }
             .overlay(alignment: .trailing) {
-                if model.grouping == .name && (model.layout == .grid || !LibraryNativeIndexVisibility.available) {
+                if model.grouping == .name && model.layout == .list && !LibraryNativeIndexVisibility.available {
                     LibraryAlphabetIndex(letters: groups.map(\.id)) { letter in
-                        let target = model.layout == .grid ? groups.first(where: { $0.id == letter })?.entries.first?.id : letter
-                        if let target { proxy.scrollTo(target, anchor: .top) }
+                        proxy.scrollTo(ScrollTarget.nameGroup(letter), anchor: .top)
                     }
                 }
             }
@@ -101,13 +129,24 @@ struct LibraryAllBooksView: View {
                     let values = try await AppDataService.shared.allLibraryBooks(shelfID)
                     let grouped = await Task.detached(priority: .userInitiated) { LibraryNameGroup.group(values) }.value
                     try Task.checkCancellation()
-                    groups = grouped; books = grouped.flatMap(\.entries); bookCount = UInt64(values.count)
+                    groups = grouped; bookCount = UInt64(values.count)
                 }
                 loaded = true
             } catch is CancellationError { } catch { model.error = ReaderMessages.error(error) }
         }
 
         .animation(MotionTokens.controls(reduced: reduceMotion), value: model.layout)
+    }
+
+    private func currentNameGroup(_ bounds: [String: [Anchor<CGRect>]], in geometry: GeometryProxy) -> String? {
+        // Include tiles: a long group's header can be unloaded while its books
+        // still fill the viewport. Resolve live anchors only in the index overlay;
+        // no per-frame state writes or retained geometry/last-tapped letter.
+        let starts = groups.compactMap { group -> (id: String, y: CGFloat)? in
+            guard let y = bounds[group.id]?.map({ geometry[$0].minY }).min() else { return nil }
+            return (group.id, y)
+        }
+        return starts.last(where: { $0.y <= geometry.safeAreaInsets.top })?.id ?? starts.first?.id ?? groups.first?.id
     }
 
     @ViewBuilder private var tagBrowser: some View {
