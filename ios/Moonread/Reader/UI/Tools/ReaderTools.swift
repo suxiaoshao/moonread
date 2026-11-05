@@ -172,6 +172,9 @@ final class ReaderToolsModel {
         notes = []; notesKind = noteKind; moreNotes = false; loadingNotes = true
     }
 
+    /// Editing lists every chapter without changing the reader's folded volumes.
+    var chapterSnapshot: [ChapterEntry] { allChapters }
+
     func containsChapter(_ offset: UInt64) -> Bool { allChapters.contains { $0.startUtf8 == offset } }
 
     func showChapter(_ offset: UInt64) {

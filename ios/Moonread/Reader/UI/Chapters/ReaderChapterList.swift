@@ -40,7 +40,12 @@ struct ReaderChapterList: View {
                     ForEach(outlineGroups) { group in
                         Section {
                             if let volume = group.volume {
-                                if editingOutline { chapterRow(volume) }
+                                if editingOutline {
+                                    chapterRow(volume)
+                                    ForEach(group.chapters, id: \.startUtf8) { chapter in
+                                        chapterRow(chapter)
+                                    }
+                                }
                                 else {
                                     DisclosureGroup(isExpanded: volumeExpanded(volume.startUtf8)) {
                                         ForEach(group.chapters, id: \.startUtf8) { chapter in
@@ -121,7 +126,7 @@ struct ReaderChapterList: View {
     /// Presentation only: parent offsets already come from the Rust outline.
     private var outlineGroups: [OutlineGroup] {
         var groups: [OutlineGroup] = []
-        for chapter in model.chapters {
+        for chapter in editingOutline ? model.chapterSnapshot : model.chapters {
             if chapter.level == 0 {
                 groups.append(.init(id: chapter.startUtf8, volume: chapter, chapters: []))
             } else if let last = groups.indices.last, groups[last].volume?.startUtf8 == chapter.parentUtf8 {
