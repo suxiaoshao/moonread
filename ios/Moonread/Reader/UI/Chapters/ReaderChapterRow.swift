@@ -33,13 +33,7 @@ struct ReaderChapterRow<Actions: View>: View {
         .contextMenu { actions() }
         .listRowBackground(Color(uiColor: theme.surface))
         .listRowSeparatorTint(Color(uiColor: theme.separator))
-        .onGeometryChange(for: Bool.self) { geometry in
-            guard current else { return false }
-            let frame = geometry.frame(in: .named("chapterListViewport"))
-            let visible = min(frame.maxY, viewportHeight) - max(frame.minY, 0)
-            return frame.height > 0 && visible >= frame.height * 0.6
-        } action: { visibilityChanged($0) }
-        .onDisappear { visibilityChanged(false) }
+        .modifier(ReaderChapterVisibility(current: current, viewportHeight: viewportHeight, changed: visibilityChanged))
         .accessibilityLabel(Text(verbatim: chapter.title))
         .accessibilityValue(accessibilitySummary)
         .accessibilityAddTraits(current ? .isSelected : [])
@@ -52,5 +46,23 @@ struct ReaderChapterRow<Actions: View>: View {
     private func metadata(_ text: String) -> some View {
         Text(verbatim: text).font(.caption).monospacedDigit()
             .foregroundStyle(Color(uiColor: current ? theme.accent : theme.secondary))
+    }
+}
+
+/// Observe the current label/row only, never a whole expanded volume's bounds.
+struct ReaderChapterVisibility: ViewModifier {
+    let current: Bool
+    let viewportHeight: CGFloat
+    let changed: (Bool) -> Void
+
+    func body(content: Content) -> some View {
+        content
+        .onGeometryChange(for: Bool.self) { geometry in
+            guard current else { return false }
+            let frame = geometry.frame(in: .named("chapterListViewport"))
+            let visible = min(frame.maxY, viewportHeight) - max(frame.minY, 0)
+            return frame.height > 0 && visible >= frame.height * 0.6
+        } action: { changed($0) }
+        .onDisappear { changed(false) }
     }
 }

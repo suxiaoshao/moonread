@@ -51,11 +51,12 @@ struct ReaderChapterList: View {
                                         ForEach(group.chapters, id: \.startUtf8) { chapter in
                                             chapterRow(chapter)
                                         }
-                                    } label: { chapterTitle(volume, current: false) }
+                                    } label: { volumeTitle(volume) }
                                     .id(volume.startUtf8)
                                     .contextMenu { chapterActions(volume) }
                                     .listRowBackground(Color(uiColor: theme.surface))
                                     .listRowSeparatorTint(Color(uiColor: theme.separator))
+                                    .accessibilityAddTraits(isCurrent(volume) ? .isSelected : [])
                                     .accessibilityIdentifier("volume-\(volume.startUtf8)")
                                 }
                             } else {
@@ -164,17 +165,29 @@ struct ReaderChapterList: View {
         }
     }
     private func chapterRow(_ chapter: ChapterEntry) -> some View {
-        let current = !session.showingCover && session.chapter?.startUtf8 == chapter.startUtf8
+        let current = isCurrent(chapter)
         return ReaderChapterRow(chapter: chapter, current: current, viewportHeight: viewportHeight) {
             chapterFilterFocused = false
             if editingOutline { editChapter(ChapterEditDraft(start: chapter.startUtf8, title: chapter.title, level: chapter.level)) }
             else if chapter.level == 0 { model.toggleVolume(chapter.startUtf8) }
             else { navigate(chapter.startUtf8, nil, .start) }
         } visibilityChanged: { visible in
-            guard current else { return }
-            let next: Set<UInt64> = visible ? [chapter.startUtf8] : []
-            if next != visibleChapters { visibleChapters = next }
+            reportVisibility(visible, for: chapter)
         } actions: { chapterActions(chapter) }
+    }
+    private func isCurrent(_ chapter: ChapterEntry) -> Bool {
+        !session.showingCover && session.chapter?.startUtf8 == chapter.startUtf8
+    }
+    private func reportVisibility(_ visible: Bool, for chapter: ChapterEntry) {
+        guard isCurrent(chapter) else { return }
+        let next: Set<UInt64> = visible ? [chapter.startUtf8] : []
+        if next != visibleChapters { visibleChapters = next }
+    }
+    private func volumeTitle(_ volume: ChapterEntry) -> some View {
+        chapterTitle(volume, current: isCurrent(volume))
+            .modifier(ReaderChapterVisibility(current: isCurrent(volume), viewportHeight: viewportHeight) {
+                reportVisibility($0, for: volume)
+            })
     }
     private func chapterTitle(_ chapter: ChapterEntry, current: Bool) -> some View {
         Text(verbatim: chapter.title).font(chapter.level == 0 ? .headline : .body)

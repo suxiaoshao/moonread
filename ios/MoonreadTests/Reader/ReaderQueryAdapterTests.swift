@@ -145,7 +145,15 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     try source.write(to: file, atomically: true, encoding: .utf8)
     let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
     let book = try core.importBook(filePath: file.path, title: "Outline")
-    let outline = try core.querySnapshot(json: "{}").chapterOutline(bookId: book.id)
+    let query = try core.querySnapshot(json: "{}")
+    let outline = try query.chapterOutline(bookId: book.id)
+    let volume = try XCTUnwrap(outline.items.first { $0.level == 0 })
+    let firstChapter = try XCTUnwrap(outline.items.first { $0.parentUtf8 == volume.startUtf8 })
+    for offset in [volume.startUtf8, firstChapter.startUtf8 - 1] {
+      let selected = try XCTUnwrap(query.chapterAt(bookId: book.id, offsetUtf8: offset))
+      XCTAssertEqual(selected.startUtf8, volume.startUtf8)
+      XCTAssertEqual(selected.level, 0, "A current outline item can be a volume, including the gap before its first chapter")
+    }
     let current = try XCTUnwrap(outline.items.first { $0.title == "第150章 月" })
     let service = AppDataService(core: core)
     let model = ReaderToolsModel(service: service)
