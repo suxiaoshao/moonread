@@ -29,7 +29,7 @@ extension LibraryQueryRules {
         }
     }
     // Rust str::trim's Unicode White_Space set (Foundation additionally trims
-    // U+200B). Never use localized matching for the library's literal contract.
+    // U+200B). Keep original-text matching byte-exact; pinyin is a separate fallback.
     private static func rustWhitespace(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
         case 9...13, 32, 133, 160, 5760, 8192...8202, 8232, 8233, 8239, 8287, 12288: true
@@ -58,6 +58,22 @@ extension LibraryQueryRules {
         let literal = spec.profile == .library
         let query = literal ? literalQuery(spec.query) : spec.query
         if literal && query.isEmpty && spec.author == nil && spec.tags.isEmpty && spec.status == nil && !spec.configuration.booksOnly { return .init(entries: [], unknownCount: 0) }
+        let usesPinyin = literal && query.unicodeScalars.allSatisfy(\.isASCII)
+            && query.utf8.contains { (97...122).contains($0) }
+        // Request-local only: shared authors/copies need one transform per text,
+        // with no persisted index or invalidation state.
+        var spellingsByText: [String: [String]] = [:]
+        func pinyinRank(_ text: String) -> Int? {
+            guard usesPinyin, text.unicodeScalars.contains(where: { $0.properties.isIdeographic }) else { return nil }
+            let spellings: [String]
+            if let saved = spellingsByText[text] { spellings = saved }
+            else {
+                spellings = pinyinSpellings(text)
+                spellingsByText[text] = spellings
+            }
+            if spellings.contains(where: { $0.utf8.starts(with: query.utf8) }) { return 0 }
+            return spellings.contains(where: { literalContains($0, query) }) ? 1 : nil
+        }
         var unknownCount = 0
         let ranked = candidates.compactMap { candidate -> (LibrarySearchCandidate, LibraryEntry, Int)? in
             var row = candidate.entry
@@ -73,7 +89,8 @@ extension LibraryQueryRules {
                 let rank: Int
                 if query.isEmpty || title.utf8.starts(with: query.utf8) { rank = 0 }
                 else if literalContains(title, query) { rank = 1 }
-                else if !row.directory, metadata.map({ literalContains($0.author.lowercased(), query) }) == true { rank = 2 }
+                else if !row.directory, let spellingRank = pinyinRank(title) { rank = spellingRank }
+                else if !row.directory, metadata.map({ literalContains($0.author.lowercased(), query) || pinyinRank($0.author) != nil }) == true { rank = 2 }
                 else { return nil }
                 if let status = spec.status {
                     guard let metadata = candidate.resolvedMetadata, statusName(metadata.status) != "other" else { unknownCount += 1; return nil }

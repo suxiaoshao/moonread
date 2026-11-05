@@ -57,7 +57,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 系统元数据匹配 | Swift 共享 `LibraryQueryRules.systemMetadataBooks` | 共享书名、作者、标签、书名/作者的有效分词与拼音全拼/首字母；去空白、去重、最多64项，不生成前缀碎片或单字分词。Entity 用该词表做部分/拼音匹配，Spotlight 匹配与展示由系统负责；复用 Rust ordinal，不带 AI 简介 profile | 具名契约 |
 | 系统书目派生快照与统一开书路由 | Swift `SystemIntegration`、`SystemIntegrationShared` | SystemReadingCatalog 是全库书目、最近项、曝光策略与失效的主 App 唯一生产者；共享 DTO 不含正文、路径、位置 token/偏移，不成为事实权威。身份、代表副本、顺序与进度沿既有 Rust 查询；SystemReadingRouter 统一开书，扩展不读正文或事实库，统计回答调用既有主 App 查询 | 平台边界 |
 | 查询范围、身份/metadata 关联、目录后代最近时间、最近副本选择 | Rust `library/bookshelf/`、`user/projection.rs` | 需要完整索引/快照，不能由限量 recents 再聚合 | 单源查询 |
-| 书目文本/作者/标签/状态筛选、搜索排名和建议匹配 | Swift `LibraryQueryRules`（`Library/Search/LibraryQueryRules.swift` 与共享系统元数据 profile） | 条件树的三值求值、无标签、自定义多键排序与摘要使用同一查询；UI literal 与 AI/建议模式显式保留 | 单源匹配与排序 |
+| 书目文本/作者/标签/状态筛选、搜索排名和建议匹配 | Swift `LibraryQueryRules`（`Library/Search/LibraryQueryRules.swift` 与共享系统元数据 profile） | 条件树的三值求值、无标签、自定义多键排序与摘要使用同一查询；书架书名/作者的全拼与首字母复用共享 `pinyinSpellings`，与 Entity/Spotlight 使用同一系统默认普通话转写，不加词典或 Rust 副本；UI 原文匹配与 AI/建议模式显式保留，64 项上限仅属于系统词表 | 单源匹配与排序 |
 | 文件自然比较、目录/全书/标签自然排序 | Rust `library/order.rs`（从 bookshelf 提取） | 已服务 SQL 查询和目录；按完整快照一次计算 | Swift 搜索使用批量 ordinal 和同名分档，不复制自然 comparator |
 | 搜索排名组合、AI 名称字典序/recent 平手顺序 | Swift `LibraryQueryRules.swift` | 与匹配结果一同完成，AI 原生字符串比较不迁语言 | 单源组合排序 |
 | 拼音 key、字母分组及组内 localized collation | Swift `LibraryPresentation.swift::LibraryNameGroup` | 唯一实现且依赖 Foundation；不是原文件自然序副本 | 原位保留 |
