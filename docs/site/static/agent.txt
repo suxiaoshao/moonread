@@ -1,0 +1,8 @@
+Moonread — metadata exchange
+
+Human format guide: https://suxiaoshao.github.io/moonread/en/metadata-format/
+Chinese guide: https://suxiaoshao.github.io/moonread/metadata-format/
+JSON Schema 2020-12: https://suxiaoshao.github.io/moonread/schema/moonread-metadata-v1.schema.json
+Agent skill: https://suxiaoshao.github.io/moonread/skills/moonread-metadata/SKILL.md
+
+Use Moonread exports, never novel text, to identify books. Keep content_sha256 and reference unchanged. Do not infer matches from titles or paths. Missing fields mean unchanged; null does not clear. Explicit clear/rename requests require user review in the app. This is metadata editing, not a reading-data backup.

@@ -43,6 +43,14 @@
             <key>public.filename-extension</key><array><string>moonread-backup</string></array>
             <key>public.mime-type</key><string>application/vnd.moonread.backup+zip</string>
         </dict>
+    </dict><dict>
+        <key>UTTypeIdentifier</key><string>dev.moonread.metadata</string>
+        <key>UTTypeDescription</key><string>Moonread Book Metadata</string>
+        <key>UTTypeConformsTo</key><array><string>public.zip-archive</string></array>
+        <key>UTTypeTagSpecification</key><dict>
+            <key>public.filename-extension</key><array><string>moonread-metadata</string></array>
+            <key>public.mime-type</key><string>application/vnd.moonread.metadata+zip</string>
+        </dict>
     </dict></array>
 </dict>
 </plist>

@@ -19,6 +19,12 @@ extension BookMetadata {
     }
 }
 
+struct BookMetadataEditPlan: Sendable {
+    let sha: String
+    let values: [String: String]
+    var isEmpty: Bool { values.isEmpty }
+}
+
 extension AppDataService {
     func details(bookID: String? = nil, sha: String? = nil) async throws -> BookDetails {
         let result: BookDetails
@@ -28,30 +34,42 @@ extension AppDataService {
         return result
     }
     func metadataOptions(shelfID: String?) async throws -> BookFilterOptions { try await catalogueQuery(shelfID.map { LibraryLocation(shelfID: $0) }, recursive: true).bookFilterOptions(shelfId: shelfID) }
-    func saveMetadata(base: BookMetadata, edited: BookMetadata) async throws {
+    nonisolated func metadataEditPlan(base: BookMetadata, edited: BookMetadata, fields: Set<String>? = nil) throws -> BookMetadataEditPlan {
         guard base.sha == edited.sha, (try? parseSha256(value: base.sha)) != nil, edited.author.utf8.count <= 1024,
               edited.synopsis.utf8.count <= 64 * 1024, edited.tags.count <= 100 else { throw ReaderError.InvalidSettings }
-        let store = try await userStore()
         let before = try JSONSerialization.jsonObject(with: Data(encodeBookMetadata(value: base).utf8)) as! [String: Any]
         let normalized = edited.normalizedForSaving
         guard normalized.tags.allSatisfy({ $0.utf8.count <= 128 }) else { throw ReaderError.InvalidSettings }
-        if let cover = edited.cover, cover != base.cover {
-            let bytes = try Data(contentsOf: coverDraftURL(cover))
-            try await store.saveCover(id: cover.id, bytes: bytes)
-        }
         let after = try JSONSerialization.jsonObject(with: Data(encodeBookMetadata(value: normalized).utf8)) as! [String: Any]
         var changes: [String: String] = [:]
-        for field in ["author", "synopsis", "status", "cover"] {
+        for field in ["author", "synopsis", "status", "cover"] where fields?.contains(field) ?? true {
             let old = try JSONSerialization.data(withJSONObject: before[field]!, options: [.fragmentsAllowed, .sortedKeys])
             let new = try JSONSerialization.data(withJSONObject: after[field]!, options: [.fragmentsAllowed, .sortedKeys])
             if old != new { changes["metadata/\(base.sha)/\(field)"] = String(decoding: new, as: UTF8.self) }
         }
-        for tag in Set(base.tags).union(normalized.tags) where base.tags.contains(tag) != normalized.tags.contains(tag) {
+        for tag in Set(base.tags).union(normalized.tags) where (fields?.contains("tags") ?? true) && base.tags.contains(tag) != normalized.tags.contains(tag) {
             let key = SHA256.hash(data: Data(tag.utf8)).map { String(format: "%02x", $0) }.joined()
             changes["metadata/\(base.sha)/tag-\(key)"] = normalized.tags.contains(tag) ? String(decoding: try JSONEncoder().encode(tag), as: UTF8.self) : "null"
         }
-        try await store.putValues(changes, device: userDevice)
+        return BookMetadataEditPlan(sha: base.sha, values: changes)
+    }
+    func saveMetadata(base: BookMetadata, edited: BookMetadata) async throws {
+        var final = edited
+        if let cover = edited.cover, cover != base.cover {
+            let bytes = try Data(contentsOf: coverDraftURL(cover))
+            if let existing = base.cover, let old = try? await coverBytes(existing), sameCoverPixels(bytes, old) {
+                final.cover = existing
+            }
+        }
+        let plan = try metadataEditPlan(base: base, edited: final)
+        try await commitMetadata(plan, cover: final.cover != base.cover ? final.cover : nil)
         if let cover = edited.cover { discardCoverDraft(cover) }
+    }
+    func commitMetadata(_ plan: BookMetadataEditPlan, cover: BookCoverAsset?) async throws {
+        guard !plan.values.isEmpty else { return }
+        let store = try await userStore()
+        let asset = try cover.map { UserDataStore.CoverWrite(id: $0.id, bytes: try Data(contentsOf: coverDraftURL($0))) }
+        try await store.putValues(plan.values, device: userDevice, cover: asset)
         dataChanged(); NotificationCenter.default.post(name: .bookMetadataChanged, object: nil)
     }
     func coverDirectory() throws -> URL {
@@ -65,28 +83,73 @@ extension AppDataService {
               (try? parseSha256(value: cover.sha256)) != nil else { throw CocoaError(.fileReadCorruptFile) }
         return try coverDirectory().appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
     }
-    private func coverDraftURL(_ cover: BookCoverAsset) -> URL {
+    func coverDraftURL(_ cover: BookCoverAsset) -> URL {
         FileManager.default.temporaryDirectory.appendingPathComponent("\(dataDirectoryName)-CoverDrafts", isDirectory: true)
             .appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
     }
     func discardCoverDraft(_ cover: BookCoverAsset) { try? FileManager.default.removeItem(at: coverDraftURL(cover)) }
-    func makeCover(_ data: Data) throws -> BookCoverAsset {
-        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
-              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                  kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 1600,
-                  kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else { throw CocoaError(.fileReadCorruptFile) }
+    private struct NormalizedCover {
+        let bytes: Data
+        let ext: String
+        let width: UInt32
+        let height: UInt32
+    }
+    private func normalizedCover(_ data: Data) throws -> NormalizedCover {
+        let image = try normalizedCoverImage(data)
         let alpha = ![CGImageAlphaInfo.none, .noneSkipFirst, .noneSkipLast].contains(image.alphaInfo)
         let output = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(output, (alpha ? UTType.png : .jpeg).identifier as CFString, 1, nil) else { throw CocoaError(.fileWriteUnknown) }
         CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 0.88] as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
         let bytes = output as Data
+        return .init(bytes: bytes, ext: alpha ? "png" : "jpg", width: UInt32(image.width), height: UInt32(image.height))
+    }
+    func makeCover(_ data: Data) throws -> BookCoverAsset { try stageCover(normalizedCover(data)) }
+    /// Normalize before deciding whether an import needs a new asset. Reimporting
+    /// a PNG encoded to JPEG must compare the deterministic saved representation.
+    func importedCover(_ data: Data, reusing assets: [BookCoverAsset]) async throws -> BookCoverAsset {
+        let normalized = try normalizedCover(data)
+        for asset in assets {
+            let bytes: Data?
+            if FileManager.default.fileExists(atPath: coverDraftURL(asset).path) { bytes = try Data(contentsOf: coverDraftURL(asset)) }
+            else { bytes = try? await coverBytes(asset) }
+            if let bytes, bytes == normalized.bytes || sameCoverPixels(bytes, normalized.bytes) { return asset }
+        }
+        return try stageCover(normalized)
+    }
+    private func stageCover(_ normalized: NormalizedCover) throws -> BookCoverAsset {
+        let bytes = normalized.bytes
         let cover = BookCoverAsset(id: UUID().uuidString, sha256: SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(),
-                                  extension: alpha ? "png" : "jpg", width: UInt32(image.width), height: UInt32(image.height))
+                                  extension: normalized.ext, width: normalized.width, height: normalized.height)
         let url = coverDraftURL(cover)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try bytes.write(to: url, options: .atomic)
         return cover
+    }
+    private func normalizedCoverImage(_ data: Data) throws -> CGImage {
+        guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                  kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 1600,
+                  kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else { throw CocoaError(.fileReadCorruptFile) }
+        return image
+    }
+    func sameCoverPixels(_ a: Data, _ b: Data) -> Bool {
+        if a == b { return true }
+        guard let first = try? normalizedCoverImage(a), let second = try? normalizedCoverImage(b),
+              first.width == second.width, first.height == second.height else { return false }
+        func pixels(_ image: CGImage) -> Data? {
+            let width = image.width, height = image.height
+            var data = Data(count: width * height * 4)
+            let made = data.withUnsafeMutableBytes { bytes -> Bool in
+                guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+                      let context = CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
+                context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height)); return true
+            }
+            return made ? data : nil
+        }
+        guard let left = pixels(first), let right = pixels(second) else { return false }
+        return left == right
     }
     /// Original user asset, verified independently of reconstructible thumbnails.
     func coverBytes(_ cover: BookCoverAsset) async throws -> Data {

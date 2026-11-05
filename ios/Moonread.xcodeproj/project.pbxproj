@@ -353,6 +353,13 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		3F6360D2E5B77985EFF5EF2E /* ReaderScreen+Controls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 266F15FF22C52D6798BCD4D3 /* ReaderScreen+Controls.swift */; };
 		ED43C6093F46B29167FA3107 /* ReaderSearchPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBFAB498FE6EBD8916C23861 /* ReaderSearchPage.swift */; };
 		34118FBC4E5AADEF0EE21434 /* ReaderChapterRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6446714E15EDF5DC84D08419 /* ReaderChapterRow.swift */; };
+		471EC7FB4D05BD00640CFA1D /* MetadataExchange.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB3912F88E0505A233C40FF6; };
+		7FFFB76F33327913F37A7D68 /* MetadataExchangeModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2359B9413943919B9286CDF7; };
+		4C40326EFE5BB71FA030A863 /* MetadataExchangeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 201974DC4BBF9AC197832880; };
+		CDF00E04D1ED44A69B16733E /* MetadataImportView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B921D33133257F57CF747E59; };
+		2A9B96701CC7CDCCC25D0622 /* MetadataTasksSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE54835FF23B76DF33D8DB39; };
+		89E96FFFF6571AEF936D682A = {isa = PBXBuildFile; fileRef = ED137C59B129523670772A6F; };
+		D84AF1EE58BF3D4813B23CFA = {isa = PBXBuildFile; fileRef = 26AA2454BCE4D9C649AE5576; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -716,6 +723,13 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		266F15FF22C52D6798BCD4D3 /* ReaderScreen+Controls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderScreen+Controls.swift"; sourceTree = "<group>"; };
 		BBFAB498FE6EBD8916C23861 /* ReaderSearchPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSearchPage.swift; sourceTree = "<group>"; };
 		6446714E15EDF5DC84D08419 /* ReaderChapterRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderChapterRow.swift; sourceTree = "<group>"; };
+		BB3912F88E0505A233C40FF6 /* MetadataExchange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExchange.swift; sourceTree = "<group>"; };
+		2359B9413943919B9286CDF7 /* MetadataExchangeModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExchangeModel.swift; sourceTree = "<group>"; };
+		201974DC4BBF9AC197832880 /* MetadataExchangeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExchangeService.swift; sourceTree = "<group>"; };
+		B921D33133257F57CF747E59 /* MetadataImportView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataImportView.swift; sourceTree = "<group>"; };
+		DE54835FF23B76DF33D8DB39 /* MetadataTasksSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataTasksSection.swift; sourceTree = "<group>"; };
+		ED137C59B129523670772A6F = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExchangeTests.swift; sourceTree = "<group>"; };
+		26AA2454BCE4D9C649AE5576 = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = MetadataExchange.xcstrings; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -955,6 +969,7 @@ D35000000000000000000001,
 			children = (
 				B14000000000000000000002 /* BookInformation.swift */,
 				B14000000000000000000001 /* BookMetadata.swift */,
+				D02176A5E81A8C8BDAC8782F /* MetadataExchange */,
 			);
 			path = Books;
 			sourceTree = "<group>";
@@ -1506,6 +1521,7 @@ D35000000000000000000001,
 				8B7347C8B711202E4F6D8DF4 /* CloudAccountTests.swift */,
 				3E3F5C90A0A8FB0A54303016 /* CloudFileHandoffTests.swift */,
 				35D2425416C9B7E3AC350B0F /* CloudSchemaPreparationTests.swift */,
+				ED137C59B129523670772A6F /* MetadataExchangeTests.swift */,
 				D50620000000000000000006 /* DataManagementTests.swift */,
 				92A0440947A91EDD1FD0BB84 /* RecentReadingRestorationTests.swift */,
 				B52B2668125D1619DF27BF6A /* SourceDecodingTests.swift */,
@@ -1686,6 +1702,14 @@ D35000000000000000000001,
             path = Search;
             sourceTree = "<group>";
         };
+		D02176A5E81A8C8BDAC8782F /* MetadataExchange */ = {isa = PBXGroup; children = (
+			26AA2454BCE4D9C649AE5576,
+			BB3912F88E0505A233C40FF6 /* MetadataExchange.swift */,
+			2359B9413943919B9286CDF7 /* MetadataExchangeModel.swift */,
+			201974DC4BBF9AC197832880 /* MetadataExchangeService.swift */,
+			B921D33133257F57CF747E59 /* MetadataImportView.swift */,
+			DE54835FF23B76DF33D8DB39 /* MetadataTasksSection.swift */,
+		); path = MetadataExchange; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -1816,6 +1840,7 @@ D35000000000000000000001,
                 2A49E75FB62D455EA40547D4 /* WidgetDefaultAppearance.json */,
                 005AC664DBAF46D4BDDD504A /* AppShortcuts.xcstrings */,
                 D720FF62FEF54991885AE8D3 /* SystemReading.xcstrings in Resources */,
+                D84AF1EE58BF3D4813B23CFA /* MetadataExchange.xcstrings in Resources */,
                 D50610000000000000000005 /* DataManagement.xcstrings in Resources */,
                 B39A10000000000000000002 /* ShelfRecovery.xcstrings in Resources */,
                 F14900000000000000000003 /* FullIndex.xcstrings in Resources */,
@@ -1884,6 +1909,11 @@ E51000000000000000000009,D41000000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				471EC7FB4D05BD00640CFA1D /* MetadataExchange.swift in Sources */,
+				7FFFB76F33327913F37A7D68 /* MetadataExchangeModel.swift in Sources */,
+				4C40326EFE5BB71FA030A863 /* MetadataExchangeService.swift in Sources */,
+				CDF00E04D1ED44A69B16733E /* MetadataImportView.swift in Sources */,
+				2A9B96701CC7CDCCC25D0622 /* MetadataTasksSection.swift in Sources */,
 				34118FBC4E5AADEF0EE21434 /* ReaderChapterRow.swift in Sources */,
 				ED43C6093F46B29167FA3107 /* ReaderSearchPage.swift in Sources */,
 				3F6360D2E5B77985EFF5EF2E /* ReaderScreen+Controls.swift in Sources */,
@@ -2102,6 +2132,7 @@ F01900000000000000000001,
 				57A2D772529695F1AE2064AC /* ReaderSessionApplicationStateTests.swift in Sources */,
 				50D07A08D70F5E06F833C840 /* ReaderSessionSelectionTests.swift in Sources */,
                 D50610000000000000000007 /* CacheManagementTests.swift in Sources */,
+                89E96FFFF6571AEF936D682A /* MetadataExchangeTests.swift in Sources */,
                 D50610000000000000000006 /* DataManagementTests.swift in Sources */,
 				6FE466A10D361A647F688D3A /* SourceDecodingTests.swift in Sources */,
 				660000000000000000000004,

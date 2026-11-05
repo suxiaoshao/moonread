@@ -65,6 +65,9 @@ struct LibraryFolderView: View {
                                 Label("全部小说", systemImage: "books.vertical")
                             }
                         }
+                        NavigationLink { MetadataExportView(service: model.service, shelfID: location.shelfID) } label: {
+                            Label { Text("导出本书架信息", tableName: "MetadataExchange") } icon: { Image(systemName: "doc.text") }
+                        }
                         Button("在此书架中搜索", systemImage: "magnifyingglass") { model.path.append(.search(AppSearchScope(seeds: [.shelf(location.shelfID)]))) }
                             .accessibilityIdentifier("searchShelf")
                     } label: { Label("文件夹操作", systemImage: "ellipsis") }.menuOrder(.fixed).toolbarGlyph().accessibilityIdentifier("folderActions").disabled(fileActionsDisabled)

@@ -169,10 +169,11 @@ struct DataManagementView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                MetadataTasksSection(service: model.service)
                 VStack(alignment: .leading, spacing: 16) {
-                    Label { Text("备份", tableName: "DataManagement") } icon: { Image(systemName: "externaldrive") }.font(.headline)
+                    Label { Text("阅读数据备份", tableName: "MetadataExchange") } icon: { Image(systemName: "externaldrive") }.font(.headline)
                     VStack(alignment: .leading, spacing: 16) {
-                        Text("备份包含全部阅读数据和配色，不包含小说原文、AI 或授权。", tableName: "DataManagement").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                        Text("备份进度、书签、笔记等阅读数据，与小说信息分开。", tableName: "MetadataExchange").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                         ViewThatFits(in: .horizontal) {
                             HStack { backupButtons }
                             VStack { backupButtons }
@@ -180,7 +181,7 @@ struct DataManagementView: View {
                         if let message = model.message { Text(verbatim: message).font(.footnote).accessibilityIdentifier("readingDataResult") }
                         if let error = model.error { Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)).accessibilityIdentifier("readingDataError") }
                     }.frame(maxWidth: .infinity, alignment: .leading)
-                }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
+                }
                 if !model.inventory.diagnostics.isEmpty {
                     HStack(alignment: .top) {
                         Image(systemName: "exclamationmark.circle")
@@ -190,17 +191,30 @@ struct DataManagementView: View {
                             .accessibilityIdentifier("readingDataIssues")
                     }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
                 }
-                VStack {
-                    VStack(spacing: 16) {
-                        NavigationLink { ReadingDataListView(model: model) } label: {
-                            HStack { Label { Text("阅读数据", tableName: "DataManagement") } icon: { Image(systemName: "books.vertical") }; Spacer(); Text("\(model.inventory.items.count) 本", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.secondary)); Image(systemName: "chevron.right").font(.footnote) }
-                        }.accessibilityIdentifier("readingDataList")
-                        ThemedDivider()
-                        NavigationLink { ReadingDataCacheView(model: model) } label: {
-                            HStack { Label { Text("可重建缓存", tableName: "DataManagement") } icon: { Image(systemName: "internaldrive") }; Spacer(); Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: model.cache.bytes), countStyle: .file)).foregroundStyle(Color(uiColor: theme.secondary)); Image(systemName: "chevron.right").font(.footnote) }
-                        }.accessibilityIdentifier("readingDataCaches")
-                    }.padding(.vertical, 8)
-                }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("阅读数据", tableName: "DataManagement").font(.headline)
+                    NavigationLink { ReadingDataListView(model: model) } label: {
+                        HStack {
+                            Label { Text("查看与删除", tableName: "MetadataExchange") } icon: { Image(systemName: "books.vertical") }
+                            Spacer()
+                            Text("\(model.inventory.items.count) 本", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.secondary))
+                            Image(systemName: "chevron.right").font(.footnote)
+                        }.padding().background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12))
+                    }.accessibilityIdentifier("readingDataList")
+                }
+                VStack(alignment: .leading, spacing: 16) {
+                    Label { Text("可重建缓存", tableName: "DataManagement") } icon: { Image(systemName: "internaldrive") }.font(.headline)
+                    Text("清理缓存不删除小说文件与阅读数据。", tableName: "MetadataExchange")
+                        .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                    NavigationLink { ReadingDataCacheView(model: model) } label: {
+                        HStack {
+                            Text("清理缓存", tableName: "DataManagement")
+                            Spacer()
+                            Text(ByteCountFormatter.string(fromByteCount: Int64(clamping: model.cache.bytes), countStyle: .file)).foregroundStyle(Color(uiColor: theme.secondary))
+                            Image(systemName: "chevron.right").font(.footnote)
+                        }
+                    }.accessibilityIdentifier("readingDataCaches")
+                }
                 Button(role: .destructive) { Task { await model.requestDeleteAll() } } label: {
                     Text("删除全部阅读数据", tableName: "DataManagement").frame(maxWidth: .infinity, minHeight: 44)
                 }.buttonStyle(.bordered).tint(Color(uiColor: theme.destructive)).accessibilityIdentifier("deleteAllReadingData")
@@ -234,10 +248,10 @@ struct DataManagementView: View {
     }
     @ViewBuilder private var backupButtons: some View {
         Button { Task { if let url = await model.chooseBackup() { await model.prepareImport(url) } else { picker = true } } } label: {
-            Label { Text("导入备份", tableName: "DataManagement") } icon: { Image(systemName: "square.and.arrow.down") }.frame(maxWidth: .infinity)
+            Label { Text("导入", tableName: "MetadataExchange") } icon: { Image(systemName: "square.and.arrow.down") }.frame(maxWidth: .infinity)
         }.buttonStyle(.bordered).controlSize(.large).accessibilityIdentifier("importReadingBackup")
         Button { exportConfirmation = true } label: {
-            Label { Text("导出全部", tableName: "DataManagement") } icon: { Image(systemName: "square.and.arrow.up") }.frame(maxWidth: .infinity)
+            Label { Text("导出", tableName: "MetadataExchange") } icon: { Image(systemName: "square.and.arrow.up") }.frame(maxWidth: .infinity)
         }.buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).accessibilityIdentifier("exportAllReadingData")
         #if DEBUG
         .accessibilityValue(model.exported == nil ? "not-ready" : "backup-ready")

@@ -1,20 +1,16 @@
 //! Portable transport only. SwiftData remains the owner of payload schemas and merge rules.
-use crate::{ReaderError, Result, parse_sha256, validate_relative_path};
+use super::archive_limits::*;
+use crate::{ReaderError, Result, parse_sha256};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
     fs::{self, File, OpenOptions},
-    io::{Read, Seek, SeekFrom, Write},
+    io::{Read, Write},
     path::Path,
 };
-use zip::{ZipArchive, ZipWriter, write::SimpleFileOptions};
+use zip::{ZipWriter, write::SimpleFileOptions};
 
-const MAX_ARCHIVE: u64 = 512 * 1024 * 1024;
-const MAX_TOTAL: u64 = 2 * 1024 * 1024 * 1024;
-const MAX_MEMBERS: usize = 100_000;
-const MAX_RECORD: u64 = 16 * 1024 * 1024;
-const MAX_ASSET: u64 = 32 * 1024 * 1024;
 const RECORDS: [&str; 5] = [
     "records/values.jsonl",
     "records/positions.jsonl",
@@ -31,15 +27,9 @@ fn zipped<T>(value: zip::result::ZipResult<T>) -> Result<T> {
     value.map_err(|_| invalid("备份 ZIP 无效、不完整或使用不支持的压缩方式"))
 }
 fn safe_name(name: &str) -> Result<()> {
-    validate_relative_path(name.into(), false).map_err(|_| invalid("备份包含不安全路径"))?;
-    // The portable member namespace is ASCII; this also prevents Unicode-normalization collisions.
-    if !name.is_ascii()
-        || name.contains(':')
-        || name.contains('\\')
-        || name
-            .split('/')
-            .any(|s| s.is_empty() || s == "." || s == "..")
-    {
+    safe_relative_member(name)?;
+    // Backup namespaces are ASCII; exchange covers may use Unicode names.
+    if !name.is_ascii() {
         return Err(invalid("备份包含不安全路径"));
     }
     if name == "manifest.json" || RECORDS.contains(&name) || name.starts_with("extensions/") {
@@ -62,63 +52,6 @@ fn limit(name: &str) -> u64 {
     } else {
         MAX_TOTAL
     }
-}
-
-// Bound central-directory allocation before the ZIP library parses it. Format
-// validity/header consistency is still checked by zip; this is only a budget gate.
-fn preflight_directory(file: &mut File) -> Result<()> {
-    let length = file.metadata()?.len();
-    if length > MAX_ARCHIVE {
-        return Err(invalid("备份超过压缩包大小上限"));
-    }
-    let count = length.min(65557);
-    file.seek(SeekFrom::End(-(count as i64)))?;
-    let mut tail = vec![0; count as usize];
-    file.read_exact(&mut tail)?;
-    let at = (0..tail.len().saturating_sub(21))
-        .rev()
-        .find(|&i| {
-            tail[i..].starts_with(b"PK\x05\x06")
-                && i + 22 <= tail.len()
-                && i + 22 + u16::from_le_bytes([tail[i + 20], tail[i + 21]]) as usize == tail.len()
-        })
-        .ok_or_else(|| invalid("备份 ZIP 无效、不完整或使用不支持的压缩方式"))?;
-    let u16_at = |i| u16::from_le_bytes([tail[i], tail[i + 1]]);
-    let u32_at = |i| u32::from_le_bytes(tail[i..i + 4].try_into().unwrap());
-    if u16_at(at + 4) != 0 || u16_at(at + 6) != 0 {
-        return Err(invalid("备份 ZIP 无效、不完整或使用不支持的压缩方式"));
-    }
-    let mut members = u16_at(at + 10) as u64;
-    let mut bytes = u32_at(at + 12) as u64;
-    if members == u16::MAX as u64 || bytes == u32::MAX as u64 {
-        let end = length - count + at as u64;
-        if end < 20 {
-            return Err(invalid("备份清单无效"));
-        }
-        file.seek(SeekFrom::Start(end - 20))?;
-        let mut locator = [0; 20];
-        file.read_exact(&mut locator)?;
-        if &locator[..4] != b"PK\x06\x07" {
-            return Err(invalid("备份清单无效"));
-        }
-        let offset = u64::from_le_bytes(locator[8..16].try_into().unwrap());
-        if offset > length.saturating_sub(56) {
-            return Err(invalid("备份清单无效"));
-        }
-        file.seek(SeekFrom::Start(offset))?;
-        let mut header = [0; 56];
-        file.read_exact(&mut header)?;
-        if &header[..4] != b"PK\x06\x06" {
-            return Err(invalid("备份清单无效"));
-        }
-        members = u64::from_le_bytes(header[32..40].try_into().unwrap());
-        bytes = u64::from_le_bytes(header[40..48].try_into().unwrap());
-    }
-    if members > MAX_MEMBERS as u64 || bytes > 64 * 1024 * 1024 {
-        return Err(invalid("备份超过成员数量上限"));
-    }
-    file.seek(SeekFrom::Start(0))?;
-    Ok(())
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, uniffi::Record)]
@@ -244,13 +177,7 @@ pub fn backup_member(path: String, file_path: String) -> Result<BackupMember> {
 }
 #[uniffi::export]
 pub fn inspect_backup(archive_path: String, staging_root: String) -> Result<BackupArchiveInfo> {
-    let mut file = File::open(archive_path)?;
-    preflight_directory(&mut file)?;
-    let mut zip = zipped(ZipArchive::new(file))?;
-    if zip.len() > MAX_MEMBERS {
-        return Err(invalid("备份超过成员数量上限"));
-    }
-    zipped(zip.validate_header_consistency())?; // Reject duplicate names and overlapping/header-mismatched entries.
+    let mut zip = open_archive(Path::new(&archive_path), false, limit)?;
     let text = {
         let mut entry = zipped(zip.by_name("manifest.json"))?;
         if entry.size() > MAX_RECORD {
@@ -265,7 +192,6 @@ pub fn inspect_backup(archive_path: String, staging_root: String) -> Result<Back
         return Err(invalid("备份包含未列成员"));
     }
     // Preflight every member before making any directory from archive input.
-    let mut names = HashSet::new();
     let members: HashMap<_, _> = value
         .members
         .iter()
@@ -275,13 +201,6 @@ pub fn inspect_backup(archive_path: String, staging_root: String) -> Result<Back
         let entry = zipped(zip.by_index(i))?;
         let name = zipped(entry.name())?;
         safe_name(&name)?;
-        if !names.insert(name.to_ascii_lowercase())
-            || !entry.is_file()
-            || entry.is_symlink()
-            || entry.encrypted()
-        {
-            return Err(invalid("备份包含链接、重复或非普通文件"));
-        }
         if entry.size() > limit(&name) {
             return Err(invalid("备份成员超过大小上限"));
         }

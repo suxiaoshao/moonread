@@ -21,6 +21,8 @@ email = "suxiaoshao@gmail.com"
 holder = "suxiaoshao"
 
 [translations]
+metadata = "小说信息格式"
+metadata_desc = "导出、编辑和导入小说信息；正文身份、Schema 与 agent Skill。"
 privacy = "隐私政策"
 support = "帮助与支持"
 switch = "English"
@@ -30,6 +32,8 @@ privacy_desc = "月读处理哪些数据、发给谁，以及你能怎么控制�
 support_desc = "导入与阅读、iCloud、AI、打赏，以及如何反馈问题。"
 
 [languages.en.translations]
+metadata = "Metadata format"
+metadata_desc = "Export, edit and import book metadata with stable text identities, a schema and an agent skill."
 privacy = "Privacy"
 support = "Support"
 switch = "中文"

@@ -32,3 +32,7 @@ Tips in Settings are optional, repeatable purchases that unlock no content or fe
 Email the app version, iOS version, device model, steps, expected result, and actual result. Redact private book titles, passages, conversations, and account information in screenshots. Do not send entire books, databases, or system logs unless a specific, limited diagnostic request has been agreed. We do not ask for passwords, verification codes, payment details, or keys. See the [Privacy Policy](@/privacy.en.md) or contact suxiaoshao@gmail.com for privacy questions.
 
 Touch and hold an AI reply and choose “Send Feedback About This Reply” to open an email draft with the selected reply, app version, provider, and model. Review and edit it before sending. If no mail account is configured, copy the contents into your preferred email app.
+
+## Organizing book information
+
+Export book metadata from Data management, edit it, then preview an import. This is separate from reading-data backups and contains no novel text. See [Book metadata exchange](@/metadata-format.en.md) for the format, safety boundaries and agent skill.

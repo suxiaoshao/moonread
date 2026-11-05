@@ -1,4 +1,4 @@
-mod maintenance;
+pub(crate) mod maintenance;
 pub(crate) mod migrations;
 pub(crate) mod rows;
 pub(crate) mod validation;

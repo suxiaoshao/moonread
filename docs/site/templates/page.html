@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ page.title }} · {% if page.lang == "zh" %}月读{% else %}Moonread{% endif %}{% endblock %}
-{% block description %}{% if page.extra.kind == "privacy" %}{{ trans(key="privacy_desc", lang=page.lang) }}{% else %}{{ trans(key="support_desc", lang=page.lang) }}{% endif %}{% endblock %}
+{% block description %}{% if page.extra.kind == "privacy" %}{{ trans(key="privacy_desc", lang=page.lang) }}{% elif page.extra.kind == "metadata" %}{{ trans(key="metadata_desc", lang=page.lang) }}{% else %}{{ trans(key="support_desc", lang=page.lang) }}{% endif %}{% endblock %}
 {% block main_class %}doc-layout{% endblock main_class %}
 {% block sky %}
 <div class="wrap doc-head">

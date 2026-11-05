@@ -2,6 +2,8 @@
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ReaderError {
     #[error("{message}")]
+    MetadataExchange { message: String },
+    #[error("{message}")]
     Backup { message: String },
     #[error("文件访问失败：{message}")]
     Io { message: String },

@@ -41,6 +41,8 @@ final class BookCoverReaderIntegrationTests: ReaderIntegrationFixture {
     try await service.saveMetadata(base: base, edited: edited)
     let saved = try await service.details(bookID: book.id).metadata
     XCTAssertEqual(saved.cover, cover)
+    let repeatedCover = try await service.importedCover(data, reusing: [cover])
+    XCTAssertEqual(repeatedCover, cover, "Equivalent imported pixels must keep the existing asset ID")
     let persistedCover = try await service.coverImage(cover, pixels: 321)
     XCTAssertNotNil(persistedCover)
     let cancelled = try await service.makeCover(data)
