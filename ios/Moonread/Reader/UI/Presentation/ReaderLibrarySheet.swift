@@ -123,6 +123,9 @@ struct ReaderLibraryContent: View {
                 var complete = !session.incomplete
                 await session.activity.flush()
                 await model.prepare(bookID: id, currentChapter: session.chapter?.startUtf8 ?? 0, library: true, preservingPosition: true)
+                if !Task.isCancelled, model.tab == .chapters {
+                    model.showChapter(session.chapter?.startUtf8 ?? 0)
+                }
                 // While this sheet is open, publish newly parsed headings/counts
                 // without scrolling the reader's current directory viewport.
                 while !Task.isCancelled {
@@ -138,7 +141,8 @@ struct ReaderLibraryContent: View {
             .onDisappear { session.notesChanged() }
             .onChange(of: model.tab) { _, value in
                 chapterFilterFocused = false
-                if value != .chapters { Task { await model.loadNotes(reset: true) } }
+                if value == .chapters { model.showChapter(session.chapter?.startUtf8 ?? 0) }
+                else { Task { await model.loadNotes(reset: true) } }
             }
             .onChange(of: session.marksRevision) { _, _ in
                 Task { await model.refreshVisibleMarks() }
