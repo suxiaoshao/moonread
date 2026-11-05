@@ -58,6 +58,32 @@ final class LibraryQueryRulesTests: XCTestCase {
         XCTAssertEqual(LibraryQueryRules.filterSuggestions(["月港", "星灯"], query: "月"), ["月港"])
         XCTAssertTrue(LibraryQueryRules.selectionMatches("Moonread", query: "moon"))
     }
+    func testLibraryPinyinSearchSharesSystemSpellingAndKeepsQueryBoundaries() {
+        let author = BookMetadata(sha: String(repeating: "a", count: 64), author: "林清", synopsis: "", tags: ["原创"], cover: nil, status: .reading)
+        let incidental = BookMetadata(sha: String(repeating: "b", count: 64), author: "", synopsis: "林清", tags: ["林清"], cover: nil, status: .unread)
+        let rows = [candidate("林清集.txt", ordinal: 3), candidate("读林清记.txt", ordinal: 2),
+                    candidate("月光来信.txt", ordinal: 1, metadata: author, recent: 10),
+                    candidate("春日.txt", ordinal: 0, metadata: incidental),
+                    candidate("林清", ordinal: 4, folder: true), candidate("Clean Book.txt", ordinal: 5)]
+        func names(_ spec: LibraryQueryRules.SearchSpec) -> [String] { LibraryQueryRules.filterAndRank(rows, spec: spec).map(\.name) }
+        let matches = ["林清集.txt", "读林清记.txt", "月光来信.txt"]
+        XCTAssertEqual(names(.init(profile: .library, query: "linqing")), matches)
+        XCTAssertEqual(names(.init(profile: .library, query: " LQ ")), matches)
+        XCTAssertEqual(names(.init(profile: .library, query: "linqing", tags: ["原创"])), ["月光来信.txt"])
+        XCTAssertEqual(names(.init(profile: .library, query: "lq", configuration: .init(sorts: [.init(field: .recent, descending: true)]))).first, "月光来信.txt")
+        XCTAssertTrue(names(.init(profile: .library, author: "linqing")).isEmpty, "Explicit author selection remains exact")
+        XCTAssertTrue(names(.init(profile: .library, query: "cb")).isEmpty, "Do not add Latin-word initials")
+        XCTAssertTrue(names(.init(profile: .library, query: "lqjtxt")).isEmpty, "The extension is not part of title spelling")
+        XCTAssertTrue(names(.init(profile: .ai, query: "linqing")).isEmpty, "The AI matching profile is unchanged")
+        XCTAssertEqual(names(.init(profile: .library, query: "林")), ["林清集.txt", "读林清记.txt", "月光来信.txt", "林清"])
+        XCTAssertEqual(LibraryQueryRules.pinyinSpellings("绿野"), ["lvye", "ly"])
+        let title = "重山来信", spellings = LibraryQueryRules.pinyinSpellings(title)
+        let systemTerms = LibraryQueryRules.systemMetadataTerms(title: title, author: "林清", tags: [])
+        for spelling in spellings {
+            XCTAssertTrue(systemTerms.contains(spelling))
+            XCTAssertEqual(LibraryQueryRules.filterAndRank([candidate(title + ".txt", ordinal: 0)], spec: .init(profile: .library, query: spelling)).count, 1, "Use the same system-default polyphonic reading")
+        }
+    }
     func testBookSearchExpressionsKeepUnknownDistinctFromAbsenceAndCompose() {
         let known = candidate("已索引.txt", ordinal: 0, metadata: .init(sha: String(repeating: "a", count: 64), author: "林澄", synopsis: "", tags: [], cover: nil, status: .unread))
         let unknown = candidate("未索引.txt", ordinal: 1)

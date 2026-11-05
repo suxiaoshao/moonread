@@ -5,6 +5,18 @@ import NaturalLanguage
 /// Shares the same named metadata matching owner as in-App library queries.
 /// It can run in an extension using only the already-produced catalogue.
 enum LibraryQueryRules {
+    /// The system's default Mandarin reading, shared by library and system search.
+    /// No dictionary or polyphonic alternatives; keep conventional keyboard lü → lv.
+    static func pinyinSpellings(_ text: String) -> [String] {
+        let latin = NSMutableString(string: text)
+        CFStringTransform(latin, nil, kCFStringTransformMandarinLatin, false)
+        latin.setString((latin as String).decomposedStringWithCanonicalMapping)
+        latin.replaceOccurrences(of: "u\u{0308}", with: "v", options: .literal, range: NSRange(location: 0, length: latin.length))
+        CFStringTransform(latin, nil, kCFStringTransformStripDiacritics, false)
+        let syllables = (latin as String).lowercased().split { !$0.isLetter && !$0.isNumber }
+        return [syllables.joined(), String(syllables.compactMap(\.first))].filter { $0.count > 1 }
+    }
+
     /// Platform search vocabulary only; no novel text or AI matching profile.
     /// Entity selection and Spotlight share metadata vocabulary. The system's
     /// own Spotlight matching policy is independent of our EntityStringQuery.
@@ -20,16 +32,7 @@ enum LibraryQueryRules {
                 if word.count > 1, word.contains(where: { $0.isLetter || $0.isNumber }) { words.append(word) }
                 return true
             }
-            let latin = NSMutableString(string: text)
-            CFStringTransform(latin, nil, kCFStringTransformMandarinLatin, false)
-            // Keep the conventional keyboard spelling lü → lv before removing tones.
-            latin.setString((latin as String).decomposedStringWithCanonicalMapping)
-            latin.replaceOccurrences(of: "u\u{0308}", with: "v", options: .literal, range: NSRange(location: 0, length: latin.length))
-            CFStringTransform(latin, nil, kCFStringTransformStripDiacritics, false)
-            let syllables = (latin as String).lowercased().split { !$0.isLetter && !$0.isNumber }
-            for spelling in [syllables.joined(), String(syllables.compactMap(\.first))] where spelling.count > 1 {
-                terms.append(spelling)
-            }
+            terms += pinyinSpellings(text)
         }
         // Keep full names and their pinyin ahead of potentially long token/tag
         // lists, so the bound cannot discard the Entity query's pinyin keys.
