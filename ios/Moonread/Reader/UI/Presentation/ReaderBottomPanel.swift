@@ -37,7 +37,6 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
                     // backgrounds may draw beyond the safe-area layout proposal.
                     accessoryContent(in: geometry)
                         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .bottom)
-                        .clipped()
                         .transition(MotionTokens.accessoryContent(reduced: reduceMotion))
                 }
             }
@@ -130,6 +129,7 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
             }
             .opacity(1 - fraction).allowsHitTesting(fraction < 0.2)
             .accessibilityHidden(fraction >= 0.2)
+            .clipped()
         }
     }
 

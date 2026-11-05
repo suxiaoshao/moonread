@@ -197,7 +197,6 @@ final class ReaderToolsModel {
         if collapsedVolumes.contains(offset) { collapsedVolumes.remove(offset) }
         else { collapsedVolumes.insert(offset) }
         updateChapterRows()
-        jumpToChapter(offset)
     }
 
     private func updateChapterRows() {

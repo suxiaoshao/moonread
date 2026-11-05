@@ -443,7 +443,7 @@ import XCTest
     let original = anchor()
     controls()
     app.buttons["showSearch"].tap()
-    let query = ready(app.textFields["bookSearchQuery"])
+    let query = ready(app.searchFields.firstMatch)
     query.tap()
     query.typeText("星灯")
     ready(element("searchStatus"))
@@ -458,7 +458,7 @@ import XCTest
     waitUntil { self.anchor() == original }
     controls()
     app.buttons["showSearch"].tap()
-    let again = ready(app.textFields["bookSearchQuery"])
+    let again = ready(app.searchFields.firstMatch)
     if (again.value as? String) != "星灯" {
       again.tap()
       again.typeText("星灯")

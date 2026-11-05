@@ -351,6 +351,8 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		1447BC60327069310DE0A4CD /* LibraryModel+FileWork.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A6964053824537B134D3E6C /* LibraryModel+FileWork.swift */; };
 		3A17B5EDF92E15B897D0C225 /* ReaderScreen+Content.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A6DCFDAFFDC5FBC8A30EEBE /* ReaderScreen+Content.swift */; };
 		3F6360D2E5B77985EFF5EF2E /* ReaderScreen+Controls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 266F15FF22C52D6798BCD4D3 /* ReaderScreen+Controls.swift */; };
+		ED43C6093F46B29167FA3107 /* ReaderSearchPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBFAB498FE6EBD8916C23861 /* ReaderSearchPage.swift */; };
+		34118FBC4E5AADEF0EE21434 /* ReaderChapterRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6446714E15EDF5DC84D08419 /* ReaderChapterRow.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -712,6 +714,8 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		8A6964053824537B134D3E6C /* LibraryModel+FileWork.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryModel+FileWork.swift"; sourceTree = "<group>"; };
 		4A6DCFDAFFDC5FBC8A30EEBE /* ReaderScreen+Content.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderScreen+Content.swift"; sourceTree = "<group>"; };
 		266F15FF22C52D6798BCD4D3 /* ReaderScreen+Controls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderScreen+Controls.swift"; sourceTree = "<group>"; };
+		BBFAB498FE6EBD8916C23861 /* ReaderSearchPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSearchPage.swift; sourceTree = "<group>"; };
+		6446714E15EDF5DC84D08419 /* ReaderChapterRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderChapterRow.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -922,7 +926,7 @@ D35000000000000000000001,
 			isa = PBXGroup;
 			children = (
 				3F488BF9A9B7B97FB3B1CAD0 /* ReaderScreen */,
-				5DFDEA98F6244BFCB5585222 /* ReaderSearchContent.swift */,
+				7AA9CD4AFAD099E6F26CBA8B /* Search */,
 				48CED65B0EAF17799A024E37 /* Presentation */,
 				DB8C8C172290509EDEBFEBB6 /* Notes */,
 				D8A9053AADFD64D37A2701E0 /* Chapters */,
@@ -1606,6 +1610,7 @@ D35000000000000000000001,
 		D8A9053AADFD64D37A2701E0 /* Chapters */ = {
 			isa = PBXGroup;
 			children = (
+				6446714E15EDF5DC84D08419 /* ReaderChapterRow.swift */,
 				2DD24446A106474B8CE31B7C /* ReaderChapterList.swift */,
 				AD2000000000000000000006 /* ReaderChapters.swift */,
 			);
@@ -1672,6 +1677,15 @@ D35000000000000000000001,
 			path = "Tools";
 			sourceTree = "<group>";
 		};
+		7AA9CD4AFAD099E6F26CBA8B /* Search */ = {
+            isa = PBXGroup;
+            children = (
+                5DFDEA98F6244BFCB5585222 /* ReaderSearchContent.swift */,
+                BBFAB498FE6EBD8916C23861 /* ReaderSearchPage.swift */,
+            );
+            path = Search;
+            sourceTree = "<group>";
+        };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -1870,6 +1884,8 @@ E51000000000000000000009,D41000000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				34118FBC4E5AADEF0EE21434 /* ReaderChapterRow.swift in Sources */,
+				ED43C6093F46B29167FA3107 /* ReaderSearchPage.swift in Sources */,
 				3F6360D2E5B77985EFF5EF2E /* ReaderScreen+Controls.swift in Sources */,
 				3A17B5EDF92E15B897D0C225 /* ReaderScreen+Content.swift in Sources */,
 				1447BC60327069310DE0A4CD /* LibraryModel+FileWork.swift in Sources */,
