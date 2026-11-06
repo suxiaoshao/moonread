@@ -47,6 +47,7 @@
 <div class="story-copy"><h2 class="section-title">{% if zh %}自己的书，自己整理。{% else %}Your books, your way.{% endif %}</h2>
 <p>{% if zh %}文件夹就是书架，用标签与阅读状态找书。留下书签与批注，导出单本笔记，也能备份全部阅读数据。{% else %}Organize your folders, then find books by tags and reading status. Keep bookmarks and notes, export a book’s notes, or back up all reading data.{% endif %}</p>
 <p class="story-note">{% if zh %}阅读统计记录每段时光。阅读数据备份不包含 TXT 原文；请另行保存小说文件。{% else %}Reading statistics keep track of your time. A reading-data backup does not include TXT files; keep your books separately.{% endif %}</p>
+<p class="story-note"><a href="{{ get_url(path='@/metadata-format.md', lang=section.lang) }}">{% if zh %}在 App 外整理作者、标签与封面：了解小说信息导入导出 →{% else %}Edit authors, tags and covers outside the app: how metadata import and export work →{% endif %}</a></p>
 <div class="scene-choice" hidden role="group" aria-label="{% if zh %}书籍与记录画面{% else %}Books and records screenshots{% endif %}"><button type="button" data-scene="R05" aria-pressed="true">{% if zh %}书架{% else %}Library{% endif %}</button><button type="button" data-scene="R06" aria-pressed="false">{% if zh %}笔记{% else %}Notes{% endif %}</button><button type="button" data-scene="R07" aria-pressed="false">{% if zh %}统计{% else %}Statistics{% endif %}</button><button type="button" data-scene="R10" aria-pressed="false">{% if zh %}备份{% else %}Backup{% endif %}</button></div></div>
 {{ <screenshot scene="R05" lang={section.lang} label={section.extra.library_alt} /> }}
 </section>

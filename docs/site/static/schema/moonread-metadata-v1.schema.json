@@ -94,12 +94,12 @@
           "type": "string",
           "pattern": "^[0-9a-f]{64}$",
           "readOnly": true,
-          "description": "App正文身份normalization-v1，直接从索引取得；唯一匹配键，agent原样保留，不重算或修改。"
+          "description": "正文身份normalization-v1，唯一匹配键。已有清单保留；新建可按公开算法从TXT计算，与月读书架索引匹配。"
         },
         "reference": {
           "type": "object",
           "readOnly": true,
-          "description": "仅供人和agent理解，导入完全忽略；不用于匹配或选择改名目标。",
+          "description": "仅供人和agent理解，导入完全忽略；直接生成可省略；files 中 shelf 可省略，不编造未知书架；不用于匹配或选择改名目标。",
           "properties": {
             "title": {
               "type": "string"
@@ -113,7 +113,6 @@
                 "type": "object",
                 "required": [
                   "title",
-                  "shelf",
                   "path"
                 ],
                 "properties": {
@@ -121,7 +120,8 @@
                     "type": "string"
                   },
                   "shelf": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "可选的已知书架名；未知时省略。导出通常包含，不是导入必需字段。"
                   },
                   "path": {
                     "type": "string"

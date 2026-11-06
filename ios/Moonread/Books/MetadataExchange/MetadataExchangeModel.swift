@@ -11,6 +11,7 @@ import SwiftUI
     var result: MetadataBatchResult?
     var loading = false
     var saving = false
+    var cancellationRequested = false
     var error: String?
     var completed = 0
     var total = 0
@@ -20,15 +21,18 @@ import SwiftUI
     init(service: AppDataService) { self.service = service }
     var books: [MetadataPreviewBook] { preview?.books ?? [] }
     var invalidSelection: Bool { books.contains { $0.selectionError != nil } }
-    var pending: [MetadataPreviewBook] { books.filter { !$0.changedFields.isEmpty } }
+    var pending: [MetadataPreviewBook] { books.filter { $0.disposition == .changes } }
+    var unchangedCount: Int { books.filter { $0.disposition == .unchanged }.count }
+    var unmatchedCount: Int { books.filter { $0.disposition == .unmatched }.count }
+    var skippedCount: Int { books.filter { $0.disposition == .skipped }.count }
     var visible: [MetadataPreviewBook] {
         books.filter { book in
             (query.isEmpty || LibraryQueryRules.selectionMatches(book.title, query: query)) &&
-            (filter == 0 || (filter == 1 ? !book.changedFields.isEmpty : book.changedFields.isEmpty))
+            (filter == 0 || (filter == 1 ? book.disposition == .changes : book.disposition != .changes))
         }
     }
     func load(_ url: URL) async {
-        loading = true; error = nil
+        loading = true; error = nil; preview = nil; result = nil; issues = []; query = ""; filter = 0
         defer { loading = false }
         do { preview = try await service.previewMetadata(url); issues = (preview?.diagnostics ?? []).map { Issue(value: $0) } }
         catch { self.error = ReaderMessages.error(error) }
@@ -50,8 +54,8 @@ import SwiftUI
         return String(localized: "保存 \(pending.count) 本资料，清空 \(clear) 个字段，移除 \(removed) 个标签，改名 \(rename) 个文件。已保存的资料不会因取消或后续失败撤回。", table: "MetadataExchange")
     }
     func save() async {
-        guard !saving, !invalidSelection, let preview else { return }
-        saving = true; completed = 0; total = pending.count; error = nil
+        guard !saving, !invalidSelection, !pending.isEmpty, let preview else { return }
+        saving = true; cancellationRequested = false; completed = 0; total = pending.count; error = nil
         let task = Task {
             self.result = await service.applyMetadata(preview) { completed, total in
                 await MainActor.run { self.completed = completed; self.total = total }
@@ -59,7 +63,7 @@ import SwiftUI
         }
         work = task; await task.value; work = nil; saving = false
     }
-    func cancel() { work?.cancel() }
+    func cancel() { guard work != nil else { return }; cancellationRequested = true; work?.cancel() }
     func reviewAgain() async {
         guard let session = preview?.session else { return }
         loading = true; error = nil

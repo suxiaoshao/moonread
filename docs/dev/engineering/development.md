@@ -64,10 +64,11 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 - Xcode 构建缓存只用两份：模拟器构建和测试统一 `-derivedDataPath build/DerivedData`，真机构建统一 `build/DeviceDerivedData`。不按任务另建缓存目录；任务的日志、截图等验证记录可以放在 `build/<任务名>/`，任务合并后删除。
 - 不使用 git worktree；在主目录切分支，共用 `target`、`build/DerivedData` 和 `build/DeviceDerivedData`。
 - Nix 默认路径为 `/nix/var/nix/profiles/default/bin/nix`；非标准安装可在本地 `LocalSigning.xcconfig` 覆盖 `MOONREAD_NIX`。
+- 开发环境以 `build/nix-dev-profile` 作为 GC root。运行 `nix gc` / `nix-collect-garbage` 前确认该 root 存在，否则开发环境会被回收，需要重新下载工具链。
 
 首次运行需要下载工具链和 Cargo 依赖，之后复用缓存。
 
-本机主模拟器仍使用 iOS 27.0 的 iPhone 18 Pro（`FFA6F448-E09C-4885-B59C-53C5E07185F5`）；当前 iOS 27.1 运行时仅支持 Duo，Duo 检查使用独立的 iPhone Duo（`6E42EBA5-DA26-4E2C-BF50-0CA9DC193893`），两个运行时均保留，CI 不变。
+本机主模拟器仍使用 iOS 27.0 的 iPhone 18 Pro（`FFA6F448-E09C-4885-B59C-53C5E07185F5`）；当前 iOS 27.1 运行时仅支持 Duo，Duo 检查使用独立的 iPhone Duo（`6E42EBA5-DA26-4E2C-BF50-0CA9DC193893`），两个运行时均保留，CI 不变。iPad 检查使用 iPad Pro 13 英寸（`0F4A5FC1-EA80-4A88-81C2-D1650CFCA791`）。只复用这三台，不按任务新建；需要干净状态时重装 App。同一时间只开一台，用完关机；模拟器是测试和截图机，不清理桌面小组件、系统语言或外观。
 
 ## 签名与安装
 

@@ -10,8 +10,14 @@ final class MetadataImportSession: @unchecked Sendable {
     deinit { for url in drafts { try? FileManager.default.removeItem(at: url) } }
 }
 
+/// Rust exposes JSON record_index as a zero-based array subscript; JSONL uses a 1-based source_line.
+nonisolated func metadataSourceDescription(sourceLine: UInt64?, recordIndex: UInt64?) -> String? {
+    if let sourceLine { return String(localized: "第 \(sourceLine) 行", table: "MetadataExchange") }
+    return recordIndex.map { "books[\($0)]" }
+}
+
 enum MetadataField: String, CaseIterable, Identifiable, Sendable {
-    case author, tags, description, cover, readingState, title
+    case author, description, tags, readingState, cover, title
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -53,6 +59,9 @@ struct MetadataFieldChoice: Identifiable, Sendable {
     var id: MetadataField { field }
     var chosen: MetadataOption? { options.first { $0.id == selected } }
 }
+enum MetadataPreviewDisposition: Equatable, Sendable {
+    case changes, unchanged, unmatched, skipped
+}
 struct MetadataPreviewBook: Identifiable, Sendable {
     let id: String
     let title: String
@@ -62,6 +71,9 @@ struct MetadataPreviewBook: Identifiable, Sendable {
     var fields: [MetadataFieldChoice]
     var messages: [String]
     var selectionError: String?
+    var coverFiles: [String] = []
+    var coverUnavailable = false
+    var incomingCovers: [MetadataOption] { fields.first { $0.field == .cover }?.options.filter { $0.cover != nil } ?? [] }
     mutating func validateSelection(using service: AppDataService) {
         guard let base, let edited else { selectionError = nil; return }
         do {
@@ -96,6 +108,38 @@ struct MetadataPreviewBook: Identifiable, Sendable {
         }
         return value.normalizedForSaving
     }
+    /// Presentation classification only; skipped or unmatched data is never a successful no-op.
+    var disposition: MetadataPreviewDisposition {
+        if sourceCount == 0 { return .unmatched }
+        if base == nil { return .skipped }
+        if !changedFields.isEmpty { return .changes }
+        return messages.isEmpty ? .unchanged : .skipped
+    }
+    var summary: String {
+        switch disposition {
+        case .changes:
+            let changes = changedFields
+            let fields = changedMetadataFields
+            if fields.isEmpty { return String(localized: "仅修改文件名", table: "MetadataExchange") }
+            var parts = [String(localized: "\(fields.count) 项将更新", table: "MetadataExchange")]
+            if fields.contains(.cover) { parts.append(String(localized: "含封面", table: "MetadataExchange")) }
+            if changes.contains(.title) { parts.append(String(localized: "文件将改名", table: "MetadataExchange")) }
+            return parts.joined(separator: " · ")
+        case .unchanged: return String(localized: "无变化", table: "MetadataExchange")
+        case .unmatched: return String(localized: "未匹配", table: "MetadataExchange")
+        case .skipped: return String(localized: "已跳过", table: "MetadataExchange")
+        }
+    }
+    var hasSuggestedChanges: Bool {
+        for index in fields.indices {
+            for option in fields[index].options {
+                var proposed = self; proposed.fields[index].selected = option.id
+                if proposed.changedFields.contains(fields[index].field) { return true }
+            }
+        }
+        return false
+    }
+    var changedMetadataFields: [MetadataField] { changedFields.filter { $0 != .title } }
     var changedFields: [MetadataField] {
         guard let base, let edited else { return [] }
         return fields.compactMap { choice in
@@ -151,6 +195,15 @@ struct MetadataImportOutcome: Identifiable, Sendable {
     let title: String
     let saved: Bool
     let message: String?
+    var cover: BookCoverAsset? = nil
+    var savedFieldCount = 0
+    var renamed = false
+    var summary: String {
+        guard saved else { return message ?? String(localized: "尚未开始保存", table: "MetadataExchange") }
+        var parts = [String(localized: "\(savedFieldCount) 项资料已保存", table: "MetadataExchange")]
+        if renamed { parts.append(String(localized: "文件已改名", table: "MetadataExchange")) }
+        return parts.joined(separator: " · ")
+    }
 }
 struct MetadataBatchResult: Sendable {
     var outcomes: [MetadataImportOutcome] = []

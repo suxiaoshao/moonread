@@ -1,25 +1,48 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
-    "%lld 本 · %lld 本无变化": {
+    "%lld 本 · %lld 本无变化 · %lld 本未匹配 · %lld 本已跳过": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld 本 · %lld 本无变化"
+            "value": "%lld 本 · %lld 本无变化 · %lld 本未匹配 · %lld 本已跳过"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld 本 · %lld 本無變化"
+            "value": "%lld 本 · %lld 本無變化 · %lld 本未匹配 · %lld 本已略過"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld books · %lld unchanged"
+            "value": "Total: %lld · Unchanged: %lld · Unmatched: %lld · Skipped: %lld"
+          }
+        }
+      }
+    },
+    "%lld 本失败 · %lld 本未处理": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 本失败 · %lld 本未处理"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 本失敗 · %lld 本未處理"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed: %lld · Not processed: %lld"
           }
         }
       }
@@ -43,6 +66,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld unindexed books were not exported"
+          }
+        }
+      }
+    },
+    "%lld 本未处理": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 本未处理"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 本未處理"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not processed: %lld"
           }
         }
       }
@@ -89,6 +135,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "%lld changes selected"
+          }
+        }
+      }
+    },
+    "%lld 项资料已保存": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 项资料已保存"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 項資料已儲存"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Fields saved: %lld"
           }
         }
       }
@@ -231,6 +300,29 @@
         }
       }
     },
+    "与现有封面相同": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "与现有封面相同"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "與現有封面相同"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Same as current cover"
+          }
+        }
+      }
+    },
     "了解信息格式": {
       "extractionState": "manual",
       "localizations": {
@@ -250,6 +342,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "About the format"
+          }
+        }
+      }
+    },
+    "仅保存已选择的改动": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅保存已选择的改动"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "僅儲存已選擇的變更"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only selected changes are saved"
+          }
+        }
+      }
+    },
+    "仅修改文件名": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "仅修改文件名"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "僅修改檔案名稱"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Filename change only"
           }
         }
       }
@@ -277,6 +415,29 @@
         }
       }
     },
+    "保存成功": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存成功"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "儲存成功"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved successfully"
+          }
+        }
+      }
+    },
     "保留现有值": {
       "extractionState": "manual",
       "localizations": {
@@ -296,6 +457,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Keep existing value"
+          }
+        }
+      }
+    },
+    "保留现有封面": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留现有封面"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留現有封面"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current cover will be kept"
           }
         }
       }
@@ -484,6 +668,52 @@
         }
       }
     },
+    "包内图片缺失或无法读取，封面已跳过；其他信息可继续导入。这里只是预览，确认导入后才保存。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包内图片缺失或无法读取，封面已跳过；其他信息可继续导入。这里只是预览，确认导入后才保存。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "套件內圖片缺失或無法讀取，封面已略過；其他資訊可繼續匯入。這裡只是預覽，確認匯入後才儲存。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The packaged image is missing or unreadable, so its cover is skipped. Other information can still be imported. Changes are saved after import confirmation."
+          }
+        }
+      }
+    },
+    "包内新封面": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "包内新封面"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "套件內新封面"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New cover in package"
+          }
+        }
+      }
+    },
     "包含子文件夹；同一正文的信息只导出一次。": {
       "extractionState": "manual",
       "localizations": {
@@ -549,6 +779,75 @@
           "stringUnit": {
             "state": "translated",
             "value": "Cancel"
+          }
+        }
+      }
+    },
+    "取消会保留已经保存的信息。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消会保留已经保存的信息。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消會保留已經儲存的資訊。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancelling keeps information already saved."
+          }
+        }
+      }
+    },
+    "取消导入": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消导入"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消匯入"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel import"
+          }
+        }
+      }
+    },
+    "另有 %lld 本未匹配，已跳过。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另有 %lld 本未匹配，已跳过。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "另有 %lld 本未相符，已略過。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unmatched and skipped: %lld."
           }
         }
       }
@@ -645,6 +944,98 @@
         }
       }
     },
+    "含封面": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "含封面"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "含封面"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Includes cover"
+          }
+        }
+      }
+    },
+    "图片缺失或无法读取": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片缺失或无法读取"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "圖片缺失或無法讀取"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image missing or unreadable"
+          }
+        }
+      }
+    },
+    "图片缺失或无法读取 · 已跳过": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "图片缺失或无法读取 · 已跳过"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "圖片缺失或無法讀取 · 已略過"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Image missing or unreadable · Skipped"
+          }
+        }
+      }
+    },
+    "在书架完成索引后，可再次导出。本次不会读取或下载小说。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在书架完成索引后，可再次导出。本次不会读取或下载小说。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在書架完成索引後，可再次匯出。本次不會讀取或下載小說。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Index these books in your library, then export again. This export does not read or download novels."
+          }
+        }
+      }
+    },
     "备份进度、书签、笔记等阅读数据，与小说信息分开。": {
       "extractionState": "manual",
       "localizations": {
@@ -737,6 +1128,75 @@
         }
       }
     },
+    "导入信息": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入信息"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯入資訊"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import"
+          }
+        }
+      }
+    },
+    "导入备份": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入备份"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯入備份"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import"
+          }
+        }
+      }
+    },
+    "导入完成": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入完成"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯入完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import complete"
+          }
+        }
+      }
+    },
     "导入小说信息": {
       "extractionState": "manual",
       "localizations": {
@@ -756,6 +1216,144 @@
           "stringUnit": {
             "state": "translated",
             "value": "Import novel information"
+          }
+        }
+      }
+    },
+    "导入已停止": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入已停止"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯入已停止"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import stopped"
+          }
+        }
+      }
+    },
+    "导入已取消": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入已取消"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯入已取消"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import cancelled"
+          }
+        }
+      }
+    },
+    "导入或导出小说信息；可编辑清单，也可从 TXT 生成。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入或导出小说信息；可编辑清单，也可从 TXT 生成。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯入或匯出小說資訊；可編輯清單，也可從 TXT 產生。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import or export novel information. Edit a manifest or generate one from TXT."
+          }
+        }
+      }
+    },
+    "导入文件": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入文件"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯入檔案"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Imported value"
+          }
+        }
+      }
+    },
+    "导入结果": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入结果"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯入結果"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import results"
+          }
+        }
+      }
+    },
+    "导入进度": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导入进度"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯入進度"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import progress"
           }
         }
       }
@@ -802,6 +1400,75 @@
           "stringUnit": {
             "state": "translated",
             "value": "Export"
+          }
+        }
+      }
+    },
+    "导出信息": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导出信息"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯出資訊"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export"
+          }
+        }
+      }
+    },
+    "导出备份": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导出备份"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯出備份"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export"
+          }
+        }
+      }
+    },
+    "导出失败": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导出失败"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯出失敗"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export failed"
           }
         }
       }
@@ -944,6 +1611,29 @@
         }
       }
     },
+    "导出进度": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "导出进度"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯出進度"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export progress"
+          }
+        }
+      }
+    },
     "导出问题清单": {
       "extractionState": "manual",
       "localizations": {
@@ -990,6 +1680,29 @@
         }
       }
     },
+    "封面文件": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封面文件"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封面檔案"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cover files"
+          }
+        }
+      }
+    },
     "封面文件缺失": {
       "extractionState": "manual",
       "localizations": {
@@ -1032,6 +1745,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "The cover could not be read. Other information can still be imported."
+          }
+        }
+      }
+    },
+    "封面相同，无需重复保存。这里只是预览，确认导入后才保存。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封面相同，无需重复保存。这里只是预览，确认导入后才保存。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "封面相同，無需重複儲存。這裡只是預覽，確認匯入後才儲存。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The cover is identical and needs no update. This is a preview; changes are saved after import confirmation."
           }
         }
       }
@@ -1147,6 +1883,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Will remove %lld existing tags"
+          }
+        }
+      }
+    },
+    "将采用新封面": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将采用新封面"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "將採用新封面"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New cover will be used"
           }
         }
       }
@@ -1358,6 +2117,75 @@
         }
       }
     },
+    "尚未保存任何小说": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未保存任何小说"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未儲存任何小說"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No books saved yet"
+          }
+        }
+      }
+    },
+    "尚未开始保存": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未开始保存"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚未開始儲存"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not yet processed"
+          }
+        }
+      }
+    },
+    "已保存": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已儲存"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saved"
+          }
+        }
+      }
+    },
     "已保存 %lld / %lld 本": {
       "extractionState": "manual",
       "localizations": {
@@ -1400,6 +2228,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Saved %lld books"
+          }
+        }
+      }
+    },
+    "已保存且未再更改的信息，重新导入时会显示“无变化”。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已保存且未再更改的信息，重新导入时会显示“无变化”。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已儲存且未再變更的資訊，重新匯入時會顯示「無變化」。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Information that has been saved and left unchanged will appear as “No changes” when imported again."
           }
         }
       }
@@ -1450,6 +2301,29 @@
         }
       }
     },
+    "已完成本次选择的改动": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已完成本次选择的改动"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已完成本次選擇的改動"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your selected changes have been saved."
+          }
+        }
+      }
+    },
     "已导出 %lld 条小说信息": {
       "extractionState": "manual",
       "localizations": {
@@ -1496,6 +2370,144 @@
         }
       }
     },
+    "已有自设封面，默认保留；开启后才替换。这里只是预览，确认导入后才保存。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已有自设封面，默认保留；开启后才替换。这里只是预览，确认导入后才保存。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已有自訂封面，預設保留；開啟後才替換。這裡只是預覽，確認匯入後才儲存。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "An existing custom cover is kept by default. Enable this option to replace it. This is a preview; changes are saved after import confirmation."
+          }
+        }
+      }
+    },
+    "已索引但未下载的小说照常导出已有资料；本次不下载正文或自动建立索引。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已索引但未下载的小说照常导出已有资料；本次不下载正文或自动建立索引。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已建立索引但未下載的小說照常匯出已有資料；本次不下載正文或自動建立索引。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Existing information is exported for indexed books even when they are not downloaded. This export does not download text or build an index."
+          }
+        }
+      }
+    },
+    "已跳过": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已跳过"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已略過"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Skipped"
+          }
+        }
+      }
+    },
+    "当前信息与导入文件相同，不会重复保存。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前信息与导入文件相同，不会重复保存。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目前資訊與匯入檔案相同，不會重複儲存。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The information matches the imported file and will not be saved again."
+          }
+        }
+      }
+    },
+    "当前没有自设封面，默认采用包内新图。这里只是预览，确认导入后才保存。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前没有自设封面，默认采用包内新图。这里只是预览，确认导入后才保存。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目前沒有自訂封面，預設採用套件內新圖。這裡只是預覽，確認匯入後才儲存。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There is no custom cover, so the new image is selected by default. This is a preview; changes are saved after import confirmation."
+          }
+        }
+      }
+    },
+    "当前默认封面": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前默认封面"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目前預設封面"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current default cover"
+          }
+        }
+      }
+    },
     "忽略未使用的附属文件": {
       "extractionState": "manual",
       "localizations": {
@@ -1538,6 +2550,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "An unknown optional field was ignored."
+          }
+        }
+      }
+    },
+    "所选范围没有已建立索引的小说。建立索引后可再次导出。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所选范围没有已建立索引的小说。建立索引后可再次导出。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所選範圍沒有已建立索引的小說。建立索引後可再次匯出。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "There are no indexed books in this scope. Index your books, then try exporting again."
           }
         }
       }
@@ -1680,25 +2715,94 @@
         }
       }
     },
-    "整理书名、作者、标签、简介与封面，再带回书架。": {
+    "文件将改名": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "整理书名、作者、标签、简介与封面，再带回书架。"
+            "value": "文件将改名"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "整理書名、作者、標籤、簡介與封面，再帶回書架。"
+            "value": "檔案將重新命名"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Edit titles, authors, tags, descriptions and covers, then bring them back to your shelves."
+            "value": "File will be renamed"
+          }
+        }
+      }
+    },
+    "文件已改名": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件已改名"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檔案已重新命名"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File renamed"
+          }
+        }
+      }
+    },
+    "文件已生成，可以分享或存储到“文件”。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件已生成，可以分享或存储到“文件”。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檔案已產生，可以分享或儲存到「檔案」。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Your file is ready to share or save to Files."
+          }
+        }
+      }
+    },
+    "文件已生成，可通过系统分享或存储到“文件”。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文件已生成，可通过系统分享或存储到“文件”。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檔案已產生，可透過系統分享或儲存到「檔案」。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file is ready to share or save to Files."
           }
         }
       }
@@ -1791,6 +2895,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "The metadata ZIP could not be finalized."
+          }
+        }
+      }
+    },
+    "无法导入": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法导入"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法匯入"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot import"
           }
         }
       }
@@ -2002,6 +3129,52 @@
         }
       }
     },
+    "替换会移除未包含在导入值中的旧标签。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "替换会移除未包含在导入值中的旧标签。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取代會移除未包含在匯入值中的舊標籤。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Replacement removes existing tags that are absent from the imported value."
+          }
+        }
+      }
+    },
+    "有未采用的内容": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有未采用的内容"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "有未採用的內容"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Some content was not applied"
+          }
+        }
+      }
+    },
     "有较新版本的阅读状态，未导出该状态": {
       "extractionState": "manual",
       "localizations": {
@@ -2021,6 +3194,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "A newer reading state was not exported."
+          }
+        }
+      }
+    },
+    "未匹配": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未匹配"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未匹配"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unmatched"
+          }
+        }
+      }
+    },
+    "未填写": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未填写"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未填寫"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Not provided"
           }
         }
       }
@@ -2140,6 +3359,75 @@
         }
       }
     },
+    "未选择修改；现有信息将保留。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未选择修改；现有信息将保留。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未選擇變更；現有資訊將保留。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No changes selected. Existing information will be kept."
+          }
+        }
+      }
+    },
+    "未选择改动": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未选择改动"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未選擇改動"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No changes selected"
+          }
+        }
+      }
+    },
+    "本次没有完成写入。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本次没有完成写入。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本次沒有完成寫入。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No information was saved in this import."
+          }
+        }
+      }
+    },
     "查看与删除": {
       "extractionState": "manual",
       "localizations": {
@@ -2163,6 +3451,29 @@
         }
       }
     },
+    "查看改动": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看改动"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檢視變更"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review changes"
+          }
+        }
+      }
+    },
     "查看未导出的小说": {
       "extractionState": "manual",
       "localizations": {
@@ -2182,6 +3493,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "View skipped books"
+          }
+        }
+      }
+    },
+    "查看资料前后变化，并决定哪些内容要采用。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看资料前后变化，并决定哪些内容要采用。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看資料前後變化，並決定要採用哪些內容。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compare existing and imported information, then choose what to adopt."
           }
         }
       }
@@ -2232,6 +3566,190 @@
         }
       }
     },
+    "正在停止…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在停止…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在停止…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopping…"
+          }
+        }
+      }
+    },
+    "正在准备导入": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在准备导入"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在準備匯入"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing import"
+          }
+        }
+      }
+    },
+    "正在准备导出…": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在准备导出…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在準備匯出…"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing export…"
+          }
+        }
+      }
+    },
+    "正在完成": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在完成"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在完成"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finishing"
+          }
+        }
+      }
+    },
+    "正在完成当前这本，之后停止。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在完成当前这本，之后停止。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在完成目前這本，之後停止。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Finishing this book, then stopping."
+          }
+        }
+      }
+    },
+    "正在导入": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在导入"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在匯入"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Importing"
+          }
+        }
+      }
+    },
+    "正在导出": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在导出"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在匯出"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exporting"
+          }
+        }
+      }
+    },
+    "正在导出 %lld / %lld 本": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在导出 %lld / %lld 本"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在匯出 %lld / %lld 本"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exporting %lld of %lld"
+          }
+        }
+      }
+    },
     "正在检查信息…": {
       "extractionState": "manual",
       "localizations": {
@@ -2251,6 +3769,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Checking information…"
+          }
+        }
+      }
+    },
+    "正在检查格式、匹配已有索引，尚未保存任何修改。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在检查格式、匹配已有索引，尚未保存任何修改。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在檢查格式、比對已有索引，尚未儲存任何修改。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Checking the format and matching indexed books. No changes have been saved."
+          }
+        }
+      }
+    },
+    "正在读取清单": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在读取清单"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在讀取清單"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reading manifest"
           }
         }
       }
@@ -2324,6 +3888,52 @@
         }
       }
     },
+    "没有可导出的小说信息": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可导出的小说信息"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有可匯出的小說資訊"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No book information to export"
+          }
+        }
+      }
+    },
+    "没有待导入的改动": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有待导入的改动"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沒有待匯入的變更"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No changes to import"
+          }
+        }
+      }
+    },
     "没有标签": {
       "extractionState": "manual",
       "localizations": {
@@ -2343,6 +3953,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "No tags"
+          }
+        }
+      }
+    },
+    "清单中没有小说": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清单中没有小说"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清單中沒有小說"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No books in this manifest"
           }
         }
       }
@@ -2393,6 +4026,29 @@
         }
       }
     },
+    "清单无法读取": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清单无法读取"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "清單無法讀取"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cannot read manifest"
+          }
+        }
+      }
+    },
     "清单格式": {
       "extractionState": "manual",
       "localizations": {
@@ -2439,6 +4095,29 @@
         }
       }
     },
+    "现有信息将保留。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "现有信息将保留。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現有資訊將保留。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Existing information will be kept."
+          }
+        }
+      }
+    },
     "现有值": {
       "extractionState": "manual",
       "localizations": {
@@ -2458,6 +4137,52 @@
           "stringUnit": {
             "state": "translated",
             "value": "Existing value"
+          }
+        }
+      }
+    },
+    "现有封面": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "现有封面"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "現有封面"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Current cover"
+          }
+        }
+      }
+    },
+    "相同": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相同"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相同"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Same"
           }
         }
       }
@@ -2504,6 +4229,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Line %llu"
+          }
+        }
+      }
+    },
+    "管理保存在月读的阅读记录": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理保存在月读的阅读记录"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "管理儲存在月讀的閱讀記錄"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Manage reading records stored in Moonread"
           }
         }
       }
@@ -2619,6 +4367,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Provide a string. Omit a field to leave it unchanged; null does not clear it."
+          }
+        }
+      }
+    },
+    "请确认这本书已加入书架并建立索引。若清单由 TXT 生成，请使用与月读相同的编码；仍不匹配时可改用月读导出。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请确认这本书已加入书架并建立索引。若清单由 TXT 生成，请使用与月读相同的编码；仍不匹配时可改用月读导出。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請確認這本書已加入書架並建立索引。若清單由 TXT 產生，請使用與月讀相同的編碼；仍不相符時可改用月讀匯出。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check that this book has been added to a shelf and indexed. If the manifest was generated from TXT, use the same encoding as Moonread. If it still does not match, try exporting from Moonread."
           }
         }
       }
@@ -2807,6 +4578,29 @@
         }
       }
     },
+    "资料已保存，请查看下方说明。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "资料已保存，请查看下方说明。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "資料已儲存，請查看下方說明。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Information has been saved. See the notes below."
+          }
+        }
+      }
+    },
     "资料超出当前编辑限制，未采用该字段": {
       "extractionState": "manual",
       "localizations": {
@@ -2922,6 +4716,52 @@
         }
       }
     },
+    "返回选择范围": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回选择范围"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "返回選擇範圍"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Back to scope"
+          }
+        }
+      }
+    },
+    "这份清单没有可预览的书目。没有保存任何信息。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "这份清单没有可预览的书目。没有保存任何信息。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "這份清單沒有可預覽的書目。沒有儲存任何資訊。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This manifest has no books to preview. No information has been saved."
+          }
+        }
+      }
+    },
     "这是对原文件的真实改名；不移动文件，不覆盖同名文件。未下载时不会触发下载。": {
       "extractionState": "manual",
       "localizations": {
@@ -3014,6 +4854,29 @@
         }
       }
     },
+    "追加会保留已有标签。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加会保留已有标签。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "追加會保留已有標籤。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appending keeps existing tags."
+          }
+        }
+      }
+    },
     "选择一本小说": {
       "extractionState": "manual",
       "localizations": {
@@ -3033,6 +4896,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Select a book"
+          }
+        }
+      }
+    },
+    "选择其他文件": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "选择其他文件"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選擇其他檔案"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose another file"
           }
         }
       }
@@ -3083,6 +4969,29 @@
         }
       }
     },
+    "采用新封面": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "采用新封面"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "採用新封面"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use new cover"
+          }
+        }
+      }
+    },
     "重复成员": {
       "extractionState": "manual",
       "localizations": {
@@ -3125,6 +5034,29 @@
           "stringUnit": {
             "state": "translated",
             "value": "Review again"
+          }
+        }
+      }
+    },
+    "重试": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重试"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重試"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retry"
           }
         }
       }
@@ -3175,25 +5107,48 @@
         }
       }
     },
-    "导入结果": {
+    "默认补空白资料、追加标签。已有不同值保留，改名需要单独选择。": {
       "extractionState": "manual",
       "localizations": {
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "导入结果"
+            "value": "默认补空白资料、追加标签。已有不同值保留，改名需要单独选择。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "匯入結果"
+            "value": "預設補空白資料、追加標籤。已有不同值保留，改名需要單獨選擇。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Import results"
+            "value": "Empty fields are filled and tags are appended by default. Existing different values are kept; renames require a separate choice."
+          }
+        }
+      }
+    },
+    "默认补空白资料、追加标签。已有不同值保留，改名需要单独选择。仅保存已选择的改动。": {
+      "extractionState": "manual",
+      "localizations": {
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认补空白资料、追加标签。已有不同值保留，改名需要单独选择。仅保存已选择的改动。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "預設補上空白資料、追加標籤。已有不同值會保留，重新命名需另行選擇。僅儲存已選擇的變更。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "By default, fill empty information and append tags. Existing different values are kept, and renaming requires a separate choice. Only selected changes are saved."
           }
         }
       }

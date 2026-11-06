@@ -9,6 +9,13 @@ generate_feeds = false
 [markdown]
 smart_punctuation = false
 
+# Zola 0.23 / Giallo: build-time CSS classes, no client-side highlighter.
+[markdown.highlighting]
+style = "class"
+light_theme = "moonread-light"
+dark_theme = "moonread-dark"
+extra_themes = ["highlight/light.json", "highlight/dark.json"]
+
 [languages.en]
 title = "Moonread"
 description = "A quiet place for your own TXT books"

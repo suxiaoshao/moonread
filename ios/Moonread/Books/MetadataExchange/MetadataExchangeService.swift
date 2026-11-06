@@ -1,8 +1,9 @@
 import Foundation
 
 extension AppDataService {
-    func exportMetadata(shelfID: String?, format: MetadataFormat) async throws -> MetadataExportResult {
+    func exportMetadata(shelfID: String?, format: MetadataFormat, progress: @escaping @Sendable (Int, Int) async -> Void = { _, _ in }) async throws -> MetadataExportResult {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
         let configuration = userCloudConfigurationRevision
         let query = try await catalogueQuery(shelfID.map { LibraryLocation(shelfID: $0) }, recursive: true)
         let shelves = try shelves(), names = Dictionary(uniqueKeysWithValues: shelves.map { ($0.id, $0.name) })
@@ -12,9 +13,12 @@ extension AppDataService {
         var grouped: [String: [LibraryEntry]] = [:]
         var skipped: [MetadataSkippedFile] = []
         for entry in entries where !entry.directory {
+            try Task.checkCancellation()
             guard let sha = entry.contentSha256, (try? parseSha256(value: sha)) != nil else { skipped.append(.init(id: entry.id, shelf: names[entry.shelfId] ?? "", path: entry.relativePath)); continue }
             grouped[sha, default: []].append(entry)
         }
+        await progress(0, grouped.count)
+        try Task.checkCancellation()
         let stage = FileManager.default.temporaryDirectory.appendingPathComponent("MetadataExport-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: stage, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: stage) }
@@ -24,6 +28,7 @@ extension AppDataService {
         var warning: [String] = [], count = 0
         var metadataSnapshot: [String: BookMetadata] = [:]
         for sha in grouped.keys {
+            try Task.checkCancellation()
             try await store.requireMetadataReadable(key: sha)
             metadataSnapshot[sha] = try query.bookDetails(bookId: nil, contentSha: sha).metadata
         }
@@ -54,13 +59,14 @@ extension AppDataService {
                 author: metadata.author.isEmpty ? nil : metadata.author, tags: metadata.tags,
                 description: metadata.synopsis.isEmpty ? nil : metadata.synopsis, cover: coverPath, readingState: state, clear: [], requires: [])
             try writer.append(book: book); count += 1
+            await progress(count, grouped.count)
         }
         try writer.finish()
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         try Task.checkCancellation()
         let file = try LibraryExport { directory in
             if hasCovers {
-                try Data("Moonread metadata v1\nFormat: https://suxiaoshao.github.io/moonread/metadata-format/\nSchema: https://suxiaoshao.github.io/moonread/schema/moonread-metadata-v1.schema.json\nSkill: https://suxiaoshao.github.io/moonread/skills/moonread-metadata/SKILL.md\nAgent: https://suxiaoshao.github.io/moonread/agent.txt\nKeep content_sha256 and reference unchanged. This is not a reading-data backup.\n".utf8).write(to: stage.appendingPathComponent("README.txt"))
+                try Data("Moonread metadata v1\nFormat: https://suxiaoshao.github.io/moonread/metadata-format/\nSchema: https://suxiaoshao.github.io/moonread/schema/moonread-metadata-v1.schema.json\nSkill: https://suxiaoshao.github.io/moonread/skills/moonread-metadata/SKILL.md\nAgent: https://suxiaoshao.github.io/moonread/agent.txt\nWhen editing this exported manifest, preserve content_sha256 and reference unchanged. New manifests may be generated directly from TXT using normalization-v1. Use the same text encoding as Moonread. Reference: https://suxiaoshao.github.io/moonread/skills/moonread-metadata/identity/README.md\nThis is not a reading-data backup.\n".utf8).write(to: stage.appendingPathComponent("README.txt"))
                 let output = directory.appendingPathComponent("Moonread.moonread-metadata")
                 try writeMetadataArchive(stagingDirectory: stage.path, destination: output.path)
                 return [output]
@@ -69,6 +75,7 @@ extension AppDataService {
             try FileManager.default.copyItem(at: manifest, to: output)
             return [output]
         }
+        try Task.checkCancellation()
         return .init(file: file, count: count, skipped: skipped, warnings: Array(Set(warning)).sorted())
     }
 
@@ -119,6 +126,7 @@ extension AppDataService {
             let base = try query.bookDetails(bookId: nil, contentSha: sha).metadata
             let hasPosition = try query.metadataHasReadingPosition(contentSha256: sha)
             item = MetadataPreviewBook(id: sha, title: item.title, base: base, source: item.source, sourceCount: sources.count, fields: [], messages: [])
+            item.coverUnavailable = messagesBySHA[sha, default: []].contains { $0.code == "cover_unavailable" }
             var choices: [MetadataField: [MetadataOption]] = [:]
             var acceptedCovers: [BookCoverAsset] = []
             cursor = 0
@@ -126,7 +134,7 @@ extension AppDataService {
                 let page = try session.document.records(sha: sha, cursor: cursor, count: 50)
                 for record in page.records {
                     let book = record.book
-                    let origin = record.sourceLine.map { String(localized: "第 \($0) 行", table: "MetadataExchange") } ?? "books[\(record.recordIndex - 1)]"
+                    let origin = metadataSourceDescription(sourceLine: record.sourceLine, recordIndex: record.recordIndex)!
                     for field in MetadataField.allCases {
                         var text: String?, tags: [String] = [], cover: BookCoverAsset?
                         let clear = book.clear.contains(field.transportKey)
@@ -139,6 +147,7 @@ extension AppDataService {
                             if let incoming = book.tags { var normalized = base; normalized.tags = incoming; tags = normalized.normalizedForSaving.tags; text = "tags" }
                         case .cover:
                             if let path = book.cover {
+                                if !item.coverFiles.contains(path) { item.coverFiles.append(path) }
                                 do {
                                     let bytes = try Data(contentsOf: URL(fileURLWithPath: session.document.coverPath(path: path)))
                                     cover = try await importedCover(bytes, reusing: (base.cover.map { [$0] } ?? []) + acceptedCovers)
@@ -147,6 +156,7 @@ extension AppDataService {
                                     }
                                     text = "cover"
                                 } catch {
+                                    item.coverUnavailable = true
                                     let message = String(localized: "封面无法读取；其他资料仍可导入", table: "MetadataExchange")
                                     item.messages.append(message)
                                     diagnostics.append(.init(sourceLine: record.sourceLine, recordIndex: record.recordIndex, code: "cover_invalid", field: "cover", contentSha256: sha, message: message))
@@ -202,31 +212,33 @@ extension AppDataService {
         let selected = preview.books.filter { !$0.changedFields.isEmpty }
         var result = MetadataBatchResult()
         for (index, book) in selected.enumerated() {
-            if Task.isCancelled { result.cancelled = true; result.remaining = selected[index...].map { .init(id: $0.id, title: $0.title, saved: false, message: nil) }; break }
+            if Task.isCancelled { result.cancelled = true; result.remaining = selected[index...].map { .init(id: $0.id, title: $0.title, saved: false, message: nil, cover: $0.base?.cover) }; break }
             do {
                 guard preview.session.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
                 guard let base = book.base, let edited = book.edited else { continue }
                 let plan = try metadataEditPlan(base: base, edited: edited, fields: Set(book.fields.filter { $0.chosen != nil }.map { $0.field.metadataKey }))
                 try await commitMetadata(plan, cover: edited.cover != base.cover ? edited.cover : nil)
             } catch {
-                result.outcomes.append(.init(id: book.id, title: book.title, saved: false, message: String(localized: "资料保存失败，已停止；此前保存的资料保留", table: "MetadataExchange")))
-                result.remaining = selected.dropFirst(index + 1).map { .init(id: $0.id, title: $0.title, saved: false, message: nil) }; break
+                result.outcomes.append(.init(id: book.id, title: book.title, saved: false, message: String(localized: "资料保存失败，已停止；此前保存的资料保留", table: "MetadataExchange"), cover: book.base?.cover))
+                result.remaining = selected.dropFirst(index + 1).map { .init(id: $0.id, title: $0.title, saved: false, message: nil, cover: $0.base?.cover) }; break
             }
             var message: String?
+            var renamed = false
             if let name = book.renameName, let source = book.source {
                 // Only this explicit file-operation phase touches original bytes. Never download.
                 do {
                     let snapshot = try aiFileSnapshot(source.location)
                     try renameLibraryItem(source, name: name, replace: false, expected: snapshot)
+                    renamed = true
                 } catch let error as AIFileExecutionError {
                     switch error.stage {
-                    case .movedButIndexFailed: message = String(localized: "资料已保存，文件已改名，但索引未更新；请刷新书架", table: "MetadataExchange")
+                    case .movedButIndexFailed: renamed = true; message = String(localized: "资料已保存，文件已改名，但索引未更新；请刷新书架", table: "MetadataExchange")
                     case .uncertain, .copiedSourceRemains: message = String(localized: "资料已保存，文件操作未完成；请检查书架中的文件", table: "MetadataExchange")
                     default: message = Self.metadataRenameFailure(error.underlying)
                     }
                 } catch { message = Self.metadataRenameFailure(error) }
             }
-            result.outcomes.append(.init(id: book.id, title: book.title, saved: true, message: message))
+            result.outcomes.append(.init(id: book.id, title: book.title, saved: true, message: message, cover: book.edited?.cover, savedFieldCount: book.changedMetadataFields.count, renamed: renamed))
             await progress(index + 1, selected.count)
         }
         return result

@@ -285,6 +285,7 @@ struct BookCoverImage: View {
     let cover: BookCoverAsset
     var pixels = 320
     var loader = CoverImageLoader.shared
+    var contentMode: ContentMode = .fill
     @State private var subscription: CoverSubscription?
     var body: some View {
         ZStack {
@@ -292,7 +293,7 @@ struct BookCoverImage: View {
             // An empty Group has no child on which SwiftUI can start the task.
             Color.clear
             if let image = (subscription?.key == CoverImageLoader.key(cover, pixels) ? subscription?.presentation : loader.presentation(cover, pixels: pixels))?.image {
-                Image(uiImage: image).resizable().scaledToFill().accessibilityIdentifier("bookCoverImage")
+                Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode).accessibilityIdentifier("bookCoverImage")
             }
         }
             .task(id: CoverImageLoader.key(cover, pixels)) {

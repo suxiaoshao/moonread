@@ -18,6 +18,7 @@
 ## 阅读与界面
 
 - [正文准备与编码](reader/import.md)、[排版与阅读交互](reader/reading.md)、[目录/搜索/批注与导航](reader/tools.md)。
+- [界面设计原则](design/principles.md)。
 - [首页与书架](design/library.md)、[小说详情](design/book-details.md)、[阅读统计](design/statistics.md)、[阅读弹层](design/reader-panels.md)。
 - [当前设置页](design/settings.md)、[设置信息架构与新增入口规则](design/settings-information-architecture.md)、[系统集成设计](design/ios-integration.md)。
 - [主题模型与纹理](design/themes.md)、[界面样式归属](design/ui-inventory.md)、[动效与月亮](design/motion-and-moon.md)。
