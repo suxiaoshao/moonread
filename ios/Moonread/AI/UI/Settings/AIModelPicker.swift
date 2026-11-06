@@ -34,7 +34,8 @@ enum AIModelPickerDestination {
             return ai.providers.setPurpose(purpose, selection: .init(connectionID: selection.connectionID, modelID: selection.modelID))
         case .draft(let value):
             guard let model = ai.providers.model(connectionID: selection.connectionID, modelID: selection.modelID),
-                  model.capabilities?.text != false,
+                  let connection = ai.providers.connections.first(where: { $0.id == selection.connectionID }),
+                  AINativeCapabilities.supportsText(connection: connection, model: model),
                   selection.thinking.map(model.thinking.contains) ?? true else { return false }
             value.wrappedValue = selection; return true
         }
@@ -172,8 +173,8 @@ struct AIModelPickerButton: View {
     static func filter(_ models: [AIModelOption], query: String, connection: AIConnection, _ providers: AIConnectionService) -> [AIModelOption] {
         models.filter { providers.matches($0, in: connection, query: query) }
     }
-    static func offered(_ connection: AIConnection, purpose: AIModelPurpose?, keeping current: AIModelSelection?) -> [AIModelOption] {
-        connection.models.filter {
+    static func offered(_ connection: AIConnection, purpose: AIModelPurpose?, keeping current: AIModelSelection?, catalog: AIModelCatalog? = nil) -> [AIModelOption] {
+        connection.models.map { catalog?.option($0, providerID: connection.catalogID, authentication: connection.authMethod) ?? $0 }.filter {
             AIModelAvailability.supports($0, purpose: purpose, connection: connection)
                 || (current?.connectionID == connection.id && current?.modelID == $0.id)
         }
@@ -229,7 +230,7 @@ private struct AIModelPickerContent: View {
     @State private var searching = false
     private var current: AIModelSelection? { destination.selection(ai) }
     private func offered(_ connection: AIConnection) -> [AIModelOption] {
-        AIModelSearch.offered(connection, purpose: destination.purpose, keeping: current)
+        AIModelSearch.offered(connection, purpose: destination.purpose, keeping: current, catalog: ai.providers.catalog)
     }
     private func shown(_ connection: AIConnection) -> [AIModelOption] {
         AIModelSearch.filter(offered(connection), query: query, connection: connection, ai.providers)
@@ -452,6 +453,22 @@ struct AIModelDetailView: View {
                         }.padding(.vertical, 22).padding(.horizontal, 12)
                             .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 22))
                     }
+                    if model.isManual == true, model.capabilities?.text == nil {
+                        Text("这是手填型号，将尝试通用文字请求；能力并未经目录确认。")
+                            .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                    } else if model.capabilities?.text == nil && model.capabilities?.imageOutput == nil {
+                        Text("此型号已列出，能力资料尚未补齐；补齐前不会自动提供给对话或工具选择。")
+                            .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                    }
+                    if model.isListed == false {
+                        Text("此连接的目录未列出该型号，请刷新目录或重新选择。")
+                            .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                    }
+                    if let raw = connection.models.first(where: { $0.id == modelID }), raw.isManual == true,
+                       raw.contextWindow != model.contextWindow || raw.maxOutput != model.maxOutput {
+                        Text("已保留你填写的预算；实际请求按预算与连接已知上限中的较小值使用。")
+                            .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                    }
                     if let selection, !model.thinking.isEmpty {
                         VStack(spacing: 8) {
                             HStack { Text("思考程度").font(.headline); Spacer(); Text(AIThinkingLabel.label(selection.thinking ?? "")).foregroundStyle(Color(uiColor: theme.accent)) }
@@ -477,7 +494,7 @@ struct AIModelDetailView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("容量").font(.headline)
                             HStack(spacing: 16) {
-                                if let context = limits.context { capacity(context, label: "上下文 · tokens") }
+                                if let context = limits.context { capacity(context, label: model.contextIsInputLimit == true ? "输入上限 · tokens" : "上下文 · tokens") }
                                 if let output = limits.output { capacity(output, label: "最大输出 · tokens") }
                             }.padding(20).frame(maxWidth: .infinity)
                                 .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 22))
@@ -496,7 +513,8 @@ struct AIModelDetailView: View {
                         else { Task { if await ai.applyModelSelection(selection, to: target) { enable(); dismiss() } else { error = true } } }
                     } label: { Text("使用此模型").frame(maxWidth: .infinity).padding(.vertical, 6) }
                         .buttonStyle(.borderedProminent).tint(Color(uiColor: theme.accent)).foregroundStyle(Color(uiColor: theme.onAccent))
-                        .frame(maxWidth: .infinity).accessibilityIdentifier("applyAIModelDetail")
+                        .frame(maxWidth: .infinity).disabled(model.isListed == false || (!AINativeCapabilities.supportsText(connection: connection, model: model) && !AINativeCapabilities.supports(.image, connection: connection, model: model)))
+                        .accessibilityIdentifier("applyAIModelDetail")
                 }.padding([.horizontal, .top], 20).padding(.bottom).frame(maxWidth: .infinity, alignment: .leading)
             } else { ContentUnavailableView("模型不可用", systemImage: "sparkles") }
         }.accessibilityIdentifier("aiModelDetails").themedPage().navigationTitle("模型详情").navigationBarTitleDisplayMode(.inline)

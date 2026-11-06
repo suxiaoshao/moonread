@@ -21,7 +21,16 @@ enum AIConnectionState: Equatable {
             for old in oldValue {
                 guard let new = connections.first(where: { $0.id == old.id }),
                       old.baseURL == new.baseURL, old.providerID == new.providerID,
-                      old.protocolIdentity == new.protocolIdentity else { sharing.revoke(old.id); continue }
+                      old.protocolIdentity == new.protocolIdentity, old.catalogCredentialGeneration == new.catalogCredentialGeneration else {
+                    sharing.revoke(old.id); invalidateCatalog(old.id)
+                    if let index = connections.firstIndex(where: { $0.id == old.id }) {
+                        connections[index].models = connections[index].models.filter { $0.isManual == true }.map {
+                            AIModelOption(id: $0.id, name: $0.name, contextWindow: $0.contextWindow, thinking: [], maxOutput: $0.maxOutput, isManual: true)
+                        }
+                        connections[index].modelsChecked = nil; connections[index].modelsOrigin = nil; connections[index].modelsIdentity = nil
+                    }
+                    continue
+                }
             }
         }
     }
@@ -39,6 +48,7 @@ enum AIConnectionState: Equatable {
     var needsLogin = Set<String>()
     private var authenticatedConnections = Set<String>()
     @ObservationIgnored private var modelRevisions: [String: UUID] = [:]
+    @ObservationIgnored private var modelTasks: [String: Task<Void, Never>] = [:]
     var refreshingModels = Set<String>()
     @ObservationIgnored let auth: AIAuthentication
     @ObservationIgnored private let defaults: UserDefaults
@@ -132,7 +142,9 @@ enum AIConnectionState: Equatable {
         do {
             // Close content admission before suspending to the credential actor.
             sharing.revoke(id)
+            invalidateCatalog(id)
             try await auth.saveAPIKey(key, connection: connection)
+            resetCatalog(id)
             authenticatedConnections.insert(id); needsLogin.remove(id); credentialRevision += 1
             await refreshModels(id)
             return true
@@ -232,7 +244,7 @@ enum AIConnectionState: Equatable {
                 }
                 try Task.checkCancellation(); guard loginRevision == revision else { return }
                 if let index = connections.firstIndex(where: { $0.id == id }) { connections[index].modelsChecked = nil; saveConnections() }
-                sharing.revoke(id)
+                sharing.revoke(id); resetCatalog(id)
                 authenticatedConnections.insert(id); needsLogin.remove(id); modelErrors[id] = nil
                 credentialRevision += 1; loginConnectionID = nil; loginStates[id] = nil
                 guard !chatGPTPlanDisabled(connection) else { return }
@@ -264,7 +276,7 @@ enum AIConnectionState: Equatable {
             do {
                 try await auth.finishOpenRouter(request.id, code: code, reference: connection.credentialReference)
                 try Task.checkCancellation(); guard loginRevision == revision else { return }
-                sharing.revoke(id)
+                sharing.revoke(id); resetCatalog(id)
                 authenticatedConnections.insert(id); needsLogin.remove(id); modelErrors[id] = nil
                 credentialRevision += 1; loginConnectionID = nil; loginStates[id] = nil
                 await refreshModels(id)
@@ -299,10 +311,10 @@ enum AIConnectionState: Equatable {
         sharing.revoke(id)
         cancelLogin(id)
         for request in nativeRequests.values where request.0 == id { request.1() }
-        modelRevisions[id] = UUID(); refreshingModels.remove(id)
+        invalidateCatalog(id)
         do {
             try await auth.logout(connection, forgetRegistration: forgetRegistration); authenticatedConnections.remove(id); needsLogin.remove(id)
-            if let index = connections.firstIndex(where: { $0.id == id }) { connections[index].models = []; connections[index].modelsChecked = nil; saveConnections() }
+            resetCatalog(id); saveConnections()
             loginStates[id] = nil; modelErrors[id] = nil; accountCatalogAttempts[id] = nil; credentialRevision += 1
             return true
         } catch {
@@ -328,6 +340,11 @@ enum AIConnectionState: Equatable {
         let maxOutput = output.isEmpty ? existing.flatMap { connections[index].models[$0].maxOutput } : Int(output)
         guard (output.isEmpty || maxOutput != nil), maxOutput.map({ $0 > 0 && $0 <= capacity }) ?? true else { return false }
         if let existing {
+            if connections[index].models[existing].isManual != true,
+               [.account, .service].contains(connections[index].models[existing].directoryOrigin) {
+                connections[index].models[existing].connectionContextLimit = connections[index].models[existing].contextWindow
+                connections[index].models[existing].connectionOutputLimit = connections[index].models[existing].maxOutput
+            }
             connections[index].models[existing].contextWindow = capacity
             connections[index].models[existing].maxOutput = maxOutput
             connections[index].models[existing].isManual = true
@@ -335,8 +352,12 @@ enum AIConnectionState: Equatable {
             connections[index].models.append(.init(id: id, name: id, contextWindow: capacity,
                 thinking: [], maxOutput: maxOutput, isManual: true))
         }
+        if AIModelDirectoryPolicy.policy(connections[index]).filtered, connections[index].modelsOrigin == .account,
+           let model = connections[index].models.firstIndex(where: { $0.id == id }), connections[index].models[model].directoryOrigin != .account {
+            connections[index].models[model].isListed = false
+        }
         connections[index].disabledModelIDs.remove(id)
-        if connections[index].modelID.isEmpty { connections[index].modelID = id }
+        if connections[index].modelID.isEmpty, let model = model(id, in: connections[index]), AINativeCapabilities.supportsText(connection: connections[index], model: model) { connections[index].modelID = id }
         saveConnections(); return true
     }
     @discardableResult func setChatGPTContextBudget(connectionID: String, modelID: String, value: String) -> Bool {
@@ -385,68 +406,131 @@ enum AIConnectionState: Equatable {
         let instant = now ?? auth.now()
         try? await availability.perform {
             for connection in self.connections where self.isLoggedIn(connection) && !self.chatGPTPlanDisabled(connection) &&
-                instant.timeIntervalSince(self.accountCatalogAttempts[connection.id] ?? connection.modelsChecked ?? .distantPast) >= 86400 {
+                instant.timeIntervalSince(self.accountCatalogAttempts[connection.id] ?? (connection.authMethod == .chatGPT || connection.modelsIdentity == connection.catalogIdentity ? connection.modelsChecked : nil) ?? .distantPast) >= 86400 {
                 try self.availability.requireAvailable()
                 await self.refreshModels(connection.id, refreshPublic: false)
             }
         }
     }
+    private func invalidateCatalog(_ id: String) {
+        modelTasks.removeValue(forKey: id)?.cancel()
+        modelRevisions[id] = nil; refreshingModels.remove(id); accountCatalogAttempts[id] = nil
+    }
+    private func resetCatalog(_ id: String) {
+        guard let index = connections.firstIndex(where: { $0.id == id }) else { return }
+        invalidateCatalog(id)
+        connections[index].catalogCredentialGeneration = UUID()
+        connections[index].models = connections[index].authMethod == .chatGPT ? [] : connections[index].models.filter { $0.isManual == true }.map {
+            AIModelOption(id: $0.id, name: $0.name, contextWindow: $0.contextWindow, thinking: [], maxOutput: $0.maxOutput, isManual: true)
+        }
+        connections[index].modelsChecked = nil; connections[index].modelsOrigin = nil; connections[index].modelsIdentity = nil
+    }
     func refreshModels(_ id: String, refreshPublic: Bool = true) async {
         guard availability.isAvailable, !Task.isCancelled else { return }
-        guard let connection = connections.first(where: { $0.id == id }), !refreshingModels.contains(id) else { return }
-        accountCatalogAttempts[id] = auth.now()
+        if let task = modelTasks[id] { await task.value; return }
+        guard let connection = connections.first(where: { $0.id == id }) else { return }
         let revision = UUID(); modelRevisions[id] = revision
-        modelErrors[id] = nil; refreshingModels.insert(id)
-        modelNotices[id] = nil
+        let job = Task { await self.readDirectory(connection, revision: revision, refreshPublic: refreshPublic) }
+        modelTasks[id] = job
+        await job.value
+        if modelRevisions[id] == revision { modelTasks[id] = nil }
+    }
+    private func readDirectory(_ connection: AIConnection, revision: UUID, refreshPublic: Bool) async {
+        let id = connection.id, policy = AIModelDirectoryPolicy.policy(connection)
+        accountCatalogAttempts[id] = auth.now(); refreshingModels.insert(id)
+        modelErrors[id] = nil; modelNotices[id] = nil
         defer { if modelRevisions[id] == revision { refreshingModels.remove(id) } }
+        func currentIndex() -> Int? {
+            guard !Task.isCancelled, availability.isAvailable, modelRevisions[id] == revision else { return nil }
+            return connections.firstIndex { $0.id == id && $0.catalogIdentity == connection.catalogIdentity }
+        }
         var sessionID: String?
         do {
-            if refreshPublic && connection.authMethod != .chatGPT {
-                await catalog.refresh(force: true)
-                guard modelRevisions[id] == revision, connections.contains(where: { $0.id == id }) else { return }
-            }
-            let token = try await credential(connection)
-            sessionID = token.sessionID
+            if refreshPublic && connection.authMethod != .chatGPT { await catalog.refresh(force: true) }
+            guard currentIndex() != nil else { return }
             let models: [AIModelOption]
-            if connection.authMethod != .chatGPT, !catalog.models(for: connection).isEmpty {
+            var checked = auth.now()
+            switch policy.kind {
+            case .metadata:
+                guard !catalog.publicRefreshFailed else { throw AIError.invalidResponse }
                 models = catalog.models(for: connection)
-            } else { models = try await availability.perform { try await self.auth.models(connection, credential: token) } }
-            guard modelRevisions[id] == revision, !needsLogin.contains(id),
-                  let index = connections.firstIndex(where: { $0.id == id }) else { return }
-            authenticatedConnections.insert(id); needsLogin.remove(id)
-            let manualModels = connections[index].models.filter { $0.isManual == true }
-            connections[index].models = models.map { discovered in
-                guard let manual = manualModels.first(where: { $0.id == discovered.id }) else { return discovered }
+            case .service:
+                let snapshot = try await catalog.serviceModels(connection, auth: auth, force: refreshPublic, now: auth.now())
+                models = snapshot.models; checked = snapshot.checked
+            case .account, .custom, .chatGPT:
+                let token = try await credential(connection); sessionID = token.sessionID
+                models = try await auth.directory(connection, credential: token)
+            }
+            guard let index = currentIndex() else { return }
+            if policy.kind == .account || policy.kind == .custom || policy.kind == .chatGPT {
+                authenticatedConnections.insert(id); needsLogin.remove(id)
+            }
+            let manuals = connections[index].models.filter { $0.isManual == true }
+            var merged = models.map { discovered in
+                guard let manual = manuals.first(where: { $0.id == discovered.id }) else { return discovered }
                 if connection.authMethod == .chatGPT, discovered.contextWindow != nil {
                     modelNotices[id] = String(localized: "账户目录已提供容量，现已改用目录值。")
                     return discovered
                 }
-                var model = discovered
-                model.contextWindow = manual.contextWindow
-                model.maxOutput = manual.maxOutput
-                model.isManual = true
-                return model
-            } + (connection.authMethod == .chatGPT ? [] : manualModels.filter { manual in !models.contains(where: { $0.id == manual.id }) })
-            connections[index].modelsChecked = auth.now()
+                var result = discovered
+                if connection.authMethod != .chatGPT, policy.kind != .metadata {
+                    result.connectionContextLimit = discovered.contextWindow; result.connectionOutputLimit = discovered.maxOutput
+                }
+                result.contextWindow = manual.contextWindow; result.maxOutput = manual.maxOutput; result.isManual = true
+                return result
+            }
+            if connection.authMethod != .chatGPT {
+                merged += manuals.filter { manual in !models.contains { $0.id == manual.id } }.map {
+                    AIModelOption(id: $0.id, name: $0.name, contextWindow: $0.contextWindow, thinking: [], maxOutput: $0.maxOutput,
+                                  isManual: true, isListed: policy.filtered ? false : nil)
+                }
+            }
+            connections[index].models = merged
+            connections[index].modelsOrigin = policy.origin
+            connections[index].modelsIdentity = connection.catalogIdentity
+            connections[index].modelsChecked = checked
             if connections[index].modelID.isEmpty {
-                let first = models.first {
-                    $0.capabilities?.text != false && !connections[index].disabledModelIDs.contains($0.id)
+                let first = merged.map { catalog.option($0, providerID: connection.catalogID, authentication: connection.authMethod) }.first {
+                    AINativeCapabilities.supportsText(connection: connection, model: $0) && !connections[index].disabledModelIDs.contains($0.id)
                 }
                 connections[index].modelID = first?.id ?? ""; connections[index].thinking = first?.defaultThinking
             }
             saveConnections()
         } catch {
-            guard modelRevisions[id] == revision else { return }
-            switch error {
-            case AIError.loginRequired:
-                do { try await confirmLoginInvalid(connection, sessionID: nil) }
-                catch { modelErrors[id] = Self.connectionError(error) }
-            case AIError.http(401) where sessionID != nil:
-                do { try await confirmLoginInvalid(connection, sessionID: sessionID) }
-                catch { modelErrors[id] = Self.connectionError(error) }
-            case AIChatGPTError.refreshExpired: break // credential() already applied the single expiry transition.
-            default: modelErrors[id] = Self.connectionError(error)
+            guard let index = currentIndex() else { return }
+            // No successful connection snapshot: public candidates are explicitly
+            // unverified. A previous success (even an empty list) is never widened.
+            if connection.authMethod != .chatGPT, connections[index].modelsOrigin == nil, connections[index].models.isEmpty {
+                connections[index].models = catalog.models(for: connection); saveConnections()
             }
+            if connection.authMethod == .chatGPT {
+                switch error {
+                case AIError.loginRequired:
+                    try? await confirmLoginInvalid(connection, sessionID: nil)
+                case AIError.http(401):
+                    try? await confirmLoginInvalid(connection, sessionID: sessionID)
+                default: break
+                }
+            } else if policy.kind != .service, case AIError.http(401) = error {
+                needsLogin.insert(id); credentialRevision += 1
+            }
+            if case AIError.http(403) = error {
+                modelErrors[id] = String(localized: "没有读取模型目录的权限。已有模型配置仍会保留。")
+            } else if case AIError.http(401) = error {
+                modelErrors[id] = String(localized: "无法读取模型目录，请检查此连接的凭证。")
+            } else { modelErrors[id] = Self.connectionError(error) }
+        }
+    }
+    func directorySummary(_ connection: AIConnection) -> String {
+        if connection.authMethod == .chatGPT { return String(localized: "型号来自当前 ChatGPT 账户目录。") }
+        guard connection.modelsIdentity == connection.catalogIdentity, let origin = connection.modelsOrigin else {
+            return String(localized: "公开资料候选，尚未用此连接核实。")
+        }
+        switch origin {
+        case .metadata: return String(localized: "型号与能力来自公开资料，尚未用此连接核实。")
+        case .service: return String(localized: "型号来自官方公共目录，不代表此连接的密钥有效。")
+        case .account:
+            return AIModelDirectoryPolicy.policy(connection).filtered ? String(localized: "型号来自此连接的目录，已应用账户筛选。") : String(localized: "型号来自此连接读取的官方目录，不代表每个型号均有调用权限。")
         }
     }
     func purposeSelection(_ purpose: AIModelPurpose) -> AIPurposeSelection? {
@@ -468,6 +552,7 @@ enum AIConnectionState: Equatable {
     func cancelAIWork() {
         cancelLogin()
         catalog.cancelRefresh()
+        for task in modelTasks.values { task.cancel() }; modelTasks.removeAll()
         for id in refreshingModels { modelRevisions[id] = nil; accountCatalogAttempts[id] = nil }
         refreshingModels.removeAll()
         for request in nativeRequests.values { request.1() }

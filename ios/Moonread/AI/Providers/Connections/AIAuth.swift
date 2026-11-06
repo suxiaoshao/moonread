@@ -212,64 +212,25 @@ actor AIAuthentication {
         try credentials.remove(connection.credentialReference)
     }
     func models(_ connection: AIConnection, credential supplied: AICredential? = nil) async throws -> [AIModelOption] {
-        if connection.authMethod == .chatGPT {
-            guard connection.baseURL == AIChatGPTProtocol.resource, connection.wireProtocol == .responses else { throw AIError.unsupported }
+        if connection.authMethod != .chatGPT {
+            let policy = AIModelDirectoryPolicy.policy(connection)
+            if policy.kind == .service { return try await directory(connection) }
+            let token: AICredential
+            if let supplied { token = supplied } else { token = try await credential(connection) }
+            return try await directory(connection, credential: token)
         }
+        guard connection.baseURL == AIChatGPTProtocol.resource, connection.wireProtocol == .responses else { throw AIError.unsupported }
         let token: AICredential
         if let supplied { token = supplied } else { token = try await credential(connection) }
-
         guard let url = URL(string: connection.baseURL + "/models") else { throw AIError.invalidResponse }
         var request = URLRequest(url: url)
         request.setValue("Bearer " + token.accessToken, forHTTPHeaderField: "Authorization")
-        if connection.wireProtocol == .anthropic { request.setValue(token.accessToken, forHTTPHeaderField: "x-api-key"); request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version") }
-        if connection.wireProtocol == .gemini { request.setValue(token.accessToken, forHTTPHeaderField: "x-goog-api-key") }
-        var list: [[String: Any]] = []
-        var seen = Set<String>()
-        while true {
-            let (data, response) = try await requestData(request)
-            guard let response = response as? HTTPURLResponse else { throw AIError.invalidResponse }
-            guard response.statusCode == 200 else { throw AIError.http(response.statusCode) }
-            guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let page = (object["models"] ?? object["data"]) as? [[String: Any]] else { throw AIError.invalidResponse }
-            list += page
-            let cursor: String?
-            let key: String
-            if connection.wireProtocol == .gemini { cursor = object["nextPageToken"] as? String; key = "pageToken" }
-            else if connection.wireProtocol == .anthropic, object["has_more"] as? Bool == true {
-                guard let last = object["last_id"] as? String, !last.isEmpty else { throw AIError.invalidResponse }
-                cursor = last; key = "after_id"
-            } else { break }
-            guard let next = cursor, !next.isEmpty else { break }
-            guard seen.insert(next).inserted, seen.count <= 100 else { throw AIError.invalidResponse }
-            var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
-            components.queryItems = (components.queryItems ?? []) + [URLQueryItem(name: key, value: next)]
-            request.url = components.url
-        }
-        if connection.authMethod == .chatGPT { return try Self.chatGPTModels(list) }
-        return Self.directoryModels(list, wire: connection.wireProtocol)
-    }
-    static func directoryModels(_ list: [[String: Any]], wire: AIWireProtocol) -> [AIModelOption] {
-        list.compactMap { item in
-            if wire == .gemini {
-                guard let name = item["name"] as? String else { return nil }
-                if let methods = item["supportedGenerationMethods"] as? [String], !methods.contains("generateContent") { return nil }
-                let id = name.hasPrefix("models/") ? String(name.dropFirst(7)) : name
-                return AIModelOption(id: id, name: item["displayName"] as? String ?? id,
-                    contextWindow: item["inputTokenLimit"] as? Int, thinking: [], maxOutput: item["outputTokenLimit"] as? Int)
-            }
-            guard let id = item["id"] as? String else { return nil }
-            if wire == .anthropic {
-                let capabilities = item["capabilities"] as? [String: [String: Any]] ?? [:]
-                let efforts = ["low", "medium", "high", "xhigh", "max"].filter { (capabilities["effort"]?[$0] as? [String: Any])?["supported"] as? Bool == true }
-                return AIModelOption(id: id, name: item["display_name"] as? String ?? id,
-                    contextWindow: item["max_input_tokens"] as? Int, thinking: efforts, maxOutput: item["max_tokens"] as? Int,
-                    capabilities: .init(text: true, imageInput: capabilities["image_input"]?["supported"] as? Bool,
-                        reasoning: capabilities["thinking"]?["supported"] as? Bool, structured: capabilities["structured_outputs"]?["supported"] as? Bool),
-                    reasoningParameters: efforts.isEmpty ? nil : [.init(type: "effort", values: efforts.map { Optional($0) })])
-            }
-            return AIModelOption(id: id, name: item["display_name"] as? String ?? item["name"] as? String ?? id,
-                contextWindow: item["context_window"] as? Int, thinking: [])
-        }
+        let (data, response) = try await requestData(request)
+        guard let response = response as? HTTPURLResponse else { throw AIError.invalidResponse }
+        guard response.statusCode == 200 else { throw AIError.http(response.statusCode) }
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let list = (object["models"] ?? object["data"]) as? [[String: Any]] else { throw AIError.invalidResponse }
+        return try Self.chatGPTModels(list)
     }
 
     private func requestObject(_ request: URLRequest) async throws -> [String: Any] {

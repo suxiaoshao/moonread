@@ -585,7 +585,7 @@ final class AIConnectionTestProtocol: URLProtocol, @unchecked Sendable {
     var status = 200
     var body: [String: Any]
     if mode == "gemini-pages" || mode == "anthropic-pages" {
-      let second = request.url?.query != nil
+      let second = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.contains { ["pageToken", "after_id"].contains($0.name) } == true
       if mode == "gemini-pages" {
         body = [
           "models": [

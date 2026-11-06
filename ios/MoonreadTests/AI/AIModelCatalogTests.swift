@@ -67,11 +67,14 @@ final class AIModelCatalogAuthenticationTests: AuthenticationFixture {
     XCTAssertEqual(
       expired.connections[0].models.map(\.id), ["available"],
       "Old snapshot remains usable during refresh")
-    await expired.refreshConnectionCatalogsIfNeeded()
+    let joining = expectation(description: "Concurrent refresh started")
+    let joined = Task { joining.fulfill(); await expired.refreshModels(id, refreshPublic: false) }
+    await fulfillment(of: [joining], timeout: 3)
     XCTAssertEqual(
       ChatGPTURLProtocol.fixture.requestCount, 3, "Concurrent checks share the in-flight refresh")
     ChatGPTURLProtocol.fixture.resume()
     await refresh.value
+    await joined.value
     await expired.refreshConnectionCatalogsIfNeeded()
     XCTAssertEqual(ChatGPTURLProtocol.fixture.requestCount, 3)
     ChatGPTURLProtocol.fixture.set { _ in (500, Data()) }
@@ -81,6 +84,106 @@ final class AIModelCatalogAuthenticationTests: AuthenticationFixture {
     XCTAssertEqual(
       ChatGPTURLProtocol.fixture.requestCount, 1,
       "Failure retains snapshot without automatic retry loops")
+  }
+
+  func testProviderDirectoryAuthorityFailureAndCredentialIsolation() async throws {
+    let suite = "directory-" + UUID().uuidString
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite); ChatGPTURLProtocol.fixture.resume() }
+    let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ChatGPTURLProtocol.self]
+    let auth = TestAI.authentication(session: URLSession(configuration: config), credentialResolver: { _ in
+      .init(accessToken: "synthetic", refreshToken: "", expires: .distantFuture, accountID: "")
+    })
+    let providers = TestAI.connections(defaults: defaults, auth: auth)
+    let connection = AIProviderPreset.all.first { $0.id == "openrouter" && $0.auth == .apiKey }!.connection()
+    let id = providers.addConnection(connection)
+    ChatGPTURLProtocol.fixture.set { request in
+      XCTAssertEqual(request.url?.path, "/api/v1/models/user")
+      XCTAssertTrue(request.url!.query!.contains("output_modalities=text,image"))
+      XCTAssertNil(request.value(forHTTPHeaderField: "x-api-key"))
+      return (200, Data(#"{"data":[{"id":"new","architecture":{"input_modalities":["text"],"output_modalities":["text"]},"supported_parameters":[],"context_length":12000}]}"#.utf8))
+    }
+    await providers.refreshModels(id, refreshPublic: false)
+    XCTAssertEqual(providers.connections[0].models.map(\.id), ["new"])
+    XCTAssertEqual(providers.connections[0].modelsOrigin, .account)
+    XCTAssertTrue(providers.addManualModel(connectionID: id, id: "new", context: "24000", output: "20000"))
+    await providers.refreshModels(id, refreshPublic: false)
+    let effective = try XCTUnwrap(providers.model("new", in: providers.connections[0]))
+    XCTAssertEqual(providers.connections[0].models[0].contextWindow, 24000)
+    XCTAssertEqual(effective.contextWindow, 12000); XCTAssertEqual(effective.maxOutput, 12000)
+    ChatGPTURLProtocol.fixture.set { _ in (403, Data()) }
+    await providers.refreshModels(id, refreshPublic: false)
+    XCTAssertEqual(providers.connections[0].models.map(\.id), ["new"])
+    XCTAssertFalse(providers.needsLogin.contains(id)); XCTAssertNotNil(providers.modelErrors[id])
+    ChatGPTURLProtocol.fixture.set { _ in (200, Data(#"{"data":[]}"#.utf8)) }
+    await providers.refreshModels(id, refreshPublic: false)
+    XCTAssertEqual(providers.connections[0].models[0].isListed, false, "Manual record stays, but cannot bypass a filtered successful empty directory")
+    XCTAssertFalse(AINativeCapabilities.supportsText(connection: providers.connections[0], model: providers.model("new", in: providers.connections[0])!))
+    let arrived = expectation(description: "Directory request admitted")
+    ChatGPTURLProtocol.fixture.pause("/api/v1/models/user") { arrived.fulfill() }
+    let refresh = Task { await providers.refreshModels(id, refreshPublic: false) }
+    await fulfillment(of: [arrived], timeout: 3)
+    providers.connections[0].baseURL = "https://different.invalid/v1"
+    ChatGPTURLProtocol.fixture.resume(); await refresh.value
+    XCTAssertNil(providers.connections[0].modelsOrigin, "Old endpoint response cannot publish under a new connection identity")
+  }
+
+  func testDirectorySparseFieldsAndPublicTransport() async throws {
+    let presets = AIProviderPreset.all
+    XCTAssertEqual(presets.filter { AIModelDirectoryPolicy.policy($0.connection()).kind == .account }.count, 21)
+    XCTAssertEqual(presets.filter { AIModelDirectoryPolicy.policy($0.connection()).kind == .service }.count, 5)
+    func decode(_ provider: String, _ json: String) throws -> [AIModelOption] {
+      let connection = presets.first { $0.id == provider && $0.auth == .apiKey }!.connection()
+      return try AIModelDirectoryDecoder.page(Data(json.utf8), policy: .policy(connection), provider: provider).models
+    }
+    let p = #"{"openrouter":{"models":{"known":{"modalities":{"input":["text","image"],"output":["text"]},"reasoning":true,"tool_call":true,"structured_output":true,"limit":{"context":64000,"output":8000},"reasoning_options":[{"type":"effort","values":["low","high"]}]}}}}"#
+    let catalog = TestAI.catalog(bundled: Data(p.utf8))
+    let sparse = try decode("openrouter", #"{"data":[{"id":"known","supported_parameters":[],"context_length":16000},{"id":"unknown"}]}"#)
+    let known = catalog.option(sparse[0], providerID: "openrouter", authentication: .apiKey)
+    let stalePublic = AIModelOption(id: "known", name: "Known", contextWindow: 1000, thinking: [], maxOutput: 100, directoryOrigin: .metadata)
+    XCTAssertEqual(catalog.option(stalePublic, providerID: "openrouter", authentication: .apiKey).contextWindow, 64000, "A cached public value is not an explicit connection limit")
+    XCTAssertEqual(known.contextWindow, 16000); XCTAssertEqual(known.maxOutput, 8000)
+    XCTAssertEqual(known.capabilities?.imageInput, true)
+    XCTAssertEqual(known.capabilities?.tools, false); XCTAssertEqual(known.capabilities?.reasoning, false)
+    XCTAssertTrue(known.thinking.isEmpty)
+    XCTAssertFalse(AINativeCapabilities.supportsText(connection: presets.first{$0.id == "openrouter"}!.connection(), model: sparse[1]))
+    let google = try decode("google", #"{"models":[{"name":"models/chat","supportedGenerationMethods":["generateContent"],"inputTokenLimit":32000,"outputTokenLimit":8000}]}"#)
+    XCTAssertEqual(google[0].id, "chat"); XCTAssertEqual(google[0].contextWindow, 32000)
+    XCTAssertNil(google[0].capabilities?.imageOutput)
+    XCTAssertEqual(try decode("togetherai", #"[{"id":"chat","type":"chat","context_length":16000}]"#)[0].capabilities?.text, true)
+    XCTAssertEqual(try decode("deepseek", #"{"data":[{"id":"chat","input_modalities":["text"],"output_modalities":["text"],"effort":{"supported_levels":["low","high"],"default_level":"high"}}]}"#)[0].thinking, ["low", "high"])
+    let old = AIConnection(name: "Legacy", billing: .usage, baseURL: "https://example.invalid", providerID: "custom", providerName: "Custom", wireProtocol: .chat, authMethod: .apiKey)
+    var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(old)) as! [String: Any]
+    json.removeValue(forKey: "modelsOrigin"); json.removeValue(forKey: "modelsIdentity"); json.removeValue(forKey: "catalogCredentialGeneration")
+    let legacy = try JSONDecoder().decode(AIConnection.self, from: JSONSerialization.data(withJSONObject: json))
+    XCTAssertNil(legacy.modelsOrigin); XCTAssertNil(legacy.modelsIdentity)
+    let manual = AIModelOption(id: "private-deployment", name: "Private", contextWindow: 8000, thinking: [], isManual: true)
+    let openAI = presets.first { $0.id == "openai" && $0.auth == .apiKey }!.connection()
+    XCTAssertTrue(AINativeCapabilities.supportsText(connection: openAI, model: manual))
+    XCTAssertNil(AINativeCapabilities.route(.search, connection: openAI, model: manual))
+    XCTAssertNil(catalog.option(manual, providerID: "openai", authentication: .apiKey).capabilities?.text, "An explicit attempt is not a verified capability")
+    let gateway = try decode("opencode", #"{"data":[{"id":"new","modalities":{"input":["text","image/png"],"output":["text"]},"capabilities":{"tools":{"supported":false},"reasoning":{"supported":true,"effort":["low","high"]}},"limit":{"context":32000,"output":4000},"api":{"messages":{}}}]}"#)[0]
+    XCTAssertEqual(gateway.wireProtocol, .anthropic); XCTAssertEqual(gateway.capabilities?.imageInput, true)
+    XCTAssertEqual(gateway.thinking, ["low", "high"]); XCTAssertEqual(gateway.capabilities?.tools, false)
+    let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ChatGPTURLProtocol.self]
+    let auth = TestAI.authentication(session: URLSession(configuration: config))
+    ChatGPTURLProtocol.fixture.set { request in
+      XCTAssertNil(request.value(forHTTPHeaderField: "Authorization")); XCTAssertNil(request.value(forHTTPHeaderField: "x-api-key")); XCTAssertNil(request.value(forHTTPHeaderField: "x-goog-api-key"))
+      return (200, Data(#"{"data":[]}"#.utf8))
+    }
+    for preset in presets where AIModelDirectoryPolicy.policy(preset.connection()).kind == .service {
+      let result = try await auth.directory(preset.connection())
+      XCTAssertTrue(result.isEmpty)
+    }
+    let serviceCatalog = TestAI.catalog(bundled: Data("{}".utf8))
+    let publicConnection = presets.first { $0.id == "vercel" }!.connection()
+    let before = ChatGPTURLProtocol.fixture.requestCount
+    _ = try await serviceCatalog.serviceModels(publicConnection, auth: auth, force: false, now: TestAI.now)
+    var secondConnection = publicConnection; secondConnection.id = "another-connection"
+    let cached = try await serviceCatalog.serviceModels(secondConnection, auth: auth, force: false, now: TestAI.now.addingTimeInterval(60))
+    XCTAssertEqual(cached.checked, TestAI.now, "Copying a shared result must not extend its successful check time")
+    XCTAssertEqual(ChatGPTURLProtocol.fixture.requestCount, before + 1, "Public directory freshness is shared across connections")
+
   }
 
   // S071: 账户目录是可用模型权威，本地预算覆盖不能添加服务器未授予模型。
@@ -216,5 +319,25 @@ final class AIModelCatalogAIProviderContractTests: AIProviderContractFixture {
       XCTAssertEqual(models.map(\.id), ["first", "second"])
       XCTAssertEqual(models.last?.maxOutput, 8000)
     }
+    let pages = URLSessionConfiguration.ephemeral; pages.protocolClasses = [ChatGPTURLProtocol.self]
+    let otherAuth = TestAI.authentication(session: URLSession(configuration: pages), credentialResolver: { _ in
+      .init(accessToken: "synthetic", refreshToken: "", expires: .distantFuture, accountID: "")
+    })
+    for provider in ["alibaba", "fireworks-ai"] {
+      let connection = AIProviderPreset.all.first { $0.id == provider }!.connection()
+      ChatGPTURLProtocol.fixture.set { request in
+        let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!.queryItems ?? []
+        if provider == "alibaba" {
+          let second = query.contains { $0.name == "page_no" && $0.value == "2" }
+          return (200, Data((second ? #"{"success":true,"output":{"total":2,"models":[{"model":"second","model_info":{"context_window":32000,"max_output_tokens":4000},"inference_metadata":{"request_modality":["Text"],"response_modality":["Text"]}}]}}"# : #"{"success":true,"output":{"total":2,"models":[{"model":"first"}]}}"#).utf8))
+        }
+        XCTAssertEqual(query.first { $0.name == "filter" }?.value, "supports_serverless=true")
+        let second = query.contains { $0.name == "pageToken" && $0.value == "next" }
+        return (200, Data((second ? #"{"models":[{"name":"second","contextLength":32000}]}"# : #"{"models":[{"name":"first"}],"nextPageToken":"next"}"#).utf8))
+      }
+      let models = try await otherAuth.models(connection)
+      XCTAssertEqual(models.map(\.id), ["first", "second"]); XCTAssertEqual(models.last?.contextWindow, 32000)
+    }
+
   }
 }
