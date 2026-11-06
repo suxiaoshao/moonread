@@ -97,6 +97,20 @@ final class AIModelCatalogAuthenticationTests: AuthenticationFixture {
     let providers = TestAI.connections(defaults: defaults, auth: auth)
     let connection = AIProviderPreset.all.first { $0.id == "openrouter" && $0.auth == .apiKey }!.connection()
     let id = providers.addConnection(connection)
+    ChatGPTURLProtocol.fixture.set { _ in (503, Data()) }
+    await providers.refreshModels(id, refreshPublic: false)
+    XCTAssertTrue(providers.connections[0].models.isEmpty, "First account failure must not enumerate public models")
+    XCTAssertNotNil(providers.modelErrors[id])
+    let publicID = try XCTUnwrap(providers.catalog.providers[connection.catalogID]?.models.keys.first)
+    var stale = connection
+    stale.models = [AIModelOption(id: publicID, name: publicID, thinking: [], directoryOrigin: .metadata),
+                    AIModelOption(id: "manual", name: "Manual", contextWindow: 16000, thinking: [], isManual: true)]
+    stale.modelID = publicID; stale.modelsChecked = TestAI.now
+    defaults.set(try JSONEncoder().encode([stale]), forKey: "Moonread.ai.connections")
+    let restored = TestAI.connections(defaults: defaults, auth: auth)
+    XCTAssertEqual(restored.connections[0].models.map(\.id), ["manual"], "Legacy public IDs are not an account directory")
+    XCTAssertEqual(restored.connections[0].modelID, publicID, "Do not silently change the saved default")
+    XCTAssertNil(restored.connections[0].modelsChecked)
     ChatGPTURLProtocol.fixture.set { request in
       XCTAssertEqual(request.url?.path, "/api/v1/models/user")
       XCTAssertTrue(request.url!.query!.contains("output_modalities=text,image"))
@@ -175,6 +189,26 @@ final class AIModelCatalogAuthenticationTests: AuthenticationFixture {
       let result = try await auth.directory(preset.connection())
       XCTAssertTrue(result.isEmpty)
     }
+    let serviceConnection = presets.first { $0.id == "vercel" }!.connection()
+    let metadataConnection = presets.first { $0.id == "nvidia" }!.connection()
+    let suite = "directory-source-" + UUID().uuidString
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    let providerFixture = #"{"vercel":{"models":{"public-only":{"modalities":{"input":["text"],"output":["text"]},"reasoning":false,"tool_call":false,"limit":{}}}},"nvidia":{"models":{"public-only":{"modalities":{"input":["text"],"output":["text"]},"reasoning":false,"tool_call":false,"limit":{}}}}}"#
+    let sourceCatalog = TestAI.catalog(bundled: Data(providerFixture.utf8))
+    let sourceProviders = TestAI.connections(defaults: defaults, auth: auth, catalog: sourceCatalog)
+    let serviceID = sourceProviders.addConnection(serviceConnection)
+    ChatGPTURLProtocol.fixture.set { _ in (503, Data()) }
+    await sourceProviders.refreshModels(serviceID, refreshPublic: false)
+    XCTAssertTrue(sourceProviders.connections[0].models.isEmpty, "First service failure must stay empty despite P metadata")
+    XCTAssertNotNil(sourceProviders.modelErrors[serviceID])
+    XCTAssertTrue(sourceCatalog.models(for: serviceConnection).isEmpty)
+    let metadataID = sourceProviders.addConnection(metadataConnection)
+    await sourceProviders.refreshModels(metadataID, refreshPublic: false)
+    XCTAssertEqual(sourceProviders.connections[1].models.map(\.id), ["public-only"], "The 15 metadata-only connections keep their list source")
+    let reloaded = TestAI.connections(defaults: defaults, auth: auth, catalog: sourceCatalog)
+    XCTAssertEqual(reloaded.connections[1].models.map(\.id), ["public-only"])
+    ChatGPTURLProtocol.fixture.set { _ in (200, Data(#"{"data":[]}"#.utf8)) }
     let serviceCatalog = TestAI.catalog(bundled: Data("{}".utf8))
     let publicConnection = presets.first { $0.id == "vercel" }!.connection()
     let before = ChatGPTURLProtocol.fixture.requestCount

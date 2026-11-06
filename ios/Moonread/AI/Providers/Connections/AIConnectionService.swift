@@ -66,6 +66,18 @@ enum AIConnectionState: Equatable {
         let session = arguments.firstIndex(of: "--ui-test-session").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
         #endif
         connections = AIPersistedJSON.readArray(AIConnection.self, data: defaults.data(forKey: "Moonread.ai.connections"), key: "Moonread.ai.connections")
+            .map { stored in
+                var connection = stored
+                let policy = AIModelDirectoryPolicy.policy(connection)
+                // 1.4 ordinary API snapshots may be public metadata, not a
+                // successful directory read. Keep only explicit manual records.
+                if policy.kind != .metadata, policy.kind != .chatGPT,
+                   connection.modelsOrigin != policy.origin || connection.modelsIdentity != connection.catalogIdentity {
+                    connection.models.removeAll { $0.isManual != true }
+                    connection.modelsChecked = nil; connection.modelsOrigin = nil; connection.modelsIdentity = nil
+                }
+                return connection
+            }
         defaultTextConnectionID = defaults.string(forKey: "Moonread.ai.defaultTextConnection")
         purposeDefaults = AIPersistedJSON.readDictionary(AIPurposeSelection.self, data: defaults.data(forKey: "Moonread.ai.purposeDefaults"), key: "Moonread.ai.purposeDefaults")
         #if DEBUG
@@ -498,9 +510,9 @@ enum AIConnectionState: Equatable {
             saveConnections()
         } catch {
             guard let index = currentIndex() else { return }
-            // No successful connection snapshot: public candidates are explicitly
-            // unverified. A previous success (even an empty list) is never widened.
-            if connection.authMethod != .chatGPT, connections[index].modelsOrigin == nil, connections[index].models.isEmpty {
+            // Only metadata-only presets use P as a model list. A/S failures
+            // retain a successful directory or manual records, never public IDs.
+            if policy.kind == .metadata, connections[index].modelsOrigin == nil, connections[index].models.isEmpty {
                 connections[index].models = catalog.models(for: connection); saveConnections()
             }
             if connection.authMethod == .chatGPT {
@@ -523,8 +535,11 @@ enum AIConnectionState: Equatable {
     }
     func directorySummary(_ connection: AIConnection) -> String {
         if connection.authMethod == .chatGPT { return String(localized: "型号来自当前 ChatGPT 账户目录。") }
+        if AIModelDirectoryPolicy.policy(connection).kind == .metadata {
+            return String(localized: "型号与能力来自公开资料，尚未用此连接核实。")
+        }
         guard connection.modelsIdentity == connection.catalogIdentity, let origin = connection.modelsOrigin else {
-            return String(localized: "公开资料候选，尚未用此连接核实。")
+            return String(localized: "尚未取得模型目录，请刷新重试。")
         }
         switch origin {
         case .metadata: return String(localized: "型号与能力来自公开资料，尚未用此连接核实。")

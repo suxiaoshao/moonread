@@ -1,11 +1,11 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "尚未取得模型目录，请刷新重试。":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"The model directory has not been loaded. Refresh to try again."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"尚未取得模型目錄，請重新整理再試。"}}}},
     "这是手填型号，将尝试通用文字请求；能力并未经目录确认。":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"This is a manually entered model. A generic text request will be attempted; its capabilities have not been confirmed by the directory."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"這是手填型號，將嘗試通用文字請求；能力並未經目錄確認。"}}}},
     "输入上限 · tokens":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"Input Limit · tokens"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"輸入上限 · tokens"}}}},
     "没有读取模型目录的权限。已有模型配置仍会保留。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Permission to read the model directory is missing. Existing model settings are kept."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"沒有讀取模型目錄的權限。既有模型設定仍會保留。"}}}},
     "无法读取模型目录，请检查此连接的凭证。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Unable to read the model directory. Check this connection’s credentials."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"無法讀取模型目錄，請檢查此連線的憑證。"}}}},
-    "公开资料候选，尚未用此连接核实。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Candidates from public metadata; not yet checked with this connection."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"公開資料候選，尚未用此連線核實。"}}}},
     "型号与能力来自公开资料，尚未用此连接核实。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Models and capabilities come from public metadata and have not been checked with this connection."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"型號與能力來自公開資料，尚未用此連線核實。"}}}},
     "型号来自官方公共目录，不代表此连接的密钥有效。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Models come from the official public directory. This does not verify this connection’s key."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"型號來自官方公共目錄，不代表此連線的金鑰有效。"}}}},
     "型号来自此连接的目录，已应用账户筛选。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Models come from this connection’s directory, with account filters applied."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"型號來自此連線的目錄，已套用帳戶篩選。"}}}},

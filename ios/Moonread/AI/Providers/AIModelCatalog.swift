@@ -119,7 +119,7 @@ struct AIResolvedModel: Sendable {
         return snapshot
     }
     func models(for connection: AIConnection) -> [AIModelOption] {
-        guard connection.authMethod != .chatGPT else { return [] }
+        guard AIModelDirectoryPolicy.policy(connection).kind == .metadata else { return [] }
         return (providers[connection.catalogID]?.models ?? [:]).filter { !$0.value.modalities.output.filter { ["text", "image"].contains($0) }.isEmpty }.map { id, entry in
             option(AIModelOption(id: id, name: entry.name ?? id, thinking: [], directoryOrigin: .metadata), providerID: connection.catalogID, authentication: connection.authMethod)
         }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
