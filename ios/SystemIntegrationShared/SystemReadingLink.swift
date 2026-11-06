@@ -16,6 +16,10 @@ enum SystemReadingLink {
         if !query.isEmpty { url.queryItems = [URLQueryItem(name: "query", value: query)] }
         return url.url!
     }
+    static func contentSHA256(bookID: String) -> String? {
+        guard bookID.hasPrefix(bookIDPrefix) else { return nil }
+        return String(bookID.dropFirst(bookIDPrefix.count))
+    }
     static func book(_ id: String) -> URL? {
         guard id.hasPrefix(bookIDPrefix) else { return nil }
         return URL(string: "\(scheme)://\(host)\(bookPathPrefix)" + id.dropFirst(bookIDPrefix.count))

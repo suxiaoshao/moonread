@@ -47,7 +47,7 @@ struct StatisticsView: View {
             }
         }
         .sheet(item: $information.draft, onDismiss: { Task { if let target { await information.load(target) } } }) { draft in
-            BookMetadataEditor(draft: draft).themeScope(theme)
+            BookMetadataEditor(draft: draft, title: information.entry?.title ?? target?.title ?? "").themeScope(theme)
         }
         .confirmationDialog("下载小说后才能编辑信息", isPresented: $information.confirmDownload, titleVisibility: .visible) {
             Button("下载并准备") { if let target { information.prepareEditing(target) } }

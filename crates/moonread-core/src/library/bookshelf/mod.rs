@@ -56,6 +56,8 @@ pub struct SourceFileSnapshot {
 pub struct LibraryCoverPreview {
     pub file_id: String,
     pub name: String,
+    pub content_sha256: Option<String>,
+    pub author: Option<String>,
     pub cover: Option<crate::BookCoverAsset>,
 }
 
@@ -197,7 +199,7 @@ fn folder_cover_previews(
     #[cfg(test)]
     FOLDER_COVER_QUERIES.with(|count| count.set(count.get() + 1));
     let mut stmt = db.prepare_cached(
-        "SELECT f.id,f.name,m.value FROM library_files f
+        "SELECT f.id,f.name,m.value,fi.content_sha256 FROM library_files f
         LEFT JOIN file_identities fi ON fi.file_id=f.id
         LEFT JOIN user_positions p ON p.content_key=fi.content_sha256
         LEFT JOIN book_metadata m ON m.content_sha=fi.content_sha256
@@ -209,10 +211,16 @@ fn folder_cover_previews(
     let end = format!("{relative_path}0");
     Ok(stmt
         .query_map(params![shelf_id, prefix, end], |r| {
+            let metadata = metadata_column(r, 2)?;
             Ok(LibraryCoverPreview {
+                content_sha256: r.get(3)?,
+                author: metadata
+                    .as_ref()
+                    .map(|m| m.author.clone())
+                    .filter(|a| !a.is_empty()),
                 file_id: r.get(0)?,
                 name: r.get(1)?,
-                cover: metadata_column(r, 2)?.and_then(|m| m.cover),
+                cover: metadata.and_then(|m| m.cover),
             })
         })?
         .collect::<std::result::Result<_, _>>()?)
@@ -225,7 +233,7 @@ fn populate_cover_previews(db: &Connection, entries: &mut [LibraryEntry]) -> Res
     Ok(())
 }
 
-fn metadata_column(
+pub(crate) fn metadata_column(
     r: &rusqlite::Row<'_>,
     index: usize,
 ) -> rusqlite::Result<Option<crate::BookMetadata>> {

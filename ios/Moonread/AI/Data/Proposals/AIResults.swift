@@ -54,6 +54,8 @@ struct AINoteReviewValue {
 }
 struct AICoverReviewValue {
     var bookRef: String
+    var title: String = ""
+    var contentSHA256: String? = nil
     var candidateAssetIDs: [String]
 }
 struct AIReviewValue: Identifiable {

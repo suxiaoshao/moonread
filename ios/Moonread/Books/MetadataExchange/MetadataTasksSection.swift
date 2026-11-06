@@ -208,16 +208,14 @@ struct MetadataTaskBar<Bar: View>: ViewModifier {
 struct MetadataBookThumbnail: View {
     let title: String
     let cover: BookCoverAsset?
+    var contentSHA256: String? = nil
+    var author: String? = nil
     var size = CGSize(width: 34, height: 49)
     var contentMode: ContentMode = .fill
-    @Environment(\.theme) private var theme
     @Environment(\.displayScale) private var displayScale
     var body: some View {
-        ZStack {
-            Color(uiColor: theme.input)
-            if let cover { BookCoverImage(cover: cover, pixels: Int((size.height * displayScale).rounded(.up)), contentMode: contentMode) }
-            else { SystemTextBookCover(title: title, accent: Color(uiColor: theme.accent), surface: Color(uiColor: theme.accentSurface), compact: true) }
-        }.frame(width: size.width, height: size.height).clipShape(.rect(cornerRadius: 4)).accessibilityHidden(true)
+        BookCoverView(title: title, compact: true, cover: cover, contentSHA256: contentSHA256, author: author, pixels: Int((size.height * displayScale).rounded(.up)), contentMode: contentMode)
+            .frame(width: size.width, height: size.height).clipShape(.rect(cornerRadius: 4))
     }
 }
 struct MetadataStatusView: View {

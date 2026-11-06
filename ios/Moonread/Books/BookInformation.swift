@@ -172,6 +172,7 @@ final class BookMetadataDraft: Identifiable {
 
 struct BookMetadataEditor: View {
     @Bindable var draft: BookMetadataDraft
+    var title = ""
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @FocusState private var focused: Bool
@@ -191,7 +192,7 @@ struct BookMetadataEditor: View {
             Form {
                 Section {
                     VStack(spacing: 16) {
-                        LibraryBookCover(title: "", cover: draft.value.cover).frame(width: 112, height: 160)
+                        BookCoverView(title: title, cover: draft.value.cover, contentSHA256: draft.value.sha, author: draft.value.author).frame(width: 112, height: 160)
                             .overlay { if draft.choosingImage { ProgressView("正在处理图片").padding(8).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 12)) } }
                         ViewThatFits(in: .horizontal) {
                             HStack(spacing: 12) { coverActions }
@@ -320,7 +321,7 @@ struct BookInformationSections: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(alignment: .top, spacing: 16) {
-                LibraryBookCover(title: target.title, cover: model.details?.metadata.cover)
+                BookCoverView(title: model.entry?.title ?? target.title, cover: model.details?.metadata.cover, contentSHA256: model.details?.metadata.sha, author: model.details?.metadata.author)
                     .frame(width: 64, height: 90).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 12) {
                     Text(verbatim: model.entry?.title ?? target.title)

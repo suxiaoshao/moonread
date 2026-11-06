@@ -28,10 +28,11 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 
 | 独立规则 | 唯一归属方 / 文件 | 理由与其他层边界 | 现状 / 边界 |
 | --- | --- | --- | --- |
+| 封面显示优先级、预设分配与排版 | Swift 共享 `SystemIntegrationShared/SystemReadingCard.swift` 的 `SystemBookCover`；`SystemPresetBookCover.swift` 负责预设绘制 | `SystemBookCover` 唯一决定用户图片优先、否则预设／无 SHA 文字兜底；App 的 `BookCoverView` 只订阅既有 `CoverImageLoader`，小组件只读取共享缩略图，Spotlight 用同一视图生成缩略图，阅读扉页也复用；统计查询从现有资料投影带回作者及封面。固定六款按完整 content_sha256 取余6；主 App/小组件共享竖排、横排、作者、固定字色、书脊与有界缩略缓存；宋体仅用已安装字款，缓存包含实际字款；无身份文字封面使用固定暖灰纸/墨色；不重算身份、不写用户封面事实。扩展对传入 SHA 拼写作防御性校验，主 App 沿用 Rust 身份校验 | 显示规则及读取接线共用；不新增用户数据格式 |
 | 小说信息交换格式、归档与诊断 | Rust `metadata/`，共用 `storage/maintenance/archive_limits.rs` | JSON/JSONL/ZIP、版本/必需能力、流式私有暂存、路径与资源预算；不实现字段正规化或 LWW | 新增单源 |
 | 小说信息编辑与导入提交 | Swift `Books/BookMetadata.swift`、`Books/MetadataExchange/` | 共用编辑计划、封面正规化与单本事务；匹配只查索引 SHA，未选字段不写，资料成功后仅显式改名读取来源快照 | 复用现有 owner |
 | 配色专属纹理支持、descriptor/混合参数、独立开关及发布迁移 | Rust `user/themes/textures.rs`（descriptor），`preferences.rs`（偏好与迁移），`resolve.rs`（校验/解析） | 分层资源、锚点/尺度限制与混合参数单源；按最终有效内置配色 ID 解析；本机 version 1 map；旧 1.3 两槽播种同明暗全部支持项，缺 key 新默认开；App/官网共用 descriptor，不再维护通用纹理/强度/Lr/tile 运行契约 | 单源 |
-| 导入字体资源身份、引用与清单格式/校验 | Rust `user/reader_fonts.rs` 与 `reading/layout.rs` | 复用 `SourceIdentityProbe.raw_sha256` 标识原字节；Swift `ReaderFontLibrary` 负责协调复制与 Core Text 注册，`ReaderBuiltinFonts` 管已知 Apple 宋体/圆体的按需下载与可用性，`ReadingTypography` 唯一解析正文/预览字体及缺失回退；资源/face 可用性改变使排版缓存失效 | 单源与平台接线 |
+| 导入字体资源身份、引用与清单格式/校验 | Rust `user/reader_fonts.rs` 与 `reading/layout.rs` | 复用 `SourceIdentityProbe.raw_sha256` 标识原字节；Swift `ReaderFontLibrary` 负责协调复制与 Core Text 注册，`ReaderBuiltinFonts` 管已知 Apple 宋体/圆体的按需下载与可用性，已安装字款与中文字形验证共用 Swift 共享 `SystemInstalledFont`；封面只读可用性，不调用下载，`ReadingTypography` 唯一解析正文/预览字体及缺失回退；资源/face 可用性改变使排版缓存失效 | 单源与平台接线 |
 | 字号、行距、段间距的默认值、范围与控件步长 | Rust `reading/layout.rs` | `reader_typography_controls` 同时供设置校验、Swift Stepper 和官网导出器使用；原生/浏览器字体度量各自归平台 | 单源 |
 | 阅读设置当前值、连续修改与串行保存 | Swift `Settings/Reading/ReaderSettingsStore.swift`，App 级可观察环境对象 | `ReaderSession` 和设置页共用同一实例，不持有可写副本或各自排队；`AppDataService` 仍负责既有 UserDefaults 编解码和持久化，Rust 校验范围不变 | 单一 owner |
 | 纹理偏好本机保存/回滚 | Swift `UserThemes` / `ThemeStore` | 原 UserDefaults key，缺 key 与已有坏数据分开；不可读不能被默认覆盖；不改 Palette、CloudKit 或备份 | 平台边界 |
@@ -113,7 +114,7 @@ SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `in
 | 目录 | 文件职责与保留边界 |
 | --- | --- |
 | `App` | 应用入口和 `MoonreadDelegate`；App 继续持有同一个 `CloudStore` |
-| `Library` | `LibraryModel/` 中 `LibraryModel.swift` 保留原存储和初始化，Navigation/Discovery/Reload/Imports/FileWork 同类型扩展分职责；`LibraryRoutes.swift` 保留原路由与首页快照值；`Browsing/` 保存首页、全部小说、文件夹、最近阅读及行/原生集合；`FileOperations/` 保存文件动作与 drop，`Search/` 保存查询/筛选/排序，`Sources/` 保存真实目录、云文件与协调访问，`Indexing/` 和 `Recovery/` 保存索引/恢复及各自本地化；管理页保持入口，状态/绑定及层级不变；`Browsing/LibraryPresentation.swift` 保留跨功能复用的 `LibraryBookCover`；`Fixtures/LibraryUIFixtures.swift`、`LibraryStoreShotFixtures.swift` 与 `StoreScreenshotFixture.swift` 汇集 DEBUG/测试合成输入，target membership、隔离目录及初始化顺序不变 |
+| `Library` | `LibraryModel/` 中 `LibraryModel.swift` 保留原存储和初始化，Navigation/Discovery/Reload/Imports/FileWork 同类型扩展分职责；`LibraryRoutes.swift` 保留原路由与首页快照值；`Browsing/` 保存首页、全部小说、文件夹、最近阅读及行/原生集合；`FileOperations/` 保存文件动作与 drop，`Search/` 保存查询/筛选/排序，`Sources/` 保存真实目录、云文件与协调访问，`Indexing/` 和 `Recovery/` 保存索引/恢复及各自本地化；管理页保持入口，状态/绑定及层级不变；封面由 `Books/BookMetadata.swift` 的 `BookCoverView` 接入既有图片加载器；`Fixtures/LibraryUIFixtures.swift`、`LibraryStoreShotFixtures.swift` 与 `StoreScreenshotFixture.swift` 汇集 DEBUG/测试合成输入，target membership、隔离目录及初始化顺序不变 |
 | `Reader/Session` | `ReaderSession/` 中 `ReaderSession.swift` 保留原存储、init、open/leave；Loading、Position、Preparation、Browsing、Continuation、Annotations 为同一类型的领域扩展，完整保留现有会话 owner；`Opening/` 汇集开书协调与已有诊断入口，ReaderAutoReading 保持会话级入口 |
 | `Reader/UI` | `ReaderScreen/` 中 `ReaderScreen` 保留全部私有 State、会话生命周期和导航/原生呈现协调；Content/Controls 扩展使用同一 View 的只读引用/值访问口组合原内容，不引入宿主或副本状态；`Presentation/` 汇集原生呈现、来源导航及工具会话；`Controls/` 保存顶部提示、附件内容与更多操作，`Chapters/`、`Notes/` 保存目录与笔记，`Tools/` 保存工具 model/标签，`Search/` 保存完整原生搜索页和紧凑续搜入口；目录在 `Chapters/` 使用系统 List/DisclosureGroup/searchable 和独立惰性行，读取同一轻量快照；偏移 ID 由 ForEach 提供，仅当前章可见性回写页面；原意图路径、绑定和视图层级不变 |
 | `Reader/Rendering` | `ReadingView` 是 SwiftUI 适配入口；`ReadingController/` 汇集原控制器及 Pages/Scroll/Navigation/Selection 扩展，`Pages/` 保存叶页/扉页控制器，`Text/` 保存排版装配、坐标、原生正文与背景；ReadingPagination、ReadingViewport 和设备控制保留原入口/owner |

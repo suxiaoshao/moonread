@@ -6,6 +6,8 @@ struct AITaskObject {
     var subtitle: String?
     var cover: BookCoverAsset?
     var symbol = "book.closed"
+    var contentSHA256: String? = nil
+    var author: String? = nil
 }
 
 /// Local setup exists only until Start. Started sessions use AIChatView.
@@ -49,8 +51,8 @@ struct AITaskObjectHeader: View {
     let object: AITaskObject
     var body: some View {
         HStack(alignment: .top, spacing: LayoutTokens.control) {
-            if let cover = object.cover {
-                LibraryBookCover(title: object.title, cover: cover).frame(width: 40, height: 56).accessibilityHidden(true)
+            if object.cover != nil || object.contentSHA256 != nil {
+                BookCoverView(title: object.title, cover: object.cover, contentSHA256: object.contentSHA256, author: object.author).frame(width: 40, height: 56).accessibilityHidden(true)
             } else {
                 Image(systemName: object.symbol).font(.title2).foregroundStyle(Color(uiColor: theme.secondary))
                     .frame(width: 40, height: 56).accessibilityHidden(true)

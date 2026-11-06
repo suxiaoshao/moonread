@@ -77,8 +77,13 @@ struct AIResultCard: View {
             }
         }
     }
+    private var coverBook: AICoverReviewValue? {
+        guard let review, case .cover(let value) = review.body else { return nil }
+        return value
+    }
     private func coverPreview(_ candidate: AICoverCandidate) -> some View {
-        AICoverPreview(item: coverItem(candidate), bookTitle: String(localized: "封面"), currentCover: ai.proposals.liveMetadata[resultID]?.cover,
+        AICoverPreview(item: coverItem(candidate), bookTitle: coverBook?.title ?? String(localized: "封面"), currentCover: ai.proposals.liveMetadata[resultID]?.cover,
+            contentSHA256: coverBook?.contentSHA256, author: ai.proposals.liveMetadata[resultID]?.author,
             useAsReference: { Task { try? await ai.proposals.useImage(result, attachmentRef: candidate.id) } },
             setCover: { await ai.proposals.setCover(resultID, attachmentRef: candidate.id) }).themeScope(theme)
     }

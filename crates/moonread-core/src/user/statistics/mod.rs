@@ -204,6 +204,8 @@ pub struct StatisticsBook {
     pub content_key: String,
     pub book_id: Option<String>,
     pub title: String,
+    pub author: Option<String>,
+    pub cover: Option<BookCoverAsset>,
     pub duration_ms: u64,
     pub first_read_ms: i64,
     pub last_read_ms: i64,
@@ -291,10 +293,16 @@ impl ReaderCore {
         content_key: Option<String>,
     ) -> Result<StatisticsOverview> {
         let db = self.read_lock()?;
-        let mut query = db.prepare("SELECT content_key,book_id,title,SUM(ended_ms-started_ms),MIN(started_ms),MAX(ended_ms),MAX(CASE WHEN preview=0 THEN ended_ms ELSE 0 END),COUNT(DISTINCT local_day) FROM reading_activity WHERE deleted=0 AND local_day>=?1 AND local_day<=?2 AND (?3 IS NULL OR content_key=?3) GROUP BY content_key ORDER BY MAX(CASE WHEN preview=0 THEN ended_ms ELSE 0 END) DESC,title,content_key")?;
+        let mut query = db.prepare("SELECT a.content_key,a.book_id,a.title,SUM(a.ended_ms-a.started_ms),MIN(a.started_ms),MAX(a.ended_ms),MAX(CASE WHEN a.preview=0 THEN a.ended_ms ELSE 0 END),COUNT(DISTINCT a.local_day),m.value FROM reading_activity a LEFT JOIN book_metadata m ON m.content_sha=a.content_key WHERE a.deleted=0 AND a.local_day>=?1 AND a.local_day<=?2 AND (?3 IS NULL OR a.content_key=?3) GROUP BY a.content_key ORDER BY MAX(CASE WHEN a.preview=0 THEN a.ended_ms ELSE 0 END) DESC,a.title,a.content_key")?;
         let books = query
             .query_map(params![first_day, last_day, content_key], |r| {
+                let metadata = crate::library::bookshelf::metadata_column(r, 8)?;
                 Ok(StatisticsBook {
+                    author: metadata
+                        .as_ref()
+                        .map(|m| m.author.clone())
+                        .filter(|a| !a.is_empty()),
+                    cover: metadata.and_then(|m| m.cover),
                     content_key: r.get(0)?,
                     book_id: r.get(1)?,
                     title: r.get(2)?,

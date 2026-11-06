@@ -122,7 +122,7 @@ SQLite v22 新增 `source_identities`（原文件 SHA＋解码策略为键）与
 | 书签与批注 | SwiftData `AnnotationOperation`；完整内容候选和操作基线，正式保存后不维护内容历史 |
 | 阅读事实与清理边界 | SwiftData `ReadingFact` / `StatisticsClear`；各设备独立事实累加，同 ID 重试不多算 |
 | 分享接收 | App Group `ShareInbox`，原字节与 `schemaVersion: 1` 清单；已发布项跨启动保留，不参与缓存清理 |
-| 用户封面 | SwiftData `UserCover.bytes` 外部存储；权威图片不是缓存，附件暂缺时文字封面 |
+| 用户封面 | SwiftData `UserCover.bytes` 外部存储；权威图片不是缓存；附件暂缺时用预设装帧兜底，无有效正文身份时用文字封面；预设不是用户事实 |
 | SHA 完成前的阅读数据 | 设备 SwiftData `pending-users.store`，禁止云同步；完成后转入 SHA 用户存储并回收暂存 |
 | 原文件编码选择 | SwiftData UserValue `source-decoding/<rawSHA>`，整值 LWW；导出全部包含，整书删除不删除此全局设置 |
 | 旧手选升级待办 | SQLite v23 `source_decoding_migration`，只登记升级前非 auto 值；未知 raw 的离线原件暂留，保存 epoch 候选后才删除 |

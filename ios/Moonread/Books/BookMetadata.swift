@@ -281,24 +281,29 @@ private final class CoverObservationTokens: @unchecked Sendable {
     }
 }
 
-struct BookCoverImage: View {
-    let cover: BookCoverAsset
-    var pixels = 320
-    var loader = CoverImageLoader.shared
+/// App-side asset loading only. Display priority and typography live in the
+/// same shared SystemBookCover consumed by widgets and Spotlight.
+struct BookCoverView: View {
+    let title: String
+    var compact = false
+    var cover: BookCoverAsset? = nil
+    var contentSHA256: String? = nil
+    var author: String? = nil
+    var coverLoader = CoverImageLoader.shared
+    var pixels: Int? = nil
     var contentMode: ContentMode = .fill
     @State private var subscription: CoverSubscription?
+    private var image: UIImage? {
+        guard let cover else { return nil }
+        let key = CoverImageLoader.key(cover, pixels ?? (compact ? 160 : 600))
+        return (subscription?.key == key ? subscription?.presentation : coverLoader.presentation(cover, pixels: pixels ?? (compact ? 160 : 600)))?.image
+    }
     var body: some View {
-        ZStack {
-            // A waiting cover still needs a mounted view to own its subscription.
-            // An empty Group has no child on which SwiftUI can start the task.
-            Color.clear
-            if let image = (subscription?.key == CoverImageLoader.key(cover, pixels) ? subscription?.presentation : loader.presentation(cover, pixels: pixels))?.image {
-                Image(uiImage: image).resizable().aspectRatio(contentMode: contentMode).accessibilityIdentifier("bookCoverImage")
-            }
-        }
-            .task(id: CoverImageLoader.key(cover, pixels)) {
-                guard !Task.isCancelled else { return }
-                subscription = loader.subscribe(cover, pixels: pixels)
+        SystemBookCover(title: title, compact: compact, contentSHA256: contentSHA256, author: author, userImage: image, contentMode: contentMode)
+            .task(id: cover.map { CoverImageLoader.key($0, pixels ?? (compact ? 160 : 600)) }) {
+                subscription = nil
+                guard !Task.isCancelled, let cover else { return }
+                subscription = coverLoader.subscribe(cover, pixels: pixels ?? (compact ? 160 : 600))
             }
             .onDisappear { subscription = nil }
     }

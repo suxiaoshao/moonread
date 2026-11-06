@@ -152,7 +152,7 @@ extension AIQuickTaskRequest {
         }
         if files.count == 1, family == .metadata, let entry = files.first {
             return AIQuickTaskRequest(family: family, origin: AITaskOrigin(bookSHA: nil, fileRef: refs[0]),
-                                      object: AITaskObject(title: entry.title, cover: entry.metadata?.cover), attachments: attachments)
+                                      object: AITaskObject(title: entry.title, cover: entry.metadata?.cover, contentSHA256: entry.contentSha256, author: entry.metadata?.author), attachments: attachments)
         }
         var selection = AIReadingAttachment(kind: .files, origin: "library", title: String(localized: "已选 \(files.count) 项"))
         selection.fileRefs = refs

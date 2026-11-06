@@ -101,6 +101,8 @@ struct AICoverPreview: View {
     let item: AICoverCandidateItem
     let bookTitle: String
     let currentCover: BookCoverAsset?
+    var contentSHA256: String? = nil
+    var author: String? = nil
     /// Nil when the image service cannot edit with a reference.
     var useAsReference: (() -> Void)?
     var canUseReference = true
@@ -116,7 +118,7 @@ struct AICoverPreview: View {
                         .frame(maxHeight: 420).frame(maxWidth: .infinity)
                         .accessibilityLabel(Text("封面候选"))
                     HStack(alignment: .center, spacing: LayoutTokens.control) {
-                        LibraryBookCover(title: bookTitle, cover: currentCover).frame(width: 48, height: 68)
+                        BookCoverView(title: bookTitle, cover: currentCover, contentSHA256: contentSHA256, author: author).frame(width: 48, height: 68)
                         VStack(alignment: .leading, spacing: 4) {
                             Text("当前封面").font(.subheadline)
                         }
