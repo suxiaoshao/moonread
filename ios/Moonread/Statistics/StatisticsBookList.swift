@@ -11,7 +11,7 @@ struct StatisticsBookRow: View {
     var body: some View {
         NavigationLink(value: LibraryRoute.statistics(StatisticsRoute(key: book.contentKey, bookID: book.bookId, title: book.title, window: window, readingSection: true))) {
             HStack(spacing: LayoutTokens.control) {
-                LibraryBookCover(title: book.title, compact: true).frame(width: 30, height: 42).accessibilityHidden(true)
+                LibraryBookCover(title: book.title, compact: true, contentSHA256: book.contentKey).frame(width: 30, height: 42).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(verbatim: book.title).lineLimit(1)
                     StatisticsDurationBar(fraction: Double(book.durationMs) / Double(max(1, maximum)), color: theme.statisticsColor(book.contentKey)) {

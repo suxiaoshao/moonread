@@ -9,6 +9,21 @@ import XCTest
 @testable import Moonread
 
 final class BookCoverReaderIntegrationTests: ReaderIntegrationFixture {
+
+  func testPresetCoverAssignmentIsStable() {
+    let zero = String(repeating: "0", count: 63)
+    let samples: [(String, PresetBookCoverID)] = [
+      (zero + "0", .bamboo), (zero + "1", .river), (zero + "2", .vermilion),
+      (zero + "3", .moonlake), (zero + "4", .plum), (zero + "5", .lotus),
+      ("1" + zero, .plum), ("f" + zero, .bamboo), (String(repeating: "f", count: 64), .moonlake)
+    ]
+    for (sha, expected) in samples { XCTAssertEqual(presetCoverID(contentSHA256: sha), expected) }
+    for invalid in ["", zero, zero + "g", String(repeating: "F", count: 64), zero + "00"] {
+      XCTAssertNil(presetCoverID(contentSHA256: invalid))
+    }
+    XCTAssertNil(presetCoverID(contentSHA256: nil))
+  }
+
   // S358: 封面保存只接受有效内容且取消不替换旧封面；哈希校验调用 Rust，图片缩放数值/渲染矩阵删去。
   @MainActor
   func testCoverDownsamplingSaveCancelAndHashValidation() async throws {

@@ -28,6 +28,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 
 | 独立规则 | 唯一归属方 / 文件 | 理由与其他层边界 | 现状 / 边界 |
 | --- | --- | --- | --- |
+| 预设装帧封面分配与排版 | Swift 共享 `SystemIntegrationShared/SystemPresetBookCover.swift` | 固定六款按完整 content_sha256 取余6；主 App/小组件共享竖排、横排、作者、字色、书脊与有界缩略缓存；不重算身份、不写用户封面事实。扩展对传入 SHA 拼写作防御性校验，主 App 沿用 Rust 身份校验 | 新增单源显示规则 |
 | 小说信息交换格式、归档与诊断 | Rust `metadata/`，共用 `storage/maintenance/archive_limits.rs` | JSON/JSONL/ZIP、版本/必需能力、流式私有暂存、路径与资源预算；不实现字段正规化或 LWW | 新增单源 |
 | 小说信息编辑与导入提交 | Swift `Books/BookMetadata.swift`、`Books/MetadataExchange/` | 共用编辑计划、封面正规化与单本事务；匹配只查索引 SHA，未选字段不写，资料成功后仅显式改名读取来源快照 | 复用现有 owner |
 | 配色专属纹理支持、descriptor/混合参数、独立开关及发布迁移 | Rust `user/themes/textures.rs`（descriptor），`preferences.rs`（偏好与迁移），`resolve.rs`（校验/解析） | 分层资源、锚点/尺度限制与混合参数单源；按最终有效内置配色 ID 解析；本机 version 1 map；旧 1.3 两槽播种同明暗全部支持项，缺 key 新默认开；App/官网共用 descriptor，不再维护通用纹理/强度/Lr/tile 运行契约 | 单源 |

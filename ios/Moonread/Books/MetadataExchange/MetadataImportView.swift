@@ -105,7 +105,7 @@ struct MetadataImportView: View {
     }
     private func bookRow(_ book: MetadataPreviewBook) -> some View {
         HStack(spacing: 12) {
-            MetadataBookThumbnail(title: book.title, cover: book.edited?.cover, size: CGSize(width: 44, height: 66), contentMode: .fit)
+            MetadataBookThumbnail(title: book.title, cover: book.edited?.cover, contentSHA256: book.id, author: book.edited?.author, size: CGSize(width: 44, height: 66), contentMode: .fit)
             VStack(alignment: .leading, spacing: 4) {
                 Text(verbatim: book.title).font(.body.weight(.medium)).foregroundStyle(Color(uiColor: theme.ink))
                 Text(verbatim: book.summary).font(.footnote).foregroundStyle(Color(uiColor: book.disposition == .unmatched || book.disposition == .skipped ? theme.warning : theme.secondary))
@@ -268,7 +268,7 @@ struct MetadataImportView: View {
     }
     private func resultRow(_ item: MetadataImportOutcome) -> some View {
         HStack(spacing: 12) {
-            MetadataBookThumbnail(title: item.title, cover: item.cover, size: CGSize(width: 44, height: 66), contentMode: .fit)
+            MetadataBookThumbnail(title: item.title, cover: item.cover, contentSHA256: item.id, size: CGSize(width: 44, height: 66), contentMode: .fit)
             VStack(alignment: .leading, spacing: 4) {
                 Text(verbatim: item.title).font(.body.weight(.medium))
                 Text(verbatim: item.summary).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
@@ -286,7 +286,7 @@ private struct MetadataFieldView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 HStack(spacing: 14) {
-                    MetadataBookThumbnail(title: book.title, cover: book.base?.cover)
+                    MetadataBookThumbnail(title: book.title, cover: book.base?.cover, contentSHA256: book.id, author: book.base?.author)
                     VStack(alignment: .leading, spacing: 4) { Text(verbatim: book.title).font(.title2.weight(.semibold)); Text(verbatim: book.summary).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
                 }.padding(.bottom, 8)
                 if book.disposition == .unmatched {
@@ -432,7 +432,7 @@ private struct MetadataCoverComparison: View {
                 } else if let cover {
                     BookCoverImage(cover: cover, pixels: 600, contentMode: .fit)
                 } else {
-                    SystemTextBookCover(title: book.title, accent: Color(uiColor: theme.accent), surface: Color(uiColor: theme.accentSurface), compact: true)
+                    SystemTextBookCover(title: book.title, accent: Color(uiColor: theme.accent), surface: Color(uiColor: theme.accentSurface), compact: true, contentSHA256: book.id, author: book.base?.author)
                 }
             }.frame(width: 124, height: 186)
                 .clipShape(.rect(cornerRadius: 5))

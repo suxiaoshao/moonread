@@ -7,7 +7,16 @@ struct SystemTextBookCover: View {
     let accent: Color
     let surface: Color
     var compact = false
+    var contentSHA256: String? = nil
+    var author: String? = nil
     var body: some View {
+        Group {
+            if let id = presetCoverID(contentSHA256: contentSHA256) {
+                SystemPresetBookCover(id: id, title: title, author: author)
+            } else { textCover }
+        }.accessibilityHidden(true)
+    }
+    private var textCover: some View {
         ZStack(alignment: .leading) {
             RoundedRectangle(cornerRadius: compact ? 3 : 6).fill(surface)
             Rectangle().fill(accent.opacity(0.18)).frame(width: 1).padding(.leading, compact ? 4 : 7)
@@ -65,7 +74,7 @@ struct SystemWidgetCover: View {
                let data = (file ?? (try? .shared()))?.coverData(cover), let image = UIImage(data: data) {
                 Image(uiImage: image).resizable().widgetAccentedRenderingMode(.desaturated).scaledToFill()
             } else {
-                SystemTextBookCover(title: book.title, accent: colors.accent, surface: colors.accentSurface, compact: compact)
+                SystemTextBookCover(title: book.title, accent: colors.accent, surface: colors.accentSurface, compact: compact, contentSHA256: SystemReadingLink.contentSHA256(bookID: book.id), author: book.author)
             }
         }.clipShape(.rect(cornerRadius: 3)).accessibilityHidden(true)
     }

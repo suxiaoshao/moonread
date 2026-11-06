@@ -360,6 +360,10 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		2A9B96701CC7CDCCC25D0622 /* MetadataTasksSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE54835FF23B76DF33D8DB39; };
 		89E96FFFF6571AEF936D682A = {isa = PBXBuildFile; fileRef = ED137C59B129523670772A6F; };
 		D84AF1EE58BF3D4813B23CFA = {isa = PBXBuildFile; fileRef = 26AA2454BCE4D9C649AE5576; };
+		07E3722C848B4FE19CBF215D = {isa = PBXBuildFile; fileRef = 5BB83729646B4A3D83C1F8E1; };
+		EC0901A046A34E0C94F19377 = {isa = PBXBuildFile; fileRef = 5BB83729646B4A3D83C1F8E1; };
+		FEBD0561E8064B4F9A34173E = {isa = PBXBuildFile; fileRef = 42C27EDDC5304FA9B6EBFA5E; };
+		4C56E96FD985471688B0E843 = {isa = PBXBuildFile; fileRef = 42C27EDDC5304FA9B6EBFA5E; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -730,6 +734,8 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		DE54835FF23B76DF33D8DB39 /* MetadataTasksSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataTasksSection.swift; sourceTree = "<group>"; };
 		ED137C59B129523670772A6F = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExchangeTests.swift; sourceTree = "<group>"; };
 		26AA2454BCE4D9C649AE5576 = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = MetadataExchange.xcstrings; sourceTree = "<group>"; };
+		5BB83729646B4A3D83C1F8E1 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemPresetBookCover.swift; sourceTree = "<group>"; };
+		42C27EDDC5304FA9B6EBFA5E = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = PresetCovers.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1076,6 +1082,8 @@ D35000000000000000000001,
 				CDF91CB9E9184CA3BF5287FC /* SystemReadingRouter.swift */,
 			); path = Moonread/SystemIntegration; sourceTree = "<group>"; };
 		A2E6EE44E97CC74D11961166 /* SystemIntegrationShared */ = {isa = PBXGroup; children = (
+                5BB83729646B4A3D83C1F8E1,
+                42C27EDDC5304FA9B6EBFA5E,
                 1FC26519733A4A86A5C69068 /* WidgetDefaultAppearance.json */,
                 66ECAE43656B4E6FA118B88B /* SystemStatisticsCard.swift */,
                 98A93E7440E64AE0B11216AC /* SystemWidgetSnapshot.swift */,
@@ -1838,6 +1846,7 @@ D35000000000000000000001,
 			buildActionMask = 2147483647;
 			files = (
                 2A49E75FB62D455EA40547D4 /* WidgetDefaultAppearance.json */,
+                FEBD0561E8064B4F9A34173E,
                 005AC664DBAF46D4BDDD504A /* AppShortcuts.xcstrings */,
                 D720FF62FEF54991885AE8D3 /* SystemReading.xcstrings in Resources */,
                 D84AF1EE58BF3D4813B23CFA /* MetadataExchange.xcstrings in Resources */,
@@ -1877,6 +1886,7 @@ E51000000000000000000009,D41000000000000000000001,
 		EC1986FEC42C4A9A940AE0B0 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (
                 C14A00000000000000000004 /* Widget InfoPlist in Resources */,
                 B135F2963E3B47819FE2FC73 /* WidgetDefaultAppearance.json */,
+                4C56E96FD985471688B0E843,
                 3590C0DA176B4ADBBFB73708 /* PrivacyInfo.xcprivacy */,
                 F02F8D5E092D48BEBAF2CBBB /* Localizable.xcstrings */,
                 010EFBB7F2A045A3A50FBC84 /* SystemReading.xcstrings */,); runOnlyForDeploymentPostprocessing = 0; };
@@ -1957,6 +1967,7 @@ E51000000000000000000009,D41000000000000000000001,
                 2474CD360E81483DBDA43BE3 /* SystemStatisticsCard.swift */,
                 BB8ABFEE74F04456A4BE070E /* SystemWidgetSnapshot.swift */,
                 83977DC4948F48748061915D /* SystemReadingCard.swift */,
+                07E3722C848B4FE19CBF215D,
                 CB5D24E426C74DB28C409E79 /* SystemReadingLink.swift */,
                 A674F357DD104E0393C79ACC /* SystemIntegrationSettingsView.swift */,
                 637E8D49F3D84FECA7E48556 /* SystemSpotlightIndexer.swift */,
@@ -2210,6 +2221,7 @@ F01900000000000000000001,
                 4FB012E703494D00A03A92E4 /* SystemWidgetSnapshot.swift */,
                 E473A3CD4DBB45B7AB184A3D /* ReadingWidget.swift */,
                 CB6A7FD1BF984A79B8586F5E /* SystemReadingCard.swift */,
+                EC0901A046A34E0C94F19377,
                 58F94938188043B8B65F2209 /* SystemReadingLink.swift */,
                 B56C2D6C1C9A4E179056846B /* SystemReadingSnapshot.swift */,
                 174FF1DA006A482FA274E861 /* SystemReadingEntities.swift */,

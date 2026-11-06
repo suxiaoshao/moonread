@@ -52,11 +52,13 @@ struct LibraryBookCover: View {
     let title: String
     var compact = false
     var cover: BookCoverAsset? = nil
+    var contentSHA256: String? = nil
+    var author: String? = nil
     var coverLoader = CoverImageLoader.shared
     @Environment(\.theme) private var theme
 
     var body: some View {
-        SystemTextBookCover(title: title, accent: Color(uiColor: theme.accent), surface: Color(uiColor: theme.accentSurface), compact: compact)
+        SystemTextBookCover(title: title, accent: Color(uiColor: theme.accent), surface: Color(uiColor: theme.accentSurface), compact: compact, contentSHA256: contentSHA256, author: author)
         .overlay { if let cover { BookCoverImage(cover: cover, pixels: compact ? 160 : 600, loader: coverLoader).clipped() } }
         .clipShape(.rect(cornerRadius: compact ? 3 : 6))
         .accessibilityHidden(true)
@@ -94,7 +96,7 @@ struct LibraryFolderCover: View {
     private func previewRow(_ items: [LibraryCoverPreview]) -> some View {
         HStack(spacing: 5) {
             ForEach(items, id: \.fileId) { preview in
-                LibraryBookCover(title: URL(fileURLWithPath: preview.name).deletingPathExtension().lastPathComponent, compact: true, cover: preview.cover)
+                LibraryBookCover(title: URL(fileURLWithPath: preview.name).deletingPathExtension().lastPathComponent, compact: true, cover: preview.cover, contentSHA256: preview.contentSha256, author: preview.author)
                     .frame(width: 39.5, height: 59)
             }
             if items.count < 2 { Color.clear.frame(width: 39.5, height: 59) }
@@ -117,7 +119,7 @@ struct LibraryBookTile: View {
                     Group {
                         if entry.directory {
                             LibraryFolderCover(previews: entry.coverPreviews).aspectRatio(0.7, contentMode: .fit)
-                        } else { LibraryBookCover(title: entry.title, cover: entry.metadata?.cover).aspectRatio(0.7, contentMode: .fit) }
+                        } else { LibraryBookCover(title: entry.title, cover: entry.metadata?.cover, contentSHA256: entry.contentSha256, author: entry.metadata?.author).aspectRatio(0.7, contentMode: .fit) }
                     }
                         .overlay {
                             if selected {
