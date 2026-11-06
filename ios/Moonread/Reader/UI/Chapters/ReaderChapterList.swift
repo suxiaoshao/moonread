@@ -28,7 +28,10 @@ struct ReaderChapterList: View {
                     }.font(.caption).listRowBackground(Color(uiColor: theme.surface))
                 }
                 if model.chapterFilter.isEmpty {
-                    Button { navigate(0, nil, .cover) } label: {
+                    Button {
+                        chapterFilterFocused = false
+                        navigate(0, nil, .cover)
+                    } label: {
                         Label("封面", systemImage: "book.closed")
                             .foregroundStyle(Color(uiColor: session.showingCover ? theme.accent : theme.ink))
                     }
