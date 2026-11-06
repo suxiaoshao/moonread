@@ -677,8 +677,13 @@ final class AIExpandedAuthProtocol: URLProtocol, @unchecked Sendable {
     var connection = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection()
     connection.authMethod = .apiKey
     connection.models = [
-      .init(id: "gpt-6-astra", name: "Astra", contextWindow: 32000, thinking: [])
+      .init(id: "gpt-6-astra", name: "Astra", contextWindow: 32000, thinking: [], directoryOrigin: .account, isListed: true)
     ]
+    // Native-tool tests start with a successfully loaded connection directory;
+    // an unmarked public candidate is intentionally not restored by D2.
+    connection.modelsOrigin = .account
+    connection.modelsIdentity = connection.catalogIdentity
+    connection.modelsChecked = TestAI.now
     connection.modelID = "gpt-6-astra"
     _ = providers.addConnection(connection)
     for purpose in AIModelPurpose.allCases {
