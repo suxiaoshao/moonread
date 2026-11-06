@@ -32,7 +32,7 @@ Rust 索引、身份、来源状态 ─────────┴→ AppDataSer
 | 封面引用 | fileName/revision/pixelWidth/pixelHeight；仅受控 Covers basename，损坏/缺图用共享预设装帧兜底，无有效身份才用文字封面，统计/主题不可得不阻断书目 |
 | 统计摘要 | status、generatedAt、localDay、validUntil、timeZoneID/calendarID/firstWeekday、recordingEnabled、今日/本周时长、连续日、七日条；不进 Entity/Spotlight/donation |
 
-不保存精确 offset/位置 token，点击时读最新权威位置，不能反算百分比跳页。共享 catalog 只引用自身 Covers 子目录内的受限缩略图，不发布原封面路径或字节；Spotlight 复用同一缩略图生成入口，缺图共用 App 的预设装帧与排版。同 SHA 多副本合一；正文改变换身份，旧 ID 不按同名重绑。
+不保存精确 offset/位置 token，点击时读最新权威位置，不能反算百分比跳页。共享 catalog 只引用自身 Covers 子目录内的受限缩略图，不发布原封面路径或字节；Spotlight 使用同一 `SystemBookCover` 显示入口生成缩略图，缺图共用 App 的预设装帧与排版。同 SHA 多副本合一；正文改变换身份，旧 ID 不按同名重绑。
 
 ## 发布和失效
 
@@ -65,7 +65,7 @@ App Group `SystemReading/v1/` 同目录暂存后原子替换完整 JSON；串行
 
 **Spotlight 与建议：**本机默认开启，书架排除默认空，无 onboarding。一个命名 CSSearchableIndex，填写 title/author/keywords、thumbnailData 和 contentDescription（作者 · 当前章节 · 已知进度）。缩略图从用户已有封面读取，缺失时按既有 book:SHA 引用渲染 App 同款预设装帧（含已知作者）；只在主 App 内查询资产描述，不给 Widget 增加权限或数据。未知章节/进度省略；不填 textContent、正文 URL、简介、批注、精确时间或路径。按 ID/domain 做更新/删除与可重建处理，点击走共用 router；不同时启用另一套 IndexedEntity 自动全属性捐赠。
 
-Spotlight 另记 `contentFormatVersion`（当前 2）：提交字段、关键词或缩略图表达变化时递增。启动/后续 catalog 刷新发现版本不同就清空自身命名索引并全量重提，仅所有批次成功回调后标完成；失败或 scope/许可变化不误记完成。这是同一用户数据版本内的可重建缓存失效，不是数据迁移。填写 title/displayName/contentType；每批最多 50 本，独立于 Siri donation 工作链，普通位置更新不反复中断同 scope 全量提交。
+Spotlight 另记 `contentFormatVersion`（当前 8）：提交字段、关键词或缩略图表达变化时递增。启动/后续 catalog 刷新发现版本不同就清空自身命名索引并全量重提，仅所有批次成功回调后标完成；失败或 scope/许可变化不误记完成。这是同一用户数据版本内的可重建缓存失效，不是数据迁移。填写 title/displayName/contentType；每批最多 50 本，独立于 Siri donation 工作链，普通位置更新不反复中断同 scope 全量提交。
 
 当前没有后台 reindex extension，必须先打开主 App，让它生成并提交书目。设置 → 阅读 → 系统集成显示“正在准备/正在提交/已向系统搜索提交 N 本”；保持前台直到已提交即可，不必重新导入或重建正文。API 成功仅表示 Core Spotlight 已接受并 journal，不等于系统结果已可见，不能承诺固定秒数；系统检索匹配仍由 iOS 决定。若已提交但仍不命中，可据此区分提交失败与系统检索问题。
 

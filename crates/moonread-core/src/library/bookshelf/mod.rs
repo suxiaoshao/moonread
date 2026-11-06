@@ -233,7 +233,7 @@ fn populate_cover_previews(db: &Connection, entries: &mut [LibraryEntry]) -> Res
     Ok(())
 }
 
-fn metadata_column(
+pub(crate) fn metadata_column(
     r: &rusqlite::Row<'_>,
     index: usize,
 ) -> rusqlite::Result<Option<crate::BookMetadata>> {

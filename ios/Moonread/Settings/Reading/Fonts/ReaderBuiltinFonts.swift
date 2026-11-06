@@ -22,18 +22,14 @@ final class ReaderBuiltinFonts {
     private static func names(_ font: ReaderFont) -> (body: String, heading: String)? {
         switch font {
         case .system: nil
-        case .serif: ("STSongti-SC-Regular", "STSongti-SC-Bold")
+        case .serif: (SystemInstalledFont.songtiName, "STSongti-SC-Bold")
         case .rounded: ("STYuanti-SC-Regular", "STYuanti-SC-Bold")
         }
     }
     /// Confirm the requested face also supplies Chinese glyphs, rather than
     /// accepting a Western base face whose Chinese is entirely cascade fallback.
     private static func installedFont(_ name: String, size: CGFloat) -> UIFont? {
-        guard let font = UIFont(name: name, size: size), font.fontName == name else { return nil }
-        let text = Array("月读".utf16)
-        var glyphs = [CGGlyph](repeating: 0, count: text.count)
-        let ctFont = CTFontCreateWithName(name as CFString, size, nil)
-        return CTFontGetGlyphsForCharacters(ctFont, text, &glyphs, text.count) ? font : nil
+        SystemInstalledFont.lookup(name, size: size)
     }
     func refresh() {
         let next = Set([ReaderFont.serif, .rounded].filter { font in

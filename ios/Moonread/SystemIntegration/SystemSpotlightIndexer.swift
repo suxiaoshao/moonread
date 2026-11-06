@@ -7,7 +7,7 @@ import SwiftUI
 /// position offset/token or precise reading time enters the system index.
 struct SystemSpotlightMetadata: Equatable, Sendable {
     // Bump whenever the submitted fields or keyword/thumbnail representation changes.
-    static let contentFormatVersion = 4
+    static let contentFormatVersion = 8
     let id: String
     let title: String
     let author: String?
@@ -28,12 +28,9 @@ struct SystemSpotlightMetadata: Equatable, Sendable {
         attributes.thumbnailData = thumbnail
         return attributes
     }
-    @MainActor static func textThumbnail(title: String, author: String? = nil, contentSHA256: String? = nil) -> Data? {
-        if let id = presetCoverID(contentSHA256: contentSHA256) {
-            return SystemPresetCoverRenderer.image(.init(id: id, title: title, author: author, size: CGSize(width: 98, height: 137), scale: 2)).pngData()
-        }
-        let renderer = ImageRenderer(content: LibraryBookCover(title: title)
-            .environment(\.theme, ThemeSurface.initial).frame(width: 98, height: 137))
+    @MainActor static func thumbnail(title: String, author: String?, contentSHA256: String?, image: UIImage?) -> Data? {
+        let renderer = ImageRenderer(content: SystemBookCover(title: title, contentSHA256: contentSHA256, author: author, userImage: image, rendersSynchronously: true)
+            .environment(\.displayScale, 2).frame(width: 98, height: 137))
         renderer.scale = 2
         return renderer.uiImage?.pngData()
     }
@@ -115,10 +112,10 @@ extension AppDataService {
     }
 
     private func systemSpotlightThumbnail(_ book: SystemSpotlightMetadata) async -> Data? {
-        if let reference = systemCatalog?.displaySnapshot?.books.first(where: { $0.id == book.id })?.coverThumbnail,
-           let data = systemCatalog?.file.coverData(reference) { return data }
-        if let cover = book.cover, let value = await systemDerivedCover(cover) { return value.data }
-        return await SystemSpotlightMetadata.textThumbnail(title: book.title, author: book.author, contentSHA256: SystemReadingLink.contentSHA256(bookID: book.id))
+        let image: UIImage?
+        if let cover = book.cover { image = try? await coverImage(cover, pixels: 384) }
+        else { image = nil }
+        return await SystemSpotlightMetadata.thumbnail(title: book.title, author: book.author, contentSHA256: SystemReadingLink.contentSHA256(bookID: book.id), image: image)
     }
 
     func requestSystemSpotlightReindex() async {

@@ -5,17 +5,15 @@ import SwiftUI
 struct ReaderTitlePage: View {
     let title: String
     var information: BookDetails? = nil
+    var contentSHA256: String? = nil
     var showDetails: (() -> Void)? = nil
     @Environment(\.theme) private var theme
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
                 Spacer(minLength: 24)
-                ZStack {
-                    if let cover = information?.metadata.cover {
-                        BookCoverImage(cover: cover, pixels: 600).frame(width: 70, height: 100).clipped()
-                    } else { BrandSeal(size: min(64, geometry.size.height * 0.11)) }
-                }.frame(height: 100).accessibilityHidden(true)
+                BookCoverView(title: title, cover: information?.metadata.cover, contentSHA256: information?.metadata.sha ?? contentSHA256, author: information?.metadata.author)
+                    .frame(width: 70, height: 100).accessibilityHidden(true)
                 Text(verbatim: title)
                     .font(.system(.largeTitle, design: .serif).weight(.medium))
                     .foregroundStyle(Color(uiColor: theme.ink))

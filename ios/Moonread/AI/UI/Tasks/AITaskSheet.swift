@@ -52,7 +52,7 @@ struct AITaskObjectHeader: View {
     var body: some View {
         HStack(alignment: .top, spacing: LayoutTokens.control) {
             if object.cover != nil || object.contentSHA256 != nil {
-                LibraryBookCover(title: object.title, cover: object.cover, contentSHA256: object.contentSHA256, author: object.author).frame(width: 40, height: 56).accessibilityHidden(true)
+                BookCoverView(title: object.title, cover: object.cover, contentSHA256: object.contentSHA256, author: object.author).frame(width: 40, height: 56).accessibilityHidden(true)
             } else {
                 Image(systemName: object.symbol).font(.title2).foregroundStyle(Color(uiColor: theme.secondary))
                     .frame(width: 40, height: 56).accessibilityHidden(true)

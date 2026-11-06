@@ -429,10 +429,8 @@ private struct MetadataCoverComparison: View {
                 Color(uiColor: theme.input)
                 if missing {
                     VStack(spacing: 8) { Image(systemName: "exclamationmark.triangle"); Text("图片缺失或无法读取", tableName: "MetadataExchange").font(.footnote).multilineTextAlignment(.center) }.padding(8).foregroundStyle(Color(uiColor: theme.secondary))
-                } else if let cover {
-                    BookCoverImage(cover: cover, pixels: 600, contentMode: .fit)
                 } else {
-                    SystemTextBookCover(title: book.title, accent: Color(uiColor: theme.accent), surface: Color(uiColor: theme.accentSurface), compact: true, contentSHA256: book.id, author: book.base?.author)
+                    BookCoverView(title: book.title, cover: cover, contentSHA256: book.id, author: book.base?.author, contentMode: .fit)
                 }
             }.frame(width: 124, height: 186)
                 .clipShape(.rect(cornerRadius: 5))

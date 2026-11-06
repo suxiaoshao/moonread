@@ -12,7 +12,7 @@ struct ReaderScreen: View {
     let onExit: (String?, UInt64) -> Void
     @State private var reviewExitIsNormal = false
     @State private var session = ReaderSession()
-    @State private var coverInformation: BookDetails?
+    @State var coverInformation: BookDetails?
     @Environment(LibraryModel.self) private var library
     @State private var tools = ReaderToolsModel()
     @State private var toolSession = ReaderToolSession()
@@ -139,7 +139,7 @@ struct ReaderScreen: View {
                 }
         }
         .ignoresSafeArea(.container)
-        .overlay { if isWide, !layoutStatus.hasValidLayout { ReaderTitlePage(title: session.book?.title ?? route.title) } }
+        .overlay { if isWide, !layoutStatus.hasValidLayout { ReaderTitlePage(title: session.book?.title ?? route.title, information: coverInformation, contentSHA256: session.book?.contentSha256) } }
     }
 
     private func readingView(window: ReadingWindow, settings: ReaderSettings, geometry: ReadingContentGeometry?) -> some View {

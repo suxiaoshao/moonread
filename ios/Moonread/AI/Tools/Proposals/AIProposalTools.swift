@@ -113,6 +113,12 @@ enum AIResolvedSource: Sendable, Identifiable {
     static func metadataValue(_ kind: AIMetadataFieldKind, _ value: BookMetadata) -> String {
         switch kind { case .author: value.author; case .synopsis: value.synopsis; case .tags: value.tags.sorted().joined(separator: "\n"); case .readingStatus: String(describing: value.status) }
     }
+    private func initialCoverReview(_ ref: String, candidates: [String]) async -> AICoverReviewValue {
+        let sha = try? AIReadingReferences.parseBookReference(ref)
+        let details: BookDetails?
+        if let sha { details = try? await reader.details(sha: sha) } else { details = nil }
+        return .init(bookRef: ref, title: details?.book?.title ?? String(localized: "封面"), contentSHA256: sha, candidateAssetIDs: candidates)
+    }
     private func initialReview(_ result: AIResultValue) async throws -> AIReviewValue {
         let references = AIReadingReferences(reader: reader)
         let body: AIReviewValue.Body
@@ -150,8 +156,8 @@ enum AIResolvedSource: Sendable, Identifiable {
                 }
             } catch { value.unavailable = AIRequestError.message(error); value.selected = false }
             body = .note(value)
-        case .cover(let p): body = .cover(.init(bookRef: p.bookRef, candidateAssetIDs: [p.attachment.id]))
-        case .findCover(let p): body = .cover(.init(bookRef: p.bookRef, candidateAssetIDs: Self.coverCandidates(result).map(\.id)))
+        case .cover(let p): body = .cover(await initialCoverReview(p.bookRef, candidates: [p.attachment.id]))
+        case .findCover(let p): body = .cover(await initialCoverReview(p.bookRef, candidates: Self.coverCandidates(result).map(\.id)))
         case .organization(let p):
             let location = try await references.location(p.input.scopeRef)
             let plan = AIOrganizationPlan(proposal: p, scope: location, reader: reader)

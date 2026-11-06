@@ -4,6 +4,7 @@ import UIKit
 struct ReaderPreparationContent: View {
     let session: ReaderSession
     let route: ReaderRoute
+    var information: BookDetails? = nil
     var statusOnly = false
     let changeEncoding: (String?) -> Void
     @Environment(\.theme) private var theme
@@ -16,7 +17,7 @@ struct ReaderPreparationContent: View {
     }
 
     private var preparationView: some View {
-        ReaderTitlePage(title: session.book?.title ?? route.title)
+        ReaderTitlePage(title: session.book?.title ?? route.title, information: information, contentSHA256: session.book?.contentSha256)
             .overlay(alignment: .bottom) {
                 VStack(spacing: 12) {
                 if session.preparing && session.error == nil {

@@ -36,10 +36,10 @@ extension ReaderScreen {
     }
 
     var preparationView: some View {
-        ReaderPreparationContent(session: readerSession, route: route, changeEncoding: changeEncoding)
+        ReaderPreparationContent(session: readerSession, route: route, information: coverInformation, changeEncoding: changeEncoding)
     }
     var importStatus: some View {
-        ReaderPreparationContent(session: readerSession, route: route, statusOnly: true, changeEncoding: changeEncoding)
+        ReaderPreparationContent(session: readerSession, route: route, information: coverInformation, statusOnly: true, changeEncoding: changeEncoding)
     }
 }
 

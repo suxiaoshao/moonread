@@ -72,7 +72,7 @@ struct AIMetadataResultReview: View {
                 if let review, case .metadata(let metadata) = review.body {
                     VStack(alignment: .leading, spacing: LayoutTokens.section) {
                         HStack(alignment: .top, spacing: LayoutTokens.content) {
-                            LibraryBookCover(title: metadata.rename.map { $0.selected ? $0.draft : ($0.currentName as NSString).deletingPathExtension } ?? metadata.title, cover: ai.proposals.liveMetadata[resultID]?.cover, contentSHA256: ai.proposals.liveMetadata[resultID]?.sha, author: ai.proposals.liveMetadata[resultID]?.author)
+                            BookCoverView(title: metadata.rename.map { $0.selected ? $0.draft : ($0.currentName as NSString).deletingPathExtension } ?? metadata.title, cover: ai.proposals.liveMetadata[resultID]?.cover, contentSHA256: ai.proposals.liveMetadata[resultID]?.sha, author: ai.proposals.liveMetadata[resultID]?.author)
                                 .frame(width: 64, height: 90)
                             VStack(alignment: .leading, spacing: LayoutTokens.compact) {
                                 if let rename = metadata.rename {
