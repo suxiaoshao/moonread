@@ -255,7 +255,6 @@ enum AIConnectionState: Equatable {
                     await self.receivedChatGPTCallback(id, revision: revision)
                 }
                 try Task.checkCancellation(); guard loginRevision == revision else { return }
-                if let index = connections.firstIndex(where: { $0.id == id }) { connections[index].modelsChecked = nil; saveConnections() }
                 sharing.revoke(id); resetCatalog(id)
                 authenticatedConnections.insert(id); needsLogin.remove(id); modelErrors[id] = nil
                 credentialRevision += 1; loginConnectionID = nil; loginStates[id] = nil
@@ -326,7 +325,7 @@ enum AIConnectionState: Equatable {
         invalidateCatalog(id)
         do {
             try await auth.logout(connection, forgetRegistration: forgetRegistration); authenticatedConnections.remove(id); needsLogin.remove(id)
-            resetCatalog(id); saveConnections()
+            resetCatalog(id)
             loginStates[id] = nil; modelErrors[id] = nil; accountCatalogAttempts[id] = nil; credentialRevision += 1
             return true
         } catch {
@@ -436,6 +435,9 @@ enum AIConnectionState: Equatable {
             AIModelOption(id: $0.id, name: $0.name, contextWindow: $0.contextWindow, thinking: [], maxOutput: $0.maxOutput, isManual: true)
         }
         connections[index].modelsChecked = nil; connections[index].modelsOrigin = nil; connections[index].modelsIdentity = nil
+        // Persist the reset before refresh can suspend or fail, so the old
+        // credential’s directory cannot return after restarting the app.
+        saveConnections()
     }
     func refreshModels(_ id: String, refreshPublic: Bool = true) async {
         guard availability.isAvailable, !Task.isCancelled else { return }
