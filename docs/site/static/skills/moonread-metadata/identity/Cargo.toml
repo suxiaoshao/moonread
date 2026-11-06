@@ -1,0 +1,17 @@
+# Standalone documentation example, not part of the Moonread build workspace.
+[package]
+name = "moonread-metadata-identity"
+version = "1.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "moonread-metadata-identity"
+path = "identity.rs"
+
+[dependencies]
+chardetng = "=1.0.0"
+encoding_rs = "=0.8.42"
+sha2 = "=0.11.1"

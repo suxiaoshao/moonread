@@ -21,11 +21,15 @@ final class BookCoverReaderIntegrationTests: ReaderIntegrationFixture {
     let format = UIGraphicsImageRendererFormat()
     format.scale = 1
     format.opaque = true
-    let data = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 3), format: format).jpegData(
+    let data = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 36), format: format).jpegData(
       withCompressionQuality: 0.95
     ) { context in
-      UIColor.red.setFill()
-      context.fill(CGRect(x: 0, y: 0, width: 2, height: 3))
+      for y in 0..<36 {
+        for x in 0..<24 {
+          UIColor(red: CGFloat((x * 17 + y * 11) % 256) / 255, green: CGFloat((x * 7 + y * 23) % 256) / 255, blue: CGFloat((x * 29 + y * 3) % 256) / 255, alpha: 1).setFill()
+          context.fill(CGRect(x: x, y: y, width: 1, height: 1))
+        }
+      }
     }
     do {
       _ = try await service.makeCover(Data("invalid image".utf8))
@@ -41,6 +45,11 @@ final class BookCoverReaderIntegrationTests: ReaderIntegrationFixture {
     try await service.saveMetadata(base: base, edited: edited)
     let saved = try await service.details(bookID: book.id).metadata
     XCTAssertEqual(saved.cover, cover)
+    let repeatedCover = try await service.importedCover(data, reusing: [cover])
+    XCTAssertEqual(repeatedCover, cover, "Equivalent imported pixels must keep the existing asset ID")
+    let exportedBytes = try await service.coverBytes(cover)
+    let unchangedCover = try await service.importedCover(exportedBytes, reusing: [cover])
+    XCTAssertEqual(unchangedCover, cover, "An exported JPEG must reuse the saved asset without recompression")
     let persistedCover = try await service.coverImage(cover, pixels: 321)
     XCTAssertNotNil(persistedCover)
     let cancelled = try await service.makeCover(data)

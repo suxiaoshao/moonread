@@ -107,8 +107,12 @@ extension UserDataStore {
         else { modelContext.insert(UserValue(key: key, device: device, payload: payload)) }
         return stored
     }
-    func putValues(_ values: [String: String], device: String) throws {
-        try transaction { for (key, value) in values { try putWithoutSave(key, value: value, device: device) } }
+    struct CoverWrite: Sendable { let id: String; let bytes: Data }
+    func putValues(_ values: [String: String], device: String, cover: CoverWrite? = nil) throws {
+        try transaction {
+            if let cover { try saveCoverWithoutSave(id: cover.id, bytes: cover.bytes) }
+            for (key, value) in values { try putWithoutSave(key, value: value, device: device) }
+        }
     }
     func allValues(prefix: String) throws -> [String: String] {
         let snapshot = try valueSnapshot(prefix: prefix)

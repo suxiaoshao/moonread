@@ -190,6 +190,15 @@ fn empty(sha: &str) -> BookMetadata {
     }
 }
 
+/// Formal reading-position truth shared by status projection and metadata imports.
+pub(crate) fn has_reading_position(db: &Connection, sha: &str) -> Result<bool> {
+    Ok(db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM reading_content_positions WHERE content_sha256=?1)",
+        [sha],
+        |r| r.get::<_, bool>(0),
+    )?)
+}
+
 pub(crate) fn metadata(db: &Connection, sha: &str) -> Result<BookMetadata> {
     let text: Option<String> = db
         .query_row(
@@ -201,11 +210,7 @@ pub(crate) fn metadata(db: &Connection, sha: &str) -> Result<BookMetadata> {
     let stored = text
         .map(|v| serde_json::from_str(&v).map_err(|_| ReaderError::InvalidSettings))
         .transpose()?;
-    let has_reading = db.query_row(
-        "SELECT EXISTS(SELECT 1 FROM reading_content_positions WHERE content_sha256=?1)",
-        [sha],
-        |r| r.get::<_, bool>(0),
-    )?;
+    let has_reading = has_reading_position(db, sha)?;
     Ok(project_metadata(sha, stored, has_reading))
 }
 /// Shared metadata defaults/status projection for details and catalogue batches.

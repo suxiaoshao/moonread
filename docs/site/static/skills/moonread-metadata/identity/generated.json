@@ -1,0 +1,16 @@
+{
+  "$schema": "https://suxiaoshao.github.io/moonread/schema/moonread-metadata-v1.schema.json",
+  "format": "moonread-metadata",
+  "version": 1,
+  "books": [
+    {
+      "v": 1,
+      "content_sha256": "9b84f52a4ad4aa3427d6c3c343e16c3bc6c5cb59dc18b69d14f5ecf5a3dacc8d",
+      "author": "合成作者",
+      "tags": [
+        "验证样本"
+      ],
+      "description": "用于元数据身份往返的原创合成样本。"
+    }
+  ]
+}

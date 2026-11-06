@@ -13,6 +13,7 @@ struct LibraryFolderView: View {
     @State private var selection = Set<String>()
     @State private var editing = EditMode.inactive
     @State private var catalogue = LibraryCatalogueRequest()
+    @State private var metadataExporting = false
     private var shelf: LibraryShelf? { model.shelves.first { $0.id == location.shelfID } }
     private var title: String { location.path.isEmpty ? model.shelfTitle(location.shelfID) : URL(fileURLWithPath: location.path).lastPathComponent }
     private var selectedEntries: [LibraryEntry] { entries.filter { selection.contains($0.id) } }
@@ -65,6 +66,9 @@ struct LibraryFolderView: View {
                                 Label("全部小说", systemImage: "books.vertical")
                             }
                         }
+                        Button { metadataExporting = true } label: {
+                            Label { Text("导出本书架信息", tableName: "MetadataExchange") } icon: { Image(systemName: "doc.text") }
+                        }
                         Button("在此书架中搜索", systemImage: "magnifyingglass") { model.path.append(.search(AppSearchScope(seeds: [.shelf(location.shelfID)]))) }
                             .accessibilityIdentifier("searchShelf")
                     } label: { Label("文件夹操作", systemImage: "ellipsis") }.menuOrder(.fixed).toolbarGlyph().accessibilityIdentifier("folderActions").disabled(fileActionsDisabled)
@@ -106,6 +110,7 @@ struct LibraryFolderView: View {
                 ToolbarItem(placement: .bottomBar) { Spacer() }
             }
         }
+        .sheet(isPresented: $metadataExporting) { MetadataExportView(service: model.service, shelfID: location.shelfID).presentationSizing(.page) }
         .task(id: LibraryCatalogueRequest.Input(location: location, libraryRevision: model.revision, readingRevision: model.readingInputRevision)) {
             let request = loading.begin(); defer { loading.finish(request) }
             let cloudGeneration = model.discoveryGeneration, cloudRevision = model.discoveryRevision

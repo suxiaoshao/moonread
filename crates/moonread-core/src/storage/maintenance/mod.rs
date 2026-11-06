@@ -1,3 +1,4 @@
+pub(crate) mod archive_limits;
 mod backup_archive;
 mod cache_management;
 

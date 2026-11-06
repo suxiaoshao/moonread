@@ -41,11 +41,12 @@ import CoreData
         catch { modelContext.rollback(); throw error }
     }
     func saveCover(id: String, bytes: Data) throws {
-        try transaction {
-            let rows = try modelContext.fetch(FetchDescriptor<UserCover>(predicate: #Predicate { $0.id == id }))
-            guard rows.allSatisfy({ $0.bytes == nil || $0.bytes == bytes }) else { throw UserSyncCompatibilityError() }
-            if rows.isEmpty { modelContext.insert(UserCover(id: id, bytes: bytes)) }
-        }
+        try transaction { try saveCoverWithoutSave(id: id, bytes: bytes) }
+    }
+    func saveCoverWithoutSave(id: String, bytes: Data) throws {
+        let rows = try modelContext.fetch(FetchDescriptor<UserCover>(predicate: #Predicate { $0.id == id }))
+        guard rows.allSatisfy({ $0.bytes == nil || $0.bytes == bytes }) else { throw UserSyncCompatibilityError() }
+        if rows.isEmpty { modelContext.insert(UserCover(id: id, bytes: bytes)) }
     }
     func cover(_ id: String) throws -> Data? {
         try modelContext.fetch(FetchDescriptor<UserCover>(predicate: #Predicate { $0.id == id })).compactMap(\.bytes).first
