@@ -38,6 +38,13 @@ struct AIModelOption: Codable, Hashable, Identifiable, Sendable {
     var isManual: Bool?
     var reasoningParameters: [AIReasoningParameter]?
     var thinkingLevelMap: [String: String]?
+    var directoryOrigin: AIModelDirectoryOrigin?
+    var isListed: Bool?
+    // Preserve the user budget in contextWindow/maxOutput while retaining the
+    // service's separate, explicit limits for the final resolver.
+    var connectionContextLimit: Int?
+    var connectionOutputLimit: Int?
+    var contextIsInputLimit: Bool?
 }
 struct AIConnection: Codable, Identifiable, Sendable {
     var id = UUID().uuidString
@@ -55,6 +62,10 @@ struct AIConnection: Codable, Identifiable, Sendable {
     var models: [AIModelOption] = []
     var disabledModelIDs: Set<String> = []
     var modelsChecked: Date?
+    var modelsOrigin: AIModelDirectoryOrigin?
+    var modelsIdentity: String?
+    var catalogCredentialGeneration: UUID?
+    var catalogIdentity: String { [id, baseURL, providerID, protocolIdentity, catalogCredentialGeneration?.uuidString ?? "legacy"].joined(separator: "\n") }
     var modelID = ""
     var thinking: String?
 }

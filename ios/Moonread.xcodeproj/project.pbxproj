@@ -364,6 +364,8 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		EC0901A046A34E0C94F19377 = {isa = PBXBuildFile; fileRef = 5BB83729646B4A3D83C1F8E1; };
 		FEBD0561E8064B4F9A34173E = {isa = PBXBuildFile; fileRef = 42C27EDDC5304FA9B6EBFA5E; };
 		4C56E96FD985471688B0E843 = {isa = PBXBuildFile; fileRef = 42C27EDDC5304FA9B6EBFA5E; };
+79FDB8BF2A464B4CA138DFB4 /* ModelDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20F937775DA74EBEADA5BB87; };
+CA0FCD9B82134E7091B5CD9F /* ModelDirectoryDecoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8C3CE03D9A84285ACE6CC41; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -736,6 +738,8 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		26AA2454BCE4D9C649AE5576 = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = MetadataExchange.xcstrings; sourceTree = "<group>"; };
 		5BB83729646B4A3D83C1F8E1 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemPresetBookCover.swift; sourceTree = "<group>"; };
 		42C27EDDC5304FA9B6EBFA5E = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = PresetCovers.xcassets; sourceTree = "<group>"; };
+20F937775DA74EBEADA5BB87 /* ModelDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDirectory.swift; sourceTree = "<group>"; };
+A8C3CE03D9A84285ACE6CC41 /* ModelDirectoryDecoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDirectoryDecoding.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1621,6 +1625,7 @@ D35000000000000000000001,
 		D77A8922F03A2EDD9DD0CB8E /* Providers */ = {
 			isa = PBXGroup;
 			children = (
+691E7DA560CC45CBADFE58DB /* Catalog */,
 				A11D153D9A51C001A9FE116A /* Connections */,
 				648898574D5A490398DF5331 /* AICoverImageFetcher.swift */,
 				E52000000000000000000002 /* AIProviderRequest.swift */,
@@ -1718,6 +1723,7 @@ D35000000000000000000001,
 			B921D33133257F57CF747E59 /* MetadataImportView.swift */,
 			DE54835FF23B76DF33D8DB39 /* MetadataTasksSection.swift */,
 		); path = MetadataExchange; sourceTree = "<group>"; };
+691E7DA560CC45CBADFE58DB /* Catalog */ = {isa = PBXGroup; children = (20F937775DA74EBEADA5BB87,A8C3CE03D9A84285ACE6CC41); path = Catalog; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -2021,6 +2027,8 @@ B792EA92E8204EEDB7AA1450,
 				DFA135AC4F9846958D6431FB /* CloudStore.swift in Sources */,
 				94D2EEC02FFF4BC08C9C7711 /* ReaderMessages.swift in Sources */,
  D41000000000000000000002,
+CA0FCD9B82134E7091B5CD9F,
+79FDB8BF2A464B4CA138DFB4,
 D31000000000000000000005,E51000000000000000000001,E51000000000000000000002,E51000000000000000000003,E51000000000000000000004,E51000000000000000000005,E51000000000000000000006,E51000000000000000000007,E51000000000000000000008,D31000000000000000000007,
 FA1000000000000000000002,
 FA1000000000000000000001, FB1000000000000000000001,

@@ -92,6 +92,7 @@ final class AIResultSourceAINativeToolsTests: AINativeToolsFixture {
       let (providers, tools, connection, _) = try await fixture(mode)
       if route == "chatgpt" {
         providers.connections[0].authMethod = .chatGPT
+        providers.connections[0].models = connection.models
       } else {
         providers.connections[0].authMethod = .apiKey
         providers.connections[0].providerID = route
@@ -101,8 +102,10 @@ final class AIResultSourceAINativeToolsTests: AINativeToolsFixture {
           : route == "xai" ? "https://api.x.ai/v1" : "https://api.openai.com/v1"
         let id =
           route == "google" ? "gemini-2.5-flash" : route == "xai" ? "grok-4.7" : "gpt-6-astra"
-        providers.connections[0].models = [.init(id: id, name: id, thinking: [])]
         providers.connections[0].wireProtocol = route == "google" ? .gemini : .responses
+        // A changed route discards its previous directory; seed this route only
+        // after its configuration is complete, as a real refresh would do.
+        providers.connections[0].models = [.init(id: id, name: id, thinking: [])]
         XCTAssertTrue(
           providers.setPurpose(.search, selection: .init(connectionID: connection.id, modelID: id)))
       }

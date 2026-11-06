@@ -276,13 +276,10 @@ struct AIConnectionView: View {
             .buttonStyle(ThemedProminentButtonStyle())
     }
     private func showsModels(_ connection: AIConnection) -> Bool {
-        switch ai.providers.connectionState(connection) {
-        case .connected, .loadingModels, .modelsFailed: return ai.providers.isLoggedIn(connection)
-        default: return false
-        }
+        ai.providers.isLoggedIn(connection) || !connection.models.isEmpty || ai.providers.modelErrors[connection.id] != nil
     }
     private func modelSettings(_ connection: AIConnection) -> some View {
-        let models = AIModelSearch.filter(connection.models, query: modelQuery, connection: connection, ai.providers)
+        let models = AIModelSearch.filter(connection.models.map { ai.providers.model($0.id, in: connection) ?? $0 }, query: modelQuery, connection: connection, ai.providers)
         let enabled = connection.models.filter { ai.providers.isEnabled(modelID: $0.id, in: connection) }.count
         let searching = editingModels || connection.models.count > 12
         return VStack(alignment: .leading, spacing: 10) {
@@ -315,6 +312,17 @@ struct AIConnectionView: View {
                     }
                 }
             }
+            Text(verbatim: ai.providers.directorySummary(connection)).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+            if !connection.modelID.isEmpty, !connection.models.contains(where: { $0.id == connection.modelID }) {
+                Text("原先选择的型号已不在当前目录中，请重新选择。")
+                    .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+            }
+            if let error = ai.providers.modelErrors[connection.id] {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(verbatim: error).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
+                    Button("重新加载模型") { Task { await ai.providers.refreshModels(connectionID) } }
+                }.accessibilityIdentifier("aiConnectionError")
+            }
             if searching {
                 TextField("搜索模型", text: $modelQuery).textInputAutocapitalization(.never).autocorrectionDisabled()
                     .padding(14).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 14))
@@ -322,19 +330,16 @@ struct AIConnectionView: View {
             }
             LazyVStack(spacing: 0) {
                 if connection.models.isEmpty {
-                    Text("还没有可用模型").foregroundStyle(Color(uiColor: theme.secondary)).padding(20)
+                    if ai.providers.refreshingModels.contains(connectionID) { ProgressView("正在载入模型…").padding(20) }
+                    else if ai.providers.modelErrors[connection.id] == nil {
+                        ContentUnavailableView("当前目录未列出模型", systemImage: "sparkles")
+                    }
                 } else if models.isEmpty {
                     Text("没有匹配的模型").foregroundStyle(Color(uiColor: theme.secondary)).padding(20)
                 }
                 ForEach(models) { model in
                     if model.id != models.first?.id { ThemedDivider().padding(.horizontal, 18) }
                     modelRow(model, connection: connection)
-                }
-                if case .modelsFailed(let error) = ai.providers.connectionState(connection) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(error).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
-                        Button("重新加载模型") { Task { await ai.providers.refreshModels(connectionID) } }
-                    }.padding(18).frame(maxWidth: .infinity, alignment: .leading).accessibilityIdentifier("aiConnectionError")
                 }
             }.frame(maxWidth: .infinity).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 22))
             if editingModels {
@@ -358,7 +363,13 @@ struct AIConnectionView: View {
         } else {
             NavigationLink { AIModelDetailView(connectionID: connection.id, modelID: model.id) } label: {
                 HStack(spacing: 12) {
-                    Text(verbatim: model.name).frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(verbatim: model.name)
+                        if model.isListed == false { Text("此连接的目录未列出该型号").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
+                        else if let resolved = ai.providers.model(model.id, in: connection), resolved.capabilities?.text == nil && resolved.capabilities?.imageOutput == nil {
+                            Text("能力资料尚未补齐").font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                        }
+                    }.frame(maxWidth: .infinity, alignment: .leading)
                         .foregroundStyle(Color(uiColor: disabled ? theme.secondary : theme.ink))
                     if disabled { Text("未启用").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
                     if isDefault {
