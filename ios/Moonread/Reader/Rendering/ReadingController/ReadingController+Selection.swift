@@ -177,6 +177,9 @@ extension ReadingController {
 
     static var pageActionNames: [String] { [String(localized: "上一页"), String(localized: "下一页")] }
     func configureAccessibility(_ text: UITextView) {
+        (text as? ReadingTextView)?.accessibilityNavigation = { [weak self] in
+            self?.autoReading?.end(); self?.statisticsInteraction(); self?.readingBegan?()
+        }
         (text as? ReadingTextView)?.copySelection = { [weak self] start, end in
             guard let self else { return }
             let full = retainedSelection ?? (min(selectionStart ?? start, start), max(selectionStart ?? end, end))

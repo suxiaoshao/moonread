@@ -12,6 +12,7 @@ extension ReaderSession {
     }
 
     func restart(encoding: String? = nil) {
+        stopListening(releasingPosition: true)
         autoReading.end()
         // Admission is synchronous, before flush/actor hops. No second import can
         // be created until this task ends, including its worker-finish wait.

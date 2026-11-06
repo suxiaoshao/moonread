@@ -71,7 +71,7 @@ final class ReadingViewportAccess {
     init(capture: (() -> ReadingViewport?)? = nil, range: (() -> (UInt64, UInt64)?)? = nil) { captureOverride = capture; rangeOverride = range }
     func statisticsRange() -> (UInt64, UInt64)? { rangeOverride.map { $0() } ?? controller?.statisticsRange() }
     func capture() -> ReadingViewport? { captureOverride.map { $0() } ?? controller?.captureViewport() }
-    func hasBlockingPresentation(allowingReaderAccessory: Bool) -> Bool {
+    func hasBlockingPresentation(allowingReaderAccessory: Bool, allowAccessoryTransitions: Bool = false) -> Bool {
         guard let controller else { return false }
         func modal(in container: UIViewController) -> UIViewController? {
             if let presented = container.presentedViewController { return presented }
@@ -88,7 +88,8 @@ final class ReadingViewportAccess {
             ancestor = current.parent
         }
         guard let presented else { return false }
-        guard allowingReaderAccessory, !presented.isBeingPresented, !presented.isBeingDismissed else { return true }
+        guard allowingReaderAccessory else { return true }
+        if !allowAccessoryTransitions, presented.isBeingPresented || presented.isBeingDismissed { return true }
         // SwiftUI identifies the current small accessory. Exempt only its own
         // layer; a task presented above it (even by a contained child) blocks.
         return modal(in: presented) != nil

@@ -2,8 +2,12 @@ import SwiftUI
 import UIKit
 
 extension ReaderSession {
-    func moved(to offset: UInt64, settled: Bool, userInitiated: Bool = true) {
+    func moved(to offset: UInt64, settled: Bool, userInitiated: Bool = true, fromListening: Bool = false) {
         guard !isLeaving, let book, let id = readingID else { return }
+        if !fromListening, listeningOwnsPosition {
+            guard userInitiated else { return }
+            beganReadingInteraction()
+        }
         guard !navigating else { return }
         showingCover = false
         if browseOrigin == nil { hasEnteredBody = true }

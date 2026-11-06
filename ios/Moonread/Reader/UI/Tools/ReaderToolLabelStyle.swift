@@ -3,7 +3,7 @@ import UIKit
 
 /// The content above the reader's anchored tools: progress (or search/browse), quick settings, or 更多.
 enum ReaderDock {
-    case progress, settings, more, automatic
+    case progress, settings, more, automatic, listening
     mutating func toggle(_ destination: Self) { self = self == destination ? .progress : destination }
 }
 
