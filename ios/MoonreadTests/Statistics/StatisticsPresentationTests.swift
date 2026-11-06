@@ -8,6 +8,106 @@ import XCTest
 @testable import Moonread
 
 final class StatisticsPresentationTests: ReaderIntegrationFixture {
+  @MainActor
+  private func rangeContent(_ total: UInt64) -> StatisticsModel.Content {
+    .init(overview: .init(totalDurationMs: total, books: [], days: [], preferences: .init(enabled: true, generation: 0)))
+  }
+
+  @MainActor
+  func testStatisticsRangeResultsAreReusedUntilDataChanges() async {
+    let notifications = NotificationCenter()
+    var reads = 0
+    var fail = false
+    let model = StatisticsModel(notifications: notifications, fetch: { _ in
+      reads += 1
+      if fail { throw CocoaError(.fileReadCorruptFile) }
+      return self.rangeContent(UInt64(reads) * 100)
+    })
+    let date = ISO8601DateFormatter().date(from: "2026-10-05T12:00:00Z")!
+    let month = StatisticsWindow(period: .month, date: date)
+    let year = StatisticsWindow(period: .year, date: date)
+    var sameMonth = month
+    sameMonth.date = date.addingTimeInterval(7 * 86400)
+    await model.load(month, target: nil)
+    await model.load(year, target: nil)
+    await model.load(sameMonth, target: nil)
+    XCTAssertEqual(reads, 2)
+    XCTAssertEqual(model.state(month, target: nil).overview?.totalDurationMs, 100)
+    XCTAssertFalse(model.state(month, target: nil).loading)
+    // Positions and generic saves do not invalidate statistics results.
+    notifications.post(name: .readingDataChanged, object: nil)
+    await model.load(month, target: nil)
+    XCTAssertEqual(reads, 2)
+    let otherBook = StatisticsRoute(key: String(repeating: "a", count: 64), title: "Synthetic")
+    await model.load(month, target: otherBook)
+    XCTAssertEqual(reads, 3)
+    notifications.post(name: .statisticsChanged, object: nil)
+    XCTAssertNil(model.state(month, target: nil).overview)
+    XCTAssertFalse(model.state(month, target: nil).loading, "Invalidation alone is not a running read")
+    await model.load(month, target: nil)
+    XCTAssertEqual(reads, 4)
+    XCTAssertEqual(model.state(month, target: nil).overview?.totalDurationMs, 400)
+    notifications.post(name: .statisticsPreferencesChanged, object: nil)
+    await model.load(month, target: nil)
+    XCTAssertEqual(reads, 5)
+    fail = true
+    notifications.post(name: .statisticsChanged, object: nil)
+    await model.load(month, target: nil)
+    XCTAssertNil(model.state(month, target: nil).overview)
+    XCTAssertNotNil(model.state(month, target: nil).error)
+    XCTAssertFalse(model.state(month, target: nil).loading)
+    fail = false
+    await model.load(month, target: nil)
+    XCTAssertEqual(reads, 7, "A failed range can be explicitly retried")
+    XCTAssertNotNil(model.state(month, target: nil).overview)
+  }
+
+  @MainActor
+  func testStatisticsInFlightRangesAreSharedAndInvalidatedCompletionsStayDiscarded() async {
+    let started = expectation(description: "two distinct ranges started")
+    started.expectedFulfillmentCount = 2
+    let restarted = expectation(description: "invalidated range restarted")
+    var reads = 0
+    var gates: [StatisticsModel.Scope: [CheckedContinuation<StatisticsModel.Content, Error>]] = [:]
+    let model = StatisticsModel(notifications: NotificationCenter(), fetch: { scope in
+      reads += 1
+      return try await withCheckedThrowingContinuation { continuation in
+        gates[scope, default: []].append(continuation)
+        if reads <= 2 { started.fulfill() } else { restarted.fulfill() }
+      }
+    })
+    let date = ISO8601DateFormatter().date(from: "2026-10-05T12:00:00Z")!
+    let month = StatisticsWindow(period: .month, date: date)
+    let year = StatisticsWindow(period: .year, date: date)
+    let a = model.request(month, target: nil)!
+    let sameA = model.request(month, target: nil)!
+    let b = model.request(year, target: nil)!
+    XCTAssertTrue(model.state(month, target: nil).loading)
+    XCTAssertTrue(model.state(year, target: nil).loading)
+    await fulfillment(of: [started], timeout: 2)
+    XCTAssertEqual(reads, 2, "The duplicate month request shares its running query")
+    let monthScope = model.scope(month, target: nil), yearScope = model.scope(year, target: nil)
+    gates[monthScope]![0].resume(returning: rangeContent(100))
+    await a.value; await sameA.value
+    XCTAssertEqual(model.state(month, target: nil).overview?.totalDurationMs, 100)
+    XCTAssertTrue(model.state(year, target: nil).loading)
+    XCTAssertNil(model.state(year, target: nil).overview, "No month numbers under the year range")
+    model.invalidate()
+    let newB = model.request(year, target: nil)!
+    await fulfillment(of: [restarted], timeout: 2)
+    // A backend which finishes despite cancellation cannot restore invalid data.
+    gates[yearScope]![0].resume(returning: rangeContent(200))
+    await b.value
+    XCTAssertNil(model.state(year, target: nil).overview)
+    XCTAssertTrue(model.state(year, target: nil).loading)
+    gates[yearScope]![1].resume(returning: rangeContent(300))
+    await newB.value
+    XCTAssertEqual(model.state(year, target: nil).overview?.totalDurationMs, 300)
+    XCTAssertFalse(model.state(year, target: nil).loading)
+    await model.load(year, target: nil)
+    XCTAssertEqual(reads, 3)
+  }
+
   // S361: 本应用展示窗口按阅读地点公历日构造，固定跨月/跨年两个输入；删除统计值重算，补零仅在当前 Swift 展示 owner 测。
   @MainActor
   func testStatisticsDayUsesGregorianDateAtReadingLocation() {

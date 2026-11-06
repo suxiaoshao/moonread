@@ -73,6 +73,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 自动阅读偏好与计时例外 | Rust `reading/layout.rs::auto_reading_control` / `user/statistics/mod.rs::ReadingClock` | Rust 定义1–30档／默认10及指数 em/min 映射，Swift 经 ReaderSettingsStore 保存本机档位，按实际文本容器／缩放字体／正文行高换算位移；Swift 原生帧驱动只提供真实位移时间，Rust 单源裁决时长，不模拟手动 interaction |
 | 自动阅读运行、打断与原生位移 | Swift `ReaderAutoReading` / `ReadingController` / `ReaderDeviceControls` | 同一附件与显式继续，使用原文位置／预取／有界检查点入口；复用统计可读性事实，临时常亮合并原 lease，不持久化运行状态 |
 | 阅读时长/有效天数/覆盖等统计数值 | Rust `user/statistics/mod.rs`、`user/statistics/coverage.rs`（后续统一 summary） | 事实聚合按固定 local_day；Swift 不再另 reduce 同一总量 | #66 不迁；旧报告第11项仍登记 |
+| 统计范围结果与读取状态 | Swift `Statistics/StatisticsModels.swift::StatisticsModel` | 日期边界／书籍身份作查询键，页面模型内复用结果和在途读取；既有统计／偏好／资料／身份通知失效，迟到失效结果不回填；视图只消费当前范围状态，Rust聚合与持久化不变 | 平台查询状态 |
 | 系统统计摘要与连续日 | Rust `user/statistics/mod.rs` | 复用有效日汇总与清除投影；今天未读则截至昨天，不限七天。Swift 只处理 Calendar 和展示，Widget 不读事实库 | 单源 |
 | 同步位置领先阈值、有效章节与百分比 | Rust `reading/navigation.rs` / `ReaderQuery` | Swift 只持有冷启动本机基线与提示状态，不重算领先裁决；见[同步设计](../data/sync.md#13-同步进度与编码) | 单源 |
 | 手选编码 LWW 与升级 epoch 候选 | Swift `UserDataStore` / `UserSyncJSON`，`SourceDecodingPreferences` 编排 | rawSHA 和编码规范调用 Rust `identity/source.rs` / `reading/input/text.rs`；开书、索引与 AI 只消费同步 resolver，无旧本机回退 | 平台事实裁决 |

@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import Combine
 
 struct StatisticsRoute: Hashable {
     var key: String?
@@ -142,50 +143,130 @@ struct StatisticsSpan: Identifiable {
 
 @MainActor @Observable
 final class StatisticsModel {
-    var overview: StatisticsOverview?
-    var cumulative: StatisticsBook?
-    var spans: [StatisticsSpan] = []
-    var key: String?
-    var title: String?
-    var error: String?
-    var compatibilityNotice: String?
-    var loading = false
-    private var revision = 0
-
-    func report(_ error: Error) {
-        self.error = ReaderMessages.error(error)
-        if error is UserSyncCompatibilityError { overview = nil; cumulative = nil; spans = []; compatibilityNotice = nil }
+    struct Scope: Hashable {
+        enum Book: Hashable { case all, content(String), local(String), unprepared }
+        let bounds: ClosedRange<Int64>
+        let book: Book
+        let cumulativeLast: Int64?
     }
+    struct Content {
+        let overview: StatisticsOverview
+        var cumulative: StatisticsBook? = nil
+        var spans: [StatisticsSpan] = []
+        var key: String? = nil
+        var compatibilityNotice: String? = nil
+    }
+    struct State {
+        var content: Content? = nil
+        var error: String? = nil
+        var loading = false
+        var overview: StatisticsOverview? { content?.overview }
+        var cumulative: StatisticsBook? { content?.cumulative }
+        var spans: [StatisticsSpan] { content?.spans ?? [] }
+        var key: String? { content?.key }
+        var compatibilityNotice: String? { content?.compatibilityNotice }
+    }
+    typealias Fetch = @MainActor (Scope) async throws -> Content
+    private var states: [Scope: State] = [:]
+    private(set) var dataRevision: UInt64 = 0
+    @ObservationIgnored private var pending: [Scope: Task<Void, Never>] = [:]
+    @ObservationIgnored private var observations: Set<AnyCancellable> = []
+    @ObservationIgnored private let fetch: Fetch
 
-    func load(_ window: StatisticsWindow, target: StatisticsRoute?) async {
-        revision += 1
-        let request = revision
-        loading = true; error = nil
-        defer { if revision == request { loading = false } }
-        do {
-            await StatisticsWriter.shared.drain()
-            var contentKey = target?.key
-            if let target, contentKey == nil, let id = target.bookID {
-                contentKey = try await AppDataService.shared.book(id).contentSha256
-            }
-            if target != nil, contentKey == nil { contentKey = "unprepared" }
-            let notice = try await AppDataService.shared.statisticsCompatibilityNotice(book: contentKey)
-            let bounds = window.bounds
-            let result = try await AppDataService.shared.statistics(first: bounds.lowerBound, last: bounds.upperBound, book: contentKey)
-            let all = target == nil ? nil : try await AppDataService.shared.statistics(first: 0, last: StatisticsDates.day(Date()), book: contentKey).books.first
-            // One book's sessions: the last seven reading days within the selected range.
-            var spans: [StatisticsSpan] = []
-            if target != nil, let first = result.days.suffix(7).first?.day, let last = result.days.last?.day {
-                spans = StatisticsSpan.merge(try await AppDataService.shared.activities(first: first, last: last, book: contentKey))
-            }
-            guard !Task.isCancelled, request == revision else { return }
-            key = contentKey; title = target?.title; overview = result; cumulative = all; self.spans = spans; compatibilityNotice = notice
-        } catch is CancellationError { }
-        catch {
-            if request == revision {
-                report(error)
+    init(service: AppDataService = .shared, notifications: NotificationCenter = .default, fetch: Fetch? = nil) {
+        self.fetch = fetch ?? { try await Self.read($0, service: service) }
+        // Cloud imports already publish statisticsChanged. Do not invalidate for
+        // every generic model save, position update, or theme preference change.
+        for name in [Notification.Name.statisticsChanged, .statisticsPreferencesChanged, .bookMetadataChanged, .libraryIdentityChanged] {
+            notifications.publisher(for: name).sink { [weak self] _ in
+                if Thread.isMainThread { MainActor.assumeIsolated { self?.invalidate() } }
+                else { Task { @MainActor [weak self] in self?.invalidate() } }
+            }.store(in: &observations)
+        }
+    }
+    func scope(_ window: StatisticsWindow, target: StatisticsRoute?) -> Scope {
+        let book: Scope.Book
+        if let target {
+            if let key = target.key { book = .content(key) }
+            else if let id = target.bookID { book = .local(id) }
+            else { book = .unprepared }
+        } else { book = .all }
+        return Scope(bounds: window.bounds, book: book, cumulativeLast: target == nil ? nil : StatisticsDates.day(Date()))
+    }
+    func state(_ window: StatisticsWindow, target: StatisticsRoute?) -> State {
+        states[scope(window, target: target)] ?? State()
+    }
+    /// Selection itself never invalidates a completed result. The same running
+    /// query is shared, so quick A→B→A changes cannot queue duplicate A reads.
+    @discardableResult func request(_ window: StatisticsWindow, target: StatisticsRoute?) -> Task<Void, Never>? {
+        let scope = scope(window, target: target)
+        if states[scope]?.content != nil { return nil }
+        if let task = pending[scope] { return task }
+        states[scope] = State(loading: true)
+        let revision = dataRevision, fetch = fetch
+        let task = Task { [weak self] in
+            do {
+                let content = try await fetch(scope)
+                guard let self, self.dataRevision == revision else { return }
+                self.pending[scope] = nil
+                self.states[scope] = State(content: content)
+            } catch {
+                guard let self, self.dataRevision == revision else { return }
+                self.pending[scope] = nil
+                self.states[scope] = State(error: ReaderMessages.error(error))
             }
         }
+        pending[scope] = task
+        return task
+    }
+    func load(_ window: StatisticsWindow, target: StatisticsRoute?) async {
+        await request(window, target: target)?.value
+    }
+    func reload(_ window: StatisticsWindow, target: StatisticsRoute?) async {
+        invalidate()
+        await load(window, target: target)
+    }
+    func invalidate() {
+        guard !states.isEmpty || !pending.isEmpty else { return }
+        dataRevision &+= 1
+        for task in pending.values { task.cancel() }
+        pending.removeAll(); states.removeAll()
+    }
+    func report(_ error: Error, window: StatisticsWindow, target: StatisticsRoute?) {
+        let scope = scope(window, target: target)
+        if error is UserSyncCompatibilityError { invalidate() }
+        var state = states[scope] ?? State()
+        state.error = ReaderMessages.error(error)
+        states[scope] = state
+    }
+    func clearError(_ window: StatisticsWindow, target: StatisticsRoute?) {
+        let scope = scope(window, target: target)
+        guard var state = states[scope] else { return }
+        state.error = nil; states[scope] = state
+    }
+    private static func read(_ scope: Scope, service: AppDataService) async throws -> Content {
+        await StatisticsWriter.shared.drain()
+        try Task.checkCancellation()
+        let key: String?
+        switch scope.book {
+        case .all: key = nil
+        case .content(let value): key = value
+        case .local(let id): key = try await service.book(id).contentSha256 ?? "unprepared"
+        case .unprepared: key = "unprepared"
+        }
+        let notice = try await service.statisticsCompatibilityNotice(book: key)
+        try Task.checkCancellation()
+        let overview = try await service.statistics(first: scope.bounds.lowerBound, last: scope.bounds.upperBound, book: key)
+        var cumulative: StatisticsBook?
+        if let last = scope.cumulativeLast {
+            if scope.bounds == (0...last) { cumulative = overview.books.first }
+            else { cumulative = try await service.statistics(first: 0, last: last, book: key).books.first }
+        }
+        var spans: [StatisticsSpan] = []
+        if scope.cumulativeLast != nil, let first = overview.days.suffix(7).first?.day, let last = overview.days.last?.day {
+            spans = StatisticsSpan.merge(try await service.activities(first: first, last: last, book: key))
+        }
+        return Content(overview: overview, cumulative: cumulative, spans: spans, key: key, compatibilityNotice: notice)
     }
 }
 
