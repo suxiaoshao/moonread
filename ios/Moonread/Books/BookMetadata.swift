@@ -105,15 +105,15 @@ extension AppDataService {
         return .init(bytes: bytes, ext: alpha ? "png" : "jpg", width: UInt32(image.width), height: UInt32(image.height))
     }
     func makeCover(_ data: Data) throws -> BookCoverAsset { try stageCover(normalizedCover(data)) }
-    /// Normalize before deciding whether an import needs a new asset. Reimporting
-    /// a PNG encoded to JPEG must compare the deterministic saved representation.
+    /// An exported asset is already normalized; compare its original bytes too,
+    /// since encoding a saved JPEG again can change its pixels.
     func importedCover(_ data: Data, reusing assets: [BookCoverAsset]) async throws -> BookCoverAsset {
         let normalized = try normalizedCover(data)
         for asset in assets {
             let bytes: Data?
             if FileManager.default.fileExists(atPath: coverDraftURL(asset).path) { bytes = try Data(contentsOf: coverDraftURL(asset)) }
             else { bytes = try? await coverBytes(asset) }
-            if let bytes, bytes == normalized.bytes || sameCoverPixels(bytes, normalized.bytes) { return asset }
+            if let bytes, bytes == data || bytes == normalized.bytes || sameCoverPixels(bytes, normalized.bytes) { return asset }
         }
         return try stageCover(normalized)
     }

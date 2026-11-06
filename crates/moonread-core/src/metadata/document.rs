@@ -50,26 +50,26 @@ fn save_book(
     index: u64,
 ) -> Result<()> {
     match parse::book(value) {
-        Err(d) => save_diagnostic(db, d, line, Some(index)),
+        Err(d) => save_diagnostic(db, *d, line, Some(index)),
         Ok((mut book, warnings)) => {
             for d in warnings {
                 save_diagnostic(db, d, line, Some(index))?;
             }
-            if let Some(name) = &book.cover {
-                if !packaged || !super::archive::cover_path(name) || !root.join(name).is_file() {
-                    save_diagnostic(
-                        db,
-                        diagnostic(
-                            "cover_unavailable",
-                            Some("cover"),
-                            Some(&book.content_sha256),
-                            "封面不可用；只跳过封面，其他资料仍可导入",
-                        ),
-                        line,
-                        Some(index),
-                    )?;
-                    book.cover = None;
-                }
+            if let Some(name) = &book.cover
+                && (!packaged || !super::archive::cover_path(name) || !root.join(name).is_file())
+            {
+                save_diagnostic(
+                    db,
+                    diagnostic(
+                        "cover_unavailable",
+                        Some("cover"),
+                        Some(&book.content_sha256),
+                        "封面不可用；只跳过封面，其他资料仍可导入",
+                    ),
+                    line,
+                    Some(index),
+                )?;
+                book.cover = None;
             }
             let payload = serde_json::to_string(&book).map_err(|_| invalid("无法记录小说信息"))?;
             db.execute("INSERT INTO records(sha,payload,source_line,record_index,duplicates) VALUES(?1,?2,?3,?4,1) ON CONFLICT(sha,payload) DO UPDATE SET duplicates=duplicates+1",params![book.content_sha256,payload,line.map(|v| v as i64),index as i64])?;

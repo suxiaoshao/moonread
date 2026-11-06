@@ -709,7 +709,7 @@ extension AppDataService {
         try refreshLibraryShelf(entry.shelfId)
         if destination.shelfID != entry.shelfId { try refreshLibraryShelf(destination.shelfID) }
         } catch {
-            if check != nil { throw AIFileExecutionError(stage: stage, underlying: error) }
+            if check != nil || renameSnapshot != nil { throw AIFileExecutionError(stage: stage, underlying: error) }
             throw error
         }
     }

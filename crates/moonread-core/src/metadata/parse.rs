@@ -86,14 +86,14 @@ impl<'de> Deserialize<'de> for StrictValue {
 
 pub(super) fn book(
     mut value: Value,
-) -> std::result::Result<(MetadataBook, Vec<MetadataDiagnostic>), MetadataDiagnostic> {
+) -> std::result::Result<(MetadataBook, Vec<MetadataDiagnostic>), Box<MetadataDiagnostic>> {
     let Some(map) = value.as_object_mut() else {
-        return Err(diagnostic(
+        return Err(Box::new(diagnostic(
             "invalid_record",
             None,
             None,
             "小说信息必须是对象",
-        ));
+        )));
     };
     let sha = map
         .get("content_sha256")
@@ -101,15 +101,20 @@ pub(super) fn book(
         .map(str::to_owned)
         .filter(|s| crate::parse_sha256(s.clone()).is_ok());
     let err = |field: &str, message: &str| {
-        diagnostic("invalid_field", Some(field), sha.as_deref(), message)
+        Box::new(diagnostic(
+            "invalid_field",
+            Some(field),
+            sha.as_deref(),
+            message,
+        ))
     };
     if map.get("v").and_then(Value::as_f64) != Some(1.0) {
-        return Err(diagnostic(
+        return Err(Box::new(diagnostic(
             "unsupported_version",
             Some("v"),
             sha.as_deref(),
             "不支持此条小说信息的版本",
-        ));
+        )));
     }
     map.insert("v".into(), Value::from(1));
     if sha
@@ -190,12 +195,12 @@ pub(super) fn book(
         return Err(err("reading_state", "未知阅读状态，未当作未读处理"));
     }
     if !result.requires.is_empty() {
-        return Err(diagnostic(
+        return Err(Box::new(diagnostic(
             "unsupported_feature",
             Some("requires"),
             sha.as_deref(),
             "此条要求App尚未支持的能力，未导入",
-        ));
+        )));
     }
     Ok((result, warnings))
 }

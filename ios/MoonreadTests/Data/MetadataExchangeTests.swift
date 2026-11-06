@@ -2,6 +2,7 @@ import Foundation
 import SwiftData
 import XCTest
 import UIKit
+import SQLite3
 @testable import Moonread
 
 final class MetadataExchangeTests: ReaderIntegrationFixture {
@@ -163,7 +164,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         XCTAssertEqual(cancelled.remaining.first { $0.id == second.contentSha256 }?.cover, existingCover, "An unprocessed book keeps its existing cover")
     }
     @MainActor func testExportCountsUnindexedFilesAndRejectsRenameForGlobalDuplicates() async throws {
-        let (root, service, core, _, _, first, _, suite) = try singleBookFixture()
+        let (root, service, core, _, _, first, second, suite) = try singleBookFixture()
         defer { UserDefaults.standard.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
         let old = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")
         var items = old.map { ScannedLibraryItem(relativePath: $0.relativePath, directory: false, size: $0.size, modified: $0.modified, needsDownload: $0.needsDownload) }
@@ -207,6 +208,23 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         let preview = try await service.previewMetadata(input)
         XCTAssertEqual(preview.books[0].sourceCount, 2)
         XCTAssertFalse(preview.books[0].fields.contains { $0.field == .title })
+
+        // A real rename followed by an index failure is a partial success, not an unmoved file.
+        try "{\"v\":1,\"content_sha256\":\"\(second.contentSha256)\",\"title\":\"Renamed\",\"author\":\"Writer\"}".write(to: input, atomically: true, encoding: .utf8)
+        var rename = try await service.previewMetadata(input)
+        let title = try XCTUnwrap(rename.books[0].fields.firstIndex { $0.field == .title })
+        rename.books[0].fields[title].selected = rename.books[0].fields[title].options[0].id
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(root.appendingPathComponent("db/reader.sqlite3").path, &db), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        XCTAssertEqual(sqlite3_exec(db, "CREATE TRIGGER fail_metadata_rename BEFORE UPDATE OF relative_path ON library_files BEGIN SELECT RAISE(ABORT, 'synthetic relocation failure'); END", nil, nil, nil), SQLITE_OK)
+        let renamed = await service.applyMetadata(rename) { _, _ in }
+        let outcome = try XCTUnwrap(renamed.outcomes.first)
+        XCTAssertTrue(outcome.saved)
+        XCTAssertTrue(outcome.renamed)
+        XCTAssertNotNil(outcome.message)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("Renamed.txt").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("b.txt").path))
     }
 
 }
