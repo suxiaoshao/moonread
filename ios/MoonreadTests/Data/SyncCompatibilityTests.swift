@@ -470,10 +470,11 @@ final class SyncCompatibilityTests: UserDataFixture {
       let fact = syncFact(book.contentSha256)
       try await store.saveFacts(
         [("fact", book.contentSha256, fact)], generation: 0, current: 0, enabled: true)
-      let model = StatisticsModel()
-      model.overview = try await service.statistics(
-        first: 20000, last: 20000, book: book.contentSha256)
-      XCTAssertNotNil(model.overview)
+      let model = StatisticsModel(service: service, notifications: NotificationCenter())
+      let window = StatisticsWindow(period: .all)
+      let target = StatisticsRoute(key: book.contentSha256, title: "Synthetic")
+      await model.load(window, target: target)
+      XCTAssertNotNil(model.state(window, target: target).overview)
       let futureFact = try syncJSON(syncFact(book.contentSha256, id: "futureFact")) { $0["v"] = 2 }
       try await store.receiveSyncFixture(
         "fact", key: book.contentSha256, id: "futureFact", payload: futureFact)
@@ -487,12 +488,14 @@ final class SyncCompatibilityTests: UserDataFixture {
         _ = try await service.statistics(first: 20000, last: 20000, book: book.contentSha256)
         XCTFail("Unknown clear must not display totals")
       } catch is UserSyncCompatibilityError {
-        model.report(UserSyncCompatibilityError(statistics: true))
+        model.report(UserSyncCompatibilityError(statistics: true), window: window, target: target)
       }
-      XCTAssertNil(model.overview)
-      XCTAssertNil(model.cumulative)
-      XCTAssertTrue(model.spans.isEmpty)
-      XCTAssertNotNil(model.error)
+      let state = model.state(window, target: target)
+      XCTAssertNil(state.overview)
+      XCTAssertNil(state.cumulative)
+      XCTAssertTrue(state.spans.isEmpty)
+      XCTAssertNotNil(state.error)
+      XCTAssertFalse(state.loading)
       await Self.rejectSync { try await service.deleteStatistics(book: book.contentSha256) }
       let retained = try await store.syncFixturePayloads("clear")
       XCTAssertEqual(retained, [future])

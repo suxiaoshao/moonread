@@ -1,6 +1,11 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "下一年": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Next Year"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "下一年"}}}},
+    "上一年": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Previous Year"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "上一年"}}}},
+    "下一月": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Next Month"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "下一月"}}}},
+    "上一月": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "Previous Month"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "上一月"}}}},
+    "7 天": {"localizations": {"en": {"stringUnit": {"state": "translated", "value": "7 Days"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "7 天"}}}},
     "此配色的纹理仅保存在此设备。":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"This palette’s texture setting is saved only on this device."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"此配色的紋理僅儲存在此裝置。"}}}},
     "显示%@纹理":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show %@ Texture"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"顯示%@紋理"}}}},
     "显示纹理":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"Show Texture"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"顯示紋理"}}}},

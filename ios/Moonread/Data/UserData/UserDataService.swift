@@ -73,6 +73,7 @@ extension AppDataService {
             userCloudConfigurationRevision = UUID()
             resetSystemReadingCatalog()
             NotificationCenter.default.post(name: .readingContinuationInvalidated, object: nil)
+            NotificationCenter.default.post(name: .statisticsChanged, object: nil)
             let revision = userCloudConfigurationRevision
             // The configuration switch is serialized with deletion, not store
             // bootstrap: a newer configuration must be able to replace a stuck
@@ -227,6 +228,7 @@ extension AppDataService {
             if hidden.remove(serializeReadingKey(key: .pending(bookId: id))) != nil { hidden.insert(key); sourceDefaults.set(Array(hidden), forKey: "Moonread.hiddenRecent") }
             pendingPromotionIDs.remove(id)
             promotedUserKeys.insert(id)
+            if !transfer.facts.isEmpty { NotificationCenter.default.post(name: .statisticsChanged, object: nil) }
         } catch {
             // Keep the source identity/lease recovery path alive while raw pending data is protected.
             pendingPromotionIDs.insert(id); promotedUserKeys.remove(id)
