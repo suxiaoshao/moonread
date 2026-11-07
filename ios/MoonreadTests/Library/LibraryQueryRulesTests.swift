@@ -23,6 +23,36 @@ final class LibraryQueryRulesTests: XCTestCase {
         XCTAssertEqual(String(localized: "已索引 \(Int64(1)) / \(Int64(2)) 本", table: "FullIndex", bundle: english, locale: locale), "Indexed 1 / 2 books")
         XCTAssertEqual(String(localized: "有 \(Int64(1)) 本未索引", table: "ShelfRecovery", bundle: english, locale: locale), "1 book not indexed")
         XCTAssertEqual(String(localized: "导入备份", table: "DataManagement", bundle: english, locale: locale), "Import")
+
+        // Settings/cache table ownership and missing labels must resolve from the shipped bundles.
+        let labels: [(String, String, String, String)] = [
+            ("DataManagement", "数据管理", "Data Management", "資料管理"),
+            ("DataManagement", "清理缓存", "Clear Cache", "清除快取"),
+            ("Localizable", "标签关系", "Tag Matching", "標籤關係"),
+            ("Localizable", "格式", "Format", "格式"),
+            ("Localizable", "使用此配色的应用槽位将恢复纸色，阅读槽位将恢复跟随应用。", "App slots using this palette will revert to Paper; reading slots will return to Follow App.", "使用此配色的應用程式槽位將恢復紙色，閱讀槽位將恢復跟隨應用程式。"),
+            ("Localizable", "回到正文", "Return to Reading", "回到正文"),
+            ("Localizable", "导入", "Import", "匯入"),
+            ("Localizable", "好", "OK", "好"),
+            ("Localizable", "下载", "Download", "下載"),
+            ("Localizable", "展开", "Expand", "展開"),
+            ("Localizable", "字号", "Font Size", "字級"),
+            ("Localizable", "行距", "Line Spacing", "行距"),
+            ("Localizable", "段间距", "Paragraph Spacing", "段落間距"),
+            ("Localizable", "左右边距", "Side Margins", "左右邊界"),
+            ("Localizable", "最大行宽", "Maximum Line Width", "最大行寬"),
+            ("Localizable", "打开 ${target}", "Open ${target}", "開啟 ${target}"),
+            ("Localizable", "显示 ${book}", "Show ${book}", "顯示 ${book}"),
+            ("Localizable", "查看 ${period} 的阅读统计", "View reading statistics for ${period}", "查看 ${period} 的閱讀統計")
+        ]
+        for (language, identifier) in [("en", "en_US"), ("zh-Hant", "zh_TW")] {
+            let path = try XCTUnwrap(Bundle.main.path(forResource: language, ofType: "lproj"))
+            let bundle = try XCTUnwrap(Bundle(path: path))
+            for (table, key, en, hant) in labels {
+                let expected = language == "en" ? en : hant
+                XCTAssertEqual(String(localized: String.LocalizationValue(key), table: table, bundle: bundle, locale: Locale(identifier: identifier)), expected, "\(language) / \(table) / \(key)")
+            }
+        }
     }
 
     private func candidate(_ name: String, ordinal: UInt64, folder: Bool = false, metadata: BookMetadata? = nil, recent: Int64 = 0) -> LibrarySearchCandidate {
