@@ -5026,25 +5026,25 @@
           "path": "images/screenshots/en/F/R10-light-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 23936
+          "bytes": 32540
         },
         {
           "path": "images/screenshots/en/F/R10-light-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 54286
+          "bytes": 74800
         },
         {
           "path": "images/screenshots/en/F/R10-light-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 95668
+          "bytes": 125620
         }
       ],
       "source": {
         "id": "R10-F-en-light",
-        "origin": "1.4",
-        "sha256": "c1fdf715e86684a1a2794aa7ddc622f9a6066dc87917b4f0fd4648340afb38ac",
+        "origin": "1.5",
+        "sha256": "76e05e9a5a8e36b14ce39b571eafb3a88591bc06fa5919c0107656a2b2d3f4cc",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -5070,25 +5070,25 @@
           "path": "images/screenshots/en/F/R10-dark-480.webp",
           "width": 480,
           "height": 981,
-          "bytes": 22306
+          "bytes": 31680
         },
         {
           "path": "images/screenshots/en/F/R10-dark-960.webp",
           "width": 960,
           "height": 1963,
-          "bytes": 51002
+          "bytes": 74578
         },
         {
           "path": "images/screenshots/en/F/R10-dark-1350.webp",
           "width": 1350,
           "height": 2760,
-          "bytes": 89718
+          "bytes": 125868
         }
       ],
       "source": {
         "id": "R10-F-en-dark",
-        "origin": "1.4",
-        "sha256": "db194d8eaab672a18de926af285cb7c2b857179e86715ca1a1de4f1c6e671df1",
+        "origin": "1.5",
+        "sha256": "0452ccb859cf0779cb5847056ef8012b4bb9f92ea4e68afdea69edea7b7c983e",
         "frame": {
           "file": "iphone18pro.png",
           "sha256": "cb7b20a551c4fd63e794e1dd08ab0096816a12e72d38503f36a242550f07264c",
@@ -5378,25 +5378,25 @@
           "path": "images/screenshots/en/I/R10-light-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 13196
+          "bytes": 15092
         },
         {
           "path": "images/screenshots/en/I/R10-light-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 35418
+          "bytes": 41310
         },
         {
           "path": "images/screenshots/en/I/R10-light-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 65966
+          "bytes": 77142
         }
       ],
       "source": {
         "id": "R10-I-en-light",
-        "origin": "1.4",
-        "sha256": "c0ffdcdbe65f665079d986b8a26b3f9ab09e038e43026037e620876bfc1bcf09",
+        "origin": "1.5",
+        "sha256": "2b36bd5f071d4e4017ee15d4c07cff45c0ba0e65ea2dbc802d6d882c425f6195",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -5422,25 +5422,25 @@
           "path": "images/screenshots/en/I/R10-dark-480.webp",
           "width": 480,
           "height": 349,
-          "bytes": 12704
+          "bytes": 14984
         },
         {
           "path": "images/screenshots/en/I/R10-dark-960.webp",
           "width": 960,
           "height": 697,
-          "bytes": 34268
+          "bytes": 40818
         },
         {
           "path": "images/screenshots/en/I/R10-dark-1600.webp",
           "width": 1600,
           "height": 1162,
-          "bytes": 64782
+          "bytes": 77688
         }
       ],
       "source": {
         "id": "R10-I-en-dark",
-        "origin": "1.4",
-        "sha256": "5298c9d3d13e86fe2e23239cbc74f732942023637f037ffc035af189bb5646e5",
+        "origin": "1.5",
+        "sha256": "1f60ec0ac0fd3a6d5609fb877f6de42ba0fcabcffc53bb454eaaf8eab1b3ba74",
         "frame": {
           "file": "duo-inner.png",
           "sha256": "bd684d4cd2b68756ca008c158b9c0cbfeeb134bf3b5e481b3d0dd02d783211f1",
@@ -5554,25 +5554,25 @@
           "path": "images/screenshots/en/L/R10-light-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 8106
+          "bytes": 8952
         },
         {
           "path": "images/screenshots/en/L/R10-light-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 23844
+          "bytes": 27890
         },
         {
           "path": "images/screenshots/en/L/R10-light-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 49680
+          "bytes": 58066
         }
       ],
       "source": {
         "id": "R10-L-en-light",
-        "origin": "1.4",
-        "sha256": "96f380c24d21d7ff5c631830eb420a9cbbb1c1056153697faba597be45b49bae",
+        "origin": "1.5",
+        "sha256": "00d88be42ce376093b34f513afcf068044c1d3c9e3f75546482a7e6b41034a15",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
@@ -5598,25 +5598,25 @@
           "path": "images/screenshots/en/L/R10-dark-480.webp",
           "width": 480,
           "height": 368,
-          "bytes": 7944
+          "bytes": 8784
         },
         {
           "path": "images/screenshots/en/L/R10-dark-960.webp",
           "width": 960,
           "height": 736,
-          "bytes": 23760
+          "bytes": 28160
         },
         {
           "path": "images/screenshots/en/L/R10-dark-1600.webp",
           "width": 1600,
           "height": 1227,
-          "bytes": 48770
+          "bytes": 58074
         }
       ],
       "source": {
         "id": "R10-L-en-dark",
-        "origin": "1.4",
-        "sha256": "e2dab0283d73977e215b8dc05abc3128af7ed3b2b924dae1a8c6fed72838b56d",
+        "origin": "1.5",
+        "sha256": "8d238d59491af5863d32ae7c506d5112e33773b3306e50dd006819d12fefbbcc",
         "frame": {
           "file": "ipad-landscape.png",
           "sha256": "1baa558379ab9e0d7e43089927fe9c7f4a16cc020d0675bc21a8c1c898ca619e",
