@@ -14,20 +14,32 @@ Nix 不替代 Xcode。Apple SDK、Swift 编译器、模拟器和签名由 Xcode 
 
 | 改动范围 | PR 检查 |
 | --- | --- |
-| `crates/**`、根目录 `Cargo.*`、`flake.*` | Linux fmt／Clippy／Rust 测试，以及 iOS 单测 |
+| `crates/**`、根目录 `Cargo.*`、`flake.*` | 同一 macOS 作业中的 fmt／Clippy／Rust 测试及 iOS 单测 |
 | `ios/**`、`assets/icon/**` | iOS 单测 |
 | `docs/site/**`、`flake.nix`、`flake.lock` | `Website checks`：Nix 环境 `zola build`，不设为必需检查 |
 | `.github/**` | actionlint，且全部检查都跑 |
 | 其他文档等改动 | 密钥扫描；不相关的 job 跳过 |
 | push 到 `main`／`release/**`／`hotfix/**`，或手动触发 | 全部检查 |
 
-`Secret scan` 对任何改动都运行：gitleaks 扫描当前 HEAD 可达的已提交历史，输出遮盖密钥，不扫描开发者本机 build/、签名配置或未提交文件。密钥扫描或适用的 actionlint 失败会使必需的 `Linux checks` 直接失败，保留拆分前的合并阻断效果；正常按范围跳过 actionlint 不阻断 Linux。Linux 同时检查 Rust/Nix 格式、工作区所有 target/feature 的 Clippy（禁止警告）及 Rust 测试；Cargo 命令均使用 `--locked`。
+`Secret scan` 对任何改动都运行：gitleaks 扫描当前 HEAD 可达的已提交历史并遮盖密钥。`Workflow syntax` 仍在 Linux 运行 actionlint；网站生成检查同样留在 Linux。这些轻量作业不保存 Actions 缓存。
 
-范围判断失败时退回全部检查。后续 job 以 job 级 `if` 跳过，保留 `Linux checks`／`iOS unit tests` 的检查名称；不相关的必需 job 显示 skipped（视为通过），不会因整个工作流未触发而一直 pending。同一 PR 的新提交取消旧检查。Cargo 缓存按平台、工具链及依赖区分，不上传本机数据或签名安装包。
+`Rust and iOS tests` 是唯一 macOS 执行作业，使用 `xcode-27` arm64 镜像，固定 Xcode 27.1 与镜像已有的 iOS 27.0 iPhone 18 Pro；缺失时失败，不新建模拟器或替换工具链。先要求密钥及适用的工作流检查成功，再恢复缓存、实现当前 Nix 环境、按 Rust 范围串行运行 fmt/nixfmt、工作区全 target/feature Clippy 和 Rust 测试，随后 build-for-testing 并运行完整 MoonreadTests。纯 Swift PR 跳过 Rust 规则检查，但 Xcode 仍每次构建 Rust/绑定；分支 push 和手动运行仍全检查。Cargo 使用 `--locked`，测试关闭并行、固定简中、ad-hoc 签名以保留真实 Keychain 接线，每项最多五分钟。
 
-`iOS unit tests` 使用官方 `xcode-27` arm64 镜像，显式选择 Xcode 27.1 与镜像已有的 iOS 27.0 iPhone 18 Pro；缺少时直接失败，不创建模拟器或替换工具链。Xcode 构建阶段通过 Nix 编译 Rust，xcodebuild 运行完整 MoonreadTests（不运行 MoonreadUITests），关闭测试并行，测试语言固定简体中文；模拟器使用 ad-hoc 签名以支持隔离命名空间的钥匙串适配器测试，单项最多五分钟。Cargo 与 DerivedData 分开缓存，日志及 xcresult 保留七天。本工作流没有 tag 发布或上传逻辑。长时性能、UI、最低系统和真实文件提供方仍按范围在本地验证，CI 不替代这些验收。
+范围判断失败回退全检查。过渡期保留名为 `Linux checks`、`iOS unit tests` 的两个轻量 Linux gate，只转发合并 Mac 的成功结果；只有已成功确认无 Rust/iOS 改动时才允许 Mac skipped。仓库保护仍要求这两个原名，协调者与用户确认后才改为 `Rust and iOS tests` 并移除旧 gate；main TestFlight 的必需检查合同也须同轮调整。实现本身不修改仓库规则。同一 PR 的新提交取消旧运行。
 
-CI 工作流只读仓库，checkout 不保留凭据，引用的 Actions 固定到完整提交 SHA。不使用 `pull_request_target`，也不让工作流自动批准或合并 PR。
+### 单份 macOS 缓存
+
+唯一写入 ref 在 workflow 的 `CI_CACHE_WRITE_REF` 显式声明，当前为 `refs/heads/release/1.6`；升级 release 时更新它。只有该 ref 的 push 在完整 Rust 检查和当前 iOS 构建成功后保存；精确命中不重存。PR、main、旧 release、hotfix 和手动运行只按 GitHub 正常作用域恢复，PR 不向基线回写。不使用 `pull_request_target`、PAT 或额外缓存后端。
+
+单包保存 Cargo registry/git、`target` 的 host/simulator 产物、DerivedData、Debug UniFFI 生成目录及实际 Nix 用户输入缓存。环境前缀包含实际 macOS/架构、Xcode build、SDK、Nix 版本和工具链/依赖锁指纹；源码、工程、scheme、xcconfig、资源和 CI 配置属于精确 key 后缀，工程小改不再隔断环境前缀恢复。Nix 输入尊重 `NIX_CACHE_HOME` / `XDG_CACHE_HOME`，不包含整个 `/nix/store`。新输入的展开体积先限 1.5 GiB，超过时不发布该代，记录证据后调整；这不冒充压缩存储量。
+
+每个新包 API 存储量预算为 4 GiB。独立清理作业先确认成功 key 在精确 writer ref 唯一可见且在预算内，再删除同命名空间更旧 ID 及明确列出的旧 Cargo/DerivedData 前缀；保留当前和更晚并发代，保存失败或 API 不可确认时不删旧。新代超预算只移除该新代，保留旧种子并报告容量未通过；不提高额度。迁移清理仅作用于 Actions cache ID，不删除日志、xcresult 或 TestFlight artifact。
+
+缓存不决定测试源码：每次仍运行当前 Cargo、UniFFI 和 Xcode build-for-testing；先移除缓存中的旧 xctestrun，要求成功构建产生唯一当前 manifest，再显式用于 test-without-building。不会仅因 cache hit 直接测试旧 App，也不按提交时间伪造 mtime。UniFFI 先写临时目录，验证三个既有输出完整，再逐文件 cmp；未变保留 mtime，缺失/有变化才替换，失败停止构建。
+
+阶段耗时、源码与环境身份、展开尺寸、缓存命中、Xcode build timing、Rust/Swift 测试日志和 xcresult 保留七天；restore/save 耗时以 Actions 步骤为准，压缩包大小以 API 为准。冷缓存 PR 只读，热缓存及 Swift/Rust 源码负向对照等待 release push 生成首个种子后执行。本工作流没有打包上传逻辑，不能将性能检查当发布或真实环境验收。
+
+构建作业只读仓库，checkout 不保留凭据；只有受信任的当前 release push 的独立缓存清理作业具有 `actions: write`，不 checkout 或执行 PR 代码，引用的 Actions 固定到完整提交 SHA。不使用 `pull_request_target`，也不让工作流自动批准或合并 PR。
 
 ## 仓库设置
 
@@ -78,7 +90,7 @@ cd docs/site && zola serve
 
 MoonreadUITests 保留少量独立小样本主路径，具体清单以测试源码为准；U04 真实重启，其余不叠加重启、外观矩阵或系统选择器/菜单验证。U15 从已选文件接收边界导入；U19 经 NSItemProvider 测试适配器发布真实 ShareInbox 清单再由主 App 消费，不声称覆盖第三方宿主的分享面板。默认只附失败截图。原 008、009、105 删除，不另设每 PR 性能通道。
 
-商店截图由独立的 opt-in StoreScreenshots 流程生成，不计入日常关键 UI 流程；入口见[商店截图](development.md#官网与商店原图独立-debug-测试)。UI 按改动范围验证并记录实际用时，不能由测试数量推断全量预算。Linux 与 iOS 单测以同一提交的 CI 结果为准。
+商店截图由独立的 opt-in StoreScreenshots 流程生成，不计入日常关键 UI 流程；入口见[商店截图](development.md#官网与商店原图独立-debug-测试)。UI 按改动范围验证并记录实际用时，不能由测试数量推断全量预算。Rust 与 iOS 单测以同一提交的 CI 结果为准。
 
 ### 网站维护边界
 
