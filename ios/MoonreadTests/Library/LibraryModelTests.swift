@@ -84,7 +84,6 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
     let cloudOnly = IdentityInventory(shelf: refreshed.shelf, total: refreshed.total, pending: [cloudFile])
     XCTAssertEqual(controller.sheetAction("builtin", inventory: cloudOnly, includeCloud: false), .none)
     XCTAssertEqual(controller.sheetAction("builtin", inventory: cloudOnly, includeCloud: true), .start)
-    XCTAssertEqual(controller.sheetAction("builtin", inventory: cloudOnly, includeCloud: false), .none)
   }
 
   @MainActor func testBackgroundTaskCallbacksHopToMainActor() async {

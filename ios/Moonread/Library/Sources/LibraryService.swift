@@ -9,35 +9,6 @@ extension Notification.Name {
     static let libraryIndexChanged = Notification.Name("Moonread.libraryIndexChanged")
 }
 
-/// The presenter only signals invalidation. Coordinated scans and all content
-/// work run on AppDataService, never on the presenter's queue or the main actor.
-final class LibraryDirectoryObserver: NSObject, NSFilePresenter, @unchecked Sendable {
-    let presentedItemURL: URL?
-    let presentedItemOperationQueue: OperationQueue
-    private var accessed: Bool
-    init(url: URL) {
-        presentedItemURL = url
-        accessed = url.startAccessingSecurityScopedResource()
-        presentedItemOperationQueue = OperationQueue()
-        presentedItemOperationQueue.maxConcurrentOperationCount = 1
-        super.init()
-        NSFileCoordinator.addFilePresenter(self)
-    }
-    func stop() {
-        NSFileCoordinator.removeFilePresenter(self)
-        if accessed { presentedItemURL?.stopAccessingSecurityScopedResource(); accessed = false }
-    }
-    private func changed() { NotificationCenter.default.post(name: .libraryFilesChanged, object: nil) }
-    func presentedItemDidChange() { changed() }
-    func presentedItemDidMove(to newURL: URL) { changed() }
-    func presentedSubitemDidAppear(at url: URL) { changed() }
-    func presentedSubitemDidChange(at url: URL) { changed() }
-    func presentedSubitem(at oldURL: URL, didMoveTo newURL: URL) { changed() }
-    func accommodatePresentedSubitemDeletion(at url: URL, completionHandler: @escaping (Error?) -> Void) {
-        completionHandler(nil); changed()
-    }
-}
-
 enum LibraryFileError: LocalizedError {
     case conflict(String), invalidDestination, missingShelf, unsupportedFile, trashUnsupported, fileWorkBusy
     var errorDescription: String? {
@@ -71,31 +42,6 @@ struct LibraryLocation: Codable, Hashable, Identifiable, Sendable {
     let shelfID: String
     var path: String = ""
     var id: String { shelfID + ":" + path }
-}
-
-/// Owns only disposable copies. The presentation and its completion handler
-/// retain this object until the system has finished consuming the files.
-final class LibraryExport: Sendable {
-    let directory: URL
-    let urls: [URL]
-    private static let root: URL = {
-        let fm = FileManager.default
-        let root = fm.temporaryDirectory.appendingPathComponent("Moonread-Exports", isDirectory: true)
-        // Initialized once per process, before any live export exists. Reclaim
-        // staging left by process termination, not by a normal dismissal.
-        if fm.fileExists(atPath: root.path) { try? fm.removeItem(at: root) }
-        return root
-    }()
-
-    init(copy: (URL) throws -> [URL]) throws {
-        directory = Self.root.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        do { urls = try copy(directory) }
-        catch { try? FileManager.default.removeItem(at: directory); throw error }
-    }
-
-    func finish() { try? FileManager.default.removeItem(at: directory) }
-    deinit { finish() }
 }
 
 extension LibraryEntry {

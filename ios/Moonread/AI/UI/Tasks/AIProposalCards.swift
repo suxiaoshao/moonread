@@ -1,12 +1,5 @@
 import SwiftUI
 
-struct AIProposalCards: View {
-    let results: [AIResultValue]
-    var body: some View {
-        ForEach(results) { result in AIResultCard(result: result) }
-    }
-}
-
 /// Canonical history is always visible. Editable reviews are fresh, view-lifetime values.
 struct AIResultCard: View {
     @Environment(AIService.self) private var ai
