@@ -366,6 +366,16 @@ F72000000000000000000004 = {isa = PBXBuildFile; fileRef = F710000000000000000000
 		4C56E96FD985471688B0E843 = {isa = PBXBuildFile; fileRef = 42C27EDDC5304FA9B6EBFA5E; };
 79FDB8BF2A464B4CA138DFB4 /* ModelDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20F937775DA74EBEADA5BB87; };
 CA0FCD9B82134E7091B5CD9F /* ModelDirectoryDecoding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8C3CE03D9A84285ACE6CC41; };
+		FBEC3350F1726A8D25FE408B /* AIChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A9A1F23534B032F5051C81C /* AIChatView.swift */; };
+		F7BB0BC883AAEB35058D210B /* AIComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 802F64D6FADEC829D9FABA3E /* AIComposer.swift */; };
+		88852170375247A7A949C4CE /* AIReadingAttachmentPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BAA7EF26936FFE4DD432AE2 /* AIReadingAttachmentPreview.swift */; };
+		90709A613E0B26BF14B9F308 /* DataManagementModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C840F5BC5EE009E9B72CABA8 /* DataManagementModel.swift */; };
+		4E5986F68A44B334B7F8643D /* ReadingDataListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B72D32826922F52B1EB3A9D5 /* ReadingDataListView.swift */; };
+		42F0869878D5AA951138E187 /* ReadingDataIssuesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1A67ABEBB4368A733D50556 /* ReadingDataIssuesView.swift */; };
+		CFFFF465FBAAE3D5BD8BDD6F /* AIThinkingSlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ACEF8F2A333A8663E9BECEB /* AIThinkingSlider.swift */; };
+		2D2BA9F36327CC9404EEC2D1 /* AIModelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D6C0F3CCD6A30E6A607404 /* AIModelDetailView.swift */; };
+		EC01BD4B8052624B73BD6031 /* LibraryDirectoryObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = F54437FA5E94BE01B694DE2D /* LibraryDirectoryObserver.swift */; };
+		6F0F9A8C149BDA5EEAD6DF01 /* LibraryExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1552663E85DD907D9582A20 /* LibraryExport.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -740,6 +750,16 @@ F71000000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourceco
 		42C27EDDC5304FA9B6EBFA5E = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = PresetCovers.xcassets; sourceTree = "<group>"; };
 20F937775DA74EBEADA5BB87 /* ModelDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDirectory.swift; sourceTree = "<group>"; };
 A8C3CE03D9A84285ACE6CC41 /* ModelDirectoryDecoding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelDirectoryDecoding.swift; sourceTree = "<group>"; };
+		7A9A1F23534B032F5051C81C /* AIChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIChatView.swift; sourceTree = "<group>"; };
+		802F64D6FADEC829D9FABA3E /* AIComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIComposer.swift; sourceTree = "<group>"; };
+		3BAA7EF26936FFE4DD432AE2 /* AIReadingAttachmentPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIReadingAttachmentPreview.swift; sourceTree = "<group>"; };
+		C840F5BC5EE009E9B72CABA8 /* DataManagementModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DataManagementModel.swift; sourceTree = "<group>"; };
+		B72D32826922F52B1EB3A9D5 /* ReadingDataListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingDataListView.swift; sourceTree = "<group>"; };
+		B1A67ABEBB4368A733D50556 /* ReadingDataIssuesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingDataIssuesView.swift; sourceTree = "<group>"; };
+		8ACEF8F2A333A8663E9BECEB /* AIThinkingSlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIThinkingSlider.swift; sourceTree = "<group>"; };
+		36D6C0F3CCD6A30E6A607404 /* AIModelDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIModelDetailView.swift; sourceTree = "<group>"; };
+		F54437FA5E94BE01B694DE2D /* LibraryDirectoryObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDirectoryObserver.swift; sourceTree = "<group>"; };
+		A1552663E85DD907D9582A20 /* LibraryExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryExport.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1002,7 +1022,7 @@ D35000000000000000000001,
 			isa = PBXGroup;
 			children = (
 				D50620000000000000000005 /* DataManagement.xcstrings */,
-				D50620000000000000000004 /* DataManagementView.swift */,
+				C77FEFA6FC6D2D5785EE3779 /* DataManagement */,
 				AC2000000000000000000002 /* SettingsView.swift */,
 				F01600000000000000000002 /* Onboarding.swift */,
 				F01700000000000000000004 /* TipJar.storekit */,
@@ -1277,6 +1297,7 @@ D35000000000000000000001,
 		27CF9E0FF09FD8187DFF37CE /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				F54437FA5E94BE01B694DE2D /* LibraryDirectoryObserver.swift */,
 				AE2000000000000000000001 /* LibraryService.swift */,
 				B02000000000000000000002 /* CloudLibrary.swift */,
 				FDAC3B680102A215FC689892 /* SourceFileAccess.swift */,
@@ -1572,6 +1593,9 @@ D35000000000000000000001,
 		B6DBD907A1055179DE664779 /* Conversations */ = {
 			isa = PBXGroup;
 			children = (
+				3BAA7EF26936FFE4DD432AE2 /* AIReadingAttachmentPreview.swift */,
+				802F64D6FADEC829D9FABA3E /* AIComposer.swift */,
+				7A9A1F23534B032F5051C81C /* AIChatView.swift */,
 				D32000000000000000000005 /* AIConversationsView.swift */,
 				FA2000000000000000000001 /* AIMessageList.swift */,
 				E72000000000000000000001 /* AITurnView.swift */,
@@ -1668,6 +1692,7 @@ D35000000000000000000001,
 		E811C8CAF4B648C0177FB2A8 /* FileOperations */ = {
 			isa = PBXGroup;
 			children = (
+				A1552663E85DD907D9582A20 /* LibraryExport.swift */,
 				AE2000000000000000000002 /* LibraryActions.swift */,
 				AF2000000000000000000004 /* LibraryDrop.swift */,
 				F853A448B490AEA3E382B39B /* LibraryShelfDrop.swift */,
@@ -1687,6 +1712,8 @@ D35000000000000000000001,
 		ED51B0984073FAABD1C8C4EC /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				36D6C0F3CCD6A30E6A607404 /* AIModelDetailView.swift */,
+				8ACEF8F2A333A8663E9BECEB /* AIThinkingSlider.swift */,
 				E52000000000000000000006 /* AISettingsView.swift */,
 				E52000000000000000000007 /* AIConnectionView.swift */,
 				EC14CE0E00934BB682B83B4D /* AIDataSharingConsentView.swift */,
@@ -1724,6 +1751,17 @@ D35000000000000000000001,
 			DE54835FF23B76DF33D8DB39 /* MetadataTasksSection.swift */,
 		); path = MetadataExchange; sourceTree = "<group>"; };
 691E7DA560CC45CBADFE58DB /* Catalog */ = {isa = PBXGroup; children = (20F937775DA74EBEADA5BB87,A8C3CE03D9A84285ACE6CC41); path = Catalog; sourceTree = "<group>"; };
+		C77FEFA6FC6D2D5785EE3779 /* DataManagement */ = {
+			isa = PBXGroup;
+			children = (
+				D50620000000000000000004 /* DataManagementView.swift */,
+				C840F5BC5EE009E9B72CABA8 /* DataManagementModel.swift */,
+				B72D32826922F52B1EB3A9D5 /* ReadingDataListView.swift */,
+				B1A67ABEBB4368A733D50556 /* ReadingDataIssuesView.swift */,
+			);
+			path = DataManagement;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -1942,6 +1980,16 @@ E51000000000000000000009,D41000000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FBEC3350F1726A8D25FE408B /* AIChatView.swift in Sources */,
+				F7BB0BC883AAEB35058D210B /* AIComposer.swift in Sources */,
+				88852170375247A7A949C4CE /* AIReadingAttachmentPreview.swift in Sources */,
+				90709A613E0B26BF14B9F308 /* DataManagementModel.swift in Sources */,
+				4E5986F68A44B334B7F8643D /* ReadingDataListView.swift in Sources */,
+				42F0869878D5AA951138E187 /* ReadingDataIssuesView.swift in Sources */,
+				CFFFF465FBAAE3D5BD8BDD6F /* AIThinkingSlider.swift in Sources */,
+				2D2BA9F36327CC9404EEC2D1 /* AIModelDetailView.swift in Sources */,
+				EC01BD4B8052624B73BD6031 /* LibraryDirectoryObserver.swift in Sources */,
+				6F0F9A8C149BDA5EEAD6DF01 /* LibraryExport.swift in Sources */,
 				471EC7FB4D05BD00640CFA1D /* MetadataExchange.swift in Sources */,
 				7FFFB76F33327913F37A7D68 /* MetadataExchangeModel.swift in Sources */,
 				4C40326EFE5BB71FA030A863 /* MetadataExchangeService.swift in Sources */,
