@@ -4,7 +4,7 @@ title = "Organize book information outside Moonread"
 kind = "metadata"
 +++
 
-Edit a manifest exported from Moonread, or create one directly from local TXT files. Organize authors, tags, descriptions and covers yourself or with an agent, then review each change in Moonread. The import file does not need to contain book text.
+Edit a manifest exported from Moonread, or create one directly from local TXT files. Organize authors, tags, descriptions and covers yourself or with an agent, then review each change in Moonread.
 
 Available in Moonread 1.5. This exchanges book information; use **Reading data backup** to restore positions, bookmarks and notes.
 
@@ -26,15 +26,15 @@ Available in Moonread 1.5. This exchanges book information; use **Reading data b
 <div class="metadata-shots">
 <figure>
 <picture>
-<source media="(prefers-color-scheme: dark)" srcset="../../images/metadata/en-dark-export-scope-480.webp 480w, ../../images/metadata/en-dark-export-scope-960.webp 960w, ../../images/metadata/en-dark-export-scope-1206.webp 1206w" sizes="(max-width: 400px) 84vw, 300px">
-<img src="../../images/metadata/en-light-export-scope-960.webp" srcset="../../images/metadata/en-light-export-scope-480.webp 480w, ../../images/metadata/en-light-export-scope-960.webp 960w, ../../images/metadata/en-light-export-scope-1206.webp 1206w" sizes="(max-width: 400px) 84vw, 300px" width="1206" height="2622" alt="Choose the export scope and format" loading="lazy" decoding="async">
+<source media="(prefers-color-scheme: dark)" srcset="../../images/metadata/en-dark-export-scope-480.webp 480w, ../../images/metadata/en-dark-export-scope-960.webp 960w, ../../images/metadata/en-dark-export-scope-1350.webp 1350w" sizes="(max-width: 400px) 84vw, 300px">
+<img src="../../images/metadata/en-light-export-scope-960.webp" srcset="../../images/metadata/en-light-export-scope-480.webp 480w, ../../images/metadata/en-light-export-scope-960.webp 960w, ../../images/metadata/en-light-export-scope-1350.webp 1350w" sizes="(max-width: 400px) 84vw, 300px" width="1350" height="2760" alt="Choose the export scope and format" loading="lazy" decoding="async">
 </picture>
 <figcaption>Choose the export scope and format</figcaption>
 </figure>
 <figure>
 <picture>
-<source media="(prefers-color-scheme: dark)" srcset="../../images/metadata/en-dark-export-result-480.webp 480w, ../../images/metadata/en-dark-export-result-960.webp 960w, ../../images/metadata/en-dark-export-result-1206.webp 1206w" sizes="(max-width: 400px) 84vw, 300px">
-<img src="../../images/metadata/en-light-export-result-960.webp" srcset="../../images/metadata/en-light-export-result-480.webp 480w, ../../images/metadata/en-light-export-result-960.webp 960w, ../../images/metadata/en-light-export-result-1206.webp 1206w" sizes="(max-width: 400px) 84vw, 300px" width="1206" height="2622" alt="Share or save the exported manifest" loading="lazy" decoding="async">
+<source media="(prefers-color-scheme: dark)" srcset="../../images/metadata/en-dark-export-result-480.webp 480w, ../../images/metadata/en-dark-export-result-960.webp 960w, ../../images/metadata/en-dark-export-result-1350.webp 1350w" sizes="(max-width: 400px) 84vw, 300px">
+<img src="../../images/metadata/en-light-export-result-960.webp" srcset="../../images/metadata/en-light-export-result-480.webp 480w, ../../images/metadata/en-light-export-result-960.webp 960w, ../../images/metadata/en-light-export-result-1350.webp 1350w" sizes="(max-width: 400px) 84vw, 300px" width="1350" height="2760" alt="Share or save the exported manifest" loading="lazy" decoding="async">
 </picture>
 <figcaption>Share or save the exported manifest</figcaption>
 </figure>
@@ -55,15 +55,15 @@ By default, Moonread fills empty fields and appends tags, keeping existing value
 <div class="metadata-shots">
 <figure>
 <picture>
-<source media="(prefers-color-scheme: dark)" srcset="../../images/metadata/en-dark-import-preview-480.webp 480w, ../../images/metadata/en-dark-import-preview-960.webp 960w, ../../images/metadata/en-dark-import-preview-1206.webp 1206w" sizes="(max-width: 400px) 84vw, 300px">
-<img src="../../images/metadata/en-light-import-preview-960.webp" srcset="../../images/metadata/en-light-import-preview-480.webp 480w, ../../images/metadata/en-light-import-preview-960.webp 960w, ../../images/metadata/en-light-import-preview-1206.webp 1206w" sizes="(max-width: 400px) 84vw, 300px" width="1206" height="2622" alt="Review the books to update" loading="lazy" decoding="async">
+<source media="(prefers-color-scheme: dark)" srcset="../../images/metadata/en-dark-import-preview-480.webp 480w, ../../images/metadata/en-dark-import-preview-960.webp 960w, ../../images/metadata/en-dark-import-preview-1350.webp 1350w" sizes="(max-width: 400px) 84vw, 300px">
+<img src="../../images/metadata/en-light-import-preview-960.webp" srcset="../../images/metadata/en-light-import-preview-480.webp 480w, ../../images/metadata/en-light-import-preview-960.webp 960w, ../../images/metadata/en-light-import-preview-1350.webp 1350w" sizes="(max-width: 400px) 84vw, 300px" width="1350" height="2760" alt="Review the books to update" loading="lazy" decoding="async">
 </picture>
 <figcaption>Review the books to update</figcaption>
 </figure>
 <figure>
 <picture>
-<source media="(prefers-color-scheme: dark)" srcset="../../images/metadata/en-dark-import-result-480.webp 480w, ../../images/metadata/en-dark-import-result-960.webp 960w, ../../images/metadata/en-dark-import-result-1206.webp 1206w" sizes="(max-width: 400px) 84vw, 300px">
-<img src="../../images/metadata/en-light-import-result-960.webp" srcset="../../images/metadata/en-light-import-result-480.webp 480w, ../../images/metadata/en-light-import-result-960.webp 960w, ../../images/metadata/en-light-import-result-1206.webp 1206w" sizes="(max-width: 400px) 84vw, 300px" width="1206" height="2622" alt="See which books were saved" loading="lazy" decoding="async">
+<source media="(prefers-color-scheme: dark)" srcset="../../images/metadata/en-dark-import-result-480.webp 480w, ../../images/metadata/en-dark-import-result-960.webp 960w, ../../images/metadata/en-dark-import-result-1350.webp 1350w" sizes="(max-width: 400px) 84vw, 300px">
+<img src="../../images/metadata/en-light-import-result-960.webp" srcset="../../images/metadata/en-light-import-result-480.webp 480w, ../../images/metadata/en-light-import-result-960.webp 960w, ../../images/metadata/en-light-import-result-1350.webp 1350w" sizes="(max-width: 400px) 84vw, 300px" width="1350" height="2760" alt="See which books were saved" loading="lazy" decoding="async">
 </picture>
 <figcaption>See which books were saved</figcaption>
 </figure>
@@ -106,7 +106,7 @@ If needed, check the encoding or use an exported manifest instead.
 
 If the tool cannot open links, download the [agent editing instructions (Skill)](../../skills/moonread-metadata/SKILL.md) and [JSON Schema](../../schema/moonread-metadata-v1.schema.json), and provide them with your input. The Skill explains how to edit; the Schema checks the file structure. If your tool cannot handle cover packages, start with a manifest without covers.
 
-**Check the information before sending it.** Metadata manifests should contain no book text, reading positions, bookmarks, notes, statistics or access permissions. They may contain titles, authors, shelf names and relative paths, along with your descriptions and custom covers. Sending the file to an external service shares that information with the service; send only what you are comfortable sharing.
+**Check the information before sending it.** Metadata manifests may contain titles, authors, shelf names and relative paths, along with your descriptions and custom covers. Sending the file to an external service shares that information with the service; send only what you are comfortable sharing.
 
 Moonread does not fetch missing information automatically or rewrite book text or the input manifest. A real filename changes only if you explicitly select its rename suggestion in the preview; files are not moved to another directory or overwritten.
 
@@ -215,4 +215,4 @@ Identical same-SHA records coalesce; conflicting fields show source positions an
 
 Real-file renaming and the existing source-snapshot check run after metadata is saved. Unavailable originals are not downloaded for a rename; a rename failure leaves metadata saved and explains why the file was not renamed. No updated manifest is required afterward: historical paths are not used for matching.
 
-Diagnostic JSONL contains source line/record number, code, field, a valid text identity and a controlled reason, without book text or private absolute paths. Do not send private manifests or books unsolicited when reporting a problem.
+Diagnostic JSONL contains source line/record number, code, field, a valid text identity and a controlled reason, without private absolute paths. Do not send private manifests or books unsolicited when reporting a problem.

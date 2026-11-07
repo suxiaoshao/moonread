@@ -22,9 +22,9 @@ nix develop --no-update-lock-file -c zola --root docs/site build
 
 首页依次展示舒服阅读、跨设备续读、书籍与记录，保留阅读预览和中英文政策入口。
 截图通过 `data/screenshots.json` 选择手机、Duo 内/外屏、iPad、语言与系统明暗；文件在 `static/images/screenshots/`。
-来源统一查 `build/Release/1.4-screenshots/sources.json` 中 `consumers` 含 `website` 的用途 ID；目录名不代表截图版本，以各项 `origin` 为准。只替换受已合并改动影响的画面，未变画面复用既有真实截图。1.5 已替换的槽位在 `data/screenshots.json` 记录源 ID、版本、SHA 与局部裁切坐标；原图不改动、不删除。官网和商店共用原图，不从宣传成图反裁，不借其他设备或语言、不反色冒充暗色。
+来源统一查 `build/Release/1.4-screenshots/sources.json` 中 `consumers` 含 `website` 的用途 ID；目录名不代表截图版本，以各项 `origin` 为准。只替换受已合并改动影响的画面，未变画面复用既有真实截图。1.5 已替换的槽位在 `data/screenshots.json` 记录源 ID、版本、SHA 与官方设备外框信息；完整原图嵌入对应 Apple 官方外框，尺寸不同只按比例缩放；原图不改动、不删除。官网和商店共用原图，不从宣传成图反裁，不借其他设备或语言、不反色冒充暗色。
 
-派生沿用本机 ImageMagick，无额外安装/构建脚本或前端框架。派生产出约480/960/1600宽 WebP，不上采样；没有原图的槽位明确标记 pending，不能拿其他设备替代。后续补图时先更新核验来源记录，再重新派生对应图片与数据。 原图登记仍带未通过的 `review` 标记时，使用既有 `pending` 回退，不把问题新图或过时界面当成可发布画面。
+派生沿用本机 ImageMagick，无额外安装/构建脚本或前端框架。派生产出约480/960/1600宽 WebP，不上采样；没有原图的槽位明确标记 pending，不能拿其他设备替代。后续补图时先更新核验来源记录，再重新派生对应图片与数据。 原图登记仍带未通过的 `review` 标记时，不接入该新图；保留该槽位上一张已核验的截图，待修复后再替换。目前英文 R10 的手机、Duo 内屏与 iPad 明暗六槽沿用 1.4 原图。
 
 本机 `zola serve` 不监听 `data/`，且会缓存 `load_data` 结果；更新截图索引后重启预览进程，再核验浏览器实际载入的数据。
 
