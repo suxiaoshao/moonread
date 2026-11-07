@@ -1210,21 +1210,32 @@
           "path": "images/screenshots/zh/F/R04-light-480.webp",
           "width": 480,
           "height": 269,
-          "bytes": 10004
+          "bytes": 9688
         },
         {
           "path": "images/screenshots/zh/F/R04-light-960.webp",
           "width": 960,
           "height": 538,
-          "bytes": 22768
+          "bytes": 24400
         },
         {
           "path": "images/screenshots/zh/F/R04-light-1106.webp",
           "width": 1106,
           "height": 620,
-          "bytes": 26850
+          "bytes": 32934
         }
-      ]
+      ],
+      "source": {
+        "id": "R04-F-zh-Hans-light",
+        "origin": "1.5",
+        "sha256": "72d60d1c5df335772b0b3db05380669985591a520c6799e48d801332f77bacce",
+        "crop": [
+          50,
+          230,
+          1106,
+          620
+        ]
+      }
     },
     "zh/F/R04/dark": {
       "cropped": true,
@@ -1235,21 +1246,32 @@
           "path": "images/screenshots/zh/F/R04-dark-480.webp",
           "width": 480,
           "height": 269,
-          "bytes": 9180
+          "bytes": 9036
         },
         {
           "path": "images/screenshots/zh/F/R04-dark-960.webp",
           "width": 960,
           "height": 538,
-          "bytes": 20424
+          "bytes": 22502
         },
         {
           "path": "images/screenshots/zh/F/R04-dark-1106.webp",
           "width": 1106,
           "height": 620,
-          "bytes": 23572
+          "bytes": 30330
         }
-      ]
+      ],
+      "source": {
+        "id": "R04-F-zh-Hans-dark",
+        "origin": "1.5",
+        "sha256": "d000f59be8aafb695d8b3361ebd01e46d7d14b7cc312267420f5dc9df84f9726",
+        "crop": [
+          50,
+          230,
+          1106,
+          620
+        ]
+      }
     },
     "en/F/R04/light": {
       "cropped": true,
@@ -1260,21 +1282,32 @@
           "path": "images/screenshots/en/F/R04-light-480.webp",
           "width": 480,
           "height": 269,
-          "bytes": 13176
+          "bytes": 11792
         },
         {
           "path": "images/screenshots/en/F/R04-light-960.webp",
           "width": 960,
           "height": 538,
-          "bytes": 29784
+          "bytes": 27572
         },
         {
           "path": "images/screenshots/en/F/R04-light-1106.webp",
           "width": 1106,
           "height": 620,
-          "bytes": 33850
+          "bytes": 37590
         }
-      ]
+      ],
+      "source": {
+        "id": "R04-F-en-light",
+        "origin": "1.5",
+        "sha256": "57192f8d042c969268dde52050985dfefa153112989bcbbd4ea4520aaf2b82af",
+        "crop": [
+          50,
+          230,
+          1106,
+          620
+        ]
+      }
     },
     "en/F/R04/dark": {
       "cropped": true,
@@ -1285,21 +1318,32 @@
           "path": "images/screenshots/en/F/R04-dark-480.webp",
           "width": 480,
           "height": 269,
-          "bytes": 12072
+          "bytes": 10820
         },
         {
           "path": "images/screenshots/en/F/R04-dark-960.webp",
           "width": 960,
           "height": 538,
-          "bytes": 26590
+          "bytes": 25716
         },
         {
           "path": "images/screenshots/en/F/R04-dark-1106.webp",
           "width": 1106,
           "height": 620,
-          "bytes": 29938
+          "bytes": 34590
         }
-      ]
+      ],
+      "source": {
+        "id": "R04-F-en-dark",
+        "origin": "1.5",
+        "sha256": "fddae42379215d05ffe3b64dffe3f77af47fced574a621f79fadc8d68528580f",
+        "crop": [
+          50,
+          230,
+          1106,
+          620
+        ]
+      }
     },
     "zh/O/R04/light": {
       "cropped": true,
@@ -1310,21 +1354,32 @@
           "path": "images/screenshots/zh/O/R04-light-480.webp",
           "width": 480,
           "height": 262,
-          "bytes": 10410
+          "bytes": 10030
         },
         {
           "path": "images/screenshots/zh/O/R04-light-960.webp",
           "width": 960,
           "height": 524,
-          "bytes": 24094
+          "bytes": 24032
         },
         {
           "path": "images/screenshots/zh/O/R04-light-1080.webp",
           "width": 1080,
           "height": 590,
-          "bytes": 26954
+          "bytes": 30494
         }
-      ]
+      ],
+      "source": {
+        "id": "R04-O-zh-Hans-light",
+        "origin": "1.5",
+        "sha256": "8c9ba2066a676670abf4e29397126a0df86f873465c6647392cbd97d2a8e4f67",
+        "crop": [
+          45,
+          140,
+          1080,
+          590
+        ]
+      }
     },
     "zh/O/R04/dark": {
       "cropped": true,
@@ -1335,21 +1390,32 @@
           "path": "images/screenshots/zh/O/R04-dark-480.webp",
           "width": 480,
           "height": 262,
-          "bytes": 8664
+          "bytes": 9154
         },
         {
           "path": "images/screenshots/zh/O/R04-dark-960.webp",
           "width": 960,
           "height": 524,
-          "bytes": 20022
+          "bytes": 22108
         },
         {
           "path": "images/screenshots/zh/O/R04-dark-1080.webp",
           "width": 1080,
           "height": 590,
-          "bytes": 23800
+          "bytes": 27800
         }
-      ]
+      ],
+      "source": {
+        "id": "R04-O-zh-Hans-dark",
+        "origin": "1.5",
+        "sha256": "d0c5277f320bc6c282b25b87737428b3ffd9d67db99e70e9d06a2f1a4b1bc97d",
+        "crop": [
+          45,
+          140,
+          1080,
+          590
+        ]
+      }
     },
     "en/O/R04/light": {
       "cropped": true,
@@ -1360,21 +1426,32 @@
           "path": "images/screenshots/en/O/R04-light-480.webp",
           "width": 480,
           "height": 262,
-          "bytes": 13068
+          "bytes": 11838
         },
         {
           "path": "images/screenshots/en/O/R04-light-960.webp",
           "width": 960,
           "height": 524,
-          "bytes": 29700
+          "bytes": 27570
         },
         {
           "path": "images/screenshots/en/O/R04-light-1080.webp",
           "width": 1080,
           "height": 590,
-          "bytes": 33378
+          "bytes": 35028
         }
-      ]
+      ],
+      "source": {
+        "id": "R04-O-en-light",
+        "origin": "1.5",
+        "sha256": "38b8ad1d6b0287a48656f43d107720747c0c8e578cc3685f546bf2e103d5bad9",
+        "crop": [
+          45,
+          140,
+          1080,
+          590
+        ]
+      }
     },
     "en/O/R04/dark": {
       "cropped": true,
@@ -1385,21 +1462,32 @@
           "path": "images/screenshots/en/O/R04-dark-480.webp",
           "width": 480,
           "height": 262,
-          "bytes": 11264
+          "bytes": 10964
         },
         {
           "path": "images/screenshots/en/O/R04-dark-960.webp",
           "width": 960,
           "height": 524,
-          "bytes": 24914
+          "bytes": 25280
         },
         {
           "path": "images/screenshots/en/O/R04-dark-1080.webp",
           "width": 1080,
           "height": 590,
-          "bytes": 30294
+          "bytes": 32602
         }
-      ]
+      ],
+      "source": {
+        "id": "R04-O-en-dark",
+        "origin": "1.5",
+        "sha256": "6d4613711ef79f98c4d3703d655c0d38e819f81c370fe222a6ee8ff63f349207",
+        "crop": [
+          45,
+          140,
+          1080,
+          590
+        ]
+      }
     },
     "zh/I/R04/light": {
       "cropped": true,
@@ -1410,21 +1498,32 @@
           "path": "images/screenshots/zh/I/R04-light-480.webp",
           "width": 480,
           "height": 259,
-          "bytes": 7910
+          "bytes": 9106
         },
         {
           "path": "images/screenshots/zh/I/R04-light-960.webp",
           "width": 960,
           "height": 518,
-          "bytes": 19218
+          "bytes": 22376
         },
         {
           "path": "images/screenshots/zh/I/R04-light-1150.webp",
           "width": 1150,
           "height": 620,
-          "bytes": 26912
+          "bytes": 30282
         }
-      ]
+      ],
+      "source": {
+        "id": "R04-I-zh-Hans-light",
+        "origin": "1.5",
+        "sha256": "77a4a19b2144e78969941911c8a9e9a9cf96ddf4fa0bc4255499f8a41a67d2ad",
+        "crop": [
+          1360,
+          140,
+          1150,
+          620
+        ]
+      }
     },
     "zh/I/R04/dark": {
       "cropped": true,
@@ -1435,21 +1534,32 @@
           "path": "images/screenshots/zh/I/R04-dark-480.webp",
           "width": 480,
           "height": 259,
-          "bytes": 7860
+          "bytes": 8324
         },
         {
           "path": "images/screenshots/zh/I/R04-dark-960.webp",
           "width": 960,
           "height": 518,
-          "bytes": 18100
+          "bytes": 20476
         },
         {
           "path": "images/screenshots/zh/I/R04-dark-1150.webp",
           "width": 1150,
           "height": 620,
-          "bytes": 24198
+          "bytes": 27694
         }
-      ]
+      ],
+      "source": {
+        "id": "R04-I-zh-Hans-dark",
+        "origin": "1.5",
+        "sha256": "59a3c6d708b034a1c6b458572f35e6725234da62f8170234d2c3264c0dff0b1c",
+        "crop": [
+          1360,
+          140,
+          1150,
+          620
+        ]
+      }
     },
     "en/I/R04/light": {
       "cropped": true,
@@ -1460,21 +1570,32 @@
           "path": "images/screenshots/en/I/R04-light-480.webp",
           "width": 480,
           "height": 259,
-          "bytes": 10166
+          "bytes": 10682
         },
         {
           "path": "images/screenshots/en/I/R04-light-960.webp",
           "width": 960,
           "height": 518,
-          "bytes": 24238
+          "bytes": 25952
         },
         {
           "path": "images/screenshots/en/I/R04-light-1150.webp",
           "width": 1150,
           "height": 620,
-          "bytes": 33652
+          "bytes": 35144
         }
-      ]
+      ],
+      "source": {
+        "id": "R04-I-en-light",
+        "origin": "1.5",
+        "sha256": "fefc0ce3ef1d21fade6c05167b520b601314f412ee3928755f26daa33be9cbb2",
+        "crop": [
+          1360,
+          140,
+          1150,
+          620
+        ]
+      }
     },
     "en/I/R04/dark": {
       "cropped": true,
@@ -1485,21 +1606,32 @@
           "path": "images/screenshots/en/I/R04-dark-480.webp",
           "width": 480,
           "height": 259,
-          "bytes": 9302
+          "bytes": 9876
         },
         {
           "path": "images/screenshots/en/I/R04-dark-960.webp",
           "width": 960,
           "height": 518,
-          "bytes": 21656
+          "bytes": 23978
         },
         {
           "path": "images/screenshots/en/I/R04-dark-1150.webp",
           "width": 1150,
           "height": 620,
-          "bytes": 28328
+          "bytes": 32428
         }
-      ]
+      ],
+      "source": {
+        "id": "R04-I-en-dark",
+        "origin": "1.5",
+        "sha256": "0b527dd9b6693ab55470b3f48af24546a4f636026cdcb00cb070480a959e1763",
+        "crop": [
+          1360,
+          140,
+          1150,
+          620
+        ]
+      }
     },
     "zh/L/R04/light": {
       "cropped": true,
@@ -1510,15 +1642,26 @@
           "path": "images/screenshots/zh/L/R04-light-480.webp",
           "width": 480,
           "height": 283,
-          "bytes": 9416
+          "bytes": 7570
         },
         {
           "path": "images/screenshots/zh/L/R04-light-780.webp",
           "width": 780,
           "height": 460,
-          "bytes": 16768
+          "bytes": 15310
         }
-      ]
+      ],
+      "source": {
+        "id": "R04-L-zh-Hans-light",
+        "origin": "1.5",
+        "sha256": "c27ec68ff9aac3ea5e8021e7dc50a8bf6beda4a28ce86e9cb3b3363280f96007",
+        "crop": [
+          250,
+          80,
+          780,
+          460
+        ]
+      }
     },
     "zh/L/R04/dark": {
       "cropped": true,
@@ -1529,15 +1672,26 @@
           "path": "images/screenshots/zh/L/R04-dark-480.webp",
           "width": 480,
           "height": 258,
-          "bytes": 8192
+          "bytes": 6918
         },
         {
           "path": "images/screenshots/zh/L/R04-dark-800.webp",
           "width": 800,
           "height": 430,
-          "bytes": 15134
+          "bytes": 14782
         }
-      ]
+      ],
+      "source": {
+        "id": "R04-L-zh-Hans-dark",
+        "origin": "1.5",
+        "sha256": "579a44edc05b1db994e6a50c1147d4274c104d90fbd0fd72056b647fa62046ed",
+        "crop": [
+          200,
+          130,
+          800,
+          430
+        ]
+      }
     },
     "en/L/R04/light": {
       "cropped": true,
@@ -1548,15 +1702,26 @@
           "path": "images/screenshots/en/L/R04-light-480.webp",
           "width": 480,
           "height": 283,
-          "bytes": 12390
+          "bytes": 9370
         },
         {
           "path": "images/screenshots/en/L/R04-light-780.webp",
           "width": 780,
           "height": 460,
-          "bytes": 21040
+          "bytes": 17806
         }
-      ]
+      ],
+      "source": {
+        "id": "R04-L-en-light",
+        "origin": "1.5",
+        "sha256": "7d515e402f6a56de0236a1bc6814d31b061bb76bf1579a2d4d4208bb04f4e988",
+        "crop": [
+          250,
+          80,
+          780,
+          460
+        ]
+      }
     },
     "en/L/R04/dark": {
       "cropped": true,
@@ -1567,15 +1732,26 @@
           "path": "images/screenshots/en/L/R04-dark-480.webp",
           "width": 480,
           "height": 258,
-          "bytes": 10552
+          "bytes": 8242
         },
         {
           "path": "images/screenshots/en/L/R04-dark-800.webp",
           "width": 800,
           "height": 430,
-          "bytes": 19594
+          "bytes": 17498
         }
-      ]
+      ],
+      "source": {
+        "id": "R04-L-en-dark",
+        "origin": "1.5",
+        "sha256": "7ea53f28c485715f907aa737cbe3d06f27dbcb23614e7f666f43c3d633a06dd1",
+        "crop": [
+          200,
+          130,
+          800,
+          430
+        ]
+      }
     },
     "zh/F/R05/light": {
       "cropped": false,
@@ -1586,21 +1762,26 @@
           "path": "images/screenshots/zh/F/R05-light-480.webp",
           "width": 480,
           "height": 1044,
-          "bytes": 18144
+          "bytes": 17964
         },
         {
           "path": "images/screenshots/zh/F/R05-light-960.webp",
           "width": 960,
           "height": 2087,
-          "bytes": 41778
+          "bytes": 42360
         },
         {
           "path": "images/screenshots/zh/F/R05-light-1206.webp",
           "width": 1206,
           "height": 2622,
-          "bytes": 53004
+          "bytes": 54092
         }
-      ]
+      ],
+      "source": {
+        "id": "R05-F-zh-Hans-light",
+        "origin": "1.5",
+        "sha256": "0d165fd4e58311dbdd1326a1bcf6855a6a029b40ae9b56c852fa0c52e02e4165"
+      }
     },
     "zh/F/R05/dark": {
       "cropped": false,
@@ -1611,21 +1792,26 @@
           "path": "images/screenshots/zh/F/R05-dark-480.webp",
           "width": 480,
           "height": 1044,
-          "bytes": 18218
+          "bytes": 17644
         },
         {
           "path": "images/screenshots/zh/F/R05-dark-960.webp",
           "width": 960,
           "height": 2087,
-          "bytes": 43092
+          "bytes": 41962
         },
         {
           "path": "images/screenshots/zh/F/R05-dark-1206.webp",
           "width": 1206,
           "height": 2622,
-          "bytes": 54764
+          "bytes": 54656
         }
-      ]
+      ],
+      "source": {
+        "id": "R05-F-zh-Hans-dark",
+        "origin": "1.5",
+        "sha256": "e209e54b929ff7c72a1105fe1f9f49a307615b867f0623ecc14c3b6dfb81dd1d"
+      }
     },
     "en/F/R05/light": {
       "cropped": false,
@@ -1636,21 +1822,26 @@
           "path": "images/screenshots/en/F/R05-light-480.webp",
           "width": 480,
           "height": 1044,
-          "bytes": 20986
+          "bytes": 19840
         },
         {
           "path": "images/screenshots/en/F/R05-light-960.webp",
           "width": 960,
           "height": 2087,
-          "bytes": 47738
+          "bytes": 45730
         },
         {
           "path": "images/screenshots/en/F/R05-light-1206.webp",
           "width": 1206,
           "height": 2622,
-          "bytes": 60860
+          "bytes": 58528
         }
-      ]
+      ],
+      "source": {
+        "id": "R05-F-en-light",
+        "origin": "1.5",
+        "sha256": "2e20357d28b59c9f0892b2511ba03b1f9c4b2be6454e7c1887281840d67885c1"
+      }
     },
     "en/F/R05/dark": {
       "cropped": false,
@@ -1661,21 +1852,26 @@
           "path": "images/screenshots/en/F/R05-dark-480.webp",
           "width": 480,
           "height": 1044,
-          "bytes": 21226
+          "bytes": 19848
         },
         {
           "path": "images/screenshots/en/F/R05-dark-960.webp",
           "width": 960,
           "height": 2087,
-          "bytes": 49086
+          "bytes": 45960
         },
         {
           "path": "images/screenshots/en/F/R05-dark-1206.webp",
           "width": 1206,
           "height": 2622,
-          "bytes": 62834
+          "bytes": 59578
         }
-      ]
+      ],
+      "source": {
+        "id": "R05-F-en-dark",
+        "origin": "1.5",
+        "sha256": "33223357e11d08ab5bef7f383dd64fe9cb5777aaf0c6afa5681b4e23b99688a0"
+      }
     },
     "zh/O/R05/light": {
       "cropped": false,
@@ -1686,21 +1882,26 @@
           "path": "images/screenshots/zh/O/R05-light-480.webp",
           "width": 480,
           "height": 698,
-          "bytes": 14584
+          "bytes": 14224
         },
         {
           "path": "images/screenshots/zh/O/R05-light-960.webp",
           "width": 960,
           "height": 1397,
-          "bytes": 33962
+          "bytes": 34340
         },
         {
           "path": "images/screenshots/zh/O/R05-light-1398.webp",
           "width": 1398,
           "height": 2034,
-          "bytes": 50292
+          "bytes": 51494
         }
-      ]
+      ],
+      "source": {
+        "id": "R05-O-zh-Hans-light",
+        "origin": "1.5",
+        "sha256": "9a31a5fcea2346ef55c42cb1f1a7c94c2dbefffe7c3130d20864efe02a288a8b"
+      }
     },
     "zh/O/R05/dark": {
       "cropped": false,
@@ -1711,21 +1912,26 @@
           "path": "images/screenshots/zh/O/R05-dark-480.webp",
           "width": 480,
           "height": 698,
-          "bytes": 14620
+          "bytes": 14186
         },
         {
           "path": "images/screenshots/zh/O/R05-dark-960.webp",
           "width": 960,
           "height": 1397,
-          "bytes": 35020
+          "bytes": 33938
         },
         {
           "path": "images/screenshots/zh/O/R05-dark-1398.webp",
           "width": 1398,
           "height": 2034,
-          "bytes": 51546
+          "bytes": 52034
         }
-      ]
+      ],
+      "source": {
+        "id": "R05-O-zh-Hans-dark",
+        "origin": "1.5",
+        "sha256": "273983d106475e23de69081f65c61891be4f79d4e3c92da0732271d24b01ed34"
+      }
     },
     "en/O/R05/light": {
       "cropped": false,
@@ -1736,21 +1942,26 @@
           "path": "images/screenshots/en/O/R05-light-480.webp",
           "width": 480,
           "height": 698,
-          "bytes": 16394
+          "bytes": 15762
         },
         {
           "path": "images/screenshots/en/O/R05-light-960.webp",
           "width": 960,
           "height": 1397,
-          "bytes": 38532
+          "bytes": 36216
         },
         {
           "path": "images/screenshots/en/O/R05-light-1398.webp",
           "width": 1398,
           "height": 2034,
-          "bytes": 56888
+          "bytes": 55700
         }
-      ]
+      ],
+      "source": {
+        "id": "R05-O-en-light",
+        "origin": "1.5",
+        "sha256": "98beeca4252d50a095caf629761e3a08e6e3501a22c094bcddb04f9d8dd448a9"
+      }
     },
     "en/O/R05/dark": {
       "cropped": false,
@@ -1761,21 +1972,26 @@
           "path": "images/screenshots/en/O/R05-dark-480.webp",
           "width": 480,
           "height": 698,
-          "bytes": 17072
+          "bytes": 15842
         },
         {
           "path": "images/screenshots/en/O/R05-dark-960.webp",
           "width": 960,
           "height": 1397,
-          "bytes": 39210
+          "bytes": 36778
         },
         {
           "path": "images/screenshots/en/O/R05-dark-1398.webp",
           "width": 1398,
           "height": 2034,
-          "bytes": 59392
+          "bytes": 56904
         }
-      ]
+      ],
+      "source": {
+        "id": "R05-O-en-dark",
+        "origin": "1.5",
+        "sha256": "a76b72e430d357e068bc56e70e1efe1cdd3da67b344357e87e5eb874c6289131"
+      }
     },
     "zh/I/R05/light": {
       "cropped": false,
@@ -1786,21 +2002,26 @@
           "path": "images/screenshots/zh/I/R05-light-480.webp",
           "width": 480,
           "height": 338,
-          "bytes": 5390
+          "bytes": 5228
         },
         {
           "path": "images/screenshots/zh/I/R05-light-960.webp",
           "width": 960,
           "height": 675,
-          "bytes": 14650
+          "bytes": 14458
         },
         {
           "path": "images/screenshots/zh/I/R05-light-1600.webp",
           "width": 1600,
           "height": 1126,
-          "bytes": 28540
+          "bytes": 28572
         }
-      ]
+      ],
+      "source": {
+        "id": "R05-I-zh-Hans-light",
+        "origin": "1.5",
+        "sha256": "b58e31cede245eae6245d7dfe96e4e459900c34537d48f0d4715705fee16e605"
+      }
     },
     "zh/I/R05/dark": {
       "cropped": false,
@@ -1811,21 +2032,26 @@
           "path": "images/screenshots/zh/I/R05-dark-480.webp",
           "width": 480,
           "height": 338,
-          "bytes": 5600
+          "bytes": 5184
         },
         {
           "path": "images/screenshots/zh/I/R05-dark-960.webp",
           "width": 960,
           "height": 675,
-          "bytes": 15102
+          "bytes": 14314
         },
         {
           "path": "images/screenshots/zh/I/R05-dark-1600.webp",
           "width": 1600,
           "height": 1126,
-          "bytes": 29240
+          "bytes": 28354
         }
-      ]
+      ],
+      "source": {
+        "id": "R05-I-zh-Hans-dark",
+        "origin": "1.5",
+        "sha256": "c5ab5a579b3dd1f6bc38dd06b68a2354a2e2a46d5d4698a5f05408101b88e411"
+      }
     },
     "en/I/R05/light": {
       "cropped": false,
@@ -1836,21 +2062,26 @@
           "path": "images/screenshots/en/I/R05-light-480.webp",
           "width": 480,
           "height": 338,
-          "bytes": 6346
+          "bytes": 6048
         },
         {
           "path": "images/screenshots/en/I/R05-light-960.webp",
           "width": 960,
           "height": 675,
-          "bytes": 16730
+          "bytes": 16294
         },
         {
           "path": "images/screenshots/en/I/R05-light-1600.webp",
           "width": 1600,
           "height": 1126,
-          "bytes": 31810
+          "bytes": 30602
         }
-      ]
+      ],
+      "source": {
+        "id": "R05-I-en-light",
+        "origin": "1.5",
+        "sha256": "1354d9a343b7580c4e9e33aca7efb6e2ddd8f03908609cf7a953581dc8dc7bc0"
+      }
     },
     "en/I/R05/dark": {
       "cropped": false,
@@ -1861,21 +2092,26 @@
           "path": "images/screenshots/en/I/R05-dark-480.webp",
           "width": 480,
           "height": 338,
-          "bytes": 6508
+          "bytes": 6018
         },
         {
           "path": "images/screenshots/en/I/R05-dark-960.webp",
           "width": 960,
           "height": 675,
-          "bytes": 17158
+          "bytes": 15926
         },
         {
           "path": "images/screenshots/en/I/R05-dark-1600.webp",
           "width": 1600,
           "height": 1126,
-          "bytes": 33030
+          "bytes": 30722
         }
-      ]
+      ],
+      "source": {
+        "id": "R05-I-en-dark",
+        "origin": "1.5",
+        "sha256": "d72d0bf16a2c765078ddc588830a8edcecec72a5fb6060d1075fd51350c5d5b7"
+      }
     },
     "zh/L/R05/light": {
       "cropped": false,
@@ -1886,21 +2122,26 @@
           "path": "images/screenshots/zh/L/R05-light-480.webp",
           "width": 480,
           "height": 640,
-          "bytes": 4960
+          "bytes": 4890
         },
         {
           "path": "images/screenshots/zh/L/R05-light-960.webp",
           "width": 960,
           "height": 1280,
-          "bytes": 14326
+          "bytes": 14604
         },
         {
           "path": "images/screenshots/zh/L/R05-light-1600.webp",
           "width": 1600,
           "height": 2133,
-          "bytes": 29064
+          "bytes": 29448
         }
-      ]
+      ],
+      "source": {
+        "id": "R05-L-zh-Hans-light",
+        "origin": "1.5",
+        "sha256": "1bab5a7959be084eec004c85b50475cba794776469ad3751de535fd7b2a8af91"
+      }
     },
     "zh/L/R05/dark": {
       "cropped": false,
@@ -1911,21 +2152,26 @@
           "path": "images/screenshots/zh/L/R05-dark-480.webp",
           "width": 480,
           "height": 360,
-          "bytes": 3372
+          "bytes": 3072
         },
         {
           "path": "images/screenshots/zh/L/R05-dark-960.webp",
           "width": 960,
           "height": 720,
-          "bytes": 9398
+          "bytes": 8948
         },
         {
           "path": "images/screenshots/zh/L/R05-dark-1600.webp",
           "width": 1600,
           "height": 1200,
-          "bytes": 20308
+          "bytes": 19426
         }
-      ]
+      ],
+      "source": {
+        "id": "R05-L-zh-Hans-dark",
+        "origin": "1.5",
+        "sha256": "5f091d725fb40e9c021ba776e71f7e38dba30460de858dd55f6d8c27ee3ab3c6"
+      }
     },
     "en/L/R05/light": {
       "cropped": false,
@@ -1936,21 +2182,26 @@
           "path": "images/screenshots/en/L/R05-light-480.webp",
           "width": 480,
           "height": 640,
-          "bytes": 5896
+          "bytes": 5572
         },
         {
           "path": "images/screenshots/en/L/R05-light-960.webp",
           "width": 960,
           "height": 1280,
-          "bytes": 16878
+          "bytes": 16160
         },
         {
           "path": "images/screenshots/en/L/R05-light-1600.webp",
           "width": 1600,
           "height": 2133,
-          "bytes": 33492
+          "bytes": 32216
         }
-      ]
+      ],
+      "source": {
+        "id": "R05-L-en-light",
+        "origin": "1.5",
+        "sha256": "5480082059013cd820dea4cefbedef14cddbc00409d3364716d161ea00820278"
+      }
     },
     "en/L/R05/dark": {
       "cropped": false,
@@ -1961,21 +2212,26 @@
           "path": "images/screenshots/en/L/R05-dark-480.webp",
           "width": 480,
           "height": 360,
-          "bytes": 3960
+          "bytes": 3622
         },
         {
           "path": "images/screenshots/en/L/R05-dark-960.webp",
           "width": 960,
           "height": 720,
-          "bytes": 11362
+          "bytes": 10690
         },
         {
           "path": "images/screenshots/en/L/R05-dark-1600.webp",
           "width": 1600,
           "height": 1200,
-          "bytes": 23224
+          "bytes": 22042
         }
-      ]
+      ],
+      "source": {
+        "id": "R05-L-en-dark",
+        "origin": "1.5",
+        "sha256": "e05bde8857ffa8466065e0fd2f0537d7b603533bc21d5903bf2aefa4a1774036"
+      }
     },
     "zh/F/R06/light": {
       "cropped": false,
@@ -2386,21 +2642,26 @@
           "path": "images/screenshots/zh/F/R07-light-480.webp",
           "width": 480,
           "height": 1044,
-          "bytes": 19864
+          "bytes": 17624
         },
         {
           "path": "images/screenshots/zh/F/R07-light-960.webp",
           "width": 960,
           "height": 2087,
-          "bytes": 42950
+          "bytes": 37724
         },
         {
           "path": "images/screenshots/zh/F/R07-light-1206.webp",
           "width": 1206,
           "height": 2622,
-          "bytes": 54922
+          "bytes": 48190
         }
-      ]
+      ],
+      "source": {
+        "id": "R07-F-zh-Hans-light",
+        "origin": "1.5",
+        "sha256": "05cb710a55dcaafdf80f4a595c60ee9061029709075813f49b9f896f796ce8a7"
+      }
     },
     "zh/F/R07/dark": {
       "cropped": false,
@@ -2411,21 +2672,26 @@
           "path": "images/screenshots/zh/F/R07-dark-480.webp",
           "width": 480,
           "height": 1044,
-          "bytes": 19938
+          "bytes": 17478
         },
         {
           "path": "images/screenshots/zh/F/R07-dark-960.webp",
           "width": 960,
           "height": 2087,
-          "bytes": 43678
+          "bytes": 37348
         },
         {
           "path": "images/screenshots/zh/F/R07-dark-1206.webp",
           "width": 1206,
           "height": 2622,
-          "bytes": 54996
+          "bytes": 47986
         }
-      ]
+      ],
+      "source": {
+        "id": "R07-F-zh-Hans-dark",
+        "origin": "1.5",
+        "sha256": "52d81df0a171ea6df0b90ab61aca4c22cb90c5f7f00a085d0d9719a9452758ae"
+      }
     },
     "en/F/R07/light": {
       "cropped": false,
@@ -2436,21 +2702,26 @@
           "path": "images/screenshots/en/F/R07-light-480.webp",
           "width": 480,
           "height": 1044,
-          "bytes": 21808
+          "bytes": 19482
         },
         {
           "path": "images/screenshots/en/F/R07-light-960.webp",
           "width": 960,
           "height": 2087,
-          "bytes": 47428
+          "bytes": 42374
         },
         {
           "path": "images/screenshots/en/F/R07-light-1206.webp",
           "width": 1206,
           "height": 2622,
-          "bytes": 60390
+          "bytes": 54578
         }
-      ]
+      ],
+      "source": {
+        "id": "R07-F-en-light",
+        "origin": "1.5",
+        "sha256": "9453a951793cda52dd3db1dd4934b143c074aa6a5fb83cecbd0d9fd0dd681690"
+      }
     },
     "en/F/R07/dark": {
       "cropped": false,
@@ -2461,21 +2732,26 @@
           "path": "images/screenshots/en/F/R07-dark-480.webp",
           "width": 480,
           "height": 1044,
-          "bytes": 21934
+          "bytes": 19120
         },
         {
           "path": "images/screenshots/en/F/R07-dark-960.webp",
           "width": 960,
           "height": 2087,
-          "bytes": 47594
+          "bytes": 41586
         },
         {
           "path": "images/screenshots/en/F/R07-dark-1206.webp",
           "width": 1206,
           "height": 2622,
-          "bytes": 60772
+          "bytes": 54136
         }
-      ]
+      ],
+      "source": {
+        "id": "R07-F-en-dark",
+        "origin": "1.5",
+        "sha256": "78407a825cc99df3ece373fd49d0aadd09aa9828d37779f9a703a4ad2551ed2d"
+      }
     },
     "zh/O/R07/light": {
       "cropped": false,
@@ -2486,21 +2762,26 @@
           "path": "images/screenshots/zh/O/R07-light-480.webp",
           "width": 480,
           "height": 698,
-          "bytes": 15210
+          "bytes": 13920
         },
         {
           "path": "images/screenshots/zh/O/R07-light-960.webp",
           "width": 960,
           "height": 1397,
-          "bytes": 33288
+          "bytes": 30236
         },
         {
           "path": "images/screenshots/zh/O/R07-light-1398.webp",
           "width": 1398,
           "height": 2034,
-          "bytes": 48206
+          "bytes": 44394
         }
-      ]
+      ],
+      "source": {
+        "id": "R07-O-zh-Hans-light",
+        "origin": "1.5",
+        "sha256": "2f1330fe9cafdc36326390a72860c6f7c6ef40c36724076e4f235a5789b223cf"
+      }
     },
     "zh/O/R07/dark": {
       "cropped": false,
@@ -2511,21 +2792,26 @@
           "path": "images/screenshots/zh/O/R07-dark-480.webp",
           "width": 480,
           "height": 698,
-          "bytes": 15200
+          "bytes": 13662
         },
         {
           "path": "images/screenshots/zh/O/R07-dark-960.webp",
           "width": 960,
           "height": 1397,
-          "bytes": 33576
+          "bytes": 29758
         },
         {
           "path": "images/screenshots/zh/O/R07-dark-1398.webp",
           "width": 1398,
           "height": 2034,
-          "bytes": 48358
+          "bytes": 44210
         }
-      ]
+      ],
+      "source": {
+        "id": "R07-O-zh-Hans-dark",
+        "origin": "1.5",
+        "sha256": "c3aa6984df580632e711e134278e246d14c5456598de947dcd7a88cac00183ab"
+      }
     },
     "en/O/R07/light": {
       "cropped": false,
@@ -2536,21 +2822,26 @@
           "path": "images/screenshots/en/O/R07-light-480.webp",
           "width": 480,
           "height": 698,
-          "bytes": 16406
+          "bytes": 15296
         },
         {
           "path": "images/screenshots/en/O/R07-light-960.webp",
           "width": 960,
           "height": 1397,
-          "bytes": 35916
+          "bytes": 33464
         },
         {
           "path": "images/screenshots/en/O/R07-light-1398.webp",
           "width": 1398,
           "height": 2034,
-          "bytes": 51986
+          "bytes": 48618
         }
-      ]
+      ],
+      "source": {
+        "id": "R07-O-en-light",
+        "origin": "1.5",
+        "sha256": "6b460946b2cb1fb91c297c1748a35b0def2794924bb336e96a4200ec54173692"
+      }
     },
     "en/O/R07/dark": {
       "cropped": false,
@@ -2561,21 +2852,26 @@
           "path": "images/screenshots/en/O/R07-dark-480.webp",
           "width": 480,
           "height": 698,
-          "bytes": 16296
+          "bytes": 15106
         },
         {
           "path": "images/screenshots/en/O/R07-dark-960.webp",
           "width": 960,
           "height": 1397,
-          "bytes": 36150
+          "bytes": 32596
         },
         {
           "path": "images/screenshots/en/O/R07-dark-1398.webp",
           "width": 1398,
           "height": 2034,
-          "bytes": 51714
+          "bytes": 48078
         }
-      ]
+      ],
+      "source": {
+        "id": "R07-O-en-dark",
+        "origin": "1.5",
+        "sha256": "3f0c6cd0d880a299be6f58c3359400cf4d9a6150afbed077ebaa8aebd2e38993"
+      }
     },
     "zh/I/R07/light": {
       "cropped": false,
@@ -2586,21 +2882,26 @@
           "path": "images/screenshots/zh/I/R07-light-480.webp",
           "width": 480,
           "height": 338,
-          "bytes": 6470
+          "bytes": 5668
         },
         {
           "path": "images/screenshots/zh/I/R07-light-960.webp",
           "width": 960,
           "height": 675,
-          "bytes": 16348
+          "bytes": 14218
         },
         {
           "path": "images/screenshots/zh/I/R07-light-1600.webp",
           "width": 1600,
           "height": 1126,
-          "bytes": 30128
+          "bytes": 26326
         }
-      ]
+      ],
+      "source": {
+        "id": "R07-I-zh-Hans-light",
+        "origin": "1.5",
+        "sha256": "4401219878b34435b443c610341ec274d46acb51f7f0b1d6fdf86784bfebf480"
+      }
     },
     "zh/I/R07/dark": {
       "cropped": false,
@@ -2611,21 +2912,26 @@
           "path": "images/screenshots/zh/I/R07-dark-480.webp",
           "width": 480,
           "height": 338,
-          "bytes": 6522
+          "bytes": 5594
         },
         {
           "path": "images/screenshots/zh/I/R07-dark-960.webp",
           "width": 960,
           "height": 675,
-          "bytes": 16420
+          "bytes": 14108
         },
         {
           "path": "images/screenshots/zh/I/R07-dark-1600.webp",
           "width": 1600,
           "height": 1126,
-          "bytes": 30290
+          "bytes": 26284
         }
-      ]
+      ],
+      "source": {
+        "id": "R07-I-zh-Hans-dark",
+        "origin": "1.5",
+        "sha256": "daf13406bd26a69af6d4b0eb9bff301b847f381697e411f5e5f3eadd06190937"
+      }
     },
     "en/I/R07/light": {
       "cropped": false,
@@ -2636,21 +2942,26 @@
           "path": "images/screenshots/en/I/R07-light-480.webp",
           "width": 480,
           "height": 338,
-          "bytes": 6792
+          "bytes": 6178
         },
         {
           "path": "images/screenshots/en/I/R07-light-960.webp",
           "width": 960,
           "height": 675,
-          "bytes": 16944
+          "bytes": 15238
         },
         {
           "path": "images/screenshots/en/I/R07-light-1600.webp",
           "width": 1600,
           "height": 1126,
-          "bytes": 31538
+          "bytes": 28540
         }
-      ]
+      ],
+      "source": {
+        "id": "R07-I-en-light",
+        "origin": "1.5",
+        "sha256": "02b02f33051e97508a053ac86b25d9232831ac42c0f00118b8bb7aef0af8b9f9"
+      }
     },
     "en/I/R07/dark": {
       "cropped": false,
@@ -2661,21 +2972,26 @@
           "path": "images/screenshots/en/I/R07-dark-480.webp",
           "width": 480,
           "height": 338,
-          "bytes": 6812
+          "bytes": 6052
         },
         {
           "path": "images/screenshots/en/I/R07-dark-960.webp",
           "width": 960,
           "height": 675,
-          "bytes": 17232
+          "bytes": 15074
         },
         {
           "path": "images/screenshots/en/I/R07-dark-1600.webp",
           "width": 1600,
           "height": 1126,
-          "bytes": 31938
+          "bytes": 28312
         }
-      ]
+      ],
+      "source": {
+        "id": "R07-I-en-dark",
+        "origin": "1.5",
+        "sha256": "37b314e083a9ecee3b877ec85f15ffa597df44c4ea2c637c093bd2a8483633f8"
+      }
     },
     "zh/L/R07/light": {
       "cropped": false,
@@ -2686,21 +3002,26 @@
           "path": "images/screenshots/zh/L/R07-light-480.webp",
           "width": 480,
           "height": 640,
-          "bytes": 6392
+          "bytes": 5474
         },
         {
           "path": "images/screenshots/zh/L/R07-light-960.webp",
           "width": 960,
           "height": 1280,
-          "bytes": 16486
+          "bytes": 14480
         },
         {
           "path": "images/screenshots/zh/L/R07-light-1600.webp",
           "width": 1600,
           "height": 2133,
-          "bytes": 31258
+          "bytes": 27906
         }
-      ]
+      ],
+      "source": {
+        "id": "R07-L-zh-Hans-light",
+        "origin": "1.5",
+        "sha256": "f8361db2674fe5f41501d335d193a46c7c57c5f73215cd3869cb0dc255ee5c05"
+      }
     },
     "zh/L/R07/dark": {
       "cropped": false,
@@ -2711,21 +3032,26 @@
           "path": "images/screenshots/zh/L/R07-dark-480.webp",
           "width": 480,
           "height": 360,
-          "bytes": 4128
+          "bytes": 3562
         },
         {
           "path": "images/screenshots/zh/L/R07-dark-960.webp",
           "width": 960,
           "height": 720,
-          "bytes": 10750
+          "bytes": 9614
         },
         {
           "path": "images/screenshots/zh/L/R07-dark-1600.webp",
           "width": 1600,
           "height": 1200,
-          "bytes": 22180
+          "bytes": 19620
         }
-      ]
+      ],
+      "source": {
+        "id": "R07-L-zh-Hans-dark",
+        "origin": "1.5",
+        "sha256": "2cacf2b964ee8e314c6c2838fde6514fdcac929b7772b76d0fc04c1fcaba44c3"
+      }
     },
     "en/L/R07/light": {
       "cropped": false,
@@ -2736,21 +3062,26 @@
           "path": "images/screenshots/en/L/R07-light-480.webp",
           "width": 480,
           "height": 640,
-          "bytes": 6886
+          "bytes": 6248
         },
         {
           "path": "images/screenshots/en/L/R07-light-960.webp",
           "width": 960,
           "height": 1280,
-          "bytes": 17680
+          "bytes": 15962
         },
         {
           "path": "images/screenshots/en/L/R07-light-1600.webp",
           "width": 1600,
           "height": 2133,
-          "bytes": 34034
+          "bytes": 31222
         }
-      ]
+      ],
+      "source": {
+        "id": "R07-L-en-light",
+        "origin": "1.5",
+        "sha256": "ca5e71dce962fb6f38265ce3e8b77df54dd64dfdbb09c712f11c2a974e6b5757"
+      }
     },
     "en/L/R07/dark": {
       "cropped": false,
@@ -2761,21 +3092,26 @@
           "path": "images/screenshots/en/L/R07-dark-480.webp",
           "width": 480,
           "height": 360,
-          "bytes": 4504
+          "bytes": 3998
         },
         {
           "path": "images/screenshots/en/L/R07-dark-960.webp",
           "width": 960,
           "height": 720,
-          "bytes": 12058
+          "bytes": 10934
         },
         {
           "path": "images/screenshots/en/L/R07-dark-1600.webp",
           "width": 1600,
           "height": 1200,
-          "bytes": 24092
+          "bytes": 21596
         }
-      ]
+      ],
+      "source": {
+        "id": "R07-L-en-dark",
+        "origin": "1.5",
+        "sha256": "17e18dd7422986febc02a609b4210c152e09b41028c37cfbc514afdd69348161"
+      }
     },
     "zh/F/R10/light": {
       "cropped": false,
@@ -2786,21 +3122,26 @@
           "path": "images/screenshots/zh/F/R10-light-480.webp",
           "width": 480,
           "height": 1044,
-          "bytes": 20320
+          "bytes": 29140
         },
         {
           "path": "images/screenshots/zh/F/R10-light-960.webp",
           "width": 960,
           "height": 2087,
-          "bytes": 46486
+          "bytes": 65924
         },
         {
           "path": "images/screenshots/zh/F/R10-light-1206.webp",
           "width": 1206,
           "height": 2622,
-          "bytes": 58286
+          "bytes": 83590
         }
-      ]
+      ],
+      "source": {
+        "id": "R10-F-zh-Hans-light",
+        "origin": "1.5",
+        "sha256": "d6cb3c4b43738c5a61c8010abbae85275baf092b394fe03d53b262bbc023faff"
+      }
     },
     "zh/F/R10/dark": {
       "cropped": false,
@@ -2811,21 +3152,26 @@
           "path": "images/screenshots/zh/F/R10-dark-480.webp",
           "width": 480,
           "height": 1044,
-          "bytes": 20148
+          "bytes": 29220
         },
         {
           "path": "images/screenshots/zh/F/R10-dark-960.webp",
           "width": 960,
           "height": 2087,
-          "bytes": 45180
+          "bytes": 66746
         },
         {
           "path": "images/screenshots/zh/F/R10-dark-1206.webp",
           "width": 1206,
           "height": 2622,
-          "bytes": 56916
+          "bytes": 84970
         }
-      ]
+      ],
+      "source": {
+        "id": "R10-F-zh-Hans-dark",
+        "origin": "1.5",
+        "sha256": "cdd343df9592af1f7e010832e0a8ca1b80a687bd3065dd28a8855c4cf5bccc1f"
+      }
     },
     "en/F/R10/light": {
       "cropped": false,
@@ -2850,7 +3196,9 @@
           "height": 2622,
           "bytes": 64342
         }
-      ]
+      ],
+      "pending": true,
+      "review": "english-localization-issue"
     },
     "en/F/R10/dark": {
       "cropped": false,
@@ -2875,7 +3223,9 @@
           "height": 2622,
           "bytes": 62338
         }
-      ]
+      ],
+      "pending": true,
+      "review": "english-localization-issue"
     },
     "zh/O/R10/light": {
       "cropped": false,
@@ -2886,21 +3236,26 @@
           "path": "images/screenshots/zh/O/R10-light-480.webp",
           "width": 480,
           "height": 698,
-          "bytes": 15952
+          "bytes": 20822
         },
         {
           "path": "images/screenshots/zh/O/R10-light-960.webp",
           "width": 960,
           "height": 1397,
-          "bytes": 37020
+          "bytes": 48036
         },
         {
           "path": "images/screenshots/zh/O/R10-light-1398.webp",
           "width": 1398,
           "height": 2034,
-          "bytes": 54634
+          "bytes": 71174
         }
-      ]
+      ],
+      "source": {
+        "id": "R10-O-zh-Hans-light",
+        "origin": "1.5",
+        "sha256": "18e48d5a076eb4ae62893d764e3b943d8a7752e752eae2a236da8732d17bb5c2"
+      }
     },
     "zh/O/R10/dark": {
       "cropped": false,
@@ -2911,21 +3266,26 @@
           "path": "images/screenshots/zh/O/R10-dark-480.webp",
           "width": 480,
           "height": 698,
-          "bytes": 15696
+          "bytes": 21094
         },
         {
           "path": "images/screenshots/zh/O/R10-dark-960.webp",
           "width": 960,
           "height": 1397,
-          "bytes": 35938
+          "bytes": 48370
         },
         {
           "path": "images/screenshots/zh/O/R10-dark-1398.webp",
           "width": 1398,
           "height": 2034,
-          "bytes": 53120
+          "bytes": 72764
         }
-      ]
+      ],
+      "source": {
+        "id": "R10-O-zh-Hans-dark",
+        "origin": "1.5",
+        "sha256": "526e0c81509dbe832fdc22270bb6514b24e5d5b1e1eecd0a03ae8534fbc2c244"
+      }
     },
     "en/O/R10/light": {
       "cropped": false,
@@ -2936,21 +3296,26 @@
           "path": "images/screenshots/en/O/R10-light-480.webp",
           "width": 480,
           "height": 698,
-          "bytes": 17810
+          "bytes": 23662
         },
         {
           "path": "images/screenshots/en/O/R10-light-960.webp",
           "width": 960,
           "height": 1397,
-          "bytes": 40238
+          "bytes": 53046
         },
         {
           "path": "images/screenshots/en/O/R10-light-1398.webp",
           "width": 1398,
           "height": 2034,
-          "bytes": 59000
+          "bytes": 76874
         }
-      ]
+      ],
+      "source": {
+        "id": "R10-O-en-light",
+        "origin": "1.5",
+        "sha256": "4e3be36ab7ac767957165f366703ce34d9ce402436fd6021f6c0485e6fee510c"
+      }
     },
     "en/O/R10/dark": {
       "cropped": false,
@@ -2961,21 +3326,26 @@
           "path": "images/screenshots/en/O/R10-dark-480.webp",
           "width": 480,
           "height": 698,
-          "bytes": 17424
+          "bytes": 23710
         },
         {
           "path": "images/screenshots/en/O/R10-dark-960.webp",
           "width": 960,
           "height": 1397,
-          "bytes": 39212
+          "bytes": 54308
         },
         {
           "path": "images/screenshots/en/O/R10-dark-1398.webp",
           "width": 1398,
           "height": 2034,
-          "bytes": 57554
+          "bytes": 79266
         }
-      ]
+      ],
+      "source": {
+        "id": "R10-O-en-dark",
+        "origin": "1.5",
+        "sha256": "79eb58f6985bc48fffcbd92a4badc4139319550e86eca20ee0d11f76de656eff"
+      }
     },
     "zh/I/R10/light": {
       "cropped": false,
@@ -2986,21 +3356,26 @@
           "path": "images/screenshots/zh/I/R10-light-480.webp",
           "width": 480,
           "height": 338,
-          "bytes": 11134
+          "bytes": 6734
         },
         {
           "path": "images/screenshots/zh/I/R10-light-960.webp",
           "width": 960,
           "height": 675,
-          "bytes": 31346
+          "bytes": 20022
         },
         {
           "path": "images/screenshots/zh/I/R10-light-1600.webp",
           "width": 1600,
           "height": 1126,
-          "bytes": 58928
+          "bytes": 38480
         }
-      ]
+      ],
+      "source": {
+        "id": "R10-I-zh-Hans-light",
+        "origin": "1.5",
+        "sha256": "8e48a2c71ebd8a7bb4057a6f79e2dcf18132e724f8d6f7028f26c10c0055f743"
+      }
     },
     "zh/I/R10/dark": {
       "cropped": false,
@@ -3011,21 +3386,26 @@
           "path": "images/screenshots/zh/I/R10-dark-480.webp",
           "width": 480,
           "height": 338,
-          "bytes": 11178
+          "bytes": 6798
         },
         {
           "path": "images/screenshots/zh/I/R10-dark-960.webp",
           "width": 960,
           "height": 675,
-          "bytes": 31634
+          "bytes": 19908
         },
         {
           "path": "images/screenshots/zh/I/R10-dark-1600.webp",
           "width": 1600,
           "height": 1126,
-          "bytes": 59496
+          "bytes": 39066
         }
-      ]
+      ],
+      "source": {
+        "id": "R10-I-zh-Hans-dark",
+        "origin": "1.5",
+        "sha256": "7682355f3c64891ce56490930e69f3f4b86da53ca18330fdaaf720c745b6f325"
+      }
     },
     "en/I/R10/light": {
       "cropped": false,
@@ -3050,7 +3430,9 @@
           "height": 1126,
           "bytes": 69300
         }
-      ]
+      ],
+      "pending": true,
+      "review": "english-localization-issue"
     },
     "en/I/R10/dark": {
       "cropped": false,
@@ -3075,32 +3457,39 @@
           "height": 1126,
           "bytes": 70402
         }
-      ]
+      ],
+      "pending": true,
+      "review": "english-localization-issue"
     },
     "zh/L/R10/light": {
       "cropped": false,
-      "width": 2064,
-      "height": 2752,
+      "width": 2752,
+      "height": 2064,
       "variants": [
         {
           "path": "images/screenshots/zh/L/R10-light-480.webp",
           "width": 480,
-          "height": 640,
-          "bytes": 12896
+          "height": 360,
+          "bytes": 4488
         },
         {
           "path": "images/screenshots/zh/L/R10-light-960.webp",
           "width": 960,
-          "height": 1280,
-          "bytes": 36972
+          "height": 720,
+          "bytes": 14114
         },
         {
           "path": "images/screenshots/zh/L/R10-light-1600.webp",
           "width": 1600,
-          "height": 2133,
-          "bytes": 69856
+          "height": 1200,
+          "bytes": 30334
         }
-      ]
+      ],
+      "source": {
+        "id": "R10-L-zh-Hans-light",
+        "origin": "1.5",
+        "sha256": "df7e890fb0e21fd93fa5587e5959c03888a0c5d32d33afc5c9c216e18e4c90d8"
+      }
     },
     "zh/L/R10/dark": {
       "cropped": false,
@@ -3111,21 +3500,26 @@
           "path": "images/screenshots/zh/L/R10-dark-480.webp",
           "width": 480,
           "height": 360,
-          "bytes": 7950
+          "bytes": 4504
         },
         {
           "path": "images/screenshots/zh/L/R10-dark-960.webp",
           "width": 960,
           "height": 720,
-          "bytes": 22948
+          "bytes": 14234
         },
         {
           "path": "images/screenshots/zh/L/R10-dark-1600.webp",
           "width": 1600,
           "height": 1200,
-          "bytes": 47916
+          "bytes": 30724
         }
-      ]
+      ],
+      "source": {
+        "id": "R10-L-zh-Hans-dark",
+        "origin": "1.5",
+        "sha256": "fa50a9c09ef10e59a9ec38ca2c449230be6300490f7b9037cde9a257de370c8e"
+      }
     },
     "en/L/R10/light": {
       "cropped": false,
@@ -3150,7 +3544,9 @@
           "height": 1200,
           "bytes": 56488
         }
-      ]
+      ],
+      "pending": true,
+      "review": "english-localization-issue"
     },
     "en/L/R10/dark": {
       "cropped": false,
@@ -3175,7 +3571,9 @@
           "height": 1200,
           "bytes": 57748
         }
-      ]
+      ],
+      "pending": true,
+      "review": "english-localization-issue"
     }
   }
 }

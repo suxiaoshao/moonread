@@ -19,9 +19,9 @@ Reopening the same book content attempts to resume your position. Editing the so
 
 ## Optional AI
 
-You can turn off AI Features in Settings to hide all AI entry points and stop ongoing requests. Existing connections, conversations, and data-sharing permissions are kept.
+AI is off by default and is unavailable in the mainland China App Store storefront. You can turn off AI Features in Settings to hide all AI entry points and stop ongoing requests. Existing connections, conversations, and data-sharing permissions are kept.
 
-Select a service, connection, and model in AI settings. The app explains the destination and data scope before initial sharing; separate search or image services may require separate permission. Declining does not affect reading. For connection problems, check the network, provider access, and quota. Never email API keys or tokens. AI output can be inaccurate, so check important information. You can withdraw permission for future sharing in connection settings.
+Select your own service, connection, and model in AI settings. Supported connections can refresh the available model catalog returned by the service; specifications are for reference. If a refresh fails, retry and check access and quota with the service. The app explains the destination and data scope before initial sharing; separate search or image services may require separate permission. Declining does not affect reading. For connection problems, check the network, provider access, and quota. Never email API keys or tokens. AI output can be inaccurate, so check important information. You can withdraw permission for future sharing in connection settings.
 
 ## Support Moonread
 
@@ -35,4 +35,4 @@ Touch and hold an AI reply and choose “Send Feedback About This Reply” to op
 
 ## Organizing book information
 
-Export book metadata from Data management, edit it, then preview an import. This is separate from reading-data backups and contains no novel text. See [Book metadata exchange](@/metadata-format.en.md) for the format, safety boundaries and agent skill.
+Import or export metadata files in Data management. Edit an exported copy or generate a new file from local TXT files using the public format—no prior export is required. Review each change before importing. This is separate from reading-data backups and contains no novel text. See [Book metadata exchange](@/metadata-format.en.md) for the format, safety boundaries and agent skill.

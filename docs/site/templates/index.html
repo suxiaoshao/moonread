@@ -45,8 +45,8 @@
 </section>
 <section class="section story" data-gallery>
 <div class="story-copy"><h2 class="section-title">{% if zh %}自己的书，自己整理。{% else %}Your books, your way.{% endif %}</h2>
-<p>{% if zh %}文件夹就是书架，用标签与阅读状态找书。留下书签与批注，导出单本笔记，也能备份全部阅读数据。{% else %}Organize your folders, then find books by tags and reading status. Keep bookmarks and notes, export a book’s notes, or back up all reading data.{% endif %}</p>
-<p class="story-note">{% if zh %}阅读统计记录每段时光。阅读数据备份不包含 TXT 原文；请另行保存小说文件。{% else %}Reading statistics keep track of your time. A reading-data backup does not include TXT files; keep your books separately.{% endif %}</p>
+<p>{% if zh %}文件夹就是书架，用标签与阅读状态找书。自设封面或六款预设装帧，让熟悉的书更好认。留下书签与批注，导出单本笔记；也能把作者、标签、简介与封面整理成清单，预览确认后导入。{% else %}Folders are your bookshelves. Find books by tag and reading status, with your own covers or six preset designs. Keep bookmarks and notes, export a book’s notes, or review a metadata file before importing authors, tags, descriptions, and covers.{% endif %}</p>
+<p class="story-note">{% if zh %}按 7 天、月、年或全部回看阅读统计。阅读数据备份独立保存进度、书签、批注与统计，不包含 TXT 原文；小说文件请另行保存。{% else %}Look back over seven days, a month, a year, or all time. A separate reading-data backup keeps positions, bookmarks, notes, and statistics. Keep your TXT files separately.{% endif %}</p>
 <p class="story-note"><a href="{{ get_url(path='@/metadata-format.md', lang=section.lang) }}">{% if zh %}在 App 外整理作者、标签与封面：了解小说信息导入导出 →{% else %}Edit authors, tags and covers outside the app: how metadata import and export work →{% endif %}</a></p>
 <div class="scene-choice" hidden role="group" aria-label="{% if zh %}书籍与记录画面{% else %}Books and records screenshots{% endif %}"><button type="button" data-scene="R05" aria-pressed="true">{% if zh %}书架{% else %}Library{% endif %}</button><button type="button" data-scene="R06" aria-pressed="false">{% if zh %}笔记{% else %}Notes{% endif %}</button><button type="button" data-scene="R07" aria-pressed="false">{% if zh %}统计{% else %}Statistics{% endif %}</button><button type="button" data-scene="R10" aria-pressed="false">{% if zh %}备份{% else %}Backup{% endif %}</button></div></div>
 {{ <screenshot scene="R05" lang={section.lang} label={section.extra.library_alt} /> }}
@@ -85,10 +85,10 @@
 <summary>{% if zh %}换手机，进度还在吗？{% else %}Will my place move to a new phone?{% endif %}</summary>
 <p>{% if zh %}“我的书架”的文件通过 iCloud Drive 同步；开启阅读数据同步后，进度、书签和批注通过 CloudKit 私有库同步。外部书架在新设备上需重新授权；字体、排版与当前配色选择保存在本机。{% else %}Files in My Library sync through iCloud Drive. Reading-data sync uses your private CloudKit database for positions, bookmarks, and notes. Authorize external folders again on a new device. Fonts, typography, and the selected palette stay on this device.{% endif %}</p>
 </details>
-<details><summary>{% if zh %}备份里有小说吗？{% else %}Does a backup include my books?{% endif %}</summary><p>{% if zh %}没有。全部阅读数据备份与单本笔记导出是两件事；TXT 小说文件需要另行保存。{% else %}No. A backup of all reading data is separate from exporting a book’s notes. Keep your TXT files separately.{% endif %}</p></details>
+<details><summary>{% if zh %}小说信息和阅读数据备份有什么区别？{% else %}How do metadata files differ from reading-data backups?{% endif %}</summary><p>{% if zh %}小说信息清单用于整理作者、标签、简介和封面；阅读数据备份保存进度、书签、批注与统计。两者都不包含 TXT 原文，小说文件请另行保存。导入小说信息前可以逐项预览确认。{% else %}Metadata files help you edit authors, tags, descriptions, and covers. A reading-data backup keeps positions, bookmarks, notes, and statistics. Neither includes TXT files. Keep your books separately and review metadata changes before importing.{% endif %}</p></details>
 <details>
 <summary>{% if zh %}AI 是必需的吗？{% else %}Do I have to use AI?{% endif %}</summary>
-<p>{% if zh %}不是。支持该功能的店面中，AI 默认关闭，使用你选择的服务与账户；不用 AI 也能完整阅读。部分地区不提供 AI 功能，包括中国大陆店面。{% else %}No. Where available, AI is off by default and uses a service and account you choose. Reading works fully without it. AI features are unavailable in some regions, including the mainland China storefront.{% endif %}</p>
+<p>{% if zh %}不是。支持该功能的店面中，AI 默认关闭，使用你自己的服务或账户。支持的连接可刷新服务返回的模型目录，按用途选择模型；不用 AI 也能完整阅读。中国大陆 App Store 店面不提供 AI 功能。{% else %}No. Where available, AI is off by default and uses your own service or account. Supported connections can refresh the service’s model catalog so you can choose models for each task. Reading works fully without AI. AI features are unavailable in the mainland China App Store storefront.{% endif %}</p>
 </details>
 <details>
 <summary>{% if zh %}月读开源吗？{% else %}Is Moonread open source?{% endif %}</summary>
