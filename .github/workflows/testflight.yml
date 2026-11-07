@@ -137,7 +137,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/testflight-private" "$RUNNER_TEMP/testflight-public"
           printf '%s\n' prepare > "$RUNNER_TEMP/testflight-private/current-stage"
           python3 - <<'PY'
-          import base64, os, pathlib, re, secrets, subprocess
+          import base64, hashlib, os, pathlib, re, secrets, ssl, subprocess
           for name in ['ASC_API_KEY_BASE64', 'ASC_KEY_ID', 'ASC_ISSUER_ID', 'APPLE_TEAM_ID',
                        'IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64', 'IOS_DEVELOPMENT_CERTIFICATE_PASSWORD']:
               if not os.environ.get(name): raise SystemExit('Missing Environment setting: ' + name)
@@ -168,21 +168,56 @@ jobs:
           p12 = root / 'development.p12'
           p12.write_bytes(base64.b64decode(os.environ['IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64'], validate=True))
           p12.chmod(0o600)
-          def run_secret(stage, args):
+          def run_secret(stage, args, data=None):
               # Arguments carry passwords: report only the stage, never the command or exception.
-              if subprocess.run(args, capture_output=True).returncode != 0:
+              result = subprocess.run(args, input=data, capture_output=True)
+              if result.returncode != 0:
                   raise SystemExit('Development certificate ' + stage + ' failed.')
+              return result.stdout
           run_secret('import', ['security', 'import', str(p12), '-k', keychain,
                                 '-P', os.environ['IOS_DEVELOPMENT_CERTIFICATE_PASSWORD'],
                                 '-T', '/usr/bin/codesign', '-T', '/usr/bin/security'])
           p12.unlink()
           run_secret('key access', ['security', 'set-key-partition-list', '-S', 'apple-tool:,apple:,codesign:',
                                     '-s', '-k', password, keychain])
-          identities = subprocess.run(['security', 'find-identity', '-v', '-p', 'codesigning', keychain],
-                                      capture_output=True, text=True).stdout
-          team = '(' + os.environ['APPLE_TEAM_ID'] + ')'
-          if not any('Apple Development' in line and team in line for line in identities.splitlines()):
-              raise SystemExit('No valid Apple Development identity for the team in the imported certificate.')
+          # Validate the imported leaf, not the display name's parenthesized member ID.
+          # Apple places the Team ID in subject.OU:
+          # https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/RequirementLang/RequirementLang.html
+          identities = run_secret('identity lookup',
+                                  ['security', 'find-identity', '-v', '-p', 'codesigning', keychain]).decode('utf-8')
+          valid = set(re.findall(r'^\s*\d+\)\s+([0-9A-Fa-f]{40})\s+"', identities, re.MULTILINE))
+          valid = {value.upper() for value in valid}
+          if not valid:
+              raise SystemExit('No valid code-signing identity in imported keychain; check certificate validity, private key and WWDR trust chain.')
+          certificates = run_secret('certificate lookup',
+                                    ['security', 'find-certificate', '-a', '-p', keychain]).decode('ascii')
+          matches, development = set(), set()
+          for pem in re.findall(r'-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----', certificates, re.DOTALL):
+              fingerprint = hashlib.sha1(ssl.PEM_cert_to_DER_cert(pem)).hexdigest().upper()
+              if fingerprint not in valid:
+                  continue
+              subject = run_secret('subject inspection',
+                                   ['openssl', 'x509', '-noout', '-subject',
+                                    '-nameopt', 'sep_multiline,sname,utf8,esc_ctrl'],
+                                   data=pem.encode('ascii')).decode('utf-8')
+              fields = {}
+              for line in subject.splitlines():
+                  name, separator, value = line.strip().partition('=')
+                  if separator:
+                      fields.setdefault(name.strip(), []).append(value.strip())
+              names = fields.get('CN', [])
+              if len(names) != 1 or not names[0].startswith('Apple Development: '):
+                  continue
+              development.add(fingerprint)
+              if fields.get('OU') == [os.environ['APPLE_TEAM_ID']]:
+                  matches.add(fingerprint)
+          if not development:
+              raise SystemExit('No valid Apple Development certificate in imported keychain.')
+          if not matches:
+              raise SystemExit('No valid imported Apple Development certificate belongs to the configured team.')
+          if len(matches) != 1:
+              raise SystemExit('Expected one fixed Apple Development identity for the configured team, found multiple.')
+          print('Fixed Apple Development identity verified for the configured team (valid certificate and matching private key).')
           PY
           # This helper exists only in the ephemeral runner, never as a repository script/artifact.
           cat > "$RUNNER_TEMP/testflight-private/asc.py" <<'PY'
