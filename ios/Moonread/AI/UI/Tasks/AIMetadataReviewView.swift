@@ -267,9 +267,3 @@ struct AIResultFeedback: View {
         if let text = ai.proposals.renameErrors[resultID] { Text("重命名：\(text)").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
     }
 }
-
-struct AITrailingIconLabelStyle: LabelStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        HStack(spacing: 4) { configuration.title; configuration.icon.font(.caption) }
-    }
-}

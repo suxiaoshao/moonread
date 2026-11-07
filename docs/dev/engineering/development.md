@@ -69,6 +69,8 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 首次运行需要下载工具链和 Cargo 依赖，之后复用缓存。
 
+### 本机模拟器约定
+
 本机主模拟器仍使用 iOS 27.0 的 iPhone 18 Pro（`FFA6F448-E09C-4885-B59C-53C5E07185F5`）；当前 iOS 27.1 运行时仅支持 Duo，Duo 检查使用独立的 iPhone Duo（`6E42EBA5-DA26-4E2C-BF50-0CA9DC193893`），两个运行时均保留，CI 不变。iPad 检查使用 iPad Pro 13 英寸（`0F4A5FC1-EA80-4A88-81C2-D1650CFCA791`）。只复用这三台，不按任务新建；需要干净状态时重装 App。同一时间只开一台，用完关机；模拟器是测试和截图机，不清理桌面小组件、系统语言或外观。
 
 ## 签名与安装
@@ -91,7 +93,7 @@ App 的营销版本（`MARKETING_VERSION`，用户可见）和构建号（`CURRE
 
 使用独立的 `StoreScreenshots` scheme，不进入日常关键 UI 测试。拍摄参数、原创样书与处理入口都只存在于 DEBUG（#83）；每次启动使用随机 UUID 的临时书库，拒绝用户 iCloud / Downloads 路径。不能用用户小说或真实 AI 网络请求作夹具。
 
-先对比上一版原图，只拍有变化或旧图里没有的页面；画面未变就复用旧的真实截图，不要求所有图来自同一提交。官网和商店共用同一份原图，不能按消费者重复拍摄。1.4 的联合清单是 `build/Work/release-1.4/150-site/capture-matrix.json`，用于选择所需场景，不是每版整批重拍要求，也不是完成证明。例如从主目录只补拍一张：
+先对比上一版原图，只拍有变化或旧图里没有的页面；画面未变就复用旧的真实截图，不要求所有图来自同一提交。官网和商店共用同一份原图，不能按消费者重复拍摄。需要矩阵时由当轮已审定清单提供，不依赖历史工作稿路径。例如从主目录只补拍一张：
 
 ```sh
 nix develop --no-update-lock-file -c xcodebuild \
@@ -100,12 +102,11 @@ nix develop --no-update-lock-file -c xcodebuild \
   -derivedDataPath build/DerivedData -parallel-testing-enabled NO \
   -collect-test-diagnostics never \
   STORE_SCREENSHOT_DEVICE=iphone-medium STORE_SCREENSHOT_LANGUAGES=zh-Hans \
-  STORE_SCREENSHOT_MATRIX=build/Work/release-1.4/150-site/capture-matrix.json \
-  STORE_SCREENSHOT_IDS=R06-F-zh-Hans-light \
+  STORE_SCREENSHOT_SCENES=R06 STORE_SCREENSHOT_APPEARANCES=light \
   CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES test
 ```
 
-按需指定 ID、场景和明暗；未限定时命令会处理所选设备组/语言的全部清单条目，执行前须核对范围。按设备姿态分批执行，不能同时开多台。可用 `STORE_SCREENSHOT_SCENES=R01,R12,R13`、`STORE_SCREENSHOT_APPEARANCES=light` 或 `STORE_SCREENSHOT_IDS=<完整ID,...>` 缩小本批。矩阵中的语言、App/阅读配色、纹理开关、系统明暗、方向、店面和输出路径经同一 `StoreShotCapture` 传给夹具。App 用生产 Rust 规则解析配色并返回实际应用的 receipt，导出前核对，不能只改文件名伪装配色。
+按需指定场景和明暗；使用矩阵时还可按完整 ID 筛选。未限定时命令会处理所选设备组/语言的全部场景，执行前须核对范围。按设备姿态分批执行，不能同时开多台。可用 `STORE_SCREENSHOT_SCENES=R01,R12,R13`、`STORE_SCREENSHOT_APPEARANCES=light` 缩小本批；`STORE_SCREENSHOT_IDS=<完整ID,...>` 只用于矩阵分支。矩阵中的语言、App/阅读配色、纹理开关、系统明暗、方向、店面和输出路径经同一 `StoreShotCapture` 传给夹具。App 用生产 Rust 规则解析配色并返回实际应用的 receipt，导出前核对，不能只改文件名伪装配色。
 
 不传矩阵时，可用同名 `STORE_SCREENSHOT_SCENES=R01`、`STORE_SCREENSHOT_LANGUAGES=zh-Hans`、`STORE_SCREENSHOT_APPEARANCES=light,dark`、`STORE_SCREENSHOT_ORIENTATION=portrait` 单独拍；可显式指定 `STORE_SCREENSHOT_APP_PALETTE` / `STORE_SCREENSHOT_READER_PALETTE`。店面由 `STORE_SCREENSHOT_STOREFRONT` 独立指定，默认 USA，与语言无关。单页 `PAGE_SHOT_SCENE/APPEARANCE/ORIENTATION` 保留，也走同一配置入口，输出仍在 `build/PageShots/`。旧 kraft/linen 与 01–08 别名不再使用。
 

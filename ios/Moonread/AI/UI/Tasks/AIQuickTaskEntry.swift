@@ -97,40 +97,6 @@ struct AIQuickTaskSheet: View {
     }
 }
 
-/// Entry for an existing task; status comes only from current runtime activity.
-struct AIQuickTaskStatusRow: View {
-    @Environment(AIService.self) private var ai
-    @Environment(\.theme) private var theme
-    let request: AIQuickTaskRequest
-    let open: () -> Void
-    var body: some View {
-        if let task = request.task(ai) {
-            let text = Self.text(task, family: request.family)
-            Button(action: open) {
-                HStack(spacing: LayoutTokens.compact) {
-                    Image(systemName: "sparkles").foregroundStyle(Color(uiColor: theme.accent)).accessibilityHidden(true)
-                    Text(verbatim: text).foregroundStyle(Color(uiColor: theme.ink))
-                    Spacer(minLength: 0)
-                    if task.running { ProgressView().accessibilityHidden(true) }
-                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).accessibilityHidden(true)
-                }.frame(minHeight: LayoutTokens.hit).contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityIdentifier("aiTaskStatusRow")
-        }
-    }
-    @MainActor static func text(_ task: AISessionSummary, family: AIQuickTaskRequest.Family) -> String {
-        let name: String = switch family {
-        case .metadata: String(localized: "资料建议")
-        case .cover: String(localized: "封面")
-        case .organization: String(localized: "整理方案")
-        case .statistics: String(localized: "阅读分析")
-        }
-        // A runtime waiting for confirmation is still running; the wait is what needs the person.
-        if task.waitingConfirmation { return name + " · " + String(localized: "等待确认") }
-        if task.running { return name + " · " + String(localized: "进行中") }
-        return name
-    }
-}
-
 enum AIQuickTaskDates {
     /// Statistics days are civil day numbers; the task carries explicit local dates.
     static func iso(_ day: Int64) -> String {
