@@ -260,9 +260,6 @@ final class AIAgentPersistenceConversationTests: ConversationFixture {
     XCTAssertTrue(conversation.running)
     XCTAssertTrue(service.conversation(conversation.id) === conversation)
     XCTAssertEqual(AITestURLProtocol.state.counts.0, 1)
-    // Reopening observes this exact object and never sends another request.
-    XCTAssertTrue(service.conversation(conversation.id) === conversation)
-    XCTAssertEqual(AITestURLProtocol.state.counts.0, 1)
     service.stop(conversation.id)
     await wait { !conversation.running }
     XCTAssertEqual(conversation.turns.last?.outcome, .stopped)
