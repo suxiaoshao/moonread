@@ -1736,6 +1736,7 @@ D35000000000000000000001,
 				A60000000000000000000002 /* Sources */,
 				A40000000000000000000001 /* Frameworks */,
 				A60000000000000000000003 /* Resources */,
+				A60000000000000000000008 /* Prune unused math fonts */,
 			);
 			buildRules = (
 			);
@@ -1917,6 +1918,22 @@ E51000000000000000000009,D41000000000000000000001,
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
 			shellScript = "set -eu\ncd \"${SRCROOT}/..\"\nexport CARGO_TARGET_DIR=\"$PWD/target\"\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command bash -c '\n  builder=cargo\n  if [ -z \"${CI:-}\" ]; then\n    if command -v mbx >/dev/null 2>&1; then\n      builder=$(command -v mbx)\n    elif [ -x \"$HOME/.cargo/bin/mbx\" ]; then\n      builder=\"$HOME/.cargo/bin/mbx\"\n    fi\n  fi\n  echo \"Rust builder: $builder; rustc: $(command -v rustc)\"\n  exec \"$builder\" build --locked --package moonread-core --lib --profile \"$1\" ${2}\n' bash \"${MOONREAD_CARGO_PROFILE}\" \"${MOONREAD_RUST_TARGET_FLAGS}\"\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command cargo run --locked --package moonread-core --features cli --bin uniffi-bindgen -- generate --library \"${MOONREAD_BINDGEN_LIBRARY}\" --language swift --no-format --out-dir \"${MOONREAD_BINDINGS_DIR}\"\n";
+		};
+		A60000000000000000000008 /* Prune unused math fonts */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = ();
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/SwiftMath_SwiftMath.bundle",
+			);
+			name = "Prune unused math fonts";
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/SwiftMathFontsPruned.stamp",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -eu\n# SwiftPM signs Debug resource bundles independently. Only the unsigned\n# Release copy is pruned, before the enclosing App is signed.\nif [ \"$CONFIGURATION\" != Release ]; then\n  /bin/mkdir -p \"$(/usr/bin/dirname \"$SCRIPT_OUTPUT_FILE_0\")\"\n  /usr/bin/printf '%s\\n' 'Debug: upstream math resources retained' > \"$SCRIPT_OUTPUT_FILE_0\"\n  echo 'SwiftMath resources: Debug bundle left unchanged.'\n  exit 0\nfi\nbundle=\"${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/SwiftMath_SwiftMath.bundle\"\nfonts=\"${bundle}/mathFonts.bundle\"\nif [ ! -d \"$fonts\" ] || [ -e \"$bundle/_CodeSignature\" ] || [ -e \"$fonts/_CodeSignature\" ]; then\n  echo 'error: SwiftMath must be copied as an unsigned resource bundle before font pruning.' >&2\n  exit 1\nfi\nfor name in latinmodern-math.otf latinmodern-math.plist LICENSE OFL.txt GUST-FONT-LICENSE.txt; do\n  if [ ! -f \"$fonts/$name\" ] || [ -L \"$fonts/$name\" ]; then\n    echo \"error: Missing required SwiftMath resource: $name\" >&2\n    exit 1\n  fi\ndone\n/usr/bin/find \"$fonts\" -mindepth 1 -maxdepth 1 \\\n  ! -name latinmodern-math.otf ! -name latinmodern-math.plist \\\n  ! -name LICENSE ! -name OFL.txt ! -name GUST-FONT-LICENSE.txt \\\n  -exec /bin/rm -rf -- {} +\n/bin/mkdir -p \"$(/usr/bin/dirname \"$SCRIPT_OUTPUT_FILE_0\")\"\n/usr/bin/printf '%s\\n' 'Latin Modern Math + metrics + licenses' > \"$SCRIPT_OUTPUT_FILE_0\"\necho 'SwiftMath resources: retained Latin Modern Math, metrics and licenses.'\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
