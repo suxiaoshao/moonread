@@ -4,7 +4,7 @@ title = "在 App 外整理小说信息"
 kind = "metadata"
 +++
 
-可以修改月读导出的信息清单，也可以直接从本机 TXT 生成一份新清单。自己整理或交给 agent 处理作者、标签、简介与封面，最后在月读逐项确认；导入文件不需要包含小说正文。
+可以修改月读导出的信息清单，也可以直接从本机 TXT 生成一份新清单。自己整理或交给 agent 处理作者、标签、简介与封面，最后在月读逐项确认。
 
 此功能适用于月读 1.5；交换的是书目信息，恢复进度、书签和笔记请用「阅读数据备份」。
 
@@ -26,15 +26,15 @@ kind = "metadata"
 <div class="metadata-shots">
 <figure>
 <picture>
-<source media="(prefers-color-scheme: dark)" srcset="../images/metadata/zh-dark-export-scope-480.webp 480w, ../images/metadata/zh-dark-export-scope-960.webp 960w, ../images/metadata/zh-dark-export-scope-1206.webp 1206w" sizes="(max-width: 400px) 84vw, 300px">
-<img src="../images/metadata/zh-light-export-scope-960.webp" srcset="../images/metadata/zh-light-export-scope-480.webp 480w, ../images/metadata/zh-light-export-scope-960.webp 960w, ../images/metadata/zh-light-export-scope-1206.webp 1206w" sizes="(max-width: 400px) 84vw, 300px" width="1206" height="2622" alt="选择导出范围与清单格式" loading="lazy" decoding="async">
+<source media="(prefers-color-scheme: dark)" srcset="../images/metadata/zh-dark-export-scope-480.webp 480w, ../images/metadata/zh-dark-export-scope-960.webp 960w, ../images/metadata/zh-dark-export-scope-1350.webp 1350w" sizes="(max-width: 400px) 84vw, 300px">
+<img src="../images/metadata/zh-light-export-scope-960.webp" srcset="../images/metadata/zh-light-export-scope-480.webp 480w, ../images/metadata/zh-light-export-scope-960.webp 960w, ../images/metadata/zh-light-export-scope-1350.webp 1350w" sizes="(max-width: 400px) 84vw, 300px" width="1350" height="2760" alt="选择导出范围与清单格式" loading="lazy" decoding="async">
 </picture>
 <figcaption>选择导出范围与清单格式</figcaption>
 </figure>
 <figure>
 <picture>
-<source media="(prefers-color-scheme: dark)" srcset="../images/metadata/zh-dark-export-result-480.webp 480w, ../images/metadata/zh-dark-export-result-960.webp 960w, ../images/metadata/zh-dark-export-result-1206.webp 1206w" sizes="(max-width: 400px) 84vw, 300px">
-<img src="../images/metadata/zh-light-export-result-960.webp" srcset="../images/metadata/zh-light-export-result-480.webp 480w, ../images/metadata/zh-light-export-result-960.webp 960w, ../images/metadata/zh-light-export-result-1206.webp 1206w" sizes="(max-width: 400px) 84vw, 300px" width="1206" height="2622" alt="导出完成后分享或存储清单" loading="lazy" decoding="async">
+<source media="(prefers-color-scheme: dark)" srcset="../images/metadata/zh-dark-export-result-480.webp 480w, ../images/metadata/zh-dark-export-result-960.webp 960w, ../images/metadata/zh-dark-export-result-1350.webp 1350w" sizes="(max-width: 400px) 84vw, 300px">
+<img src="../images/metadata/zh-light-export-result-960.webp" srcset="../images/metadata/zh-light-export-result-480.webp 480w, ../images/metadata/zh-light-export-result-960.webp 960w, ../images/metadata/zh-light-export-result-1350.webp 1350w" sizes="(max-width: 400px) 84vw, 300px" width="1350" height="2760" alt="导出完成后分享或存储清单" loading="lazy" decoding="async">
 </picture>
 <figcaption>导出完成后分享或存储清单</figcaption>
 </figure>
@@ -55,15 +55,15 @@ kind = "metadata"
 <div class="metadata-shots">
 <figure>
 <picture>
-<source media="(prefers-color-scheme: dark)" srcset="../images/metadata/zh-dark-import-preview-480.webp 480w, ../images/metadata/zh-dark-import-preview-960.webp 960w, ../images/metadata/zh-dark-import-preview-1206.webp 1206w" sizes="(max-width: 400px) 84vw, 300px">
-<img src="../images/metadata/zh-light-import-preview-960.webp" srcset="../images/metadata/zh-light-import-preview-480.webp 480w, ../images/metadata/zh-light-import-preview-960.webp 960w, ../images/metadata/zh-light-import-preview-1206.webp 1206w" sizes="(max-width: 400px) 84vw, 300px" width="1206" height="2622" alt="查看将更新的小说" loading="lazy" decoding="async">
+<source media="(prefers-color-scheme: dark)" srcset="../images/metadata/zh-dark-import-preview-480.webp 480w, ../images/metadata/zh-dark-import-preview-960.webp 960w, ../images/metadata/zh-dark-import-preview-1350.webp 1350w" sizes="(max-width: 400px) 84vw, 300px">
+<img src="../images/metadata/zh-light-import-preview-960.webp" srcset="../images/metadata/zh-light-import-preview-480.webp 480w, ../images/metadata/zh-light-import-preview-960.webp 960w, ../images/metadata/zh-light-import-preview-1350.webp 1350w" sizes="(max-width: 400px) 84vw, 300px" width="1350" height="2760" alt="查看将更新的小说" loading="lazy" decoding="async">
 </picture>
 <figcaption>查看将更新的小说</figcaption>
 </figure>
 <figure>
 <picture>
-<source media="(prefers-color-scheme: dark)" srcset="../images/metadata/zh-dark-import-result-480.webp 480w, ../images/metadata/zh-dark-import-result-960.webp 960w, ../images/metadata/zh-dark-import-result-1206.webp 1206w" sizes="(max-width: 400px) 84vw, 300px">
-<img src="../images/metadata/zh-light-import-result-960.webp" srcset="../images/metadata/zh-light-import-result-480.webp 480w, ../images/metadata/zh-light-import-result-960.webp 960w, ../images/metadata/zh-light-import-result-1206.webp 1206w" sizes="(max-width: 400px) 84vw, 300px" width="1206" height="2622" alt="查看已保存的小说" loading="lazy" decoding="async">
+<source media="(prefers-color-scheme: dark)" srcset="../images/metadata/zh-dark-import-result-480.webp 480w, ../images/metadata/zh-dark-import-result-960.webp 960w, ../images/metadata/zh-dark-import-result-1350.webp 1350w" sizes="(max-width: 400px) 84vw, 300px">
+<img src="../images/metadata/zh-light-import-result-960.webp" srcset="../images/metadata/zh-light-import-result-480.webp 480w, ../images/metadata/zh-light-import-result-960.webp 960w, ../images/metadata/zh-light-import-result-1350.webp 1350w" sizes="(max-width: 400px) 84vw, 300px" width="1350" height="2760" alt="查看已保存的小说" loading="lazy" decoding="async">
 </picture>
 <figcaption>查看已保存的小说</figcaption>
 </figure>
@@ -104,7 +104,7 @@ https://suxiaoshao.github.io/moonread/schema/moonread-metadata-v1.schema.json
 
 若工具不能打开链接，请下载 [agent 编辑说明（Skill）](../skills/moonread-metadata/SKILL.md) 和 [JSON Schema](../schema/moonread-metadata-v1.schema.json)，与输入一起提供。Skill 是给工具看的操作说明；Schema 用来检查文件结构。不能处理封面包的工具，可以先只整理不带封面的清单。
 
-**发送前检查资料内容。** 信息清单不应包含小说正文、阅读进度、书签、笔记、统计或授权信息，但可能包含书名、作者、书架与相对路径，以及您填写的简介和自设封面。把它交给外部服务时，这些信息也会交给该服务；只发送您愿意分享的内容。
+**发送前检查资料内容。** 信息清单可能包含书名、作者、书架与相对路径，以及您填写的简介和自设封面。把它交给外部服务时，这些信息也会交给该服务；只发送您愿意分享的内容。
 
 月读不会自动联网补全资料，也不会改写小说正文或输入清单。只有您在预览中明确勾选改名建议，才会修改真实文件名；不会搬动目录或覆盖同名文件。
 
@@ -213,4 +213,4 @@ JSONL 不带外层结构，每个非空物理行一个书目对象，每条同�
 
 资料保存后才执行真实改名及现有文件快照校验。原件未下载时不为改名下载；改名失败保留已保存的资料，结果说明原因。改名后无需更新清单，历史路径不参与匹配。
 
-问题清单 JSONL 只含来源行/记录号、代码、字段、有效正文身份与受控原因，不附正文或私有绝对路径。反馈问题时，请勿主动发送原始资料或小说。
+问题清单 JSONL 只含来源行/记录号、代码、字段、有效正文身份与受控原因，不附私有绝对路径。反馈问题时，请勿主动发送原始资料或小说。
