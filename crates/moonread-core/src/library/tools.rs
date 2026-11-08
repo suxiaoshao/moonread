@@ -559,7 +559,7 @@ impl ReaderCore {
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        let coverage = crate::user::coverage::covered_char_ranges(&tx, &id)?;
+        let coverage = crate::user::statistics::coverage::covered_char_ranges(&tx, &id)?;
         let mut parent: Option<&IndexedChapter> = None;
         let mut items = Vec::with_capacity(headings.len());
         for (index, heading) in headings.iter().enumerate() {
@@ -583,7 +583,11 @@ impl ReaderCore {
                     .as_ref()
                     .filter(|_| next.is_some() || complete)
                     .map(|ranges| {
-                        crate::user::coverage::count(ranges, heading.body_char_count, end)
+                        crate::user::statistics::coverage::count(
+                            ranges,
+                            heading.body_char_count,
+                            end,
+                        )
                     }),
             });
             if heading.level == 0 {

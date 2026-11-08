@@ -68,7 +68,7 @@ import XCTest
                 XCTAssertTrue(options.isHittable)
             case .search:
                 readableBody(); controls(); ready(app.buttons["showSearch"]).tap()
-                let query = ready(app.textFields["bookSearchQuery"])
+                let query = ready(app.searchFields.firstMatch)
                 query.tap(); query.typeText((language == "en" ? "Lin Zhou" : "林舟") + "\n")
                 ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'searchHit-' ")).firstMatch, timeout: 20)
                 settled(ready(element("searchStatus"), timeout: 20))

@@ -46,7 +46,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 - 新开 `release/x.y` 时，同步修改 [Dependabot](../../../.github/dependabot.yml) 两个更新项的 `target-branch`，让常规依赖版本更新 PR 指向当前版本分支。
 - Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 PR 的 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 `hotfix/x.y.z` 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。
-- 当前常规依赖更新目标为 `release/1.5`，以 `.github/dependabot.yml` 为准；新版本分支切换后需核对实际配置。
+- 当前常规依赖更新目标为 `release/1.6`，以 `.github/dependabot.yml` 为准；新版本分支切换后需核对实际配置。
 
 签名配置、小说原件、构建产物与凭据不随代码推送。CI、仓库保护、模板及依赖更新见[仓库与持续集成](repository.md)，测试范围与推送前要求见[测试原则](verification.md#测试原则)。
 
@@ -58,16 +58,20 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 
 - 构建阶段先进入 Nix devShell，再在本机按 PATH、`$HOME/.cargo/bin/mbx` 的顺序寻找 mbx；找到时用 `mbx build`，否则用 `cargo build`。CI 始终直接用 Cargo。mbx 使用 devShell 中锁定的 Cargo/Rust（含 iOS targets），不选系统 rustup 工具链；UniFFI 绑定生成仍用 Cargo。
 - 构建阶段执行编译与生成绑定两条工具调用。target、Debug/Release、链接路径声明在 [Rust.xcconfig](../../../ios/Rust.xcconfig)。
+- 主 App 的 `Prune unused math fonts` 阶段依赖 SwiftPM 已复制的资源 bundle，在 Release 签名前只保留 Latin Modern Math 的 OTF、metrics plist 与三份许可证；上游依赖不变。该阶段每次构建执行，防止增量复制恢复未用字体，缺少必需资源时构建失败。Debug 的 SwiftPM 资源 bundle 有独立临时签名，不做裁剪。
 - UniFFI 从 [uniffi.toml](../../../crates/moonread-core/uniffi.toml) 读取输出名称；使用 `--no-format` 生成，避免每次构建格式化自动生成代码。
 - 链接明确指定 `libmoonread_core.a`，避免同目录动态库被优先选中或把 Mac 路径带进 iPhone。
 - Rust 输出位于仓库默认的 `target/`，绑定位于 `build/ios/Generated/<Configuration>/`，均不提交。模拟器只编译 `aarch64-apple-ios-sim`（arm64）。
 - Xcode 构建缓存只用两份：模拟器构建和测试统一 `-derivedDataPath build/DerivedData`，真机构建统一 `build/DeviceDerivedData`。不按任务另建缓存目录；任务的日志、截图等验证记录可以放在 `build/<任务名>/`，任务合并后删除。
 - 不使用 git worktree；在主目录切分支，共用 `target`、`build/DerivedData` 和 `build/DeviceDerivedData`。
 - Nix 默认路径为 `/nix/var/nix/profiles/default/bin/nix`；非标准安装可在本地 `LocalSigning.xcconfig` 覆盖 `MOONREAD_NIX`。
+- 开发环境以 `build/nix-dev-profile` 作为 GC root。运行 `nix gc` / `nix-collect-garbage` 前确认该 root 存在，否则开发环境会被回收，需要重新下载工具链。
 
 首次运行需要下载工具链和 Cargo 依赖，之后复用缓存。
 
-本机主模拟器仍使用 iOS 27.0 的 iPhone 18 Pro（`FFA6F448-E09C-4885-B59C-53C5E07185F5`）；当前 iOS 27.1 运行时仅支持 Duo，Duo 检查使用独立的 iPhone Duo（`6E42EBA5-DA26-4E2C-BF50-0CA9DC193893`），两个运行时均保留，CI 不变。
+### 本机模拟器约定
+
+本机主模拟器仍使用 iOS 27.0 的 iPhone 18 Pro（`FFA6F448-E09C-4885-B59C-53C5E07185F5`）；当前 iOS 27.1 运行时仅支持 Duo，Duo 检查使用独立的 iPhone Duo（`6E42EBA5-DA26-4E2C-BF50-0CA9DC193893`），两个运行时均保留，CI 不变。iPad 检查使用 iPad Pro 13 英寸（`0F4A5FC1-EA80-4A88-81C2-D1650CFCA791`）。只复用这三台，不按任务新建；需要干净状态时重装 App。同一时间只开一台，用完关机；模拟器是测试和截图机，不清理桌面小组件、系统语言或外观。
 
 ## 签名与安装
 
@@ -89,7 +93,7 @@ App 的营销版本（`MARKETING_VERSION`，用户可见）和构建号（`CURRE
 
 使用独立的 `StoreScreenshots` scheme，不进入日常关键 UI 测试。拍摄参数、原创样书与处理入口都只存在于 DEBUG（#83）；每次启动使用随机 UUID 的临时书库，拒绝用户 iCloud / Downloads 路径。不能用用户小说或真实 AI 网络请求作夹具。
 
-先对比上一版原图，只拍有变化或旧图里没有的页面；画面未变就复用旧的真实截图，不要求所有图来自同一提交。官网和商店共用同一份原图，不能按消费者重复拍摄。1.4 的联合清单是 `build/Work/release-1.4/150-site/capture-matrix.json`，用于选择所需场景，不是每版整批重拍要求，也不是完成证明。例如从主目录只补拍一张：
+先对比上一版原图，只拍有变化或旧图里没有的页面；画面未变就复用旧的真实截图，不要求所有图来自同一提交。官网和商店共用同一份原图，不能按消费者重复拍摄。需要矩阵时由当轮已审定清单提供，不依赖历史工作稿路径。例如从主目录只补拍一张：
 
 ```sh
 nix develop --no-update-lock-file -c xcodebuild \
@@ -98,12 +102,11 @@ nix develop --no-update-lock-file -c xcodebuild \
   -derivedDataPath build/DerivedData -parallel-testing-enabled NO \
   -collect-test-diagnostics never \
   STORE_SCREENSHOT_DEVICE=iphone-medium STORE_SCREENSHOT_LANGUAGES=zh-Hans \
-  STORE_SCREENSHOT_MATRIX=build/Work/release-1.4/150-site/capture-matrix.json \
-  STORE_SCREENSHOT_IDS=R06-F-zh-Hans-light \
+  STORE_SCREENSHOT_SCENES=R06 STORE_SCREENSHOT_APPEARANCES=light \
   CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES test
 ```
 
-按需指定 ID、场景和明暗；未限定时命令会处理所选设备组/语言的全部清单条目，执行前须核对范围。按设备姿态分批执行，不能同时开多台。可用 `STORE_SCREENSHOT_SCENES=R01,R12,R13`、`STORE_SCREENSHOT_APPEARANCES=light` 或 `STORE_SCREENSHOT_IDS=<完整ID,...>` 缩小本批。矩阵中的语言、App/阅读配色、纹理开关、系统明暗、方向、店面和输出路径经同一 `StoreShotCapture` 传给夹具。App 用生产 Rust 规则解析配色并返回实际应用的 receipt，导出前核对，不能只改文件名伪装配色。
+按需指定场景和明暗；使用矩阵时还可按完整 ID 筛选。未限定时命令会处理所选设备组/语言的全部场景，执行前须核对范围。按设备姿态分批执行，不能同时开多台。可用 `STORE_SCREENSHOT_SCENES=R01,R12,R13`、`STORE_SCREENSHOT_APPEARANCES=light` 缩小本批；`STORE_SCREENSHOT_IDS=<完整ID,...>` 只用于矩阵分支。矩阵中的语言、App/阅读配色、纹理开关、系统明暗、方向、店面和输出路径经同一 `StoreShotCapture` 传给夹具。App 用生产 Rust 规则解析配色并返回实际应用的 receipt，导出前核对，不能只改文件名伪装配色。
 
 不传矩阵时，可用同名 `STORE_SCREENSHOT_SCENES=R01`、`STORE_SCREENSHOT_LANGUAGES=zh-Hans`、`STORE_SCREENSHOT_APPEARANCES=light,dark`、`STORE_SCREENSHOT_ORIENTATION=portrait` 单独拍；可显式指定 `STORE_SCREENSHOT_APP_PALETTE` / `STORE_SCREENSHOT_READER_PALETTE`。店面由 `STORE_SCREENSHOT_STOREFRONT` 独立指定，默认 USA，与语言无关。单页 `PAGE_SHOT_SCENE/APPEARANCE/ORIENTATION` 保留，也走同一配置入口，输出仍在 `build/PageShots/`。旧 kraft/linen 与 01–08 别名不再使用。
 

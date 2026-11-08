@@ -90,11 +90,19 @@ fn overlapping_devices_accumulate_and_fact_retry_does_not_double_count() {
     let (_root, core, book) = fixture();
     let a = fact(&book, "a", "device-a", "visit-a", 1_000, 15_000, (20, 50));
     let b = fact(&book, "b", "device-b", "visit-b", 1_000, 15_000, (20, 50));
+    let cover = json!({"id":"00000000-0000-4000-8000-000000000001","sha256":"a".repeat(64),"extension":"jpg","width":80,"height":120});
     let query = core
-        .query_snapshot(json!({"facts":[a.clone(),b,a]}).to_string())
+        .query_snapshot(json!({"facts":[a.clone(),b,a], "metadata":[{
+            "sha":book.content_sha256,"author":"Example Author","synopsis":"","tags":[],"cover":cover,"status":"Reading"
+        }]}).to_string())
         .unwrap();
     let overview = query.statistics_overview(20000, 20000, None).unwrap();
     assert_eq!(overview.books[0].duration_ms, 30_000);
+    assert_eq!(overview.books[0].author.as_deref(), Some("Example Author"));
+    assert_eq!(
+        serde_json::to_value(&overview.books[0].cover).unwrap(),
+        cover
+    );
     assert_eq!(overview.days[0].duration_ms, 30_000);
     assert_eq!(
         query.reading_activities(20000, 20000, None).unwrap().len(),

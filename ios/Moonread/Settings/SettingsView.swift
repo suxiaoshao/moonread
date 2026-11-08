@@ -118,7 +118,7 @@ struct SettingsView: View {
                         SettingsEntry(title: "书架管理", symbol: "books.vertical", summary: String(localized: "\(library.shelves.count) 个书架"), selected: sizeClass == .regular && navigation.selectedTask == .library)
                     }.accessibilityIdentifier("libraryManagementSettings")
                     settingsLink(.data) {
-                        SettingsEntry(title: "数据管理", symbol: "externaldrive", summary: String(localized: "备份、恢复、清理"), selected: sizeClass == .regular && navigation.selectedTask == .data)
+                        SettingsEntry(title: LocalizedStringResource("数据管理", table: "DataManagement"), symbol: "externaldrive", summary: String(localized: "备份、恢复、清理"), selected: sizeClass == .regular && navigation.selectedTask == .data)
                     }.accessibilityIdentifier("dataManagementSettings")
                     if CloudConfiguration.availableInBuild {
                         settingsLink(.cloud) {
@@ -204,7 +204,7 @@ struct SettingsView: View {
 
 /// Shared only by the settings home: native rows retain their navigation controls.
 private struct SettingsEntry: View {
-    let title: LocalizedStringKey
+    let title: LocalizedStringResource
     let symbol: String
     let summary: String
     var selected = false

@@ -95,7 +95,7 @@ impl ReaderCore {
         } else {
             None
         };
-        crate::reading::text::decode_chunks(&mut input, encoding, |mut text| {
+        crate::reading::input::text::decode_chunks(&mut input, encoding, |mut text| {
             while !text.is_empty() {
                 if let Some(stored) = replay.as_ref() {
                     if stored.start_utf8 != replay_end

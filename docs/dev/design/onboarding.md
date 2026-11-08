@@ -37,7 +37,7 @@
 
 ### 架构：沿用内置根发现状态
 
-[CloudDocumentQuery](../../../ios/Moonread/Library/CloudLibrary.swift) 区分首次 gathering 完成与增量更新，发布带代次、revision 和 gathered 的快照，并处理查询启动失败。内置根使用 `notRequired / discovering / ready / unavailable`；只有采用快照并读回对应目录后才进入 ready。开场引导与文件夹页使用同一个目录读取确认入口，不另外判定云端是否为空。
+[CloudDocumentQuery](../../../ios/Moonread/Library/Sources/CloudLibrary.swift) 区分首次 gathering 完成与增量更新，发布带代次、revision 和 gathered 的快照，并处理查询启动失败。内置根使用 `notRequired / discovering / ready / unavailable`；只有采用快照并读回对应目录后才进入 ready。开场引导与文件夹页使用同一个目录读取确认入口，不另外判定云端是否为空。
 
 `homeReady` 仅保证本地首页快照，`cloudLibraryUpdating` 表示根交接，`CloudStore.status.syncing` 表示 CloudKit 用户数据同步，三者均不能替代 iCloud Documents 初次发现状态。发现状态只控制空的内置根，不扩展为全应用同步状态机。
 
@@ -46,7 +46,7 @@
 3. 页面以“目录确实为空 + 无目录错误 + 发现状态为 ready/notRequired”显示“还没有小说”。发现中的空根显示已有轻量加载反馈；失败、账户变化、`query.start()` 失败或等待过久显示“暂未完成发现/重试”一类中性状态，并保留导入和指南入口，不把超时当作云端为空。账户/根变化重置代次，忽略旧任务结果。后续增量更新静默应用，不把已经显示的非空目录反复切回加载页。
 4. Apple 的首次 gathering 完成只表示**当前元数据索引的首轮匹配结果已收集**，之后仍有 live updates；它不能证明服务器上永远没有其他文件。实现和文案应承诺“不在已知发现过程未完成时先显示空”，不承诺一次回调证明云端全量同步结束。[Apple：NSMetadataQuery 两阶段](https://developer.apple.com/documentation/foundation/nsmetadataquery)、[iCloud 文档发现示例](https://developer.apple.com/documentation/uikit/synchronizing-documents-in-the-icloud-environment)
 
-涉及 `Library/CloudLibrary.swift`、`Library/LibraryService.swift`、`Library/LibraryModel.swift`、`Library/LibraryView.swift`，以及 `Settings/CloudStore.swift` / `App/MoonreadApp.swift` 的启动与账户变化接线。全局启动遮罩继续只等本地首屏，不延长到云发现完成。
+涉及 `Library/Sources/CloudLibrary.swift`、`Library/Sources/LibraryService.swift`、`Library/LibraryModel.swift`、`Library/Browsing/LibraryView.swift`，以及 `Settings/Cloud/CloudStore.swift` / `App/MoonreadApp.swift` 的启动与账户变化接线。全局启动遮罩继续只等本地首屏，不延长到云发现完成。
 
 模拟器注入可控发现源，覆盖：首次结果延迟但最终非空、首次结果为空、结果已到而扫描仍在途、启动失败/超时、旧账户迟到回调、已有本地内容时云发现未完成。使用真实 LibraryModel→页面状态链路断言无空状态中间帧。现有 `--ui-testing` 会关闭真实云能力，所谓“模拟登录”应明确为依赖注入，不能当作真实 iCloud 账户或服务时序验收。
 

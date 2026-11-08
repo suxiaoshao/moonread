@@ -54,6 +54,18 @@ final class AIModelSelectionAINativeToolsTests: AINativeToolsFixture {
     let restored = TestAI.connections(defaults: defaults, auth: providers.auth)
     XCTAssertEqual(restored.purposeSelection(.search)?.connectionID, connection.id)
     XCTAssertEqual(restored.purposeSelection(.image)?.modelID, "gpt-6-astra")
+    XCTAssertEqual(restored.purposeDefaults, providers.purposeDefaults)
+    // The defaults are retained even without a confirmed directory, but they
+    // cannot resolve to public candidates after reopening the connection.
+    var unverified = connection
+    unverified.modelsOrigin = nil; unverified.modelsIdentity = nil
+    unverified.models[0].directoryOrigin = nil
+    defaults.set(try JSONEncoder().encode([unverified]), forKey: "Moonread.ai.connections")
+    let awaitingDirectory = TestAI.connections(defaults: defaults, auth: providers.auth)
+    XCTAssertEqual(awaitingDirectory.purposeDefaults, restored.purposeDefaults)
+    XCTAssertTrue(awaitingDirectory.connections[0].models.isEmpty)
+    XCTAssertNil(awaitingDirectory.purposeSelection(.search))
+    XCTAssertNil(awaitingDirectory.purposeSelection(.image))
     XCTAssertTrue(providers.setPurpose(.search, selection: nil))
     XCTAssertNil(providers.purposeSelection(.search))
     XCTAssertNotNil(providers.purposeSelection(.image))

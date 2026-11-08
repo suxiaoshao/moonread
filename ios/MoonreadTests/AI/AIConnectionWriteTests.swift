@@ -48,4 +48,74 @@ final class AIAuthenticationBookAITests: BookAIFixture {
     XCTAssertNil(service.credentialErrors[connection.id])
     XCTAssertNotNil(service.modelErrors[connection.id])
   }
+
+  func testCredentialReplacementPersistsResetBeforeDirectoryRefresh() async throws {
+    for method in [AIAuthenticationMethod.apiKey, .openrouter] {
+      for cancel in [false, true] {
+        let suite = "credential-directory-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite); ChatGPTURLProtocol.fixture.resume() }
+        let config = URLSessionConfiguration.ephemeral; config.protocolClasses = [ChatGPTURLProtocol.self]
+        let session = URLSession(configuration: config)
+        let credentials = MemoryCredentialStore()
+        let auth = TestAI.authentication(session: session, credentials: credentials)
+        let catalog = TestAI.catalog(session: session, bundled: Data("{}".utf8))
+        let providers = TestAI.connections(defaults: defaults, auth: auth, catalog: catalog)
+        var connection = AIProviderPreset.all.first {
+          $0.auth == method && $0.id == (method == .apiKey ? "openai" : "openrouter")
+        }!.connection()
+        connection.catalogCredentialGeneration = UUID()
+        connection.modelsOrigin = .account; connection.modelsIdentity = connection.catalogIdentity
+        connection.modelsChecked = TestAI.now; connection.modelID = "old"
+        connection.models = [
+          .init(id: "old", name: "Old", contextWindow: 8000, thinking: [], directoryOrigin: .account, isListed: true),
+          .init(id: "manual", name: "Manual", contextWindow: 32000, thinking: [], maxOutput: 16000, isManual: true,
+                directoryOrigin: .account, isListed: true, connectionContextLimit: 8000, connectionOutputLimit: 4000),
+        ]
+        try credentials.save(AICredential(accessToken: "synthetic-old", refreshToken: "", expires: .distantFuture, accountID: ""), reference: connection.credentialReference)
+        let id = providers.addConnection(connection)
+        let path = method == .apiKey ? "/v1/models" : "/api/v1/models/user"
+        ChatGPTURLProtocol.fixture.set { request in
+          if request.url?.path == "/api/v1/auth/keys" { return (200, Data(#"{"key":"synthetic-new"}"#.utf8)) }
+          return (503, Data())
+        }
+        let arrived = expectation(description: "New credential directory request")
+        ChatGPTURLProtocol.fixture.pause(path) { arrived.fulfill() }
+        var keyWrite: Task<Bool, Never>?
+        if method == .apiKey {
+          keyWrite = Task { await providers.saveAPIKey("synthetic-new", for: id) }
+        } else {
+          let request = try await auth.beginOpenRouter()
+          providers.loginConnectionID = id; providers.loginStates[id] = .browser(request)
+          providers.submitAuthorizationCode("synthetic-code", connectionID: id)
+        }
+        await fulfillment(of: [arrived], timeout: 3)
+        // Inspect persistence while refresh is still suspended, not after a
+        // successful response has had an opportunity to save the reset for us.
+        let data = try XCTUnwrap(defaults.data(forKey: "Moonread.ai.connections"))
+        let stored = try XCTUnwrap(JSONDecoder().decode([AIConnection].self, from: data).first)
+        XCTAssertNotEqual(stored.catalogCredentialGeneration, connection.catalogCredentialGeneration)
+        XCTAssertNil(stored.modelsChecked); XCTAssertNil(stored.modelsOrigin); XCTAssertNil(stored.modelsIdentity)
+        XCTAssertEqual(stored.models.map(\.id), ["manual"])
+        XCTAssertEqual(stored.models[0].contextWindow, 32000)
+        XCTAssertNil(stored.models[0].connectionContextLimit); XCTAssertNil(stored.models[0].connectionOutputLimit)
+        let joining = expectation(description: "Join refresh before cancellation")
+        let joined = Task { joining.fulfill(); await providers.refreshModels(id, refreshPublic: false) }
+        await fulfillment(of: [joining], timeout: 3)
+        if cancel { providers.cancelAIWork() }
+        ChatGPTURLProtocol.fixture.resume()
+        await joined.value
+        if let keyWrite { let written = await keyWrite.value; XCTAssertTrue(written) }
+        let restored = TestAI.connections(defaults: defaults, auth: auth, catalog: catalog)
+        XCTAssertEqual(restored.connections[0].catalogCredentialGeneration, stored.catalogCredentialGeneration)
+        XCTAssertEqual(restored.connections[0].models.map(\.id), ["manual"])
+        XCTAssertNil(restored.connections[0].modelsChecked)
+        XCTAssertEqual(try credentials.load(connection.credentialReference)?.accessToken, "synthetic-new")
+        let count = ChatGPTURLProtocol.fixture.requestCount
+        await restored.refreshConnectionCatalogsIfNeeded(now: TestAI.now)
+        XCTAssertEqual(ChatGPTURLProtocol.fixture.requestCount, count + 1, "The old recent check must not suppress the new credential's refresh")
+      }
+    }
+  }
+
 }

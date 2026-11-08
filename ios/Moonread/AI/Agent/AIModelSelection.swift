@@ -35,7 +35,7 @@ extension AIService {
         guard let index = providers.connections.firstIndex(where: { $0.id == selection.connectionID }),
               let model = providers.model(selection.modelID, in: providers.connections[index]),
               selection.thinking == nil || model.thinking.contains(selection.thinking!) else { return false }
-        guard model.capabilities?.text != false else { return false }
+        guard AINativeCapabilities.supportsText(connection: providers.connections[index], model: model) else { return false }
         let thinking = selection.thinking ?? AIModelSelection.defaultThinking(model)
         switch target {
         case .defaults:
@@ -61,9 +61,13 @@ extension AIModelSelectionTarget {
 @MainActor enum AIModelAvailability {
     static func supports(_ model: AIModelOption, purpose: AIModelPurpose?, connection: AIConnection) -> Bool {
         if let purpose { return AINativeCapabilities.supports(purpose, connection: connection, model: model) }
-        return model.capabilities?.text != false
+        return AINativeCapabilities.supportsText(connection: connection, model: model)
     }
     static func reason(_ model: AIModelOption, purpose: AIModelPurpose?, connection: AIConnection, providers: AIConnectionService) -> String? {
+        if model.isListed == false { return String(localized: "此连接的目录未列出该型号") }
+        if connection.authMethod != .chatGPT, model.isManual != true, model.capabilities?.text == nil && model.capabilities?.imageOutput == nil {
+            return String(localized: "能力资料尚未补齐")
+        }
         guard supports(model, purpose: purpose, connection: connection) else { return String(localized: "不支持该用途") }
         switch providers.connectionState(connection) {
         case .signedOut, .expired, .needsLogin, .loginFailed, .authorizing, .browser:

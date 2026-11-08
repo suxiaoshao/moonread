@@ -1,27 +1,63 @@
 import SwiftUI
 import WidgetKit
+import CoreText
+
+/// One display decision for the App, widgets and system thumbnails. Providers
+/// supply decoded user images; missing assets never become a second cover fact.
+struct SystemBookCover: View {
+    let title: String
+    var compact = false
+    var contentSHA256: String? = nil
+    var author: String? = nil
+    var userImage: UIImage? = nil
+    var contentMode: ContentMode = .fill
+    var rendersSynchronously = false
+    var body: some View {
+        GeometryReader { geometry in
+            Group {
+                if let userImage {
+                    Image(uiImage: userImage).resizable().widgetAccentedRenderingMode(.desaturated)
+                        .aspectRatio(contentMode: contentMode).accessibilityIdentifier("bookCoverImage")
+                } else {
+                    SystemDefaultBookCover(title: title, compact: compact, contentSHA256: contentSHA256, author: author, rendersSynchronously: rendersSynchronously)
+                }
+            }.frame(width: geometry.size.width, height: geometry.size.height)
+                .clipShape(.rect(cornerRadius: compact ? 3 : 6))
+        }.accessibilityHidden(true)
+    }
+}
 
 /// The same text-cover drawing is used by App shelves, Spotlight and widgets.
-struct SystemTextBookCover: View {
+private struct SystemDefaultBookCover: View {
     let title: String
-    let accent: Color
-    let surface: Color
     var compact = false
+    var contentSHA256: String? = nil
+    var author: String? = nil
+    var rendersSynchronously = false
+    @State private var chineseFace = SystemInstalledFont.coverFace
     var body: some View {
+        Group {
+            if let id = presetCoverID(contentSHA256: contentSHA256) {
+                SystemPresetBookCover(id: id, title: title, author: author, chineseFace: chineseFace, rendersSynchronously: rendersSynchronously)
+            } else { textCover }
+        }.accessibilityHidden(true)
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name(kCTFontManagerRegisteredFontsChangedNotification as String)).receive(on: DispatchQueue.main)) { _ in chineseFace = SystemInstalledFont.coverFace }
+    }
+    private var textCover: some View {
         ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: compact ? 3 : 6).fill(surface)
-            Rectangle().fill(accent.opacity(0.18)).frame(width: 1).padding(.leading, compact ? 4 : 7)
+            RoundedRectangle(cornerRadius: compact ? 3 : 6).fill(Color(uiColor: SystemCoverTypography.fallbackPaper))
+            Rectangle().fill(Color(uiColor: SystemCoverTypography.fallbackInk).opacity(0.18)).frame(width: 1).padding(.leading, compact ? 4 : 7)
             GeometryReader { geometry in
               Text(verbatim: title)
-                .font(.system(size: titleSize(width: geometry.size.width), weight: compact ? .medium : .semibold, design: .serif))
-                .foregroundStyle(accent).multilineTextAlignment(.center).lineLimit(compact ? 4 : 5)
+                .font(Font(SystemCoverTypography.chineseFont(face: chineseFace, size: titleSize(width: geometry.size.width))))
+                .foregroundStyle(Color(uiColor: SystemCoverTypography.fallbackInk)).multilineTextAlignment(.center).lineLimit(compact ? 4 : 5)
                 .minimumScaleFactor(0.8).frame(maxWidth: .infinity, maxHeight: .infinity)
             }.padding(compact ? 6 : 12)
         }.accessibilityHidden(true)
     }
     private func titleSize(width: CGFloat) -> CGFloat {
         let base: CGFloat = compact ? 10 : UIFont.preferredFont(forTextStyle: .headline).pointSize
-        let font = UIFont(descriptor: (UIFont.systemFont(ofSize: base, weight: compact ? .medium : .semibold).fontDescriptor.withDesign(.serif) ?? UIFont.systemFont(ofSize: base, weight: compact ? .medium : .semibold).fontDescriptor), size: base)
+        let font = SystemCoverTypography.chineseFont(face: chineseFace, size: base)
         // Fit whole Latin words before wrapping, rather than splitting a word
         // across cover lines. CJK continues to use its natural character wraps.
         let longest = title.split(whereSeparator: \.isWhitespace).filter { $0.unicodeScalars.allSatisfy(\.isASCII) }
@@ -60,14 +96,8 @@ struct SystemWidgetCover: View {
     var file: SystemReadingSnapshotFile? = nil
     var compact = true
     var body: some View {
-        Group {
-            if let cover = book.coverThumbnail,
-               let data = (file ?? (try? .shared()))?.coverData(cover), let image = UIImage(data: data) {
-                Image(uiImage: image).resizable().widgetAccentedRenderingMode(.desaturated).scaledToFill()
-            } else {
-                SystemTextBookCover(title: book.title, accent: colors.accent, surface: colors.accentSurface, compact: compact)
-            }
-        }.clipShape(.rect(cornerRadius: 3)).accessibilityHidden(true)
+        let image = book.coverThumbnail.flatMap { (file ?? (try? .shared()))?.coverData($0) }.flatMap { UIImage(data: $0) }
+        SystemBookCover(title: book.title, compact: compact, contentSHA256: SystemReadingLink.contentSHA256(bookID: book.id), author: book.author, userImage: image)
     }
 }
 

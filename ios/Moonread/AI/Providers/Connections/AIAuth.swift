@@ -1,0 +1,278 @@
+import Foundation
+import Security
+import CryptoKit
+
+enum AIError: LocalizedError {
+    case loginRequired, authorizationExpired, invalidResponse, http(Int), storage, noModel, cancelled, unsupported
+    var errorDescription: String? {
+        switch self {
+        case .loginRequired: String(localized: "请先连接所选 AI 服务。")
+        case .authorizationExpired: String(localized: "授权已过期，请重新登录。")
+        case .invalidResponse: String(localized: "AI 服务返回了无法识别的响应。")
+        case .http(let code): String(localized: "AI 服务请求失败（\(code)）。")
+        case .storage: String(localized: "无法安全保存 AI 凭证。")
+        case .noModel: String(localized: "请先选择可用模型。")
+        case .cancelled: String(localized: "已停止")
+        case .unsupported: String(localized: "此连接尚未接入。")
+        }
+    }
+}
+struct AICredential: Codable, Sendable {
+    var accessToken: String
+    var refreshToken: String
+    var expires: Date
+    var accountID: String
+    var chatGPT: AIChatGPTAccount? = nil
+    // Compare an in-flight request to the current credentials without carrying tokens in errors.
+    var sessionID: String {
+        let fields = [accessToken, refreshToken, accountID, chatGPT?.clientID ?? ""]
+        let text = fields.map { "\($0.utf8.count):" + $0 }.joined()
+        return Data(SHA256.hash(data: Data(text.utf8))).base64EncodedString()
+    }
+}
+protocol CredentialStore: Sendable {
+    func read(_ reference: String) throws -> Data?
+    func write(_ data: Data, reference: String) throws
+    func remove(_ reference: String) throws
+}
+
+extension CredentialStore {
+    func load<T: Decodable>(_ reference: String, as type: T.Type) throws -> T? {
+        try read(reference).map { try JSONDecoder().decode(type, from: $0) }
+    }
+    func load(_ reference: String) throws -> AICredential? { try load(reference, as: AICredential.self) }
+    func save<T: Encodable>(_ value: T, reference: String) throws {
+        try write(JSONEncoder().encode(value), reference: reference)
+    }
+}
+
+final class MemoryCredentialStore: CredentialStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var values: [String: Data] = [:]
+    private var failingWrites = false
+    var rejectWrites: Bool {
+        get { lock.withLock { failingWrites } }
+        set { lock.withLock { failingWrites = newValue } }
+    }
+    func read(_ reference: String) throws -> Data? { lock.withLock { values[reference] } }
+    func write(_ data: Data, reference: String) throws {
+        try lock.withLock { if failingWrites { throw AIError.storage }; values[reference] = data }
+    }
+    func remove(_ reference: String) throws { _ = lock.withLock { values.removeValue(forKey: reference) } }
+}
+
+/// Composition root: tests explicitly select memory in the scheme. The small
+/// Keychain adapter integration test instantiates its own isolated namespace.
+enum AIKeychain {
+    static let store: any CredentialStore = {
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["MOONREAD_TEST_CREDENTIALS"] == "memory" { return MemoryCredentialStore() }
+        #endif
+        return KeychainCredentialStore()
+    }()
+    static func load<T: Decodable>(_ reference: String, as type: T.Type) throws -> T? { try store.load(reference, as: type) }
+    static func load(_ reference: String) throws -> AICredential? { try store.load(reference) }
+    static func save<T: Encodable>(_ value: T, reference: String) throws { try store.save(value, reference: reference) }
+    static func remove(_ reference: String) throws { try store.remove(reference) }
+}
+
+/// Moonread's own namespace only. No access to another application's auth files.
+struct KeychainCredentialStore: CredentialStore {
+    let service: String
+    init(service: String = "dev.moonread.Moonread.ai") { self.service = service }
+    func read(_ reference: String) throws -> Data? {
+        var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: reference]
+        query[kSecReturnData as String] = true; query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        if status == errSecItemNotFound { return nil }
+        guard status == errSecSuccess, let data = result as? Data else { throw AIError.storage }
+        return data
+    }
+    func write(_ data: Data, reference: String) throws {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: reference]
+        let attributes: [String: Any] = [kSecValueData as String: data]
+        let status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+        if status == errSecItemNotFound {
+            var insertion = query; insertion[kSecValueData as String] = data
+            insertion[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            guard SecItemAdd(insertion as CFDictionary, nil) == errSecSuccess else { throw AIError.storage }
+        } else if status != errSecSuccess { throw AIError.storage }
+    }
+    func remove(_ reference: String) throws {
+        let status = SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: reference] as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw AIError.storage }
+    }
+}
+actor AIAuthentication {
+    private var refreshes: [String: Task<AICredential, Error>] = [:]
+    var signingOut = Set<String>()
+    let session: URLSession
+    nonisolated let network: AINetworkAccess
+    nonisolated let credentials: any CredentialStore
+    nonisolated let now: @Sendable () -> Date
+    let chatGPTHostReference: String
+    let makeCallbackSource: @Sendable () -> any AIChatGPTCallbackSource
+    var chatGPTListeners: [String: any AIChatGPTCallbackSource] = [:]
+    var chatGPTAttempts: [String: (id: String, attempt: AIChatGPTProtocol.Attempt)] = [:]
+    var chatGPTIssuedClients: [String: String] = [:]
+    private let credentialResolver: (@Sendable (AIConnection) async throws -> AICredential)?
+    private let credentialSaver: (@Sendable (AICredential, String) throws -> Void)?
+    init(now: @escaping @Sendable () -> Date = { Date() }, makeCallbackSource: @escaping @Sendable () -> any AIChatGPTCallbackSource = { AIChatGPTLoopback(validate: { _ in false }) }, session: URLSession = URLSession(configuration: .ephemeral), credentials: any CredentialStore = AIKeychain.store, chatGPTHostReference: String = "chatgpt/host", credentialSaver: (@Sendable (AICredential, String) throws -> Void)? = nil, credentialResolver: (@Sendable (AIConnection) async throws -> AICredential)? = nil, availability: AIAvailability? = nil) {
+        self.makeCallbackSource = makeCallbackSource
+        self.now = now
+        self.credentials = credentials
+        network = AINetworkAccess(availability: availability)
+        self.chatGPTHostReference = chatGPTHostReference
+        self.session = session; self.credentialResolver = credentialResolver; self.credentialSaver = credentialSaver
+    }
+    func requestData(_ request: URLRequest) async throws -> (Data, URLResponse) {
+        try await network.perform { [session] in try await session.data(for: request) }
+    }
+    func saveAPIKey(_ key: String, connection: AIConnection) throws {
+        guard !signingOut.contains(connection.credentialReference) else { throw AIError.loginRequired }
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("--ui-testing"), args.contains("--ui-test-session"), args.contains("--ui-test-ai-key-write-failure") { throw AIError.storage }
+        #endif
+        let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty else { throw AIError.loginRequired }
+        let value = AICredential(accessToken: key, refreshToken: "", expires: .distantFuture, accountID: "")
+        if let credentialSaver { try credentialSaver(value, connection.credentialReference) }
+        else { try credentials.save(value, reference: connection.credentialReference) }
+    }
+    func saveCredential(_ credential: AICredential, reference: String) throws {
+        if let credentialSaver { try credentialSaver(credential, reference) }
+        else { try credentials.save(credential, reference: reference) }
+    }
+    func credential(_ connection: AIConnection, availability: AIAvailability? = nil, generation: UUID? = nil) async throws -> AICredential {
+        try Task.checkCancellation()
+        guard !signingOut.contains(connection.credentialReference) else { throw AIError.loginRequired }
+        if let credentialResolver { return try await credentialResolver(connection) }
+        let reference = connection.credentialReference
+        guard let current = try credentials.load(reference) else { throw AIError.loginRequired }
+        if connection.authMethod == .apiKey || connection.authMethod == .openrouter { return current }
+        guard current.chatGPT?.scopes.contains("chatgpt.tokens.use.direct") == true else { throw AIChatGPTError.planPermission }
+        if current.expires > now().addingTimeInterval(60) { return current }
+        if let task = refreshes[reference] {
+            let value = try await task.value
+            guard !signingOut.contains(reference), try credentials.load(reference)?.refreshToken == value.refreshToken else { throw AIError.loginRequired }
+            guard value.chatGPT?.scopes.contains("chatgpt.tokens.use.direct") == true else { throw AIChatGPTError.planPermission }
+            return value
+        }
+        let task = Task {
+            do {
+                let refreshed: AICredential
+                if let availability {
+                    // This shared refresh has its own task, independent of any one caller.
+                    refreshed = try await availability.perform(generation: generation) { try await self.refreshChatGPT(current) }
+                } else { refreshed = try await self.refreshChatGPT(current) }
+                try Task.checkCancellation()
+                guard try credentials.load(reference)?.refreshToken == current.refreshToken else { throw CancellationError() }
+                try credentials.save(refreshed, reference: reference)
+                return refreshed
+            } catch AIChatGPTError.refreshExpired(let code, _) {
+                guard try credentials.load(reference)?.sessionID == current.sessionID else { throw CancellationError() }
+                throw AIChatGPTError.refreshExpired(code, sessionID: current.sessionID)
+            }
+        }
+        refreshes[reference] = task
+        defer { refreshes[reference] = nil }
+        let value = try await task.value
+        guard !signingOut.contains(reference), try credentials.load(reference)?.refreshToken == value.refreshToken else { throw AIError.loginRequired }
+        guard value.chatGPT?.scopes.contains("chatgpt.tokens.use.direct") == true else { throw AIChatGPTError.planPermission }
+        return value
+    }
+    /// The connection service owns the single confirmed-expiry transition. This actor performs its guarded storage update.
+    func invalidateSession(_ connection: AIConnection, sessionID: String?) throws -> Bool {
+        let reference = connection.credentialReference
+        guard let current = try credentials.load(reference) else { return true }
+        guard let sessionID, current.sessionID == sessionID else { return false }
+        if let account = current.chatGPT { try credentials.save(account.registration, reference: reference + "/registration") }
+        try credentials.remove(reference)
+        return true
+    }
+    func logout(_ connection: AIConnection, forgetRegistration: Bool = false) async throws {
+        let reference = connection.credentialReference
+        guard signingOut.insert(reference).inserted else { throw AIError.cancelled }
+        defer { signingOut.remove(reference) }
+        cancelChatGPT(reference)
+        // Settle rotating credentials before revoking; otherwise an in-flight refresh
+        // could leave a new refresh token alive after its predecessor was revoked.
+        if let refresh = refreshes[connection.credentialReference] { _ = try? await refresh.value }
+        if connection.authMethod == .chatGPT, let current = try credentials.load(connection.credentialReference), let account = current.chatGPT {
+            try await revokeChatGPT(refreshToken: current.refreshToken, clientID: account.clientID)
+            try credentials.save(account.registration, reference: reference + "/registration")
+        }
+        if forgetRegistration {
+            try credentials.remove(reference + "/registration")
+            chatGPTIssuedClients[reference] = nil
+        }
+        refreshes.removeValue(forKey: connection.credentialReference)?.cancel()
+        try credentials.remove(connection.credentialReference)
+    }
+    func models(_ connection: AIConnection, credential supplied: AICredential? = nil) async throws -> [AIModelOption] {
+        if connection.authMethod != .chatGPT {
+            let policy = AIModelDirectoryPolicy.policy(connection)
+            if policy.kind == .service { return try await directory(connection) }
+            let token: AICredential
+            if let supplied { token = supplied } else { token = try await credential(connection) }
+            return try await directory(connection, credential: token)
+        }
+        guard connection.baseURL == AIChatGPTProtocol.resource, connection.wireProtocol == .responses else { throw AIError.unsupported }
+        let token: AICredential
+        if let supplied { token = supplied } else { token = try await credential(connection) }
+        guard let url = URL(string: connection.baseURL + "/models") else { throw AIError.invalidResponse }
+        var request = URLRequest(url: url)
+        request.setValue("Bearer " + token.accessToken, forHTTPHeaderField: "Authorization")
+        let (data, response) = try await requestData(request)
+        guard let response = response as? HTTPURLResponse else { throw AIError.invalidResponse }
+        guard response.statusCode == 200 else { throw AIError.http(response.statusCode) }
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let list = (object["models"] ?? object["data"]) as? [[String: Any]] else { throw AIError.invalidResponse }
+        return try Self.chatGPTModels(list)
+    }
+
+    private func requestObject(_ request: URLRequest) async throws -> [String: Any] {
+        let (data, response) = try await requestData(request)
+        guard let response = response as? HTTPURLResponse else { throw AIError.invalidResponse }
+        if response.statusCode == 401 || response.statusCode == 403 { throw AIError.loginRequired }
+        guard (200..<300).contains(response.statusCode) else { throw AIError.http(response.statusCode) }
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw AIError.invalidResponse }
+        return object
+    }
+    struct BrowserAuthorization: Equatable, Sendable {
+        let id: String
+        let url: URL
+        let expires: Date
+    }
+    private var browserVerifiers: [String: (verifier: String, expires: Date)] = [:]
+    func beginOpenRouter() async throws -> BrowserAuthorization {
+        // Preparing a browser URL can itself initiate service traffic without URLSession.
+        try await network.perform {}
+        var random = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, random.count, &random) == errSecSuccess else { throw AIError.storage }
+        func base64(_ bytes: Data) -> String { bytes.base64EncodedString().replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "") }
+        let verifier = base64(Data(random))
+        let challenge = base64(Data(SHA256.hash(data: Data(verifier.utf8))))
+        var url = URLComponents(string: "https://openrouter.ai/auth")!
+        url.queryItems = [URLQueryItem(name: "code_challenge", value: challenge), URLQueryItem(name: "code_challenge_method", value: "S256"), URLQueryItem(name: "key_label", value: "Moonread")]
+        let request = BrowserAuthorization(id: UUID().uuidString, url: url.url!, expires: now().addingTimeInterval(600))
+        browserVerifiers = [request.id: (verifier, request.expires)]
+        return request
+    }
+    func cancelBrowserAuthorization(_ id: String) { browserVerifiers.removeValue(forKey: id) }
+    func finishOpenRouter(_ id: String, code: String, reference: String) async throws {
+        guard let pending = browserVerifiers.removeValue(forKey: id), pending.expires > now() else { throw AIError.authorizationExpired }
+        let code = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty, code.count < 4096 else { throw AIError.invalidResponse }
+        var request = URLRequest(url: URL(string: "https://openrouter.ai/api/v1/auth/keys")!)
+        request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["code": code, "code_verifier": pending.verifier, "code_challenge_method": "S256"])
+        let body = try await requestObject(request)
+        guard let key = body["key"] as? String, !key.isEmpty else { throw AIError.invalidResponse }
+        try Task.checkCancellation()
+        let value = AICredential(accessToken: key, refreshToken: "", expires: .distantFuture, accountID: "")
+        if let credentialSaver { try credentialSaver(value, reference) } else { try credentials.save(value, reference: reference) }
+    }
+}

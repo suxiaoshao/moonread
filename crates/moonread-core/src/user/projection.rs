@@ -300,6 +300,11 @@ impl ReaderQuery {
     ) -> Result<BookDetails> {
         self.core.book_details(book_id, content_sha)
     }
+    pub fn metadata_has_reading_position(&self, content_sha256: String) -> Result<bool> {
+        crate::parse_sha256(content_sha256.clone())?;
+        let db = self.core.read_lock()?;
+        crate::reading::book_details::has_reading_position(&db, &content_sha256)
+    }
     pub fn book_filter_options(&self, shelf_id: Option<String>) -> Result<BookFilterOptions> {
         self.core.book_filter_options(shelf_id)
     }

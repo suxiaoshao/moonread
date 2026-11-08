@@ -150,7 +150,7 @@ StoreKit `Storefront.current` 提供启动查询，`Storefront.updates` 持续�
 
 ## 快捷任务与业务结果
 
-2026-10-05 已实现。存储与所有权由[内部分层](../ai/architecture.md)定义，工具参数见[工具契约](../ai/tools.md)；本节记录实际产品行为。界面位于 `ios/Moonread/AI/UI`：`AITaskSheet`（两阶段页）、`AIQuickTaskEntry`（入口与状态行）、`AIQuickTaskResult`、`AIMetadataReviewView`、`AICoverTaskView`、`AIOrganizationView`、`AIProposalCards`。
+2026-10-05 已实现。存储与所有权由[内部分层](../ai/architecture.md)定义，工具参数见[工具契约](../ai/tools.md)；本节记录实际产品行为。界面位于 `ios/Moonread/AI/UI`：`AITaskSheet`（两阶段页）、`AIQuickTaskEntry`（任务入口）、`AIQuickTaskResult`、`AIMetadataReviewView`、`AICoverTaskView`、`AIOrganizationView`、`AIResultCard`。
 
 ### 通用任务页
 
@@ -269,7 +269,7 @@ StoreKit `Storefront.current` 提供启动查询，`Storefront.updates` 持续�
 
 ## 阅读月亮入口
 
-2026-10-16 起改为「月光」：助手就是桌面图标里那弯月亮，不画五官、不拿道具，状态用月光的亮度和月相表达（取代带表情与道具的「月牙」角色，已实现）。源码：`Shared/Components/MoonCharacter.swift`（形象与状态绘制）、`AI/UI/AIReadingMoon.swift`（阅读页提示与动画）。静态状态稿见 `build/IconExplore/assistant-states.png`（本机预览，不提交）。
+2026-10-16 起改为「月光」：助手就是桌面图标里那弯月亮，不画五官、不拿道具，状态用月光的亮度和月相表达（取代带表情与道具的「月牙」角色，已实现）。源码：`Shared/Components/MoonCharacter.swift`（形象与状态绘制）、`AI/UI/Reading/AIReadingMoon.swift`（阅读页提示与动画）。静态状态稿见 `build/IconExplore/assistant-states.png`（本机预览，不提交）。
 
 ### 形象
 
@@ -365,19 +365,15 @@ StoreKit `Storefront.current` 提供启动查询，`Storefront.updates` 持续�
 
 ### 模型详情与能力数据
 
-详情采用稳定顺序：身份与连接、能力概览、思考调节、容量、使用按钮。不设“模型资料”展开区；模型 ID 与名称不同时放在名称下方并支持复制，来源和更新时间内部保存。必要限制体现在相关项目，有准确的官方模型链接才显示底部文字入口。能力分组使用三列两行、图标在名称上方：第一行为文字对话、图片输入、深度思考，第二行为图片生成、工具调用、结构化输出。按 models.dev 明确支持的字段启用，其余在固定位置置灰，不显示“未知”或阶段性未接入说明。具体字段映射、资料匹配、缓存与刷新见[模型目录方案](../ai/model-catalog.md)。
+详情采用稳定顺序：身份与连接、能力概览、思考调节、容量、使用按钮。不设“模型资料”展开区；模型 ID 与名称不同时放在名称下方并支持复制，来源和更新时间内部保存。必要限制体现在相关项目，有准确的官方模型链接才显示底部文字入口。能力分组使用三列两行、图标在名称上方：第一行为文字对话、图片输入、深度思考，第二行为图片生成、工具调用、结构化输出。能力状态读取统一模型资料，不支持的项目在固定位置置灰，不显示“未知”或阶段性未接入说明。具体字段映射、资料匹配、缓存与刷新见[模型目录方案](../ai/model-catalog.md)。
 
-页面读取统一模型资料，不在 View 内按某一型号写死能力。供应商、接口及精确模型身份共同决定匹配，不能把 API 规格自动套到订阅连接。同一份解析后的能力与限制供选择、详情及请求使用；供应商运行时明确返回的账户目录/限制优先于匹配的通用资料，缺失字段可由经过核对的目录补充，不用猜测补值。能力支持与账户暂时失效等运行状态分别处理。
-
-Pi 使用内置目录、本地 models-store.json 与运行时远端覆盖；部分入口触发刷新，远端目录通常有 4 小时缓存窗口。月读采用内置快照、应用级缓存及后台按需刷新，公开能力目录与账户目录分开，具体策略见[模型目录方案](../ai/model-catalog.md)。
+页面读取统一模型资料，不在 View 内按某一型号写死能力；选择、详情及请求复用同一份解析结果。能力支持与账户暂时失效等运行状态分别呈现。
 
 详情配置为本次查看的草稿，返回不保存，使用模型后应用到进入时的目标。供应商图标来源见 `ios/Moonread/AI/PROVIDER-ICONS.md`。未完成项见 [AI 计划](../plans/ai.md)，验证结果见 [验证记录](../engineering/verification.md)。
 
-模型目录字段核实（2026-10-03）：models.dev 最终模型 schema 要求 `attachment`、`reasoning`、`tool_call` 为布尔值，`modalities.input/output` 为支持类型列表；基础元数据/覆盖片段中的可选字段不能当成最终记录缺失。当天公开 api.json 的 8,385 条供应商模型记录中，这四项均存在。Pi 以 `reasoning === true`、输入列表包含 `image` 等条件确定能力，未提供肯定支持时不启用，没有给这些能力另建用户可见的未知状态。models.dev 没有独立统一的联网搜索/图片编辑字段，不能用 tool_call 或同时支持图片输入输出替代这两项判断；需核对相应服务适配器。ChatGPT 目录只以账户明确返回的字段为准，尚未取得真实目录时不推断字段必定存在；缺少上下文容量时只编辑该账户已返回型号的用户预算。
-
 ### 编辑与关闭按钮
 
-编辑和选择页统一使用文字：左侧“取消”，右侧按操作使用“保存”“完成”或“应用目录”。取消丢弃未应用修改；纯浏览、对话和搜索的收起入口使用 ×，不伪装成取消保存。维持既有无障碍标识与行为。
+编辑和选择页遵循[系统组件优先](principles.md#系统组件优先)，统一使用 `SystemToolbarButton` 的 cancel／confirm／close 语义：iOS 26+ 使用系统角色，旧系统回退原生 ×／✓，保留操作名称和无障碍标识。取消丢弃未应用修改；纯浏览关闭不伪装成取消保存。
 
 ### 资料与封面的应用反馈
 

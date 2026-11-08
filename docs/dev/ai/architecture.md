@@ -51,7 +51,7 @@ AI 会话与附件只在本机 SwiftData，不进 CloudKit；配置本机保存�
 
 ### 模型启用与搜索
 
-[AIConnection](../../../ios/Moonread/AI/Providers/AIConnection.swift) 保存 `disabledModelIDs: Set<String>`，随本机连接配置保存。新连接为空，刷新不删除停用 ID，新出现模型默认启用，消失后重现保留偏好；手工添加与详情“使用此模型”显式启用。不增加自动启用设置；新增持久化字段按发布兼容规则给默认值。
+[AIConnection](../../../ios/Moonread/AI/Providers/Connections/AIConnection.swift) 保存 `disabledModelIDs: Set<String>`，随本机连接配置保存。新连接为空，刷新不删除停用 ID，新出现模型默认启用，消失后重现保留偏好；手工添加与详情“使用此模型”显式启用。不增加自动启用设置；新增持久化字段按发布兼容规则给默认值。
 
 停用只限制新选择。默认、对话、搜索、生图的当前值继续显示“未启用”且可用；运行和历史不变。执行器的 `model/purposeSelection` 不能加停用过滤而拒绝已有选择。修改当前模型的思考档位不视为重新选择。真正缺失或能力不匹配仍报错，不换账户。目录刷新仅在默认 modelID 为空时选第一个已启用文本模型，没有则留空。
 

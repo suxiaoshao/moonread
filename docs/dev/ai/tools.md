@@ -203,7 +203,7 @@ find_cover 在执行期间暂存本次候选／图片，不提前发布结果；
 
 已实现稳定引用解析、组合查询与结果分页、按 SHA 取正文/批注、无正式阅读副作用的共享准备租约、批注冲突摘要和结构化来源输出。页面校验工具结果中的来源引用并打开只读原文预览，不改变正式阅读位置。准备完成前不能伪造完整书籍身份。Swift 工具经 AppDataService 调用 Rust 最终投影，不直接重新读取数据库。
 
-来源：当前 `ios/Moonread/Data/{AppDataService,UserDataService}.swift`、`ios/Moonread/Library/LibraryService.swift`、`ios/Moonread/Books/BookMetadata.swift`、`ios/Moonread/Statistics/ReadingStatistics.swift`；`crates/moonread-core/src/{library_tools,bookshelf,book_details,statistics}.rs`。UTF-8、搜索截断、日期归档等均按本轮源码核对；工具命名和业务封装是月读实施设计，不冒充底层已存在 API。
+来源：当前 `ios/Moonread/Data/AppDataService.swift`、`ios/Moonread/Data/UserData/UserDataService.swift`、`ios/Moonread/Library/Sources/LibraryService.swift`、`ios/Moonread/Books/BookMetadata.swift`、`ios/Moonread/Statistics/ReadingStatistics.swift`；`crates/moonread-core/src/library/tools.rs`、`library/bookshelf/mod.rs`、`reading/book_details.rs`、`user/statistics/mod.rs`。UTF-8、搜索截断、日期归档等均按本轮源码核对；工具命名和业务封装是月读实施设计，不冒充底层已存在 API。
 
 ### 参数与结果的可发现性
 
