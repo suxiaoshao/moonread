@@ -28,6 +28,8 @@ struct ReadingView: UIViewControllerRepresentable {
     var selectionStart: UInt64?
     var selection: (UInt64, UInt64, ReaderSelectionAction) -> Void = { _, _, _ in }
     var allowsBackGesture = false
+    var prepareInteractivePop: () -> Void = {}
+    var endUnstartedInteractivePop: () -> Void = {}
     var allowsSelection = true
     var allowsChapterEditing = true
     var coverTitle: String? = nil
@@ -67,6 +69,8 @@ struct ReadingView: UIViewControllerRepresentable {
         controller.requestWindow = requestWindow
         controller.openingID = openingID
         controller.allowsBackGesture = allowsBackGesture
+        controller.backNavigation.prepareInteractivePop = prepareInteractivePop
+        controller.backNavigation.endUnstartedInteractivePop = endUnstartedInteractivePop
         controller.allowsSelection = allowsSelection
         controller.allowsChapterEditing = allowsChapterEditing
         controller.deviceControls.brightnessChanged = brightnessChanged
