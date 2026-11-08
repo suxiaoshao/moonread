@@ -1,6 +1,6 @@
 # 开发文档
 
-月读以舒服、连续的本地小说阅读为目标。产品介绍见[项目 README](../../README.md)，开发起步见[CONTRIBUTING](../../CONTRIBUTING.md)，取舍见[产品方向](product.md)，工作规则见[AGENTS.md](../../AGENTS.md)。当前开发分支为 `release/1.4`；1.3 已于 2026-10-30 提审，提审不等于上线。已实现行为以专题与源码为准，已确认但未实现的范围见[后续安排](roadmap.md)。发布不等于所有设备、云端和长时场景已验收，具体证据见[验证记录](engineering/verification.md)。
+月读以舒服、连续的本地小说阅读为目标。产品介绍见[项目 README](../../README.md)，开发起步见[CONTRIBUTING](../../CONTRIBUTING.md)，取舍见[产品方向](product.md)，工作规则见[AGENTS.md](../../AGENTS.md)。`main` 对应已发布的 1.5（2026-11-08 上架）；当前开发分支为 `release/1.6`。已实现行为以专题与源码为准，已确认但未实现的范围见[后续安排](roadmap.md)。发布不等于所有设备、云端和长时场景已验收，具体证据见[验证记录](engineering/verification.md)。
 
 ## 开发与发布
 
@@ -18,6 +18,7 @@
 ## 阅读与界面
 
 - [正文准备与编码](reader/import.md)、[排版与阅读交互](reader/reading.md)、[目录/搜索/批注与导航](reader/tools.md)。
+- [界面设计原则](design/principles.md)。
 - [首页与书架](design/library.md)、[小说详情](design/book-details.md)、[阅读统计](design/statistics.md)、[阅读弹层](design/reader-panels.md)。
 - [当前设置页](design/settings.md)、[设置信息架构与新增入口规则](design/settings-information-architecture.md)、[系统集成设计](design/ios-integration.md)。
 - [主题模型与纹理](design/themes.md)、[界面样式归属](design/ui-inventory.md)、[动效与月亮](design/motion-and-moon.md)。
@@ -35,7 +36,6 @@
 ## 计划与研究
 
 - [后续安排](roadmap.md)：已定稿待实施、候选和暂缓范围的索引。
-- [1.3 交付范围与原实施顺序](plans/1.3.md)。
 - 活跃专题计划：[AI 未完成工作](plans/ai.md)、[统计回看与历史位置](plans/statistics.md)。
 - [CloudKit 同步测试研究](research/cloudkit-sync-testing.md)：模拟器、真机、schema 与私有库证据边界。
 - 历史调研：[CI 缓存与测量边界](research/ci-cache-history.md)、[元数据交换格式取舍](research/metadata-exchange-history.md)；旧建议不构成当前实施承诺。

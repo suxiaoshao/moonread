@@ -31,22 +31,22 @@
 {% set zh = section.lang == "zh" %}
 <section class="section story" id="features" data-gallery>
 <div class="story-copy"><h2 class="section-title">{% if zh %}一页，调成喜欢的样子。{% else %}Make the page feel right.{% endif %}</h2>
-<p>{% if zh %}纸色的细纹、薄荷的枝叶、雾紫的云雾。调整字体、字号和间距，也可以导入自己的字体。翻页慢读，或在滚动模式下开启自动阅读。{% else %}Paper grain, mint leaves, and soft mist. Adjust fonts, size, and spacing—or import your own fonts. Turn pages at your pace, or let the text scroll.{% endif %}</p>
-<p class="story-note">{% if zh %}素白与纯黑夜间保持纯净。宽屏可双页阅读；滚动模式始终单栏。{% else %}White and OLED Black stay plain. Read two pages on wide screens; scrolling stays in one column.{% endif %}</p>
-<div class="scene-choice" hidden role="group" aria-label="{% if zh %}阅读画面{% else %}Reading screenshots{% endif %}"><button type="button" data-scene="R01" aria-pressed="true">{% if zh %}正文{% else %}Reading{% endif %}</button><button type="button" data-scene="R02" aria-pressed="false">{% if zh %}阅读设置{% else %}Typography{% endif %}</button></div></div>
-{{ <screenshot scene="R01" lang={section.lang} label={section.extra.reading_alt} /> }}
+<p>{% if zh %}调整字体、字号、行距与段间距，也可以导入自己的字体。翻页慢读，或在滚动模式下开启自动阅读。{% else %}Adjust fonts, text size, line spacing, and paragraph spacing—or import your own fonts. Turn pages at your pace, or let the text scroll.{% endif %}</p>
+<p class="story-note">{% if zh %}宽屏可双页阅读；滚动模式始终单栏。{% else %}Read two pages on wide screens; scrolling stays in one column.{% endif %}</p>
+<div class="scene-choice" hidden role="group" aria-label="{% if zh %}阅读画面{% else %}Reading screenshots{% endif %}"><button type="button" data-scene="R02" aria-pressed="true">{% if zh %}阅读设置{% else %}Typography{% endif %}</button><button type="button" data-scene="R01" aria-pressed="false">{% if zh %}正文{% else %}Reading{% endif %}</button></div></div>
+{{ <screenshot scene="R02" lang={section.lang} label={section.extra.typography_alt} /> }}
 </section>
 <section class="section story reverse" data-gallery>
 <div class="story-copy"><h2 class="section-title">{% if zh %}换个地方，接着这一段。{% else %}Pick up the story wherever you are.{% endif %}</h2>
 <p>{% if zh %}从小组件、快捷指令或 Siri 回到书中。开启 iCloud 同步后，“我的书架”里的文件与阅读记录分别同步；收到更靠后的进度时，由你决定是否跳过去。{% else %}Return with a widget, Shortcuts, or Siri. With iCloud sync enabled, files in My Library and reading records sync separately. When a later position arrives, you choose whether to jump there.{% endif %}</p>
-<p class="story-note">{% if zh %}系统搜索只索引书名等元数据，不索引小说正文。{% else %}System search indexes book metadata, never the book’s contents.{% endif %}</p>
 <div class="scene-choice" hidden role="group" aria-label="{% if zh %}续读画面{% else %}Continue reading screenshots{% endif %}"><button type="button" data-scene="R04" aria-pressed="true">{% if zh %}桌面续读{% else %}Widgets{% endif %}</button><button type="button" data-scene="R03" aria-pressed="false">{% if zh %}跨设备进度{% else %}Synced progress{% endif %}</button></div></div>
 {{ <screenshot scene="R04" lang={section.lang} label={section.extra.widget_alt} /> }}
 </section>
 <section class="section story" data-gallery>
 <div class="story-copy"><h2 class="section-title">{% if zh %}自己的书，自己整理。{% else %}Your books, your way.{% endif %}</h2>
-<p>{% if zh %}文件夹就是书架，用标签与阅读状态找书。留下书签与批注，导出单本笔记，也能备份全部阅读数据。{% else %}Organize your folders, then find books by tags and reading status. Keep bookmarks and notes, export a book’s notes, or back up all reading data.{% endif %}</p>
-<p class="story-note">{% if zh %}阅读统计记录每段时光。阅读数据备份不包含 TXT 原文；请另行保存小说文件。{% else %}Reading statistics keep track of your time. A reading-data backup does not include TXT files; keep your books separately.{% endif %}</p>
+<p>{% if zh %}文件夹就是书架，用标签与阅读状态找书。自设封面或六款预设装帧，让熟悉的书更好认。留下书签与批注，导出单本笔记；也能把作者、标签、简介与封面整理成清单，预览确认后导入。{% else %}Folders are your bookshelves. Find books by tag and reading status, with your own covers or six preset designs. Keep bookmarks and notes, export a book’s notes, or review a metadata file before importing authors, tags, descriptions, and covers.{% endif %}</p>
+<p class="story-note">{% if zh %}按 7 天、月、年或全部回看阅读统计。{% else %}Look back over seven days, a month, a year, or all time.{% endif %}</p>
+<p class="story-note"><a href="{{ get_url(path='@/metadata-format.md', lang=section.lang) }}">{% if zh %}在 App 外整理作者、标签与封面：了解小说信息导入导出 →{% else %}Edit authors, tags and covers outside the app: how metadata import and export work →{% endif %}</a></p>
 <div class="scene-choice" hidden role="group" aria-label="{% if zh %}书籍与记录画面{% else %}Books and records screenshots{% endif %}"><button type="button" data-scene="R05" aria-pressed="true">{% if zh %}书架{% else %}Library{% endif %}</button><button type="button" data-scene="R06" aria-pressed="false">{% if zh %}笔记{% else %}Notes{% endif %}</button><button type="button" data-scene="R07" aria-pressed="false">{% if zh %}统计{% else %}Statistics{% endif %}</button><button type="button" data-scene="R10" aria-pressed="false">{% if zh %}备份{% else %}Backup{% endif %}</button></div></div>
 {{ <screenshot scene="R05" lang={section.lang} label={section.extra.library_alt} /> }}
 </section>
@@ -78,16 +78,16 @@
 <h2 class="section-title">{% if zh %}你可能还想知道{% else %}A few things to know{% endif %}</h2>
 <details>
 <summary>{% if zh %}支持哪些文件？{% else %}Which files can I read?{% endif %}</summary>
-<p>{% if zh %}目前支持 TXT，会自动识别常见编码和章节。月读不提供书城、书源或小说下载。{% else %}TXT files, with automatic detection of common encodings and chapters. Moonread has no bookstore, content sources, or book downloads.{% endif %}</p>
+<p>{% if zh %}目前支持 TXT，会自动识别常见编码和章节。{% else %}TXT files, with automatic detection of common encodings and chapters.{% endif %}</p>
 </details>
 <details>
 <summary>{% if zh %}换手机，进度还在吗？{% else %}Will my place move to a new phone?{% endif %}</summary>
 <p>{% if zh %}“我的书架”的文件通过 iCloud Drive 同步；开启阅读数据同步后，进度、书签和批注通过 CloudKit 私有库同步。外部书架在新设备上需重新授权；字体、排版与当前配色选择保存在本机。{% else %}Files in My Library sync through iCloud Drive. Reading-data sync uses your private CloudKit database for positions, bookmarks, and notes. Authorize external folders again on a new device. Fonts, typography, and the selected palette stay on this device.{% endif %}</p>
 </details>
-<details><summary>{% if zh %}备份里有小说吗？{% else %}Does a backup include my books?{% endif %}</summary><p>{% if zh %}没有。全部阅读数据备份与单本笔记导出是两件事；TXT 小说文件需要另行保存。{% else %}No. A backup of all reading data is separate from exporting a book’s notes. Keep your TXT files separately.{% endif %}</p></details>
+<details><summary>{% if zh %}小说信息和阅读数据备份有什么区别？{% else %}How do metadata files differ from reading-data backups?{% endif %}</summary><p>{% if zh %}小说信息清单用于整理作者、标签、简介和封面；阅读数据备份保存进度、书签、批注与统计。导入小说信息前可以逐项预览确认。{% else %}Metadata files help you edit authors, tags, descriptions, and covers. A reading-data backup keeps positions, bookmarks, notes, and statistics. Review metadata changes before importing.{% endif %}</p></details>
 <details>
 <summary>{% if zh %}AI 是必需的吗？{% else %}Do I have to use AI?{% endif %}</summary>
-<p>{% if zh %}不是。支持该功能的店面中，AI 默认关闭，使用你选择的服务与账户；不用 AI 也能完整阅读。部分地区不提供 AI 功能，包括中国大陆店面。{% else %}No. Where available, AI is off by default and uses a service and account you choose. Reading works fully without it. AI features are unavailable in some regions, including the mainland China storefront.{% endif %}</p>
+<p>{% if zh %}不是。支持该功能的店面中，使用你自己的服务或账户。支持的连接可刷新服务返回的模型目录，按用途选择模型。中国大陆 App Store 店面不提供 AI 功能。{% else %}No. Where available, AI uses your own service or account. Supported connections can refresh the service’s model catalog so you can choose models for each task. AI features are unavailable in the mainland China App Store storefront.{% endif %}</p>
 </details>
 <details>
 <summary>{% if zh %}月读开源吗？{% else %}Is Moonread open source?{% endif %}</summary>

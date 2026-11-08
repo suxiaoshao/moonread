@@ -65,7 +65,7 @@ impl SourceIdentityProbe {
         let mut file = File::open(file_path)?;
         let policy = decoding_policy(&decoding)?;
         let encoding = if policy == "auto" {
-            crate::reading::text::detect_encoding(&mut file)?
+            crate::reading::input::text::detect_encoding(&mut file)?
         } else {
             Encoding::for_label(policy.as_bytes()).ok_or(ReaderError::InvalidSettings)?
         };
@@ -80,7 +80,7 @@ impl SourceIdentityProbe {
         let mut has_text = false;
         let mut utf8_bytes = 0;
         let mut char_count = 0;
-        crate::reading::text::decode_chunks(&mut input, encoding, |part| {
+        crate::reading::input::text::decode_chunks(&mut input, encoding, |part| {
             content.update(part.as_bytes());
             utf8_bytes += part.len() as u64;
             char_count += part.chars().filter(|c| !c.is_whitespace()).count() as u64;

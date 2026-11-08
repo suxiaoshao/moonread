@@ -40,7 +40,6 @@
         </div></div>
       {% endfor %}
       </div>
-      <p class="control-help">{% if zh %}只在这张纸上试读，不会改动 App 设置。{% else %}Try it here. Your settings in the app stay unchanged.{% endif %}</p>
     </div>
     <div>
       <div class="reader-paper" id="readerPaper" style="background:{{ initial.colors.paper }};color:{{ initial.colors.ink }}">
@@ -52,7 +51,7 @@
           </article>
         </div>
       </div>
-      <div class="reader-footer"><span>{% if zh %}原创示例正文 · 可滚动阅读{% else %}Original sample · Scroll to read{% endif %}</span><span>{% if zh %}颜色来自 App；字体与换行随设备略有不同。{% else %}App colors. Type and line breaks vary by device.{% endif %}</span></div>
+      <div class="reader-footer"><span>{% if zh %}可滚动阅读{% else %}Scroll to read{% endif %}</span></div>
     </div>
   </div>
 </section>

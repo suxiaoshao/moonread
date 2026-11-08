@@ -175,7 +175,7 @@ UserValue 按 `(updated, token)` 做整值 LWW；位置候选写入与压缩也�
 
 ## 1.3 同步进度与编码
 
-以下为 #98/#99 的实现契约；兼容基线为已发布 1.2 (10) `6ceef33`。CloudKit schema 不变，不新增通用同步引擎。排期见[1.3 计划](../plans/1.3.md)。
+以下为 #98/#99 的实现契约；兼容基线为已发布 1.2 (10) `6ceef33`。CloudKit schema 不变，不新增通用同步引擎。
 
 ### 同步进度提示：同步位置更靠后时的非打断提示
 
@@ -191,7 +191,7 @@ PositionValue 仍是 `content_key/offset/source_hint`，StoredValue 仍是 `upda
 
 #### 决策与时序
 
-`Data/ReadingContinuation.swift` 统一准备 ResumeContext；`ReaderSession` 只拥有可见提示、关闭和导航状态。
+`Data/Restoration/ReadingContinuation.swift` 统一准备 ResumeContext；`ReaderSession` 只拥有可见提示、关闭和导航状态。
 
 1. 开书在首次位置写入之前同时取该 SHA 的现有 LWW 胜者、本机基线、兼容状态。未知 payload/隔离时沿用原保护，不猜位置。
 2. 无本机基线：沿用当前正常恢复胜者行为，不把读者拉回 0；已读过本机但无 token 的旧数据也不捏造来源。1.3 以后发生本机实际阅读才积累基线。
@@ -225,7 +225,7 @@ PositionValue 仍是 `content_key/offset/source_hint`，StoredValue 仍是 `upda
 - 用户本次明确选择最高优先级；事务提交经既有 put 获得比已见 winner 更新的 updated。之后已同步的更新可以在**下次开书/重建**成为默认；不能远端设置一到就销毁正在阅读的会话。
 - 选择“自动”必须保存显式 auto 值，不能只删本机 override，使远端旧手选值再次生效。
 
-Swift `Data/SourceDecodingPreferences.swift` 统一编排“确定 rawSHA → 完成这条来源的旧值迁移 → 读取同步 winner”。Rust 继续负责原始摘要、编码规范和解码。迁移器只生产历史候选，正常解析只消费 UserDataStore 胜者，没有本机旧值参与第二轮裁决。
+Swift `Data/Sources/SourceDecodingPreferences.swift` 统一编排“确定 rawSHA → 完成这条来源的旧值迁移 → 读取同步 winner”。Rust 继续负责原始摘要、编码规范和解码。迁移器只生产历史候选，正常解析只消费 UserDataStore 胜者，没有本机旧值参与第二轮裁决。
 
 #### 三条路径共用同一个编码判定
 

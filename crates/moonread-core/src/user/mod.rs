@@ -1,4 +1,3 @@
-pub(crate) mod coverage;
 pub(crate) mod projection;
 pub(crate) mod statistics;
 mod themes;

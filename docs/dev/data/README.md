@@ -122,7 +122,7 @@ SQLite v22 新增 `source_identities`（原文件 SHA＋解码策略为键）与
 | 书签与批注 | SwiftData `AnnotationOperation`；完整内容候选和操作基线，正式保存后不维护内容历史 |
 | 阅读事实与清理边界 | SwiftData `ReadingFact` / `StatisticsClear`；各设备独立事实累加，同 ID 重试不多算 |
 | 分享接收 | App Group `ShareInbox`，原字节与 `schemaVersion: 1` 清单；已发布项跨启动保留，不参与缓存清理 |
-| 用户封面 | SwiftData `UserCover.bytes` 外部存储；权威图片不是缓存，附件暂缺时文字封面 |
+| 用户封面 | SwiftData `UserCover.bytes` 外部存储；权威图片不是缓存；附件暂缺时用预设装帧兜底，无有效正文身份时用文字封面；预设不是用户事实 |
 | SHA 完成前的阅读数据 | 设备 SwiftData `pending-users.store`，禁止云同步；完成后转入 SHA 用户存储并回收暂存 |
 | 原文件编码选择 | SwiftData UserValue `source-decoding/<rawSHA>`，整值 LWW；导出全部包含，整书删除不删除此全局设置 |
 | 旧手选升级待办 | SQLite v23 `source_decoding_migration`，只登记升级前非 auto 值；未知 raw 的离线原件暂留，保存 epoch 候选后才删除 |
@@ -143,7 +143,7 @@ Rust `books` 不再保存正式位置或最近阅读时间。`user/projection.rs
 
 首次使用本地空目录仍复制自带原创短篇；已注册内置根不会因文件被删除而再次预置。目录扫描仍只读取元数据，跳过隐藏项、包内容与符号链接；按实际目录权限工作，不主动读取整库正文。
 
-源码入口：[SwiftData 存储](../../../ios/Moonread/Data/UserData.swift)、[用户业务接口](../../../ios/Moonread/Data/UserDataService.swift)、[Rust 计算输入](../../../crates/moonread-core/src/user/projection.rs)、[平台文件操作](../../../ios/Moonread/Library/LibraryService.swift)。
+源码入口：[SwiftData 存储](../../../ios/Moonread/Data/UserData/UserData.swift)、[用户业务接口](../../../ios/Moonread/Data/UserData/UserDataService.swift)、[Rust 计算输入](../../../crates/moonread-core/src/user/projection.rs)、[平台文件操作](../../../ios/Moonread/Library/Sources/LibraryService.swift)。
 
 ## 先统一术语
 
@@ -224,3 +224,11 @@ Rust 管理正文身份、计算与索引；SwiftData 管理用户数据，Swift
 ## 阅读数据管理与可移植备份
 
 数据管理页面、全量备份格式、安全限额与可重建缓存边界见[备份与清理](backup-and-cleanup.md)；事实合并和删除传播见[同步设计](sync.md#整书阅读数据删除与备份恢复)。
+
+## 小说信息交换
+
+数据管理的「小说信息」与阅读数据备份独立；书架菜单可预选本架导出。JSON/JSONL/封面包的公开契约见[格式说明](../../site/content/metadata-format.md)，Schema 与 agent Skill 同仓维护。导出基于所选范围的真实索引文件，按有效正文 SHA 去重，未索引跳过数按文件计。导入只按当前索引 `content_sha256` 匹配，不读 TXT、不下载，也不把 `reference` 当选择器。
+
+预览默认补空、标签追加；清空、替换和改名明确选择。确认后不做字段 base/revision 重审，只保留账户/配置检查；未选字段不写。单本封面与资料在 UserDataStore 同一事务保存，存储失败停止后续书目，取消保留已完成项。已有阅读记录的书只跳过导入的 unread，不删除位置。
+
+仅勾选并实际执行改名时，复用 `aiFileSnapshot` 与 `renameLibraryItem(expected:)`，不覆盖同名目标、不下载未下载的 iCloud 原件。资料保存与改名结果分开；改名失败保留资料，文件已移动但索引更新失败则明确说明。原包不改，不创建新的同步格式。

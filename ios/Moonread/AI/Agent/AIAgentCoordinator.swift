@@ -44,6 +44,7 @@ import Foundation
                     guard let selection = self.sessions[id]?.head.selection ?? head.selection,
                           let connection = self.providers.connections.first(where: { $0.id == selection.connectionID }),
                           let model = self.providers.model(selection.modelID, in: connection) else { throw AIError.noModel }
+                    guard AINativeCapabilities.supportsText(connection: connection, model: model) else { throw AIError.noModel }
                     let resolved = self.providers.catalog.resolve(model, providerID: connection.catalogID, authentication: connection.authMethod)
                     guard let capacity = resolved.context, capacity > 0 else { throw AIAgentFailure.capacity }
                     if let thinking = selection.thinking, !model.thinking.contains(thinking) { throw AIError.noModel }

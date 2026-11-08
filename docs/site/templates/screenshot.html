@@ -12,6 +12,6 @@
 <img src="{{ get_url(path=light.variants[1].path) }}" srcset="{% for v in light.variants %}{{ get_url(path=v.path) }} {{ v.width }}w{% if not loop.last %}, {% endif %}{% endfor %}" sizes="(max-width: 700px) 88vw, 520px" width="{{ light.width }}" height="{{ light.height }}" alt="{{ label }}" {% if not eager %}loading="lazy"{% else %}fetchpriority="high"{% endif %} decoding="async">
 </picture></a>
 <p class="shot-unavailable" hidden role="status"></p>
-<figcaption><span class="shot-device">iPhone</span> · {% if lang == 'zh' %}真实界面{% else %}Actual interface{% endif %} <a class="device-jump" href="#screenshot-devices" hidden>{% if lang == "zh" %}切换设备{% else %}Change device{% endif %}</a></figcaption>
+<figcaption><span class="shot-device">iPhone</span> <a class="device-jump" href="#screenshot-devices" hidden>{% if lang == "zh" %}切换设备{% else %}Change device{% endif %}</a></figcaption>
 </figure>
 {% endcomponent screenshot %}

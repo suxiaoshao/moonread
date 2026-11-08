@@ -376,6 +376,16 @@ import XCTest
     launch()
     shelf()
     open()
+    // Real touches on the default List button, including its blank row area.
+    // Accessibility activation alone bypasses the ancestor-gesture regression.
+    for x in [0.25, 0.9] {
+      controls()
+      ready(app.buttons["showChapters"]).tap()
+      let cover = ready(app.buttons["showBookCover"])
+      cover.coordinate(withNormalizedOffset: CGVector(dx: x, dy: 0.5)).tap()
+      ready(app.buttons["returnFromBrowse"]).tap()
+      readableBody()
+    }
     controls()
     app.buttons["showChapters"].tap()
     app.buttons["chapterActions"].tap()
@@ -443,7 +453,7 @@ import XCTest
     let original = anchor()
     controls()
     app.buttons["showSearch"].tap()
-    let query = ready(app.textFields["bookSearchQuery"])
+    let query = ready(app.searchFields.firstMatch)
     query.tap()
     query.typeText("星灯")
     ready(element("searchStatus"))
@@ -458,7 +468,7 @@ import XCTest
     waitUntil { self.anchor() == original }
     controls()
     app.buttons["showSearch"].tap()
-    let again = ready(app.textFields["bookSearchQuery"])
+    let again = ready(app.searchFields.firstMatch)
     if (again.value as? String) != "星灯" {
       again.tap()
       again.typeText("星灯")

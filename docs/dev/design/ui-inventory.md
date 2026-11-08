@@ -10,15 +10,15 @@
 | --- | --- | --- |
 | 书架、设置 | canvas、surface、ink、secondary、accent | 原生 List/Form/Tab，内容背景和列表行接入主题；系统拥有控件内部间距 |
 | 书架管理 | canvas、surface、ink、secondary、accent、separator、destructive、moon/maria | 标准居中导航标题，右上角原生 `＋`；内嵌分组 List 使用独立紧凑 Label 行，默认 24pt 图标，上下 8pt 行内边距，名称与来源双行对齐；动态字号自然撑高，不使用首页的大图标行或悬浮标题 |
-| 书架小说与找书 | accentSurface/accent、ink、secondary、input、search、separator、moon/maria | 小说文字封面与文件夹内最多四本小封面共用列表／自适应网格；书籍行上下 12、目录行上下 8、页面左右 20；普通目录固定最近阅读排序，“全部小说”递归书目提供名称索引，使用 accent 并预留宽度；结果路径用 caption2，命中使用 search；恢复原生紧凑导航标题和默认背景，原生操作按钮保持位置，无胶囊标题或自定义滚动显隐；搜索按需展开并保持输入框可见；空白等待页用居中大号系统转圈，内容就绪后淡出，已有内容用导航栏 20pt 系统转圈；文件获取在对应封面内显示可取消原生进度条＋真实百分比，未知进度用系统转圈，更多按钮和条目布局保持不变 |
+| 书架小说与找书 | accentSurface/accent、ink、secondary、input、search、separator、moon/maria | 小说预设装帧与文件夹内最多四本小封面共用共享绘制（底图与字色固定，不跟随界面明暗），无身份仍用固定暖灰纸底/深墨文字封面；列表／自适应网格；书籍行上下 12、目录行上下 8、页面左右 20；普通目录固定最近阅读排序，“全部小说”递归书目提供名称索引，使用 accent 并预留宽度；结果路径用 caption2，命中使用 search；恢复原生紧凑导航标题和默认背景，原生操作按钮保持位置，无胶囊标题或自定义滚动显隐；搜索按需展开并保持输入框可见；空白等待页用居中大号系统转圈，内容就绪后淡出，已有内容用导航栏 20pt 系统转圈；文件获取在对应封面内显示可取消原生进度条＋真实百分比，未知进度用系统转圈，更多按钮和条目布局保持不变 |
 | 正文与信息栏 | paper、ink、secondary | UIKit 与 SwiftUI 接收同一阅读作用域；动态 UIColor 只更新绘制，正文存储不重写 |
 | 正文底部渐变 | paper → 透明 | 更新 CGColor，不改变渐变位置和高度 |
 | 目录、书签、笔记 | surface、ink、accent、secondary、separator、destructive | 当前章标题与字数都用 accent，其他章字数用 secondary；章节输入区同样采用 input 与 border/focus；删除保留文字与图标 |
 | 搜索 | surface、input、ink、secondary、border/focus、separator、accent/accentSurface、selected | 摘要使用原生 SwiftUI AttributedString 显式设置 ink；普通命中用 search，选中命中与正文都用 searchCurrent；当前行底色用 selected，标注用独立 annotation |
 | 批注 | surface、raised、input、ink、secondary、border/focus、selection | 原生控制器显式设置主题与键盘明暗；输入和摘录圆角统一为 16 |
 | AI 对话与列表 | canvas/surface、raised、input、accentSurface、ink、secondary、accent/onAccent、border/focus、selected、destructive、success、moon/maria | 对话列表为 plain List：标题＋右侧时间或运行状态，下一行为最新可见消息摘要，关联书名用小字；对话页用户气泡 accentSurface 靠右，回复无底框；输入框 1pt border/focus，发送与停止为 accent 实心圆；阅读弹窗沿用阅读作用域的 surface；阅读月亮为主题 MoonView 加纸色间隙，状态角标颜色按语义。细则见 [AI 阅读助手](ai.md) 与[对话错误与单次操作确认](../ai/rendering.md) |
-| 准备、空态、关于 | moon、maria、secondary、paper | 月亮角色以矢量路径按主题着色（静止姿态；扉页为读书姿态），月体保持完整圆形 |
-| 阅读封面／扉页 | paper、ink、secondary、accent；品牌固定色 | 书名与品牌图标（无封面时）居中、细分隔线和小字号落款；与书架文字封面共用字体设计和主题角色，封面使用阅读主题。正文准备阶段复用这一画面，较慢任务在底部显示原生加载进度 |
+| 准备、空态、关于 | moon、maria、secondary、paper | 月亮角色以矢量路径按主题着色（静止姿态），月体保持完整圆形 |
+| 阅读封面／扉页 | paper、ink、secondary、accent；品牌固定色 | 书名与封面居中、细分隔线和小字号落款；封面与书架共用用户图片／预设／文字兜底，页面其余部分使用阅读主题。正文准备阶段复用这一画面，较慢任务在底部显示原生加载进度 |
 | 启动页 | LaunchBackground 浅深颜色资产、LaunchSeal（桌面图标渲染） | 系统静态图与 App 首帧均为 120pt 桌面图标、全屏居中；主题与本地首页快照就绪或错误后（根等待上限1s、封面子预算150ms），底色和图标一起250ms原地淡出，减弱动态缩短至 120ms；首页同步可用，回前台不重播 |
 
 应用自绘内容的文字层级显式读取 ink/secondary，包括书架文件名与路径、目录与笔记摘要、搜索标题/结果数量/摘要、空态和准备状态。不能用通用 `.primary/.secondary` 代替配色中的独立角色。自绘分隔线使用 separator；自定义返回、撤销、准备与加载浮层在预设/自定义配色下使用 raised，选择系统配色时保留系统材质。
@@ -52,4 +52,4 @@ MotionTokens 统一工具 180ms、减少动态 100ms、快捷面板高度 200ms�
 
 ## 信息与操作的选择
 
-配置集合和钻取用 List/Form；进度、错误和空态使用真实状态组件或局部摘要，说明优先 footer，主要操作与对象相邻，破坏性操作独立。App 自绘背景/行底/分隔线显式用主题角色；系统导航、键盘、菜单和原生搜索内部由系统管理，不用逐帧取色冒充固定 token。1.3 页面定稿见[计划](../plans/1.3.md)。
+配置集合和钻取用 List/Form；进度、错误和空态使用真实状态组件或局部摘要，说明优先 footer，主要操作与对象相邻，破坏性操作独立。App 自绘背景/行底/分隔线显式用主题角色；系统导航、键盘、菜单和原生搜索内部由系统管理，不用逐帧取色冒充固定 token。页面结构分别见[设置](settings.md)、[小说详情](book-details.md)与[首页书架](library.md)。

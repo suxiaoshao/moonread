@@ -15,13 +15,13 @@ Check in the system Files app that the source is accessible and the file is down
 
 ## Positions, notes, and statistics
 
-Reopening the same book content attempts to resume your position. Editing the source text may create a new content identity. Removing a source file and deleting reading data are separate operations. You can pause or clear reading statistics in their settings; clearing statistics does not delete the book text. Read the stated scope before confirming deletion.
+Reopening the same book content attempts to resume your position. Editing the source text may create a new content identity. Removing a source file and deleting reading data are separate operations. You can pause or clear reading statistics in their settings; clearing affects statistics only. Read the stated scope before confirming deletion.
 
 ## Optional AI
 
-You can turn off AI Features in Settings to hide all AI entry points and stop ongoing requests. Existing connections, conversations, and data-sharing permissions are kept.
+AI is unavailable in the mainland China App Store storefront. You can turn off AI Features in Settings to hide all AI entry points and stop ongoing requests. Existing connections, conversations, and data-sharing permissions are kept.
 
-Select a service, connection, and model in AI settings. The app explains the destination and data scope before initial sharing; separate search or image services may require separate permission. Declining does not affect reading. For connection problems, check the network, provider access, and quota. Never email API keys or tokens. AI output can be inaccurate, so check important information. You can withdraw permission for future sharing in connection settings.
+Select your own service, connection, and model in AI settings. Supported connections can refresh the available model catalog returned by the service. If a refresh fails, retry. The app explains the destination and data scope before initial sharing; separate search or image services may require separate permission. For connection problems, check the network, provider access, and quota. You can withdraw permission for future sharing in connection settings.
 
 ## Support Moonread
 
@@ -32,3 +32,7 @@ Tips in Settings are optional, repeatable purchases that unlock no content or fe
 Email the app version, iOS version, device model, steps, expected result, and actual result. Redact private book titles, passages, conversations, and account information in screenshots. Do not send entire books, databases, or system logs unless a specific, limited diagnostic request has been agreed. We do not ask for passwords, verification codes, payment details, or keys. See the [Privacy Policy](@/privacy.en.md) or contact suxiaoshao@gmail.com for privacy questions.
 
 Touch and hold an AI reply and choose “Send Feedback About This Reply” to open an email draft with the selected reply, app version, provider, and model. Review and edit it before sending. If no mail account is configured, copy the contents into your preferred email app.
+
+## Organizing book information
+
+Import or export metadata files in Data management. Edit an exported copy or generate a new file from local TXT files using the public format—no prior export is required. Review each change before importing. This is separate from reading-data backups. See [Book metadata exchange](@/metadata-format.en.md) for the format, safety boundaries and agent skill.

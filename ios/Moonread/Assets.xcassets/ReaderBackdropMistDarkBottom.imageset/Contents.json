@@ -10,6 +10,7 @@
     "version": 1
   },
   "properties": {
-    "template-rendering-intent": "original"
+    "template-rendering-intent": "original",
+    "compression-type": "lossy"
   }
 }
