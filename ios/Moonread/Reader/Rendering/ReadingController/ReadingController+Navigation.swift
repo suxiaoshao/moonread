@@ -326,6 +326,9 @@ extension ReadingController {
             text.backgroundColor = .clear
             text.isOpaque = false
             text.contentInsetAdjustmentBehavior = .never
+            // The fixed reader header already separates this text from chrome.
+            // An automatic top blur can survive an interactive-pop cancellation.
+            if #available(iOS 26, *) { text.topEdgeEffect.isHidden = true }
             text.contentInset.bottom = ReadingTextMetrics.scrollFadeHeight(bottomSafeArea: stableInsets.bottom)
             text.textContainerInset = textInsets
             // Populate after UITextView has configured the typesetter, just as

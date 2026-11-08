@@ -185,14 +185,7 @@ struct ReaderScreen: View {
                             contentGeometry: geometry, layoutStatus: layoutStatus,
                             headerPositionChanged: { localHeaderTop = $0 },
                             controlsVisible: controlsVisible,
-                            toggleControls: {
-                                if panel == nil || panel == .search {
-                                    if automaticSelected && !automaticHidden { closeAutomaticReading(); return }
-                                    if automaticHidden { presentation.choose(.library, exposure: .accessory) }
-                                    controlsVisible.toggle()
-                                    synchronizeNativePresentation()
-                                }
-                            },
+                            toggleControls: toggleReadingControls,
                             readingBegan: { session.beganReadingInteraction(); controlsVisible = false },
                             positionChanged: { offset, end in
                                 if !navigationPresentation.isSuspended { session.moved(to: offset, settled: end, userInitiated: false) }
@@ -202,6 +195,22 @@ struct ReaderScreen: View {
                     .accessibilityIdentifier("readingContent")
                     .modifier(ReaderImportDiagnosticStatus(complete: session.snapshot?.phase == .complete))
                     .transition(.opacity)
+    }
+
+    private func toggleReadingControls() {
+        guard panel == nil || panel == .search else { return }
+        if automaticSelected && !automaticHidden { closeReadingControls(); return }
+        if automaticHidden { presentation.choose(.library, exposure: .accessory) }
+        if controlsVisible { closeReadingControls() }
+        else { controlsVisible = true; synchronizeNativePresentation() }
+    }
+
+    /// Body taps and cancelled native returns use the same close path. The
+    /// header, status bar, navigation and sheet all derive from that one intent.
+    private func closeReadingControls() {
+        if automaticSelected && !automaticHidden { closeAutomaticReading() }
+        else { controlsVisible = false }
+        synchronizeNativePresentation()
     }
 
     private var allowsReaderBack: Bool {
@@ -462,7 +471,7 @@ struct ReaderScreen: View {
     }
 
     private var sourceObserver: some View {
-        NavigationTransitionObserver(openingID: session.opening.request?.id ?? openingRequest?.id, expectedDepth: sourceDepth, synchronizesBarOnCancellation: true,
+        NavigationTransitionObserver(openingID: session.opening.request?.id ?? openingRequest?.id, expectedDepth: sourceDepth,
                                                    appeared: { id, reason in
                                                        completedOpeningID = id; session.opening.settled(id, reason: reason)
                                                    },
@@ -470,17 +479,16 @@ struct ReaderScreen: View {
                                                        contentVisible = visible; session.opening.visibility(visible, active: scenePhase == .active)
                                                    },
                                                    willLeave: { popping in
-            if popping { navigationPresentation.begin(hasPresentation: sheetPresented, retainingChrome: true) }
+            if popping { navigationPresentation.begin(hasPresentation: sheetPresented) }
             if popping || presentation.sourcePage != nil || !sourceRoutePresent { sourceCurrent = false }
             ReaderSceneDiagnostics.record("source.willLeave", opening: session.opening.request?.id, fields: ["popping": popping])
         }, completed: { popping, cancelled in
             if cancelled { sourceCurrent = true }
             ReaderSceneDiagnostics.record("source.completed", opening: session.opening.request?.id, fields: ["popping": popping, "cancelled": cancelled])
             guard popping else { return }
-            var transaction = Transaction()
-            transaction.disablesAnimations = cancelled
-            withTransaction(transaction) { navigationPresentation.finish(cancelled: cancelled) }
-            if !cancelled, !sourceRoutePresent { completeReturning() }
+            navigationPresentation.finish(cancelled: cancelled)
+            if cancelled { closeReadingControls() }
+            else if !sourceRoutePresent { completeReturning() }
         }, removed: { if !sourceRoutePresent { completeReturning() } }, becameCurrent: {
             sourceCurrent = true
             ReaderSceneDiagnostics.record("source.current", opening: session.opening.request?.id)
@@ -881,11 +889,10 @@ struct ReaderScreen: View {
                             compactHeaderHeight: compactHeaderHeight, showControls: { controlsVisible = true })
     }
     private var readerOwnsChrome: Bool {
-        // Pop starts suspending reading/tools before UIKit finishes navigating.
-        // Keep this reader's bar preference through the transition. Interactive
-        // pop reveals its own bar before UIKit starts; tool intent stays unchanged.
-        navigationPresentation.revealsNavigation || navigationPresentation.retainsChrome
-            || (sourceSelected && sourceCurrent && presentation.sourcePage == nil && !navigationPresentation.isSuspended && !session.isLeaving)
+        // The temporary bar belongs to C's interactive pop. Otherwise the
+        // current reader owns its preference even while a tool is dismissing.
+        navigationPresentation.revealsNavigation
+            || (sourceSelected && sourceCurrent && presentation.sourcePage == nil && !session.isLeaving)
     }
     private var readerNavigationVisible: Bool {
         !session.isLeaving && (navigationPresentation.revealsNavigation
