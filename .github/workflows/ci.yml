@@ -258,6 +258,8 @@ jobs:
             -project ios/Moonread.xcodeproj -scheme Moonread -configuration Debug \
             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
             -derivedDataPath build/DerivedData -showBuildTimingSummary \
+            COMPILATION_CACHE_ENABLE_CACHING=YES COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES \
+            "COMPILATION_CACHE_CAS_PATH=$GITHUB_WORKSPACE/build/DerivedData/CompilationCache.noindex" \
             -only-testing:MoonreadTests -parallel-testing-enabled NO \
             -testLanguage zh-Hans -testRegion CN \
             -test-timeouts-enabled YES -default-test-execution-time-allowance 300 \
@@ -292,8 +294,12 @@ jobs:
           allowed = sizes[os.environ['NIX_INPUTS']] <= 1536 * 1024**2
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('allowed=' + str(allowed).lower() + '\n')
+          # Already included in DerivedData above: report CAS separately without double-counting it.
+          cas = pathlib.Path('build/DerivedData/CompilationCache.noindex')
+          cas_bytes = int(subprocess.check_output(['du', '-sk', str(cas)], text=True).split()[0]) * 1024 if cas.exists() else 0
           pathlib.Path('build/CI/cache-payload.json').write_text(json.dumps(
-              {'expandedBytes': sizes, 'nixInputsWithinBudget': allowed, 'restoredKey': os.environ['MATCHED_KEY']}, indent=2))
+              {'expandedBytes': sizes, 'nixInputsWithinBudget': allowed, 'restoredKey': os.environ['MATCHED_KEY'],
+               'compilationCache': {'path': str(cas), 'expandedBytes': cas_bytes, 'includedIn': 'build/DerivedData'}}, indent=2))
           if not allowed:
               print('::warning::Nix input cache exceeds its 1.5 GiB expanded budget; do not publish this generation.')
           PY
@@ -352,6 +358,11 @@ jobs:
               if build_log.exists():
                   for stage, seconds in re.findall(r'CI_TIMING (\w+)_seconds=(\d+)', build_log.read_text(errors='replace')):
                       output.write(f'| {stage} | {seconds} |\n')
+              payload = pathlib.Path('build/CI/cache-payload.json')
+              if payload.exists():
+                  import json
+                  cas = json.loads(payload.read_text())['compilationCache']
+                  output.write(f'\nCompilation cache: `{cas["path"]}`, {cas["expandedBytes"]} expanded bytes (included in DerivedData, not an additional cache). Hit/miss remarks are in BuildForTesting.log.\n')
               output.write('\nRestore/save durations are the Actions step durations; expanded bytes are in cache-payload.json. Compressed storage bytes are verified by the trusted cleanup job, not inferred from du.\n')
           PY
       - name: Preserve test results and timing evidence
