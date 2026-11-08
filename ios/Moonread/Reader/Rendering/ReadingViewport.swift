@@ -129,7 +129,8 @@ enum ReadingContainerRegions {
             }
         }
     }
-    static func permitsSpread(in size: CGSize) -> Bool { size.width > size.height }
+    // Temporary #135 negative probe: the existing square-viewport assertion must fail.
+    static func permitsSpread(in size: CGSize) -> Bool { size.width >= size.height }
 }
 
 /// Readiness of the local renderer, independent of tool presentation.
