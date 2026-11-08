@@ -6,7 +6,6 @@ struct LibraryView: View {
     @Bindable var model: LibraryModel
     @Environment(AIService.self) private var ai
     @Environment(ThemeStore.self) private var themes
-    @Environment(\.librarySourceToolbar) private var sourceToolbar
     @Environment(\.theme) private var theme
     @Environment(\.horizontalSizeClass) private var sizeClass
     /// The most recent formal reading resumes from its own row; the rest follow as recents:
@@ -25,22 +24,20 @@ struct LibraryView: View {
         .navigationTitle("书架").navigationBarTitleDisplayMode(.large)
         .background(Color(uiColor: theme.canvas).ignoresSafeArea(.container))
         .toolbar {
-            if sourceToolbar?.covered != true {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Menu {
-                        Button("导入小说", systemImage: "square.and.arrow.down") { model.chooseFiles(.novels(LibraryLocation(shelfID: "builtin"))) }
-                        Button("添加书架", systemImage: "folder.badge.plus") { model.chooseFiles(.folder(nil)) }
-                            .accessibilityIdentifier("chooseFolder")
-                    } label: { Label("书架操作", systemImage: "plus") }.toolbarGlyph().accessibilityIdentifier("libraryActions")
-                    #if DEBUG
-                    if ReaderSmokeFixture.enabled {
-                        Menu("测试接收") {
-                            Button("导入TXT") { Task { await model.receiveSmokeTXT(shared: false) } }.accessibilityIdentifier("smokeImportTXT")
-                            Button("分享TXT") { Task { await model.receiveSmokeTXT(shared: true) } }.accessibilityIdentifier("smokeShareTXT")
-                        }.accessibilityIdentifier("smokeReceive")
-                    }
-                    #endif
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Menu {
+                    Button("导入小说", systemImage: "square.and.arrow.down") { model.chooseFiles(.novels(LibraryLocation(shelfID: "builtin"))) }
+                    Button("添加书架", systemImage: "folder.badge.plus") { model.chooseFiles(.folder(nil)) }
+                        .accessibilityIdentifier("chooseFolder")
+                } label: { Label("书架操作", systemImage: "plus") }.toolbarGlyph().accessibilityIdentifier("libraryActions")
+                #if DEBUG
+                if ReaderSmokeFixture.enabled {
+                    Menu("测试接收") {
+                        Button("导入TXT") { Task { await model.receiveSmokeTXT(shared: false) } }.accessibilityIdentifier("smokeImportTXT")
+                        Button("分享TXT") { Task { await model.receiveSmokeTXT(shared: true) } }.accessibilityIdentifier("smokeShareTXT")
+                    }.accessibilityIdentifier("smokeReceive")
                 }
+                #endif
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {

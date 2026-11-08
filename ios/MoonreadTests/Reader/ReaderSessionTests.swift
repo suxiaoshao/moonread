@@ -277,49 +277,43 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
   func testNavigationCancellationWaitsForSheetDismissalInEitherOrder() {
     for dismissFirst in [true, false] {
       let state = NavigationPresentationState()
-      state.begin(hasPresentation: true)
+      state.prepareInteractivePop()
+      XCTAssertTrue(state.revealsNavigation)
+      state.begin(hasPresentation: true, retainingChrome: true)
+      state.endUnstartedInteractivePop()
+      XCTAssertTrue(state.revealsNavigation, "Gesture ending does not clear a tracked transition")
+      XCTAssertTrue(state.retainsChrome, "Pop keeps the reader's navigation preference")
       if dismissFirst { XCTAssertTrue(state.presentationDismissed()) }
       state.finish(cancelled: true)
+      XCTAssertFalse(state.revealsNavigation, "Cancelled pop restores the previous controls intent")
       XCTAssertEqual(state.isSuspended, !dismissFirst)
+      XCTAssertEqual(state.retainsChrome, !dismissFirst, "Cancellation waits for tool dismissal before restoring normal chrome")
       if !dismissFirst { XCTAssertTrue(state.presentationDismissed()) }
       XCTAssertFalse(state.isSuspended)
+      XCTAssertFalse(state.retainsChrome)
       XCTAssertFalse(state.presentationDismissed(), "Only the navigation dismissal is consumed")
     }
     let state = NavigationPresentationState()
-    state.begin(hasPresentation: false)
+    state.prepareInteractivePop()
+    state.endUnstartedInteractivePop()
+    XCTAssertFalse(state.revealsNavigation, "Preparation without a transition must not leave a bar")
+    state.begin(hasPresentation: false, retainingChrome: true)
     state.finish(cancelled: true)
     XCTAssertFalse(state.isSuspended)
+    XCTAssertFalse(state.retainsChrome)
 
     let completed = NavigationPresentationState()
-    completed.begin(hasPresentation: true)
+    completed.prepareInteractivePop()
+    completed.begin(hasPresentation: true, retainingChrome: true)
     completed.finish(cancelled: false)
+    XCTAssertFalse(completed.revealsNavigation)
+    XCTAssertFalse(completed.retainsChrome, "Only completed pop hands the source navigation back")
     XCTAssertTrue(completed.presentationDismissed())
     XCTAssertTrue(completed.isSuspended)
     completed.appear()
     XCTAssertFalse(
       completed.isSuspended, "Returning from a child settings page can restore its preview")
 
-  }
-
-  @MainActor func testSourceToolbarWaitsForConfirmedReaderReturn() {
-    let state = LibrarySourceToolbar()
-    let request = OpeningRequest(target: .book("fixture"))
-    let path: [LibraryRoute] = [.folder(LibraryLocation(shelfID: "builtin")), .reader(request)]
-    XCTAssertTrue(state.covers(depth: 1, path: path), "Hide source items as soon as the reader route enters")
-    state.cover(request.id, depth: 3)
-    XCTAssertTrue(state.covers(depth: 2, path: []), "Early route removal is not pop completion")
-    XCTAssertFalse(state.covers(depth: 3, path: path), "The reader's pushed details/settings keep their own items")
-    state.completed(request.id, popping: true, cancelled: true)
-    XCTAssertTrue(state.covers(depth: 1, path: []), "Cancelled pop keeps the source covered")
-    state.completed(request.id, popping: false, cancelled: false)
-    XCTAssertTrue(state.covers(depth: 1, path: []), "Pushing a child is not leaving the reader")
-    let next = UUID()
-    state.cover(next, depth: 3)
-    state.completed(request.id, popping: true, cancelled: false)
-    XCTAssertTrue(state.covers(depth: 1, path: []), "An older completion cannot release a newer reader")
-    state.completed(next, popping: true, cancelled: false)
-    XCTAssertFalse(state.covers(depth: 1, path: []))
-    XCTAssertFalse(LibrarySourceToolbar().covers(depth: 1, path: []), "Each source stack is independent")
   }
 
   // S413: 离开/后台发送释放常亮和旋转约束意图；假 device sink，不读系统实际状态。

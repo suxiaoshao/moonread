@@ -135,7 +135,6 @@ struct ReaderContextSearch: View {
 }
 
 struct AppSearchView: View {
-    @Environment(\.librarySourceToolbar) private var sourceToolbar
     @Bindable var model: LibraryModel
     let search: AppSearch
     var host = AppSearchHost()
@@ -231,10 +230,10 @@ struct AppSearchView: View {
         .scrollBounceBehavior(.always)
         .accessibilityIdentifier("appSearchResults")
         .navigationTitle("搜索").navigationBarTitleDisplayMode(.inline)
-        .toolbar { if sourceToolbar?.covered != true { ToolbarItem(placement: .topBarTrailing) {
+        .toolbar { ToolbarItem(placement: .topBarTrailing) {
             Button("筛选与排序", systemImage: "line.3.horizontal.decrease") { openEditor() }
                 .accessibilityIdentifier("searchFilters")
-        } } }
+        } }
         .sheet(item: $editor) { draft in BookSearchEditor(search: search, model: model, draft: draft) }
         .overlay {
             if !search.hasCriteria {

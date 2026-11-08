@@ -356,16 +356,11 @@ private struct MoonreadRoot: View {
 /// above an open book, builds its pages here from the shared environment.
 struct LibraryDestination: View {
     @Environment(AIService.self) private var ai
-    @Environment(\.librarySourceToolbar) private var sourceToolbar
     let route: LibraryRoute
     @Environment(LibraryModel.self) private var library
     @Environment(\.readerTheme) private var readerTheme
 
     var body: some View {
-        destination.environment(\.librarySourceToolbar, sourceToolbar?.page(route))
-    }
-
-    @ViewBuilder private var destination: some View {
         switch route {
         case .reader(let reader):
             ReaderScreen(route: reader.target, openingRequest: reader) { error, milliseconds in
@@ -455,7 +450,6 @@ private struct MoonLaunchCover: View {
 private struct LibrarySourceTabVisibility: ViewModifier {
     let path: [LibraryRoute]
     @State private var selectingFolders: Set<LibraryLocation> = []
-    @State private var sourceToolbar = LibrarySourceToolbar()
     private var hidesTabs: Bool {
         if path.contains(where: \.isReader) { return true }
         if case let .folder(location) = path.last { return selectingFolders.contains(location) }
@@ -463,7 +457,6 @@ private struct LibrarySourceTabVisibility: ViewModifier {
     }
     func body(content: Content) -> some View {
         content
-            .environment(\.librarySourceToolbar, LibrarySourceToolbarContext(owner: sourceToolbar, path: path))
             .onPreferenceChange(LibrarySelectingFolders.self) { selectingFolders = $0 }
             .toolbarVisibility(hidesTabs ? .hidden : .automatic, for: .tabBar)
     }

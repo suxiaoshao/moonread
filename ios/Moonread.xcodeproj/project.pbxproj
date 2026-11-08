@@ -130,7 +130,6 @@ C21000000000000000000001 = {isa = PBXBuildFile; fileRef = C220000000000000000000
         B01000000000000000000002 = {isa = PBXBuildFile; fileRef = B02000000000000000000002; };
         AF1000000000000000000003 /* LibraryCollection.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000003; };
         AF1000000000000000000002 /* LibraryPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000002; };
-        F21600000000000000000001 /* LibrarySourceToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = F21600000000000000000002; };
         AF1000000000000000000001 /* WelcomeStory.txt in Resources */ = {isa = PBXBuildFile; fileRef = AF2000000000000000000001; };
         AE1000000000000000000001 = {isa = PBXBuildFile; fileRef = AE2000000000000000000001; };
         AE1000000000000000000002 = {isa = PBXBuildFile; fileRef = AE2000000000000000000002; };
@@ -527,7 +526,6 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
         B02000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CloudLibrary.swift"; sourceTree = "<group>"; };
         AF2000000000000000000003 /* LibraryCollection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryCollection.swift"; sourceTree = "<group>"; };
         AF2000000000000000000002 /* LibraryPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryPresentation.swift"; sourceTree = "<group>"; };
-        F21600000000000000000002 /* LibrarySourceToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibrarySourceToolbar.swift"; sourceTree = "<group>"; };
         AF2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text; path = Resources/WelcomeStory.txt; sourceTree = "<group>"; };
         AE2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryService.swift"; sourceTree = "<group>"; };
         AE2000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryActions.swift"; sourceTree = "<group>"; };
@@ -1571,7 +1569,6 @@ D35000000000000000000001,
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000003 /* LibraryView.swift */,
-				F21600000000000000000002 /* LibrarySourceToolbar.swift */,
 				7F2EE539CF4C43B0C3E69DB9 /* LibraryAllBooksView.swift */,
 				3B08AF041DBD8BF5576A2C99 /* LibraryFolderView.swift */,
 				6FCE87B842E89B4B3662BC34 /* RecentLibraryView.swift */,
@@ -2177,7 +2174,6 @@ F01900000000000000000001,
 				FF97A598EBE17BAA6A938B5F /* SourceDecodingPreferences.swift in Sources */,
 				A10000000000000000000003 /* LibraryView.swift in Sources */,
                 AF1000000000000000000002 /* LibraryPresentation.swift in Sources */,
-                F21600000000000000000001 /* LibrarySourceToolbar.swift in Sources */,
                 AF1000000000000000000003 /* LibraryCollection.swift in Sources */,
                 AF1000000000000000000004 /* LibraryDrop.swift in Sources */,
                 F14900000000000000000001,

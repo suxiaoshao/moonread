@@ -3,7 +3,6 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct LibraryFolderView: View {
-    @Environment(\.librarySourceToolbar) private var sourceToolbar
     @Bindable var model: LibraryModel
     let location: LibraryLocation
     @Environment(AIService.self) private var ai
@@ -31,7 +30,7 @@ struct LibraryFolderView: View {
         // The source stack combines this page's selection with reader visibility.
         .preference(key: LibrarySelectingFolders.self, value: editing.isEditing ? [location] : [])
         .toolbar {
-            if editing.isEditing && sourceToolbar?.covered != true {
+            if editing.isEditing {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(allSelected ? LocalizedStringKey("取消全选") : LocalizedStringKey("全选")) {
                         selection = allSelected ? [] : Set(entries.map(\.id))
@@ -40,41 +39,39 @@ struct LibraryFolderView: View {
                     .accessibilityIdentifier("librarySelectAll")
                 }
             }
-            if sourceToolbar?.covered != true {
-                ToolbarItem(placement: .topBarTrailing) {
-                    if editing.isEditing {
-                        SystemToolbarButton("结束选择", role: .confirm) { editing = .inactive; selection = [] }
-                            .accessibilityIdentifier("librarySelectionDone")
-                            .disabled(fileActionsDisabled)
-                    }
-                    else {
-                        Menu {
-                            Button { Task { await model.openShelfIndex(location.shelfID) } } label: { Label { Text("建立索引", tableName: "FullIndex") } icon: { Image(systemName: "text.badge.checkmark") } }.accessibilityIdentifier("buildShelfIndex")
-                            Button("选择项目", systemImage: "checkmark.circle") { editing = .active }
-                            Button("新建文件夹", systemImage: "folder.badge.plus") { model.sheet = .create(location) }
-                            if location.shelfID == "builtin" { Button("导入小说", systemImage: "square.and.arrow.down") { model.chooseFiles(.novels(location)) } }
-                            if ai.availability.isAvailable {
-                                Button("整理…", systemImage: "folder.badge.gearshape") { model.aiRequest = .folder(location, title: title) }
-                                    .accessibilityIdentifier("organizeFolder")
+            ToolbarItem(placement: .topBarTrailing) {
+                if editing.isEditing {
+                    SystemToolbarButton("结束选择", role: .confirm) { editing = .inactive; selection = [] }
+                        .accessibilityIdentifier("librarySelectionDone")
+                        .disabled(fileActionsDisabled)
+                }
+                else {
+                    Menu {
+                        Button { Task { await model.openShelfIndex(location.shelfID) } } label: { Label { Text("建立索引", tableName: "FullIndex") } icon: { Image(systemName: "text.badge.checkmark") } }.accessibilityIdentifier("buildShelfIndex")
+                        Button("选择项目", systemImage: "checkmark.circle") { editing = .active }
+                        Button("新建文件夹", systemImage: "folder.badge.plus") { model.sheet = .create(location) }
+                        if location.shelfID == "builtin" { Button("导入小说", systemImage: "square.and.arrow.down") { model.chooseFiles(.novels(location)) } }
+                        if ai.availability.isAvailable {
+                            Button("整理…", systemImage: "folder.badge.gearshape") { model.aiRequest = .folder(location, title: title) }
+                                .accessibilityIdentifier("organizeFolder")
+                        }
+                        Divider()
+                        Picker("显示方式", selection: $model.layout) {
+                            Label("列表", systemImage: "list.bullet").tag(LibraryLayout.list)
+                            Label("网格", systemImage: "square.grid.3x3").tag(LibraryLayout.grid)
+                        }.pickerStyle(.inline)
+                        Divider()
+                        if !location.path.isEmpty {
+                            NavigationLink(value: LibraryRoute.allBooks(location.shelfID)) {
+                                Label("全部小说", systemImage: "books.vertical")
                             }
-                            Divider()
-                            Picker("显示方式", selection: $model.layout) {
-                                Label("列表", systemImage: "list.bullet").tag(LibraryLayout.list)
-                                Label("网格", systemImage: "square.grid.3x3").tag(LibraryLayout.grid)
-                            }.pickerStyle(.inline)
-                            Divider()
-                            if !location.path.isEmpty {
-                                NavigationLink(value: LibraryRoute.allBooks(location.shelfID)) {
-                                    Label("全部小说", systemImage: "books.vertical")
-                                }
-                            }
-                            Button { metadataExporting = true } label: {
-                                Label { Text("导出本书架信息", tableName: "MetadataExchange") } icon: { Image(systemName: "doc.text") }
-                            }
-                            Button("在此书架中搜索", systemImage: "magnifyingglass") { model.path.append(.search(AppSearchScope(seeds: [.shelf(location.shelfID)]))) }
-                                .accessibilityIdentifier("searchShelf")
-                        } label: { Label("文件夹操作", systemImage: "ellipsis") }.menuOrder(.fixed).toolbarGlyph().accessibilityIdentifier("folderActions").disabled(fileActionsDisabled)
-                    }
+                        }
+                        Button { metadataExporting = true } label: {
+                            Label { Text("导出本书架信息", tableName: "MetadataExchange") } icon: { Image(systemName: "doc.text") }
+                        }
+                        Button("在此书架中搜索", systemImage: "magnifyingglass") { model.path.append(.search(AppSearchScope(seeds: [.shelf(location.shelfID)]))) }
+                            .accessibilityIdentifier("searchShelf")
+                    } label: { Label("文件夹操作", systemImage: "ellipsis") }.menuOrder(.fixed).toolbarGlyph().accessibilityIdentifier("folderActions").disabled(fileActionsDisabled)
                 }
             }
             if editing.isEditing {

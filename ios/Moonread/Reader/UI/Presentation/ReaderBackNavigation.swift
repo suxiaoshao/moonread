@@ -8,15 +8,28 @@ final class NavigationPresentationState {
     private enum Phase { case active, moving, restoring, departed }
     private var phase = Phase.active
     private var awaitingDismissal = false
+    private(set) var retainsChrome = false
+    private(set) var revealsNavigation = false
     var isSuspended: Bool { phase != .active }
 
-    func begin(hasPresentation: Bool) {
+    func prepareInteractivePop() {
+        guard phase == .active else { return }
+        revealsNavigation = true
+    }
+    func endUnstartedInteractivePop() {
+        guard phase == .active else { return }
+        revealsNavigation = false
+    }
+    func begin(hasPresentation: Bool, retainingChrome: Bool = false) {
         guard phase == .active else { return }
         awaitingDismissal = hasPresentation
+        retainsChrome = retainingChrome
         phase = .moving
     }
     func finish(cancelled: Bool) {
+        revealsNavigation = false
         phase = cancelled ? (awaitingDismissal ? .restoring : .active) : .departed
+        if !cancelled || phase == .active { retainsChrome = false }
     }
     func appear() {
         guard phase == .departed else { return }
@@ -27,7 +40,7 @@ final class NavigationPresentationState {
     func presentationDismissed() -> Bool {
         guard awaitingDismissal else { return false }
         awaitingDismissal = false
-        if phase == .restoring { phase = .active }
+        if phase == .restoring { phase = .active; retainsChrome = false }
         return true
     }
 }
@@ -49,7 +62,6 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
     // identity, including removal without an animated pop or scene teardown.
     static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
         controller.removed()
-        controller.finishRemovalIfNeeded()
     }
     func updateUIViewController(_ controller: Controller, context: Context) {
         controller.willLeave = willLeave; controller.completed = completed
@@ -122,25 +134,10 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
         }
         override func viewDidDisappear(_ animated: Bool) {
             super.viewDidDisappear(animated); visible = false; visibilityChanged(false)
-            finishRemovalIfNeeded()
-        }
-
-        func finishRemovalIfNeeded() {
             // Unanimated source suffix removal has no transition coordinator.
             // A covered page still belongs to its stack and must not release.
-            guard !tracking, let navigation = observedNavigation, let owner = observedDestination,
-                  !navigation.viewControllers.contains(where: { $0 === owner }) else { return }
-            if let transition = navigation.transitionCoordinator {
-                guard transition.viewController(forKey: .from) === owner else { return }
-                // Dismantling during a pop is not its completion. Keep this
-                // callback alive even if SwiftUI removes the observer first.
-                tracking = true
-                let finished = completed
-                transition.animate(alongsideTransition: nil) { [weak self] context in
-                    self?.tracking = false
-                    finished(true, context.isCancelled)
-                }
-            } else {
+            if !tracking, let navigation = observedNavigation, let owner = observedDestination,
+               !navigation.viewControllers.contains(where: { $0 === owner }) {
                 completed(true, false)
             }
         }
@@ -155,8 +152,11 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
                   let source = transition.viewController(forKey: .from) else { return }
             var ancestor: UIViewController? = self
             while let value = ancestor, value !== source { ancestor = value.parent }
+            // During interactive pop SwiftUI has already removed the owner from
+            // viewControllers, while isMovingFromParent may still be false.
+            // Match the destination we observed on appearance, not a new depth lookup.
             guard ancestor === source, source.parent === navigation,
-                  destination === source else { return }
+                  observedDestination === source else { return }
             let popping = source.isMovingFromParent || !navigation.viewControllers.contains(source)
             ReaderSceneDiagnostics.record("native.navigationWillDisappear", opening: openingID, fields: [
                 "fromType": String(describing: type(of: source)), "fromTitle": source.title ?? "",
@@ -189,6 +189,8 @@ final class ReaderBackNavigation: NSObject, UIGestureRecognizerDelegate {
     var canBegin: () -> Bool = { false }
     var allowsContentGesture: () -> Bool = { true }
     var readingPan: (() -> UIPanGestureRecognizer?)?
+    var prepareInteractivePop: () -> Void = {}
+    var endUnstartedInteractivePop: () -> Void = {}
 
     func install(on owner: UIViewController) {
         guard registrations.isEmpty, let navigation = owner.navigationController else { return }
@@ -200,6 +202,7 @@ final class ReaderBackNavigation: NSObject, UIGestureRecognizerDelegate {
         for gesture in gestures {
             registrations.append(Registration(gesture: gesture, delegate: gesture.delegate, wasEnabled: gesture.isEnabled))
             gesture.delegate = self
+            gesture.addTarget(self, action: #selector(gestureEnded(_:)))
             // The hidden navigation bar may disable native recognition. Eligibility
             // remains in the delegate, including the reading-mode restriction.
             gesture.isEnabled = true
@@ -208,12 +211,21 @@ final class ReaderBackNavigation: NSObject, UIGestureRecognizerDelegate {
 
     func uninstall() {
         for registration in registrations {
+            registration.gesture.removeTarget(self, action: #selector(gestureEnded(_:)))
             if registration.gesture.delegate === self {
                 registration.gesture.delegate = registration.delegate
                 registration.gesture.isEnabled = registration.wasEnabled
             }
         }
         registrations.removeAll()
+        endUnstartedInteractivePop()
+    }
+
+    @objc private func gestureEnded(_ gesture: UIGestureRecognizer) {
+        switch gesture.state {
+        case .ended, .cancelled, .failed: endUnstartedInteractivePop()
+        default: break
+        }
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -224,6 +236,11 @@ final class ReaderBackNavigation: NSObject, UIGestureRecognizerDelegate {
         guard destination === navigation.topViewController else { return false }
         if #available(iOS 26, *), gestureRecognizer === navigation.interactiveContentPopGestureRecognizer,
            !allowsContentGesture() { return false }
+        // Show this reader's own bar before UIKit captures the shared-bar transition.
+        // Flush public layout only; SwiftUI still owns bar visibility and styling.
+        prepareInteractivePop()
+        navigation.view.setNeedsLayout()
+        navigation.view.layoutIfNeeded()
         // UIKit's native edge/content recognizers determine direction and motion
         // thresholds. Adding another velocity cone rejects otherwise valid pans.
         return true

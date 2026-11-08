@@ -2,7 +2,6 @@ import SwiftUI
 import Charts
 
 struct StatisticsView: View {
-    @Environment(\.librarySourceToolbar) private var sourceToolbar
     let library: LibraryModel
     var target: StatisticsRoute?
     @Environment(\.theme) private var theme
@@ -124,10 +123,8 @@ struct StatisticsView: View {
         .navigationBarTitleDisplayMode(target == nil ? .large : .inline)
         .toolbarVisibility(.visible, for: .navigationBar)
         .toolbar {
-            if sourceToolbar?.covered != true {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    optionsMenu
-                }
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                optionsMenu
             }
         }
         .sheet(item: $aiRequest) { if ai.availability.isAvailable { AIQuickTaskSheet(request: $0).themeScope(theme) } }

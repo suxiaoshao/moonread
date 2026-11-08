@@ -14,7 +14,6 @@ struct ReaderScreen: View {
     @State private var session = ReaderSession()
     @State var coverInformation: BookDetails?
     @Environment(LibraryModel.self) private var library
-    @Environment(\.librarySourceToolbar) private var sourceToolbar
     @State private var tools = ReaderToolsModel()
     @State private var toolSession = ReaderToolSession()
     @State private var presentationOwner = UUID()
@@ -153,6 +152,11 @@ struct ReaderScreen: View {
                             annotations: session.annotations, bookmarkPositions: session.bookmarkPositions, focusRange: session.focusRange,
                             selectionStart: session.selectionStart, selection: selectText,
                             allowsBackGesture: allowsReaderBack,
+                            prepareInteractivePop: {
+                                var transaction = Transaction(); transaction.disablesAnimations = true
+                                withTransaction(transaction) { navigationPresentation.prepareInteractivePop() }
+                            },
+                            endUnstartedInteractivePop: { navigationPresentation.endUnstartedInteractivePop() },
                             allowsSelection: (panel == nil || panel == .search) && toolSession.editor == nil && session.noteEditorModel == nil,
                             allowsChapterEditing: !session.incomplete,
                             coverTitle: session.book?.title ?? route.title,
@@ -458,8 +462,7 @@ struct ReaderScreen: View {
     }
 
     private var sourceObserver: some View {
-        let opening = openingRequest?.id ?? session.opening.request?.id
-        return NavigationTransitionObserver(openingID: session.opening.request?.id ?? openingRequest?.id, expectedDepth: sourceDepth,
+        NavigationTransitionObserver(openingID: session.opening.request?.id ?? openingRequest?.id, expectedDepth: sourceDepth,
                                                    appeared: { id, reason in
                                                        completedOpeningID = id; session.opening.settled(id, reason: reason)
                                                    },
@@ -467,11 +470,10 @@ struct ReaderScreen: View {
                                                        contentVisible = visible; session.opening.visibility(visible, active: scenePhase == .active)
                                                    },
                                                    willLeave: { popping in
-            if popping { navigationPresentation.begin(hasPresentation: sheetPresented) }
+            if popping { navigationPresentation.begin(hasPresentation: sheetPresented, retainingChrome: true) }
             if popping || presentation.sourcePage != nil || !sourceRoutePresent { sourceCurrent = false }
             ReaderSceneDiagnostics.record("source.willLeave", opening: session.opening.request?.id, fields: ["popping": popping])
         }, completed: { popping, cancelled in
-            if let opening { sourceToolbar?.owner.completed(opening, popping: popping, cancelled: cancelled) }
             if cancelled { sourceCurrent = true }
             ReaderSceneDiagnostics.record("source.completed", opening: session.opening.request?.id, fields: ["popping": popping, "cancelled": cancelled])
             guard popping else { return }
@@ -481,11 +483,6 @@ struct ReaderScreen: View {
             sourceCurrent = true
             ReaderSceneDiagnostics.record("source.current", opening: session.opening.request?.id)
         })
-        .onAppear {
-            if let opening, let depth = sourceDepth {
-                sourceToolbar?.owner.cover(opening, depth: depth)
-            }
-        }
     }
 
     private var sourceReader: some View {
@@ -881,10 +878,16 @@ struct ReaderScreen: View {
         ReaderCompactHeader(session: session, battery: battery, book: book, readerWidth: readerWidth,
                             compactHeaderHeight: compactHeaderHeight, showControls: { controlsVisible = true })
     }
-    private var readerOwnsChrome: Bool { sourceSelected && sourceCurrent && presentation.sourcePage == nil && !navigationPresentation.isSuspended && !session.isLeaving }
+    private var readerOwnsChrome: Bool {
+        // Pop starts suspending reading/tools before UIKit finishes navigating.
+        // Keep this reader's bar preference through the transition. Interactive
+        // pop reveals its own bar before UIKit starts; tool intent stays unchanged.
+        navigationPresentation.revealsNavigation || navigationPresentation.retainsChrome
+            || (sourceSelected && sourceCurrent && presentation.sourcePage == nil && !navigationPresentation.isSuspended && !session.isLeaving)
+    }
     private var readerNavigationVisible: Bool {
-        !session.isLeaving && !navigationPresentation.isSuspended
-            && (presentation.controlsVisible || session.window == nil)
+        !session.isLeaving && (navigationPresentation.revealsNavigation
+            || (!navigationPresentation.isSuspended && (presentation.controlsVisible || session.window == nil)))
     }
 
     private var readingSettings: Binding<ReaderSettings> {
