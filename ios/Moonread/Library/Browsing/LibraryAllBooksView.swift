@@ -3,6 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct LibraryAllBooksView: View {
+    @Environment(\.librarySourceToolbar) private var sourceToolbar
     private enum ScrollTarget: Hashable { case nameGroup(String) }
     private struct NameGroupBounds: PreferenceKey {
         static var defaultValue: [String: [Anchor<CGRect>]] { [:] }
@@ -98,19 +99,21 @@ struct LibraryAllBooksView: View {
         }
         .navigationTitle("全部小说").navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Picker("显示方式", selection: $model.layout) {
-                        Label("列表", systemImage: "list.bullet").tag(LibraryLayout.list)
-                        Label("网格", systemImage: "square.grid.3x3").tag(LibraryLayout.grid)
-                    }.pickerStyle(.inline)
-                    Menu("分组方式", systemImage: "rectangle.3.group") {
-                        Picker("分组方式", selection: $model.grouping) {
-                            Label("名称", systemImage: "textformat.abc").tag(LibraryGrouping.name)
-                            Label("标签", systemImage: "tag").tag(LibraryGrouping.tags)
+            if sourceToolbar?.covered != true {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Picker("显示方式", selection: $model.layout) {
+                            Label("列表", systemImage: "list.bullet").tag(LibraryLayout.list)
+                            Label("网格", systemImage: "square.grid.3x3").tag(LibraryLayout.grid)
                         }.pickerStyle(.inline)
-                    }.accessibilityIdentifier("libraryGrouping")
-                } label: { Label("显示方式", systemImage: "ellipsis") }.toolbarGlyph().accessibilityIdentifier("folderActions")
+                        Menu("分组方式", systemImage: "rectangle.3.group") {
+                            Picker("分组方式", selection: $model.grouping) {
+                                Label("名称", systemImage: "textformat.abc").tag(LibraryGrouping.name)
+                                Label("标签", systemImage: "tag").tag(LibraryGrouping.tags)
+                            }.pickerStyle(.inline)
+                        }.accessibilityIdentifier("libraryGrouping")
+                    } label: { Label("显示方式", systemImage: "ellipsis") }.toolbarGlyph().accessibilityIdentifier("folderActions")
+                }
             }
         }
         .refreshable { await model.refresh(showIndicator: false, userInitiated: true) }

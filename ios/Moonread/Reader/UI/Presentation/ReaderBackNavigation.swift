@@ -49,6 +49,7 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
     // identity, including removal without an animated pop or scene teardown.
     static func dismantleUIViewController(_ controller: Controller, coordinator: ()) {
         controller.removed()
+        controller.finishRemovalIfNeeded()
     }
     func updateUIViewController(_ controller: Controller, context: Context) {
         controller.willLeave = willLeave; controller.completed = completed
@@ -121,10 +122,25 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
         }
         override func viewDidDisappear(_ animated: Bool) {
             super.viewDidDisappear(animated); visible = false; visibilityChanged(false)
+            finishRemovalIfNeeded()
+        }
+
+        func finishRemovalIfNeeded() {
             // Unanimated source suffix removal has no transition coordinator.
             // A covered page still belongs to its stack and must not release.
-            if !tracking, let navigation = observedNavigation, let owner = observedDestination,
-               !navigation.viewControllers.contains(where: { $0 === owner }) {
+            guard !tracking, let navigation = observedNavigation, let owner = observedDestination,
+                  !navigation.viewControllers.contains(where: { $0 === owner }) else { return }
+            if let transition = navigation.transitionCoordinator {
+                guard transition.viewController(forKey: .from) === owner else { return }
+                // Dismantling during a pop is not its completion. Keep this
+                // callback alive even if SwiftUI removes the observer first.
+                tracking = true
+                let finished = completed
+                transition.animate(alongsideTransition: nil) { [weak self] context in
+                    self?.tracking = false
+                    finished(true, context.isCancelled)
+                }
+            } else {
                 completed(true, false)
             }
         }

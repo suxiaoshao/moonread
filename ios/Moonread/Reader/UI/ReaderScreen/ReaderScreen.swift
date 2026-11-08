@@ -14,6 +14,7 @@ struct ReaderScreen: View {
     @State private var session = ReaderSession()
     @State var coverInformation: BookDetails?
     @Environment(LibraryModel.self) private var library
+    @Environment(\.librarySourceToolbar) private var sourceToolbar
     @State private var tools = ReaderToolsModel()
     @State private var toolSession = ReaderToolSession()
     @State private var presentationOwner = UUID()
@@ -457,7 +458,8 @@ struct ReaderScreen: View {
     }
 
     private var sourceObserver: some View {
-        NavigationTransitionObserver(openingID: session.opening.request?.id ?? openingRequest?.id, expectedDepth: sourceDepth,
+        let opening = openingRequest?.id ?? session.opening.request?.id
+        return NavigationTransitionObserver(openingID: session.opening.request?.id ?? openingRequest?.id, expectedDepth: sourceDepth,
                                                    appeared: { id, reason in
                                                        completedOpeningID = id; session.opening.settled(id, reason: reason)
                                                    },
@@ -469,6 +471,7 @@ struct ReaderScreen: View {
             if popping || presentation.sourcePage != nil || !sourceRoutePresent { sourceCurrent = false }
             ReaderSceneDiagnostics.record("source.willLeave", opening: session.opening.request?.id, fields: ["popping": popping])
         }, completed: { popping, cancelled in
+            if let opening { sourceToolbar?.owner.completed(opening, popping: popping, cancelled: cancelled) }
             if cancelled { sourceCurrent = true }
             ReaderSceneDiagnostics.record("source.completed", opening: session.opening.request?.id, fields: ["popping": popping, "cancelled": cancelled])
             guard popping else { return }
@@ -478,6 +481,11 @@ struct ReaderScreen: View {
             sourceCurrent = true
             ReaderSceneDiagnostics.record("source.current", opening: session.opening.request?.id)
         })
+        .onAppear {
+            if let opening, let depth = sourceDepth {
+                sourceToolbar?.owner.cover(opening, depth: depth)
+            }
+        }
     }
 
     private var sourceReader: some View {
