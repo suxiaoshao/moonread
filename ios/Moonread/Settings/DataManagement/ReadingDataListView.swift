@@ -48,7 +48,7 @@ struct ReadingDataListView: View {
                                     }.buttonStyle(.plain)
                                 }
                             }.tag(item.id).accessibilityIdentifier("reading-data-" + item.id)
-                                .swipeActions { Button(role: .destructive) { model.deleting = [item.id] } label: { Text("删除", tableName: "DataManagement") } }
+                                .swipeActions { Button(role: .destructive) { model.deleting = [item.id] } label: { Text("删除", tableName: "DataManagement") }.tint(Color(uiColor: .systemRed)) }
                         }
                     } footer: {
                         Text("按此设备当前索引判断；未建立索引或尚未重新连接的小说也可能出现在这里。", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.secondary))

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        F18300000000000000000001 /* ReaderFontList.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18300000000000000000002; };
         F15200000000000000000005 /* ReaderBuiltinFonts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F15200000000000000000006; };
         152000000000000000000003 /* ReaderFontPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 152000000000000000000004; };
         152000000000000000000001 /* ReaderFontLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 152000000000000000000002; };
@@ -403,6 +404,7 @@ CA0FCD9B82134E7091B5CD9F /* ModelDirectoryDecoding.swift in Sources */ = {isa = 
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+        F18300000000000000000002 /* ReaderFontList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderFontList.swift"; sourceTree = "<group>"; };
         F15200000000000000000006 /* ReaderBuiltinFonts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderBuiltinFonts.swift"; sourceTree = "<group>"; };
         152000000000000000000004 /* ReaderFontPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderFontPicker.swift"; sourceTree = "<group>"; };
         152000000000000000000002 /* ReaderFontLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderFontLibrary.swift"; sourceTree = "<group>"; };
@@ -1631,6 +1633,7 @@ D35000000000000000000001,
 				F15200000000000000000006 /* ReaderBuiltinFonts.swift */,
 				152000000000000000000002 /* ReaderFontLibrary.swift */,
 				152000000000000000000004 /* ReaderFontPicker.swift */,
+                F18300000000000000000002 /* ReaderFontList.swift */,
 			);
 			path = "Fonts";
 			sourceTree = "<group>";
@@ -2185,6 +2188,7 @@ F01900000000000000000001,
                 F14100000000000000000001 /* ReaderSettingsStore.swift in Sources */,
                 F15200000000000000000005 /* ReaderBuiltinFonts.swift in Sources */,
                 152000000000000000000003 /* ReaderFontPicker.swift in Sources */,
+                F18300000000000000000001 /* ReaderFontList.swift in Sources */,
                 152000000000000000000001 /* ReaderFontLibrary.swift in Sources */,
                 AD1000000000000000000004,
                 AD1000000000000000000005,
