@@ -50,6 +50,7 @@ final class NavigationPresentationState {
 struct NavigationTransitionObserver: UIViewControllerRepresentable {
     var openingID: UUID? = nil
     var expectedDepth: Int? = nil
+    var synchronizesBarOnCancellation = false
     var appeared: (UUID, String) -> Void = { _, _ in }
     var visibilityChanged: (Bool) -> Void = { _ in }
     var willLeave: (_ popping: Bool) -> Void
@@ -68,6 +69,7 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
         controller.visibilityChanged = visibilityChanged
         controller.removed = removed; controller.becameCurrent = becameCurrent
         controller.expectedDepth = expectedDepth
+        controller.synchronizesBarOnCancellation = synchronizesBarOnCancellation
         controller.setOpening(openingID, appeared: appeared)
     }
 
@@ -77,6 +79,7 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
         var removed: () -> Void = {}
         var becameCurrent: () -> Void = {}
         var expectedDepth: Int?
+        var synchronizesBarOnCancellation = false
         private var openingID: UUID?
         private var appeared: (UUID, String) -> Void = { _, _ in }
         private var initialAppearanceCompleted = false
@@ -166,9 +169,18 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
             tracking = true
             willLeave(popping)
             let finished = completed
-            transition.animate(alongsideTransition: nil) { [weak self] context in
+            let synchronizeBar = synchronizesBarOnCancellation
+            transition.animate(alongsideTransition: nil) { [weak self, weak navigation, weak source] context in
                 self?.tracking = false
                 finished(popping, context.isCancelled)
+                // Preparation flushes the temporary bar before UIKit starts. On
+                // cancellation, flush the restored SwiftUI preference too, after
+                // UIKit has returned to this reader. Never touch the source page.
+                if synchronizeBar, context.isCancelled, let navigation, let source,
+                   navigation.topViewController === source {
+                    navigation.view.setNeedsLayout()
+                    navigation.view.layoutIfNeeded()
+                }
             }
         }
     }

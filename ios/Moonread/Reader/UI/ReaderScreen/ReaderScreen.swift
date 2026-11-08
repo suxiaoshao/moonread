@@ -462,7 +462,7 @@ struct ReaderScreen: View {
     }
 
     private var sourceObserver: some View {
-        NavigationTransitionObserver(openingID: session.opening.request?.id ?? openingRequest?.id, expectedDepth: sourceDepth,
+        NavigationTransitionObserver(openingID: session.opening.request?.id ?? openingRequest?.id, expectedDepth: sourceDepth, synchronizesBarOnCancellation: true,
                                                    appeared: { id, reason in
                                                        completedOpeningID = id; session.opening.settled(id, reason: reason)
                                                    },
@@ -477,7 +477,9 @@ struct ReaderScreen: View {
             if cancelled { sourceCurrent = true }
             ReaderSceneDiagnostics.record("source.completed", opening: session.opening.request?.id, fields: ["popping": popping, "cancelled": cancelled])
             guard popping else { return }
-            navigationPresentation.finish(cancelled: cancelled)
+            var transaction = Transaction()
+            transaction.disablesAnimations = cancelled
+            withTransaction(transaction) { navigationPresentation.finish(cancelled: cancelled) }
             if !cancelled, !sourceRoutePresent { completeReturning() }
         }, removed: { if !sourceRoutePresent { completeReturning() } }, becameCurrent: {
             sourceCurrent = true
