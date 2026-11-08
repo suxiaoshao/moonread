@@ -319,14 +319,7 @@ struct ShelfReferenceHints: View {
         if !model.shelfRecovery.references.isEmpty {
             Section {
                 ForEach(model.shelfRecovery.references) { reference in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(verbatim: reference.value.name).font(.headline)
-                        Text(reference.locationLabel).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
-                        Button { model.reauthorizeShelf(reference) } label: { Text("重新连接", tableName: "Localizable") }
-                            .buttonStyle(ThemedSecondaryButtonStyle())
-                            .accessibilityIdentifier("reauthorizeShelf-" + reference.id)
-                            .disabled(!model.canAcceptFileWork)
-                    }.padding(.vertical, 6)
+                    ShelfReferenceRow(model: model, reference: reference)
                 }
             } header: { Text("你之前添加过这些书架", tableName: "ShelfRecovery") } footer: {
                 Text("重新选择原来的文件夹，即可恢复对此书架的访问。")
@@ -335,5 +328,21 @@ struct ShelfReferenceHints: View {
                 .listRowBackground(grouped ? Color(uiColor: theme.surface) : Color.clear)
                 .listRowSeparatorTint(Color(uiColor: theme.separator))
         }
+    }
+}
+
+struct ShelfReferenceRow: View {
+    @Environment(\.theme) private var theme
+    let model: LibraryModel
+    let reference: ShelfReference
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(verbatim: reference.value.name).font(.headline)
+            Text(reference.locationLabel).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+            Button { model.reauthorizeShelf(reference) } label: { Text("重新连接", tableName: "Localizable") }
+                .buttonStyle(ThemedSecondaryButtonStyle())
+                .accessibilityIdentifier("reauthorizeShelf-" + reference.id)
+                .disabled(!model.canAcceptFileWork)
+        }.padding(.vertical, 6)
     }
 }

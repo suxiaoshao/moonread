@@ -142,9 +142,7 @@ struct ReaderFontList: UIViewControllerRepresentable {
             cell.contentConfiguration = content
             cell.tintColor = theme.accent
             cell.configurationUpdateHandler = { cell, state in
-                var background = UIBackgroundConfiguration.listCell()
-                background.backgroundColor = theme.surface
-                cell.backgroundConfiguration = background.updated(for: state)
+                cell.backgroundConfiguration = themedListBackground(theme, state: state)
             }
             cell.setNeedsUpdateConfiguration()
             cell.accessories = []
