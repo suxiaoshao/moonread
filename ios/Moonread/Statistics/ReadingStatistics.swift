@@ -61,11 +61,11 @@ extension AppDataService {
     }
     func statistics(first: Int64, last: Int64, book: String? = nil) async throws -> StatisticsOverview {
         _ = try await statisticsCompatibilityNotice(book: book)
-        return try await effectiveQuery(facts: true, statisticsBook: book).statisticsOverview(firstDay: first, lastDay: last, contentKey: book)
+        return try await effectiveQuery(facts: true, statisticsBook: book, fields: .metadata).statisticsOverview(firstDay: first, lastDay: last, contentKey: book)
     }
     func activities(first: Int64, last: Int64, book: String? = nil) async throws -> [ReadingActivity] {
         _ = try await statisticsCompatibilityNotice(book: book)
-        return try await effectiveQuery(facts: true, statisticsBook: book).readingActivities(firstDay: first, lastDay: last, contentKey: book)
+        return try await effectiveQuery(facts: true, statisticsBook: book, fields: []).readingActivities(firstDay: first, lastDay: last, contentKey: book)
     }
     func statisticsCompatibilityNotice(book: String? = nil) async throws -> String? {
         let formal = try await userStore(), pending = try await userStore(pending: true)

@@ -46,7 +46,7 @@ extension AppDataService {
     func systemDerivedCover(_ cover: BookCoverAsset) async -> SystemReadingDerivedCover? {
         for pixels in [384, 274, 192] {
             guard !Task.isCancelled else { return nil }
-            guard let image = try? await coverImage(cover, pixels: pixels), let cgImage = image.cgImage else { continue }
+            guard let image = try? await coverImage(cover, pixels: pixels, exactSize: true), let cgImage = image.cgImage else { continue }
             let value = await Task.detached(priority: .utility) { SystemReadingDerivedCover.encode(cgImage, sha: cover.sha256, pixels: pixels) }.value
             if let value, value.data.count <= 128 * 1024 || pixels == 192 { return value }
         }
@@ -106,7 +106,7 @@ extension AppDataService {
         do {
             if try await statisticsCompatibilityNotice() != nil { return result("incomplete") }
             let week = StatisticsDates.systemReadingBounds(week: true, now: now, calendar: calendar)
-            let query = try await effectiveQuery(facts: true, scope: "system-widget-statistics")
+            let query = try await effectiveQuery(facts: true, scope: "system-widget-statistics", fields: [])
             let summary = try await Task.detached(priority: .utility) { try query.statisticsWidgetSummary(today: today, weekStart: week.lowerBound) }.value
             return result(!enabled && !summary.hasReadingHistory ? "notEnabled" : "ready", summary: summary)
         } catch let error as UserSyncCompatibilityError where error.reason == .newerFormat { return result("incomplete") }

@@ -270,15 +270,6 @@ extension AppDataService {
         guard !keys.isEmpty else { return [] }
         return try await effectiveQuery(keys: Array(Set(keys)), scope: "recent").recentLibraryEntries(limit: limit)
     }
-    func recentBook(_ route: ReaderRoute) async throws -> LibraryEntry? {
-        switch route {
-        case let .book(id): return try await bookQuery(id).recentLibraryEntries(limit: 1).first
-        case let .source(file):
-            let entry = try await libraryEntry(file.id)
-            guard let key = entry.readingKey else { return nil }
-            return try await effectiveQuery(keys: [key], scope: "recent-source").recentLibraryEntries(limit: 1000).first { $0.readingKey == key }
-        }
-    }
     func hideRecent(_ value: String) throws {
         let key: String
         if let parsed = try? parseReadingKey(value: value) { key = serializeReadingKey(key: parsed) }

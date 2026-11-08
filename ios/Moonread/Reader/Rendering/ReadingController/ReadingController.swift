@@ -16,6 +16,9 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     var autoReading: ReaderAutoReading?
     var pausedAutomaticTouch = false
     var resumeAutomaticReading: () -> Void = {}
+    var bodyDisplayed: () -> Void = {}
+    private var bodyDisplayLink: CADisplayLink?
+    private var displayedOpening: UUID?
     var statisticsInteraction: () -> Void = {}
     var statisticsPresentationChanged: () -> Void = {}
     var annotationChooserChanged: (Bool) -> Void = { _ in }
@@ -168,10 +171,12 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         backNavigation.install(on: self)
         deviceControls.start(in: view.window?.windowScene)
         statisticsPresentationChanged()
+        awaitBodyDisplay()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        bodyDisplayLink?.invalidate(); bodyDisplayLink = nil
         autoReading?.pause()
         backNavigation.uninstall()
         deviceControls.stop()
@@ -432,6 +437,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             let status = layoutStatus
             Task { @MainActor in status?.committed() }
         }
+        awaitBodyDisplay()
         recordLayout("layout.committed", proposed: nextSurface)
         if let id = openingID, diagnosedOpening != id, !needsRebuild {
             diagnosedOpening = id
@@ -441,6 +447,20 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             displayProbe = ReaderDisplayProbe(view: view, id: id, cover: isCoverVisible, glyphsVisible: { [weak self] in self?.diagnosticGlyphsVisible() ?? false }) { [weak self] in self?.displayProbe = nil }
             #endif
         }
+    }
+
+    func awaitBodyDisplay() {
+        guard let openingID, displayedOpening != openingID, bodyDisplayLink == nil,
+              statisticsRange() != nil else { return }
+        let link = CADisplayLink(target: self, selector: #selector(didDisplayBody))
+        bodyDisplayLink = link; link.add(to: .main, forMode: .common)
+    }
+    @objc private func didDisplayBody() {
+        bodyDisplayLink?.invalidate(); bodyDisplayLink = nil
+        guard UIApplication.shared.applicationState == .active, let openingID,
+              displayedOpening != openingID, viewIfLoaded?.window != nil, view.alpha >= 0.99,
+              statisticsRange() != nil else { return }
+        displayedOpening = openingID; bodyDisplayed()
     }
 
     private func recordLayout(_ event: String, proposed: CGRect? = nil) {

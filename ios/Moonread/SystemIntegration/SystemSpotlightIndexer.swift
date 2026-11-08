@@ -112,10 +112,29 @@ extension AppDataService {
     }
 
     private func systemSpotlightThumbnail(_ book: SystemSpotlightMetadata) async -> Data? {
+        // Image inputs exclude chapter/progress: a text-only update reuses the same bytes.
+        let scope = systemCatalog?.scope ?? ""
+        let lastKey = "last-" + scope + "-" + book.id
+        let key = [scope, book.id, book.title, book.author ?? "",
+                   book.cover?.id ?? "", book.cover?.sha256 ?? "", book.thumbnailRevision ?? ""].joined(separator: "\u{0}")
+        if let value = systemSpotlightThumbnails.object(forKey: key as NSString) { return value as Data }
         let image: UIImage?
-        if let cover = book.cover { image = try? await coverImage(cover, pixels: 384) }
-        else { image = nil }
-        return await SystemSpotlightMetadata.thumbnail(title: book.title, author: book.author, contentSHA256: SystemReadingLink.contentSHA256(bookID: book.id), image: image)
+        if let cover = book.cover {
+            image = try? await coverImage(cover, pixels: 384)
+            guard systemCatalog?.scope == scope else { return nil }
+            if image == nil {
+                systemSpotlightThumbnailFailures.insert(book.id)
+                return systemSpotlightThumbnails.object(forKey: lastKey as NSString).map { $0 as Data }
+            }
+        } else { image = nil }
+        let result = await SystemSpotlightMetadata.thumbnail(title: book.title, author: book.author, contentSHA256: SystemReadingLink.contentSHA256(bookID: book.id), image: image)
+        guard systemCatalog?.scope == scope else { return nil }
+        if let result {
+            systemSpotlightThumbnailFailures.remove(book.id)
+            systemSpotlightThumbnails.setObject(result as NSData, forKey: key as NSString, cost: result.count)
+            systemSpotlightThumbnails.setObject(result as NSData, forKey: lastKey as NSString, cost: result.count)
+        }
+        return result
     }
 
     func requestSystemSpotlightReindex() async {
@@ -141,7 +160,7 @@ extension AppDataService {
         if state.scope != snapshot.storeScope || state.contentVersion != SystemSpotlightMetadata.contentFormatVersion {
             try await adapter.deleteAll()
             state = .init(scope: snapshot.storeScope)
-            systemSpotlightMetadata.removeAll()
+            systemSpotlightMetadata.removeAll(); systemSpotlightThumbnails.removeAllObjects(); systemSpotlightThumbnailFailures.removeAll()
             sourceDefaults.set(try JSONEncoder().encode(state), forKey: key)
         }
         let metadata = snapshot.books.filter(\.allowsAutomaticExposure).map {
@@ -170,7 +189,7 @@ extension AppDataService {
             let batch = Array(changed[start..<min(start + 50, changed.count)])
             try await adapter.index(batch)
             guard systemCatalog?.scope == snapshot.storeScope, systemExposurePolicy() == snapshot.exposurePolicy else { return }
-            for item in batch { systemSpotlightMetadata[item.id] = item }
+            for item in batch where !systemSpotlightThumbnailFailures.contains(item.id) { systemSpotlightMetadata[item.id] = item }
             reportSystemSpotlightProgress(String(localized: "正在提交系统搜索：\(start + batch.count) / \(changed.count) 本"))
         }
         guard systemCatalog?.scope == snapshot.storeScope, systemExposurePolicy() == snapshot.exposurePolicy else { return }

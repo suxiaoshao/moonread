@@ -236,7 +236,6 @@ struct LibraryFileLoading: View {
         if model.openingFileID == entry.id && model.showsFileLoading {
             Button { model.cancelOpening() } label: {
                 ZStack {
-                    Color(uiColor: theme.accentSurface)
                     VStack(spacing: compact ? 5 : 8) {
                         if let progress = model.fileProgress {
                             ProgressView(value: progress).progressViewStyle(.linear)
@@ -248,7 +247,8 @@ struct LibraryFileLoading: View {
                             ProgressView().progressViewStyle(.circular)
                                 .tint(Color(uiColor: theme.accent))
                         }
-                    }.padding(.horizontal, compact ? 6 : 12).frame(maxWidth: 92)
+                    }.padding(.horizontal, compact ? 6 : 12).padding(.vertical, 8).frame(maxWidth: 92)
+                        .background(.regularMaterial, in: .rect(cornerRadius: compact ? 3 : 6))
                 }.clipShape(.rect(cornerRadius: compact ? 3 : 6)).contentShape(.rect)
             }.buttonStyle(.plain).accessibilityLabel("取消下载")
                 .accessibilityValue(model.fileProgress.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? String(localized: "正在获取文件"))

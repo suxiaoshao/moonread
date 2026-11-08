@@ -8,7 +8,7 @@ struct LibraryView: View {
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
     @Environment(\.horizontalSizeClass) private var sizeClass
-    /// The most recent formal reading resumes from its own row; the rest follow as recents:
+    /// The most recently opened book resumes from its own row; the rest follow as recents:
     /// two rows in the list layout, a scrollable cover row in the grid.
     private var current: LibraryEntry? { model.recents.first }
     private var following: [LibraryEntry] {

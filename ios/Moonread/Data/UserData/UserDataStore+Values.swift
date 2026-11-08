@@ -3,7 +3,7 @@ import SwiftData
 import CoreData
 
 extension UserDataStore {
-    struct ValueSnapshot {
+    struct ValueSnapshot: Sendable {
         var values: [String: StoredValue] = [:]
         var blocked = Set<String>()
         mutating func include(key: String, payload: String) {

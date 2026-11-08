@@ -112,7 +112,7 @@ extension AppDataService {
         if let store = try? await userStore() { try? await store.importedChanges() }
         if let store = try? await userStore(pending: true) { try? await store.importedChanges() }
     }
-    func bookQuery(_ id: String, diagnostic: ReaderOpenTrace? = nil) async throws -> ReaderQuery {
+    func bookQuery(_ id: String, facts: Bool = false, diagnostic: ReaderOpenTrace? = nil) async throws -> ReaderQuery {
         let diagnostic = diagnostic ?? ReaderOpenDiagnostics.trace(book: id)
         diagnostic?.mark("bookQuery.actor.begin")
         defer { diagnostic?.mark("bookQuery.actor.return") }
@@ -121,11 +121,13 @@ extension AppDataService {
         let key = try userKey(id)
         diagnostic?.mark("userKey.return")
         diagnostic?.mark("effectiveQuery.queued")
-        let query = try await effectiveQuery(keys: Array(Set([key, serializeReadingKey(key: .pending(bookId: id))])), scope: "book-\(id)-\(generation)", diagnostic: diagnostic)
+        let keys = try textCore().readingScopeKeys(key: parseReadingKey(value: key)).map { serializeReadingKey(key: $0) }
+        let query = try await effectiveQuery(facts: facts, keys: keys, statisticsKeys: facts ? keys : nil, scope: "book-\(id)-\(generation)", fields: [.position, .metadata, .chapter], diagnostic: diagnostic)
         diagnostic?.mark("effectiveQuery.resumed")
         return query
     }
-    func effectiveQuery(facts: Bool = false, keys: [String]? = nil, positionsOnly: Bool = false, statisticsBook: String? = nil, scope: String = "batch", sparseCatalogue: Bool = false, diagnostic: ReaderOpenTrace? = nil) async throws -> ReaderQuery {
+    func effectiveQuery(facts: Bool = false, keys: [String]? = nil, positionsOnly: Bool = false, statisticsBook: String? = nil, statisticsKeys: [String]? = nil, scope: String = "batch", sparseCatalogue: Bool = false, fields: UserProjectionDomain = .reading, diagnostic: ReaderOpenTrace? = nil, retryChangedInput: Bool = true) async throws -> ReaderQuery {
+        let configuration = userCloudConfigurationRevision
         diagnostic?.mark("effectiveQuery.actor.begin")
         defer { diagnostic?.mark("effectiveQuery.actor.return") }
         diagnostic?.mark("formalStore.queued")
@@ -136,12 +138,20 @@ extension AppDataService {
         diagnostic?.mark("pendingStore.resumed")
         diagnostic?.mark("inputSignature.begin")
         let preferences = statisticsPreferences(), core = try textCore()
-        let formalVersion = store.projectionVersion, pendingVersion = pending.projectionVersion
-        let hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
+        let statisticsScope = try statisticsBook.map { try core.readingScopeKeys(key: parseReadingKey(value: $0)).map { serializeReadingKey(key: $0) } }
+        let factKeys = statisticsKeys ?? statisticsScope
+        let valueKeys = keys ?? statisticsScope
+        func version(_ store: UserDataStore) -> String {
+            store.version(keys: valueKeys, positionsOnly: positionsOnly, includeFacts: facts, statisticsKeys: factKeys, fields: fields)
+        }
+        let formalVersion = version(store), pendingVersion = version(pending)
+        let usesRecents = positionsOnly || !fields.intersection([.position, .opened]).isEmpty
+        let hidden = usesRecents ? Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []) : []
         let prefix = "Moonread.preferredFile."
         let preferred: [String: String]
-        if let keys {
-            preferred = keys.reduce(into: [:]) { result, key in
+        if !usesRecents { preferred = [:] }
+        else if let valueKeys {
+            preferred = valueKeys.reduce(into: [:]) { result, key in
                 if let file = sourceDefaults.string(forKey: prefix + key) { result[key] = file }
             }
         } else {
@@ -149,15 +159,15 @@ extension AppDataService {
                 if item.key.hasPrefix(prefix), let file = item.value as? String { result[String(item.key.dropFirst(prefix.count))] = file }
             }
         }
-        let cacheKey = scope + "-\(facts)-\(positionsOnly)-\(statisticsBook ?? "all")-\(sparseCatalogue)-" + (keys?.sorted().joined(separator: ",") ?? "all")
+        let cacheKey = scope + "-\(facts)-\(positionsOnly)-\(factKeys?.sorted().joined(separator: ",") ?? "all")-\(sparseCatalogue)-\(fields.rawValue)-" + (valueKeys?.sorted().joined(separator: ",") ?? "all")
         let signature = "\(userCloudConfigurationRevision)-\(formalVersion)-\(pendingVersion)-\(preferences.generation)-\(preferences.enabled)-" + hidden.sorted().joined(separator: ",") + preferred.sorted { $0.key < $1.key }.map { $0.key + "=" + $0.value }.joined(separator: ",")
         diagnostic?.mark("inputSignature.return")
         if let cached = queryCache[cacheKey], cached.signature == signature { diagnostic?.mark("query.cacheHit"); return cached.query }
         diagnostic?.mark("formalProjection.queued")
-        let formalJSON = try await store.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: keys, positionsOnly: positionsOnly, statisticsBook: statisticsBook, diagnostic: diagnostic, diagnosticScope: "formalProjection", sparseCatalogue: sparseCatalogue)
+        let formalJSON = try await store.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: valueKeys, positionsOnly: positionsOnly, statisticsKeys: factKeys, fields: fields, diagnostic: diagnostic, diagnosticScope: "formalProjection", sparseCatalogue: sparseCatalogue)
         diagnostic?.mark("formalProjection.resumed")
         diagnostic?.mark("pendingProjection.queued")
-        let pendingJSON = try await pending.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: keys, positionsOnly: positionsOnly, statisticsBook: statisticsBook, diagnostic: diagnostic, diagnosticScope: "pendingProjection", sparseCatalogue: sparseCatalogue)
+        let pendingJSON = try await pending.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: valueKeys, positionsOnly: positionsOnly, statisticsKeys: factKeys, fields: fields, diagnostic: diagnostic, diagnosticScope: "pendingProjection", sparseCatalogue: sparseCatalogue)
         diagnostic?.mark("pendingProjection.resumed")
         // Full JSON/TEMP work runs independently, so an exiting reader's batch cannot occupy this actor.
         diagnostic?.mark("queryBuild.queued")
@@ -166,10 +176,11 @@ extension AppDataService {
             defer { diagnostic?.mark("queryBuild.worker.return") }
             var combined = try JSONSerialization.jsonObject(with: Data(formalJSON.utf8)) as! [String: Any]
             let extra = try JSONSerialization.jsonObject(with: Data(pendingJSON.utf8)) as! [String: Any]
-            for field in ["positions", "facts", "metadata", "corrections"] { combined[field] = (combined[field] as! [Any]) + (extra[field] as! [Any]) }
+            for field in ["positions", "opened", "facts", "metadata", "corrections"] { combined[field] = (combined[field] as! [Any]) + (extra[field] as! [Any]) }
             let rawPositions = combined["positions"] as! [[String: Any]]
             var blockedPositions = Set((combined["unsupportedPositions"] as? [String] ?? []) + (extra["unsupportedPositions"] as? [String] ?? []))
-            let rawKeys = Set(rawPositions.compactMap { $0["content_key"] as? String }).union(hidden).union(blockedPositions)
+            let rawOpened = combined["opened"] as! [[String: Any]]
+            let rawKeys = Set(rawPositions.compactMap { $0["content_key"] as? String }).union(rawOpened.compactMap { $0["content_key"] as? String }).union(hidden).union(blockedPositions)
             let resolutions = try core.resolveReadingKeys(keys: rawKeys.compactMap { try? parseReadingKey(value: $0) })
             let mapping = Dictionary(uniqueKeysWithValues: resolutions.map { (serializeReadingKey(key: $0.original), serializeReadingKey(key: $0.effective)) })
             let effectiveHidden = hidden.union(hidden.compactMap { mapping[$0] })
@@ -179,6 +190,21 @@ extension AppDataService {
                 let candidate = try PositionCandidate(projection: input)
                 guard let key = mapping[candidate.value.content_key], !blockedPositions.contains(key) else { return nil }
                 return try candidate.rekeyed(to: key)
+            }
+            var opened = UserDataStore.ValueSnapshot()
+            var openedSources: [String: [String: String]] = [:]
+            for row in rawOpened {
+                guard let source = row["content_key"] as? String, let key = mapping[source],
+                      !effectiveHidden.contains(key), let at = row["opened_ms"] as? NSNumber,
+                      let updated = row["updated"] as? NSNumber, let token = row["token"] as? String else { continue }
+                // Use the existing value LWW owner even while formal/pending coexist.
+                try opened.select(key: key, value: StoredValue(updated: updated.int64Value, token: token, value: at.stringValue))
+                openedSources[key, default: [:]][token] = source
+            }
+            combined["opened"] = opened.values.map { key, stored -> [String: Any] in
+                let source = openedSources[key]?[stored.token] ?? key
+                return ["content_key": key, "updated": Int64(stored.value) ?? 0,
+                        "preferred": preferred[key] ?? preferred[source] ?? NSNull() as Any]
             }
             let positions = PositionCandidate.reduce(candidates)
             combined["positions"] = try positions.keys.sorted().map { key -> [String: Any] in
@@ -191,7 +217,13 @@ extension AppDataService {
             return try core.querySnapshot(json: String(decoding: JSONSerialization.data(withJSONObject: combined), as: UTF8.self))
         }.value
         diagnostic?.mark("queryBuild.resumed")
-        if store.projectionVersion == formalVersion, pending.projectionVersion == pendingVersion {
+        guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
+        guard version(store) == formalVersion, version(pending) == pendingVersion else {
+            guard retryChangedInput else { throw CancellationError() }
+            return try await effectiveQuery(facts: facts, keys: keys, positionsOnly: positionsOnly, statisticsBook: statisticsBook,
+                statisticsKeys: statisticsKeys, scope: scope, sparseCatalogue: sparseCatalogue, fields: fields, diagnostic: diagnostic, retryChangedInput: false)
+        }
+        do {
             if queryCache.count >= 32 { queryCache.removeAll() }
             queryCache[cacheKey] = CachedQuery(signature: signature, query: query)
         }
@@ -240,6 +272,16 @@ extension AppDataService {
         if let notice = try await userStore(for: key).compatibilityNotice(key: key) { return notice }
         if case .formal = try parseReadingKey(value: key) { return try await userStore(pending: true).compatibilityNotice(key: serializeReadingKey(key: .pending(bookId: id))) }
         return nil
+    }
+    /// Separate LWW fact: never manufactures a reading position or activity.
+    func recordBookOpened(_ id: String, at milliseconds: Int64) async throws {
+        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        let key = try userKey(id)
+        if let file = readingSourceIDs[id] { sourceDefaults.set(file, forKey: "Moonread.preferredFile." + key) }
+        var hidden = sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []
+        hidden.removeAll { $0 == key }; sourceDefaults.set(hidden, forKey: "Moonread.hiddenRecent")
+        _ = try await userStore(for: key).put("opened/" + key, value: String(milliseconds), device: userDevice)
+        dataChanged()
     }
     func writePosition(_ id: String, offset: UInt64, expectedConfiguration: UUID? = nil) async throws {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }

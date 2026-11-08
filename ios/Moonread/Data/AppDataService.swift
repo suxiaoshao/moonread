@@ -53,6 +53,7 @@ final class ReadingLease: Sendable {
 
 /// Serializes blocking Rust and file-provider calls away from the main actor.
 actor AppDataService {
+    let coverResources = CoverResourceLoader()
     static let shared: AppDataService = {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
@@ -130,6 +131,10 @@ actor AppDataService {
     var systemSpotlightSubmissionStatus: String?
     var systemSpotlightAdapter: SystemSpotlightAdapter?
     var systemSpotlightMetadata: [String: SystemSpotlightMetadata] = [:]
+    let systemSpotlightThumbnails: NSCache<NSString, NSData> = {
+        let cache = NSCache<NSString, NSData>(); cache.totalCostLimit = 16 * 1024 * 1024; cache.countLimit = 128; return cache
+    }()
+    var systemSpotlightThumbnailFailures = Set<String>()
     private var core: ReaderCore?
     struct CachedQuery { let signature: String; let query: ReaderQuery }
     var queryCache: [String: CachedQuery] = [:]
@@ -463,7 +468,7 @@ actor AppDataService {
         return (frame.snapshot, frame)
     }
 
-    func chapters(_ id: String) async throws -> ChapterOutline { try await effectiveQuery(facts: true).chapterOutline(bookId: id) }
+    func chapters(_ id: String) async throws -> ChapterOutline { try await bookQuery(id, facts: true).chapterOutline(bookId: id) }
     func marks(_ id: String, kind: MarkKind, offset: UInt32, snapshot: NoteCandidates? = nil) async throws -> MarkPage {
         let values = try await userMarks(id, kind: kind, snapshot: snapshot), start = min(Int(offset), values.count), end = min(start + 60, values.count)
         return MarkPage(items: Array(values[start..<end]), hasMore: end < values.count)

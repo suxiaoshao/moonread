@@ -48,6 +48,9 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 待索引集合与书架索引 inventory | Rust `library/bookshelf/full_index.rs` | 同一数据库快照返回总量/pending；Swift 不重复身份判定 | 单源扩展 |
 | 书架同步描述、本机授权绑定和扫描后准入 | Swift `ShelfRecovery.swift`、`UserSyncJSON.swift`、`FullIndex.swift` | SwiftData 裁决描述，本机 schemaVersion 1 绑定按账户隔离；平台扫描成功范围限制自动任务，不复制 Rust 查询 | 平台边界 |
 | SHA 格式 | Rust `identity/content.rs::parse_sha256` | 身份及资产校验共享严格语法，语义字段仍区分 | 单源 |
+| 查询输入范围与失效 | Swift `UserDataService` / `UserDataStore+Projection.swift` / `UserData.swift` | 正式+pending（含 Rust `reading_scope_keys` 解析的旧别名）、字段依赖与按书 facts 在一个装配入口；事务保存前按变更模型的书/领域阻断旧缓存；读取在同一 actor 提交/回滚后取值，成功后才发布数据变更；未知云导入全局失效；Rust ReaderQuery 只做既有计算 | 单一查询 owner |
+| 最近打开 | Swift `ReaderSession.bodyDidDisplay` 及 `UserDataService.recordBookOpened`，Rust `user/projection.rs` / `library/bookshelf` | 原生正文完成布局并到达显示时机后单次记录；UserValue `opened/<reading-key>` 的毫秒时间与位置独立，复用 LWW/备份/pending 晋升。Rust 唯一排序，旧数据缺值回退位置时间，不制造位置/计时交互 | 单一事实与排序 |
+| 封面资源与静默替换 | Swift `Books/BookMetadata.swift` 的 `CoverResourceLoader`、`CoverImageLoader`、`BookCoverDisplay` | 独立资源 actor 统一 UI/Widget/Spotlight I/O 与派生；按作用域/资源/尺寸合并并有界缓存，ready 不随订阅销毁。同书旧图等新图成功，删除/换书/换账号立即清；系统文字更新复用图像输入版本 | 单一资源 owner |
 | 默认阅读中状态 | Rust `user/projection.rs::reading_content_positions` + `reading/book_details.rs::project_metadata` | 详情、搜索与资料导入 unread 限制共用 SHA 位置记录判定（`has_reading_position`）；file_identities 提供有效索引身份，不依赖本机 books 正文缓存；显式状态优先 | 单源修复 |
 | AI 工具输入/schema/输出契约与执行 | Swift `AI/Tools/Reading/AIReadingToolContracts.swift` / `AIReadingTools.swift` | 只拆契约、执行和 `AppDataService+AIReading.swift` 平台适配的物理文件；引用、SHA、范围与搜索仍调用既有 owner | 单一执行 actor |
 | AI b: 引用协议 | Swift `AI/Tools/Reading/AIReadingReferences.swift` | 工具协议只在 Swift；调用 Rust SHA 校验，不再复制 hex 判断 | 共享引用解析 |
@@ -185,6 +188,8 @@ AI 连接、共享授权、用途默认值逐条解码，失败条目跳过并�
 
 正文身份 `content_sha256` 的 normalization-v1 是稳定契约。已经支持的文件，其解码策略与规范化结果不得因依赖更新、算法整理而静默改变；若确需变更，须保留原键到新键的映射与所有进度/标记关联，并测试旧文件解码和旧键恢复。缓存可版本失效重建，但不得连带抛弃授权、解码选择、任务暂存或用户记录。
 
+1.6 的最近打开复用既有 UserValue v1 envelope 和 LWW，新增可缺省的 `opened/<reading-key>` 值（JSON Int64 毫秒）；缺失不伪造，排序回退已发布 1.5 的位置时间。既有 SwiftData 模型、CloudKit schema、位置和备份容器格式不变；完整备份包含此值，pending 晋升和按书删除沿原入口处理。旧版可保留未知键，1.6 能读取原有 1.5 数据；没有开发中间态迁移。
+
 SwiftData 变更使用可验证的 schema 演进/迁移。1.0.0 的阅读数据库与 AI 会话库没有使用 `VersionedSchema`。1.0.0 之后第一次修改任一库的模型（包括只加可选字段的轻量变更）时引入版本化：1.0.0 的现有模型原样作为 `SchemaV1`，新模型为 `SchemaV2`，加 `SchemaMigrationPlan` 与旧库升级测试；此后每个发布过的 schema 都保留一个版本，轻量变更用 lightweight stage，不能只登记首尾两端。CloudKit 生产 schema 只增加字段/记录类型，不删改既有类型及字段语义。UserDefaults/Keychain 的键名与凭据编码属于数据契约，变更需迁移且不得落入日志。同步 payload 通过 Swift 边界校验并按作用域隔离未知内容，不能靠 JSON 字段保留代替 LWW 并发设计；详见同步专题。
 
 重置仅限当轮明确授权的开发数据，不是发布后错误恢复方式；不得删除用户的外部或 iCloud 小说原件。上述约定不改变[iOS 版本和 API 兼容策略](ios-support.md)。
@@ -206,7 +211,7 @@ ReaderCore 只公开正文与索引操作所需的接口。导入生命周期使
 
 ## 查询范围与执行隔离
 
-开书只按正文 SHA 或 pending key 读取位置、元数据与章节覆盖；首次 snapshot/frame 共用同一不可变 ReaderQuery。普通目录只投影该目录及子目录相关书籍，普通最近列表先查位置索引再补必要资料。冷首页全量路径与需要 facts 的统计/目录查询保留各自范围，不把它们作为每次开书的前置条件。
+开书只按正文 SHA 或 pending key 读取位置、元数据与章节覆盖；首次 snapshot/frame 共用同一不可变 ReaderQuery。普通目录只投影该目录及子目录相关书籍，普通最近列表先查位置/打开时间索引再补必要资料。目录的正式与 pending 资料及 facts 使用同一单书范围；统计概览只取资料/事实，统计小组件只取事实。相关书/领域的本机提交使缓存失效，CloudSync 完成未知范围导入时保守全局失效，不以任意 ModelContext 保存或原始 Core Data remote-change 通知全局重算。对象取值留在原 ModelActor，传 Sendable 值后在 detached 任务执行唯一的事实筛选/JSON 组装，同输入合并进行中任务；不增加读 context。读完输入版本变动的结果不缓存或发布，首次受控重取一次。
 
 阅读设置使用验证后的内存副本；位置压缩按写入 key 进行，CloudKit 导入失效缓存，读路径不执行全库压缩。pending 恢复与全局 reclaim 在本地首页建立后启动一次。ReaderQuery 保持独立不可变 TEMP 输入；缓存按输入版本失效，不恢复共享可变 TEMP 表。详细失效与执行原则见[性能设计](performance.md)。
 

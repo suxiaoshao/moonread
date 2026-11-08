@@ -127,7 +127,7 @@ enum BackupRows {
         let parts = key.split(separator: "/")
         guard let type = parts.first else { throw ReadingDataError.invalid }
         if type == "palette" || type == "source-decoding" { return nil }
-        guard ["metadata", "chapter", "position"].contains(String(type)) else { throw ReadingDataError.updateRequired }
+        guard ["metadata", "chapter", "position", "opened"].contains(String(type)) else { throw ReadingDataError.updateRequired }
         guard parts.count >= 2 else { throw ReadingDataError.invalid }
         let book = String(parts[1]); _ = try parseReadingKey(value: book); return book
     }
@@ -242,7 +242,8 @@ extension UserDataStore {
                 let values = try allValues(prefix: "metadata/" + key + "/")
                 let chapters = try allValues(prefix: "chapter/" + key + "/")
                 let heads = try candidates(key: key, compacting: false)
-                let live = positions["position/" + key] != nil || values.values.contains { $0 != "null" } || chapters.values.contains { $0 != "null" }
+                let opened = try value("opened/" + key)
+                let live = opened != nil || positions["position/" + key] != nil || values.values.contains { $0 != "null" } || chapters.values.contains { $0 != "null" }
                     || heads.values.contains { $0.contains { $0.content != nil } } || !facts.isEmpty
                 if !live, items[key]?.unsupported == false { items.removeValue(forKey: key); continue }
                 items[key]?.author = values["metadata/" + key + "/author"].flatMap { try? JSONDecoder().decode(String.self, from: Data($0.utf8)) } ?? ""

@@ -51,7 +51,7 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
   @MainActor func testSingleBookProjectionMatchesBatchAndInvalidatesWithoutMutatingOldSnapshot()
     async throws
   {
-    let (root, service, _, formal, _, book, other, suite) = try singleBookFixture()
+    let (root, service, _, formal, pending, book, other, suite) = try singleBookFixture()
     defer {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -77,6 +77,43 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(
       try scoped.readingSnapshot(bookId: book.id), try same.readingSnapshot(bookId: book.id),
       "Unchanged facts have equal query results; framework notifications may evict a cached object")
+    let beforeOther = formal.version(keys: [book.contentSha256, "pending:" + book.id], positionsOnly: false, includeFacts: false, statisticsKeys: nil)
+    try await service.savePosition(bookID: other.id, offset: 12)
+    let afterOther = formal.version(keys: [book.contentSha256, "pending:" + book.id], positionsOnly: false, includeFacts: false, statisticsKeys: nil)
+    XCTAssertEqual(beforeOther, afterOther, "Only related input versions may change")
+    let unrelated = try await service.bookQuery(book.id)
+    XCTAssertTrue(same === unrelated, "An unrelated book position must reuse this query")
+    func fact(_ key: String) throws -> (String, String, String) {
+      let id = UUID().uuidString
+      let payload: [String: Any] = ["content_key": key, "title": "Synthetic", "device": "fixture", "slice": [
+        "id": id, "session_id": "fixture", "visit_id": "fixture", "book_id": book.id,
+        "started_ms": 1000, "ended_ms": 2000, "local_day": 20000, "utc_offset_seconds": 0,
+        "preview": false, "exposures": [["start_utf8": 0, "end_utf8": 9, "duration_ms": 1000]]]]
+      return (id, key, String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self))
+    }
+    try await formal.saveFacts([fact(book.contentSha256), fact(other.contentSha256)], generation: 0, current: 0, enabled: true)
+    try await pending.saveFacts([fact("pending:" + book.id)], generation: 0, current: 0, enabled: true)
+    let noFactsChanged = try await service.bookQuery(book.id)
+    XCTAssertTrue(unrelated === noFactsChanged, "Reading facts cannot invalidate a query that does not depend on them")
+    let statsOnly = try await formal.projection(generation: 0, enabled: true, includeFacts: true,
+      keys: [book.contentSha256], statisticsKeys: [book.contentSha256, "pending:" + book.id])
+    XCTAssertFalse(statsOnly.contains(other.contentSha256))
+    let formalJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(statsOnly.utf8)) as? [String: Any])
+    XCTAssertEqual((formalJSON["facts"] as? [Any])?.count, 1)
+    let pendingInput = try await pending.projection(generation: 0, enabled: true, includeFacts: true,
+      keys: [book.contentSha256, "pending:" + book.id], statisticsKeys: [book.contentSha256, "pending:" + book.id])
+    let pendingJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(pendingInput.utf8)) as? [String: Any])
+    XCTAssertEqual((pendingJSON["facts"] as? [Any])?.count, 1, "Both identities retain their own facts")
+    let outline = try await service.bookQuery(book.id, facts: true).chapterOutline(bookId: book.id)
+    let full = try await service.effectiveQuery(facts: true)
+    XCTAssertEqual(outline, try full.chapterOutline(bookId: book.id))
+    let widget = try await service.effectiveQuery(facts: true, fields: [])
+    XCTAssertEqual(try widget.statisticsWidgetSummary(today: 20000, weekStart: 19994),
+      try full.statisticsWidgetSummary(today: 20000, weekStart: 19994))
+    let withFacts = try await service.bookQuery(book.id, facts: true)
+    try await formal.saveFacts([fact(other.contentSha256)], generation: 0, current: 0, enabled: true)
+    let unrelatedFacts = try await service.bookQuery(book.id, facts: true)
+    XCTAssertTrue(withFacts === unrelatedFacts)
     let old = try scoped.readingSnapshot(bookId: book.id).book.positionUtf8
     try await service.savePosition(bookID: book.id, offset: 44)
     let newer = try await service.bookQuery(book.id)
@@ -103,6 +140,22 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
       input.contains(other.contentSha256), "Single-book inputs must not fetch/project another book")
   }
 
+  @MainActor func testOpeningIsPersistedSeparatelyWithoutMovingReadingPosition() async throws {
+    let (root, service, _, formal, _, book, _, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let before = try await service.snapshot(book.id)
+    try await service.recordBookOpened(book.id, at: 12345)
+    let opened = try await formal.value("opened/" + book.contentSha256)
+    XCTAssertEqual(opened, "12345")
+    let after = try await service.snapshot(book.id)
+    XCTAssertEqual(before.book.positionUtf8, after.book.positionUtf8)
+    XCTAssertEqual(before.hasStarted, after.hasStarted)
+    let position = try await formal.value("position/" + book.contentSha256)
+    XCTAssertNil(position)
+    let restored = try await formal.projection(generation: 0, enabled: true, includeFacts: false, positionsOnly: true)
+    XCTAssertTrue(restored.contains("12345"))
+  }
+
   // S320: 启动恢复尚未结束时 pending 别名的位置仍进入正确开书查询；裁决算法只 S457。
   @MainActor func testPendingAliasPositionIsReadableBeforeStartupRecoveryAndPromotion() async throws
   {
@@ -117,7 +170,11 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
       decoding: try JSONEncoder().encode(PositionValue(content_key: "pending:" + id, offset: 20)),
       as: UTF8.self)
     try await pending.put("position/pending:" + id, value: position, device: "fixture")
+    try await service.recordBookOpened(id, at: 34567)
     try core.reuseImport(control: control, existingId: book.id)
+    let canonical = try await service.bookQuery(book.id)
+    XCTAssertEqual(try canonical.readingSnapshot(bookId: book.id).book.positionUtf8, 20,
+      "A scoped canonical query still includes the original pending alias")
     let update = try await service.openingFrame(id, offset: nil)
     XCTAssertTrue(update.0.hasStarted)
     XCTAssertEqual(update.0.book.positionUtf8, 20)
@@ -130,6 +187,10 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     let after = try await service.snapshot(book.id)
     XCTAssertEqual(after.book.positionUtf8, 20)
     XCTAssertTrue(after.hasStarted)
+    let formalOpened = try await service.userStore().value("opened/" + book.contentSha256)
+    let pendingOpened = try await pending.value("opened/pending:" + id)
+    XCTAssertEqual(formalOpened, "34567")
+    XCTAssertNil(pendingOpened)
   }
 
   // S359: 目录刷新使当前目录 snapshot 更新，展开/筛选不混用旧版本；目录查找算法只在 Rust。

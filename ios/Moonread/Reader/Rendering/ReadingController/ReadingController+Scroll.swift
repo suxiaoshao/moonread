@@ -126,6 +126,7 @@ extension ReadingController {
     }
 
     func report(_ offset: UInt64, settled: Bool) {
+        awaitBodyDisplay()
         anchor = offset
         layoutAnchor = offset
         #if DEBUG

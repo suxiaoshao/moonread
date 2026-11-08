@@ -39,6 +39,7 @@ struct ReadingView: UIViewControllerRepresentable {
     var coverChanged: (Bool) -> Void = { _ in }
     var brightnessChanged: (Double) -> Void = { _ in }
     var orientationFailed: () -> Void = {}
+    var bodyDisplayed: () -> Void = {}
     var statisticsInteraction: () -> Void = {}
     var statisticsPresentationChanged: () -> Void = {}
     var annotationChooserChanged: (Bool) -> Void = { _ in }
@@ -77,6 +78,7 @@ struct ReadingView: UIViewControllerRepresentable {
         controller.deviceControls.orientationFailed = orientationFailed
         controller.deviceControls.update(settings)
         controller.annotationChooserChanged = annotationChooserChanged
+        controller.bodyDisplayed = bodyDisplayed
         controller.statisticsInteraction = statisticsInteraction
         controller.statisticsPresentationChanged = statisticsPresentationChanged
         controller.configure(window: window, settings: settings, anchor: anchor,
