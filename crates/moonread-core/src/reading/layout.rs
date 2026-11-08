@@ -119,6 +119,10 @@ pub fn auto_reading_em_per_minute(speed: f64) -> Result<f64> {
     if !valid_auto_reading_speed(speed) {
         return Err(ReaderError::InvalidSettings);
     }
+    // Temporary #135 probe: unchanged FFI must expose this iOS-only implementation change.
+    if cfg!(target_os = "ios") {
+        return Ok(0.0);
+    }
     Ok(150.0 * 1.16_f64.powf(speed - 1.0))
 }
 
