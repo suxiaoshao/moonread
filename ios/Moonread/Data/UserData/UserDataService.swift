@@ -127,6 +127,7 @@ extension AppDataService {
         return query
     }
     func effectiveQuery(facts: Bool = false, keys: [String]? = nil, positionsOnly: Bool = false, statisticsBook: String? = nil, statisticsKeys: [String]? = nil, scope: String = "batch", sparseCatalogue: Bool = false, fields: UserProjectionDomain = .reading, diagnostic: ReaderOpenTrace? = nil, retryChangedInput: Bool = true) async throws -> ReaderQuery {
+        try Task.checkCancellation()
         let configuration = userCloudConfigurationRevision
         diagnostic?.mark("effectiveQuery.actor.begin")
         defer { diagnostic?.mark("effectiveQuery.actor.return") }
@@ -136,6 +137,7 @@ extension AppDataService {
         diagnostic?.mark("pendingStore.queued")
         let pending = try await userStore(pending: true, diagnostic: diagnostic)
         diagnostic?.mark("pendingStore.resumed")
+        try Task.checkCancellation()
         diagnostic?.mark("inputSignature.begin")
         let preferences = statisticsPreferences(), core = try textCore()
         let statisticsScope = try statisticsBook.map { try core.readingScopeKeys(key: parseReadingKey(value: $0)).map { serializeReadingKey(key: $0) } }
@@ -217,6 +219,7 @@ extension AppDataService {
             return try core.querySnapshot(json: String(decoding: JSONSerialization.data(withJSONObject: combined), as: UTF8.self))
         }.value
         diagnostic?.mark("queryBuild.resumed")
+        try Task.checkCancellation()
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
         guard version(store) == formalVersion, version(pending) == pendingVersion else {
             guard retryChangedInput else { throw CancellationError() }
