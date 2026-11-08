@@ -36,25 +36,17 @@ struct ReadingDataListView: View {
                     .padding(.horizontal).padding(.vertical, 8).accessibilityIdentifier("readingDataResult")
             }
             if !model.visible.isEmpty {
-                List(selection: $model.selected) {
-                    Section {
-                        ForEach(model.visible) { item in
-                            Group {
-                                if model.selecting {
-                                    DataManagementRow(item: item, duplicate: model.duplicateNames[item.id])
-                                } else {
-                                    Button { detail = item } label: {
-                                        DataManagementRow(item: item, duplicate: model.duplicateNames[item.id])
-                                    }.buttonStyle(.plain)
-                                }
-                            }.tag(item.id).accessibilityIdentifier("reading-data-" + item.id)
-                                .swipeActions { Button(role: .destructive) { model.deleting = [item.id] } label: { Text("删除", tableName: "DataManagement") } }
+                ThemedGroupedList(sections: [
+                    .init(id: "readingData", footer: String(localized: "按此设备当前索引判断；未建立索引或尚未重新连接的小说也可能出现在这里。", table: "DataManagement"), rows: model.visible.map { item in
+                        .init(item.id, action: { detail = item }, actions: [
+                            .init(title: String(localized: "删除", table: "DataManagement"), destructive: true, perform: { model.deleting = [item.id] })
+                        ], accessibilityID: "reading-data-" + item.id) {
+                            DataManagementRow(item: item, duplicate: model.duplicateNames[item.id])
+                                .accessibilityIdentifier("reading-data-" + item.id)
                         }
-                    } footer: {
-                        Text("按此设备当前索引判断；未建立索引或尚未重新连接的小说也可能出现在这里。", tableName: "DataManagement").foregroundStyle(Color(uiColor: theme.secondary))
-                    }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-                }
-                .contentMargins(.top, 8, for: .scrollContent)
+                    })
+                ], theme: theme, topInset: 8, selecting: model.selecting, selected: model.selected,
+                   selectionChanged: { model.selected = $0 })
             } else if model.loading || !model.loaded {
                 ProgressView { Text("正在读取阅读数据…", tableName: "DataManagement") }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.error != nil {

@@ -6,50 +6,10 @@ struct LibraryManagementView: View {
     @Bindable var model: LibraryModel
     @Environment(\.theme) private var theme
     var body: some View {
-        List {
-            Section {
-                Toggle(isOn: Binding(get: { model.fullIndex.automatic }, set: { model.fullIndex.automatic = $0 })) { Text("新加入的书自动建立索引", tableName: "FullIndex") }.accessibilityIdentifier("automaticFullIndex")
-            } header: { Text("索引", tableName: "FullIndex") }
-                .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            ShelfReferenceHints(model: model, grouped: true)
-            Section {
-                ForEach(model.shelves, id: \.id) { shelf in
-                    Group {
-                        if shelf.error != nil {
-                            VStack(alignment: .leading, spacing: 12) {
-                                ManagedShelfRow(shelf: shelf)
-                                Button("重新连接") { model.chooseFiles(.folder(shelf.id)) }
-                                    .buttonStyle(ThemedSecondaryButtonStyle()).disabled(!model.canAcceptFileWork)
-                                    .accessibilityIdentifier("reconnectShelf-" + shelf.id)
-                            }
-                        } else {
-                            NavigationLink(value: LibraryRoute.folder(LibraryLocation(shelfID: shelf.id))) {
-                                ManagedShelfRow(shelf: shelf)
-                            }
-                        }
-                    }.accessibilityIdentifier("shelf-\(shelf.id)")
-                    .modifier(LibraryShelfDropTarget(model: model, shelf: shelf))
-                    .contextMenu { ShelfMenu(model: model, shelf: shelf) }
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        if !shelf.builtin {
-                            // Confirm before removing; a destructive swipe role
-                            // would animate the row away before confirmation.
-                            Button("移除", systemImage: "minus.circle") { model.removingShelf = shelf }
-                                .tint(Color(uiColor: theme.destructive))
-                                .accessibilityLabel("移除书架")
-                                .accessibilityIdentifier("removeShelf-\(shelf.id)")
-                        }
-                    }
-                }
-            }
-            .listRowInsets(EdgeInsets(top: LayoutTokens.compact, leading: LayoutTokens.content,
-                                     bottom: LayoutTokens.compact, trailing: LayoutTokens.content))
-            .listRowBackground(Color(uiColor: theme.surface))
-            .listRowSeparatorTint(Color(uiColor: theme.separator))
-        }
-        .listStyle(.insetGrouped).themedPage()
-        .contentMargins(.top, LayoutTokens.content, for: .scrollContent)
-        .refreshable { await model.refresh(showIndicator: false, userInitiated: true) }
+        ThemedGroupedList(sections: managementSections, theme: theme,
+                          topInset: LayoutTokens.content,
+                          refresh: { await model.refresh(showIndicator: false, userInitiated: true) })
+        .themedPage()
         .navigationTitle("书架管理").navigationBarTitleDisplayMode(.inline)
         .modifier(PageLoadingOverlay(request: model.processingFiles || model.nativeRefreshing ? nil : model.loading.request ?? model.refreshing.request ?? model.shelfScans.values.first ?? model.summaries.request,
                                      hasContent: !model.shelves.isEmpty, label: "正在加载书架", immediate: model.explicitRefresh))
@@ -60,6 +20,48 @@ struct LibraryManagementView: View {
             }
         }
     }
+    private var managementSections: [ThemedGroupedList.Section] {
+        var result: [ThemedGroupedList.Section] = [
+            .init(id: "index", title: String(localized: "索引", table: "FullIndex"), rows: [
+                .init("automaticFullIndex") {
+                    Toggle(isOn: Binding(get: { model.fullIndex.automatic }, set: { model.fullIndex.automatic = $0 })) {
+                        Text("新加入的书自动建立索引", tableName: "FullIndex")
+                    }.accessibilityIdentifier("automaticFullIndex")
+                }
+            ])
+        ]
+        if !model.shelfRecovery.references.isEmpty {
+            result.append(.init(id: "references", title: String(localized: "你之前添加过这些书架", table: "ShelfRecovery"),
+                                footer: String(localized: "重新选择原来的文件夹，即可恢复对此书架的访问。"),
+                                rows: model.shelfRecovery.references.map { reference in
+                .init("reference-" + reference.id) {
+                    ShelfReferenceRow(model: model, reference: reference)
+                }
+            }))
+        }
+        result.append(.init(id: "shelves", rows: model.shelves.map { shelf in
+            let actions: [ThemedGroupedList.Action] = shelf.builtin ? [] : [
+                .init(title: String(localized: "移除"), symbol: "minus.circle", destructive: true,
+                      perform: { model.removingShelf = shelf })
+            ]
+            return .init("shelf-" + shelf.id,
+                         action: shelf.error == nil ? { model.path.append(.folder(LibraryLocation(shelfID: shelf.id))) } : nil,
+                         disclosure: shelf.error == nil, actions: actions, allowsFullSwipe: false) {
+                VStack(alignment: .leading, spacing: 12) {
+                    ManagedShelfRow(shelf: shelf)
+                    if shelf.error != nil {
+                        Button("重新连接") { model.chooseFiles(.folder(shelf.id)) }
+                            .buttonStyle(ThemedSecondaryButtonStyle()).disabled(!model.canAcceptFileWork)
+                            .accessibilityIdentifier("reconnectShelf-" + shelf.id)
+                    }
+                }
+                .modifier(LibraryShelfDropTarget(model: model, shelf: shelf))
+                .contextMenu { ShelfMenu(model: model, shelf: shelf) }
+            }
+        }))
+        return result
+    }
+
 }
 
 private struct ManagedShelfRow: View {

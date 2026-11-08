@@ -75,64 +75,67 @@ struct PalettePicker: View {
         } message: { Text("使用此配色的应用槽位将恢复纸色，阅读槽位将恢复跟随应用。") }
     }
     private var paletteList: some View {
-        List {
-            if !embedded { Section {
-                PalettePreview(theme: previewTheme).listRowInsets(EdgeInsets()).listRowBackground(Color.clear)
-            } }
-            if reader && previewTheme.readerTexture?.descriptor != nil {
-                textureSection
-            }
-            Section {
-                if reader { sourceRow("跟随应用", id: "app", icon: "arrow.turn.down.right") }
-                sourceRow("系统配色", id: "system", icon: "circle.lefthalf.filled")
-            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            Section("预设") {
-                ForEach(palettes.filter { !$0.custom }, id: \.id) { palette in paletteRow(palette) }
-            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            Section("自定义") {
-                ForEach(palettes.filter(\.custom), id: \.id) { palette in
-                    paletteRow(palette)
-                        .contextMenu {
-                            Button("编辑", systemImage: "pencil") { edit(PaletteDraft(palette: palette, creating: false)) }
-                            Button("删除", systemImage: "trash", role: .destructive) { deleting = palette }
-                        }
-                        .swipeActions {
-                            Button("删除", systemImage: "trash", role: .destructive) { deleting = palette }.tint(Color(uiColor: theme.destructive))
-                            Button("编辑", systemImage: "pencil") { edit(PaletteDraft(palette: palette, creating: false)) }.tint(Color(uiColor: theme.accent))
-                        }
-                }
-                Button("新建配色", systemImage: "plus") {
-                    guard var base = palettes.first(where: { $0.id == selected }) ?? palettes.first else { return }
-                    base.name = ""; base.custom = true
-                    edit(PaletteDraft(palette: base, creating: true))
-                }.accessibilityIdentifier("createPalette")
-            }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-        }
-        .disabled(themes.saving).themedPage()
-        .contentMargins(.top, embedded ? LayoutTokens.compact : LayoutTokens.content, for: .scrollContent)
-        .contentMargins(.bottom, bottomContentInset, for: .scrollContent)
-        .accessibilityIdentifier("paletteOptions")
+        ThemedGroupedList(sections: paletteSections, theme: theme,
+                          topInset: embedded ? LayoutTokens.compact : LayoutTokens.content,
+                          bottomInset: bottomContentInset)
+            .disabled(themes.saving).themedPage().accessibilityIdentifier("paletteOptions")
     }
-    private var textureSection: some View {
-        Section {
-            Toggle(isOn: Binding(get: { previewTheme.readerTexture?.enabled == true }, set: { enabled in
-                let id = previewTheme.plan.paletteId
-                themes.update { value in
-                    // The core owns support/defaults; Swift only persists its returned preference.
-                    if let updated = try? setReaderPaletteTexture(preferences: value, paletteId: id, enabled: enabled) { value = updated }
+    private var paletteSections: [ThemedGroupedList.Section] {
+        var result: [ThemedGroupedList.Section] = []
+        if !embedded {
+            result.append(.init(id: "preview", rows: [.init("preview", clear: true) { PalettePreview(theme: previewTheme) }]))
+        }
+        if reader && previewTheme.readerTexture?.descriptor != nil {
+            result.append(.init(id: "texture", title: String(localized: "纸张纹理"),
+                                footer: String(localized: "此配色的纹理仅保存在此设备。"), rows: [
+                .init("readerPaletteTexture") {
+                    Toggle(isOn: Binding(get: { previewTheme.readerTexture?.enabled == true }, set: { enabled in
+                        let id = previewTheme.plan.paletteId
+                        themes.update { value in
+                            if let updated = try? setReaderPaletteTexture(preferences: value, paletteId: id, enabled: enabled) { value = updated }
+                        }
+                    })) {
+                        let name = themes.snapshot.palettes.first { $0.id == previewTheme.plan.paletteId }.map(paletteDisplayName) ?? ""
+                        Text("显示\(name)纹理")
+                    }.accessibilityIdentifier("readerPaletteTexture").disabled(themes.saving)
                 }
-            })) {
-                let name = themes.snapshot.palettes.first { $0.id == previewTheme.plan.paletteId }.map(paletteDisplayName) ?? ""
-                Text("显示\(name)纹理")
-            }.accessibilityIdentifier("readerPaletteTexture")
-        } header: { Text("纸张纹理") }
-        footer: { Text("此配色的纹理仅保存在此设备。") }
-        .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+            ]))
+        }
+        var sources: [ThemedGroupedList.Row] = []
+        if reader { sources.append(.init("app") { sourceRow("跟随应用", id: "app", icon: "arrow.turn.down.right") }) }
+        sources.append(.init("system") { sourceRow("系统配色", id: "system", icon: "circle.lefthalf.filled") })
+        result.append(.init(id: "sources", rows: sources))
+        result.append(.init(id: "presets", title: String(localized: "预设"), rows: palettes.filter { !$0.custom }.map(nativePaletteRow)))
+        var custom = palettes.filter(\.custom).map(nativePaletteRow)
+        custom.append(.init("createPalette") {
+            Button("新建配色", systemImage: "plus") {
+                guard var base = palettes.first(where: { $0.id == selected }) ?? palettes.first else { return }
+                base.name = ""; base.custom = true
+                edit(PaletteDraft(palette: base, creating: true))
+            }.disabled(themes.saving).accessibilityIdentifier("createPalette")
+        })
+        result.append(.init(id: "custom", title: String(localized: "自定义"), rows: custom))
+        return result
+    }
+    private func nativePaletteRow(_ palette: ThemePalette) -> ThemedGroupedList.Row {
+        let actions: [ThemedGroupedList.Action] = palette.custom && !themes.saving ? [
+            .init(title: String(localized: "删除"), symbol: "trash", destructive: true, perform: { deleting = palette }),
+            .init(title: String(localized: "编辑"), symbol: "pencil", perform: { edit(PaletteDraft(palette: palette, creating: false)) })
+        ] : []
+        return .init("palette-" + palette.id, actions: actions) {
+            paletteRow(palette).disabled(themes.saving)
+                .contextMenu {
+                    if palette.custom {
+                        Button("编辑", systemImage: "pencil") { edit(PaletteDraft(palette: palette, creating: false)) }
+                        Button("删除", systemImage: "trash", role: .destructive) { deleting = palette }
+                    }
+                }
+        }
     }
     private func sourceRow(_ title: LocalizedStringKey, id: String, icon: String) -> some View {
         Button { choose(id) } label: {
             HStack { Label(title, systemImage: icon); Spacer(); check(id) }
-        }.foregroundStyle(Color(uiColor: theme.ink))
+        }.foregroundStyle(Color(uiColor: theme.ink)).disabled(themes.saving)
     }
     private func edit(_ value: PaletteDraft) {
         if let editPalette { editPalette(value) } else { draft = value }
