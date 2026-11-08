@@ -8,14 +8,24 @@ final class NavigationPresentationState {
     private enum Phase { case active, moving, restoring, departed }
     private var phase = Phase.active
     private var awaitingDismissal = false
+    private(set) var revealsNavigation = false
     var isSuspended: Bool { phase != .active }
 
+    func prepareInteractivePop() {
+        guard phase == .active else { return }
+        revealsNavigation = true
+    }
+    func endUnstartedInteractivePop() {
+        guard phase == .active else { return }
+        revealsNavigation = false
+    }
     func begin(hasPresentation: Bool) {
         guard phase == .active else { return }
         awaitingDismissal = hasPresentation
         phase = .moving
     }
     func finish(cancelled: Bool) {
+        revealsNavigation = false
         phase = cancelled ? (awaitingDismissal ? .restoring : .active) : .departed
     }
     func appear() {
@@ -139,8 +149,11 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
                   let source = transition.viewController(forKey: .from) else { return }
             var ancestor: UIViewController? = self
             while let value = ancestor, value !== source { ancestor = value.parent }
+            // During interactive pop SwiftUI has already removed the owner from
+            // viewControllers, while isMovingFromParent may still be false.
+            // Match the destination we observed on appearance, not a new depth lookup.
             guard ancestor === source, source.parent === navigation,
-                  destination === source else { return }
+                  observedDestination === source else { return }
             let popping = source.isMovingFromParent || !navigation.viewControllers.contains(source)
             ReaderSceneDiagnostics.record("native.navigationWillDisappear", opening: openingID, fields: [
                 "fromType": String(describing: type(of: source)), "fromTitle": source.title ?? "",
@@ -173,6 +186,8 @@ final class ReaderBackNavigation: NSObject, UIGestureRecognizerDelegate {
     var canBegin: () -> Bool = { false }
     var allowsContentGesture: () -> Bool = { true }
     var readingPan: (() -> UIPanGestureRecognizer?)?
+    var prepareInteractivePop: () -> Void = {}
+    var endUnstartedInteractivePop: () -> Void = {}
 
     func install(on owner: UIViewController) {
         guard registrations.isEmpty, let navigation = owner.navigationController else { return }
@@ -184,6 +199,7 @@ final class ReaderBackNavigation: NSObject, UIGestureRecognizerDelegate {
         for gesture in gestures {
             registrations.append(Registration(gesture: gesture, delegate: gesture.delegate, wasEnabled: gesture.isEnabled))
             gesture.delegate = self
+            gesture.addTarget(self, action: #selector(gestureEnded(_:)))
             // The hidden navigation bar may disable native recognition. Eligibility
             // remains in the delegate, including the reading-mode restriction.
             gesture.isEnabled = true
@@ -192,12 +208,21 @@ final class ReaderBackNavigation: NSObject, UIGestureRecognizerDelegate {
 
     func uninstall() {
         for registration in registrations {
+            registration.gesture.removeTarget(self, action: #selector(gestureEnded(_:)))
             if registration.gesture.delegate === self {
                 registration.gesture.delegate = registration.delegate
                 registration.gesture.isEnabled = registration.wasEnabled
             }
         }
         registrations.removeAll()
+        endUnstartedInteractivePop()
+    }
+
+    @objc private func gestureEnded(_ gesture: UIGestureRecognizer) {
+        switch gesture.state {
+        case .ended, .cancelled: endUnstartedInteractivePop()
+        default: break
+        }
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -208,6 +233,11 @@ final class ReaderBackNavigation: NSObject, UIGestureRecognizerDelegate {
         guard destination === navigation.topViewController else { return false }
         if #available(iOS 26, *), gestureRecognizer === navigation.interactiveContentPopGestureRecognizer,
            !allowsContentGesture() { return false }
+        // Show this reader's own bar before UIKit captures the shared-bar transition.
+        // Flush public layout only; SwiftUI still owns bar visibility and styling.
+        prepareInteractivePop()
+        navigation.view.setNeedsLayout()
+        navigation.view.layoutIfNeeded()
         // UIKit's native edge/content recognizers determine direction and motion
         // thresholds. Adding another velocity cone rejects otherwise valid pans.
         return true

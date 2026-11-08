@@ -277,22 +277,32 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
   func testNavigationCancellationWaitsForSheetDismissalInEitherOrder() {
     for dismissFirst in [true, false] {
       let state = NavigationPresentationState()
+      state.prepareInteractivePop()
+      XCTAssertTrue(state.revealsNavigation)
       state.begin(hasPresentation: true)
+      state.endUnstartedInteractivePop()
+      XCTAssertTrue(state.revealsNavigation, "Gesture ending does not clear a tracked transition")
       if dismissFirst { XCTAssertTrue(state.presentationDismissed()) }
       state.finish(cancelled: true)
+      XCTAssertFalse(state.revealsNavigation, "Cancelled pop clears the temporary navigation reveal")
       XCTAssertEqual(state.isSuspended, !dismissFirst)
       if !dismissFirst { XCTAssertTrue(state.presentationDismissed()) }
       XCTAssertFalse(state.isSuspended)
       XCTAssertFalse(state.presentationDismissed(), "Only the navigation dismissal is consumed")
     }
     let state = NavigationPresentationState()
+    state.prepareInteractivePop()
+    state.endUnstartedInteractivePop()
+    XCTAssertFalse(state.revealsNavigation, "Preparation without a transition must not leave a bar")
     state.begin(hasPresentation: false)
     state.finish(cancelled: true)
     XCTAssertFalse(state.isSuspended)
 
     let completed = NavigationPresentationState()
+    completed.prepareInteractivePop()
     completed.begin(hasPresentation: true)
     completed.finish(cancelled: false)
+    XCTAssertFalse(completed.revealsNavigation)
     XCTAssertTrue(completed.presentationDismissed())
     XCTAssertTrue(completed.isSuspended)
     completed.appear()
