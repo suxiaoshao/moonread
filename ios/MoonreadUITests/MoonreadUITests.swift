@@ -565,7 +565,7 @@ import XCTest
     XCTAssertTrue(rows.firstMatch.label.contains("上次来源："))
     XCTAssertTrue(rows.firstMatch.label.contains("读到 50%"))
     ready(app.buttons["selectReadingData"]).tap()
-    XCTAssertEqual(app.buttons["selectReadingData"].label, "完成")
+    XCTAssertEqual(app.buttons["selectReadingData"].label, "结束选择")
     XCTAssertTrue(app.buttons["readingDataSort"].exists)
     XCTAssertTrue(ready(app.buttons["selectAllReadingData"]).exists)
     XCTAssertTrue(app.navigationBars.buttons["BackButton"].exists)
