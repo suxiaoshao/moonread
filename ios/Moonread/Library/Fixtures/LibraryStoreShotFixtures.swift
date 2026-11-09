@@ -145,8 +145,7 @@ extension AppDataService {
             throw LibraryFileError.invalidDestination
         }
         let id = try SystemReadingBookID(sha: book.contentSha256).rawValue
-        let keys = try textCore().catalogueContentKeys(scope: catalogueScope(nil, recursive: true))
-        let query = try await effectiveQuery(keys: keys.map { serializeReadingKey(key: $0) }, scope: "store-shot-widget", sparseCatalogue: true)
+        let query = try await readingQuery(.catalogue(nil, recursive: true), options: .init(scope: "store-shot-widget", sparseCatalogue: true))
         guard let projected = try query.systemReadingCatalogue().first(where: { $0.contentSha256 == book.contentSha256 }) else { throw ReaderError.NotFound }
         let entry = SystemReadingSnapshot.Book(id: id, title: book.title, author: fixture.author, tags: [],
             availability: .available, sourceCount: 1, naturalOrdinal: 0, progress: projected.percentage,

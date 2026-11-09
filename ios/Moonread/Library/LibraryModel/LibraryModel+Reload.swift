@@ -18,7 +18,7 @@ extension LibraryModel {
                 self.error = nil
                 Task { await service.startUserRecovery(); await refresh() }
                 return true
-            } catch is CancellationError { refreshAfterDiscardedRead(); return false }
+            } catch is CancellationError { return false }
             catch { self.error = ReaderMessages.error(error); return false }
         }
         initialization = task
@@ -76,7 +76,7 @@ extension LibraryModel {
             next.recents = try await service.recentLibrary(UInt32(Self.homeRecentLimit))
             try Task.checkCancellation()
             publishHome(next)
-        } catch is CancellationError { refreshAfterDiscardedRead() }
+        } catch is CancellationError { }
         catch { self.error = ReaderMessages.error(error) }
     }
     func returnedToLibrary() {
@@ -100,7 +100,7 @@ extension LibraryModel {
                     try await refreshLibrary(); try await reload(); retryPendingCloudDiscovery()
                 } while refreshAgain && !Task.isCancelled
             }
-            catch is CancellationError { refreshAfterDiscardedRead() }
+            catch is CancellationError { }
             catch { self.error = ReaderMessages.error(error) }
         }
         refreshWork = work
@@ -122,13 +122,7 @@ extension LibraryModel {
     }
     func reloadBooks() async {
         do { revision += 1; try await reload() }
-        catch is CancellationError { refreshAfterDiscardedRead() }
+        catch is CancellationError { }
         catch { self.error = ReaderMessages.error(error) }
-    }
-    private func refreshAfterDiscardedRead() {
-        // A changed query input rejects its stale result with CancellationError.
-        // Keep the published home until the existing coalesced refresh reads again.
-        // A cancelled owner, unlike a discarded result, must not request more work.
-        if !Task.isCancelled { scheduleRefresh() }
     }
 }

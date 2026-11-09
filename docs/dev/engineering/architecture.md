@@ -48,7 +48,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 待索引集合与书架索引 inventory | Rust `library/bookshelf/full_index.rs` | 同一数据库快照返回总量/pending；Swift 不重复身份判定 | 单源扩展 |
 | 书架同步描述、本机授权绑定和扫描后准入 | Swift `ShelfRecovery.swift`、`UserSyncJSON.swift`、`FullIndex.swift` | SwiftData 裁决描述，本机 schemaVersion 1 绑定按账户隔离；平台扫描成功范围限制自动任务，不复制 Rust 查询 | 平台边界 |
 | SHA 格式 | Rust `identity/content.rs::parse_sha256` | 身份及资产校验共享严格语法，语义字段仍区分 | 单源 |
-| 查询输入范围与失效 | Swift `UserDataService` / `UserDataStore+Projection.swift` / `UserData.swift` | 正式+pending（含 Rust `reading_scope_keys` 解析的旧别名）、字段依赖与按书 facts 在一个装配入口；事务保存前按变更模型的书/领域阻断旧缓存；读取在同一 actor 提交/回滚后取值，成功后才发布数据变更；未知云导入全局失效；Rust ReaderQuery 只做既有计算 | 单一查询 owner |
+| 查询输入范围与失效 | Swift `UserDataQuery.swift` / `UserDataStore+Projection.swift` / `UserData.swift` | 正式+pending（含 Rust `reading_scope_keys` 解析的旧别名）、字段依赖与按书 facts 在一个装配入口；事务保存前按变更模型的书/领域阻断旧缓存；读取在同一 actor 提交/回滚后取值，成功后才发布数据变更；未知云导入全局失效；查询 owner 统一校验完整输入并在同一有效任务内补读，失效不向上抛取消；模型负责请求寿命及发布资格，真正取消不补读，真实错误不自动重试；Rust ReaderQuery 只做既有计算 | 单一查询 owner |
 | 最近打开 | Swift `ReaderSession.bodyDidDisplay` 及 `UserDataService.recordBookOpened`，Rust `user/projection.rs` / `library/bookshelf` | 原生正文完成布局并到达显示时机后单次记录；UserValue `opened/<reading-key>` 的毫秒时间与位置独立，复用 LWW/备份/pending 晋升。Rust 唯一排序，旧数据缺值回退位置时间，不制造位置/计时交互 | 单一事实与排序 |
 | 封面资源与静默替换 | Swift `Books/BookMetadata.swift` 的 `CoverResourceLoader`、`CoverImageLoader`、`BookCoverDisplay` | 独立资源 actor 统一 UI/Widget/Spotlight I/O 与派生；按作用域/资源/尺寸合并并有界缓存，ready 不随订阅销毁。同书旧图等新图成功，删除/换书/换账号立即清；系统文字更新复用图像输入版本 | 单一资源 owner |
 | 默认阅读中状态 | Rust `user/projection.rs::reading_content_positions` + `reading/book_details.rs::project_metadata` | 详情、搜索与资料导入 unread 限制共用 SHA 位置记录判定（`has_reading_position`）；file_identities 提供有效索引身份，不依赖本机 books 正文缓存；显式状态优先 | 单源修复 |

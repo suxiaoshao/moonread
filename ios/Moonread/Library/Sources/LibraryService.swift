@@ -61,20 +61,15 @@ struct LibraryScanSnapshot: Sendable {
 
 extension AppDataService {
     func libraryEntry(_ id: String) async throws -> LibraryEntry {
-        let core = try textCore()
-        // Only this file and its original import alias are needed.
-        let identity = try core.fileIdentity(fileId: id)
-        var selected = identity.key.map { [$0] } ?? []
-        if let alias = identity.pendingAlias { selected.append(alias) }
-        return try await effectiveQuery(keys: selected.map { serializeReadingKey(key: $0) }, scope: "file-" + id).libraryEntry(fileId: id)
+        try await readingQuery(.file(id), options: .init(scope: "file-" + id)).libraryEntry(fileId: id)
     }
+
     func catalogueScope(_ location: LibraryLocation?, recursive: Bool) -> CatalogueScope {
         .init(shelfId: location?.shelfID, parentPath: location?.path, recursive: recursive)
     }
     func catalogueQuery(_ location: LibraryLocation?, recursive: Bool) async throws -> ReaderQuery {
-        // A directory's last_read aggregates descendants even when only its children are returned.
-        let keys = try textCore().catalogueContentKeys(scope: catalogueScope(location, recursive: true))
-        return try await effectiveQuery(keys: keys.map { serializeReadingKey(key: $0) }, scope: "catalogue")
+        // Folder aggregates include descendants even when displaying only children.
+        try await readingQuery(.catalogue(location, recursive: true), options: .init(scope: "catalogue"))
     }
 
     /// Deterministic latency for UI checks; release builds never delay queries.
@@ -265,11 +260,9 @@ extension AppDataService {
     }
     func recentLibrary(_ limit: UInt32 = 1000, cold: Bool = false) async throws -> [LibraryEntry] {
         if cold { return try await effectiveQuery(scope: "home-cold").recentLibraryEntries(limit: limit) }
-        let index = try await effectiveQuery(positionsOnly: true, scope: "recent-index").recentLibraryEntries(limit: limit)
-        let keys = index.compactMap(\.readingKey)
-        guard !keys.isEmpty else { return [] }
-        return try await effectiveQuery(keys: Array(Set(keys)), scope: "recent").recentLibraryEntries(limit: limit)
+        return try await readingQuery(.recent(limit), options: .init(scope: "recent")).recentLibraryEntries(limit: limit)
     }
+
     func hideRecent(_ value: String) throws {
         let key: String
         if let parsed = try? parseReadingKey(value: value) { key = serializeReadingKey(key: parsed) }

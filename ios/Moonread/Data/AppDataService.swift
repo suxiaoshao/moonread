@@ -136,7 +136,10 @@ actor AppDataService {
     }()
     var systemSpotlightThumbnailFailures = Set<String>()
     private var core: ReaderCore?
-    struct CachedQuery { let signature: String; let query: ReaderQuery }
+    struct CachedQuery { let signature: UserQuerySignature; let identities: [String: String]; let query: ReaderQuery }
+    #if DEBUG
+    var queryTestBoundary: (@Sendable (String, UserQueryTestPhase) async throws -> Void)?
+    #endif
     var queryCache: [String: CachedQuery] = [:]
     var recoveryTask: Task<Void, Never>?
     var recentRestorationTask: Task<Void, Never>?

@@ -125,8 +125,7 @@ extension AppDataService {
         do {
             while let catalog = systemCatalog, catalog.taskID == taskID, !catalog.accountPending, !Task.isCancelled {
                 let configuration = userCloudConfigurationRevision, revision = catalog.revision
-                let keys = try textCore().catalogueContentKeys(scope: catalogueScope(nil, recursive: true))
-                let query = try await effectiveQuery(keys: keys.map { serializeReadingKey(key: $0) }, scope: "system-catalogue", sparseCatalogue: true)
+                let query = try await readingQuery(.catalogue(nil, recursive: true), options: .init(scope: "system-catalogue", sparseCatalogue: true))
                 let projected = try await Task.detached(priority: .utility) { try query.systemReadingCatalogue() }.value
                 try Task.checkCancellation()
                 guard systemCatalog?.taskID == taskID, userCloudConfigurationRevision == configuration else { return }
@@ -136,7 +135,7 @@ extension AppDataService {
                 let policy = systemExposurePolicy(), excluded = Set(policy.excludedShelfIDs)
                 let appearance = await systemWidgetAppearance()
                 let statistics = catalog.statisticsDirty || catalog.displaySnapshot?.statistics?.isCurrent(at: Date()) != true
-                    ? await systemWidgetStatistics() : catalog.displaySnapshot?.statistics
+                    ? try await systemWidgetStatistics() : catalog.displaySnapshot?.statistics
                 var books = try projected.map { book in
                     SystemReadingSnapshot.Book(id: try SystemReadingBookID(sha: book.contentSha256).rawValue,
                         title: book.title, author: book.author, tags: book.tags,

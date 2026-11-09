@@ -207,11 +207,14 @@ final class StatisticsModel {
         let task = Task { [weak self] in
             do {
                 let content = try await fetch(scope)
-                guard let self, self.dataRevision == revision else { return }
+                guard let self, !Task.isCancelled, self.dataRevision == revision else { return }
                 self.pending[scope] = nil
                 self.states[scope] = State(content: content)
-            } catch {
+            } catch is CancellationError {
                 guard let self, self.dataRevision == revision else { return }
+                self.pending[scope] = nil; self.states[scope] = State()
+            } catch {
+                guard let self, !Task.isCancelled, self.dataRevision == revision else { return }
                 self.pending[scope] = nil
                 self.states[scope] = State(error: ReaderMessages.error(error))
             }

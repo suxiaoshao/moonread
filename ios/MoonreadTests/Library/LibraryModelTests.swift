@@ -173,44 +173,47 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
 }
 
 final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
-  @MainActor func testCancelledHomeReadsKeepContentAndRefreshWithoutHidingRealFailures() async throws {
-    let (root, service, _, _, _, book, _, suite) = try singleBookFixture()
+  @MainActor func testHomeReadsWaitForStableInputsAndKeepRealFailuresVisible() async throws {
+    let (root, service, _, formal, _, book, _, suite) = try singleBookFixture()
     defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
     try await service.savePosition(bookID: book.id, offset: 12)
     let model = LibraryModel(service: service, prepareLibrary: {}, refreshLibrary: {})
-    // A discarded first-launch read must get a later result, rather than an alert
-    // or a home page that never finishes initialization.
-    await service.cancelHomeQueryFixture()
+    let attempts = QueryAttemptCounter()
+    await service.queryFixture { _, phase in
+      if phase == .built, await attempts.next() <= 3 {
+        try await formal.put("metadata/" + book.contentSha256 + "/author", value: "\"\(UUID().uuidString)\"", device: "fixture")
+      }
+    }
     let loaded = await model.load()
-    XCTAssertFalse(loaded)
-    XCTAssertNil(model.error)
-    await awaitState { model.initialized && model.homeReady }
-    await model.refresh()
+    XCTAssertTrue(loaded); XCTAssertTrue(model.homeReady); XCTAssertNil(model.error)
+    await model.refresh(); await service.waitForUserRecovery()
     let home = model.home
-    let revision = model.readingInputRevision
-    await service.cancelHomeQueryFixture()
-    await model.reloadBooks()
-    XCTAssertNil(model.error)
+    let gate = RestorationGate(), refreshAttempts = QueryAttemptCounter()
+    await service.queryFixture { _, phase in
+      if phase == .built, await refreshAttempts.next() <= 3 {
+        await gate.wait()
+        try await formal.put("metadata/" + book.contentSha256 + "/author", value: "\"Updated\"", device: "fixture")
+      }
+    }
+    let refresh = Task { await model.reloadBooks() }
+    await gate.waitForEntry()
     XCTAssertEqual(model.home, home)
-    await awaitState { model.readingInputRevision > revision }
-    await model.refresh()
-    await service.cancelHomeQueryFixture()
-    await model.reloadBook(.book(book.id))
-    XCTAssertNil(model.error)
-    XCTAssertEqual(model.home, home)
-    await model.refresh()
-    model.refreshTask?.cancel(); model.refreshTask = nil
-    // A truly cancelled caller does not schedule replacement work.
+    await gate.release(); await refresh.value
+    XCTAssertEqual(model.recents.first?.metadata?.author, "Updated"); XCTAssertNil(model.error)
+    await service.queryFixture(nil)
     let cancelled = Task { @MainActor in
       withUnsafeCurrentTask { $0?.cancel() }
       await model.reloadBooks()
     }
     await cancelled.value
-    XCTAssertNil(model.error)
-    XCTAssertNil(model.refreshTask)
+    XCTAssertNil(model.error); XCTAssertNil(model.refreshTask)
     await service.failHomeQueryFixture()
     await model.reloadBooks()
     XCTAssertEqual(model.error, ReaderMessages.error(CocoaError(.fileReadNoPermission)))
+    model.error = nil
+    await service.cancelHomeQueryFixture()
+    await model.reloadBooks()
+    XCTAssertEqual(model.error, ReaderMessages.error(CocoaError(.fileReadUnknown)), "A shared dependency failing on its own is a real read failure")
   }
   // S333: 首页快照一次发布一致的文件/最近列表，替换同一文件不产生两个入口；不锁无变化刷新通知次数。
   @MainActor func testHomeSnapshotPublishesAtomicallyAndIgnoresInvisibleReloadChanges() async throws
