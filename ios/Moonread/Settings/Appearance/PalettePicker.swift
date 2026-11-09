@@ -68,11 +68,13 @@ struct PalettePicker: View {
         }
         .sheet(item: $draft) { value in PaletteEditor(draft: value) }
         .confirmationDialog("删除配色？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
-            Button("删除并恢复默认配色", role: .destructive) {
+            Button("删除", role: .destructive) {
                 if let deleting { Task { await themes.deletePalette(deleting.id) } }
                 deleting = nil
             }
-        } message: { Text("使用此配色的应用槽位将恢复纸色，阅读槽位将恢复跟随应用。") }
+        } message: {
+            if let deleting, let message = themes.paletteDeletionImpact(deleting.id).message { Text(message) }
+        }
     }
     private var paletteList: some View {
         ThemedGroupedList(sections: paletteSections, theme: theme,

@@ -290,6 +290,7 @@ final class ThemeStore {
             }
         }
     }
+    func paletteDeletionImpact(_ id: String) -> PaletteDeletionImpact { AppDataService.paletteDeletionImpact(id, in: snapshot.preferences) }
     var paletteCreationIssue: PaletteSaveIssue? { AppDataService.paletteSaveIssue(in: snapshot) }
     func flushPreferences() async { await preferencesTask?.value }
     func savePalette(_ palette: ThemePalette, creating: Bool) async throws {

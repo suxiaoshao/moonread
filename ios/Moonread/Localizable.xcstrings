@@ -1,6 +1,8 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "使用此配色的应用槽位将恢复纸色。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"App slots using this palette will return to Paper."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"使用此配色的應用程式欄位將恢復紙色。"}}}},
+    "使用此配色的阅读槽位将恢复跟随应用。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading slots using this palette will return to Follow App."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"使用此配色的閱讀欄位將恢復跟隨應用程式。"}}}},
     "请输入名称，最多 40 个字符。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Enter a name, up to 40 characters."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"請輸入名稱，最多 40 個字元。"}}}},
     "请输入配色名称。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Enter a palette name."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"請輸入配色名稱。"}}}},
     "名称太长，请缩短到 40 个字符以内。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The name is too long. Shorten it to 40 characters or fewer."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"名稱太長，請縮短至 40 個字元以內。"}}}},

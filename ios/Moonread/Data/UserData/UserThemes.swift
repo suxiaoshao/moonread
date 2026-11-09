@@ -10,7 +10,30 @@ enum PaletteSaveIssue: LocalizedError, Equatable {
     }
 }
 
+struct PaletteDeletionImpact: Equatable {
+    let appSlots: Bool
+    let readerSlots: Bool
+    var message: String? {
+        switch (appSlots, readerSlots) {
+        case (false, false): nil
+        case (true, false): String(localized: "使用此配色的应用槽位将恢复纸色。")
+        case (false, true): String(localized: "使用此配色的阅读槽位将恢复跟随应用。")
+        case (true, true): String(localized: "使用此配色的应用槽位将恢复纸色，阅读槽位将恢复跟随应用。")
+        }
+    }
+}
+
 extension AppDataService {
+    nonisolated static func paletteDeletionImpact(_ id: String, in preferences: ThemePreferences) -> PaletteDeletionImpact {
+        let app = [preferences.appLight, preferences.appDark].contains { source in
+            if case let .palette(value) = source { return value == id }; return false
+        }
+        let reader = [preferences.readerLight, preferences.readerDark].contains { source in
+            if case let .palette(value) = source { return value == id }; return false
+        }
+        return .init(appSlots: app, readerSlots: reader)
+    }
+
     nonisolated static func paletteSaveIssue(in snapshot: ThemeSnapshot, editing value: ThemePalette? = nil) -> PaletteSaveIssue? {
         if let value {
             return snapshot.palettes.contains { $0.custom && $0.id == value.id && $0.appearance == value.appearance } ? nil : .missingTarget

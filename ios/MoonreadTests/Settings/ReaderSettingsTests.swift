@@ -199,7 +199,14 @@ final class ReaderSettingsUserDataTests: UserDataFixture {
     XCTAssertNil(stored["preferences"])
     XCTAssertNil(stored["palettes"])
     var preferences = defaultThemeSnapshot().preferences
+    XCTAssertEqual(AppDataService.paletteDeletionImpact(palette.id, in: preferences), .init(appSlots: false, readerSlots: false))
+    XCTAssertNil(AppDataService.paletteDeletionImpact(palette.id, in: preferences).message)
     preferences.appLight = .palette(id: palette.id)
+    XCTAssertEqual(AppDataService.paletteDeletionImpact(palette.id, in: preferences), .init(appSlots: true, readerSlots: false))
+    var directlySelected = preferences; directlySelected.readerLight = .palette(id: palette.id)
+    XCTAssertEqual(AppDataService.paletteDeletionImpact(palette.id, in: directlySelected), .init(appSlots: true, readerSlots: true))
+    directlySelected.appLight = .system
+    XCTAssertEqual(AppDataService.paletteDeletionImpact(palette.id, in: directlySelected), .init(appSlots: false, readerSlots: true))
     preferences = try setReaderPaletteTexture(preferences: preferences, paletteId: "apricot-light", enabled: false)
     let selected = try await service.saveThemes(preferences)
     XCTAssertEqual(selected.preferences.appLight, .palette(id: palette.id))
