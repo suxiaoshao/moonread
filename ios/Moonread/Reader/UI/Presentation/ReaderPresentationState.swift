@@ -153,6 +153,9 @@ enum ReaderPresentationTarget: Equatable { case none, dock, settings, details }
     var phase: ReaderNativePhase { installation.phase }
     func confirmed(_ token: ReaderHostToken) { installation.confirm(token) }
     var showing: ReaderPresentationTarget { token == nil || dismissing ? .none : target }
+    var presentsChapterList: Bool {
+        showing == .dock && node?.taskID == "library" && node?.editor == nil && node?.noteID == nil
+    }
     func update(_ desired: ReaderPresentationTarget, opening: UUID, generation: UInt64, force: Bool = false) {
         if token == nil {
             target = desired

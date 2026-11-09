@@ -368,11 +368,10 @@ struct ReaderScreen: View {
         .onReceive(NotificationCenter.default.publisher(for: .statisticsChanged).receive(on: DispatchQueue.main)) { notification in
             // Keep clear/import invalidation alive even while the directory is
             // closed. Ordinary appends retain validated values until replacement.
-            if notification.userInfo?["reset"] as? Bool == true { tools.invalidateChapterCoverage() }
-            if !session.isLeaving, !navigationPresentation.isSuspended, presentation.controlsVisible,
-               panel == .library, tools.tab == .chapters, taskID == nil,
-               toolSession.editor == nil, session.editor == nil {
-                Task { await tools.refreshChapters() }
+            let reset = notification.userInfo?["reset"] as? Bool == true
+            Task {
+                await tools.refreshChapterStatistics(reset: reset,
+                    presented: !session.isLeaving && !navigationPresentation.isSuspended && nativeHost.presentsChapterList)
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .cloudReadingPositionsReceived).receive(on: DispatchQueue.main)) { _ in

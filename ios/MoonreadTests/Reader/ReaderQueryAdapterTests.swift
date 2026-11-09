@@ -452,6 +452,54 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertNil(pendingOpened)
   }
 
+  @MainActor func testPresentedDirectoryRefreshesCoverageForStatisticsChangeAndReset() async throws {
+    let (root, service, _, formal, _, book, _, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let state = ReaderPresentationState()
+    state.push(.library) // presentPanel opens a task, not the compact controls.
+    let host = ReaderPresentationHost()
+    host.retain(ReaderInstalledNode(location: state.location, exposure: state.exposure, controls: state.controlsVisible,
+      searchActive: false, noteID: nil, noteEditor: nil, editor: nil))
+    host.update(.dock, opening: UUID(), generation: state.revision)
+    let token = try XCTUnwrap(host.token); host.confirmed(token)
+    XCTAssertFalse(state.controlsVisible); XCTAssertEqual(host.node?.taskID, "library")
+    XCTAssertTrue(host.presentsChapterList, "A real directory is presented even with compact controls hidden")
+    let model = ReaderToolsModel(service: service)
+    await model.prepare(bookID: book.id, currentChapter: 0, library: true)
+    await awaitState { model.chapterCoverageReady }
+    XCTAssertTrue(model.chapterSnapshot.allSatisfy { $0.coveredCharacters == nil })
+    model.filterChapters("合成")
+    let jump = model.chapterJumpRevision
+    let key = book.contentSha256
+    let payload: [String: Any] = ["content_key": key, "title": "Synthetic", "device": "fixture", "slice": [
+      "id": "directory-change", "session_id": "fixture", "visit_id": "fixture", "book_id": book.id,
+      "started_ms": 1000, "ended_ms": 4000, "local_day": 20000, "utc_offset_seconds": 0,
+      "preview": false, "exposures": [["start_utf8": 0, "end_utf8": book.byteCount, "duration_ms": 3000]]]]
+    try await formal.saveFacts([("directory-change", key, String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self))], generation: 0, current: 0, enabled: true)
+    await model.refreshChapterStatistics(reset: false, presented: host.presentsChapterList)
+    await awaitState { model.chapterSnapshot.contains { ($0.coveredCharacters ?? 0) > 0 } }
+    XCTAssertTrue(model.chapterSnapshot.contains { ($0.coveredCharacters ?? 0) > 0 })
+    XCTAssertEqual(model.chapterFilter, "合成"); XCTAssertEqual(model.chapterJumpRevision, jump)
+
+    try await formal.clear(book: key, session: nil)
+    let gate = RestorationGate()
+    await service.queryFixture { scope, phase in
+      if scope.hasPrefix("chapters-"), phase == .built { await gate.wait() }
+    }
+    await model.refreshChapterStatistics(reset: true, presented: host.presentsChapterList)
+    await gate.waitForEntry()
+    XCTAssertFalse(model.chapterCoverageReady, "Reset hides obsolete coverage before replacement is ready")
+    XCTAssertFalse(model.chapters.isEmpty)
+    await gate.release()
+    await awaitState { model.chapterCoverageReady }
+    XCTAssertTrue(model.chapterCoverageReady, "An open directory reloads coverage after reset")
+    XCTAssertTrue(model.chapterSnapshot.allSatisfy { $0.coveredCharacters == nil })
+    XCTAssertEqual(model.chapterFilter, "合成"); XCTAssertEqual(model.chapterJumpRevision, jump)
+    host.installation.beginDismissal()
+    XCTAssertFalse(host.presentsChapterList, "A retained outgoing node is not an open directory")
+    model.leave(); await service.queryFixture(nil)
+  }
+
   @MainActor func testChapterStructurePublishesBeforeCoverageAndCancellationRejectsLateCoverage() async throws {
     let (root, service, _, _, _, book, _, suite) = try singleBookFixture()
     defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }

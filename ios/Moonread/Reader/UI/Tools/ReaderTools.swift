@@ -241,6 +241,12 @@ final class ReaderToolsModel {
         chapterCoverageReady = false
     }
 
+    func refreshChapterStatistics(reset: Bool, presented: Bool) async {
+        if reset { invalidateChapterCoverage() }
+        guard presented, tab == .chapters else { return }
+        await refreshChapters()
+    }
+
     func refreshChapters(jumpTo offset: UInt64? = nil) async {
         guard !isLeaving, !Task.isCancelled, let id = bookID else { return }
         cancelChapterLoads()
