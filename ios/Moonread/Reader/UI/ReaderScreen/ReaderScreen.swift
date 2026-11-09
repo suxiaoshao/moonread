@@ -365,6 +365,16 @@ struct ReaderScreen: View {
         .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in
             session.notesChanged() // CloudSync also posts bookMetadataChanged once for this import.
         }
+        .onReceive(NotificationCenter.default.publisher(for: .statisticsChanged).receive(on: DispatchQueue.main)) { notification in
+            // Keep clear/import invalidation alive even while the directory is
+            // closed. Ordinary appends retain validated values until replacement.
+            if notification.userInfo?["reset"] as? Bool == true { tools.invalidateChapterCoverage() }
+            if !session.isLeaving, !navigationPresentation.isSuspended, presentation.controlsVisible,
+               panel == .library, tools.tab == .chapters, taskID == nil,
+               toolSession.editor == nil, session.editor == nil {
+                Task { await tools.refreshChapters() }
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .cloudReadingPositionsReceived).receive(on: DispatchQueue.main)) { _ in
             Task { await session.refreshSyncedContinuation() }
         }

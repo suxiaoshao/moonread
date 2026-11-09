@@ -139,14 +139,14 @@ struct ReaderLibraryContent: View {
                     do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
                 }
             }
-            .onDisappear { session.notesChanged() }
+            .onDisappear { model.cancelChapterLoads(); session.notesChanged() }
             .onChange(of: model.tab) { _, value in
                 chapterFilterFocused = false
-                if value == .chapters { model.showChapter(session.chapter?.startUtf8 ?? 0) }
+                if value == .chapters {
+                    model.showChapter(session.chapter?.startUtf8 ?? 0)
+                    Task { await model.refreshChapters() }
+                }
                 else { Task { await model.loadNotes(reset: true) } }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: .statisticsChanged).receive(on: DispatchQueue.main)) { _ in
-                if model.tab == .chapters { Task { await model.refreshChapters() } }
             }
             .onChange(of: session.marksRevision) { _, _ in
                 Task { await model.refreshVisibleMarks() }

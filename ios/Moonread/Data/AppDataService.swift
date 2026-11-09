@@ -471,13 +471,25 @@ actor AppDataService {
         return (frame.snapshot, frame)
     }
 
+    typealias ChapterResult = (query: ReaderQuery, outline: ChapterOutline?)
+
     func chapterQuery(_ id: String) async throws -> ReaderQuery {
         try await readingQuery(.book(id), options: .init(facts: true, scope: "chapters-" + id, fields: .chapter))
     }
-    func chapters(_ id: String, reusing previous: ReaderQuery?) async throws -> (query: ReaderQuery, outline: ChapterOutline?) {
-        let query = try await chapterQuery(id)
+    func chapterStructure(_ id: String, reusing previous: ReaderQuery?) async throws -> ChapterResult {
+        try await chapterOutline(id, reusing: previous, coverage: false)
+    }
+    func chapters(_ id: String, reusing previous: ReaderQuery?) async throws -> ChapterResult {
+        try await chapterOutline(id, reusing: previous, coverage: true)
+    }
+    private func chapterOutline(_ id: String, reusing previous: ReaderQuery?, coverage: Bool) async throws -> ChapterResult {
+        let query = try await readingQuery(.book(id), options: .init(facts: coverage,
+            scope: (coverage ? "chapters-" : "chapter-structure-") + id, fields: .chapter))
         if query === previous { return (query, nil) }
-        let work = Task.detached(priority: Task.currentPriority) { try query.chapterOutline(bookId: id) }
+        let work = Task.detached(priority: Task.currentPriority) {
+            try Task.checkCancellation()
+            return try coverage ? query.chapterOutline(bookId: id) : query.chapterStructure(bookId: id)
+        }
         let outline = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
         try Task.checkCancellation()
         return (query, outline)

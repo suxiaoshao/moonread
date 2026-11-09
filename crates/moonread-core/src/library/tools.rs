@@ -533,6 +533,16 @@ impl ReaderCore {
     /// A complete, lightweight snapshot of every published heading. Counts use
     /// prefix totals built with the text cache; this query never loads prose.
     pub(crate) fn chapter_outline(&self, book_id: String) -> Result<ChapterOutline> {
+        self.chapter_outline_with_coverage(book_id, true)
+    }
+    pub(crate) fn chapter_structure(&self, book_id: String) -> Result<ChapterOutline> {
+        self.chapter_outline_with_coverage(book_id, false)
+    }
+    fn chapter_outline_with_coverage(
+        &self,
+        book_id: String,
+        include_coverage: bool,
+    ) -> Result<ChapterOutline> {
         let mut db = self.reader.lock().map_err(|_| ReaderError::ImportBusy)?;
         let tx = db.transaction()?;
         let id = content_key(&tx, &book_id)?;
@@ -559,7 +569,11 @@ impl ReaderCore {
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        let coverage = crate::user::statistics::coverage::covered_char_ranges(&tx, &id)?;
+        let coverage = if include_coverage {
+            crate::user::statistics::coverage::covered_char_ranges(&tx, &id)?
+        } else {
+            None
+        };
         let mut parent: Option<&IndexedChapter> = None;
         let mut items = Vec::with_capacity(headings.len());
         for (index, heading) in headings.iter().enumerate() {

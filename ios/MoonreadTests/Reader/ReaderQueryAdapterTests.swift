@@ -452,6 +452,45 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertNil(pendingOpened)
   }
 
+  @MainActor func testChapterStructurePublishesBeforeCoverageAndCancellationRejectsLateCoverage() async throws {
+    let (root, service, _, _, _, book, _, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let gate = RestorationGate()
+    await service.queryFixture { scope, phase in
+      if scope.hasPrefix("chapters-"), phase == .built { await gate.wait() }
+    }
+    let model = ReaderToolsModel(service: service)
+    await model.prepare(bookID: book.id, currentChapter: 0, library: true)
+    await gate.waitForEntry()
+    XCTAssertFalse(model.chapters.isEmpty, "Structure is usable while coverage is still reading")
+    XCTAssertFalse(model.loadingChapters); XCTAssertFalse(model.chapterCoverageReady)
+    model.filterChapters("no-matching-chapter")
+    let jump = model.chapterJumpRevision
+    await gate.release()
+    await awaitState { model.chapterCoverageReady }
+    XCTAssertTrue(model.chapterCoverageReady)
+    XCTAssertEqual(model.chapterFilter, "no-matching-chapter"); XCTAssertTrue(model.chapters.isEmpty)
+    XCTAssertEqual(model.chapterJumpRevision, jump, "Background coverage never scrolls the list")
+
+    let late = RestorationGate()
+    await service.queryFixture { scope, phase in
+      if scope.hasPrefix("chapters-"), phase == .built { await late.wait() }
+    }
+    model.invalidateChapterCoverage()
+    await model.refreshChapters()
+    await late.waitForEntry()
+    model.invalidateChapterCoverage() // A clear, including while the sheet is closed, invalidates late work.
+    await late.release()
+    await service.queryFixture { scope, phase in
+      if scope.hasPrefix("chapters-"), phase == .built { throw CocoaError(.fileReadNoPermission) }
+    }
+    await model.refreshChapters()
+    await awaitState { model.error != nil }
+    XCTAssertFalse(model.chapterCoverageReady); XCTAssertNotNil(model.error)
+    XCTAssertFalse(model.chapterSnapshot.isEmpty, "Coverage errors never remove usable chapters")
+    model.leave(); await service.queryFixture(nil)
+  }
+
   // S359: 目录刷新使当前目录 snapshot 更新，展开/筛选不混用旧版本；目录查找算法只在 Rust。
   @MainActor
   func testCompleteOutlineSearchFoldingAndRefreshKeepOneSnapshot() async throws {
@@ -481,6 +520,7 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(model.chapters.count, 202)
     XCTAssertEqual(model.chapterTarget, current.startUtf8)
     XCTAssertNil(model.noteSnapshot, "Opening the chapter list does not prefetch notes")
+    await awaitState { model.chapterCoverageReady }
     let beforePosition = try await service.chapterQuery(book.id)
     try await service.savePosition(bookID: book.id, offset: current.startUtf8)
     let afterPosition = try await service.chapterQuery(book.id)
