@@ -39,6 +39,7 @@ struct ReaderScreen: View {
 
     var automatic: ReaderAutoReading { session.autoReading }
     @State private var listeningVoices = false
+    @State private var listeningReservation: CGFloat = 0
     var listening: ListeningSession { session.listening }
     private var listeningSelected: Bool { renderedNode.location.selection == .listening }
     private var listeningHidden: Bool { listeningSelected && renderedNode.exposure == .hidden }
@@ -190,7 +191,8 @@ struct ReaderScreen: View {
                             annotationChooserChanged: { choosingAnnotations = $0 },
                             edgeChanged: { session.nearEdge = $0 },
                             compactHeaderHeight: compactHeaderHeight,
-                            guideHeight: Onboarding.shared.enabled && !Onboarding.shared.revealedControls && !controlsVisible ? controlsTipHeight : 0,
+                            guideHeight: max(Onboarding.shared.enabled && !Onboarding.shared.revealedControls && !controlsVisible ? controlsTipHeight : 0,
+                                listening.active && listeningSelected && !listeningHidden ? listeningReservation : 0),
                             contentGeometry: geometry, layoutStatus: layoutStatus,
                             headerPositionChanged: { localHeaderTop = $0 },
                             controlsVisible: controlsVisible,
@@ -712,7 +714,7 @@ struct ReaderScreen: View {
             .animation(MotionTokens.accessoryResize(reduced: reduceMotion), value: dock)
         } footer: {
             VStack(spacing: 0) {
-                if (controlsVisible || automaticSelected || listeningSelected), session.book != nil {
+                if (!listeningSelected || !listening.active), (controlsVisible || automaticSelected || listeningSelected), session.book != nil {
                     bottomControls.padding(.top, LayoutTokens.compact)
                 }
             }.padding(.bottom, LayoutTokens.compact)
@@ -721,7 +723,7 @@ struct ReaderScreen: View {
                 NavigationStack {
                     ScrollView { listeningContent(expanded: true) }.scrollBounceBehavior(.basedOnSize)
                         .navigationTitle("听书").navigationBarTitleDisplayMode(.inline)
-                        .toolbar { ToolbarItem(placement: .topBarTrailing) { SystemToolbarButton("关闭", role: .close, action: closeListening).labelStyle(.iconOnly) } }
+                        .toolbar { ToolbarItem(placement: .topBarTrailing) { SystemToolbarButton("关闭", role: .close, action: collapseListening).labelStyle(.iconOnly) } }
                         .navigationDestination(isPresented: $listeningVoices) { ListeningVoicesView(session: listening) }
                 }
             } else if automaticSelected {
@@ -956,7 +958,10 @@ struct ReaderScreen: View {
                 TipView(Onboarding.shared.selection).tipViewStyle(ThemedTipStyle(titleOverride: ai.availability.isAvailable ? nil : Text("长按文字可以标注、写批注或拷贝"))).accessibilityIdentifier("readerSelectionTip")
             }
             if dock == .listening {
-                listeningContent(expanded: false)
+                if listening.active {
+                    ReaderListeningCompact(session: listening, expand: { attachmentExpanded = true }, resume: startListening,
+                        returnToSpeech: session.returnToListening, measured: { listeningReservation = $0 })
+                } else { listeningContent(expanded: false) }
             } else if dock == .automatic {
                 automaticContent(expanded: false)
             } else if dock == .settings {
@@ -1014,12 +1019,20 @@ struct ReaderScreen: View {
         presentation.choose(.listening, exposure: .hidden)
     }
 
+    private func startListening() {
+        listening.start()
+        if listening.active { attachmentExpanded = false }
+    }
+    private func collapseListening() {
+        if !listening.active { closeListening(); return }
+        listening.stopPreview(); listeningVoices = false; attachmentExpanded = false
+    }
     private func listeningContent(expanded: Bool) -> some View {
-        ReaderListeningContent(session: listening, showsHeader: !expanded,
+        ReaderListeningContent(session: listening, showsHeader: !expanded, navigatesToVoices: expanded,
             canStart: session.opening.phase == .reading && session.window != nil && !session.isLoading
                 && !session.isLeaving && !session.navigating && session.error == nil,
-            openVoices: { listening.pause(); listeningVoices = true; attachmentExpanded = true }, close: closeListening,
-            start: { listening.start() })
+            openVoices: { listening.pause(); listeningVoices = true; attachmentExpanded = true }, close: expanded ? collapseListening : closeListening,
+            start: startListening)
     }
 
     func closeAutomaticReading() {

@@ -1,6 +1,10 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "回到朗读处": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Back to speech"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"回到朗讀處"}}}},
+    "展开听书控制": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Expand listening controls"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"展開聽書控制"}}}},
+    "正在朗读": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading aloud"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在朗讀"}}}},
+    "已调整，将从当前片段继续。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Updated. Resume from the current passage."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"已調整，將從目前片段繼續。"}}}},
     "听书": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Listen"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"聽書"}}}},
     "声音": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Voice"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"聲音"}}}},
     "选择声音": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Choose Voice"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"選擇聲音"}}}},

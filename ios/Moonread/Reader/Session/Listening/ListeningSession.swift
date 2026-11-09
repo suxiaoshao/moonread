@@ -193,12 +193,14 @@ struct ListeningContext {
     func setRate(_ value: Float) {
         let value = min(AVSpeechUtteranceMaximumSpeechRate, max(AVSpeechUtteranceMinimumSpeechRate, value))
         guard value != rate else { return }
-        pause(message: active ? String(localized: "已调整，将从本句继续。") : nil)
+        if let segment = queue.first { safeOffset = segment.start }
+        pause(message: active ? String(localized: "已调整，将从当前片段继续。") : nil)
         rate = value; defaults.set(value, forKey: "Moonread.listening.rate")
     }
     func selectVoice(_ voice: AVSpeechSynthesisVoice) {
         guard voice.identifier != voiceID else { return }
-        pause(message: active ? String(localized: "已调整，将从本句继续。") : nil)
+        if let segment = queue.first { safeOffset = segment.start }
+        pause(message: active ? String(localized: "已调整，将从当前片段继续。") : nil)
         voiceID = voice.identifier; voiceLanguage = voice.language
         defaults.set(voiceID, forKey: "Moonread.listening.voice"); defaults.set(voiceLanguage, forKey: "Moonread.listening.language")
     }
