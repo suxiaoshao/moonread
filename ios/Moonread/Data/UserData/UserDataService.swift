@@ -73,7 +73,7 @@ extension AppDataService {
             userCloudConfigurationRevision = UUID()
             resetSystemReadingCatalog()
             NotificationCenter.default.post(name: .readingContinuationInvalidated, object: nil)
-            NotificationCenter.default.post(name: .statisticsChanged, object: nil)
+            NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
             let revision = userCloudConfigurationRevision
             // The configuration switch is serialized with deletion, not store
             // bootstrap: a newer configuration must be able to replace a stuck

@@ -48,6 +48,8 @@ pub struct SourceSpan {
 #[derive(Debug, uniffi::Record)]
 pub struct ReadingFrame {
     pub snapshot: ReadingSnapshot,
+    /// Target heading from the same read transaction as the bounded frame.
+    pub chapter: Option<ChapterInfo>,
     pub chunks: Vec<TextChunk>,
     pub paragraphs: Vec<ReadingParagraph>,
     pub is_end_of_book: bool,

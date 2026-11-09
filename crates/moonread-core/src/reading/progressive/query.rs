@@ -455,9 +455,15 @@ impl ReaderCore {
                 .iter()
                 .any(|c| c.start_utf8 <= *anchor && *anchor < c.end_utf8)
         });
+        let chapter = if locate {
+            crate::library::tools::chapter(&tx, &id, requested)?
+        } else {
+            None
+        };
         tx.commit()?;
         Ok(ReadingFrame {
             snapshot: state,
+            chapter,
             chunks,
             paragraphs,
             is_end_of_book: end,

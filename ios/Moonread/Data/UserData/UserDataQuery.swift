@@ -10,6 +10,7 @@ extension AppDataService {
     }
     struct UserQueryOptions: Sendable {
         var facts = false
+        var statisticsRange: ClosedRange<Int64>? = nil
         var positionsOnly = false
         var scope = "batch"
         var sparseCatalogue = false
@@ -25,7 +26,16 @@ extension AppDataService {
         let selection: UserQuerySelection
         let formalVersion: String, pendingVersion: String
         let generation: UInt64, enabled: Bool
+        let statisticsVersion: String
         let hidden: Set<String>, preferred: [String: String]
+    }
+    struct UserQueryOutput: Sendable {
+        let query: ReaderQuery
+        let statisticsIncomplete: Bool
+        let statisticsVersion: String
+        var compatibilityNotice: String? {
+            statisticsIncomplete ? String(localized: "统计不完整：部分记录当前版本无法理解，请更新 App。") : nil
+        }
     }
     private struct UserQueryRead {
         let source: UserQuerySource
@@ -35,6 +45,7 @@ extension AppDataService {
         let cacheKey: String
         let query: ReaderQuery
         let identities: [String: String]
+        let statisticsIncomplete: Bool
     }
     #if DEBUG
     // Deterministic gates at real query boundaries; no production timing or data changes.
@@ -52,6 +63,9 @@ extension AppDataService {
             options: .init(facts: facts, positionsOnly: positionsOnly, scope: scope, sparseCatalogue: sparseCatalogue, fields: fields), diagnostic: diagnostic)
     }
     func readingQuery(_ source: UserQuerySource, options: UserQueryOptions, diagnostic: ReaderOpenTrace? = nil) async throws -> ReaderQuery {
+        try await readingQueryResult(source, options: options, diagnostic: diagnostic).query
+    }
+    func readingQueryResult(_ source: UserQuerySource, options: UserQueryOptions, diagnostic: ReaderOpenTrace? = nil) async throws -> UserQueryOutput {
         do {
             var discarded = 0
             while true {
@@ -73,9 +87,10 @@ extension AppDataService {
                 if let reads, try reads.allSatisfy({ try queryReadIsValid($0) }) {
                     if queryCache.count >= 32 { queryCache.removeAll() }
                     for read in reads {
-                        queryCache[read.cacheKey] = CachedQuery(signature: read.signature, identities: read.identities, query: read.query)
+                        queryCache[read.cacheKey] = CachedQuery(signature: read.signature, identities: read.identities, query: read.query, statisticsIncomplete: read.statisticsIncomplete)
                     }
-                    return reads.last!.query
+                    let read = reads.last!
+                    return UserQueryOutput(query: read.query, statisticsIncomplete: read.statisticsIncomplete, statisticsVersion: read.signature.statisticsVersion)
                 }
                 discarded += 1
                 #if DEBUG
@@ -141,7 +156,7 @@ extension AppDataService {
         }
         return .init(configuration: userCloudConfigurationRevision, formalID: userStoreTask?.id, pendingID: pendingUserStoreTask?.id,
             selection: selection, formalVersion: version(formal), pendingVersion: version(pending), generation: preferences.generation,
-            enabled: preferences.enabled, hidden: hidden, preferred: preferred)
+            enabled: preferences.enabled, statisticsVersion: options.facts ? "\(userCloudConfigurationRevision)-\(userStoreTask?.id.uuidString ?? "")-\(pendingUserStoreTask?.id.uuidString ?? "")-\(selection.statisticsKeys?.joined(separator: ",") ?? "all")-\(formal.version(keys: [], positionsOnly: false, includeFacts: true, statisticsKeys: selection.statisticsKeys, fields: []))-\(pending.version(keys: [], positionsOnly: false, includeFacts: true, statisticsKeys: selection.statisticsKeys, fields: []))-\(preferences.generation)-\(preferences.enabled)" : "", hidden: hidden, preferred: preferred)
     }
     private func queryReadIsValid(_ read: UserQueryRead) throws -> Bool {
         guard read.signature.configuration == userCloudConfigurationRevision,
@@ -176,19 +191,20 @@ extension AppDataService {
         // expires a cached query on the NEXT call, but is not a reason to starve
         // the current prefix. Identity/scope changes are validated separately.
         let progress = if case let .book(id) = source { "-\(readingChangeRevision(id))" } else { "" }
-        let cacheKey = options.scope + progress + "-\(options.facts)-\(options.positionsOnly)-\(factKeys?.joined(separator: ",") ?? "all")-\(options.sparseCatalogue)-\(options.fields.rawValue)-" + (keys?.joined(separator: ",") ?? "all")
+        let rangeKey = options.statisticsRange.map { "\($0.lowerBound)...\($0.upperBound)" } ?? "full"
+        let cacheKey = options.scope + progress + "-" + rangeKey + "-\(options.facts)-\(options.positionsOnly)-\(factKeys?.joined(separator: ",") ?? "all")-\(options.sparseCatalogue)-\(options.fields.rawValue)-" + (keys?.joined(separator: ",") ?? "all")
         if let cached = queryCache[cacheKey], cached.signature == signature {
             let read = UserQueryRead(source: source, options: options, formal: formal, pending: pending, signature: signature,
-                cacheKey: cacheKey, query: cached.query, identities: cached.identities)
+                cacheKey: cacheKey, query: cached.query, identities: cached.identities, statisticsIncomplete: cached.statisticsIncomplete)
             return read
         }
         let formalJSON = try await formal.projection(generation: signature.generation, enabled: signature.enabled, includeFacts: options.facts,
             keys: keys, positionsOnly: options.positionsOnly, statisticsKeys: factKeys, fields: options.fields, diagnostic: diagnostic,
-            diagnosticScope: "formalProjection", sparseCatalogue: options.sparseCatalogue)
+            diagnosticScope: "formalProjection", sparseCatalogue: options.sparseCatalogue, statisticsRange: options.statisticsRange)
         try Task.checkCancellation()
         let pendingJSON = try await pending.projection(generation: signature.generation, enabled: signature.enabled, includeFacts: options.facts,
             keys: keys, positionsOnly: options.positionsOnly, statisticsKeys: factKeys, fields: options.fields, diagnostic: diagnostic,
-            diagnosticScope: "pendingProjection", sparseCatalogue: options.sparseCatalogue)
+            diagnosticScope: "pendingProjection", sparseCatalogue: options.sparseCatalogue, statisticsRange: options.statisticsRange)
         try Task.checkCancellation()
         let core = try textCore(), hidden = signature.hidden, preferred = signature.preferred
         let build = Task.detached(priority: Task.currentPriority) {
@@ -196,6 +212,8 @@ extension AppDataService {
             var combined = try JSONSerialization.jsonObject(with: Data(formalJSON.utf8)) as! [String: Any]
             let extra = try JSONSerialization.jsonObject(with: Data(pendingJSON.utf8)) as! [String: Any]
             for field in ["positions", "opened", "facts", "metadata", "corrections"] { combined[field] = (combined[field] as! [Any]) + (extra[field] as! [Any]) }
+            let incomplete = (combined["statisticsIncomplete"] as? Bool ?? false) || (extra["statisticsIncomplete"] as? Bool ?? false)
+            combined.removeValue(forKey: "statisticsIncomplete")
             let rawPositions = combined["positions"] as! [[String: Any]]
             var blockedPositions = Set((combined["unsupportedPositions"] as? [String] ?? []) + (extra["unsupportedPositions"] as? [String] ?? []))
             let rawOpened = combined["opened"] as! [[String: Any]]
@@ -236,15 +254,15 @@ extension AppDataService {
             try Task.checkCancellation()
             let query = try core.querySnapshot(json: String(decoding: JSONSerialization.data(withJSONObject: combined), as: UTF8.self))
             try Task.checkCancellation()
-            return (query, mapping)
+            return (query, mapping, incomplete)
 
         }
-        let (query, identities) = try await withTaskCancellationHandler { try await build.value } onCancel: { build.cancel() }
+        let (query, identities, incomplete) = try await withTaskCancellationHandler { try await build.value } onCancel: { build.cancel() }
         #if DEBUG
         try await queryTestBoundary?(options.scope, .built)
         #endif
         try Task.checkCancellation()
         return UserQueryRead(source: source, options: options, formal: formal, pending: pending, signature: signature,
-            cacheKey: cacheKey, query: query, identities: identities)
+            cacheKey: cacheKey, query: query, identities: identities, statisticsIncomplete: incomplete)
     }
 }

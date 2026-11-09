@@ -136,7 +136,7 @@ actor AppDataService {
     }()
     var systemSpotlightThumbnailFailures = Set<String>()
     private var core: ReaderCore?
-    struct CachedQuery { let signature: UserQuerySignature; let identities: [String: String]; let query: ReaderQuery }
+    struct CachedQuery { let signature: UserQuerySignature; let identities: [String: String]; let query: ReaderQuery; let statisticsIncomplete: Bool }
     #if DEBUG
     var queryTestBoundary: (@Sendable (String, UserQueryTestPhase) async throws -> Void)?
     #endif
@@ -471,7 +471,20 @@ actor AppDataService {
         return (frame.snapshot, frame)
     }
 
-    func chapters(_ id: String) async throws -> ChapterOutline { try await bookQuery(id, facts: true).chapterOutline(bookId: id) }
+    func chapterQuery(_ id: String) async throws -> ReaderQuery {
+        try await readingQuery(.book(id), options: .init(facts: true, scope: "chapters-" + id, fields: .chapter))
+    }
+    func chapters(_ id: String, reusing previous: ReaderQuery?) async throws -> (query: ReaderQuery, outline: ChapterOutline?) {
+        let query = try await chapterQuery(id)
+        if query === previous { return (query, nil) }
+        let work = Task.detached(priority: Task.currentPriority) { try query.chapterOutline(bookId: id) }
+        let outline = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+        try Task.checkCancellation()
+        return (query, outline)
+    }
+    func chapters(_ id: String) async throws -> ChapterOutline {
+        try await chapters(id, reusing: nil).outline!
+    }
     func marks(_ id: String, kind: MarkKind, offset: UInt32, snapshot: NoteCandidates? = nil) async throws -> MarkPage {
         let values = try await userMarks(id, kind: kind, snapshot: snapshot), start = min(Int(offset), values.count), end = min(start + 60, values.count)
         return MarkPage(items: Array(values[start..<end]), hasMore: end < values.count)

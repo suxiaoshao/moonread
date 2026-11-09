@@ -31,6 +31,7 @@ final class ReaderToolsModel {
     var chapterFilter = ""
     var chapters: [ChapterEntry] = []
     private var allChapters: [ChapterEntry] = []
+    private var chapterQuery: ReaderQuery?
     var collapsedVolumes: Set<UInt64> = []
     var chapterComplete = false
     var chapterTarget: UInt64?
@@ -148,21 +149,21 @@ final class ReaderToolsModel {
         let changed = self.bookID != bookID
         if changed {
             cancelSearchJob(); chapterTask?.cancel(); chapterTask = nil; chapterGeneration += 1; loadingChapters = false; self.bookID = bookID
-            chapters = []; allChapters = []; collapsedVolumes = []; chapterFilter = ""
+            chapters = []; allChapters = []; chapterQuery = nil; collapsedVolumes = []; chapterFilter = ""
             clearNoteSelection(); selectingNotes = false; noteSnapshot = nil
             notes = []; notesKind = nil; noteLocations = [:]; notesLoadError = nil; hits = []; query = ""
         }
         guard library else { return }
         self.currentChapter = currentChapter
         if preservingPosition && !changed {
-            if allChapters.isEmpty { await refreshChapters(jumpTo: currentChapter) }
+            await refreshChapters(jumpTo: allChapters.isEmpty ? currentChapter : nil)
             guard !Task.isCancelled, !isLeaving, self.bookID == bookID else { return }
-            await loadNotes(reset: true, preservingCount: notes.count)
+            if tab != .chapters { await loadNotes(reset: true, preservingCount: notes.count) }
             return
         }
         await refreshChapters(jumpTo: currentChapter)
         guard !Task.isCancelled, !isLeaving, self.bookID == bookID else { return }
-        await loadNotes(reset: true)
+        if tab != .chapters { await loadNotes(reset: true) }
     }
 
     /// Chooses the list before it is shown, so its first frame already has the right
@@ -229,9 +230,12 @@ final class ReaderToolsModel {
         let task = Task { [weak self, service] in
             defer { if let self, generation == self.chapterGeneration { self.loadingChapters = false; self.chapterTask = nil } }
             do {
-                let value = try await service.chapters(id)
+                let result = try await service.chapters(id, reusing: self?.chapterQuery)
                 guard let self, !self.isLeaving, !Task.isCancelled, id == self.bookID, generation == self.chapterGeneration else { return }
-                self.allChapters = value.items; self.chapterComplete = value.isComplete
+                if let value = result.outline {
+                    self.allChapters = value.items; self.chapterComplete = value.isComplete
+                }
+                self.chapterQuery = result.query
                 if let offset { self.showChapter(offset) } else { self.updateChapterRows() }
             } catch is CancellationError { }
             catch {

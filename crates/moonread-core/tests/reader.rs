@@ -102,6 +102,11 @@ fn chapter_lookup_recognizes_chinese_and_english_headings_by_offset() {
     let outline = query.chapter_outline(book.id.clone()).unwrap();
     assert_eq!(outline.items.len(), 4);
     for item in &outline.items {
+        let frame = query
+            .reading_frame(book.id.clone(), item.start_utf8)
+            .unwrap();
+        assert_eq!(frame.chapter.as_ref().unwrap().title, item.title);
+        assert_eq!(frame.snapshot.book.byte_count, book.byte_count);
         assert_eq!(
             query
                 .chapter_at(book.id.clone(), item.start_utf8)

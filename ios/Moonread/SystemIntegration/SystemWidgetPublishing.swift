@@ -105,11 +105,13 @@ extension AppDataService {
                   currentStreakDays: summary?.currentStreakDays, days: summary?.days.map { .init(localDay: $0.day, durationMs: $0.durationMs) })
         }
         do {
-            let notice = try await statisticsCompatibilityNotice()
-            try Task.checkCancellation()
-            if notice != nil { return result("incomplete") }
             let week = StatisticsDates.systemReadingBounds(week: true, now: now, calendar: calendar)
-            let query = try await effectiveQuery(facts: true, scope: "system-widget-statistics", fields: [])
+            // Streak needs history before this week; share the prepared facts,
+            // but keep all prior local days rather than truncating it to seven.
+            let input = try await statisticsQuery(first: Int64.min, last: Int64.max, fields: [], scope: "system-widget-statistics")
+            try Task.checkCancellation()
+            if input.statisticsIncomplete { return result("incomplete") }
+            let query = input.query
             let summary = try await Task.detached(priority: .utility) { try query.statisticsWidgetSummary(today: today, weekStart: week.lowerBound) }.value
             try Task.checkCancellation()
             return result(!enabled && !summary.hasReadingHistory ? "notEnabled" : "ready", summary: summary)

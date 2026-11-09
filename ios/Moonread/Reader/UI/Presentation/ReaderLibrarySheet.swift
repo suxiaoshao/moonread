@@ -122,7 +122,7 @@ struct ReaderLibraryContent: View {
                 guard let id = preparedBookID else { return }
                 var available = session.book?.byteCount
                 var complete = !session.incomplete
-                await session.activity.flush()
+                session.activity.breakVisit()
                 await model.prepare(bookID: id, currentChapter: session.chapter?.startUtf8 ?? 0, library: true, preservingPosition: true)
                 if !Task.isCancelled, model.tab == .chapters {
                     model.showChapter(session.chapter?.startUtf8 ?? 0)
@@ -144,6 +144,9 @@ struct ReaderLibraryContent: View {
                 chapterFilterFocused = false
                 if value == .chapters { model.showChapter(session.chapter?.startUtf8 ?? 0) }
                 else { Task { await model.loadNotes(reset: true) } }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .statisticsChanged).receive(on: DispatchQueue.main)) { _ in
+                if model.tab == .chapters { Task { await model.refreshChapters() } }
             }
             .onChange(of: session.marksRevision) { _, _ in
                 Task { await model.refreshVisibleMarks() }
