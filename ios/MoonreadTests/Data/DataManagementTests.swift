@@ -421,8 +421,9 @@ import XCTest
         XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: preview.staging.directory.path), "Keep the current preview staging")
         let refreshed = expectation(forNotification: .cloudDataReceived, object: nil)
+        let metadataChanged = expectation(forNotification: .bookMetadataChanged, object: nil)
         try await service.importReadingBackup(preview)
-        await fulfillment(of: [refreshed], timeout: 2)
+        await fulfillment(of: [refreshed, metadataChanged], timeout: 2)
     }
     func testStatisticsFailureDropsBatchReleasesLeaseAndAllowsDeletionAfterClosing() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }

@@ -294,5 +294,7 @@ extension AppDataService {
         NotificationCenter.default.post(name: .statisticsChanged, object: nil)
         // Reuse the existing received-data refresh (including ThemeStore.load).
         NotificationCenter.default.post(name: .cloudDataReceived, object: nil)
+        // Reader metadata has one invalidation event, shared with CloudKit imports.
+        NotificationCenter.default.post(name: .bookMetadataChanged, object: nil)
     }
 }
