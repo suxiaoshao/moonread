@@ -3,7 +3,7 @@ import XCTest
 import UIKit
 @testable import Moonread
 
-@MainActor final class ListeningTests: XCTestCase {
+@MainActor final class ListeningTests: ReaderIntegrationFixture {
     func testBoundedSpeechUsesSharedProjectionAndOriginalUTF8Coordinates() throws {
         let raw = "　　原创甲😀，original text。\n\n\t原创乙。\n"
         let firstEnd = UInt64("　　原创甲😀，original text。\n".utf8.count)
@@ -107,6 +107,104 @@ import UIKit
         XCTAssertTrue(audio.finished)
     }
 
+    func testReaderCheckpointsKeepAudioAnchorAcrossBrowsingWindowsAndStop() async throws {
+        let (root,service,core,_,_,_,_,suite) = try singleBookFixture()
+        defer { try? FileManager.default.removeItem(at:root); UserDefaults.standard.removePersistentDomain(forName:suite) }
+        let defaults = try XCTUnwrap(UserDefaults(suiteName:suite)); defaults.set("synthetic",forKey:"Moonread.listening.voice")
+        let paragraph = "原创正文，春风照亮前路，夜色温柔。\n"
+        let text = "第一章 合成\n" + String(repeating:paragraph,count:8000)
+        let file = root.appendingPathComponent("listening.txt"); try text.write(to:file,atomically:true,encoding:.utf8)
+        let book = try core.importBook(filePath:file.path,title:"Synthetic")
+        let audio = FakeListeningAudio(), queued = expectation(description:"bounded units prepared")
+        queued.expectedFulfillmentCount = 2; audio.enqueued = { queued.fulfill() }
+        let reader = ReaderSession(service:service,makeListening:{ owner in
+            owner.makeListeningSession(defaults:defaults,voiceAvailable:{ _ in true },audio:{ audio })
+        })
+        await reader.open(.book(book.id)); await awaitState { reader.window != nil }
+        reader.showingCover = false
+        let listening = reader.listening; listening.start()
+        await fulfillment(of:[queued],timeout:3)
+        let first = try XCTUnwrap(audio.items.first)
+        audio.event?(.began(first.id)); audio.event?(.range(first.id,NSRange(location:1,length:1)))
+        let spoken = try XCTUnwrap(listening.safeOffset)
+        let far = book.byteCount - UInt64(paragraph.utf8.count * 2)
+        reader.beganReadingInteraction()
+        reader.window = ReadingWindow(frame:try await service.frame(book.id,offset:far))
+        reader.moved(to:far,settled:true,userInitiated:false)
+        listening.tick(uptime:100)
+        await reader.flush()
+        XCTAssertTrue(listening.running); XCTAssertEqual(listening.following,.detached)
+        XCTAssertEqual(reader.anchor,far,"Checkpoint cannot pull a browsed viewport back")
+        let saved = try await service.snapshot(book.id).book.positionUtf8
+        XCTAssertEqual(saved,spoken,"Browse reports never replace the audio position")
+        let ids = audio.items.map(\.id)
+        reader.returnToListening(); await reader.listeningWindowTask?.value
+        XCTAssertEqual(audio.items.map(\.id),ids,"Returning reloads only the reading frame, never speech")
+        XCTAssertTrue(try XCTUnwrap(reader.window).start <= spoken && spoken < reader.window!.end)
+        reader.stopListening(); await reader.navigationTask?.value
+        XCTAssertEqual(reader.anchor,spoken)
+        reader.moved(to:far,settled:true,userInitiated:false)
+        XCTAssertEqual(reader.anchor,spoken,"A late pre-stop viewport cannot undo the final reveal")
+        await reader.flush()
+        let stopped = try await service.snapshot(book.id).book.positionUtf8; XCTAssertEqual(stopped,spoken)
+        audio.event?(.range(first.id,NSRange(location:0,length:1)))
+        await reader.leave().value
+        let afterExit = try await service.snapshot(book.id).book.positionUtf8; XCTAssertEqual(afterExit,spoken)
+    }
+
+    func testNativeFollowUsesVisiblePagesAndPaintOnlyRanges() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let window = UIWindow(windowScene: scene)
+        let controller = ReadingController()
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            window.frame.size.height = min(window.bounds.height, window.bounds.width * 0.68)
+        }
+        window.rootViewController = controller; window.makeKeyAndVisible()
+        defer { window.isHidden = true; window.rootViewController = nil }
+        var text = "", starts: [UInt64] = []
+        for index in 0..<160 { starts.append(UInt64(text.utf8.count)); text += "原创第\(index)段，春风轻拂，星光照亮书页。 Original words 😀 continue here.\n" }
+        let source = ReadingWindow(chunks: [.init(index: 0, startUtf8: 0, endUtf8: UInt64(text.utf8.count), text: text)], isEndOfBook: true)
+        for dark in [false,true] {
+            for mode in [ReadingMode.scroll,.pages] {
+                var settings = defaultReaderSettings(); settings.mode = mode
+                controller.contentGeometry = UIDevice.current.userInterfaceIdiom == .pad ? ReadingContentGeometry(size: controller.view.bounds.size) : nil
+                controller.configure(window: source, settings: settings, anchor: 0, dark: dark, typeSize: .large,
+                    compactHeaderHeight: 0, controlsVisible: false, toggleControls: {}, readingBegan: {}, changed: { _,_ in })
+                controller.guideHeight = 90
+                controller.view.setNeedsLayout(); controller.view.layoutIfNeeded()
+                if let scroll = controller.scrollText {
+                    let before = scroll.textStorage.string
+                    let unit = SourceSpan(startUtf8: starts[80], endUtf8: starts[80]+3)
+                    controller.updateListening(cursor: ListeningCursor(sentence: SourceSpan(startUtf8: starts[80], endUtf8: starts[81]),unit: unit), following: true)
+                    XCTAssertGreaterThan(scroll.contentOffset.y, 0)
+                    let y = scroll.contentOffset.y
+                    controller.updateListening(cursor: ListeningCursor(sentence: SourceSpan(startUtf8: starts[80], endUtf8: starts[81]),unit: SourceSpan(startUtf8: starts[80]+3,endUtf8: starts[80]+6)), following: true)
+                    XCTAssertEqual(scroll.contentOffset.y,y,"A visible word does not repeatedly scroll")
+                    let layout = try XCTUnwrap(scroll.layoutManager as? ReadingLayoutManager)
+                    XCTAssertNotNil(layout.listeningDecoration); XCTAssertEqual(scroll.textStorage.string,before)
+                    controller.updateListening(cursor:nil,following:false)
+                    XCTAssertNil(layout.listeningDecoration)
+                } else {
+                    let leaves = controller.currentLeaves
+                    if UIDevice.current.userInterfaceIdiom == .pad { XCTAssertEqual(leaves.count,2) }
+                    let right = try XCTUnwrap(leaves.last)
+                    let positions = leaves.map { $0.page.start }, pageCount = controller.pages.count
+                    let offset = right.page.firstVisibleOffset
+                    controller.updateListening(cursor:ListeningCursor(sentence:SourceSpan(startUtf8:right.page.start,endUtf8:right.page.end),unit:SourceSpan(startUtf8:offset,endUtf8:offset+3)),following:true)
+                    XCTAssertEqual(controller.currentLeaves.map { $0.page.start },positions,"The right visible leaf stays in this spread")
+                    let nextIndex = try XCTUnwrap(leaves.map(\.index).max())+1
+                    XCTAssertLessThan(nextIndex,controller.pages.count)
+                    let next = controller.pages[nextIndex]
+                    controller.updateListening(cursor:ListeningCursor(sentence:SourceSpan(startUtf8:next.start,endUtf8:next.end),unit:SourceSpan(startUtf8:next.firstVisibleOffset,endUtf8:next.firstVisibleOffset+3)),following:true)
+                    XCTAssertTrue(controller.currentLeaves.contains { $0.page.start == next.start },"Crossing the visible group advances once")
+                    XCTAssertEqual(controller.pages.count,pageCount,"Following changes the visible group without repagination")
+                }
+                let image = UIGraphicsImageRenderer(bounds:controller.view.bounds).image { _ in controller.view.drawHierarchy(in:controller.view.bounds,afterScreenUpdates:true) }
+                let attachment = XCTAttachment(image:image); attachment.name = "listening-\(mode)-\(dark ? "dark" : "light")"; attachment.lifetime = .keepAlways; add(attachment)
+            }
+        }
+    }
+
     func testInterruptionsTimerAndSourceChangeRequireExplicitContinuation() async throws {
         let suite = "ListeningTest.\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -142,6 +240,17 @@ import UIKit
         XCTAssertEqual(session.phase, .idle)
         XCTAssertNotNil(session.notice)
         session.end()
+        let notifications = NotificationCenter()
+        let system = SystemListeningAudio(notifications: notifications)
+        let reset = expectation(description: "background notification safely crosses to MainActor")
+        system.event = { event in
+            if case .reset = event { MainActor.preconditionIsolated(); reset.fulfill() }
+        }
+        await Task.detached {
+            notifications.post(name: AVAudioSession.mediaServicesWereResetNotification, object: AVAudioSession.sharedInstance())
+        }.value
+        await fulfillment(of: [reset], timeout: 2)
+        system.finish()
     }
 }
 

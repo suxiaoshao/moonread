@@ -12,7 +12,7 @@ struct ListeningContext {
 }
 
 /// One reading opening owns one synthesizer. There is no independent listening
-/// position: safe native ranges are committed through ReaderSession.moved/flush.
+/// position: safe native ranges are committed through ReaderSession's existing position service/flush.
 @MainActor @Observable final class ListeningSession {
     enum Phase { case idle, preparing, playing, paused }
     enum Following { case following, detached }
@@ -21,6 +21,7 @@ struct ListeningContext {
     private(set) var notice: String?
     private(set) var title = ""
     private(set) var chapter = ""
+    private(set) var currentChapter: ChapterInfo?
     private(set) var previewing = false
     private(set) var ownsPosition = false
     private(set) var cursor: ListeningCursor?
@@ -34,6 +35,9 @@ struct ListeningContext {
     var voice: AVSpeechSynthesisVoice? { voiceID.flatMap(AVSpeechSynthesisVoice.init(identifier:)) }
     static var voices: [AVSpeechSynthesisVoice] { AVSpeechSynthesisVoice.speechVoices().filter { !$0.voiceTraits.contains(.isPersonalVoice) } }
     @ObservationIgnored var readerAccessoryPresented = false
+    @ObservationIgnored var readerTaskPresented = false
+    @ObservationIgnored var voiceSelectionPresented = false
+    private var isBlocked: Bool { readerTaskPresented || voiceSelectionPresented || blocked() }
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let context: () -> ListeningContext?
     @ObservationIgnored private let read: (ListeningContext, UInt64, Bool) async throws -> ListeningRead
@@ -78,7 +82,7 @@ struct ListeningContext {
         rate = min(AVSpeechUtteranceMaximumSpeechRate, max(AVSpeechUtteranceMinimumSpeechRate, stored?.floatValue ?? AVSpeechUtteranceDefaultSpeechRate))
         voiceID = defaults.string(forKey: "Moonread.listening.voice")
         voiceLanguage = defaults.string(forKey: "Moonread.listening.language")
-        if voiceID == nil {
+        if voiceID == nil || !voiceAvailable(voiceID!) {
             let language = voiceLanguage ?? Locale.preferredLanguages.first ?? Locale.current.identifier
             let preferred = AVSpeechSynthesisVoice(language: language)
             let voices = Self.voices
@@ -100,12 +104,14 @@ struct ListeningContext {
         guard let voiceID, voiceAvailable(voiceID) else {
             notice = String(localized: "声音不可用，请重新选择系统声音。"); return
         }
-        guard !blocked() else { notice = String(localized: "请先关闭当前操作再继续听书。"); return }
+        guard !isBlocked else { notice = String(localized: "请先关闭当前操作再继续听书。"); return }
         willStart()
         guard let context = context() else { notice = String(localized: "这部分正文还未准备好"); return }
         let beginning = phase == .idle || !ownsPosition
         cancelQueue(); native?.silence()
-        source = context; title = context.title; chapter = context.chapter
+        source = context; title = context.title
+        if beginning { chapter = context.chapter }
+        cursor = nil
         let offset = beginning ? context.offset : (safeOffset ?? context.offset)
         safeOffset = offset; publishedOffset = nil; nextOffset = offset; endOfText = false
         if beginning { following = .following }
@@ -165,7 +171,7 @@ struct ListeningContext {
         if savePosition { checkpoint() }
         else { ownsPosition = false; safeOffset = nil; publishedOffset = nil }
         cancelQueue(); native?.finish(); native = nil
-        phase = .idle; previewID = nil; previewing = false; deadline = nil
+        phase = .idle; cursor = nil; previewID = nil; previewing = false; deadline = nil
         timer?.cancel(); timer = nil
         notice = message
         if savePosition, let safeOffset { ended(safeOffset, returnToText) }
@@ -220,7 +226,7 @@ struct ListeningContext {
     }
     func stopPreview() { if previewing { pause() } }
     private func cancelQueue() {
-        generation &+= 1; preparation?.cancel(); preparation = nil; queue.removeAll(); cursor = nil
+        generation &+= 1; preparation?.cancel(); preparation = nil; queue.removeAll()
     }
     private func checkpoint() {
         guard ownsPosition, let safeOffset, publishedOffset != safeOffset else { return }
@@ -244,7 +250,7 @@ struct ListeningContext {
             lastCheckpoint = uptime; checkpoint()
         }
     }
-    func checkPresentation() { if running && blocked() { pause() } }
+    func checkPresentation() { if running && isBlocked { pause() } }
     private func publishMedia() {
         guard active else { return }
         native?.publish(ListeningMetadata(title: title, chapter: chapter, artwork: artwork), playing: phase == .playing)
@@ -254,10 +260,14 @@ struct ListeningContext {
         chapter = value; publishMedia()
     }
     func updateCover(title: String, sha: String?, author: String?, cover: BookCoverAsset?, service: AppDataService) {
+        self.title = title; publishMedia()
         coverTask?.cancel()
         coverTask = Task { [weak self] in
             let image: UIImage?
-            if let cover { image = try? await service.coverImage(cover, pixels: 600) } else { image = nil }
+            if let cover {
+                do { image = try await service.coverImage(cover, pixels: 600) }
+                catch { return } // Keep successful artwork until a replacement is ready.
+            } else { image = nil }
             guard !Task.isCancelled, let self else { return }
             // This is the same cover view/rule used by reader, library and widgets.
             let renderer = ImageRenderer(content: SystemBookCover(title: title, contentSHA256: sha, author: author, userImage: image, rendersSynchronously: true).frame(width: 280, height: 392))
@@ -282,13 +292,13 @@ struct ListeningContext {
         case .began(let id):
             guard running, let segment = queue.first, segment.id == id else { return }
             safeOffset = segment.start
-            if let chapter = segment.chapter { updateChapter(chapter) }
+            currentChapter = segment.chapter
+            if let chapter = segment.chapter { updateChapter(chapter.title) }
             let length = segment.text.text.first?.utf16.count ?? 0
             if let unit = segment.sourceRange(NSRange(location: 0, length: length)) {
                 cursor = ListeningCursor(sentence: SourceSpan(startUtf8: segment.start, endUtf8: segment.end), unit: unit)
                 cursorChanged()
             }
-            checkpoint()
         case .range(let id, let range):
             guard running, let segment = queue.first, segment.id == id, let unit = segment.sourceRange(range) else { return }
             cursor = ListeningCursor(sentence: SourceSpan(startUtf8: segment.start, endUtf8: segment.end), unit: unit)
@@ -297,7 +307,7 @@ struct ListeningContext {
         case .finished(let id):
             guard running, let segment = queue.first, segment.id == id else { return }
             if queue.count > 1 || !endOfText { safeOffset = segment.end }
-            checkpoint(); queue.removeFirst()
+            queue.removeFirst()
             if queue.isEmpty && endOfText { end(message: String(localized: "已到书末")) }
             else { prepare() }
         case .cancelled(let id):

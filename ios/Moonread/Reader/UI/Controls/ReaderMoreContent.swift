@@ -80,7 +80,7 @@ struct ReaderMoreContent: View {
         case .notes: "highlighter"
         case .details: "info.circle"
         case .automatic: "play.circle"
-        case .listening: "speaker.wave.2"
+        case .listening: "headphones"
         }
         let title: LocalizedStringKey = switch action {
         case .bookmark: "书签"

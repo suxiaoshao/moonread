@@ -6,7 +6,7 @@ struct SpeechSegment: Sendable {
     let id = UUID()
     let text: ReadingText
     let contentSHA: String?
-    var chapter: String? = nil
+    var chapter: ChapterInfo? = nil
     var start: UInt64 { text.firstVisibleOffset ?? text.sourceStart }
     var end: UInt64 { text.sourceEnd }
     func sourceRange(_ range: NSRange) -> SourceSpan? {
@@ -49,7 +49,7 @@ actor ListeningTextProvider {
             if var segment = Self.segment(in: window, at: offset, paragraphStart: paragraphStart, indent: indent, identity: identity) {
                 // Resolve ahead with the bounded speech unit, never from a word
                 // callback or from the user's independently browsed chapter.
-                segment.chapter = try await service.chapter(bookID: bookID, offset: segment.start)?.title
+                segment.chapter = try await service.chapter(bookID: bookID, offset: segment.start)
                 return ListeningRead(segment: segment, atEnd: false)
             }
             if window.isEndOfBook { return ListeningRead(segment: nil, atEnd: true) }

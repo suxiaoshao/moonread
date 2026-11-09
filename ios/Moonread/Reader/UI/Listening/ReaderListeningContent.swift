@@ -129,8 +129,8 @@ struct ListeningVoicesView: View {
         }
         .searchable(text: $search, prompt: Text("搜索声音"))
         .navigationTitle("声音").navigationBarTitleDisplayMode(.inline).themedPage()
-        .onAppear { session.pause(); voices = ListeningSession.voices }
-        .onDisappear { session.stopPreview() }
+        .onAppear { session.voiceSelectionPresented = true; session.pause(); voices = ListeningSession.voices }
+        .onDisappear { session.voiceSelectionPresented = false; session.stopPreview() }
     }
     private func quality(_ voice: AVSpeechSynthesisVoice) -> String {
         switch voice.quality {
@@ -158,13 +158,16 @@ struct ReaderListeningCompact: View {
         }
         .padding(.horizontal, LayoutTokens.content).padding(.vertical, LayoutTokens.compact)
         .background {
-            VStack(spacing: LayoutTokens.compact) { controls; returnButton }
+            VStack(spacing: LayoutTokens.compact) {
+                controls; returnButton
+                if let notice = session.notice { Text(notice).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
+            }
                 .padding(.horizontal, LayoutTokens.content).padding(.vertical, LayoutTokens.compact)
                 .fixedSize(horizontal: false, vertical: true)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measured($0) }
                 .hidden().accessibilityHidden(true).allowsHitTesting(false)
         }
-        .accessibilityIdentifier("listeningCompact")
+        .accessibilityElement(children: .contain).accessibilityIdentifier("listeningCompact")
     }
     private var controls: some View {
         HStack(spacing: LayoutTokens.control) {

@@ -43,17 +43,18 @@ final class ReaderSession {
     var navigation: ReadingNavigation?
     let viewportAccess = ReadingViewportAccess()
     @ObservationIgnored private var listeningOwner: ListeningSession?
+    @ObservationIgnored private let listeningFactory: ((ReaderSession) -> ListeningSession)?
     var listening: ListeningSession {
         if let listeningOwner { return listeningOwner }
-        let value = makeListeningSession(); listeningOwner = value; return value
+        let value = listeningFactory?(self) ?? makeListeningSession(); listeningOwner = value; return value
     }
     var listeningWindowTask: Task<Void, Never>?
     var listeningUIActive = true
     var listeningOwnsPosition: Bool { listeningOwner?.ownsPosition == true }
     func pauseListening() { listeningOwner?.pause() }
     func stopListening(releasingPosition: Bool = false, returnToText: Bool = true) {
-        listeningWindowTask?.cancel(); listeningWindowTask = nil
-        listeningOwner?.end(returnToText: returnToText)
+        listeningWindowTask?.cancel() // Its owner clears the slot after cancellation completes.
+        listeningOwner?.end(returnToText: returnToText && !releasingPosition)
         if releasingPosition { listeningOwner?.userNavigated() }
     }
     let autoReading: ReaderAutoReading
@@ -98,7 +99,9 @@ final class ReaderSession {
     init(service: AppDataService = .shared, activity: ReadingActivityRecorder? = nil,
          settingsStore: ReaderSettingsStore? = nil,
          restartReading: (@Sendable (String, String?) async throws -> ReadingLease)? = nil,
-         readContinuation: (@Sendable (String, UInt64?) async throws -> ReadingResumeContext)? = nil) {
+         readContinuation: (@Sendable (String, UInt64?) async throws -> ReadingResumeContext)? = nil,
+         makeListening: ((ReaderSession) -> ListeningSession)? = nil) {
+        self.listeningFactory = makeListening
         self.service = service; self.activity = activity ?? ReadingActivityRecorder()
         self.settingsStore = settingsStore ?? (service === AppDataService.shared ? .shared : ReaderSettingsStore(service: service))
         self.restartReading = restartReading ?? { try await service.restartImport($0, encoding: $1) }

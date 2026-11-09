@@ -2,15 +2,16 @@ import SwiftUI
 import UIKit
 
 extension ReaderSession {
-    func moved(to offset: UInt64, settled: Bool, userInitiated: Bool = true, fromListening: Bool = false) {
+    func moved(to offset: UInt64, settled: Bool, userInitiated: Bool = true) {
         guard !isLeaving, let book, let id = readingID else { return }
-        if !fromListening, listeningOwnsPosition {
+        if listeningOwnsPosition {
             if userInitiated { beganReadingInteraction() }
             // The visual anchor may follow a manual browse, but the audio
             // checkpoint remains the sole formal position until ownership ends.
             if listeningOwnsPosition {
+                guard listening.active else { return }
                 anchor = min(offset, book.byteCount)
-                refreshChapter(at: anchor, bookID: id)
+                if listening.following == .detached { refreshChapter(at: anchor, bookID: id) }
                 return
             }
         }

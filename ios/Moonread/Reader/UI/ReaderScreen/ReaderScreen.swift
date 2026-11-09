@@ -393,6 +393,11 @@ struct ReaderScreen: View {
             session.invalidateSyncedContinuation()
         }
         .onChange(of: sheetPresented && listeningSelected, initial: true) { _, presented in listening.readerAccessoryPresented = presented }
+        .onChange(of: navigationPresentation.isSuspended || presentation.sourcePage != nil
+            || (!listeningSelected && sheetPresented) || toolSession.editor != nil || session.noteEditorModel != nil,
+            initial: true) { _, blocked in
+            listening.readerTaskPresented = blocked; listening.checkPresentation()
+        }
         .onChange(of: statisticsVisibility, initial: true) { _, visibility in
             session.activity.update(visibility: visibility, preview: session.browseOrigin != nil)
             if statisticsReadable { session.systemReadingBecameReadable() }
@@ -470,7 +475,10 @@ struct ReaderScreen: View {
         .onChange(of: reduceMotion) { _, value in session.opening.reduceMotion(value) }
         .onChange(of: scenePhase) { _, phase in
             session.listeningUIActive = phase == .active
-            if phase == .active { session.followListeningPosition() }
+            if phase == .active {
+                if !listening.active, let offset = session.listeningPosition { session.finishListeningPosition(offset, reveal: true) }
+                else { session.followListeningPosition() }
+            }
             session.opening.visibility(contentVisible, active: phase == .active)
             if phase != .active { automatic.pause() }
             guard !session.isLeaving else { return }
@@ -641,13 +649,13 @@ struct ReaderScreen: View {
         ReaderStatisticsVisibility(body: scenePhase == .active && !session.isLeaving && session.opening.phase == .reading && session.window != nil && !session.showingCover
             && !session.isLoading && !session.navigating && session.error == nil && !listening.running
             && !navigationPresentation.isSuspended && !controlsVisible && !searchExpanded
-            && (dock == .progress || automaticHidden || listeningHidden) && taskID == nil && panel?.isPage != true
+            && (dock == .progress || automaticHidden || listeningHidden || (listeningSelected && !attachmentExpanded)) && taskID == nil && panel?.isPage != true
             && toolSession.editor == nil,
             preparingExcerpt: sharingExcerpt, excerptPresented: excerptShare != nil,
             confirmationPresented: systemReadingRouter?.presentsConfirmation(active: !sheetPresented, editor: false) == true,
             choosingAnnotations: choosingAnnotations,
             readerAccessoryPresented: sheetPresented && nativeHost.phase == .confirmed
-                && taskID == nil && (panel == nil || panel == .search) && dock == .progress && !searchExpanded && !controlsVisible)
+                && taskID == nil && (panel == nil || panel == .search) && (dock == .progress || (listeningSelected && !attachmentExpanded && !listening.running)) && !searchExpanded && !controlsVisible)
     }
 
     private var statisticsReadable: Bool {
@@ -713,11 +721,13 @@ struct ReaderScreen: View {
             }
             .animation(MotionTokens.accessoryResize(reduced: reduceMotion), value: dock)
         } footer: {
-            VStack(spacing: 0) {
-                if (!listeningSelected || !listening.active), (controlsVisible || automaticSelected || listeningSelected), session.book != nil {
-                    bottomControls.padding(.top, LayoutTokens.compact)
-                }
-            }.padding(.bottom, LayoutTokens.compact)
+            if !listeningSelected || !listening.active {
+                VStack(spacing: 0) {
+                    if (controlsVisible || automaticSelected || listeningSelected), session.book != nil {
+                        bottomControls.padding(.top, LayoutTokens.compact)
+                    }
+                }.padding(.bottom, LayoutTokens.compact)
+            }
         } details: { readyForInput in
             if listeningSelected {
                 NavigationStack {
@@ -1042,6 +1052,7 @@ struct ReaderScreen: View {
 
     func requestAutomaticStart() {
         guard session.settings?.mode == .scroll else { return }
+        session.stopListening(releasingPosition: true, returnToText: false)
         automatic.requestStart()
         closeAutomaticReading()
         if nativeHost.token == nil { startAutomaticAfterDismissal() }

@@ -30,38 +30,46 @@ struct ListeningMetadata {
     private var items: [ObjectIdentifier: UUID] = [:]
     private var observers: Set<AnyCancellable> = []
     private var commands: [(MPRemoteCommand, Any)] = []
+    private let notifications: NotificationCenter
     private var active = false
     private var publishesMedia = false
-    override init() {
+    init(notifications: NotificationCenter = .default) {
+        self.notifications = notifications
         super.init()
         configureSynthesizer()
-        if #available(iOS 27, *) {
-            // iOS 27 replaces interruption begin/end with session lifecycle.
-            // A resumption recommendation never starts playback automatically.
-            observe(AVAudioSession.didBecomeInactiveNotification) { [weak self] _ in
-                MainActor.assumeIsolated { if self?.active == true { self?.event?(.interrupted) } }
+        if #available(iOS 27, *) { observe(AVAudioSession.didBecomeInactiveNotification, kind: .inactive) }
+        else { observe(AVAudioSession.interruptionNotification, kind: .interruption) }
+        observe(AVAudioSession.routeChangeNotification, kind: .route)
+        observe(AVAudioSession.mediaServicesWereResetNotification, kind: .reset)
+    }
+    private enum NotificationKind: Sendable { case inactive, interruption, route, reset }
+    private func observe(_ name: Notification.Name, kind: NotificationKind) {
+        notifications.publisher(for: name, object: AVAudioSession.sharedInstance())
+            .sink(receiveValue: Self.receiver(owner: self, kind: kind)).store(in: &observers)
+    }
+    // The SDK can post from any queue. Decode Sendable facts before crossing to
+    // MainActor; never enter an actor-inferred Notification/Combine closure first.
+    private nonisolated static func receiver(owner: SystemListeningAudio, kind: NotificationKind) -> @Sendable (Notification) -> Void {
+        { [weak owner] note in
+            let event: ListeningAudioEvent
+            switch kind {
+            case .inactive: event = .interrupted
+            case .interruption:
+                guard (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue else { return }
+                event = .interrupted
+            case .route:
+                guard (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt) == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
+                event = .routeLost
+            case .reset: event = .reset
             }
-        } else {
-            observe(AVAudioSession.interruptionNotification) { [weak self] note in
-                let began = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt) == AVAudioSession.InterruptionType.began.rawValue
-                MainActor.assumeIsolated { if began { self?.event?(.interrupted) } }
-            }
-        }
-        observe(AVAudioSession.routeChangeNotification) { [weak self] note in
-            let lost = (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt) == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue
-            MainActor.assumeIsolated { if lost { self?.event?(.routeLost) } }
-        }
-        observe(AVAudioSession.mediaServicesWereResetNotification) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                self.active = false; self.items.removeAll(); self.synthesizer = AVSpeechSynthesizer(); self.configureSynthesizer()
-                self.event?(.reset)
-            }
+            Task { @MainActor [weak owner] in owner?.receivedNotification(event) }
         }
     }
-    private func observe(_ name: Notification.Name, receive: @escaping (Notification) -> Void) {
-        NotificationCenter.default.publisher(for: name, object: AVAudioSession.sharedInstance())
-            .receive(on: DispatchQueue.main).sink(receiveValue: receive).store(in: &observers)
+    private func receivedNotification(_ value: ListeningAudioEvent) {
+        if case .reset = value {
+            active = false; items.removeAll(); synthesizer = AVSpeechSynthesizer(); configureSynthesizer()
+        } else if !active { return }
+        event?(value)
     }
     private func configureSynthesizer() {
         synthesizer.delegate = self; synthesizer.usesApplicationAudioSession = true
