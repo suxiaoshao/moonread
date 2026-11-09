@@ -67,12 +67,15 @@ struct PalettePicker: View {
             }
         }
         .sheet(item: $draft) { value in PaletteEditor(draft: value) }
-        .confirmationDialog("删除配色？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
-            Button("删除并恢复默认配色", role: .destructive) {
-                if let deleting { Task { await themes.deletePalette(deleting.id) } }
+        .alert(Text("删除配色“\(deleting?.name ?? "")”？"), isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), presenting: deleting) { palette in
+            Button("删除", role: .destructive) {
+                Task { await themes.deletePalette(palette.id) }
                 deleting = nil
             }
-        } message: { Text("使用此配色的应用槽位将恢复纸色，阅读槽位将恢复跟随应用。") }
+            Button("取消", role: .cancel) { deleting = nil }
+        } message: { palette in
+            if let message = themes.paletteDeletionImpact(palette.id).message { Text(message) }
+        }
     }
     private var paletteList: some View {
         ThemedGroupedList(sections: paletteSections, theme: theme,
@@ -102,19 +105,18 @@ struct PalettePicker: View {
             ]))
         }
         var sources: [ThemedGroupedList.Row] = []
-        if reader { sources.append(.init("app") { sourceRow("跟随应用", id: "app", icon: "arrow.turn.down.right") }) }
-        sources.append(.init("system") { sourceRow("系统配色", id: "system", icon: "circle.lefthalf.filled") })
+        if reader { sources.append(.init("app", action: themes.saving ? nil : { choose("app") }) { sourceRow("跟随应用", id: "app", icon: "arrow.turn.down.right") }) }
+        sources.append(.init("system", action: themes.saving ? nil : { choose("system") }) { sourceRow("系统配色", id: "system", icon: "circle.lefthalf.filled") })
         result.append(.init(id: "sources", rows: sources))
         result.append(.init(id: "presets", title: String(localized: "预设"), rows: palettes.filter { !$0.custom }.map(nativePaletteRow)))
         var custom = palettes.filter(\.custom).map(nativePaletteRow)
-        custom.append(.init("createPalette") {
-            Button("新建配色", systemImage: "plus") {
-                guard var base = palettes.first(where: { $0.id == selected }) ?? palettes.first else { return }
-                base.name = ""; base.custom = true
-                edit(PaletteDraft(palette: base, creating: true))
-            }.disabled(themes.saving).accessibilityIdentifier("createPalette")
+        let creationIssue = themes.paletteCreationIssue
+        custom.append(ThemedGroupedList.Row("createPalette", action: themes.saving || creationIssue != nil ? nil : { createPalette() }) {
+            Label("新建配色", systemImage: "plus")
+                .foregroundStyle(Color(uiColor: themes.saving || creationIssue != nil ? theme.secondary : theme.accent))
+                .disabled(themes.saving || creationIssue != nil)
         })
-        result.append(.init(id: "custom", title: String(localized: "自定义"), rows: custom))
+        result.append(.init(id: "custom", title: String(localized: "自定义"), footer: creationIssue?.errorDescription, rows: custom))
         return result
     }
     private func nativePaletteRow(_ palette: ThemePalette) -> ThemedGroupedList.Row {
@@ -122,10 +124,10 @@ struct PalettePicker: View {
             .init(title: String(localized: "删除"), symbol: "trash", destructive: true, perform: { deleting = palette }),
             .init(title: String(localized: "编辑"), symbol: "pencil", perform: { edit(PaletteDraft(palette: palette, creating: false)) })
         ] : []
-        return .init("palette-" + palette.id, actions: actions) {
+        return .init("palette-" + palette.id, action: themes.saving ? nil : { choose(palette.id) }, actions: actions) {
             paletteRow(palette).disabled(themes.saving)
                 .contextMenu {
-                    if palette.custom {
+                    if palette.custom && !themes.saving {
                         Button("编辑", systemImage: "pencil") { edit(PaletteDraft(palette: palette, creating: false)) }
                         Button("删除", systemImage: "trash", role: .destructive) { deleting = palette }
                     }
@@ -133,31 +135,37 @@ struct PalettePicker: View {
         }
     }
     private func sourceRow(_ title: LocalizedStringKey, id: String, icon: String) -> some View {
-        Button { choose(id) } label: {
-            HStack { Label(title, systemImage: icon); Spacer(); check(id) }
-        }.foregroundStyle(Color(uiColor: theme.ink)).disabled(themes.saving)
+        HStack { Label(title, systemImage: icon); Spacer(); check(id) }
+            .foregroundStyle(Color(uiColor: themes.saving ? theme.secondary : theme.ink)).disabled(themes.saving)
+    }
+    private func createPalette() {
+        guard !themes.saving, themes.paletteCreationIssue == nil,
+              var base = palettes.first(where: { $0.id == selected }) ?? palettes.first else { return }
+        base.name = ""; base.custom = true
+        edit(PaletteDraft(palette: base, creating: true))
     }
     private func edit(_ value: PaletteDraft) {
+        guard !themes.saving else { return }
         if let editPalette { editPalette(value) } else { draft = value }
     }
     private func paletteRow(_ value: ThemePalette) -> some View {
-        Button { choose(value.id) } label: {
-            HStack(spacing: LayoutTokens.control) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12).fill(Color(uiColor: UIColor(rgb: value.colors.paper)))
-                    Image(systemName: "text.alignleft").foregroundStyle(Color(uiColor: UIColor(rgb: value.colors.ink)))
-                }.frame(width: 48, height: 48).overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(uiColor: theme.separator), lineWidth: 1))
-                Text(verbatim: paletteDisplayName(value)).foregroundStyle(Color(uiColor: theme.ink))
-                Spacer()
-                Circle().fill(Color(uiColor: UIColor(rgb: value.colors.accent))).frame(width: 16, height: 16)
-                check(value.id)
-            }.padding(.vertical, 4)
-        }.accessibilityIdentifier("palette-\(value.id)")
+        HStack(spacing: LayoutTokens.control) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12).fill(Color(uiColor: UIColor(rgb: value.colors.paper)))
+                Image(systemName: "text.alignleft").foregroundStyle(Color(uiColor: UIColor(rgb: value.colors.ink)))
+            }.frame(width: 48, height: 48).overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(uiColor: theme.separator), lineWidth: 1))
+            Text(verbatim: paletteDisplayName(value)).foregroundStyle(Color(uiColor: theme.ink))
+            Spacer()
+            Circle().fill(Color(uiColor: UIColor(rgb: value.colors.accent))).frame(width: 16, height: 16)
+            check(value.id)
+        }.padding(.vertical, 4)
+        .accessibilityIdentifier("palette-\(value.id)")
     }
     @ViewBuilder private func check(_ id: String) -> some View {
         if selected == id { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)).accessibilityLabel("已选择") }
     }
     private func choose(_ id: String) {
+        guard !themes.saving else { return }
         themes.update { p in
             if reader {
                 let value: ReaderPaletteSource = id == "app" ? .app : id == "system" ? .system : .palette(id: id)

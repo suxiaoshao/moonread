@@ -104,7 +104,7 @@ struct LibraryFolderView: View {
                         } label: { Label("AI 助手", systemImage: "sparkles") }
                             .disabled(selection.isEmpty || fileActionsDisabled).accessibilityIdentifier("libraryAISelection")
                     }
-                    Button("删除", systemImage: "trash", role: .destructive) { model.deletion = selectedEntries }
+                    Button("删除", systemImage: "trash", role: .destructive) { model.deleteEntries(selectedEntries) }
                         .disabled(selection.isEmpty || fileActionsDisabled)
                 }
                 ToolbarItem(placement: .bottomBar) { Spacer() }

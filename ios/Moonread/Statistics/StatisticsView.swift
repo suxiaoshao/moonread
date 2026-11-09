@@ -51,8 +51,9 @@ struct StatisticsView: View {
         .sheet(item: $information.draft, onDismiss: { Task { if let target { await information.load(target) } } }) { draft in
             BookMetadataEditor(draft: draft, title: information.entry?.title ?? target?.title ?? "").themeScope(theme)
         }
-        .confirmationDialog("下载小说后才能编辑信息", isPresented: $information.confirmDownload, titleVisibility: .visible) {
+        .alert("下载小说后才能编辑信息", isPresented: $information.confirmDownload) {
             Button("下载并准备") { if let target { information.prepareEditing(target) } }
+            Button("取消", role: .cancel) {}
         }
         .overlay {
             if information.preparing {
@@ -88,11 +89,12 @@ struct StatisticsView: View {
             }
             await model.reload(window, target: statisticsTarget)
         }
-        .confirmationDialog("清除本书的阅读统计？", isPresented: $deleteBook, titleVisibility: .visible) {
+        .alert("清除本书的阅读统计？", isPresented: $deleteBook) {
             Button("清除统计", role: .destructive) {
                 guard let key = statisticsState.key else { return }
                 Task { do { try await AppDataService.shared.deleteStatistics(book: key) } catch { model.report(error, window: window, target: statisticsTarget) } }
             }
+            Button("取消", role: .cancel) {}
         } message: { Text("正文、续读位置、书签和笔记会保留。") }
         .alert("暂时无法完成", isPresented: Binding(get: { statisticsState.error != nil && statisticsState.overview != nil }, set: { if !$0 { model.clearError(window, target: statisticsTarget) } })) {
             Button("知道了", role: .cancel) { model.clearError(window, target: statisticsTarget) }
@@ -129,14 +131,15 @@ struct StatisticsView: View {
         }
         .sheet(item: $aiRequest) { if ai.availability.isAvailable { AIQuickTaskSheet(request: $0).themeScope(theme) } }
         .onChange(of: ai.availability.isAvailable) { _, available in if !available { aiRequest = nil; removingTask = nil } }
-        .confirmationDialog("移除这个任务？", isPresented: Binding(get: { removingTask != nil }, set: { if !$0 { removingTask = nil } }),
-                            titleVisibility: .visible, presenting: removingTask) { task in
+        .alert("移除这个任务？", isPresented: Binding(get: { removingTask != nil }, set: { if !$0 { removingTask = nil } }),
+                            presenting: removingTask) { task in
             Button("移除任务", role: .destructive) {
                 Task {
                     do { try await ai.removeTask(task.id) }
                     catch { information.error = AIRequestError.message(error) }
                 }
             }
+            Button("取消", role: .cancel) { removingTask = nil }
         } message: { task in
             Text(AIQuickTaskRemoval.message(task))
         }

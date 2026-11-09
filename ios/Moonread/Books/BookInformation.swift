@@ -255,8 +255,9 @@ struct BookMetadataEditor: View {
                         }.disabled(draft.saving || draft.choosingImage).accessibilityIdentifier("saveBookMetadata")
                     }
                 }
-                .confirmationDialog("放弃未保存的修改？", isPresented: $discard, titleVisibility: .visible) {
+                .alert("放弃未保存的修改？", isPresented: $discard) {
                     Button("放弃修改", role: .destructive) { dismiss() }
+                    Button("取消", role: .cancel) {}
                 }
                 .fileImporter(isPresented: $filePicker, allowedContentTypes: [.image]) { result in
                     Task {

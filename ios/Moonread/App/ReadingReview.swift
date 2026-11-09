@@ -126,7 +126,7 @@ struct ReadingReviewCandidate: Equatable {
               library.selectedTab == .library, library.openingFileID == nil, !library.busy,
               library.error == nil, library.readerExitError == nil,
               library.sheet == nil, library.aiRequest == nil, !library.filePickerPresented,
-              library.pendingDecision == nil, library.deletion == nil, library.removingShelf == nil, presentationIsIdle else { return false }
+              library.pendingDecision == nil, library.removingShelf == nil, presentationIsIdle else { return false }
         return isBookshelf
     }
 

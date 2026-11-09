@@ -177,7 +177,7 @@ struct LibraryCollection: UIViewControllerRepresentable {
                     guard let self, let current = configuration, !current.editing.isEditing, !current.disabled,
                           let entry = entry(at: path) else { return nil }
                     let delete = UIContextualAction(style: .destructive, title: String(localized: "删除")) { _, _, completion in
-                        current.model.deletion = [entry]; completion(true)
+                        current.model.deleteEntries([entry]); completion(true)
                     }
                     delete.image = UIImage(systemName: "trash")
                     delete.backgroundColor = current.theme.destructive

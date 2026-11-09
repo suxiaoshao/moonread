@@ -101,9 +101,9 @@ struct BookSearchEditor: View {
         .presentationSizing(.form)
         .presentationDetents([.large])
         .background(BookSearchDismissalGuard(changed: draft.changed) { discard = true })
-        .confirmationDialog("放弃筛选更改？", isPresented: $discard, titleVisibility: .visible) {
+        .alert("放弃筛选更改？", isPresented: $discard) {
             Button("放弃更改", role: .destructive) { dismiss() }
-            Button("继续编辑", role: .cancel) {}
+            Button("取消", role: .cancel) {}
         }
     }
     private func cancel() { if draft.changed { discard = true } else { dismiss() } }
@@ -140,7 +140,7 @@ struct BookSearchEditor: View {
         return [
             .init(id: "sorts", footer: String(localized: "自定义顺序会替代默认匹配优先级；前一项相同时才比较下一项。缺少作者或阅读时间的小说始终排在最后。"), rows: rows),
             .init(id: "actions", rows: [
-                .init("reset") { Button("恢复默认排序") { draft.value.sorts = [] } },
+                .init("reset", action: { draft.value.sorts = [] }) { Text("恢复默认排序").foregroundStyle(Color(uiColor: theme.accent)) },
                 .init("add", action: draft.value.sorts.count < BookSearchSortField.allCases.count ? { path.append(.sortFields) } : nil, disclosure: true) {
                     Text("添加排序").foregroundStyle(Color(uiColor: draft.value.sorts.count == BookSearchSortField.allCases.count ? theme.secondary : theme.ink))
                 }
@@ -167,7 +167,7 @@ private struct BookSearchGroupPage: View {
     var body: some View {
         ThemedGroupedList(sections: groupSections, theme: theme).themedPage()
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("删除条件及其子条件？", isPresented: Binding(get: { !deleting.isEmpty }, set: { if !$0 { deleting = [] } }), titleVisibility: .visible) {
+        .alert("删除条件及其子条件？", isPresented: Binding(get: { !deleting.isEmpty }, set: { if !$0 { deleting = [] } })) {
             Button("删除条件", role: .destructive) { let ids = Set(deleting); draft.edit(id) { $0.children.removeAll { ids.contains($0.id) } }; deleting = [] }
             Button("取消", role: .cancel) { deleting = [] }
         } message: { Text("将删除 \(deletionCount) 条条件（含子条件），仅修改当前草稿。") }
@@ -196,11 +196,9 @@ private struct BookSearchGroupPage: View {
             }
         }
         rows.append(.init("addSearchCondition", action: { navigate(.fields(id)) }, disclosure: true) { Text("添加条件") })
-        rows.append(.init("addGroup") {
-            Button("添加条件组", systemImage: "rectangle.stack.badge.plus") {
-                draft.edit(id) { $0.children.append(BookSearchNode()) }
-            }
-        })
+        rows.append(.init("addGroup", action: {
+            draft.edit(id) { $0.children.append(BookSearchNode()) }
+        }) { Label("添加条件组", systemImage: "rectangle.stack.badge.plus").foregroundStyle(Color(uiColor: theme.accent)) })
         return [options, .init(id: "children", footer: node.children.isEmpty ? String(localized: "添加条件，或保留空的根组以取消筛选。") : nil, rows: rows)]
     }
 
