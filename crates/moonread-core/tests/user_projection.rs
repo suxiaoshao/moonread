@@ -131,6 +131,33 @@ fn coverage_spans_checkpoints_but_does_not_add_disjoint_visits() {
             .unwrap()
             > 0
     );
+    let full = query.chapter_outline(book.id.clone()).unwrap();
+    let structure = query.chapter_structure(book.id.clone()).unwrap();
+    assert_eq!(structure.is_complete, full.is_complete);
+    assert_eq!(structure.items.len(), full.items.len());
+    for (structure, full) in structure.items.iter().zip(&full.items) {
+        assert_eq!(
+            (
+                structure.start_utf8,
+                &structure.title,
+                structure.level,
+                structure.word_count,
+                structure.count_complete,
+                structure.parent_utf8,
+                &structure.parent_title
+            ),
+            (
+                full.start_utf8,
+                &full.title,
+                full.level,
+                full.word_count,
+                full.count_complete,
+                full.parent_utf8,
+                &full.parent_title
+            )
+        );
+        assert_eq!(structure.covered_characters, None);
+    }
     let c = fact(&book, "c", "s", "other", 1500, 1500, (19, 49));
     let query = core
         .query_snapshot(json!({"facts":[a,c]}).to_string())

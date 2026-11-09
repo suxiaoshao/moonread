@@ -78,6 +78,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 自动阅读偏好与计时例外 | Rust `reading/layout.rs::auto_reading_control` / `user/statistics/mod.rs::ReadingClock` | Rust 定义1–30档／默认10及指数 em/min 映射，Swift 经 ReaderSettingsStore 保存本机档位，按实际文本容器／缩放字体／正文行高换算位移；Swift 原生帧驱动只提供真实位移时间，Rust 单源裁决时长，不模拟手动 interaction |
 | 自动阅读运行、打断与原生位移 | Swift `ReaderAutoReading` / `ReadingController` / `ReaderDeviceControls` | 同一附件与显式继续，使用原文位置／预取／有界检查点入口；复用统计可读性事实，临时常亮合并原 lease，不持久化运行状态 |
 | 阅读时长/有效天数/覆盖等统计数值 | Rust `user/statistics/mod.rs`、`user/statistics/coverage.rs`（后续统一 summary） | 事实聚合按固定 local_day；Swift 不再另 reduce 同一总量 | #66 不迁；旧报告第11项仍登记 |
+| 目录结构与覆盖加载 | Rust `library/tools.rs` 共用章节装配，`user/statistics/coverage.rs` 批量映射覆盖端点；Swift `ReaderToolsModel` 分两阶段发布 | 结构不读 facts；覆盖沿用同一查询失效规则，后台补齐不改变筛选/滚动，取消随目录 owner | 无新增持久缓存或事实格式 |
 | 目录/临时跳转与正式续读保存 | Swift `ReaderSession`、`ReaderToolsModel` / Rust `ReadingFrame` | 目录断 visit 并 enqueue，不等统计 writer drain、不预读笔记；跳转 frame/章节标题在 Rust 同一读取事务中返回并一起发布；临时原点只在会话内存，原已接受保存走现有 saveTask 与位置写入 owner 完成，继续/离页最终保存不得被旧保存覆盖 | 不改正式位置格式 |
 | 统计范围结果与读取状态 | Swift `Statistics/StatisticsModels.swift::StatisticsModel` | 日期边界／书籍身份／用途作查询键，复用结果和在途读取；已知变更按书使结果过期，同 scope 保留旧内容直到成功替换，真正清除/未知导入撤下旧数；页面关闭取消查询，迟到结果不回填。单书先发布期间统计，累计与时段按同一事实版本补齐，视图只消费状态，Rust 聚合与持久化不变 | 平台查询状态 |
 | 系统统计摘要与连续日 | Rust `user/statistics/mod.rs` | 复用有效日汇总与清除投影；今天未读则截至昨天，不限七天。Swift 只处理 Calendar 和展示，Widget 不读事实库 | 单源 |

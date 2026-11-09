@@ -32,6 +32,8 @@ final class ReaderToolsModel {
     var chapters: [ChapterEntry] = []
     private var allChapters: [ChapterEntry] = []
     private var chapterQuery: ReaderQuery?
+    private var coverageQuery: ReaderQuery?
+    private(set) var chapterCoverageReady = false
     var collapsedVolumes: Set<UInt64> = []
     var chapterComplete = false
     var chapterTarget: UInt64?
@@ -93,7 +95,8 @@ final class ReaderToolsModel {
     private var bookID: String?
     private var currentChapter: UInt64 = 0
     private var chapterGeneration = 0
-    private var chapterTask: Task<Void, Never>?
+    private var chapterTask: Task<AppDataService.ChapterResult, Error>?
+    private var coverageTask: Task<Void, Never>?
     private var notesGeneration = 0
     private var searchGeneration = 0
     private var job: SearchJob?
@@ -148,8 +151,8 @@ final class ReaderToolsModel {
         guard !isLeaving else { return }
         let changed = self.bookID != bookID
         if changed {
-            cancelSearchJob(); chapterTask?.cancel(); chapterTask = nil; chapterGeneration += 1; loadingChapters = false; self.bookID = bookID
-            chapters = []; allChapters = []; chapterQuery = nil; collapsedVolumes = []; chapterFilter = ""
+            cancelSearchJob(); cancelChapterLoads(); self.bookID = bookID
+            chapters = []; allChapters = []; chapterQuery = nil; coverageQuery = nil; chapterCoverageReady = false; collapsedVolumes = []; chapterFilter = ""
             clearNoteSelection(); selectingNotes = false; noteSnapshot = nil
             notes = []; notesKind = nil; noteLocations = [:]; notesLoadError = nil; hits = []; query = ""
         }
@@ -171,6 +174,7 @@ final class ReaderToolsModel {
     func select(_ destination: ReaderLibraryTab) {
         if tab != destination { clearNoteSelection(); selectingNotes = false }
         tab = destination
+        if destination != .chapters { cancelChapterLoads() }
         guard destination != .chapters, notesKind != noteKind else { return }
         notesGeneration += 1
         notes = []; notesKind = noteKind; moreNotes = false; loadingNotes = true
@@ -222,29 +226,82 @@ final class ReaderToolsModel {
         chapterJumpRevision += 1
     }
 
+    /// Cancel actual data work when its directory owner goes away. Keep the last
+    /// valid snapshot for reopening; cancellation is not a user-facing failure.
+    func cancelChapterLoads() {
+        chapterGeneration += 1
+        chapterTask?.cancel(); chapterTask = nil
+        coverageTask?.cancel(); coverageTask = nil
+        loadingChapters = false
+    }
+
+    func invalidateChapterCoverage() {
+        cancelChapterLoads()
+        coverageQuery = nil
+        chapterCoverageReady = false
+    }
+
+    func refreshChapterStatistics(reset: Bool, presented: Bool) async {
+        if reset { invalidateChapterCoverage() }
+        guard presented, tab == .chapters else { return }
+        await refreshChapters()
+    }
+
     func refreshChapters(jumpTo offset: UInt64? = nil) async {
         guard !isLeaving, !Task.isCancelled, let id = bookID else { return }
-        chapterTask?.cancel(); chapterGeneration += 1
-        let generation = chapterGeneration
+        cancelChapterLoads()
+        let generation = chapterGeneration, previous = chapterQuery
         loadingChapters = true
-        let task = Task { [weak self, service] in
-            defer { if let self, generation == self.chapterGeneration { self.loadingChapters = false; self.chapterTask = nil } }
-            do {
-                let result = try await service.chapters(id, reusing: self?.chapterQuery)
-                guard let self, !self.isLeaving, !Task.isCancelled, id == self.bookID, generation == self.chapterGeneration else { return }
-                if let value = result.outline {
-                    self.allChapters = value.items; self.chapterComplete = value.isComplete
-                }
-                self.chapterQuery = result.query
-                if let offset { self.showChapter(offset) } else { self.updateChapterRows() }
-            } catch is CancellationError { }
-            catch {
-                guard let self, !self.isLeaving, !Task.isCancelled, generation == self.chapterGeneration else { return }
-                self.error = ReaderMessages.error(error)
-            }
+        // No MainActor child task before service admission: native List layout
+        // must not delay the independent structure read.
+        let task = Task.detached(priority: Task.currentPriority) { [service] in
+            try await service.chapterStructure(id, reusing: previous)
         }
         chapterTask = task
-        await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
+        defer {
+            if generation == chapterGeneration { loadingChapters = false; chapterTask = nil }
+        }
+        do {
+            let result = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+            guard !isLeaving, !Task.isCancelled, id == bookID, generation == chapterGeneration else { return }
+            if let value = result.outline {
+                allChapters = value.items; chapterComplete = value.isComplete
+                coverageQuery = nil; chapterCoverageReady = false
+            }
+            chapterQuery = result.query
+            if let offset { showChapter(offset) } else if result.outline != nil { updateChapterRows() }
+            if tab == .chapters { loadChapterCoverage(id, generation: generation) }
+        } catch is CancellationError { }
+        catch {
+            guard !isLeaving, !Task.isCancelled, generation == chapterGeneration else { return }
+            self.error = ReaderMessages.error(error)
+        }
+    }
+
+    private func loadChapterCoverage(_ id: String, generation: Int) {
+        let previous = coverageQuery
+        coverageTask = Task.detached(priority: Task.currentPriority) { [weak self, service] in
+            do {
+                let result = try await service.chapters(id, reusing: previous)
+                try Task.checkCancellation()
+                await self?.publishChapterCoverage(result, id: id, generation: generation)
+            } catch is CancellationError { }
+            catch { await self?.chapterCoverageFailed(error, generation: generation) }
+        }
+    }
+
+    private func publishChapterCoverage(_ result: AppDataService.ChapterResult, id: String, generation: Int) {
+        guard !isLeaving, id == bookID, generation == chapterGeneration else { return }
+        if let value = result.outline {
+            allChapters = value.items; chapterComplete = value.isComplete
+            updateChapterRows() // Never change filter, folding, target or scroll revision.
+        }
+        coverageQuery = result.query; chapterCoverageReady = true; coverageTask = nil
+    }
+
+    private func chapterCoverageFailed(_ error: Error, generation: Int) {
+        guard !isLeaving, generation == chapterGeneration else { return }
+        coverageTask = nil; self.error = ReaderMessages.error(error)
     }
 
     func loadNotes(reset: Bool, preservingCount: Int = 0) async {
@@ -330,8 +387,8 @@ final class ReaderToolsModel {
     func leave() {
         isLeaving = true
         stopSearch()
-        chapterTask?.cancel(); chapterTask = nil
-        chapterGeneration += 1; notesGeneration += 1; loadingChapters = false
+        cancelChapterLoads()
+        notesGeneration += 1
         clearNoteSelection(); selectingNotes = false; noteSnapshot = nil
         bookID = nil
         deletedIDs = nil

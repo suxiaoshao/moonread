@@ -272,6 +272,9 @@ impl ReaderQuery {
     pub fn chapter_at(&self, book_id: String, offset_utf8: u64) -> Result<Option<ChapterInfo>> {
         self.core.chapter_at(book_id, offset_utf8)
     }
+    pub fn chapter_structure(&self, book_id: String) -> Result<ChapterOutline> {
+        self.core.chapter_structure(book_id)
+    }
     pub fn chapter_outline(&self, book_id: String) -> Result<ChapterOutline> {
         self.core.chapter_outline(book_id)
     }

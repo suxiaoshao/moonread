@@ -1,7 +1,6 @@
 //! Continuous visible-text dwell, independently of duration totals and layout pages.
 use crate::*;
 use rusqlite::Connection;
-use rusqlite::OptionalExtension;
 use rusqlite::params;
 use std::collections::BTreeMap;
 
@@ -103,28 +102,83 @@ pub(crate) fn covered_char_ranges(db: &Connection, id: &str) -> Result<Option<Ve
     if !observed {
         return Ok(None);
     }
-    dwell
+    let endpoints: Vec<_> = dwell
         .covered
         .into_iter()
-        .map(|(a, b)| Ok((character_prefix(db, id, a)?, character_prefix(db, id, b)?)))
-        .collect::<Result<Vec<_>>>()
-        .map(Some)
+        .flat_map(|(a, b)| [a, b])
+        .collect();
+    let prefixes = character_prefixes(db, id, &endpoints)?;
+    Ok(Some(
+        prefixes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|p| (p[0], p[1]))
+            .collect(),
+    ))
 }
 
-fn character_prefix(db: &Connection, id: &str, offset: u64) -> Result<u64> {
-    let row: Option<(u64,u64,String)> = db.query_row("SELECT start_utf8,start_char_count,text FROM chunks WHERE book_id=?1 AND start_utf8<=?2 ORDER BY chunk_index DESC LIMIT 1", params![id,offset.min(i64::MAX as u64) as i64], |r| Ok((unsigned_column(r,0)?,unsigned_column(r,1)?,r.get(2)?))).optional()?;
-    let Some((start, count, text)) = row else {
-        return Ok(0);
+/// Map all coverage endpoints together. Read chunk headers once and scan each
+/// selected chunk's text once, rather than querying/scanning a prefix per point.
+fn character_prefixes(db: &Connection, id: &str, offsets: &[u64]) -> Result<Vec<u64>> {
+    let mut points: Vec<_> = offsets.iter().copied().enumerate().collect();
+    points.sort_unstable_by_key(|&(_, offset)| offset);
+    let Some(&(_, maximum)) = points.last() else {
+        return Ok(Vec::new());
     };
-    let mut length = (offset - start).min(text.len() as u64) as usize;
-    while !text.is_char_boundary(length) {
-        length -= 1;
-    }
-    Ok(count
-        + text[..length]
+    let mut headers = db.prepare("SELECT chunk_index,start_utf8,start_char_count FROM chunks WHERE book_id=?1 AND start_utf8<=?2 ORDER BY start_utf8,chunk_index")?;
+    let mut rows = headers.query(params![id, maximum.min(i64::MAX as u64) as i64])?;
+    let mut next = || -> Result<Option<(u64, u64, u64)>> {
+        rows.next()?
+            .map(|r| {
+                Ok((
+                    unsigned_column(r, 0)?,
+                    unsigned_column(r, 1)?,
+                    unsigned_column(r, 2)?,
+                ))
+            })
+            .transpose()
+    };
+    let mut header = next()?;
+    let mut selected: Option<(u64, u64, u64)> = None;
+    let mut loaded = None;
+    let mut text = String::new();
+    let mut cursor = 0;
+    let mut count = 0;
+    let mut read_text =
+        db.prepare("SELECT text FROM chunks WHERE book_id=?1 AND chunk_index=?2")?;
+    let mut result = vec![0; offsets.len()];
+    for (index, offset) in points {
+        let eligible = offset.min(i64::MAX as u64);
+        while let Some(value) = header.filter(|&(_, start, _)| start <= eligible) {
+            // Preserve the original ORDER BY chunk_index DESC rule, including
+            // empty chunks sharing an offset with the following chunk.
+            if selected.is_none_or(|current| value.0 > current.0) {
+                selected = Some(value);
+            }
+            header = next()?;
+        }
+        let Some((chunk, start, prefix)) = selected else {
+            continue;
+        };
+        if loaded != Some(chunk) {
+            text = read_text.query_row(params![id, chunk as i64], |r| r.get(0))?;
+            loaded = Some(chunk);
+            cursor = 0;
+            count = prefix;
+        }
+        let mut end = (offset - start).min(text.len() as u64) as usize;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        count += text[cursor..end]
             .chars()
             .filter(|c| !c.is_whitespace())
-            .count() as u64)
+            .count() as u64;
+        cursor = end;
+        result[index] = count;
+    }
+    Ok(result)
 }
 
 pub(crate) fn count(ranges: &[(u64, u64)], start: u64, end: u64) -> u64 {
@@ -139,6 +193,84 @@ pub(crate) fn count(ranges: &[(u64, u64)], start: u64, end: u64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn batched_prefixes_and_chapter_counts_match_point_mapping() {
+        use rusqlite::OptionalExtension;
+        let db = Connection::open_in_memory().unwrap();
+        db.execute_batch("CREATE TABLE chunks(book_id TEXT,chunk_index INTEGER,start_utf8 INTEGER,start_char_count INTEGER,text TEXT); CREATE INDEX chunk_offset ON chunks(book_id,start_utf8);").unwrap();
+        let chunks = [
+            (0, 0, "甲 \t乙\n"),
+            (9, 2, ""),
+            (9, 2, "🙂丙\u{a0}丁"),
+            (21, 5, "　戊\n"),
+            (28, 6, ""),
+        ];
+        for (index, (start, count, text)) in chunks.into_iter().enumerate() {
+            db.execute(
+                "INSERT INTO chunks VALUES('book',?1,?2,?3,?4)",
+                params![index as i64, start, count, text],
+            )
+            .unwrap();
+        }
+        // The pre-optimization point query is retained only as a test oracle.
+        let point = |id: &str, offset: u64| -> u64 {
+            let row: Option<(u64,u64,String)> = db.query_row("SELECT start_utf8,start_char_count,text FROM chunks WHERE book_id=?1 AND start_utf8<=?2 ORDER BY chunk_index DESC LIMIT 1", params![id,offset.min(i64::MAX as u64) as i64], |r| Ok((unsigned_column(r,0)?,unsigned_column(r,1)?,r.get(2)?))).optional().unwrap();
+            row.map_or(0, |(start, count, text)| {
+                let mut end = (offset - start).min(text.len() as u64) as usize;
+                while !text.is_char_boundary(end) {
+                    end -= 1;
+                }
+                count + text[..end].chars().filter(|c| !c.is_whitespace()).count() as u64
+            })
+        };
+        let mut points: Vec<_> = (0..=35).rev().collect();
+        points.extend([0, 9, 9, 28, u64::MAX]);
+        let mapped = character_prefixes(&db, "book", &points).unwrap();
+        assert_eq!(
+            mapped,
+            points
+                .iter()
+                .map(|&offset| point("book", offset))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            character_prefixes(&db, "missing", &points).unwrap(),
+            vec![0; points.len()]
+        );
+        assert!(character_prefixes(&db, "book", &[]).unwrap().is_empty());
+        assert_eq!(
+            character_prefixes(&db, "book", &[0, 3, 5, 9, 13, 16, 18, 21, 24, 27, 28]).unwrap(),
+            vec![0, 1, 1, 2, 3, 4, 4, 5, 5, 6, 6]
+        );
+        let mut dwell = VisibleDwell::default();
+        for (start, end) in [(0, 9), (3, 16), (18, 21), (24, 28)] {
+            dwell.observe(start, end, 3_000);
+        }
+        let endpoints: Vec<_> = dwell
+            .covered
+            .into_iter()
+            .flat_map(|(a, b)| [a, b])
+            .collect();
+        let old: Vec<_> = endpoints
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|p| (point("book", p[0]), point("book", p[1])))
+            .collect();
+        let prefixes = character_prefixes(&db, "book", &endpoints).unwrap();
+        let new: Vec<_> = prefixes
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|p| (p[0], p[1]))
+            .collect();
+        for start in 0..=6 {
+            for end in start..=6 {
+                assert_eq!(count(&new, start, end), count(&old, start, end));
+            }
+        }
+    }
+
     #[test]
     fn slow_scroll_extends_overlap_without_qualifying_new_text() {
         let mut v = VisibleDwell::default();

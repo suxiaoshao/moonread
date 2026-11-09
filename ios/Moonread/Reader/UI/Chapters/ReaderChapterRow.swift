@@ -5,6 +5,7 @@ import SwiftUI
 struct ReaderChapterRow<Actions: View>: View {
     let chapter: ChapterEntry
     let current: Bool
+    var showsCoverage = true
     let viewportHeight: CGFloat
     let select: () -> Void
     let visibilityChanged: (Bool) -> Void
@@ -14,9 +15,9 @@ struct ReaderChapterRow<Actions: View>: View {
     var body: some View {
         let count = chapter.countComplete ? String(localized: "\(chapter.wordCount.formatted()) 字") : String(localized: "\(chapter.wordCount.formatted())+ 字")
         let summary = current ? String(localized: "当前章节，\(count)") : count
-        let accessibilitySummary = chapter.level == 0 ? summary : String(localized: "\(summary)，\(chapter.coverageLabel)")
+        let accessibilitySummary = chapter.level == 0 || !showsCoverage ? summary : String(localized: "\(summary)，\(chapter.coverageLabel)")
         Button(action: select) {
-            let meta = [count, chapter.listCoverageLabel].compactMap { $0 }.joined(separator: " · ")
+            let meta = [count, showsCoverage ? chapter.listCoverageLabel : nil].compactMap { $0 }.joined(separator: " · ")
             ViewThatFits(in: .horizontal) {
                 HStack(alignment: .firstTextBaseline, spacing: LayoutTokens.control) {
                     title.lineLimit(1).fixedSize()
