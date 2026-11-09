@@ -5,7 +5,7 @@ extension ReaderSession {
     func browse(to start: UInt64, end: UInt64? = nil, placement: ReadingTargetPlacement = .context,
                 bottomObstruction: CGFloat = 0, restoring: ReadingViewport? = nil, historyID: String? = nil) {
         guard !isLeaving, let id = readingID else { return }
-        listening.userNavigated()
+        listening.pause(); listening.userNavigated()
         autoReading.end()
         activity.breakVisit()
         let firstPreview = browseOrigin == nil
@@ -67,13 +67,18 @@ extension ReaderSession {
 
     func continueReading() async {
         guard !isLeaving, !navigating, let id = readingID else { return }
-        listening.userNavigated()
+        listening.pause(); listening.userNavigated()
         autoReading.end()
         let revision = navigationGeneration
         let position = anchor, cover = showingCover
         do {
             await saveTask?.value
             guard !isLeaving, !navigating, revision == navigationGeneration else { return }
+            if listeningOwnsPosition {
+                browseOrigin = nil; browseViewport = nil; navigation = nil; focusRange = nil
+                history = emptyReadingHistory()
+                return
+            }
             if !cover {
                 try await service.savePosition(bookID: id, offset: position)
                 hasEnteredBody = true

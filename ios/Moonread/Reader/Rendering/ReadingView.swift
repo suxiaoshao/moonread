@@ -20,6 +20,8 @@ struct ReadingView: UIViewControllerRepresentable {
     var navigationRevision: Int = 0
     var navigation: ReadingNavigation?
     var resumeAutomaticReading: () -> Void = {}
+    var listening: ListeningSession?
+    var listeningUIActive = true
     var autoReading: ReaderAutoReading?
     var viewportAccess: ReadingViewportAccess?
     var annotations: [ReaderMark] = []
@@ -62,6 +64,7 @@ struct ReadingView: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: ReadingController, context: Context) {
         controller.resumeAutomaticReading = resumeAutomaticReading
         controller.autoReading = autoReading
+        controller.listening = listening
         controller.deviceControls.willSuspend = { [weak autoReading] in autoReading?.pause() }
         controller.headerPositionChanged = headerPositionChanged
         controller.contentGeometry = contentGeometry
@@ -91,6 +94,8 @@ struct ReadingView: UIViewControllerRepresentable {
                              compactHeaderHeight: compactHeaderHeight,
                              controlsVisible: controlsVisible, toggleControls: toggleControls,
                              readingBegan: readingBegan, changed: positionChanged)
+        controller.updateListening(cursor: listeningUIActive && listening?.running == true ? listening?.cursor : nil,
+            following: listeningUIActive && listening?.following == .following)
         controller.updateAutomaticReadingEdge()
     }
 }

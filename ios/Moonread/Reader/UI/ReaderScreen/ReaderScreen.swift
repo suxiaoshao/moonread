@@ -155,7 +155,7 @@ struct ReaderScreen: View {
                             requestWindow: { direction,keep in session.requestWindow(direction,retaining:keep) },
                             dark: colorScheme == .dark, dynamicTypeSize: dynamicTypeSize,
                             navigationRevision: session.navigationRevision,
-                            navigation: session.navigation, resumeAutomaticReading: requestAutomaticStart, autoReading: automatic, viewportAccess: session.viewportAccess,
+                            navigation: session.navigation, resumeAutomaticReading: requestAutomaticStart, listening: listening, listeningUIActive: scenePhase == .active, autoReading: automatic, viewportAccess: session.viewportAccess,
                             annotations: session.annotations, bookmarkPositions: session.bookmarkPositions, focusRange: session.focusRange,
                             selectionStart: session.selectionStart, selection: selectText,
                             allowsBackGesture: allowsReaderBack,
@@ -181,7 +181,7 @@ struct ReaderScreen: View {
                                 session.error = String(localized: "当前无法切换屏幕方向，已恢复跟随系统。")
                             },
                             bodyDisplayed: { session.bodyDidDisplay() },
-                            statisticsInteraction: { session.pauseListening(); session.activity.interacted() },
+                            statisticsInteraction: { session.activity.interacted() },
                             statisticsPresentationChanged: { [weak activity = session.activity, weak automatic, weak viewport = session.viewportAccess, weak listening] in
                                 activity?.sample()
                                 listening?.checkPresentation()
@@ -391,7 +391,6 @@ struct ReaderScreen: View {
             session.invalidateSyncedContinuation()
         }
         .onChange(of: sheetPresented && listeningSelected, initial: true) { _, presented in listening.readerAccessoryPresented = presented }
-        .onChange(of: session.chapter?.title) { _, title in listening.updateChapter(title ?? "") }
         .onChange(of: statisticsVisibility, initial: true) { _, visibility in
             session.activity.update(visibility: visibility, preview: session.browseOrigin != nil)
             if statisticsReadable { session.systemReadingBecameReadable() }
@@ -468,6 +467,8 @@ struct ReaderScreen: View {
         .onChange(of: undoCapsuleVisible, initial: true) { _, visible in tools.setUndoVisible(visible) }
         .onChange(of: reduceMotion) { _, value in session.opening.reduceMotion(value) }
         .onChange(of: scenePhase) { _, phase in
+            session.listeningUIActive = phase == .active
+            if phase == .active { session.followListeningPosition() }
             session.opening.visibility(contentVisible, active: phase == .active)
             if phase != .active { automatic.pause() }
             guard !session.isLeaving else { return }

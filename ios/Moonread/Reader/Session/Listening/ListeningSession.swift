@@ -15,6 +15,8 @@ struct ListeningContext {
 /// position: safe native ranges are committed through ReaderSession.moved/flush.
 @MainActor @Observable final class ListeningSession {
     enum Phase { case idle, preparing, playing, paused }
+    enum Following { case following, detached }
+    private(set) var following = Following.following
     private(set) var phase = Phase.idle
     private(set) var notice: String?
     private(set) var title = ""
@@ -36,6 +38,8 @@ struct ListeningContext {
     @ObservationIgnored private let context: () -> ListeningContext?
     @ObservationIgnored private let read: (ListeningContext, UInt64, Bool) async throws -> ListeningRead
     @ObservationIgnored private let position: (UInt64) -> Void
+    @ObservationIgnored private let cursorChanged: () -> Void
+    @ObservationIgnored private let ended: (UInt64, Bool) -> Void
     @ObservationIgnored private let flush: () -> Void
     @ObservationIgnored private let readabilityChanged: () -> Void
     @ObservationIgnored private let willStart: () -> Void
@@ -46,7 +50,7 @@ struct ListeningContext {
     @ObservationIgnored private var source: ListeningContext?
     @ObservationIgnored private var generation: UInt64 = 0
     @ObservationIgnored private var queue: [SpeechSegment] = []
-    @ObservationIgnored private var safeOffset: UInt64?
+    private(set) var safeOffset: UInt64?
     @ObservationIgnored private var publishedOffset: UInt64?
     @ObservationIgnored private var nextOffset: UInt64 = 0
     @ObservationIgnored private var endOfText = false
@@ -63,10 +67,12 @@ struct ListeningContext {
          position: @escaping (UInt64) -> Void, flush: @escaping () -> Void,
          readabilityChanged: @escaping () -> Void, blocked: @escaping () -> Bool,
          willStart: @escaping () -> Void = {},
+         cursorChanged: @escaping () -> Void = {}, ended: @escaping (UInt64, Bool) -> Void = { _,_ in },
          voiceAvailable: @escaping (String) -> Bool = { id in ListeningSession.voices.contains { $0.identifier == id } },
          audio: @escaping () -> any ListeningAudio = { SystemListeningAudio() }) {
         self.defaults = defaults; self.context = context; self.read = read
         self.position = position; self.flush = flush; self.readabilityChanged = readabilityChanged; self.blocked = blocked
+        self.cursorChanged = cursorChanged; self.ended = ended
         makeAudio = audio; self.voiceAvailable = voiceAvailable; self.willStart = willStart
         let stored = defaults.object(forKey: "Moonread.listening.rate") as? NSNumber
         rate = min(AVSpeechUtteranceMaximumSpeechRate, max(AVSpeechUtteranceMinimumSpeechRate, stored?.floatValue ?? AVSpeechUtteranceDefaultSpeechRate))
@@ -100,7 +106,9 @@ struct ListeningContext {
         let beginning = phase == .idle || !ownsPosition
         cancelQueue(); native?.silence()
         source = context; title = context.title; chapter = context.chapter
-        safeOffset = context.offset; publishedOffset = nil; nextOffset = context.offset; endOfText = false
+        let offset = beginning ? context.offset : (safeOffset ?? context.offset)
+        safeOffset = offset; publishedOffset = nil; nextOffset = offset; endOfText = false
+        if beginning { following = .following }
         ownsPosition = true; notice = nil; phase = .preparing; previewing = false; previewID = nil
         if beginning { deadline = timerMinutes == 0 ? nil : Date().addingTimeInterval(Double(timerMinutes) * 60) }
         readabilityChanged()
@@ -152,7 +160,7 @@ struct ListeningContext {
         if let message { notice = message }
         publishMedia(); readabilityChanged(); flush()
     }
-    func end(message: String? = nil, savePosition: Bool = true) {
+    func end(message: String? = nil, savePosition: Bool = true, returnToText: Bool = true) {
         guard active || previewing || native != nil else { return }
         if savePosition { checkpoint() }
         else { ownsPosition = false; safeOffset = nil; publishedOffset = nil }
@@ -160,13 +168,20 @@ struct ListeningContext {
         phase = .idle; previewID = nil; previewing = false; deadline = nil
         timer?.cancel(); timer = nil
         notice = message
+        if savePosition, let safeOffset { ended(safeOffset, returnToText) }
         // The screen may still show an old page. Only explicit reader navigation
         // can hand the shared position back to that viewport, even after Stop.
         readabilityChanged(); if savePosition { flush() }
     }
     func userNavigated() {
-        if running || previewing { pause() }
-        ownsPosition = false; safeOffset = nil; publishedOffset = nil
+        if previewing { pause() }
+        guard ownsPosition else { return }
+        if active { following = .detached }
+        else { ownsPosition = false; safeOffset = nil; publishedOffset = nil }
+    }
+    func returnToSpeech() {
+        guard active, ownsPosition else { return }
+        following = .following; cursorChanged()
     }
     func sourceChanged() {
         guard active, let source else { return }
@@ -263,15 +278,24 @@ struct ListeningContext {
         case .cancelled(let id) where id == previewID:
             previewID = nil; previewing = false
         case .began(let id):
-            guard running, let segment = queue.first(where: { $0.id == id }) else { return }
-            safeOffset = segment.start; checkpoint()
+            guard running, let segment = queue.first, segment.id == id else { return }
+            safeOffset = segment.start
+            if let chapter = segment.chapter { updateChapter(chapter) }
+            let length = segment.text.text.first?.utf16.count ?? 0
+            if let unit = segment.sourceRange(NSRange(location: 0, length: length)) {
+                cursor = ListeningCursor(sentence: SourceSpan(startUtf8: segment.start, endUtf8: segment.end), unit: unit)
+                cursorChanged()
+            }
+            checkpoint()
         case .range(let id, let range):
             guard running, let segment = queue.first, segment.id == id, let unit = segment.sourceRange(range) else { return }
             cursor = ListeningCursor(sentence: SourceSpan(startUtf8: segment.start, endUtf8: segment.end), unit: unit)
             safeOffset = unit.startUtf8 // willSpeak is a conservative unit start, not heard coverage.
+            cursorChanged()
         case .finished(let id):
             guard running, let segment = queue.first, segment.id == id else { return }
-            safeOffset = segment.end; checkpoint(); queue.removeFirst()
+            if queue.count > 1 || !endOfText { safeOffset = segment.end }
+            checkpoint(); queue.removeFirst()
             if queue.isEmpty && endOfText { end(message: String(localized: "已到书末")) }
             else { prepare() }
         case .cancelled(let id):

@@ -5,8 +5,14 @@ extension ReaderSession {
     func moved(to offset: UInt64, settled: Bool, userInitiated: Bool = true, fromListening: Bool = false) {
         guard !isLeaving, let book, let id = readingID else { return }
         if !fromListening, listeningOwnsPosition {
-            guard userInitiated else { return }
-            beganReadingInteraction()
+            if userInitiated { beganReadingInteraction() }
+            // The visual anchor may follow a manual browse, but the audio
+            // checkpoint remains the sole formal position until ownership ends.
+            if listeningOwnsPosition {
+                anchor = min(offset, book.byteCount)
+                refreshChapter(at: anchor, bookID: id)
+                return
+            }
         }
         guard !navigating else { return }
         showingCover = false

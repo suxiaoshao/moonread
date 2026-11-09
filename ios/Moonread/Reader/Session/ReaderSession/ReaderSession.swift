@@ -47,10 +47,13 @@ final class ReaderSession {
         if let listeningOwner { return listeningOwner }
         let value = makeListeningSession(); listeningOwner = value; return value
     }
+    var listeningWindowTask: Task<Void, Never>?
+    var listeningUIActive = true
     var listeningOwnsPosition: Bool { listeningOwner?.ownsPosition == true }
     func pauseListening() { listeningOwner?.pause() }
-    func stopListening(releasingPosition: Bool = false) {
-        listeningOwner?.end()
+    func stopListening(releasingPosition: Bool = false, returnToText: Bool = true) {
+        listeningWindowTask?.cancel(); listeningWindowTask = nil
+        listeningOwner?.end(returnToText: returnToText)
         if releasingPosition { listeningOwner?.userNavigated() }
     }
     let autoReading: ReaderAutoReading
@@ -201,15 +204,21 @@ final class ReaderSession {
         openedTask = Task { [service] in try? await service.recordBookOpened(id, at: at) }
     }
 
-    func beganReadingInteraction() { listeningOwner?.userNavigated(); if browseOrigin == nil { hasLocalReadingInteraction = true } }
+    func beganReadingInteraction() {
+        if listeningOwner?.ownsPosition == true, listeningOwner?.active == false {
+            navigationTask?.cancel(); navigationGeneration += 1
+        }
+        listeningOwner?.userNavigated()
+        if browseOrigin == nil { hasLocalReadingInteraction = true }
+    }
 
     func flush() async {
         saveTask?.cancel()
-        let currentAnchor = autoReading.phase == .idle ? anchor : (viewportAccess.capture()?.offset ?? anchor)
+        let currentAnchor = listeningPosition ?? (autoReading.phase == .idle ? anchor : (viewportAccess.capture()?.offset ?? anchor))
         // Capture before any suspension. Exit clears preview state, and settings
         // writes may finish after the reader's UI has started disappearing.
         let progress = leavingProgress ?? readingID.flatMap { id in
-            window == nil || !hasEnteredBody || !hasLocalReadingInteraction ? nil : (bookID: id, offset: browseOrigin ?? currentAnchor)
+            window == nil || !hasEnteredBody || !hasLocalReadingInteraction ? nil : (bookID: id, offset: listeningPosition ?? browseOrigin ?? currentAnchor)
         }
         await settingsStore.flush()
         await saveTask?.value
@@ -221,7 +230,7 @@ final class ReaderSession {
     @discardableResult
     func leave() -> Task<Void, Never> {
         if let leaveTask { return leaveTask }
-        stopListening()
+        stopListening(returnToText: false)
         restartTask?.cancel()
         activityStartTask?.cancel(); activityStartTask = nil
         if autoReading.phase != .idle, let visible = viewportAccess.capture()?.offset {
@@ -230,7 +239,7 @@ final class ReaderSession {
         autoReading.end()
         activity.stop()
         leavingProgress = readingID.flatMap { id in
-            window == nil || !hasEnteredBody || !hasLocalReadingInteraction ? nil : (bookID: id, offset: browseOrigin ?? anchor)
+            window == nil || !hasEnteredBody || !hasLocalReadingInteraction ? nil : (bookID: id, offset: listeningPosition ?? browseOrigin ?? anchor)
         }
         clearContinuation()
         isLeaving = true

@@ -45,7 +45,7 @@ import UIKit
         XCTAssertNil(emoji.sourceRange(NSRange(location: 0, length: Int.max)))
     }
 
-    func testQueueIsBoundedAndOldCallbacksCannotOverwriteManualPosition() async throws {
+    func testQueueIsBoundedManualBrowsingDetachesAndReturnDoesNotReplay() async throws {
         let suite = "ListeningTest.\(UUID())", defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         defaults.set("synthetic", forKey: "Moonread.listening.voice")
@@ -66,11 +66,21 @@ import UIKit
         let first = try XCTUnwrap(audio.items.first)
         audio.event?(.began(first.id))
         audio.event?(.range(first.id, NSRange(location: 2, length: 2)))
+        session.userNavigated()
+        XCTAssertTrue(session.running); XCTAssertEqual(session.following, .detached)
+        let queued = audio.items.map(\.id), readsBeforeReturn = reads
+        session.tick(uptime: 100)
+        XCTAssertEqual(session.safeOffset, 6)
+        session.returnToSpeech()
+        XCTAssertEqual(session.following, .following)
+        XCTAssertEqual(audio.items.map(\.id), queued); XCTAssertEqual(reads, readsBeforeReturn)
         blocked = true; session.checkPresentation(); blocked = false
         XCTAssertEqual(offset, 6, "UTF16 callback maps to original UTF8, not a UTF16 offset")
         XCTAssertEqual(session.phase, .paused)
         XCTAssertTrue(session.ownsPosition, "The still-old screen cannot reclaim the audio location")
-        session.userNavigated(); offset = 80
+        session.userNavigated()
+        XCTAssertTrue(session.ownsPosition, "Paused browsing keeps the audio anchor")
+        session.end(); session.userNavigated(); offset = 80
         let count = writes.count
         audio.event?(.finished(first.id)); audio.event?(.range(first.id, NSRange(location: 0, length: 1)))
         XCTAssertEqual(writes.count, count); XCTAssertEqual(offset, 80)
@@ -91,7 +101,7 @@ import UIKit
         XCTAssertFalse(session.running)
         XCTAssertEqual(starts, 1)
         blocked = false
-        audio.event?(.command(.play))
+        session.start()
         XCTAssertEqual(starts, 2, "Remote play uses the same mutual-exclusion hook as App play")
         session.end()
         XCTAssertTrue(audio.finished)

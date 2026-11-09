@@ -13,6 +13,9 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     #if READER_OPEN_DIAGNOSTICS
     private var displayProbe: ReaderDisplayProbe?
     #endif
+    var listening: ListeningSession?
+    var listeningCursor: ListeningCursor?
+    var listeningFollows = false
     var autoReading: ReaderAutoReading?
     var pausedAutomaticTouch = false
     var resumeAutomaticReading: () -> Void = {}
@@ -433,6 +436,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             pendingNavigation?.keepVisible = false
         }
         applyNavigation()
+        applyListeningFollow()
         if contentGeometry != nil, layoutStatus?.hasValidLayout != true {
             let status = layoutStatus
             Task { @MainActor in status?.committed() }

@@ -14,7 +14,7 @@ extension ReadingController {
             endAnnotationMenu(clearSelection: false)
         }
         if !rebuilding {
-            if textView.selectedRange.length > 0 { autoReading?.end() }
+            if textView.selectedRange.length > 0 { autoReading?.end(); listening?.pause() }
             if let selected = retainedSelection {
                 let expected = Self.annotationRange(AnnotationSelection(start: selected.0, end: selected.1, annotations: []),
                     mapping: textCoordinates(textView), base: textBase(textView))
