@@ -51,7 +51,7 @@ extension ReadingController {
         if !decelerate { reportScroll(settled: true); applyPendingWindow() }
     }
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { reportScroll(settled: true); applyPendingWindow() }
-    func scrollViewDidScrollToTop(_ scrollView: UIScrollView) { autoReading?.end(); reportScroll(settled: true) }
+    func scrollViewDidScrollToTop(_ scrollView: UIScrollView) { autoReading?.end(); readingBegan?(); reportScroll(settled: true) }
 
     func reportScroll(settled: Bool) {
         guard let text = scrollText, window != nil, text.textStorage.length > 0 else { return }

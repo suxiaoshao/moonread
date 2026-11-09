@@ -4,7 +4,7 @@ import UIKit
 /// Intent belongs to this reading opening. Geometry and native completion never
 /// write the location; the system page Binding is direct navigation input.
 /// All sizes use the same sheet and source navigation.
-enum ReaderTool: Hashable { case library, search, settings, more, automatic }
+enum ReaderTool: Hashable { case library, search, settings, more, automatic, listening }
 enum ReaderToolExposure: Equatable { case hidden, accessory, expanded }
 enum ReaderDestination: Hashable {
     case library, fullSettings, preview(UUID), palette(UUID), chapter(UUID)
@@ -67,7 +67,7 @@ struct ReaderToolLocation: Equatable {
     }
     func setControlsVisible(_ visible: Bool) {
         controlsVisible = visible
-        if !visible, exposure == .accessory, location.path.isEmpty, location.selection != .search { location.selection = .library }
+        if !visible, exposure == .accessory, location.path.isEmpty, location.selection != .search, location.selection != .listening { location.selection = .library }
     }
     func expandSearch(_ expanded: Bool) {
         if expanded { location.selection = .search }
@@ -136,7 +136,7 @@ enum ReaderPresentationTarget: Equatable { case none, dock, settings, details }
         if path.contains(.fullSettings) || (state.location.selection == .settings && state.exposure == .expanded) { return .settings }
         if editorParent == .settings || editorParent == .preview { return .settings }
         if !path.isEmpty || hasNote { return .dock }
-        return state.controlsVisible || hasAccessory || (state.location.selection == .automatic && state.exposure != .hidden) ? .dock : .none
+        return state.controlsVisible || hasAccessory || ([.automatic, .listening].contains(state.location.selection) && state.exposure != .hidden) ? .dock : .none
     }
 }
 
@@ -185,7 +185,7 @@ enum ReaderPresentationTarget: Equatable { case none, dock, settings, details }
     let noteEditor: NoteEditorModel?
     let editor: ReaderEditSession?
     var dock: ReaderDock {
-        switch location.selection { case .settings: .settings; case .more: .more; case .automatic: .automatic; default: .progress }
+        switch location.selection { case .settings: .settings; case .more: .more; case .automatic: .automatic; case .listening: .listening; default: .progress }
     }
     var searchExpanded: Bool { location.selection == .search && exposure == .expanded }
     var panel: ReaderPanel? {

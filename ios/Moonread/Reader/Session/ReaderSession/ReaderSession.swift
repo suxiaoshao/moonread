@@ -42,6 +42,17 @@ final class ReaderSession {
     var navigationRevision = 0
     var navigation: ReadingNavigation?
     let viewportAccess = ReadingViewportAccess()
+    @ObservationIgnored private var listeningOwner: ListeningSession?
+    var listening: ListeningSession {
+        if let listeningOwner { return listeningOwner }
+        let value = makeListeningSession(); listeningOwner = value; return value
+    }
+    var listeningOwnsPosition: Bool { listeningOwner?.ownsPosition == true }
+    func pauseListening() { listeningOwner?.pause() }
+    func stopListening(releasingPosition: Bool = false) {
+        listeningOwner?.end()
+        if releasingPosition { listeningOwner?.userNavigated() }
+    }
     let autoReading: ReaderAutoReading
     let activity: ReadingActivityRecorder
     var browseViewport: ReadingViewport?
@@ -93,6 +104,11 @@ final class ReaderSession {
         autoReading.readable = { [weak activity = self.activity, weak viewport = viewportAccess] in activity?.bodyReadable(through: viewport) == true }
         autoReading.motionChanged = { [weak activity = self.activity] in activity?.sample() }
 
+    }
+
+    deinit {
+        // Closing a scene can destroy the owner without a navigation-pop callback.
+        if let listeningOwner { Task { @MainActor in listeningOwner.end() } }
     }
 
     var preparing: Bool {
@@ -185,7 +201,7 @@ final class ReaderSession {
         openedTask = Task { [service] in try? await service.recordBookOpened(id, at: at) }
     }
 
-    func beganReadingInteraction() { if browseOrigin == nil { hasLocalReadingInteraction = true } }
+    func beganReadingInteraction() { listeningOwner?.userNavigated(); if browseOrigin == nil { hasLocalReadingInteraction = true } }
 
     func flush() async {
         saveTask?.cancel()
@@ -205,6 +221,7 @@ final class ReaderSession {
     @discardableResult
     func leave() -> Task<Void, Never> {
         if let leaveTask { return leaveTask }
+        stopListening()
         restartTask?.cancel()
         activityStartTask?.cancel(); activityStartTask = nil
         if autoReading.phase != .idle, let visible = viewportAccess.capture()?.offset {

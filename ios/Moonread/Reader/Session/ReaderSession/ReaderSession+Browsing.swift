@@ -5,6 +5,7 @@ extension ReaderSession {
     func browse(to start: UInt64, end: UInt64? = nil, placement: ReadingTargetPlacement = .context,
                 bottomObstruction: CGFloat = 0, restoring: ReadingViewport? = nil, historyID: String? = nil) {
         guard !isLeaving, let id = readingID else { return }
+        listening.userNavigated()
         autoReading.end()
         activity.breakVisit()
         let firstPreview = browseOrigin == nil
@@ -66,6 +67,7 @@ extension ReaderSession {
 
     func continueReading() async {
         guard !isLeaving, !navigating, let id = readingID else { return }
+        listening.userNavigated()
         autoReading.end()
         let revision = navigationGeneration
         let position = anchor, cover = showingCover

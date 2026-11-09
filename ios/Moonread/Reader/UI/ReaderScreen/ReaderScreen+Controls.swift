@@ -73,7 +73,7 @@ extension ReaderScreen {
     /// label style, columns and targets as the tools below; at accessibility sizes the
     /// same labels stack as rows so they stay readable.
     var moreContent: some View {
-        ReaderMoreContent(session: readerSession, openLibrary: openLibrary, presentPanel: presentPanel, automaticReading: openAutomaticReading, changeEncoding: changeEncoding)
+        ReaderMoreContent(session: readerSession, openLibrary: openLibrary, presentPanel: presentPanel, automaticReading: openAutomaticReading, listening: openListening, changeEncoding: changeEncoding)
     }
     func automaticContent(expanded: Bool) -> some View {
         ReaderAutoReadingContent(state: automatic, mode: readerSession.settings?.mode ?? .scroll,
