@@ -22,7 +22,7 @@ struct AIReadingConversation: View {
             }
         }
         .onAppear { visible = true }.onDisappear { visible = false; notice = nil }
-        .onReceive(NotificationCenter.default.publisher(for: .aiActionFailed)) { notification in
+        .onReceive(MainActorNotifications.publisher(for: .aiActionFailed)) { notification in
             guard visible, selected == nil, let event = notification.object as? AIActionNotice, event.sessionID == nil else { return }
             notice = event
         }

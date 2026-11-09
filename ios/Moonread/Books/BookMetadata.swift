@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import ImageIO
 import UniformTypeIdentifiers
@@ -210,8 +211,7 @@ extension AppDataService {
     deinit { release() }
 }
 private final class CoverObservationTokens: @unchecked Sendable {
-    var values: [NSObjectProtocol] = []
-    deinit { for observer in values { NotificationCenter.default.removeObserver(observer) } }
+    var values: [AnyCancellable] = []
 }
 @MainActor final class CoverImageLoader {
     static let shared = CoverImageLoader()
@@ -232,7 +232,7 @@ private final class CoverObservationTokens: @unchecked Sendable {
     }) {
         self.load = load
         for name in [ModelContext.didSave, .NSPersistentStoreRemoteChange, .cloudDataReceived, .bookMetadataChanged] {
-            observers.values.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { @Sendable [weak self] _ in
+            observers.values.append(MainActorNotifications.observe(name) { [weak self] in
                 Task { @MainActor [weak self] in self?.attachmentsChanged() }
             })
         }
