@@ -28,25 +28,30 @@ extension UserDataStore {
         return result
     }
     func positionValues() throws -> [String: StoredValue] { try valueSnapshot(prefix: "position/").values }
-    func projection(generation: UInt64, enabled: Bool, includeFacts: Bool, keys: [String]? = nil, positionsOnly: Bool = false, statisticsBook: String? = nil, statisticsKeys: [String]? = nil, fields: UserProjectionDomain = .reading, diagnostic: ReaderOpenTrace? = nil, diagnosticScope: String = "projection", sparseCatalogue: Bool = false) async throws -> String {
+    func projection(generation: UInt64, enabled: Bool, includeFacts: Bool, keys: [String]? = nil, positionsOnly: Bool = false, statisticsBook: String? = nil, statisticsKeys: [String]? = nil, fields: UserProjectionDomain = .reading, diagnostic: ReaderOpenTrace? = nil, diagnosticScope: String = "projection", sparseCatalogue: Bool = false, statisticsRange: ClosedRange<Int64>? = nil) async throws -> String {
         diagnostic?.mark(diagnosticScope + ".actor.begin")
         defer { diagnostic?.mark(diagnosticScope + ".actor.return") }
         let factKeys = statisticsKeys ?? statisticsBook.map { [$0] }
-        let cacheKey = "\(generation)-\(enabled)-\(includeFacts)-\(positionsOnly)-\(factKeys?.sorted().joined(separator: ",") ?? "all")-\(sparseCatalogue)-\(fields.rawValue)-" + (keys?.sorted().joined(separator: ",") ?? "all")
-        if includeFacts {
-            if let factKeys { for key in factKeys { try requireStatisticsReadable(book: key) } }
-            else { try requireStatisticsReadable() }
-        }
+        let rangeKey = statisticsRange.map { "\($0.lowerBound)...\($0.upperBound)" } ?? "full"
+        let cacheKey = rangeKey + "-\(generation)-\(enabled)-\(includeFacts)-\(positionsOnly)-\(factKeys?.sorted().joined(separator: ",") ?? "all")-\(sparseCatalogue)-\(fields.rawValue)-" + (keys?.sorted().joined(separator: ",") ?? "all")
         let version = version(keys: keys, positionsOnly: positionsOnly, includeFacts: includeFacts, statisticsKeys: factKeys, fields: fields)
         if let cached = projectionCache[cacheKey], cached.0 == version { diagnostic?.mark(diagnosticScope + ".cacheHit"); return cached.1 }
         if let work = projectionWork[cacheKey], work.version == version { return try await work.task.value }
+        let facts = includeFacts ? try await preparedFacts(keys: factKeys) : nil
+        // Preparation may suspend. Rejoin a projection already started by a
+        // concurrent date/page request rather than duplicating its JSON work.
+        if let cached = projectionCache[cacheKey], cached.0 == version { return cached.1 }
+        if let work = projectionWork[cacheKey], work.version == version { return try await work.task.value }
+        let valueKeys = keys ?? statisticsRange.map { range in
+            Array(Set(facts?.facts.filter { range.contains($0.day) }.map(\.contentKey) ?? []))
+        }
         diagnostic?.mark(diagnosticScope + ".fetch.begin")
         let snapshot: ValueSnapshot
         if positionsOnly {
             var recent = try valueSnapshot(prefix: "position/")
             try recent.merge(valueSnapshot(prefix: "opened/")); snapshot = recent
         }
-        else if let keys {
+        else if let keys = valueKeys {
             var scoped = ValueSnapshot()
             // Large catalogues are mostly unread files without user data. One
             // metadata-only presence pass avoids three empty fetches per file;
@@ -65,14 +70,13 @@ extension UserDataStore {
             }
             snapshot = selected
         }
-        let facts = includeFacts ? try factsInput(keys: factKeys) : nil
         diagnostic?.mark(diagnosticScope + ".fetch.return")
         // No ModelContext or @Model escapes this actor. Only immutable value
         // copies enter JSON/candidate computation, so saves can proceed meanwhile.
         let task = Task.detached(priority: Task.currentPriority) {
             diagnostic?.mark(diagnosticScope + ".json.begin")
             defer { diagnostic?.mark(diagnosticScope + ".json.return") }
-            return try Self.encodeProjection(snapshot, facts: facts, generation: generation, enabled: enabled)
+            return try Self.encodeProjection(snapshot, facts: facts, generation: generation, enabled: enabled, statisticsRange: statisticsRange)
         }
         let id = UUID(); projectionWork[cacheKey] = ProjectionWork(version: version, id: id, task: task)
         defer { if projectionWork[cacheKey]?.id == id { projectionWork[cacheKey] = nil } }
@@ -83,7 +87,7 @@ extension UserDataStore {
         }
         return json
     }
-    private nonisolated static func encodeProjection(_ snapshot: ValueSnapshot, facts: FactsInput?, generation: UInt64, enabled: Bool) throws -> String {
+    private nonisolated static func encodeProjection(_ snapshot: ValueSnapshot, facts: PreparedFacts?, generation: UInt64, enabled: Bool, statisticsRange: ClosedRange<Int64>?) throws -> String {
         let all = snapshot.values
         var metadata: [String: [String: Any]] = [:]
         for (key, stored) in all where key.hasPrefix("metadata/") {
@@ -104,7 +108,7 @@ extension UserDataStore {
         let corrections = try all.filter { $0.key.hasPrefix("chapter/") && $0.value.value != "null" }.map { try JSONSerialization.jsonObject(with: Data($0.value.value.utf8)) }
         let result: [String: Any] = ["positions": positions, "opened": opened, "metadata": Array(metadata.values), "corrections": corrections,
             "unsupportedPositions": snapshot.blocked.filter { $0.hasPrefix("position/") }.map { String($0.dropFirst(9)) },
-            "facts": try facts?.visible() ?? [], "generation": generation, "enabled": enabled]
+            "facts": try facts?.values(range: statisticsRange) ?? [], "statisticsIncomplete": facts?.incomplete ?? false, "generation": generation, "enabled": enabled]
         let json = String(decoding: try JSONSerialization.data(withJSONObject: result, options: .sortedKeys), as: UTF8.self)
         return json
     }

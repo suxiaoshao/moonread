@@ -185,7 +185,7 @@ final class ReaderSession {
         openedTask = Task { [service] in try? await service.recordBookOpened(id, at: at) }
     }
 
-    func beganReadingInteraction() { hasLocalReadingInteraction = true }
+    func beganReadingInteraction() { if browseOrigin == nil { hasLocalReadingInteraction = true } }
 
     func flush() async {
         saveTask?.cancel()
@@ -196,6 +196,7 @@ final class ReaderSession {
             window == nil || !hasEnteredBody || !hasLocalReadingInteraction ? nil : (bookID: id, offset: browseOrigin ?? currentAnchor)
         }
         await settingsStore.flush()
+        await saveTask?.value
         guard let progress else { return }
         do { try await service.savePosition(bookID: progress.bookID, offset: progress.offset) }
         catch { reportAutomaticReadingError(error) }

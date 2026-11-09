@@ -42,7 +42,8 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     await model.load(month, target: otherBook)
     XCTAssertEqual(reads, 3)
     notifications.post(name: .statisticsChanged, object: nil)
-    XCTAssertNil(model.state(month, target: nil).overview)
+    XCTAssertEqual(model.state(month, target: nil).overview?.totalDurationMs, 100, "Keep same-scope content until its replacement is ready")
+    XCTAssertTrue(model.state(month, target: nil).stale)
     XCTAssertFalse(model.state(month, target: nil).loading, "Invalidation alone is not a running read")
     await model.load(month, target: nil)
     XCTAssertEqual(reads, 4)
@@ -53,13 +54,20 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     fail = true
     notifications.post(name: .statisticsChanged, object: nil)
     await model.load(month, target: nil)
-    XCTAssertNil(model.state(month, target: nil).overview)
+    XCTAssertEqual(model.state(month, target: nil).overview?.totalDurationMs, 500, "A real refresh error preserves the last result and remains visible")
     XCTAssertNotNil(model.state(month, target: nil).error)
     XCTAssertFalse(model.state(month, target: nil).loading)
     fail = false
     await model.load(month, target: nil)
     XCTAssertEqual(reads, 7, "A failed range can be explicitly retried")
     XCTAssertNotNil(model.state(month, target: nil).overview)
+    await model.load(month, target: otherBook)
+    let before = reads
+    notifications.post(name: .statisticsChanged, object: nil, userInfo: ["keys": [String(repeating: "b", count: 64)]])
+    await model.load(month, target: otherBook)
+    XCTAssertEqual(reads, before, "An unrelated book does not invalidate a loaded single-book scope")
+    notifications.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
+    XCTAssertNil(model.state(month, target: nil).overview, "Destructive/unknown imports cannot keep old totals visible")
   }
 
   @MainActor
@@ -73,7 +81,7 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
       reads += 1
       return try await withCheckedThrowingContinuation { continuation in
         gates[scope, default: []].append(continuation)
-        if reads <= 2 { started.fulfill() } else { restarted.fulfill() }
+        if reads <= 2 { started.fulfill() } else if reads == 3 { restarted.fulfill() }
       }
     })
     let date = ISO8601DateFormatter().date(from: "2026-10-05T12:00:00Z")!
@@ -106,6 +114,15 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     XCTAssertFalse(model.state(year, target: nil).loading)
     await model.load(year, target: nil)
     XCTAssertEqual(reads, 3)
+    model.invalidate()
+    let cancelled = model.request(year, target: nil)!
+    for _ in 0..<200 where gates[yearScope]!.count < 3 { await Task.yield() }
+    guard gates[yearScope]!.count == 3 else { return XCTFail("Cancellation read did not start") }
+    model.cancel()
+    gates[yearScope]![2].resume(returning: rangeContent(999))
+    await cancelled.value
+    XCTAssertEqual(model.state(year, target: nil).overview?.totalDurationMs, 300)
+    XCTAssertFalse(model.state(year, target: nil).loading)
   }
 
   // S361: 本应用展示窗口按阅读地点公历日构造，固定跨月/跨年两个输入；删除统计值重算，补零仅在当前 Swift 展示 owner 测。

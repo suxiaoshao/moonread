@@ -196,6 +196,10 @@ final class SyncCompatibilityTests: UserDataFixture {
     let json = try XCTUnwrap(
       JSONSerialization.jsonObject(with: Data(visible.utf8)) as? [String: Any])
     XCTAssertEqual((json["facts"] as? [Any])?.count, 1)
+    let narrow = try await partial.projection(generation: 0, enabled: true, includeFacts: true, statisticsRange: 0...1)
+    let narrowJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(narrow.utf8)) as? [String: Any])
+    XCTAssertEqual(narrowJSON["statisticsIncomplete"] as? Bool, true, "Date pruning must not hide unsupported facts outside the range")
+    XCTAssertTrue((narrowJSON["facts"] as? [Any])?.isEmpty == true)
     let facts = try await partial.syncFixturePayloads("fact")
     XCTAssertTrue(facts.contains(futureFact))
     do {

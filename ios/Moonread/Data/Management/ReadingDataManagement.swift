@@ -171,7 +171,7 @@ extension AppDataService {
             if case let .pending(id) = try parseReadingKey(value: alias) { promotedUserKeys.remove(id); pendingPromotionIDs.remove(id) }
         }
         queryCache.removeAll(); cancelRecentRestoration(); dataChanged(); scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
-        NotificationCenter.default.post(name: .statisticsChanged, object: nil)
+        NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
         do {
             // Retain every other book's untransferred pending data before the
             // existing completed-job reclaim, including jobs not yet recovered.
@@ -291,7 +291,7 @@ extension AppDataService {
         try Task.checkCancellation()
         try await userStore().mergeBackup(directory: preview.staging.directory, manifest: preview.staging.manifest)
         queryCache.removeAll(); dataChanged(); scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
-        NotificationCenter.default.post(name: .statisticsChanged, object: nil)
+        NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
         // Reuse the existing received-data refresh (including ThemeStore.load).
         NotificationCenter.default.post(name: .cloudDataReceived, object: nil)
         // Reader metadata has one invalidation event, shared with CloudKit imports.

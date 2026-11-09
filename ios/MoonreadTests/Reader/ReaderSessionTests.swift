@@ -12,7 +12,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
   @MainActor func testPreviewCancelContinueBookmarkAndImmediateReopenUseFormalPosition()
     async throws
   {
-    let (root, service, _, _, _, book, _, suite) = try singleBookFixture()
+    let (root, service, _, _, _, book, other, suite) = try singleBookFixture()
     defer {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -27,6 +27,13 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     await session.flush()
     let added = await session.toggleBookmark()
     XCTAssertTrue(added)
+    let accepted = expectation(description: "accepted formal save held before IO")
+    let gate = SourceReadinessGate(entered: accepted)
+    session.saveTask = Task {
+      await gate.wait()
+      try? await service.savePosition(bookID: book.id, offset: origin)
+    }
+    await fulfillment(of: [accepted], timeout: 2)
     session.browse(to: target)
     await awaitState { !session.navigating }
     XCTAssertEqual(session.browseOrigin, origin)
@@ -38,7 +45,9 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertNil(session.browseOrigin)
     session.browse(to: target)
     await awaitState { !session.navigating }
-    await session.continueReading()
+    let continuing = Task { await session.continueReading() }
+    await gate.release()
+    await continuing.value
     XCTAssertNil(session.browseOrigin)
     await session.leave().value
     let reopened = ReaderSession(service: service)
@@ -46,6 +55,17 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     await awaitState { reopened.window != nil }
     XCTAssertEqual(reopened.anchor, target)
     await reopened.leave().value
+    let previewOnly = ReaderSession(service: service)
+    await previewOnly.open(.book(other.id))
+    await awaitState { previewOnly.window != nil }
+    previewOnly.showingCover = false
+    previewOnly.moved(to: 3, settled: true, userInitiated: false)
+    previewOnly.browse(to: 6)
+    await awaitState { !previewOnly.navigating }
+    previewOnly.moved(to: 9, settled: true)
+    await previewOnly.leave().value
+    let untouched = try await service.snapshot(other.id)
+    XCTAssertFalse(untouched.hasStarted, "A preview-only visit must not create a formal reading timestamp")
   }
 
   // S318: 上下文任务返回原宿主路由，不破坏挂起的阅读路径或串到别的书。

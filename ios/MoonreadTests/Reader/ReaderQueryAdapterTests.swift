@@ -47,6 +47,51 @@ final class ReaderQueryAdapterRecentReadingRestorationTests: RecentReadingRestor
 }
 
 final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
+  @MainActor func testPreparedStatisticsDatesMatchFullProjectionAndInvalidateByInput() async throws {
+    let (root, service, _, formal, pending, book, other, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    func fact(_ id: String, key: String, day: Int, preview: Bool = false) throws -> (String, String, String) {
+      let value: [String: Any] = ["content_key": key, "title": "Synthetic", "device": "fixture", "slice": ["id": id, "session_id": id, "visit_id": id, "book_id": book.id, "started_ms": day * 86400000, "ended_ms": day * 86400000 + 1000, "local_day": day, "utc_offset_seconds": 3600, "preview": preview, "exposures": [["start_utf8": 3,"end_utf8": 6,"duration_ms": 500],["start_utf8": 6,"end_utf8": 9,"duration_ms": 500]]]]
+      return (id, key, String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self))
+    }
+    let key = book.contentSha256
+    try await formal.saveFacts([fact("old", key: key, day: 19000), fact("new", key: key, day: 20000), fact("preview", key: other.contentSha256, day: 20001, preview: true)], generation: 0, current: 0, enabled: true)
+    try await pending.saveFacts([fact("pending", key: "pending:" + book.id, day: 20001)], generation: 0, current: 0, enabled: true)
+    let full = try await service.effectiveQuery(facts: true, fields: .metadata)
+    for bounds in [19000...20001, 20000...20001, 20000...20000] {
+      let first = Int64(bounds.lowerBound), last = Int64(bounds.upperBound)
+      let read = try await service.statisticsRead(first: first, last: last)
+      XCTAssertEqual(read.value, try full.statisticsOverview(firstDay: first, lastDay: last, contentKey: nil))
+      let activities = try await service.activitiesRead(first: first, last: last)
+      XCTAssertEqual(activities.value, try full.readingActivities(firstDay: first, lastDay: last, contentKey: nil))
+      XCTAssertEqual(read.version, activities.version)
+      XCTAssertNil(read.compatibilityNotice)
+    }
+    let before = try await service.statisticsRead(first: 20000, last: 20001, book: key)
+    try await formal.put("metadata/" + other.contentSha256 + "/author", value: "\"Other\"", device: "fixture")
+    let unchanged = try await service.statisticsRead(first: 20000, last: 20001, book: key)
+    XCTAssertEqual(before.version, unchanged.version)
+    try await formal.saveFacts([fact("later", key: key, day: 20000)], generation: 0, current: 0, enabled: true)
+    let changed = try await service.statisticsRead(first: 20000, last: 20001, book: key)
+    XCTAssertNotEqual(before.version, changed.version)
+    XCTAssertEqual(changed.value.totalDurationMs, before.value.totalDurationMs + 1000)
+    try await formal.clear(book: key, session: "new")
+    let cleared = try await service.statisticsRead(first: 20000, last: 20001, book: key)
+    XCTAssertEqual(cleared.value.totalDurationMs, before.value.totalDurationMs)
+    let scopedFull = try await service.effectiveQuery(facts: true, statisticsBook: key, fields: .metadata)
+    XCTAssertEqual(cleared.value, try scopedFull.statisticsOverview(firstDay: 20000, lastDay: 20001, contentKey: key))
+    let model = StatisticsModel(service: service)
+    let window = StatisticsWindow(period: .month, date: StatisticsDates.date(20000))
+    let target = StatisticsRoute(key: key, bookID: book.id, title: "Synthetic")
+    await model.load(window, target: target)
+    let state = model.state(window, target: target)
+    XCTAssertNil(state.error)
+    XCTAssertTrue(state.content?.detailsLoaded == true)
+    XCTAssertEqual(state.cumulative?.durationMs, 2000)
+    XCTAssertEqual(state.overview?.totalDurationMs, 1000)
+    XCTAssertEqual(state.spans.count, 1)
+  }
+
   @MainActor func testActiveQueriesRebuildCompleteInputsUntilStableAndKeepRealFailures() async throws {
     let (root, service, core, formal, _, book, other, suite) = try singleBookFixture()
     defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
@@ -435,6 +480,11 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     await model.prepare(bookID: book.id, currentChapter: current.startUtf8, library: true)
     XCTAssertEqual(model.chapters.count, 202)
     XCTAssertEqual(model.chapterTarget, current.startUtf8)
+    XCTAssertNil(model.noteSnapshot, "Opening the chapter list does not prefetch notes")
+    let beforePosition = try await service.chapterQuery(book.id)
+    try await service.savePosition(bookID: book.id, offset: current.startUtf8)
+    let afterPosition = try await service.chapterQuery(book.id)
+    XCTAssertTrue(beforePosition === afterPosition, "Position changes do not invalidate chapter/coverage inputs")
     model.toggleVolume(0)
     model.toggleVolume(UInt64(first.utf8.count))
     XCTAssertEqual(model.chapters.count, 2)

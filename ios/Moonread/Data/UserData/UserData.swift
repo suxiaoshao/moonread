@@ -9,13 +9,15 @@ import CoreData
     nonisolated let changes = UserInputRevision()
     struct ProjectionWork { let version: String; let id: UUID; let task: Task<String, Error> }
     var projectionWork: [String: ProjectionWork] = [:]
+    var preparedFactsCache: [String: (version: String, value: PreparedFacts)] = [:]
+    var preparedFactsWork: [String: (version: String, id: UUID, task: Task<PreparedFacts, Error>)] = [:]
     var projectionCache: [String: (String, String)] = [:]
     func importedChanges(keys: Set<String> = []) throws {
         if keys.isEmpty { invalidateProjection() }
         else { changes.invalidate(keys: Array(keys)) }
         for key in keys { try compactPositions(key: key) }
     }
-    func invalidateProjection() { changes.invalidate(); projectionCache.removeAll() }
+    func invalidateProjection() { changes.invalidate(); projectionCache.removeAll(); preparedFactsCache.removeAll() }
     nonisolated func version(keys: [String]?, positionsOnly: Bool, includeFacts: Bool, statisticsKeys: [String]?, fields: UserProjectionDomain = .reading) -> String {
         let values: UserProjectionDomain = positionsOnly ? [.position, .opened] : fields
         return "\(changes.version(keys: keys, domains: values))-\(includeFacts ? changes.version(keys: statisticsKeys, domains: .statistics) : 0)-\(UserProjectionChanges.shared.revision)"

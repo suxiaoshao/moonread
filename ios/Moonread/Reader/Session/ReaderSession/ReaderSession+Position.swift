@@ -9,9 +9,10 @@ extension ReaderSession {
         if browseOrigin == nil { hasEnteredBody = true }
         displayAnchor = nil
         anchor = min(offset, book.byteCount)
-        if userInitiated { hasLocalReadingInteraction = true }
+        if userInitiated && browseOrigin == nil { hasLocalReadingInteraction = true }
         if let continuation, anchor >= continuation.location.offsetUtf8 { clearContinuation() }
         refreshChapter(at: anchor, bookID: id)
+        guard browseOrigin == nil else { return }
         saveTask?.cancel()
         guard hasLocalReadingInteraction else { return }
         let position = anchor
@@ -19,7 +20,7 @@ extension ReaderSession {
             do {
                 try await Task.sleep(for: .milliseconds(350))
                 try Task.checkCancellation()
-                guard self?.isLeaving == false, self?.browseOrigin == nil else { return }
+                guard self?.isLeaving == false else { return }
                 try await self?.service.savePosition(bookID: id, offset: position)
             } catch is CancellationError { } catch { self?.reportAutomaticReadingError(error) }
         }

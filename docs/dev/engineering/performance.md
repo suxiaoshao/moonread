@@ -90,9 +90,11 @@ display-link、onAppear、layout completion 都是程序代理，不能声称光
 
 ### 单书路径的剩余小项
 
-`UserDataStore.projectionVersion` 与 ReaderQuery 签名仍含全局版本，其他书/统计写入可能使当前无 facts 单书缓存 miss；新 draft scope 也不保证跨会话命中。当前缓存约32项有界，单书 preferred 值已按 key 读，不再声称每次单书查询扫描全部 UserDefaults。若有残余热点，再区分位置/资料/章节、facts、可见性/首选等失效域，合并同 scope 的并发构建；先保证 miss 本身足够小，不无证据引入复杂 LRU。
+单书查询已按正式与 pending 身份、位置/资料/目录/facts 领域版本复用；未知云导入保守全局失效。目录显示仅断 visit 并 enqueue，不等整个统计写入队列，也不预读笔记；目标正文与章节标题由同一不可变查询返回，旧正文保持到新结果就绪。临时浏览的原点/视口留在会话内存，已接受的正式保存沿原 saveTask 路径完成；继续阅读与离页最终保存等待它，不能靠取消旧写入换速度。首次空目录复用 300ms 反馈延迟，跳转沿用原有延迟，不叠加。
 
-Rust ReaderQuery 的固定建连与 TEMP apply 成本仍存在。只有新数据说明其占主要残余成本时再优化连接或重复 apply，保持独立不可变快照和 search job 持有期。必要的最终位置保存、后台统计 drain、启动恢复与 facts 查询仍应在原入口交错检查，不能把 utility 优先级理解为可抢占或绕过同书最终提交。
+统计事实和 clear 由 UserDataStore 同版本取 Sendable 值、合并准备兼容性与可见候选；相关历史冷读仍要一次解析，未增加日期持久索引或 CloudKit 字段。范围请求在准备结果上按事实的 local_day 选择，再把统计所需的最小 exposure（活动跳转的原起点）送给 Rust，目录覆盖仍用完整 exposure。资料仅取该范围事实涉及的键；日期详情、小组件与 Siri 复用同一事实准备 owner，连续日/历史状态保留完整历史输入。纯读取不 drain writer；同范围旧内容静默更新，清除与未知导入不保留不可信旧数。单书所选范围先显示，资料/章节独立加载，累计按书/事实版本复用、时段随后补齐，版本不一致不得拼装。
+
+Rust ReaderQuery 的固定建连与 TEMP apply 成本仍存在。只有新数据说明其占主要残余成本时再优化连接或重复 apply，保持独立不可变快照和 search job 持有期。本轮不增加独立 ModelContext/读库、聚合持久缓存或新队列；必要的最终位置保存、清除/导入和退出 drain 继续保留，后台任务仍受原 actor 与存储约束。
 
 ## 隔离开书诊断
 

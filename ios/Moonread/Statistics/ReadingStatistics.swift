@@ -57,34 +57,48 @@ extension AppDataService {
         try await userStore().saveFacts(facts, generation: generation, current: preferences.generation, enabled: preferences.enabled)
         try await userStore(pending: true).saveFacts(pendingFacts, generation: generation, current: preferences.generation, enabled: preferences.enabled)
         scheduleSystemReadingCatalog(statisticsChanged: true)
-        NotificationCenter.default.post(name: .statisticsChanged, object: nil)
+        NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["keys": Array(leases.keys)])
+    }
+    struct StatisticsRead<Value: Sendable>: Sendable {
+        let value: Value
+        let compatibilityNotice: String?
+        let version: String
+    }
+    func statisticsQuery(first: Int64, last: Int64, book: String? = nil, fields: UserProjectionDomain = .metadata, scope: String = "statistics") async throws -> UserQueryOutput {
+        guard first <= last else { throw ReaderError.InvalidRange }
+        return try await readingQueryResult(.fixed(keys: nil, statisticsBook: book, statisticsKeys: nil),
+            options: .init(facts: true, statisticsRange: first...last, scope: scope, fields: fields))
+    }
+    func statisticsRead(first: Int64, last: Int64, book: String? = nil) async throws -> StatisticsRead<StatisticsOverview> {
+        let input = try await statisticsQuery(first: first, last: last, book: book)
+        let work = Task.detached(priority: Task.currentPriority) {
+            try Task.checkCancellation()
+            return try input.query.statisticsOverview(firstDay: first, lastDay: last, contentKey: book)
+        }
+        let value = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+        try Task.checkCancellation()
+        return .init(value: value, compatibilityNotice: input.compatibilityNotice, version: input.statisticsVersion)
     }
     func statistics(first: Int64, last: Int64, book: String? = nil) async throws -> StatisticsOverview {
-        _ = try await statisticsCompatibilityNotice(book: book)
-        return try await effectiveQuery(facts: true, statisticsBook: book, fields: .metadata).statisticsOverview(firstDay: first, lastDay: last, contentKey: book)
+        try await statisticsRead(first: first, last: last, book: book).value
+    }
+    func activitiesRead(first: Int64, last: Int64, book: String? = nil) async throws -> StatisticsRead<[ReadingActivity]> {
+        let input = try await statisticsQuery(first: first, last: last, book: book, fields: [])
+        let work = Task.detached(priority: Task.currentPriority) {
+            try Task.checkCancellation()
+            return try input.query.readingActivities(firstDay: first, lastDay: last, contentKey: book)
+        }
+        let value = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
+        try Task.checkCancellation()
+        return .init(value: value, compatibilityNotice: input.compatibilityNotice, version: input.statisticsVersion)
     }
     func activities(first: Int64, last: Int64, book: String? = nil) async throws -> [ReadingActivity] {
-        _ = try await statisticsCompatibilityNotice(book: book)
-        return try await effectiveQuery(facts: true, statisticsBook: book, fields: []).readingActivities(firstDay: first, lastDay: last, contentKey: book)
+        try await activitiesRead(first: first, last: last, book: book).value
     }
     func statisticsCompatibilityNotice(book: String? = nil) async throws -> String? {
-        let formal = try await userStore(), pending = try await userStore(pending: true)
-        // Check both barriers before any potentially partial display/clear operation.
-        try await formal.requireStatisticsReadable(book: book)
-        try await pending.requireStatisticsReadable(book: book)
-        let formalIncomplete = try await formal.statisticsIncomplete(book: book)
-        var pendingIncomplete = try await pending.statisticsIncomplete(book: book)
-        if let book, case .formal = try parseReadingKey(value: book) {
-            // Completed pending identities remain aliases until the transfer can be committed.
-            let core = try textCore()
-            let keys = try await pending.pendingKeys().map { try parseReadingKey(value: $0) }
-            for resolution in try core.resolveReadingKeys(keys: keys) where serializeReadingKey(key: resolution.effective) == book {
-                let key = serializeReadingKey(key: resolution.original)
-                try await pending.requireStatisticsReadable(book: key)
-                if try await pending.statisticsIncomplete(book: key) { pendingIncomplete = true }
-            }
-        }
-        return formalIncomplete || pendingIncomplete ? String(localized: "统计不完整：部分记录当前版本无法理解，请更新 App。") : nil
+        // Compatibility covers the whole resolved book/all-books scope, even
+        // though this no-output request carries no history into Rust.
+        try await statisticsQuery(first: 0, last: 0, book: book, fields: []).compatibilityNotice
     }
     func deleteStatistics(book: String? = nil, session: String? = nil) async throws {
         _ = try await statisticsCompatibilityNotice(book: book)
@@ -238,7 +252,8 @@ final class ReadingActivityRecorder {
     func flush() async {
         sample()
         guard let clock, let lease else { return }
-        // A tools panel has already paused the clock. Drain its final fact before querying coverage.
+        // Explicit flush joins accepted writes. Display queries use breakVisit
+        // without joining the writer; mandatory persistence boundaries keep this API.
         enqueue(clock.breakVisit(), lease: lease)
         await writer.drain()
     }

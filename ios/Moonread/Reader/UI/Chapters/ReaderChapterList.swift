@@ -115,7 +115,7 @@ struct ReaderChapterList: View {
             }
             .overlay {
                 if model.chapters.isEmpty {
-                    if model.loadingChapters { LoadingActivity(fullPage: true) }
+                    if model.loadingChapters { LoadingActivity(fullPage: true, delay: LoadingTiming.inlineDelay) }
                     else { ThemedEmptyState(title: String(localized: "没有找到章节"), symbol: "list.bullet") }
                 }
             }

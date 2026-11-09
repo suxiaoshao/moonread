@@ -38,15 +38,17 @@ struct StatisticsView: View {
         ScrollViewReader { proxy in
         contentList
         .task(id: LoadRequest(scope: model.scope(window, target: statisticsTarget), target: target, dataRevision: model.dataRevision)) {
-            if let target { await information.load(target) }
-            guard !Task.isCancelled else { return }
             await model.load(window, target: statisticsTarget)
-            guard !Task.isCancelled else { return }
-            if target?.readingSection == true, !positionedAtReading {
+        }
+        .onChange(of: readingSectionReady, initial: true) { _, ready in
+            if ready, !positionedAtReading {
                 positionedAtReading = true
                 var transaction = Transaction(); transaction.disablesAnimations = true
                 withTransaction(transaction) { proxy.scrollTo("myReading", anchor: .top) }
             }
+        }
+        .task(id: target.map(BookInformationModel.Identity.init)) {
+            if let target { await information.load(target) }
         }
         .sheet(item: $information.draft, onDismiss: { Task { if let target { await information.load(target) } } }) { draft in
             BookMetadataEditor(draft: draft, title: information.entry?.title ?? target?.title ?? "").themeScope(theme)
@@ -79,7 +81,7 @@ struct StatisticsView: View {
             if visible, let target { Task { await information.load(target) } }
         }
         .onAppear { visible = true }
-        .onDisappear { visible = false; information.cancelPreparation() }
+        .onDisappear { visible = false; information.cancelPreparation(); model.cancel() }
         // A pull reloads everything this page shows: for one book that includes the
         // file index (availability) and its information, then the statistics.
         .refreshable {
@@ -298,12 +300,12 @@ struct StatisticsView: View {
         AIQuickTaskRequest.statistics(window: window, target: target, information: information)
     }
 
-    private var statisticsTarget: StatisticsRoute? {
-        guard var target else { return nil }
-        let matches = information.matches(target)
-        target.key = information.contentSHA(for: target) ?? target.key
-        if matches { target.bookID = information.details?.book?.id ?? target.bookID }
-        return target
+    // Statistics resolves the route identity itself. Loading metadata/chapters
+    // must not change the range scope and restart its already-running query.
+    private var statisticsTarget: StatisticsRoute? { target }
+    private var readingSectionReady: Bool {
+        guard let target, target.readingSection else { return false }
+        return information.matches(target) && statisticsState.overview != nil
     }
 
     @ViewBuilder private var fileInformation: some View {
@@ -326,7 +328,12 @@ struct StatisticsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("累计阅读").font(.subheadline.weight(.medium))
             VStack(alignment: .leading, spacing: 8) {
-                Text(StatisticsDates.duration(statisticsState.cumulative?.durationMs ?? 0)).font(.title3).monospacedDigit()
+                if statisticsState.content?.detailsLoaded == false {
+                    if statisticsState.loading { LoadingActivity(waitingLabel: "正在读取统计") }
+                    else { Text("—") }
+                } else {
+                    Text(StatisticsDates.duration(statisticsState.cumulative?.durationMs ?? 0)).font(.title3).monospacedDigit()
+                }
                 if let book = statisticsState.cumulative {
                     Text("\(book.readingDays) 个阅读日")
                     Text("首次阅读 \(Date(timeIntervalSince1970: Double(book.firstReadMs) / 1000).formatted(date: .abbreviated, time: .omitted))")
@@ -435,6 +442,10 @@ struct StatisticsView: View {
                 Spacer()
             }
             VStack(spacing: 0) {
+                if statisticsState.content?.detailsLoaded == false {
+                    if statisticsState.loading { LoadingActivity(waitingLabel: "正在读取统计").padding(16) }
+                    else { Text("—").padding(16) }
+                } else {
                 ForEach(Array(statisticsState.spans.reversed().prefix(3))) { span in
                     ReadingSessionRow(span: span, showBook: false, compact: true).padding(16)
                     ThemedDivider()
@@ -447,6 +458,7 @@ struct StatisticsView: View {
                         Spacer()
                         Image(systemName: "chevron.right").font(.caption)
                     }.font(.subheadline).padding(16).frame(minHeight: LayoutTokens.hit)
+                }
                 }
             }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
                 .accessibilityIdentifier("bookReadingSessions")

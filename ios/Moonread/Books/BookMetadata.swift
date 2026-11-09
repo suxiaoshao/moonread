@@ -70,7 +70,7 @@ extension AppDataService {
         let store = try await userStore()
         let asset = try cover.map { UserDataStore.CoverWrite(id: $0.id, bytes: try Data(contentsOf: coverDraftURL($0))) }
         try await store.putValues(plan.values, device: userDevice, cover: asset)
-        dataChanged(); NotificationCenter.default.post(name: .bookMetadataChanged, object: nil)
+        dataChanged(); NotificationCenter.default.post(name: .bookMetadataChanged, object: nil, userInfo: ["keys": [plan.sha]])
     }
     func coverDirectory() throws -> URL {
         let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
