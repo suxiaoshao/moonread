@@ -59,6 +59,14 @@ final class BookInformationModel {
         guard loadedIdentity == Identity(target) else { return nil }
         return Self.validSHA(details?.metadata.sha)
     }
+    /// Only a file-only route needs loaded information to acquire an identity.
+    /// Known key/bookID queries stay independent of metadata and chapter loading.
+    func statisticsTarget(for target: StatisticsRoute?) -> StatisticsRoute? {
+        guard var target, target.fileID != nil, target.key == nil, target.bookID == nil,
+              let sha = contentSHA(for: target) else { return target }
+        target.key = sha
+        return target
+    }
     func matches(_ target: StatisticsRoute) -> Bool { loadedIdentity == Identity(target) }
     func load(_ target: StatisticsRoute) async {
         let identity = Identity(target), revision = UUID()

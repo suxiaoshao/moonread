@@ -8,6 +8,53 @@ import XCTest
 @testable import Moonread
 
 final class StatisticsPresentationTests: ReaderIntegrationFixture {
+
+  @MainActor
+  func testFileOnlyStatisticsRouteRecoversAfterPreparingForMetadataEditing() async throws {
+    let (root, service, _, suite) = try introductionFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let file = root.appendingPathComponent("library/synthetic.txt")
+    try Data("第一章 合成章节\n用于统计身份回归的原创正文。\n".utf8).write(to: file)
+    _ = try await service.scanLibraryShelf("builtin")
+    let entries = try await service.libraryEntries(nil)
+    let entry = try XCTUnwrap(entries.first { !$0.directory })
+    let route = StatisticsRoute(title: "Synthetic", fileID: entry.id)
+    XCTAssertNil(entry.readingKey)
+    XCTAssertNil(entry.bookId)
+    let information = BookInformationModel(service: service)
+    let model = StatisticsModel(service: service, notifications: NotificationCenter())
+    let month = StatisticsWindow(period: .month, date: Date(timeIntervalSince1970: 1_800_000_000))
+    await information.load(route)
+    XCTAssertNil(information.error)
+    XCTAssertEqual(model.scope(month, target: information.statisticsTarget(for: route)).book, .unprepared)
+    await model.load(month, target: information.statisticsTarget(for: route))
+
+    information.prepareEditing(route)
+    await awaitState { information.draft != nil || information.error != nil }
+    XCTAssertNil(information.error)
+    XCTAssertNotNil(information.draft)
+    let sha = try XCTUnwrap(information.contentSHA(for: route))
+    let resolved = try XCTUnwrap(information.statisticsTarget(for: route))
+    XCTAssertEqual(resolved.key, sha)
+    XCTAssertEqual(resolved.fileID, route.fileID)
+    XCTAssertEqual(model.scope(month, target: resolved).book, .content(sha))
+    XCTAssertTrue(information.chapters.isEmpty, "Statistics must not wait for the separate chapter load")
+    await model.load(month, target: resolved)
+    XCTAssertNotNil(model.state(month, target: resolved).overview)
+    XCTAssertNil(model.state(month, target: resolved).error)
+    XCTAssertEqual(model.state(month, target: resolved).key, sha)
+    await model.reload(month, target: resolved)
+    let year = StatisticsWindow(period: .year, date: month.date)
+    await model.load(year, target: resolved)
+    XCTAssertNotNil(model.state(year, target: resolved).overview)
+    XCTAssertNil(model.state(year, target: resolved).error)
+
+    let known = StatisticsRoute(bookID: try XCTUnwrap(information.details?.book?.id), title: route.title, fileID: route.fileID)
+    XCTAssertEqual(information.statisticsTarget(for: known), known, "Known bookID scope must not restart when information arrives")
+    var other = route; other.fileID = "other-file"
+    XCTAssertEqual(information.statisticsTarget(for: other), other, "Loaded information cannot resolve another file")
+    await information.finishPreparationForDataDeletion()
+  }
   @MainActor
   private func rangeContent(_ total: UInt64) -> StatisticsModel.Content {
     .init(overview: .init(totalDurationMs: total, books: [], days: [], preferences: .init(enabled: true, generation: 0)))

@@ -300,9 +300,9 @@ struct StatisticsView: View {
         AIQuickTaskRequest.statistics(window: window, target: target, information: information)
     }
 
-    // Statistics resolves the route identity itself. Loading metadata/chapters
-    // must not change the range scope and restart its already-running query.
-    private var statisticsTarget: StatisticsRoute? { target }
+    // Known identities load independently. A file-only route acquires its SHA
+    // after preparation, changing the task scope without reopening this page.
+    private var statisticsTarget: StatisticsRoute? { information.statisticsTarget(for: target) }
     private var readingSectionReady: Bool {
         guard let target, target.readingSection else { return false }
         return information.matches(target) && statisticsState.overview != nil
