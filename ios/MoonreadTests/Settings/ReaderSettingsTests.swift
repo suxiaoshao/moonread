@@ -190,7 +190,7 @@ final class ReaderSettingsUserDataTests: UserDataFixture {
     template.name = "Independent"
     template.colors.ink = template.colors.paper
     XCTAssertFalse(themeColorsReadable(c: template.colors))
-    XCTAssertTrue(template.isValidDraft)
+    XCTAssertNil(validateThemePaletteDraft(name: template.name, colors: template.colors))
     let palette = try await service.savePalette(template, creating: true)
     let rows = try await store.allValues(prefix: "palette/")
     let json = try XCTUnwrap(rows["palette/\(palette.id)"])
@@ -209,6 +209,24 @@ final class ReaderSettingsUserDataTests: UserDataFixture {
     XCTAssertEqual(deleted.preferences.appLight, defaultThemeSnapshot().preferences.appLight)
     XCTAssertFalse(deleted.palettes.contains { $0.id == palette.id })
     XCTAssertEqual(deleted.preferences.readerPaletteTextures, preferences.readerPaletteTextures)
+    var full = defaultThemeSnapshot()
+    var values: [String: String] = [:]
+    for index in 0..<64 {
+      var custom = palette; custom.id = "custom-limit-\(index)"
+      full.palettes.append(custom)
+      values["palette/" + custom.id] = try encodeThemePalette(value: custom)
+    }
+    XCTAssertEqual(AppDataService.paletteSaveIssue(in: full), .customLimit)
+    let existing = try XCTUnwrap(full.palettes.last)
+    XCTAssertNil(AppDataService.paletteSaveIssue(in: full, editing: existing), "The limit blocks creation, never editing")
+    try await store.putValues(values, device: "fixture")
+    do { _ = try await service.savePalette(template, creating: true); XCTFail("Enforce current storage capacity") }
+    catch PaletteSaveIssue.customLimit { }
+    var renamed = existing; renamed.name = "Edited at capacity"
+    _ = try await service.savePalette(renamed, creating: false)
+    _ = try await service.deletePalette(existing.id)
+    do { _ = try await service.savePalette(renamed, creating: false); XCTFail("Missing edit targets must not become new palettes") }
+    catch PaletteSaveIssue.missingTarget { }
     let defaults = try XCTUnwrap(UserDefaults(suiteName: "Review-\(root.lastPathComponent)"))
     let key = "Moonread.themePreferences"
     var future = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(try encodeThemePreferences(value: preferences).utf8)) as? [String: Any])

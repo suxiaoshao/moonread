@@ -1,6 +1,22 @@
 import Foundation
 
+enum PaletteSaveIssue: LocalizedError, Equatable {
+    case customLimit, missingTarget
+    var errorDescription: String? {
+        switch self {
+        case .customLimit: String(localized: "最多可保存 64 个自定义配色，请先删除不需要的配色。")
+        case .missingTarget: String(localized: "这个配色已被删除，无法保存更改。")
+        }
+    }
+}
+
 extension AppDataService {
+    nonisolated static func paletteSaveIssue(in snapshot: ThemeSnapshot, editing value: ThemePalette? = nil) -> PaletteSaveIssue? {
+        if let value {
+            return snapshot.palettes.contains { $0.custom && $0.id == value.id && $0.appearance == value.appearance } ? nil : .missingTarget
+        }
+        return snapshot.palettes.filter(\.custom).count < 64 ? nil : .customLimit
+    }
     func themes() async throws -> ThemeSnapshot {
         var snapshot = defaultThemeSnapshot()
         if let stored = sourceDefaults.object(forKey: "Moonread.themePreferences") {
@@ -27,7 +43,7 @@ extension AppDataService {
     }
     func savePalette(_ value: ThemePalette, creating: Bool) async throws -> ThemePalette {
         let snapshot = try await themes()
-        guard creating ? snapshot.palettes.filter(\.custom).count < 64 : snapshot.palettes.contains(where: { $0.custom && $0.id == value.id && $0.appearance == value.appearance }) else { throw ReaderError.InvalidSettings }
+        if let issue = Self.paletteSaveIssue(in: snapshot, editing: creating ? nil : value) { throw issue }
         let palette = try makeThemePalette(id: creating ? "custom-\(UUID().uuidString)" : value.id, name: value.name, appearance: value.appearance, colors: value.colors)
         let json = try encodeThemePalette(value: palette)
         try await userStore().put("palette/\(palette.id)", value: json, device: userDevice)

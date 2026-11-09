@@ -65,8 +65,52 @@ fn builtin_palettes_are_readable_and_preserve_custom_capacity() {
         decode_theme_palette(encode_theme_palette(custom.clone()).unwrap()).unwrap(),
         custom
     );
+    let colors = builtin_theme_palettes()[0].colors.clone();
+    for (name, expected) in [
+        (String::new(), Some(ThemePaletteDraftIssue::MissingName)),
+        (
+            " \t\n\u{3000}\u{a0}".into(),
+            Some(ThemePaletteDraftIssue::MissingName),
+        ),
+        ("a".repeat(40), None),
+        ("a".repeat(41), Some(ThemePaletteDraftIssue::NameTooLong)),
+        (format!("  {} ", "a".repeat(40)), None),
+        ("e\u{301}".repeat(20), None),
+        (
+            "e\u{301}".repeat(21),
+            Some(ThemePaletteDraftIssue::NameTooLong),
+        ),
+    ] {
+        assert_eq!(
+            validate_theme_palette_draft(name.clone(), colors.clone()),
+            expected
+        );
+        let created = make_theme_palette(
+            "custom-name".into(),
+            name.clone(),
+            ThemeAppearance::Light,
+            colors.clone(),
+        );
+        assert_eq!(created.is_ok(), expected.is_none());
+        if let Ok(palette) = created {
+            assert_eq!(palette.name, name.trim());
+        }
+    }
     let mut invalid = custom;
     invalid.colors.ink = 0xff000000;
+    assert_eq!(
+        validate_theme_palette_draft(invalid.name.clone(), invalid.colors.clone()),
+        Some(ThemePaletteDraftIssue::InvalidColors)
+    );
+    assert!(
+        make_theme_palette(
+            invalid.id.clone(),
+            invalid.name.clone(),
+            invalid.appearance,
+            invalid.colors.clone()
+        )
+        .is_err()
+    );
     assert!(
         encode_theme_palette(invalid).is_err(),
         "RGB format limits still apply"

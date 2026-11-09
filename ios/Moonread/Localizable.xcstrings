@@ -1,6 +1,13 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "请输入名称，最多 40 个字符。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Enter a name, up to 40 characters."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"請輸入名稱，最多 40 個字元。"}}}},
+    "请输入配色名称。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Enter a palette name."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"請輸入配色名稱。"}}}},
+    "名称太长，请缩短到 40 个字符以内。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The name is too long. Shorten it to 40 characters or fewer."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"名稱太長，請縮短至 40 個字元以內。"}}}},
+    "配色包含无效颜色，请重新选择。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The palette contains an invalid color. Choose it again."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"配色包含無效顏色，請重新選擇。"}}}},
+    "最多可保存 64 个自定义配色，请先删除不需要的配色。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"You can save up to 64 custom palettes. Delete an unused palette first."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"最多可儲存 64 個自訂配色，請先刪除不需要的配色。"}}}},
+    "这个配色已被删除，无法保存更改。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"This palette has been deleted. Your changes cannot be saved."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"這個配色已被刪除，無法儲存更改。"}}}},
+    "正在保存": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Saving"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在儲存"}}}},
     "尚未取得模型目录，请刷新重试。":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"The model directory has not been loaded. Refresh to try again."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"尚未取得模型目錄，請重新整理再試。"}}}},
     "这是手填型号，将尝试通用文字请求；能力并未经目录确认。":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"This is a manually entered model. A generic text request will be attempted; its capabilities have not been confirmed by the directory."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"這是手填型號，將嘗試通用文字請求；能力並未經目錄確認。"}}}},
     "输入上限 · tokens":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"Input Limit · tokens"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"輸入上限 · tokens"}}}},

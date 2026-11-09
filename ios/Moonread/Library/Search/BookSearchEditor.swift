@@ -140,7 +140,7 @@ struct BookSearchEditor: View {
         return [
             .init(id: "sorts", footer: String(localized: "自定义顺序会替代默认匹配优先级；前一项相同时才比较下一项。缺少作者或阅读时间的小说始终排在最后。"), rows: rows),
             .init(id: "actions", rows: [
-                .init("reset") { Button("恢复默认排序") { draft.value.sorts = [] } },
+                .init("reset", action: { draft.value.sorts = [] }) { Text("恢复默认排序").foregroundStyle(Color(uiColor: theme.accent)) },
                 .init("add", action: draft.value.sorts.count < BookSearchSortField.allCases.count ? { path.append(.sortFields) } : nil, disclosure: true) {
                     Text("添加排序").foregroundStyle(Color(uiColor: draft.value.sorts.count == BookSearchSortField.allCases.count ? theme.secondary : theme.ink))
                 }
@@ -196,11 +196,9 @@ private struct BookSearchGroupPage: View {
             }
         }
         rows.append(.init("addSearchCondition", action: { navigate(.fields(id)) }, disclosure: true) { Text("添加条件") })
-        rows.append(.init("addGroup") {
-            Button("添加条件组", systemImage: "rectangle.stack.badge.plus") {
-                draft.edit(id) { $0.children.append(BookSearchNode()) }
-            }
-        })
+        rows.append(.init("addGroup", action: {
+            draft.edit(id) { $0.children.append(BookSearchNode()) }
+        }) { Label("添加条件组", systemImage: "rectangle.stack.badge.plus").foregroundStyle(Color(uiColor: theme.accent)) })
         return [options, .init(id: "children", footer: node.children.isEmpty ? String(localized: "添加条件，或保留空的根组以取消筛选。") : nil, rows: rows)]
     }
 

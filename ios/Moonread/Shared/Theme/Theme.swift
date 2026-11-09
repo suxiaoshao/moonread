@@ -290,6 +290,7 @@ final class ThemeStore {
             }
         }
     }
+    var paletteCreationIssue: PaletteSaveIssue? { AppDataService.paletteSaveIssue(in: snapshot) }
     func flushPreferences() async { await preferencesTask?.value }
     func savePalette(_ palette: ThemePalette, creating: Bool) async throws {
         guard !saving else { return }
