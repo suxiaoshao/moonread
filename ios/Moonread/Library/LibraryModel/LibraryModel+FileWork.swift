@@ -103,6 +103,8 @@ extension LibraryModel {
         work.commands = entries.map { .move($0, destination) }
         try await continueFileWork(work)
     }
+    func deleteEntries(_ entries: [LibraryEntry]) { runBatch(entries.map { .delete($0) }) }
+
     @discardableResult
     func runBatch(_ commands: [LibraryCommand], onSuccess: ((LibraryCommand) -> Void)? = nil) -> Bool {
         guard !commands.isEmpty else { return false }

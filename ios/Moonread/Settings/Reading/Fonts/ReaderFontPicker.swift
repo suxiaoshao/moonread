@@ -40,7 +40,7 @@ struct ReaderFontPicker: View {
                 case .failure(let error): message = error.localizedDescription
                 }
             }
-            .confirmationDialog("删除字体文件？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible, presenting: deleting) { resource in
+            .alert("删除字体文件？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), presenting: deleting) { resource in
                 Button("删除", role: .destructive) { remove(resource) }
                 Button("取消", role: .cancel) { deleting = nil }
             } message: { resource in

@@ -171,7 +171,6 @@ import XCTest
     waitUntil { !self.app.tabBars.buttons["书架"].isHittable }
     file(sample).tap()
     app.buttons["删除"].tap()
-    ready(app.buttons["移到最近删除"]).tap()
     XCTAssertTrue(file(sample).waitForNonExistence(timeout: 8))
     XCTAssertTrue(file("同名.txt").exists)
     app.buttons["librarySelectionDone"].tap()
@@ -434,6 +433,11 @@ import XCTest
     row.tap()
     ready(app.staticTexts["已选 1 项"])
     XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'editNote-'")).firstMatch.exists)
+    app.buttons["删除"].tap()
+    let undo = ready(app.buttons["撤销"])
+    XCTAssertFalse(app.alerts.firstMatch.exists)
+    undo.tap()
+    ready(app.cells.containing(NSPredicate(format: "identifier BEGINSWITH 'noteRow-'")).firstMatch)
     app.buttons["结束选择"].tap()
     ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'editNote-'")).firstMatch)
     closeList()
@@ -553,7 +557,6 @@ import XCTest
     snapshot("data-cache")
     app.navigationBars.buttons.firstMatch.tap()
     ready(app.buttons["exportAllReadingData"]).tap()
-    ready(app.buttons["confirmExportAllReadingData"].firstMatch).tap()
     // Export/restore our bytes; do not drive the system share UI in this test.
     waitUntil { self.app.buttons["exportAllReadingData"].value as? String == "backup-ready" }
     let readingData = ready(app.buttons["readingDataList"])

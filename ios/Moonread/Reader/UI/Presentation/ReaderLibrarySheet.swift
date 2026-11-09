@@ -108,7 +108,7 @@ struct ReaderLibraryContent: View {
                 }
             }
             .modifier(ReaderLibraryEditorPresentation(editing: editing, session: session, refreshOutline: refreshOutline, closed: editorClosed))
-            .confirmationDialog("恢复自动目录？", isPresented: $editing.restoringOutline, titleVisibility: .visible) {
+            .alert("恢复自动目录？", isPresented: $editing.restoringOutline) {
                 Button("清除人工修正", role: .destructive) {
                     guard let id = session.readingID else { return }
                     Task {
@@ -116,6 +116,7 @@ struct ReaderLibraryContent: View {
                         catch { model.error = ReaderMessages.error(error) }
                     }
                 }
+                Button("取消", role: .cancel) {}
             } message: { Text("仅清除目录的人工修正，正文、书签和笔记保持不变。") }
             .task(id: preparedBookID) {
                 guard let id = preparedBookID else { return }

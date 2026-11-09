@@ -8,10 +8,7 @@ struct ReaderNotesList: View {
     let edit: (ReaderMark) -> Void
     @Environment(\.theme) private var theme
     @State private var sharing: NoteSharePayload?
-    @State private var deleting: NoteCandidates?
-    @State private var deletingIDs: Set<String> = []
     @State private var busy = false
-    @State private var confirmDelete = false
     var body: some View {
         VStack(spacing: 0) {
             if model.deletedIDs != nil {
@@ -99,23 +96,19 @@ struct ReaderNotesList: View {
                 ToolbarItem(placement: .bottomBar) {
                     Button("删除", systemImage: "trash", role: .destructive) {
                         guard let snapshot = model.noteSnapshot else { return }
-                        deletingIDs = model.selectedNotes
-                        deleting = NoteCandidates(key: snapshot.key, groups: model.selectedCandidates, blocked: snapshot.blocked)
-                        confirmDelete = true
+                        let ids = model.selectedNotes
+                        let expected = NoteCandidates(key: snapshot.key, groups: model.selectedCandidates, blocked: snapshot.blocked)
+                        busy = true
+                        Task {
+                            await model.deleteSelectedNotes(expected, ids: ids)
+                            busy = false; session.notesChanged()
+                        }
                     }.disabled(busy || model.selectedNotes.isEmpty).tint(Color(uiColor: theme.destructive))
                 }
             }
         }
         .onChange(of: model.deletedIDs, initial: true) { _, ids in model.setUndoVisible(ids != nil) }
         .onDisappear { model.setUndoVisible(false) }
-        .confirmationDialog(model.noteKind == .bookmark ? String(localized: "删除 \(deletingIDs.count) 个书签？") : String(localized: "删除 \(deletingIDs.count) 项笔记？"), isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("删除", role: .destructive) {
-                guard let expected = deleting else { return }
-                let ids = deletingIDs
-                Task { busy = true; await model.deleteSelectedNotes(expected, ids: ids); busy = false; session.notesChanged() }
-            }
-            Button("取消", role: .cancel) {}
-        } message: { Text("会同步删除其他设备上的这些记录，小说原文件不受影响。") }
         .sheet(item: $sharing) { LibraryShareSheet(files: $0.files, text: $0.text) }
     }
     private func noteContent(_ mark: ReaderMark) -> some View {

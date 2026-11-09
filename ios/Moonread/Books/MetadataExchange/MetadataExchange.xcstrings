@@ -1,6 +1,7 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "导入小说信息？": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Import book metadata?"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"匯入小說資訊？"}}}},
     "%lld 本 · %lld 本无变化 · %lld 本未匹配 · %lld 本已跳过": {
       "extractionState": "manual",
       "localizations": {

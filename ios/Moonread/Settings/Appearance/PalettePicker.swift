@@ -67,13 +67,14 @@ struct PalettePicker: View {
             }
         }
         .sheet(item: $draft) { value in PaletteEditor(draft: value) }
-        .confirmationDialog("删除配色？", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), titleVisibility: .visible) {
+        .alert(Text("删除配色“\(deleting?.name ?? "")”？"), isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }), presenting: deleting) { palette in
             Button("删除", role: .destructive) {
-                if let deleting { Task { await themes.deletePalette(deleting.id) } }
+                Task { await themes.deletePalette(palette.id) }
                 deleting = nil
             }
-        } message: {
-            if let deleting, let message = themes.paletteDeletionImpact(deleting.id).message { Text(message) }
+            Button("取消", role: .cancel) { deleting = nil }
+        } message: { palette in
+            if let message = themes.paletteDeletionImpact(palette.id).message { Text(message) }
         }
     }
     private var paletteList: some View {

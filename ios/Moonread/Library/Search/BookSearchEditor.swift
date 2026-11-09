@@ -101,9 +101,9 @@ struct BookSearchEditor: View {
         .presentationSizing(.form)
         .presentationDetents([.large])
         .background(BookSearchDismissalGuard(changed: draft.changed) { discard = true })
-        .confirmationDialog("放弃筛选更改？", isPresented: $discard, titleVisibility: .visible) {
+        .alert("放弃筛选更改？", isPresented: $discard) {
             Button("放弃更改", role: .destructive) { dismiss() }
-            Button("继续编辑", role: .cancel) {}
+            Button("取消", role: .cancel) {}
         }
     }
     private func cancel() { if draft.changed { discard = true } else { dismiss() } }
@@ -167,7 +167,7 @@ private struct BookSearchGroupPage: View {
     var body: some View {
         ThemedGroupedList(sections: groupSections, theme: theme).themedPage()
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("删除条件及其子条件？", isPresented: Binding(get: { !deleting.isEmpty }, set: { if !$0 { deleting = [] } }), titleVisibility: .visible) {
+        .alert("删除条件及其子条件？", isPresented: Binding(get: { !deleting.isEmpty }, set: { if !$0 { deleting = [] } })) {
             Button("删除条件", role: .destructive) { let ids = Set(deleting); draft.edit(id) { $0.children.removeAll { ids.contains($0.id) } }; deleting = [] }
             Button("取消", role: .cancel) { deleting = [] }
         } message: { Text("将删除 \(deletionCount) 条条件（含子条件），仅修改当前草稿。") }

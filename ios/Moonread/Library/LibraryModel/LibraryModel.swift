@@ -116,7 +116,6 @@ final class LibraryModel {
     var canAcceptFileWork: Bool { fileWork == nil }
     var afterSheetDismiss: (() -> Void)?
     var pendingDecision: LibraryPendingDecision?
-    var deletion: [LibraryEntry]?
     var removingShelf: LibraryShelf?
     var importFailures: [ImportFailure] = []
     var sharedImportResult: String?

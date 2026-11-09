@@ -188,8 +188,9 @@ struct AIResultCard: View {
             let eligible = Set(organization.nodes.filter { $0.included && $0.conflict == nil && ($0.result?.stage == nil || $0.result?.stage == .notMoved) }.map(\.id))
             Button("执行剩余 \(eligible.count) 项") { confirmedNodes = eligible; confirmOrganization = true }
                 .disabled(eligible.isEmpty || saving).accessibilityIdentifier("executeOrganization-\(resultID)")
-                .confirmationDialog(String(localized: "执行剩余 \(confirmedNodes.count) 项"), isPresented: $confirmOrganization, titleVisibility: .visible) {
+                .alert(String(localized: "执行剩余 \(confirmedNodes.count) 项"), isPresented: $confirmOrganization) {
                     Button("执行") { let ids = confirmedNodes; Task { await ai.proposals.executeOrganization(resultID, confirmedIDs: ids) } }
+                    Button("取消", role: .cancel) {}
                 }
         }
     }

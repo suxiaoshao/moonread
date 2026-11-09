@@ -52,9 +52,10 @@ struct MetadataImportView: View {
             }
         }
         .interactiveDismissDisabled(model.saving)
-        .confirmationDialog(Text("确认导入？", tableName: "MetadataExchange"), isPresented: $confirm, titleVisibility: .visible) {
+        .alert(Text("导入小说信息？", tableName: "MetadataExchange"), isPresented: $confirm) {
             Button { Task { await model.save() } } label: { Text("导入 \(model.pending.count) 本", tableName: "MetadataExchange") }
                 .accessibilityIdentifier("executeMetadataImport")
+            Button("取消", role: .cancel) {}
         } message: { Text(verbatim: model.confirmation) }
         .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) { if let sharing { LibraryShareSheet(files: sharing) } }
     }

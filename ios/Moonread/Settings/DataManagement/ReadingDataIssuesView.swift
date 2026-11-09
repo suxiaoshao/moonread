@@ -52,11 +52,12 @@ struct ReadingDataIssuesView: View {
         .refreshable { await model.load() }
         .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in Task { await model.load() } }
         .onReceive(NotificationCenter.default.publisher(for: .libraryIndexScanCommitted).receive(on: DispatchQueue.main)) { _ in Task { await model.load() } }
-        .confirmationDialog(Text("丢弃这本书的待关联记录？", tableName: "DataManagement"), isPresented: Binding(get: { discarding != nil }, set: { if !$0 { discarding = nil } }), titleVisibility: .visible) {
+        .alert(Text("丢弃这本书的待关联记录？", tableName: "DataManagement"), isPresented: Binding(get: { discarding != nil }, set: { if !$0 { discarding = nil } })) {
             if let item = discarding {
                 Button(role: .destructive) { discarding = nil; Task { await model.deleteConfirmed([item.id]) } } label: { Text("丢弃记录", tableName: "DataManagement") }
                     .accessibilityIdentifier("confirmDiscardPending")
             }
+            Button("取消", role: .cancel) { discarding = nil }
         } message: { Text("只删除这条待关联的阅读进度、统计及其他阅读数据，不删除小说文件，也不删除已经关联的正式记录。", tableName: "DataManagement") }
     }
     @ViewBuilder private func pendingSection(_ title: LocalizedStringKey, items: [PendingReadingData]) -> some View {
