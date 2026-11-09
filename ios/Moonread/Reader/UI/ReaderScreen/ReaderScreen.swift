@@ -13,6 +13,7 @@ struct ReaderScreen: View {
     @State private var reviewExitIsNormal = false
     @State private var session = ReaderSession()
     @State var coverInformation: BookDetails?
+    @State private var coverRequest = UUID()
     @Environment(LibraryModel.self) private var library
     @State private var tools = ReaderToolsModel()
     @State private var toolSession = ReaderToolSession()
@@ -173,6 +174,7 @@ struct ReaderScreen: View {
                                 value.orientation = .system; session.updateSettings(value)
                                 session.error = String(localized: "当前无法切换屏幕方向，已恢复跟随系统。")
                             },
+                            bodyDisplayed: { session.bodyDidDisplay() },
                             statisticsInteraction: { session.activity.interacted() },
                             statisticsPresentationChanged: { [weak activity = session.activity, weak automatic, weak viewport = session.viewportAccess] in
                                 activity?.sample()
@@ -335,6 +337,9 @@ struct ReaderScreen: View {
                 session?.editor = nil; session?.chapterDraft = nil
                 if let current = toolSession?.editor { toolSession?.finishEditing(current.id) }
             }
+            if coverInformation == nil, let metadata = openingRequest?.metadataHint {
+                coverInformation = BookDetails(book: nil, metadata: metadata, wordCount: 0, chapterCount: 0, currentChapter: nil)
+            }
             await session.open(route, request: openingRequest)
         }
         .onChange(of: library.systemReading.pending) { _, request in
@@ -358,7 +363,7 @@ struct ReaderScreen: View {
             Task { await loadCoverInformation() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in
-            Task { session.notesChanged(); await loadCoverInformation() }
+            session.notesChanged() // CloudSync also posts bookMetadataChanged once for this import.
         }
         .onReceive(NotificationCenter.default.publisher(for: .cloudReadingPositionsReceived).receive(on: DispatchQueue.main)) { _ in
             Task { await session.refreshSyncedContinuation() }
@@ -627,7 +632,14 @@ struct ReaderScreen: View {
 
     private func loadCoverInformation() async {
         guard let id = session.readingID else { return }
-        coverInformation = try? await AppDataService.shared.details(bookID: id)
+        guard let sha = session.book?.contentSha256, (try? parseSha256(value: sha)) != nil else { return }
+        let request = UUID(); coverRequest = request
+        do {
+            let next = try await AppDataService.shared.details(bookID: id, sha: sha)
+            guard !Task.isCancelled, coverRequest == request, session.readingID == id,
+                  session.book?.contentSha256 == sha else { return }
+            coverInformation = next
+        } catch { /* Keep the last successful value; failure is not a cover deletion. */ }
     }
 
     private var bookDetailsTarget: StatisticsRoute {

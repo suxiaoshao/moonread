@@ -12,6 +12,8 @@ struct UserProjection {
     #[serde(default)]
     positions: Vec<PositionInput>,
     #[serde(default)]
+    opened: Vec<OpenedInput>,
+    #[serde(default)]
     metadata: Vec<BookMetadata>,
     #[serde(default)]
     facts: Vec<FactInput>,
@@ -34,6 +36,12 @@ struct PositionInput {
     preferred: Option<String>,
 }
 #[derive(Deserialize)]
+struct OpenedInput {
+    content_key: String,
+    updated: i64,
+    preferred: Option<String>,
+}
+#[derive(Deserialize)]
 struct FactInput {
     content_key: String,
     title: String,
@@ -51,7 +59,8 @@ struct ChapterInput {
 
 pub(crate) fn initialize(db: &Connection) -> Result<()> {
     crate::identity::content::initialize(db)?;
-    db.execute_batch(&format!("CREATE TEMP TABLE user_positions(content_key TEXT PRIMARY KEY,position_utf8 INTEGER,last_read INTEGER,recent_visible INTEGER,preferred_file_id TEXT);
+    db.execute_batch(&format!("CREATE TEMP TABLE user_opened(content_key TEXT PRIMARY KEY,opened_ms INTEGER,preferred_file_id TEXT);
+    CREATE TEMP TABLE user_positions(content_key TEXT PRIMARY KEY,position_utf8 INTEGER,last_read INTEGER,recent_visible INTEGER,preferred_file_id TEXT);
     CREATE TEMP VIEW ranked_library_sources AS
     SELECT f.id file_id,fi.content_sha256,
       ROW_NUMBER() OVER (PARTITION BY fi.content_sha256 ORDER BY {source_order}) source_rank
@@ -71,7 +80,7 @@ pub(crate) fn initialize(db: &Connection) -> Result<()> {
 }
 fn apply(db: &mut Connection, value: &UserProjection) -> Result<()> {
     let tx = db.transaction()?;
-    tx.execute_batch("DELETE FROM user_positions; DELETE FROM book_metadata; DELETE FROM chapter_overrides; DELETE FROM reading_activity;")?;
+    tx.execute_batch("DELETE FROM user_positions; DELETE FROM user_opened; DELETE FROM book_metadata; DELETE FROM chapter_overrides; DELETE FROM reading_activity;")?;
     tx.execute(
         "UPDATE statistics_preferences SET enabled=?1,generation=?2",
         params![value.enabled, value.generation as i64],
@@ -87,6 +96,10 @@ fn apply(db: &mut Connection, value: &UserProjection) -> Result<()> {
                 p.preferred
             ],
         )?;
+    }
+    for o in &value.opened {
+        tx.execute("INSERT INTO user_opened VALUES(?1,?2,?3) ON CONFLICT(content_key) DO UPDATE SET opened_ms=max(opened_ms,excluded.opened_ms),preferred_file_id=CASE WHEN excluded.opened_ms>=opened_ms THEN excluded.preferred_file_id ELSE preferred_file_id END",
+            params![o.content_key, o.updated, o.preferred])?;
     }
     for m in &value.metadata {
         tx.execute(

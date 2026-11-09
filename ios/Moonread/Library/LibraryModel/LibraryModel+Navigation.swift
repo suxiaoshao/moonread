@@ -71,10 +71,10 @@ extension LibraryModel {
                 try Task.checkCancellation()
                 if let push {
                     guard isCurrent() else { return }
-                    push(.reader(OpeningRequest(target: .source(entry.source), tap: tap, expectedContentSHA: expectedContentSHA))); return
+                    push(.reader(OpeningRequest(target: .source(entry.source), tap: tap, expectedContentSHA: expectedContentSHA, metadataHint: entry.metadata))); return
                 }
                 guard selectedTab == tab, path == origin else { return }
-                path.append(.reader(OpeningRequest(target: .source(entry.source), tap: tap, expectedContentSHA: expectedContentSHA)))
+                path.append(.reader(OpeningRequest(target: .source(entry.source), tap: tap, expectedContentSHA: expectedContentSHA, metadataHint: entry.metadata)))
             } catch is CancellationError { }
             catch {
                 guard !Task.isCancelled, openingRequest == request, push == nil ? (selectedTab == tab && path == origin) : isCurrent() else { return }

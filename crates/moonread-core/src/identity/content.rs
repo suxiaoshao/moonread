@@ -137,6 +137,32 @@ impl ReaderCore {
             })
             .collect()
     }
+    /// The complete formal/pending scope of one content identity. Keep alias
+    /// resolution here rather than teaching each Swift consumer another rule.
+    pub fn reading_scope_keys(&self, key: ReadingKey) -> Result<Vec<ReadingKey>> {
+        let effective = self
+            .resolve_reading_keys(vec![key.clone()])?
+            .remove(0)
+            .effective;
+        let mut keys = vec![effective.clone()];
+        if !keys.contains(&key) {
+            keys.push(key);
+        }
+        if let ReadingKey::Formal { sha256 } = effective {
+            let db = self.lock()?;
+            let mut query = db.prepare("SELECT original.id FROM main.books original LEFT JOIN main.import_jobs j ON j.book_id=original.id JOIN main.books b ON b.id=COALESCE(j.canonical_id,original.id) WHERE b.content_sha256=?1 ORDER BY original.id")?;
+            let aliases = query
+                .query_map([sha256], |row| row.get::<_, String>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            for book_id in aliases {
+                let key = ReadingKey::Pending { book_id };
+                if !keys.contains(&key) {
+                    keys.push(key);
+                }
+            }
+        }
+        Ok(keys)
+    }
     pub fn file_identity(&self, file_id: String) -> Result<FileIdentity> {
         let db = self.lock()?;
         let (key, associated_book_id, original):(Option<String>,Option<String>,Option<String>)=db.query_row("SELECT fi.content_sha256,fi.associated_book_id,f.book_id FROM main.library_files f LEFT JOIN file_identities fi ON fi.file_id=f.id WHERE f.id=?1",[&file_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?.ok_or(ReaderError::NotFound)?;
@@ -365,7 +391,17 @@ mod tests {
                 params![old.id, alias],
             )
             .unwrap();
-        let resolved = core.resolve_book_identity(alias).unwrap();
+        let resolved = core.resolve_book_identity(alias.clone()).unwrap();
+        let scope = core
+            .reading_scope_keys(ReadingKey::Formal {
+                sha256: old.content_sha256.clone(),
+            })
+            .unwrap();
+        assert!(scope.contains(&ReadingKey::Pending { book_id: alias }));
+        assert!(scope.contains(&ReadingKey::Pending {
+            book_id: old.id.clone()
+        }));
+        assert!(scope.contains(&resolved.key));
         assert_eq!(resolved.canonical_book_id, old.id);
         assert_eq!(
             resolved.key,

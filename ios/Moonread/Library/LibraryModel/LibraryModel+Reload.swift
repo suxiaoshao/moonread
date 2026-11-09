@@ -36,6 +36,7 @@ extension LibraryModel {
         let localRecents = try await service.recentLibrary(UInt32(Self.homeRecentLimit), cold: !homeReady)
         let next = HomeSnapshot(shelves: localShelves, recents: localRecents)
         if !homeReady { await warmHomeCovers(next.recents) }
+        try Task.checkCancellation()
         guard homeRequest == token else { return }
         let structuralChange = libraryStructure != nil && libraryStructure != structure
         libraryStructure = structure
@@ -54,7 +55,7 @@ extension LibraryModel {
     }
     private func warmHomeCovers(_ entries: [LibraryEntry]) async {
         // The resume card and the covers visible in the first screen of the recent row.
-        homeCovers = entries.prefix(4).compactMap { $0.metadata?.cover }.map { CoverImageLoader.shared.subscribe($0, pixels: 320) }
+        homeCovers = entries.prefix(4).compactMap { $0.metadata?.cover }.map { CoverImageLoader.shared.subscribe($0, pixels: 384) }
         let deadline = ContinuousClock.now.advanced(by: .milliseconds(150))
         while homeCovers.contains(where: { $0.presentation.phase == .loading }), ContinuousClock.now < deadline {
             do { try await Task.sleep(for: .milliseconds(5)) } catch { return }
@@ -71,14 +72,12 @@ extension LibraryModel {
     func reloadBook(_ route: ReaderRoute) async {
         defer { readingInputRevision &+= 1 }
         do {
-            guard let entry = try await service.recentBook(route) else { return }
             var next = homeIndex
-            next.recents.removeAll { $0.id == entry.id || (entry.readingKey != nil && $0.readingKey == entry.readingKey) }
-            next.recents.append(entry)
-            next.recents.sort { $0.lastRead == $1.lastRead ? $0.id < $1.id : $0.lastRead > $1.lastRead }
-            next.recents = Array(next.recents.prefix(Self.homeRecentLimit))
+            next.recents = try await service.recentLibrary(UInt32(Self.homeRecentLimit))
+            try Task.checkCancellation()
             publishHome(next)
-        } catch { self.error = ReaderMessages.error(error) }
+        } catch is CancellationError { }
+        catch { self.error = ReaderMessages.error(error) }
     }
     func returnedToLibrary() {
         if automaticRefreshDeferred, !path.contains(where: \.isReader) { automaticRefreshDeferred = false; scheduleRefresh() }
@@ -121,5 +120,9 @@ extension LibraryModel {
             catch { }
         }
     }
-    func reloadBooks() async { do { revision += 1; try await reload() } catch { self.error = ReaderMessages.error(error) } }
+    func reloadBooks() async {
+        do { revision += 1; try await reload() }
+        catch is CancellationError { }
+        catch { self.error = ReaderMessages.error(error) }
+    }
 }

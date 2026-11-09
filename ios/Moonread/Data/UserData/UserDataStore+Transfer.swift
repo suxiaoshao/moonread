@@ -5,6 +5,7 @@ import CoreData
 struct UserDataTransfer: Sendable {
     struct Operation: Sendable { let id: String; let mark: String; let payload: String }
     struct Fact: Sendable { let id: String; let payload: String }
+    var opened: String? = nil
     let positions: [String]
     let operations: [Operation]
     let facts: [Fact]
@@ -17,10 +18,12 @@ extension UserDataStore {
         for row in try modelContext.fetch(FetchDescriptor<StatisticsClear>()) where (try? decode(ClearValue.self, row.payload)) == nil {
             if let scope = try? JSONDecoder().decode(UserSyncClearScope.self, from: Data(row.payload.utf8)), let book = scope.book { result.insert(book) }
         }
+        for row in try modelContext.fetch(FetchDescriptor<UserValue>()) where row.key.hasPrefix("opened/") { result.insert(String(row.key.dropFirst(7))) }
         return result.filter { if let key = try? parseReadingKey(value: $0), case .pending = key { return true }; return false }
     }
     func requirePendingReadable(key: String) throws {
         try requireValueReadable("position/" + key)
+        try requireValueReadable("opened/" + key)
         guard try blockedMarks(key: key).isEmpty else { throw UserSyncCompatibilityError() }
         try requireStatisticsReadable(book: key)
         let facts = try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.contentKey == key }))
@@ -34,7 +37,7 @@ extension UserDataStore {
         let visible = Set(try visibleFacts(key: key).compactMap { ($0["slice"] as? [String: Any])?["id"] as? String })
         let facts = try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.contentKey == key })).filter { visible.contains($0.id) }
             .map { UserDataTransfer.Fact(id: $0.id, payload: $0.payload) }
-        return UserDataTransfer(positions: positions, operations: operations, facts: facts)
+        return UserDataTransfer(opened: try storedValue("opened/" + key).map { try encode($0) }, positions: positions, operations: operations, facts: facts)
     }
     // Shared immutable-record intake for pending promotion and portable backup.
     func mergePositionRecord(key: String, payload: String) throws {
@@ -78,6 +81,10 @@ extension UserDataStore {
             for value in transfer.positions { _ = try UserSyncJSON.storedValue(value, key: "position/" + from) }
             for value in transfer.operations { _ = try UserSyncJSON.annotation(value.payload, id: value.id) }
             for value in transfer.facts { try UserSyncJSON.validateFact(value.payload, id: value.id) }
+            if let opened = transfer.opened {
+                _ = try UserSyncJSON.storedValue(opened, key: "opened/" + from)
+                try mergeValueRecord(key: "opened/" + to, device: "pending-promotion", payload: opened)
+            }
             for value in transfer.positions {
                 let incoming = try PositionCandidate(decode(StoredValue.self, value)).rekeyed(to: to)
                 try mergePositionRecord(key: to, payload: encode(incoming.stored))
@@ -99,6 +106,8 @@ extension UserDataStore {
             for row in positions { _ = try UserSyncJSON.storedValue(row.payload, key: "position/" + key) }
             for row in operations { _ = try UserSyncJSON.annotation(row.payload, id: row.id) }
             for row in facts { try UserSyncJSON.validateFact(row.payload, id: row.id) }
+            let openedKey = "opened/" + key
+            for row in try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate { $0.key == openedKey })) { modelContext.delete(row) }
             for row in positions { modelContext.delete(row) }
             for row in operations { modelContext.delete(row) }
             for row in facts { modelContext.delete(row) }

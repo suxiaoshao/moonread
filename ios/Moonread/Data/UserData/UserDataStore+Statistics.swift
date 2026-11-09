@@ -35,28 +35,40 @@ extension UserDataStore {
         else { rows = try modelContext.fetch(FetchDescriptor<ReadingFact>()) }
         return rows.contains { (try? UserSyncJSON.validateFact($0.payload, id: $0.id)) == nil }
     }
+    struct FactInput: Sendable { let id: String; let contentKey: String; let payload: String }
+    struct FactsInput: Sendable {
+        let rows: [FactInput]
+        let clears: [ClearValue]
+        nonisolated func visible(session: String? = nil) throws -> [[String: Any]] {
+            var groups: [String: [FactInput]] = [:], facts: [[String: Any]] = []
+            for row in rows { groups[row.id, default: []].append(row) }
+            for copies in groups.values {
+                // An unknown sibling must not be hidden by the order CloudKit delivered duplicates.
+                guard copies.allSatisfy({ (try? UserSyncJSON.validateFact($0.payload, id: $0.id)) != nil }), let row = copies.first else {
+                    UserSyncJSON.quarantined("ReadingFact"); continue
+                }
+                var value = try JSONSerialization.jsonObject(with: Data(row.payload.utf8)) as! [String: Any]
+                let slice = value["slice"] as! [String: Any]
+                if let session, slice["session_id"] as? String != session { continue }
+                let start = (slice["started_ms"] as! NSNumber).int64Value
+                value["content_key"] = row.contentKey
+                if clears.contains(where: { ($0.book == nil || $0.book == row.contentKey) && ($0.session == nil || $0.session == slice["session_id"] as? String) && ($0.ids.contains(row.id) || start <= $0.through) }) { continue }
+                facts.append(value)
+            }
+            return facts
+        }
+    }
+    func factsInput(keys: [String]? = nil) throws -> FactsInput {
+        let clears = try modelContext.fetch(FetchDescriptor<StatisticsClear>()).compactMap { try? decode(ClearValue.self, $0.payload) }
+        let rows: [ReadingFact]
+        if let keys {
+            rows = try keys.flatMap { key in try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.contentKey == key })) }
+        } else { rows = try modelContext.fetch(FetchDescriptor<ReadingFact>()) }
+        return FactsInput(rows: rows.map { FactInput(id: $0.id, contentKey: $0.contentKey, payload: $0.payload) }, clears: clears)
+    }
     func visibleFacts(key: String? = nil, session: String? = nil) throws -> [[String: Any]] {
         try requireStatisticsReadable(book: key, session: session)
-        let clears = try modelContext.fetch(FetchDescriptor<StatisticsClear>()).compactMap { try? decode(ClearValue.self, $0.payload) }
-        var groups: [String: [ReadingFact]] = [:], facts: [[String: Any]] = []
-        let rows: [ReadingFact]
-        if let key { rows = try modelContext.fetch(FetchDescriptor<ReadingFact>(predicate: #Predicate { $0.contentKey == key })) }
-        else { rows = try modelContext.fetch(FetchDescriptor<ReadingFact>()) }
-        for row in rows { groups[row.id, default: []].append(row) }
-        for copies in groups.values {
-            // An unknown sibling must not be hidden by the order CloudKit delivered duplicates.
-            guard copies.allSatisfy({ (try? UserSyncJSON.validateFact($0.payload, id: $0.id)) != nil }), let row = copies.first else {
-                UserSyncJSON.quarantined("ReadingFact"); continue
-            }
-            var value = try JSONSerialization.jsonObject(with: Data(row.payload.utf8)) as! [String: Any]
-            let slice = value["slice"] as! [String: Any]
-            if let session, slice["session_id"] as? String != session { continue }
-            let start = (slice["started_ms"] as! NSNumber).int64Value
-            value["content_key"] = row.contentKey
-            if clears.contains(where: { ($0.book == nil || $0.book == row.contentKey) && ($0.session == nil || $0.session == slice["session_id"] as? String) && ($0.ids.contains(row.id) || start <= $0.through) }) { continue }
-            facts.append(value)
-        }
-        return facts
+        return try factsInput(keys: key.map { [$0] }).visible(session: session)
     }
     func clear(book: String?, session: String?, newGeneration: UInt64? = nil) throws {
         try transaction {

@@ -14,6 +14,8 @@ final class ReaderSession {
     var anchor: UInt64 = 0
     var displayAnchor: UInt64?
     var showingCover = true
+    private var openedTask: Task<Void, Never>?
+    private var openedAttempt: UUID?
     var hasEnteredBody = false
     var hasLocalReadingInteraction = false
     var continuation: ReadingContinuationCandidate?
@@ -175,6 +177,14 @@ final class ReaderSession {
         Task { await service.systemReadingBegan(id) }
     }
 
+    func bodyDidDisplay() {
+        guard !isLeaving, let attempt = opening.request?.id, openedAttempt != attempt,
+              let id = readingID, book != nil else { return }
+        openedAttempt = attempt
+        let at = Int64(Date().timeIntervalSince1970 * 1000)
+        openedTask = Task { [service] in try? await service.recordBookOpened(id, at: at) }
+    }
+
     func beganReadingInteraction() { hasLocalReadingInteraction = true }
 
     func flush() async {
@@ -218,7 +228,7 @@ final class ReaderSession {
         pendingChapterAnchor = nil
         navigating = false
         error = nil
-        let task = Task { await flush(); await StatisticsWriter.shared.drain(); await service.scheduleSystemReadingCatalog(immediate: true) }
+        let task = Task { await openedTask?.value; await flush(); await StatisticsWriter.shared.drain(); await service.scheduleSystemReadingCatalog(immediate: true) }
         leaveTask = task
         return task
     }

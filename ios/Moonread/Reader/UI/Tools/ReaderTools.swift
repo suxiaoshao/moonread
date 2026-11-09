@@ -92,6 +92,7 @@ final class ReaderToolsModel {
     private var bookID: String?
     private var currentChapter: UInt64 = 0
     private var chapterGeneration = 0
+    private var chapterTask: Task<Void, Never>?
     private var notesGeneration = 0
     private var searchGeneration = 0
     private var job: SearchJob?
@@ -146,7 +147,7 @@ final class ReaderToolsModel {
         guard !isLeaving else { return }
         let changed = self.bookID != bookID
         if changed {
-            cancelSearchJob(); self.bookID = bookID
+            cancelSearchJob(); chapterTask?.cancel(); chapterTask = nil; chapterGeneration += 1; loadingChapters = false; self.bookID = bookID
             chapters = []; allChapters = []; collapsedVolumes = []; chapterFilter = ""
             clearNoteSelection(); selectingNotes = false; noteSnapshot = nil
             notes = []; notesKind = nil; noteLocations = [:]; notesLoadError = nil; hits = []; query = ""
@@ -155,10 +156,12 @@ final class ReaderToolsModel {
         self.currentChapter = currentChapter
         if preservingPosition && !changed {
             if allChapters.isEmpty { await refreshChapters(jumpTo: currentChapter) }
+            guard !Task.isCancelled, !isLeaving, self.bookID == bookID else { return }
             await loadNotes(reset: true, preservingCount: notes.count)
             return
         }
         await refreshChapters(jumpTo: currentChapter)
+        guard !Task.isCancelled, !isLeaving, self.bookID == bookID else { return }
         await loadNotes(reset: true)
     }
 
@@ -219,19 +222,25 @@ final class ReaderToolsModel {
     }
 
     func refreshChapters(jumpTo offset: UInt64? = nil) async {
-        guard !isLeaving, let id = bookID else { return }
-        chapterGeneration += 1
+        guard !isLeaving, !Task.isCancelled, let id = bookID else { return }
+        chapterTask?.cancel(); chapterGeneration += 1
         let generation = chapterGeneration
         loadingChapters = true
-        defer { if generation == chapterGeneration { loadingChapters = false } }
-        do {
-            let value = try await service.chapters(id)
-            guard !isLeaving, !Task.isCancelled, id == bookID, generation == chapterGeneration else { return }
-            allChapters = value.items
-            chapterComplete = value.isComplete
-            if let offset { showChapter(offset) }
-            else { updateChapterRows() }
-        } catch { if !Task.isCancelled && generation == chapterGeneration { self.error = ReaderMessages.error(error) } }
+        let task = Task { [weak self, service] in
+            defer { if let self, generation == self.chapterGeneration { self.loadingChapters = false; self.chapterTask = nil } }
+            do {
+                let value = try await service.chapters(id)
+                guard let self, !self.isLeaving, !Task.isCancelled, id == self.bookID, generation == self.chapterGeneration else { return }
+                self.allChapters = value.items; self.chapterComplete = value.isComplete
+                if let offset { self.showChapter(offset) } else { self.updateChapterRows() }
+            } catch is CancellationError { }
+            catch {
+                guard let self, !self.isLeaving, !Task.isCancelled, generation == self.chapterGeneration else { return }
+                self.error = ReaderMessages.error(error)
+            }
+        }
+        chapterTask = task
+        await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
 
     func loadNotes(reset: Bool, preservingCount: Int = 0) async {
@@ -317,7 +326,8 @@ final class ReaderToolsModel {
     func leave() {
         isLeaving = true
         stopSearch()
-        chapterGeneration += 1; notesGeneration += 1
+        chapterTask?.cancel(); chapterTask = nil
+        chapterGeneration += 1; notesGeneration += 1; loadingChapters = false
         clearNoteSelection(); selectingNotes = false; noteSnapshot = nil
         bookID = nil
         deletedIDs = nil

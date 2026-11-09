@@ -408,8 +408,14 @@ impl ReaderCore {
         let db = self.read_lock()?;
         let mut statement = db.prepare(&format!(
             "WITH recent_positions AS (
-                SELECT * FROM user_positions
-                WHERE last_read>0 AND COALESCE(recent_visible,1)=1
+                SELECT p.content_key,p.position_utf8,p.last_read,p.recent_visible,
+                    COALESCE(o.preferred_file_id,p.preferred_file_id) preferred_file_id,
+                    COALESCE(o.opened_ms,p.last_read) recent_order
+                FROM user_positions p LEFT JOIN user_opened o ON o.content_key=p.content_key
+                WHERE (p.last_read>0 OR o.opened_ms>0) AND COALESCE(p.recent_visible,1)=1
+                UNION ALL
+                SELECT o.content_key,0,0,1,o.preferred_file_id,o.opened_ms
+                FROM user_opened o WHERE o.opened_ms>0 AND NOT EXISTS(SELECT 1 FROM user_positions p WHERE p.content_key=o.content_key)
             ), ranked AS (
                 SELECT f.id,f.shelf_id,s.name shelf_name,f.relative_path,f.parent_path,f.name,
                     f.directory,f.size,f.modified,f.needs_download,
@@ -419,7 +425,7 @@ impl ReaderCore {
                         AND c.start_utf8<=p.position_utf8 ORDER BY c.start_utf8 DESC LIMIT 1) chapter_title,
                     0 child_book_count,p.last_read,COALESCE(p.preferred_file_id=f.id,0) preferred,
                     m.value,p.content_key,
-                    ROW_NUMBER() OVER (PARTITION BY p.content_key ORDER BY {source_order}) chosen
+                    ROW_NUMBER() OVER (PARTITION BY p.content_key ORDER BY {source_order}) chosen,p.recent_order
                 FROM recent_positions p
                 JOIN file_identities fi ON fi.content_sha256=p.content_key
                 JOIN library_files f ON f.id=fi.file_id
@@ -429,7 +435,7 @@ impl ReaderCore {
                 LEFT JOIN book_metadata m ON m.content_sha=fi.content_sha256
             )
             SELECT * FROM ranked WHERE chosen=1
-            ORDER BY last_read DESC,preferred DESC,id LIMIT ?1",
+            ORDER BY recent_order DESC,preferred DESC,id LIMIT ?1",
             source_order = PREFERRED_SOURCE_ORDER,
         ))?;
         Ok(statement

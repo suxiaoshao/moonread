@@ -28,6 +28,7 @@ import XCTest
     func testCompleteBackupPreservesAuthorityPayloadsAndRepeatedMergeIsIdempotent() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
         let source = f.formal, key = f.book.contentSha256
+        try await value(source, "opened/" + key, "123456", token: "opened")
         try await receiveBackupPosition(positionRecord(key: key, token: "original-clock", offset: 12), key: key, store: source)
         try await value(source, "metadata/" + key + "/author", UserSyncJSON.encode("Original Author"), token: "author")
         for (offset, title, excluded) in [(UInt64(0), "Manual title", false), (9, "Excluded", true)] {
@@ -420,8 +421,9 @@ import XCTest
         XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: preview.staging.directory.path), "Keep the current preview staging")
         let refreshed = expectation(forNotification: .cloudDataReceived, object: nil)
+        let metadataChanged = expectation(forNotification: .bookMetadataChanged, object: nil)
         try await service.importReadingBackup(preview)
-        await fulfillment(of: [refreshed], timeout: 2)
+        await fulfillment(of: [refreshed, metadataChanged], timeout: 2)
     }
     func testStatisticsFailureDropsBatchReleasesLeaseAndAllowsDeletionAfterClosing() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }

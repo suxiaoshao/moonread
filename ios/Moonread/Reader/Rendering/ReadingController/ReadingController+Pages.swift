@@ -101,6 +101,7 @@ extension ReadingController {
     }
 
     func reportCover(_ visible: Bool) {
+        if !visible { Task { @MainActor [weak self] in self?.awaitBodyDisplay() } }
         guard isCoverVisible != visible else { return }
         isCoverVisible = visible
         visibleTextViews.forEach(configureAccessibility)

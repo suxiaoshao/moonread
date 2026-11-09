@@ -46,7 +46,7 @@ extension AppDataService {
     func systemDerivedCover(_ cover: BookCoverAsset) async -> SystemReadingDerivedCover? {
         for pixels in [384, 274, 192] {
             guard !Task.isCancelled else { return nil }
-            guard let image = try? await coverImage(cover, pixels: pixels), let cgImage = image.cgImage else { continue }
+            guard let image = try? await coverImage(cover, pixels: pixels, exactSize: true), let cgImage = image.cgImage else { continue }
             let value = await Task.detached(priority: .utility) { SystemReadingDerivedCover.encode(cgImage, sha: cover.sha256, pixels: pixels) }.value
             if let value, value.data.count <= 128 * 1024 || pixels == 192 { return value }
         }
@@ -93,7 +93,8 @@ extension AppDataService {
             return .init(light: light.colors == nil ? nil : tokens(light), dark: dark.colors == nil ? nil : tokens(dark), preferredDark: preferredDark)
         }
     }
-    func systemWidgetStatistics(now: Date = Date(), calendar: Calendar = .current) async -> SystemReadingSnapshot.Statistics {
+    func systemWidgetStatistics(now: Date = Date(), calendar: Calendar = .current) async throws -> SystemReadingSnapshot.Statistics {
+        try Task.checkCancellation()
         let today = StatisticsDates.day(now, calendar: calendar)
         let until = calendar.dateInterval(of: .day, for: now)?.end ?? now
         let enabled = statisticsPreferences().enabled
@@ -104,12 +105,16 @@ extension AppDataService {
                   currentStreakDays: summary?.currentStreakDays, days: summary?.days.map { .init(localDay: $0.day, durationMs: $0.durationMs) })
         }
         do {
-            if try await statisticsCompatibilityNotice() != nil { return result("incomplete") }
+            let notice = try await statisticsCompatibilityNotice()
+            try Task.checkCancellation()
+            if notice != nil { return result("incomplete") }
             let week = StatisticsDates.systemReadingBounds(week: true, now: now, calendar: calendar)
-            let query = try await effectiveQuery(facts: true, scope: "system-widget-statistics")
+            let query = try await effectiveQuery(facts: true, scope: "system-widget-statistics", fields: [])
             let summary = try await Task.detached(priority: .utility) { try query.statisticsWidgetSummary(today: today, weekStart: week.lowerBound) }.value
+            try Task.checkCancellation()
             return result(!enabled && !summary.hasReadingHistory ? "notEnabled" : "ready", summary: summary)
-        } catch let error as UserSyncCompatibilityError where error.reason == .newerFormat { return result("incomplete") }
-        catch { return result("unavailable") }
+        } catch let error as UserSyncCompatibilityError where error.reason == .newerFormat { try Task.checkCancellation(); return result("incomplete") }
+        catch is CancellationError { throw CancellationError() }
+        catch { try Task.checkCancellation(); return result("unavailable") }
     }
 }

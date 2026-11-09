@@ -140,7 +140,7 @@ v1 写入所有字段，Optional 的 nil 显式写 `null`。读取同时检查**
 
 批注 `content:null` 是删除 tombstone，`mergedInto:null` 是未合并；`relatedMarks` 总是数组。统计清除的 `book:null` / `session:null` 才表示不限定该维度，缺键不能解释为全局。位置内层字段为 content_key/offset/source_hint（历史缺失来源线索按 nil 读取）；章节为 content_key/offset/title/level/excluded；批注 content 为 start/end/excerpt/note。slice、exposures、cover、调色板及颜色对象逐层使用当前声明的完整字段集合；UserCover 的 bytes 不加 envelope，约定同 id 字节不可变。不支持的封面格式显示占位并保留引用与原字节。
 
-v1 key 白名单：`position/{contentKey}`、`chapter/{contentKey}/{offset}`、`palette/{id}`、`metadata/{sha}/{author,synopsis,status,cover,tag-*}`。遍历、投影、批量操作和 pending 转移不处理未知 key；保留其原始记录，metadata 只投影已知属性。内层 null 仅用于声明允许删除的章节、封面、标签、调色板；author/synopsis/status 必须是字符串。
+v1 key 白名单：`position/{contentKey}`、`opened/{contentKey}`（1.6 起的可缺省最近打开毫秒时间，JSON Int64）、`chapter/{contentKey}/{offset}`、`palette/{id}`、`metadata/{sha}/{author,synopsis,status,cover,tag-*}`。遍历、投影、批量操作和 pending 转移不处理未知 key；保留其原始记录，metadata 只投影已知属性。最近打开复用既有 UserValue/StoredValue LWW 与完整备份，不修改位置 payload 或 SwiftData schema；无 opened 值的已发布 1.5 数据保持原阅读时间顺序，pending 晋升沿同一身份与值裁决入口处理。内层 null 仅用于声明允许删除的章节、封面、标签、调色板；author/synopsis/status 必须是字符串。
 
 隔离不修改、不重编码或删除原 payload，不选择一个旧的可理解候选把它遮住，也不当成普通冲突自动解决：
 

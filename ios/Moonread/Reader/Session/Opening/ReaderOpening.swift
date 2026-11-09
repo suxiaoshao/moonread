@@ -8,8 +8,9 @@ struct OpeningRequest: Hashable, Sendable {
     let routeRequested: TimeInterval
     let tap: TimeInterval?
     let expectedContentSHA: String?
-    init(target: ReaderRoute, tap: TimeInterval? = nil, expectedContentSHA: String? = nil, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
-        id = UUID(); self.expectedContentSHA = expectedContentSHA; self.target = target; routeRequested = now; self.tap = tap
+    let metadataHint: BookMetadata?
+    init(target: ReaderRoute, tap: TimeInterval? = nil, expectedContentSHA: String? = nil, metadataHint: BookMetadata? = nil, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        id = UUID(); self.metadataHint = metadataHint; self.expectedContentSHA = expectedContentSHA; self.target = target; routeRequested = now; self.tap = tap
         ReaderOpenDiagnostics.begin(self)
     }
 }

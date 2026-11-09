@@ -246,6 +246,25 @@ fn recent_entries_include_index_only_and_null_visibility() {
     assert_eq!(recent[0].book_id, None);
     assert_eq!(recent[0].content_sha256.as_deref(), Some("indexed-sha"));
     assert_eq!(recent[0].position_utf8, 50);
+    core.read_lock().unwrap().execute_batch("INSERT INTO user_opened VALUES('prepared-sha',100,NULL); INSERT INTO user_opened VALUES('hidden-sha',200,NULL);").unwrap();
+    let opened = core.recent_library_entries(10).unwrap();
+    assert_eq!(
+        opened.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+        ["prepared-file", "indexed-file"]
+    );
+    assert_eq!(
+        opened[0].position_utf8, 25,
+        "Opening does not overwrite the saved reading position"
+    );
+    assert_eq!(opened[0].last_read, 10, "Opening has a distinct timestamp");
+    core.read_lock()
+        .unwrap()
+        .execute_batch("DELETE FROM user_positions WHERE content_key='prepared-sha';")
+        .unwrap();
+    let unopened_position = core.recent_library_entries(10).unwrap();
+    assert_eq!(unopened_position[0].id, "prepared-file");
+    assert_eq!(unopened_position[0].position_utf8, 0);
+    assert_eq!(unopened_position[0].last_read, 0);
 }
 
 #[test]

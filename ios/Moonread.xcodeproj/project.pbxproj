@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E22800000000000000000001 /* UserDataQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = E22800000000000000000002; };
         F18300000000000000000003 /* ThemedGroupedList.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18300000000000000000004; };
         F18300000000000000000001 /* ReaderFontList.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18300000000000000000002; };
         F15200000000000000000005 /* ReaderBuiltinFonts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F15200000000000000000006; };
@@ -405,6 +406,7 @@ CA0FCD9B82134E7091B5CD9F /* ModelDirectoryDecoding.swift in Sources */ = {isa = 
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		E22800000000000000000002 /* UserDataQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDataQuery.swift; sourceTree = "<group>"; };
         F18300000000000000000004 /* ThemedGroupedList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemedGroupedList.swift; sourceTree = "<group>"; };
         F18300000000000000000002 /* ReaderFontList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderFontList.swift"; sourceTree = "<group>"; };
         F15200000000000000000006 /* ReaderBuiltinFonts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderBuiltinFonts.swift"; sourceTree = "<group>"; };
@@ -1215,6 +1217,7 @@ D35000000000000000000001,
 				E0D371B9C6A60C0708C4C049 /* UserDataStore+Transfer.swift */,
 				DF3479613D2459E809884460 /* UserDataStore+Values.swift */,
 				C22000000000000000000002 /* UserDataService.swift */,
+				E22800000000000000000002 /* UserDataQuery.swift */,
 				D50620000000000000000001 /* UserDataBackup.swift */,
 				FF2000000000000000000001 /* UserSyncJSON.swift */,
 				C22000000000000000000003 /* UserThemes.swift */,
@@ -2012,6 +2015,7 @@ E51000000000000000000009,D41000000000000000000001,
 				14DD958CABDFDE3272DDD374 /* LibraryModel+Discovery.swift in Sources */,
 				173E9176A10B09A7DC9BABE4 /* LibraryRoutes.swift in Sources */,
 				A2F368BD3C3638D87A341C2F /* UserDataStore+Projection.swift in Sources */,
+				E22800000000000000000001 /* UserDataQuery.swift in Sources */,
 				20396341363C7FE0150EE103 /* UserDataStore+Statistics.swift in Sources */,
 				0EC6C0D2525AD80826CE3AA6 /* UserDataStore+Annotations.swift in Sources */,
 				E6D7C1E870611C3861CBCD58 /* UserDataStore+Values.swift in Sources */,

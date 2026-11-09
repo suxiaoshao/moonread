@@ -161,35 +161,91 @@ extension AppDataService {
         guard SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == cover.sha256 else { throw CocoaError(.fileReadCorruptFile) }
         return bytes
     }
-    func coverImage(_ cover: BookCoverAsset, pixels: Int) async throws -> UIImage? {
-        let main = try coverURL(cover)
-        guard pixels > 0, pixels <= 4096 else { throw CocoaError(.fileReadCorruptFile) }
-        let caches = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-            .appendingPathComponent("\(dataDirectoryName)/Covers", isDirectory: true)
-        try FileManager.default.createDirectory(at: caches, withIntermediateDirectories: true)
+    func coverImage(_ cover: BookCoverAsset, pixels: Int, exactSize: Bool = false) async throws -> UIImage? {
+        let configuration = userCloudConfigurationRevision
+        let image = try await coverResources.image(cover, pixels: exactSize ? pixels : CoverImageLoader.bucket(pixels), allowLarger: !exactSize, directory: dataDirectoryName,
+            scope: configuration, attachment: { [self] in try await userStore().cover(cover.id) })
+        guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
+        return image
+    }
+
+}
+
+
+/// Process-local, disposable resource cache. UI, widgets and Spotlight share this
+/// path; SwiftData is consulted only when the immutable source asset is absent.
+actor CoverResourceLoader {
+    private struct Ready { let image: UIImage; let cost: Int; var used: UInt64 }
+    private var ready: [String: Ready] = [:]
+    private var running: [String: (UUID, Task<UIImage?, Error>)] = [:]
+    private var tick: UInt64 = 0
+    private var activeScope: UUID?
+    private let budget = 32 * 1024 * 1024
+    func image(_ cover: BookCoverAsset, pixels: Int, allowLarger: Bool = true, directory: String, scope: UUID,
+               attachment: @escaping @Sendable () async throws -> Data?) async throws -> UIImage? {
+        if activeScope != scope {
+            activeScope = scope; ready.removeAll()
+            for (_, task) in running.values { task.cancel() }; running.removeAll()
+        }
+        let key = CoverImageLoader.key(cover, pixels, exact: true)
+        tick &+= 1
+        for size in (allowLarger ? [160, 192, 274, 384, 600, 1200, 2400, 4096].filter { $0 >= pixels } : [pixels]) {
+            let candidate = CoverImageLoader.key(cover, size, exact: true)
+            if var value = ready[candidate] { value.used = tick; ready[candidate] = value; return value.image }
+        }
+        if let (_, task) = running[key] { return try await task.value }
+        let token = UUID()
+        let task = Task { try await self.read(cover, pixels: pixels, directory: directory, attachment: attachment) }
+        running[key] = (token, task)
+        do {
+            let image = try await task.value
+            guard activeScope == scope, running[key]?.0 == token else { throw CancellationError() }
+            running[key] = nil
+            if let image {
+                let cost = image.cgImage.map { $0.bytesPerRow * $0.height } ?? pixels * pixels * 4
+                tick &+= 1; ready[key] = Ready(image: image, cost: cost, used: tick)
+                while ready.count > 64 || ready.values.reduce(0, { $0 + $1.cost }) > budget {
+                    guard let oldest = ready.min(by: { $0.value.used < $1.value.used })?.key else { break }
+                    ready[oldest] = nil
+                }
+            }
+            return image
+        } catch { if running[key]?.0 == token { running[key] = nil }; throw error }
+    }
+    private func read(_ cover: BookCoverAsset, pixels: Int, directory: String,
+                      attachment: @escaping @Sendable () async throws -> Data?) async throws -> UIImage? {
+        guard pixels > 0, pixels <= 4096, UUID(uuidString: cover.id) != nil,
+              ["jpg", "png"].contains(cover.extension), (try? parseSha256(value: cover.sha256)) != nil else { throw CocoaError(.fileReadCorruptFile) }
+        let manager = FileManager.default
+        let root = try manager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        let main = root.appendingPathComponent(directory).appendingPathComponent("Assets/Covers/\(cover.id)-\(cover.sha256).\(cover.extension)")
+        let caches = try manager.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+            .appendingPathComponent("\(directory)/Covers", isDirectory: true)
+        try manager.createDirectory(at: caches, withIntermediateDirectories: true)
         let cached = caches.appendingPathComponent("\(cover.id)-\(cover.sha256)-\(pixels).\(cover.extension)")
         if let image = UIImage(contentsOfFile: cached.path) { return image }
         try Task.checkCancellation()
-        if !FileManager.default.fileExists(atPath: main.path), let bytes = try await userStore().cover(cover.id) {
+        if !manager.fileExists(atPath: main.path), let bytes = try await attachment() {
             try Task.checkCancellation()
             guard SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == cover.sha256 else { return nil }
+            try manager.createDirectory(at: main.deletingLastPathComponent(), withIntermediateDirectories: true)
             try bytes.write(to: main, options: .atomic)
         }
-        let url = FileManager.default.fileExists(atPath: main.path) ? main : coverDraftURL(cover)
-        return await Task.detached(priority: .utility) {
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
-                  let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
-                      kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: pixels] as CFDictionary) else { return nil as UIImage? }
-            guard !Task.isCancelled else { return nil }
-            let bytes = NSMutableData()
-            if let output = CGImageDestinationCreateWithData(bytes, (cover.extension == "png" ? UTType.png : .jpeg).identifier as CFString, 1, nil) {
-                CGImageDestinationAddImage(output, image, nil)
-                if CGImageDestinationFinalize(output) { try? (bytes as Data).write(to: cached, options: .atomic) }
-            }
-            return UIImage(cgImage: image)
-        }.value
+        let draft = manager.temporaryDirectory.appendingPathComponent("\(directory)-CoverDrafts")
+            .appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
+        let url = manager.fileExists(atPath: main.path) ? main : draft
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
+              let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: pixels,
+                kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else { return nil }
+        try Task.checkCancellation()
+        let bytes = NSMutableData()
+        if let output = CGImageDestinationCreateWithData(bytes, (cover.extension == "png" ? UTType.png : .jpeg).identifier as CFString, 1, nil) {
+            CGImageDestinationAddImage(output, image, nil)
+            if CGImageDestinationFinalize(output) { try? (bytes as Data).write(to: cached, options: .atomic) }
+        }
+        return UIImage(cgImage: image)
     }
-
 }
 
 /// Presentation and retries belong to the cover domain, shared by shelf/detail
@@ -213,7 +269,7 @@ private final class CoverObservationTokens: @unchecked Sendable {
     var values: [NSObjectProtocol] = []
     deinit { for observer in values { NotificationCenter.default.removeObserver(observer) } }
 }
-@MainActor final class CoverImageLoader {
+@MainActor @Observable final class CoverImageLoader {
     static let shared = CoverImageLoader()
     private struct Entry {
         let cover: BookCoverAsset
@@ -224,26 +280,33 @@ private final class CoverObservationTokens: @unchecked Sendable {
         var generation = UUID()
         var retryAfterLoad = false
     }
-    private var entries: [String: Entry] = [:]
+    @ObservationIgnored private var entries: [String: Entry] = [:]
+    private let completed = NSCache<NSString, CoverPresentation>()
+    private(set) var scope = UUID()
     private let observers = CoverObservationTokens()
     private let load: @Sendable (BookCoverAsset, Int) async throws -> UIImage?
     init(load: @escaping @Sendable (BookCoverAsset, Int) async throws -> UIImage? = { cover, pixels in
         try await AppDataService.shared.coverImage(cover, pixels: pixels)
     }) {
         self.load = load
+        completed.totalCostLimit = 24 * 1024 * 1024; completed.countLimit = 64
+        observers.values.append(NotificationCenter.default.addObserver(forName: .readingContinuationInvalidated, object: nil, queue: nil) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.resetScope() }
+        })
         for name in [ModelContext.didSave, .NSPersistentStoreRemoteChange, .cloudDataReceived, .bookMetadataChanged] {
             observers.values.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { @Sendable [weak self] _ in
                 Task { @MainActor [weak self] in self?.attachmentsChanged() }
             })
         }
     }
-    static func key(_ cover: BookCoverAsset, _ pixels: Int) -> String {
-        "\(cover.id)-\(cover.sha256)-\(cover.extension)-\(pixels)"
+    nonisolated static func bucket(_ pixels: Int) -> Int { [160, 384, 600, 1200, 2400, 4096].first { $0 >= pixels } ?? pixels }
+    nonisolated static func key(_ cover: BookCoverAsset, _ pixels: Int, exact: Bool = false) -> String {
+        "\(cover.id)-\(cover.sha256)-\(cover.extension)-\(exact ? pixels : bucket(pixels))"
     }
-    func presentation(_ cover: BookCoverAsset, pixels: Int) -> CoverPresentation? { entries[Self.key(cover, pixels)]?.presentation }
+    func presentation(_ cover: BookCoverAsset, pixels: Int) -> CoverPresentation? { entries[Self.key(cover, pixels)]?.presentation ?? completed.object(forKey: Self.key(cover, pixels) as NSString) }
     func subscribe(_ cover: BookCoverAsset, pixels: Int) -> CoverSubscription {
         let key = Self.key(cover, pixels), token = UUID()
-        if entries[key] == nil { entries[key] = Entry(cover: cover, pixels: pixels, presentation: CoverPresentation(), subscribers: []) }
+        if entries[key] == nil { entries[key] = Entry(cover: cover, pixels: Self.bucket(pixels), presentation: completed.object(forKey: key as NSString) ?? CoverPresentation(), subscribers: []) }
         entries[key]!.subscribers.insert(token)
         start(key)
         return CoverSubscription(key: key, presentation: entries[key]!.presentation) { [weak self] in
@@ -253,8 +316,19 @@ private final class CoverObservationTokens: @unchecked Sendable {
     private func release(_ key: String, token: UUID) {
         guard var entry = entries[key] else { return }
         entry.subscribers.remove(token)
-        if entry.subscribers.isEmpty { entry.task?.cancel(); entries[key] = nil }
+        if entry.subscribers.isEmpty {
+            if let image = entry.presentation.image {
+                completed.setObject(entry.presentation, forKey: key as NSString,
+                    cost: image.cgImage.map { $0.bytesPerRow * $0.height } ?? 0)
+            }
+            entry.task?.cancel(); entries[key] = nil
+        }
         else { entries[key] = entry }
+    }
+    private func resetScope() {
+        scope = UUID(); completed.removeAllObjects()
+        for entry in entries.values { entry.task?.cancel(); entry.presentation.image = nil }
+        entries.removeAll()
     }
     func attachmentsChanged() {
         for key in Array(entries.keys) {
@@ -281,6 +355,22 @@ private final class CoverObservationTokens: @unchecked Sendable {
     }
 }
 
+/// A successful image belongs to a book and data scope, not to the next asset request.
+struct BookCoverDisplay {
+    private var book: String?
+    private var scope: UUID?
+    private var previous: UIImage?
+    mutating func accept(book: String, scope: UUID, asset: BookCoverAsset?, ready: UIImage?) {
+        if self.book != book || self.scope != scope || asset == nil { previous = nil }
+        self.book = book; self.scope = scope
+        if let ready, asset != nil { previous = ready }
+    }
+    func image(book: String, scope: UUID, asset: BookCoverAsset?, ready: UIImage?) -> UIImage? {
+        guard asset != nil else { return nil }
+        return ready ?? (self.book == book && self.scope == scope ? previous : nil)
+    }
+}
+
 /// App-side asset loading only. Display priority and typography live in the
 /// same shared SystemBookCover consumed by widgets and Spotlight.
 struct BookCoverView: View {
@@ -292,18 +382,34 @@ struct BookCoverView: View {
     var coverLoader = CoverImageLoader.shared
     var pixels: Int? = nil
     var contentMode: ContentMode = .fill
+    @Environment(\.displayScale) private var displayScale
+    @State private var measuredPixels: Int?
+    private var targetPixels: Int { CoverImageLoader.bucket(pixels ?? measuredPixels ?? (compact ? 384 : 600)) }
     @State private var subscription: CoverSubscription?
-    private var image: UIImage? {
+    @State private var display = BookCoverDisplay()
+    private var bookIdentity: String { contentSHA256 ?? title }
+    private var currentImage: UIImage? {
         guard let cover else { return nil }
-        let key = CoverImageLoader.key(cover, pixels ?? (compact ? 160 : 600))
-        return (subscription?.key == key ? subscription?.presentation : coverLoader.presentation(cover, pixels: pixels ?? (compact ? 160 : 600)))?.image
+        let key = CoverImageLoader.key(cover, targetPixels)
+        return (subscription?.key == key ? subscription?.presentation : coverLoader.presentation(cover, pixels: targetPixels))?.image
+    }
+    private var image: UIImage? {
+        display.image(book: bookIdentity, scope: coverLoader.scope, asset: cover, ready: currentImage)
     }
     var body: some View {
         SystemBookCover(title: title, compact: compact, contentSHA256: contentSHA256, author: author, userImage: image, contentMode: contentMode)
-            .task(id: cover.map { CoverImageLoader.key($0, pixels ?? (compact ? 160 : 600)) }) {
-                subscription = nil
-                guard !Task.isCancelled, let cover else { return }
-                subscription = coverLoader.subscribe(cover, pixels: pixels ?? (compact ? 160 : 600))
+            .task(id: "\(bookIdentity)-\(coverLoader.scope)-" + (cover.map { CoverImageLoader.key($0, targetPixels) } ?? "none")) {
+                display.accept(book: bookIdentity, scope: coverLoader.scope, asset: cover, ready: currentImage)
+                subscription = cover.map { coverLoader.subscribe($0, pixels: targetPixels) }
+                display.accept(book: bookIdentity, scope: coverLoader.scope, asset: cover, ready: currentImage)
+            }
+            .onChange(of: currentImage) { _, image in
+                display.accept(book: bookIdentity, scope: coverLoader.scope, asset: cover, ready: image)
+            }
+            .onGeometryChange(for: Int.self) { proxy in
+                Int(ceil(max(proxy.size.width, proxy.size.height) * displayScale))
+            } action: { value in
+                if value > 0, pixels == nil { measuredPixels = value }
             }
             .onDisappear { subscription = nil }
     }

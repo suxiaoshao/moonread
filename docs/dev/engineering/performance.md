@@ -14,7 +14,9 @@
 
 ## 单书投影与保存
 
-`UserDataStore` 按 content SHA/pending key 取单书所需位置、资料、章节覆盖；首次 `openingFrame` 合并 snapshot/frame，使用同一次不可变 ReaderQuery。冷首页确需的批量投影可按输入版本复用；目录只补相关子树用户数据，普通最近列表先读位置索引。需要 facts 的统计/章节查询仍有全量成本，列为下方候选。
+`UserDataStore` 按 content SHA/pending key 取单书所需位置、资料、章节覆盖；首次 `openingFrame` 合并 snapshot/frame，使用同一次不可变 ReaderQuery。冷首页确需的批量投影可按输入版本复用；目录只补相关子树用户数据，普通最近列表先读位置/打开时间索引。单书章节 facts 与资料共同限定正式/pending 范围；统计概览只取资料/事实，小组件统计只取事实。只有相关书/领域的写入使相应缓存失效，未知云导入保守全局失效。原 ModelActor 只提取 Sendable 值；事实解码/过滤与 JSON 组装在 detached 任务执行，同版本请求合并，版本变化拒绝缓存与发布，不增加只读 context。
+
+封面 ready 缓存与订阅分离，资源 actor 有界缓存 32MiB/64 项、视图完成呈现缓存 24MiB/64 项；尺寸按固定档位复用，首页预热与实际小封面使用相同档位。同书新图就绪前保留旧成功图，明确删除立即转预设；主 App 的小组件/Spotlight 也经过同一资源读取路径，纯进度更新不重绘同输入缩略图。
 
 位置压缩移到该 key 写入，读路径不写库；CloudKit 导入失效缓存，已知 keys 可按书处理，否则下次该书写入再压缩。缓存要覆盖本机写入、远端导入、pending→SHA、统计开关/清理代次、最近隐藏和首选文件变化；查询版本一致，不能缓存混合代次结果。query 保留独立不可变 TEMP 输入，不换回共享可变投影。
 

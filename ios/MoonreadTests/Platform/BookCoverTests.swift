@@ -70,6 +70,14 @@ final class BookCoverReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(unchangedCover, cover, "An exported JPEG must reuse the saved asset without recompression")
     let persistedCover = try await service.coverImage(cover, pixels: 321)
     XCTAssertNotNil(persistedCover)
+    async let first = service.coverImage(cover, pixels: 321)
+    async let second = service.coverImage(cover, pixels: 321)
+    let images = try await (first, second)
+    XCTAssertTrue(images.0 === images.1)
+    XCTAssertTrue(images.0 === persistedCover)
+    let exact = try await service.coverImage(cover, pixels: 80, exactSize: true)
+    XCTAssertLessThanOrEqual(try XCTUnwrap(exact?.cgImage).width, 80)
+    XCTAssertLessThanOrEqual(try XCTUnwrap(exact?.cgImage).height, 80)
     let cancelled = try await service.makeCover(data)
     await service.discardCoverDraft(cancelled)
     let discarded = try await service.coverImage(cancelled, pixels: 123)
@@ -101,12 +109,36 @@ final class BookCoverUserDataTests: UserDataFixture {
     one = nil
     two = nil
     await Task.yield()
-    let replacement = loader.subscribe(new, pixels: 320)
-    await awaitState { replacement.presentation.phase == .ready }
+    var replacement: CoverSubscription? = loader.subscribe(new, pixels: 320)
+    await awaitState { replacement?.presentation.phase == .ready }
     await probe.release()
     await Task.yield()
     XCTAssertNil(oldPresentation.image)
-    XCTAssertTrue(replacement.presentation.image === image)
+    XCTAssertTrue(replacement?.presentation.image === image)
+    replacement = nil
+    await Task.yield()
+    _ = await probe.calls
+    await Task.yield()
+    var ready: CoverSubscription? = loader.subscribe(new, pixels: 320)
+    let readyPresentation = try XCTUnwrap(ready?.presentation)
+    ready = nil
+    let sameReady = loader.subscribe(new, pixels: 320)
+    XCTAssertTrue(sameReady.presentation === readyPresentation)
+    XCTAssertTrue(sameReady.presentation.image === image)
+    let calls = await probe.calls
+    XCTAssertEqual(calls, 2, "Only the old and new asset load; returning does not read either again")
+    XCTAssertEqual(CoverImageLoader.bucket(320), 384)
+    var display = BookCoverDisplay()
+    let scope = UUID()
+    display.accept(book: "synthetic", scope: scope, asset: old, ready: image)
+    display.accept(book: "synthetic", scope: scope, asset: new, ready: nil)
+    XCTAssertTrue(display.image(book: "synthetic", scope: scope, asset: new, ready: nil) === image,
+      "A pending or failed replacement must not clear the successful image")
+    XCTAssertNil(display.image(book: "other", scope: scope, asset: new, ready: nil))
+    XCTAssertNil(display.image(book: "synthetic", scope: UUID(), asset: new, ready: nil))
+    XCTAssertNil(display.image(book: "synthetic", scope: scope, asset: nil, ready: nil))
+    display.accept(book: "synthetic", scope: scope, asset: nil, ready: nil)
+    XCTAssertNil(display.image(book: "synthetic", scope: scope, asset: new, ready: nil))
     // A completed attachment save wakes the current subscriber without a hosted view.
     do {
 
