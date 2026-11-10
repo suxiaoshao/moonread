@@ -11,19 +11,75 @@ pub enum ImportPhase {
     Failed,
 }
 
+#[derive(Clone, Debug, uniffi::Enum)]
+pub enum PreparationState {
+    Preparing,
+    Importing,
+    Finalizing,
+    Complete,
+    Paused { detail: PauseDetail },
+    Failed { detail: FailureDetail },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum PauseDetail {
+    Unknown,
+    Interrupted,
+    NoActiveWorker,
+}
+
+#[derive(Clone, Debug, uniffi::Enum)]
+pub enum FailureDetail {
+    Reported { error: ReaderError },
+    Unavailable,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ReadablePrefix {
+    Unavailable,
+    Readable,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct ImportByteProgress {
+    pub read: u64,
+    pub total: u64,
+}
+
+impl PreparationState {
+    pub(crate) fn is_complete(&self) -> bool {
+        matches!(self, Self::Complete)
+    }
+
+    fn is_active(&self) -> bool {
+        matches!(self, Self::Preparing | Self::Importing | Self::Finalizing)
+    }
+
+    /// The original flat status still serves the import management boundary.
+    fn legacy_phase(&self) -> ImportPhase {
+        match self {
+            Self::Preparing => ImportPhase::Preparing,
+            Self::Importing => ImportPhase::Importing,
+            Self::Finalizing => ImportPhase::Finalizing,
+            Self::Complete => ImportPhase::Complete,
+            Self::Paused { .. } => ImportPhase::Paused,
+            Self::Failed { .. } => ImportPhase::Failed,
+        }
+    }
+}
+
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct ReadingSnapshot {
     /// For a draft/alias this ID stays stable throughout the reading session.
     pub book: BookInfo,
-    pub phase: ImportPhase,
+    pub preparation: PreparationState,
     pub generation: u64,
-    pub can_read: bool,
+    /// Already committed text may be readable even after a worker fails.
+    pub readable_prefix: ReadablePrefix,
     /// Formal reading activity, including the first body position (offset 0).
     /// Preparing or viewing a cover does not start reading.
     pub has_started: bool,
-    pub source_bytes_read: u64,
-    pub source_byte_count: u64,
-    pub error: Option<ReaderError>,
+    pub byte_progress: ImportByteProgress,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -77,8 +133,7 @@ pub struct ImportControl {
 #[derive(Clone)]
 pub(crate) struct ImportFailure {
     generation: u64,
-    paused: bool,
-    error: ReaderError,
+    preparation: PreparationState,
 }
 
 /// Import lifecycle metadata contains no user position or reading activity.

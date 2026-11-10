@@ -34,7 +34,7 @@ final class AIAuthenticationBookAITests: BookAIFixture {
     let first = await service.saveAPIKey("synthetic-old", for: connection.id)
     XCTAssertTrue(first)
     XCTAssertTrue(service.isLoggedIn(connection))
-    XCTAssertNotNil(service.modelErrors[connection.id])
+    XCTAssertNotNil(service.modelError(connection.id))
     credentials.rejectWrites = true
     let failed = await service.saveAPIKey("synthetic-replacement", for: connection.id)
     XCTAssertFalse(failed)
@@ -46,7 +46,7 @@ final class AIAuthenticationBookAITests: BookAIFixture {
     let written = await service.saveAPIKey("synthetic-replacement", for: connection.id)
     XCTAssertTrue(written)
     XCTAssertNil(service.credentialErrors[connection.id])
-    XCTAssertNotNil(service.modelErrors[connection.id])
+    XCTAssertNotNil(service.modelError(connection.id))
   }
 
   func testCredentialReplacementPersistsResetBeforeDirectoryRefresh() async throws {
@@ -72,7 +72,7 @@ final class AIAuthenticationBookAITests: BookAIFixture {
           .init(id: "manual", name: "Manual", contextWindow: 32000, thinking: [], maxOutput: 16000, isManual: true,
                 directoryOrigin: .account, isListed: true, connectionContextLimit: 8000, connectionOutputLimit: 4000),
         ]
-        try credentials.save(AICredential(accessToken: "synthetic-old", refreshToken: "", expires: .distantFuture, accountID: ""), reference: connection.credentialReference)
+        try credentials.save(AICredentialStorage(accessToken: "synthetic-old", refreshToken: "", expires: .distantFuture, accountID: ""), reference: connection.credentialReference)
         let id = providers.addConnection(connection)
         let path = method == .apiKey ? "/v1/models" : "/api/v1/models/user"
         ChatGPTURLProtocol.fixture.set { request in
@@ -86,7 +86,7 @@ final class AIAuthenticationBookAITests: BookAIFixture {
           keyWrite = Task { await providers.saveAPIKey("synthetic-new", for: id) }
         } else {
           let request = try await auth.beginOpenRouter()
-          providers.loginConnectionID = id; providers.loginStates[id] = .browser(request)
+          providers.loginConnectionID = id; providers.setLoginPresentation(.browser(request), for: id)
           providers.submitAuthorizationCode("synthetic-code", connectionID: id)
         }
         await fulfillment(of: [arrived], timeout: 3)

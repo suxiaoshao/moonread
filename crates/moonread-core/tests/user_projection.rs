@@ -35,14 +35,15 @@ fn temporary_user_inputs_never_persist_in_the_text_database() {
     let (root, core, book) = fixture();
     let query = core.query_snapshot(json!({"positions":[{"content_key":book.content_sha256,"offset":24,"updated":99,"visible":true,"preferred":null}],"metadata":[{"sha":book.content_sha256,"author":"作者","synopsis":"介绍","tags":["月"],"cover":null,"status":"Reading"}]}).to_string()).unwrap();
     assert_eq!(query.book_info(book.id.clone()).unwrap().position_utf8, 24);
-    assert_eq!(
-        query
-            .book_details(Some(book.id.clone()), None)
-            .unwrap()
-            .metadata
-            .author,
-        "作者"
-    );
+    let moonread_core::BookDetailsResult::Identified { details, .. } = query
+        .book_details(moonread_core::BookTarget::Cached {
+            book_id: book.id.clone(),
+        })
+        .unwrap()
+    else {
+        panic!("prepared details")
+    };
+    assert_eq!(details.metadata.author, "作者");
     drop(core);
     let reopened = ReaderCore::new(root.path().join("db").to_string_lossy().into()).unwrap();
     assert_eq!(
@@ -54,16 +55,15 @@ fn temporary_user_inputs_never_persist_in_the_text_database() {
             .position_utf8,
         0
     );
-    assert_eq!(
-        reopened
-            .query_snapshot("{}".into())
-            .unwrap()
-            .book_details(Some(book.id), None)
-            .unwrap()
-            .metadata
-            .author,
-        ""
-    );
+    let moonread_core::BookDetailsResult::Identified { details, .. } = reopened
+        .query_snapshot("{}".into())
+        .unwrap()
+        .book_details(moonread_core::BookTarget::Cached { book_id: book.id })
+        .unwrap()
+    else {
+        panic!("prepared details")
+    };
+    assert_eq!(details.metadata.author, "");
     let db = rusqlite::Connection::open(root.path().join("db/reader.sqlite3")).unwrap();
     for name in [
         "reading_activity",

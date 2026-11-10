@@ -115,7 +115,7 @@ struct ReaderScreen: View {
                             coverInformation: coverInformation,
                             showBookDetails: { openBookDetails() },
                             showingCover: session.showingCover,
-                            coverChanged: { if !navigationPresentation.isSuspended { session.showingCover = $0 } },
+                            coverChanged: { if !navigationPresentation.isSuspended { session.coverVisibilityChanged($0) } },
                             brightnessChanged: { brightness in
                                 guard var value = session.settings else { return }
                                 value.brightness = brightness; session.updateSettings(value)
@@ -151,7 +151,7 @@ struct ReaderScreen: View {
                     .allowsHitTesting(rendered.sourcePage == nil)
                     .ignoresSafeArea(.container)
                     .accessibilityIdentifier("readingContent")
-                    .modifier(ReaderImportDiagnosticStatus(complete: session.snapshot?.phase == .complete))
+                    .modifier(ReaderImportDiagnosticStatus(complete: session.snapshot?.preparation.isComplete == true))
                     .transition(.opacity)
     }
 
@@ -282,7 +282,7 @@ struct ReaderScreen: View {
                 if let current = toolSession?.editor { toolSession?.finishEditing(current.id) }
             }
             if coverInformation == nil, let metadata = openingRequest?.metadataHint {
-                coverInformation = BookDetails(book: nil, metadata: metadata, wordCount: 0, chapterCount: 0, currentChapter: nil)
+                coverInformation = BookDetails(metadata: metadata, body: nil)
             }
             await session.open(route, request: openingRequest)
         }
@@ -502,7 +502,7 @@ struct ReaderScreen: View {
     var body: some View {
         sourceReader
         .onChange(of: isLibrary) { old, new in
-            if old && !new { tools.clearNoteSelection(); tools.selectingNotes = false }
+            if old && !new { tools.finishNoteSelection() }
         }
         .overlay { if sharingExcerpt { ProgressView().padding().background(Color(uiColor: theme.surface), in: .capsule) } }
         .sheet(item: $excerptShare) { LibraryShareSheet(files: $0.files, text: $0.text) }
@@ -579,7 +579,7 @@ struct ReaderScreen: View {
         guard let sha = session.book?.contentSha256, (try? parseSha256(value: sha)) != nil else { return }
         let request = UUID(); coverRequest = request
         do {
-            let next = try await AppDataService.shared.details(bookID: id, sha: sha)
+            let next = try await AppDataService.shared.details(bookID: id)
             guard !Task.isCancelled, coverRequest == request, session.readingID == id,
                   session.book?.contentSha256 == sha else { return }
             coverInformation = next
@@ -590,9 +590,14 @@ struct ReaderScreen: View {
 
     private var bookDetailsTarget: StatisticsRoute {
         if case let .source(file) = route {
-            return StatisticsRoute(bookID: session.readingID, title: file.title, fileID: file.id, fromReader: true)
+            return StatisticsRoute(target: session.readingID.map { .cached(bookId: $0) } ?? .file(fileId: file.id),
+                                   title: file.title, origin: .reader(fileID: file.id))
         }
-        return StatisticsRoute(bookID: session.readingID, title: session.book?.title ?? route.title, fromReader: true)
+        let target: BookTarget = switch route {
+        case .book(let id): .cached(bookId: session.readingID ?? id.value)
+        case .source(let file): .file(fileId: file.id)
+        }
+        return StatisticsRoute(target: target, title: session.book?.title ?? route.title, origin: .reader())
     }
 
     private var desiredPresentation: ReaderPresentationTarget {

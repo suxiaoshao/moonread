@@ -3,7 +3,7 @@ import UIKit
 
 extension ReaderSession {
     func retryPreparation() {
-        guard !isLeaving, snapshot?.phase == .failed, let id = readingID else { return }
+        guard !isLeaving, snapshot?.preparation.isFailed == true, let id = readingID else { return }
         error = nil
         Task {
             do { try await service.resumeImport(id); startMonitoring() }
@@ -27,9 +27,10 @@ extension ReaderSession {
                 // A late unclaimed lease is released normally. Its service-owned,
                 // file-associated worker remains tracked through finish/reclaim.
                 guard !isLeaving, !Task.isCancelled, readingID == id else { return }
-                opening.begin(OpeningRequest(target: .book(next.id)), navigationSettled: true)
-                let attempt = opening.request?.id
-                if let attempt { toolsSession.beginOpening(attempt) }
+                let request = OpeningRequest(target: .book(next.id))
+                opening.begin(request, navigationSettled: true)
+                let attempt = request.id
+                toolsSession.beginOpening(attempt)
                 monitorToken = UUID()
                 monitorTask?.cancel(); windowTask?.cancel(); saveTask?.cancel(); chapterTask?.cancel()
                 cancelNavigation(); navigationTask = nil
@@ -37,9 +38,9 @@ extension ReaderSession {
                 clearBrowse(); navigation = nil; chapterDraft = nil
                 selectionStart = nil; annotations = []; bookmarkPositions = []
                 // Transfer ownership and clear old projection before any more await.
-                readingLease = next; decodingPolicy = nil
-                snapshot = nil; window = nil; chapter = nil; anchor = 0
-                showingCover = true; hasEnteredBody = false; hasLocalReadingInteraction = false
+                activateOpening(request, lease: next); decodingPolicy = nil
+                chapter = nil; displayAnchor = nil
+                surface = .cover; hasEnteredBody = false; hasLocalReadingInteraction = false
                 error = nil; isLoading = true; nearEdge = false; navigationRevision += 1
                 startMonitoring(); startActivity(attempt: attempt)
                 let policy = await service.readingDecoding(next.id)

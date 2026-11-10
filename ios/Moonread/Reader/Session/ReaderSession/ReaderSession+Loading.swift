@@ -30,20 +30,20 @@ extension ReaderSession {
                     guard current(id, attempt: attempt, monitor: token) else { return }
                     ReaderOpenDiagnostics.mark(attempt, "snapshotCompleted")
                     snapshot = value
-                    autoReading?.updatePreparationFailure(value.phase == .failed ? value.error.map { ReaderMessages.error($0) } : nil)
-                    isLoading = !value.canRead && preparing
+                    autoReading?.updatePreparationFailure(value.preparation.failure.map { ReaderMessages.error($0) })
+                    isLoading = value.readablePrefix != .readable && preparing
                     let expected = opening.request?.expectedContentSHA
-                    if let expected, value.phase == .complete, value.book.contentSha256 != expected {
+                    if let expected, value.preparation.isComplete, value.book.contentSha256 != expected {
                         throw SystemReadingRouteError.contentChanged
                     }
                     // A system identity must be verified before any prefix is displayed.
-                    if value.canRead && (expected == nil || value.phase == .complete) {
+                    if value.readablePrefix == .readable && (expected == nil || value.preparation.isComplete) {
                         let firstDisplay = window?.projectionAnchor == nil
                         if firstDisplay {
                             ReaderOpenDiagnostics.mark(attempt, "canRead")
-                            anchor = update.1?.projectionAnchor ?? value.book.positionUtf8
+                            let target = SourceAnchor(update.1?.projectionAnchor ?? value.book.positionUtf8)
+                            surface = value.hasStarted ? .body(target) : .cover
                             hasEnteredBody = value.hasStarted
-                            showingCover = !value.hasStarted
                         }
                         if let frame = update.1 { publishFrame(frame, id: id, attempt: attempt, monitor: token) }
                         if let candidate = resume?.candidate { presentContinuation(candidate) }
@@ -51,7 +51,7 @@ extension ReaderSession {
                         refreshChapter(at: anchor, bookID: id)
                     }
                     updateOpening()
-                    if value.phase == .complete {
+                    if value.preparation.isComplete {
                         if !firstContinuationReady { await refreshSyncedContinuation() }
                         break
                     }
@@ -62,7 +62,7 @@ extension ReaderSession {
             } catch is CancellationError { }
             catch {
                 if !isLeaving, !Task.isCancelled, opening.request?.id == attempt, monitorToken == token {
-                    self.error = ReaderMessages.error(error); isLoading = false; updateOpening()
+                    failOpening(error)
                 }
             }
         }

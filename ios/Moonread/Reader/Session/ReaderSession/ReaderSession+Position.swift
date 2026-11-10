@@ -10,17 +10,16 @@ extension ReaderSession {
             // checkpoint remains the sole formal position until ownership ends.
             if listeningOwnsPosition, let listening = activeListening {
                 guard listening.active else { return }
-                anchor = min(offset, book.byteCount)
+                surface = .body(SourceAnchor(min(offset, book.byteCount)))
                 if listening.following == .detached { refreshChapter(at: anchor, bookID: id) }
                 return
             }
         }
         if case .speechExit = navigationWork?.intent, !userInitiated { return }
         guard !navigating else { return }
-        showingCover = false
         if browseOrigin == nil { hasEnteredBody = true }
         displayAnchor = nil
-        anchor = min(offset, book.byteCount)
+        surface = .body(SourceAnchor(min(offset, book.byteCount)))
         if userInitiated && browseOrigin == nil { hasLocalReadingInteraction = true }
         if let continuation, anchor >= continuation.location.offsetUtf8 { clearContinuation() }
         refreshChapter(at: anchor, bookID: id)
@@ -67,13 +66,7 @@ extension ReaderSession {
         guard !isLeaving, let previous = window else { return }
         guard frame.status != .deferred else { return }
         guard frame.status == .ready else {
-            var retained = previous
-            if direction == .forward {
-                retained.nextCursor = nil
-                retained.isPreparedTail = frame.status == .awaiting
-                retained.isEndOfBook = frame.status == .end && frame.snapshot.phase == .complete
-            } else { retained.previousCursor = nil }
-            window = retained
+            window = previous.retainingContent(availability: frame, direction: direction)
             return
         }
         let visible = viewportAccess.capture()?.offset ?? displayAnchor ?? anchor

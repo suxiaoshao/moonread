@@ -25,7 +25,7 @@ impl ReaderCore {
             .recent_library_entries(1000)?
             .into_iter()
             .enumerate()
-            .filter_map(|(i, e)| Some((e.content_sha256?, i as u32)))
+            .filter_map(|(i, e)| Some((e.book()?.formal_sha()?.to_owned(), i as u32)))
             .collect();
         let db = self.read_lock()?;
         let mut statement =
@@ -37,9 +37,9 @@ impl ReaderCore {
         files.sort_by(crate::library::order::file_order);
         let mut sources: HashMap<String, Vec<String>> = HashMap::new();
         for e in &files {
-            if let Some(sha) = &e.content_sha256 {
+            if let Some(sha) = e.book().and_then(BookRow::formal_sha) {
                 sources
-                    .entry(sha.clone())
+                    .entry(sha.to_owned())
                     .or_default()
                     .push(e.shelf_id.clone());
             }
@@ -48,15 +48,18 @@ impl ReaderCore {
             .into_iter()
             .enumerate()
             .filter_map(|(ordinal, e)| {
-                let sha = e.content_sha256?;
-                if !crate::valid_sha(&sha) || !chosen.contains(&e.id) {
+                let LibraryItem::Book { row } = e.item else {
+                    return None;
+                };
+                let sha = row.formal_sha()?.to_owned();
+                if !chosen.contains(&e.id) {
                     return None;
                 }
                 let mut shelves = sources.remove(&sha).unwrap_or_default();
                 let source_count = shelves.len() as u64;
                 shelves.sort();
                 shelves.dedup();
-                let metadata = e.metadata;
+                let metadata = row.metadata;
                 Some(SystemReadingBookProjection {
                     title: std::path::Path::new(&e.name)
                         .file_stem()?
@@ -70,14 +73,14 @@ impl ReaderCore {
                     tags: metadata.map(|m| m.tags).unwrap_or_default(),
                     source_shelf_ids: shelves,
                     source_count,
-                    needs_download: e.needs_download,
-                    percentage: (e.byte_count > 0 && e.last_read > 0).then(|| {
+                    needs_download: row.needs_download,
+                    percentage: (row.byte_count > 0 && e.last_read > 0).then(|| {
                         crate::reading::navigation::reading_percentage(
-                            e.position_utf8,
-                            e.byte_count,
+                            row.position_utf8,
+                            row.byte_count,
                         )
                     }),
-                    chapter_title: e.chapter_title,
+                    chapter_title: row.chapter_title,
                     recent_rank: recent.get(&sha).copied(),
                     content_sha256: sha,
                     natural_order_ordinal: ordinal as u64,

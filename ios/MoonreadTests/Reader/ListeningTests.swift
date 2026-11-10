@@ -8,11 +8,11 @@ import UIKit
         let raw = "　　原创甲😀，original text。\n\n\t原创乙。\n"
         let firstEnd = UInt64("　　原创甲😀，original text。\n".utf8.count)
         let secondStart = firstEnd + 1, end = UInt64(raw.utf8.count)
-        let window = ReadingWindow(chunks: [.init(index: 0, startUtf8: 100, endUtf8: 100 + end, text: raw)], paragraphs: [
+        let window = ReadingWindow.preview(chunks: [.init(index: 0, startUtf8: 100, endUtf8: 100 + end, text: raw)], paragraphs: [
             .init(startUtf8: 100, endUtf8: 100 + firstEnd, kind: .body, continuation: false, indented: true),
             .init(startUtf8: 100 + firstEnd, endUtf8: 100 + secondStart, kind: .blank, continuation: false, indented: false),
             .init(startUtf8: 100 + secondStart, endUtf8: 100 + end, kind: .body, continuation: false, indented: true)
-        ], isEndOfBook: true)
+        ], trailing: .end)
         let projection = ReadingText(window, indent: .smart)
         var cursor: UInt64 = 100, spoken = ""
         var segments = 0
@@ -32,7 +32,7 @@ import UIKit
         XCTAssertFalse(spoken.contains("　")); XCTAssertFalse(spoken.contains("\t"))
         XCTAssertEqual(ListeningTextProvider.segment(in: window, at: 109, paragraphStart: true, indent: .smart, identity: nil)?.start, 106)
         let long = String(repeating: "甲😀", count: 700)
-        let large = ReadingWindow(chunks: [.init(index: 0, startUtf8: 0, endUtf8: UInt64(long.utf8.count), text: long)], isEndOfBook: true)
+        let large = ReadingWindow.preview(chunks: [.init(index: 0, startUtf8: 0, endUtf8: UInt64(long.utf8.count), text: long)], trailing: .end)
         let a = try XCTUnwrap(ListeningTextProvider.segment(in: large, at: 0, paragraphStart: true, indent: .smart, identity: nil))
         let b = try XCTUnwrap(ListeningTextProvider.segment(in: large, at: a.end, paragraphStart: false, indent: .smart, identity: nil))
         XCTAssertLessThanOrEqual(a.text.text.utf16.count, 500)
@@ -128,7 +128,7 @@ import UIKit
             owner.makeListeningSession(defaults:defaults,voiceAvailable:{ _ in true },audio:{ audio })
         })
         await reader.open(.book(book.id)); await awaitState { reader.window != nil }
-        reader.showingCover = false
+        reader.coverVisibilityChanged(false)
         let listening = reader.selectListening(); listening.start()
         await fulfillment(of:[queued],timeout:3)
         let first = try XCTUnwrap(audio.items.first)
@@ -203,7 +203,7 @@ import UIKit
             })
             await reader.open(.book(book.id))
             await awaitState { reader.window != nil }
-            reader.showingCover = false
+            reader.coverVisibilityChanged(false)
             reader.moved(to: 0, settled: true)
             await reader.flush()
             let listening = reader.selectListening()
@@ -272,7 +272,7 @@ import UIKit
         })
         await reader.open(.book(book.id))
         await awaitState { reader.window != nil }
-        reader.showingCover = false
+        reader.coverVisibilityChanged(false)
         let listening = reader.selectListening()
         listening.start()
         await fulfillment(of: [queued], timeout: 3)
@@ -337,7 +337,7 @@ import UIKit
         defer { window.isHidden = true; window.rootViewController = nil }
         var text = "", starts: [UInt64] = []
         for index in 0..<160 { starts.append(UInt64(text.utf8.count)); text += "原创第\(index)段，春风轻拂，星光照亮书页。 Original words 😀 continue here.\n" }
-        let source = ReadingWindow(chunks: [.init(index: 0, startUtf8: 0, endUtf8: UInt64(text.utf8.count), text: text)], isEndOfBook: true)
+        let source = ReadingWindow.preview(chunks: [.init(index: 0, startUtf8: 0, endUtf8: UInt64(text.utf8.count), text: text)], trailing: .end)
         for dark in [false,true] {
             for mode in [ReadingMode.scroll,.pages] {
                 var settings = defaultReaderSettings(); settings.mode = mode

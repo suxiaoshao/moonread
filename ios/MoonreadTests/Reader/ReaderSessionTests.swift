@@ -22,7 +22,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     await awaitState { session.window != nil }
     let origin = UInt64("第一章 合成甲\n".utf8.count)
     let target = origin + 6
-    session.showingCover = false
+    session.coverVisibilityChanged(false)
     session.moved(to: origin, settled: true)
     await session.flush()
     let added = await session.toggleBookmark()
@@ -58,7 +58,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     let previewOnly = ReaderSession(service: service)
     await previewOnly.open(.book(other.id))
     await awaitState { previewOnly.window != nil }
-    previewOnly.showingCover = false
+    previewOnly.coverVisibilityChanged(false)
     previewOnly.moved(to: 3, settled: true, userInitiated: false)
     previewOnly.browse(to: 6)
     await awaitState { !previewOnly.navigating }
@@ -202,7 +202,9 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     try await service.prepareLibrary()
     try await service.refreshLibrary()
     var entry = try await service.libraryEntries(LibraryLocation(shelfID: "builtin"))[0]
-    entry.needsDownload = true
+    var book = try XCTUnwrap(entry.bookRow)
+    book.needsDownload = true
+    entry.item = .book(row: book)
     let entered = expectation(description: "source requested")
     let finished = expectation(description: "cancelled source finished")
     let gate = SourceReadinessGate(entered: entered)
@@ -381,7 +383,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     scroll.contentSize = CGSize(width: 320, height: 2000)
     scroll.contentOffset = .zero
     reader.scrollText = scroll; reader.settings = defaultReaderSettings()
-    reader.window = ReadingWindow(chunks: readingChunks())
+    reader.window = ReadingWindow.preview(chunks: readingChunks())
     reader.needsRebuild = false
     let opening = UUID(); reader.openingID = opening
     let session = ReaderSession()
@@ -428,7 +430,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     automatic.frame(at: 5)
     XCTAssertEqual(scroll.contentOffset.y, 1620, "Prepared content still waits for Continue")
     automatic.requestStart(); automatic.startAfterDismissal(opening: opening, speed: 20)
-    reader.window?.isEndOfBook = true
+    reader.window = ReadingWindow.preview(chunks: readingChunks(), trailing: .end)
     scroll.contentOffset.y = 2020
     automatic.frame(at: 6); automatic.frame(at: 6.1)
     XCTAssertEqual(automatic.phase, .finished)
@@ -471,7 +473,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     // Enter the body before simulating a temporary preview; the cover is unread.
     session.moved(to: original, settled: true)
     XCTAssertFalse(session.showingCover)
-    session.anchor = preview
+    session.surface = .body(SourceAnchor(preview))
     session.browseState = .preview(.init(origin: original, viewport: nil, target: preview, focus: nil, history: session.history))
     session.selectionStart = original
     let mark = try await service.annotate(book.id, start: 0, end: original)
@@ -525,7 +527,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
       ReadingNavigation().scrollTarget(
         lineY: 500, textInset: 16, target: .zero, visible: .zero, keepVisible: false), 500)
     let chunks = readingChunks()
-    let window = ReadingWindow(chunks: Array(chunks.prefix(3)))
+    let window = ReadingWindow.preview(chunks: Array(chunks.prefix(3)))
     let pages = syntheticPages(window)
     let savedPage = pages[1]
     let pageRestore = ReadingViewport(
@@ -554,7 +556,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     let savedGroup = ReadingViewport(
       offset: pages[2].firstVisibleOffset, lineY: 0, size: size, settings: settings,
       typeSize: .large, pages: pages, pageSize: leafSize, leafCount: 2, groupStart: pages[1].start)
-    pager.setViewControllers([controller.makePage(at: 0)], direction: .forward, animated: false)
+    pager.setViewControllers([controller.makePage(at: .body(PageIndex(0)))], direction: .forward, animated: false)
     controller.pendingNavigation = (ReadingNavigation(restoring: savedGroup), false)
     controller.applyNavigation()
     XCTAssertEqual(controller.currentLeaves.map { $0.page.start }, [pages[1].start, pages[2].start])
@@ -573,7 +575,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertTrue(pager.viewControllers?.first === restoredGroup)
     XCTAssertEqual(controller.currentLeaves.map(\.index), [0, 1])
     let nextGroup = try XCTUnwrap(controller.pageViewController(pager, viewControllerAfter: try XCTUnwrap(restoredGroup)))
-    XCTAssertEqual(controller.pageIndex(nextGroup), 2)
+    XCTAssertEqual(controller.renderedPage(nextGroup), .body(PageIndex(2)))
     XCTAssertEqual((nextGroup as? ReadingPageGroupController)?.leaves.first?.page.start, pages[3].start)
   }
 }

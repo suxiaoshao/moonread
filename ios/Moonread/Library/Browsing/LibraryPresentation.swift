@@ -36,7 +36,7 @@ struct LibraryListHeading: ViewModifier {
 
 extension LibraryEntry {
     var libraryDetail: String {
-        if directory { return String(localized: "\(childBookCount) 本小说") }
+        if case .folder(let folder) = item { return String(localized: "\(folder.childBookCount) 本小说") }
         if needsDownload { return String(localized: "待下载") }
         guard contentSha256 != nil, positionUtf8 > 0 else { return String(localized: "未读") }
         return libraryProgress + (chapterTitle.map { " · " + $0 } ?? "")
@@ -101,8 +101,8 @@ struct LibraryBookTile: View {
             Button { if let select { select() } else { model.open(entry) } } label: {
                 VStack(alignment: .leading, spacing: LayoutTokens.compact) {
                     Group {
-                        if entry.directory {
-                            LibraryFolderCover(previews: entry.coverPreviews).aspectRatio(0.7, contentMode: .fit)
+                        if case .folder(let folder) = entry.item {
+                            LibraryFolderCover(previews: folder.coverPreviews).aspectRatio(0.7, contentMode: .fit)
                         } else { BookCoverView(title: entry.title, cover: entry.metadata?.cover, contentSHA256: entry.contentSha256, author: entry.metadata?.author).aspectRatio(0.7, contentMode: .fit) }
                     }
                         .overlay {

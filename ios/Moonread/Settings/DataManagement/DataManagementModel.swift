@@ -2,18 +2,108 @@ import SwiftUI
 
 @MainActor @Observable final class DataManagementModel {
     let service: AppDataService
-    var inventory = ReadingDataInventory(items: [], pending: 0, unsupported: 0)
-    var cache = CacheSummary()
-    var busy = false
-    private(set) var loading = false
-    private(set) var loaded = false
+    private enum InventoryResult {
+        case ready(ReadingDataInventory)
+        case failed(String, previous: ReadingDataInventory?)
+
+        var inventory: ReadingDataInventory? {
+            switch self {
+            case .ready(let value): value
+            case .failed(_, let previous): previous
+            }
+        }
+    }
+    private enum ReadingDataLoad {
+        case idle
+        case loading(previous: InventoryResult?)
+        case finished(InventoryResult)
+
+        var result: InventoryResult? {
+            switch self {
+            case .idle: nil
+            case .loading(let previous): previous
+            case .finished(let result): result
+            }
+        }
+    }
+    private enum OperationResult {
+        case exported
+        case imported
+        case deleted(cacheCleaned: Bool)
+        case cacheCleaned(removed: Int, retained: Int)
+
+        var message: String? {
+            switch self {
+            case .exported: nil
+            case .imported: String(localized: "阅读数据已导入", table: "DataManagement")
+            case .deleted(let cleaned):
+                String(localized: cleaned ? "阅读数据已清除，小说文件未变" : "阅读数据已清除，部分本机缓存未清理", table: "DataManagement")
+            case .cacheCleaned(let removed, let retained):
+                String(localized: "已清理 \(removed) 本缓存，保留 \(retained) 本", table: "DataManagement")
+            }
+        }
+    }
+    private enum DataOperation {
+        case idle, exporting, inspectingBackup, promoting, preparingPending
+        case previewingImport(ReadingBackupPreview)
+        case importing(ReadingBackupPreview)
+        case deleting(Set<String>)
+        case cleaningCache
+        case completed(OperationResult)
+        case failed(String, preview: ReadingBackupPreview?)
+
+        var working: String? {
+            switch self {
+            case .exporting: String(localized: "正在生成备份…", table: "DataManagement")
+            case .inspectingBackup: String(localized: "正在检查备份…", table: "DataManagement")
+            case .importing: String(localized: "正在导入…", table: "DataManagement")
+            case .deleting: String(localized: "正在清除…", table: "DataManagement")
+            case .cleaningCache: String(localized: "正在清理缓存…", table: "DataManagement")
+            case .promoting: String(localized: "正在关联阅读数据…", table: "DataManagement")
+            case .preparingPending: String(localized: "正在准备正文", table: "DataManagement")
+            default: nil
+            }
+        }
+    }
+    private var dataLoad = ReadingDataLoad.idle
+    private var dataOperation = DataOperation.idle
+    private var latestExport: URL?
+    var inventory: ReadingDataInventory { dataLoad.result?.inventory ?? .init(items: [], pending: 0, unsupported: 0) }
+    private(set) var cache = CacheSummary()
+    var busy: Bool { working != nil }
+    var loading: Bool { if case .loading = dataLoad { true } else { false } }
+    var loaded: Bool { dataLoad.result != nil }
     private var inventoryLoad: Task<Void, Never>?
     private var inventoryRefreshRequested = false
-    var working = ""
-    var error: String?
-    var message: String?
-    var preview: ReadingBackupPreview?
-    var exported: URL?
+    var working: String? { dataOperation.working }
+    var error: String? {
+        if case .failed(let message, _) = dataOperation { return message }
+        if case .finished(.failed(let message, _)) = dataLoad { return message }
+        return nil
+    }
+    var message: String? {
+        if case .completed(let result) = dataOperation { result.message } else { nil }
+    }
+    var preview: ReadingBackupPreview? {
+        switch dataOperation {
+        case .previewingImport(let value), .importing(let value), .failed(_, let value?): value
+        default: nil
+        }
+    }
+    var exported: URL? { latestExport }
+    func showError(_ message: String) { dataOperation = .failed(message, preview: preview) }
+    func clearError() {
+        if case .failed(_, let previous) = dataOperation { dataOperation = previous.map(DataOperation.previewingImport) ?? .idle }
+        if case .finished(.failed(_, let previous)) = dataLoad { dataLoad = previous.map { .finished(.ready($0)) } ?? .idle }
+    }
+    func closePreview() {
+        guard !busy else { return }
+        switch dataOperation {
+        case .previewingImport: dataOperation = .idle
+        case .failed(let message, _): dataOperation = .failed(message, preview: nil)
+        default: break
+        }
+    }
     var selected = Set<String>()
     var query = "" { didSet { if oldValue != query { selected.removeAll() } } }
     var unlinkedOnly = false { didSet { if oldValue != unlinkedOnly { selected.removeAll() } } }
@@ -22,17 +112,22 @@ import SwiftUI
     var deleting: Set<String>?
     var issueErrors: [String: String] = [:]
     private(set) var duplicateNames: [String: (index: Int, count: Int)] = [:]
-    private var operation: Task<Void, Never>?
-    var canCancel: Bool { operation != nil }
-    func cancel() { operation?.cancel() }
-    private func runCancellable(_ action: @escaping @MainActor () async throws -> Void) async {
-        guard !busy else { return }; error = nil; message = nil; busy = true
+    private var operationTask: Task<Void, Never>?
+    var canCancel: Bool { operationTask != nil }
+    func cancel() { operationTask?.cancel() }
+    private func runCancellable(_ operation: DataOperation, _ action: @escaping @MainActor () async throws -> DataOperation) async {
+        guard !busy else { return }
+        let previous = preview
+        dataOperation = operation
         let task = Task {
-            do { try Task.checkCancellation(); try await action() }
-            catch is CancellationError { }
-            catch { self.error = ReaderMessages.error(error) }
+            do {
+                try Task.checkCancellation()
+                dataOperation = try await action()
+            } catch is CancellationError {
+                dataOperation = previous.map(DataOperation.previewingImport) ?? .idle
+            } catch { dataOperation = .failed(ReaderMessages.error(error), preview: previous) }
         }
-        operation = task; await task.value; operation = nil; busy = false
+        operationTask = task; await task.value; operationTask = nil
     }
     private var nameOrder: [String] = []
     private var recentOrder: [String] = []
@@ -49,25 +144,31 @@ import SwiftUI
             await inventoryLoad.value
             return
         }
-        loading = true; error = nil
+        dataLoad = .loading(previous: dataLoad.result)
         let task = Task { @MainActor in
-            defer { inventoryLoad = nil; loading = false; loaded = true }
+            defer { inventoryLoad = nil }
             repeat {
                 inventoryRefreshRequested = false
-                error = nil
+                dataLoad = .loading(previous: dataLoad.result)
                 do {
-                    updateInventory(try await service.readingDataInventory())
+                    let value = try await service.readingDataInventory()
+                    // Keep the list if the independent cache summary subsequently fails.
+                    dataLoad = .loading(previous: .ready(value))
+                    updateOrder(value)
                     cache = try await service.cacheSummary()
-                } catch { self.error = ReaderMessages.error(error) }
+                    dataLoad = .finished(.ready(value))
+                } catch { dataLoad = .finished(.failed(ReaderMessages.error(error), previous: dataLoad.result?.inventory)) }
             } while inventoryRefreshRequested
         }
         inventoryLoad = task
         await task.value
     }
     func updateInventory(_ value: ReadingDataInventory) {
-            loaded = true
-            inventory = value
-            let entries = inventory.items.map { ReadingDataSortEntry(key: $0.id, title: $0.title, lastRead: $0.lastRead) }
+        dataLoad = .finished(.ready(value))
+        updateOrder(value)
+    }
+    private func updateOrder(_ value: ReadingDataInventory) {
+        let entries = value.items.map { ReadingDataSortEntry(key: $0.id, title: $0.title, lastRead: $0.lastRead) }
             nameOrder = readingDataOrder(entries: entries, recent: false)
             recentOrder = readingDataOrder(entries: entries, recent: true)
             duplicateNames = [:]
@@ -84,10 +185,10 @@ import SwiftUI
     }
     func prepareIssues() async {
         await load()
-        guard !busy, error == nil else { return }; busy = true; working = String(localized: "正在关联阅读数据…", table: "DataManagement")
-        defer { busy = false }
-        // One attempt per completed task when this page is entered. Never loop
-        // on a failed promotion or start an import merely to inspect inventory.
+        guard !busy, error == nil else { return }
+        dataOperation = .promoting
+        defer { dataOperation = .idle }
+        // One attempt per completed task when this page is entered.
         for item in inventory.pendingItems where item.readable && item.phase == .complete {
             do { try await service.promoteUserData(item.bookID, retry: true); issueErrors[item.id] = nil }
             catch { issueErrors[item.id] = ReaderMessages.error(error) }
@@ -95,17 +196,20 @@ import SwiftUI
         await load()
     }
     func continuePending(_ item: PendingReadingData) async {
-        guard !busy else { return }; busy = true; working = String(localized: "正在准备正文", table: "DataManagement")
-        defer { busy = false }
+        guard !busy else { return }
+        dataOperation = .preparingPending
+        defer { dataOperation = .idle }
         do { try await service.continuePendingReadingData(item.id); issueErrors[item.id] = nil }
         catch { issueErrors[item.id] = ReaderMessages.error(error) }
         await load()
     }
     func exportAll() async {
-        working = String(localized: "正在生成备份…", table: "DataManagement"); exported = nil
-        await runCancellable {
+        guard !busy else { return }
+        latestExport = nil
+        await runCancellable(.exporting) {
             let next = try await self.service.exportReadingData()
-            self.exported = next
+            self.latestExport = next
+            return .completed(.exported)
         }
     }
     func shareBackup() async throws -> LibraryExport {
@@ -113,40 +217,42 @@ import SwiftUI
         return try await service.readingBackupShareCopy(exported)
     }
     func prepareImport(_ url: URL) async {
-        working = String(localized: "正在检查备份…", table: "DataManagement")
-        await runCancellable { self.preview = try await self.service.previewReadingBackup(url) }
+        await runCancellable(.inspectingBackup) { .previewingImport(try await self.service.previewReadingBackup(url)) }
     }
     func importConfirmed() async {
-        guard !busy, let candidate = preview else { return }; error = nil; working = String(localized: "正在导入…", table: "DataManagement"); busy = true; defer { busy = false }
+        guard !busy, let candidate = preview else { return }
+        dataOperation = .importing(candidate)
         do {
             try await service.importReadingBackup(candidate)
-            preview = nil; message = String(localized: "阅读数据已导入", table: "DataManagement"); await load()
+            await load()
+            dataOperation = .completed(.imported)
         } catch ReadingDataError.changed {
-            do { preview = try await service.refreshReadingBackupPreview(candidate.staging) }
-            catch { preview = nil }
-            error = ReadingDataError.changed.localizedDescription
-        } catch { self.error = ReaderMessages.error(error) }
+            let refreshed = try? await service.refreshReadingBackupPreview(candidate.staging)
+            dataOperation = .failed(ReadingDataError.changed.localizedDescription, preview: refreshed)
+        } catch { dataOperation = .failed(ReaderMessages.error(error), preview: candidate) }
     }
     func deleteConfirmed(_ keys: Set<String>) async {
-        guard !busy, !keys.isEmpty else { return }; deleting = nil; error = nil; working = String(localized: "正在清除…", table: "DataManagement"); busy = true; defer { busy = false }
+        guard !busy, !keys.isEmpty else { return }
+        deleting = nil
+        let configuration = inventory.configuration
+        dataOperation = .deleting(keys)
         do {
-            guard let configuration = inventory.configuration else { throw ReadingDataError.changed }
+            guard let configuration else { throw ReadingDataError.changed }
             let cleaned = try await service.deleteReadingData(keys, configuration: configuration)
-            message = String(localized: cleaned ? "阅读数据已清除，小说文件未变" : "阅读数据已清除，部分本机缓存未清理", table: "DataManagement")
             selected.subtract(keys); await load()
-        } catch { self.error = ReaderMessages.error(error) }
+            dataOperation = .completed(.deleted(cacheCleaned: cleaned))
+        } catch { dataOperation = .failed(ReaderMessages.error(error), preview: nil) }
     }
     func requestDeleteAll() async {
         guard !busy else { return }
         do { deleting = try await service.allReadingDataKeys() }
-        catch { self.error = ReaderMessages.error(error) }
+        catch { dataOperation = .failed(ReaderMessages.error(error), preview: nil) }
     }
     func clearCache() async {
-        working = String(localized: "正在清理缓存…", table: "DataManagement")
-        await runCancellable {
+        await runCancellable(.cleaningCache) {
             let result = try await self.service.clearRebuildableCaches()
-            self.message = String(localized: "已清理 \(result.removed) 本缓存，保留 \(result.retained) 本", table: "DataManagement")
             await self.load()
+            return .completed(.cacheCleaned(removed: result.removed, retained: result.retained))
         }
     }
     func chooseBackup() async -> URL? {

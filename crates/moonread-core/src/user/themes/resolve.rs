@@ -109,25 +109,28 @@ pub fn resolve_themes(
         }
     };
     let palette = |mode, id: Option<&str>| -> Result<ResolvedTheme> {
-        let colors = if let Some(id) = id {
+        let surface = if let Some(id) = id {
             let palette = value
                 .palettes
                 .iter()
                 .find(|v| v.id == id && v.appearance == mode)
                 .ok_or(ReaderError::InvalidSettings)?;
-            Some(if high_contrast {
+            let colors = if high_contrast {
                 palette.high_contrast.clone()
             } else {
                 palette.colors.clone()
-            })
+            };
+            ResolvedSurface::Palette {
+                appearance: mode,
+                id: id.into(),
+                colors,
+            }
         } else {
-            None
+            ResolvedSurface::System { appearance: mode }
         };
         Ok(ResolvedTheme {
-            appearance: mode,
             high_contrast,
-            colors,
-            palette_id: id.unwrap_or("system").into(),
+            surface,
         })
     };
     let app_id = |source: &AppPaletteSource| match source {
@@ -144,16 +147,16 @@ pub fn resolve_themes(
         ReaderPaletteSource::System => None,
         ReaderPaletteSource::Palette { id } => Some(id.clone()),
     };
-    let mut texture =
-        reader_texture_for_palette(p.clone(), reader_id.clone().unwrap_or("system".into()))?;
-    if value
+    let palette_id = reader_id.clone().unwrap_or_else(|| "system".into());
+    let texture = if value
         .palettes
         .iter()
-        .any(|palette| palette.id == texture.palette_id && palette.custom)
+        .any(|palette| palette.id == palette_id && palette.custom)
     {
-        texture.descriptor = None;
-        texture.enabled = false;
-    }
+        ResolvedReaderTexture::Unsupported { palette_id }
+    } else {
+        reader_texture_for_palette(p.clone(), palette_id)?
+    };
     Ok(ResolvedThemes {
         reader_texture: texture,
         app: palette(app_mode, app_id(app_source(app_mode)).as_deref())?,

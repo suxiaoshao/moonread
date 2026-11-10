@@ -65,12 +65,67 @@ enum MetadataPreviewDisposition: Equatable, Sendable {
 struct MetadataPreviewBook: Identifiable, Sendable {
     let id: String
     let title: String
-    let base: BookMetadata?
-    let source: LibraryEntry?
-    let sourceCount: Int
-    var fields: [MetadataFieldChoice]
-    var messages: [String]
-    var selectionError: String?
+    enum Source: Sendable {
+        case none
+        case unique(LibraryEntry)
+        case multiple(Int)
+
+        init(_ sources: [LibraryEntry]) {
+            switch sources.count {
+            case 0: self = .none
+            case 1: self = .unique(sources[0])
+            default: self = .multiple(sources.count)
+            }
+        }
+        var count: Int {
+            switch self {
+            case .none: 0
+            case .unique: 1
+            case .multiple(let count): count
+            }
+        }
+    }
+    struct MatchedBook: Sendable {
+        let base: BookMetadata
+        let source: Source
+        var choices: [MetadataFieldChoice] = []
+        var selectionError: String?
+    }
+    enum Match: Sendable {
+        case unmatched
+        case skipped(reason: String, Source)
+        case matched(MatchedBook)
+    }
+    var match: Match
+    var messages: [String] = []
+    var base: BookMetadata? { if case .matched(let book) = match { book.base } else { nil } }
+    var source: LibraryEntry? {
+        guard case .matched(let book) = match, case .unique(let source) = book.source else { return nil }
+        return source
+    }
+    var sourceCount: Int {
+        switch match {
+        case .unmatched: 0
+        case .skipped(_, let source): source.count
+        case .matched(let book): book.source.count
+        }
+    }
+    var fields: [MetadataFieldChoice] {
+        get { if case .matched(let book) = match { book.choices } else { [] } }
+        set {
+            guard case .matched(var book) = match else { return }
+            book.choices = newValue
+            match = .matched(book)
+        }
+    }
+    var selectionError: String? {
+        get { if case .matched(let book) = match { book.selectionError } else { nil } }
+        set {
+            guard case .matched(var book) = match else { return }
+            book.selectionError = newValue
+            match = .matched(book)
+        }
+    }
     var coverFiles: [String] = []
     var coverUnavailable = false
     var incomingCovers: [MetadataOption] { fields.first { $0.field == .cover }?.options.filter { $0.cover != nil } ?? [] }
@@ -110,10 +165,12 @@ struct MetadataPreviewBook: Identifiable, Sendable {
     }
     /// Presentation classification only; skipped or unmatched data is never a successful no-op.
     var disposition: MetadataPreviewDisposition {
-        if sourceCount == 0 { return .unmatched }
-        if base == nil { return .skipped }
-        if !changedFields.isEmpty { return .changes }
-        return messages.isEmpty ? .unchanged : .skipped
+        switch match {
+        case .unmatched: .unmatched
+        case .skipped: .skipped
+        case .matched:
+            !changedFields.isEmpty ? .changes : messages.isEmpty ? .unchanged : .skipped
+        }
     }
     var summary: String {
         switch disposition {

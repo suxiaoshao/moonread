@@ -21,6 +21,17 @@ enum ReadingTextMetrics {
 }
 
 
+struct SourceAnchor: Equatable, Sendable {
+    let offset: UInt64
+    init(_ offset: UInt64) { self.offset = offset }
+}
+
+enum ReadingSurface: Equatable, Sendable {
+    case cover
+    case body(SourceAnchor)
+    var anchor: SourceAnchor? { if case .body(let anchor) = self { anchor } else { nil } }
+}
+
 enum ReadingTargetPlacement { case start, context, cover }
 
 

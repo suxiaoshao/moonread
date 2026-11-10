@@ -125,7 +125,7 @@ struct ReaderFontPicker: View {
                          cancelFontSelection()
                          guard available else { message = String(localized: "所选字体不可用，暂用系统字体"); return }
                          Task {
-                             do { try await settings.selectFont(.system, imported: ref) }
+                             do { try await settings.selectFont(.imported(id: ref, fallback: .system)) }
                              catch { message = error.localizedDescription }
                          }
                      }, remove: { cancelFontSelection(); deleting = resource })
@@ -140,7 +140,7 @@ struct ReaderFontPicker: View {
                 do {
                     let resource = try await library.importFile(url)
                     if urls.count == 1, let face = resource.faces.first {
-                        try await settings.selectFont(.system, imported: ImportedReaderFont(resourceSha256: resource.sha256, face: face.postscriptName))
+                        try await settings.selectFont(.imported(id: ImportedReaderFont(resourceSha256: resource.sha256, face: face.postscriptName), fallback: .system))
                     }
                     if let face = resource.faces.first {
                         focusedResource = nil

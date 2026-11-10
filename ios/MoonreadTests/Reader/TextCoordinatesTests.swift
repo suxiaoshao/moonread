@@ -134,11 +134,11 @@ final class TextCoordinatesReaderSelectionTests: ReaderSelectionFixture {
   func testAllBlankProjectionHasNoSyntheticVisiblePage() {
     let raw = "\n \t　\n\n"
     let end = UInt64(raw.utf8.count)
-    let window = ReadingWindow(
+    let window = ReadingWindow.preview(
       chunks: [.init(index: 0, startUtf8: 0, endUtf8: end, text: raw)],
       paragraphs: [
         .init(startUtf8: 0, endUtf8: end, kind: .blank, continuation: false, indented: false)
-      ], isEndOfBook: true)
+      ], trailing: .end)
     let projection = ReadingText(window)
     XCTAssertTrue(projection.text.isEmpty)
     XCTAssertNil(projection.firstVisibleOffset)
@@ -179,7 +179,7 @@ final class TextCoordinatesReaderIntegrationTests: ReaderIntegrationFixture {
 
   // S398: 封面不参与正文 offset，加入/移除封面仍按同一原文锚点恢复；纯投影输入。
   func testCoverIsOutsideTextCoordinatesAcrossWindowAndLayoutChanges() throws {
-    let window = ReadingWindow(chunks: Array(readingChunks().prefix(2)))
+    let window = ReadingWindow.preview(chunks: Array(readingChunks().prefix(2)))
     let body = ReadingText(window)
     let covered = body.prefixed("\u{fffc}\n")
     XCTAssertNil(covered.coordinates.sourcePoint(0))
@@ -189,7 +189,7 @@ final class TextCoordinatesReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(UInt64(source.lowerBound) + covered.sourceStart, window.start)
     XCTAssertEqual(UInt64(source.upperBound) + covered.sourceStart, window.end)
     XCTAssertEqual(covered.slice(covered.selectableRange).text, body.text)
-    let extended = ReadingText(ReadingWindow(chunks: Array(readingChunks().prefix(3)))).prefixed(
+    let extended = ReadingText(ReadingWindow.preview(chunks: Array(readingChunks().prefix(3)))).prefixed(
       "\u{fffc}\n")
     XCTAssertEqual(extended.coordinates.sourcePoint(2), 0)
   }
@@ -241,7 +241,7 @@ final class TextCoordinatesReaderIntegrationTests: ReaderIntegrationFixture {
   // S423: 合成 page spans 跨窗口拼接无丢字/重复，重叠窗口保留正确边界；一个前移和一个回移，不测 TextKit。
   @MainActor func testPaginationCoversChunkWithoutMissingOrRepeatedBytes() {
     let text = String(repeating: "月🌙👨‍👩‍👧‍👦e\u{301}。\n", count: 5)
-    let window = ReadingWindow(chunks: [
+    let window = ReadingWindow.preview(chunks: [
       .init(index: 0, startUtf8: 321, endUtf8: 321 + UInt64(text.utf8.count), text: text)
     ])
     let pages = syntheticPages(window)
@@ -252,8 +252,8 @@ final class TextCoordinatesReaderIntegrationTests: ReaderIntegrationFixture {
       XCTAssertEqual(page.readingText.sourceEnd, page.end)
     }
     let chunks = readingChunks()
-    let first = ReadingWindow(chunks: Array(chunks.prefix(3)))
-    let next = ReadingWindow(chunks: Array(chunks[1...3]))
+    let first = ReadingWindow.preview(chunks: Array(chunks.prefix(3)))
+    let next = ReadingWindow.preview(chunks: Array(chunks[1...3]))
     let firstPages = syntheticPages(first)
     let forward = syntheticPages(next, preserving: firstPages)
     assertCoverage(forward, window: next)

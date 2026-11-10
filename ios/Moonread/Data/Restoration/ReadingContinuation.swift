@@ -50,8 +50,7 @@ extension AppDataService {
     func readingResumeContext(_ id: String, currentOffset: UInt64? = nil) async throws -> ReadingResumeContext {
         let configuration = userCloudConfigurationRevision
         try await promoteUserData(id)
-        let key = try userKey(id)
-        guard case .formal = try parseReadingKey(value: key) else { return .init(localOffset: nil, candidate: nil) }
+        guard case .formal(let key) = try userKey(id) else { return .init(localOffset: nil, candidate: nil) }
         let state = try LocalReadingResumeState(data: sourceDefaults.data(forKey: LocalReadingResumeState.key))
         guard let local = state.scopes[localResumeScope]?[key], let localToken = local.lastLocalWriteToken else {
             return .init(localOffset: nil, candidate: nil)

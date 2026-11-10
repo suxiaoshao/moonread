@@ -40,17 +40,17 @@ final class CloudAccountCloudAccountTests: CloudAccountFixture {
   @MainActor func testSyncStatusPresentsExistingActivityAndRecoveryFacts() {
     let cloud = CloudStore()
     XCTAssertEqual(cloud.syncTitle, String(localized: "阅读数据同步已关闭"))
-    cloud.status = CloudSyncStatus(requested: true, accountToConfirm: "fixture")
+    cloud.status = CloudSyncStatus(requested: true, activation: .awaitingAccountConfirmation(.init(recordName: "fixture"), revision: UUID(), message: "fixture"))
     XCTAssertEqual(cloud.syncTitle, String(localized: "需要确认同步账户"))
-    cloud.status.accountToConfirm = nil
+    cloud.status.activation = .unavailable("fixture")
     XCTAssertEqual(cloud.syncTitle, String(localized: "阅读数据同步已暂停"))
-    cloud.status.enabled = true; cloud.status.syncing = true; cloud.busy = true
+    cloud.status.activation = .enabled(.init(recordName: "fixture"), revision: UUID()); cloud.status.syncing = true; cloud.busy = true
     XCTAssertEqual(cloud.syncTitle, String(localized: "正在处理并同步"))
     cloud.busy = false
     XCTAssertEqual(cloud.syncTitle, String(localized: "正在同步"))
-    cloud.status.syncing = false; cloud.status.message = "fixture error"
+    cloud.status.syncing = false; cloud.status.transportMessage = "fixture error"
     XCTAssertEqual(cloud.syncTitle, String(localized: "同步需要处理"))
-    cloud.status.message = nil
+    cloud.status.transportMessage = nil
     XCTAssertEqual(cloud.syncTitle, String(localized: "阅读数据同步已开启"))
   }
 

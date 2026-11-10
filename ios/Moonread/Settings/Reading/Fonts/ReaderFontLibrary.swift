@@ -119,7 +119,7 @@ final class ReaderFontLibrary {
         busy = true
         defer { busy = false }
         if settings.value?.importedFont?.resourceSha256 == resource.sha256 {
-            try await settings.selectFont(.system, imported: nil)
+            try await settings.selectFont(.builtin(font: .system))
         }
         let next = resources.filter { $0.sha256 != resource.sha256 }
         let url = root.appendingPathComponent(resource.relativePath)

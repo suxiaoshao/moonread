@@ -286,7 +286,7 @@ import XCTest
         let retained = try await snapshot(source); XCTAssertEqual(retained, protected)
         let archive = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: f.root, includingPropertiesForKeys: nil).first { $0.pathExtension == "moonread-backup" })
         let accountPreview = try await f.service.previewReadingBackup(archive)
-        try await f.service.configureUserCloud(true, account: "backup-fixture")
+        try await f.service.configureUserCloud(.cloud(.init(recordName: "backup-fixture"), .currentOwner))
         do { try await f.service.importReadingBackup(accountPreview); XCTFail("A preview from the old configuration cannot commit") }
         catch ReadingDataError.changed { }
         let unchanged = try await snapshot(source); XCTAssertEqual(unchanged, protected)
@@ -353,7 +353,7 @@ import XCTest
         let key = f.book.contentSha256, alias = "pending:" + f.book.id
         try await f.pending.receiveSyncFixture("position", key: alias, payload: UserSyncJSON.encode(positionRecord(key: alias, token: "old-pending", offset: 9), envelope: true))
         let information = BookInformationModel(service: f.service)
-        let route = StatisticsRoute(key: key, bookID: f.book.id, title: "Position fixture")
+        let route = StatisticsRoute(target: .record(key: .formal(sha256: key)), title: "Position fixture")
         await information.load(route)
         XCTAssertNil(information.error); XCTAssertFalse(information.chapters.isEmpty)
         do { _ = try await f.service.exportReadingData(); XCTFail("A full export must not silently omit pending data") }

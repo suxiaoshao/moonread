@@ -701,7 +701,7 @@ impl ReaderCore {
                 matcher,
                 headings,
                 limit: end,
-                partial: snapshot.phase != ImportPhase::Complete,
+                partial: !snapshot.preparation.is_complete(),
                 offset: start,
                 line_start: start,
                 line: String::new(),

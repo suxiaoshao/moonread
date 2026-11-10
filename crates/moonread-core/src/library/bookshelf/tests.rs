@@ -57,16 +57,20 @@ fn search_candidates_leave_unmatched_folder_covers_unqueried() {
     let before = FOLDER_COVER_QUERIES.with(|count| count.get());
     let candidates = query
         .library_search_candidates(
-            crate::CatalogueScope {
-                shelf_id: Some("s".into()),
-                parent_path: None,
+            crate::CatalogueScope::Shelf {
+                shelf_id: "s".into(),
+                parent_path: String::new(),
                 recursive: true,
             },
             false,
         )
         .unwrap();
-    assert!(candidates.iter().any(|c| c.entry.directory));
-    assert!(candidates.iter().all(|c| c.entry.cover_previews.is_empty()));
+    assert!(candidates.iter().any(|c| c.entry.folder().is_some()));
+    assert!(candidates.iter().all(|c| {
+        c.entry
+            .folder()
+            .is_none_or(|row| row.cover_previews.is_empty())
+    }));
     let originals: Vec<_> = candidates
         .iter()
         .filter(|c| c.entry.name == "book.txt")
@@ -105,15 +109,15 @@ fn tag_groups_repeat_multitagged_files_and_separate_identity_states_within_shelf
                 INSERT INTO library_files VALUES('unknown','s','unknown.txt','','unknown.txt',0,100,1,0,NULL,'auto');
                 INSERT INTO library_files VALUES('stale','s','stale.txt','','stale.txt',0,101,1,0,NULL,'auto');
                 INSERT INTO library_files VALUES('outside','other','outside.txt','','outside.txt',0,100,1,0,NULL,'auto');
-                INSERT INTO source_identities VALUES('raw','auto','tagged-sha','UTF-8',100,80);
-                INSERT INTO source_identities VALUES('raw-untagged','auto','untagged-sha','UTF-8',100,80);
+                INSERT INTO source_identities VALUES('raw','auto','1111111111111111111111111111111111111111111111111111111111111111','UTF-8',100,80);
+                INSERT INTO source_identities VALUES('raw-untagged','auto','2222222222222222222222222222222222222222222222222222222222222222','UTF-8',100,80);
                 INSERT INTO library_identities VALUES('tagged','raw','auto',100,1);
                 INSERT INTO library_identities VALUES('untagged','raw-untagged','auto',100,1);
                 INSERT INTO library_identities VALUES('stale','raw','auto',100,1);
                 INSERT INTO library_identities VALUES('outside','raw','auto',100,1);").unwrap();
     }
     let query = core.query_snapshot(serde_json::json!({"metadata": [{
-            "sha": "tagged-sha", "author": "", "synopsis": "", "tags": ["B", "A"], "cover": null, "status": "Unread"
+            "sha": "1111111111111111111111111111111111111111111111111111111111111111", "author": "", "synopsis": "", "tags": ["B", "A"], "cover": null, "status": "Unread"
         }]}).to_string()).unwrap();
     let catalogue = query.all_library_tag_groups("s".into()).unwrap();
     assert_eq!(catalogue.book_count, 4);
@@ -150,7 +154,7 @@ fn tag_groups_repeat_multitagged_files_and_separate_identity_states_within_shelf
             .groups
             .iter()
             .flat_map(|g| &g.entries)
-            .all(|e| e.shelf_id == "s" && !e.directory)
+            .all(|e| e.shelf_id == "s" && e.book().is_some())
     );
 }
 
@@ -186,10 +190,10 @@ fn folder_last_read_includes_index_only_child_with_synced_position() {
         .library_entries(Some("s".into()), Some("".into()), LibrarySort::Reading)
         .unwrap()
         .remove(0);
-    assert!(folder.directory);
+    assert!(folder.book().is_none());
     assert_eq!(folder.last_read, 123456);
     let child = query.library_entry("indexed".into()).unwrap();
-    assert!(child.book_id.is_none());
+    assert!(child.book().unwrap().book_id().is_none());
     assert_eq!(child.last_read, folder.last_read);
     // Two paths to one SHA both inherit it; replacing the input snapshot can
     // lower a folder's time (no monotonically increasing UI-side max).
@@ -202,6 +206,8 @@ fn folder_last_read_includes_index_only_child_with_synced_position() {
 
     assert_eq!(
         folder
+            .folder()
+            .unwrap()
             .cover_previews
             .iter()
             .map(|p| p.file_id.as_str())
@@ -219,13 +225,13 @@ fn recent_entries_include_index_only_and_null_visibility() {
         .unwrap();
     {
         let db = core.lock().unwrap();
-        db.execute_batch("INSERT INTO books(id,title,content_sha256,encoding,byte_count) VALUES('prepared','Prepared','prepared-sha','UTF-8',100);
+        db.execute_batch("INSERT INTO books(id,title,content_sha256,encoding,byte_count) VALUES('prepared','Prepared','bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','UTF-8',100);
                 INSERT INTO library_files VALUES('prepared-file','s','prepared.txt','','prepared.txt',0,100,1,0,'prepared','auto');
                 INSERT INTO library_files VALUES('indexed-file','s','indexed.txt','','indexed.txt',0,100,1,0,NULL,'auto');
                 INSERT INTO library_files VALUES('indexed-copy','s','copy.txt','','copy.txt',0,100,1,0,NULL,'auto');
                 INSERT INTO library_files VALUES('hidden-file','s','hidden.txt','','hidden.txt',0,100,1,0,NULL,'auto');
-                INSERT INTO source_identities VALUES('raw-index','auto','indexed-sha','UTF-8',100,80);
-                INSERT INTO source_identities VALUES('raw-hidden','auto','hidden-sha','UTF-8',100,80);
+                INSERT INTO source_identities VALUES('raw-index','auto','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','UTF-8',100,80);
+                INSERT INTO source_identities VALUES('raw-hidden','auto','cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc','UTF-8',100,80);
                 INSERT INTO library_identities VALUES('indexed-file','raw-index','auto',100,1);
                 INSERT INTO library_identities VALUES('indexed-copy','raw-index','auto',100,1);
                 INSERT INTO library_identities VALUES('hidden-file','raw-hidden','auto',100,1);").unwrap();
@@ -233,9 +239,9 @@ fn recent_entries_include_index_only_and_null_visibility() {
     core.read_lock()
         .unwrap()
         .execute_batch(
-            "INSERT INTO user_positions VALUES('prepared-sha',25,10,NULL,NULL);
-            INSERT INTO user_positions VALUES('indexed-sha',50,20,NULL,'indexed-file');
-            INSERT INTO user_positions VALUES('hidden-sha',50,30,0,NULL);",
+            "INSERT INTO user_positions VALUES('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',25,10,NULL,NULL);
+            INSERT INTO user_positions VALUES('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',50,20,NULL,'indexed-file');
+            INSERT INTO user_positions VALUES('cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',50,30,0,NULL);",
         )
         .unwrap();
     let recent = core.recent_library_entries(10).unwrap();
@@ -243,27 +249,31 @@ fn recent_entries_include_index_only_and_null_visibility() {
         recent.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
         ["indexed-file", "prepared-file"]
     );
-    assert_eq!(recent[0].book_id, None);
-    assert_eq!(recent[0].content_sha256.as_deref(), Some("indexed-sha"));
-    assert_eq!(recent[0].position_utf8, 50);
-    core.read_lock().unwrap().execute_batch("INSERT INTO user_opened VALUES('prepared-sha',100,NULL); INSERT INTO user_opened VALUES('hidden-sha',200,NULL);").unwrap();
+    assert_eq!(recent[0].book().unwrap().book_id(), None);
+    assert_eq!(
+        recent[0].book().unwrap().formal_sha(),
+        Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    );
+    assert_eq!(recent[0].book().unwrap().position_utf8, 50);
+    core.read_lock().unwrap().execute_batch("INSERT INTO user_opened VALUES('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',100,NULL); INSERT INTO user_opened VALUES('cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',200,NULL);").unwrap();
     let opened = core.recent_library_entries(10).unwrap();
     assert_eq!(
         opened.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
         ["prepared-file", "indexed-file"]
     );
     assert_eq!(
-        opened[0].position_utf8, 25,
+        opened[0].book().unwrap().position_utf8,
+        25,
         "Opening does not overwrite the saved reading position"
     );
     assert_eq!(opened[0].last_read, 10, "Opening has a distinct timestamp");
     core.read_lock()
         .unwrap()
-        .execute_batch("DELETE FROM user_positions WHERE content_key='prepared-sha';")
+        .execute_batch("DELETE FROM user_positions WHERE content_key='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';")
         .unwrap();
     let unopened_position = core.recent_library_entries(10).unwrap();
     assert_eq!(unopened_position[0].id, "prepared-file");
-    assert_eq!(unopened_position[0].position_utf8, 0);
+    assert_eq!(unopened_position[0].book().unwrap().position_utf8, 0);
     assert_eq!(unopened_position[0].last_read, 0);
 }
 
@@ -307,8 +317,21 @@ fn source_availability_updates_only_the_matching_existing_file() {
             .set_source_file_availability(before.clone(), false)
             .unwrap()
     );
-    assert!(!core.library_entry(file.id.clone()).unwrap().needs_download);
-    assert!(core.library_entry(copy.id.clone()).unwrap().needs_download);
+    assert!(
+        !core
+            .library_entry(file.id.clone())
+            .unwrap()
+            .book()
+            .unwrap()
+            .needs_download
+    );
+    assert!(
+        core.library_entry(copy.id.clone())
+            .unwrap()
+            .book()
+            .unwrap()
+            .needs_download
+    );
     assert_eq!(core.source_decoding(file.id.clone()).unwrap(), "UTF-8");
     assert_eq!(
         core.source_file_location(file.id.clone()).unwrap().book_id,
@@ -324,9 +347,22 @@ fn source_availability_updates_only_the_matching_existing_file() {
         }
         assert!(!core.set_source_file_availability(stale, true).unwrap());
     }
-    assert!(!core.library_entry(file.id.clone()).unwrap().needs_download);
+    assert!(
+        !core
+            .library_entry(file.id.clone())
+            .unwrap()
+            .book()
+            .unwrap()
+            .needs_download
+    );
     core.scan_library_shelf("s".into(), vec![]).unwrap();
     assert!(!core.set_source_file_availability(before, true).unwrap());
     assert!(core.source_files("s".into()).unwrap().is_empty());
-    assert!(core.library_entry(copy.id).unwrap().needs_download);
+    assert!(
+        core.library_entry(copy.id)
+            .unwrap()
+            .book()
+            .unwrap()
+            .needs_download
+    );
 }

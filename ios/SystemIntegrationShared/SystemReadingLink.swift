@@ -35,18 +35,32 @@ enum SystemReadingWidgetModel {
         let byID = Dictionary(uniqueKeysWithValues: snapshot.books.map { ($0.id, $0) })
         return snapshot.recentIDs.prefix(max(0, limit)).compactMap { byID[$0] }
     }
+    enum Selection: Sendable {
+        case available(SystemReadingSnapshot.Book)
+        case missing(String)
+        case empty
+
+        var book: SystemReadingSnapshot.Book? {
+            if case .available(let book) = self { book } else { nil }
+        }
+        var targetID: String? {
+            switch self {
+            case .available(let book): book.id
+            case .missing(let id): id
+            case .empty: nil
+            }
+        }
+    }
+
     /// Selecting a missing book must never silently show a different recent book.
-    static func book(in snapshot: SystemReadingSnapshot, selectedID: String?) -> SystemReadingSnapshot.Book? {
-        guard let id = selectedID ?? snapshot.recentIDs.first else { return nil }
-        return snapshot.books.first { $0.id == id }
-    }
-    struct Selection: Sendable {
-        let book: SystemReadingSnapshot.Book?
-        let targetID: String?
-    }
-    static func selection(in snapshot: SystemReadingSnapshot?, selectedID: String?) -> Selection {
-        let selected = snapshot.flatMap { book(in: $0, selectedID: selectedID) }
-        return .init(book: selected, targetID: selectedID ?? selected?.id)
+    static func selection(in snapshot: SystemReadingSnapshot?, selectedID: String?, specific: Bool = false) -> Selection {
+        if let selectedID {
+            guard let selected = snapshot?.books.first(where: { $0.id == selectedID }) else { return .missing(selectedID) }
+            return .available(selected)
+        }
+        guard !specific, let snapshot, let recent = snapshot.recentIDs.first,
+              let book = snapshot.books.first(where: { $0.id == recent }) else { return .empty }
+        return .available(book)
     }
     static var sample: SystemReadingSnapshot.Book {
         .init(id: SystemReadingLink.bookIDPrefix + String(repeating: "a", count: 64),

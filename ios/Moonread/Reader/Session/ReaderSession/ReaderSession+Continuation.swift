@@ -36,7 +36,7 @@ extension ReaderSession {
     }
     func refreshSyncedContinuation() async {
         guard !isLeaving, !continuationSuppressed, let id = readingID, window != nil,
-              snapshot?.phase == .complete else { return }
+              snapshot?.preparation.isComplete == true else { return }
         firstContinuationReady = true
         let attempt = opening.request?.id, refresh = UUID()
         continuationRefresh = refresh
@@ -69,7 +69,7 @@ extension ReaderSession {
                 expectedConfiguration: candidate.configuration, whileCurrent: { continuation?.token == candidate.token })
             else { return }
             snapshot = frame.snapshot; window = ReadingWindow(frame: frame)
-            displayAnchor = target; anchor = target; showingCover = false
+            displayAnchor = target; surface = .body(SourceAnchor(target))
             navigation = ReadingNavigation(placement: .start); navigationRevision += 1
             history = visitReadingPosition(history: previous.1, fromUtf8: previous.0,
                 fromTitle: previous.2, toUtf8: target,

@@ -45,8 +45,33 @@ struct LibraryLocation: Codable, Hashable, Identifiable, Sendable {
 }
 
 extension LibraryEntry {
+    var bookRow: BookRow? { if case .book(let row) = item { row } else { nil } }
+    var folderRow: FolderRow? { if case .folder(let row) = item { row } else { nil } }
+    var directory: Bool { folderRow != nil }
+    var bookId: String? {
+        guard case .resolved(let record) = bookRow?.resolution,
+              case .associated(let bookID) = record.body else { return nil }
+        return bookID
+    }
+    var readingIdentity: ReadingKey? {
+        guard case .resolved(let record) = bookRow?.resolution else { return nil }
+        return record.key
+    }
     /// Reading data follows normalized text; unfinished imports retain their pending namespace.
-    var readingKey: String? { readingIdentity.map { serializeReadingKey(key: $0) } }
+    var readingKey: String? { readingIdentity.map(\.storageKey) }
+    var contentSha256: String? { readingKey }
+    var needsDownload: Bool { bookRow?.needsDownload ?? false }
+    var positionUtf8: UInt64 { bookRow?.positionUtf8 ?? 0 }
+    var byteCount: UInt64 { bookRow?.byteCount ?? 0 }
+    var chapterTitle: String? { bookRow?.chapterTitle }
+    var preferred: Bool { bookRow?.preferred ?? false }
+    var metadata: BookMetadata? { bookRow?.metadata }
+    func withMetadata(_ metadata: BookMetadata?) -> Self {
+        guard var book = bookRow else { return self }
+        book.metadata = metadata
+        var entry = self; entry.item = .book(row: book)
+        return entry
+    }
     var source: SourceFile { SourceFile(id: id, shelfID: shelfId, relativePath: relativePath) }
     var location: LibraryLocation { LibraryLocation(shelfID: shelfId, path: relativePath) }
     var parent: LibraryLocation { LibraryLocation(shelfID: shelfId, path: parentPath) }
@@ -61,15 +86,15 @@ struct LibraryScanSnapshot: Sendable {
 
 extension AppDataService {
     func libraryEntry(_ id: String) async throws -> LibraryEntry {
-        try await readingQuery(.file(id), options: .init(scope: "file-" + id)).libraryEntry(fileId: id)
+        try await readingQuery(.book(.file(fileId: id)), options: .init(scope: "file-" + id)).libraryEntry(fileId: id)
     }
 
     func catalogueScope(_ location: LibraryLocation?, recursive: Bool) -> CatalogueScope {
-        .init(shelfId: location?.shelfID, parentPath: location?.path, recursive: recursive)
+        location.map { .shelf(shelfId: $0.shelfID, parentPath: $0.path, recursive: recursive) } ?? .all
     }
     func catalogueQuery(_ location: LibraryLocation?, recursive: Bool) async throws -> ReaderQuery {
         // Folder aggregates include descendants even when displaying only children.
-        try await readingQuery(.catalogue(location, recursive: true), options: .init(scope: "catalogue"))
+        try await readingQuery(.catalogue(catalogueScope(location, recursive: true)), options: .init(scope: "catalogue"))
     }
 
     /// Deterministic latency for UI checks; release builds never delay queries.
@@ -245,9 +270,11 @@ extension AppDataService {
         let candidates = try query.librarySearchCandidates(scope: catalogueScope(location, recursive: true), booksOnly: spec.profile == .ai || spec.configuration.booksOnly)
         if spec.profile == .ai { try await requireAIMetadataReadable(nil, recursive: true) }
         var found = LibraryQueryRules.searchOutcome(candidates, spec: spec)
-        for index in found.entries.indices where found.entries[index].directory {
-            found.entries[index].coverPreviews = try query.libraryFolderCoverPreviews(
-                shelfId: found.entries[index].shelfId, relativePath: found.entries[index].relativePath)
+        for index in found.entries.indices {
+            let entry = found.entries[index]
+            guard var folder = entry.folderRow else { continue }
+            folder.coverPreviews = try query.libraryFolderCoverPreviews(shelfId: entry.shelfId, relativePath: entry.relativePath)
+            found.entries[index].item = .folder(row: folder)
         }
         return found
     }
@@ -266,7 +293,7 @@ extension AppDataService {
     func hideRecent(_ value: String) throws {
         let key: String
         if let parsed = try? parseReadingKey(value: value) { key = serializeReadingKey(key: parsed) }
-        else { key = try userKey(value) }
+        else { key = try userKey(value).storageKey }
         var hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
         hidden.insert(key); sourceDefaults.set(Array(hidden), forKey: "Moonread.hiddenRecent"); dataChanged(); scheduleSystemReadingCatalog(immediate: true)
     }
@@ -349,19 +376,48 @@ extension AppDataService {
         }
     }
 
-    private func resolveShelf(_ shelf: LibraryShelf) throws -> URL {
-        var stale = false
-        let url = try shelf.builtin ? builtinLibraryURL() : URL(resolvingBookmarkData: Data(shelf.bookmark), options: .withoutUI, bookmarkDataIsStale: &stale)
-        // Bookmarks follow folders into .Trash, often without becoming stale.
-        // Reject before scanning or rewriting the bookmark so restore can reconnect.
-        guard !url.standardizedFileURL.pathComponents.contains(".Trash") else { throw LibraryFileError.missingShelf }
-        if stale {
-            let access = url.startAccessingSecurityScopedResource()
-            defer { if access { url.stopAccessingSecurityScopedResource() } }
-            let data = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-            try textCore().saveLibraryShelf(id: shelf.id, name: url.lastPathComponent, bookmark: data, location: shelf.location, builtin: false)
+    enum ShelfSource {
+        enum ExternalAccess {
+            case usable(URL, stale: Bool)
+            case needsAuthorization
+            case unavailable(any Error)
         }
-        return url
+        case managedLocal(URL)
+        case managedCloud(URL)
+        case external(ExternalAccess)
+    }
+
+    func shelfSource(_ shelf: LibraryShelf) throws -> ShelfSource {
+        if shelf.builtin {
+            if let cloudLibraryRoot { return .managedCloud(cloudLibraryRoot) }
+            return .managedLocal(try builtinLibraryURL())
+        }
+        guard !shelf.bookmark.isEmpty else { return .external(.needsAuthorization) }
+        do {
+            var stale = false
+            let url = try URL(resolvingBookmarkData: Data(shelf.bookmark), options: .withoutUI, bookmarkDataIsStale: &stale)
+            // Bookmarks can follow folders into Trash without becoming stale.
+            guard !url.standardizedFileURL.pathComponents.contains(".Trash") else { return .external(.needsAuthorization) }
+            return .external(.usable(url, stale: stale))
+        } catch {
+            return .external(.unavailable(error))
+        }
+    }
+
+    private func resolveShelf(_ shelf: LibraryShelf) throws -> URL {
+        switch try shelfSource(shelf) {
+        case .managedLocal(let url), .managedCloud(let url): return url
+        case .external(.needsAuthorization): throw LibraryFileError.missingShelf
+        case .external(.unavailable(let error)): throw error
+        case .external(.usable(let url, let stale)):
+            if stale {
+                let access = url.startAccessingSecurityScopedResource()
+                defer { if access { url.stopAccessingSecurityScopedResource() } }
+                let data = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+                try textCore().saveLibraryShelf(id: shelf.id, name: url.lastPathComponent, bookmark: data, location: shelf.location, builtin: false)
+            }
+            return url
+        }
     }
 
     func refreshLibraryShelf(_ id: String) throws {

@@ -450,9 +450,9 @@ final class SyncCompatibilityTests: UserDataFixture {
     let (root, service, book, store) = try await editorFixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let model = BookInformationModel(
-      readInformation: { _ in (nil, try await service.details(bookID: book.id)) },
+      readInformation: { _ in (nil, try await service.bookDetails(.cached(bookId: book.id))) },
       readChapters: { _ in [] })
-    let target = StatisticsRoute(bookID: book.id, title: "Original sample", fromReader: true)
+    let target = StatisticsRoute(target: .cached(bookId: book.id), title: "Original sample", origin: .reader())
     await model.load(target)
     XCTAssertNotNil(model.details)
     let payload = try UserSyncJSON.encode(
@@ -476,7 +476,7 @@ final class SyncCompatibilityTests: UserDataFixture {
         [("fact", book.contentSha256, fact)], generation: 0, current: 0, enabled: true)
       let model = StatisticsModel(service: service, notifications: NotificationCenter())
       let window = StatisticsWindow(period: .all)
-      let target = StatisticsRoute(key: book.contentSha256, title: "Synthetic")
+      let target = StatisticsRoute(target: .record(key: .formal(sha256: book.contentSha256)), title: "Synthetic")
       await model.load(window, target: target)
       XCTAssertNotNil(model.state(window, target: target).overview)
       let futureFact = try syncJSON(syncFact(book.contentSha256, id: "futureFact")) { $0["v"] = 2 }

@@ -181,8 +181,8 @@ struct ReaderSettingsView: View {
     private var previewCollapsed: Bool { verticalSizeClass != .compact && previewDetent == .height(60) }
     private var previewTheme: ThemeSurface {
         if let draft {
-            return ThemeSurface(plan: ResolvedTheme(appearance: draft.palette.appearance, highContrast: themes.highContrast,
-                                                   colors: draft.palette.colors, paletteId: draft.palette.id))
+            return ThemeSurface(plan: ResolvedTheme(highContrast: themes.highContrast,
+                surface: .palette(appearance: draft.palette.appearance, id: draft.palette.id, colors: draft.palette.colors)))
         }
         var snapshot = themes.snapshot
         snapshot.preferences.readerMode = appearance == .light ? .light : .dark
@@ -412,8 +412,9 @@ struct ReadingSettingsControls: View {
         })
     }
     private var fontName: String {
-        if let font = settings.importedFont { return ReaderFontLibrary.shared.name(for: font) }
-        switch settings.font {
+        if case .imported(let font, _) = settings.fontChoice { return ReaderFontLibrary.shared.name(for: font) }
+        guard case .builtin(let font) = settings.fontChoice else { return String(localized: "系统") }
+        switch font {
         case .system: return String(localized: "系统")
         case .serif: return String(localized: "宋体")
         case .rounded: return String(localized: "圆体")

@@ -75,7 +75,7 @@ actor AIReadingTools {
     type + ":" + SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
   }
   static func bookRef(_ sha: String) -> String { "b:" + sha }
-  private func sha(_ ref: String) throws -> String { try AIReadingReferences.parseBookReference(ref) }
+  private func sha(_ ref: String) throws -> String { try AIReadingReferences.parseBookReference(ref).sha }
   private func files() async throws -> [LibraryEntry] { try await AIReadingReferences(reader: reader).files() }
   private func location(_ ref: String) async throws -> LibraryLocation { try await AIReadingReferences(reader: reader).location(ref) }
   private func file(_ ref: String) async throws -> LibraryEntry { try await AIReadingReferences(reader: reader).file(ref) }
@@ -170,10 +170,16 @@ actor AIReadingTools {
           || ($0.directory ? input.kind == .folders : input.kind == .books)
       }.map {
         var item = fileResult($0)
-        item.kind = $0.directory ? "folder" : "file"
-        item.ref = Self.ref(
-          $0.directory ? "d" : "f", $0.directory ? $0.shelfId + "/" + $0.relativePath : $0.id)
-        item.childBookCount = UInt64($0.childBookCount)
+        switch $0.item {
+        case .folder(let row):
+          item.kind = "folder"
+          item.ref = Self.ref("d", $0.shelfId + "/" + $0.relativePath)
+          item.childBookCount = row.childBookCount
+        case .book:
+          item.kind = "file"
+          item.ref = Self.ref("f", $0.id)
+          item.childBookCount = 0
+        }
         return item
       }
     } else {
@@ -216,24 +222,30 @@ actor AIReadingTools {
     return .init(data: .init(items: pageItems), page: page)
   }
   private func getBook(_ input: AIGetBookInput) async throws -> AIToolResponse<AIBookResult> {
-    var entry: LibraryEntry?
-    var ref = input.bookRef
-    if let fileRef = input.fileRef {
-      entry = try await file(fileRef)
-      if input.prepare == true, let entry {
-        let lease = try await reader.aiPrepare(entry.source)
-        ref = Self.bookRef(try await reader.snapshot(lease.id).book.contentSha256)
-      } else if let sha = entry?.metadata?.sha {
-        ref = Self.bookRef(sha)
+    let entry: LibraryEntry?
+    let contentSHA: String?
+    switch try ReadingToolTarget(input) {
+    case .book(let reference):
+      entry = nil
+      contentSHA = reference.sha
+    case .file(let reference, let policy):
+      let source = try await AIReadingReferences(reader: reader).file(reference)
+      entry = source
+      switch policy {
+      case .prepare:
+        let lease = try await reader.aiPrepare(source.source)
+        contentSHA = try parseSha256(value: await reader.snapshot(lease.id).book.contentSha256)
+      case .existingOnly:
+        contentSHA = try source.metadata.map { try parseSha256(value: $0.sha) }
       }
     }
-    guard let ref else {
+    guard let contentSHA else {
       return .init(
         data: .init(
           title: entry?.title ?? "", availability: entry.map(availability) ?? "unavailable",
           files: entry.map { [fileResult($0)] } ?? []))
     }
-    let details = try await reader.details(sha: sha(ref))
+    let details = try await reader.details(sha: contentSHA)
     let files = try await files().filter { $0.metadata?.sha == details.metadata.sha }
     var data = AIBookResult(
       title: details.book?.title ?? entry?.title ?? "",
@@ -241,7 +253,7 @@ actor AIReadingTools {
       files: files.map(fileResult))
     addMetadata(details.metadata, to: &data)
     data.wordCount = details.wordCount
-    data.chapterCount = UInt64(details.chapterCount)
+    data.chapterCount = details.chapterCount
     data.filesTruncated = false
     if let book = details.book {
       data.totalUtf8 = book.byteCount

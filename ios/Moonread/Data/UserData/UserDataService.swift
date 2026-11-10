@@ -2,6 +2,10 @@ import Foundation
 import SwiftData
 import CryptoKit
 
+extension ReadingKey {
+    var storageKey: String { serializeReadingKey(key: self) }
+}
+
 extension AppDataService {
     func userStore(pending: Bool = false, diagnostic: ReaderOpenTrace? = nil) async throws -> UserDataStore {
         let label = pending ? "pendingStore" : "formalStore"
@@ -11,7 +15,7 @@ extension AppDataService {
         if let cached = pending ? pendingUserStoreTask : userStoreTask { initialization = cached }
         else {
             let name = userDirectoryName, factory = userStoreFactory
-            let cloud = !pending && userCloudEnabled
+            let cloud = !pending && userCloudMode.isCloud
             let filename = pending ? "pending-users.store" : "user-data.store"
             let task = Task.detached {
                 diagnostic?.mark(label + ".initialize.begin")
@@ -42,7 +46,10 @@ extension AppDataService {
         }
     }
     func userStore(for key: String) async throws -> UserDataStore {
-        switch try parseReadingKey(value: key) {
+        try await userStore(for: parseReadingKey(value: key))
+    }
+    func userStore(for key: ReadingKey) async throws -> UserDataStore {
+        switch key {
         case .pending: try await userStore(pending: true)
         case .formal: try await userStore()
         }
@@ -56,20 +63,25 @@ extension AppDataService {
         catch ReaderError.NotFound { }
         throw ReaderError.NotFound
     }
-    func configureUserCloud(_ enabled: Bool, account: String?, allowAccountChange: Bool = false) async throws {
+    func configureUserCloud(_ configuration: CloudConfiguration) async throws {
         await acquireUserDataOperation()
         var holdsOperation = true
         defer { if holdsOperation { releaseUserDataOperation() } }
-        if enabled {
-            guard let account else { throw CocoaError(.userCancelled) }
-            if let previous = sourceDefaults.string(forKey: "Moonread.userOwner"), previous != account, !allowAccountChange { throw ReaderError.CloudAccountChanged }
-            // The verified user consent remains valid even if initialization fails.
+        let mode: UserCloudStoreMode
+        switch configuration {
+        case .local: mode = .local
+        case .cloud(let verified, let consent):
+            let account = verified.recordName
+            if let previous = sourceDefaults.string(forKey: "Moonread.userOwner"), previous != account,
+               case .currentOwner = consent { throw ReaderError.CloudAccountChanged }
+            // Verified user consent remains valid even if initialization fails.
             if sourceDefaults.string(forKey: "Moonread.userOwner") == nil { try? adoptLocalShelfBindings(account: account) }
             sourceDefaults.set(account, forKey: "Moonread.userOwner")
+            mode = .cloud(verified)
         }
-        if userCloudEnabled != enabled {
+        if userCloudMode != mode {
             cancelRecentRestoration()
-            userStoreTask = nil; userCloudEnabled = enabled
+            userStoreTask = nil; userCloudMode = mode
             userCloudConfigurationRevision = UUID()
             resetSystemReadingCatalog()
             NotificationCenter.default.post(name: .readingContinuationInvalidated, object: nil)
@@ -81,7 +93,7 @@ extension AppDataService {
             releaseUserDataOperation(); holdsOperation = false
             do { _ = try await userStore() }
             catch {
-                if userCloudConfigurationRevision == revision { userCloudEnabled = false }
+                if userCloudConfigurationRevision == revision { userCloudMode = .local }
                 throw error
             }
             guard userCloudConfigurationRevision == revision else { return }
@@ -116,8 +128,8 @@ extension AppDataService {
         if let id = sourceDefaults.string(forKey: "Moonread.userDevice") { return id }
         let id = UUID().uuidString; sourceDefaults.set(id, forKey: "Moonread.userDevice"); return id
     }
-    func userKey(_ id: String) throws -> String {
-        serializeReadingKey(key: try textCore().resolveBookIdentity(bookId: id).key)
+    func userKey(_ id: String) throws -> ReadingKey {
+        try textCore().resolveBookIdentity(bookId: id).key
     }
     func promoteUserData(_ id: String, retry: Bool = false) async throws {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
@@ -125,8 +137,7 @@ extension AppDataService {
         try await promoteUserDataLocked(id)
     }
     func promoteUserDataLocked(_ id: String) async throws {
-        let key = try userKey(id)
-        guard case .formal = try parseReadingKey(value: key) else { return }
+        guard case .formal(let key) = try userKey(id) else { return }
         let pending = try await userStore(pending: true)
         do {
             // A late CloudKit/import arrival must not be bypassed by the promotion fast path.
@@ -151,15 +162,15 @@ extension AppDataService {
         }
     }
     func readingCompatibilityNotice(_ id: String) async throws -> String? {
-        let key = try userKey(id)
-        if let notice = try await userStore(for: key).compatibilityNotice(key: key) { return notice }
-        if case .formal = try parseReadingKey(value: key) { return try await userStore(pending: true).compatibilityNotice(key: serializeReadingKey(key: .pending(bookId: id))) }
+        let identity = try userKey(id)
+        if let notice = try await userStore(for: identity).compatibilityNotice(key: identity.storageKey) { return notice }
+        if case .formal = identity { return try await userStore(pending: true).compatibilityNotice(key: serializeReadingKey(key: .pending(bookId: id))) }
         return nil
     }
     /// Separate LWW fact: never manufactures a reading position or activity.
     func recordBookOpened(_ id: String, at milliseconds: Int64) async throws {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
-        let key = try userKey(id)
+        let key = try userKey(id).storageKey
         if let file = readingSourceIDs[id] { sourceDefaults.set(file, forKey: "Moonread.preferredFile." + key) }
         var hidden = sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []
         hidden.removeAll { $0 == key }; sourceDefaults.set(hidden, forKey: "Moonread.hiddenRecent")
@@ -170,7 +181,7 @@ extension AppDataService {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         if let expectedConfiguration, expectedConfiguration != userCloudConfigurationRevision { throw CancellationError() }
         try await promoteUserDataLocked(id)
-        let core = try textCore(), key = try userKey(id)
+        let core = try textCore(), key = try userKey(id).storageKey
         let normalized = try core.normalizedPosition(bookId: id, offsetUtf8: offset)
         if let file = readingSourceIDs[id] { sourceDefaults.set(file, forKey: "Moonread.preferredFile." + key) }
         var hidden = sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []; hidden.removeAll { $0 == key }
@@ -191,7 +202,7 @@ extension AppDataService {
     }
     func userMarks(_ id: String, kind: MarkKind? = nil, snapshot: NoteCandidates? = nil) async throws -> [ReaderMark] {
         try await promoteUserData(id)
-        let key = try userKey(id)
+        let key = try userKey(id).storageKey
         let groups: [String: [AnnotationCandidate]]
         if let snapshot {
             guard snapshot.key == key else { throw UserDataConflict(candidates: []) }
@@ -210,7 +221,7 @@ extension AppDataService {
     }
     func userAnnotationRanges(_ id: String, start: UInt64, end: UInt64) async throws -> [ReaderMark] {
         try await promoteUserData(id)
-        let key = try userKey(id), store = try await userStore(for: key)
+        let key = try userKey(id).storageKey, store = try await userStore(for: key)
         let groups = try await store.candidates(key: key)
         var result: [ReaderMark] = []
         for (markID, heads) in groups {
@@ -226,7 +237,7 @@ extension AppDataService {
     func prepareUserAnnotation(_ id: String, start: UInt64, end: UInt64) async throws -> AnnotationEdit {
         guard start < end else { throw ReaderError.InvalidRange }
         try await promoteUserData(id)
-        let key = try userKey(id)
+        let key = try userKey(id).storageKey
         let groups = try await userStore(for: key).candidates(key: key)
         var marks = try await userMarks(id, kind: .annotation)
         for index in marks.indices {
@@ -254,7 +265,7 @@ extension AppDataService {
     func saveUserNote(_ edit: AnnotationEdit, text: String) async throws -> ReaderMark {
         guard text.utf8.count <= 64 * 1024, edit.startUtf8 < edit.endUtf8 else { throw ReaderError.InvalidRange }
         let content = AnnotationContent(start: edit.startUtf8, end: edit.endUtf8, excerpt: edit.excerpt, note: text)
-        let key = try userKey(edit.bookId)
+        let key = try userKey(edit.bookId).storageKey
         let created = edit.marks.map(\.created).min() ?? UInt64(Date().timeIntervalSince1970 * 1000)
         _ = try await userStore(for: key).saveAnnotation(key: key, edit: edit, content: content)
         dataChanged()
@@ -262,11 +273,11 @@ extension AppDataService {
             excerpt: content.excerpt, note: text, created: created)
     }
     func annotationEditingBundle(_ edit: AnnotationEdit) async throws -> [String: [AnnotationCandidate]] {
-        let key = try userKey(edit.bookId)
+        let key = try userKey(edit.bookId).storageKey
         return try await userStore(for: key).editingBundle(key: key, edit: edit)
     }
     func resolveAnnotation(_ edit: AnnotationEdit, expected: [String: [AnnotationCandidate]], content: AnnotationContent?) async throws {
-        let key = try userKey(edit.bookId)
+        let key = try userKey(edit.bookId).storageKey
         if let content {
             guard content.note.utf8.count <= 64 * 1024, content.start < content.end else { throw ReaderError.InvalidRange }
         }

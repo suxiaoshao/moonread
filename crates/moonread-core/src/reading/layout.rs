@@ -17,6 +17,31 @@ pub enum ReaderFont {
     Serif,
     Rounded,
 }
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ReaderFontChoice {
+    Builtin {
+        font: ReaderFont,
+    },
+    Imported {
+        id: ImportedReaderFont,
+        fallback: ReaderFont,
+    },
+}
+
+#[uniffi::export]
+pub fn resolve_reader_font_choice(
+    font: ReaderFont,
+    imported: Option<ImportedReaderFont>,
+) -> ReaderFontChoice {
+    match imported {
+        // Previous readers used the system font when a selected import was unavailable.
+        Some(id) => ReaderFontChoice::Imported {
+            id,
+            fallback: ReaderFont::System,
+        },
+        None => ReaderFontChoice::Builtin { font },
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Enum)]
 pub enum ReadingIndent {
     Original,

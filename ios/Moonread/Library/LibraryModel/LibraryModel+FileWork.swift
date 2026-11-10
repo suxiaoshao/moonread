@@ -11,22 +11,31 @@ extension LibraryModel {
         error = ReaderMessages.error(LibraryFileError.fileWorkBusy); return false
     }
     func launch(_ work: FileWork, operation: @escaping @MainActor () async throws -> Void) {
+        work.stage = .running
         work.task = Task {
+            var outcome = FileWork.Outcome.completed
             defer {
                 work.task = nil
-                if self.fileWork === work, Task.isCancelled {
-                    if case .replacement(.receive(let file, _), _) = self.pendingDecision { file.finish() }
-                    self.pendingDecision = nil
+                if self.fileWork === work {
+                    if Task.isCancelled {
+                        self.discardDecision(work)
+                        work.stage = .finished(.cancelled)
+                    } else if case .running = work.stage {
+                        work.stage = .finished(outcome)
+                    }
+                    self.finish(work)
                 }
-                if self.fileWork === work, self.pendingDecision == nil { self.finish(work) }
             }
             do { try Task.checkCancellation(); try await operation() }
-            catch is CancellationError { }
-            catch { self.error = ReaderMessages.error(error) }
+            catch is CancellationError { outcome = .cancelled }
+            catch { outcome = .failed; self.error = ReaderMessages.error(error) }
         }
     }
+    private func discardDecision(_ work: FileWork) {
+        if case .awaitingDecision(.replacement(.receive(let file, _), _)) = work.stage { file.finish() }
+    }
     func finish(_ work: FileWork) {
-        guard fileWork === work, pendingDecision == nil, importedBookToOpen == nil else { return }
+        guard fileWork === work, case .finished = work.stage else { return }
         for (file, _) in work.imports { file.finish() }; work.imports = []
         for command in work.commands { if case .receive(let file, _) = command { file.finish() } }
         work.commands = []; fileWork = nil
@@ -46,8 +55,9 @@ extension LibraryModel {
         guard let work = fileWork else { return }
         if let task = work.task { task.cancel() }
         else {
-            if case .replacement(.receive(let file, _), _) = pendingDecision { file.finish() }
-            pendingDecision = nil; finish(work)
+            discardDecision(work)
+            work.stage = .finished(.cancelled)
+            finish(work)
         }
     }
     func canAcceptDrop(at destination: LibraryLocation) -> Bool {
@@ -115,7 +125,7 @@ extension LibraryModel {
     }
     func continueFileWork(_ work: FileWork) async throws {
         guard fileWork === work else { throw CancellationError() }
-        while pendingDecision == nil {
+        while case .running = work.stage {
             try Task.checkCancellation()
             let command: LibraryCommand
             if work.kind == .imports {
@@ -126,10 +136,10 @@ extension LibraryModel {
             }
             _ = await perform(command, work: work)
         }
-        if pendingDecision == nil, work.kind == .imports {
+        if case .running = work.stage, work.kind == .imports {
             if let entry = work.imported.first {
                 switch work.importCompletion {
-                case .openSingle: importedBookToOpen = entry
+                case .openSingle: work.stage = .awaitingOpen(entry)
                 case .showFolder: path.append(.folder(entry.parent))
                 case .stayInFolder: break
                 }
@@ -150,7 +160,6 @@ extension LibraryModel {
     /// A decision resumes the existing task, never re-enters admission.
     func resolveDecision(_ id: UUID, accepting: Bool) async {
         guard let decision = pendingDecision, decision.id == id, let work = fileWork, work.task == nil else { return }
-        pendingDecision = nil
         launch(work) {
             switch decision {
             case .replacement(let command, _):
@@ -193,7 +202,7 @@ extension LibraryModel {
                     switch work.trashChoice {
                     case .permanentlyDelete: result = try await service.deleteLibraryItem(entry, permanently: true)
                     case .skip: return false
-                    case nil: pendingDecision = .trashUnsupported(entry); return false
+                    case nil: work.stage = .awaitingDecision(.trashUnsupported(entry)); return false
                     }
                 }
                 if let error = result.refreshError { self.error = ReaderMessages.error(error) }
@@ -211,7 +220,7 @@ extension LibraryModel {
         } catch is CancellationError {
             if case .receive(let file, _) = command { file.finish() }
         }
-        catch LibraryFileError.conflict { pendingDecision = .replacement(command) }
+        catch LibraryFileError.conflict { work.stage = .awaitingDecision(.replacement(command)) }
         catch {
             if case let .receive(file, location) = command {
                 importFailures.append(ImportFailure(file: file, location: location, message: ReaderMessages.error(error), completion: work.importCompletion == .stayInFolder ? .stayInFolder : .showFolder))

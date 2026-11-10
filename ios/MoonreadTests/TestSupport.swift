@@ -144,7 +144,7 @@ enum TestCredentials {
   static func load<T: Decodable>(_ key: String, as type: T.Type) throws -> T? {
     try store.load(key, as: type)
   }
-  static func load(_ key: String) throws -> AICredential? { try store.load(key) }
+  static func load(_ key: String) throws -> AICredentialStorage? { try store.load(key) }
   static func save<T: Encodable>(_ value: T, reference: String) throws {
     try store.save(value, reference: reference)
   }
@@ -183,8 +183,8 @@ final class OfflineTestProtocol: URLProtocol, @unchecked Sendable {
     session: URLSession = TestAI.session(),
     credentials: any CredentialStore = TestCredentials.store,
     chatGPTHostReference: String = "chatgpt/host",
-    credentialSaver: (@Sendable (AICredential, String) throws -> Void)? = nil,
-    credentialResolver: (@Sendable (AIConnection) async throws -> AICredential)? = nil,
+    credentialSaver: (@Sendable (AICredentialStorage, String) throws -> Void)? = nil,
+    credentialResolver: (@Sendable (AIConnection) async throws -> AICredentialStorage)? = nil,
     availability: AIAvailability? = nil
   ) -> AIAuthentication {
     AIAuthentication(

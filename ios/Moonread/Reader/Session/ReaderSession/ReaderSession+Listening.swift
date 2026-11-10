@@ -36,7 +36,7 @@ extension ReaderSession {
                         listening.pause(message: String(localized: "这部分正文还未准备好")); return
                     }
                     snapshot = frame.snapshot; window = next
-                    displayAnchor = frame.projectionAnchor; anchor = current.unit.startUtf8
+                    displayAnchor = frame.projectionAnchor; surface = .body(SourceAnchor(current.unit.startUtf8))
                     refreshAnnotations()
                 }
             } catch is CancellationError { }
@@ -78,7 +78,7 @@ extension ReaderSession {
 
     private func clearListeningBrowse(at offset: UInt64) {
         clearBrowse()
-        anchor = offset; displayAnchor = nil; showingCover = false
+        surface = .body(SourceAnchor(offset)); displayAnchor = nil
     }
 
     private func revealListeningPosition(_ initial: UInt64, request: ReaderNavigationRequest,
@@ -115,7 +115,7 @@ extension ReaderSession {
         audio: @escaping () -> any ListeningAudio = { SystemListeningAudio() }) -> ListeningSession {
         let provider = ListeningTextProvider(service: service)
         return ListeningSession(defaults: defaults, context: { [weak self] in
-            guard let self, !isLeaving, let id = readingID, let snapshot, snapshot.canRead else { return nil }
+            guard let self, !isLeaving, let id = readingID, let snapshot, snapshot.readablePrefix == .readable else { return nil }
             return ListeningContext(bookID: id, contentSHA: snapshot.book.contentSha256, generation: snapshot.generation,
                 offset: anchor, indent: settings?.indent ?? .original, title: snapshot.book.title, chapter: chapter?.title ?? "")
         }, read: { context, offset, beginning in

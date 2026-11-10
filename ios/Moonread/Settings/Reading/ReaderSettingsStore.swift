@@ -53,16 +53,16 @@ final class ReaderSettingsStore {
 
     /// Font changes publish only after durable save. Other preference edits can
     /// still coalesce, but cannot race a stale font reference back into storage.
-    func selectFont(_ font: ReaderFont, imported: ImportedReaderFont?) async throws {
+    func selectFont(_ choice: ReaderFontChoice) async throws {
         guard !fontSaving else { throw ReaderFontFailure.busy }
         fontSaving = true
         defer { fontSaving = false; startPendingWrite() }
         await flush()
         var next = value ?? defaultReaderSettings()
-        next.font = font; next.importedFont = imported
+        next.setFontChoice(choice)
         try await persist(next)
         var latest = value ?? next
-        latest.font = font; latest.importedFont = imported
+        latest.setFontChoice(choice)
         value = latest
         if pending != nil { pending = latest }
         refreshBuiltinFonts()
@@ -71,13 +71,13 @@ final class ReaderSettingsStore {
     func selectBuiltinFont(_ font: ReaderFont, fonts: ReaderBuiltinFonts = .shared, progress: (Double) -> Void = { _ in }) async throws {
         try await fonts.prepare(font, progress: progress)
         try Task.checkCancellation()
-        try await selectFont(font, imported: nil)
+        try await selectFont(.builtin(font: font))
     }
 
     func refreshBuiltinFonts() {
         let fonts = ReaderBuiltinFonts.shared
         fonts.refresh()
-        let missing = value.flatMap { $0.importedFont == nil && !fonts.isAvailable($0.font) ? $0.font : nil }
+        let missing: ReaderFont? = if case .builtin(let font) = value?.fontChoice, !fonts.isAvailable(font) { font } else { nil }
         if missing != lastMissingBuiltin {
             lastMissingBuiltin = missing
             fontNotice = missing == nil ? nil : String(localized: "当前字体需要重新下载，已暂用系统字体。请在阅读设置中重新选择宋体或圆体。")

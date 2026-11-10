@@ -46,7 +46,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
         .source(SourceFile(id: file.id, shelfID: "builtin", relativePath: "a.txt")))
       let ready = XCTNSPredicateExpectation(
         predicate: NSPredicate { _, _ in
-          session.window != nil && session.snapshot?.phase == .complete
+          session.window != nil && session.snapshot?.preparation.isComplete == true
         }, object: nil)
       await fulfillment(of: [ready], timeout: 5)
       let previous = try XCTUnwrap(session.readingID)
@@ -59,7 +59,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
       let finished = XCTNSPredicateExpectation(
         predicate: NSPredicate { _, _ in
           !session.restartingEncoding
-            && (outcome != "success" || session.snapshot?.phase == .complete)
+            && (outcome != "success" || session.snapshot?.preparation.isComplete == true)
         }, object: nil)
       await fulfillment(of: [finished], timeout: 5)
       if outcome == "success" {
@@ -109,7 +109,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     func complete(_ lease: ReadingLease) async throws -> ReadingSnapshot {
       try await service.waitForImportsIdle()
       let snapshot = try await service.snapshot(lease.id)
-      XCTAssertEqual(snapshot.phase, .complete)
+      XCTAssertTrue(snapshot.preparation.isComplete)
       return snapshot
     }
     let first = try await service.openSourceFile(entry.source)
@@ -180,7 +180,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
         defaults.removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: root)
       }
-      let target = StatisticsRoute(bookID: id, title: "暂停语义样本", fromReader: true)
+      let target = StatisticsRoute(target: .cached(bookId: id), title: "暂停语义样本", origin: .reader())
       let model = BookInformationModel(service: service)
       await model.load(target)
       model.edit(target)

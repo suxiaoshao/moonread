@@ -205,7 +205,7 @@ struct MoonreadApp: App {
                 guard let entry = try await library.service.libraryEntries(LibraryLocation(shelfID: "builtin"))
                     .first(where: { $0.title == fixture.books[0].title }) else { throw ReaderError.NotFound }
                 if page == .bookDetails {
-                    library.libraryPath = [.statistics(StatisticsRoute(key: entry.readingKey, bookID: entry.bookId, title: entry.title, fileID: entry.id))]
+                    library.libraryPath = [.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title))]
                 } else { library.open(entry) }
             }
         } catch { library.error = ReaderMessages.error(error) }

@@ -512,7 +512,7 @@ actor ChinaStorefrontLookup {
       auth: TestAI.authentication(
         makeCallbackSource: { CallbackFixture.make() },
         credentialResolver: { _ in
-          AICredential(
+          AICredentialStorage(
             accessToken: "test-only", refreshToken: "test-only", expires: .distantFuture,
             accountID: "fixture")
         }),
@@ -665,7 +665,7 @@ final class AIExpandedAuthProtocol: URLProtocol, @unchecked Sendable {
     let auth = TestAI.authentication(
       makeCallbackSource: { CallbackFixture.make() },
       credentialResolver: { _ in
-        AICredential(
+        AICredentialStorage(
           accessToken: "test-only", refreshToken: "", expires: .distantFuture, accountID: "fixture")
       })
     let providers = TestAI.connections(defaults: defaults, auth: auth)

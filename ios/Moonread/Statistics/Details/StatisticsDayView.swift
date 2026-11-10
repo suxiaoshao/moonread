@@ -7,7 +7,7 @@ struct StatisticsDayView: View {
     @Environment(\.theme) private var theme
     @State private var model = StatisticsModel()
     private var scope: StatisticsModel.Scope {
-        .init(bounds: route.day...route.day, book: route.book.map { .content($0) } ?? .all,
+        .init(bounds: route.day...route.day, target: route.book.flatMap { try? parseReadingKey(value: $0) }.map { .book(.record(key: $0)) } ?? .all,
               cumulativeLast: nil, purpose: .activities)
     }
     private var state: StatisticsModel.State { model.state(scope) }

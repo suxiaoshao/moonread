@@ -27,36 +27,44 @@ struct CloudDocumentSnapshot: Sendable {
 /// Keep the system's metadata snapshot and use it to augment normal scans.
 @MainActor final class CloudDocumentQuery: NSObject, CloudDiscoverySource {
     static let shared = CloudDocumentQuery()
-    private var query: NSMetadataQuery?
-    private var notifications: [AnyCancellable] = []
-    private var generation: UUID?
-    private var revision = 0
-    private var gathered = false
-    private var emittedItems: [CloudDocumentItem]?
-    private var emittedGathered = false
-    private var receive: ((CloudDocumentSnapshot) -> Void)?
-    private var failed: ((UUID) -> Void)?
+    private struct ActiveQuery {
+        let query: NSMetadataQuery
+        let generation: UUID
+        let receive: (CloudDocumentSnapshot) -> Void
+        let failed: (UUID) -> Void
+        var notifications: [AnyCancellable] = []
+        var lastSnapshot: CloudDocumentSnapshot?
+    }
+    private enum Discovery {
+        case idle
+        case active(ActiveQuery)
+    }
+    private var discovery = Discovery.idle
     func stop() {
-        query?.stop(); notifications.removeAll()
-        query = nil; generation = nil; receive = nil; failed = nil
+        guard case .active(let active) = discovery else { return }
+        discovery = .idle
+        active.query.stop()
+        active.notifications.forEach { $0.cancel() }
     }
     func start(generation: UUID, receive: @escaping (CloudDocumentSnapshot) -> Void, failed: @escaping (UUID) -> Void) {
-        guard self.generation != generation else { return }
-        stop(); self.generation = generation; self.receive = receive; self.failed = failed
-        revision = 0; gathered = false; emittedItems = nil; emittedGathered = false
-        let query = NSMetadataQuery(); self.query = query
+        if case .active(let active) = discovery, active.generation == generation { return }
+        stop()
+        let query = NSMetadataQuery()
         query.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope]
         query.predicate = NSPredicate(format: "%K ENDSWITH[c] %@", NSMetadataItemFSNameKey, ".txt")
+        var active = ActiveQuery(query: query, generation: generation, receive: receive, failed: failed)
         for name in [Notification.Name.NSMetadataQueryDidFinishGathering, .NSMetadataQueryDidUpdate] {
-            notifications.append(MainActorNotifications.observe(name, object: query) { [weak self] in
+            active.notifications.append(MainActorNotifications.observe(name, object: query) { [weak self] in
                 self?.changed(query, finishedGathering: name == .NSMetadataQueryDidFinishGathering)
             })
         }
-        if !query.start() { failed(generation) }
+        discovery = .active(active)
+        if !query.start() { active.failed(generation) }
     }
     private func changed(_ source: NSMetadataQuery, finishedGathering: Bool) {
-        guard let query, source === query, let generation else { return }
-        if finishedGathering { gathered = true }
+        guard case .active(var active) = discovery, source === active.query else { return }
+        let query = active.query
+        let gathered = finishedGathering || active.lastSnapshot?.gathered == true
         query.disableUpdates()
         let items = query.results.compactMap { result -> CloudDocumentItem? in
             guard let item = result as? NSMetadataItem, let url = item.value(forAttribute: NSMetadataItemURLKey) as? URL else { return nil }
@@ -69,9 +77,12 @@ struct CloudDocumentSnapshot: Sendable {
         query.enableUpdates()
         let ordered = items.sorted { $0.url.absoluteString < $1.url.absoluteString }
         // The first gathering boundary matters even when the snapshot is empty or equal.
-        guard emittedItems != ordered || emittedGathered != gathered else { return }
-        emittedItems = ordered; emittedGathered = gathered; revision += 1
-        receive?(CloudDocumentSnapshot(generation: generation, revision: revision, gathered: gathered, items: ordered))
+        guard active.lastSnapshot?.items != ordered || active.lastSnapshot?.gathered != gathered else { return }
+        let snapshot = CloudDocumentSnapshot(generation: active.generation, revision: (active.lastSnapshot?.revision ?? 0) + 1,
+                                             gathered: gathered, items: ordered)
+        active.lastSnapshot = snapshot
+        discovery = .active(active)
+        active.receive(snapshot)
     }
 }
 
@@ -87,10 +98,51 @@ struct HandoffAssociation: Codable, Sendable {
 }
 
 struct CloudHandoffReceipt: Codable, Sendable {
-    var copied = false
+    enum Stage: Equatable, Sendable { case intent, copied, published, invalidLegacy }
+    private(set) var stage: Stage
     let bytesHash: String
     var association: HandoffAssociation?
-    var published = false
+    var copied: Bool { stage == .copied || stage == .published }
+    var published: Bool { stage == .published }
+
+    init(bytesHash: String, association: HandoffAssociation? = nil) {
+        stage = .intent; self.bytesHash = bytesHash; self.association = association
+    }
+    mutating func recordCopy() throws {
+        switch stage {
+        case .intent: stage = .copied
+        case .copied, .published: break
+        case .invalidLegacy: throw ReaderError.SourceChanged
+        }
+    }
+    mutating func recordPublication() throws {
+        switch stage {
+        case .copied: stage = .published
+        case .published: break
+        case .intent, .invalidLegacy: throw ReaderError.SourceChanged
+        }
+    }
+    private enum CodingKeys: String, CodingKey { case copied, bytesHash, association, published }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        bytesHash = try container.decode(String.self, forKey: .bytesHash)
+        association = try container.decodeIfPresent(HandoffAssociation.self, forKey: .association)
+        let copied = try container.decodeIfPresent(Bool.self, forKey: .copied) ?? false
+        let published = try container.decodeIfPresent(Bool.self, forKey: .published) ?? false
+        switch (copied, published) {
+        case (false, false): stage = .intent
+        case (true, false): stage = .copied
+        case (true, true): stage = .published
+        case (false, true): stage = .invalidLegacy
+        }
+    }
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(copied, forKey: .copied)
+        try container.encode(published || stage == .invalidLegacy, forKey: .published)
+        try container.encode(bytesHash, forKey: .bytesHash)
+        try container.encodeIfPresent(association, forKey: .association)
+    }
 }
 
 /// Durable evidence belongs to this one-time handoff, not a folder mirror.
@@ -173,7 +225,7 @@ enum CloudDocumentHandoff {
                 result = Result {
                     let digest = try bytesHash(from)
                     if var saved = receipts[relative], !replacing.contains(relative) {
-                        guard saved.bytesHash == digest else { throw ReaderError.SourceChanged }
+                        guard saved.stage != .invalidLegacy, saved.bytesHash == digest else { throw ReaderError.SourceChanged }
                         if saved.copied {
                             try verifyBytes(to, expectedHash: saved.bytesHash)
                             return
@@ -183,7 +235,7 @@ enum CloudDocumentHandoff {
                         if fm.fileExists(atPath: to.path) {
                             try verifyBytes(to, expectedHash: saved.bytesHash)
                             try verifyBytes(from, expectedHash: digest)
-                            saved.copied = true; receipts[relative] = saved; try persist(receipts); return
+                            try saved.recordCopy(); receipts[relative] = saved; try persist(receipts); return
                         }
                     }
                     try verifyBytes(from, expectedHash: digest)
@@ -202,7 +254,7 @@ enum CloudDocumentHandoff {
                         _ = try fm.replaceItemAt(to, withItemAt: copy)
                     } else { try makeUbiquitous(copy, to) }
                     try verifyBytes(to, expectedHash: digest)
-                    receipts[relative]?.copied = true
+                    try receipts[relative]?.recordCopy()
                     try persist(receipts)
                     try verifyBytes(from, expectedHash: digest)
                 }
@@ -212,7 +264,7 @@ enum CloudDocumentHandoff {
         _ = try verifiedTransfers(local: local, cloud: cloud, receipts: receipts)
         guard removeOriginals else { return }
         try activate()
-        for key in receipts.keys { receipts[key]?.published = true }
+        for key in receipts.keys { try receipts[key]?.recordPublication() }
         try persist(receipts)
         try cleanup(local: local, cloud: cloud, receipts: &receipts, persist: persist)
     }
@@ -465,7 +517,7 @@ extension AppDataService {
                         try await self.commitCloudHandoff(core: core, cloud: cloud, previousRoot: previousRoot, bookmark: bookmark,
                             files: transfers, items: items, sources: sources, updates: updates, requireIdleImports: requireIdleImports, validateIdentity: validateIdentity)
                     }
-                    for path in receipts.keys { receipts[path]?.published = true }
+                    for path in receipts.keys { try receipts[path]?.recordPublication() }
                     try persist(receipts) // Index first; durable receipt second; originals remain until cleanup.
                 }
             }

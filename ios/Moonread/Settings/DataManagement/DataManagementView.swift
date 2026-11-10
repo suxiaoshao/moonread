@@ -74,10 +74,10 @@ struct DataManagementView: View {
         .onReceive(NotificationCenter.default.publisher(for: .cloudStatusChanged).receive(on: DispatchQueue.main)) { _ in if !model.busy { Task { await model.load() } } }
         .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in if !model.busy { Task { await model.load() } } }
         .fileImporter(isPresented: $picker, allowedContentTypes: [.moonreadBackup]) { result in
-            switch result { case .success(let url): Task { await model.prepareImport(url) }; case .failure(let error): model.error = error.localizedDescription }
+            switch result { case .success(let url): Task { await model.prepareImport(url) }; case .failure(let error): model.showError(error.localizedDescription) }
         }
         .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) { if let sharing { LibraryShareSheet(files: sharing) } }
-        .sheet(isPresented: Binding(get: { model.preview != nil }, set: { if !$0 && !model.busy { model.preview = nil } })) { BackupImportPreviewView(model: model) }
+        .sheet(isPresented: Binding(get: { model.preview != nil }, set: { if !$0 && !model.busy { model.closePreview() } })) { BackupImportPreviewView(model: model) }
     }
     private func exportBackup() {
         Task {
@@ -88,7 +88,7 @@ struct DataManagementView: View {
             #endif
             if model.exported != nil {
                 do { sharing = try await model.shareBackup() }
-                catch { model.error = ReaderMessages.error(error) }
+                catch { model.showError(ReaderMessages.error(error)) }
             }
         }
     }
@@ -109,9 +109,9 @@ struct ReadingDataWorking: ViewModifier {
     @Bindable var model: DataManagementModel
     func body(content: Content) -> some View {
         content.disabled(model.busy).overlay {
-            if model.busy {
+            if let working = model.working {
                 VStack(spacing: 12) {
-                    ProgressView(model.working)
+                    ProgressView(working)
                     if model.canCancel { Button("取消") { model.cancel() } }
                 }.padding().background(theme.floatingBackground(), in: .rect(cornerRadius: 12)).accessibilityIdentifier("readingDataWorking")
             }
@@ -179,7 +179,7 @@ private struct BackupImportPreviewView: View {
                 }.padding().background(Color(uiColor: theme.canvas))
             }
             .modifier(ReadingDataWorking(model: model))
-            .toolbar { ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("取消", role: .cancel) { if !model.busy { model.preview = nil } }.disabled(model.busy) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("取消", role: .cancel) { if !model.busy { model.closePreview() } }.disabled(model.busy) } }
             .interactiveDismissDisabled(model.busy)
         }
     }

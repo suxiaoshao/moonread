@@ -111,23 +111,36 @@ fn import_failure_keeps_kind_and_parameters_after_reopen() {
     drop(core);
     let reopened = ReaderCore::new(dir.path().join("data").to_string_lossy().into()).unwrap();
     let state = reopened.reading_snapshot(id.clone()).unwrap();
-    assert_eq!(state.phase, ImportPhase::Failed);
+    assert!(matches!(state.preparation, PreparationState::Failed { .. }));
     assert!(
-        matches!(state.error, Some(ReaderError::Decode { message }) if message == "invalid byte at 42")
+        matches!(state.preparation, PreparationState::Failed { detail: FailureDetail::Reported { error: ReaderError::Decode { message } } } if message == "invalid byte at 42")
     );
+    reopened
+        .lock()
+        .unwrap()
+        .execute("UPDATE import_jobs SET error=NULL WHERE book_id=?1", [&id])
+        .unwrap();
+    assert!(matches!(
+        reopened.reading_snapshot(id.clone()).unwrap().preparation,
+        PreparationState::Failed {
+            detail: FailureDetail::Unavailable
+        }
+    ));
     let retry = reopened.resume_import(id.clone()).unwrap();
     assert!(
         reopened
             .reading_snapshot(id.clone())
             .unwrap()
-            .error
-            .is_none()
+            .preparation
+            .is_active()
     );
     retry.pause();
     reopened.fail_import(retry, ReaderError::Paused).unwrap();
     let paused = reopened.reading_snapshot(id).unwrap();
-    assert_eq!(paused.phase, ImportPhase::Paused);
-    assert!(paused.error.is_none());
+    assert!(matches!(
+        paused.preparation,
+        PreparationState::Paused { .. }
+    ));
 }
 
 struct Gate {
@@ -243,7 +256,10 @@ fn blank_window_awaiting_pause_resume_confirms_only_whole_lines() {
         proceed.send(()).unwrap();
         assert!(worker.join().unwrap().is_err());
         assert_eq!(
-            core.reading_snapshot(token.id.clone()).unwrap().phase,
+            core.reading_snapshot(token.id.clone())
+                .unwrap()
+                .preparation
+                .legacy_phase(),
             ImportPhase::Paused
         );
         let resumed = core.resume_import(token.id.clone()).unwrap();
@@ -392,7 +408,7 @@ fn tolerant_decode_resumes_old_failed_prefix_and_matches_index_identity() {
     .unwrap();
     core.finish_import(retry).unwrap();
     let state = core.reading_snapshot(token.id.clone()).unwrap();
-    assert_eq!(state.phase, ImportPhase::Complete);
+    assert_eq!(state.preparation.legacy_phase(), ImportPhase::Complete);
     assert_eq!(core.read_chunk(token.id.clone(), 0).unwrap().text, prefix);
     let actual: String = (0..state.book.chunk_count)
         .map(|i| core.read_chunk(token.id.clone(), i).unwrap().text)
@@ -467,8 +483,8 @@ fn storage_failure_preserves_prefix_even_if_error_status_cannot_be_written() {
         .is_err()
     );
     let state = core.reading_snapshot(token.id.clone()).unwrap();
-    assert!(state.can_read);
-    assert_eq!(state.phase, ImportPhase::Failed);
+    assert!(state.readable_prefix == ReadablePrefix::Readable);
+    assert!(matches!(state.preparation, PreparationState::Failed { .. }));
     let prefix = core.reading_frame(token.id.clone(), 0).unwrap().chunks[0]
         .text
         .clone();
@@ -497,7 +513,7 @@ fn readable_and_position_calculation_works_before_eof() {
     let (token, reached, proceed, worker) = gated(&core, &text);
     reached.recv_timeout(Duration::from_secs(5)).unwrap();
     let state = core.reading_snapshot(token.id.clone()).unwrap();
-    assert!(state.can_read);
+    assert!(state.readable_prefix == ReadablePrefix::Readable);
     assert!(state.book.byte_count < text.len() as u64);
     assert!(state.book.content_sha256.is_empty());
     assert!(
@@ -529,7 +545,7 @@ fn readable_and_position_calculation_works_before_eof() {
     worker.join().unwrap().unwrap();
     let id = core.finish_import(token).unwrap();
     let state = core.reading_snapshot(id.clone()).unwrap();
-    assert_eq!(state.phase, ImportPhase::Complete);
+    assert_eq!(state.preparation.legacy_phase(), ImportPhase::Complete);
     assert_eq!(state.book.byte_count, text.len() as u64);
     assert!(core.reading_frame(id, u64::MAX).unwrap().is_end_of_book);
 }
@@ -563,8 +579,15 @@ fn paused_prefix_survives_reopen_and_replay_continues_without_duplication() {
         drop(core);
         let core = ReaderCore::new(dir.path().join("data").to_string_lossy().into()).unwrap();
         let state = core.reading_snapshot(id.clone()).unwrap();
-        assert_eq!(state.phase, ImportPhase::Paused, "{interruption}");
-        assert!(state.can_read, "{interruption}");
+        assert_eq!(
+            state.preparation.legacy_phase(),
+            ImportPhase::Paused,
+            "{interruption}"
+        );
+        assert!(
+            state.readable_prefix == ReadablePrefix::Readable,
+            "{interruption}"
+        );
         let next = core.resume_import(id.clone()).unwrap();
         core.stream_import(
             next.clone(),
@@ -575,7 +598,11 @@ fn paused_prefix_survives_reopen_and_replay_continues_without_duplication() {
         .unwrap();
         core.finish_import(next).unwrap();
         let state = core.reading_snapshot(id.clone()).unwrap();
-        assert_eq!(state.phase, ImportPhase::Complete, "{interruption}");
+        assert_eq!(
+            state.preparation.legacy_phase(),
+            ImportPhase::Complete,
+            "{interruption}"
+        );
         assert_eq!(
             (0..state.book.chunk_count)
                 .map(|i| core.read_chunk(id.clone(), i).unwrap().text)

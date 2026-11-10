@@ -263,11 +263,9 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
                 let merged = previous.chunks + window.chunks.filter { $0.startUtf8 >= previous.end }
                 if Set(merged.map(\.index)).count <= 256 && merged.reduce(0, { $0+$1.text.utf8.count }) <= 65536 {
                     let paragraphs = previous.paragraphs.filter { $0.startUtf8 < window.start } + window.paragraphs
-                    var combined = window
-                    combined.chunks = merged; combined.paragraphs = paragraphs
-                    combined.sourceStart = previous.start; combined.omitted = previous.omitted + window.omitted
-                    combined.previousCursor = previous.previousCursor; combined.isStartOfBook = previous.isStartOfBook
-                    appendScrollContents(combined)
+                    if let combined = window.extendingScroll(previous, chunks: merged, paragraphs: paragraphs) {
+                        appendScrollContents(combined)
+                    }
                 }
             }
         } else {

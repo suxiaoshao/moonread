@@ -24,10 +24,11 @@ enum AIConnectionState: Equatable {
                       old.protocolIdentity == new.protocolIdentity, old.catalogCredentialGeneration == new.catalogCredentialGeneration else {
                     sharing.revoke(old.id); invalidateCatalog(old.id)
                     if let index = connections.firstIndex(where: { $0.id == old.id }) {
-                        connections[index].models = connections[index].models.filter { $0.isManual == true }.map {
+                        let manuals = connections[index].models.filter { $0.isManual == true }.map {
                             AIModelOption(id: $0.id, name: $0.name, contextWindow: $0.contextWindow, thinking: [], maxOutput: $0.maxOutput, isManual: true)
                         }
-                        connections[index].modelsChecked = nil; connections[index].modelsOrigin = nil; connections[index].modelsIdentity = nil
+                        connections[index].directorySnapshot = .legacy(manuals)
+                        runtime[old.id, default: ConnectionRuntime()].directory = .idle
                     }
                     continue
                 }
@@ -40,16 +41,105 @@ enum AIConnectionState: Equatable {
     var error: String?
     var credentialRevision = 0
     var loginConnectionID: String?
-    var loginStates: [String: AILoginState] = [:]
+    private enum LoginReason { case expiredSession, directoryRejected }
+    private enum AuthorizationSnapshot {
+        case disconnected
+        case available(reference: String, generation: UUID?)
+        case needsLogin(LoginReason)
+    }
+    private enum LoginAttempt {
+        case preparing
+        case browser(AIAuthentication.BrowserAuthorization)
+    }
+    private enum LoginFailure { case expired, message(String) }
+    private enum Authorization {
+        case settled(AuthorizationSnapshot)
+        case authorizing(LoginAttempt, previous: AuthorizationSnapshot)
+        case failed(LoginFailure, previous: AuthorizationSnapshot)
+
+        var snapshot: AuthorizationSnapshot {
+            switch self {
+            case .settled(let snapshot), .authorizing(_, let snapshot), .failed(_, let snapshot): snapshot
+            }
+        }
+        var presentation: AILoginState? {
+            switch self {
+            case .settled: nil
+            case .authorizing(.preparing, _): .authorizing
+            case .authorizing(.browser(let request), _): .browser(request)
+            case .failed(.expired, _): .expired
+            case .failed(.message(let message), _): .failed(message)
+            }
+        }
+        func updatingSnapshot(_ value: AuthorizationSnapshot) -> Self {
+            switch self {
+            case .settled: .settled(value)
+            case .authorizing(let attempt, _): .authorizing(attempt, previous: value)
+            case .failed(let error, _): .failed(error, previous: value)
+            }
+        }
+    }
+    private enum DirectoryState {
+        case idle
+        case refreshing(previous: AIDirectorySnapshot)
+        case ready(AIDirectorySnapshot)
+        case failed(String, previous: AIDirectorySnapshot?)
+
+        var snapshot: AIDirectorySnapshot? {
+            switch self {
+            case .idle: nil
+            case .refreshing(let value), .ready(let value): value
+            case .failed(_, let previous): previous
+            }
+        }
+        var isRefreshing: Bool { if case .refreshing = self { true } else { false } }
+        var error: String? { if case .failed(let message, _) = self { message } else { nil } }
+    }
+    private struct ConnectionRuntime {
+        var authorization = Authorization.settled(.disconnected)
+        var directory = DirectoryState.idle
+    }
+    private var runtime: [String: ConnectionRuntime] = [:]
     var showingChatGPTWelcome = false
-    var modelErrors: [String: String] = [:]
     var modelNotices: [String: String] = [:]
     var credentialErrors: [String: String] = [:]
-    var needsLogin = Set<String>()
-    private var authenticatedConnections = Set<String>()
     @ObservationIgnored private var modelRevisions: [String: UUID] = [:]
     @ObservationIgnored private var modelTasks: [String: Task<Void, Never>] = [:]
-    var refreshingModels = Set<String>()
+
+    func loginState(_ id: String) -> AILoginState? { runtime[id]?.authorization.presentation }
+    func setLoginPresentation(_ value: AILoginState?, for id: String) {
+        let current = runtime[id]?.authorization.snapshot ?? .disconnected
+        runtime[id, default: ConnectionRuntime()].authorization = switch value {
+        case nil: .settled(current)
+        case .authorizing: .authorizing(.preparing, previous: current)
+        case .browser(let request): .authorizing(.browser(request), previous: current)
+        case .expired: .failed(.expired, previous: current)
+        case .failed(let message): .failed(.message(message), previous: current)
+        }
+    }
+    func requiresLogin(_ id: String) -> Bool {
+        if case .needsLogin = runtime[id]?.authorization.snapshot { true } else { false }
+    }
+    func isRefreshing(_ id: String) -> Bool { runtime[id]?.directory.isRefreshing == true }
+    var refreshingModels: Set<String> { Set(runtime.keys.filter { isRefreshing($0) }) }
+    func modelError(_ id: String) -> String? { runtime[id]?.directory.error }
+
+    private func setAuthorization(_ value: AuthorizationSnapshot, for id: String) {
+        let current = runtime[id]?.authorization ?? .settled(.disconnected)
+        runtime[id, default: ConnectionRuntime()].authorization = current.updatingSnapshot(value)
+    }
+    private func markAuthorized(_ id: String) {
+        guard let connection = connections.first(where: { $0.id == id }) else { return }
+        setAuthorization(.available(reference: connection.credentialReference, generation: connection.catalogCredentialGeneration), for: id)
+    }
+    private func publishDirectoryError(_ message: String, for id: String) {
+        let previous = connections.first(where: { $0.id == id })?.directorySnapshot ?? runtime[id]?.directory.snapshot
+        runtime[id, default: ConnectionRuntime()].directory = .failed(message, previous: previous)
+    }
+    private func finishDirectoryRefresh(_ id: String) {
+        guard case .refreshing(let previous) = runtime[id]?.directory else { return }
+        runtime[id, default: ConnectionRuntime()].directory = .ready(previous)
+    }
     @ObservationIgnored let auth: AIAuthentication
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var loginTask: Task<Void, Never>?
@@ -72,9 +162,8 @@ enum AIConnectionState: Equatable {
                 // 1.4 ordinary API snapshots may be public metadata, not a
                 // successful directory read. Keep only explicit manual records.
                 if policy.kind != .metadata, policy.kind != .chatGPT,
-                   connection.modelsOrigin != policy.origin || connection.modelsIdentity != connection.catalogIdentity {
-                    connection.models.removeAll { $0.isManual != true }
-                    connection.modelsChecked = nil; connection.modelsOrigin = nil; connection.modelsIdentity = nil
+                   connection.verifiedDirectory?.origin != policy.origin {
+                    connection.directorySnapshot = .legacy(connection.models.filter { $0.isManual == true })
                 }
                 return connection
             }
@@ -100,11 +189,11 @@ enum AIConnectionState: Equatable {
             image.id = "fixture-image"; image.name = "测试绘图连接"
             image.models = [AIModelOption(id: "image", name: "Image Model", thinking: [], capabilities: .init(text: false, imageOutput: true))]
             connections = [first, second, image]; defaultTextConnectionID = first.id
-            authenticatedConnections = [first.id, second.id, image.id]
+            [first.id, second.id, image.id].forEach { markAuthorized($0) }
         }
         if arguments.contains("--ui-testing"), session != nil, arguments.contains("--ui-test-ai-key-write-failure") {
             var connection = AIConnection(name: "离线密钥连接", billing: .usage, baseURL: "https://example.com", providerID: "fixture", providerName: "Fixture", wireProtocol: .chat, authMethod: .apiKey)
-            connection.id = "fixture-key"; connections = [connection]; authenticatedConnections = [connection.id]
+            connection.id = "fixture-key"; connections = [connection]; markAuthorized(connection.id)
         }
         if arguments.contains("--ui-testing"), session != nil, arguments.contains("--ui-test-ai-login-browser") {
             var connection = AIProviderPreset.all.first { $0.auth == .chatGPT }!.connection()
@@ -118,7 +207,7 @@ enum AIConnectionState: Equatable {
     private func beginOfflineBrowserAuthorization(_ connection: AIConnection) {
         let listener = AIChatGPTLoopback()
         listener.enableOfflineConsentPage()
-        loginConnectionID = connection.id; loginStates[connection.id] = .authorizing
+        loginConnectionID = connection.id; setLoginPresentation(.authorizing, for: connection.id)
         loginTask = Task {
             defer { listener.stop() }
             do {
@@ -126,15 +215,15 @@ enum AIConnectionState: Equatable {
                 try Task.checkCancellation()
                 let url = redirect.deletingLastPathComponent().deletingLastPathComponent().appending(path: "fixture/authorize")
                 let request = AIAuthentication.BrowserAuthorization(id: UUID().uuidString, url: url, expires: .distantFuture)
-                loginStates[connection.id] = .browser(request)
+                setLoginPresentation(.browser(request), for: connection.id)
                 for try await _ in listener.callbacks {
                     try Task.checkCancellation()
-                    loginStates[connection.id] = nil; loginConnectionID = nil
-                    authenticatedConnections.insert(connection.id)
+                    setLoginPresentation(nil, for: connection.id); loginConnectionID = nil
+                    markAuthorized(connection.id)
                     if !defaults.bool(forKey: "Moonread.ai.chatGPTWelcomeSeen") { showingChatGPTWelcome = true }
                     return
                 }
-            } catch { if !Task.isCancelled { loginStates[connection.id] = .failed(Self.connectionError(error)); loginConnectionID = nil } }
+            } catch { if !Task.isCancelled { setLoginPresentation(.failed(Self.connectionError(error)), for: connection.id); loginConnectionID = nil } }
         }
     }
     #endif
@@ -157,7 +246,7 @@ enum AIConnectionState: Equatable {
             invalidateCatalog(id)
             try await auth.saveAPIKey(key, connection: connection)
             resetCatalog(id)
-            authenticatedConnections.insert(id); needsLogin.remove(id); credentialRevision += 1
+            markAuthorized(id); credentialRevision += 1
             await refreshModels(id)
             return true
         } catch { credentialErrors[id] = Self.connectionError(error); return false }
@@ -173,8 +262,9 @@ enum AIConnectionState: Equatable {
     }
     func isLoggedIn(_ connection: AIConnection) -> Bool {
         _ = credentialRevision
-        guard !needsLogin.contains(connection.id) else { return false }
-        return authenticatedConnections.contains(connection.id) || (try? auth.credentials.load(connection.credentialReference)) != nil
+        guard !requiresLogin(connection.id) else { return false }
+        if case .available = runtime[connection.id]?.authorization.snapshot { return true }
+        return (try? auth.credentials.load(for: connection)) != nil
     }
     func isUsingChatGPTPlan(_ connection: AIConnection) -> Bool {
         isLoggedIn(connection) && chatGPTPlanEnabled(connection)
@@ -182,16 +272,16 @@ enum AIConnectionState: Equatable {
     func chatGPTPlanEnabled(_ connection: AIConnection) -> Bool {
         _ = credentialRevision
         return connection.authMethod == .chatGPT &&
-            (try? auth.credentials.load(connection.credentialReference))?.chatGPT?.scopes.contains("chatgpt.tokens.use.direct") == true
+            (try? auth.credentials.load(for: connection))?.oauth?.chatGPT?.scopes.contains("chatgpt.tokens.use.direct") == true
     }
-    func credential(_ connection: AIConnection) async throws -> AICredential {
-        guard !needsLogin.contains(connection.id) else { throw AIError.loginRequired }
+    func credential(_ connection: AIConnection) async throws -> RuntimeCredential {
+        guard !requiresLogin(connection.id) else { throw AIError.loginRequired }
         let generation = availability.generation
         do {
             let value = try await availability.perform {
                 try await self.auth.credential(connection, availability: self.availability, generation: generation)
             }
-            guard !needsLogin.contains(connection.id) else { throw AIError.loginRequired }
+            guard !requiresLogin(connection.id) else { throw AIError.loginRequired }
             return value
         }
         catch AIChatGPTError.refreshExpired(let code, let sessionID) {
@@ -204,17 +294,17 @@ enum AIConnectionState: Equatable {
         guard connections.contains(where: { $0.id == connection.id }),
               try await auth.invalidateSession(connection, sessionID: sessionID),
               try auth.credentials.load(connection.credentialReference) == nil else { return }
-        authenticatedConnections.remove(connection.id)
-        if needsLogin.insert(connection.id).inserted { credentialRevision += 1 }
+        if !requiresLogin(connection.id) { credentialRevision += 1 }
+        setAuthorization(.needsLogin(.expiredSession), for: connection.id)
     }
     func chatGPTPlanDisabled(_ connection: AIConnection) -> Bool {
         _ = credentialRevision
         guard connection.authMethod == .chatGPT,
-              let account = (try? auth.credentials.load(connection.credentialReference))?.chatGPT else { return false }
+              let account = (try? auth.credentials.load(for: connection))?.oauth?.chatGPT else { return false }
         return !account.scopes.contains("chatgpt.tokens.use.direct")
     }
     func connectionState(_ connection: AIConnection) -> AIConnectionState {
-        if let state = loginStates[connection.id] {
+        if let state = loginState(connection.id) {
             switch state {
             case .authorizing: return .authorizing
             case .browser(let request): return .browser(request)
@@ -223,9 +313,9 @@ enum AIConnectionState: Equatable {
             }
         }
         if chatGPTPlanDisabled(connection) { return .planPermissionRequired }
-        if needsLogin.contains(connection.id) { return .needsLogin }
-        if refreshingModels.contains(connection.id) { return .loadingModels }
-        if let error = modelErrors[connection.id] { return .modelsFailed(error) }
+        if requiresLogin(connection.id) { return .needsLogin }
+        if isRefreshing(connection.id) { return .loadingModels }
+        if let error = modelError(connection.id) { return .modelsFailed(error) }
         return isLoggedIn(connection) ? .connected : .signedOut
     }
     func login(_ id: String) {
@@ -237,7 +327,7 @@ enum AIConnectionState: Equatable {
         }
         #endif
         sharing.revoke(id)
-        loginConnectionID = id; loginStates[id] = .authorizing
+        loginConnectionID = id; setLoginPresentation(.authorizing, for: id)
         let revision = loginRevision
         loginTask = Task {
             do {
@@ -245,28 +335,28 @@ enum AIConnectionState: Equatable {
                     let request = try await auth.beginOpenRouter()
                     try Task.checkCancellation()
                     guard loginRevision == revision else { return }
-                    loginStates[id] = .browser(request)
+                    setLoginPresentation(.browser(request), for: id)
                     return
                 }
                 let request = try await auth.beginChatGPT(connection)
                 try Task.checkCancellation(); guard loginRevision == revision else { return }
-                loginStates[id] = .browser(request)
+                setLoginPresentation(.browser(request), for: id)
                 try await auth.finishChatGPT(request.id, reference: connection.credentialReference) {
                     await self.receivedChatGPTCallback(id, revision: revision)
                 }
                 try Task.checkCancellation(); guard loginRevision == revision else { return }
                 sharing.revoke(id); resetCatalog(id)
-                authenticatedConnections.insert(id); needsLogin.remove(id); modelErrors[id] = nil
-                credentialRevision += 1; loginConnectionID = nil; loginStates[id] = nil
+                markAuthorized(id)
+                credentialRevision += 1; loginConnectionID = nil; setLoginPresentation(nil, for: id)
                 guard !chatGPTPlanDisabled(connection) else { return }
                 if !defaults.bool(forKey: "Moonread.ai.chatGPTWelcomeSeen") { showingChatGPTWelcome = true }
                 await refreshModels(id)
             } catch {
                 guard loginRevision == revision else { return }
                 if !Task.isCancelled {
-                    if case AIError.cancelled = error { loginStates[id] = nil }
-                    else if case AIError.authorizationExpired = error { loginStates[id] = .expired }
-                    else { loginStates[id] = .failed(Self.connectionError(error)) }
+                    if case AIError.cancelled = error { setLoginPresentation(nil, for: id) }
+                    else if case AIError.authorizationExpired = error { setLoginPresentation(.expired, for: id) }
+                    else { setLoginPresentation(.failed(Self.connectionError(error)), for: id) }
                 }
                 loginConnectionID = nil
             }
@@ -275,47 +365,47 @@ enum AIConnectionState: Equatable {
     private func receivedChatGPTCallback(_ id: String, revision: UUID) {
         guard loginRevision == revision, loginConnectionID == id else { return }
         // Removes the browser immediately; token exchange continues behind an in-app progress state.
-        loginStates[id] = .authorizing
+        setLoginPresentation(.authorizing, for: id)
     }
     func submitAuthorizationCode(_ code: String, connectionID id: String) {
         guard availability.isAvailable else { return }
         guard let connection = connections.first(where: { $0.id == id }), connection.authMethod == .openrouter,
-              case .browser(let request) = loginStates[id], loginConnectionID == id else { return }
+              case .browser(let request) = loginState(id), loginConnectionID == id else { return }
         let revision = loginRevision
-        loginStates[id] = .authorizing
+        setLoginPresentation(.authorizing, for: id)
         loginTask = Task {
             do {
                 try await auth.finishOpenRouter(request.id, code: code, reference: connection.credentialReference)
                 try Task.checkCancellation(); guard loginRevision == revision else { return }
                 sharing.revoke(id); resetCatalog(id)
-                authenticatedConnections.insert(id); needsLogin.remove(id); modelErrors[id] = nil
-                credentialRevision += 1; loginConnectionID = nil; loginStates[id] = nil
+                markAuthorized(id)
+                credentialRevision += 1; loginConnectionID = nil; setLoginPresentation(nil, for: id)
                 await refreshModels(id)
             } catch {
                 guard loginRevision == revision else { return }
                 loginConnectionID = nil
-                if !Task.isCancelled { loginStates[id] = .failed(Self.connectionError(error)) }
+                if !Task.isCancelled { setLoginPresentation(.failed(Self.connectionError(error)), for: id) }
             }
         }
     }
     func cancelLogin(_ id: String? = nil) {
         if let id, loginConnectionID != id { return }
         if let active = loginConnectionID {
-            if case .browser(let request) = loginStates[active] {
+            if case .browser(let request) = loginState(active) {
                 Task { await auth.cancelBrowserAuthorization(request.id) }
             }
-            loginStates[active] = nil
+            setLoginPresentation(nil, for: active)
         }
         loginRevision = UUID(); loginTask?.cancel(); loginTask = nil; loginConnectionID = nil
     }
     func browserPresentationFailed(_ id: String, url: URL, error: Error) {
-        guard loginConnectionID == id, case .browser(let request) = loginStates[id], request.url == url else { return }
+        guard loginConnectionID == id, case .browser(let request) = loginState(id), request.url == url else { return }
         // OpenRouter's headless PKCE requires returning from the browser to paste its code.
         // Closing that browser keeps the existing code-entry attempt; explicit Cancel ends it.
         if connections.first(where: { $0.id == id })?.authMethod == .openrouter,
            case AIChatGPTError.loginCancelled = error { return }
         cancelLogin(id)
-        loginStates[id] = .failed(Self.connectionError(error))
+        setLoginPresentation(.failed(Self.connectionError(error)), for: id)
     }
     @discardableResult func logout(_ id: String, forgetRegistration: Bool = false) async -> Bool {
         guard let connection = connections.first(where: { $0.id == id }) else { return false }
@@ -324,12 +414,12 @@ enum AIConnectionState: Equatable {
         for request in nativeRequests.values where request.0 == id { request.1() }
         invalidateCatalog(id)
         do {
-            try await auth.logout(connection, forgetRegistration: forgetRegistration); authenticatedConnections.remove(id); needsLogin.remove(id)
+            try await auth.logout(connection, forgetRegistration: forgetRegistration); setAuthorization(.disconnected, for: id)
             resetCatalog(id)
-            loginStates[id] = nil; modelErrors[id] = nil; accountCatalogAttempts[id] = nil; credentialRevision += 1
+            setLoginPresentation(nil, for: id); accountCatalogAttempts[id] = nil; credentialRevision += 1
             return true
         } catch {
-            modelErrors[id] = connection.authMethod == .chatGPT ? Self.connectionError(error) : String(localized: "无法移除 AI 凭证。")
+            publishDirectoryError(connection.authMethod == .chatGPT ? Self.connectionError(error) : String(localized: "无法移除 AI 凭证。"), for: id)
             return false
         }
     }
@@ -338,7 +428,7 @@ enum AIConnectionState: Equatable {
         connections.removeAll { $0.id == id }
         if defaultTextConnectionID == id { defaultTextConnectionID = nil }
         purposeDefaults = purposeDefaults.filter { $0.value.connectionID != id }
-        accountCatalogAttempts[id] = nil; modelRevisions[id] = nil
+        accountCatalogAttempts[id] = nil; modelRevisions[id] = nil; runtime[id] = nil
         saveConnections()
         return true
     }
@@ -368,7 +458,7 @@ enum AIConnectionState: Equatable {
             connections[index].models[model].isListed = false
         }
         connections[index].disabledModelIDs.remove(id)
-        if connections[index].modelID.isEmpty, let model = model(id, in: connections[index]), AINativeCapabilities.supportsText(connection: connections[index], model: model) { connections[index].modelID = id }
+        if connections[index].modelChoice.id == nil, let model = model(id, in: connections[index]), AINativeCapabilities.supportsText(connection: connections[index], model: model) { connections[index].modelID = id }
         saveConnections(); return true
     }
     @discardableResult func setChatGPTContextBudget(connectionID: String, modelID: String, value: String) -> Bool {
@@ -425,16 +515,17 @@ enum AIConnectionState: Equatable {
     }
     private func invalidateCatalog(_ id: String) {
         modelTasks.removeValue(forKey: id)?.cancel()
-        modelRevisions[id] = nil; refreshingModels.remove(id); accountCatalogAttempts[id] = nil
+        modelRevisions[id] = nil; finishDirectoryRefresh(id); accountCatalogAttempts[id] = nil
     }
     private func resetCatalog(_ id: String) {
         guard let index = connections.firstIndex(where: { $0.id == id }) else { return }
         invalidateCatalog(id)
         connections[index].catalogCredentialGeneration = UUID()
-        connections[index].models = connections[index].authMethod == .chatGPT ? [] : connections[index].models.filter { $0.isManual == true }.map {
+        let manuals = connections[index].authMethod == .chatGPT ? [] : connections[index].models.filter { $0.isManual == true }.map {
             AIModelOption(id: $0.id, name: $0.name, contextWindow: $0.contextWindow, thinking: [], maxOutput: $0.maxOutput, isManual: true)
         }
-        connections[index].modelsChecked = nil; connections[index].modelsOrigin = nil; connections[index].modelsIdentity = nil
+        connections[index].directorySnapshot = .legacy(manuals)
+        runtime[id, default: ConnectionRuntime()].directory = .idle
         // Persist the reset before refresh can suspend or fail, so the old
         // credential’s directory cannot return after restarting the app.
         saveConnections()
@@ -451,9 +542,10 @@ enum AIConnectionState: Equatable {
     }
     private func readDirectory(_ connection: AIConnection, revision: UUID, refreshPublic: Bool) async {
         let id = connection.id, policy = AIModelDirectoryPolicy.policy(connection)
-        accountCatalogAttempts[id] = auth.now(); refreshingModels.insert(id)
-        modelErrors[id] = nil; modelNotices[id] = nil
-        defer { if modelRevisions[id] == revision { refreshingModels.remove(id) } }
+        accountCatalogAttempts[id] = auth.now()
+        runtime[id, default: ConnectionRuntime()].directory = .refreshing(previous: connection.directorySnapshot)
+        modelNotices[id] = nil
+        defer { if modelRevisions[id] == revision { finishDirectoryRefresh(id) } }
         func currentIndex() -> Int? {
             guard !Task.isCancelled, availability.isAvailable, modelRevisions[id] == revision else { return nil }
             return connections.firstIndex { $0.id == id && $0.catalogIdentity == connection.catalogIdentity }
@@ -477,7 +569,7 @@ enum AIConnectionState: Equatable {
             }
             guard let index = currentIndex() else { return }
             if policy.kind == .account || policy.kind == .custom || policy.kind == .chatGPT {
-                authenticatedConnections.insert(id); needsLogin.remove(id)
+                markAuthorized(id)
             }
             let manuals = connections[index].models.filter { $0.isManual == true }
             var merged = models.map { discovered in
@@ -499,15 +591,14 @@ enum AIConnectionState: Equatable {
                                   isManual: true, isListed: policy.filtered ? false : nil)
                 }
             }
-            connections[index].models = merged
-            connections[index].modelsOrigin = policy.origin
-            connections[index].modelsIdentity = connection.catalogIdentity
-            connections[index].modelsChecked = checked
-            if connections[index].modelID.isEmpty {
+            let snapshot = AIDirectorySnapshot.fetched(.init(models: merged, checked: checked, origin: policy.origin, identity: connection.catalogIdentity))
+            connections[index].directorySnapshot = snapshot
+            runtime[id, default: ConnectionRuntime()].directory = .ready(snapshot)
+            if case .unselected = connections[index].modelChoice {
                 let first = merged.map { catalog.option($0, providerID: connection.catalogID, authentication: connection.authMethod) }.first {
                     AINativeCapabilities.supportsText(connection: connection, model: $0) && !connections[index].disabledModelIDs.contains($0.id)
                 }
-                connections[index].modelID = first?.id ?? ""; connections[index].thinking = first?.defaultThinking
+                if let first { connections[index].modelChoice = .selected(id: first.id, thinking: first.defaultThinking) }
             }
             saveConnections()
         } catch {
@@ -526,13 +617,16 @@ enum AIConnectionState: Equatable {
                 default: break
                 }
             } else if policy.kind != .service, case AIError.http(401) = error {
-                needsLogin.insert(id); credentialRevision += 1
+                setAuthorization(.needsLogin(.directoryRejected), for: id); credentialRevision += 1
             }
+            guard currentIndex() != nil else { return }
+            let message: String
             if case AIError.http(403) = error {
-                modelErrors[id] = String(localized: "没有读取模型目录的权限。已有模型配置仍会保留。")
+                message = String(localized: "没有读取模型目录的权限。已有模型配置仍会保留。")
             } else if case AIError.http(401) = error {
-                modelErrors[id] = String(localized: "无法读取模型目录，请检查此连接的凭证。")
-            } else { modelErrors[id] = Self.connectionError(error) }
+                message = String(localized: "无法读取模型目录，请检查此连接的凭证。")
+            } else { message = Self.connectionError(error) }
+            publishDirectoryError(message, for: id)
         }
     }
     func directorySummary(_ connection: AIConnection) -> String {
@@ -540,7 +634,7 @@ enum AIConnectionState: Equatable {
         if AIModelDirectoryPolicy.policy(connection).kind == .metadata {
             return String(localized: "型号与能力来自公开资料，尚未用此连接核实。")
         }
-        guard connection.modelsIdentity == connection.catalogIdentity, let origin = connection.modelsOrigin else {
+        guard let origin = connection.verifiedDirectory?.origin else {
             return String(localized: "尚未取得模型目录，请刷新重试。")
         }
         switch origin {
@@ -570,8 +664,7 @@ enum AIConnectionState: Equatable {
         cancelLogin()
         catalog.cancelRefresh()
         for task in modelTasks.values { task.cancel() }; modelTasks.removeAll()
-        for id in refreshingModels { modelRevisions[id] = nil; accountCatalogAttempts[id] = nil }
-        refreshingModels.removeAll()
+        for id in refreshingModels { invalidateCatalog(id) }
         for request in nativeRequests.values { request.1() }
         for request in sharing.requests { sharing.cancel(owner: request.owner) }
         showingChatGPTWelcome = false

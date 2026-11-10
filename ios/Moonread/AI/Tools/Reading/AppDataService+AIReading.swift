@@ -1,5 +1,22 @@
 import Foundation
 
+enum AIPreparationEntry {
+  case preparing(token: UUID, task: Task<Void, Never>, waiters: Int)
+  case completed(token: UUID, result: Result<ReadingLease, Error>, waiters: Int)
+
+  var waiters: Int {
+    switch self {
+    case .preparing(_, _, let count), .completed(_, _, let count): count
+    }
+  }
+  func withWaiters(_ count: Int) -> Self {
+    switch self {
+    case .preparing(let token, let task, _): .preparing(token: token, task: task, waiters: count)
+    case .completed(let token, let result, _): .completed(token: token, result: result, waiters: count)
+    }
+  }
+}
+
 extension AppDataService {
   func aiLibraryEntries(_ location: LibraryLocation, sort: LibrarySort) async throws
     -> [LibraryEntry]
@@ -9,7 +26,7 @@ extension AppDataService {
     let byID = Dictionary(uniqueKeysWithValues: metadata.map { ($0.entry.id, $0.resolvedMetadata) })
     try await requireAIMetadataReadable(location, recursive: false)
     return try query.libraryEntries(shelfId: location.shelfID, parentPath: location.path, sort: sort).map { entry in
-      var entry = entry; entry.metadata = byID[entry.id] ?? nil; return entry
+      entry.withMetadata(byID[entry.id] ?? nil)
     }
   }
   func aiLibraryBooks(_ shelf: String) async throws -> [LibraryEntry] {
@@ -17,7 +34,7 @@ extension AppDataService {
     let candidates = try await catalogueQuery(location, recursive: true).librarySearchCandidates(scope: catalogueScope(location, recursive: true), booksOnly: true)
     try await requireAIMetadataReadable(location, recursive: true)
     return candidates.map { candidate in
-      var entry = candidate.entry; entry.metadata = candidate.resolvedMetadata; return entry
+      candidate.entry.withMetadata(candidate.resolvedMetadata)
     }
   }
   func aiBookID(sha: String) throws -> String {
@@ -30,46 +47,46 @@ extension AppDataService {
   /// Uses the same import lease as readers, without setting preferred source/position
   /// or starting a ReadingActivityRecorder. Cancellation releases only this waiter.
   func aiPrepare(_ file: SourceFile) async throws -> ReadingLease {
-    aiPreparationWaiters[file.id, default: 0] += 1
-    if aiPreparationTasks[file.id] == nil {
+    if let existing = aiPreparations[file.id] {
+      aiPreparations[file.id] = existing.withWaiters(existing.waiters + 1)
+    } else {
       let token = UUID()
-      aiPreparationTokens[file.id] = token
-      aiPreparationTasks[file.id] = Task {
-        do {
-          let lease = try await aiPrepareUnshared(file)
-          if aiPreparationTokens[file.id] == token {
-            aiPreparationResults[file.id] = .success(lease)
-          }
-        } catch {
-          if aiPreparationTokens[file.id] == token {
-            aiPreparationResults[file.id] = .failure(error)
-          }
-        }
+      let task = Task {
+        let result: Result<ReadingLease, Error>
+        do { result = .success(try await aiPrepareUnshared(file)) }
+        catch { result = .failure(error) }
+        guard case .preparing(let activeToken, _, let waiters) = aiPreparations[file.id],
+              activeToken == token else { return }
+        aiPreparations[file.id] = .completed(token: token, result: result, waiters: waiters)
       }
+      aiPreparations[file.id] = .preparing(token: token, task: task, waiters: 1)
     }
-    defer {
-      aiPreparationWaiters[file.id, default: 1] -= 1
-      if aiPreparationWaiters[file.id] == 0 {
-        aiPreparationTasks.removeValue(forKey: file.id)?.cancel()
-        aiPreparationResults[file.id] = nil
-        aiPreparationWaiters[file.id] = nil
-        aiPreparationTokens[file.id] = nil
-      }
-    }
+    defer { releaseAIPreparation(file.id) }
     while true {
       try Task.checkCancellation()
-      if let result = aiPreparationResults[file.id] { return try result.get() }
+      if case .completed(_, let result, _) = aiPreparations[file.id] { return try result.get() }
       try await Task.sleep(for: .milliseconds(50))
     }
   }
+
+  private func releaseAIPreparation(_ fileID: String) {
+    guard let entry = aiPreparations[fileID] else { return }
+    if entry.waiters > 1 {
+      aiPreparations[fileID] = entry.withWaiters(entry.waiters - 1)
+    } else {
+      aiPreparations[fileID] = nil
+      if case .preparing(_, let task, _) = entry { task.cancel() }
+    }
+  }
+
   private func aiPrepareUnshared(_ file: SourceFile) async throws -> ReadingLease {
     try await prepareSourceFile(file)
     let lease = try await openSourceFile(file, trackReadingSource: false)
     while true {
       try Task.checkCancellation()
       let state = try await snapshot(lease.id)
-      if state.phase == .complete { return lease }
-      if state.phase == .failed || state.phase == .paused { throw AIToolError("needs_preparation") }
+      if state.preparation.isComplete { return lease }
+      if state.preparation.isFailed || state.preparation.isPaused { throw AIToolError("needs_preparation") }
       try await Task.sleep(for: .milliseconds(50))
     }
   }

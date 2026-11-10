@@ -43,13 +43,14 @@ extension AppDataService {
         var facts: [(String, String, String)] = [], pendingFacts: [(String, String, String)] = []
         var leases: [String: UUID] = [:]
         for slice in slices {
-            let key = try userKey(slice.bookId)
+            let identity = try userKey(slice.bookId)
+            let key = identity.storageKey
             leases[key] = localReadingWriteLease(key)
             let book = try await snapshot(slice.bookId).book
             let value: [String: Any] = ["content_key": key, "title": book.title, "device": userDevice,
                 "slice": try JSONSerialization.jsonObject(with: Data(encodeReadingSlice(value: slice).utf8))]
             let fact = (slice.id, key, String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self))
-            switch try parseReadingKey(value: key) { case .pending: pendingFacts.append(fact); case .formal: facts.append(fact) }
+            switch identity { case .pending: pendingFacts.append(fact); case .formal: facts.append(fact) }
         }
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         facts = facts.filter { leases[$0.1] == localReadingWriteLease($0.1) }
@@ -61,36 +62,69 @@ extension AppDataService {
     }
     struct StatisticsRead<Value: Sendable>: Sendable {
         let value: Value
+        let key: ReadingKey?
         let compatibilityNotice: String?
         let version: String
     }
-    func statisticsQuery(first: Int64, last: Int64, book: String? = nil, fields: UserProjectionDomain = .metadata, scope: String = "statistics") async throws -> UserQueryOutput {
-        guard first <= last else { throw ReaderError.InvalidRange }
-        return try await readingQueryResult(.fixed(keys: nil, statisticsBook: book, statisticsKeys: nil),
-            options: .init(facts: true, statisticsRange: first...last, scope: scope, fields: fields))
+    enum StatisticsResult<Value: Sendable>: Sendable {
+        case identityPending(fileID: String)
+        case ready(StatisticsRead<Value>)
+
+        func requireReady() throws -> StatisticsRead<Value> {
+            guard case .ready(let result) = self else { throw ReaderError.ImportBusy }
+            return result
+        }
     }
-    func statisticsRead(first: Int64, last: Int64, book: String? = nil) async throws -> StatisticsRead<StatisticsOverview> {
-        let input = try await statisticsQuery(first: first, last: last, book: book)
+    private func statisticsTarget(book: String?) throws -> StatisticsTarget {
+        try book.map { .book(.record(key: try parseReadingKey(value: $0))) } ?? .all
+    }
+    func statisticsQuery(first: Int64, last: Int64, book: String? = nil, fields: UserProjectionDomain = .metadata, scope: String = "statistics") async throws -> UserQueryOutput {
+        try await statisticsQuery(first: first, last: last, target: statisticsTarget(book: book), fields: fields, scope: scope)
+    }
+    func statisticsQuery(first: Int64, last: Int64, target: StatisticsTarget, fields: UserProjectionDomain = .metadata, scope: String = "statistics") async throws -> UserQueryOutput {
+        guard first <= last else { throw ReaderError.InvalidRange }
+        let source: UserQuerySource = switch target {
+        case .all: .fixed(records: .all, facts: .all)
+        case .book(let book): .book(book, facts: true)
+        }
+        return try await readingQueryResult(source, options: .init(statisticsRange: first...last, scope: scope, fields: fields))
+    }
+    private func readStatistics<Value: Sendable>(first: Int64, last: Int64, target: StatisticsTarget,
+        fields: UserProjectionDomain, project: @escaping @Sendable (ReaderQuery, String?) throws -> Value) async throws -> StatisticsResult<Value> {
+        let input = try await statisticsQuery(first: first, last: last, target: target, fields: fields)
+        let key: ReadingKey?
+        switch input.resolution {
+        case .resolved(let record): key = record.key
+        case .unidentified(let file): return .identityPending(fileID: file)
+        case .missing: throw ReaderError.NotFound
+        case nil: key = nil
+        }
         let work = Task.detached(priority: Task.currentPriority) {
             try Task.checkCancellation()
-            return try input.query.statisticsOverview(firstDay: first, lastDay: last, contentKey: book)
+            return try project(input.query, key?.storageKey)
         }
         let value = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
         try Task.checkCancellation()
-        return .init(value: value, compatibilityNotice: input.compatibilityNotice, version: input.statisticsVersion)
+        return .ready(.init(value: value, key: key, compatibilityNotice: input.compatibilityNotice, version: input.statisticsVersion))
+    }
+    func statisticsRead(first: Int64, last: Int64, target: StatisticsTarget) async throws -> StatisticsResult<StatisticsOverview> {
+        try await readStatistics(first: first, last: last, target: target, fields: .metadata) {
+            try $0.statisticsOverview(firstDay: first, lastDay: last, contentKey: $1)
+        }
+    }
+    func statisticsRead(first: Int64, last: Int64, book: String? = nil) async throws -> StatisticsRead<StatisticsOverview> {
+        try await statisticsRead(first: first, last: last, target: statisticsTarget(book: book)).requireReady()
     }
     func statistics(first: Int64, last: Int64, book: String? = nil) async throws -> StatisticsOverview {
         try await statisticsRead(first: first, last: last, book: book).value
     }
-    func activitiesRead(first: Int64, last: Int64, book: String? = nil) async throws -> StatisticsRead<[ReadingActivity]> {
-        let input = try await statisticsQuery(first: first, last: last, book: book, fields: [])
-        let work = Task.detached(priority: Task.currentPriority) {
-            try Task.checkCancellation()
-            return try input.query.readingActivities(firstDay: first, lastDay: last, contentKey: book)
+    func activitiesRead(first: Int64, last: Int64, target: StatisticsTarget) async throws -> StatisticsResult<[ReadingActivity]> {
+        try await readStatistics(first: first, last: last, target: target, fields: []) {
+            try $0.readingActivities(firstDay: first, lastDay: last, contentKey: $1)
         }
-        let value = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
-        try Task.checkCancellation()
-        return .init(value: value, compatibilityNotice: input.compatibilityNotice, version: input.statisticsVersion)
+    }
+    func activitiesRead(first: Int64, last: Int64, book: String? = nil) async throws -> StatisticsRead<[ReadingActivity]> {
+        try await activitiesRead(first: first, last: last, target: statisticsTarget(book: book)).requireReady()
     }
     func activities(first: Int64, last: Int64, book: String? = nil) async throws -> [ReadingActivity] {
         try await activitiesRead(first: first, last: last, book: book).value

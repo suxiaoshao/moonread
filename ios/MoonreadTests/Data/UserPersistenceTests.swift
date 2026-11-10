@@ -183,16 +183,16 @@ final class UserPersistenceUserDataTests: UserDataFixture {
     let service = AppDataService(
       sourceDefaultsSuite: "Bootstrap-\(UUID().uuidString)",
       userStoreFactory: { name, cloud in try await probe.make(name, cloud: cloud) })
-    let old = Task { try await service.configureUserCloud(true, account: "fixture") }
+    let old = Task { try await service.configureUserCloud(.cloud(.init(recordName: "fixture"), .currentOwner)) }
     await probe.waitUntilStarted()
-    try await service.configureUserCloud(false, account: nil)
-    try await service.configureUserCloud(true, account: "fixture")
+    try await service.configureUserCloud(.local)
+    try await service.configureUserCloud(.cloud(.init(recordName: "fixture"), .currentOwner))
     let replacement = try await service.userStore()
     await probe.failFirst()
     if case .success = await old.result { XCTFail("Expected old initialization failure") }
     let after = try await service.userStore()
     XCTAssertTrue(after === replacement)
-    let cloud = await service.userCloudEnabled
+    let cloud = await service.userCloudMode.isCloud
     XCTAssertTrue(cloud)
     let count = await probe.count
     XCTAssertEqual(count, 3)

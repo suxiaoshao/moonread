@@ -18,46 +18,42 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     _ = try await service.scanLibraryShelf("builtin")
     let entries = try await service.libraryEntries(nil)
     let entry = try XCTUnwrap(entries.first { !$0.directory })
-    let route = StatisticsRoute(title: "Synthetic", fileID: entry.id)
+    let route = StatisticsRoute(target: .file(fileId: entry.id), title: "Synthetic")
     XCTAssertNil(entry.readingKey)
     XCTAssertNil(entry.bookId)
     let information = BookInformationModel(service: service)
-    let model = StatisticsModel(service: service, notifications: NotificationCenter())
+    let model = StatisticsModel(service: service)
     let month = StatisticsWindow(period: .month, date: Date(timeIntervalSince1970: 1_800_000_000))
     await information.load(route)
     XCTAssertNil(information.error)
-    XCTAssertEqual(model.scope(month, target: information.statisticsTarget(for: route)).book, .unprepared)
-    await model.load(month, target: information.statisticsTarget(for: route))
+    let scope = model.scope(month, target: route)
+    let other = StatisticsRoute(target: .file(fileId: "other-file"), title: route.title)
+    XCTAssertNotEqual(scope, model.scope(month, target: other))
+    await model.load(month, target: route)
+    XCTAssertTrue(model.state(month, target: route).content?.waitingForIdentity == true)
 
+    let revision = model.dataRevision
     information.prepareEditing(route)
-    await awaitState { information.draft != nil || information.error != nil }
+    await awaitState { (information.draft != nil && model.dataRevision > revision) || information.error != nil }
     XCTAssertNil(information.error)
     XCTAssertNotNil(information.draft)
     let sha = try XCTUnwrap(information.contentSHA(for: route))
-    let resolved = try XCTUnwrap(information.statisticsTarget(for: route))
-    XCTAssertEqual(resolved.key, sha)
-    XCTAssertEqual(resolved.fileID, route.fileID)
-    XCTAssertEqual(model.scope(month, target: resolved).book, .content(sha))
     XCTAssertTrue(information.chapters.isEmpty, "Statistics must not wait for the separate chapter load")
-    await model.load(month, target: resolved)
-    XCTAssertNotNil(model.state(month, target: resolved).overview)
-    XCTAssertNil(model.state(month, target: resolved).error)
-    XCTAssertEqual(model.state(month, target: resolved).key, sha)
-    await model.reload(month, target: resolved)
+    await model.load(month, target: route)
+    XCTAssertEqual(model.scope(month, target: route), scope, "Preparation does not replace the original file target")
+    XCTAssertNotNil(model.state(month, target: route).overview)
+    XCTAssertNil(model.state(month, target: route).error)
+    XCTAssertEqual(model.state(month, target: route).key, sha)
     let year = StatisticsWindow(period: .year, date: month.date)
-    await model.load(year, target: resolved)
-    XCTAssertNotNil(model.state(year, target: resolved).overview)
-    XCTAssertNil(model.state(year, target: resolved).error)
-
-    let known = StatisticsRoute(bookID: try XCTUnwrap(information.details?.book?.id), title: route.title, fileID: route.fileID)
-    XCTAssertEqual(information.statisticsTarget(for: known), known, "Known bookID scope must not restart when information arrives")
-    var other = route; other.fileID = "other-file"
-    XCTAssertEqual(information.statisticsTarget(for: other), other, "Loaded information cannot resolve another file")
+    await model.load(year, target: route)
+    XCTAssertNotNil(model.state(year, target: route).overview)
+    XCTAssertNil(model.state(year, target: route).error)
+    XCTAssertNil(information.contentSHA(for: other))
     await information.finishPreparationForDataDeletion()
   }
   @MainActor
   private func rangeContent(_ total: UInt64) -> StatisticsModel.Content {
-    .init(overview: .init(totalDurationMs: total, books: [], days: [], preferences: .init(enabled: true, generation: 0)))
+    .init(payload: .overview(.init(totalDurationMs: total, books: [], days: [], preferences: .init(enabled: true, generation: 0)), .notRequested))
   }
 
   @MainActor
@@ -96,8 +92,8 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
       token.cancel()
     }
     let key = String(repeating: "a", count: 64)
-    let affected = StatisticsRoute(key: key, title: "Synthetic A")
-    let unaffected = StatisticsRoute(key: String(repeating: "b", count: 64), title: "Synthetic B")
+    let affected = StatisticsRoute(target: .record(key: .formal(sha256: key)), title: "Synthetic A")
+    let unaffected = StatisticsRoute(target: .record(key: .formal(sha256: String(repeating: "b", count: 64))), title: "Synthetic B")
     await model.load(window, target: affected)
     await model.load(window, target: unaffected)
     for reset in [false, true] {
@@ -141,7 +137,7 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     notifications.post(name: .readingDataChanged, object: nil)
     await model.load(month, target: nil)
     XCTAssertEqual(reads, 2)
-    let otherBook = StatisticsRoute(key: String(repeating: "a", count: 64), title: "Synthetic")
+    let otherBook = StatisticsRoute(target: .record(key: .formal(sha256: String(repeating: "a", count: 64))), title: "Synthetic")
     await model.load(month, target: otherBook)
     XCTAssertEqual(reads, 3)
     notifications.post(name: .statisticsChanged, object: nil)
@@ -271,7 +267,7 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
         year.bounds(today: today, calendar: calendar), civil(2026, 1, 1)...civil(2026, 12, 31))
       var recent = StatisticsWindow(period: .recent, date: evening)
       recent.shift(-1, calendar: calendar)
-      XCTAssertEqual(recent.date, evening, "The recent window has no history to step through")
+      XCTAssertEqual(recent, .recent, "The recent window has no historical date to step through")
 
     }
     do {

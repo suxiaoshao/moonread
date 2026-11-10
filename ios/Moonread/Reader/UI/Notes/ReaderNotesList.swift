@@ -72,9 +72,9 @@ struct ReaderNotesList: View {
             ToolbarItem(placement: .topBarLeading) {
                 Group {
                     if model.selectingNotes {
-                        SystemToolbarButton("结束选择", role: .confirm) { model.selectingNotes = false; model.clearNoteSelection() }
+                        SystemToolbarButton("结束选择", role: .confirm) { model.finishNoteSelection() }
                     } else {
-                        Button { model.selectingNotes = true } label: { Image(systemName: "checklist") }
+                        Button { model.beginNoteSelection() } label: { Image(systemName: "checklist") }
                             .accessibilityLabel(model.noteKind == .bookmark ? String(localized: "选择书签") : String(localized: "选择标注与笔记"))
                     }
                 }.disabled(busy || (model.notes.isEmpty && !model.selectingNotes))
@@ -95,12 +95,9 @@ struct ReaderNotesList: View {
                 ToolbarItem(placement: .bottomBar) { Spacer() }
                 ToolbarItem(placement: .bottomBar) {
                     Button("删除", systemImage: "trash", role: .destructive) {
-                        guard let snapshot = model.noteSnapshot else { return }
-                        let ids = model.selectedNotes
-                        let expected = NoteCandidates(key: snapshot.key, groups: model.selectedCandidates, blocked: snapshot.blocked)
                         busy = true
                         Task {
-                            await model.deleteSelectedNotes(expected, ids: ids)
+                            await model.deleteSelectedNotes()
                             busy = false; session.notesChanged()
                         }
                     }.disabled(busy || model.selectedNotes.isEmpty).tint(Color(uiColor: theme.destructive))

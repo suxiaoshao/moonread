@@ -29,7 +29,7 @@ impl ReaderCore {
         let mut index = 0u32;
         let mut offset = 0u64;
         let mut visible = false;
-        let mut published_visible = old.can_read;
+        let mut published_visible = old.readable_prefix == ReadablePrefix::Readable;
         let mut batch: Vec<(TextChunk, u64, u64)> = Vec::new();
         let mut batch_bytes = 0usize;
         let mut last_commit = Instant::now();

@@ -6,14 +6,80 @@ final class ReaderSession {
     let opening = ReaderOpeningState()
     private var systemDonationOpening: UUID?
     var monitorToken = UUID()
-    var snapshot: ReadingSnapshot?
+    struct ReadingContext {
+        var request: OpeningRequest
+        let lease: ReadingLease
+        var snapshot: ReadingSnapshot?
+        var window: ReadingWindow?
+    }
+    private struct ClosingContext {
+        let reading: ReadingContext?
+        let progress: (bookID: String, offset: UInt64)?
+    }
+    private struct OpenFailure {
+        let request: OpeningRequest
+        var reading: ReadingContext?
+    }
+    private enum OpeningState {
+        case unopened
+        case preparing(OpeningRequest)
+        case active(ReadingContext)
+        case closing(ClosingContext)
+        case failed(OpenFailure)
+
+        var reading: ReadingContext? {
+            switch self {
+            case .active(let reading): reading
+            case .closing(let closing): closing.reading
+            case .failed(let failure): failure.reading
+            case .unopened, .preparing: nil
+            }
+        }
+    }
+    private var openingState: OpeningState = .unopened
+    private func updateReadingContext(_ change: (inout ReadingContext) -> Void) {
+        switch openingState {
+        case .active(var reading):
+            change(&reading)
+            openingState = .active(reading)
+        case .failed(var failure):
+            guard var reading = failure.reading else { return }
+            change(&reading)
+            failure.reading = reading
+            openingState = .failed(failure)
+        case .closing, .unopened, .preparing: break
+        }
+    }
+    func activateOpening(_ request: OpeningRequest, lease: ReadingLease) {
+        openingState = .active(.init(request: request, lease: lease))
+    }
+    func failOpening(_ error: any Error) {
+        guard !isLeaving, let request = opening.request else { return }
+        if window == nil { openingState = .failed(.init(request: request, reading: openingState.reading)) }
+        self.error = ReaderMessages.error(error)
+        isLoading = false
+        updateOpening()
+    }
+    var snapshot: ReadingSnapshot? {
+        get { openingState.reading?.snapshot }
+        set { updateReadingContext { $0.snapshot = newValue } }
+    }
     var book: BookInfo? { snapshot?.book }
-    var window: ReadingWindow?
+    var window: ReadingWindow? {
+        get { openingState.reading?.window }
+        set { updateReadingContext { $0.window = newValue } }
+    }
     let settingsStore: ReaderSettingsStore
     var settings: ReaderSettings? { settingsStore.value }
-    var anchor: UInt64 = 0
+    var surface: ReadingSurface = .cover
+    var anchor: UInt64 { surface.anchor?.offset ?? displayAnchor ?? 0 }
     var displayAnchor: UInt64?
-    var showingCover = true
+    var showingCover: Bool { surface == .cover }
+
+    func coverVisibilityChanged(_ visible: Bool) {
+        if visible { surface = .cover }
+        else if showingCover { surface = .body(SourceAnchor(anchor)) }
+    }
     private var openedTask: Task<Void, Never>?
     private var openedAttempt: UUID?
     var hasEnteredBody = false
@@ -141,7 +207,7 @@ final class ReaderSession {
         navigationGeneration += 1
         navigationWork = nil
     }
-    var readingLease: ReadingLease?
+    var readingLease: ReadingLease? { openingState.reading?.lease }
     var readingID: String? { readingLease?.id }
     let service: AppDataService
     private var activityStartTask: Task<Void, Never>?
@@ -151,8 +217,10 @@ final class ReaderSession {
     var windowTask: Task<Void, Never>?
     var chapterTask: Task<Void, Never>?
     var pendingChapterAnchor: UInt64?
-    var isLeaving = false
-    private var leavingProgress: (bookID: String, offset: UInt64)?
+    var isLeaving: Bool { if case .closing = openingState { true } else { false } }
+    private var leavingProgress: (bookID: String, offset: UInt64)? {
+        if case .closing(let closing) = openingState { closing.progress } else { nil }
+    }
     private var leaveTask: Task<Void, Never>?
     var restartTask: Task<Void, Never>?
     var restartingEncoding: Bool { restartTask != nil }
@@ -177,18 +245,20 @@ final class ReaderSession {
 
     var preparing: Bool {
         guard let snapshot else { return isLoading }
-        return [.preparing, .importing, .finalizing].contains(snapshot.phase)
+        return snapshot.preparation.isActive
     }
-    var incomplete: Bool { snapshot.map { $0.phase != .complete } ?? true }
+    var incomplete: Bool { snapshot.map { !$0.preparation.isComplete } ?? true }
     var atPreparedEdge: Bool { nearEdge && incomplete && window?.isPreparedTail == true }
 
     func open(_ route: ReaderRoute, request: OpeningRequest? = nil) async {
         guard !isLeaving else { return }
         if opening.request == nil { opening.begin(request ?? OpeningRequest(target: route)) }
-        let attempt = opening.request?.id
-        if let attempt { toolsSession.beginOpening(attempt) }
+        guard let openingRequest = opening.request else { return }
+        let attempt = openingRequest.id
+        toolsSession.beginOpening(attempt)
         ReaderOpenDiagnostics.mark(attempt, "sessionOpen")
         if readingID == nil {
+            openingState = .preparing(openingRequest)
             isLoading = true
             do {
                 ReaderOpenDiagnostics.mark(attempt, "settingsRequested")
@@ -200,20 +270,25 @@ final class ReaderSession {
                 diagnostic?.mark("lease.queued")
                 let lease: ReadingLease
                 switch route {
-                case let .book(id): lease = try await service.openReading(id, diagnostic: diagnostic)
+                case let .book(id): lease = try await service.openReading(id.value, diagnostic: diagnostic)
                 case let .source(file): lease = try await service.openSourceFile(file, diagnostic: diagnostic)
                 }
                 diagnostic?.mark("lease.mainResumed")
                 guard !isLeaving, !Task.isCancelled, opening.request?.id == attempt else { return }
-                readingLease = lease
-                decodingPolicy = await service.readingDecoding(lease.id)
-            } catch { if !isLeaving, !Task.isCancelled, opening.request?.id == attempt { self.error = ReaderMessages.error(error); isLoading = false; updateOpening() }; return }
+                activateOpening(openingRequest, lease: lease)
+                let policy = await service.readingDecoding(lease.id)
+                guard current(lease.id, attempt: attempt) else { return }
+                decodingPolicy = policy
+            } catch { if !isLeaving, !Task.isCancelled, opening.request?.id == attempt { failOpening(error) }; return }
+        } else if var reading = openingState.reading, reading.request.id != attempt {
+            reading.request = openingRequest
+            openingState = .active(reading)
         }
         guard !isLeaving else { return }
         if let readingLease {
-            if let attempt = opening.request?.id { ReaderOpenDiagnostics.bind(readingLease.id, to: attempt) }
+            ReaderOpenDiagnostics.bind(readingLease.id, to: attempt)
             ReaderOpenDiagnostics.mark(opening.request?.id, "leaseCreated")
-            if ReaderOpenDiagnostics.serialStatistics, let attempt {
+            if ReaderOpenDiagnostics.serialStatistics {
                 activity.prepareStart(attempt)
                 ReaderOpenDiagnostics.mark(attempt, "activityStart")
                 await activity.start(lease: readingLease, viewport: viewportAccess, attempt: attempt)
@@ -240,7 +315,7 @@ final class ReaderSession {
 
     func updateOpening() {
         opening.update(ready: settings != nil && window.map { $0.status != .awaiting && $0.projectionAnchor != nil } == true,
-                       terminal: error != nil || snapshot.map { [.paused, .failed].contains($0.phase) } == true)
+                       terminal: error != nil || snapshot.map { $0.preparation.isPaused || $0.preparation.isFailed } == true)
     }
     func retry(_ route: ReaderRoute) async {
         opening.begin(OpeningRequest(target: route, expectedContentSHA: opening.request?.expectedContentSHA), navigationSettled: true)
@@ -334,11 +409,11 @@ final class ReaderSession {
         }
         autoReading?.end()
         activity.stop()
-        leavingProgress = committingPosition ? nil : readingID.flatMap { id in
+        let progress: (bookID: String, offset: UInt64)? = committingPosition ? nil : readingID.flatMap { id in
             window == nil || !hasEnteredBody || !hasLocalReadingInteraction ? nil : (bookID: id, offset: listeningPosition ?? browseOrigin ?? anchor)
         }
         clearContinuation()
-        isLeaving = true
+        openingState = .closing(.init(reading: openingState.reading, progress: progress))
         opening.leave(); monitorToken = UUID()
         saveTask?.cancel()
         monitorTask?.cancel()

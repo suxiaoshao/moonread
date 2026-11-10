@@ -112,7 +112,7 @@ extension ReadingController {
         if let text=scrollText {
             if text.contentOffset.y+text.bounds.height*2>=text.contentSize.height { requestMore(.forward) }
             if text.contentOffset.y<text.bounds.height { requestMore(.backward) }
-        } else if let current = pageController?.viewControllers?.first, let first = pageIndex(current), first >= 0 {
+        } else if let current = pageController?.viewControllers?.first, let first = renderedPage(current)?.bodyIndex {
             if (lastPageIndex(current) ?? first) >= pages.count - max(2, leafFrames.count * 2) { requestMore(.forward) }
             if first <= 1 { requestMore(.backward) }
         }

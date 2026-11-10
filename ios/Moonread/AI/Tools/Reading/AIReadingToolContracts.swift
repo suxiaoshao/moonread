@@ -144,13 +144,7 @@ struct AIGetBookInput: AIReadingInput {
   var bookRef: String?
   var fileRef: String?
   var prepare: Bool?
-  func validate() throws {
-    guard (bookRef == nil) != (fileRef == nil) else {
-      throw AIToolError(
-        "invalid_argument", field: "bookRef/fileRef",
-        message: "Supply exactly one reference. Omit the unused field or set it to null.")
-    }
-  }
+  func validate() throws { _ = try ReadingToolTarget(self) }
 }
 struct AIChaptersInput: AIReadingInput {
   var bookRef: String

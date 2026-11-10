@@ -73,7 +73,7 @@ final class ReaderSessionReaderSelectionTests: ReaderSelectionFixture {
     XCTAssertNil(session.window?.nextCursor)
     var waiting = end
     waiting.status = .awaiting
-    waiting.snapshot.phase = .importing
+    waiting.snapshot.preparation = .importing
     waiting.isEndOfBook = false
     session.acceptExtension(waiting, direction: .forward)
     XCTAssertEqual(session.window?.chunks, previous.chunks)

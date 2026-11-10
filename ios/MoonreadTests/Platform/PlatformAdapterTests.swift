@@ -18,12 +18,12 @@ final class PlatformAdapterCredentialStoreAdapterTests: CredentialStoreAdapterFi
     let reference = "synthetic-credential"
     defer { try? store.remove(reference) }
     XCTAssertNil(try store.read(reference))
-    let first = AICredential(
+    let first = AICredentialStorage(
       accessToken: "synthetic-first", refreshToken: "", expires: .distantFuture,
       accountID: "fixture")
     try store.save(first, reference: reference)
     XCTAssertEqual(try store.load(reference)?.accessToken, first.accessToken)
-    let next = AICredential(
+    let next = AICredentialStorage(
       accessToken: "synthetic-replacement", refreshToken: "", expires: .distantFuture,
       accountID: "fixture")
     try store.save(next, reference: reference)
@@ -78,5 +78,22 @@ final class PlatformAdapterTipJarTests: TipJarFixture {
       if case .verified(let value) = result { unfinished.insert(value.id) }
     }
     XCTAssertFalse(unfinished.contains(generated.id), "The adapter must finish the real transaction")
+  }
+}
+
+final class PlatformAdapterSystemReadingTests: XCTestCase {
+  func testPublishedSnapshotDoesNotSubstituteRecentBookForMissingSelection() throws {
+    let book = SystemReadingWidgetModel.sample
+    let missing = "book:" + String(repeating: "b", count: 64)
+    let snapshot = SystemReadingSnapshot(generation: UUID(), storeScope: "fixture",
+      generatedAt: .distantPast, books: [book], recentIDs: [book.id], exposurePolicy: .initial,
+      appearance: nil, statistics: nil)
+    let decoded = try JSONDecoder().decode(SystemReadingSnapshot.self, from: JSONEncoder().encode(snapshot))
+    let selection = SystemReadingWidgetModel.selection(in: decoded, selectedID: missing, specific: true)
+    guard case .missing(let id) = selection else { return XCTFail("Missing selection must retain its identity") }
+    XCTAssertEqual(id, missing)
+    XCTAssertEqual(try SystemReadingRequest(url: XCTUnwrap(SystemReadingLink.book(id))),
+                   .openBook(try SystemReadingBookID(rawValue: missing)))
+    XCTAssertEqual(SystemReadingWidgetModel.selection(in: decoded, selectedID: nil).book?.id, book.id)
   }
 }

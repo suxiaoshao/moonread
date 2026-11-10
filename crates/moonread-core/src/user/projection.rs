@@ -309,12 +309,8 @@ impl ReaderQuery {
         self.core
             .start_search(book_id, query, regular_expression, case_sensitive, range)
     }
-    pub fn book_details(
-        &self,
-        book_id: Option<String>,
-        content_sha: Option<String>,
-    ) -> Result<BookDetails> {
-        self.core.book_details(book_id, content_sha)
+    pub fn book_details(&self, target: BookTarget) -> Result<BookDetailsResult> {
+        self.core.book_details(target)
     }
     pub fn metadata_has_reading_position(&self, content_sha256: String) -> Result<bool> {
         crate::parse_sha256(content_sha256.clone())?;

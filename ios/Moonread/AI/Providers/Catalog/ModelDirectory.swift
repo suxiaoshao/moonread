@@ -7,20 +7,64 @@ struct AIModelDirectoryPolicy: Sendable {
     enum Kind: Sendable { case account, service, metadata, chatGPT, custom }
     enum Format: Sendable { case openAI, anthropic, google, openRouter, together, fireworks, dashscope, deepInfra, huggingFace, gateway, chatGPT }
     enum Header: Sendable { case bearer, anthropic, google, xiaomi, none }
-    let kind: Kind
-    let format: Format
-    let header: Header
-    let url: URL?
+    struct RequestPlan: Sendable {
+        let kind: Kind
+        let format: Format
+        let header: Header
+        let url: URL
+    }
+    enum Plan: Sendable {
+        case metadataOnly
+        case chatGPT(URL?)
+        case request(RequestPlan)
+        case unsupported(Kind, Format, Header)
+    }
+    let plan: Plan
+    var kind: Kind {
+        switch plan {
+        case .metadataOnly: .metadata
+        case .chatGPT: .chatGPT
+        case .request(let request): request.kind
+        case .unsupported(let kind, _, _): kind
+        }
+    }
+    var format: Format {
+        switch plan {
+        case .metadataOnly: .openAI
+        case .chatGPT: .chatGPT
+        case .request(let request): request.format
+        case .unsupported(_, let format, _): format
+        }
+    }
+    var header: Header {
+        switch plan {
+        case .metadataOnly: .none
+        case .chatGPT: .bearer
+        case .request(let request): request.header
+        case .unsupported(_, _, let header): header
+        }
+    }
+    var url: URL? {
+        switch plan {
+        case .metadataOnly, .unsupported: nil
+        case .chatGPT(let url): url
+        case .request(let request): request.url
+        }
+    }
     var origin: AIModelDirectoryOrigin { kind == .service ? .service : kind == .metadata ? .metadata : .account }
     var filtered: Bool { format == .openRouter }
     static func policy(_ connection: AIConnection) -> Self {
         if connection.authMethod == .chatGPT {
-            return .init(kind: .chatGPT, format: .chatGPT, header: .bearer, url: URL(string: connection.baseURL + "/models"))
+            return .init(plan: .chatGPT(URL(string: connection.baseURL + "/models")))
         }
         let base = connection.baseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let known = AIProviderPreset.all.contains { $0.id == connection.providerID && $0.auth == connection.authMethod && $0.wire == connection.wireProtocol && $0.endpoint == base }
         func make(_ kind: Kind, _ format: Format = .openAI, _ header: Header = .bearer, _ url: String? = nil) -> Self {
-            .init(kind: kind, format: format, header: header, url: URL(string: url ?? base + "/models"))
+            guard kind != .metadata else { return .init(plan: .metadataOnly) }
+            guard let endpoint = URL(string: url ?? base + "/models"), endpoint.scheme == "https", endpoint.host != nil else {
+                return .init(plan: .unsupported(kind, format, header))
+            }
+            return .init(plan: .request(.init(kind: kind, format: format, header: header, url: endpoint)))
         }
         guard known else {
             return make(.custom, connection.wireProtocol == .anthropic ? .anthropic : connection.wireProtocol == .gemini ? .google : .openAI,
@@ -47,16 +91,17 @@ struct AIModelDirectoryPolicy: Sendable {
 extension AIAuthentication {
     /// No redirects bearing credentials, no foreign next URLs, no partial page
     /// commits. Each cursor is encoded into the original, approved endpoint.
-    func directory(_ connection: AIConnection, credential: AICredential? = nil) async throws -> [AIModelOption] {
+    func directory(_ connection: AIConnection, credential: RuntimeCredential? = nil) async throws -> [AIModelOption] {
         let policy = AIModelDirectoryPolicy.policy(connection)
-        if policy.kind == .chatGPT { return try await models(connection, credential: credential) }
-        guard policy.kind != .metadata, let url = policy.url, url.scheme == "https", url.host != nil else { throw AIError.unsupported }
+        if case .chatGPT = policy.plan { return try await models(connection, credential: credential) }
+        guard case .request(let plan) = policy.plan else { throw AIError.unsupported }
+        let url = plan.url
         var all: [AIModelOption] = [], signatures: [String: Data] = [:], cursor: String?, seen = Set<String>(), page = 1
         while true {
             try Task.checkCancellation()
             var components = URLComponents(url: url, resolvingAgainstBaseURL: false)!
             var query = components.queryItems ?? []
-            switch policy.format {
+            switch plan.format {
             case .google: query += [URLQueryItem(name: "pageSize", value: "1000")]; if let cursor { query += [.init(name: "pageToken", value: cursor)] }
             case .anthropic: query += [.init(name: "limit", value: "100")]; if let cursor { query += [.init(name: "after_id", value: cursor)] }
             case .fireworks: query += [.init(name: "pageSize", value: "200")]; if let cursor { query += [.init(name: "pageToken", value: cursor)] }
@@ -67,7 +112,7 @@ extension AIAuthentication {
             guard let next = components.url else { throw AIError.invalidResponse }
             var request = URLRequest(url: next)
             request.timeoutInterval = 20; request.cachePolicy = .reloadIgnoringLocalCacheData
-            switch policy.header {
+            switch plan.header {
             case .none: break
             case .bearer: guard let credential else { throw AIError.loginRequired }; request.setValue("Bearer " + credential.accessToken, forHTTPHeaderField: "Authorization")
             case .anthropic:
@@ -90,7 +135,7 @@ extension AIAuthentication {
                 signatures[id] = value
             }
             all += decoded.models
-            if policy.format == .dashscope {
+            if plan.format == .dashscope {
                 guard let total = decoded.total else { throw AIError.invalidResponse }
                 if all.count >= total { break }
                 guard !decoded.models.isEmpty else { throw AIError.invalidResponse }
