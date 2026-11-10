@@ -227,10 +227,7 @@ actor AppDataService {
     var indexScanRevisions: [String: UUID] = [:]
     // Completion includes index publication; mutation-only invalidation tokens are not joinable scans.
     var libraryScanTasks: [String: (id: UUID, task: Task<Bool, Error>)] = [:]
-    var aiPreparationTokens: [String: UUID] = [:]
-    var aiPreparationTasks: [String: Task<Void, Never>] = [:]
-    var aiPreparationResults: [String: Result<ReadingLease, Error>] = [:]
-    var aiPreparationWaiters: [String: Int] = [:]
+    var aiPreparations: [String: AIPreparationEntry] = [:]
     private struct ChangeWaiter {
         let continuation: CheckedContinuation<Void, Error>
         let timeout: Task<Void, Never>

@@ -1,5 +1,29 @@
 import Foundation
 
+enum ReadingToolTarget {
+  struct BookReference {
+    let sha: String
+  }
+  struct FileReference {
+    let value: String
+  }
+  enum PreparationPolicy { case existingOnly, prepare }
+
+  case book(BookReference)
+  case file(FileReference, PreparationPolicy)
+
+  init(_ input: AIGetBookInput) throws {
+    switch (input.bookRef, input.fileRef) {
+    case (let ref?, nil): self = .book(.init(sha: try AIReadingReferences.parseBookReference(ref)))
+    case (nil, let ref?): self = .file(.init(value: ref), input.prepare == true ? .prepare : .existingOnly)
+    default:
+      throw AIToolError(
+        "invalid_argument", field: "bookRef/fileRef",
+        message: "Supply exactly one reference. Omit the unused field or set it to null.")
+    }
+  }
+}
+
 /// Shared validation of application-generated book, file and folder references.
 actor AIReadingReferences {
   let reader: AppDataService
@@ -42,8 +66,8 @@ actor AIReadingReferences {
     try await reader.aiBookID(sha: sha(ref))
   }
   func confirmBook(_ input: AIGetBookInput) async throws -> String? {
-    guard input.prepare == true, let ref = input.fileRef else { return nil }
-    let entry = try await file(ref)
+    guard case .file(let ref, .prepare) = try ReadingToolTarget(input) else { return nil }
+    let entry = try await file(ref.value)
     return String(
       localized:
         "下载并解析《\(entry.name)》 · \(ByteCountFormatter.string(fromByteCount: Int64(entry.size), countStyle: .file))"

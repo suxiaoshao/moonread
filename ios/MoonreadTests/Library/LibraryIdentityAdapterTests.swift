@@ -28,6 +28,14 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
     try await service.scanLibraryShelf("builtin")
     let first = try XCTUnwrap(
       core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin").first)
+    guard case .book(let row) = first.item, case .unidentified = row.resolution else {
+      return XCTFail("A new file is still a book before its text identity is resolved")
+    }
+    let disconnected = LibraryShelf(id: "disconnected", name: "Fixture", bookmark: Data(), location: "local",
+                                    builtin: false, error: nil, bookCount: 0)
+    guard case .external(.needsAuthorization) = try await service.shelfSource(disconnected) else {
+      return XCTFail("A disconnected external shelf must not resolve to the managed root")
+    }
     let lease = try await service.aiPrepare(first.source)
     let original = try await service.snapshot(lease.id).book
     try await service.savePosition(bookID: lease.id, offset: 9)

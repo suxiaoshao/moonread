@@ -54,8 +54,10 @@ pub(crate) fn directory_order(
 ) -> std::cmp::Ordering {
     use crate::LibrarySort;
     match sort {
-        LibrarySort::Reading => (a.directory && a.child_book_count == 0)
-            .cmp(&(b.directory && b.child_book_count == 0))
+        LibrarySort::Reading => a
+            .folder()
+            .is_some_and(|f| f.child_book_count == 0)
+            .cmp(&b.folder().is_some_and(|f| f.child_book_count == 0))
             .then_with(|| b.last_read.cmp(&a.last_read))
             .then_with(|| {
                 if a.last_read == 0 && b.last_read == 0 {
@@ -66,8 +68,9 @@ pub(crate) fn directory_order(
             })
             .then_with(|| natural_cmp(&a.name, &b.name)),
         LibrarySort::Name => b
-            .directory
-            .cmp(&a.directory)
+            .folder()
+            .is_some()
+            .cmp(&a.folder().is_some())
             .then_with(|| natural_cmp(&a.name, &b.name)),
     }
     .then_with(|| a.relative_path.cmp(&b.relative_path))

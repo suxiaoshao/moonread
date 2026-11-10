@@ -100,10 +100,10 @@ mod status_tests {
                 .unwrap();
             assert_eq!(candidates.len(), 1);
             assert_eq!(
-                candidates[0].entry.content_sha256.as_deref(),
+                candidates[0].entry.book().unwrap().formal_sha(),
                 Some(sha.as_str())
             );
-            assert_eq!(candidates[0].entry.position_utf8, 50);
+            assert_eq!(candidates[0].entry.book().unwrap().position_utf8, 50);
             assert_eq!(
                 candidates[0].resolved_metadata.as_ref().unwrap().status,
                 expected

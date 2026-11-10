@@ -458,7 +458,9 @@ mod tests {
                 .unwrap()
                 .library_entry(file.id.clone())
                 .unwrap()
-                .book_id
+                .book()
+                .unwrap()
+                .book_id()
                 .is_none()
         );
         let keys = core

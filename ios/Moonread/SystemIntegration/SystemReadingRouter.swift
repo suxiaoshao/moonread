@@ -61,9 +61,33 @@ enum SystemReadingRouteError: LocalizedError, Equatable {
 final class SystemReadingRouter {
     private weak var library: LibraryModel?
     private let service: AppDataService
-    private(set) var pending: SystemReadingRequest?
+    private struct RequestContext {
+        let token = UUID()
+        let request: SystemReadingRequest
+    }
+    private enum Handoff {
+        case idle(UUID)
+        case resolving(RequestContext)
+        case awaitingConfirmation(RequestContext, title: String)
+        case opening(RequestContext)
+
+        var context: RequestContext? {
+            switch self {
+            case .idle: nil
+            case .resolving(let context), .awaitingConfirmation(let context, _), .opening(let context): context
+            }
+        }
+        var token: UUID {
+            switch self {
+            case .idle(let id): id
+            case .resolving(let context), .awaitingConfirmation(let context, _), .opening(let context): context.token
+            }
+        }
+    }
+
+    private var handoff: Handoff = .idle(UUID())
+    var pending: SystemReadingRequest? { handoff.context?.request }
     private var task: Task<Void, Never>?
-    private var token = UUID()
     private var resumeAfterCurrent = false
     private weak var reader: ReaderSession?
     private var readerNavigationID: UUID?
@@ -72,27 +96,38 @@ final class SystemReadingRouter {
     var hasUnsavedEdits: (() -> Bool)?
     var hasEditor: (() -> Bool)?
     var discardEdits: (() -> Void)?
-    var requestID: UUID { token }
-    var confirmationTitle: String?
+    var requestID: UUID { handoff.token }
+    var confirmationTitle: String? {
+        if case .awaitingConfirmation(_, let title) = handoff { title } else { nil }
+    }
     var requestError: String?
     func presentsConfirmation(active: Bool, editor: Bool) -> Bool {
         active && (hasEditor?() == true) == editor && (confirmationTitle != nil || requestError != nil)
     }
     func admit(title: String, library: LibraryModel) -> Bool {
         if savingEdits?() == true {
-            pending = nil
+            handoff = .idle(requestID)
             requestError = String(localized: "正在保存，请稍后重试")
             return false
         }
-        if hasUnsavedEdits?() == true { confirmationTitle = title; return false }
+        if hasUnsavedEdits?() == true {
+            if let context = handoff.context { handoff = .awaitingConfirmation(context, title: title) }
+            return false
+        }
         library.sheet = nil; library.filePickerPresented = false; library.indexPrompt = nil
         return true
     }
     func answerConfirmation(discard: Bool, expectedID: UUID? = nil) {
-        guard expectedID == nil || expectedID == token, confirmationTitle != nil else { return }
-        confirmationTitle = nil
-        if discard { discardEdits?(); resume() }
-        else { pending = nil; task?.cancel(); task = nil; token = UUID(); resumeAfterCurrent = false }
+        guard case .awaitingConfirmation(let context, _) = handoff,
+              expectedID == nil || expectedID == context.token else { return }
+        if discard {
+            handoff = .resolving(context)
+            discardEdits?()
+            resume()
+        } else {
+            handoff = .idle(UUID())
+            task?.cancel(); task = nil; resumeAfterCurrent = false
+        }
     }
     init(library: LibraryModel, service: AppDataService) { self.library = library; self.service = service }
     func register(_ session: ReaderSession, navigationID: UUID?) { reader = session; readerNavigationID = navigationID }
@@ -107,11 +142,13 @@ final class SystemReadingRouter {
         // destination. A newer handoff's reader must not be popped by this task.
         if let navigationID { library.removeReaderDestination(navigationID) }
     }
-    private func openEntry(_ entry: LibraryEntry, expectedSHA: String?, in library: LibraryModel, requestToken: UUID) async -> Bool {
+    private func openEntry(_ entry: LibraryEntry, expectedSHA: String?, in library: LibraryModel, context: RequestContext) async -> Bool {
+        guard sceneActive, requestID == context.token, !Task.isCancelled else { return false }
         if expectedSHA == nil, let id = entry.bookId, reader?.isLeaving == false, reader?.readingID == id { return true }
         guard admit(title: entry.title, library: library) else { return false }
+        handoff = .opening(context)
         await finishReader(in: library)
-        guard sceneActive, token == requestToken, !Task.isCancelled else { return false }
+        guard sceneActive, requestID == context.token, !Task.isCancelled else { return false }
         library.selectedTab = .library
         library.libraryPath = Array(library.libraryPath.prefix { !$0.isReader })
         library.open(entry, expectedContentSHA: expectedSHA)
@@ -119,19 +156,22 @@ final class SystemReadingRouter {
     }
     func submit(_ request: SystemReadingRequest) {
         if pending == request { return }
-        confirmationTitle = nil; requestError = nil
-        pending = request; token = UUID(); task?.cancel(); task = nil; resumeAfterCurrent = false
+        requestError = nil
+        handoff = .resolving(.init(request: request))
+        task?.cancel(); task = nil; resumeAfterCurrent = false
         resume()
     }
     func resume() {
         guard task == nil else { resumeAfterCurrent = true; return }
-        guard confirmationTitle == nil, let request = pending, let library, library.initialized,
+        guard confirmationTitle == nil, let context = handoff.context, let library, library.initialized,
               sceneActive, Onboarding.shared.completed else { return }
-        let current = token
+        let current = context.token
+        let request = context.request
+        handoff = .resolving(context)
         task = Task { [weak self] in
             guard let self else { return }
             defer {
-                if token == current {
+                if requestID == current {
                     task = nil
                     if resumeAfterCurrent { resumeAfterCurrent = false; resume() }
                 }
@@ -143,8 +183,9 @@ final class SystemReadingRouter {
                 switch request {
                 case .showStatistics, .showLibrary, .showRecent, .searchBooks:
                     guard admit(title: String(localized: "月读"), library: library) else { return }
+                    handoff = .opening(context)
                     await finishReader(in: library)
-                    guard sceneActive, token == current, !Task.isCancelled else { return }
+                    guard sceneActive, requestID == current, !Task.isCancelled else { return }
                     switch request {
                     case .showStatistics: library.selectedTab = .statistics; library.statisticsPath = []
                     case .showRecent: library.selectedTab = .library; library.libraryPath = [.recent]
@@ -155,30 +196,31 @@ final class SystemReadingRouter {
                         library.selectedTab = .search; library.setSearchPresented(true)
                     default: break
                     }
-                    pending = nil
+                    handoff = .idle(current)
                     return
                 case .continueReading:
                     guard let entry = try await service.recentLibrary(1).first else { throw SystemReadingRouteError.noRecent }
+                    guard sceneActive, requestID == current, !Task.isCancelled else { return }
                     guard let formal = try entry.systemReadingIdentity else {
-                        if await openEntry(entry, expectedSHA: nil, in: library, requestToken: current) { pending = nil }
+                        if await openEntry(entry, expectedSHA: nil, in: library, context: context) { handoff = .idle(current) }
                         return
                     }
                     id = formal; automatic = false
                 case .openBook(let value): id = value; automatic = false
                 case .openSearchBook(let value): id = value; automatic = true
                 }
-                if !automatic, reader?.isLeaving == false, reader?.book?.contentSha256 == id.sha { pending = nil; return }
+                if !automatic, reader?.isLeaving == false, reader?.book?.contentSha256 == id.sha { handoff = .idle(current); return }
                 let entry = try await service.resolveSystemReadingBook(id, automatic: automatic)
-                guard sceneActive, token == current, !Task.isCancelled else { return }
+                guard sceneActive, requestID == current, !Task.isCancelled else { return }
                 if reader?.isLeaving == false, reader?.book?.contentSha256 == id.sha || reader?.opening.request?.expectedContentSHA == id.sha {
-                    pending = nil; return // Never reset an already displayed session to an older saved position.
+                    handoff = .idle(current); return // Never reset an already displayed session to an older saved position.
                 }
-                if await openEntry(entry, expectedSHA: id.sha, in: library, requestToken: current) { pending = nil }
+                if await openEntry(entry, expectedSHA: id.sha, in: library, context: context) { handoff = .idle(current) }
             } catch is CancellationError { }
             catch {
-                guard sceneActive, token == current, !Task.isCancelled else { return }
+                guard sceneActive, requestID == current, !Task.isCancelled else { return }
                 // Resolution errors must never leave the current reader/editor.
-                pending = nil
+                handoff = .idle(current)
                 if reader == nil { library.error = ReaderMessages.error(error) }
                 else { requestError = ReaderMessages.error(error) }
             }

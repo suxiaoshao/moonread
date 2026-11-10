@@ -37,13 +37,7 @@ impl ReaderCore {
 
     pub fn source_file_location(&self, file_id: String) -> Result<SourceFileLocation> {
         let entry = self.library_entry(file_id)?;
-        Ok(SourceFileLocation {
-            id: entry.id,
-            directory: entry.directory,
-            shelf_id: entry.shelf_id,
-            relative_path: entry.relative_path,
-            book_id: entry.book_id,
-        })
+        Ok(entry.into())
     }
 }
 
@@ -54,14 +48,22 @@ impl ReaderCore {
         Ok(self
             .library_entries(Some(shelf_id), None, LibrarySort::Name)?
             .into_iter()
-            .map(|entry| SourceFileLocation {
-                id: entry.id,
-                directory: entry.directory,
-                shelf_id: entry.shelf_id,
-                relative_path: entry.relative_path,
-                book_id: entry.book_id,
-            })
+            .map(SourceFileLocation::from)
             .collect())
+    }
+}
+
+impl From<LibraryEntry> for SourceFileLocation {
+    fn from(entry: LibraryEntry) -> Self {
+        let book_id = entry.book().and_then(BookRow::book_id).map(str::to_owned);
+        let directory = entry.folder().is_some();
+        Self {
+            id: entry.id,
+            shelf_id: entry.shelf_id,
+            relative_path: entry.relative_path,
+            directory,
+            book_id,
+        }
     }
 }
 

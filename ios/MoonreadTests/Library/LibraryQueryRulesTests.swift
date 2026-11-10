@@ -56,10 +56,14 @@ final class LibraryQueryRulesTests: XCTestCase {
     }
 
     private func candidate(_ name: String, ordinal: UInt64, folder: Bool = false, metadata: BookMetadata? = nil, recent: Int64 = 0) -> LibrarySearchCandidate {
+        let resolution: BookResolution = metadata.map {
+            .resolved(record: .init(key: .formal(sha256: $0.sha), body: .absent, aliases: []))
+        } ?? .unidentified(fileId: name)
+        let item: Moonread.LibraryItem = folder ? .folder(row: .init(childBookCount: 0, coverPreviews: []))
+            : .book(row: .init(resolution: resolution, needsDownload: false, positionUtf8: 0, byteCount: 0,
+                              chapterTitle: nil, preferred: false, metadata: metadata))
         let entry = LibraryEntry(id: name, shelfId: "s", shelfName: "Shelf", relativePath: name, parentPath: "", name: name,
-            directory: folder, size: 0, modified: 0, needsDownload: false, bookId: nil, positionUtf8: 0, byteCount: 0,
-            chapterTitle: nil, childBookCount: 0, lastRead: recent, preferred: false, coverPreviews: [], metadata: metadata,
-            contentSha256: metadata?.sha, readingIdentity: metadata.map { .formal(sha256: $0.sha) })
+                                 size: 0, modified: 0, lastRead: recent, item: item)
         return .init(entry: entry, naturalNameOrdinal: ordinal, naturalOrderOrdinal: ordinal, resolvedMetadata: metadata)
     }
     func testBookMatchingProfilesKeepTheirExistingContracts() {

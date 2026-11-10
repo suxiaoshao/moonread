@@ -77,7 +77,7 @@ extension LibraryQueryRules {
         var unknownCount = 0
         let ranked = candidates.compactMap { candidate -> (LibrarySearchCandidate, LibraryEntry, Int)? in
             var row = candidate.entry
-            if !literal { row.metadata = candidate.resolvedMetadata }
+            if !literal { row = row.withMetadata(candidate.resolvedMetadata) }
             let metadata = row.metadata
             if literal {
                 if spec.configuration.booksOnly || spec.status != nil { guard !row.directory else { return nil } }
@@ -101,7 +101,7 @@ extension LibraryQueryRules {
                     if truth == .unknown { unknownCount += 1 }
                     guard truth == .yes else { return nil }
                 }
-                row.metadata = candidate.resolvedMetadata
+                row = row.withMetadata(candidate.resolvedMetadata)
                 return (candidate, row, rank)
             }
             guard !row.directory,

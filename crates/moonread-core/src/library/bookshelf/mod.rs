@@ -69,21 +69,78 @@ pub struct LibraryEntry {
     pub relative_path: String,
     pub parent_path: String,
     pub name: String,
-    pub directory: bool,
     pub size: u64,
     pub modified: i64,
+    pub last_read: i64,
+    pub item: LibraryItem,
+}
+
+#[derive(Clone, Debug, uniffi::Enum)]
+pub enum LibraryItem {
+    Folder { row: FolderRow },
+    Book { row: BookRow },
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct FolderRow {
+    pub child_book_count: u64,
+    pub cover_previews: Vec<LibraryCoverPreview>,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct BookRow {
+    pub resolution: crate::BookResolution,
     pub needs_download: bool,
-    pub book_id: Option<String>,
     pub position_utf8: u64,
     pub byte_count: u64,
     pub chapter_title: Option<String>,
-    pub child_book_count: u64,
-    pub last_read: i64,
     pub preferred: bool,
-    pub cover_previews: Vec<LibraryCoverPreview>,
     pub metadata: Option<crate::BookMetadata>,
-    pub content_sha256: Option<String>,
-    pub reading_identity: Option<crate::ReadingKey>,
+}
+
+impl LibraryEntry {
+    pub fn book(&self) -> Option<&BookRow> {
+        match &self.item {
+            LibraryItem::Book { row } => Some(row),
+            LibraryItem::Folder { .. } => None,
+        }
+    }
+
+    pub fn folder(&self) -> Option<&FolderRow> {
+        match &self.item {
+            LibraryItem::Folder { row } => Some(row),
+            LibraryItem::Book { .. } => None,
+        }
+    }
+}
+
+impl BookRow {
+    pub fn key(&self) -> Option<&crate::ReadingKey> {
+        match &self.resolution {
+            crate::BookResolution::Resolved { record } => Some(&record.key),
+            _ => None,
+        }
+    }
+
+    pub fn book_id(&self) -> Option<&str> {
+        match &self.resolution {
+            crate::BookResolution::Resolved {
+                record:
+                    crate::ResolvedBookRecord {
+                        body: crate::BodyAssociation::Associated { book_id },
+                        ..
+                    },
+            } => Some(book_id),
+            _ => None,
+        }
+    }
+
+    pub fn formal_sha(&self) -> Option<&str> {
+        match self.key() {
+            Some(crate::ReadingKey::Formal { sha256 }) => Some(sha256),
+            _ => None,
+        }
+    }
 }
 
 /// A virtual tag section in one shelf's file catalogue, never a filesystem folder.
@@ -159,30 +216,58 @@ fn filtered_entries(
 }
 
 fn library_entry_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryEntry> {
+    let id: String = r.get(0)?;
+    let item = if r.get::<_, bool>(6)? {
+        LibraryItem::Folder {
+            row: FolderRow {
+                child_book_count: r.get::<_, i64>(14)? as u64,
+                cover_previews: Vec::new(),
+            },
+        }
+    } else {
+        let key = r
+            .get::<_, Option<String>>(18)?
+            .and_then(|s| crate::parse_reading_key(s).ok());
+        let resolution = if let Some(key) = key {
+            crate::BookResolution::Resolved {
+                record: crate::ResolvedBookRecord {
+                    key,
+                    body: r
+                        .get::<_, Option<String>>(10)?
+                        .map(|book_id| crate::BodyAssociation::Associated { book_id })
+                        .unwrap_or(crate::BodyAssociation::Absent),
+                    // This is a catalogue row, not a request to traverse historical aliases.
+                    aliases: Vec::new(),
+                },
+            }
+        } else {
+            crate::BookResolution::Unidentified {
+                file_id: id.clone(),
+            }
+        };
+        LibraryItem::Book {
+            row: BookRow {
+                resolution,
+                needs_download: r.get(9)?,
+                position_utf8: r.get::<_, i64>(11)? as u64,
+                byte_count: r.get::<_, i64>(12)? as u64,
+                chapter_title: r.get(13)?,
+                preferred: r.get(16)?,
+                metadata: metadata_column(r, 17)?,
+            },
+        }
+    };
     Ok(LibraryEntry {
-        id: r.get(0)?,
+        id,
         shelf_id: r.get(1)?,
         shelf_name: r.get(2)?,
         relative_path: r.get(3)?,
         parent_path: r.get(4)?,
         name: r.get(5)?,
-        directory: r.get(6)?,
         size: r.get::<_, i64>(7)? as u64,
         modified: r.get(8)?,
-        needs_download: r.get(9)?,
-        book_id: r.get(10)?,
-        position_utf8: r.get::<_, i64>(11)? as u64,
-        byte_count: r.get::<_, i64>(12)? as u64,
-        chapter_title: r.get(13)?,
-        child_book_count: r.get::<_, i64>(14)? as u64,
         last_read: r.get(15)?,
-        preferred: r.get(16)?,
-        cover_previews: Vec::new(),
-        metadata: metadata_column(r, 17)?,
-        content_sha256: r.get(18)?,
-        reading_identity: r
-            .get::<_, Option<String>>(18)?
-            .and_then(|s| crate::parse_reading_key(s).ok()),
+        item,
     })
 }
 
@@ -227,8 +312,10 @@ fn folder_cover_previews(
 }
 
 fn populate_cover_previews(db: &Connection, entries: &mut [LibraryEntry]) -> Result<()> {
-    for folder in entries.iter_mut().filter(|e| e.directory) {
-        folder.cover_previews = folder_cover_previews(db, &folder.shelf_id, &folder.relative_path)?;
+    for entry in entries {
+        if let LibraryItem::Folder { row } = &mut entry.item {
+            row.cover_previews = folder_cover_previews(db, &entry.shelf_id, &entry.relative_path)?;
+        }
     }
     Ok(())
 }
@@ -315,17 +402,15 @@ impl ReaderCore {
                     name_ordinal += 1;
                 }
                 previous_name = Some(entry.name.clone());
-                let resolved_metadata = entry
-                    .content_sha256
-                    .as_ref()
-                    .filter(|sha| crate::valid_sha(sha))
-                    .map(|sha| {
+                let resolved_metadata = entry.book().and_then(|book| {
+                    book.formal_sha().map(|sha| {
                         crate::reading::book_details::project_metadata(
                             sha,
-                            entry.metadata.clone(),
+                            book.metadata.clone(),
                             reading.contains(sha),
                         )
-                    });
+                    })
+                });
                 Ok(LibrarySearchCandidate {
                     entry,
                     natural_order_ordinal: i as u64,
@@ -352,11 +437,12 @@ impl ReaderCore {
         let mut untagged = Vec::new();
         let mut unindexed = Vec::new();
         for book in books {
-            if book.content_sha256.is_none() {
+            let Some(row) = book.book() else { continue };
+            if row.key().is_none() {
                 unindexed.push(book);
                 continue;
             }
-            let tags: std::collections::BTreeSet<_> = book
+            let tags: std::collections::BTreeSet<_> = row
                 .metadata
                 .as_ref()
                 .map(|m| m.tags.iter().collect())

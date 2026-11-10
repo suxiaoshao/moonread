@@ -202,7 +202,9 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     try await service.prepareLibrary()
     try await service.refreshLibrary()
     var entry = try await service.libraryEntries(LibraryLocation(shelfID: "builtin"))[0]
-    entry.needsDownload = true
+    var book = try XCTUnwrap(entry.bookRow)
+    book.needsDownload = true
+    entry.item = .book(row: book)
     let entered = expectation(description: "source requested")
     let finished = expectation(description: "cancelled source finished")
     let gate = SourceReadinessGate(entered: entered)

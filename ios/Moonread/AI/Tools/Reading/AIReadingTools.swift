@@ -216,24 +216,30 @@ actor AIReadingTools {
     return .init(data: .init(items: pageItems), page: page)
   }
   private func getBook(_ input: AIGetBookInput) async throws -> AIToolResponse<AIBookResult> {
-    var entry: LibraryEntry?
-    var ref = input.bookRef
-    if let fileRef = input.fileRef {
-      entry = try await file(fileRef)
-      if input.prepare == true, let entry {
-        let lease = try await reader.aiPrepare(entry.source)
-        ref = Self.bookRef(try await reader.snapshot(lease.id).book.contentSha256)
-      } else if let sha = entry?.metadata?.sha {
-        ref = Self.bookRef(sha)
+    let entry: LibraryEntry?
+    let contentSHA: String?
+    switch try ReadingToolTarget(input) {
+    case .book(let reference):
+      entry = nil
+      contentSHA = reference.sha
+    case .file(let reference, let policy):
+      let source = try await file(reference.value)
+      entry = source
+      switch policy {
+      case .prepare:
+        let lease = try await reader.aiPrepare(source.source)
+        contentSHA = try parseSha256(value: await reader.snapshot(lease.id).book.contentSha256)
+      case .existingOnly:
+        contentSHA = try source.metadata.map { try parseSha256(value: $0.sha) }
       }
     }
-    guard let ref else {
+    guard let contentSHA else {
       return .init(
         data: .init(
           title: entry?.title ?? "", availability: entry.map(availability) ?? "unavailable",
           files: entry.map { [fileResult($0)] } ?? []))
     }
-    let details = try await reader.details(sha: sha(ref))
+    let details = try await reader.details(sha: contentSHA)
     let files = try await files().filter { $0.metadata?.sha == details.metadata.sha }
     var data = AIBookResult(
       title: details.book?.title ?? entry?.title ?? "",

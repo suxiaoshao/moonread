@@ -4,18 +4,16 @@ import WidgetKit
 
 struct SystemWidgetEntry: TimelineEntry {
     let date: Date
-    let book: SystemReadingSnapshot.Book?
-    let targetID: String?
+    let selection: SystemReadingWidgetModel.Selection
+    var book: SystemReadingSnapshot.Book? { selection.book }
     let specificBook: Bool
     let recent: [SystemReadingSnapshot.Book]
     let appearance: SystemReadingSnapshot.Appearance?
     let statistics: SystemReadingSnapshot.Statistics?
-    var url: URL { targetID.flatMap(SystemReadingLink.book) ?? SystemReadingLink.resume }
+    var url: URL { selection.targetID.flatMap(SystemReadingLink.book) ?? SystemReadingLink.resume }
     init(date: Date = Date(), snapshot: SystemReadingSnapshot?, selectedID: String? = nil, specific: Bool = false) {
         self.date = date; specificBook = specific
-        let selection = SystemReadingWidgetModel.selection(in: snapshot, selectedID: selectedID)
-        book = specific && selectedID == nil ? nil : selection.book
-        targetID = specific && selectedID == nil ? nil : selection.targetID
+        selection = SystemReadingWidgetModel.selection(in: snapshot, selectedID: selectedID, specific: specific)
         recent = SystemReadingWidgetModel.recentBooks(in: snapshot, limit: 4)
         appearance = snapshot?.appearance; statistics = snapshot?.statistics
     }
