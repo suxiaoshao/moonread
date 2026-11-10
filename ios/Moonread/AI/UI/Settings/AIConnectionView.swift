@@ -27,6 +27,7 @@ struct AIConnectionView: View {
     @State private var name = ""
     @State private var authorizationCode = ""
     @State private var showingChatGPTWelcome = false
+    @State private var usageVisit = UUID()
     private var connection: AIConnection? { ai.providers.connections.first { $0.id == connectionID } }
     private var authorizationURL: URL? {
         if case .browser(let request) = ai.providers.loginState(connectionID) { return request.url }
@@ -34,10 +35,13 @@ struct AIConnectionView: View {
     }
     var body: some View {
         ScrollView {
-            if let connection {
+            if ai.availability.isAvailable, let connection {
                 VStack(alignment: .leading, spacing: 28) {
                     identity(connection)
                     accountCard(connection)
+                    AIConnectionUsageSection(presentation: ai.usage.presentation(for: connection)) {
+                        ai.usage.refresh(connectionID)
+                    }
                     VStack(alignment: .leading, spacing: LayoutTokens.control) {
                         Text("数据共享许可").font(.headline)
                         Text("撤销后会停止此连接的内容任务。已发送给服务的数据无法追回。")
@@ -125,7 +129,11 @@ struct AIConnectionView: View {
                 else if url == nil { browser = nil }
             }
             .onChange(of: ai.providers.showingChatGPTWelcome) { _, value in showingChatGPTWelcome = value }
-            .onAppear { showingChatGPTWelcome = ai.providers.showingChatGPTWelcome }
+            .onAppear {
+                showingChatGPTWelcome = ai.providers.showingChatGPTWelcome
+                ai.usage.enterDetail(connectionID, visit: usageVisit)
+            }
+            .onDisappear { ai.usage.leaveDetail(connectionID, visit: usageVisit) }
             .alert("正在使用你的 ChatGPT 套餐", isPresented: $showingChatGPTWelcome) {
                 Button("知道了") { ai.providers.acknowledgeChatGPTWelcome() }
             } message: { Text("此连接的 AI 请求使用你的 ChatGPT 套餐，用量与权限由 ChatGPT 管理。") }
@@ -159,11 +167,11 @@ struct AIConnectionView: View {
                 }
             }
             if connection.authMethod == .apiKey {
-                if ["kimi-code-plan-cn", "kimi-code-plan-global"].contains(connection.catalogID) {
+                if case .linkOnly(.kimiAccount(let url)) = AIUsageAdapter.capability(for: connection) {
                     Text("Kimi 会员可在 Kimi Code 控制台创建 API Key，然后粘贴到这里。会员权益与工具使用范围以 Kimi 的说明为准；月读不提供 Kimi 账户登录。")
                         .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                         .accessibilityIdentifier("kimiMembershipKeyGuide")
-                    Link("打开 Kimi Code 控制台", destination: URL(string: "https://www.kimi.com/code/console")!)
+                    Link("打开 Kimi Code 控制台", destination: url)
                         .foregroundStyle(Color(uiColor: theme.accent)).accessibilityIdentifier("kimiKeyConsoleLink")
                 }
                 if !connected || editingKey {
@@ -187,10 +195,10 @@ struct AIConnectionView: View {
                 }
                 if !connected, let error = ai.providers.modelError(connectionID) { Text(error).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
             } else { statusContent(connection) }
-            if ai.providers.isUsingChatGPTPlan(connection) {
+            if case .linkOnly(.chatGPT(let url)) = AIUsageAdapter.capability(for: connection), ai.providers.isUsingChatGPTPlan(connection) {
                 Label("正在使用 ChatGPT 套餐", systemImage: "checkmark.shield")
                     .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
-                Link("管理 ChatGPT 用量", destination: URL(string: "https://chatgpt.com/settings/usage")!)
+                Link("管理 ChatGPT 用量", destination: url)
                     .foregroundStyle(Color(uiColor: theme.accent))
             }
             if removalFailed { Text("无法移除连接，请重试。").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }

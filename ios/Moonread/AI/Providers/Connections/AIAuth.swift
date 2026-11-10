@@ -188,8 +188,8 @@ actor AIAuthentication {
         self.chatGPTHostReference = chatGPTHostReference
         self.session = session; self.credentialResolver = credentialResolver; self.credentialSaver = credentialSaver
     }
-    func requestData(_ request: URLRequest) async throws -> (Data, URLResponse) {
-        try await network.perform { [session] in try await session.data(for: request) }
+    func requestData(_ request: URLRequest, delegate: (any URLSessionTaskDelegate)? = nil) async throws -> (Data, URLResponse) {
+        try await network.perform { [session] in try await session.data(for: request, delegate: delegate) }
     }
     func saveAPIKey(_ key: String, connection: AIConnection) throws {
         guard !signingOut.contains(connection.credentialReference) else { throw AIError.loginRequired }

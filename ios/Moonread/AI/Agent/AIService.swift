@@ -153,6 +153,7 @@ struct AISessionSummary: Identifiable {
     let proposals: AIProposalRegistry
     let availability: AIAvailability
     let providers: AIConnectionService
+    let usage: AIConnectionUsageService
     let sharing: AIDataSharingConsent
     private(set) var sessions: [AIConversation] = []
     var conversations: [AIConversation] { sessions.filter(\.listed).sorted { $0.updated > $1.updated } }
@@ -187,7 +188,8 @@ struct AISessionSummary: Identifiable {
         proposals = AIProposalRegistry(reader: reader)
         availability = AIAvailability(defaults: defaults, storefront: storefront)
         sharing = AIDataSharingConsent(defaults: defaults)
-        providers = AIConnectionService(defaults: defaults, auth: auth, sharing: sharing, availability: availability)
+        usage = AIConnectionUsageService(availability: availability, now: auth.now)
+        providers = AIConnectionService(defaults: defaults, auth: auth, sharing: sharing, availability: availability, usage: usage)
         availability.didDisable = { [weak self] in
             guard let self else { return }
             for value in self.sessions { self.stop(value.id) }
