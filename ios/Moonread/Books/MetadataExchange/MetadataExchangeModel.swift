@@ -2,19 +2,53 @@ import SwiftUI
 
 @MainActor @Observable final class MetadataExchangeModel {
     let service: AppDataService
-    var preview: MetadataImportPreview?
     struct Issue: Identifiable {
-        let id = UUID()
+        let id: Int
         let value: MetadataDiagnostic
     }
-    var issues: [Issue] = []
-    var result: MetadataBatchResult?
-    var loading = false
-    var saving = false
-    var cancellationRequested = false
-    var error: String?
-    var completed = 0
-    var total = 0
+    private struct Review {
+        var preview: MetadataImportPreview
+        var result: MetadataBatchResult?
+    }
+    private struct ApplyContext {
+        let token = UUID()
+        let preview: MetadataImportPreview
+        var completed = 0
+        let total: Int
+        var cancellationRequested = false
+    }
+    private enum ExchangeState {
+        case idle
+        case reading(previous: Review?)
+        case reviewing(MetadataImportPreview)
+        case applying(ApplyContext)
+        case finished(MetadataImportPreview, MetadataBatchResult)
+        case failed(String, previous: Review?)
+
+        var review: Review? {
+            switch self {
+            case .idle: nil
+            case .reading(let previous), .failed(_, let previous): previous
+            case .reviewing(let preview): Review(preview: preview)
+            case .applying(let context): Review(preview: context.preview)
+            case .finished(let preview, let result): Review(preview: preview, result: result)
+            }
+        }
+    }
+    private var state = ExchangeState.idle
+    var preview: MetadataImportPreview? { state.review?.preview }
+    var issues: [Issue] { (preview?.diagnostics ?? []).enumerated().map { Issue(id: $0.offset, value: $0.element) } }
+    var result: MetadataBatchResult? { state.review?.result }
+    var loading: Bool { if case .reading = state { true } else { false } }
+    var saving: Bool { if case .applying = state { true } else { false } }
+    var cancellationRequested: Bool { applying?.cancellationRequested ?? false }
+    var error: String? { if case .failed(let message, _) = state { message } else { nil } }
+    var completed: Int { applying?.completed ?? 0 }
+    var total: Int { applying?.total ?? 0 }
+    private var applying: ApplyContext? { if case .applying(let context) = state { context } else { nil } }
+
+    func showError(_ message: String) { state = .failed(message, previous: state.review) }
+    func review(_ preview: MetadataImportPreview) { state = .reviewing(preview) }
     var query = ""
     var filter = 0
     private var work: Task<Void, Never>?
@@ -32,20 +66,29 @@ import SwiftUI
         }
     }
     func load(_ url: URL) async {
-        loading = true; error = nil; preview = nil; result = nil; issues = []; query = ""; filter = 0
-        defer { loading = false }
-        do { preview = try await service.previewMetadata(url); issues = (preview?.diagnostics ?? []).map { Issue(value: $0) } }
-        catch { self.error = ReaderMessages.error(error) }
+        guard !loading, !saving else { return }
+        state = .reading(previous: nil); query = ""; filter = 0
+        do { review(try await service.previewMetadata(url)) }
+        catch { showError(ReaderMessages.error(error)) }
     }
     func binding(_ id: String) -> Binding<MetadataPreviewBook>? {
         guard let book = books.first(where: { $0.id == id }) else { return nil }
         return Binding(get: { self.books.first { $0.id == id } ?? book }, set: { value in
-            guard let index = self.preview?.books.firstIndex(where: { $0.id == id }) else { return }; var value = value; value.validateSelection(using: self.service); self.preview?.books[index] = value
+            guard !self.saving, !self.loading, var preview = self.preview,
+                  let index = preview.books.firstIndex(where: { $0.id == id }) else { return }
+            var value = value
+            value.validateSelection(using: self.service)
+            preview.books[index] = value
+            self.review(preview)
         })
     }
     func adopt(_ enabled: Bool, replaceTags: Bool = false) {
-        guard preview != nil else { return }
-        for index in preview!.books.indices { preview!.books[index].adopt(enabled, replaceTags: replaceTags); preview!.books[index].validateSelection(using: service) }
+        guard !saving, !loading, var preview else { return }
+        for index in preview.books.indices {
+            preview.books[index].adopt(enabled, replaceTags: replaceTags)
+            preview.books[index].validateSelection(using: service)
+        }
+        review(preview)
     }
     var confirmation: String {
         let clear = pending.reduce(0) { $0 + $1.fields.filter { $0.chosen?.clearing == true }.count }
@@ -54,22 +97,33 @@ import SwiftUI
         return String(localized: "保存 \(pending.count) 本资料，清空 \(clear) 个字段，移除 \(removed) 个标签，改名 \(rename) 个文件。已保存的资料不会因取消或后续失败撤回。", table: "MetadataExchange")
     }
     func save() async {
-        guard !saving, !invalidSelection, !pending.isEmpty, let preview else { return }
-        saving = true; cancellationRequested = false; completed = 0; total = pending.count; error = nil
+        guard !saving, !loading, !invalidSelection, !pending.isEmpty, let preview else { return }
+        let context = ApplyContext(preview: preview, total: pending.count)
+        state = .applying(context)
         let task = Task {
-            self.result = await service.applyMetadata(preview) { completed, total in
-                await MainActor.run { self.completed = completed; self.total = total }
+            let result = await service.applyMetadata(preview) { completed, _ in
+                await MainActor.run {
+                    guard var current = self.applying, current.token == context.token else { return }
+                    current.completed = completed
+                    self.state = .applying(current)
+                }
             }
+            guard self.applying?.token == context.token else { return }
+            self.state = .finished(preview, result)
         }
-        work = task; await task.value; work = nil; saving = false
+        work = task; await task.value; work = nil
     }
-    func cancel() { guard work != nil else { return }; cancellationRequested = true; work?.cancel() }
+    func cancel() {
+        guard var context = applying else { return }
+        context.cancellationRequested = true
+        state = .applying(context)
+        work?.cancel()
+    }
     func reviewAgain() async {
-        guard let session = preview?.session else { return }
-        loading = true; error = nil
-        defer { loading = false }
-        do { preview = try await service.metadataPreview(session); issues = (preview?.diagnostics ?? []).map { Issue(value: $0) }; result = nil }
-        catch { self.error = ReaderMessages.error(error) }
+        guard !saving, !loading, let previous = state.review else { return }
+        state = .reading(previous: previous)
+        do { review(try await service.metadataPreview(previous.preview.session)) }
+        catch { showError(ReaderMessages.error(error)) }
     }
     func diagnosticFile() throws -> LibraryExport? {
         guard let diagnostics = preview?.diagnostics, !diagnostics.isEmpty else { return nil }

@@ -137,11 +137,73 @@ final class FullIndexController {
     @ObservationIgnored private var foreground = true
     @ObservationIgnored private var observers: [AnyCancellable] = []
     @ObservationIgnored private var admissions: [String: [String: IndexInput]] = [:]
-    private(set) var currentFile: SourceFileSnapshot?
-    private(set) var waitingForReader = false
-    private(set) var paused = false
-    private(set) var running = false
-    private(set) var failures: [IndexFailure] = []
+    private enum Counts {
+        case unknown
+        case known(indexed: Int, total: Int)
+        var values: (indexed: Int, total: Int)? {
+            if case .known(let indexed, let total) = self { (indexed, total) } else { nil }
+        }
+    }
+    private struct IndexProgress {
+        var shelf: String?
+        var counts = Counts.unknown
+        var failures: [IndexFailure] = []
+        var lastFile: SourceFileSnapshot?
+        func moving(to shelf: String) -> Self { .init(shelf: shelf, failures: failures) }
+    }
+    private struct IndexRun {
+        enum Step {
+            case inventory
+            case processing(SourceFileSnapshot)
+            case waitingForForeground(lastFile: SourceFileSnapshot?)
+        }
+        var step = Step.inventory
+        var progress: IndexProgress
+    }
+    private enum PauseReason { case constrained, background, requested }
+    private enum IndexState {
+        case idle(IndexProgress)
+        case active(IndexRun)
+        case suspended(PauseReason, IndexProgress)
+        case completed(IndexProgress)
+        case failed(String, IndexProgress)
+
+        var progress: IndexProgress {
+            switch self {
+            case .active(let run): run.progress
+            case .idle(let progress), .suspended(_, let progress), .completed(let progress), .failed(_, let progress): progress
+            }
+        }
+        func updatingProgress(_ change: (inout IndexProgress) -> Void) -> Self {
+            var next = progress; change(&next)
+            switch self {
+            case .idle: return .idle(next)
+            case .active(var run): run.progress = next; return .active(run)
+            case .suspended(let reason, _): return .suspended(reason, next)
+            case .completed: return .completed(next)
+            case .failed(let error, _): return .failed(error, next)
+            }
+        }
+    }
+    private var state = IndexState.idle(.init())
+    private func updateProgress(_ change: (inout IndexProgress) -> Void) { state = state.updatingProgress(change) }
+    private func updateStep(_ step: IndexRun.Step) {
+        guard case .active(var run) = state else { return }
+        run.step = step
+        if case .processing(let file) = step { run.progress.lastFile = file }
+        state = .active(run)
+    }
+    var currentFile: SourceFileSnapshot? {
+        guard case .active(let run) = state else { return nil }
+        if case .waitingForForeground = run.step { return nil }
+        return run.progress.lastFile
+    }
+    var waitingForReader: Bool {
+        if case .active(let run) = state, case .waitingForForeground = run.step { true } else { false }
+    }
+    var paused: Bool { if case .suspended(.constrained, _) = state { true } else { false } }
+    var running: Bool { if case .active = state { true } else { false } }
+    var failures: [IndexFailure] { state.progress.failures }
     func canContinue(_ inventory: IdentityInventory, includeCloud: Bool) -> Bool {
         inventory.admittedPending.contains { file in
             (includeCloud || !file.needsDownload) && !failures.contains { $0.matches(file) }
@@ -163,11 +225,17 @@ final class FullIndexController {
         if running && shelfID == shelf && hasInventory { return (indexed, total) }
         return inventory.map { ($0.total - $0.pending.count, $0.total) }
     }
-    private(set) var hasInventory = false
-    private(set) var indexed = 0
-    private(set) var total = 0
-    private(set) var shelfID: String?
-    var message: String?
+    var hasInventory: Bool { state.progress.counts.values != nil }
+    var indexed: Int { state.progress.counts.values?.indexed ?? 0 }
+    var total: Int { state.progress.counts.values?.total ?? 0 }
+    var shelfID: String? { state.progress.shelf }
+    var message: String? {
+        switch state {
+        case .suspended(.constrained, _): String(localized: "已暂停：低电量模式或设备过热", table: "FullIndex")
+        case .failed(let message, _): message
+        default: nil
+        }
+    }
     var automatic = false {
         didSet {
             defaults.set(automatic, forKey: "Moonread.fullIndex.automatic")
@@ -177,7 +245,7 @@ final class FullIndexController {
     init(defaults: UserDefaults = .standard, service: AppDataService = .shared, registerTasks: Bool = true) {
         self.defaults = defaults; self.service = service
         automatic = defaults.bool(forKey: "Moonread.fullIndex.automatic")
-        if let data = defaults.data(forKey: "Moonread.fullIndex.request.v1"), let saved = try? JSONDecoder().decode(Request.self, from: data), saved.schemaVersion == 1 { request = saved; shelfID = saved.shelf }
+        if let data = defaults.data(forKey: "Moonread.fullIndex.request.v1"), let saved = try? JSONDecoder().decode(Request.self, from: data), saved.schemaVersion == 1 { request = saved; state = .idle(.init(shelf: saved.shelf)) }
         guard registerTasks else { return }
         BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.processingID, using: nil,
             launchHandler: FullIndexSystemCallback.launch { self.attach($0) })
@@ -196,7 +264,7 @@ final class FullIndexController {
             if !userInitiated && !inputs.isEmpty && inputs.allSatisfy({ admissions[shelf]?[$0.key] == $0.value }) { return }
             admissions[shelf] = inputs
         }
-        if userInitiated { failures.removeAll { $0.file.shelfId == shelf } }
+        if userInitiated { updateProgress { $0.failures.removeAll { $0.file.shelfId == shelf } } }
         if userInitiated { foreground = true }
         if runner != nil || request?.resume == true {
             var queued = request?.queued ?? []
@@ -206,7 +274,7 @@ final class FullIndexController {
             } else { queued.append(QueuedRequest(shelf: shelf, includeCloud: includeCloud, scannedOnly: scannedOnly ? true : nil)) }
             request?.queued = queued; save(); resume(); return
         }
-        request = Request(shelf: shelf, includeCloud: includeCloud, resume: true, scannedOnly: scannedOnly ? true : nil); shelfID = shelf; hasInventory = false; indexed = 0; total = 0; message = nil; save()
+        request = Request(shelf: shelf, includeCloud: includeCloud, resume: true, scannedOnly: scannedOnly ? true : nil); state = .idle(state.progress.moving(to: shelf)); save()
         if #available(iOS 26.0, *), userInitiated {
             let identifier = Self.continuedPrefix + UUID().uuidString
             if BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil, launchHandler: FullIndexSystemCallback.launch { self.attach($0) }) {
@@ -237,9 +305,10 @@ final class FullIndexController {
     }
     func waitForCompletion() async { while let task = runner { await task.value } }
     private func pause() {
-        currentFile = nil; waitingForReader = false; paused = constrained
+        var progress = state.progress; progress.lastFile = nil
+        let reason: PauseReason = constrained ? .constrained : request?.resume == true ? .background : .requested
+        state = .suspended(reason, progress)
         work?.cancel(); runner?.cancel()
-        if constrained { message = String(localized: "已暂停：低电量模式或设备过热", table: "FullIndex") }
         if runner == nil { finishBackground(success: false); schedule() }
     }
     private func schedule() {
@@ -254,18 +323,21 @@ final class FullIndexController {
     }
     private func resume() {
         guard runner == nil, request?.resume == true, !constrained, foreground || background != nil, let request else { return }
-        currentFile = nil; waitingForReader = false; paused = false; message = nil
-        running = true
+        var progress = state.progress; progress.lastFile = nil
+        state = .active(IndexRun(progress: progress))
         runner = Task {
             var completed = false
             var finishedShelf = false
             defer {
-                currentFile = nil; waitingForReader = false
-                work = nil; runner = nil; running = false
+                work = nil; runner = nil
+                if case .active = state {
+                    var progress = state.progress; progress.lastFile = nil
+                    state = finishedShelf ? .completed(progress) : .idle(progress)
+                }
                 if finishedShelf, var queued = self.request?.queued, !queued.isEmpty {
                     let next = queued.removeFirst()
                     self.request = Request(shelf: next.shelf, includeCloud: next.includeCloud, resume: true, queued: queued, scannedOnly: next.scannedOnly)
-                    shelfID = next.shelf; hasInventory = false; indexed = 0; total = 0; message = nil; save(); resume()
+                    state = .idle(state.progress.moving(to: next.shelf)); save(); resume()
                 } else {
                     finishBackground(success: completed)
                     if !completed {
@@ -277,13 +349,15 @@ final class FullIndexController {
                 var attempted = Set<IndexInput>()
                 while !Task.isCancelled {
                     if constrained { break }
+                    updateStep(.inventory)
                     let inventory = try await service.identityInventory(request.shelf, scannedOnly: request.scannedOnly == true)
-                    failures.removeAll { failure in
-                        failure.file.shelfId == request.shelf && !inventory.pending.contains { failure.matches($0) }
+                    try Task.checkCancellation()
+                    updateProgress { progress in
+                        progress.failures.removeAll { failure in
+                            failure.file.shelfId == request.shelf && !inventory.pending.contains { failure.matches($0) }
+                        }
+                        progress.counts = .known(indexed: inventory.total - inventory.pending.count, total: inventory.total)
                     }
-                    hasInventory = true
-                    total = inventory.total
-                    indexed = total - inventory.pending.count
                     if #available(iOS 26.0, *), let task = background as? BGContinuedProcessingTask {
                         task.progress.totalUnitCount = Int64(max(total,1)); task.progress.completedUnitCount = Int64(indexed)
                     }
@@ -296,36 +370,42 @@ final class FullIndexController {
                     }
                     // Nothing eligible means the shelf is finished, even while
                     // foreground opening/editing/reading holds the shared gate.
-                    waitingForReader = !(await service.identityMayRun())
-                    if waitingForReader { currentFile = nil }
-                    let waitedForReader = waitingForReader
+                    let waitedForReader = !(await service.identityMayRun())
+                    try Task.checkCancellation()
+                    if waitedForReader { updateStep(.waitingForForeground(lastFile: currentFile)) }
                     try await service.waitForReadingIdle()
-                    waitingForReader = false
-                    // The foreground operation may have changed or removed next.
-                    if waitedForReader { continue }
+                    try Task.checkCancellation()
+                    if waitedForReader {
+                        updateProgress { $0.lastFile = nil }
+                        continue  // Foreground work may have changed this source.
+                    }
                     attempted.insert(IndexInput(next))
                     let nextWork = IdentityFileWork(); work = nextWork
                     do {
                         let core = try await service.identityCore()
                         try await service.withReadingIdleWork(cancel: { nextWork.cancel() }) {
-                            await MainActor.run { self.currentFile = next }
+                            await MainActor.run { self.updateStep(.processing(next)) }
                             try await nextWork.run(file: next, shelf: inventory.shelf, core: core, includeCloud: request.includeCloud, service: service)
                         }
-                        failures.removeAll { $0.id == next.id }
+                        updateProgress { $0.failures.removeAll { $0.id == next.id } }
                         NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
                     } catch {
                         if Task.isCancelled { break }
-                        if nextWork.isCancelled { currentFile = nil; attempted.remove(IndexInput(next)) }
-                        else {
-                            failures.removeAll { $0.id == next.id }
-                            failures.append(IndexFailure(file: next, message: ReaderMessages.error(error)))
+                        if nextWork.isCancelled {
+                            updateProgress { $0.lastFile = nil }
+                            attempted.remove(IndexInput(next))
+                        } else {
+                            updateProgress {
+                                $0.failures.removeAll { $0.id == next.id }
+                                $0.failures.append(IndexFailure(file: next, message: ReaderMessages.error(error)))
+                            }
                         }
                     }
                     // Keep the last reported file through normal inventory
                     // refresh, until actual work on the next file replaces it.
                     work = nil
                 }
-            } catch { if !Task.isCancelled { message = ReaderMessages.error(error) } }
+            } catch { if !Task.isCancelled { state = .failed(ReaderMessages.error(error), state.progress) } }
         }
     }
 }

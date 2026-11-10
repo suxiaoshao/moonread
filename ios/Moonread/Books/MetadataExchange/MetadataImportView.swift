@@ -48,7 +48,7 @@ struct MetadataImportView: View {
         .fileImporter(isPresented: $selectingFile, allowedContentTypes: UTType.metadataImportTypes) { result in
             switch result {
             case .success(let url): selected = nil; Task { await model.load(url) }
-            case .failure(let error): model.error = ReaderMessages.error(error)
+            case .failure(let error): model.showError(ReaderMessages.error(error))
             }
         }
         .interactiveDismissDisabled(model.saving)
@@ -130,7 +130,7 @@ struct MetadataImportView: View {
                     }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                 }.themedPage().navigationTitle(Text("未应用内容", tableName: "MetadataExchange"))
             } label: { Text("\(diagnostics.count) 条未应用内容", tableName: "MetadataExchange") }
-            Button { do { sharing = try model.diagnosticFile() } catch { model.error = ReaderMessages.error(error) } } label: { Text("导出问题清单", tableName: "MetadataExchange") }
+            Button { do { sharing = try model.diagnosticFile() } catch { model.showError(ReaderMessages.error(error)) } } label: { Text("导出问题清单", tableName: "MetadataExchange") }
         }.font(.footnote).foregroundStyle(Color(uiColor: theme.accent))
     }
     @ToolbarContentBuilder private var closeButton: some ToolbarContent {

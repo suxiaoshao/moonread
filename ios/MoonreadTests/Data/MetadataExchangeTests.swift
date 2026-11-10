@@ -105,7 +105,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
             .joined(separator: "\n").write(to: input, atomically: true, encoding: .utf8)
         let mixed = try await service.previewMetadata(input)
         let model = MetadataExchangeModel(service: service)
-        model.preview = mixed
+        model.review(mixed)
         XCTAssertEqual(model.pending.count, 0)
         XCTAssertEqual(model.unchangedCount, 1)
         XCTAssertEqual(model.unmatchedCount, 1)

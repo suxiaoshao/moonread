@@ -80,7 +80,9 @@ final class LibraryModel {
     var pendingIndexScans = Set<String>()
     var indexPrompt: IdentityInventory?
     var deferredIndexPrompt: IdentityInventory?
-    var importedBookToOpen: LibraryEntry?
+    var importedBookToOpen: LibraryEntry? {
+        if case .awaitingOpen(let entry) = fileWork?.stage { entry } else { nil }
+    }
     /// Called by the presentation owner only after the index alert has closed.
     func resolveIndexPrompt(start: Bool) {
         guard let prompt = indexPrompt else { return }
@@ -91,9 +93,10 @@ final class LibraryModel {
     func finishImportOpening() {
         guard indexPrompt == nil, deferredIndexPrompt == nil, sheet == nil,
               let entry = importedBookToOpen else { return }
-        importedBookToOpen = nil
+        guard let work = fileWork else { return }
+        work.stage = .finished(.completed)
         open(entry)
-        if let work = fileWork, work.task == nil { finish(work) }
+        if work.task == nil { finish(work) }
     }
     func offerIndex(_ shelfID: String) async {
         guard let inventory = try? await service.identityInventory(shelfID), !inventory.local.isEmpty else { return }
@@ -112,10 +115,12 @@ final class LibraryModel {
     private(set) var shelfScans: [String: UUID] = [:]
     var explicitFileWork: Bool { fileWork != nil }
     var runningFileBatch: Bool { fileWork?.kind == .commands }
-    var processingFiles: Bool { pendingDecision == nil && importedBookToOpen == nil && explicitFileWork }
+    var processingFiles: Bool { if case .running = fileWork?.stage { true } else { false } }
     var canAcceptFileWork: Bool { fileWork == nil }
     var afterSheetDismiss: (() -> Void)?
-    var pendingDecision: LibraryPendingDecision?
+    var pendingDecision: LibraryPendingDecision? {
+        if case .awaitingDecision(let decision) = fileWork?.stage { decision } else { nil }
+    }
     var removingShelf: LibraryShelf?
     var importFailures: [ImportFailure] = []
     var sharedImportResult: String?
@@ -136,10 +141,18 @@ final class LibraryModel {
     var initialized = false
     var initialization: Task<Bool, Never>?
     var refreshTask: Task<Void, Never>?
-    @MainActor final class FileWork {
+    @MainActor @Observable final class FileWork {
         enum Kind { case commands, imports, shelf, export }
+        enum Outcome { case completed, cancelled, failed }
+        enum Stage {
+            case running
+            case awaitingDecision(LibraryPendingDecision)
+            case awaitingOpen(LibraryEntry)
+            case finished(Outcome)
+        }
         let kind: Kind
-        var task: Task<Void, Never>?
+        var stage = Stage.running
+        @ObservationIgnored var task: Task<Void, Never>?
         var commands: [LibraryCommand] = []
         var imports: [(LibraryImportFile, LibraryLocation)] = []
         var imported: [LibraryEntry] = []
@@ -273,6 +286,7 @@ final class LibraryModel {
             try await self.reload()
             if self.selectedTab == tab, self.path == origin { self.path.append(.folder(LibraryLocation(shelfID: id))) }
             let request = UUID(); self.shelfScans[id] = request
+            work.stage = .finished(.completed)
             self.finish(work)
             // Registration is owned; the subsequent scan has its existing page feedback.
             Task {

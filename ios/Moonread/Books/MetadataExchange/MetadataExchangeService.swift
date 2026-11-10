@@ -112,20 +112,24 @@ extension AppDataService {
         for sha in shas {
             try Task.checkCancellation()
             let sources = try query.systemReadingSources(contentSha256: sha)
-            var item = MetadataPreviewBook(id: sha, title: sources.first.map { ($0.name as NSString).deletingPathExtension } ?? String(localized: "找不到这本书", table: "MetadataExchange"), base: nil, source: sources.count == 1 ? sources[0] : nil, sourceCount: sources.count, fields: [], messages: [])
+            let source = MetadataPreviewBook.Source(sources)
+            let title = sources.first.map { ($0.name as NSString).deletingPathExtension }
+                ?? String(localized: "找不到这本书", table: "MetadataExchange")
             guard !sources.isEmpty else {
-                item.messages = [String(localized: "找不到这本书", table: "MetadataExchange")]; books.append(item)
+                let message = String(localized: "找不到这本书", table: "MetadataExchange")
+                books.append(.init(id: sha, title: title, match: .unmatched, messages: [message]))
                 let record = try session.document.records(sha: sha, cursor: 0, count: 1).records.first
-                diagnostics.append(.init(sourceLine: record?.sourceLine, recordIndex: record?.recordIndex, code: "book_not_found", field: "content_sha256", contentSha256: sha, message: item.messages[0])); continue
+                diagnostics.append(.init(sourceLine: record?.sourceLine, recordIndex: record?.recordIndex, code: "book_not_found", field: "content_sha256", contentSha256: sha, message: message)); continue
             }
             do { try await store.requireMetadataReadable(key: sha) }
             catch {
-                item.messages = [String(localized: "这本书的资料无法读取，未导入", table: "MetadataExchange")]; books.append(item)
-                diagnostics.append(.init(sourceLine: nil, recordIndex: nil, code: "metadata_unreadable", field: nil, contentSha256: sha, message: item.messages[0])); continue
+                let message = String(localized: "这本书的资料无法读取，未导入", table: "MetadataExchange")
+                books.append(.init(id: sha, title: title, match: .skipped(reason: message, source), messages: [message]))
+                diagnostics.append(.init(sourceLine: nil, recordIndex: nil, code: "metadata_unreadable", field: nil, contentSha256: sha, message: message)); continue
             }
             let base = try query.bookDetails(target: .record(key: .formal(sha256: sha))).requireIdentified().metadata
             let hasPosition = try query.metadataHasReadingPosition(contentSha256: sha)
-            item = MetadataPreviewBook(id: sha, title: item.title, base: base, source: item.source, sourceCount: sources.count, fields: [], messages: [])
+            var item = MetadataPreviewBook(id: sha, title: title, match: .matched(.init(base: base, source: source)))
             item.coverUnavailable = messagesBySHA[sha, default: []].contains { $0.code == "cover_unavailable" }
             var choices: [MetadataField: [MetadataOption]] = [:]
             var acceptedCovers: [BookCoverAsset] = []
