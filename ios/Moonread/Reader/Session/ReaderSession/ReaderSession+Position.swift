@@ -4,6 +4,18 @@ import UIKit
 extension ReaderSession {
     func moved(to offset: UInt64, settled: Bool, userInitiated: Bool = true) {
         guard !isLeaving, let book, let id = readingID else { return }
+        if listeningOwnsPosition {
+            if userInitiated { beganReadingInteraction() }
+            // The visual anchor may follow a manual browse, but the audio
+            // checkpoint remains the sole formal position until ownership ends.
+            if listeningOwnsPosition, let listening = activeListening {
+                guard listening.active else { return }
+                anchor = min(offset, book.byteCount)
+                if listening.following == .detached { refreshChapter(at: anchor, bookID: id) }
+                return
+            }
+        }
+        if case .speechExit = navigationWork?.intent, !userInitiated { return }
         guard !navigating else { return }
         showingCover = false
         if browseOrigin == nil { hasEnteredBody = true }
@@ -42,7 +54,7 @@ extension ReaderSession {
                 acceptExtension(frame,direction:direction)
             } catch {
                 if current(id, attempt: attempt) {
-                    if autoReading.phase == .preparing { autoReading.failed(ReaderMessages.error(error)) }
+                    if autoReading?.phase == .preparing { autoReading?.failed(ReaderMessages.error(error)) }
                     else { self.error = ReaderMessages.error(error) }
                 }
             }

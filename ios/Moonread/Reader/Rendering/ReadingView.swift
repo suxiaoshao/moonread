@@ -19,7 +19,13 @@ struct ReadingView: UIViewControllerRepresentable {
     let dynamicTypeSize: DynamicTypeSize
     var navigationRevision: Int = 0
     var navigation: ReadingNavigation?
-    var resumeAutomaticReading: () -> Void = {}
+    var automaticTouchBegan: () -> Bool = { false }
+    var automaticBodyTap: (Bool) -> Bool = { _ in false }
+    var showAutomaticControls: () -> Void = {}
+    var endAutomaticReading: () -> Void = {}
+    var readingSelectionChanged: (Bool) -> Void = { _ in }
+    var listening: ListeningSession?
+    var listeningUIActive = true
     var autoReading: ReaderAutoReading?
     var viewportAccess: ReadingViewportAccess?
     var annotations: [ReaderMark] = []
@@ -60,7 +66,11 @@ struct ReadingView: UIViewControllerRepresentable {
         return controller
     }
     func updateUIViewController(_ controller: ReadingController, context: Context) {
-        controller.resumeAutomaticReading = resumeAutomaticReading
+        controller.automaticTouchBegan = automaticTouchBegan
+        controller.automaticBodyTap = automaticBodyTap
+        controller.showAutomaticControls = showAutomaticControls
+        controller.endAutomaticReading = endAutomaticReading
+        controller.readingSelectionChanged = readingSelectionChanged
         controller.autoReading = autoReading
         controller.deviceControls.willSuspend = { [weak autoReading] in autoReading?.pause() }
         controller.headerPositionChanged = headerPositionChanged
@@ -91,6 +101,8 @@ struct ReadingView: UIViewControllerRepresentable {
                              compactHeaderHeight: compactHeaderHeight,
                              controlsVisible: controlsVisible, toggleControls: toggleControls,
                              readingBegan: readingBegan, changed: positionChanged)
+        controller.updateListening(cursor: listeningUIActive && listening?.running == true ? listening?.cursor : nil,
+            following: listeningUIActive && listening?.following == .following)
         controller.updateAutomaticReadingEdge()
     }
 }

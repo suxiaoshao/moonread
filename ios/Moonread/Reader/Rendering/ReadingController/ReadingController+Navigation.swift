@@ -108,7 +108,7 @@ extension ReadingController {
     }
 
     /// Coordinates here include the text container's inset, unlike TextKit's rectangles.
-    private func targetRect(_ offset: UInt64, end: UInt64? = nil, in text: ReadingTextView) -> CGRect? {
+    func targetRect(_ offset: UInt64, end: UInt64? = nil, in text: ReadingTextView) -> CGRect? {
         let projection = text.readingText
         guard offset >= projection.sourceStart, offset < projection.sourceEnd, text.textStorage.length > 0 else { return nil }
         guard let start = projection.coordinates.displayPoint(Int(offset - projection.sourceStart)) else { return nil }
@@ -119,7 +119,7 @@ extension ReadingController {
         return rect.offsetBy(dx: text.textContainerInset.left, dy: text.textContainerInset.top)
     }
 
-    private func contextViewport(in text: UITextView, bottomObstruction: CGFloat) -> CGRect {
+    func contextViewport(in text: UITextView, bottomObstruction: CGFloat) -> CGRect {
         // A collapsed search sheet excludes the home-indicator safe area from
         // its detent height. The ordinary return pill needs the same clearance.
         let obstruction = max(bottomObstruction, UIFontMetrics(forTextStyle: .subheadline).scaledValue(for: 60))

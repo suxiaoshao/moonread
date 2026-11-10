@@ -54,32 +54,31 @@ extension ReaderSession {
     func acceptSyncedContinuation() async {
         guard !isLeaving, !navigating, let id = readingID, let candidate = continuation else { return }
         let attempt = opening.request?.id
-        let previous = (snapshot, window, anchor, displayAnchor, showingCover, history, navigation, browseOrigin)
-        autoReading.end()
-        navigating = true; saveTask?.cancel(); activity.breakVisit()
-        defer { navigating = false }
+        let request = beginNavigation(.positionAdoption)
+        activity.breakVisit()
+        defer { finishNavigation(request) }
         do {
             let frame = try await service.frame(id, offset: candidate.location.offsetUtf8)
-            guard current(id, attempt: attempt), continuation?.token == candidate.token,
+            guard currentNavigation(request), current(id, attempt: attempt), continuation?.token == candidate.token,
                   frame.snapshot.book.contentSha256 == candidate.contentSHA else { return }
             let target = frame.projectionAnchor ?? candidate.location.offsetUtf8
+            let previous = (anchor, history, chapter?.title ?? book?.title ?? "")
+            let toolContext = toolsSession.render.context
+            let wasListening = listeningOwnsPosition || activeListening?.active == true
+            guard try await adoptReadingPosition(target, bookID: id, request: request,
+                expectedConfiguration: candidate.configuration, whileCurrent: { continuation?.token == candidate.token })
+            else { return }
             snapshot = frame.snapshot; window = ReadingWindow(frame: frame)
             displayAnchor = target; anchor = target; showingCover = false
             navigation = ReadingNavigation(placement: .start); navigationRevision += 1
-            try await service.writePosition(id, offset: target, expectedConfiguration: candidate.configuration)
-            guard current(id, attempt: attempt) else { return }
-            history = visitReadingPosition(history: previous.5, fromUtf8: previous.2,
-                fromTitle: chapter?.title ?? book?.title ?? "", toUtf8: target,
+            history = visitReadingPosition(history: previous.1, fromUtf8: previous.0,
+                fromTitle: previous.2, toUtf8: target,
                 toTitle: candidate.location.chapter?.title ?? book?.title ?? "")
-            browseOrigin = nil; browseViewport = nil; focusRange = nil
-            hasEnteredBody = true; hasLocalReadingInteraction = true
+            clearBrowse(keepingHistory: true)
             refreshChapter(at: target, bookID: id); refreshAnnotations(); clearContinuation()
+            if wasListening, toolsSession.render.compact == .listening { toolsSession.send(.finishedBrowse(toolContext)) }
         } catch {
-            guard !isLeaving, readingID == id, opening.request?.id == attempt else { return }
-            snapshot = previous.0; window = previous.1; anchor = previous.2; displayAnchor = previous.3
-            showingCover = previous.4; history = previous.5; navigation = previous.6; browseOrigin = previous.7
-            navigationRevision += 1
-            if !(error is CancellationError) { self.error = ReaderMessages.error(error) }
+            if currentNavigation(request), !(error is CancellationError) { self.error = ReaderMessages.error(error) }
         }
     }
 

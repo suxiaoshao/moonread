@@ -16,7 +16,7 @@ struct ReaderSearchPage: View {
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                if !model.query.isEmpty || model.error != nil {
+                if !model.query.isEmpty || model.searchError != nil {
                     searchStatus.padding(.horizontal, 20)
                     ThemedDivider()
                 }
@@ -61,7 +61,7 @@ struct ReaderSearchPage: View {
     }
 
     private func searchChanged() {
-        session.focusRange = nil
+        session.clearSearchFocus()
         model.searchListPosition = nil
         model.startSearch()
     }
@@ -96,7 +96,7 @@ struct ReaderSearchPage: View {
                 if model.truncatedSearch { Text("部分超长段落未执行正则搜索，其他结果仍可查看。") }
             }.accessibilityIdentifier("searchCoverageNotice")
         }
-        if let error = model.error { Label(error, systemImage: "exclamationmark.circle").foregroundStyle(Color(uiColor: theme.destructive)) }
+        if let error = model.searchError { Label(error, systemImage: "exclamationmark.circle").foregroundStyle(Color(uiColor: theme.destructive)) }
         }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary)).padding(.bottom, 8).accessibilityIdentifier("searchStatus")
     }
 
@@ -129,7 +129,7 @@ struct ReaderSearchPage: View {
         .scrollDismissesKeyboard(.interactively)
         .accessibilityIdentifier("searchResults")
         .overlay {
-            if !model.query.isEmpty && model.hits.isEmpty && !model.searching && model.error == nil {
+            if !model.query.isEmpty && model.hits.isEmpty && !model.searching && model.searchError == nil {
                 ThemedEmptyState(title: searchEmptyTitle, symbol: "magnifyingglass")
             }
         }
