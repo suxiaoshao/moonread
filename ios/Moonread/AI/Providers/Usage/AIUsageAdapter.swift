@@ -122,14 +122,7 @@ enum AIUsageAdapter: Equatable, Sendable {
                 return .wallet(amounts, serviceAvailable: wallet.isAvailable)
             case .openRouter:
                 let key = try decoder.decode(OpenRouter.self, from: data).data
-                let reset: AIUsageSnapshot.Reset = switch key.limitReset {
-                case "daily": .daily
-                case "weekly": .weekly
-                case "monthly": .monthly
-                case nil: .none
-                default: .unknown
-                }
-                return .keyLimit(key.limit, cumulative: key.usage, reset: reset, includesBYOK: key.includeByokInLimit)
+                return .keyLimit(key.limit, cumulative: key.usage, reset: key.reset, includesBYOK: key.includeByokInLimit)
             case .vercel:
                 let gateway = try decoder.decode(Vercel.self, from: data)
                 return try .gateway(balance: Self.money(gateway.balance), cumulative: Self.money(gateway.totalUsed))
@@ -175,7 +168,7 @@ enum AIUsageAdapter: Equatable, Sendable {
         struct Key: Decodable {
             let limit: AIUsageSnapshot.KeyLimit
             let usage: Decimal
-            let limitReset: String?
+            let reset: AIUsageSnapshot.Reset
             let includeByokInLimit: Bool?
 
             private enum CodingKeys: String, CodingKey { case limit, limitRemaining, usage, limitReset, includeByokInLimit }
@@ -186,7 +179,13 @@ enum AIUsageAdapter: Equatable, Sendable {
                 let remaining = try fields.decodeIfPresent(Decimal.self, forKey: .limitRemaining)
                 limit = amount.map { .limited(amount: $0, remaining: remaining) } ?? .unlimited
                 usage = try fields.decode(Decimal.self, forKey: .usage)
-                limitReset = try fields.decodeIfPresent(String.self, forKey: .limitReset)
+                reset = switch try fields.decodeIfPresent(String.self, forKey: .limitReset) {
+                case "daily": .daily
+                case "weekly": .weekly
+                case "monthly": .monthly
+                case nil where fields.contains(.limitReset): .none
+                default: .unknown
+                }
                 includeByokInLimit = try fields.decodeIfPresent(Bool.self, forKey: .includeByokInLimit)
             }
         }

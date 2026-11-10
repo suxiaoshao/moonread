@@ -44,6 +44,8 @@ import XCTest
             ], serviceAvailable: false))
         XCTAssertEqual(try decode(.openRouter, #"{"data":{"limit":null,"limit_remaining":null,"usage":2.25,"limit_reset":null}}"#),
                        .keyLimit(.unlimited, cumulative: 2.25, reset: .none, includesBYOK: nil))
+        XCTAssertEqual(try decode(.openRouter, #"{"data":{"limit":null,"usage":2.25}}"#),
+                       .keyLimit(.unlimited, cumulative: 2.25, reset: .unknown, includesBYOK: nil))
         XCTAssertEqual(try decode(.openRouter, #"{"data":{"limit":25,"usage":40,"limit_reset":"new","include_byok_in_limit":false}}"#),
                        .keyLimit(.limited(amount: 25, remaining: nil), cumulative: 40, reset: .unknown, includesBYOK: false))
         XCTAssertEqual(try decode(.openRouter, #"{"data":{"limit":0,"limit_remaining":0,"usage":1,"limit_reset":"weekly"}}"#),
