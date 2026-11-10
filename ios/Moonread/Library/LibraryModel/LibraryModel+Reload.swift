@@ -87,7 +87,7 @@ extension LibraryModel {
     func refresh(showIndicator: Bool = false, userInitiated: Bool = false) async {
         if userInitiated { await service.scheduleRecentRestoration(retry: true) }
         guard !busy else { return }
-        if !userInitiated, openingFileID != nil || path.contains(where: \.isReader) { automaticRefreshDeferred = true; return }
+        if !userInitiated, path.contains(where: \.isReader) { automaticRefreshDeferred = true; return }
         guard initialized else { _ = await load(); return }
         if !showIndicator || !userInitiated { nativeRefreshing = true }
         if userInitiated { explicitRefresh = true }

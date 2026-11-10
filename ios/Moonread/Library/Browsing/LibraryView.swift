@@ -169,7 +169,7 @@ private struct ContinueReadingRow: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 16) {
                 BookCoverView(title: entry.title, compact: true, cover: entry.metadata?.cover, contentSHA256: entry.contentSha256, author: entry.metadata?.author).frame(width: 60, height: 84)
-                    .overlay { LibraryFileLoading(model: model, entry: entry, compact: true) }
+                    .overlay { LibraryFileAvailability(entry: entry, compact: true) }
                 VStack(alignment: .leading, spacing: 8) {
                     Text(verbatim: entry.title).font(.title3.weight(.semibold)).foregroundStyle(Color(uiColor: theme.ink)).lineLimit(2)
                     Text(entry.chapterTitle ?? String(localized: "继续阅读")).font(.subheadline)
@@ -211,7 +211,7 @@ struct RecentBookRow: View {
             }.padding(.vertical, 6).contentShape(.rect)
         }.buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
             .overlay(alignment: .leading) {
-                LibraryFileLoading(model: model, entry: entry, compact: true).frame(width: 44, height: 62)
+                LibraryFileAvailability(entry: entry, compact: true).frame(width: 44, height: 62)
             }
     }
 }
@@ -239,6 +239,6 @@ private struct RecentCoverTile<Actions: View>: View {
         } primaryAction: { model.open(entry) }
             .buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
             // The cancel control sits beside the button, never inside its label.
-            .overlay(alignment: .top) { LibraryFileLoading(model: model, entry: entry).aspectRatio(0.7, contentMode: .fit) }
+            .overlay(alignment: .top) { LibraryFileAvailability(entry: entry).aspectRatio(0.7, contentMode: .fit) }
     }
 }

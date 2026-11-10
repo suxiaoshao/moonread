@@ -76,7 +76,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
       UserDefaults.standard.removePersistentDomain(forName: suite)
     }
     let entry = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")[1]
-    let model = LibraryModel(service: service, prepareSource: { _, _ in })
+    let model = LibraryModel(service: service)
     model.path = [.folder(.init(shelfID: "builtin"))]
     let origin = model.path
     let pushed = expectation(description: "Context host receives actual source route")
@@ -192,54 +192,47 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(state.phase, .reading)
   }
 
-  // S400: 开书必须等源就绪，取消/被替代后完成不得导航或处理旧源。
-  @MainActor func testOpeningWaitsForSourceAndCancellationCannotNavigate() async throws {
-    let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: temporary) }
-    let service = AppDataService(
-      core: try ReaderCore(dataDirectory: temporary.appendingPathComponent("db").path),
-      libraryDirectory: temporary.appendingPathComponent("books"))
-    try await service.prepareLibrary()
-    try await service.refreshLibrary()
-    var entry = try await service.libraryEntries(LibraryLocation(shelfID: "builtin"))[0]
-    var book = try XCTUnwrap(entry.bookRow)
-    book.needsDownload = true
-    entry.item = .book(row: book)
-    let entered = expectation(description: "source requested")
-    let finished = expectation(description: "cancelled source finished")
+  // S400: 点击先提交阅读页；返回后的进度和 lease 不得进入旧会话。
+  @MainActor func testOpeningRoutesBeforeSourceAndDiscardsLateResultAfterReturn() async throws {
+    let (root, service, core, _, _, book, _, suite) = try singleBookFixture()
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      UserDefaults.standard.removePersistentDomain(forName: suite)
+    }
+    let entries = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")
+    let first = try XCTUnwrap(entries.first), next = try XCTUnwrap(entries.dropFirst().first)
+    let model = LibraryModel(service: service)
+    model.open(first)
+    let firstPath = model.path
+    model.open(first)
+    XCTAssertEqual(model.path, firstPath, "A repeat tap must not push another reader")
+    model.open(next, expectedContentSHA: book.contentSha256)
+    XCTAssertEqual(model.path.count, 1, "A later tap must replace the in-flight destination")
+    guard case .reader(let opening) = model.path.last else { return XCTFail("Reader route was not submitted synchronously") }
+    XCTAssertEqual(opening.target, .source(next.source))
+    XCTAssertEqual(opening.expectedContentSHA, book.contentSha256)
+
+    let entered = expectation(description: "source requested by the destination")
     let gate = SourceReadinessGate(entered: entered)
-    let model = LibraryModel(prepareSource: { _, report in
+    let session = ReaderSession(service: service, openSource: { _, _, report in
       report(0.25)
       await gate.wait()
       report(0.9)
-      finished.fulfill()
+      return try await service.openReading(book.id)
     })
-    model.open(entry)
+    let work = Task { await session.open(opening.target, request: opening) }
     await fulfillment(of: [entered], timeout: 2)
-    XCTAssertTrue(model.path.isEmpty, "Downloading must stay on the shelf")
-    XCTAssertEqual(model.openingFileID, entry.id)
-    XCTAssertTrue(model.showsFileLoading, "A known download must show feedback immediately")
-    XCTAssertEqual(model.fileProgress, 0.25)
-    model.cancelOpening()
+    await awaitState { session.sourceProgress == 0.25 }
+    XCTAssertTrue(session.isFetchingSource)
+    XCTAssertNil(session.readingLease)
+    model.path.removeLast()
+    let leaving = session.leave()
     await gate.release()
-    await fulfillment(of: [finished], timeout: 2)
-    await Task.yield()
-    XCTAssertNil(model.openingFileID)
-    XCTAssertNil(model.fileProgress, "Cancelled progress must not return from a late callback")
+    await work.value
+    await leaving.value
+    XCTAssertNil(session.readingLease)
+    XCTAssertNil(session.sourceProgress, "Cancelled progress must not return from a late callback")
     XCTAssertTrue(model.path.isEmpty)
-
-    let ready = expectation(description: "next source requested")
-    let nextGate = SourceReadinessGate(entered: ready)
-    let next = LibraryModel(prepareSource: { _, _ in await nextGate.wait() })
-    next.open(entry)
-    await fulfillment(of: [ready], timeout: 2)
-    XCTAssertTrue(next.path.isEmpty)
-    await nextGate.release()
-    await awaitState { !next.path.isEmpty }
-    guard case .reader(let opening) = next.path.first else {
-      return XCTFail("Missing reader opening")
-    }
-    XCTAssertEqual(opening.target, .source(entry.source))
 
     let loading = LoadingState()
     let superseded = loading.begin()

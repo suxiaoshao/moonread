@@ -177,21 +177,13 @@ final class LibraryModel {
     let prepareLibrary: @Sendable () async throws -> Void
     private let scanShelf: @Sendable (String) async throws -> Void
     let refreshLibrary: @Sendable () async throws -> Void
-    let prepareSource: @Sendable (SourceFile, @escaping @Sendable (Double?) -> Void) async throws -> Void
-    var openingOrigin: (AppTab, [LibraryRoute])?
-    var openingTask: Task<Void, Never>?
-    var openingRequest: UUID?
-    var openingFileID: String?
-    var openingSource: SourceFile?
-    var showsFileLoading = false
-    var fileProgress: Double?
+
 
     init(service: AppDataService = .shared, fullIndex: FullIndexController? = nil,
          prepareLibrary: (@Sendable () async throws -> Void)? = nil,
          scanShelf: (@Sendable (String) async throws -> Void)? = nil,
          refreshLibrary: (@Sendable () async throws -> Void)? = nil,
          fileMutationReload: (@Sendable () async throws -> Void)? = nil,
-         prepareSource: @escaping @Sendable (SourceFile, @escaping @Sendable (Double?) -> Void) async throws -> Void = { try await AppDataService.shared.prepareSourceFile($0, progress: $1) },
          lookupDropEntry: (@MainActor (String) async throws -> LibraryEntry)? = nil,
          defaults: UserDefaults = .standard,
          cloudDiscoveryRequired: Bool? = nil,
@@ -217,7 +209,6 @@ final class LibraryModel {
         self.prepareLibrary = prepareLibrary ?? { try await service.prepareLocalLibrary() }
         self.scanShelf = scanShelf ?? { try await service.scanLibraryShelf($0) }
         self.refreshLibrary = refreshLibrary ?? { try await service.refreshLibrary() }
-        self.prepareSource = prepareSource
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
         let session = arguments.firstIndex(of: "--ui-test-session").flatMap {

@@ -115,10 +115,10 @@ final class LibraryDeletionTests: LibraryTrashFixture {
     XCTAssertTrue(probe.scans() >= 2)
   }
 
-  // S434: 删除只取消同书架被删目录的后代开书，不影响同名前缀兄弟或其他书架；边界样例保留。
-  func testDeletionCancelsSameShelfDescendantButNotSiblingPrefixOrOtherShelf() async throws {
+  // S434: 已删除目录的旧开书请求失效，不影响同名前缀兄弟或其他书架；边界样例保留。
+  func testDeletedDescendantCannotOpenButSiblingPrefixAndOtherShelfCan() async throws {
     let (temporary, _, service, entries) = try await fixture(
-      ["foo/child.txt", "foobar/child.txt"], deletion: { _, _ in })
+      ["foo/child.txt", "foobar/child.txt"], deletion: { url, _ in try FileManager.default.removeItem(at: url) })
     defer { try? FileManager.default.removeItem(at: temporary) }
     let folder = try XCTUnwrap(entries.first { $0.name == "foo" })
     let childEntries = try await service.libraryEntries(folder.location)
@@ -136,19 +136,14 @@ final class LibraryDeletionTests: LibraryTrashFixture {
       LibraryLocation(shelfID: otherID, path: "foo"))
     let other = try XCTUnwrap(otherEntries.first)
     XCTAssertEqual(other.relativePath, child.relativePath)
-    for source in [child, sibling, other] {
-      let entered = expectation(description: "open preparation entered")
-      let gate = SourceReadinessGate(entered: entered)
-      let model = LibraryModel(
-        service: service, fileMutationReload: {}, prepareSource: { _, _ in await gate.wait() })
-      model.open(source)
-      await fulfillment(of: [entered], timeout: 2)
-      XCTAssertTrue(model.runBatch([.delete(folder)]))
-      await model.waitForFileWork()
-      XCTAssertNil(model.error)
-      XCTAssertEqual(model.openingFileID, source.id == child.id ? nil : source.id)
-      model.cancelOpening()
-      await gate.release()
+    _ = try await service.deleteLibraryItem(folder)
+    do {
+      _ = try await service.openSourceFile(child.source)
+      XCTFail("The removed source must not produce a reading lease")
+    } catch ReaderError.NotFound {}
+    for entry in [sibling, other] {
+      let lease = try await service.openSourceFile(entry.source)
+      XCTAssertFalse(lease.id.isEmpty)
     }
   }
 

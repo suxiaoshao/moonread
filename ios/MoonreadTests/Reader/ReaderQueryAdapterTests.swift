@@ -47,6 +47,39 @@ final class ReaderQueryAdapterRecentReadingRestorationTests: RecentReadingRestor
 }
 
 final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
+  @MainActor func testBatchedProjectionOnlyReadsScopedCandidatesAndKeepsCompatibility() async throws {
+    let store = try makeInMemoryUserStore()
+    let keys = (1...140).map { String(format: "%064x", $0) }
+    let first = keys[0], last = keys[139], blocked = keys[128]
+    let outside = String(repeating: "f", count: 64)
+    func envelope(_ key: String, offset: UInt64, updated: Int64) throws -> String {
+      try UserSyncJSON.encode(StoredValue(updated: updated, token: "fixture-\(updated)",
+        value: UserSyncJSON.encode(PositionValue(content_key: key, offset: offset))))
+    }
+    try await store.receiveSyncFixture("value", key: "position/" + last, payload: envelope(last, offset: 1, updated: 1))
+    try await store.receiveSyncFixture("position", key: last, payload: envelope(last, offset: 2, updated: 2))
+    try await store.receiveSyncFixture("value", key: "position/" + blocked, payload: envelope(blocked, offset: 3, updated: 1))
+    try await store.receiveSyncFixture("position", key: blocked, payload: "{}")
+    try await store.receiveSyncFixture("position", key: outside, payload: envelope(outside, offset: 9, updated: 9))
+    try await store.put("metadata/\(first)/tag-fixture", value: "\"Synthetic\"", device: "fixture")
+    try await store.put("metadata/\(outside)/author", value: "\"Outside\"", device: "fixture")
+    try await store.put("opened/\(last)", value: "12345", device: "fixture")
+    let input = try await store.projection(generation: 0, enabled: true, includeFacts: false, keys: keys)
+    let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: Any])
+    let positions = try XCTUnwrap(json["positions"] as? [[String: Any]])
+    XCTAssertEqual(positions.map { $0["content_key"] as? String }, [last])
+    XCTAssertEqual(positions.first?["offset"] as? Int, 2)
+    XCTAssertEqual(json["unsupportedPositions"] as? [String], [blocked])
+    let metadata = try XCTUnwrap(json["metadata"] as? [[String: Any]])
+    XCTAssertEqual(metadata.map { $0["sha"] as? String }, [first])
+    XCTAssertEqual(metadata.first?["tags"] as? [String], ["Synthetic"])
+    XCTAssertFalse(input.contains(outside))
+    let onlyOpened = try await store.projection(generation: 0, enabled: true, includeFacts: false, keys: keys, fields: [.opened])
+    XCTAssertTrue(onlyOpened.contains("12345"))
+    XCTAssertFalse(onlyOpened.contains(first))
+    XCTAssertFalse(onlyOpened.contains(blocked))
+  }
+
   @MainActor func testPreparedStatisticsDatesMatchFullProjectionAndInvalidateByInput() async throws {
     let (root, service, _, formal, pending, book, other, suite) = try singleBookFixture()
     defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }

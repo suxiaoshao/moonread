@@ -125,7 +125,7 @@ struct LibraryBookTile: View {
                 .accessibilityAddTraits(selected ? .isSelected : [])
                 .overlay(alignment: .top) {
                     if select == nil && !entry.directory {
-                        LibraryFileLoading(model: model, entry: entry).aspectRatio(0.7, contentMode: .fit)
+                        LibraryFileAvailability(entry: entry).aspectRatio(0.7, contentMode: .fit)
                     }
                 }
             HStack(spacing: 0) {
@@ -227,33 +227,12 @@ struct LibraryAlphabetIndex: View {
     }
 }
 
-struct LibraryFileLoading: View {
-    let model: LibraryModel
+struct LibraryFileAvailability: View {
     let entry: LibraryEntry
     var compact = false
     @Environment(\.theme) private var theme
     var body: some View {
-        if model.openingFileID == entry.id && model.showsFileLoading {
-            Button { model.cancelOpening() } label: {
-                ZStack {
-                    VStack(spacing: compact ? 5 : 8) {
-                        if let progress = model.fileProgress {
-                            ProgressView(value: progress).progressViewStyle(.linear)
-                                .tint(Color(uiColor: theme.accent))
-                            Text(progress, format: .percent.precision(.fractionLength(0)))
-                                .font(compact ? .caption2 : .caption).monospacedDigit()
-                                .foregroundStyle(Color(uiColor: theme.ink))
-                        } else {
-                            ProgressView().progressViewStyle(.circular)
-                                .tint(Color(uiColor: theme.accent))
-                        }
-                    }.padding(.horizontal, compact ? 6 : 12).padding(.vertical, 8).frame(maxWidth: 92)
-                        .background(.regularMaterial, in: .rect(cornerRadius: compact ? 3 : 6))
-                }.clipShape(.rect(cornerRadius: compact ? 3 : 6)).contentShape(.rect)
-            }.buttonStyle(.plain).accessibilityLabel("取消下载")
-                .accessibilityValue(model.fileProgress.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? String(localized: "正在获取文件"))
-                .accessibilityIdentifier("library-file-loading")
-        } else if entry.needsDownload {
+        if entry.needsDownload {
             ZStack(alignment: .bottomTrailing) {
                 Color.clear
                 Image(systemName: "icloud.and.arrow.down")

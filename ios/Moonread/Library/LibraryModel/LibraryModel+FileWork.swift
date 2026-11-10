@@ -195,7 +195,6 @@ extension LibraryModel {
             case let .copy(entry): _ = try await service.copyToBuiltin(entry, replace: replace)
             case let .create(location, name): try await service.createLibraryFolder(at: location, name: name)
             case let .delete(entry):
-                cancelOpening(deleting: entry)
                 let result: LibraryDeletionResult
                 do { result = try await service.deleteLibraryItem(entry, permanently: permanently) }
                 catch LibraryFileError.trashUnsupported where !permanently {

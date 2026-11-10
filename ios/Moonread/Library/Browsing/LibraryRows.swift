@@ -91,7 +91,7 @@ struct LibraryFileRow: View {
                 }.buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
                     .overlay(alignment: .leading) {
                         if select == nil && !entry.directory {
-                            LibraryFileLoading(model: model, entry: entry, compact: true).frame(width: coverSize.width, height: coverSize.height)
+                            LibraryFileAvailability(entry: entry, compact: true).frame(width: coverSize.width, height: coverSize.height)
                         }
                     }
                 if select == nil {

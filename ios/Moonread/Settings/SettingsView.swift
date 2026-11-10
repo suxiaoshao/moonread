@@ -71,7 +71,6 @@ struct SettingsView: View {
             catch { navigation.error = ReaderMessages.error(error) }
             await navigation.load()
         }
-        .onChange(of: navigation.path) { _, _ in library.cancelOpeningForNavigationChange() }
         .onReceive(NotificationCenter.default.publisher(for: .statisticsPreferencesChanged).receive(on: DispatchQueue.main)) { _ in
             Task { navigation.recording = await AppDataService.shared.statisticsPreferences().enabled }
         }

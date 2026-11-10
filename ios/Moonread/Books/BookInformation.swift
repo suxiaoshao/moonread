@@ -349,7 +349,6 @@ struct BookInformationSections: View {
         } else if let entry = model.entry, let library {
             Button { library.open(entry) } label: { Text(entry.lastRead == 0 ? "开始阅读" : "继续阅读").frame(maxWidth: .infinity) }
                 .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
-                .disabled(library.openingFileID != nil)
         } else if let book = model.readableBook, let library {
             Button { library.path.append(.reader(OpeningRequest(target: .book(book.id)))) } label: { Text("继续阅读").frame(maxWidth: .infinity) }
                 .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
