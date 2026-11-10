@@ -22,7 +22,7 @@ final class ReaderSession {
     }
     private enum OpeningState {
         case unopened
-        case preparing(OpeningRequest)
+        case preparing(OpeningRequest, sourceProgress: Double?)
         case active(ReadingContext)
         case closing(ClosingContext)
         case failed(OpenFailure)
@@ -37,6 +37,23 @@ final class ReaderSession {
         }
     }
     private var openingState: OpeningState = .unopened
+    private struct OpeningWork {
+        let id: UUID
+        let task: Task<ReadingLease, any Error>
+    }
+    @ObservationIgnored private var openingWork: OpeningWork?
+    var isFetchingSource: Bool {
+        if case .preparing(let request, _) = openingState, case .source = request.target { true } else { false }
+    }
+    var sourceProgress: Double? {
+        if case .preparing(_, let progress) = openingState { progress } else { nil }
+    }
+    private func updateSourceProgress(_ progress: Double?, attempt: UUID, workID: UUID) {
+        guard let work = openingWork, work.id == workID, !work.task.isCancelled,
+              case .preparing(let request, _) = openingState,
+              request.id == attempt, opening.request?.id == attempt else { return }
+        openingState = .preparing(request, sourceProgress: progress)
+    }
     private func updateReadingContext(_ change: (inout ReadingContext) -> Void) {
         switch openingState {
         case .active(var reading):
@@ -225,16 +242,19 @@ final class ReaderSession {
     var restartTask: Task<Void, Never>?
     var restartingEncoding: Bool { restartTask != nil }
     let restartReading: @Sendable (String, String?) async throws -> ReadingLease
+    let openSource: @Sendable (SourceFile, ReaderOpenTrace?, @escaping @Sendable (Double?) -> Void) async throws -> ReadingLease
     let readContinuation: @Sendable (String, UInt64?) async throws -> ReadingResumeContext
 
     init(service: AppDataService = .shared, activity: ReadingActivityRecorder? = nil,
          settingsStore: ReaderSettingsStore? = nil,
+         openSource: (@Sendable (SourceFile, ReaderOpenTrace?, @escaping @Sendable (Double?) -> Void) async throws -> ReadingLease)? = nil,
          restartReading: (@Sendable (String, String?) async throws -> ReadingLease)? = nil,
          readContinuation: (@Sendable (String, UInt64?) async throws -> ReadingResumeContext)? = nil,
          makeListening: ((ReaderSession) -> ListeningSession)? = nil) {
         self.listeningFactory = makeListening
         self.service = service; self.activity = activity ?? ReadingActivityRecorder()
         self.settingsStore = settingsStore ?? (service === AppDataService.shared ? .shared : ReaderSettingsStore(service: service))
+        self.openSource = openSource ?? { try await service.openSourceFile($0, diagnostic: $1, progress: $2) }
         self.restartReading = restartReading ?? { try await service.restartImport($0, encoding: $1) }
         self.readContinuation = readContinuation ?? { try await service.readingResumeContext($0, currentOffset: $1) }
     }
@@ -255,11 +275,17 @@ final class ReaderSession {
         if opening.request == nil { opening.begin(request ?? OpeningRequest(target: route)) }
         guard let openingRequest = opening.request else { return }
         let attempt = openingRequest.id
+        if let work = openingWork {
+            guard work.task.isCancelled else { return }
+            openingWork = nil
+        }
         toolsSession.beginOpening(attempt)
         ReaderOpenDiagnostics.mark(attempt, "sessionOpen")
         if readingID == nil {
-            openingState = .preparing(openingRequest)
+            openingState = .preparing(openingRequest, sourceProgress: nil)
             isLoading = true
+            let workID = UUID()
+            defer { if openingWork?.id == workID { openingWork = nil } }
             do {
                 ReaderOpenDiagnostics.mark(attempt, "settingsRequested")
                 try settingsStore.load()
@@ -268,18 +294,30 @@ final class ReaderSession {
                 ReaderOpenDiagnostics.mark(attempt, "leaseRequested")
                 let diagnostic = ReaderOpenDiagnostics.trace(attempt)
                 diagnostic?.mark("lease.queued")
-                let lease: ReadingLease
-                switch route {
-                case let .book(id): lease = try await service.openReading(id.value, diagnostic: diagnostic)
-                case let .source(file): lease = try await service.openSourceFile(file, diagnostic: diagnostic)
+                let work = Task { [service, openSource, weak self] in
+                    switch openingRequest.target {
+                    case let .book(id): return try await service.openReading(id.value, diagnostic: diagnostic)
+                    case let .source(file):
+                        return try await openSource(file, diagnostic) { [weak self] fraction in
+                            Task { @MainActor [weak self] in self?.updateSourceProgress(fraction, attempt: attempt, workID: workID) }
+                        }
+                    }
                 }
+                openingWork = OpeningWork(id: workID, task: work)
+                let lease = try await withTaskCancellationHandler {
+                    try await work.value
+                } onCancel: { work.cancel() }
                 diagnostic?.mark("lease.mainResumed")
-                guard !isLeaving, !Task.isCancelled, opening.request?.id == attempt else { return }
+                guard !isLeaving, !Task.isCancelled, opening.request?.id == attempt, openingWork?.id == workID else { return }
                 activateOpening(openingRequest, lease: lease)
                 let policy = await service.readingDecoding(lease.id)
                 guard current(lease.id, attempt: attempt) else { return }
                 decodingPolicy = policy
-            } catch { if !isLeaving, !Task.isCancelled, opening.request?.id == attempt { failOpening(error) }; return }
+            } catch {
+                if !isLeaving, !Task.isCancelled, opening.request?.id == attempt,
+                   openingWork == nil || openingWork?.id == workID { failOpening(error) }
+                return
+            }
         } else if var reading = openingState.reading, reading.request.id != attempt {
             reading.request = openingRequest
             openingState = .active(reading)
@@ -318,7 +356,9 @@ final class ReaderSession {
                        terminal: error != nil || snapshot.map { $0.preparation.isPaused || $0.preparation.isFailed } == true)
     }
     func retry(_ route: ReaderRoute) async {
-        opening.begin(OpeningRequest(target: route, expectedContentSHA: opening.request?.expectedContentSHA), navigationSettled: true)
+        guard !isLeaving, openingWork == nil else { return }
+        opening.begin(OpeningRequest(target: route, expectedContentSHA: opening.request?.expectedContentSHA,
+                                     metadataHint: opening.request?.metadataHint), navigationSettled: true)
         error = nil; await open(route)
     }
     func current(_ id: String, attempt: UUID?, monitor: UUID? = nil) -> Bool {
@@ -328,7 +368,7 @@ final class ReaderSession {
     func systemReadingBecameReadable() {
         guard !isLeaving, browseOrigin == nil, let openingID = opening.request?.id,
               systemDonationOpening != openingID, let id = readingID,
-              let sha = book?.contentSha256, (try? parseSha256(value: sha)) != nil else { return }
+              case .formal? = book?.readingKey else { return }
         systemDonationOpening = openingID
         Task { await service.systemReadingBegan(id) }
     }
@@ -403,6 +443,7 @@ final class ReaderSession {
         toolsSession.invalidateOpening()
         stopListening(returnToText: false)
         restartTask?.cancel()
+        openingWork?.task.cancel(); openingWork = nil
         activityStartTask?.cancel(); activityStartTask = nil
         if let autoReading, autoReading.phase != .idle, let visible = viewportAccess.capture()?.offset {
             moved(to: visible, settled: true, userInitiated: false)

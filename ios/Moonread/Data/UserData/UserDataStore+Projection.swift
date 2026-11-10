@@ -9,26 +9,56 @@ extension UserDataStore {
             $0.key.starts(with: metadata) || $0.key.starts(with: chapter) || $0.key.starts(with: position) || $0.key.starts(with: opened)
         }))
         // This is only a broad presence filter, never a second parser or LWW
-        // decision. All selected candidates go through scopedValues unchanged.
+        // decision. All selected keys use the same batched projection.
         var result = Set(values.compactMap { row in row.key.split(separator: "/", maxSplits: 2).dropFirst().first.map(String.init) })
         result.formUnion(try modelContext.fetch(FetchDescriptor<UserPosition>()).map(\.contentKey))
         return result
     }
-    private func scopedValues(_ contentKey: String, fields: UserProjectionDomain = .reading) throws -> ValueSnapshot {
+    private func scopedValues(_ keys: [String], fields: UserProjectionDomain) throws -> ValueSnapshot {
         var result = ValueSnapshot()
-        if fields.contains(.position) { try result.merge(valueSnapshot(key: "position/" + contentKey)) }
-        var prefixes: [String] = []
-        if fields.contains(.opened) { try result.merge(valueSnapshot(key: "opened/" + contentKey)) }
-        if fields.contains(.metadata) { prefixes.append("metadata/" + contentKey + "/") }
-        if fields.contains(.chapter) { prefixes.append("chapter/" + contentKey + "/") }
-        for prefix in prefixes {
-            let next = try valueSnapshot(prefix: prefix)
-            try result.merge(next)
+        let keys = Array(Set(keys)).sorted()
+        for start in stride(from: 0, to: keys.count, by: 128) {
+            try Task.checkCancellation()
+            let page = Array(keys[start..<min(start + 128, keys.count)])
+            let exact = (fields.contains(.position) ? page.map { "position/" + $0 } : [])
+                + (fields.contains(.opened) ? page.map { "opened/" + $0 } : [])
+            if !exact.isEmpty {
+                for row in try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate { exact.contains($0.key) })) {
+                    result.include(key: row.key, payload: row.payload)
+                }
+            }
+            if fields.contains(.position) {
+                for row in try modelContext.fetch(FetchDescriptor<UserPosition>(predicate: #Predicate { page.contains($0.contentKey) })) {
+                    result.include(key: "position/" + row.contentKey, payload: row.payload)
+                }
+            }
+        }
+
+        // Tags and chapter offsets are open-ended suffixes. Use a bounded OR of
+        // SQL-translatable prefix comparisons instead of fetching other books' rows.
+        let prefixes = (fields.contains(.metadata) ? keys.map { "metadata/" + $0 + "/" } : [])
+            + (fields.contains(.chapter) ? keys.map { "chapter/" + $0 + "/" } : [])
+        for start in stride(from: 0, to: prefixes.count, by: 8) {
+            try Task.checkCancellation()
+            let page = Array(prefixes[start..<min(start + 8, prefixes.count)])
+            let last = page.count - 1
+            let p0 = page[min(0, last)], p1 = page[min(1, last)], p2 = page[min(2, last)], p3 = page[min(3, last)]
+            let p4 = page[min(4, last)], p5 = page[min(5, last)], p6 = page[min(6, last)], p7 = page[min(7, last)]
+            let predicate = #Predicate<UserValue> {
+                (($0.key.starts(with: p0) || $0.key.starts(with: p1))
+                  || ($0.key.starts(with: p2) || $0.key.starts(with: p3)))
+                  || (($0.key.starts(with: p4) || $0.key.starts(with: p5))
+                      || ($0.key.starts(with: p6) || $0.key.starts(with: p7)))
+            }
+            for row in try modelContext.fetch(FetchDescriptor<UserValue>(predicate: predicate)) {
+                result.include(key: row.key, payload: row.payload)
+            }
         }
         return result
     }
     func positionValues() throws -> [String: StoredValue] { try valueSnapshot(prefix: "position/").values }
     func projection(generation: UInt64, enabled: Bool, includeFacts: Bool, keys: [String]? = nil, positionsOnly: Bool = false, statisticsBook: String? = nil, statisticsKeys: [String]? = nil, fields: UserProjectionDomain = .reading, diagnostic: ReaderOpenTrace? = nil, diagnosticScope: String = "projection", sparseCatalogue: Bool = false, statisticsRange: ClosedRange<Int64>? = nil) async throws -> String {
+        try Task.checkCancellation()
         diagnostic?.mark(diagnosticScope + ".actor.begin")
         defer { diagnostic?.mark(diagnosticScope + ".actor.return") }
         let factKeys = statisticsKeys ?? statisticsBook.map { [$0] }
@@ -52,16 +82,10 @@ extension UserDataStore {
             try recent.merge(valueSnapshot(prefix: "opened/")); snapshot = recent
         }
         else if let keys = valueKeys {
-            var scoped = ValueSnapshot()
-            // Large catalogues are mostly unread files without user data. One
-            // metadata-only presence pass avoids three empty fetches per file;
-            // populated keys still use the sole scoped projection/check below.
-            let present = sparseCatalogue ? try populatedReadingKeys() : nil
-            for key in keys where present?.contains(key) ?? true {
-                let next = try scopedValues(key, fields: fields)
-                try scoped.merge(next)
-            }
-            snapshot = scoped
+            // The existing all-library system catalogue can still skip unread
+            // files. Folder projections never need an unscoped presence scan.
+            let scope = sparseCatalogue ? try keys.filter(populatedReadingKeys().contains) : keys
+            snapshot = try scopedValues(scope, fields: fields)
         } else if fields == .reading { snapshot = try valueSnapshot() }
         else {
             var selected = ValueSnapshot()

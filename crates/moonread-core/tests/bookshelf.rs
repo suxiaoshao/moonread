@@ -189,7 +189,7 @@ fn reading_order_mixes_books_and_folders_and_keeps_empty_folders_last() {
             .unwrap();
         core.link_library_file(file.id.clone(), book.id.clone())
             .unwrap();
-        positions.push(serde_json::json!({"content_key": book.content_sha256, "offset": 0, "updated": updated, "visible": true, "preferred": file.id}));
+        positions.push(serde_json::json!({"content_key": book.reading_key.formal_sha().unwrap(), "offset": 0, "updated": updated, "visible": true, "preferred": file.id}));
     }
     let query = core
         .query_snapshot(serde_json::json!({"positions": positions}).to_string())

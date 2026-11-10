@@ -7,7 +7,8 @@ pub(crate) fn book_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<BookInfo> {
     Ok(BookInfo {
         id: row.get(0)?,
         title: row.get(1)?,
-        content_sha256: row.get(2)?,
+        reading_key: crate::identity::content::reading_key_column(row, 2)?
+            .ok_or(rusqlite::Error::InvalidQuery)?,
         encoding: row.get(3)?,
         byte_count: unsigned_column(row, 4)?,
         chunk_count: row.get(5)?,

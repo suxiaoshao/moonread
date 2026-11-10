@@ -209,10 +209,10 @@ final class SystemReadingRouter {
                 case .openBook(let value): id = value; automatic = false
                 case .openSearchBook(let value): id = value; automatic = true
                 }
-                if !automatic, reader?.isLeaving == false, reader?.book?.contentSha256 == id.sha { handoff = .idle(current); return }
+                if !automatic, reader?.isLeaving == false, reader?.book?.readingKey.formalSHA256 == id.sha { handoff = .idle(current); return }
                 let entry = try await service.resolveSystemReadingBook(id, automatic: automatic)
                 guard sceneActive, requestID == current, !Task.isCancelled else { return }
-                if reader?.isLeaving == false, reader?.book?.contentSha256 == id.sha || reader?.opening.request?.expectedContentSHA == id.sha {
+                if reader?.isLeaving == false, reader?.book?.readingKey.formalSHA256 == id.sha || reader?.opening.request?.expectedContentSHA == id.sha {
                     handoff = .idle(current); return // Never reset an already displayed session to an older saved position.
                 }
                 if await openEntry(entry, expectedSHA: id.sha, in: library, context: context) { handoff = .idle(current) }

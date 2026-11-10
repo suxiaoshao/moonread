@@ -21,7 +21,7 @@ extension ReaderSession {
         continuationSuppressed = false; seenContinuationTokens.removeAll(); firstContinuationReady = false
     }
     func presentContinuation(_ candidate: ReadingContinuationCandidate) {
-        guard !continuationSuppressed, !isLeaving, candidate.contentSHA == book?.contentSha256,
+        guard !continuationSuppressed, !isLeaving, candidate.contentSHA == book?.readingKey.formalSHA256,
               candidate.location.offsetUtf8 > anchor, seenContinuationTokens.insert(candidate.token).inserted else { return }
         clearContinuation(); continuation = candidate
         continuationTimer = Task { [weak self] in
@@ -60,7 +60,7 @@ extension ReaderSession {
         do {
             let frame = try await service.frame(id, offset: candidate.location.offsetUtf8)
             guard currentNavigation(request), current(id, attempt: attempt), continuation?.token == candidate.token,
-                  frame.snapshot.book.contentSha256 == candidate.contentSHA else { return }
+                  frame.snapshot.book.readingKey.formalSHA256 == candidate.contentSHA else { return }
             let target = frame.projectionAnchor ?? candidate.location.offsetUtf8
             let previous = (anchor, history, chapter?.title ?? book?.title ?? "")
             let toolContext = toolsSession.render.context

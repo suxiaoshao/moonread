@@ -318,7 +318,7 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
       try await service.waitForImportFinish(pending)
       let completed = try await service.snapshot(pending)
       XCTAssertTrue(completed.preparation.isComplete)
-      XCTAssertFalse(completed.book.contentSha256.hasPrefix("pending:"))
+      XCTAssertFalse(completed.book.fixtureSHA256.hasPrefix("pending:"))
       XCTAssertEqual(completed.book.positionUtf8, expectedOffset)
       let migrated = try await service.libraryEntry(entry.id)
       XCTAssertEqual(migrated.bookId, completed.book.id)

@@ -3,7 +3,7 @@ import SwiftUI
 
 struct ListeningContext {
     let bookID: String
-    let contentSHA: String?
+    let readingKey: ReadingKey?
     let generation: UInt64
     let offset: UInt64
     let indent: ReadingIndent
@@ -148,7 +148,7 @@ enum ListeningAdmission: Equatable {
                         }
                         break
                     }
-                    if let expected = source.contentSHA, let actual = segment.contentSHA, expected != actual {
+                    if let expected = source.readingKey, let actual = segment.readingKey, expected != actual {
                         end(message: String(localized: "正文已变化，请重新打开小说。"), savePosition: false); return
                     }
                     guard segment.end > nextOffset || paragraphStart else {
@@ -201,7 +201,7 @@ enum ListeningAdmission: Equatable {
     func sourceChanged() {
         guard active, let source else { return }
         guard let current = context(), current.bookID == source.bookID, current.generation == source.generation,
-              source.contentSHA == nil || current.contentSHA == source.contentSHA else {
+              source.readingKey == nil || current.readingKey == source.readingKey else {
             end(message: String(localized: "正文已变化，请重新打开小说。"), savePosition: false); return
         }
     }

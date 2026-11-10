@@ -129,7 +129,7 @@ mod tests {
             !core
                 .evict_cached_body(
                     book.id.clone(),
-                    book.content_sha256.clone(),
+                    book.reading_key.formal_sha().unwrap().to_owned(),
                     None,
                     vec![],
                     false
@@ -142,7 +142,7 @@ mod tests {
             !core
                 .evict_cached_body(
                     book.id.clone(),
-                    book.content_sha256.clone(),
+                    book.reading_key.formal_sha().unwrap().to_owned(),
                     Some(file.clone()),
                     vec![book.id.clone()],
                     false
@@ -155,7 +155,7 @@ mod tests {
             !core
                 .evict_cached_body(
                     book.id.clone(),
-                    book.content_sha256.clone(),
+                    book.reading_key.formal_sha().unwrap().to_owned(),
                     Some(changed),
                     vec![],
                     false
@@ -171,7 +171,7 @@ mod tests {
         assert!(
             core.evict_cached_body(
                 book.id.clone(),
-                book.content_sha256.clone(),
+                book.reading_key.formal_sha().unwrap().to_owned(),
                 Some(file.clone()),
                 vec![],
                 false
@@ -188,7 +188,7 @@ mod tests {
         assert_eq!(
             core.file_identity(file.id).unwrap().key,
             Some(crate::ReadingKey::Formal {
-                sha256: book.content_sha256.clone()
+                sha256: book.reading_key.formal_sha().unwrap().to_owned()
             })
         );
         assert_eq!(
@@ -204,7 +204,7 @@ mod tests {
         let rebuilt = core
             .import_book(path.to_string_lossy().into(), "Rebuilt".into())
             .unwrap();
-        assert_eq!(rebuilt.content_sha256, book.content_sha256);
+        assert_eq!(rebuilt.reading_key, book.reading_key);
         assert!(rebuilt.chunk_count > 0);
     }
 }

@@ -48,7 +48,7 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
     XCTAssertNil(renamed.bookId)
     let reopened = try await service.aiPrepare(renamed.source)
     let same = try await service.snapshot(reopened.id).book
-    XCTAssertEqual(same.contentSha256, original.contentSha256)
+    XCTAssertEqual(same.fixtureSHA256, original.fixtureSHA256)
     XCTAssertEqual(same.positionUtf8, 9)
     try Data("第一章 合成\n替换正文乙。".utf8).write(to: moved)
     try await service.refreshLibraryShelf("builtin")
@@ -56,7 +56,7 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
     XCTAssertEqual(stale.bookId, original.id)
     let replacement = try await service.aiPrepare(stale.source)
     let changed = try await service.snapshot(replacement.id).book
-    XCTAssertNotEqual(changed.contentSha256, original.contentSha256)
+    XCTAssertNotEqual(changed.fixtureSHA256, original.fixtureSHA256)
     let old = try await service.snapshot(original.id)
     XCTAssertEqual(old.book.positionUtf8, 9)
     let kept = try await service.hasBookmark(original.id, at: 9)
@@ -145,7 +145,7 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
     try await service.savePosition(bookID: restarted.id, offset: 20)
     let snapshot = try await service.snapshot(restarted.id)
     XCTAssertEqual(
-      defaults.string(forKey: "Moonread.preferredFile." + snapshot.book.contentSha256), second.id)
+      defaults.string(forKey: "Moonread.preferredFile." + snapshot.book.fixtureSHA256), second.id)
     let recent = try await service.recentLibrary()
     XCTAssertEqual(recent.count, 1)
     XCTAssertEqual(recent.first?.id, second.id)

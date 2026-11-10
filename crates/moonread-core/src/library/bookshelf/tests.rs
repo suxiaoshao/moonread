@@ -165,12 +165,13 @@ fn folder_last_read_includes_index_only_child_with_synced_position() {
     core.save_library_shelf("s".into(), "Shelf".into(), vec![], "local".into(), false)
         .unwrap();
     let sha = "a".repeat(64);
+    let cached_sha = "b".repeat(64);
     {
         let db = core.lock().unwrap();
+        db.execute("INSERT INTO books(id,title,content_sha256,encoding,byte_count) VALUES('cached','Cached',?1,'UTF-8',100)", [&cached_sha]).unwrap();
         db.execute_batch("INSERT INTO library_files VALUES('folder','s','folder','','folder',1,0,1,0,NULL,'auto');
                 INSERT INTO library_files VALUES('indexed','s','folder/indexed.txt','folder','indexed.txt',0,100,1,0,NULL,'auto');
                 INSERT INTO library_identities VALUES('indexed','raw','auto',100,1);
-                INSERT INTO books(id,title,content_sha256,encoding,byte_count) VALUES('cached','Cached','cached-sha','UTF-8',100);
                 INSERT INTO library_files VALUES('cached-file','s','folder/cached.txt','folder','cached.txt',0,100,999,0,'cached','auto');").unwrap();
         db.execute(
             "INSERT INTO source_identities VALUES('raw','auto',?1,'UTF-8',100,80)",
@@ -182,7 +183,7 @@ fn folder_last_read_includes_index_only_child_with_synced_position() {
         .query_snapshot(
             serde_json::json!({"positions": [{
             "content_key": sha, "offset": 50, "updated": 123456, "visible": true, "preferred": null
-        },{"content_key":"cached-sha","offset":10,"updated":10,"visible":true,"preferred":null}]})
+        },{"content_key":cached_sha,"offset":10,"updated":10,"visible":true,"preferred":null}]})
             .to_string(),
         )
         .unwrap();

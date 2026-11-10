@@ -9,13 +9,12 @@ struct StatisticsBookRow: View {
     var window = StatisticsWindow()
     @Environment(\.theme) private var theme
     var body: some View {
-        if let key = try? parseReadingKey(value: book.contentKey) {
-        NavigationLink(value: LibraryRoute.statistics(StatisticsRoute(target: .record(key: key), title: book.title, window: window, readingSection: true))) {
+        NavigationLink(value: LibraryRoute.statistics(StatisticsRoute(target: .record(key: book.contentKey), title: book.title, window: window, readingSection: true))) {
             HStack(spacing: LayoutTokens.control) {
-                BookCoverView(title: book.title, compact: true, cover: book.cover, contentSHA256: book.contentKey, author: book.author).frame(width: 30, height: 42).accessibilityHidden(true)
+                BookCoverView(title: book.title, compact: true, cover: book.cover, contentSHA256: book.contentKey.formalSHA256, author: book.author).frame(width: 30, height: 42).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(verbatim: book.title).lineLimit(1)
-                    StatisticsDurationBar(fraction: Double(book.durationMs) / Double(max(1, maximum)), color: theme.statisticsColor(book.contentKey)) {
+                    StatisticsDurationBar(fraction: Double(book.durationMs) / Double(max(1, maximum)), color: theme.statisticsColor(book.contentKey.storageKey)) {
                         Text(StatisticsDates.duration(book.durationMs)).font(.caption).monospacedDigit()
                             .foregroundStyle(Color(uiColor: theme.secondary))
                     }
@@ -25,8 +24,7 @@ struct StatisticsBookRow: View {
                     } else { Text("仅查阅").font(.caption2).foregroundStyle(Color(uiColor: theme.secondary)) }
                 }
             }.padding(.vertical, 3)
-        }.accessibilityIdentifier("statistics-book-\(book.contentKey)")
-        }
+        }.accessibilityIdentifier("statistics-book-\(book.contentKey.storageKey)")
     }
 }
 

@@ -114,7 +114,7 @@ final class RecentRestorationWork: @unchecked Sendable {
                 let key = SourceContentKey(rawSha256: identity.rawSha256, decoding: decoding)
                 try core.validateImportSource(control: task, key: key)
                 let preparedID: String
-                if let cached = try core.sourceBook(key: key), cached.contentSha256 == contentKey {
+                if let cached = try core.sourceBook(key: key), cached.readingKey == .formal(sha256: contentKey) {
                     try core.reuseImport(control: task, existingId: cached.id)
                     preparedID = cached.id
                 } else {

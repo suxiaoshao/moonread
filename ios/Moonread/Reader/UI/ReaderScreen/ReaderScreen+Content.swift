@@ -19,7 +19,7 @@ extension ReaderScreen {
     }
 
     func aiContext(selection: TextRange? = nil) -> AIEntryContext {
-        let sha = readerSession.book?.contentSha256
+        let sha = readerSession.book?.readingKey.formalSHA256
         let title = readerSession.book?.title ?? route.title
         let visible = readerSession.viewportAccess.controller?.statisticsRange()
         let start = visible?.0 ?? readerSession.anchor

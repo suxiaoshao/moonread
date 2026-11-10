@@ -189,7 +189,9 @@ mod tests {
                     .unwrap()
                     .book_info(id)
                     .unwrap()
-                    .content_sha256,
+                    .reading_key
+                    .formal_sha()
+                    .unwrap(),
                 expected
             );
             // Reset only this test's cache; originals are untouched.
@@ -349,7 +351,7 @@ mod tests {
                     captured.clone(),
                     "auto".into(),
                     imported.id.clone(),
-                    imported.content_sha256.clone()
+                    imported.reading_key.formal_sha().unwrap().to_owned()
                 )
                 .unwrap()
         );
@@ -362,7 +364,7 @@ mod tests {
                 current,
                 "UTF-8".into(),
                 imported.id.clone(),
-                imported.content_sha256.clone()
+                imported.reading_key.formal_sha().unwrap().to_owned()
             )
             .unwrap()
         );
@@ -377,7 +379,10 @@ mod tests {
             core.source_file_snapshots(Some(captured.id)).unwrap()[0].book_id,
             Some(imported.id.clone())
         );
-        assert!(core.text_id_for_sha(imported.content_sha256).is_ok());
+        assert!(
+            core.text_id_for_sha(imported.reading_key.formal_sha().unwrap().to_owned())
+                .is_ok()
+        );
     }
 }
 

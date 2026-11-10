@@ -114,7 +114,7 @@ final class CallbackURLProvider: NSItemProvider {
       -> LibraryModel
     {
       LibraryModel(
-        service: service, fileMutationReload: {}, prepareSource: { _, _ in },
+        service: service, fileMutationReload: {},
         lookupDropEntry: lookup)
     }
     func remove() { try? FileManager.default.removeItem(at: root) }

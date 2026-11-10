@@ -417,7 +417,12 @@ fn tolerant_decode_resumes_old_failed_prefix_and_matches_index_identity() {
     let identity = crate::SourceIdentityProbe::new()
         .identify(file.to_string_lossy().into(), "auto".into())
         .unwrap();
-    assert_eq!(identity.content_sha256, state.book.content_sha256);
+    assert_eq!(
+        state.book.reading_key,
+        ReadingKey::Formal {
+            sha256: identity.content_sha256
+        }
+    );
 }
 
 #[test]
@@ -515,7 +520,7 @@ fn readable_and_position_calculation_works_before_eof() {
     let state = core.reading_snapshot(token.id.clone()).unwrap();
     assert!(state.readable_prefix == ReadablePrefix::Readable);
     assert!(state.book.byte_count < text.len() as u64);
-    assert!(state.book.content_sha256.is_empty());
+    assert!(matches!(state.book.reading_key, ReadingKey::Pending { .. }));
     assert!(
         !core
             .reading_frame(token.id.clone(), 0)

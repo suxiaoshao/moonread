@@ -5,7 +5,7 @@ import Foundation
 struct SpeechSegment: Sendable {
     let id = UUID()
     let text: ReadingText
-    let contentSHA: String?
+    let readingKey: ReadingKey?
     var chapter: ChapterInfo? = nil
     var start: UInt64 { text.firstVisibleOffset ?? text.sourceStart }
     var end: UInt64 { text.sourceEnd }
@@ -31,7 +31,7 @@ actor ListeningTextProvider {
     private let service: AppDataService
     private var window: ReadingWindow?
     private var bookID: String?
-    private var identity: String?
+    private var identity: ReadingKey?
     init(service: AppDataService) { self.service = service }
 
     func next(bookID: String, offset: UInt64, paragraphStart: Bool, indent: ReadingIndent) async throws -> ListeningRead {
@@ -41,7 +41,7 @@ actor ListeningTextProvider {
             if self.bookID != bookID || paragraphStart || window.map({ offset < $0.start || offset >= $0.end }) != false {
                 let frame = try await service.frame(bookID, offset: offset)
                 try Task.checkCancellation()
-                window = ReadingWindow(frame: frame); self.bookID = bookID; identity = frame.snapshot.book.contentSha256
+                window = ReadingWindow(frame: frame); self.bookID = bookID; identity = frame.snapshot.book.readingKey
             }
             guard let window, window.status == .ready || window.status == .end else {
                 return ListeningRead(segment: nil, atEnd: window?.isEndOfBook == true)
@@ -61,7 +61,7 @@ actor ListeningTextProvider {
     }
 
     static func segment(in window: ReadingWindow, at offset: UInt64, paragraphStart: Bool,
-                        indent: ReadingIndent, identity: String?) -> SpeechSegment? {
+                        indent: ReadingIndent, identity: ReadingKey?) -> SpeechSegment? {
         let projection = ReadingText(window, indent: indent)
         var source = max(offset, window.start)
         if paragraphStart, let paragraph = window.paragraphs.last(where: { $0.startUtf8 <= source && source < $0.endUtf8 }),
@@ -97,6 +97,6 @@ actor ListeningTextProvider {
         range.length = NSRange(candidate.lowerBound..<end, in: projection.text).length
         let slice = projection.slice(range)
         guard slice.firstVisibleOffset != nil, slice.sourceEnd > offset || paragraphStart else { return nil }
-        return SpeechSegment(text: slice, contentSHA: identity)
+        return SpeechSegment(text: slice, readingKey: identity)
     }
 }

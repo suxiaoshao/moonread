@@ -12,19 +12,21 @@ struct ReaderPreparationContent: View {
         if statusOnly { importStatus } else { preparationView }
     }
     private var preparationFraction: Double? {
+        if session.isFetchingSource { return session.sourceProgress }
         guard let state = session.snapshot, state.byteProgress.total > 0 else { return nil }
         return min(1, Double(state.byteProgress.read) / Double(state.byteProgress.total))
     }
 
     private var preparationView: some View {
-        ReaderTitlePage(title: session.book?.title ?? route.title, information: information, contentSHA256: session.book?.contentSha256)
+        ReaderTitlePage(title: session.book?.title ?? route.title, information: information, contentSHA256: session.book?.readingKey.formalSHA256)
             .overlay(alignment: .bottom) {
                 VStack(spacing: 12) {
                 if session.preparing && session.error == nil {
                     if session.opening.showsProgress {
                         HStack(spacing: 12) {
                             LoadingActivity(size: 24, fraction: preparationFraction, delay: .zero)
-                            Text("正在准备正文").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
+                            Text(session.isFetchingSource ? "正在获取文件" : "正在准备正文")
+                                .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                         }
                     }
                 } else {

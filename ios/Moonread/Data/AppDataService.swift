@@ -223,7 +223,13 @@ actor AppDataService {
     }()
     var systemSpotlightThumbnailFailures = Set<String>()
     private var core: ReaderCore?
-    struct CachedQuery { let signature: UserQuerySignature; let identities: [String: String]; let query: ReaderQuery; let statisticsIncomplete: Bool }
+    struct CachedQuery {
+        let signature: UserQuerySignature
+        let identities: [String: String]
+        let query: ReaderQuery
+        let statisticsIncomplete: Bool
+        let directoryActivity: ReaderQuery?
+    }
     #if DEBUG
     var queryTestBoundary: (@Sendable (String, UserQueryTestPhase) async throws -> Void)?
     #endif
@@ -651,19 +657,13 @@ actor AppDataService {
         "Moonread.importSource.\(testSession ?? "library").\(id)"
     }
 
-    /// Materialize provider files before navigation. This does not create an
-    /// import, read the full text, or change formal reading activity.
+    /// Verify access for callers that need the original without opening a reader.
     func prepareSourceFile(_ file: SourceFile, progress: @escaping @Sendable (Double?) -> Void = { _ in }) async throws {
         try await withForegroundOpening { try await self.prepareOriginalSourceFile(file, progress: progress) }
     }
 
     private func prepareOriginalSourceFile(_ file: SourceFile, progress: @escaping @Sendable (Double?) -> Void) async throws {
-        #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--ui-test-download-progress") {
-            progress(0.25); try await Task.sleep(for: .seconds(4))
-            progress(0.75); try await Task.sleep(for: .seconds(4))
-        }
-        #endif
+        try await simulateSourceDownload(progress)
         let core = try textCore()
         let entry = try core.sourceFileLocation(fileId: file.id)
         guard !entry.directory else { throw ReaderError.NotFound }
@@ -676,40 +676,64 @@ actor AppDataService {
             try Task.checkCancellation()
         } onCancel: { access.cancel() }
 
-        // The actor can reenter during provider I/O. Do not publish an old
-        // completion against a removed/renamed source or a reauthorized root.
-        let currentShelf = try libraryShelf(entry.shelfId)
-        guard configuration == userCloudConfigurationRevision,
-              currentShelf.bookmark == shelf.bookmark, currentShelf.location == shelf.location else { throw CancellationError() }
-        let current = try core.sourceFileLocation(fileId: entry.id)
-        guard !current.directory, current.shelfId == entry.shelfId, current.relativePath == entry.relativePath else { throw CancellationError() }
+        try confirmSourceLocation(entry, shelf: shelf, configuration: configuration, core: core)
         if try core.setSourceFileAvailability(file: entry, needsDownload: false) {
             publishLibraryIndexChange()
         }
     }
 
-    // The source is locally available before navigation. Only small metadata work runs on this actor;
-    // coordinated provider access and the long Rust call have their own queue.
-    func openSourceFile(_ file: SourceFile, diagnostic: ReaderOpenTrace? = nil) async throws -> ReadingLease {
+    // Provider I/O suspends this actor. Check the authority and location again
+    // before publishing availability, starting an import or handing out a lease.
+    private func confirmSourceLocation(_ entry: SourceFileLocation, shelf: LibraryShelf, configuration: UUID, core: ReaderCore) throws {
+        try Task.checkCancellation()
+        let currentShelf = try libraryShelf(entry.shelfId)
+        guard configuration == userCloudConfigurationRevision,
+              currentShelf.bookmark == shelf.bookmark, currentShelf.location == shelf.location else { throw CancellationError() }
+        let current = try core.sourceFileLocation(fileId: entry.id)
+        guard !current.directory, current.shelfId == entry.shelfId, current.relativePath == entry.relativePath else { throw ReaderError.SourceChanged }
+    }
+
+    private func simulateSourceDownload(_ progress: @Sendable (Double?) -> Void) async throws {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--ui-test-download-progress") {
+            progress(0.25); try await Task.sleep(for: .seconds(4))
+            progress(0.75); try await Task.sleep(for: .seconds(4))
+        }
+        #endif
+    }
+
+    func openSourceFile(_ file: SourceFile, diagnostic: ReaderOpenTrace? = nil,
+                        progress: (@Sendable (Double?) -> Void)? = nil) async throws -> ReadingLease {
         diagnostic?.mark("lease.actor.begin"); defer { diagnostic?.mark("lease.actor.return") }
-        return try await openSourceFile(file, trackReadingSource: true)
+        return try await withForegroundOpening {
+            try await self.readSourceForOpening(file, trackReadingSource: true, progress: progress)
+        }
     }
 
     func openSourceFile(_ file: SourceFile, trackReadingSource: Bool) async throws -> ReadingLease {
         let opening = "opening:" + UUID().uuidString
         holdForeground(opening); defer { releaseForeground(opening) }
+        return try await readSourceForOpening(file, trackReadingSource: trackReadingSource, progress: nil)
+    }
+
+    private func readSourceForOpening(_ file: SourceFile, trackReadingSource: Bool,
+                                      progress: (@Sendable (Double?) -> Void)?) async throws -> ReadingLease {
         if recentRestorationWork?.fileID == file.id { recentRestorationWork?.cancel() }
 
-        let entry = try textCore().sourceFileLocation(fileId: file.id)
+        let core = try textCore()
+        let entry = try core.sourceFileLocation(fileId: file.id)
+        guard !entry.directory else { throw ReaderError.NotFound }
         let shelf = try libraryShelf(entry.shelfId)
         let root = Data(shelf.bookmark)
         let key = "Moonread.sourceDraft.\(testSession ?? "library").\(file.id)"
         let configuration = userCloudConfigurationRevision
         let read = SourceDecodingRead()
-        let raw = try await read.read(bookmark: root, relativePath: entry.relativePath)
+        if let progress { try await simulateSourceDownload(progress) }
+        let raw = try await read.read(bookmark: root, relativePath: entry.relativePath, progress: progress)
+        try confirmSourceLocation(entry, shelf: shelf, configuration: configuration, core: core)
         let decoding = try await prepareSourceDecoding(raw: raw, fileID: file.id)
-        try Task.checkCancellation()
-        guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
+        try confirmSourceLocation(entry, shelf: shelf, configuration: configuration, core: core)
+        if try core.setSourceFileAvailability(file: entry, needsDownload: false) { publishLibraryIndexChange() }
         let encoding = decoding == "auto" ? nil : decoding
         if let previous = sourceDefaults.string(forKey: key),
            let state = try? textCore().importStatus(bookId: previous), state.phase != .complete, entry.bookId == state.text.id {

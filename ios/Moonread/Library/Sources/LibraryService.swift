@@ -59,7 +59,6 @@ extension LibraryEntry {
     }
     /// Reading data follows normalized text; unfinished imports retain their pending namespace.
     var readingKey: String? { readingIdentity.map(\.storageKey) }
-    var contentSha256: String? { readingKey }
     var needsDownload: Bool { bookRow?.needsDownload ?? false }
     var positionUtf8: UInt64 { bookRow?.positionUtf8 ?? 0 }
     var byteCount: UInt64 { bookRow?.byteCount ?? 0 }
@@ -248,6 +247,7 @@ extension AppDataService {
             throw CocoaError(.fileReadNoPermission)
         }
         #endif
+        if let location, !recursive { return try await directoryEntries(location, sort: sort) }
         return try await catalogueQuery(location, recursive: recursive).libraryEntries(shelfId: location?.shelfID, parentPath: recursive ? nil : location?.path, sort: sort)
     }
     func searchLibrary(query: String, configuration: BookSearchConfiguration) async throws -> LibraryQueryRules.SearchOutcome {

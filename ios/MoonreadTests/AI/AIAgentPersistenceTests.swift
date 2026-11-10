@@ -159,7 +159,7 @@ final class AIAgentPersistenceBookAITests: BookAIFixture {
       repository: repository, defaults: defaults, storefront: .fixed("USA"), reader: reader)
     await service.load()
     XCTAssertTrue(service.availability.isAvailable)
-    let made = await service.create(context: .init(contentSHA: book.contentSha256))
+    let made = await service.create(context: .init(contentSHA: book.fixtureSHA256))
     let session = try XCTUnwrap(made)
     let asset = try await AIImageStore.shared.prepareInput(pixels(), owner: session.id)
     try await service.addReadingAttachment(
@@ -167,7 +167,7 @@ final class AIAgentPersistenceBookAITests: BookAIFixture {
       attachment: .init(
         kind: .image, origin: "fixture", title: "Image", attachmentRef: asset.attachment.id),
       staged: asset)
-    let base = try await reader.details(sha: book.contentSha256).metadata
+    let base = try await reader.details(sha: book.fixtureSHA256).metadata
     let cover = try await reader.makeCover(asset.bytes)
     var applied = base
     applied.author = "Saved author"
@@ -183,7 +183,7 @@ final class AIAgentPersistenceBookAITests: BookAIFixture {
       _ = try await repository.assetBytes(asset.attachment.id, sessionID: session.id)
       XCTFail("Deleted session asset remains readable")
     } catch {}
-    let current = try await reader.details(sha: book.contentSha256).metadata
+    let current = try await reader.details(sha: book.fixtureSHA256).metadata
     XCTAssertEqual(current.author, "Saved author")
     XCTAssertEqual(current.cover?.id, cover.id)
     let appliedBytes = try await reader.coverBytes(cover)

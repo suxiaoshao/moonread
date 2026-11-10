@@ -402,3 +402,11 @@ func makeLibraryFileFixture(
   )
 
 }
+
+extension ImportText {
+  var fixtureSHA256: String { readingKey.formalSHA256! }
+}
+
+extension BookInfo {
+  var fixtureSHA256: String { readingKey.formalSHA256! }
+}

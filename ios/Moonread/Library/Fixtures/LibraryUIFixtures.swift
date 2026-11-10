@@ -195,8 +195,8 @@ extension AppDataService {
         let local = try query.readingLocation(bookId: prepared.id, percentage: 10)
         try await savePosition(bookID: prepared.id, offset: local.offsetUtf8)
         let target = try query.readingLocation(bookId: prepared.id, percentage: 75)
-        let value = PositionValue(content_key: actual.contentSha256, offset: target.offsetUtf8)
-        try await userStore().put("position/" + actual.contentSha256, value: UserSyncJSON.encode(value), device: "synthetic-remote")
+        let value = PositionValue(content_key: actual.readingKey.storageKey, offset: target.offsetUtf8)
+        try await userStore().put("position/" + actual.readingKey.storageKey, value: UserSyncJSON.encode(value), device: "synthetic-remote")
         sourceDefaults.set(true, forKey: marker)
         withExtendedLifetime(prepared) {}
     }

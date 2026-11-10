@@ -116,7 +116,7 @@ extension ReaderSession {
         let provider = ListeningTextProvider(service: service)
         return ListeningSession(defaults: defaults, context: { [weak self] in
             guard let self, !isLeaving, let id = readingID, let snapshot, snapshot.readablePrefix == .readable else { return nil }
-            return ListeningContext(bookID: id, contentSHA: snapshot.book.contentSha256, generation: snapshot.generation,
+            return ListeningContext(bookID: id, readingKey: snapshot.book.readingKey, generation: snapshot.generation,
                 offset: anchor, indent: settings?.indent ?? .original, title: snapshot.book.title, chapter: chapter?.title ?? "")
         }, read: { context, offset, beginning in
             try await provider.next(bookID: context.bookID, offset: offset, paragraphStart: beginning, indent: context.indent)

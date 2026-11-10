@@ -141,7 +141,7 @@ enum StatisticsBuckets {
 struct StatisticsSpan: Identifiable {
     let id: String
     let sessionID: String
-    let key: String
+    let key: ReadingKey
     let title: String
     let day: Int64
     let offset: Int32
@@ -320,7 +320,7 @@ final class StatisticsModel {
         let scopes = Set(states.keys).union(pending.keys).filter { scope in
             guard let keys else { return true }
             if metadataOnly, let overview = states[scope]?.overview {
-                return overview.books.contains { keys.contains($0.contentKey) }
+                return overview.books.contains { keys.contains($0.contentKey.storageKey) }
             }
             switch scope.target {
             case .all, .book(.cached): return true

@@ -12,7 +12,7 @@ final class UserDataConflictTests: UserDataFixture {
     for formalWins in [true, false] {
       let f = try positionWinnerFixture()
       defer { f.clean() }
-      let sha = f.book.contentSha256
+      let sha = f.book.fixtureSHA256
       let alias = "pending:" + f.aliases[1]
       let formal = try positionRecord(
         key: sha, token: formalWins ? "z-formal" : "a-formal", offset: 7)
@@ -46,7 +46,7 @@ final class UserDataConflictTests: UserDataFixture {
       for reverse in [false, true] {
         let f = try positionWinnerFixture()
         defer { f.clean() }
-        let sha = f.book.contentSha256
+        let sha = f.book.fixtureSHA256
         let keys = f.aliases.map { "pending:" + $0 }
         let a = try positionRecord(key: keys[0], token: "a-alias", offset: 7)
         let z = try positionRecord(key: keys[1], token: "z-alias", offset: 19)
@@ -276,7 +276,7 @@ final class UserDataConflictTests: UserDataFixture {
   func testNoteExportUsesWholeReadOnlySnapshotAndPreservesVersions() async throws {
     let (root, service, book, store) = try await editorFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let key = book.contentSha256
+    let key = book.fixtureSHA256
     for index in 0..<62 {
       let value = AnnotationCandidate(id: "operation-\(index)", ancestors: [],
         content: .init(start: UInt64(index), end: UInt64(index + 1), excerpt: "line \(index)\n<quote>*", note: "[note]\n`code`"),
@@ -369,7 +369,7 @@ final class UserDataConflictTests: UserDataFixture {
   func testSelectedNoteDeletionRejectsEntireChangedBatchAndReusesUndo() async throws {
     let (root, service, book, store) = try await editorFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let key = book.contentSha256
+    let key = book.fixtureSHA256
     let a = candidate("a", content: content("first"))
     let b = candidate("b", content: content("second"))
     try await store.receiveFixture(key: key, mark: "first", candidate: a)

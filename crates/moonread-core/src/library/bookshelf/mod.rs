@@ -2,6 +2,7 @@
 //! reading records remain independently keyed by the normalized text hash.
 pub(crate) mod full_index;
 
+use crate::identity::content::reading_key_column;
 use crate::{ReaderCore, ReaderError, Result, SourceContentKey, valid_source_key};
 use rusqlite::{Connection, params};
 use std::collections::HashSet;
@@ -56,7 +57,7 @@ pub struct SourceFileSnapshot {
 pub struct LibraryCoverPreview {
     pub file_id: String,
     pub name: String,
-    pub content_sha256: Option<String>,
+    pub reading_key: Option<crate::ReadingKey>,
     pub author: Option<String>,
     pub cover: Option<crate::BookCoverAsset>,
 }
@@ -136,10 +137,7 @@ impl BookRow {
     }
 
     pub fn formal_sha(&self) -> Option<&str> {
-        match self.key() {
-            Some(crate::ReadingKey::Formal { sha256 }) => Some(sha256),
-            _ => None,
-        }
+        self.key().and_then(crate::ReadingKey::formal_sha)
     }
 }
 
@@ -225,9 +223,7 @@ fn library_entry_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryEntry> {
             },
         }
     } else {
-        let key = r
-            .get::<_, Option<String>>(18)?
-            .and_then(|s| crate::parse_reading_key(s).ok());
+        let key = reading_key_column(r, 18)?;
         let resolution = if let Some(key) = key {
             crate::BookResolution::Resolved {
                 record: crate::ResolvedBookRecord {
@@ -298,7 +294,7 @@ fn folder_cover_previews(
         .query_map(params![shelf_id, prefix, end], |r| {
             let metadata = metadata_column(r, 2)?;
             Ok(LibraryCoverPreview {
-                content_sha256: r.get(3)?,
+                reading_key: reading_key_column(r, 3)?,
                 author: metadata
                     .as_ref()
                     .map(|m| m.author.clone())
@@ -349,10 +345,43 @@ impl ReaderCore {
             validate_relative(parent, true)?;
         }
         let db = self.read_lock()?;
-        let mut entries = entries(&db, shelf_id.as_deref(), parent_path.as_deref(), false)?;
+        // Rows, aggregates and cover candidates must see the same file index.
+        let tx = db.unchecked_transaction()?;
+        let mut entries = entries(&tx, shelf_id.as_deref(), parent_path.as_deref(), false)?;
         entries.sort_by(|a, b| crate::library::order::directory_order(a, b, sort));
-        populate_cover_previews(&db, &mut entries)?;
+        populate_cover_previews(&tx, &mut entries)?;
+        tx.commit()?;
         Ok(entries)
+    }
+    pub(crate) fn library_directory_detail_keys(
+        &self,
+        shelf_id: String,
+        parent_path: String,
+    ) -> Result<Vec<crate::ReadingKey>> {
+        validate_relative(&parent_path, true)?;
+        let db = self.read_lock()?;
+        let tx = db.unchecked_transaction()?;
+        let mut stmt = tx.prepare_cached(
+            "SELECT f.shelf_id,f.relative_path,f.directory,fi.content_sha256
+             FROM library_files f LEFT JOIN file_identities fi ON fi.file_id=f.id
+             WHERE f.shelf_id=?1 AND f.parent_path=?2",
+        )?;
+        let mut rows = stmt.query(params![shelf_id, parent_path])?;
+        let mut keys = HashSet::new();
+        while let Some(row) = rows.next()? {
+            if row.get::<_, bool>(2)? {
+                let shelf: String = row.get(0)?;
+                let path: String = row.get(1)?;
+                keys.extend(
+                    folder_cover_previews(&tx, &shelf, &path)?
+                        .into_iter()
+                        .filter_map(|preview| preview.reading_key),
+                );
+            } else if let Some(key) = reading_key_column(row, 3)? {
+                keys.insert(key);
+            }
+        }
+        Ok(keys.into_iter().collect())
     }
     pub(crate) fn library_folder_cover_previews(
         &self,

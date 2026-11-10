@@ -79,7 +79,7 @@ struct ReaderScreen: View {
                 }
         }
         .ignoresSafeArea(.container)
-        .overlay { if isWide, !layoutStatus.hasValidLayout { ReaderTitlePage(title: session.book?.title ?? route.title, information: coverInformation, contentSHA256: session.book?.contentSha256) } }
+        .overlay { if isWide, !layoutStatus.hasValidLayout { ReaderTitlePage(title: session.book?.title ?? route.title, information: coverInformation, contentSHA256: session.book?.readingKey.formalSHA256) } }
     }
 
     private func readingView(window: ReadingWindow, settings: ReaderSettings, geometry: ReadingContentGeometry?) -> some View {
@@ -293,7 +293,7 @@ struct ReaderScreen: View {
         .onChange(of: session.opening.request?.id) { _, id in
             if let id, completedOpeningID == id { session.opening.settled(id, reason: "observedAppearance") }
         }
-        .task(id: session.book?.contentSha256) {
+        .task(id: session.book?.readingKey.formalSHA256) {
             await loadCoverInformation()
             if statisticsReadable { session.systemReadingBecameReadable() }
         }
@@ -514,7 +514,7 @@ struct ReaderScreen: View {
 
     /// Where the Moon may appear at all: reading this book, with no task, panel or search on top.
     private var aiMoonAllowed: Bool {
-        guard ai.availability.isAvailable, let sha = session.book?.contentSha256, !sha.isEmpty, !session.isLeaving else { return false }
+        guard ai.availability.isAvailable, case .formal? = session.book?.readingKey, !session.isLeaving else { return false }
         return taskID == nil && [.none, .progress, .browse, .search].contains(rendered.compact) && !rendered.expanded
     }
     /// Notices wait for a calm page: foreground, not navigating or selecting across pages.
@@ -576,15 +576,15 @@ struct ReaderScreen: View {
 
     private func loadCoverInformation() async {
         guard let id = session.readingID else { return }
-        guard let sha = session.book?.contentSha256, (try? parseSha256(value: sha)) != nil else { return }
+        guard let sha = session.book?.readingKey.formalSHA256 else { return }
         let request = UUID(); coverRequest = request
         do {
             let next = try await AppDataService.shared.details(bookID: id)
             guard !Task.isCancelled, coverRequest == request, session.readingID == id,
-                  session.book?.contentSha256 == sha else { return }
+                  session.book?.readingKey.formalSHA256 == sha else { return }
             coverInformation = next
         } catch { /* Keep the last successful value; failure is not a cover deletion. */ }
-        listening?.updateCover(title: session.book?.title ?? route.title, sha: session.book?.contentSha256,
+        listening?.updateCover(title: session.book?.title ?? route.title, sha: session.book?.readingKey.formalSHA256,
             author: coverInformation?.metadata.author, cover: coverInformation?.metadata.cover, service: session.service)
     }
 

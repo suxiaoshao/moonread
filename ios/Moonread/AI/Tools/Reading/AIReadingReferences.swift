@@ -84,7 +84,7 @@ actor AIReadingReferences {
     let id = try await bookID(ref)
     let snapshot = try await reader.snapshot(id)
     let expectedSHA = try sha(ref)
-    guard snapshot.book.contentSha256 == expectedSHA, snapshot.preparation.isComplete else { throw AIToolError("needs_preparation") }
+    guard snapshot.book.readingKey.formalSHA256 == expectedSHA, snapshot.preparation.isComplete else { throw AIToolError("needs_preparation") }
     return id
   }
   func ready(_ ref: String) async throws -> String {
@@ -94,7 +94,7 @@ actor AIReadingReferences {
       throw AIToolError("needs_preparation")
     }
     let lease = try await reader.aiPrepare(entry.source)
-    guard try await reader.snapshot(lease.id).book.contentSha256 == sha(ref) else {
+    guard try await reader.snapshot(lease.id).book.readingKey.formalSHA256 == sha(ref) else {
       throw AIToolError("stale_reference")
     }
     return try await reader.aiBookID(sha: sha(ref))

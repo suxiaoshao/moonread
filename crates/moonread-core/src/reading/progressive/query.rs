@@ -59,10 +59,8 @@ pub(crate) fn snapshot(db: &Connection, id: &str) -> Result<ReadingSnapshot> {
         value.position_utf8 = existing.position_utf8;
         value.byte_count = existing.byte_count;
         value.chunk_count = existing.chunk_count;
-        value.content_sha256 = existing.content_sha256;
+        value.reading_key = existing.reading_key;
         value.encoding = existing.encoding;
-    } else if value.content_sha256.starts_with("pending:") {
-        value.content_sha256.clear();
     }
     Ok(ReadingSnapshot {
         book: value,

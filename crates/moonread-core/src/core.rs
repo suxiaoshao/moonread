@@ -17,8 +17,7 @@ use std::sync::MutexGuard;
 pub struct BookInfo {
     pub id: String,
     pub title: String,
-    /// SHA-256 of normalization-v1 UTF-8, not the original file's bytes.
-    pub content_sha256: String,
+    pub reading_key: ReadingKey,
     pub encoding: String,
     pub byte_count: u64,
     pub chunk_count: u32,
