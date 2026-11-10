@@ -76,19 +76,19 @@ actor AIReadingReferences {
   func confirmText(_ refs: [String]) async throws -> String? {
     try await AIReadingTools.preparationConfirmation(refs) { ref in
       let snapshot = try await self.reader.snapshot(self.bookID(ref))
-      return snapshot.phase == .complete ? nil : snapshot.book.title
+      return snapshot.preparation.isComplete ? nil : snapshot.book.title
     }
   }
   func available(_ ref: String) async throws -> String {
     let id = try await bookID(ref)
     let snapshot = try await reader.snapshot(id)
     let expectedSHA = try sha(ref)
-    guard snapshot.book.contentSha256 == expectedSHA, snapshot.phase == .complete else { throw AIToolError("needs_preparation") }
+    guard snapshot.book.contentSha256 == expectedSHA, snapshot.preparation.isComplete else { throw AIToolError("needs_preparation") }
     return id
   }
   func ready(_ ref: String) async throws -> String {
     let id = try await bookID(ref)
-    if try await reader.snapshot(id).phase == .complete { return id }
+    if try await reader.snapshot(id).preparation.isComplete { return id }
     guard let entry = try await files().first(where: { $0.bookId == id }) else {
       throw AIToolError("needs_preparation")
     }

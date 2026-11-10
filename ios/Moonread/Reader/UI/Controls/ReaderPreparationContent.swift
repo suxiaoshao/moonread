@@ -12,8 +12,8 @@ struct ReaderPreparationContent: View {
         if statusOnly { importStatus } else { preparationView }
     }
     private var preparationFraction: Double? {
-        guard let state = session.snapshot, state.sourceByteCount > 0 else { return nil }
-        return min(1, Double(state.sourceBytesRead) / Double(state.sourceByteCount))
+        guard let state = session.snapshot, state.byteProgress.total > 0 else { return nil }
+        return min(1, Double(state.byteProgress.read) / Double(state.byteProgress.total))
     }
 
     private var preparationView: some View {
@@ -28,14 +28,14 @@ struct ReaderPreparationContent: View {
                         }
                     }
                 } else {
-                    Text(session.snapshot?.phase == .paused ? String(localized: "准备已暂停") : String(localized: "暂时无法准备正文"))
+                    Text(session.snapshot?.preparation.isPaused == true ? String(localized: "准备已暂停") : String(localized: "暂时无法准备正文"))
                         .font(.headline)
-                    if let error = session.snapshot?.error.map { ReaderMessages.error($0) } ?? session.error {
+                    if let error = session.snapshot?.preparation.failure.map { ReaderMessages.error($0) } ?? session.error {
                         Text(error).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                             .multilineTextAlignment(.center)
                     }
                     if session.snapshot != nil {
-                        if session.snapshot?.phase == .failed {
+                        if session.snapshot?.preparation.isFailed == true {
                             Button("重试", action: session.retryPreparation).buttonStyle(.bordered)
                         }
                         encodingMenu
@@ -57,7 +57,7 @@ struct ReaderPreparationContent: View {
             HStack(spacing: 10) {
                 if session.preparing { LoadingActivity(size: 28, fraction: preparationFraction) }
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(session.preparing ? String(localized: "正在准备后续内容") : (session.snapshot?.phase == .failed ? String(localized: "准备失败") : String(localized: "准备已暂停")))
+                    Text(session.preparing ? String(localized: "正在准备后续内容") : (session.snapshot?.preparation.isFailed == true ? String(localized: "准备失败") : String(localized: "准备已暂停")))
                         .font(.subheadline.weight(.medium))
                     if let fraction = preparationFraction {
                         Text(fraction, format: .percent.precision(.fractionLength(0)))
@@ -66,7 +66,7 @@ struct ReaderPreparationContent: View {
                 }
                 Spacer()
             }
-            if let message = session.snapshot?.error {
+            if let message = session.snapshot?.preparation.failure {
                 Text(ReaderMessages.error(message)).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                 HStack {
                     Button("重新准备") { session.restart() }

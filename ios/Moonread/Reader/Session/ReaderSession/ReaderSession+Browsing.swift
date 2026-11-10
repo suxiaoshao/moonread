@@ -116,10 +116,9 @@ extension ReaderSession {
                 }
                 snapshot = frame.snapshot
                 windowTask?.cancel(); windowTask = nil
-                window = visibleWindow.flatMap { $0.revision == frame.projectionRevision ? $0 : nil } ?? ReadingWindow(frame: frame)
+                window = visibleWindow.flatMap { $0.sharesProjection(with: frame) ? $0 : nil } ?? ReadingWindow(frame: frame)
                 displayAnchor = frame.projectionAnchor
-                anchor = target
-                showingCover = placement == .cover || restoring?.isCover == true
+                surface = placement == .cover || restoring?.isCover == true ? .cover : .body(SourceAnchor(target))
                 browseState = .preview(.init(origin: origin, viewport: originalViewport, target: target,
                     focus: end.map { TextRange(startUtf8: start, endUtf8: $0, text: "") }, history: history))
                 navigation = ReadingNavigation(placement: placement, bottomObstruction: bottomObstruction, restoring: restoring)

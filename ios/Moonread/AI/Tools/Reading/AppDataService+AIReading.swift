@@ -85,8 +85,8 @@ extension AppDataService {
     while true {
       try Task.checkCancellation()
       let state = try await snapshot(lease.id)
-      if state.phase == .complete { return lease }
-      if state.phase == .failed || state.phase == .paused { throw AIToolError("needs_preparation") }
+      if state.preparation.isComplete { return lease }
+      if state.preparation.isFailed || state.preparation.isPaused { throw AIToolError("needs_preparation") }
       try await Task.sleep(for: .milliseconds(50))
     }
   }

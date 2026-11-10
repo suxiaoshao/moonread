@@ -199,8 +199,8 @@ extension ReadingController {
             let target = restoration?.offset ?? anchor
             let index = pending.request.pageIndex(in: pages, anchor: restoration?.groupStart ?? target)
             if !reuseCurrentPageGroup(containing: index, startingAt: restoration?.groupStart == nil ? nil : index) {
-                let current = pageIndex(paging.viewControllers?.first) ?? index
-                paging.setViewControllers([makePage(at: index)], direction: index >= current ? .forward : .reverse, animated: false)
+                let current = renderedPage(paging.viewControllers?.first)?.bodyIndex ?? index
+                paging.setViewControllers([makePage(at: .body(PageIndex(index)))], direction: index >= current ? .forward : .reverse, animated: false)
             }
             if let leaf = currentLeaves.first(where: { target >= $0.page.start && target < $0.page.end }), let text = leaf.view as? UITextView { activateLeaf(text) }
             updateEdge(lastPageIndex(paging.viewControllers?.first) == pages.count - 1)
@@ -276,7 +276,7 @@ extension ReadingController {
             let index = ReadingNavigation().pageIndex(in: pages, anchor: visible)
             let active = anchorLeaf?.page.firstVisibleOffset
             if !reuseCurrentPageGroup(containing: index) {
-                paging.setViewControllers([makePage(at: index)], direction: .forward, animated: false)
+                paging.setViewControllers([makePage(at: .body(PageIndex(index)))], direction: .forward, animated: false)
             } else if let group = paging.viewControllers?.first {
                 paging.setViewControllers([group], direction: .forward, animated: false)
             }
@@ -371,8 +371,9 @@ extension ReadingController {
             readingSurface.addSubview(paging.view)
             paging.didMove(toParent: self)
             pageController = paging
-            let index = hasCover && isCoverVisible ? -1 : ReadingNavigation().pageIndex(in: pages, anchor: anchor)
-            paging.setViewControllers([makePage(at: index)], direction: .forward, animated: false)
+            let page: RenderedPage = hasCover && isCoverVisible ? .cover
+                : .body(PageIndex(ReadingNavigation().pageIndex(in: pages, anchor: anchor)))
+            paging.setViewControllers([makePage(at: page)], direction: .forward, animated: false)
         }
         decorateVisibleText()
         updateBottomFade()

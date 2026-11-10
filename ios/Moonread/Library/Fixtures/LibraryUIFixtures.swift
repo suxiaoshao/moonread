@@ -149,7 +149,7 @@ extension AppDataService {
             if arguments.contains("--ui-test-blank-line-no-cover") {
                 try await savePosition(bookID:prepared.id,offset:UInt64(gap.utf8.count))
                 let saved = try await snapshot(prepared.id)
-                print("BLANK_FIXTURE_PREPARED", saved.phase, "hasStarted", saved.hasStarted, "position", saved.book.positionUtf8)
+                print("BLANK_FIXTURE_PREPARED", saved.preparation, "hasStarted", saved.hasStarted, "position", saved.book.positionUtf8)
             }
             withExtendedLifetime(prepared) {}
             return

@@ -179,7 +179,7 @@ final class LibraryIdentityAdapterTests: ReaderIntegrationFixture {
       let id = try XCTUnwrap(lease?.id)
       try await service.waitForImportFinish(id)
       let snapshot = try await service.snapshot(id)
-      XCTAssertEqual(snapshot.phase, .complete)
+      XCTAssertTrue(snapshot.preparation.isComplete)
       if index == 0 {
         canonical = id
         try await service.savePosition(bookID: id, offset: 90)

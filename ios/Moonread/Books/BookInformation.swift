@@ -136,7 +136,7 @@ final class BookInformationModel {
                 while true {
                     try Task.checkCancellation()
                     let snapshot = try await service.snapshot(lease.id)
-                    if snapshot.phase == .complete {
+                    if snapshot.preparation.isComplete {
                         let result = try await service.bookDetails(.cached(bookId: lease.id))
                         let details = try result.requireIdentified()
                         guard isPreparing(context), !Task.isCancelled else { return }
@@ -144,13 +144,13 @@ final class BookInformationModel {
                         preparation = .editing(BookMetadataDraft(base: details.metadata))
                         break
                     }
-                    if snapshot.phase == .failed { throw CocoaError(.fileReadCorruptFile) }
-                    if snapshot.phase == .paused {
+                    if snapshot.preparation.isFailed { throw CocoaError(.fileReadCorruptFile) }
+                    if snapshot.preparation.isPaused {
                         try Task.checkCancellation()
                         try await service.resumeImport(lease.id)
                     }
                     updatePreparation(context, step: .indexing,
-                        progress: snapshot.sourceByteCount > 0 ? Double(snapshot.sourceBytesRead) / Double(snapshot.sourceByteCount) : nil)
+                        progress: snapshot.byteProgress.total > 0 ? Double(snapshot.byteProgress.read) / Double(snapshot.byteProgress.total) : nil)
                     try await Task.sleep(for: .milliseconds(100))
                 }
             } catch is CancellationError { }

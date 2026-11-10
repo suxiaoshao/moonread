@@ -115,7 +115,7 @@ struct ReaderScreen: View {
                             coverInformation: coverInformation,
                             showBookDetails: { openBookDetails() },
                             showingCover: session.showingCover,
-                            coverChanged: { if !navigationPresentation.isSuspended { session.showingCover = $0 } },
+                            coverChanged: { if !navigationPresentation.isSuspended { session.coverVisibilityChanged($0) } },
                             brightnessChanged: { brightness in
                                 guard var value = session.settings else { return }
                                 value.brightness = brightness; session.updateSettings(value)
@@ -151,7 +151,7 @@ struct ReaderScreen: View {
                     .allowsHitTesting(rendered.sourcePage == nil)
                     .ignoresSafeArea(.container)
                     .accessibilityIdentifier("readingContent")
-                    .modifier(ReaderImportDiagnosticStatus(complete: session.snapshot?.phase == .complete))
+                    .modifier(ReaderImportDiagnosticStatus(complete: session.snapshot?.preparation.isComplete == true))
                     .transition(.opacity)
     }
 
@@ -594,7 +594,7 @@ struct ReaderScreen: View {
                                    title: file.title, origin: .reader(fileID: file.id))
         }
         let target: BookTarget = switch route {
-        case .book(let id): .cached(bookId: session.readingID ?? id)
+        case .book(let id): .cached(bookId: session.readingID ?? id.value)
         case .source(let file): .file(fileId: file.id)
         }
         return StatisticsRoute(target: target, title: session.book?.title ?? route.title, origin: .reader())
