@@ -43,6 +43,13 @@ import UIKit
         XCTAssertEqual(emoji.sourceRange(NSRange(location: 1, length: 2)), SourceSpan(startUtf8: 103, endUtf8: 107))
         XCTAssertNil(emoji.sourceRange(NSRange(location: NSNotFound, length: 1)))
         XCTAssertNil(emoji.sourceRange(NSRange(location: 0, length: Int.max)))
+        XCTAssertTrue(ListeningVoicesView.matches("中文", name: "Synthetic", language: "zh-CN"))
+        XCTAssertTrue(ListeningVoicesView.matches("粤语", name: "Synthetic", language: "yue-HK"))
+        XCTAssertTrue(ListeningVoicesView.matches("粵語", name: "Synthetic", language: "yue-HK"))
+        XCTAssertTrue(ListeningVoicesView.matches("English", name: "Synthetic", language: "en-US"))
+        XCTAssertTrue(ListeningVoicesView.matches("美国", name: "Synthetic", language: "en-US"))
+        XCTAssertTrue(ListeningVoicesView.matches("Synthetic", name: "Synthetic", language: "fr-FR"))
+        XCTAssertFalse(ListeningVoicesView.matches("中文", name: "Synthetic", language: "fr-FR"))
     }
 
     func testQueueIsBoundedManualBrowsingDetachesAndReturnDoesNotReplay() async throws {

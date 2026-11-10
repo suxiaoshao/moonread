@@ -39,7 +39,6 @@ struct ReaderScreen: View {
 
     var automatic: ReaderAutoReading { session.autoReading }
     @State private var listeningVoices = false
-    @State private var listeningReservation: CGFloat = 0
     var listening: ListeningSession { session.listening }
     private var listeningSelected: Bool { renderedNode.location.selection == .listening }
     private var listeningHidden: Bool { listeningSelected && renderedNode.exposure == .hidden }
@@ -191,8 +190,7 @@ struct ReaderScreen: View {
                             annotationChooserChanged: { choosingAnnotations = $0 },
                             edgeChanged: { session.nearEdge = $0 },
                             compactHeaderHeight: compactHeaderHeight,
-                            guideHeight: max(Onboarding.shared.enabled && !Onboarding.shared.revealedControls && !controlsVisible ? controlsTipHeight : 0,
-                                listening.active && listeningSelected && !listeningHidden ? listeningReservation : 0),
+                            guideHeight: Onboarding.shared.enabled && !Onboarding.shared.revealedControls && !controlsVisible ? controlsTipHeight : 0,
                             contentGeometry: geometry, layoutStatus: layoutStatus,
                             headerPositionChanged: { localHeaderTop = $0 },
                             controlsVisible: controlsVisible,
@@ -970,7 +968,7 @@ struct ReaderScreen: View {
             if dock == .listening {
                 if listening.active {
                     ReaderListeningCompact(session: listening, expand: { attachmentExpanded = true }, resume: startListening,
-                        returnToSpeech: session.returnToListening, measured: { listeningReservation = $0 })
+                        returnToSpeech: session.returnToListening)
                 } else { listeningContent(expanded: false) }
             } else if dock == .automatic {
                 automaticContent(expanded: false)

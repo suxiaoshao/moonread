@@ -93,7 +93,24 @@ struct ListeningVoicesView: View {
     @State private var voices: [AVSpeechSynthesisVoice] = []
     @Environment(\.theme) private var theme
     private var filtered: [AVSpeechSynthesisVoice] {
-        voices.filter { search.isEmpty || $0.name.localizedStandardContains(search) || $0.language.localizedStandardContains(search) }
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return voices }
+        let languages = Set(voices.map(\.language)).filter { Self.matches(query, name: "", language: $0) }
+        return voices.filter { $0.name.localizedStandardContains(query) || languages.contains($0.language) }
+    }
+    static func matches(_ search: String, name: String, language: String, locale: Locale = .current) -> Bool {
+        let query = search.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return true }
+        if name.localizedStandardContains(query) || language.localizedStandardContains(query) { return true }
+        let voiceLocale = Locale(identifier: language)
+        // Use system language/region names, including the UI language and the
+        // App's supported languages. A Chinese UI can still find “English”.
+        return [locale, Locale(identifier: "zh-Hans"), Locale(identifier: "zh-Hant"), Locale(identifier: "en")].contains { display in
+            [display.localizedString(forIdentifier: language),
+             voiceLocale.language.languageCode.flatMap { display.localizedString(forLanguageCode: $0.identifier) },
+             voiceLocale.region.flatMap { display.localizedString(forRegionCode: $0.identifier) }]
+                .compactMap { $0 }.contains { $0.localizedStandardContains(query) }
+        }
     }
     private var languages: [String] { Set(filtered.map(\.language)).sorted() }
     var body: some View {
@@ -141,14 +158,11 @@ struct ListeningVoicesView: View {
     }
 }
 
-/// Its background measures the largest compact state without displaying an empty
-/// return row. Following/detaching therefore does not repeatedly repaginate text.
 struct ReaderListeningCompact: View {
     let session: ListeningSession
     let expand: () -> Void
     let resume: () -> Void
     let returnToSpeech: () -> Void
-    let measured: (CGFloat) -> Void
     @Environment(\.theme) private var theme
     var body: some View {
         VStack(alignment: .leading, spacing: LayoutTokens.compact) {
@@ -157,16 +171,6 @@ struct ReaderListeningCompact: View {
             if let notice = session.notice { Text(notice).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
         }
         .padding(.horizontal, LayoutTokens.content).padding(.vertical, LayoutTokens.compact)
-        .background {
-            VStack(spacing: LayoutTokens.compact) {
-                controls; returnButton
-                if let notice = session.notice { Text(notice).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
-            }
-                .padding(.horizontal, LayoutTokens.content).padding(.vertical, LayoutTokens.compact)
-                .fixedSize(horizontal: false, vertical: true)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measured($0) }
-                .hidden().accessibilityHidden(true).allowsHitTesting(false)
-        }
         .accessibilityElement(children: .contain).accessibilityIdentifier("listeningCompact")
     }
     private var controls: some View {
