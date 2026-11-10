@@ -21,6 +21,7 @@ struct ReaderScreen: View {
     private var isWide: Bool { horizontalSizeClass == .regular }
     @State private var controlsTipHeight: CGFloat = 0
     @State private var dockHeight: CGFloat = 220
+    @ScaledMetric(relativeTo: .body) private var scaledToolRowHeight: CGFloat = 56
     @State private var settingsPreview = ReadingPreviewSource.sample
     @State private var readerWidth: CGFloat = 390
     @State private var localHeaderTop: CGFloat = 0
@@ -622,29 +623,37 @@ struct ReaderScreen: View {
         let snapshot = rendered
         let context = snapshot.context
         let token = nativeHost.token
+        let showsFooterTools = session.book != nil
+            && (snapshot.controls || snapshot.compact == .automatic || (snapshot.compact == .listening && listening?.active != true))
+        let toolRowHeight = max(56, scaledToolRowHeight)
+        let footerHeight = LayoutTokens.compact + (showsFooterTools ? toolRowHeight + LayoutTokens.compact : 0)
         return ReaderBottomPanel(expanded: Binding(get: { snapshot.expanded }, set: { expanded in
             guard !nativeHost.dismissing else { return }
             sendTool(expanded ? .expand : .collapse, from: context)
         }), compactHeight: $dockHeight, canExpand: snapshot.canExpand,
         input: nativeHost.input(for: render.context), dismissing: nativeHost.dismissing, taskID: snapshot.taskID,
         scope: toolSession.nativeToolScope(for: context), token: token,
-        confirm: { sendTool(.nativeConfirmed($0)) }, closeTask: {
+        confirm: { sendTool(.nativeConfirmed($0)) }, footerHeight: footerHeight, closeTask: {
             if let token, toolSession.acceptsNativeInput(token, generation: context.revision), let visit = snapshot.visit {
                 sendTool(.closeVisit(visit.id), from: context)
             }
         }) {
-            ReaderCompactLayout(selection: snapshot.compact) {
-                bottomDock(snapshot)
-                    .transaction { $0.animation = nil }
-                    .layoutValue(key: ReaderCompactIdentity.self, value: snapshot.compact)
-                    .id(snapshot.compact)
-                    .transition(MotionTokens.accessoryContent(reduced: reduceMotion))
+            VStack(spacing: 0) {
+                ReaderCompactLayout(selection: snapshot.compact) {
+                    bottomDock(snapshot)
+                        .transaction { $0.animation = nil }
+                        .layoutValue(key: ReaderCompactIdentity.self, value: snapshot.compact)
+                        .id(snapshot.compact)
+                        .transition(MotionTokens.accessoryContent(reduced: reduceMotion))
+                }
+                .animation(MotionTokens.accessoryResize(reduced: reduceMotion), value: snapshot.compact)
+                if showsFooterTools, session.incomplete {
+                    importStatus.padding(.horizontal, 24).padding(.top, LayoutTokens.compact).padding(.bottom, 18)
+                }
             }
-            .animation(MotionTokens.accessoryResize(reduced: reduceMotion), value: snapshot.compact)
         } footer: {
             VStack(spacing: 0) {
-                if (snapshot.controls || snapshot.compact == .automatic || (snapshot.compact == .listening && listening?.active != true)),
-                   session.book != nil { bottomControls(snapshot).padding(.top, LayoutTokens.compact) }
+                if showsFooterTools { bottomControls(snapshot, height: toolRowHeight).padding(.top, LayoutTokens.compact) }
             }.padding(.bottom, LayoutTokens.compact)
         } details: { readyForInput in
             switch snapshot.visit?.route {

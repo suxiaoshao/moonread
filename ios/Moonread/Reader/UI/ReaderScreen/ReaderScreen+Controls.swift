@@ -43,35 +43,30 @@ extension ReaderScreen {
         }
     }
 
-    func bottomControls(_ snapshot: ReaderRenderSnapshot) -> some View {
+    func bottomControls(_ snapshot: ReaderRenderSnapshot, height: CGFloat) -> some View {
         let context = snapshot.context
-        return
-        VStack(spacing: 18) {
-            if readerSession.incomplete { importStatus }
-            HStack(spacing: 0) {
-                toolButton("目录", symbol: "list.bullet", id: "showChapters") { sendTool(.open(.library(.listing(.chapters))), from: context) }
-                toolButton("搜索", symbol: "magnifyingglass", id: "showSearch") { sendTool(.openSearch, from: context) }
-                toolButton("设置", symbol: "textformat.size", id: "readingSettings", selected: snapshot.compact == .settings) {
-                    sendTool(.quick(.settings), from: context)
-                }
-                toolButton("更多", symbol: "ellipsis", id: "readerMore", selected: snapshot.compact == .more) {
-                    sendTool(.quick(.more), from: context)
-                }
+        return HStack(spacing: 0) {
+            toolButton("目录", symbol: "list.bullet", id: "showChapters", height: height) { sendTool(.open(.library(.listing(.chapters))), from: context) }
+            toolButton("搜索", symbol: "magnifyingglass", id: "showSearch", height: height) { sendTool(.openSearch, from: context) }
+            toolButton("设置", symbol: "textformat.size", id: "readingSettings", height: height, selected: snapshot.compact == .settings) {
+                sendTool(.quick(.settings), from: context)
             }
-            .labelStyle(ReaderToolLabelStyle())
-            .buttonStyle(.plain)
-
+            toolButton("更多", symbol: "ellipsis", id: "readerMore", height: height, selected: snapshot.compact == .more) {
+                sendTool(.quick(.more), from: context)
+            }
         }
+        .labelStyle(ReaderToolLabelStyle())
+        .buttonStyle(.plain)
         .padding(.horizontal, 24)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("readerBottomControls")
     }
 
-    private func toolButton(_ title: LocalizedStringKey, symbol: String, id: String, selected: Bool = false, action: @escaping () -> Void) -> some View {
+    private func toolButton(_ title: LocalizedStringKey, symbol: String, id: String, height: CGFloat, selected: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: symbol)
                 .foregroundStyle(Color(uiColor: selected ? theme.accent : theme.ink))
-                .frame(maxWidth: .infinity, minHeight: 56).contentShape(.rect)
+                .frame(maxWidth: .infinity).frame(height: height).contentShape(.rect)
         }.accessibilityIdentifier(id).accessibilityAddTraits(selected ? .isSelected : [])
     }
 

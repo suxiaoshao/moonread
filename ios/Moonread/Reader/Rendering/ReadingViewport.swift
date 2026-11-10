@@ -95,7 +95,8 @@ final class ReadingViewportAccess {
         return modal(in: presented) != nil
     }
 
-    func nativeListeningFacts(registry: ReaderNativeLayerRegistry, opening: UUID, requestingDock: Bool) -> ReaderNativeListeningFacts {
+    func nativeListeningFacts(registry: ReaderNativeLayerRegistry, opening: UUID, requestingDock: Bool,
+                              searchVisit: UUID? = nil) -> ReaderNativeListeningFacts {
         guard let controller else { return .clear }
         var checked = Set<ObjectIdentifier>()
         var facts = ReaderNativeListeningFacts.clear
@@ -105,7 +106,15 @@ final class ReadingViewportAccess {
                 case .readerTool(let origin, _) where origin == opening: break
                 case .selectionTask(let origin) where origin == opening: facts = .selection
                 case .voiceTask(let origin) where origin == opening: facts = .voice
-                default: facts = .external
+                case .external where searchVisit.map({ visit in
+                    guard let search = presented as? UISearchController else { return false }
+                    return registry.registerSearchInput(search, opening: opening, visit: visit)
+                }) == true: break
+                default:
+                    ReaderSceneDiagnostics.record("native.unregistered", opening: opening, fields: [
+                        "type": String(describing: type(of: presented)), "owner": String(describing: type(of: owner)),
+                    ])
+                    facts = .external
                 }
                 if facts == .external { return }
                 inspect(presented, includeChildren: true)

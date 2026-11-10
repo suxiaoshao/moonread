@@ -253,8 +253,9 @@ import AVFoundation
 
     func sampleNativePresentation() {
         guard valid, let reader else { return }
+        let searchVisit = if let visit = render.visit, case .search = visit.route { visit.id } else { nil as UUID? }
         let next = reader.viewportAccess.nativeListeningFacts(
-            registry: host.nativeLayers, opening: opening, requestingDock: host.phase == .requested)
+            registry: host.nativeLayers, opening: opening, requestingDock: host.phase == .requested, searchVisit: searchVisit)
         guard next != nativeListeningFacts else { return }
         nativeListeningFacts = next
         reader.activeListening?.checkPresentation()

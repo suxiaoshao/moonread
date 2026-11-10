@@ -310,6 +310,21 @@ enum ReaderNativeListeningFacts: Equatable { case clear, mountingTool, selection
         registered.object(forKey: controller)?.origin ?? .external
     }
 
+    /// A searchable navigation item may present its input controller as a
+    /// separate UIKit layer. Match the actual controller of this reader visit.
+    func registerSearchInput(_ search: UISearchController, opening: UUID, visit: UUID) -> Bool {
+        let origin = ReaderPresentationOrigin.readerTool(opening: opening, visit: visit)
+        func ownsSearch(_ controller: UIViewController) -> Bool {
+            controller.navigationItem.searchController === search || controller.children.contains { ownsSearch($0) }
+        }
+        let owners = registered.keyEnumerator().allObjects.compactMap { $0 as? UIViewController }
+        guard owners.contains(where: {
+            self.origin(for: $0) == origin && $0.presentingViewController?.presentedViewController === $0 && ownsSearch($0)
+        }) else { return false }
+        register(search, origin: origin)
+        return true
+    }
+
     static func presentedRoot(containing controller: UIViewController) -> UIViewController? {
         var candidate: UIViewController? = controller
         while let current = candidate {

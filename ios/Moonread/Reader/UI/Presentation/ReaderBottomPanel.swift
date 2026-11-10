@@ -1,8 +1,8 @@
 import SwiftUI
 import UIKit
 
-/// One compact measurement drives the detent and the physical footer. Tool
-/// identity and action admission come from the installed snapshot.
+/// The compact content and its fixed footer share one render and native sheet
+/// transition. Only the content above the four tools needs measurement.
 struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent: View>: View {
     @Binding var expanded: Bool
     @Binding var compactHeight: CGFloat
@@ -13,6 +13,7 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
     let scope: ReaderNativeToolScope
     let token: ReaderHostToken?
     let confirm: (ReaderHostToken) -> Void
+    let footerHeight: CGFloat
     let closeTask: () -> Void
     @ViewBuilder let compact: () -> Compact
     @ViewBuilder let footer: () -> Footer
@@ -39,20 +40,17 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
                 } else {
                     accessoryContent(in: geometry)
                         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .bottom)
-                        .transition(MotionTokens.accessoryContent(reduced: reduceMotion))
+                        .transition(.identity)
                 }
             }
             .frame(width: geometry.size.width, height: geometry.size.height, alignment: .bottom)
         }
         .overlay(ReaderSheetConfiguration(reference: nativeSheet, height: compactHeight, canExpand: canExpand,
-            dismissing: dismissing, expanded: wantsExpanded, taskID: taskID, scope: scope, token: token, confirm: confirm,
-            footer: AnyView(footer().frame(maxWidth: .infinity).background(Color(uiColor: theme.surface))),
-            footerHeight: phase.measurement.footer,
-            footerVisible: compactVisible, input: input) { large in
+            dismissing: dismissing, expanded: wantsExpanded, taskID: taskID, scope: scope, token: token, confirm: confirm) { large in
                 guard input.enabled else { return }
                 if taskID != nil { if !large { closeTask() }; return }
                 if canExpand, expanded != large { expanded = large }
-            }.accessibilityElement(children: .contain))
+            }.allowsHitTesting(false).accessibilityHidden(true))
         .presentationBackground(Color(uiColor: theme.surface))
         .onPreferenceChange(ReaderPanelSize.self, perform: updateMeasurement)
         .onChange(of: wantsExpanded, initial: true) { _, expanded in setExpanded(expanded) }
@@ -75,23 +73,19 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
                     .fixedSize(horizontal: false, vertical: true)
                     .background {
                         GeometryReader { content in
-                            Color.clear.preference(key: ReaderPanelSize.self, value: .init(content: content.size.height))
+                            Color.clear.preference(key: ReaderPanelSize.self,
+                                value: .init(content: content.size.height, footer: footerHeight))
                         }
                     }
             }
             .scrollBounceBehavior(.basedOnSize).scrollIndicators(.hidden)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 footer()
-                    .fixedSize(horizontal: false, vertical: true)
-                    .background {
-                        GeometryReader { footer in
-                            Color.clear.preference(key: ReaderPanelSize.self, value: .init(footer: footer.size.height))
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .hidden().accessibilityHidden(true).allowsHitTesting(false)
+                    .frame(maxWidth: .infinity).frame(height: footerHeight)
+                    .background(Color(uiColor: theme.surface))
             }
             .opacity(compactVisible ? 1 : 0)
+            .animation(nil, value: compactVisible)
             .allowsHitTesting(compactVisible && input.enabled)
             .accessibilityHidden(!compactVisible || !input.enabled)
             .clipped()
@@ -111,7 +105,9 @@ struct ReaderBottomPanel<Compact: View, Footer: View, Details: View, TaskContent
         let transition = UUID()
         withAnimation(MotionTokens.panel(reduced: reduceMotion), completionCriteria: .removed) {
             let measurement = phase.measurement
-            if !expanded, measurement.content + measurement.footer > 0 { compactHeight = measurement.detent }
+            if !expanded, measurement.content + footerHeight > 0 {
+                compactHeight = PanelMeasurement(content: measurement.content, footer: footerHeight).detent
+            }
             phase = expanded ? .expanding(measurement, transition) : .collapsing(measurement, transition)
         } completion: {
             guard phase.transition == transition else { return }
@@ -156,8 +152,7 @@ private struct ReaderPanelSize: PreferenceKey {
     static let defaultValue = PanelMeasurement()
     static func reduce(value: inout PanelMeasurement, nextValue: () -> PanelMeasurement) {
         let next = nextValue()
-        value.content = max(value.content, next.content)
-        value.footer = max(value.footer, next.footer)
+        if next.content + next.footer > 0 { value = next }
     }
 }
 
@@ -199,10 +194,6 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
     var scope: ReaderNativeToolScope
     var token: ReaderHostToken?
     var confirm: (ReaderHostToken) -> Void
-    var footer: AnyView
-    var footerHeight: CGFloat
-    var footerVisible: Bool
-    var input: ReaderInputAdmission
     var selectionChanged: (Bool) -> Void
 
     func makeUIViewController(context: Context) -> Controller {
@@ -210,19 +201,9 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
     }
     func updateUIViewController(_ controller: Controller, context: Context) {
         controller.configuration = self
-        let enabled = !dismissing && footerVisible && input.enabled
-        controller.footer.view.isUserInteractionEnabled = enabled
-        controller.footer.view.accessibilityElementsHidden = !enabled
-        controller.footer.rootView = AnyView(footer
-            .themeScope(context.environment.theme)
-            .environment(\.locale, context.environment.locale)
-            .environment(\.dynamicTypeSize, context.environment.dynamicTypeSize)
-            .environment(\.layoutDirection, context.environment.layoutDirection)
-            .environment(\.moonreadReduceMotion, context.environment.moonreadReduceMotion))
         controller.configure()
     }
-    // Fill the sheet's content proposal for the live UIKit controls, including
-    // their hit-testing and accessibility container.
+
     func sizeThatFits(_ proposal: ProposedViewSize, uiViewController: Controller, context: Context) -> CGSize? {
         CGSize(width: proposal.width ?? 0, height: proposal.height ?? 0)
     }
@@ -231,8 +212,6 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
     final class Controller: UIViewController, UISheetPresentationControllerDelegate {
         private static let compactID = UISheetPresentationController.Detent.Identifier("readerCompact")
         var configuration: ReaderSheetConfiguration?
-        let footer = UIHostingController(rootView: AnyView(EmptyView()))
-        private var footerHeight: NSLayoutConstraint?
         private weak var sheet: UISheetPresentationController?
         private weak var forwardedDelegate: (any UISheetPresentationControllerDelegate)?
         private var resolverHeight: CGFloat = 220
@@ -246,7 +225,7 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
         }
         private enum Mode: Equatable { case compact, expandable, task, conversation }
 
-        override func loadView() { view = FooterContainerView() }
+        override func loadView() { view = UIView(); view.isUserInteractionEnabled = false }
         override func didMove(toParent parent: UIViewController?) { super.didMove(toParent: parent); configure() }
         override func viewWillAppear(_ animated: Bool) {
             super.viewWillAppear(animated); configure()
@@ -274,23 +253,6 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
             defer { applying = false }
             if self.sheet !== sheet { detach(); self.sheet = sheet; mode = nil }
             if sheet.delegate !== self { forwardedDelegate = sheet.delegate; sheet.delegate = self }
-            if footer.parent !== self {
-                removeFooter()
-                addChild(footer)
-                footer.safeAreaRegions = []
-                footer.view.backgroundColor = .clear
-                footer.view.translatesAutoresizingMaskIntoConstraints = false
-                view.addSubview(footer.view)
-                let height = footer.view.heightAnchor.constraint(equalToConstant: configuration.footerHeight)
-                NSLayoutConstraint.activate([
-                    footer.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-                    footer.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-                    footer.view.bottomAnchor.constraint(equalTo: view.bottomAnchor), height,
-                ])
-                footerHeight = height
-                footer.didMove(toParent: self)
-            }
-            footerHeight?.constant = configuration.footerHeight
             if appeared { confirmInstallation() }
             let next: Mode = configuration.taskID == "ai" ? .conversation
                 : configuration.taskID != nil ? .task : configuration.canExpand ? .expandable : .compact
@@ -298,15 +260,11 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
             let changedMode = mode != next
             let changedHeight = abs(resolverHeight - configuration.height) > 1
             let changedSelection = next != .conversation && requestedLarge != large
-            guard changedMode || changedHeight || changedSelection else {
-                footer.view.alpha = configuration.footerVisible ? 1 : 0
-                return
-            }
+            guard changedMode || changedHeight || changedSelection else { return }
             let first = mode == nil
             mode = next; requestedLarge = large
             let changes = {
                 self.resolverHeight = configuration.height
-                self.footer.view.alpha = configuration.footerVisible ? 1 : 0
                 if changedMode {
                     sheet.detents = next == .conversation ? [.medium(), .large()]
                         : next == .compact ? [self.compact] : [self.compact, .large()]
@@ -338,22 +296,7 @@ private struct ReaderSheetConfiguration: UIViewControllerRepresentable {
                 sheet.invalidateDetents()
             }
         }
-        /// The physical controls and their hit-test parent share coordinates.
-        /// This keeps the footer inside the same accessibility hierarchy.
-        private final class FooterContainerView: UIView {
-            override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-                let hit = super.hitTest(point, with: event)
-                return hit === self ? nil : hit
-            }
-        }
-        private func removeFooter() {
-            guard footer.parent != nil else { return }
-            footer.willMove(toParent: nil)
-            footer.view.removeFromSuperview(); footer.removeFromParent()
-            footerHeight = nil
-        }
         func detach() {
-            removeFooter()
             if let sheet, sheet.delegate === self { sheet.delegate = forwardedDelegate }
             sheet = nil; forwardedDelegate = nil
         }
