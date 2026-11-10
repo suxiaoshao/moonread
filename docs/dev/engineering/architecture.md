@@ -46,7 +46,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 系统开书与未保存修改确认 | Swift `SystemReadingRouter`；dirty 权威为 `PaletteDraft` / `ChapterEditDraft` / `NoteEditorModel` | 普通面板不排队；比较草稿基线，保存中的请求即时提示并消费，不取消写入或排队；同一请求在解析、等确认及打开间转换；解析错误不离书，取消消费请求，晚到确认按请求 token 隔离 | 平台入口与草稿 owner |
 | 固定阅读背景合成与原生/预览绘制 | Swift `ThemeSurface` / `ReadingPaperView` / `ReadingPreviewBackdrop` | 彩色 RGBA、固定 sRGB；图块/paper/blend/opacity 准备一次，原生与预览共用 ReadingPaperView/PreparedReadingPaper；尺寸只更新 descriptor 所定的贴边/靠角/cover CGRect；内层分页/滚动透明，不动正文布局或坐标 | 平台绘制 |
 | 解码、normalization-v1、正文/原字节 SHA 计算 | Rust `reading/input/text.rs`、`identity/source.rs` 及正文导入共用核心 | 和正文缓存/稳定内容身份一致；Swift 不重算规范正文 | 保持 |
-| fileId/bookId/canonical→正式或 pending 阅读键、索引有效性 | Rust `identity/content.rs`，供 user/projection、library/bookshelf/full_index 和 library/bookshelf 共用 | 数据库关联是事实。文件、正式或 pending 记录、正文缓存使用不同目标；解析结果区分未识别、缺失及已识别，正文可无，别名仍由同一查询裁决 | 单源 |
+| fileId/bookId/canonical→正式或 pending 阅读键、索引有效性 | Rust `identity/content.rs`，供 user/projection、library/bookshelf/full_index 和 library/bookshelf 共用 | 数据库关联是事实。文件、正式或 pending 记录、正文缓存使用不同目标；跨语言的封面候选、正文/导入快照和统计使用 `ReadingKey`，别名仍由同一查询裁决；持久化键与只接受正式 SHA 的资料交换格式保持原样 | 单源 |
 | 待索引集合与书架索引 inventory | Rust `library/bookshelf/full_index.rs` | 同一数据库快照返回总量/pending；Swift 不重复身份判定 | 单源扩展 |
 | 书架同步描述、本机授权绑定和扫描后准入 | Swift `ShelfRecovery.swift`、`UserSyncJSON.swift`、`FullIndex.swift` | SwiftData 裁决描述，本机 schemaVersion 1 绑定按账户隔离；平台扫描成功范围限制自动任务，不复制 Rust 查询 | 平台边界 |
 | SHA 格式 | Rust `identity/content.rs::parse_sha256` | 身份及资产校验共享严格语法，语义字段仍区分 | 单源 |

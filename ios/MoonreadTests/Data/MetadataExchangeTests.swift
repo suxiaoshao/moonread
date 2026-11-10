@@ -13,14 +13,14 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         // A missing local original must not prevent a metadata-only preview/save.
         try FileManager.default.removeItem(at: root.appendingPathComponent("a.txt"))
         let input = root.appendingPathComponent("input.jsonl")
-        let a: [String: Any] = ["v": 1, "content_sha256": first.contentSha256, "author": "  林舟  ", "tags": ["海边", "海边"], "reading_state": "unread", "title": "New Name", "reference": ["files": [["path": "not-a-selector.txt"]]]]
+        let a: [String: Any] = ["v": 1, "content_sha256": first.fixtureSHA256, "author": "  林舟  ", "tags": ["海边", "海边"], "reading_state": "unread", "title": "New Name", "reference": ["files": [["path": "not-a-selector.txt"]]]]
         try (JSONSerialization.data(withJSONObject: a) + Data([10])).write(to: input)
         // JSON starts at books[0], including the JSON manifest inside a cover package.
         let stage = root.appendingPathComponent("json-package", isDirectory: true)
         let covers = stage.appendingPathComponent("covers", isDirectory: true)
         try FileManager.default.createDirectory(at: covers, withIntermediateDirectories: true)
         var records: [[String: Any]] = []
-        for (index, sha) in [first.contentSha256, second.contentSha256].enumerated() {
+        for (index, sha) in [first.fixtureSHA256, second.fixtureSHA256].enumerated() {
             let name = "covers/cover-\(index).jpg"
             let image = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 6)).image { context in
                 (index == 0 ? UIColor.red : UIColor.blue).setFill()
@@ -36,7 +36,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         for url in [json, package] {
             let checked = try await service.previewMetadata(url)
             XCTAssertEqual(checked.books.count, 2)
-            for (index, sha) in [first.contentSha256, second.contentSha256].enumerated() {
+            for (index, sha) in [first.fixtureSHA256, second.fixtureSHA256].enumerated() {
                 let book = try XCTUnwrap(checked.books.first { $0.id == sha })
                 XCTAssertEqual(book.fields.first { $0.field == .author }?.options.first?.sources, ["books[\(index)]"])
                 if url == package {
@@ -79,7 +79,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         let result = await service.applyMetadata(preview) { _, _ in }
         XCTAssertEqual(result.outcomes.filter(\.saved).count, 1)
         XCTAssertNotNil(result.outcomes[0].message, "Rename failure must not roll back saved metadata")
-        let metadata = try await service.details(sha: first.contentSha256).metadata
+        let metadata = try await service.details(sha: first.fixtureSHA256).metadata
         XCTAssertEqual(metadata.author, "林舟")
         XCTAssertEqual(metadata.tags, ["海边"])
         let before = try await store.syncFixturePayloads("value")
@@ -97,8 +97,8 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
 
         // An unmatched identity or an intentionally skipped state is not an unchanged book.
         let classifications: [[String: Any]] = [
-            ["v": 1, "content_sha256": first.contentSha256, "reading_state": "unread"],
-            ["v": 1, "content_sha256": second.contentSha256],
+            ["v": 1, "content_sha256": first.fixtureSHA256, "reading_state": "unread"],
+            ["v": 1, "content_sha256": second.fixtureSHA256],
             ["v": 1, "content_sha256": String(repeating: "f", count: 64)]
         ]
         try classifications.map { String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self) }
@@ -117,7 +117,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
     @MainActor func testPerBookAtomicCoverFailureAndBatchStopsKeepingCompletedBooks() async throws {
         let (root, service, _, store, _, first, second, suite) = try singleBookFixture()
         defer { UserDefaults.standard.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
-        let sha = first.contentSha256, assetID = UUID().uuidString
+        let sha = first.fixtureSHA256, assetID = UUID().uuidString
         let before = try await store.syncFixturePayloads("value")
         do {
             try await store.putValues(["metadata/\(sha)/author": "not JSON"], device: "fixture", cover: .init(id: assetID, bytes: Data([1, 2, 3])))
@@ -133,22 +133,22 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
             return try XCTUnwrap(image.jpegData(compressionQuality: 0.9))
         }
         let existingCover = try await service.makeCover(coverBytes(.blue))
-        let oldMetadata = try await service.details(sha: second.contentSha256).metadata
+        let oldMetadata = try await service.details(sha: second.fixtureSHA256).metadata
         var oldWithCover = oldMetadata; oldWithCover.cover = existingCover
         try await service.saveMetadata(base: oldMetadata, edited: oldWithCover)
         let proposedCover = try await service.makeCover(coverBytes(.green))
         let input = root.appendingPathComponent("batch.jsonl")
-        try [first, second].map { "{\"v\":1,\"content_sha256\":\"\($0.contentSha256)\",\"author\":\"Imported\"}" }.joined(separator: "\n").write(to: input, atomically: true, encoding: .utf8)
+        try [first, second].map { "{\"v\":1,\"content_sha256\":\"\($0.fixtureSHA256)\",\"author\":\"Imported\"}" }.joined(separator: "\n").write(to: input, atomically: true, encoding: .utf8)
         var preview = try await service.previewMetadata(input)
-        preview.books.sort { $0.id == first.contentSha256 && $1.id != first.contentSha256 }
+        preview.books.sort { $0.id == first.fixtureSHA256 && $1.id != first.fixtureSHA256 }
         preview.session.retainDraft(await service.coverDraftURL(proposedCover))
         for index in preview.books.indices {
             preview.books[index].fields.append(.init(field: .cover, options: [.init(id: "incoming-cover", cover: proposedCover, sources: ["synthetic"])], selected: "incoming-cover"))
         }
-        try await store.receiveSyncFixture("value", key: "metadata/\(second.contentSha256)/author", payload: "{\"v\":2}")
+        try await store.receiveSyncFixture("value", key: "metadata/\(second.fixtureSHA256)/author", payload: "{\"v\":2}")
         let result = await service.applyMetadata(preview) { _, _ in }
         XCTAssertEqual(result.outcomes.map(\.saved), [true, false])
-        let saved = try await service.details(sha: first.contentSha256).metadata
+        let saved = try await service.details(sha: first.fixtureSHA256).metadata
         XCTAssertEqual(saved.author, "Imported")
         XCTAssertEqual(result.outcomes[0].cover, saved.cover)
         XCTAssertEqual(result.outcomes[0].cover, proposedCover)
@@ -161,7 +161,7 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         }
         let cancelled = await task.value
         XCTAssertTrue(cancelled.cancelled); XCTAssertEqual(cancelled.remaining.count, 2)
-        XCTAssertEqual(cancelled.remaining.first { $0.id == second.contentSha256 }?.cover, existingCover, "An unprocessed book keeps its existing cover")
+        XCTAssertEqual(cancelled.remaining.first { $0.id == second.fixtureSHA256 }?.cover, existingCover, "An unprocessed book keeps its existing cover")
     }
     @MainActor func testMetadataImportSkipsRenameWhenSourceWasReplacedAfterPreview() async throws {
         let (root, service, _, _, _, first, second, suite) = try singleBookFixture()
@@ -172,13 +172,13 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         }
         let input = root.appendingPathComponent("import.jsonl")
         let records = [
-            ["v": 1, "content_sha256": first.contentSha256, "title": "Rename Fixture", "author": "Updated A"],
-            ["v": 1, "content_sha256": second.contentSha256, "author": "Updated B"],
+            ["v": 1, "content_sha256": first.fixtureSHA256, "title": "Rename Fixture", "author": "Updated A"],
+            ["v": 1, "content_sha256": second.fixtureSHA256, "author": "Updated B"],
         ] as [[String: Any]]
         let jsonl = try records.map { String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self) }
         try jsonl.joined(separator: "\n").write(to: input, atomically: true, encoding: .utf8)
         var preview = try await service.previewMetadata(input)
-        let book = try XCTUnwrap(preview.books.firstIndex { $0.id == first.contentSha256 })
+        let book = try XCTUnwrap(preview.books.firstIndex { $0.id == first.fixtureSHA256 })
         let title = try XCTUnwrap(preview.books[book].fields.firstIndex { $0.field == .title })
         preview.books[book].fields[title].selected = preview.books[book].fields[title].options[0].id
         XCTAssertNotNil(preview.books[book].renameName)
@@ -189,14 +189,14 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         try replacement.write(to: source, options: .atomic)
 
         let result = await service.applyMetadata(preview) { _, _ in }
-        let outcome = try XCTUnwrap(result.outcomes.first { $0.id == first.contentSha256 })
+        let outcome = try XCTUnwrap(result.outcomes.first { $0.id == first.fixtureSHA256 })
         XCTAssertTrue(outcome.saved)
         XCTAssertFalse(outcome.renamed)
         XCTAssertEqual(outcome.message, String(localized: "资料已保存，文件未改名：原文件已变化", table: "MetadataExchange"))
         XCTAssertEqual(try? Data(contentsOf: source), replacement)
         XCTAssertFalse(fm.fileExists(atPath: root.appendingPathComponent("Rename Fixture.txt").path))
-        let firstDetails = try await service.details(sha: first.contentSha256)
-        let secondDetails = try await service.details(sha: second.contentSha256)
+        let firstDetails = try await service.details(sha: first.fixtureSHA256)
+        let secondDetails = try await service.details(sha: second.fixtureSHA256)
         XCTAssertEqual(firstDetails.metadata.author, "Updated A")
         XCTAssertEqual(secondDetails.metadata.author, "Updated B")
     }
@@ -232,23 +232,23 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         XCTAssertEqual(exported.count, 2)
         XCTAssertEqual(exported.skipped.map(\.path), ["unindexed.txt"])
         let document = try inspectMetadataExchange(inputPath: exported.file.urls[0].path, stagingRoot: root.appendingPathComponent("check").path)
-        let record = try XCTUnwrap(document.records(sha: first.contentSha256, cursor: 0, count: 10).records.first)
+        let record = try XCTUnwrap(document.records(sha: first.fixtureSHA256, cursor: 0, count: 10).records.first)
         XCTAssertNil(record.book.reference, "Imports intentionally ignore the whole reference object")
         let rawLines = try String(contentsOf: exported.file.urls[0], encoding: .utf8).split(separator: "\n")
         let raw = try rawLines.map { try JSONSerialization.jsonObject(with: Data($0.utf8)) as! [String: Any] }
-        let reference = try XCTUnwrap(raw.first { $0["content_sha256"] as? String == first.contentSha256 }?["reference"] as? [String: Any])
+        let reference = try XCTUnwrap(raw.first { $0["content_sha256"] as? String == first.fixtureSHA256 }?["reference"] as? [String: Any])
         XCTAssertEqual((reference["files"] as? [[String: Any]])?.count, 2)
         let share = try exported.shareCopy(); share.finish()
         XCTAssertTrue(FileManager.default.fileExists(atPath: exported.file.urls[0].path), "Finishing a share must not remove the result retained for sharing again")
         XCTAssertNil(record.book.title)
         let input = root.appendingPathComponent("multi.jsonl")
-        try "{\"v\":1,\"content_sha256\":\"\(first.contentSha256)\",\"title\":\"Suggestion\",\"author\":\"Writer\"}".write(to: input, atomically: true, encoding: .utf8)
+        try "{\"v\":1,\"content_sha256\":\"\(first.fixtureSHA256)\",\"title\":\"Suggestion\",\"author\":\"Writer\"}".write(to: input, atomically: true, encoding: .utf8)
         let preview = try await service.previewMetadata(input)
         XCTAssertEqual(preview.books[0].sourceCount, 2)
         XCTAssertFalse(preview.books[0].fields.contains { $0.field == .title })
 
         // A real rename followed by an index failure is a partial success, not an unmoved file.
-        try "{\"v\":1,\"content_sha256\":\"\(second.contentSha256)\",\"title\":\"Renamed\",\"author\":\"Writer\"}".write(to: input, atomically: true, encoding: .utf8)
+        try "{\"v\":1,\"content_sha256\":\"\(second.fixtureSHA256)\",\"title\":\"Renamed\",\"author\":\"Writer\"}".write(to: input, atomically: true, encoding: .utf8)
         var rename = try await service.previewMetadata(input)
         let title = try XCTUnwrap(rename.books[0].fields.firstIndex { $0.field == .title })
         rename.books[0].fields[title].selected = rename.books[0].fields[title].options[0].id

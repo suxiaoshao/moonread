@@ -142,7 +142,7 @@ pub struct ImportText {
     pub encoding: String,
     pub id: String,
     pub title: String,
-    pub content_sha256: String,
+    pub reading_key: ReadingKey,
     pub byte_count: u64,
     pub chunk_count: u32,
 }
@@ -156,7 +156,7 @@ impl From<BookInfo> for ImportText {
         Self {
             id: book.id,
             title: book.title,
-            content_sha256: book.content_sha256,
+            reading_key: book.reading_key,
             encoding: book.encoding,
             byte_count: book.byte_count,
             chunk_count: book.chunk_count,

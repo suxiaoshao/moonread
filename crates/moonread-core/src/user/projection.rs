@@ -431,10 +431,10 @@ impl ReaderQuery {
         &self,
         first_day: i64,
         last_day: i64,
-        content_key: Option<String>,
+        content_key: Option<ReadingKey>,
     ) -> Result<StatisticsOverview> {
         self.core
-            .statistics_overview(first_day, last_day, content_key)
+            .statistics_overview(first_day, last_day, content_key.map(serialize_reading_key))
     }
     pub fn statistics_widget_summary(
         &self,
@@ -447,9 +447,9 @@ impl ReaderQuery {
         &self,
         first_day: i64,
         last_day: i64,
-        content_key: Option<String>,
+        content_key: Option<ReadingKey>,
     ) -> Result<Vec<ReadingActivity>> {
         self.core
-            .reading_activities(first_day, last_day, content_key)
+            .reading_activities(first_day, last_day, content_key.map(serialize_reading_key))
     }
 }

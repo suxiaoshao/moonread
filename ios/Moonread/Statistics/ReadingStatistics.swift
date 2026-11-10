@@ -90,7 +90,7 @@ extension AppDataService {
         return try await readingQueryResult(source, options: .init(statisticsRange: first...last, scope: scope, fields: fields))
     }
     private func readStatistics<Value: Sendable>(first: Int64, last: Int64, target: StatisticsTarget,
-        fields: UserProjectionDomain, project: @escaping @Sendable (ReaderQuery, String?) throws -> Value) async throws -> StatisticsResult<Value> {
+        fields: UserProjectionDomain, project: @escaping @Sendable (ReaderQuery, ReadingKey?) throws -> Value) async throws -> StatisticsResult<Value> {
         let input = try await statisticsQuery(first: first, last: last, target: target, fields: fields)
         let key: ReadingKey?
         switch input.resolution {
@@ -101,7 +101,7 @@ extension AppDataService {
         }
         let work = Task.detached(priority: Task.currentPriority) {
             try Task.checkCancellation()
-            return try project(input.query, key?.storageKey)
+            return try project(input.query, key)
         }
         let value = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
         try Task.checkCancellation()

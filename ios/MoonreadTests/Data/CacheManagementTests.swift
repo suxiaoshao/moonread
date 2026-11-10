@@ -15,7 +15,7 @@ import XCTest
         }
         let cover = Data("authoritative immutable cover".utf8), id = UUID().uuidString
         try await f.store.saveCover(id: id, bytes: cover)
-        try await position(f, key: first.contentSha256, hint: nil)
+        try await position(f, key: first.fixtureSHA256, hint: nil)
         let before = try await snapshot(f.store)
         try FileManager.default.removeItem(at: f.directory.appendingPathComponent("b.txt"))
         let result = try await f.service.clearRebuildableCaches()
@@ -25,7 +25,7 @@ import XCTest
         let after = try await snapshot(f.store), retainedCover = try await f.store.cover(id)
         XCTAssertEqual(before, after); XCTAssertEqual(retainedCover, cover)
         XCTAssertEqual(try Data(contentsOf: f.directory.appendingPathComponent("a.txt")), a)
-        let sources = try f.core.sourceFilesForSha(sha: first.contentSha256)
+        let sources = try f.core.sourceFilesForSha(sha: first.fixtureSHA256)
         XCTAssertEqual(sources.count, 1, "Eviction keeps the index identity and projected progress")
     }
 }

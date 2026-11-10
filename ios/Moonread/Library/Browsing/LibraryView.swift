@@ -168,7 +168,7 @@ private struct ContinueReadingRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 16) {
-                BookCoverView(title: entry.title, compact: true, cover: entry.metadata?.cover, contentSHA256: entry.contentSha256, author: entry.metadata?.author).frame(width: 60, height: 84)
+                BookCoverView(title: entry.title, compact: true, cover: entry.metadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.metadata?.author).frame(width: 60, height: 84)
                     .overlay { LibraryFileAvailability(entry: entry, compact: true) }
                 VStack(alignment: .leading, spacing: 8) {
                     Text(verbatim: entry.title).font(.title3.weight(.semibold)).foregroundStyle(Color(uiColor: theme.ink)).lineLimit(2)
@@ -200,7 +200,7 @@ struct RecentBookRow: View {
     var body: some View {
         Button { model.open(entry) } label: {
             HStack(spacing: 15) {
-                BookCoverView(title: entry.title, compact: true, cover: entry.metadata?.cover, contentSHA256: entry.contentSha256, author: entry.metadata?.author).frame(width: 44, height: 62)
+                BookCoverView(title: entry.title, compact: true, cover: entry.metadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.metadata?.author).frame(width: 44, height: 62)
                 VStack(alignment: .leading, spacing: 7) {
                     Text(verbatim: entry.title).font(.body.weight(.medium)).foregroundStyle(Color(uiColor: theme.ink)).lineLimit(1)
                     HStack {
@@ -228,7 +228,7 @@ private struct RecentCoverTile<Actions: View>: View {
     var body: some View {
         Menu { actions } label: {
             VStack(alignment: .leading, spacing: LayoutTokens.compact) {
-                BookCoverView(title: entry.title, cover: entry.metadata?.cover, contentSHA256: entry.contentSha256, author: entry.metadata?.author).aspectRatio(0.7, contentMode: .fit)
+                BookCoverView(title: entry.title, cover: entry.metadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.metadata?.author).aspectRatio(0.7, contentMode: .fit)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: entry.title).font(.subheadline.weight(.medium))
                         .foregroundStyle(Color(uiColor: theme.ink)).lineLimit(2, reservesSpace: true)

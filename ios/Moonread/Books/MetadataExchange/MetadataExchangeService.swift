@@ -14,7 +14,7 @@ extension AppDataService {
         var skipped: [MetadataSkippedFile] = []
         for entry in entries where !entry.directory {
             try Task.checkCancellation()
-            guard let sha = entry.contentSha256, (try? parseSha256(value: sha)) != nil else { skipped.append(.init(id: entry.id, shelf: names[entry.shelfId] ?? "", path: entry.relativePath)); continue }
+            guard let sha = entry.readingIdentity?.formalSHA256 else { skipped.append(.init(id: entry.id, shelf: names[entry.shelfId] ?? "", path: entry.relativePath)); continue }
             grouped[sha, default: []].append(entry)
         }
         await progress(0, grouped.count)

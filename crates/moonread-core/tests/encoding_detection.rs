@@ -116,7 +116,12 @@ fn frozen_corpus_detects_and_decodes_identically_through_both_import_paths() {
             "{} direct",
             sample.id
         );
-        assert_eq!(book.content_sha256, expected_sha, "{} SHA", sample.id);
+        assert_eq!(
+            book.reading_key.formal_sha().unwrap(),
+            expected_sha,
+            "{} SHA",
+            sample.id
+        );
 
         let stream = ReaderCore::new(root.path().join("stream").to_string_lossy().into()).unwrap();
         let token = stream.create_import(sample.id.clone()).unwrap();
@@ -147,7 +152,8 @@ fn frozen_corpus_detects_and_decodes_identically_through_both_import_paths() {
             sample.id
         );
         assert_eq!(
-            book.content_sha256, expected_sha,
+            book.reading_key.formal_sha().unwrap(),
+            expected_sha,
             "{} progressive SHA",
             sample.id
         );

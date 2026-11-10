@@ -9,6 +9,31 @@ pub enum ReadingKey {
     Formal { sha256: String },
     Pending { book_id: String },
 }
+impl ReadingKey {
+    pub fn formal_sha(&self) -> Option<&str> {
+        match self {
+            Self::Formal { sha256 } => Some(sha256),
+            Self::Pending { .. } => None,
+        }
+    }
+}
+
+pub(crate) fn reading_key_column(
+    row: &rusqlite::Row<'_>,
+    index: usize,
+) -> rusqlite::Result<Option<ReadingKey>> {
+    row.get::<_, Option<String>>(index)?
+        .map(|value| {
+            parse_reading_key(value).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    index,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })
+        })
+        .transpose()
+}
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct ResolvedBookIdentity {
     pub key: ReadingKey,
@@ -426,7 +451,7 @@ mod tests {
         );
         // A complete cached body also supplies its length without a file link.
         assert_eq!(
-            core.reading_data_percentage(old.content_sha256.clone(), 0)
+            core.reading_data_percentage(old.reading_key.formal_sha().unwrap().to_owned(), 0)
                 .unwrap(),
             Some(0.0)
         );
@@ -490,7 +515,7 @@ mod tests {
         assert_eq!(
             resolutions[0].effective,
             ReadingKey::Formal {
-                sha256: old.content_sha256.clone()
+                sha256: old.reading_key.formal_sha().unwrap().to_owned()
             }
         );
         assert_eq!(resolutions[1].original, resolutions[1].effective);
@@ -537,7 +562,7 @@ mod tests {
         let resolved = core.resolve_book_identity(alias.clone()).unwrap();
         let scope = core
             .reading_scope_keys(ReadingKey::Formal {
-                sha256: old.content_sha256.clone(),
+                sha256: old.reading_key.formal_sha().unwrap().to_owned(),
             })
             .unwrap();
         assert!(scope.contains(&ReadingKey::Pending { book_id: alias }));
@@ -549,7 +574,7 @@ mod tests {
         assert_eq!(
             resolved.key,
             ReadingKey::Formal {
-                sha256: old.content_sha256
+                sha256: old.reading_key.formal_sha().unwrap().to_owned()
             }
         );
     }

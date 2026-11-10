@@ -128,7 +128,8 @@ extension AppDataService {
                 if raw != effective, selected.contains(effective) { return try parseReadingKey(value: raw) }
                 return nil
             }
-            guard let detail = try await queryAttempt(.directoryDetails(keys + aliases),
+            let detailKeys = (keys + aliases).sorted { $0.storageKey < $1.storageKey }
+            guard let detail = try await queryAttempt(.directoryDetails(detailKeys),
                 options: .init(scope: "directory-details"), diagnostic: nil,
                 directoryActivity: index.query) else { return nil }
             let entries = try detail.query.libraryEntries(shelfId: location.shelfID, parentPath: location.path, sort: sort)
@@ -138,7 +139,7 @@ extension AppDataService {
             guard entries.allSatisfy({ entry in
                 (entry.readingIdentity.map(loaded.contains) ?? true)
                     && (entry.folderRow?.coverPreviews.allSatisfy { preview in
-                        preview.contentSha256.map { loaded.contains(.formal(sha256: $0)) } ?? true
+                        preview.readingKey.map(loaded.contains) ?? true
                     } ?? true)
             }) else {
                 // Evict a cached activity snapshot if a changed alias caused

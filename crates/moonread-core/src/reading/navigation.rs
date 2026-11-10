@@ -289,8 +289,7 @@ impl ChapterRebuild {
         let original = state.book.clone();
         let tx = state.db.transaction()?;
         let current = require_complete(&tx, &original.id)?;
-        if current.content_sha256 != original.content_sha256
-            || current.byte_count != original.byte_count
+        if current.reading_key != original.reading_key || current.byte_count != original.byte_count
         {
             return Err(ReaderError::SourceChanged);
         }

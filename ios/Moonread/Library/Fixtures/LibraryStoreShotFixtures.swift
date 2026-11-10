@@ -81,12 +81,12 @@ extension AppDataService {
                     try await savePosition(bookID: book.id, offset: offset)
                     if scene == .continuation {
                         let ahead = original.range(of: f.mainChapters[2])!.lowerBound
-                        let winner = PositionValue(content_key: book.contentSha256,
+                        let winner = PositionValue(content_key: book.readingKey.storageKey,
                                                    offset: UInt64(original[..<ahead].utf8.count))
                         // Same persisted candidate path as sync, without changing
                         // this device's just-written local resume baseline.
                         let json = String(decoding: try JSONEncoder().encode(winner), as: UTF8.self)
-                        try await userStore().put("position/" + book.contentSha256, value: json, device: "store-shot-other-device")
+                        try await userStore().put("position/" + book.readingKey.storageKey, value: json, device: "store-shot-other-device")
                         dataChanged()
                     }
                     if scene == .statistics { try await createStoreShotStatistics(bookID: book.id) }
@@ -144,9 +144,10 @@ extension AppDataService {
         guard let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: SystemReadingSnapshotFile.groupIdentifier) else {
             throw LibraryFileError.invalidDestination
         }
-        let id = try SystemReadingBookID(sha: book.contentSha256).rawValue
+        guard let sha = book.readingKey.formalSHA256 else { throw ReaderError.NotFound }
+        let id = try SystemReadingBookID(sha: sha).rawValue
         let query = try await readingQuery(.catalogue(.all), options: .init(scope: "store-shot-widget", sparseCatalogue: true))
-        guard let projected = try query.systemReadingCatalogue().first(where: { $0.contentSha256 == book.contentSha256 }) else { throw ReaderError.NotFound }
+        guard let projected = try query.systemReadingCatalogue().first(where: { $0.contentSha256 == sha }) else { throw ReaderError.NotFound }
         let entry = SystemReadingSnapshot.Book(id: id, title: book.title, author: fixture.author, tags: [],
             availability: .available, sourceCount: 1, naturalOrdinal: 0, progress: projected.percentage,
             chapterLabel: projected.chapterTitle, recentRank: 0, allowsAutomaticExposure: true)

@@ -435,7 +435,7 @@ struct AISourcePreview: View {
                 let sha = source.book.sha
                 let id = try await reader.aiBookID(sha: sha)
                 let snapshot = try await reader.snapshot(id)
-                guard snapshot.book.contentSha256 == sha else { throw AIToolError("stale_reference") }
+                guard snapshot.book.readingKey.formalSHA256 == sha else { throw AIToolError("stale_reference") }
                 // Inspect the exact, bounded, SHA-keyed source; never write reading position/statistics.
                 guard source.end - source.start <= 65_536 else { throw AIToolError("resource_limit") }
                 let range = try await reader.textRange(id, start: source.start, end: source.end)

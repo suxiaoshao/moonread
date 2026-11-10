@@ -10,7 +10,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
       + String(repeating: "b", count: 512 * 1024) + "\n后续命中🌙\n"
     let (root, _, book, _, tools) = try await fixture(text: text)
     defer { try? FileManager.default.removeItem(at: root) }
-    let ref = JSONValue.string(AIReadingTools.bookRef(book.contentSha256))
+    let ref = JSONValue.string(AIReadingTools.bookRef(book.fixtureSHA256))
     let result = try await invoke(tools, "rg", ["bookRefs": .array([ref]), "query": .string("后续命中")])
     let data = try XCTUnwrap(result.object["data"])
     let hits = try XCTUnwrap(data.object["hits"]?.array)
@@ -40,7 +40,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
   func testAllTenToolsAndCorrectedSearchUTF8AndNoReadingSideEffects() async throws {
     let (root, reader, book, _, tools) = try await fixture(paragraphs: 3)
     defer { try? FileManager.default.removeItem(at: root) }
-    let ref = JSONValue.string(AIReadingTools.bookRef(book.contentSha256))
+    let ref = JSONValue.string(AIReadingTools.bookRef(book.fixtureSHA256))
     let before = try await reader.book(book.id)
     let result = try await invoke(tools, "read", ["bookRef": ref, "maxBytes": .number(32)])
     XCTAssertEqual(result.object["status"], .string("ok"))
@@ -58,7 +58,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
   func testUnknownFieldsAndConflictingAnnotationsDoNotPickWinner() async throws {
     let (root, _, book, store, tools) = try await fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let ref = JSONValue.string(AIReadingTools.bookRef(book.contentSha256))
+    let ref = JSONValue.string(AIReadingTools.bookRef(book.fixtureSHA256))
     let tool = tools.definitions().first { $0.name == "read" }!
     let invalidSchema = await tool.sdkTool.inputSchema.resolve().validate([
       "bookRef": ref.string!, "path": "/tmp/file",
@@ -70,8 +70,8 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     let b = AnnotationCandidate(
       id: "b", ancestors: [], content: .init(start: 0, end: 12, excerpt: "第一章 月", note: "乙"),
       created: 2, bookmark: false)
-    try await store.receiveFixture(key: book.contentSha256, mark: "m", candidate: a)
-    try await store.receiveFixture(key: book.contentSha256, mark: "m", candidate: b)
+    try await store.receiveFixture(key: book.fixtureSHA256, mark: "m", candidate: a)
+    try await store.receiveFixture(key: book.fixtureSHA256, mark: "m", candidate: b)
     let result = try await invoke(
       tools, "get_mark", ["bookRef": ref, "markRef": .string(AIReadingTools.ref("mark", "m"))])
     XCTAssertEqual(result.object["data"]?.object["hasConflict"], .bool(true))
@@ -81,7 +81,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
   func testReadLineBudgetContinuesAcrossToolInstances() async throws {
     let (root, reader, book, users, _) = try await fixture(paragraphs: 3)
     defer { try? FileManager.default.removeItem(at: root) }
-    let ref = JSONValue.string(AIReadingTools.bookRef(book.contentSha256))
+    let ref = JSONValue.string(AIReadingTools.bookRef(book.fixtureSHA256))
     let tools = AIReadingTools(reader: reader, lineLimit: 2)
     let first = try await invoke(tools, "read", ["bookRef": ref])
     let prefix = try XCTUnwrap(first.object["data"]?.object["text"]?.string)
@@ -99,7 +99,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     let candidate = AnnotationCandidate(
       id: "note-page", ancestors: [], content: .init(start: 0, end: 9, excerpt: "第一章", note: note),
       created: 1, bookmark: false)
-    try await users.receiveFixture(key: book.contentSha256, mark: "paged", candidate: candidate)
+    try await users.receiveFixture(key: book.fixtureSHA256, mark: "paged", candidate: candidate)
     let firstNote = try await invoke(
       tools, "get_mark",
       [
@@ -136,7 +136,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
     let (one, two) = try await (first, second)
     XCTAssertEqual(one.id, two.id)
     let current = try await reader.snapshot(one.id)
-    XCTAssertEqual(current.book.contentSha256, book.contentSha256)
+    XCTAssertEqual(current.book.fixtureSHA256, book.fixtureSHA256)
     XCTAssertEqual(current.book.positionUtf8, 0)
     let source = await reader.readingSourceIDs[one.id]
     XCTAssertNil(source)
@@ -148,7 +148,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
   func testRecordedEmptyReferencesAreRejectedBySDKAndNullMeansAbsent() async throws {
     let (root, reader, book, _, tools) = try await fixture(paragraphs: 1)
     defer { try? FileManager.default.removeItem(at: root) }
-    let ref = JSONValue.string(AIReadingTools.bookRef(book.contentSha256))
+    let ref = JSONValue.string(AIReadingTools.bookRef(book.fixtureSHA256))
     let before = try await reader.book(book.id)
     do {
       _ = try await invoke(tools, "get_book", ["bookRef": ref, "fileRef": .string("")])
@@ -166,7 +166,7 @@ final class AIReadingToolsTests: AIReadingToolsFixture {
   func testSearchCursorAcceptsChangedPageSizeButRejectsChangedQuery() async throws {
     let (root, reader, book, _, tools) = try await fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let ref = JSONValue.string(AIReadingTools.bookRef(book.contentSha256))
+    let ref = JSONValue.string(AIReadingTools.bookRef(book.fixtureSHA256))
     let first = try await invoke(
       tools, "rg", ["bookRefs": .array([ref]), "query": .string("甲"), "maxHits": .number(2)])
     let cursor = try XCTUnwrap(first.object["page"]?.object["nextCursor"]?.string)

@@ -42,7 +42,7 @@ struct StatisticsView: View {
         return sortByDuration ? books.sorted {
             if $0.durationMs != $1.durationMs { return $0.durationMs > $1.durationMs }
             if $0.lastFormalMs != $1.lastFormalMs { return $0.lastFormalMs > $1.lastFormalMs }
-            return $0.contentKey < $1.contentKey
+            return $0.contentKey.storageKey < $1.contentKey.storageKey
         } : books
     }
     private var total: UInt64 { statisticsState.overview?.totalDurationMs ?? 0 }

@@ -206,11 +206,11 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     let firstPath = model.path
     model.open(first)
     XCTAssertEqual(model.path, firstPath, "A repeat tap must not push another reader")
-    model.open(next, expectedContentSHA: book.contentSha256)
+    model.open(next, expectedContentSHA: book.fixtureSHA256)
     XCTAssertEqual(model.path.count, 1, "A later tap must replace the in-flight destination")
     guard case .reader(let opening) = model.path.last else { return XCTFail("Reader route was not submitted synchronously") }
     XCTAssertEqual(opening.target, .source(next.source))
-    XCTAssertEqual(opening.expectedContentSHA, book.contentSha256)
+    XCTAssertEqual(opening.expectedContentSHA, book.fixtureSHA256)
 
     let entered = expectation(description: "source requested by the destination")
     let gate = SourceReadinessGate(entered: entered)

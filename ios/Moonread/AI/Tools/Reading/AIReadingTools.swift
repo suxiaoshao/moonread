@@ -234,7 +234,8 @@ actor AIReadingTools {
       switch policy {
       case .prepare:
         let lease = try await reader.aiPrepare(source.source)
-        contentSHA = try parseSha256(value: await reader.snapshot(lease.id).book.contentSha256)
+        guard let sha = try await reader.snapshot(lease.id).book.readingKey.formalSHA256 else { throw AIToolError("needs_preparation") }
+        contentSHA = sha
       case .existingOnly:
         contentSHA = try source.metadata.map { try parseSha256(value: $0.sha) }
       }
@@ -594,7 +595,7 @@ actor AIReadingTools {
       items = overview.books.map {
         .init(
           durationMs: $0.durationMs,
-          bookRef: (try? parseSha256(value: $0.contentKey)) != nil ? Self.bookRef($0.contentKey) : nil, title: $0.title,
+          bookRef: $0.contentKey.formalSHA256.map(Self.bookRef), title: $0.title,
           firstReadAt: timestamp($0.firstReadMs), lastReadAt: timestamp($0.lastReadMs),
           readingDays: $0.readingDays)
       }
@@ -602,7 +603,7 @@ actor AIReadingTools {
       items = try await reader.activities(first: firstDay, last: lastDay, book: key).map {
         .init(
           durationMs: UInt64(max(0, $0.endedMs - $0.startedMs)),
-          bookRef: (try? parseSha256(value: $0.contentKey)) != nil ? Self.bookRef($0.contentKey) : nil, title: $0.title,
+          bookRef: $0.contentKey.formalSHA256.map(Self.bookRef), title: $0.title,
           sessionRef: Self.ref("session", $0.id), startedAt: timestamp($0.startedMs),
           endedAt: timestamp($0.endedMs), recordedDate: date($0.localDay),
           utcOffsetSeconds: $0.utcOffsetSeconds, preview: $0.preview)

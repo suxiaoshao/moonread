@@ -156,7 +156,7 @@ final class BookCoverUserDataTests: UserDataFixture {
       let bytes = try Data(contentsOf: draft)
       await service.discardCoverDraft(cover)
       try await store.put(
-        "metadata/\(book.contentSha256)/cover",
+        "metadata/\(book.fixtureSHA256)/cover",
         value: String(
           decoding: JSONSerialization.data(withJSONObject: [
             "id": cover.id, "sha256": cover.sha256, "extension": cover.extension,

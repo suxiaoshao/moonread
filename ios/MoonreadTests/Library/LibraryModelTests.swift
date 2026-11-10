@@ -181,7 +181,7 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
     let attempts = QueryAttemptCounter()
     await service.queryFixture { _, phase in
       if phase == .built, await attempts.next() <= 3 {
-        try await formal.put("metadata/" + book.contentSha256 + "/author", value: "\"\(UUID().uuidString)\"", device: "fixture")
+        try await formal.put("metadata/" + book.fixtureSHA256 + "/author", value: "\"\(UUID().uuidString)\"", device: "fixture")
       }
     }
     let loaded = await model.load()
@@ -192,7 +192,7 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
     await service.queryFixture { _, phase in
       if phase == .built, await refreshAttempts.next() <= 3 {
         await gate.wait()
-        try await formal.put("metadata/" + book.contentSha256 + "/author", value: "\"Updated\"", device: "fixture")
+        try await formal.put("metadata/" + book.fixtureSHA256 + "/author", value: "\"Updated\"", device: "fixture")
       }
     }
     let refresh = Task { await model.reloadBooks() }
@@ -279,8 +279,8 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
       try await service.savePosition(bookID: replacement.id, offset: 6)
       await model.reloadBook(.source(old.source))
       XCTAssertEqual(model.recents.filter { $0.id == old.id }.count, 1)
-      XCTAssertFalse(model.recents.contains { $0.readingKey == book.contentSha256 })
-      XCTAssertEqual(model.recents.first?.readingKey, replacement.contentSha256)
+      XCTAssertFalse(model.recents.contains { $0.readingKey == book.fixtureSHA256 })
+      XCTAssertEqual(model.recents.first?.readingKey, replacement.fixtureSHA256)
       XCTAssertEqual(model.recents.first?.positionUtf8, 6)
 
     }

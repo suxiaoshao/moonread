@@ -2,9 +2,10 @@
 //! reading records remain independently keyed by the normalized text hash.
 pub(crate) mod full_index;
 
+use crate::identity::content::reading_key_column;
 use crate::{ReaderCore, ReaderError, Result, SourceContentKey, valid_source_key};
 use rusqlite::{Connection, params};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 
 // One copy-selection order, shared by the full catalogue and scoped recents.
 pub(crate) const PREFERRED_SOURCE_ORDER: &str = "COALESCE(p.preferred_file_id=f.id,0) DESC,f.id";
@@ -56,7 +57,7 @@ pub struct SourceFileSnapshot {
 pub struct LibraryCoverPreview {
     pub file_id: String,
     pub name: String,
-    pub content_sha256: Option<String>,
+    pub reading_key: Option<crate::ReadingKey>,
     pub author: Option<String>,
     pub cover: Option<crate::BookCoverAsset>,
 }
@@ -136,10 +137,7 @@ impl BookRow {
     }
 
     pub fn formal_sha(&self) -> Option<&str> {
-        match self.key() {
-            Some(crate::ReadingKey::Formal { sha256 }) => Some(sha256),
-            _ => None,
-        }
+        self.key().and_then(crate::ReadingKey::formal_sha)
     }
 }
 
@@ -225,9 +223,7 @@ fn library_entry_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryEntry> {
             },
         }
     } else {
-        let key = r
-            .get::<_, Option<String>>(18)?
-            .and_then(|s| crate::parse_reading_key(s).ok());
+        let key = reading_key_column(r, 18)?;
         let resolution = if let Some(key) = key {
             crate::BookResolution::Resolved {
                 record: crate::ResolvedBookRecord {
@@ -298,7 +294,7 @@ fn folder_cover_previews(
         .query_map(params![shelf_id, prefix, end], |r| {
             let metadata = metadata_column(r, 2)?;
             Ok(LibraryCoverPreview {
-                content_sha256: r.get(3)?,
+                reading_key: reading_key_column(r, 3)?,
                 author: metadata
                     .as_ref()
                     .map(|m| m.author.clone())
@@ -371,7 +367,7 @@ impl ReaderCore {
              WHERE f.shelf_id=?1 AND f.parent_path=?2",
         )?;
         let mut rows = stmt.query(params![shelf_id, parent_path])?;
-        let mut keys = BTreeSet::new();
+        let mut keys = HashSet::new();
         while let Some(row) = rows.next()? {
             if row.get::<_, bool>(2)? {
                 let shelf: String = row.get(0)?;
@@ -379,13 +375,13 @@ impl ReaderCore {
                 keys.extend(
                     folder_cover_previews(&tx, &shelf, &path)?
                         .into_iter()
-                        .filter_map(|preview| preview.content_sha256),
+                        .filter_map(|preview| preview.reading_key),
                 );
-            } else if let Some(sha) = row.get::<_, Option<String>>(3)? {
-                keys.insert(sha);
+            } else if let Some(key) = reading_key_column(row, 3)? {
+                keys.insert(key);
             }
         }
-        keys.into_iter().map(crate::parse_reading_key).collect()
+        Ok(keys.into_iter().collect())
     }
     pub(crate) fn library_folder_cover_previews(
         &self,

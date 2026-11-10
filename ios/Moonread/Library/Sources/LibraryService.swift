@@ -59,7 +59,6 @@ extension LibraryEntry {
     }
     /// Reading data follows normalized text; unfinished imports retain their pending namespace.
     var readingKey: String? { readingIdentity.map(\.storageKey) }
-    var contentSha256: String? { readingKey }
     var needsDownload: Bool { bookRow?.needsDownload ?? false }
     var positionUtf8: UInt64 { bookRow?.positionUtf8 ?? 0 }
     var byteCount: UInt64 { bookRow?.byteCount ?? 0 }

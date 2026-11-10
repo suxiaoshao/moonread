@@ -39,7 +39,7 @@ fn raw_counted_and_normalized_import_hashes_match_sha010_database_values() {
             .import_book(path.to_string_lossy().into(), name.into())
             .unwrap();
         assert_eq!(
-            imported.content_sha256,
+            imported.reading_key.formal_sha().unwrap(),
             "5aae5263622e54a70db8174765a6171f6e3447f4eedd84c37a773474a62c8be2"
         );
         let control = core.create_import(name.into()).unwrap();
@@ -64,8 +64,13 @@ fn raw_counted_and_normalized_import_hashes_match_sha010_database_values() {
         .unwrap();
         core.finish_import(control).unwrap();
         assert_eq!(
-            core.source_book(key).unwrap().unwrap().content_sha256,
-            imported.content_sha256
+            core.source_book(key)
+                .unwrap()
+                .unwrap()
+                .reading_key
+                .formal_sha()
+                .unwrap(),
+            imported.reading_key.formal_sha().unwrap()
         );
         assert_eq!(std::fs::read(path).unwrap(), bytes);
     }

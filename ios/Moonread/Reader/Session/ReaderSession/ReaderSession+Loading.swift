@@ -33,7 +33,7 @@ extension ReaderSession {
                     autoReading?.updatePreparationFailure(value.preparation.failure.map { ReaderMessages.error($0) })
                     isLoading = value.readablePrefix != .readable && preparing
                     let expected = opening.request?.expectedContentSHA
-                    if let expected, value.preparation.isComplete, value.book.contentSha256 != expected {
+                    if let expected, value.preparation.isComplete, value.book.readingKey.formalSHA256 != expected {
                         throw SystemReadingRouteError.contentChanged
                     }
                     // A system identity must be verified before any prefix is displayed.

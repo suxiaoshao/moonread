@@ -18,7 +18,7 @@ struct ReaderPreparationContent: View {
     }
 
     private var preparationView: some View {
-        ReaderTitlePage(title: session.book?.title ?? route.title, information: information, contentSHA256: session.book?.contentSha256)
+        ReaderTitlePage(title: session.book?.title ?? route.title, information: information, contentSHA256: session.book?.readingKey.formalSHA256)
             .overlay(alignment: .bottom) {
                 VStack(spacing: 12) {
                 if session.preparing && session.error == nil {

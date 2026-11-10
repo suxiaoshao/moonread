@@ -368,7 +368,7 @@ final class ReaderSession {
     func systemReadingBecameReadable() {
         guard !isLeaving, browseOrigin == nil, let openingID = opening.request?.id,
               systemDonationOpening != openingID, let id = readingID,
-              let sha = book?.contentSha256, (try? parseSha256(value: sha)) != nil else { return }
+              case .formal? = book?.readingKey else { return }
         systemDonationOpening = openingID
         Task { await service.systemReadingBegan(id) }
     }

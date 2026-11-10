@@ -16,7 +16,7 @@ import UIKit
         let projection = ReadingText(window, indent: .smart)
         var cursor: UInt64 = 100, spoken = ""
         var segments = 0
-        while let segment = ListeningTextProvider.segment(in: window, at: cursor, paragraphStart: false, indent: .smart, identity: "synthetic") {
+        while let segment = ListeningTextProvider.segment(in: window, at: cursor, paragraphStart: false, indent: .smart, identity: .pending(bookId: "synthetic")) {
             XCTAssertGreaterThan(segment.end, cursor)
             let map = segment.text.coordinates
             for index in 0..<map.length {
@@ -39,7 +39,7 @@ import UIKit
         XCTAssertEqual(a.end, b.text.sourceStart)
         XCTAssertEqual(a.text.text + b.text.text, String(long.prefix((a.text.text + b.text.text).count)))
         XCTAssertNil(a.sourcePoint(NSRange(location: 5000, length: 1)))
-        let emoji = SpeechSegment(text: ReadingText(text: "甲😀 A", sourceStart: 100), contentSHA: nil)
+        let emoji = SpeechSegment(text: ReadingText(text: "甲😀 A", sourceStart: 100), readingKey: nil)
         XCTAssertEqual(emoji.sourceRange(NSRange(location: 1, length: 2)), SourceSpan(startUtf8: 103, endUtf8: 107))
         XCTAssertNil(emoji.sourceRange(NSRange(location: NSNotFound, length: 1)))
         XCTAssertNil(emoji.sourceRange(NSRange(location: 0, length: Int.max)))
@@ -62,10 +62,10 @@ import UIKit
         prepared.expectedFulfillmentCount = 2
         audio.enqueued = { prepared.fulfill() }
         let session = ListeningSession(defaults: defaults, context: {
-            ListeningContext(bookID: "fixture", contentSHA: "identity", generation: 1, offset: offset, indent: .smart, title: "Synthetic", chapter: "One")
+            ListeningContext(bookID: "fixture", readingKey: .pending(bookId: "identity"), generation: 1, offset: offset, indent: .smart, title: "Synthetic", chapter: "One")
         }, read: { context, offset, _ in
             reads += 1
-            return ListeningRead(segment: SpeechSegment(text: ReadingText(text: "原创😀。", sourceStart: offset), contentSHA: context.contentSHA), atEnd: false)
+            return ListeningRead(segment: SpeechSegment(text: ReadingText(text: "原创😀。", sourceStart: offset), readingKey: context.readingKey), atEnd: false)
         }, position: { offset = $0; writes.append($0) }, flush: {}, readabilityChanged: {}, admission: { blocked ? .blocked(.externalPresentation) : .allowed }, willStart: { starts += 1 }, voiceAvailable: { _ in true }, audio: { audio })
         session.start()
         await fulfillment(of: [prepared], timeout: 2)
@@ -286,7 +286,7 @@ import UIKit
         let frame = try await service.frame(book.id, offset: target)
         let accepted = frame.projectionAnchor ?? target
         let manual = book.byteCount - UInt64("。\n".utf8.count)
-        reader.presentContinuation(.init(contentSHA: try XCTUnwrap(reader.book?.contentSha256),
+        reader.presentContinuation(.init(contentSHA: try XCTUnwrap(reader.book?.fixtureSHA256),
             token: "synthetic-continuation", configuration: await service.userCloudConfigurationRevision,
             location: .init(offsetUtf8: target, percentage: 50, chapter: nil)))
 
@@ -388,10 +388,10 @@ import UIKit
         let ready = expectation(description: "queued")
         audio.enqueued = { if audio.items.count == 1 { ready.fulfill() } }
         let session = ListeningSession(defaults: defaults, context: {
-            ListeningContext(bookID: "fixture", contentSHA: sha, generation: 1, offset: 0, indent: .smart, title: "Synthetic", chapter: "One")
+            ListeningContext(bookID: "fixture", readingKey: .pending(bookId: sha), generation: 1, offset: 0, indent: .smart, title: "Synthetic", chapter: "One")
         }, read: { context, offset, _ in
             requests += 1
-            return ListeningRead(segment: SpeechSegment(text: ReadingText(text: "原创。", sourceStart: offset), contentSHA: context.contentSHA), atEnd: false)
+            return ListeningRead(segment: SpeechSegment(text: ReadingText(text: "原创。", sourceStart: offset), readingKey: context.readingKey), atEnd: false)
         }, position: { _ in writes += 1 }, flush: { flushes += 1 }, readabilityChanged: {}, admission: { .allowed }, voiceAvailable: { _ in true }, audio: { audio })
         session.setTimer(15); session.start()
         await fulfillment(of: [ready], timeout: 2)
