@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import UIKit
 
@@ -6,7 +7,7 @@ import UIKit
 final class ReaderBattery {
     private(set) var level: Float = -1
     private(set) var state: UIDevice.BatteryState = .unknown
-    private var observers: [NSObjectProtocol] = []
+    private var observers: [AnyCancellable] = []
     private var wasMonitoring = false
 
     var symbol: String? { Self.symbol(level: level, state: state) }
@@ -35,7 +36,7 @@ final class ReaderBattery {
         UIDevice.current.isBatteryMonitoringEnabled = true
         refresh()
         observers = [UIDevice.batteryLevelDidChangeNotification, UIDevice.batteryStateDidChangeNotification].map { name in
-            NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+            MainActorNotifications.observe(name) { [weak self] in
                 Task { @MainActor [weak self] in self?.refresh() }
             }
         }
@@ -48,7 +49,7 @@ final class ReaderBattery {
 
     func stop() {
         guard !observers.isEmpty else { return }
-        observers.forEach { NotificationCenter.default.removeObserver($0) }
+        observers.forEach { $0.cancel() }
         observers.removeAll()
         UIDevice.current.isBatteryMonitoringEnabled = wasMonitoring
     }

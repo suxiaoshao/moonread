@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Observation
 import AISDKProvider
@@ -170,7 +171,7 @@ struct AISessionSummary: Identifiable {
     private var closedOwners: Set<String> = []
     private var admittedApplications: [String: Set<UUID>] = [:]
     #if DEBUG
-    @ObservationIgnored private var fixtureObserver: NSObjectProtocol?
+    @ObservationIgnored private var fixtureObserver: AnyCancellable?
     @ObservationIgnored var fixtureSeeding = false
     @ObservationIgnored var fixtureSeeded = false
     #endif
@@ -231,7 +232,7 @@ struct AISessionSummary: Identifiable {
     #if DEBUG
     private func installTaskFixturesIfRequested() {
         guard ProcessInfo.processInfo.arguments.contains("--ui-testing"), ProcessInfo.processInfo.arguments.contains("--ui-test-ai-tasks") else { return }
-        fixtureObserver = NotificationCenter.default.addObserver(forName: .aiTaskFixtureReady, object: nil, queue: .main) { [weak self] _ in
+        fixtureObserver = MainActorNotifications.observe(.aiTaskFixtureReady) { [weak self] in
             Task { @MainActor in do { try await self?.seedTaskFixturesIfReady() } catch { self?.error = AIRequestError.message(error) } }
         }
         Task { do { try await seedTaskFixturesIfReady() } catch { self.error = AIRequestError.message(error) } }

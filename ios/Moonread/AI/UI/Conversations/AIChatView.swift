@@ -119,7 +119,7 @@ struct AIChatView: View {
         .onChange(of: conversation.submitting) { _, submitting in
             if !submitting, restoreInputFocus, visible { inputFocused = true; restoreInputFocus = false }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .aiActionFailed)) { notification in
+        .onReceive(MainActorNotifications.publisher(for: .aiActionFailed)) { notification in
             guard visible, let event = notification.object as? AIActionNotice, event.sessionID == conversationID else { return }
             notice = event
         }

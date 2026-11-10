@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import CryptoKit
 
@@ -27,6 +28,7 @@ struct CloudDocumentSnapshot: Sendable {
 @MainActor final class CloudDocumentQuery: NSObject, CloudDiscoverySource {
     static let shared = CloudDocumentQuery()
     private var query: NSMetadataQuery?
+    private var notifications: [AnyCancellable] = []
     private var generation: UUID?
     private var revision = 0
     private var gathered = false
@@ -35,7 +37,7 @@ struct CloudDocumentSnapshot: Sendable {
     private var receive: ((CloudDocumentSnapshot) -> Void)?
     private var failed: ((UUID) -> Void)?
     func stop() {
-        if let query { query.stop(); NotificationCenter.default.removeObserver(self, name: nil, object: query) }
+        query?.stop(); notifications.removeAll()
         query = nil; generation = nil; receive = nil; failed = nil
     }
     func start(generation: UUID, receive: @escaping (CloudDocumentSnapshot) -> Void, failed: @escaping (UUID) -> Void) {
@@ -45,13 +47,16 @@ struct CloudDocumentSnapshot: Sendable {
         let query = NSMetadataQuery(); self.query = query
         query.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope]
         query.predicate = NSPredicate(format: "%K ENDSWITH[c] %@", NSMetadataItemFSNameKey, ".txt")
-        NotificationCenter.default.addObserver(self, selector: #selector(changed(_:)), name: .NSMetadataQueryDidFinishGathering, object: query)
-        NotificationCenter.default.addObserver(self, selector: #selector(changed(_:)), name: .NSMetadataQueryDidUpdate, object: query)
+        for name in [Notification.Name.NSMetadataQueryDidFinishGathering, .NSMetadataQueryDidUpdate] {
+            notifications.append(MainActorNotifications.observe(name, object: query) { [weak self] in
+                self?.changed(query, finishedGathering: name == .NSMetadataQueryDidFinishGathering)
+            })
+        }
         if !query.start() { failed(generation) }
     }
-    @objc private func changed(_ notification: Notification) {
-        guard let query, notification.object as? NSMetadataQuery === query, let generation else { return }
-        if notification.name == .NSMetadataQueryDidFinishGathering { gathered = true }
+    private func changed(_ source: NSMetadataQuery, finishedGathering: Bool) {
+        guard let query, source === query, let generation else { return }
+        if finishedGathering { gathered = true }
         query.disableUpdates()
         let items = query.results.compactMap { result -> CloudDocumentItem? in
             guard let item = result as? NSMetadataItem, let url = item.value(forAttribute: NSMetadataItemURLKey) as? URL else { return nil }
