@@ -159,6 +159,67 @@ import UIKit
         let afterExit = try await service.snapshot(book.id).book.positionUtf8; XCTAssertEqual(afterExit,spoken)
     }
 
+    func testContinueReadingAfterListeningBrowseSavesManualPositionAcrossReopen() async throws {
+        let (root, service, _, _, _, book, _, suite) = try singleBookFixture()
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            UserDefaults.standard.removePersistentDomain(forName: suite)
+        }
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults.set("synthetic", forKey: "Moonread.listening.voice")
+        let target = UInt64("第一章 合成甲\n春风吹过合成的书页。\n".utf8.count)
+        let manual = book.byteCount - UInt64("。\n".utf8.count)
+        // Chapter jumps and search results share browse(); only search adds a focus range.
+        for searchResult in [false, true] {
+            let audio = FakeListeningAudio()
+            let queued = expectation(description: "speech prepared before browsing")
+            audio.enqueued = { if audio.items.count == 1 { queued.fulfill() } }
+            let reader = ReaderSession(service: service, makeListening: { owner in
+                owner.makeListeningSession(defaults: defaults, voiceAvailable: { _ in true }, audio: { audio })
+            })
+            await reader.open(.book(book.id))
+            await awaitState { reader.window != nil }
+            reader.showingCover = false
+            reader.moved(to: 0, settled: true)
+            await reader.flush()
+            let listening = reader.listening
+            listening.start()
+            await fulfillment(of: [queued], timeout: 3)
+            let first = try XCTUnwrap(audio.items.first)
+            audio.event?(.began(first.id))
+            audio.event?(.range(first.id, NSRange(location: 1, length: 1)))
+            let spoken = try XCTUnwrap(listening.safeOffset)
+
+            reader.browse(to: target, end: searchResult ? target + 3 : nil)
+            await reader.navigationTask?.value
+            XCTAssertEqual(listening.phase, .paused)
+            XCTAssertTrue(listening.ownsPosition, "Unconfirmed browsing retains the audio anchor")
+            XCTAssertEqual(reader.anchor, target)
+            await reader.continueReading()
+            XCTAssertFalse(listening.ownsPosition, "Explicit continuation hands position back to manual reading")
+            XCTAssertNil(reader.browseOrigin)
+            XCTAssertNil(reader.focusRange)
+            XCTAssertEqual(reader.anchor, target)
+            let continued = try await service.snapshot(book.id).book.positionUtf8
+            XCTAssertEqual(continued, target, "Continue must immediately save the selected location")
+
+            reader.moved(to: manual, settled: true)
+            await reader.saveTask?.value
+            // Neither a late speech event nor leaving may restore the old audio anchor.
+            audio.event?(.range(first.id, NSRange(location: 0, length: 1)))
+            listening.tick(uptime: 100)
+            let saved = try await service.snapshot(book.id).book.positionUtf8
+            XCTAssertEqual(saved, manual)
+            XCTAssertNotEqual(saved, spoken)
+            await reader.leave().value
+            let reopened = ReaderSession(service: service)
+            await reopened.open(.book(book.id))
+            await awaitState { reopened.window != nil }
+            XCTAssertEqual(reopened.anchor, manual)
+            await reopened.leave().value
+        }
+    }
+
     func testNativeFollowUsesVisiblePagesAndPaintOnlyRanges() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)

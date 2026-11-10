@@ -75,9 +75,9 @@ extension ReaderSession {
             await saveTask?.value
             guard !isLeaving, !navigating, revision == navigationGeneration else { return }
             if listeningOwnsPosition {
-                browseOrigin = nil; browseViewport = nil; navigation = nil; focusRange = nil
-                history = emptyReadingHistory()
-                return
+                // Explicit continuation adopts the browsed location. End audio
+                // without its final checkpoint/reveal replacing that selection.
+                listening.end(savePosition: false, returnToText: false)
             }
             if !cover {
                 try await service.savePosition(bookID: id, offset: position)

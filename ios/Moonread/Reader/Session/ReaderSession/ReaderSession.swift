@@ -217,6 +217,7 @@ final class ReaderSession {
 
     func flush() async {
         saveTask?.cancel()
+        let audioOwnedPosition = listeningOwnsPosition
         let currentAnchor = listeningPosition ?? (autoReading.phase == .idle ? anchor : (viewportAccess.capture()?.offset ?? anchor))
         // Capture before any suspension. Exit clears preview state, and settings
         // writes may finish after the reader's UI has started disappearing.
@@ -225,6 +226,9 @@ final class ReaderSession {
         }
         await settingsStore.flush()
         await saveTask?.value
+        // A paused audio flush may outlive an explicit Continue Reading handoff.
+        // Its captured audio anchor must not overwrite the newly adopted position.
+        guard !audioOwnedPosition || listeningOwnsPosition else { return }
         guard let progress else { return }
         do { try await service.savePosition(bookID: progress.bookID, offset: progress.offset) }
         catch { reportAutomaticReadingError(error) }
