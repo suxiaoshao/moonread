@@ -25,7 +25,7 @@ Nix 不替代 Xcode。Apple SDK、Swift 编译器、模拟器和签名由 Xcode 
 
 `Rust and iOS tests` 是唯一 macOS 执行作业，使用 `xcode-27` arm64 镜像，固定 Xcode 27.1 与镜像已有的 iOS 27.0 iPhone 18 Pro；缺失时失败，不新建模拟器或替换工具链。先要求密钥及适用的工作流检查成功，再恢复缓存、实现当前 Nix 环境、按 Rust 范围串行运行 fmt/nixfmt、工作区全 target/feature Clippy 和 Rust 测试，随后 build-for-testing 并运行完整 MoonreadTests。纯 Swift PR 跳过 Rust 规则检查，但 Xcode 仍每次构建 Rust/绑定；分支 push 和手动运行仍全检查。Cargo 使用 `--locked`，测试关闭并行、固定简中、ad-hoc 签名以保留真实 Keychain 接线，每项最多五分钟。
 
-范围判断失败回退全检查。过渡期保留名为 `Linux checks`、`iOS unit tests` 的两个轻量 Linux gate，只转发合并 Mac 的成功结果；只有已成功确认无 Rust/iOS 改动时才允许 Mac skipped。仓库保护仍要求这两个原名，协调者与用户确认后才改为 `Rust and iOS tests` 并移除旧 gate；main TestFlight 的必需检查合同也须同轮调整。实现本身不修改仓库规则。同一 PR 的新提交取消旧运行。
+范围判断失败回退全检查。`release/1.6` 直接以 `Rust and iOS tests` 作为必需检查；PR 无相关改动时，该作业可按范围跳过。分支 push 的 [TestFlight 来源检查](development.md#testflight-手动-ci)仍要求该作业明确成功。同一 PR 的新提交取消旧运行。
 
 ### 单份 macOS 缓存
 
@@ -49,9 +49,9 @@ Nix 不替代 Xcode。Apple SDK、Swift 编译器、模拟器和签名由 Xcode 
 - Actions 允许范围设为全部允许；仍强制引用固定到完整 SHA，默认 token 只读，不允许其创建或批准 PR。当前工作流只使用 GitHub 官方 Actions 和 Nix 安装 action。
 - 启用 Dependabot 漏洞提醒与安全更新；Cargo 和 Actions 的常规版本更新每周向当前 `release/x.y` 提出 PR，同类兼容更新分组，不自动合并；每次新开版本分支同步修改两个 `target-branch`（当前配置 `release/1.6`）。Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 hotfix 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。Nix 输入由维护者显式更新锁文件并验证。
 
-`main` 的 App 代码始终对应 App Store 最新发布版本。所有改动（含官网、文档和发布基础设施）都进入当前 `release/x.y`，不直接向 `main` 提交开发 PR；`main` 只接收发布后的版本分支合并，正式发布后普通 merge 并打 tag（如 `v1.1`），线上 hotfix 按上述发布流程处理。完整流程见[分支与协作](development.md#分支与协作)。
+`main` 的 App 代码始终对应 App Store 最新发布版本。开发改动（含官网和文档）进入当前 `release/x.y`；正式发布后普通 merge 到 `main` 并打 tag（如 `v1.1`），线上 hotfix 按上述发布流程处理。[TestFlight 工作流](development.md#testflight-手动-ci)只在 `main` 执行，工作流维护先通过 PR 合入 `main`，再同步到当前 release。完整流程见[分支与协作](development.md#分支与协作)。
 
-公开仓库的分支保护已可用并启用：`main` 与 `release/**` 均必须 PR，必需检查为 `Linux checks`、`iOS unit tests`，必须解决所有讨论，禁止强推及删除。不要求其他人的批准，不要求分支在检查前更新至最新基线，不强制线性历史，以允许 release → main 的发布回合；保留现有管理员处理规则。
+公开仓库的分支保护已启用：`main` 与 `release/**` 均必须通过 PR 和目标分支的必需检查，解决所有讨论，禁止强推及删除。`release/1.6` 要求 `Rust and iOS tests`；`main` 和旧 release 分支仍要求 `Linux checks` 和 `iOS unit tests`。不要求其他人的批准，不要求分支在检查前更新至最新基线，不强制线性历史，以允许 release → main 的发布回合；保留现有管理员处理规则。
 
 ## 源码与公开边界
 

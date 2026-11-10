@@ -374,37 +374,6 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  required-checks:
-    # Temporary forwarding gates retain the existing branch/dispatch contract.
-    # The coordinator changes repository rules before these two names are removed.
-    name: ${{ matrix.check }}
-    needs: [changes, macos]
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-24.04
-    strategy:
-      fail-fast: false
-      matrix:
-        check: [Linux checks, iOS unit tests]
-    steps:
-      - name: Forward the combined Mac result without bypassing scope failures
-        env:
-          MAC_RESULT: ${{ needs.macos.result }}
-          SCOPE_RESULT: ${{ needs.changes.result }}
-          RUST_SCOPE: ${{ needs.changes.outputs.rust }}
-          IOS_SCOPE: ${{ needs.changes.outputs.ios }}
-        run: |
-          python3 - <<'PY'
-          import os
-          result = os.environ['MAC_RESULT']
-          if result == 'success':
-              print('Combined Rust and iOS tests succeeded.')
-          elif (result == 'skipped' and os.environ['SCOPE_RESULT'] == 'success'
-                and os.environ['RUST_SCOPE'] == 'false' and os.environ['IOS_SCOPE'] == 'false'):
-              print('No Rust/iOS inputs changed; combined job was correctly skipped.')
-          else:
-              raise SystemExit('Combined Mac checks did not succeed.')
-          PY
-
   cache-maintenance:
     name: Retain one verified release cache
     needs: [changes, macos]
