@@ -139,6 +139,9 @@ jobs:
     timeout-minutes: 60
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      SWIFTPM_CACHE: build/DerivedData/SwiftPMPackageCache
+      SWIFTPM_WORKSPACE: build/SwiftPM/SourcePackages
+      SWIFTPM_LOCK: ios/Moonread.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
     outputs:
       cache-key: ${{ steps.cache-ready.outputs.key }}
     steps:
@@ -241,6 +244,27 @@ jobs:
           start=$SECONDS
           nix develop --no-update-lock-file -c cargo test --locked --workspace --all-features 2>&1 | tee build/CI/RustTests.log
           printf 'rust_tests\t%s\n' "$((SECONDS - start))" >> build/CI/timings.tsv
+      - name: Resolve the current locked Swift packages
+        run: |
+          # The single DerivedData archive carries the shared repository cache,
+          # not the working copies or workspace state used by this checkout.
+          # Remove the implicit SourcePackages directory from older archives.
+          rm -rf -- build/DerivedData/SourcePackages
+          if [[ -e "$SWIFTPM_WORKSPACE" || -L "$SWIFTPM_WORKSPACE" ]]; then
+            echo 'SwiftPM working copies must start outside the restored cache, in a new directory.' >&2
+            exit 1
+          fi
+          git ls-files --error-unmatch -- "$SWIFTPM_LOCK" >/dev/null
+          start=$SECONDS
+          nix develop --no-update-lock-file -c xcodebuild \
+            -project ios/Moonread.xcodeproj -scheme Moonread \
+            -derivedDataPath build/DerivedData \
+            -packageCachePath "$GITHUB_WORKSPACE/$SWIFTPM_CACHE" \
+            -clonedSourcePackagesDirPath "$GITHUB_WORKSPACE/$SWIFTPM_WORKSPACE" \
+            -onlyUsePackageVersionsFromResolvedFile -resolvePackageDependencies \
+            2>&1 | tee build/CI/SwiftPMResolve.log
+          git diff --exit-code HEAD -- "$SWIFTPM_LOCK"
+          printf 'swiftpm_resolve\t%s\n' "$((SECONDS - start))" >> build/CI/timings.tsv
       - name: Compile current MoonreadTests (never skip a restored build)
         id: ios-build
         env:
@@ -258,6 +282,9 @@ jobs:
             -project ios/Moonread.xcodeproj -scheme Moonread -configuration Debug \
             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
             -derivedDataPath build/DerivedData -showBuildTimingSummary \
+            -packageCachePath "$GITHUB_WORKSPACE/$SWIFTPM_CACHE" \
+            -clonedSourcePackagesDirPath "$GITHUB_WORKSPACE/$SWIFTPM_WORKSPACE" \
+            -onlyUsePackageVersionsFromResolvedFile \
             COMPILATION_CACHE_ENABLE_CACHING=YES COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES \
             "COMPILATION_CACHE_CAS_PATH=$GITHUB_WORKSPACE/build/DerivedData/CompilationCache.noindex" \
             -only-testing:MoonreadTests -parallel-testing-enabled NO \
@@ -266,6 +293,7 @@ jobs:
             -maximum-test-execution-time-allowance 300 \
             CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES "MOONREAD_NIX=$(command -v nix)" build-for-testing \
             2>&1 | tee build/CI/BuildForTesting.log
+          git diff --exit-code HEAD -- "$SWIFTPM_LOCK"
           printf 'build_for_testing\t%s\n' "$((SECONDS - start))" >> build/CI/timings.tsv
           python3 - <<'PY'
           import os, pathlib
@@ -294,12 +322,15 @@ jobs:
           allowed = sizes[os.environ['NIX_INPUTS']] <= 1536 * 1024**2
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('allowed=' + str(allowed).lower() + '\n')
-          # Already included in DerivedData above: report CAS separately without double-counting it.
+          # Already included in DerivedData above: report CAS and SwiftPM without double-counting them.
           cas = pathlib.Path('build/DerivedData/CompilationCache.noindex')
           cas_bytes = int(subprocess.check_output(['du', '-sk', str(cas)], text=True).split()[0]) * 1024 if cas.exists() else 0
+          swiftpm = pathlib.Path(os.environ['SWIFTPM_CACHE'])
+          swiftpm_bytes = int(subprocess.check_output(['du', '-sk', str(swiftpm)], text=True).split()[0]) * 1024 if swiftpm.exists() else 0
           pathlib.Path('build/CI/cache-payload.json').write_text(json.dumps(
               {'expandedBytes': sizes, 'nixInputsWithinBudget': allowed, 'restoredKey': os.environ['MATCHED_KEY'],
-               'compilationCache': {'path': str(cas), 'expandedBytes': cas_bytes, 'includedIn': 'build/DerivedData'}}, indent=2))
+               'compilationCache': {'path': str(cas), 'expandedBytes': cas_bytes, 'includedIn': 'build/DerivedData'},
+               'swiftpmCache': {'path': str(swiftpm), 'expandedBytes': swiftpm_bytes, 'includedIn': 'build/DerivedData'}}, indent=2))
           if not allowed:
               print('::warning::Nix input cache exceeds its 1.5 GiB expanded budget; do not publish this generation.')
           PY
@@ -361,8 +392,11 @@ jobs:
               payload = pathlib.Path('build/CI/cache-payload.json')
               if payload.exists():
                   import json
-                  cas = json.loads(payload.read_text())['compilationCache']
+                  caches = json.loads(payload.read_text())
+                  cas = caches['compilationCache']
                   output.write(f'\nCompilation cache: `{cas["path"]}`, {cas["expandedBytes"]} expanded bytes (included in DerivedData, not an additional cache). Hit/miss remarks are in BuildForTesting.log.\n')
+                  swiftpm = caches['swiftpmCache']
+                  output.write(f'\nSwiftPM package cache: `{swiftpm["path"]}`, {swiftpm["expandedBytes"]} expanded bytes (included in DerivedData). See SwiftPMResolve.log for repository fetches.\n')
               output.write('\nRestore/save durations are the Actions step durations; expanded bytes are in cache-payload.json. Compressed storage bytes are verified by the trusted cleanup job, not inferred from du.\n')
           PY
       - name: Preserve test results and timing evidence
