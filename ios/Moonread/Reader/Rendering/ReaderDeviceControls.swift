@@ -1,3 +1,4 @@
+import Combine
 import UIKit
 
 /// Platform effects are leased only while the reader's scene is active.
@@ -15,7 +16,7 @@ final class ReaderDeviceControls {
     func sceneActive(_ value: Bool) { if value { activate() } else { suspend() } }
     private let lease = UUID()
     private weak var scene: UIWindowScene?
-    private var observers: [NSObjectProtocol] = []
+    private var observers: [AnyCancellable] = []
     private var active = false
     private var automaticReading = false
     var willSuspend: () -> Void = {}
@@ -49,13 +50,13 @@ final class ReaderDeviceControls {
         guard self.scene == nil, let scene else { return }
         self.scene = scene
         let center = NotificationCenter.default
-        observers.append(center.addObserver(forName: UIScene.didActivateNotification, object: scene, queue: .main) { [weak self] _ in
+        observers.append(MainActorNotifications.observe(UIScene.didActivateNotification, object: scene, center: center) { [weak self] in
             Task { @MainActor in self?.activate() }
         })
-        observers.append(center.addObserver(forName: UIScene.willDeactivateNotification, object: scene, queue: .main) { [weak self] _ in
+        observers.append(MainActorNotifications.observe(UIScene.willDeactivateNotification, object: scene, center: center) { [weak self] in
             Task { @MainActor in self?.suspend() }
         })
-        observers.append(center.addObserver(forName: UIScreen.brightnessDidChangeNotification, object: scene.screen, queue: .main) { [weak self] _ in
+        observers.append(MainActorNotifications.observe(UIScreen.brightnessDidChangeNotification, object: scene.screen, center: center) { [weak self] in
             Task { @MainActor in self?.observeBrightness() }
         })
         if scene.activationState == .foregroundActive { activate() }
@@ -63,7 +64,7 @@ final class ReaderDeviceControls {
 
     func stop() {
         suspend()
-        observers.forEach { NotificationCenter.default.removeObserver($0) }
+        observers.forEach { $0.cancel() }
         observers.removeAll()
         scene = nil
     }

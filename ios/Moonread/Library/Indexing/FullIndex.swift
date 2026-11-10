@@ -1,3 +1,4 @@
+import Combine
 import BackgroundTasks
 import os
 import SwiftUI
@@ -134,7 +135,7 @@ final class FullIndexController {
     @ObservationIgnored private var background: BGTask?
     @ObservationIgnored private var continuedID: String?
     @ObservationIgnored private var foreground = true
-    @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private var observers: [AnyCancellable] = []
     @ObservationIgnored private var admissions: [String: [String: IndexInput]] = [:]
     private(set) var currentFile: SourceFileSnapshot?
     private(set) var waitingForReader = false
@@ -181,7 +182,7 @@ final class FullIndexController {
         BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.processingID, using: nil,
             launchHandler: FullIndexSystemCallback.launch { self.attach($0) })
         for name in [Notification.Name.NSProcessInfoPowerStateDidChange, ProcessInfo.thermalStateDidChangeNotification] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { _ in Task { @MainActor in
+            observers.append(MainActorNotifications.observe(name) { Task { @MainActor in
                 if self.constrained { self.pause() } else if self.foreground { self.resume() }
             } })
         }

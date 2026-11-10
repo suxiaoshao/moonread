@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import ImageIO
 import UniformTypeIdentifiers
@@ -266,8 +267,7 @@ actor CoverResourceLoader {
     deinit { release() }
 }
 private final class CoverObservationTokens: @unchecked Sendable {
-    var values: [NSObjectProtocol] = []
-    deinit { for observer in values { NotificationCenter.default.removeObserver(observer) } }
+    var values: [AnyCancellable] = []
 }
 @MainActor @Observable final class CoverImageLoader {
     static let shared = CoverImageLoader()
@@ -290,11 +290,11 @@ private final class CoverObservationTokens: @unchecked Sendable {
     }) {
         self.load = load
         completed.totalCostLimit = 24 * 1024 * 1024; completed.countLimit = 64
-        observers.values.append(NotificationCenter.default.addObserver(forName: .readingContinuationInvalidated, object: nil, queue: nil) { [weak self] _ in
+        observers.values.append(MainActorNotifications.observe(.readingContinuationInvalidated) { [weak self] in
             Task { @MainActor [weak self] in self?.resetScope() }
         })
         for name in [ModelContext.didSave, .NSPersistentStoreRemoteChange, .cloudDataReceived, .bookMetadataChanged] {
-            observers.values.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { @Sendable [weak self] _ in
+            observers.values.append(MainActorNotifications.observe(name) { [weak self] in
                 Task { @MainActor [weak self] in self?.attachmentsChanged() }
             })
         }
