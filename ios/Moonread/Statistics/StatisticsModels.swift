@@ -178,9 +178,8 @@ final class StatisticsModel {
         // Cloud imports already publish statisticsChanged. Do not invalidate for
         // every generic model save, position update, or theme preference change.
         for name in [Notification.Name.statisticsChanged, .statisticsPreferencesChanged, .bookMetadataChanged, .libraryIdentityChanged] {
-            notifications.publisher(for: name).sink { [weak self] _ in
-                if Thread.isMainThread { MainActor.assumeIsolated { self?.invalidate() } }
-                else { Task { @MainActor [weak self] in self?.invalidate() } }
+            MainActorNotifications.observe(name, center: notifications) { [weak self] in
+                self?.invalidate()
             }.store(in: &observations)
         }
     }

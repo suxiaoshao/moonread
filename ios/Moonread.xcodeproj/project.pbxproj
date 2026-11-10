@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		6FE86863DC904E4183EE7017 /* MainActorNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E67FFF06C64902B16D3A2D /* MainActorNotifications.swift */; };
         F15200000000000000000005 /* ReaderBuiltinFonts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F15200000000000000000006; };
         152000000000000000000003 /* ReaderFontPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 152000000000000000000004; };
         152000000000000000000001 /* ReaderFontLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 152000000000000000000002; };
@@ -403,6 +404,7 @@ CA0FCD9B82134E7091B5CD9F /* ModelDirectoryDecoding.swift in Sources */ = {isa = 
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D8E67FFF06C64902B16D3A2D /* MainActorNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainActorNotifications.swift; sourceTree = "<group>"; };
         F15200000000000000000006 /* ReaderBuiltinFonts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderBuiltinFonts.swift"; sourceTree = "<group>"; };
         152000000000000000000004 /* ReaderFontPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderFontPicker.swift"; sourceTree = "<group>"; };
         152000000000000000000002 /* ReaderFontLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderFontLibrary.swift"; sourceTree = "<group>"; };
@@ -794,6 +796,7 @@ D35000000000000000000001,
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		12BD6151DCDE468C8BAEC02A /* Concurrency */ = {isa = PBXGroup; children = (D8E67FFF06C64902B16D3A2D /* MainActorNotifications.swift */,); path = Concurrency; sourceTree = "<group>"; };
 		A50000000000000000000001 = {
 			isa = PBXGroup;
 			children = (
@@ -1052,6 +1055,7 @@ D35000000000000000000001,
 			isa = PBXGroup;
 			children = (
 				BD79BB2926E04FA788D5DBB3 /* ReaderMessages.swift */,
+				12BD6151DCDE468C8BAEC02A /* Concurrency */,
 				8083CE54D16F4728AFD46C1D /* Theme */,
 				6690B829BEF0465DA1786DB9 /* Components */,
 			);
@@ -2091,6 +2095,7 @@ B792EA92E8204EEDB7AA1450,
 				29B55EBD38D34117AE72E079 /* CloudSettingsView.swift in Sources */,
 				DFA135AC4F9846958D6431FB /* CloudStore.swift in Sources */,
 				94D2EEC02FFF4BC08C9C7711 /* ReaderMessages.swift in Sources */,
+				6FE86863DC904E4183EE7017 /* MainActorNotifications.swift in Sources */,
  D41000000000000000000002,
 CA0FCD9B82134E7091B5CD9F,
 79FDB8BF2A464B4CA138DFB4,
@@ -2338,8 +2343,8 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
-                CURRENT_PROJECT_VERSION = 13;
-                MARKETING_VERSION = 1.5;
+                CURRENT_PROJECT_VERSION = 14;
+                MARKETING_VERSION = 1.5.1;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -2389,8 +2394,8 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
-                CURRENT_PROJECT_VERSION = 13;
-                MARKETING_VERSION = 1.5;
+                CURRENT_PROJECT_VERSION = 14;
+                MARKETING_VERSION = 1.5.1;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;

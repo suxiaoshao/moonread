@@ -9,7 +9,7 @@ final class ReaderSettingsCache: @unchecked Sendable {
     init(defaults: UserDefaults) {
         self.defaults = defaults
         value = Result { try defaults.string(forKey: "Moonread.readerSettings").map { try decodeReaderSettings(json: $0) } ?? defaultReaderSettings() }
-        observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: defaults, queue: nil) { [weak self] _ in self?.reload() }
+        observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: defaults, queue: nil) { @Sendable [weak self] _ in self?.reload() }
     }
     deinit { if let observer { NotificationCenter.default.removeObserver(observer) } }
     private func reload() {

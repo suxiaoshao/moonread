@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// File coordination asks iCloud / File Provider to materialize the original.
@@ -66,6 +67,7 @@ final class SourceFileAccess: @unchecked Sendable {
 
 @MainActor final class SourceDownloadProgress: NSObject {
     private let query = NSMetadataQuery()
+    private var notifications: [AnyCancellable] = []
     private let url: URL
     private let report: @Sendable (Double?) -> Void
     private var lastFraction: Double?
@@ -82,16 +84,16 @@ final class SourceFileAccess: @unchecked Sendable {
         query.notificationBatchingInterval = 0.1
         query.operationQueue = .main
         for name in [Notification.Name.NSMetadataQueryDidFinishGathering, .NSMetadataQueryDidUpdate] {
-            NotificationCenter.default.addObserver(self, selector: #selector(changed), name: name, object: query)
+            notifications.append(MainActorNotifications.observe(name, object: query) { [weak self] in self?.changed() })
         }
         query.start()
     }
     func stop() {
         stopped = true
         query.stop()
-        NotificationCenter.default.removeObserver(self)
+        notifications.removeAll()
     }
-    @objc private func changed() {
+    private func changed() {
         guard !stopped else { return }
         query.disableUpdates(); defer { query.enableUpdates() }
         guard let item = (query.results as? [NSMetadataItem])?.first(where: {

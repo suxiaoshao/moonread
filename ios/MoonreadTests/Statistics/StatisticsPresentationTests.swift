@@ -14,6 +14,39 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
   }
 
   @MainActor
+  func testStatisticsNotificationsFromBackgroundReachMainActor() async {
+    let notifications = NotificationCenter()
+    let model = StatisticsModel(notifications: notifications, fetch: { _ in
+      MainActor.assertIsolated()
+      return self.rangeContent(100)
+    })
+    let window = StatisticsWindow(period: .month, date: Date(timeIntervalSince1970: 1_800_000_000))
+    await model.load(window, target: nil)
+    for name in [Notification.Name.statisticsChanged, .statisticsPreferencesChanged, .bookMetadataChanged, .libraryIdentityChanged] {
+      let invalidated = expectation(description: "statistics invalidated on main actor")
+      let delivered = expectation(description: "callback delivered on main actor")
+      let posted = expectation(description: "background post returned")
+      let revision = model.dataRevision
+      withObservationTracking { _ = model.dataRevision } onChange: { invalidated.fulfill() }
+      let token = MainActorNotifications.observe(name, center: notifications) {
+        MainActor.assertIsolated()
+        delivered.fulfill()
+      }
+      DispatchQueue.global().async {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        notifications.post(name: name, object: nil, userInfo: ["sequence": 1])
+        posted.fulfill()
+      }
+      await fulfillment(of: [invalidated, delivered, posted], timeout: 3)
+      XCTAssertEqual(model.dataRevision, revision + 1)
+      XCTAssertNil(model.state(window, target: nil).overview)
+      await model.load(window, target: nil)
+      XCTAssertEqual(model.state(window, target: nil).overview?.totalDurationMs, 100)
+      token.cancel()
+    }
+  }
+
+  @MainActor
   func testStatisticsRangeResultsAreReusedUntilDataChanges() async {
     let notifications = NotificationCenter()
     var reads = 0

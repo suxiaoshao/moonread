@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import UIKit
 import MarkdownView
@@ -154,8 +155,9 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
         streamVisible = false; conversation?.streamDisplay.flush(); replayDisplay?()
         stopStreamClock(); conversation?.streamDisplay.reset()
     }
-    @objc private func streamBackgrounded() { finishStreamPresentation() }
-    @objc private func streamForegrounded() { streamVisible = viewIfLoaded?.window != nil }
+    private var lifecycleNotifications: [AnyCancellable] = []
+    private func streamBackgrounded() { finishStreamPresentation() }
+    private func streamForegrounded() { streamVisible = viewIfLoaded?.window != nil }
     private func startStreamClock() {
         guard streamLink == nil, streamVisible else { return }
         let target = AIStreamFrameTarget(); target.owner = self; streamTarget = target
@@ -218,8 +220,10 @@ final class AIMessageListController: UITableViewController, UIGestureRecognizerD
     override func loadView() { tableView = AIAnchoredTableView(frame: .zero, style: .plain) }
     override func viewDidLoad() {
         super.viewDidLoad()
-        NotificationCenter.default.addObserver(self, selector: #selector(streamBackgrounded), name: UIApplication.didEnterBackgroundNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(streamForegrounded), name: UIApplication.didBecomeActiveNotification, object: nil)
+        lifecycleNotifications = [
+            MainActorNotifications.observe(UIApplication.didEnterBackgroundNotification) { [weak self] in self?.streamBackgrounded() },
+            MainActorNotifications.observe(UIApplication.didBecomeActiveNotification) { [weak self] in self?.streamForegrounded() }
+        ]
         tableView.separatorStyle = .none
         tableView.rowHeight = UITableView.automaticDimension
         tableView.estimatedRowHeight = 80
