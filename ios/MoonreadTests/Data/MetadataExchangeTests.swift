@@ -163,6 +163,44 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         XCTAssertTrue(cancelled.cancelled); XCTAssertEqual(cancelled.remaining.count, 2)
         XCTAssertEqual(cancelled.remaining.first { $0.id == second.contentSha256 }?.cover, existingCover, "An unprocessed book keeps its existing cover")
     }
+    @MainActor func testMetadataImportSkipsRenameWhenSourceWasReplacedAfterPreview() async throws {
+        let (root, service, _, _, _, first, second, suite) = try singleBookFixture()
+        let fm = FileManager.default
+        defer {
+            UserDefaults.standard.removePersistentDomain(forName: suite)
+            try? fm.removeItem(at: root)
+        }
+        let input = root.appendingPathComponent("import.jsonl")
+        let records = [
+            ["v": 1, "content_sha256": first.contentSha256, "title": "Rename Fixture", "author": "Updated A"],
+            ["v": 1, "content_sha256": second.contentSha256, "author": "Updated B"],
+        ] as [[String: Any]]
+        let jsonl = try records.map { String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self) }
+        try jsonl.joined(separator: "\n").write(to: input, atomically: true, encoding: .utf8)
+        var preview = try await service.previewMetadata(input)
+        let book = try XCTUnwrap(preview.books.firstIndex { $0.id == first.contentSha256 })
+        let title = try XCTUnwrap(preview.books[book].fields.firstIndex { $0.field == .title })
+        preview.books[book].fields[title].selected = preview.books[book].fields[title].options[0].id
+        XCTAssertNotNil(preview.books[book].renameName)
+
+        // Replace the physical file and leave the index on its old identity.
+        let source = root.appendingPathComponent("a.txt")
+        let replacement = Data("Replacement fixture bytes.\n".utf8)
+        try replacement.write(to: source, options: .atomic)
+
+        let result = await service.applyMetadata(preview) { _, _ in }
+        let outcome = try XCTUnwrap(result.outcomes.first { $0.id == first.contentSha256 })
+        XCTAssertTrue(outcome.saved)
+        XCTAssertFalse(outcome.renamed)
+        XCTAssertEqual(outcome.message, String(localized: "资料已保存，文件未改名：原文件已变化", table: "MetadataExchange"))
+        XCTAssertEqual(try? Data(contentsOf: source), replacement)
+        XCTAssertFalse(fm.fileExists(atPath: root.appendingPathComponent("Rename Fixture.txt").path))
+        let firstDetails = try await service.details(sha: first.contentSha256)
+        let secondDetails = try await service.details(sha: second.contentSha256)
+        XCTAssertEqual(firstDetails.metadata.author, "Updated A")
+        XCTAssertEqual(secondDetails.metadata.author, "Updated B")
+    }
+
     @MainActor func testExportCountsUnindexedFilesAndRejectsRenameForGlobalDuplicates() async throws {
         let (root, service, core, _, _, first, second, suite) = try singleBookFixture()
         defer { UserDefaults.standard.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }

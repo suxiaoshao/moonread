@@ -545,7 +545,8 @@ extension AppDataService {
         let v = try fresh.resourceValues(forKeys: [.isDirectoryKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey])
         guard v.isDirectory == true || v.isUbiquitousItem != true || v.ubiquitousItemDownloadingStatus == .current else { throw AIToolError("needs_preparation") }
     }
-    nonisolated private static func aiSnapshot(_ url: URL, location: LibraryLocation) throws -> AIFileSnapshot {
+    nonisolated private static func aiSnapshot(_ url: URL, location: LibraryLocation,
+                                               fileHash: (URL) throws -> String = CloudDocumentHandoff.bytesHash) throws -> AIFileSnapshot {
         var status = stat()
         guard url.withUnsafeFileSystemRepresentation({ $0.map { Darwin.lstat($0, &status) } ?? -1 }) == 0,
               [S_IFDIR, S_IFREG].contains(status.st_mode & S_IFMT) else { throw AIToolError("permission_denied") }
@@ -554,7 +555,7 @@ extension AppDataService {
         guard resources.isWritable == true else { throw AIToolError("permission_denied") }
         let directory = status.st_mode & S_IFMT == S_IFDIR
         guard directory || resources.isUbiquitousItem != true || resources.ubiquitousItemDownloadingStatus == .current else { throw AIToolError("needs_preparation") }
-        let hash = directory ? nil : try CloudDocumentHandoff.bytesHash(url)
+        let hash = directory ? nil : try fileHash(url)
         var root = url
         for _ in location.path.split(separator: "/") { root.deleteLastPathComponent() }
         return .init(shelfID: location.shelfID, path: location.path, root: root.resolvingSymlinksInPath().path, directory: directory, hash: hash)
@@ -609,8 +610,63 @@ extension AppDataService {
         try refreshLibraryShelf(location.shelfID)
     }
 
+    private enum RenameValidation {
+        case none
+        case snapshot(AIFileSnapshot)
+        case book(ReadingKey, snapshot: AIFileSnapshot, decoding: String)
+
+        var required: Bool {
+            if case .none = self { return false }
+            return true
+        }
+
+        func validate(_ url: URL) throws {
+            switch self {
+            case .none: break
+            case .snapshot(let expected):
+                try AppDataService.aiValidateSnapshot(url, expected: expected)
+            case .book(let key, let expected, let decoding):
+                let observed = try AppDataService.aiSnapshot(url, location: expected.location) { file in
+                    let identity: SourceTextIdentity
+                    do {
+                        identity = try SourceIdentityProbe().identify(filePath: file.path, decoding: decoding)
+                    } catch let error as ReaderError {
+                        switch error {
+                        case .Decode, .EmptyBook, .BinaryContent, .TextCapacityExceeded, .GraphemeTooLong:
+                            throw ReaderError.SourceChanged
+                        default: throw error
+                        }
+                    }
+                    guard ReadingKey.formal(sha256: identity.contentSha256) == key else {
+                        throw ReaderError.SourceChanged
+                    }
+                    return identity.rawSha256
+                }
+                guard observed == expected else { throw ReaderError.SourceChanged }
+            }
+        }
+    }
+
     func renameLibraryItem(_ entry: LibraryEntry, name: String, replace: Bool, expected: AIFileSnapshot? = nil) throws {
-        try performLibraryMove(entry, to: entry.parent, name: name, replace: replace, renameSnapshot: expected)
+        try performLibraryMove(entry, to: entry.parent, name: name, replace: replace,
+                               renameValidation: expected.map(RenameValidation.snapshot) ?? .none)
+    }
+
+    /// Resolve the live file's decoding by raw bytes; the coordinated move then
+    /// proves both those bytes and the preview's normalized reading identity.
+    func renameLibraryBook(_ entry: LibraryEntry, name: String, expected key: ReadingKey) async throws {
+        guard case .formal = key else { throw ReaderError.SourceChanged }
+        let snapshot = try aiFileSnapshot(entry.location)
+        guard !snapshot.directory, let hash = snapshot.hash else { throw ReaderError.SourceChanged }
+        let decoding = try await resolveSourceDecoding(rawSHA: hash)
+        let current: SourceFileLocation
+        do { current = try textCore().sourceFileLocation(fileId: entry.id) }
+        catch ReaderError.NotFound { throw ReaderError.SourceChanged }
+        guard !current.directory, current.shelfId == entry.shelfId, current.relativePath == entry.relativePath else {
+            throw ReaderError.SourceChanged
+        }
+        try performLibraryMove(entry, to: entry.parent, name: name, replace: false,
+                               renameValidation: .book(key, snapshot: snapshot, decoding: decoding))
     }
 
     func moveLibraryItem(_ entry: LibraryEntry, to destination: LibraryLocation, name: String? = nil, replace: Bool) throws {
@@ -633,7 +689,7 @@ extension AppDataService {
             return .init(id: entry.id, stage: error.stage, message: AIRequestError.message(error.underlying), reason: aiFailureReason(error.underlying))
         } catch { return .init(id: entry.id, stage: .notMoved, message: AIRequestError.message(error), reason: aiFailureReason(error)) }
     }
-    private func performLibraryMove(_ entry: LibraryEntry, to destination: LibraryLocation, name: String? = nil, replace: Bool, check: AIFileMoveCheck? = nil, renameSnapshot: AIFileSnapshot? = nil) throws {
+    private func performLibraryMove(_ entry: LibraryEntry, to destination: LibraryLocation, name: String? = nil, replace: Bool, check: AIFileMoveCheck? = nil, renameValidation: RenameValidation = .none) throws {
         var stage: AIFileExecutionStage = .notMoved
         do {
         let target = try libraryChildPath(parent: destination.path, name: name ?? entry.name)
@@ -646,7 +702,7 @@ extension AppDataService {
         let children = try textCore().sourceFiles(shelfId: entry.shelfId)
         pauseFileImports(Set(children.filter { $0.id == entry.id || $0.relativePath.hasPrefix(entry.relativePath + "/") }.map(\.id)))
         try withLibraryURL(entry.location) { source in
-            if check != nil || renameSnapshot != nil { try Self.requirePreparedFile(source) }
+            if check != nil || renameValidation.required { try Self.requirePreparedFile(source) }
             try withLibraryURL(destination) { parent in
                 let targetURL = parent.appendingPathComponent(name ?? entry.name, isDirectory: entry.directory)
                 guard source.standardizedFileURL != targetURL.standardizedFileURL,
@@ -657,7 +713,7 @@ extension AppDataService {
                     let to = coordinatedParent.appendingPathComponent(name ?? entry.name, isDirectory: entry.directory)
                     result = Result {
                         let fm = FileManager.default
-                        if let renameSnapshot { try Self.aiValidateSnapshot(from, expected: renameSnapshot) }
+                        try renameValidation.validate(from)
                         if let check {
                             try Self.aiValidateSnapshot(from, expected: check.source)
                             try Self.aiValidateSnapshot(from.deletingLastPathComponent(), expected: check.sourceParent)
@@ -695,7 +751,7 @@ extension AppDataService {
         try refreshLibraryShelf(entry.shelfId)
         if destination.shelfID != entry.shelfId { try refreshLibraryShelf(destination.shelfID) }
         } catch {
-            if check != nil || renameSnapshot != nil { throw AIFileExecutionError(stage: stage, underlying: error) }
+            if check != nil || renameValidation.required { throw AIFileExecutionError(stage: stage, underlying: error) }
             throw error
         }
     }

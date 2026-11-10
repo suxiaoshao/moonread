@@ -231,8 +231,7 @@ extension AppDataService {
             if let name = book.renameName, let source = book.source {
                 // Only this explicit file-operation phase touches original bytes. Never download.
                 do {
-                    let snapshot = try aiFileSnapshot(source.location)
-                    try renameLibraryItem(source, name: name, replace: false, expected: snapshot)
+                    try await renameLibraryBook(source, name: name, expected: .formal(sha256: book.id))
                     renamed = true
                 } catch let error as AIFileExecutionError {
                     switch error.stage {
@@ -252,7 +251,10 @@ extension AppDataService {
             return String(localized: "资料已保存，文件未改名：原文件尚未下载；本次不会下载", table: "MetadataExchange")
         }
         if case LibraryFileError.conflict = error { return String(localized: "资料已保存，文件未改名：目标名称已存在", table: "MetadataExchange") }
-        if let error = error as? AIToolError, error.code == "stale_reference" { return String(localized: "资料已保存，文件未改名：原文件已变化", table: "MetadataExchange") }
+        let changed: Bool
+        if case ReaderError.SourceChanged = error { changed = true }
+        else { changed = (error as? AIToolError)?.code == "stale_reference" }
+        if changed { return String(localized: "资料已保存，文件未改名：原文件已变化", table: "MetadataExchange") }
         return String(localized: "资料已保存，文件未改名：原文件不可用、无权限或名称无效", table: "MetadataExchange")
     }
 }
