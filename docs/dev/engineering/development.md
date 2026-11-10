@@ -37,7 +37,7 @@ Nix 管理开发依赖；本机 Xcode 提供 Apple SDK、Clang、链接器、资
 - App Store 发布后，`release/x.y` 通过 PR 以普通 **merge commit** 合回 `main`，保留版本开发历史；发布回合使用普通 merge，不 squash 发布分支；下述已上线 hotfix 回合也使用普通 merge。
 - 线上问题从 `main` 建立 `hotfix/x.y.z`，在该分支修复、打包并提审；App Store 上线后才通过 PR 以普通 merge 回 `main` 并打补丁 tag（如 `v1.1.1`），随后把 `main` 合进当前 `release/x.y`。补丁审核及等待上线期间不提前合回 main，确保 main 的 App 代码始终对应线上版本。
 - PR 合入 `release/x.y` 或 `hotfix` 分支时，GitHub 不会根据 `Closes` 自动关闭 issue。合并后需手动关闭对应 issue，评论注明合入的分支与提交，并把看板状态改为「完成」。
-- `main` 与 `release/**` 必须经过 PR、`Linux checks` 和 `iOS unit tests`，解决所有讨论，禁止强推和删除；维护者决定何时合并，不由工具自动合并。
+- `main` 与 `release/**` 必须经过 PR 并满足目标分支的[必需检查](repository.md#仓库设置)，解决所有讨论，禁止强推和删除；维护者决定何时合并，不由工具自动合并。
 
 发版清单（分支）：
 
@@ -141,7 +141,7 @@ pre-action 复用 `ios/StoreScreenshots/export.py` 展开矩阵、启动导出�
 
 [`TestFlight`](../../../.github/workflows/testflight.yml) 只接受在默认分支 `main` 上的 `workflow_dispatch`，不由 tag、PR 或 push 上传。工作流本身须先通过 PR 合入 main；维护者再同步到当前 release 分支。Actions 中选择 `main`，填写 `source_branch`（仅 `release/x.y` 或 `hotfix/x.y.z`）、`expected_sha`（完整 40 位、等于该分支 HEAD）、`mode`（默认 `verify`）。`upload` 必须另获用户明确授权后才选择；verify 从不上传。
 
-无凭据的 prepare job 检查同一个可信 `ci.yml` 的该 SHA 最新 push run：`Secret scan`、`Workflow syntax`、`Linux checks`、`iOS unit tests` 全部成功，skipped/pending 不放行。签名 job 进入 `testflight` Environment 后再次检查分支 HEAD，检出固定 SHA；上传前再检查一次。所有版本共用 `moonread-testflight` 串行组，不取消正在运行的任务；不要连续排多个发版请求。
+不接触签名凭据的 prepare job 检查同一个可信 `ci.yml` 中该来源分支与 SHA 的最新 push run。该运行必须成功，且 `Secret scan` 和 `Workflow syntax` 必须成功；如果该运行包含 `Rust and iOS tests`，也必须要求它成功；只有不存在该作业时才要求旧版的 `Linux checks` 和 `iOS unit tests` 都成功。每项必需作业必须恰好出现一次，且结果为 `success`；skipped、pending 等状态均不放行。签名 job 进入 `testflight` Environment 后再次检查分支 HEAD，检出固定 SHA；上传前再检查一次。所有版本共用 `moonread-testflight` 串行组，不取消正在运行的任务；不要连续排多个发版请求。
 
 用户在 GitHub **Environment `testflight`** 中自行配置 Secrets：`ASC_API_KEY_BASE64`（ASC Team API Key 的 p8 原字节 Base64）、`ASC_KEY_ID`、`ASC_ISSUER_ID`，以及固定 Apple Development 证书 `IOS_DEVELOPMENT_CERTIFICATE_P12_BASE64` / `IOS_DEVELOPMENT_CERTIFICATE_PASSWORD`（导入临时钥匙串，供自动签名复用，避免每次运行新建开发证书占满额度）；配置非敏感 Variable `APPLE_TEAM_ID`。导入后仅接受临时钥匙串中通过 codesigning 有效性检查、含匹配私钥且 Subject `OU` 等于配置团队的唯一 Apple Development 身份；证书名称括号内是成员标识，不能拿来匹配 Team ID。证书类型、团队或信任链不满足时停止，不自动新建证书，也不修改信任设置。API Key 按已确认自动签名方案使用 Admin 角色。Environment 限制只允许 main 部署，不设审批；不要把签名 Secrets 配到 PR 可访问的仓库环境。代理不在仓库、日志或报告中保存密钥与 p12。未配置或自动签名权限、协议、证书额度不足时停止报告，不自动改走手动签名、不撤销证书或循环申请。GitHub-hosted `xcode-27` 必须提供 Xcode 27.1 / iPhoneOS SDK，否则停止，不自行换工具链。
 
