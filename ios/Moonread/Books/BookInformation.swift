@@ -43,7 +43,7 @@ final class BookInformationModel {
         if let file = target.fileID { entry = try await service.libraryEntry(file) }
         else if let id = target.bookID, !target.fromReader {
             let key: String
-            if let known = target.key { key = known } else { key = try await service.userKey(id) }
+            if let known = target.key { key = known } else { key = try await service.userKey(id).storageKey }
             entry = try await service.libraryEntries(nil).first { $0.readingKey == key && !$0.directory }
         } else { entry = nil }
         let key = entry?.readingKey ?? target.key

@@ -30,7 +30,7 @@ extension AppDataService {
     func details(bookID: String? = nil, sha: String? = nil) async throws -> BookDetails {
         let result: BookDetails
         if let bookID { result = try await bookQuery(bookID).bookDetails(bookId: bookID, contentSha: sha) }
-        else { result = try await effectiveQuery(keys: sha.map { [$0] }).bookDetails(bookId: bookID, contentSha: sha) }
+        else { result = try await effectiveQuery(records: try sha.map { .only([try parseReadingKey(value: $0)]) } ?? .all).bookDetails(bookId: bookID, contentSha: sha) }
         if !result.metadata.sha.isEmpty { try await userStore().requireMetadataReadable(key: result.metadata.sha) }
         return result
     }

@@ -51,9 +51,9 @@ fn scope_tree_and_natural_order_use_only_metadata() {
         .query_snapshot("{}".into())
         .unwrap()
         .library_search_candidates(
-            moonread_core::CatalogueScope {
-                shelf_id: Some("builtin".into()),
-                parent_path: None,
+            moonread_core::CatalogueScope::Shelf {
+                shelf_id: "builtin".into(),
+                parent_path: String::new(),
                 recursive: true,
             },
             true,
@@ -88,9 +88,9 @@ fn scope_tree_and_natural_order_use_only_metadata() {
         .query_snapshot("{}".into())
         .unwrap()
         .library_search_candidates(
-            moonread_core::CatalogueScope {
-                shelf_id: Some("builtin".into()),
-                parent_path: Some("奇幻".into()),
+            moonread_core::CatalogueScope::Shelf {
+                shelf_id: "builtin".into(),
+                parent_path: "奇幻".into(),
                 recursive: true,
             },
             true,
@@ -364,9 +364,9 @@ fn candidate_scope_keeps_indexed_unopened_copies_and_excludes_other_shelves() {
     }]}).to_string()).unwrap();
     let books = query
         .library_search_candidates(
-            moonread_core::CatalogueScope {
-                shelf_id: Some("builtin".into()),
-                parent_path: None,
+            moonread_core::CatalogueScope::Shelf {
+                shelf_id: "builtin".into(),
+                parent_path: String::new(),
                 recursive: true,
             },
             true,

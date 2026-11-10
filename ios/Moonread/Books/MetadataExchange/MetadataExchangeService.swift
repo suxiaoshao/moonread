@@ -9,7 +9,7 @@ extension AppDataService {
         let shelves = try shelves(), names = Dictionary(uniqueKeysWithValues: shelves.map { ($0.id, $0.name) })
         let entries: [LibraryEntry]
         if let shelfID { entries = try query.allLibraryBooks(shelfId: shelfID) }
-        else { entries = try query.librarySearchCandidates(scope: .init(shelfId: nil, parentPath: nil, recursive: true), booksOnly: true).map(\.entry) }
+        else { entries = try query.librarySearchCandidates(scope: .all, booksOnly: true).map(\.entry) }
         var grouped: [String: [LibraryEntry]] = [:]
         var skipped: [MetadataSkippedFile] = []
         for entry in entries where !entry.directory {

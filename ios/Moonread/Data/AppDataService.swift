@@ -295,7 +295,7 @@ actor AppDataService {
     func cacheProtectedBookIDs() -> [String] { Array(Set(readers.keys).union(imports.keys).union(pendingPromotionIDs)) }
     func readingDataIsBusy(_ keys: Set<String>) -> Bool {
         if foregroundHolds.keys.contains(where: { !$0.hasPrefix("book:") }) { return true }
-        return readers.keys.contains { id in (try? userKey(id)).map(keys.contains) ?? true }
+        return readers.keys.contains { id in (try? userKey(id).storageKey).map(keys.contains) ?? true }
     }
     private func holdForeground(_ key: String) {
         foregroundHolds[key, default: 0] += 1
@@ -397,14 +397,14 @@ actor AppDataService {
               !title.contains("\n"), !title.contains("\r"), offset < (try textCore().importStatus(bookId: id).text.byteCount) else { throw ReaderError.InvalidRange }
         guard try textCore().importStatus(bookId: id).phase == .complete else { throw ReaderError.ImportBusy }
         try textCore().validateChapterOffset(bookId: id, offsetUtf8: offset)
-        let key = try userKey(id)
+        let key = try userKey(id).storageKey
         let value = ChapterValue(content_key: key, offset: offset, title: title.trimmingCharacters(in: .whitespaces), level: level, excluded: excluded)
         try await userStore().put("chapter/\(key)/\(offset)", value: String(decoding: JSONEncoder().encode(value), as: UTF8.self), device: userDevice)
         dataChanged()
     }
     func restoreChapterCorrections(_ id: String) async throws {
         let store = try await userStore()
-        for key in try await store.allValues(prefix: "chapter/\(userKey(id))/").keys { try await store.put(key, value: "null", device: userDevice) }
+        for key in try await store.allValues(prefix: "chapter/\(userKey(id).storageKey)/").keys { try await store.put(key, value: "null", device: userDevice) }
         dataChanged()
     }
     func rebuildChapters(_ id: String) throws -> ChapterRebuild { try textCore().rebuildChapters(bookId: id) }
@@ -474,7 +474,7 @@ actor AppDataService {
     typealias ChapterResult = (query: ReaderQuery, outline: ChapterOutline?)
 
     func chapterQuery(_ id: String) async throws -> ReaderQuery {
-        try await readingQuery(.book(id), options: .init(facts: true, scope: "chapters-" + id, fields: .chapter))
+        try await readingQuery(.book(.cached(bookId: id), facts: true), options: .init(scope: "chapters-" + id, fields: .chapter))
     }
     func chapterStructure(_ id: String, reusing previous: ReaderQuery?) async throws -> ChapterResult {
         try await chapterOutline(id, reusing: previous, coverage: false)
@@ -483,7 +483,7 @@ actor AppDataService {
         try await chapterOutline(id, reusing: previous, coverage: true)
     }
     private func chapterOutline(_ id: String, reusing previous: ReaderQuery?, coverage: Bool) async throws -> ChapterResult {
-        let query = try await readingQuery(.book(id), options: .init(facts: coverage,
+        let query = try await readingQuery(.book(.cached(bookId: id), facts: coverage), options: .init(
             scope: (coverage ? "chapters-" : "chapter-structure-") + id, fields: .chapter))
         if query === previous { return (query, nil) }
         let work = Task.detached(priority: Task.currentPriority) {
@@ -504,13 +504,13 @@ actor AppDataService {
     func annotations(_ id: String, start: UInt64, end: UInt64) async throws -> [ReaderMark] { try await userAnnotationRanges(id, start: start, end: end) }
     func bookmarkPositions(_ id: String, start: UInt64, end: UInt64) async throws -> [UInt64] { try await userMarks(id, kind: .bookmark).filter { $0.startUtf8 >= start && $0.startUtf8 < end }.map(\.startUtf8) }
     func toggleBookmark(_ id: String, at offset: UInt64) async throws -> Bool {
-        let key = try userKey(id), quote = try textCore().paragraphRange(bookId: id, offsetUtf8: offset).text
+        let key = try userKey(id).storageKey, quote = try textCore().paragraphRange(bookId: id, offsetUtf8: offset).text
         let result = try await userStore(for: key).bookmark(key: key, id: "bookmark/\(key)/\(offset)", content: AnnotationContent(start: offset, end: offset, excerpt: String(quote.prefix(160)), note: ""))
         dataChanged(); return result
     }
     func ensureBookmark(_ id: String, at offset: UInt64) async throws -> ReaderMark {
         try await promoteUserData(id)
-        let key = try userKey(id), quote = try textCore().paragraphRange(bookId: id, offsetUtf8: offset).text
+        let key = try userKey(id).storageKey, quote = try textCore().paragraphRange(bookId: id, offsetUtf8: offset).text
         let candidate = try await userStore(for: key).ensureBookmark(key: key, id: "bookmark/\(key)/\(offset)", content: .init(start: offset, end: offset, excerpt: String(quote.prefix(160)), note: ""))
         guard let content = candidate.content else { throw ReaderError.InvalidRange }
         dataChanged()

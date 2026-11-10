@@ -68,9 +68,9 @@ extension AppDataService {
     func noteCandidates(_ id: String) async throws -> NoteCandidates {
         try await promoteUserData(id)
         let revision = userCloudConfigurationRevision
-        let key = try userKey(id)
+        let key = try userKey(id).storageKey
         let snapshot = try await userStore(for: key).noteCandidates(key: key)
-        guard revision == userCloudConfigurationRevision, key == (try userKey(id)) else { throw UserDataConflict(candidates: []) }
+        guard revision == userCloudConfigurationRevision, key == (try userKey(id).storageKey) else { throw UserDataConflict(candidates: []) }
         return snapshot
     }
     func noteDocument(_ id: String, ids: Set<String>? = nil) async throws -> NoteDocument {
@@ -118,7 +118,7 @@ extension AppDataService {
     func deleteNoteSelection(_ id: String, expected: NoteCandidates, ids: Set<String>) async throws {
         try await promoteUserData(id)
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
-        let key = try userKey(id)
+        let key = try userKey(id).storageKey
         guard key == expected.key else { throw UserDataConflict(candidates: []) }
         let groups = try expected.checked(ids)
         guard ids == Set(groups.keys) else { throw UserDataConflict(candidates: []) }

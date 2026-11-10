@@ -1,15 +1,33 @@
 import Foundation
 
 extension AppDataService {
+    enum RecordSelection: Equatable, Sendable {
+        case all, only([ReadingKey])
+
+        var storageKeys: [String]? {
+            if case .only(let keys) = self { return keys.map { serializeReadingKey(key: $0) } }
+            return nil
+        }
+    }
+
+    enum FactsSelection: Equatable, Sendable {
+        case none, all, only([ReadingKey])
+
+        var included: Bool { self != .none }
+        var storageKeys: [String]? {
+            if case .only(let keys) = self { return keys.map { serializeReadingKey(key: $0) } }
+            return nil
+        }
+    }
+
     /// Semantic inputs are resolved again after invalidation, never frozen as derived keys.
-    enum UserQuerySource: Sendable {
-        case fixed(keys: [String]?, statisticsBook: String?, statisticsKeys: [String]?)
-        case book(String), file(String)
-        case catalogue(LibraryLocation?, recursive: Bool)
+    enum UserQuerySource: Equatable, Sendable {
+        case fixed(records: RecordSelection, facts: FactsSelection)
+        case book(BookTarget, facts: Bool = false)
+        case catalogue(CatalogueScope)
         case recent(UInt32)
     }
     struct UserQueryOptions: Sendable {
-        var facts = false
         var statisticsRange: ClosedRange<Int64>? = nil
         var positionsOnly = false
         var scope = "batch"
@@ -17,12 +35,14 @@ extension AppDataService {
         var fields: UserProjectionDomain = .reading
     }
     struct UserQuerySelection: Equatable, Sendable {
-        var keys: [String]?
-        var statisticsKeys: [String]?
+        let records: RecordSelection
+        let facts: FactsSelection
+        var resolution: BookResolution? = nil
     }
     struct UserQuerySignature: Equatable {
         let configuration: UUID
         let formalID: UUID?, pendingID: UUID?
+        let source: UserQuerySource
         let selection: UserQuerySelection
         let formalVersion: String, pendingVersion: String
         let generation: UInt64, enabled: Bool
@@ -53,14 +73,14 @@ extension AppDataService {
     #endif
 
     func bookQuery(_ id: String, facts: Bool = false, diagnostic: ReaderOpenTrace? = nil) async throws -> ReaderQuery {
-        try await readingQuery(.book(id), options: .init(facts: facts, scope: "book-" + id,
+        try await readingQuery(.book(.cached(bookId: id), facts: facts), options: .init(scope: "book-" + id,
             fields: [.position, .metadata, .chapter]), diagnostic: diagnostic ?? ReaderOpenDiagnostics.trace(book: id))
     }
-    func effectiveQuery(facts: Bool = false, keys: [String]? = nil, positionsOnly: Bool = false,
-        statisticsBook: String? = nil, statisticsKeys: [String]? = nil, scope: String = "batch",
-        sparseCatalogue: Bool = false, fields: UserProjectionDomain = .reading, diagnostic: ReaderOpenTrace? = nil) async throws -> ReaderQuery {
-        try await readingQuery(.fixed(keys: keys, statisticsBook: statisticsBook, statisticsKeys: statisticsKeys),
-            options: .init(facts: facts, positionsOnly: positionsOnly, scope: scope, sparseCatalogue: sparseCatalogue, fields: fields), diagnostic: diagnostic)
+    func effectiveQuery(records: RecordSelection = .all, facts: FactsSelection = .none,
+        positionsOnly: Bool = false, scope: String = "batch", sparseCatalogue: Bool = false,
+        fields: UserProjectionDomain = .reading, diagnostic: ReaderOpenTrace? = nil) async throws -> ReaderQuery {
+        try await readingQuery(.fixed(records: records, facts: facts),
+            options: .init(positionsOnly: positionsOnly, scope: scope, sparseCatalogue: sparseCatalogue, fields: fields), diagnostic: diagnostic)
     }
     func readingQuery(_ source: UserQuerySource, options: UserQueryOptions, diagnostic: ReaderOpenTrace? = nil) async throws -> ReaderQuery {
         try await readingQueryResult(source, options: options, diagnostic: diagnostic).query
@@ -74,10 +94,10 @@ extension AppDataService {
                 if case let .recent(limit) = source {
                     // The detail scope depends on the index. Validate BOTH after the
                     // detail build, otherwise a new recent book can disappear from this result.
-                    if let index = try await queryAttempt(.fixed(keys: nil, statisticsBook: nil, statisticsKeys: nil),
+                    if let index = try await queryAttempt(.fixed(records: .all, facts: .none),
                         options: .init(positionsOnly: true, scope: "recent-index"), diagnostic: diagnostic) {
-                        let keys = try index.query.recentLibraryEntries(limit: limit).compactMap(\.readingKey)
-                        if let detail = try await queryAttempt(.fixed(keys: keys, statisticsBook: nil, statisticsKeys: nil),
+                        let keys = try index.query.recentLibraryEntries(limit: limit).compactMap(\.readingIdentity)
+                        if let detail = try await queryAttempt(.fixed(records: .only(keys), facts: .none),
                             options: options, diagnostic: diagnostic) { reads = [index, detail] }
                         else { reads = nil }
                     } else { reads = nil }
@@ -106,42 +126,50 @@ extension AppDataService {
             throw error
         }
     }
-    private func querySelection(_ source: UserQuerySource, facts: Bool) throws -> UserQuerySelection {
+    private func querySelection(_ source: UserQuerySource) throws -> UserQuerySelection {
         let core = try textCore()
-        func expand(_ keys: [String]?) throws -> [String]? {
-            try keys.map { values in
-                try Array(Set(values.flatMap { key in
-                    try core.readingScopeKeys(key: parseReadingKey(value: key)).map { serializeReadingKey(key: $0) }
-                })).sorted()
-            }
+        func sorted(_ keys: [ReadingKey]) -> [ReadingKey] {
+            Set(keys).sorted { serializeReadingKey(key: $0) < serializeReadingKey(key: $1) }
+        }
+        func expand(_ keys: [ReadingKey]) throws -> [ReadingKey] {
+            try sorted(keys.flatMap { try core.readingScopeKeys(key: $0) })
         }
         switch source {
-        case let .fixed(keys, book, statisticsKeys):
-            let scope = try book.map { try core.readingScopeKeys(key: parseReadingKey(value: $0)).map { serializeReadingKey(key: $0) } }
-            return try .init(keys: expand(keys ?? scope), statisticsKeys: expand(statisticsKeys ?? scope))
-        case let .book(id):
-            let keys = try core.readingScopeKeys(key: parseReadingKey(value: userKey(id))).map { serializeReadingKey(key: $0) }.sorted()
-            return .init(keys: keys, statisticsKeys: facts ? keys : nil)
-        case let .file(id):
-            let identity = try core.fileIdentity(fileId: id)
-            let keys = (identity.key.map { [$0] } ?? []) + (identity.pendingAlias.map { [$0] } ?? [])
-            return .init(keys: keys.map { serializeReadingKey(key: $0) }.sorted())
-        case let .catalogue(location, recursive):
-            let keys = try core.catalogueContentKeys(scope: catalogueScope(location, recursive: recursive))
-            return .init(keys: keys.map { serializeReadingKey(key: $0) }.sorted())
+        case let .fixed(records, facts):
+            let records: RecordSelection = switch records {
+            case .all: .all
+            case .only(let keys): .only(try expand(keys))
+            }
+            let facts: FactsSelection = switch facts {
+            case .none: .none
+            case .all: .all
+            case .only(let keys): .only(try expand(keys))
+            }
+            return .init(records: records, facts: facts)
+        case let .book(target, facts):
+            let resolution = try core.resolveBookTarget(target: target)
+            let keys: [ReadingKey]
+            switch resolution {
+            case .resolved(let record): keys = sorted([record.key] + record.aliases)
+            case .unidentified, .missing: keys = []
+            }
+            return .init(records: .only(keys), facts: facts ? .only(keys) : .none, resolution: resolution)
+        case let .catalogue(scope):
+            return .init(records: .only(try sorted(core.catalogueContentKeys(scope: scope))), facts: .none)
         case .recent: preconditionFailure("Recent queries prepare their index before details")
         }
     }
     private func querySignature(_ source: UserQuerySource, options: UserQueryOptions,
         formal: UserDataStore, pending: UserDataStore) throws -> UserQuerySignature {
-        let selection = try querySelection(source, facts: options.facts), preferences = statisticsPreferences()
+        let selection = try querySelection(source), preferences = statisticsPreferences()
+        let recordKeys = selection.records.storageKeys, factKeys = selection.facts.storageKeys
         let usesRecents = options.positionsOnly || !options.fields.intersection([.position, .opened]).isEmpty
         let allHidden = usesRecents ? Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []) : []
-        let hidden = selection.keys.map { allHidden.intersection($0) } ?? allHidden
+        let hidden = recordKeys.map { allHidden.intersection($0) } ?? allHidden
         let prefix = "Moonread.preferredFile."
         let preferred: [String: String]
         if !usesRecents { preferred = [:] }
-        else if let keys = selection.keys {
+        else if let keys = recordKeys {
             preferred = keys.reduce(into: [:]) { result, key in
                 if let file = sourceDefaults.string(forKey: prefix + key) { result[key] = file }
             }
@@ -151,12 +179,12 @@ extension AppDataService {
             }
         }
         func version(_ store: UserDataStore) -> String {
-            store.version(keys: selection.keys, positionsOnly: options.positionsOnly, includeFacts: options.facts,
-                statisticsKeys: selection.statisticsKeys, fields: options.fields)
+            store.version(keys: recordKeys, positionsOnly: options.positionsOnly, includeFacts: selection.facts.included,
+                statisticsKeys: factKeys, fields: options.fields)
         }
         return .init(configuration: userCloudConfigurationRevision, formalID: userStoreTask?.id, pendingID: pendingUserStoreTask?.id,
-            selection: selection, formalVersion: version(formal), pendingVersion: version(pending), generation: preferences.generation,
-            enabled: preferences.enabled, statisticsVersion: options.facts ? "\(userCloudConfigurationRevision)-\(userStoreTask?.id.uuidString ?? "")-\(pendingUserStoreTask?.id.uuidString ?? "")-\(selection.statisticsKeys?.joined(separator: ",") ?? "all")-\(formal.version(keys: [], positionsOnly: false, includeFacts: true, statisticsKeys: selection.statisticsKeys, fields: []))-\(pending.version(keys: [], positionsOnly: false, includeFacts: true, statisticsKeys: selection.statisticsKeys, fields: []))-\(preferences.generation)-\(preferences.enabled)" : "", hidden: hidden, preferred: preferred)
+            source: source, selection: selection, formalVersion: version(formal), pendingVersion: version(pending), generation: preferences.generation,
+            enabled: preferences.enabled, statisticsVersion: selection.facts.included ? "\(userCloudConfigurationRevision)-\(userStoreTask?.id.uuidString ?? "")-\(pendingUserStoreTask?.id.uuidString ?? "")-\(factKeys?.joined(separator: ",") ?? "all")-\(formal.version(keys: [], positionsOnly: false, includeFacts: true, statisticsKeys: factKeys, fields: []))-\(pending.version(keys: [], positionsOnly: false, includeFacts: true, statisticsKeys: factKeys, fields: []))-\(preferences.generation)-\(preferences.enabled)" : "", hidden: hidden, preferred: preferred)
     }
     private func queryReadIsValid(_ read: UserQueryRead) throws -> Bool {
         guard read.signature.configuration == userCloudConfigurationRevision,
@@ -186,23 +214,24 @@ extension AppDataService {
             throw error
         }
         let signature = try querySignature(source, options: options, formal: formal, pending: pending)
-        let keys = signature.selection.keys, factKeys = signature.selection.statisticsKeys
+        let selection = signature.selection
+        let keys = selection.records.storageKeys, factKeys = selection.facts.storageKeys
         // Import progress can update a readable prefix during this attempt. It
         // expires a cached query on the NEXT call, but is not a reason to starve
         // the current prefix. Identity/scope changes are validated separately.
-        let progress = if case let .book(id) = source { "-\(readingChangeRevision(id))" } else { "" }
+        let progress = if case let .book(.cached(id), _) = source { "-\(readingChangeRevision(id))" } else { "" }
         let rangeKey = options.statisticsRange.map { "\($0.lowerBound)...\($0.upperBound)" } ?? "full"
-        let cacheKey = options.scope + progress + "-" + rangeKey + "-\(options.facts)-\(options.positionsOnly)-\(factKeys?.joined(separator: ",") ?? "all")-\(options.sparseCatalogue)-\(options.fields.rawValue)-" + (keys?.joined(separator: ",") ?? "all")
+        let cacheKey = options.scope + progress + "-" + rangeKey + "-\(selection.facts.included)-\(options.positionsOnly)-\(factKeys?.joined(separator: ",") ?? "all")-\(options.sparseCatalogue)-\(options.fields.rawValue)-" + (keys?.joined(separator: ",") ?? "all")
         if let cached = queryCache[cacheKey], cached.signature == signature {
             let read = UserQueryRead(source: source, options: options, formal: formal, pending: pending, signature: signature,
                 cacheKey: cacheKey, query: cached.query, identities: cached.identities, statisticsIncomplete: cached.statisticsIncomplete)
             return read
         }
-        let formalJSON = try await formal.projection(generation: signature.generation, enabled: signature.enabled, includeFacts: options.facts,
+        let formalJSON = try await formal.projection(generation: signature.generation, enabled: signature.enabled, includeFacts: selection.facts.included,
             keys: keys, positionsOnly: options.positionsOnly, statisticsKeys: factKeys, fields: options.fields, diagnostic: diagnostic,
             diagnosticScope: "formalProjection", sparseCatalogue: options.sparseCatalogue, statisticsRange: options.statisticsRange)
         try Task.checkCancellation()
-        let pendingJSON = try await pending.projection(generation: signature.generation, enabled: signature.enabled, includeFacts: options.facts,
+        let pendingJSON = try await pending.projection(generation: signature.generation, enabled: signature.enabled, includeFacts: selection.facts.included,
             keys: keys, positionsOnly: options.positionsOnly, statisticsKeys: factKeys, fields: options.fields, diagnostic: diagnostic,
             diagnosticScope: "pendingProjection", sparseCatalogue: options.sparseCatalogue, statisticsRange: options.statisticsRange)
         try Task.checkCancellation()

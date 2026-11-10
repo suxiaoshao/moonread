@@ -305,7 +305,7 @@ final class StatisticsModel {
         switch scope.book {
         case .all: key = nil
         case .content(let value): key = value
-        case .local(let id): key = try await service.userKey(id)
+        case .local(let id): key = try await service.userKey(id).storageKey
         case .unprepared: key = "unprepared"
         }
         if scope.purpose == .activities {

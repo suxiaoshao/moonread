@@ -22,7 +22,7 @@ final class UserDataConflictTests: UserDataFixture {
       try await receivePosition(pending, key: alias, store: f.pending)
       let keys = [sha, alias]
       let expected: UInt64 = formalWins ? 7 : 19
-      let before = try await f.service.effectiveQuery(keys: keys).bookInfo(bookId: f.book.id)
+      let before = try await f.service.effectiveQuery(records: .only(try keys.map { try parseReadingKey(value: $0) })).bookInfo(bookId: f.book.id)
       XCTAssertEqual(before.positionUtf8, expected)
       // Scoped projection must carry the exact token used by the reducer.
       let scoped = try await f.formal.projection(
@@ -35,7 +35,7 @@ final class UserDataConflictTests: UserDataFixture {
       let transfer = try await f.pending.exportPending(key: alias)
       try await f.formal.importPending(transfer, from: alias, to: sha)
       try await f.pending.removePending(key: alias)
-      let after = try await f.service.effectiveQuery(keys: keys).bookInfo(bookId: f.book.id)
+      let after = try await f.service.effectiveQuery(records: .only(try keys.map { try parseReadingKey(value: $0) })).bookInfo(bookId: f.book.id)
       XCTAssertEqual(after.positionUtf8, before.positionUtf8)
       let winner = try await f.formal.positionValues()["position/" + sha]
       XCTAssertEqual(winner?.token, formalWins ? formal.token : pending.token)
@@ -60,7 +60,7 @@ final class UserDataConflictTests: UserDataFixture {
           try await receivePosition(record, key: key, store: f.pending)
         }
         let scopedKeys = reverse ? Array(keys.reversed()) : keys
-        let before = try await f.service.effectiveQuery(keys: scopedKeys).bookInfo(
+        let before = try await f.service.effectiveQuery(records: .only(try scopedKeys.map { try parseReadingKey(value: $0) })).bookInfo(
           bookId: f.book.id)
         XCTAssertEqual(before.positionUtf8, 19, "Only the final SHA winner is loaded by Rust")
         for key in scopedKeys {
@@ -68,7 +68,7 @@ final class UserDataConflictTests: UserDataFixture {
           try await f.formal.importPending(transfer, from: key, to: sha)
           try await f.pending.removePending(key: key)
         }
-        let after = try await f.service.effectiveQuery(keys: [sha]).bookInfo(bookId: f.book.id)
+        let after = try await f.service.effectiveQuery(records: .only([.formal(sha256: sha)])).bookInfo(bookId: f.book.id)
         XCTAssertEqual(after.positionUtf8, before.positionUtf8)
         let winner = try await f.formal.positionValues()["position/" + sha]
         XCTAssertEqual(winner?.token, "z-alias")

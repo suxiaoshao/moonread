@@ -81,9 +81,9 @@ mod status_tests {
             assert_eq!(details.metadata.status, expected);
             let candidates = core
                 .library_search_candidates(
-                    CatalogueScope {
-                        shelf_id: Some("s".into()),
-                        parent_path: None,
+                    CatalogueScope::Shelf {
+                        shelf_id: "s".into(),
+                        parent_path: String::new(),
                         recursive: true,
                     },
                     true,

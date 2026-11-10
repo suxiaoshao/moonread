@@ -125,7 +125,7 @@ extension AppDataService {
         do {
             while let catalog = systemCatalog, catalog.taskID == taskID, !catalog.accountPending, !Task.isCancelled {
                 let configuration = userCloudConfigurationRevision, revision = catalog.revision
-                let query = try await readingQuery(.catalogue(nil, recursive: true), options: .init(scope: "system-catalogue", sparseCatalogue: true))
+                let query = try await readingQuery(.catalogue(.all), options: .init(scope: "system-catalogue", sparseCatalogue: true))
                 let projected = try await Task.detached(priority: .utility) { try query.systemReadingCatalogue() }.value
                 try Task.checkCancellation()
                 guard systemCatalog?.taskID == taskID, userCloudConfigurationRevision == configuration else { return }
@@ -212,7 +212,7 @@ extension AppDataService {
         catch { if systemCatalog?.taskID == taskID { publishSystemCatalogError(error) } }
     }
     func resolveSystemReadingBook(_ id: SystemReadingBookID, automatic: Bool = false) async throws -> LibraryEntry {
-        let query = try await effectiveQuery(keys: [id.sha], scope: "system-open-" + id.sha)
+        let query = try await effectiveQuery(records: .only([.formal(sha256: id.sha)]), scope: "system-open-" + id.sha)
         let sources = try query.systemReadingSources(contentSha256: id.sha)
         guard !sources.isEmpty else { throw SystemReadingRouteError.unavailable }
         if automatic {

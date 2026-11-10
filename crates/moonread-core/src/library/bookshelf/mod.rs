@@ -282,23 +282,18 @@ impl ReaderCore {
         scope: crate::CatalogueScope,
         books_only: bool,
     ) -> Result<Vec<LibrarySearchCandidate>> {
-        if let Some(p) = &scope.parent_path {
+        let (shelf, parent, recursive) = scope.sql_scope();
+        if let Some(p) = parent {
             validate_relative(p, true)?;
         }
         let db = self.read_lock()?;
         let mut values = entries(
             &db,
-            scope.shelf_id.as_deref(),
-            if scope.recursive {
-                None
-            } else {
-                scope.parent_path.as_deref()
-            },
+            shelf,
+            if recursive { None } else { parent },
             books_only,
         )?;
-        if scope.recursive
-            && let Some(parent) = scope.parent_path.filter(|p| !p.is_empty())
-        {
+        if recursive && let Some(parent) = parent.filter(|p| !p.is_empty()) {
             let prefix = format!("{parent}/");
             values.retain(|e| e.relative_path.starts_with(&prefix));
         }

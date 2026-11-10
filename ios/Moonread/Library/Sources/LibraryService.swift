@@ -61,15 +61,15 @@ struct LibraryScanSnapshot: Sendable {
 
 extension AppDataService {
     func libraryEntry(_ id: String) async throws -> LibraryEntry {
-        try await readingQuery(.file(id), options: .init(scope: "file-" + id)).libraryEntry(fileId: id)
+        try await readingQuery(.book(.file(fileId: id)), options: .init(scope: "file-" + id)).libraryEntry(fileId: id)
     }
 
     func catalogueScope(_ location: LibraryLocation?, recursive: Bool) -> CatalogueScope {
-        .init(shelfId: location?.shelfID, parentPath: location?.path, recursive: recursive)
+        location.map { .shelf(shelfId: $0.shelfID, parentPath: $0.path, recursive: recursive) } ?? .all
     }
     func catalogueQuery(_ location: LibraryLocation?, recursive: Bool) async throws -> ReaderQuery {
         // Folder aggregates include descendants even when displaying only children.
-        try await readingQuery(.catalogue(location, recursive: true), options: .init(scope: "catalogue"))
+        try await readingQuery(.catalogue(catalogueScope(location, recursive: true)), options: .init(scope: "catalogue"))
     }
 
     /// Deterministic latency for UI checks; release builds never delay queries.
@@ -266,7 +266,7 @@ extension AppDataService {
     func hideRecent(_ value: String) throws {
         let key: String
         if let parsed = try? parseReadingKey(value: value) { key = serializeReadingKey(key: parsed) }
-        else { key = try userKey(value) }
+        else { key = try userKey(value).storageKey }
         var hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
         hidden.insert(key); sourceDefaults.set(Array(hidden), forKey: "Moonread.hiddenRecent"); dataChanged(); scheduleSystemReadingCatalog(immediate: true)
     }

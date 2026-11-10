@@ -43,13 +43,14 @@ extension AppDataService {
         var facts: [(String, String, String)] = [], pendingFacts: [(String, String, String)] = []
         var leases: [String: UUID] = [:]
         for slice in slices {
-            let key = try userKey(slice.bookId)
+            let identity = try userKey(slice.bookId)
+            let key = identity.storageKey
             leases[key] = localReadingWriteLease(key)
             let book = try await snapshot(slice.bookId).book
             let value: [String: Any] = ["content_key": key, "title": book.title, "device": userDevice,
                 "slice": try JSONSerialization.jsonObject(with: Data(encodeReadingSlice(value: slice).utf8))]
             let fact = (slice.id, key, String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self))
-            switch try parseReadingKey(value: key) { case .pending: pendingFacts.append(fact); case .formal: facts.append(fact) }
+            switch identity { case .pending: pendingFacts.append(fact); case .formal: facts.append(fact) }
         }
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         facts = facts.filter { leases[$0.1] == localReadingWriteLease($0.1) }
@@ -66,8 +67,15 @@ extension AppDataService {
     }
     func statisticsQuery(first: Int64, last: Int64, book: String? = nil, fields: UserProjectionDomain = .metadata, scope: String = "statistics") async throws -> UserQueryOutput {
         guard first <= last else { throw ReaderError.InvalidRange }
-        return try await readingQueryResult(.fixed(keys: nil, statisticsBook: book, statisticsKeys: nil),
-            options: .init(facts: true, statisticsRange: first...last, scope: scope, fields: fields))
+        // Temporary compatibility for the old presentation route; removed
+        // when StatisticsModel consumes BookResolution.
+        if book == "unprepared" {
+            return try await readingQueryResult(.fixed(records: .only([]), facts: .only([])),
+                options: .init(statisticsRange: first...last, scope: scope, fields: fields))
+        }
+        let key = try book.map { try parseReadingKey(value: $0) }
+        return try await readingQueryResult(.fixed(records: key.map { .only([$0]) } ?? .all, facts: key.map { .only([$0]) } ?? .all),
+            options: .init(statisticsRange: first...last, scope: scope, fields: fields))
     }
     func statisticsRead(first: Int64, last: Int64, book: String? = nil) async throws -> StatisticsRead<StatisticsOverview> {
         let input = try await statisticsQuery(first: first, last: last, book: book)

@@ -174,7 +174,7 @@ extension AppDataService {
             let baseline = try await prepareAnnotation(book.id, start: range.startUtf8, end: range.endUtf8)
             _ = try await saveNote(baseline, text: "设备甲的评论")
             if ProcessInfo.processInfo.arguments.contains("--ui-test-annotation-delete-conflict") {
-                let key = try userKey(book.id)
+                let key = try userKey(book.id).storageKey
                 try await userStore(for: key).changeDeletion(baseline.id, baseline: baseline.baselines[baseline.id] ?? [], deleted: true, restoring: nil)
             } else {
                 _ = try await saveNote(baseline, text: "设备乙的评论")

@@ -57,9 +57,9 @@ fn search_candidates_leave_unmatched_folder_covers_unqueried() {
     let before = FOLDER_COVER_QUERIES.with(|count| count.get());
     let candidates = query
         .library_search_candidates(
-            crate::CatalogueScope {
-                shelf_id: Some("s".into()),
-                parent_path: None,
+            crate::CatalogueScope::Shelf {
+                shelf_id: "s".into(),
+                parent_path: String::new(),
                 recursive: true,
             },
             false,

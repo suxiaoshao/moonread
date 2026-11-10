@@ -57,7 +57,7 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     let key = book.contentSha256
     try await formal.saveFacts([fact("old", key: key, day: 19000), fact("new", key: key, day: 20000), fact("preview", key: other.contentSha256, day: 20001, preview: true)], generation: 0, current: 0, enabled: true)
     try await pending.saveFacts([fact("pending", key: "pending:" + book.id, day: 20001)], generation: 0, current: 0, enabled: true)
-    let full = try await service.effectiveQuery(facts: true, fields: .metadata)
+    let full = try await service.effectiveQuery(facts: .all, fields: .metadata)
     for bounds in [19000...20001, 20000...20001, 20000...20000] {
       let first = Int64(bounds.lowerBound), last = Int64(bounds.upperBound)
       let read = try await service.statisticsRead(first: first, last: last)
@@ -78,7 +78,7 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     try await formal.clear(book: key, session: "new")
     let cleared = try await service.statisticsRead(first: 20000, last: 20001, book: key)
     XCTAssertEqual(cleared.value.totalDurationMs, before.value.totalDurationMs)
-    let scopedFull = try await service.effectiveQuery(facts: true, statisticsBook: key, fields: .metadata)
+    let scopedFull = try await service.effectiveQuery(records: .only([.formal(sha256: key)]), facts: .only([.formal(sha256: key)]), fields: .metadata)
     XCTAssertEqual(cleared.value, try scopedFull.statisticsOverview(firstDay: 20000, lastDay: 20001, contentKey: key))
     let model = StatisticsModel(service: service)
     let window = StatisticsWindow(period: .month, date: StatisticsDates.date(20000))
@@ -90,6 +90,19 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(state.cumulative?.durationMs, 2000)
     XCTAssertEqual(state.overview?.totalDurationMs, 1000)
     XCTAssertEqual(state.spans.count, 1)
+    try await service.savePosition(bookID: book.id, offset: 3)
+    let withoutRecords = try await service.effectiveQuery(records: .only([]), facts: .all)
+    let withRecords = try await service.effectiveQuery(facts: .all)
+    let withoutFacts = try await service.effectiveQuery()
+    let emptyFacts = try await service.effectiveQuery(facts: .only([]))
+    XCTAssertEqual(try withoutFacts.bookInfo(bookId: book.id).positionUtf8, 3)
+    XCTAssertEqual(try withoutRecords.bookInfo(bookId: book.id).positionUtf8, 0)
+    XCTAssertEqual(try withoutRecords.statisticsOverview(firstDay: 19000, lastDay: 20001, contentKey: nil).totalDurationMs,
+                   try withRecords.statisticsOverview(firstDay: 19000, lastDay: 20001, contentKey: nil).totalDurationMs)
+    for query in [withoutFacts, emptyFacts] {
+      XCTAssertEqual(try query.statisticsOverview(firstDay: 19000, lastDay: 20001, contentKey: nil).totalDurationMs, 0)
+    }
+
   }
 
   @MainActor func testActiveQueriesRebuildCompleteInputsUntilStableAndKeepRealFailures() async throws {
@@ -356,9 +369,9 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     let pendingJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(pendingInput.utf8)) as? [String: Any])
     XCTAssertEqual((pendingJSON["facts"] as? [Any])?.count, 1, "Both identities retain their own facts")
     let outline = try await service.bookQuery(book.id, facts: true).chapterOutline(bookId: book.id)
-    let full = try await service.effectiveQuery(facts: true)
+    let full = try await service.effectiveQuery(facts: .all)
     XCTAssertEqual(outline, try full.chapterOutline(bookId: book.id))
-    let widget = try await service.effectiveQuery(facts: true, fields: [])
+    let widget = try await service.effectiveQuery(facts: .all, fields: [])
     XCTAssertEqual(try widget.statisticsWidgetSummary(today: 20000, weekStart: 19994),
       try full.statisticsWidgetSummary(today: 20000, weekStart: 19994))
     let withFacts = try await service.bookQuery(book.id, facts: true)
