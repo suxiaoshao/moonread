@@ -124,8 +124,7 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
             finishAppearance(openingID, reason: "didAppear")
             if let owner = destination, let navigation = navigationController, navigation.topViewController === owner {
                 ReaderSceneDiagnostics.record("native.sourceAppeared", opening: openingID, fields: [
-                    "expectedDepth": expectedDepth ?? -1, "topTitle": owner.title ?? "",
-                    "stack": navigation.viewControllers.map { ["type": String(describing: type(of: $0)), "title": $0.title ?? ""] }])
+                    "expectedDepth": expectedDepth ?? -1, "stackDepth": navigation.viewControllers.count])
                 becameCurrent()
             }
         }
@@ -156,10 +155,7 @@ struct NavigationTransitionObserver: UIViewControllerRepresentable {
                   observedDestination === source else { return }
             let popping = source.isMovingFromParent || !navigation.viewControllers.contains(source)
             ReaderSceneDiagnostics.record("native.navigationWillDisappear", opening: openingID, fields: [
-                "fromType": String(describing: type(of: source)), "fromTitle": source.title ?? "",
-                "toType": transition.viewController(forKey: .to).map { String(describing: type(of: $0)) } ?? "none",
-                "toTitle": transition.viewController(forKey: .to)?.title ?? "none", "popping": popping, "expectedDepth": expectedDepth ?? -1,
-                "stack": navigation.viewControllers.map { ["type": String(describing: type(of: $0)), "title": $0.title ?? ""] }])
+                "popping": popping, "expectedDepth": expectedDepth ?? -1, "stackDepth": navigation.viewControllers.count])
             tracking = true
             willLeave(popping)
             let finished = completed

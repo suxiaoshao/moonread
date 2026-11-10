@@ -384,8 +384,10 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     reader.window = ReadingWindow(chunks: readingChunks())
     reader.needsRebuild = false
     let opening = UUID(); reader.openingID = opening
-    let viewport = ReadingViewportAccess(); viewport.controller = reader
-    let automatic = ReaderAutoReading(viewport: viewport); reader.autoReading = automatic
+    let session = ReaderSession()
+    session.viewportAccess.controller = reader
+    let automatic = session.selectAutomaticReading(); reader.autoReading = automatic
+    reader.readingBegan = { session.toolsSession.send(.endAutomatic) }
     defer { automatic.end() }
     var readable = true
     automatic.readable = { readable }
@@ -470,7 +472,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     session.moved(to: original, settled: true)
     XCTAssertFalse(session.showingCover)
     session.anchor = preview
-    session.browseOrigin = original
+    session.browseState = .preview(.init(origin: original, viewport: nil, target: preview, focus: nil, history: session.history))
     session.selectionStart = original
     let mark = try await service.annotate(book.id, start: 0, end: original)
     // This task has been requested but has not returned its editor yet.

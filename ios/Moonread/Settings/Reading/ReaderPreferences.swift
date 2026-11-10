@@ -84,14 +84,11 @@ enum ReadingSettingsTab: String, CaseIterable {
 @MainActor @Observable final class ReadingSettingsEditing {
     var editedAppearance: ThemeAppearance?
     private var localPreviewPresented = false
-    let previewID = UUID()
     var previewPresented: Bool {
-        get { readerTools.map { $0.presentation.location.path.contains(.preview(previewID)) } ?? localPreviewPresented }
+        get { readerTools?.settingsPreviewPresented ?? localPreviewPresented }
         set {
-            if let readerTools {
-                if newValue { readerTools.presentation.push(.preview(previewID)) }
-                else { readerTools.presentation.close(.preview(previewID)) }
-            } else { localPreviewPresented = newValue }
+            if let readerTools { readerTools.setSettingsPreview(newValue) }
+            else { localPreviewPresented = newValue }
         }
     }
     var previewDetent = PresentationDetent.height(60)
@@ -325,6 +322,7 @@ struct ReaderSettingsView: View {
                     ReadingPreviewBackdrop(surface: previewTheme).ignoresSafeArea()
                 }
                 .preferredColorScheme(previewTheme.scheme)
+                .readerToolPresentation()
                 .interactiveDismissDisabled()
                 .onAppear { previewVisible = true }
                 .sheet(item: paletteBinding(.preview), onDismiss: {
@@ -350,6 +348,7 @@ struct ReaderSettingsView: View {
 
     private func paletteEditor(_ value: PaletteDraft) -> some View {
         PaletteEditor(draft: value, showsAppPreview: false)
+        .readerToolPresentation()
         .themeScope(theme)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)

@@ -52,6 +52,7 @@ struct StatisticsView: View {
         }
         .sheet(item: $information.draft, onDismiss: { Task { if let target { await information.load(target) } } }) { draft in
             BookMetadataEditor(draft: draft, title: information.entry?.title ?? target?.title ?? "").themeScope(theme)
+                .readerToolPresentation()
         }
         .alert("下载小说后才能编辑信息", isPresented: $information.confirmDownload) {
             Button("下载并准备") { if let target { information.prepareEditing(target) } }
@@ -131,7 +132,11 @@ struct StatisticsView: View {
                 optionsMenu
             }
         }
-        .sheet(item: $aiRequest) { if ai.availability.isAvailable { AIQuickTaskSheet(request: $0).themeScope(theme) } }
+        .sheet(item: $aiRequest) {
+            if ai.availability.isAvailable {
+                AIQuickTaskSheet(request: $0).themeScope(theme).readerToolPresentation()
+            }
+        }
         .onChange(of: ai.availability.isAvailable) { _, available in if !available { aiRequest = nil; removingTask = nil } }
         .alert("移除这个任务？", isPresented: Binding(get: { removingTask != nil }, set: { if !$0 { removingTask = nil } }),
                             presenting: removingTask) { task in

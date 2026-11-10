@@ -1,8 +1,6 @@
 import SwiftUI
 import UIKit
 
-enum ReaderPanel: String { case library, search, settings, history, chapterEditor, details, ai }
-extension ReaderPanel { var isPage: Bool { self == .settings || self == .details } }
 enum ReaderLibraryTab: Hashable { case chapters, bookmarks, notes }
 enum ReaderSelectionAction: Equatable {
     case highlight, comment, paragraph, beginRange, chapter, search, copy, shareExcerpt
@@ -40,17 +38,101 @@ final class ReaderToolsModel {
     var chapterTargetCentered = true
     var chapterJumpRevision = 0
     var loadingChapters = false
-    var query = ""
-    var regex = false
-    var caseSensitive = false
-    var hits: [SearchHit] = []
-    private(set) var searchActive = false
-    var searching = false
-    var partialSearch = false
-    var searchFinished = false
-    var truncatedSearch = false
-    var searchProgress: Double = 0
-    var searchListPosition: UInt64?
+    private struct SearchDraft {
+        var query = ""
+        var regex = false
+        var caseSensitive = false
+        var hits: [SearchHit] = []
+        var partial = false
+        var truncated = false
+        var progress = 0.0
+        var listPosition: UInt64?
+    }
+    private struct SearchRequest {
+        let id = UUID()
+        let book: String
+        let query: String
+        let regex: Bool
+        let sensitive: Bool
+    }
+    private enum SearchCompletion {
+        case editing, completed, cancelled, failed(String)
+    }
+    private enum SearchPhase {
+        case waiting(SearchRequest), searching(SearchRequest), finished(SearchCompletion)
+
+        var completion: SearchCompletion {
+            if case .finished(let value) = self { return value }
+            return .cancelled
+        }
+        var requestID: UUID? {
+            switch self {
+            case .waiting(let request), .searching(let request): request.id
+            case .finished: nil
+            }
+        }
+    }
+    private enum SearchSessionState {
+        case closed(SearchDraft, SearchCompletion)
+        case open(SearchDraft, SearchPhase)
+
+        var draft: SearchDraft {
+            switch self {
+            case .closed(let draft, _), .open(let draft, _): draft
+            }
+        }
+        var completion: SearchCompletion {
+            switch self {
+            case .closed(_, let result): result
+            case .open(_, let phase): phase.completion
+            }
+        }
+    }
+    private var searchState = SearchSessionState.closed(.init(), .editing)
+    var query: String {
+        get { searchState.draft.query }
+        set { updateDraft { $0.query = newValue } }
+    }
+    var regex: Bool {
+        get { searchState.draft.regex }
+        set { updateDraft { $0.regex = newValue } }
+    }
+    var caseSensitive: Bool {
+        get { searchState.draft.caseSensitive }
+        set { updateDraft { $0.caseSensitive = newValue } }
+    }
+    var searchListPosition: UInt64? {
+        get { searchState.draft.listPosition }
+        set { updateDraft { $0.listPosition = newValue } }
+    }
+    var hits: [SearchHit] { searchState.draft.hits }
+    var partialSearch: Bool { searchState.draft.partial }
+    var truncatedSearch: Bool { searchState.draft.truncated }
+    var searchProgress: Double { searchState.draft.progress }
+    var searchActive: Bool {
+        if case .open = searchState { return true }
+        return false
+    }
+    var searching: Bool {
+        if case .open(_, let phase) = searchState { return phase.requestID != nil }
+        return false
+    }
+    var searchFinished: Bool {
+        if case .completed = searchState.completion { return true }
+        return false
+    }
+    var searchError: String? {
+        if case .failed(let message) = searchState.completion { return message }
+        return nil
+    }
+    private func updateDraft(_ update: (inout SearchDraft) -> Void) {
+        var draft = searchState.draft
+        update(&draft)
+        switch searchState {
+        case .closed(_, let completion): searchState = .closed(draft, completion)
+        case .open(_, let phase): searchState = .open(draft, phase)
+        }
+    }
     var noteKind: MarkKind { tab == .bookmarks ? .bookmark : .annotation }
     var notes: [ReaderMark] = []
     var selectingNotes = false
@@ -98,7 +180,6 @@ final class ReaderToolsModel {
     private var chapterTask: Task<AppDataService.ChapterResult, Error>?
     private var coverageTask: Task<Void, Never>?
     private var notesGeneration = 0
-    private var searchGeneration = 0
     private var job: SearchJob?
     private var searchTask: Task<Void, Never>?
     private let service: AppDataService
@@ -154,7 +235,8 @@ final class ReaderToolsModel {
             cancelSearchJob(); cancelChapterLoads(); self.bookID = bookID
             chapters = []; allChapters = []; chapterQuery = nil; coverageQuery = nil; chapterCoverageReady = false; collapsedVolumes = []; chapterFilter = ""
             clearNoteSelection(); selectingNotes = false; noteSnapshot = nil
-            notes = []; notesKind = nil; noteLocations = [:]; notesLoadError = nil; hits = []; query = ""
+            notes = []; notesKind = nil; noteLocations = [:]; notesLoadError = nil
+            searchState = searchActive ? .open(.init(), .finished(.editing)) : .closed(.init(), .editing)
         }
         guard library else { return }
         self.currentChapter = currentChapter
@@ -394,43 +476,54 @@ final class ReaderToolsModel {
         deletedIDs = nil
     }
 
-    func beginSearchSession() { searchActive = true }
-    func stopSearch() { searchActive = false; cancelSearchJob() }
+    func beginSearchSession() {
+        if case .closed(let draft, let completion) = searchState { searchState = .open(draft, .finished(completion)) }
+    }
+    func stopSearch() {
+        cancelSearchJob()
+        searchState = .closed(searchState.draft, searchState.completion)
+    }
     private func cancelSearchJob() {
-        searchGeneration += 1
-        job?.cancel(); searchTask?.cancel(); job = nil; searchTask = nil; searching = false
+        job?.cancel(); searchTask?.cancel(); job = nil; searchTask = nil
+    }
+    private func accepts(_ request: SearchRequest) -> Bool {
+        guard case .open(_, let phase) = searchState else { return false }
+        return !isLeaving && bookID == request.book && phase.requestID == request.id && !Task.isCancelled
     }
     func startSearch() {
         guard !isLeaving else { return }
         cancelSearchJob()
-        searchActive = true
-        guard let id = bookID else { return }
-        hits = []; error = nil; searchFinished = false; truncatedSearch = false; partialSearch = false; searchProgress = 0
-        searchListPosition = nil
-        guard !query.isEmpty else { return }
-        let generation = searchGeneration
-        let query = query; let regex = regex; let sensitive = caseSensitive
-        searching = true
+        var draft = searchState.draft
+        draft.hits = []; draft.progress = 0; draft.partial = false; draft.truncated = false; draft.listPosition = nil
+        guard let bookID, !draft.query.isEmpty else { searchState = .open(draft, .finished(.editing)); return }
+        let request = SearchRequest(book: bookID, query: draft.query, regex: draft.regex, sensitive: draft.caseSensitive)
+        searchState = .open(draft, .waiting(request))
         searchTask = Task {
             do {
                 try await Task.sleep(for: .milliseconds(250))
-                let job = try await service.search(id, query: query, regex: regex, caseSensitive: sensitive)
-                guard generation == searchGeneration, !Task.isCancelled else { job.cancel(); return }
+                let job = try await service.search(request.book, query: request.query, regex: request.regex, caseSensitive: request.sensitive)
+                guard accepts(request) else { job.cancel(); return }
                 self.job = job
+                searchState = .open(searchState.draft, .searching(request))
                 while !Task.isCancelled {
                     let batch = try await Task.detached(priority: .userInitiated) { try job.nextBatch() }.value
-                    guard generation == searchGeneration, !Task.isCancelled else { return }
-                    hits += batch.hits
-                    partialSearch = batch.partialBook
-                    truncatedSearch = truncatedSearch || batch.truncated
-                    searchProgress = Double(batch.scannedUtf8) / Double(max(1, batch.availableUtf8))
+                    guard accepts(request) else { return }
+                    var draft = searchState.draft
+                    draft.hits += batch.hits
+                    draft.partial = batch.partialBook
+                    draft.truncated = draft.truncated || batch.truncated
+                    draft.progress = Double(batch.scannedUtf8) / Double(max(1, batch.availableUtf8))
                     if batch.done || batch.cancelled {
-                        searchFinished = batch.done; searching = false; return
+                        searchState = .open(draft, .finished(batch.done ? .completed : .cancelled))
+                        return
                     }
+                    searchState = .open(draft, .searching(request))
                     try await Task.sleep(for: .milliseconds(20))
                 }
             } catch is CancellationError { }
-            catch { if generation == searchGeneration { searching = false; self.error = ReaderMessages.error(error) } }
+            catch {
+                if accepts(request) { searchState = .open(searchState.draft, .finished(.failed(ReaderMessages.error(error)))) }
+            }
         }
     }
 }

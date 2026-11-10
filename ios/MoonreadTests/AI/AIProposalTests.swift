@@ -193,6 +193,7 @@ final class AIProposalTests: BookAIFixture {
     XCTAssertTrue(saved)
     XCTAssertEqual(writes, 2)
     let tools = ReaderToolSession()
+    tools.send(.open(.library(.listing(.chapters))))
     tools.beginEditing(.rebuild(model), presenter: .library)
     model.startIfNeeded()
     XCTAssertTrue(model.canApply, "reappearing must not cancel the rebuild")

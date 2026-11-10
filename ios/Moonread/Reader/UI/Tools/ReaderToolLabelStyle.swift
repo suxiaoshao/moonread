@@ -1,12 +1,6 @@
 import SwiftUI
 import UIKit
 
-/// The content above the reader's anchored tools: progress (or search/browse), quick settings, or 更多.
-enum ReaderDock {
-    case progress, settings, more, automatic
-    mutating func toggle(_ destination: Self) { self = self == destination ? .progress : destination }
-}
-
 struct ReaderToolLabelStyle: LabelStyle {
     @ScaledMetric(relativeTo: .body) private var iconSize = 22.0
     func makeBody(configuration: Configuration) -> some View {

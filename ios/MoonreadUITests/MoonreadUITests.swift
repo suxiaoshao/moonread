@@ -501,6 +501,166 @@ import XCTest
     list("笔记")
     ready(app.staticTexts["暂无笔记"])
   }
+
+  func testU23ReturnToSpeechKeepsFooterInteractive() {
+    app.launchEnvironment["MOONREAD_READER_EVENTS"] = "1"
+    launch(["--ui-test-smoke-restored"])
+    shelf()
+    open()
+    controls()
+    app.buttons["readerMore"].tap()
+    ready(app.buttons["openListening"]).tap()
+    ready(app.buttons["startListening"]).tap()
+    let playback = ready(app.buttons["compactListeningPlayback"])
+    waitUntil { playback.label == "暂停" }
+    let text = body()
+    let more = app.buttons["readerMore"]
+    let settings = app.buttons["readingSettings"]
+    let chapters = app.buttons["showChapters"]
+    let search = app.buttons["showSearch"]
+    let back = app.buttons["returnToSpeech"]
+    let center = CGVector(dx: 0.5, dy: 0.5)
+
+    func tapFooter(_ button: XCUIElement) {
+      ready(button)
+      waitUntil { button.isHittable }
+      button.coordinate(withNormalizedOffset: center).tap()
+    }
+
+    for label in ["暂停", "继续"] {
+      if label == "继续" { playback.tap() }
+      waitUntil { playback.label == label }
+      text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
+        .press(forDuration: 0.08, thenDragTo: text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.22)))
+      ready(back).tap()
+      XCTAssertTrue(back.waitForNonExistence(timeout: 8))
+      XCTAssertEqual(playback.label, label)
+      text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
+
+      tapFooter(more)
+      ready(app.buttons["openBookmarks"])
+      tapFooter(more)
+      XCTAssertEqual(ready(playback).label, label)
+      tapFooter(settings)
+      ready(app.buttons["moreReadingSettings"])
+      tapFooter(settings)
+      XCTAssertEqual(ready(playback).label, label)
+      tapFooter(chapters)
+      closeList()
+      XCTAssertEqual(ready(playback).label, label)
+      controls()
+      tapFooter(search)
+      ready(app.searchFields.firstMatch)
+      let endSearch = app.buttons["closeSearch"]
+      let closeInput = app.navigationBars["搜索"].buttons["关闭"]
+      waitUntil { endSearch.exists || closeInput.exists }
+      if !endSearch.exists { closeInput.tap() }
+      ready(endSearch).tap()
+      XCTAssertEqual(ready(playback).label, label)
+    }
+  }
+
+  func testU22ListeningKeepsReadingToolsAccessible() {
+    launch(["--ui-test-smoke-restored"])
+    shelf()
+    open()
+
+    func showListening() {
+      controls()
+      app.buttons["readerMore"].tap()
+      ready(app.buttons["openListening"]).tap()
+    }
+    let playback = app.buttons["compactListeningPlayback"]
+    let chapters = app.buttons["showChapters"]
+    let search = app.buttons["showSearch"]
+    let more = app.buttons["readerMore"]
+    let settings = app.buttons["readingSettings"]
+
+    func expectPlayback(_ label: String) {
+      ready(playback)
+      waitUntil { playback.label == label }
+    }
+
+    showListening()
+    ready(app.buttons["startListening"]).tap()
+    expectPlayback("暂停")
+    XCTAssertFalse(chapters.exists)
+
+    body().tap()
+    ready(chapters)
+    XCTAssertLessThan(playback.frame.maxY, chapters.frame.minY)
+    more.tap()
+    ready(app.buttons["openBookmarks"])
+    XCTAssertTrue(playback.waitForNonExistence(timeout: 5))
+    more.tap()
+    expectPlayback("暂停")
+
+    settings.tap()
+    ready(app.buttons["moreReadingSettings"])
+    settings.tap()
+    expectPlayback("暂停")
+    settings.tap()
+    ready(app.buttons["moreReadingSettings"]).tap()
+    let fullSettings = ready(app.navigationBars["阅读设置"])
+    ready(app.buttons["toggleReadingPreview"])
+    ready(fullSettings.buttons.firstMatch).tap()
+    expectPlayback("暂停")
+
+    controls()
+    more.tap()
+    ready(app.buttons["openBookmarks"]).tap()
+    closeList()
+    expectPlayback("暂停")
+
+    controls()
+    more.tap()
+    ready(app.buttons["moreBookDetails"]).tap()
+    let details = ready(app.navigationBars["小说详情"])
+    ready(details.buttons.firstMatch).tap()
+    expectPlayback("暂停")
+
+    controls()
+    ready(search).tap()
+    let query = ready(app.searchFields.firstMatch)
+    query.tap()
+    query.typeText("星灯")
+    let hits = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'searchHit-'"))
+    ready(hits.firstMatch).tap()
+    ready(app.buttons["returnToSpeech"])
+    ready(app.buttons["continueFromHere"])
+    controls()
+    more.tap()
+    ready(app.buttons["openBookmarks"])
+    more.tap()
+    expectPlayback("继续")
+    ready(search).tap()
+    XCTAssertEqual(ready(query).value as? String, "星灯")
+    ready(hits.firstMatch).tap()
+    ready(app.buttons["closeCollapsedSearch"]).tap()
+    expectPlayback("继续")
+    ready(app.buttons["returnToSpeech"]).tap()
+    XCTAssertTrue(app.buttons["returnToSpeech"].waitForNonExistence(timeout: 5))
+    expectPlayback("继续")
+
+    playback.tap()
+    expectPlayback("暂停")
+    controls()
+    ready(chapters).tap()
+    ready(app.buttons["chapter-1249"]).tap()
+    expectPlayback("继续")
+    ready(app.buttons["continueFromHere"]).tap()
+    XCTAssertTrue(playback.waitForNonExistence(timeout: 5))
+
+    controls()
+    more.tap()
+    ready(app.buttons["openBookmarks"]).tap()
+    closeList()
+    ready(app.buttons["openBookmarks"])
+    XCTAssertFalse(playback.exists)
+    more.tap()
+    showListening()
+    XCTAssertEqual(ready(app.buttons["startListening"]).label, "开始")
+  }
   func testU19ShareInboxImportAndRead() {
     launch()
     ready(app.buttons["shelf-builtin"])

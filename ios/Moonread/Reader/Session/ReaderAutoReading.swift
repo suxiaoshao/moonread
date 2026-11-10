@@ -4,8 +4,44 @@ import UIKit
 /// One reading opening's explicit automatic-motion intent. Only speed persists.
 @MainActor @Observable final class ReaderAutoReading {
     enum Phase: Equatable { case idle, starting, running, paused, preparing, ready, failed, finished }
-    private(set) var phase = Phase.idle
-    private(set) var failure: String?
+    struct StartRequest: Equatable {
+        let id: UUID
+        let opening: UUID?
+    }
+    struct RunContext: Equatable {
+        let request: UUID
+        let opening: UUID
+        let pointsPerSecond: CGFloat
+    }
+    private enum State: Equatable {
+        case idle, paused, preparing, ready, finished
+        case starting(StartRequest)
+        case running(RunContext)
+        case failed(String)
+
+        var phase: Phase {
+            switch self {
+            case .idle: .idle
+            case .starting: .starting
+            case .running: .running
+            case .paused: .paused
+            case .preparing: .preparing
+            case .ready: .ready
+            case .failed: .failed
+            case .finished: .finished
+            }
+        }
+    }
+    private var state = State.idle
+    var phase: Phase { state.phase }
+    var failure: String? {
+        if case .failed(let failure) = state { return failure }
+        return nil
+    }
+    var pendingStart: StartRequest? {
+        if case .starting(let request) = state { return request }
+        return nil
+    }
     private(set) var panelRequest = 0
     @ObservationIgnored private weak var viewport: ReadingViewportAccess?
     @ObservationIgnored var readable: () -> Bool = { false }
@@ -14,8 +50,6 @@ import UIKit
     @ObservationIgnored private var target: DisplayTarget?
     @ObservationIgnored private var lastFrame: TimeInterval?
     @ObservationIgnored private var lastCheckpoint: TimeInterval?
-    @ObservationIgnored private var opening: UUID?
-    @ObservationIgnored private var pointsPerSecond: CGFloat = 0
     @ObservationIgnored private var preparationFailure: String?
     @ObservationIgnored private var advancedMilliseconds: Double = 0
     var milliseconds: UInt64 { UInt64(max(0, advancedMilliseconds)) }
@@ -24,7 +58,9 @@ import UIKit
 
     init(viewport: ReadingViewportAccess) { self.viewport = viewport }
 
-    func requestStart() { failure = nil; transition(.starting) }
+    func requestStart(opening: UUID? = nil) {
+        transition(.starting(.init(id: UUID(), opening: opening)))
+    }
     struct Geometry {
         let bodyWidth: CGFloat
         let fontPointSize: CGFloat
@@ -42,17 +78,17 @@ import UIKit
         return phase == .paused || phase == .ready ? .resume : .ordinary
     }
 
-    func startAfterDismissal(opening: UUID?, speed: Double) {
-        guard phase == .starting else { return }
+    func startAfterDismissal(opening: UUID?, speed: Double, requestID: UUID? = nil) {
+        guard let request = pendingStart, requestID == nil || request.id == requestID,
+              request.opening == nil || request.opening == opening else { return }
         guard let opening, let controller = viewport?.controller, controller.openingID == opening,
               readable(), let geometry = controller.automaticReadingGeometry(),
               let em = try? autoReadingEmPerMinute(speed: speed),
               let velocity = Self.velocity(emPerMinute: em, geometry: geometry) else {
             transition(.paused); return
         }
-        self.opening = opening; pointsPerSecond = velocity
         lastFrame = nil; lastCheckpoint = nil
-        transition(.running)
+        transition(.running(.init(request: request.id, opening: opening, pointsPerSecond: velocity)))
         let target = DisplayTarget(self)
         let link = CADisplayLink(target: target, selector: #selector(DisplayTarget.frame(_:)))
         self.target = target; displayLink = link
@@ -70,19 +106,19 @@ import UIKit
         preparationFailure = message
         if phase == .preparing, let message { failed(message) }
     }
-    func prepared() { if phase == .preparing || phase == .failed { failure = nil; transition(.ready) } }
-    func failed(_ message: String) { failure = message; transition(.failed) }
+    func prepared() { if phase == .preparing || phase == .failed { transition(.ready) } }
+    func failed(_ message: String) { transition(.failed(message)) }
     func reachedEnd() { transition(.finished); panelRequest &+= 1 }
-    func end() { failure = nil; transition(.idle) }
-    func retrying() { failure = nil; preparationFailure = nil; transition(.preparing) }
+    func end() { transition(.idle) }
+    func retrying() { preparationFailure = nil; transition(.preparing) }
 
-    private func transition(_ next: Phase) {
-        guard phase != next else { return }
+    private func transition(_ next: State) {
+        guard state != next else { return }
         let wasRunning = running
-        if next != .running {
+        if next.phase != .running {
             displayLink?.invalidate(); displayLink = nil; target = nil; lastFrame = nil
         }
-        phase = next
+        state = next
         viewport?.controller?.deviceControls.setAutomaticReading(running)
         if wasRunning { viewport?.controller?.reportScroll(settled: true) }
         motionChanged()
@@ -90,14 +126,14 @@ import UIKit
     }
 
     func frame(at timestamp: TimeInterval) {
-        guard running else { return }
-        guard let controller = viewport?.controller, controller.openingID == opening, readable() else { pause(); return }
+        guard case .running(let run) = state else { return }
+        guard let controller = viewport?.controller, controller.openingID == run.opening, readable() else { pause(); return }
         defer { if running { lastFrame = timestamp } }
         guard let previous = lastFrame else { return }
         // Keep sub-pixel progress, but never catch up a background interval or a
         // stalled main thread in one frame. Only accepted advancing time counts.
         let elapsed = min(0.05, max(0, timestamp - previous))
-        switch controller.advanceAutomaticReading(by: pointsPerSecond * elapsed) {
+        switch controller.advanceAutomaticReading(by: run.pointsPerSecond * elapsed) {
         case .advanced(let fraction):
             advancedMilliseconds += elapsed * fraction * 1000
             if lastCheckpoint == nil || timestamp - lastCheckpoint! >= 1 {

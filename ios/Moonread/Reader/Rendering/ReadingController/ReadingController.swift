@@ -13,9 +13,15 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     #if READER_OPEN_DIAGNOSTICS
     private var displayProbe: ReaderDisplayProbe?
     #endif
+    var listeningCursor: ListeningCursor?
+    var listeningFollows = false
     var autoReading: ReaderAutoReading?
     var pausedAutomaticTouch = false
-    var resumeAutomaticReading: () -> Void = {}
+    var automaticTouchBegan: () -> Bool = { false }
+    var automaticBodyTap: (Bool) -> Bool = { _ in false }
+    var showAutomaticControls: () -> Void = {}
+    var endAutomaticReading: () -> Void = {}
+    var readingSelectionChanged: (Bool) -> Void = { _ in }
     var bodyDisplayed: () -> Void = {}
     private var bodyDisplayLink: CADisplayLink?
     private var displayedOpening: UUID?
@@ -136,8 +142,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         observer.cancelsTouchesInView = false; observer.delaysTouchesBegan = false; observer.delaysTouchesEnded = false
         observer.began = { [weak self] in
             guard let self else { return }
-            pausedAutomaticTouch = autoReading?.running == true || autoReading?.phase == .starting
-            autoReading?.pause()
+            pausedAutomaticTouch = automaticTouchBegan()
         }
         readingSurface.addGestureRecognizer(observer)
         let singleTap = UITapGestureRecognizer(target: self, action: #selector(tappedBody(_:)))
@@ -177,6 +182,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
         bodyDisplayLink?.invalidate(); bodyDisplayLink = nil
+        statisticsPresentationChanged()
         autoReading?.pause()
         backNavigation.uninstall()
         deviceControls.stop()
@@ -433,6 +439,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             pendingNavigation?.keepVisible = false
         }
         applyNavigation()
+        applyListeningFollow()
         if contentGeometry != nil, layoutStatus?.hasValidLayout != true {
             let status = layoutStatus
             Task { @MainActor in status?.committed() }
