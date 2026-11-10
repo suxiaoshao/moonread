@@ -294,15 +294,12 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(tools.tab, .notes)
     XCTAssertTrue(tools.notes.isEmpty)
     XCTAssertTrue(tools.loadingNotes, "Waits for its own rows")
-    let note = ReaderMark(
-      id: "note", kind: .annotation, startUtf8: 0, endUtf8: 4, excerpt: "月光", note: "", created: 1)
-    tools.notes = [note]
-    tools.loadingNotes = false
+    tools.beginNoteSelection()
     tools.select(.notes)
-    XCTAssertEqual(tools.notes.map(\.id), ["note"], "The same kind keeps its rows while refreshing")
+    XCTAssertTrue(tools.selectingNotes, "Selecting the same tab preserves its active selection mode")
     tools.select(.chapters)
     XCTAssertEqual(tools.tab, .chapters)
-    XCTAssertEqual(tools.notes.map(\.id), ["note"])
+    XCTAssertFalse(tools.selectingNotes)
     tools.select(.bookmarks)
     XCTAssertEqual(tools.tab, .bookmarks)
     XCTAssertEqual(tools.noteKind, .bookmark)

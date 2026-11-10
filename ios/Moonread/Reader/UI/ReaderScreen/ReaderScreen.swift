@@ -502,7 +502,7 @@ struct ReaderScreen: View {
     var body: some View {
         sourceReader
         .onChange(of: isLibrary) { old, new in
-            if old && !new { tools.clearNoteSelection(); tools.selectingNotes = false }
+            if old && !new { tools.finishNoteSelection() }
         }
         .overlay { if sharingExcerpt { ProgressView().padding().background(Color(uiColor: theme.surface), in: .capsule) } }
         .sheet(item: $excerptShare) { LibraryShareSheet(files: $0.files, text: $0.text) }

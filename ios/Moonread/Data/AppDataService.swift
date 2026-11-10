@@ -24,6 +24,11 @@ extension PreparationState {
     }
 }
 
+enum QueryRefresh<Value: Sendable>: Sendable {
+    case unchanged(ReaderQuery)
+    case replaced(ReaderQuery, Value)
+}
+
 struct ReadingWindow: Equatable, Sendable {
     struct FrameIdentity: Equatable, Sendable {
         let bookID: String
@@ -550,31 +555,32 @@ actor AppDataService {
         return (frame.snapshot, frame)
     }
 
-    typealias ChapterResult = (query: ReaderQuery, outline: ChapterOutline?)
-
     func chapterQuery(_ id: String) async throws -> ReaderQuery {
         try await readingQuery(.book(.cached(bookId: id), facts: true), options: .init(scope: "chapters-" + id, fields: .chapter))
     }
-    func chapterStructure(_ id: String, reusing previous: ReaderQuery?) async throws -> ChapterResult {
+    func chapterStructure(_ id: String, reusing previous: ReaderQuery?) async throws -> QueryRefresh<ChapterOutline> {
         try await chapterOutline(id, reusing: previous, coverage: false)
     }
-    func chapters(_ id: String, reusing previous: ReaderQuery?) async throws -> ChapterResult {
+    func chapters(_ id: String, reusing previous: ReaderQuery?) async throws -> QueryRefresh<ChapterOutline> {
         try await chapterOutline(id, reusing: previous, coverage: true)
     }
-    private func chapterOutline(_ id: String, reusing previous: ReaderQuery?, coverage: Bool) async throws -> ChapterResult {
+    private func chapterOutline(_ id: String, reusing previous: ReaderQuery?, coverage: Bool) async throws -> QueryRefresh<ChapterOutline> {
         let query = try await readingQuery(.book(.cached(bookId: id), facts: coverage), options: .init(
             scope: (coverage ? "chapters-" : "chapter-structure-") + id, fields: .chapter))
-        if query === previous { return (query, nil) }
+        if query === previous { return .unchanged(query) }
         let work = Task.detached(priority: Task.currentPriority) {
             try Task.checkCancellation()
             return try coverage ? query.chapterOutline(bookId: id) : query.chapterStructure(bookId: id)
         }
         let outline = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
         try Task.checkCancellation()
-        return (query, outline)
+        return .replaced(query, outline)
     }
     func chapters(_ id: String) async throws -> ChapterOutline {
-        try await chapters(id, reusing: nil).outline!
+        switch try await chapters(id, reusing: nil) {
+        case .replaced(_, let value): return value
+        case .unchanged: throw ReaderError.NotFound
+        }
     }
     func marks(_ id: String, kind: MarkKind, offset: UInt32, snapshot: NoteCandidates? = nil) async throws -> MarkPage {
         let values = try await userMarks(id, kind: kind, snapshot: snapshot), start = min(Int(offset), values.count), end = min(start + 60, values.count)
