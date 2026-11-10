@@ -97,6 +97,26 @@ final class CloudFileHandoffTests: ReaderIntegrationFixture {
       ).isEmpty)
   }
 
+  func testLegacyPublicationWithoutCopyEvidenceCannotDeleteOriginal() throws {
+    let fs = FileManager.default
+    let root = fs.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    defer { try? fs.removeItem(at: root) }
+    let local = root.appendingPathComponent("local"), cloud = root.appendingPathComponent("cloud")
+    for directory in [local, cloud] {
+      try fs.createDirectory(at: directory, withIntermediateDirectories: true)
+      try Data("synthetic file".utf8).write(to: directory.appendingPathComponent("sample.txt"))
+    }
+    let source = local.appendingPathComponent("sample.txt")
+    let digest = try CloudDocumentHandoff.bytesHash(source)
+    let old = try JSONSerialization.data(withJSONObject: ["sample.txt": [
+      "copied": false, "published": true, "bytesHash": digest
+    ]])
+    var receipts = try JSONDecoder().decode([String: CloudHandoffReceipt].self, from: old)
+    XCTAssertThrowsError(try CloudDocumentHandoff.cleanup(local: local, cloud: cloud, receipts: &receipts, persist: { _ in }))
+    XCTAssertTrue(fs.fileExists(atPath: source.path))
+    XCTAssertEqual(receipts["sample.txt"]?.stage, .invalidLegacy)
+  }
+
   // S367: 复制完成但 receipt 未提交时中断可重试，不因“目标存在”删除尚未确认原件。
   func testCloudHandoffIntentSurvivesCopyBeforeReceiptCompletion() throws {
     let fm = FileManager.default

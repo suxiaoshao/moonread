@@ -15,7 +15,7 @@ extension AppDataService {
         if let cached = pending ? pendingUserStoreTask : userStoreTask { initialization = cached }
         else {
             let name = userDirectoryName, factory = userStoreFactory
-            let cloud = !pending && userCloudEnabled
+            let cloud = !pending && userCloudMode.isCloud
             let filename = pending ? "pending-users.store" : "user-data.store"
             let task = Task.detached {
                 diagnostic?.mark(label + ".initialize.begin")
@@ -63,20 +63,25 @@ extension AppDataService {
         catch ReaderError.NotFound { }
         throw ReaderError.NotFound
     }
-    func configureUserCloud(_ enabled: Bool, account: String?, allowAccountChange: Bool = false) async throws {
+    func configureUserCloud(_ configuration: CloudConfiguration) async throws {
         await acquireUserDataOperation()
         var holdsOperation = true
         defer { if holdsOperation { releaseUserDataOperation() } }
-        if enabled {
-            guard let account else { throw CocoaError(.userCancelled) }
-            if let previous = sourceDefaults.string(forKey: "Moonread.userOwner"), previous != account, !allowAccountChange { throw ReaderError.CloudAccountChanged }
-            // The verified user consent remains valid even if initialization fails.
+        let mode: UserCloudStoreMode
+        switch configuration {
+        case .local: mode = .local
+        case .cloud(let verified, let consent):
+            let account = verified.recordName
+            if let previous = sourceDefaults.string(forKey: "Moonread.userOwner"), previous != account,
+               case .currentOwner = consent { throw ReaderError.CloudAccountChanged }
+            // Verified user consent remains valid even if initialization fails.
             if sourceDefaults.string(forKey: "Moonread.userOwner") == nil { try? adoptLocalShelfBindings(account: account) }
             sourceDefaults.set(account, forKey: "Moonread.userOwner")
+            mode = .cloud(verified)
         }
-        if userCloudEnabled != enabled {
+        if userCloudMode != mode {
             cancelRecentRestoration()
-            userStoreTask = nil; userCloudEnabled = enabled
+            userStoreTask = nil; userCloudMode = mode
             userCloudConfigurationRevision = UUID()
             resetSystemReadingCatalog()
             NotificationCenter.default.post(name: .readingContinuationInvalidated, object: nil)
@@ -88,7 +93,7 @@ extension AppDataService {
             releaseUserDataOperation(); holdsOperation = false
             do { _ = try await userStore() }
             catch {
-                if userCloudConfigurationRevision == revision { userCloudEnabled = false }
+                if userCloudConfigurationRevision == revision { userCloudMode = .local }
                 throw error
             }
             guard userCloudConfigurationRevision == revision else { return }

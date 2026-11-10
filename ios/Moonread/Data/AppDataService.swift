@@ -247,7 +247,11 @@ actor AppDataService {
     var userStoreTask: UserStoreInitialization?
     var userCloudConfigurationRevision = UUID()
     let userStoreFactory: (@Sendable (String, Bool) async throws -> UserDataStore)?
-    var userCloudEnabled = false
+    enum UserCloudStoreMode: Equatable {
+        case local, cloud(CloudConfiguration.VerifiedAccount)
+        var isCloud: Bool { if case .cloud = self { true } else { false } }
+    }
+    var userCloudMode = UserCloudStoreMode.local
     let userDirectoryName: String
     var readingSourceIDs: [String: String] = [:]
     let dataManagementWriter: StatisticsWriter?

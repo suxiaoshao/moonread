@@ -227,7 +227,7 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     try await formal.put("metadata/" + book.contentSha256 + "/author", value: "\"Old account\"", device: "fixture")
     let waiting = Task { try await replacement.effectiveQuery(fields: .metadata) }
     await configGate.waitForEntry()
-    try await replacement.configureUserCloud(true, account: "fixture")
+    try await replacement.configureUserCloud(.cloud(.init(recordName: "fixture"), .currentOwner))
     await configGate.release()
     let result = try await waiting.value
     let current = try await replacement.effectiveQuery(fields: .metadata)

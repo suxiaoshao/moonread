@@ -286,7 +286,7 @@ import XCTest
         let retained = try await snapshot(source); XCTAssertEqual(retained, protected)
         let archive = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: f.root, includingPropertiesForKeys: nil).first { $0.pathExtension == "moonread-backup" })
         let accountPreview = try await f.service.previewReadingBackup(archive)
-        try await f.service.configureUserCloud(true, account: "backup-fixture")
+        try await f.service.configureUserCloud(.cloud(.init(recordName: "backup-fixture"), .currentOwner))
         do { try await f.service.importReadingBackup(accountPreview); XCTFail("A preview from the old configuration cannot commit") }
         catch ReadingDataError.changed { }
         let unchanged = try await snapshot(source); XCTAssertEqual(unchanged, protected)
