@@ -44,28 +44,68 @@ final class ReaderSession {
     let viewportAccess = ReadingViewportAccess()
     @ObservationIgnored private lazy var toolOwner = ReaderToolSession(reader: self)
     var toolsSession: ReaderToolSession { toolOwner }
-    @ObservationIgnored private var listeningOwner: ListeningSession?
+    private(set) var execution = ReaderExecution.manual
     @ObservationIgnored private let listeningFactory: ((ReaderSession) -> ListeningSession)?
-    var listening: ListeningSession {
-        if let listeningOwner { return listeningOwner }
-        let value = listeningFactory?(self) ?? makeListeningSession(); listeningOwner = value; return value
+    var activeListening: ListeningSession? {
+        if case .listening(let player) = execution { return player }
+        return nil
     }
-    var activeListening: ListeningSession? { listeningOwner }
+    var autoReading: ReaderAutoReading? {
+        if case .automatic(let reader) = execution { return reader }
+        return nil
+    }
     var listeningWindowTask: Task<Void, Never>?
     var listeningUIActive = true
-    var listeningOwnsPosition: Bool { listeningOwner?.ownsPosition == true }
-    func pauseListening() { listeningOwner?.pause() }
+    var listeningOwnsPosition: Bool { activeListening?.ownsPosition == true }
+    func pauseListening() { activeListening?.pause() }
     func stopListening(releasingPosition: Bool = false, returnToText: Bool = true) {
-        listeningWindowTask?.cancel() // Its owner clears the slot after cancellation completes.
-        listeningOwner?.end(returnToText: returnToText && !releasingPosition)
-        if releasingPosition { listeningOwner?.userNavigated() }
+        listeningWindowTask?.cancel()
+        activeListening?.end(returnToText: returnToText && !releasingPosition)
+        if releasingPosition { activeListening?.userNavigated() }
     }
-    let autoReading: ReaderAutoReading
+    func selectListening() -> ListeningSession {
+        if let activeListening { return activeListening }
+        if let autoReading, autoReading.phase != .idle, let offset = viewportAccess.capture()?.offset {
+            moved(to: offset, settled: true, userInitiated: false)
+        }
+        autoReading?.end()
+        let player = listeningFactory?(self) ?? makeListeningSession()
+        execution = .listening(player)
+        return player
+    }
+    func selectAutomaticReading() -> ReaderAutoReading {
+        if let autoReading { return autoReading }
+        stopListening()
+        let reader = ReaderAutoReading(viewport: viewportAccess)
+        reader.readable = { [weak activity, weak viewport = viewportAccess] in activity?.bodyReadable(through: viewport) == true }
+        reader.motionChanged = { [weak activity] in activity?.sample() }
+        execution = .automatic(reader)
+        return reader
+    }
+    func resetExecution() {
+        stopListening(releasingPosition: true, returnToText: false)
+        autoReading?.end()
+        execution = .manual
+    }
+
     let activity: ReadingActivityRecorder
-    var browseViewport: ReadingViewport?
-    var browseOrigin: UInt64?
-    var history = emptyReadingHistory()
-    var focusRange: TextRange?
+    var browseState: ReaderBrowseState = .reading(emptyReadingHistory())
+    var browseOrigin: UInt64? { browseState.preview?.origin }
+    var browseViewport: ReadingViewport? { browseState.preview?.viewport }
+    var focusRange: TextRange? { browseState.preview?.focus }
+    var history: ReadingHistory {
+        get { browseState.history }
+        set { browseState.history = newValue }
+    }
+
+    func clearBrowse(keepingHistory: Bool = false) {
+        browseState = .reading(keepingHistory ? history : emptyReadingHistory())
+    }
+    func clearSearchFocus() {
+        guard var preview = browseState.preview else { return }
+        preview.focus = nil
+        browseState = .preview(preview)
+    }
     var annotations: [ReaderMark] = []
     var bookmarkPositions: [UInt64] = []
     var bookmarked = false
@@ -80,8 +120,27 @@ final class ReaderSession {
     var annotationTask: Task<Void, Never>?
     var selectionTask: Task<Void, Never>?
     var navigationTask: Task<Void, Never>?
-    var navigationGeneration = 0
-    var navigating = false
+    private(set) var navigationGeneration = 0
+    private(set) var navigationWork: ReaderNavigationRequest?
+    var navigating: Bool { navigationWork?.intent.blocksPositionInput == true }
+    func beginNavigation(_ intent: ReaderNavigationIntent) -> ReaderNavigationRequest {
+        navigationTask?.cancel()
+        navigationGeneration += 1
+        let request = ReaderNavigationRequest(generation: navigationGeneration, opening: opening.request?.id, intent: intent)
+        navigationWork = request
+        return request
+    }
+    func currentNavigation(_ request: ReaderNavigationRequest) -> Bool {
+        !isLeaving && !Task.isCancelled && request.generation == navigationGeneration && request.opening == opening.request?.id
+    }
+    func finishNavigation(_ request: ReaderNavigationRequest) {
+        if currentNavigation(request) { navigationWork = nil }
+    }
+    func cancelNavigation() {
+        navigationTask?.cancel()
+        navigationGeneration += 1
+        navigationWork = nil
+    }
     var readingLease: ReadingLease?
     var readingID: String? { readingLease?.id }
     let service: AppDataService
@@ -109,15 +168,10 @@ final class ReaderSession {
         self.settingsStore = settingsStore ?? (service === AppDataService.shared ? .shared : ReaderSettingsStore(service: service))
         self.restartReading = restartReading ?? { try await service.restartImport($0, encoding: $1) }
         self.readContinuation = readContinuation ?? { try await service.readingResumeContext($0, currentOffset: $1) }
-        autoReading = ReaderAutoReading(viewport: viewportAccess)
-        autoReading.readable = { [weak activity = self.activity, weak viewport = viewportAccess] in activity?.bodyReadable(through: viewport) == true }
-        autoReading.motionChanged = { [weak activity = self.activity] in activity?.sample() }
-
     }
 
-    deinit {
-        // Closing a scene can destroy the owner without a navigation-pop callback.
-        if let listeningOwner { Task { @MainActor in listeningOwner.end() } }
+    isolated deinit {
+        if case .listening(let player) = execution { Task { @MainActor in player.end() } }
     }
 
     var preparing: Bool {
@@ -212,17 +266,14 @@ final class ReaderSession {
     }
 
     func beganReadingInteraction() {
-        if listeningOwner?.ownsPosition == true, listeningOwner?.active == false {
-            navigationTask?.cancel(); navigationGeneration += 1
-        }
-        listeningOwner?.userNavigated()
+        toolsSession.send(.manualInteraction)
         if browseOrigin == nil { hasLocalReadingInteraction = true }
     }
 
     func flush() async {
         saveTask?.cancel()
         let audioOwnedPosition = listeningOwnsPosition
-        let currentAnchor = listeningPosition ?? (autoReading.phase == .idle ? anchor : (viewportAccess.capture()?.offset ?? anchor))
+        let currentAnchor = listeningPosition ?? ((autoReading?.phase ?? .idle) == .idle ? anchor : (viewportAccess.capture()?.offset ?? anchor))
         // Capture before any suspension. Exit clears preview state, and settings
         // writes may finish after the reader's UI has started disappearing.
         let progress = leavingProgress ?? readingID.flatMap { id in
@@ -245,10 +296,10 @@ final class ReaderSession {
         stopListening(returnToText: false)
         restartTask?.cancel()
         activityStartTask?.cancel(); activityStartTask = nil
-        if autoReading.phase != .idle, let visible = viewportAccess.capture()?.offset {
+        if let autoReading, autoReading.phase != .idle, let visible = viewportAccess.capture()?.offset {
             moved(to: visible, settled: true, userInitiated: false)
         }
-        autoReading.end()
+        autoReading?.end()
         activity.stop()
         leavingProgress = readingID.flatMap { id in
             window == nil || !hasEnteredBody || !hasLocalReadingInteraction ? nil : (bookID: id, offset: listeningPosition ?? browseOrigin ?? anchor)
@@ -262,10 +313,8 @@ final class ReaderSession {
         chapterTask?.cancel()
         annotationTask?.cancel()
         selectionTask?.cancel(); selectionTask = nil
-        navigationTask?.cancel()
-        navigationGeneration += 1
+        cancelNavigation()
         pendingChapterAnchor = nil
-        navigating = false
         error = nil
         let task = Task { await openedTask?.value; await flush(); await StatisticsWriter.shared.drain(); await service.scheduleSystemReadingCatalog(immediate: true) }
         leaveTask = task
@@ -275,10 +324,9 @@ final class ReaderSession {
     func clearTransientState() {
         // Keep the presented panel's content stable until its dismissal ends.
         // The exit flag hides reader overlays immediately and blocks late work.
-        browseOrigin = nil; browseViewport = nil; focusRange = nil
+        clearBrowse()
         selectionStart = nil; editor = nil; navigation = nil
         chapterDraft = nil
-        history = emptyReadingHistory()
     }
 
     /// Automatic refreshes/saves must not repeatedly interrupt a read-only session.

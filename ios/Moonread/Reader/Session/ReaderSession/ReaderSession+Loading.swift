@@ -30,7 +30,7 @@ extension ReaderSession {
                     guard current(id, attempt: attempt, monitor: token) else { return }
                     ReaderOpenDiagnostics.mark(attempt, "snapshotCompleted")
                     snapshot = value
-                    autoReading.updatePreparationFailure(value.phase == .failed ? value.error.map { ReaderMessages.error($0) } : nil)
+                    autoReading?.updatePreparationFailure(value.phase == .failed ? value.error.map { ReaderMessages.error($0) } : nil)
                     isLoading = !value.canRead && preparing
                     let expected = opening.request?.expectedContentSHA
                     if let expected, value.phase == .complete, value.book.contentSha256 != expected {

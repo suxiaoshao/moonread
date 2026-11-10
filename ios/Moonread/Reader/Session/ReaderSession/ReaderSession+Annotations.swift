@@ -48,8 +48,7 @@ extension ReaderSession {
     func readSelection(start: UInt64, end: UInt64, finished: @escaping () -> Void = {}, perform: @escaping (TextRange) async -> Void) {
         selectionTask?.cancel()
         guard !isLeaving, let id = readingID else { finished(); return }
-        pauseListening()
-        autoReading.end()
+        toolsSession.send(.selectionChanged)
         let from = min(selectionStart ?? start, start), to = max(selectionStart ?? end, end)
         selectionTask = Task {
             defer { finished() }
@@ -67,8 +66,7 @@ extension ReaderSession {
 
     func selectText(start: UInt64, end: UInt64, action: ReaderSelectionAction) {
         guard !isLeaving, let id = readingID else { return }
-        pauseListening()
-        autoReading.end()
+        toolsSession.send(.selectionChanged)
         if action == .beginRange { selectionStart = start; refreshAnnotations(); return }
         Task {
             do {
@@ -105,7 +103,7 @@ extension ReaderSession {
 
     func openAnnotation(_ id: String) {
         guard !isLeaving else { return }
-        autoReading.end()
+        toolsSession.send(.ordinaryEdit)
         Task {
             do {
                 let value = try await service.mark(id)

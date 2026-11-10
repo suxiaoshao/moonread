@@ -12,6 +12,7 @@ struct ReaderSearchContent: View {
     let showHistory: () -> Void
     let closeSearch: () -> Void
     let selectTarget: (UInt64, UInt64) -> Void
+    let perform: (ReaderToolSession.Action) -> Void
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     @Environment(\.theme) private var theme
     private var panelAnimation: Animation { MotionTokens.panel(reduced: reduceMotion) }
@@ -64,10 +65,10 @@ struct ReaderSearchContent: View {
                     .labelStyle(.iconOnly).frame(width: 44, height: 44)
                     .disabled(session.navigating || model.hits.isEmpty || (activeIndex.map { $0 + 1 >= model.hits.count } ?? false))
                     .accessibilityIdentifier("nextSearchHit")
-                if session.browseOrigin != nil, session.listening.active { closeButton }
+                if session.browseOrigin != nil, session.activeListening?.active == true { closeButton }
             }
             if session.browseOrigin != nil {
-                ReaderBrowseActions(session: session, showsHistory: showsHistory, showHistory: showHistory, finished: close)
+                ReaderBrowseActions(session: session, showsHistory: showsHistory, showHistory: showHistory, perform: perform)
             } else {
                 HStack {
                     Spacer()

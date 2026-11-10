@@ -66,7 +66,7 @@ import UIKit
         }, read: { context, offset, _ in
             reads += 1
             return ListeningRead(segment: SpeechSegment(text: ReadingText(text: "原创😀。", sourceStart: offset), contentSHA: context.contentSHA), atEnd: false)
-        }, position: { offset = $0; writes.append($0) }, flush: {}, readabilityChanged: {}, blocked: { blocked }, willStart: { starts += 1 }, voiceAvailable: { _ in true }, audio: { audio })
+        }, position: { offset = $0; writes.append($0) }, flush: {}, readabilityChanged: {}, admission: { blocked ? .blocked(.externalPresentation) : .allowed }, willStart: { starts += 1 }, voiceAvailable: { _ in true }, audio: { audio })
         session.start()
         await fulfillment(of: [prepared], timeout: 2)
         XCTAssertEqual(reads, 2); XCTAssertEqual(audio.items.count, 2)
@@ -129,7 +129,7 @@ import UIKit
         })
         await reader.open(.book(book.id)); await awaitState { reader.window != nil }
         reader.showingCover = false
-        let listening = reader.listening; listening.start()
+        let listening = reader.selectListening(); listening.start()
         await fulfillment(of:[queued],timeout:3)
         let first = try XCTUnwrap(audio.items.first)
         audio.event?(.began(first.id)); audio.event?(.range(first.id,NSRange(location:1,length:1)))
@@ -214,7 +214,7 @@ import UIKit
             reader.showingCover = false
             reader.moved(to: 0, settled: true)
             await reader.flush()
-            let listening = reader.listening
+            let listening = reader.selectListening()
             listening.start()
             await fulfillment(of: [queued], timeout: 3)
             let first = try XCTUnwrap(audio.items.first)
@@ -327,7 +327,7 @@ import UIKit
         }, read: { context, offset, _ in
             requests += 1
             return ListeningRead(segment: SpeechSegment(text: ReadingText(text: "原创。", sourceStart: offset), contentSHA: context.contentSHA), atEnd: false)
-        }, position: { _ in writes += 1 }, flush: { flushes += 1 }, readabilityChanged: {}, blocked: { false }, voiceAvailable: { _ in true }, audio: { audio })
+        }, position: { _ in writes += 1 }, flush: { flushes += 1 }, readabilityChanged: {}, admission: { .allowed }, voiceAvailable: { _ in true }, audio: { audio })
         session.setTimer(15); session.start()
         await fulfillment(of: [ready], timeout: 2)
         audio.event?(.interrupted)

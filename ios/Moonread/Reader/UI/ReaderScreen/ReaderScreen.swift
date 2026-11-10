@@ -32,7 +32,7 @@ struct ReaderScreen: View {
     var readerTools: ReaderToolsModel { tools }
     var readerDockHeight: CGFloat { dockHeight }
 
-    var automatic: ReaderAutoReading { session.autoReading }
+    private var automatic: ReaderAutoReading? { session.autoReading }
     private var listening: ListeningSession? { session.activeListening }
     var toolSession: ReaderToolSession { session.toolsSession }
     private var tools: ReaderToolsModel { toolSession.tools }
@@ -327,7 +327,7 @@ struct ReaderScreen: View {
             session.activity.update(visibility: statisticsVisibility, preview: session.browseOrigin != nil)
         }
         .onChange(of: library.selectedTab) { _, _ in sendTool(.sourceChanged); synchronizeNativePresentation() }
-        .onChange(of: automatic.panelRequest) { _, _ in
+        .onChange(of: automatic?.panelRequest) { _, _ in
             guard scenePhase == .active, !session.isLeaving, !sheetPresented,
                   !session.viewportAccess.hasBlockingPresentation(allowingReaderAccessory: false),
                   render.sourcePage == nil else { return }
@@ -631,7 +631,11 @@ struct ReaderScreen: View {
                         } }
                         .navigationDestination(isPresented: Binding(get: { child == .voices }, set: {
                             if !$0 { sendTool(.showVoices(false), from: context) }
-                        })) { ListeningVoicesView(session: player) }
+                        })) {
+                            ListeningVoicesView(session: player,
+                                choose: { sendTool(.chooseVoice($0), from: context) },
+                                preview: { sendTool(.previewVoice($0), from: context) })
+                        }
                 }
             case .automaticSettings(let auto):
                 ScrollView { automaticContent(auto, snapshot: snapshot, expanded: true) }.scrollBounceBehavior(.basedOnSize)
@@ -710,7 +714,7 @@ struct ReaderScreen: View {
     }
 
     private func selectText(start: UInt64, end: UInt64, action: ReaderSelectionAction) {
-        automatic.end()
+        if action == .removeAnnotations { sendTool(.selectionChanged) }
         if action != .shareExcerpt { session.beganReadingInteraction() }
         if action == .removeAnnotations {
             guard !session.isLeaving, let bookID = session.readingID else { return }
@@ -780,13 +784,14 @@ struct ReaderScreen: View {
                 if let listening {
                     if listening.active {
                         ReaderListeningCompact(session: listening, expand: { sendTool(.expand, from: context) },
-                            resume: { sendTool(.startListening, from: context) }, stop: { sendTool(.stopListening, from: context) }) {
+                            resume: { sendTool(.startListening, from: context) },
+                            pause: { sendTool(.pauseListening, from: context) }, stop: { sendTool(.stopListening, from: context) }) {
                                 listeningPositionActions(snapshot)
                             }
                     } else { listeningContent(listening, snapshot: snapshot, expanded: false) }
                 }
             case .automatic:
-                automaticContent(automatic, snapshot: snapshot, expanded: false)
+                if let automatic { automaticContent(automatic, snapshot: snapshot, expanded: false) }
             case .settings:
                 ReaderQuickSettings(settings: readingSettings) { openFullSettings(from: context) }
             case .more:
@@ -812,7 +817,7 @@ struct ReaderScreen: View {
         if session.browseOrigin != nil { browsePanel(snapshot) }
         else if listening?.following == .detached {
             Button {
-                Task { await session.returnToListening() }
+                sendTool(.returnToSpeech, from: snapshot.context)
             } label: {
                 Label("回到朗读处", systemImage: "scope").frame(maxWidth: .infinity, minHeight: LayoutTokens.hit)
             }
@@ -827,17 +832,19 @@ struct ReaderScreen: View {
                 && !session.isLeaving && !session.navigating && session.error == nil,
             openVoices: { sendTool(.expand, from: context); sendTool(.showVoices(true)) },
             close: { sendTool(expanded ? .collapse : .hideAccessory, from: context) },
-            start: { sendTool(.startListening, from: context) })
+            start: { sendTool(.startListening, from: context) },
+            pause: { sendTool(.pauseListening, from: context) }, stop: { sendTool(.stopListening, from: context) },
+            updateRate: { sendTool(.rate($0), from: context) }, updateTimer: { sendTool(.timer($0), from: context) })
     }
 
-    private func requestAutomaticStart() { sendTool(.startAutomatic) }
+    private func requestAutomaticStart() {
+        sendTool(.startAutomatic)
+        if nativeHost.token == nil { startAutomaticAfterDismissal() }
+    }
     private func startAutomaticAfterDismissal() {
-        guard automatic.phase == .starting else { return }
-        guard scenePhase == .active, readerNativeReady, render.compact != .automatic else { sendTool(.pauseAutomatic); return }
+        guard automatic?.pendingStart != nil else { return }
         session.activity.update(visibility: statisticsVisibility, preview: session.browseOrigin != nil)
-        session.beganReadingInteraction()
-        automatic.startAfterDismissal(opening: session.opening.request?.id,
-            speed: session.settings?.autoReadingSpeed ?? autoReadingControl().defaultValue)
+        sendTool(.startAutomaticAfterRelease(scenePhase == .active && readerNativeReady))
     }
 
     func changeEncoding(_ encoding: String?) { sendTool(.encode(encoding)) }
@@ -867,14 +874,9 @@ struct ReaderScreen: View {
 
     func navigate(_ start: UInt64, end: UInt64? = nil, placement: ReadingTargetPlacement = .start,
                   obstruction: CGFloat = 0, historyID: String? = nil, from context: ReaderActionContext) {
-        guard !session.isLeaving, toolSession.render.context == context else { return }
-        let revision = session.navigationRevision
-        session.browse(to: start, end: end, placement: placement, bottomObstruction: obstruction, historyID: historyID)
-        let navigation = session.navigationTask
-        Task {
-            await navigation?.value
-            sendTool(.jumped(context, revision))
-        }
+        let target = ReaderReadingTarget(start: start, end: end, placement: placement,
+                                         bottomObstruction: obstruction, historyID: historyID)
+        sendTool(.navigate(.userJump(target)), from: context)
     }
 
     private func editFromLibrary(_ mark: ReaderMark) {

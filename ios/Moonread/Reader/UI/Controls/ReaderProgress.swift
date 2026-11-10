@@ -121,20 +121,13 @@ struct ReaderBrowseActions: View {
     let session: ReaderSession
     let showsHistory: Bool
     let showHistory: () -> Void
-    let finished: () -> Void
-    private var returningToSpeech: Bool { session.listening.active }
+    let perform: (ReaderToolSession.Action) -> Void
+    private var returningToSpeech: Bool { session.activeListening?.active == true }
 
     var body: some View {
         HStack(spacing: 8) {
             Button {
-                Task {
-                    if returningToSpeech {
-                        if await session.returnToListening() { finished() }
-                    } else {
-                        await session.returnFromBrowse()
-                        if session.browseOrigin == nil { finished() }
-                    }
-                }
+                perform(returningToSpeech ? .returnToSpeech : .returnToPreview)
             } label: { Text(returningToSpeech ? "回到朗读处" : "回到刚才").frame(minHeight: 44).contentShape(.rect) }
                 .accessibilityIdentifier(returningToSpeech ? "returnToSpeech" : "returnFromBrowse")
             Spacer(minLength: 0)
@@ -152,7 +145,7 @@ struct ReaderBrowseActions: View {
             } else { ThemedDivider().frame(height: 16) }
             Spacer(minLength: 0)
             Button {
-                Task { await session.continueReading(); if session.browseOrigin == nil { finished() } }
+                perform(.continueHere)
             } label: { Text("从这里继续读").frame(minHeight: 44).contentShape(.rect) }
                 .accessibilityIdentifier("continueFromHere")
         }
@@ -164,7 +157,7 @@ struct ReaderBrowseActions: View {
         let index = Int(session.history.cursor) + direction
         guard session.history.entries.indices.contains(index) else { return }
         let visit = session.history.entries[index]
-        session.browse(to: visit.offsetUtf8, placement: .start, historyID: visit.id)
+        perform(.navigate(.userJump(.init(start: visit.offsetUtf8, placement: .start, historyID: visit.id))))
     }
 }
 

@@ -470,7 +470,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     session.moved(to: original, settled: true)
     XCTAssertFalse(session.showingCover)
     session.anchor = preview
-    session.browseOrigin = original
+    session.browseState = .preview(.init(origin: original, viewport: nil, target: preview, focus: nil, history: session.history))
     session.selectionStart = original
     let mark = try await service.annotate(book.id, start: 0, end: original)
     // This task has been requested but has not returned its editor yet.

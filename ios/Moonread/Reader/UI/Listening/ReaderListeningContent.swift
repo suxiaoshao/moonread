@@ -10,6 +10,10 @@ struct ReaderListeningContent: View {
     let openVoices: () -> Void
     let close: () -> Void
     let start: () -> Void
+    let pause: () -> Void
+    let stop: () -> Void
+    let updateRate: (Float) -> Void
+    let updateTimer: (Int) -> Void
     @Environment(\.theme) private var theme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     var body: some View {
@@ -24,18 +28,15 @@ struct ReaderListeningContent: View {
                 Text(session.title).font(.headline).lineLimit(2)
                 if !session.chapter.isEmpty { Text(session.chapter).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary)).lineLimit(2) }
             }
-            Group {
-                if navigatesToVoices {
-                    NavigationLink { ListeningVoicesView(session: session) } label: { voiceLabel }
-                } else { Button(action: openVoices) { voiceLabel } }
-            }.buttonStyle(.plain).accessibilityIdentifier("listeningVoices")
+            Button(action: openVoices) { voiceLabel }
+                .buttonStyle(.plain).accessibilityIdentifier("listeningVoices")
             VStack(alignment: .leading) {
                 Text("语速").font(.subheadline)
                 Slider(value: Binding(get: { rateDraft ?? Double(session.rate) }, set: { rateDraft = $0 }),
                     in: Double(AVSpeechUtteranceMinimumSpeechRate)...Double(AVSpeechUtteranceMaximumSpeechRate),
                     label: { Text("语速") }, minimumValueLabel: { Text("慢") }, maximumValueLabel: { Text("快") },
                     onEditingChanged: { editing in
-                        if !editing, let rateDraft { session.setRate(Float(rateDraft)); self.rateDraft = nil }
+                        if !editing, let rateDraft { updateRate(Float(rateDraft)); self.rateDraft = nil }
                     })
                 .accessibilityIdentifier("listeningRate")
             }
@@ -44,7 +45,7 @@ struct ReaderListeningContent: View {
                 Spacer()
                 Menu {
                     ForEach([0, 15, 30, 60], id: \.self) { minutes in
-                        Button { session.setTimer(minutes) } label: {
+                        Button { updateTimer(minutes) } label: {
                             if minutes == session.timerMinutes { Label(timerLabel(minutes), systemImage: "checkmark") }
                             else { Text(timerLabel(minutes)) }
                         }
@@ -60,10 +61,10 @@ struct ReaderListeningContent: View {
             } else {
                 let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(spacing: 12)) : AnyLayout(HStackLayout(spacing: 12))
                 layout {
-                    Button { session.end() } label: { Text("结束").frame(maxWidth: .infinity) }
+                    Button(action: stop) { Text("结束").frame(maxWidth: .infinity) }
                         .buttonStyle(ThemedSecondaryButtonStyle()).controlSize(.large).accessibilityIdentifier("endListening")
                     if session.running {
-                        Button { session.pause() } label: { Text("暂停").frame(maxWidth: .infinity) }
+                        Button(action: pause) { Text("暂停").frame(maxWidth: .infinity) }
                             .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large).accessibilityIdentifier("pauseListening")
                     } else { playButton(title: "继续").disabled(!canStart) }
                 }
@@ -89,6 +90,8 @@ struct ReaderListeningContent: View {
 
 struct ListeningVoicesView: View {
     let session: ListeningSession
+    let choose: (AVSpeechSynthesisVoice) -> Void
+    let preview: (AVSpeechSynthesisVoice) -> Void
     @State private var search = ""
     @State private var voices: [AVSpeechSynthesisVoice] = []
     @Environment(\.theme) private var theme
@@ -119,7 +122,7 @@ struct ListeningVoicesView: View {
                 Section(Locale.current.localizedString(forIdentifier: language) ?? language) {
                     ForEach(filtered.filter { $0.language == language }, id: \.identifier) { voice in
                         HStack {
-                            Button { session.selectVoice(voice) } label: {
+                            Button { choose(voice) } label: {
                                 HStack {
                                     VStack(alignment: .leading, spacing: 3) {
                                         Text(voice.name).foregroundStyle(Color(uiColor: theme.ink))
@@ -129,7 +132,7 @@ struct ListeningVoicesView: View {
                                     if session.voiceID == voice.identifier { Image(systemName: "checkmark").foregroundStyle(Color(uiColor: theme.accent)) }
                                 }.contentShape(.rect)
                             }.buttonStyle(.plain)
-                            Button { session.preview(voice) } label: { Image(systemName: "play.circle") }
+                            Button { preview(voice) } label: { Image(systemName: "play.circle") }
                                 .buttonStyle(.borderless).accessibilityLabel("试听 \(voice.name)")
                         }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                     }
@@ -146,8 +149,7 @@ struct ListeningVoicesView: View {
         }
         .searchable(text: $search, prompt: Text("搜索声音"))
         .navigationTitle("声音").navigationBarTitleDisplayMode(.inline).themedPage()
-        .onAppear { session.voiceSelectionPresented = true; session.pause(); voices = ListeningSession.voices }
-        .onDisappear { session.voiceSelectionPresented = false; session.stopPreview() }
+        .onAppear { voices = ListeningSession.voices }
     }
     private func quality(_ voice: AVSpeechSynthesisVoice) -> String {
         switch voice.quality {
@@ -162,6 +164,7 @@ struct ReaderListeningCompact<PositionActions: View>: View {
     let session: ListeningSession
     let expand: () -> Void
     let resume: () -> Void
+    let pause: () -> Void
     let stop: () -> Void
     @ViewBuilder let positionActions: () -> PositionActions
     @Environment(\.theme) private var theme
@@ -183,7 +186,7 @@ struct ReaderListeningCompact<PositionActions: View>: View {
                 }.frame(maxWidth: .infinity, minHeight: LayoutTokens.hit, alignment: .leading).contentShape(.rect)
             }.buttonStyle(.plain).accessibilityLabel("展开听书控制")
             if session.phase == .preparing { ProgressView() }
-            Button { if session.running { session.pause() } else { resume() } } label: {
+            Button { if session.running { pause() } else { resume() } } label: {
                 Image(systemName: session.running ? "pause.fill" : "play.fill").frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit)
             }.accessibilityLabel(session.running ? "暂停" : "继续").accessibilityIdentifier("compactListeningPlayback")
             SystemToolbarButton("结束听书", role: .close, action: stop)

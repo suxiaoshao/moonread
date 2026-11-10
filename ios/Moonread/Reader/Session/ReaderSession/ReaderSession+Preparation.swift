@@ -12,8 +12,7 @@ extension ReaderSession {
     }
 
     func restart(encoding: String? = nil) {
-        stopListening(releasingPosition: true)
-        autoReading.end()
+        resetExecution()
         // Admission is synchronous, before flush/actor hops. No second import can
         // be created until this task ends, including its worker-finish wait.
         guard !isLeaving, restartTask == nil, let id = readingID else { return }
@@ -33,11 +32,10 @@ extension ReaderSession {
                 if let attempt { toolsSession.beginOpening(attempt) }
                 monitorToken = UUID()
                 monitorTask?.cancel(); windowTask?.cancel(); saveTask?.cancel(); chapterTask?.cancel()
-                navigationTask?.cancel(); navigationTask = nil; navigationGeneration += 1; navigating = false
+                cancelNavigation(); navigationTask = nil
                 windowTask = nil; chapterTask = nil; pendingChapterAnchor = nil
-                browseOrigin = nil; browseViewport = nil; navigation = nil
-                history = emptyReadingHistory(); chapterDraft = nil
-                focusRange = nil; selectionStart = nil; annotations = []; bookmarkPositions = []
+                clearBrowse(); navigation = nil; chapterDraft = nil
+                selectionStart = nil; annotations = []; bookmarkPositions = []
                 // Transfer ownership and clear old projection before any more await.
                 readingLease = next; decodingPolicy = nil
                 snapshot = nil; window = nil; chapter = nil; anchor = 0

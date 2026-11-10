@@ -11,6 +11,13 @@ struct ListeningContext {
     let chapter: String
 }
 
+enum ListeningAdmission: Equatable {
+    enum Reason: String { case leaving, readingError, selection, voice, returning, locating, presentingTool, externalPresentation }
+    case allowed
+    case keepCurrentOnly(Reason)
+    case blocked(Reason)
+}
+
 /// One reading opening owns one synthesizer. There is no independent listening
 /// position: safe native ranges are committed through ReaderSession's existing position service/flush.
 @MainActor @Observable final class ListeningSession {
@@ -35,7 +42,10 @@ struct ListeningContext {
     var voice: AVSpeechSynthesisVoice? { voiceID.flatMap(AVSpeechSynthesisVoice.init(identifier:)) }
     static var voices: [AVSpeechSynthesisVoice] { AVSpeechSynthesisVoice.speechVoices().filter { !$0.voiceTraits.contains(.isPersonalVoice) } }
     @ObservationIgnored var voiceSelectionPresented = false
-    private var isBlocked: Bool { voiceSelectionPresented || previewing || blocked() }
+    private var permission: ListeningAdmission {
+        if voiceSelectionPresented || previewing { return .blocked(.voice) }
+        return admission()
+    }
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let context: () -> ListeningContext?
     @ObservationIgnored private let read: (ListeningContext, UInt64, Bool) async throws -> ListeningRead
@@ -45,7 +55,8 @@ struct ListeningContext {
     @ObservationIgnored private let flush: () -> Void
     @ObservationIgnored private let readabilityChanged: () -> Void
     @ObservationIgnored private let willStart: () -> Void
-    @ObservationIgnored private let blocked: () -> Bool
+    @ObservationIgnored private let admission: () -> ListeningAdmission
+    @ObservationIgnored private let command: ((ListeningSession, ListeningCommand) -> Void)?
     @ObservationIgnored private let voiceAvailable: (String) -> Bool
     @ObservationIgnored private let makeAudio: () -> any ListeningAudio
     @ObservationIgnored private var native: (any ListeningAudio)?
@@ -67,13 +78,14 @@ struct ListeningContext {
          context: @escaping () -> ListeningContext?,
          read: @escaping (ListeningContext, UInt64, Bool) async throws -> ListeningRead,
          position: @escaping (UInt64) -> Void, flush: @escaping () -> Void,
-         readabilityChanged: @escaping () -> Void, blocked: @escaping () -> Bool,
+         readabilityChanged: @escaping () -> Void, admission: @escaping () -> ListeningAdmission,
          willStart: @escaping () -> Void = {},
+         command: ((ListeningSession, ListeningCommand) -> Void)? = nil,
          cursorChanged: @escaping () -> Void = {}, ended: @escaping (UInt64, Bool) -> Void = { _,_ in },
          voiceAvailable: @escaping (String) -> Bool = { id in ListeningSession.voices.contains { $0.identifier == id } },
          audio: @escaping () -> any ListeningAudio = { SystemListeningAudio() }) {
         self.defaults = defaults; self.context = context; self.read = read
-        self.position = position; self.flush = flush; self.readabilityChanged = readabilityChanged; self.blocked = blocked
+        self.position = position; self.flush = flush; self.readabilityChanged = readabilityChanged; self.admission = admission; self.command = command
         self.cursorChanged = cursorChanged; self.ended = ended
         makeAudio = audio; self.voiceAvailable = voiceAvailable; self.willStart = willStart
         let stored = defaults.object(forKey: "Moonread.listening.rate") as? NSNumber
@@ -102,7 +114,7 @@ struct ListeningContext {
         guard let voiceID, voiceAvailable(voiceID) else {
             notice = String(localized: "声音不可用，请重新选择系统声音。"); return
         }
-        guard !isBlocked else { notice = String(localized: "请先关闭当前操作再继续听书。"); return }
+        guard permission == .allowed else { notice = String(localized: "请先关闭当前操作再继续听书。"); return }
         willStart()
         guard let context = context() else { notice = String(localized: "这部分正文还未准备好"); return }
         let beginning = phase == .idle || !ownsPosition
@@ -248,7 +260,20 @@ struct ListeningContext {
             lastCheckpoint = uptime; checkpoint()
         }
     }
-    func checkPresentation() { if running && isBlocked { pause() } }
+    func checkPresentation() {
+        if running, case .blocked(let reason) = permission {
+            ReaderSceneDiagnostics.record("listening.pause", opening: nil, fields: ["reason": reason.rawValue])
+            pause()
+        }
+    }
+    func execute(_ command: ListeningCommand) {
+        switch command {
+        case .play: start()
+        case .pause: pause()
+        case .stop: end()
+        case .toggle: if running { pause() } else { start() }
+        }
+    }
     private func publishMedia() {
         guard active else { return }
         native?.publish(ListeningMetadata(title: title, chapter: chapter, artwork: artwork), playing: phase == .playing)
@@ -278,7 +303,7 @@ struct ListeningContext {
         switch event {
         case .command(let command):
             guard active else { return }
-            switch command { case .play: start(); case .pause: pause(); case .stop: end(); case .toggle: if running { pause() } else { start() } }
+            if let handle = self.command { handle(self, command) } else { execute(command) }
         case .unavailableVoice: pause(message: String(localized: "声音不可用，请重新选择系统声音。"))
         case .interrupted: pause(message: String(localized: "播放已中断，点继续恢复。"))
         case .routeLost: pause(message: String(localized: "音频设备已断开，点继续恢复。"))

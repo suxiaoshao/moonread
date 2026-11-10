@@ -10,7 +10,7 @@ extension ReaderScreen {
     func browsePanel(_ snapshot: ReaderRenderSnapshot) -> some View {
         ReaderBrowseActions(session: readerSession, showsHistory: snapshot.controls,
             showHistory: { sendTool(.open(.history), from: snapshot.context) },
-            finished: { sendTool(.finishedBrowse(snapshot.context)) })
+            perform: { sendTool($0, from: snapshot.context) })
             .padding(.horizontal, LayoutTokens.page).padding(.top, LayoutTokens.page)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("readerBrowsePanel")
@@ -22,7 +22,8 @@ extension ReaderScreen {
             expanded: Binding(get: { snapshot.expanded }, set: { sendTool($0 ? .expand : .collapse, from: context) }),
             showsDetails: details, readyForInput: readyForInput, compactHeight: readerDockHeight, showsHistory: snapshot.controls,
             showHistory: { sendTool(.open(.history), from: context) }, closeSearch: { sendTool(.endSearch, from: context) },
-            selectTarget: { start, end in navigate(start, end: end, placement: .context, obstruction: readerDockHeight, from: context) })
+            selectTarget: { start, end in navigate(start, end: end, placement: .context, obstruction: readerDockHeight, from: context) },
+            perform: { sendTool($0, from: context) })
     }
 
     @ViewBuilder var continuationControl: some View {

@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import AVFoundation
 
 @MainActor @Observable final class ReaderToolSession {
     enum Action {
@@ -15,7 +16,12 @@ import UIKit
         case startAutomatic, pauseAutomatic, endAutomatic
         case systemRequest, sourceChanged, backgrounded
         case encode(String?)
-        case jumped(ReaderActionContext, Int)
+        case navigate(ReaderNavigationIntent)
+        case returnToSpeech, returnToPreview, continueHere
+        case positionHandoff, manualInteraction, selectionChanged, ordinaryEdit
+        case remote(ListeningSession, ListeningCommand)
+        case startAutomaticAfterRelease(Bool)
+        case rate(Float), timer(Int), chooseVoice(AVSpeechSynthesisVoice), previewVoice(AVSpeechSynthesisVoice)
         case finishedBrowse(ReaderActionContext)
         case nativeConfirmed(ReaderHostToken), nativeDismissed(ReaderHostToken), nativeClose(ReaderHostToken)
     }
@@ -90,11 +96,11 @@ import UIKit
             if let visit = render.visit, case .quick(let current) = visit.route, current == tool {
                 finish(visit)
             } else {
-                if tool == .more { reader?.autoReading.pause() } else { reader?.autoReading.end() }
+                if tool == .more { reader?.autoReading?.pause() } else { reader?.autoReading?.end() }
                 replace(.quick(tool), returnTo: .init(chrome: .visible))
             }
         case .open(let route):
-            reader?.autoReading.end()
+            reader?.autoReading?.end()
             var resume = ReaderReturnContext()
             if case .library = route, case .quick(.more) = render.visit?.route {
                 resume = .init(target: .more, chrome: .visible)
@@ -102,20 +108,19 @@ import UIKit
             if case .library(let visit) = route { tools.select(visit.tab) }
             replace(route, returnTo: resume)
         case .openSearch:
-            reader?.autoReading.end()
+            reader?.autoReading?.end()
             tools.beginSearchSession()
             replace(.search(tools))
         case .openListening:
             guard let reader else { return }
-            reader.autoReading.end()
             tools.stopSearch()
-            publish(.accessory(.listening(reader.listening), .hidden))
+            publish(.accessory(.listening(reader.selectListening()), .hidden))
         case .openAutomatic:
             guard let reader else { return }
-            reader.stopListening()
-            reader.autoReading.pause()
+            let automatic = reader.selectAutomaticReading()
+            automatic.pause()
             tools.stopSearch()
-            publish(.accessory(.automatic(reader.autoReading), .hidden))
+            publish(.accessory(.automatic(automatic), .hidden))
         case .expand:
             expand()
         case .collapse:
@@ -132,6 +137,7 @@ import UIKit
             updateNote(note)
         case .showVoices(let shown):
             guard var visit = render.visit, case .listeningSettings(let player, _) = visit.route else { return }
+            if shown { player.pause() } else { player.stopPreview() }
             visit.route = .listeningSettings(player, shown ? .voices : .controls)
             publish(.tool(visit))
         case .startListening:
@@ -144,32 +150,57 @@ import UIKit
             reader?.stopListening()
             if render.compact == .listening { hideAccessory() }
         case .startAutomatic:
-            guard let reader, reader.settings?.mode == .scroll else { return }
-            reader.stopListening(releasingPosition: true, returnToText: false)
-            reader.autoReading.requestStart()
+            guard let reader, reader.settings?.mode == .scroll, let automatic = reader.autoReading else { return }
+            automatic.requestStart(opening: opening)
             hideAccessory()
+        case .startAutomaticAfterRelease(let ready):
+            guard host.token == nil, let reader, let automatic = reader.autoReading,
+                  let request = automatic.pendingStart, request.opening == opening else { return }
+            guard ready, render.target == .none else { automatic.pause(); return }
+            reader.beganReadingInteraction()
+            automatic.startAfterDismissal(opening: opening, speed: reader.settings?.autoReadingSpeed ?? autoReadingControl().defaultValue,
+                                          requestID: request.id)
         case .pauseAutomatic:
-            reader?.autoReading.pause()
+            reader?.autoReading?.pause()
         case .endAutomatic:
-            reader?.autoReading.end()
+            reader?.autoReading?.end()
             if render.compact == .automatic { hideAccessory() }
         case .systemRequest:
-            reader?.autoReading.pause(); reader?.pauseListening()
+            reader?.autoReading?.pause(); reader?.pauseListening()
             if render.visit == nil && render.compact == .progress { hideChrome() }
         case .sourceChanged:
-            reader?.autoReading.pause(); reader?.pauseListening()
+            reader?.autoReading?.pause(); reader?.pauseListening()
         case .backgrounded:
-            reader?.autoReading.pause()
+            reader?.autoReading?.pause()
         case .encode(let encoding):
             tools.stopSearch()
             publish(.reading(.hidden))
             reader?.restart(encoding: encoding)
-        case .jumped(let source, let previousRevision):
-            guard source == render.context, let reader, reader.navigationRevision > previousRevision else { return }
-            if render.compact == .search { collapse() }
-            else if let visit = render.visit, visit.route.container == .task {
-                finish(visit, returningToReader: true)
-            } else if render.compact == .progress { publish(resolveResume(.init())) }
+        case .navigate(let intent):
+            requestNavigation(intent)
+        case .positionHandoff:
+            prepareJump()
+        case .manualInteraction:
+            guard let reader else { return }
+            if let player = reader.activeListening {
+                if player.ownsPosition && !player.active { reader.cancelNavigation() }
+                player.userNavigated()
+            }
+        case .selectionChanged:
+            reader?.pauseListening()
+            reader?.autoReading?.end()
+        case .ordinaryEdit:
+            reader?.autoReading?.end()
+        case .returnToSpeech, .returnToPreview, .continueHere:
+            finishPositionAction(action)
+        case .remote(let player, let command):
+            guard player === reader?.activeListening, player.active else { return }
+            player.execute(command)
+            if !player.active, render.compact == .listening { hideAccessory() }
+        case .rate(let rate): reader?.activeListening?.setRate(rate)
+        case .timer(let minutes): reader?.activeListening?.setTimer(minutes)
+        case .chooseVoice(let voice): reader?.activeListening?.selectVoice(voice)
+        case .previewVoice(let voice): reader?.activeListening?.preview(voice)
         case .finishedBrowse(let source):
             guard source == render.context else { return }
             if render.compact == .search { tools.stopSearch() }
@@ -184,8 +215,79 @@ import UIKit
         }
     }
 
+    var listeningAdmission: ListeningAdmission {
+        guard valid, let reader, !reader.isLeaving else { return .blocked(.leaving) }
+        if reader.error != nil { return .blocked(.readingError) }
+        if reader.selectionStart != nil || reader.viewportAccess.controller?.selectedSourceRange() != nil {
+            return .blocked(.selection)
+        }
+        if listeningVoicesPresented || reader.activeListening?.previewing == true { return .blocked(.voice) }
+        if let work = reader.navigationWork {
+            switch work.intent {
+            case .returnToSpeech: return .keepCurrentOnly(.returning)
+            case .userJump, .returnToPreview, .syncedContinuation: return .keepCurrentOnly(.locating)
+            case .listeningFollow, .speechExit: break
+            }
+        }
+        if reader.viewportAccess.hasBlockingListeningPresentation(opening: opening, awaitingToolContent: true) {
+            return .blocked(.externalPresentation)
+        }
+        if reader.viewportAccess.hasBlockingListeningPresentation(opening: opening) {
+            return .keepCurrentOnly(.presentingTool)
+        }
+        return .allowed
+    }
+
+    private func prepareJump() {
+        reader?.pauseListening()
+        reader?.activeListening?.userNavigated()
+        reader?.autoReading?.end()
+    }
+
+    private func requestNavigation(_ intent: ReaderNavigationIntent) {
+        guard let reader, !reader.navigating else { return }
+        let source = render.context
+        let previous = reader.navigationRevision
+        switch intent {
+        case .userJump(let target):
+            prepareJump()
+            reader.executeBrowse(target, intent: intent)
+        case .returnToPreview(let target):
+            reader.executeBrowse(target, intent: intent)
+            return
+        default: return
+        }
+        let request = reader.navigationGeneration
+        let task = reader.navigationTask
+        Task { [weak self, weak reader] in
+            await task?.value
+            guard let self, let reader, valid, render.context == source,
+                  reader.navigationGeneration == request, reader.navigationRevision > previous else { return }
+            if render.compact == .search { collapse() }
+            else if let visit = render.visit, visit.route.container == .task { finish(visit, returningToReader: true) }
+            else if render.compact == .progress { publish(resolveResume(.init())) }
+        }
+    }
+
+    private func finishPositionAction(_ action: Action) {
+        guard let reader, !reader.navigating else { return }
+        let source = render.context
+        let wasBrowsing = reader.browseOrigin != nil
+        Task { [weak self, weak reader] in
+            guard let self, let reader else { return }
+            switch action {
+            case .returnToSpeech:
+                guard await reader.returnToListening() else { return }
+            case .returnToPreview: await reader.returnFromBrowse()
+            case .continueHere: await reader.continueReading()
+            default: return
+            }
+            if wasBrowsing, reader.browseOrigin == nil { send(.finishedBrowse(source)) }
+        }
+    }
+
     private func showChrome() {
-        reader?.autoReading.pause()
+        reader?.autoReading?.pause()
         switch intent {
         case .accessory(let accessory, _): publish(.accessory(accessory, .visible))
         case .reading: publish(resolveResume(.init(chrome: .visible)))
