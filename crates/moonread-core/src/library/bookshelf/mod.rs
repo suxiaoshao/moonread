@@ -4,7 +4,7 @@ pub(crate) mod full_index;
 
 use crate::{ReaderCore, ReaderError, Result, SourceContentKey, valid_source_key};
 use rusqlite::{Connection, params};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 // One copy-selection order, shared by the full catalogue and scoped recents.
 pub(crate) const PREFERRED_SOURCE_ORDER: &str = "COALESCE(p.preferred_file_id=f.id,0) DESC,f.id";
@@ -349,10 +349,43 @@ impl ReaderCore {
             validate_relative(parent, true)?;
         }
         let db = self.read_lock()?;
-        let mut entries = entries(&db, shelf_id.as_deref(), parent_path.as_deref(), false)?;
+        // Rows, aggregates and cover candidates must see the same file index.
+        let tx = db.unchecked_transaction()?;
+        let mut entries = entries(&tx, shelf_id.as_deref(), parent_path.as_deref(), false)?;
         entries.sort_by(|a, b| crate::library::order::directory_order(a, b, sort));
-        populate_cover_previews(&db, &mut entries)?;
+        populate_cover_previews(&tx, &mut entries)?;
+        tx.commit()?;
         Ok(entries)
+    }
+    pub(crate) fn library_directory_detail_keys(
+        &self,
+        shelf_id: String,
+        parent_path: String,
+    ) -> Result<Vec<crate::ReadingKey>> {
+        validate_relative(&parent_path, true)?;
+        let db = self.read_lock()?;
+        let tx = db.unchecked_transaction()?;
+        let mut stmt = tx.prepare_cached(
+            "SELECT f.shelf_id,f.relative_path,f.directory,fi.content_sha256
+             FROM library_files f LEFT JOIN file_identities fi ON fi.file_id=f.id
+             WHERE f.shelf_id=?1 AND f.parent_path=?2",
+        )?;
+        let mut rows = stmt.query(params![shelf_id, parent_path])?;
+        let mut keys = BTreeSet::new();
+        while let Some(row) = rows.next()? {
+            if row.get::<_, bool>(2)? {
+                let shelf: String = row.get(0)?;
+                let path: String = row.get(1)?;
+                keys.extend(
+                    folder_cover_previews(&tx, &shelf, &path)?
+                        .into_iter()
+                        .filter_map(|preview| preview.content_sha256),
+                );
+            } else if let Some(sha) = row.get::<_, Option<String>>(3)? {
+                keys.insert(sha);
+            }
+        }
+        keys.into_iter().map(crate::parse_reading_key).collect()
     }
     pub(crate) fn library_folder_cover_previews(
         &self,

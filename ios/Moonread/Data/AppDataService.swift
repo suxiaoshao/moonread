@@ -223,7 +223,13 @@ actor AppDataService {
     }()
     var systemSpotlightThumbnailFailures = Set<String>()
     private var core: ReaderCore?
-    struct CachedQuery { let signature: UserQuerySignature; let identities: [String: String]; let query: ReaderQuery; let statisticsIncomplete: Bool }
+    struct CachedQuery {
+        let signature: UserQuerySignature
+        let identities: [String: String]
+        let query: ReaderQuery
+        let statisticsIncomplete: Bool
+        let directoryActivity: ReaderQuery?
+    }
     #if DEBUG
     var queryTestBoundary: (@Sendable (String, UserQueryTestPhase) async throws -> Void)?
     #endif

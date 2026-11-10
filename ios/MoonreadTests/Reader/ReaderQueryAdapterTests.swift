@@ -47,6 +47,69 @@ final class ReaderQueryAdapterRecentReadingRestorationTests: RecentReadingRestor
 }
 
 final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
+  @MainActor func testDirectoryDetailsFollowCoverSelectionAndRevalidateActivity() async throws {
+    let (root, service, core, formal, pending, direct, _, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    var contents = ["a.txt": direct]
+    let nested = (1...5).map { "nested/deeper/\($0).txt" }
+    for (index, path) in nested.enumerated() {
+      let input = root.appendingPathComponent("input-\(index).txt")
+      try "第一章\n合成测试内容 \(index)\n".write(to: input, atomically: true, encoding: .utf8)
+      contents[path] = try core.importBook(filePath: input.path, title: "Synthetic")
+    }
+    var items: [ScannedLibraryItem] = ["nested", "nested/deeper"].map {
+      .init(relativePath: $0, directory: true, size: 0, modified: 0, needsDownload: false)
+    }
+    items += contents.map { path, book in
+      .init(relativePath: path, directory: false, size: book.byteCount, modified: 0, needsDownload: false)
+    }
+    try core.scanLibraryShelf(shelfId: "builtin", items: items)
+    for file in try core.sourceFiles(shelfId: "builtin") where !file.directory {
+      let book = try XCTUnwrap(contents[file.relativePath])
+      try core.linkLibraryFile(fileId: file.id, bookId: book.id)
+      try await formal.put("metadata/\(book.contentSha256)/author", value: "\"\(file.relativePath)\"", device: "fixture")
+    }
+    func positionPayload(key: String, updated: Int64) throws -> String {
+      try UserSyncJSON.encode(StoredValue(updated: updated, token: "fixture-\(updated)",
+        value: UserSyncJSON.encode(PositionValue(content_key: key, offset: 3))))
+    }
+    for (index, path) in nested.enumerated() {
+      let key = try XCTUnwrap(contents[path]).contentSha256
+      try await formal.receiveSyncFixture("position", key: key, payload: positionPayload(key: key, updated: Int64(index + 1)))
+    }
+    try await formal.receiveSyncFixture("position", key: direct.contentSha256,
+      payload: positionPayload(key: direct.contentSha256, updated: 10))
+    try await service.correctChapter(direct.id, offset: 0, title: "Synthetic correction", level: 0)
+    let promoted = try XCTUnwrap(contents[nested[0]]), omitted = try XCTUnwrap(contents[nested[1]])
+    let alias = "pending:" + promoted.id
+    let payload = try positionPayload(key: alias, updated: 20)
+    let details = QueryAttemptCounter()
+    await service.queryFixture { scope, phase in
+      guard scope == "directory-details", phase == .built else { return }
+      switch await details.next() {
+      case 1: try await pending.receiveSyncFixture("value", key: "position/" + alias, payload: payload)
+      case 2: try await formal.put("metadata/\(omitted.contentSha256)/author", value: "\"Unselected\"", device: "fixture")
+      default: break
+      }
+    }
+    let location = LibraryLocation(shelfID: "builtin")
+    let staged = try await service.libraryEntries(location)
+    await service.queryFixture(nil)
+    let full = try await service.catalogueQuery(location, recursive: true)
+      .libraryEntries(shelfId: "builtin", parentPath: "", sort: .reading)
+    XCTAssertEqual(staged.map(\.id), full.map(\.id))
+    XCTAssertEqual(staged.map(\.lastRead), full.map(\.lastRead))
+    let folder = try XCTUnwrap(staged.first?.folderRow)
+    XCTAssertEqual(folder.childBookCount, 5)
+    XCTAssertEqual(folder.coverPreviews.compactMap(\.author), [nested[0], nested[4], nested[3], nested[2]])
+    XCTAssertEqual(folder.coverPreviews, full.first?.folderRow?.coverPreviews)
+    XCTAssertEqual(staged.last?.metadata, full.last?.metadata)
+    XCTAssertEqual(staged.last?.positionUtf8, 3)
+    XCTAssertEqual(staged.last?.chapterTitle, "Synthetic correction")
+    let rounds = await details.count
+    XCTAssertEqual(rounds, 2, "Activity selects a different cover; unselected metadata cannot invalidate this directory")
+  }
+
   @MainActor func testBatchedProjectionOnlyReadsScopedCandidatesAndKeepsCompatibility() async throws {
     let store = try makeInMemoryUserStore()
     let keys = (1...140).map { String(format: "%064x", $0) }
