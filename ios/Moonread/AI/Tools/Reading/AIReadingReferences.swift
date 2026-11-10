@@ -1,10 +1,10 @@
 import Foundation
 
 enum ReadingToolTarget {
-  struct BookReference {
+  struct BookReference: Sendable {
     let sha: String
   }
-  struct FileReference {
+  struct FileReference: Sendable {
     let value: String
   }
   enum PreparationPolicy { case existingOnly, prepare }
@@ -14,7 +14,7 @@ enum ReadingToolTarget {
 
   init(_ input: AIGetBookInput) throws {
     switch (input.bookRef, input.fileRef) {
-    case (let ref?, nil): self = .book(.init(sha: try AIReadingReferences.parseBookReference(ref)))
+    case (let ref?, nil): self = .book(try AIReadingReferences.parseBookReference(ref))
     case (nil, let ref?): self = .file(.init(value: ref), input.prepare == true ? .prepare : .existingOnly)
     default:
       throw AIToolError(
@@ -28,13 +28,13 @@ enum ReadingToolTarget {
 actor AIReadingReferences {
   let reader: AppDataService
   init(reader: AppDataService = .shared) { self.reader = reader }
-  nonisolated static func parseBookReference(_ ref: String) throws -> String {
+  nonisolated static func parseBookReference(_ ref: String) throws -> ReadingToolTarget.BookReference {
     guard ref.hasPrefix("b:"), let value = try? parseSha256(value: String(ref.dropFirst(2))) else {
       throw AIToolError("invalid_argument", field: "bookRef", message: "Use a b: reference returned by the book tools.")
     }
-    return value
+    return .init(sha: value)
   }
-  nonisolated func sha(_ ref: String) throws -> String { try Self.parseBookReference(ref) }
+  nonisolated func sha(_ ref: String) throws -> String { try Self.parseBookReference(ref).sha }
   func files() async throws -> [LibraryEntry] {
     var values: [LibraryEntry] = []
     for shelf in try await reader.shelves() { values += try await reader.aiLibraryBooks(shelf.id) }
@@ -56,8 +56,9 @@ actor AIReadingReferences {
     }
     throw AIToolError("not_found", field: "parentRef")
   }
-  func file(_ ref: String) async throws -> LibraryEntry {
-    guard let entry = try await files().first(where: { AIReadingTools.ref("f", $0.id) == ref }) else {
+  func file(_ ref: String) async throws -> LibraryEntry { try await file(ReadingToolTarget.FileReference(value: ref)) }
+  func file(_ ref: ReadingToolTarget.FileReference) async throws -> LibraryEntry {
+    guard let entry = try await files().first(where: { AIReadingTools.ref("f", $0.id) == ref.value }) else {
       throw AIToolError("not_found", field: "fileRef")
     }
     return entry
@@ -67,7 +68,7 @@ actor AIReadingReferences {
   }
   func confirmBook(_ input: AIGetBookInput) async throws -> String? {
     guard case .file(let ref, .prepare) = try ReadingToolTarget(input) else { return nil }
-    let entry = try await file(ref.value)
+    let entry = try await file(ref)
     return String(
       localized:
         "下载并解析《\(entry.name)》 · \(ByteCountFormatter.string(fromByteCount: Int64(entry.size), countStyle: .file))"

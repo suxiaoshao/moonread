@@ -384,11 +384,11 @@ extension AIConversation {
 }
 
 struct AIResultSource: Identifiable {
-    init(id: String, bookRef: String, start: UInt64, end: UInt64, title: String) {
-        self.id = id; self.bookRef = bookRef; self.start = start; self.end = end; self.title = title
+    init(id: String, book: ReadingToolTarget.BookReference, start: UInt64, end: UInt64, title: String) {
+        self.id = id; self.book = book; self.start = start; self.end = end; self.title = title
     }
     let id: String
-    let bookRef: String
+    let book: ReadingToolTarget.BookReference
     let start: UInt64
     let end: UInt64
     let title: String
@@ -406,13 +406,13 @@ struct AIResultSource: Identifiable {
     }
     init?(_ value: JSONValue) {
         let object = value.object
-        guard let id = object["sourceRef"]?.string, let book = object["bookRef"]?.string,
-              (try? AIReadingReferences.parseBookReference(book)) != nil,
+        guard let id = object["sourceRef"]?.string, let rawBook = object["bookRef"]?.string,
+              let book = try? AIReadingReferences.parseBookReference(rawBook),
               let start = object["range"]?.object["startUtf8"]?.int,
               let end = object["range"]?.object["endUtf8"]?.int,
               start >= 0, end > start,
-              id == AIReadingTools.ref("source", "\(book):\(start):\(end)") else { return nil }
-        self.id = id; bookRef = book; self.start = UInt64(start); self.end = UInt64(end)
+              id == AIReadingTools.ref("source", "\(rawBook):\(start):\(end)") else { return nil }
+        self.id = id; self.book = book; self.start = UInt64(start); self.end = UInt64(end)
         title = object["title"]?.string ?? object["chapterTitle"]?.string ?? ""
     }
 }
@@ -432,7 +432,7 @@ struct AISourcePreview: View {
         }.presentationDetents([.medium, .large]).task(id: source.id) {
             do {
                 let reader = AppDataService.shared
-                let sha = String(source.bookRef.dropFirst(2))
+                let sha = source.book.sha
                 let id = try await reader.aiBookID(sha: sha)
                 let snapshot = try await reader.snapshot(id)
                 guard snapshot.book.contentSha256 == sha else { throw AIToolError("stale_reference") }

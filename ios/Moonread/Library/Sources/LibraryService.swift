@@ -65,8 +65,6 @@ extension LibraryEntry {
     var byteCount: UInt64 { bookRow?.byteCount ?? 0 }
     var chapterTitle: String? { bookRow?.chapterTitle }
     var preferred: Bool { bookRow?.preferred ?? false }
-    var childBookCount: UInt64 { folderRow?.childBookCount ?? 0 }
-    var coverPreviews: [LibraryCoverPreview] { folderRow?.coverPreviews ?? [] }
     var metadata: BookMetadata? { bookRow?.metadata }
     func withMetadata(_ metadata: BookMetadata?) -> Self {
         guard var book = bookRow else { return self }

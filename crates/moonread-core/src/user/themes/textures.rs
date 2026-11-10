@@ -42,11 +42,31 @@ pub struct ReaderTextureDescriptor {
     pub blend: ReaderTextureBlend,
     pub opacity: f64,
 }
-#[derive(Clone, Debug, PartialEq, uniffi::Record)]
-pub struct ResolvedReaderTexture {
-    pub palette_id: String,
-    pub descriptor: Option<ReaderTextureDescriptor>,
-    pub enabled: bool,
+#[derive(Clone, Debug, PartialEq, uniffi::Enum)]
+pub enum ResolvedReaderTexture {
+    Unsupported { palette_id: String },
+    Off { descriptor: ReaderTextureDescriptor },
+    On { descriptor: ReaderTextureDescriptor },
+}
+
+impl ResolvedReaderTexture {
+    pub fn descriptor(&self) -> Option<&ReaderTextureDescriptor> {
+        match self {
+            Self::Unsupported { .. } => None,
+            Self::Off { descriptor } | Self::On { descriptor } => Some(descriptor),
+        }
+    }
+
+    pub fn enabled(&self) -> bool {
+        matches!(self, Self::On { .. })
+    }
+
+    pub fn palette_id(&self) -> &str {
+        match self {
+            Self::Unsupported { palette_id } => palette_id,
+            Self::Off { descriptor } | Self::On { descriptor } => &descriptor.palette_id,
+        }
+    }
 }
 #[uniffi::export]
 pub fn builtin_reader_textures() -> Vec<ReaderTextureDescriptor> {
@@ -144,20 +164,22 @@ pub fn reader_texture_for_palette(
     palette_id: String,
 ) -> Result<ResolvedReaderTexture> {
     preferences.reader_palette_textures.validate()?;
-    let descriptor = builtin_reader_textures()
+    let Some(descriptor) = builtin_reader_textures()
         .into_iter()
-        .find(|d| d.palette_id == palette_id);
-    let enabled = descriptor.is_some()
-        && preferences
-            .reader_palette_textures
-            .enabled_by_palette
-            .get(&palette_id)
-            .copied()
-            .unwrap_or(true);
-    Ok(ResolvedReaderTexture {
-        palette_id,
-        descriptor,
-        enabled,
+        .find(|d| d.palette_id == palette_id)
+    else {
+        return Ok(ResolvedReaderTexture::Unsupported { palette_id });
+    };
+    let enabled = preferences
+        .reader_palette_textures
+        .enabled_by_palette
+        .get(&palette_id)
+        .copied()
+        .unwrap_or(true);
+    Ok(if enabled {
+        ResolvedReaderTexture::On { descriptor }
+    } else {
+        ResolvedReaderTexture::Off { descriptor }
     })
 }
 #[uniffi::export]
@@ -167,7 +189,7 @@ pub fn set_reader_palette_texture(
     enabled: bool,
 ) -> Result<ThemePreferences> {
     let resolved = reader_texture_for_palette(preferences.clone(), palette_id.clone())?;
-    if resolved.descriptor.is_none() {
+    if matches!(resolved, ResolvedReaderTexture::Unsupported { .. }) {
         return Err(ReaderError::InvalidSettings);
     }
     preferences

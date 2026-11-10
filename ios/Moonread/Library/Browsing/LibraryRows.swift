@@ -66,8 +66,8 @@ struct LibraryFileRow: View {
             HStack(spacing: 4) {
                 Button { if let select { select() } else { model.open(entry) } } label: {
                     HStack(spacing: LayoutTokens.control) {
-                        if entry.directory {
-                            LibraryFolderCover(previews: entry.coverPreviews).frame(width: coverSize.width, height: coverSize.height)
+                        if case .folder(let folder) = entry.item {
+                            LibraryFolderCover(previews: folder.coverPreviews).frame(width: coverSize.width, height: coverSize.height)
                         } else { BookCoverView(title: entry.title, compact: true, cover: entry.metadata?.cover, contentSHA256: entry.contentSha256, author: entry.metadata?.author).frame(width: coverSize.width, height: coverSize.height) }
                         VStack(alignment: .leading, spacing: 4) {
                             Text(highlighted).font(.body.weight(.medium)).lineLimit(1)

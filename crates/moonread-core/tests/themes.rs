@@ -126,15 +126,19 @@ fn reader_inherits_the_matching_app_slot_and_true_system_mode() {
     };
     value.preferences.reader_mode = ReaderAppearanceMode::Dark;
     let plan = resolve_themes(value.clone(), ThemeAppearance::Light, false).unwrap();
-    assert_eq!(plan.app.palette_id, "apricot-light");
-    assert_eq!(plan.reader.palette_id, "mint-dark");
+    assert_eq!(plan.app.palette_id(), "apricot-light");
+    assert_eq!(plan.reader.palette_id(), "mint-dark");
     value.preferences.app_mode = AppAppearanceMode::Dark;
     value.preferences.reader_mode = ReaderAppearanceMode::System;
     value.preferences.reader_light = ReaderPaletteSource::System;
     let plan = resolve_themes(value, ThemeAppearance::Light, true).unwrap();
-    assert_eq!(plan.reader.appearance, ThemeAppearance::Light);
-    assert!(plan.reader.colors.is_none());
-    assert_eq!(plan.app.palette_id, "mint-dark");
+    assert!(matches!(
+        plan.reader.surface,
+        ResolvedSurface::System {
+            appearance: ThemeAppearance::Light
+        }
+    ));
+    assert_eq!(plan.app.palette_id(), "mint-dark");
 }
 
 #[test]
@@ -272,16 +276,16 @@ fn palette_texture_support_independence_and_resolved_inheritance() {
         let resolved =
             reader_texture_for_palette(snapshot.preferences.clone(), palette.id.clone()).unwrap();
         assert_eq!(
-            resolved.descriptor.is_some(),
+            resolved.descriptor().is_some(),
             !["white-light", "black-dark"].contains(&palette.id.as_str())
         );
-        assert_eq!(resolved.enabled, resolved.descriptor.is_some());
+        assert_eq!(resolved.enabled(), resolved.descriptor().is_some());
     }
     for id in ["system", "custom-apricot-light", "future-palette"] {
         assert!(
             reader_texture_for_palette(snapshot.preferences.clone(), id.into())
                 .unwrap()
-                .descriptor
+                .descriptor()
                 .is_none()
         );
         assert!(set_reader_palette_texture(snapshot.preferences.clone(), id.into(), true).is_err());
@@ -289,14 +293,17 @@ fn palette_texture_support_independence_and_resolved_inheritance() {
     snapshot.preferences =
         set_reader_palette_texture(snapshot.preferences, "apricot-light".into(), false).unwrap();
     let plans = resolve_themes(snapshot.clone(), ThemeAppearance::Light, false).unwrap();
-    assert_eq!(plans.reader_texture.palette_id, "apricot-light");
-    assert!(!plans.reader_texture.enabled);
+    assert_eq!(plans.reader_texture.palette_id(), "apricot-light");
+    assert!(matches!(
+        plans.reader_texture,
+        ResolvedReaderTexture::Off { .. }
+    ));
     snapshot.preferences.reader_mode = ReaderAppearanceMode::Dark;
     assert!(
         resolve_themes(snapshot.clone(), ThemeAppearance::Light, true)
             .unwrap()
             .reader_texture
-            .enabled
+            .enabled()
     );
     snapshot.preferences.reader_mode = ReaderAppearanceMode::Light;
     snapshot.preferences.app_light = AppPaletteSource::Palette {
@@ -306,21 +313,21 @@ fn palette_texture_support_independence_and_resolved_inheritance() {
         resolve_themes(snapshot.clone(), ThemeAppearance::Dark, false)
             .unwrap()
             .reader_texture
-            .palette_id,
+            .palette_id(),
         "mint-light"
     );
     assert!(
         resolve_themes(snapshot.clone(), ThemeAppearance::Dark, false)
             .unwrap()
             .reader_texture
-            .enabled
+            .enabled()
     );
     snapshot.preferences.reader_light = ReaderPaletteSource::System;
     assert!(
         resolve_themes(snapshot.clone(), ThemeAppearance::Dark, false)
             .unwrap()
             .reader_texture
-            .descriptor
+            .descriptor()
             .is_none()
     );
     let mut custom = snapshot.palettes[0].clone();
@@ -334,7 +341,7 @@ fn palette_texture_support_independence_and_resolved_inheritance() {
         resolve_themes(snapshot.clone(), ThemeAppearance::Light, false)
             .unwrap()
             .reader_texture
-            .descriptor
+            .descriptor()
             .is_none()
     );
     snapshot
@@ -345,6 +352,6 @@ fn palette_texture_support_independence_and_resolved_inheritance() {
     assert!(
         reader_texture_for_palette(snapshot.preferences, "mint-dark".into())
             .unwrap()
-            .enabled
+            .enabled()
     );
 }

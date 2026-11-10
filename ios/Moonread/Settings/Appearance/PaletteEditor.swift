@@ -27,7 +27,7 @@ struct PaletteEditorContent: View {
     private var creating: Bool { draft.creating }
     private var palette: ThemePalette { draft.palette }
     private var previewTheme: ThemeSurface {
-        ThemeSurface(plan: ResolvedTheme(appearance: palette.appearance, highContrast: themes.highContrast, colors: palette.colors, paletteId: palette.id))
+        ThemeSurface(plan: ResolvedTheme(highContrast: themes.highContrast, surface: .palette(appearance: palette.appearance, id: palette.id, colors: palette.colors)))
     }
     private var title: LocalizedStringKey { creating ? "新建配色" : "编辑配色" }
     private var fields: some View {

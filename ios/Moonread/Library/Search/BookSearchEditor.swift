@@ -57,15 +57,15 @@ struct BookSearchEditor: View {
                         SystemToolbarButton("应用", role: .confirm) {
                             if let validation = draft.value.validation { error = validation; segment = 0; return }
                             var value = draft.value
-                            if value.root.children.isEmpty { value.root = BookSearchNode() }
+                            if value.root.children.isEmpty { value.root = BookSearchNode(id: value.root.id) }
                             search.configuration = value
                             dismiss()
                         }.fontWeight(.semibold).accessibilityIdentifier("applySearchFilters")
                     }
                     ToolbarItemGroup(placement: .bottomBar) {
                         Button("重置筛选与排序") {
-                            var reset = BookSearchConfiguration(); reset.root.id = draft.original.root.id
-                            draft.value = reset; error = nil
+                            draft.value = BookSearchConfiguration(root: BookSearchNode(id: draft.original.root.id))
+                            error = nil
                         }
                         Spacer()
                         NavigationLink("预览完整条件", value: BookSearchEditorRoute.preview)
@@ -91,8 +91,7 @@ struct BookSearchEditor: View {
                         }
                     }.scrollContentBackground(.hidden).themedPage().navigationTitle("添加排序").navigationBarTitleDisplayMode(.inline)
                 case .preview:
-                    ScrollView { BookSearchSummary(configuration: draft.value, term: search.term, shelfTitle: model.shelfTitle, expanded: true).padding() }
-                        .themedPage().navigationTitle("预览完整条件").navigationBarTitleDisplayMode(.inline)
+                    fullPreview
                 }
             }
         }
@@ -107,6 +106,12 @@ struct BookSearchEditor: View {
         }
     }
     private func cancel() { if draft.changed { discard = true } else { dismiss() } }
+    private var fullPreview: some View {
+        ScrollView {
+            BookSearchSummary(configuration: draft.value, term: search.term, shelfTitle: model.shelfTitle, expanded: true)
+                .padding()
+        }.themedPage().navigationTitle("预览完整条件").navigationBarTitleDisplayMode(.inline)
+    }
     private var sortPage: some View {
         ThemedGroupedList(sections: sortSections, theme: theme, reordered: { ids in
             let current = Dictionary(uniqueKeysWithValues: draft.value.sorts.map { ($0.field.rawValue, $0) })
@@ -223,7 +228,7 @@ private struct BookSearchRulePage: View {
     private var field: BookSearchField { node.field ?? .status }
     private var available: [BookSearchValue] {
         switch field {
-        case .status: ["reading", "finished", "paused", "unread"].map(BookSearchValue.text)
+        case .status: BookSearchStatus.allCases.map { .text($0.rawValue) }
         case .tag: [.untagged] + (options?.tags ?? []).map(BookSearchValue.text)
         case .author: (options?.authors ?? []).map(BookSearchValue.text)
         case .shelf: model.shelves.filter { $0.error == nil }.map { .text($0.id) }

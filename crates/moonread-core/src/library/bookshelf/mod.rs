@@ -78,7 +78,7 @@ pub struct LibraryEntry {
 #[derive(Clone, Debug, uniffi::Enum)]
 pub enum LibraryItem {
     Folder { row: FolderRow },
-    Book { row: BookRow },
+    Book { row: Box<BookRow> },
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -246,7 +246,7 @@ fn library_entry_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryEntry> {
             }
         };
         LibraryItem::Book {
-            row: BookRow {
+            row: Box::new(BookRow {
                 resolution,
                 needs_download: r.get(9)?,
                 position_utf8: r.get::<_, i64>(11)? as u64,
@@ -254,7 +254,7 @@ fn library_entry_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryEntry> {
                 chapter_title: r.get(13)?,
                 preferred: r.get(16)?,
                 metadata: metadata_column(r, 17)?,
-            },
+            }),
         }
     };
     Ok(LibraryEntry {

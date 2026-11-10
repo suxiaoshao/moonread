@@ -75,7 +75,7 @@ actor AIReadingTools {
     type + ":" + SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()
   }
   static func bookRef(_ sha: String) -> String { "b:" + sha }
-  private func sha(_ ref: String) throws -> String { try AIReadingReferences.parseBookReference(ref) }
+  private func sha(_ ref: String) throws -> String { try AIReadingReferences.parseBookReference(ref).sha }
   private func files() async throws -> [LibraryEntry] { try await AIReadingReferences(reader: reader).files() }
   private func location(_ ref: String) async throws -> LibraryLocation { try await AIReadingReferences(reader: reader).location(ref) }
   private func file(_ ref: String) async throws -> LibraryEntry { try await AIReadingReferences(reader: reader).file(ref) }
@@ -170,10 +170,16 @@ actor AIReadingTools {
           || ($0.directory ? input.kind == .folders : input.kind == .books)
       }.map {
         var item = fileResult($0)
-        item.kind = $0.directory ? "folder" : "file"
-        item.ref = Self.ref(
-          $0.directory ? "d" : "f", $0.directory ? $0.shelfId + "/" + $0.relativePath : $0.id)
-        item.childBookCount = UInt64($0.childBookCount)
+        switch $0.item {
+        case .folder(let row):
+          item.kind = "folder"
+          item.ref = Self.ref("d", $0.shelfId + "/" + $0.relativePath)
+          item.childBookCount = row.childBookCount
+        case .book:
+          item.kind = "file"
+          item.ref = Self.ref("f", $0.id)
+          item.childBookCount = 0
+        }
         return item
       }
     } else {
@@ -223,7 +229,7 @@ actor AIReadingTools {
       entry = nil
       contentSHA = reference.sha
     case .file(let reference, let policy):
-      let source = try await file(reference.value)
+      let source = try await AIReadingReferences(reader: reader).file(reference)
       entry = source
       switch policy {
       case .prepare:
