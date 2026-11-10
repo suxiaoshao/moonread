@@ -155,29 +155,21 @@ import UIKit
         let nativeRoot = ListeningTestModal(), controller = ReadingController()
         nativeRoot.addChild(controller); reader.viewportAccess.controller = controller
         let tool = ListeningTestModal(), preview = ListeningTestModal()
-        let toolMarker = ReaderListeningToolMarker()
-        toolMarker.opening = opening
-        tool.addChild(toolMarker)
+        let owner = reader.toolsSession
+        let registry = owner.host.nativeLayers
+        registry.register(tool, origin: .readerTool(opening: opening, visit: nil))
+        registry.register(preview, origin: .readerTool(opening: opening, visit: nil))
         nativeRoot.modal = tool; tool.modal = preview
-        preview.mounting = true
-        listening.tick(uptime: 110)
-        XCTAssertTrue(listening.running, "An empty preview host can mount without cutting off current speech")
-        XCTAssertTrue(reader.viewportAccess.hasBlockingListeningPresentation(opening: opening),
-                      "An unmarked transition cannot admit a new play request")
-        let previewMarker = ReaderListeningToolMarker()
-        previewMarker.opening = opening
-        preview.addChild(previewMarker); preview.mounting = false
+        owner.sampleNativePresentation()
         listening.tick(uptime: 115)
         XCTAssertTrue(listening.running, "Owned reader tools and their previews must survive a tick")
-        XCTAssertTrue(reader.viewportAccess.hasBlockingListeningPresentation(opening: UUID()))
-        previewMarker.removeFromParent()
-        XCTAssertFalse(reader.viewportAccess.hasBlockingListeningPresentation(opening: opening),
-                       "A recognized native host keeps its provenance during dismissal")
+        XCTAssertEqual(reader.viewportAccess.nativeListeningFacts(registry: registry, opening: UUID(), requestingDock: false), .external)
         preview.modal = UIViewController()
+        owner.sampleNativePresentation()
         listening.tick(uptime: 120)
         XCTAssertEqual(listening.phase, .paused, "An unknown native child still blocks")
         preview.modal = nil
-        listening.checkPresentation()
+        owner.sampleNativePresentation()
         XCTAssertEqual(listening.phase, .paused, "Closing a native task never starts speech")
 
         reader.stopListening(); await reader.navigationTask?.value

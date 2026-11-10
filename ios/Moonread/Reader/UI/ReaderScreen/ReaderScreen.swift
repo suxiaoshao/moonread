@@ -38,13 +38,13 @@ struct ReaderScreen: View {
     private var tools: ReaderToolsModel { toolSession.tools }
     private var nativeHost: ReaderPresentationHost { toolSession.host }
     private var render: ReaderRenderSnapshot { toolSession.render }
-    private var rendered: ReaderRenderSnapshot { nativeHost.dismissing ? (nativeHost.node ?? render) : render }
+    private var rendered: ReaderRenderSnapshot { nativeHost.node ?? render }
     var controlsVisible: Bool { rendered.controls }
     private var taskID: String? { rendered.taskID }
     private var isSearch: Bool { rendered.compact == .search }
     private var isLibrary: Bool { rendered.taskID == "library" }
     private var isAI: Bool { rendered.taskID == "ai" }
-    private var sheetPresented: Bool { nativeHost.token != nil && nativeHost.target == .dock }
+    private var sheetPresented: Bool { nativeHost.token != nil }
 
     func sendTool(_ action: ReaderToolSession.Action, from context: ReaderActionContext? = nil) {
         withAnimation(MotionTokens.panel(reduced: reduceMotion)) { toolSession.send(action, from: context) }
@@ -87,7 +87,19 @@ struct ReaderScreen: View {
                             requestWindow: { direction,keep in session.requestWindow(direction,retaining:keep) },
                             dark: colorScheme == .dark, dynamicTypeSize: dynamicTypeSize,
                             navigationRevision: session.navigationRevision,
-                            navigation: session.navigation, resumeAutomaticReading: requestAutomaticStart, listening: listening, listeningUIActive: listeningBodyVisible, autoReading: automatic, viewportAccess: session.viewportAccess,
+                            navigation: session.navigation,
+                            automaticTouchBegan: toolSession.automaticTouchBegan,
+                            automaticBodyTap: { wasRunning in
+                                switch automatic?.bodyTapAction(wasRunning: wasRunning) ?? .ordinary {
+                                case .pause: sendTool(.showAutomaticControls); return true
+                                case .resume: requestAutomaticStart(); return true
+                                case .ordinary: return false
+                                }
+                            },
+                            showAutomaticControls: { sendTool(.showAutomaticControls) },
+                            endAutomaticReading: { sendTool(.endAutomatic) },
+                            readingSelectionChanged: { if $0 { sendTool(.selectionChanged) } },
+                            listening: listening, listeningUIActive: listeningBodyVisible, autoReading: automatic, viewportAccess: session.viewportAccess,
                             annotations: session.annotations, bookmarkPositions: session.bookmarkPositions, focusRange: session.focusRange,
                             selectionStart: session.selectionStart, selection: selectText,
                             allowsBackGesture: allowsReaderBack,
@@ -114,9 +126,9 @@ struct ReaderScreen: View {
                             },
                             bodyDisplayed: { session.bodyDidDisplay() },
                             statisticsInteraction: { session.activity.interacted() },
-                            statisticsPresentationChanged: { [weak activity = session.activity, weak automatic, weak viewport = session.viewportAccess, weak listening] in
+                            statisticsPresentationChanged: { [weak activity = session.activity, weak automatic, weak viewport = session.viewportAccess, weak toolSession] in
                                 activity?.sample()
-                                listening?.checkPresentation()
+                                Task { @MainActor in toolSession?.sampleNativePresentation() }
                                 if automatic?.running == true, activity?.bodyReadable(through: viewport) != true { automatic?.pause() }
                             },
                             annotationChooserChanged: { choosingAnnotations = $0 },
@@ -128,6 +140,7 @@ struct ReaderScreen: View {
                             controlsVisible: controlsVisible,
                             toggleControls: toggleReadingControls,
                             readingBegan: {
+                                sendTool(.endAutomatic)
                                 session.beganReadingInteraction()
                                 if controlsVisible { sendTool(.hideChrome) }
                             },
@@ -149,7 +162,7 @@ struct ReaderScreen: View {
     private var allowsReaderBack: Bool {
         exitPhase == .reading && !navigationPresentation.isSuspended
             && (taskID == nil && rendered.sourcePage == nil) && !rendered.expanded
-            && taskID == nil && !nativeHost.dismissing
+            && !nativeHost.dismissing
             && session.editor == nil && session.error == nil && !session.navigating
     }
 
@@ -338,6 +351,7 @@ struct ReaderScreen: View {
         .onChange(of: nativeHost.phase) { _, _ in synchronizeNativePresentation() }
         .onChange(of: desiredPresentation, initial: true) { _, _ in synchronizeNativePresentation() }
         .onChange(of: render.context.revision) { _, _ in synchronizeNativePresentation() }
+        .onChange(of: render.hasUndo) { _, _ in synchronizeNativePresentation() }
         .onChange(of: nativeHost.token?.id) { _, token in
             if token == nil {
                 synchronizeNativePresentation(animatePage: true)
@@ -440,22 +454,32 @@ struct ReaderScreen: View {
             }
             .toolbarVisibility(readerOwnsChrome ? (readerNavigationVisible ? .visible : .hidden) : .automatic, for: .navigationBar)
         .navigationDestination(isPresented: sourcePageBinding(.settings)) {
+            let visit = render.visit?.id
             ReaderSettingsView(settings: readingSettings, preview: settingsPreview, encoding: session.encodingLabel, isRestartingEncoding: session.restartingEncoding, changeEncoding: changeEncoding, editing: toolSession.settingsEditing, editorClosed: readerEditorClosed)
-                .environment(\.readerListeningOpening, session.opening.request?.id)
+                .environment(\.readerNativeToolScope, toolSession.nativeToolScope(for: render.context))
                 .themeScope(theme)
                 .preferredColorScheme(theme.scheme)
+                .background(sourceToolReturn(visit))
         }
         .navigationDestination(isPresented: sourcePageBinding(.details)) {
+            let visit = render.visit?.id
             // Like reading settings, the pushed page's UIKit chrome follows the reader appearance.
             StatisticsView(library: library, target: detailsTarget)
-                .environment(\.readerListeningOpening, session.opening.request?.id)
+                .environment(\.readerNativeToolScope, toolSession.nativeToolScope(for: render.context))
                 .themeScope(theme).preferredColorScheme(theme.scheme).toolbarVisibility(.hidden, for: .tabBar)
                 .environment(\.returnToReading, returnToReading)
+                .background(sourceToolReturn(visit))
                 .onAppear {
-                    let visit = render.visit?.id
                     returnToReading.close = { if let visit { sendTool(.closeVisit(visit)) } }
                 }
         }
+    }
+
+    private func sourceToolReturn(_ visit: UUID?) -> some View {
+        NavigationTransitionObserver(willLeave: { _ in }, completed: { popping, cancelled in
+            guard popping, !cancelled, let visit else { return }
+            sendTool(.closeVisit(visit))
+        }).allowsHitTesting(false)
     }
 
     private var detailsTarget: StatisticsRoute {
@@ -541,7 +565,7 @@ struct ReaderScreen: View {
             confirmationPresented: systemReadingRouter?.presentsConfirmation(active: !sheetPresented, editor: false) == true,
             choosingAnnotations: choosingAnnotations,
             readerAccessoryPresented: sheetPresented && nativeHost.phase == .confirmed
-                && taskID == nil && (taskID == nil && rendered.sourcePage == nil) && ([.none, .progress, .browse, .search].contains(rendered.compact) || (rendered.compact == .listening && !rendered.expanded && listening?.running != true)) && !rendered.expanded && !controlsVisible)
+                && taskID == nil && rendered.sourcePage == nil && ([.none, .progress, .browse, .search].contains(rendered.compact) || (rendered.compact == .listening && !rendered.expanded && listening?.running != true)) && !rendered.expanded && !controlsVisible)
     }
 
     private var statisticsReadable: Bool {
@@ -602,7 +626,9 @@ struct ReaderScreen: View {
             guard !nativeHost.dismissing else { return }
             sendTool(expanded ? .expand : .collapse, from: context)
         }), compactHeight: $dockHeight, canExpand: snapshot.canExpand,
-        dismissing: nativeHost.dismissing, taskID: snapshot.taskID, closeTask: {
+        input: nativeHost.input(for: render.context), dismissing: nativeHost.dismissing, taskID: snapshot.taskID,
+        scope: toolSession.nativeToolScope(for: context), token: token,
+        confirm: { sendTool(.nativeConfirmed($0)) }, closeTask: {
             if let token, toolSession.acceptsNativeInput(token, generation: context.revision), let visit = snapshot.visit {
                 sendTool(.closeVisit(visit.id), from: context)
             }
@@ -651,13 +677,11 @@ struct ReaderScreen: View {
                 navigate: { start, end, placement, history in
                     navigate(start, end: end, placement: placement, historyID: history, from: context)
                 },
-                edit: editFromLibrary, editorClosed: readerEditorClosed)
+                edit: { if toolSession.accepts(context) { editFromLibrary($0) } }, editorClosed: readerEditorClosed)
         }
-        .onAppear { if let token { sendTool(.nativeConfirmed(token)) } }
         .interactiveDismissDisabled(snapshot.compact != .automatic && snapshot.compact != .listening && snapshot.taskID == nil && session.browseOrigin != nil)
         .themeScope(theme).preferredColorScheme(theme.scheme)
-        .readerListeningToolPresentation()
-        .environment(\.readerListeningOpening, token?.opening)
+        .environment(\.readerNativeToolScope, toolSession.nativeToolScope(for: context))
         .background(ReaderModalChildProbe(host: nativeHost))
         .overlay {
             if session.navigating && !session.isLeaving { LoadingActivity(size: 24, waitingLabel: "正在定位").allowsHitTesting(false) }
@@ -700,6 +724,7 @@ struct ReaderScreen: View {
     }
 
     func openBookDetails(from context: ReaderActionContext? = nil) {
+        guard context.map(toolSession.accepts) != false else { return }
         session.activity.update(visibility: .init(body: false), preview: session.browseOrigin != nil)
         sendTool(.open(.details(bookDetailsTarget)), from: context)
     }
@@ -856,9 +881,9 @@ struct ReaderScreen: View {
             let page = desired == .details || desired == .settings
             // Release the tool sheet before pushing on the source stack.
             let toolTarget: ReaderPresentationTarget = page || !readerNativeReady ? .none : desired
-            if nativeHost.token == nil || (nativeHost.target == toolTarget && !nativeHost.dismissing) { nativeHost.retain(render) }
-            nativeHost.update(toolTarget, opening: opening, generation: render.context.revision,
-                force: session.isLeaving || exitPhase != .reading || navigationPresentation.isSuspended)
+            let leaving = session.isLeaving || exitPhase != .reading || navigationPresentation.isSuspended
+            nativeHost.update(toolTarget == .dock ? render : nil,
+                cause: leaving ? .leaveReader : page ? .replaceContainer : .toolClosed, force: leaving)
             ReaderSceneDiagnostics.record("presentation.project", opening: opening, fields: [
                 "sourceTab": String(describing: library.selectedTab), "sourceCurrent": sourceCurrent,
                 "sourceRouteCount": library.path.count, "sourcePage": String(describing: render.sourcePage),

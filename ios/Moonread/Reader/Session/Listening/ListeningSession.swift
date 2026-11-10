@@ -41,9 +41,7 @@ enum ListeningAdmission: Equatable {
     var active: Bool { phase != .idle }
     var voice: AVSpeechSynthesisVoice? { voiceID.flatMap(AVSpeechSynthesisVoice.init(identifier:)) }
     static var voices: [AVSpeechSynthesisVoice] { AVSpeechSynthesisVoice.speechVoices().filter { !$0.voiceTraits.contains(.isPersonalVoice) } }
-    @ObservationIgnored var voiceSelectionPresented = false
     private var permission: ListeningAdmission {
-        if voiceSelectionPresented || previewing { return .blocked(.voice) }
         return admission()
     }
     @ObservationIgnored private let defaults: UserDefaults

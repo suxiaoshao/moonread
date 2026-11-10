@@ -108,17 +108,14 @@ struct ReaderLibraryContent: View {
                 }
             }
             .modifier(ReaderLibraryEditorPresentation(editing: editing, session: session, refreshOutline: refreshOutline, closed: editorClosed))
-            .readerListeningToolPresentation(alertTitle: String(localized: "恢复自动目录？"))
-            .alert("恢复自动目录？", isPresented: $editing.restoringOutline) {
-                Button("清除人工修正", role: .destructive) {
-                    guard let id = session.readingID else { return }
-                    Task {
-                        do { try await AppDataService.shared.restoreChapterCorrections(id); await refreshOutline() }
-                        catch { model.error = ReaderMessages.error(error) }
-                    }
+            .readerToolConfirmation("恢复自动目录？", isPresented: $editing.restoringOutline,
+                message: "仅清除目录的人工修正，正文、书签和笔记保持不变。", confirm: "清除人工修正", destructive: true) {
+                guard let id = session.readingID else { return }
+                Task {
+                    do { try await AppDataService.shared.restoreChapterCorrections(id); await refreshOutline() }
+                    catch { model.error = ReaderMessages.error(error) }
                 }
-                Button("取消", role: .cancel) {}
-            } message: { Text("仅清除目录的人工修正，正文、书签和笔记保持不变。") }
+            }
             .task(id: preparedBookID) {
                 guard let id = preparedBookID else { return }
                 var available = session.book?.byteCount

@@ -322,7 +322,7 @@ struct ReaderSettingsView: View {
                     ReadingPreviewBackdrop(surface: previewTheme).ignoresSafeArea()
                 }
                 .preferredColorScheme(previewTheme.scheme)
-                .readerListeningToolPresentation()
+                .readerToolPresentation()
                 .interactiveDismissDisabled()
                 .onAppear { previewVisible = true }
                 .sheet(item: paletteBinding(.preview), onDismiss: {
@@ -348,7 +348,7 @@ struct ReaderSettingsView: View {
 
     private func paletteEditor(_ value: PaletteDraft) -> some View {
         PaletteEditor(draft: value, showsAppPreview: false)
-        .readerListeningToolPresentation()
+        .readerToolPresentation()
         .themeScope(theme)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)

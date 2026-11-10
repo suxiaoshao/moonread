@@ -52,7 +52,7 @@ struct StatisticsView: View {
         }
         .sheet(item: $information.draft, onDismiss: { Task { if let target { await information.load(target) } } }) { draft in
             BookMetadataEditor(draft: draft, title: information.entry?.title ?? target?.title ?? "").themeScope(theme)
-                .readerListeningToolPresentation()
+                .readerToolPresentation()
         }
         .alert("下载小说后才能编辑信息", isPresented: $information.confirmDownload) {
             Button("下载并准备") { if let target { information.prepareEditing(target) } }
@@ -134,7 +134,7 @@ struct StatisticsView: View {
         }
         .sheet(item: $aiRequest) {
             if ai.availability.isAvailable {
-                AIQuickTaskSheet(request: $0).themeScope(theme).readerListeningToolPresentation()
+                AIQuickTaskSheet(request: $0).themeScope(theme).readerToolPresentation()
             }
         }
         .onChange(of: ai.availability.isAvailable) { _, available in if !available { aiRequest = nil; removingTask = nil } }

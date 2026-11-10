@@ -11,11 +11,7 @@ extension ReadingController {
             let ids = annotationIDs(at: gesture.location(in: text), in: text)
             if !ids.isEmpty { showAnnotations(ids, in: text); return }
         }
-        switch autoReading?.bodyTapAction(wasRunning: pausedAutomatically) ?? .ordinary {
-        case .pause: autoReading?.pause(showPanel: true); return
-        case .resume: resumeAutomaticReading(); return
-        case .ordinary: break
-        }
+        if automaticBodyTap(pausedAutomatically) { return }
         if controlsVisible || settings?.mode != .pages { toggleControls?(); return }
         let fraction = gesture.location(in: readingSurface).x / max(1, readingSurface.bounds.width)
         if fraction < 0.28 { movePage(-1) }
@@ -130,7 +126,6 @@ extension ReadingController {
     }
 
     func textView(_ textView: UITextView, willPresentEditMenuWith animator: any UIEditMenuInteractionAnimating) {
-        autoReading?.end()
         // The edit menu itself is not a blocker. Completion merely asks the
         // recorder to reread the public modal chain, without adding idle credit.
         animator.addCompletion { [weak self] in self?.statisticsPresentationChanged() }
@@ -178,7 +173,7 @@ extension ReadingController {
     static var pageActionNames: [String] { [String(localized: "上一页"), String(localized: "下一页")] }
     func configureAccessibility(_ text: UITextView) {
         (text as? ReadingTextView)?.accessibilityNavigation = { [weak self] in
-            self?.autoReading?.end(); self?.statisticsInteraction(); self?.readingBegan?()
+            self?.statisticsInteraction(); self?.readingBegan?()
         }
         (text as? ReadingTextView)?.copySelection = { [weak self] start, end in
             guard let self else { return }
@@ -207,8 +202,8 @@ extension ReadingController {
         }
         if let autoReading, autoReading.phase != .idle && autoReading.phase != .finished {
             text.accessibilityCustomActions?.append(contentsOf: [
-                UIAccessibilityCustomAction(name: String(localized: "暂停自动阅读")) { [weak autoReading] _ in autoReading?.pause(showPanel: true); return true },
-                UIAccessibilityCustomAction(name: String(localized: "结束自动阅读")) { [weak autoReading] _ in autoReading?.end(); return true }
+                UIAccessibilityCustomAction(name: String(localized: "暂停自动阅读")) { [weak self] _ in self?.showAutomaticControls(); return true },
+                UIAccessibilityCustomAction(name: String(localized: "结束自动阅读")) { [weak self] _ in self?.endAutomaticReading(); return true }
             ])
         }
         if settings?.mode == .pages {

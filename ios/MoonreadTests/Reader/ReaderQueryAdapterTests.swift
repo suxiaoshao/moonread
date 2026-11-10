@@ -458,8 +458,7 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     let owner = ReaderToolSession()
     owner.send(.open(.library(.listing(.chapters))))
     let host = owner.host
-    host.retain(owner.render)
-    host.update(.dock, opening: owner.opening, generation: owner.revision)
+    host.update(owner.render)
     let token = try XCTUnwrap(host.token); host.confirmed(token)
     XCTAssertFalse(owner.render.controls); XCTAssertEqual(host.node?.taskID, "library")
     XCTAssertTrue(host.presentsChapterList, "A real directory is presented even with compact controls hidden")
@@ -494,7 +493,7 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertTrue(model.chapterCoverageReady, "An open directory reloads coverage after reset")
     XCTAssertTrue(model.chapterSnapshot.allSatisfy { $0.coveredCharacters == nil })
     XCTAssertEqual(model.chapterFilter, "合成"); XCTAssertEqual(model.chapterJumpRevision, jump)
-    host.installation.beginDismissal()
+    host.update(nil)
     XCTAssertFalse(host.presentsChapterList, "A retained outgoing node is not an open directory")
     model.leave(); await service.queryFixture(nil)
   }

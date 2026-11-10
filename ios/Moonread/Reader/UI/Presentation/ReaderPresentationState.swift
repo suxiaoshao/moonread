@@ -46,6 +46,15 @@ enum ReaderToolRoute {
     case note(NoteEditorModel)
     case chapter(ReaderEditSession)
 
+    enum AutomaticImpact { case preserve, pause, end }
+    var automaticImpact: AutomaticImpact {
+        switch self {
+        case .quick(.more): .pause
+        case .automaticSettings, .listeningSettings: .preserve
+        case .quick(.settings), .library, .search, .settings, .details, .history, .ai, .note, .chapter: .end
+        }
+    }
+
     enum Container { case compact, expanded, task, source }
     var container: Container {
         switch self {
@@ -162,85 +171,152 @@ struct ReaderActionContext: Equatable {
     }
 }
 
-/// A native callback can release only the installation that produced it. Route
-/// generations distinguish user pop input from callbacks for an outgoing node.
+/// Input belongs to a render revision, while UIKit releases a physical
+/// installation even if its content has changed since the callback was made.
 struct ReaderHostToken: Equatable {
     let id: UUID
     let opening: UUID
     let generation: UInt64
-    init(opening: UUID, generation: UInt64) { id = UUID(); self.opening = opening; self.generation = generation }
-    private init(id: UUID, opening: UUID, generation: UInt64) { self.id = id; self.opening = opening; self.generation = generation }
-    func updating(generation: UInt64) -> Self { Self(id: id, opening: opening, generation: generation) }
-}
-enum ReaderNativePhase: String { case released, requested, confirmed, dismissing }
-
-@MainActor @Observable final class ReaderNativeInstallation {
-    private(set) var token: ReaderHostToken?
-    private(set) var phase = ReaderNativePhase.released
-    var dismissing: Bool { phase == .dismissing }
-    func install(opening: UUID, generation: UInt64) -> ReaderHostToken {
-        if let token {
-            guard token.opening == opening, !dismissing else { return token }
-            let updated = token.updating(generation: generation)
-            self.token = updated
-            return updated
-        }
-        let value = ReaderHostToken(opening: opening, generation: generation)
-        token = value; phase = .requested
-        return value
-    }
-    func confirm(_ value: ReaderHostToken) {
-        guard token?.id == value.id, token?.opening == value.opening, phase == .requested else { return }
-        phase = .confirmed
-    }
-    func beginDismissal() {
-        guard token != nil else { return }
-        if phase == .requested { token = nil; phase = .released }
-        else { phase = .dismissing }
-    }
-    @discardableResult func completed(_ value: ReaderHostToken) -> Bool {
-        guard token?.id == value.id, token?.opening == value.opening else { return false }
-        token = nil; phase = .released
-        return true
-    }
-    func acceptsInput(_ value: ReaderHostToken, opening: UUID, generation: UInt64) -> Bool {
-        token == value && phase == .confirmed && value.opening == opening && value.generation == generation
-    }
 }
 
 enum ReaderPresentationTarget: Equatable { case none, dock, settings, details }
+enum ReaderNativePhase: String { case released, requested, confirmed, dismissing }
+enum ReaderDismissCause { case toolClosed, replaceContainer, leaveReader }
 
-/// Native occupancy only. A changing target requests release; the completion
-/// installs nothing itself. The reader reprojects the latest intent afterwards.
+enum ReaderInputAdmission: Equatable {
+    case interactive(ReaderActionContext)
+    case transitioning(UUID)
+
+    var enabled: Bool {
+        if case .interactive = self { return true }
+        return false
+    }
+}
+
+@MainActor struct ReaderInstalledPresentation {
+    let token: ReaderHostToken
+    let snapshot: ReaderRenderSnapshot
+}
+
+@MainActor enum ReaderInstallation {
+    case released
+    case requested(ReaderInstalledPresentation)
+    case confirmed(ReaderInstalledPresentation)
+    case dismissing(ReaderInstalledPresentation, ReaderDismissCause)
+
+    var value: ReaderInstalledPresentation? {
+        switch self {
+        case .released: nil
+        case .requested(let value), .confirmed(let value), .dismissing(let value, _): value
+        }
+    }
+}
+
 @MainActor @Observable final class ReaderPresentationHost {
-    let installation = ReaderNativeInstallation()
-    private(set) var target = ReaderPresentationTarget.none
+    private(set) var installation = ReaderInstallation.released
     var hasModalChild = false
-    private(set) var node: ReaderRenderSnapshot?
-    func retain(_ node: ReaderRenderSnapshot) { if !dismissing { self.node = node } }
-    var token: ReaderHostToken? { installation.token }
-    var dismissing: Bool { installation.dismissing }
-    var phase: ReaderNativePhase { installation.phase }
-    func confirmed(_ token: ReaderHostToken) { installation.confirm(token) }
-    var showing: ReaderPresentationTarget { token == nil || dismissing ? .none : target }
-    var presentsChapterList: Bool {
-        showing == .dock && node?.taskID == "library" && node?.editor == nil
+    let nativeLayers = ReaderNativeLayerRegistry()
+    var token: ReaderHostToken? { installation.value?.token }
+    var node: ReaderRenderSnapshot? { installation.value?.snapshot }
+    var phase: ReaderNativePhase {
+        switch installation {
+        case .released: .released
+        case .requested: .requested
+        case .confirmed: .confirmed
+        case .dismissing: .dismissing
+        }
     }
-    func update(_ desired: ReaderPresentationTarget, opening: UUID, generation: UInt64, force: Bool = false) {
-        if token == nil {
-            target = desired
-            if desired != .none { _ = installation.install(opening: opening, generation: generation) }
-        } else if target == desired, token?.opening == opening {
-            _ = installation.install(opening: opening, generation: generation)
-        } else if force || !hasModalChild { installation.beginDismissal() }
+    var dismissing: Bool { phase == .dismissing }
+    var showing: ReaderPresentationTarget { token == nil || dismissing ? .none : .dock }
+    var presentsChapterList: Bool { showing == .dock && node?.taskID == "library" && node?.editor == nil }
+
+    func update(_ snapshot: ReaderRenderSnapshot?, cause: ReaderDismissCause = .replaceContainer, force: Bool = false) {
+        guard let snapshot else {
+            if force || !hasModalChild { beginDismissal(cause) }
+            return
+        }
+        let current = installation.value
+        guard current == nil || current?.token.opening == snapshot.context.opening else {
+            beginDismissal(.leaveReader)
+            return
+        }
+        guard !dismissing, current?.snapshot.context != snapshot.context || current?.snapshot.hasUndo != snapshot.hasUndo else { return }
+        let next = ReaderInstalledPresentation(token: .init(id: current?.token.id ?? UUID(),
+            opening: snapshot.context.opening, generation: snapshot.context.revision), snapshot: snapshot)
+        installation = phase == .confirmed ? .confirmed(next) : .requested(next)
     }
+
+    func confirmed(_ token: ReaderHostToken) {
+        guard case .requested(let current) = installation, sameInstallation(token, current.token) else { return }
+        installation = .confirmed(current)
+    }
+
+    func beginDismissal(_ cause: ReaderDismissCause) {
+        switch installation {
+        case .requested:
+            installation = .released
+            hasModalChild = false
+        case .confirmed(let current): installation = .dismissing(current, cause)
+        case .released, .dismissing: break
+        }
+    }
+
     @discardableResult func completed(_ token: ReaderHostToken) -> Bool {
-        guard installation.completed(token) else { return false }
-        target = .none; hasModalChild = false; node = nil
+        guard let current = installation.value, sameInstallation(token, current.token) else { return false }
+        installation = .released
+        hasModalChild = false
         return true
     }
+
+    func input(for context: ReaderActionContext) -> ReaderInputAdmission {
+        if case .confirmed(let current) = installation, current.snapshot.context == context {
+            return .interactive(context)
+        }
+        return .transitioning(token?.id ?? context.opening)
+    }
+
     func acceptsInput(_ token: ReaderHostToken, opening: UUID, generation: UInt64) -> Bool {
-        installation.acceptsInput(token, opening: opening, generation: generation)
+        guard case .confirmed(let current) = installation else { return false }
+        return token == current.token && token.opening == opening && token.generation == generation
+    }
+
+    private func sameInstallation(_ lhs: ReaderHostToken, _ rhs: ReaderHostToken) -> Bool {
+        lhs.id == rhs.id && lhs.opening == rhs.opening
+    }
+}
+
+enum ReaderPresentationOrigin: Equatable {
+    case readerTool(opening: UUID, visit: UUID?)
+    case selectionTask(opening: UUID)
+    case voiceTask(opening: UUID)
+    case external
+}
+
+enum ReaderNativeListeningFacts: Equatable { case clear, mountingTool, selection, voice, external }
+
+@MainActor final class ReaderNativeLayerRegistry {
+    private final class OriginBox: NSObject {
+        let origin: ReaderPresentationOrigin
+        init(_ origin: ReaderPresentationOrigin) { self.origin = origin }
+    }
+
+    private let registered = NSMapTable<UIViewController, OriginBox>.weakToStrongObjects()
+
+    func register(_ controller: UIViewController, origin: ReaderPresentationOrigin) {
+        registered.setObject(OriginBox(origin), forKey: controller)
+    }
+
+    func origin(for controller: UIViewController) -> ReaderPresentationOrigin {
+        registered.object(forKey: controller)?.origin ?? .external
+    }
+
+    static func presentedRoot(containing controller: UIViewController) -> UIViewController? {
+        var candidate: UIViewController? = controller
+        while let current = candidate {
+            if let presenter = current.presentingViewController, presenter.presentedViewController === current { return current }
+            candidate = current.parent
+        }
+        return nil
     }
 }
 

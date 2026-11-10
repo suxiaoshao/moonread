@@ -13,7 +13,7 @@ import AVFoundation
         case noteChanged(NoteEditorModel?)
         case showVoices(Bool)
         case startListening, pauseListening, stopListening
-        case startAutomatic, pauseAutomatic, endAutomatic
+        case startAutomatic, pauseAutomatic, showAutomaticControls, endAutomatic
         case systemRequest, sourceChanged, backgrounded
         case encode(String?)
         case navigate(ReaderNavigationIntent)
@@ -32,6 +32,7 @@ import AVFoundation
     private(set) var revision: UInt64 = 0
     private(set) var opening = UUID()
     private var valid = true
+    private var nativeListeningFacts = ReaderNativeListeningFacts.clear
     let host = ReaderPresentationHost()
     let libraryEditing = ReaderLibraryEditing()
     private(set) var settingsEditing = ReadingSettingsEditing()
@@ -68,6 +69,7 @@ import AVFoundation
         settingsEditing.readerTools = self
         opening = id
         valid = true
+        nativeListeningFacts = .clear
         publish(.reading(.hidden))
     }
 
@@ -83,8 +85,11 @@ import AVFoundation
     }
 
     func send(_ action: Action, from context: ReaderActionContext? = nil) {
-        if case .nativeDismissed(let token) = action { host.completed(token); return }
-        guard valid, reader?.isLeaving != true, context == nil || context == render.context else { return }
+        if case .nativeDismissed(let token) = action {
+            if host.completed(token) { sampleNativePresentation() }
+            return
+        }
+        guard valid, reader?.isLeaving != true, context.map(accepts) != false else { return }
         switch action {
         case .showChrome:
             showChrome()
@@ -96,21 +101,16 @@ import AVFoundation
             if let visit = render.visit, case .quick(let current) = visit.route, current == tool {
                 finish(visit)
             } else {
-                if tool == .more { reader?.autoReading?.pause() } else { reader?.autoReading?.end() }
-                replace(.quick(tool), returnTo: .init(chrome: .visible))
+                open(.quick(tool), returnTo: .init(chrome: .visible))
             }
         case .open(let route):
-            reader?.autoReading?.end()
             var resume = ReaderReturnContext()
             if case .library = route, case .quick(.more) = render.visit?.route {
                 resume = .init(target: .more, chrome: .visible)
             }
-            if case .library(let visit) = route { tools.select(visit.tab) }
-            replace(route, returnTo: resume)
+            open(route, returnTo: resume)
         case .openSearch:
-            reader?.autoReading?.end()
-            tools.beginSearchSession()
-            replace(.search(tools))
+            open(.search(tools))
         case .openListening:
             guard let reader else { return }
             tools.stopSearch()
@@ -142,6 +142,7 @@ import AVFoundation
             publish(.tool(visit))
         case .startListening:
             guard let player = reader?.activeListening else { return }
+            sampleNativePresentation()
             player.start()
             if player.active, render.expanded { collapse() }
         case .pauseListening:
@@ -162,6 +163,10 @@ import AVFoundation
                                           requestID: request.id)
         case .pauseAutomatic:
             reader?.autoReading?.pause()
+        case .showAutomaticControls:
+            guard let automatic = reader?.autoReading else { return }
+            if automatic.running || automatic.pendingStart != nil { automatic.pause() }
+            publish(.accessory(.automatic(automatic), .hidden))
         case .endAutomatic:
             reader?.autoReading?.end()
             if render.compact == .automatic { hideAccessory() }
@@ -195,6 +200,7 @@ import AVFoundation
             finishPositionAction(action)
         case .remote(let player, let command):
             guard player === reader?.activeListening, player.active else { return }
+            sampleNativePresentation()
             player.execute(command)
             if !player.active, render.compact == .listening { hideAccessory() }
         case .rate(let rate): reader?.activeListening?.setRate(rate)
@@ -207,9 +213,10 @@ import AVFoundation
             publish(resolveResume(.init()))
         case .nativeConfirmed(let token):
             host.confirmed(token)
+            sampleNativePresentation()
         case .nativeClose(let token):
             guard host.acceptsInput(token, opening: opening, generation: revision) else { return }
-            host.installation.beginDismissal()
+            host.beginDismissal(.toolClosed)
             if let visit = render.visit { finish(visit) } else { hideAccessory() }
         case .nativeDismissed: break
         }
@@ -229,13 +236,40 @@ import AVFoundation
             case .listeningFollow, .speechExit: break
             }
         }
-        if reader.viewportAccess.hasBlockingListeningPresentation(opening: opening, awaitingToolContent: true) {
-            return .blocked(.externalPresentation)
+        switch nativeListeningFacts {
+        case .clear: return .allowed
+        case .mountingTool: return .keepCurrentOnly(.presentingTool)
+        case .selection: return .blocked(.selection)
+        case .voice: return .blocked(.voice)
+        case .external: return .blocked(.externalPresentation)
         }
-        if reader.viewportAccess.hasBlockingListeningPresentation(opening: opening) {
-            return .keepCurrentOnly(.presentingTool)
-        }
-        return .allowed
+    }
+
+    func automaticTouchBegan() -> Bool {
+        guard let automatic = reader?.autoReading, automatic.running || automatic.pendingStart != nil else { return false }
+        send(.pauseAutomatic)
+        return true
+    }
+
+    func sampleNativePresentation() {
+        guard valid, let reader else { return }
+        let next = reader.viewportAccess.nativeListeningFacts(
+            registry: host.nativeLayers, opening: opening, requestingDock: host.phase == .requested)
+        guard next != nativeListeningFacts else { return }
+        nativeListeningFacts = next
+        reader.activeListening?.checkPresentation()
+    }
+
+    func accepts(_ context: ReaderActionContext) -> Bool {
+        valid && reader?.isLeaving != true && context == render.context
+            && (host.token == nil || host.input(for: context).enabled)
+    }
+
+    func nativeToolScope(for context: ReaderActionContext) -> ReaderNativeToolScope {
+        let origin: ReaderPresentationOrigin = listeningVoicesPresented && context == render.context
+            ? .voiceTask(opening: context.opening) : .readerTool(opening: context.opening, visit: context.visit)
+        return ReaderNativeToolScope(registry: host.nativeLayers, origin: origin,
+                                    changed: { [weak self] in self?.sampleNativePresentation() })
     }
 
     private func prepareJump() {
@@ -313,6 +347,21 @@ import AVFoundation
     private func hideAccessory() {
         if render.compact == .search { tools.stopSearch() }
         publish(.reading(.hidden))
+    }
+
+    private func open(_ route: ReaderToolRoute, returnTo resume: ReaderReturnContext = .init()) {
+        guard editor == nil, reader?.noteEditorModel == nil else { return }
+        switch route.automaticImpact {
+        case .preserve: break
+        case .pause: reader?.autoReading?.pause()
+        case .end: reader?.autoReading?.end()
+        }
+        switch route {
+        case .library(let visit): tools.select(visit.tab)
+        case .search(let search): search.beginSearchSession()
+        default: break
+        }
+        replace(route, returnTo: resume)
     }
 
     private func replace(_ route: ReaderToolRoute, returnTo resume: ReaderReturnContext = .init()) {
@@ -535,3 +584,138 @@ struct ReaderModalChildProbe: UIViewControllerRepresentable {
     }
 }
 
+
+@MainActor struct ReaderNativeToolScope {
+    let registry: ReaderNativeLayerRegistry
+    let origin: ReaderPresentationOrigin
+    let changed: () -> Void
+
+    func attach(_ controller: UIViewController) {
+        registry.register(controller, origin: origin)
+        Task { @MainActor in changed() }
+    }
+}
+
+extension EnvironmentValues {
+    @Entry var readerNativeToolScope: ReaderNativeToolScope? = nil
+}
+
+private struct ReaderToolLayer: UIViewControllerRepresentable {
+    let scope: ReaderNativeToolScope
+
+    final class Probe: UIViewController {
+        var scope: ReaderNativeToolScope?
+        override func loadView() { view = UIView(); view.isUserInteractionEnabled = false }
+        override func viewWillAppear(_ animated: Bool) { super.viewWillAppear(animated); attach() }
+        override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); attach() }
+        override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); attach() }
+        override func viewDidDisappear(_ animated: Bool) {
+            super.viewDidDisappear(animated)
+            if let scope { Task { @MainActor in scope.changed() } }
+        }
+        func attach() {
+            guard let scope, let root = ReaderNativeLayerRegistry.presentedRoot(containing: self),
+                  scope.registry.origin(for: root) != scope.origin else { return }
+            scope.attach(root)
+        }
+    }
+
+    func makeUIViewController(context: Context) -> Probe {
+        let probe = Probe()
+        probe.scope = scope
+        return probe
+    }
+
+    func updateUIViewController(_ controller: Probe, context: Context) {
+        controller.scope = scope
+        controller.attach()
+    }
+}
+
+private struct ReaderToolPresentation: ViewModifier {
+    @Environment(\.readerNativeToolScope) private var scope
+    func body(content: Content) -> some View {
+        content.background {
+            if let scope { ReaderToolLayer(scope: scope).allowsHitTesting(false) }
+        }
+    }
+}
+
+extension View {
+    func readerToolPresentation() -> some View { modifier(ReaderToolPresentation()) }
+}
+
+private struct ReaderToolConfirmation: ViewModifier {
+    @Environment(\.readerNativeToolScope) private var scope
+    @Binding var presented: Bool
+    let title: LocalizedStringResource
+    let message: LocalizedStringResource
+    let confirm: LocalizedStringResource
+    let destructive: Bool
+    let action: () -> Void
+
+    func body(content: Content) -> some View {
+        if let scope {
+            content.background {
+                NativeAlert(configuration: self, scope: scope).allowsHitTesting(false)
+            }
+        } else {
+            content.alert(Text(title), isPresented: $presented) {
+                Button(role: destructive ? .destructive : nil, action: action) { Text(confirm) }
+                Button("取消", role: .cancel) {}
+            } message: { Text(message) }
+        }
+    }
+
+    private struct NativeAlert: UIViewControllerRepresentable {
+        let configuration: ReaderToolConfirmation
+        let scope: ReaderNativeToolScope
+
+        final class Anchor: UIViewController {
+            var pending: NativeAlert?
+            weak var alert: UIAlertController?
+            override func loadView() { view = UIView(); view.isUserInteractionEnabled = false }
+            override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); updatePresentation() }
+
+            func updatePresentation() {
+                guard let pending else { return }
+                let configuration = pending.configuration
+                guard configuration.presented else {
+                    if let alert, !alert.isBeingDismissed { alert.dismiss(animated: true, completion: pending.scope.changed) }
+                    return
+                }
+                guard alert == nil, viewIfLoaded?.window != nil else { return }
+                let presenter = ReaderNativeLayerRegistry.presentedRoot(containing: self) ?? navigationController ?? parent
+                guard let presenter, presenter.presentedViewController == nil else { return }
+                let controller = UIAlertController(title: String(localized: configuration.title),
+                    message: String(localized: configuration.message), preferredStyle: .alert)
+                controller.addAction(UIAlertAction(title: String(localized: configuration.confirm),
+                    style: configuration.destructive ? .destructive : .default) { _ in
+                    configuration.action()
+                    configuration.presented = false
+                })
+                controller.addAction(UIAlertAction(title: String(localized: "取消"), style: .cancel) { _ in
+                    configuration.presented = false
+                })
+                alert = controller
+                pending.scope.attach(controller)
+                presenter.present(controller, animated: true, completion: pending.scope.changed)
+            }
+        }
+
+        func makeUIViewController(context: Context) -> Anchor { Anchor() }
+        func updateUIViewController(_ controller: Anchor, context: Context) {
+            controller.pending = self
+            Task { @MainActor [weak controller] in controller?.updatePresentation() }
+        }
+    }
+}
+
+extension View {
+    func readerToolConfirmation(_ title: LocalizedStringResource, isPresented: Binding<Bool>,
+                                message: LocalizedStringResource, confirm: LocalizedStringResource,
+                                destructive: Bool = false, action: @escaping () -> Void) -> some View {
+        modifier(ReaderToolConfirmation(presented: isPresented, title: title, message: message,
+                                        confirm: confirm, destructive: destructive, action: action))
+    }
+}

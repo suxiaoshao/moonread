@@ -68,7 +68,6 @@ final class ReadingViewportAccess {
     weak var controller: ReadingController?
     private let captureOverride: (() -> ReadingViewport?)?
     private let rangeOverride: (() -> (UInt64, UInt64)?)?
-    private let listeningToolInstallations = NSMapTable<UIViewController, NSUUID>.weakToStrongObjects()
     init(capture: (() -> ReadingViewport?)? = nil, range: (() -> (UInt64, UInt64)?)? = nil) { captureOverride = capture; rangeOverride = range }
     func statisticsRange() -> (UInt64, UInt64)? { rangeOverride.map { $0() } ?? controller?.statisticsRange() }
     func capture() -> ReadingViewport? { captureOverride.map { $0() } ?? controller?.captureViewport() }
@@ -96,86 +95,35 @@ final class ReadingViewportAccess {
         return modal(in: presented) != nil
     }
 
-    /// Listening permits each known tool layer of this opening independently.
-    /// An unmarked child above an allowed tool can still be a system task.
-    func hasBlockingListeningPresentation(opening: UUID?, awaitingToolContent: Bool = false) -> Bool {
-        guard let controller else { return false }
+    func nativeListeningFacts(registry: ReaderNativeLayerRegistry, opening: UUID, requestingDock: Bool) -> ReaderNativeListeningFacts {
+        guard let controller else { return .clear }
         var checked = Set<ObjectIdentifier>()
-        func marked(_ owner: UIViewController, for alertTitle: String?) -> Bool {
-            if let marker = owner as? ReaderListeningToolMarker,
-               let opening, marker.opening == opening, marker.alertTitle == alertTitle { return true }
-            return owner.children.contains { marked($0, for: alertTitle) }
-        }
-        func blocked(in owner: UIViewController, includingChildren: Bool) -> Bool {
+        var facts = ReaderNativeListeningFacts.clear
+        func inspect(_ owner: UIViewController, includeChildren: Bool) {
             if let presented = owner.presentedViewController, checked.insert(ObjectIdentifier(presented)).inserted {
-                if let alert = presented as? UIAlertController, let title = alert.title {
-                    guard marked(alert.presentingViewController ?? owner, for: title) else { return true }
-                } else if let opening, marked(presented, for: nil) {
-                    // Preserve provenance if SwiftUI removes the witness
-                    // before UIKit completes this same controller's exit.
-                    listeningToolInstallations.setObject(opening as NSUUID, forKey: presented)
-                } else if !presented.isBeingDismissed || opening == nil
-                            || listeningToolInstallations.object(forKey: presented).map({ $0 as UUID }) != opening {
-                    // UIKit can begin a SwiftUI sheet transition before its
-                    // hosted children exist. The next check must find the
-                    // opening's marker; this never admits a new play request.
-                    guard awaitingToolContent, opening != nil, presented.isBeingPresented,
-                          presented.children.isEmpty else { return true }
+                switch registry.origin(for: presented) {
+                case .readerTool(let origin, _) where origin == opening: break
+                case .selectionTask(let origin) where origin == opening: facts = .selection
+                case .voiceTask(let origin) where origin == opening: facts = .voice
+                default: facts = .external
                 }
-                if blocked(in: presented, includingChildren: true) { return true }
+                if facts == .external { return }
+                inspect(presented, includeChildren: true)
             }
-            return includingChildren && owner.children.contains { blocked(in: $0, includingChildren: true) }
+            if includeChildren {
+                for child in owner.children where facts != .external {
+                    inspect(child, includeChildren: true)
+                }
+            }
         }
-        var owner: UIViewController? = controller
-        while let current = owner {
-            if blocked(in: current, includingChildren: current === controller) { return true }
-            owner = current.parent
+        var ancestor: UIViewController? = controller
+        while let current = ancestor, facts != .external {
+            inspect(current, includeChildren: current === controller)
+            ancestor = current.parent
         }
-        return false
+        return facts == .clear && requestingDock ? .mountingTool : facts
     }
 }
-
-extension EnvironmentValues {
-    @Entry var readerListeningOpening: UUID? = nil
-}
-
-/// Marks native content by reading opening, without changing UIKit ownership.
-final class ReaderListeningToolMarker: UIViewController {
-    var opening: UUID?
-    var alertTitle: String?
-    override func loadView() { view = UIView(); view.isUserInteractionEnabled = false }
-}
-
-private struct ReaderListeningToolWitness: UIViewControllerRepresentable {
-    let opening: UUID
-    let alertTitle: String?
-    func makeUIViewController(context: Context) -> ReaderListeningToolMarker {
-        let marker = ReaderListeningToolMarker()
-        updateUIViewController(marker, context: context)
-        return marker
-    }
-    func updateUIViewController(_ marker: ReaderListeningToolMarker, context: Context) {
-        marker.opening = opening
-        marker.alertTitle = alertTitle
-    }
-}
-
-private struct ReaderListeningToolPresentation: ViewModifier {
-    @Environment(\.readerListeningOpening) private var opening
-    let alertTitle: String?
-    func body(content: Content) -> some View {
-        content.background {
-            if let opening { ReaderListeningToolWitness(opening: opening, alertTitle: alertTitle) }
-        }
-    }
-}
-
-extension View {
-    func readerListeningToolPresentation(alertTitle: String? = nil) -> some View {
-        modifier(ReaderListeningToolPresentation(alertTitle: alertTitle))
-    }
-}
-
 
 @MainActor
 /// Admission belongs to the application, independently of native viewport geometry.
