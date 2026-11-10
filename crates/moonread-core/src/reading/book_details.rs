@@ -76,8 +76,17 @@ mod status_tests {
                 .unwrap();
         }
         let assert_status = |expected| {
-            let details = core.book_details(None, Some(sha.clone())).unwrap();
-            assert!(details.book.is_none());
+            let BookDetailsResult::Identified { details, .. } = core
+                .book_details(BookTarget::Record {
+                    key: ReadingKey::Formal {
+                        sha256: sha.clone(),
+                    },
+                })
+                .unwrap()
+            else {
+                panic!("formal metadata should remain available without a local book")
+            };
+            assert!(details.body.is_none());
             assert_eq!(details.metadata.status, expected);
             let candidates = core
                 .library_search_candidates(
@@ -164,11 +173,32 @@ pub struct BookMetadata {
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct BookDetails {
-    pub book: Option<BookInfo>,
     pub metadata: BookMetadata,
+    pub body: Option<BookBodyDetails>,
+}
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct BookBodyDetails {
+    pub book: BookInfo,
     pub word_count: u64,
     pub chapter_count: u64,
     pub current_chapter: Option<String>,
+}
+#[derive(Clone, Debug, uniffi::Enum)]
+pub enum BookDetailsResult {
+    Unidentified {
+        file_id: String,
+    },
+    Missing {
+        target: BookTarget,
+    },
+    Pending {
+        identity: ResolvedBookRecord,
+        body: Option<BookBodyDetails>,
+    },
+    Identified {
+        identity: ResolvedBookRecord,
+        details: BookDetails,
+    },
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -176,8 +206,6 @@ pub struct BookFilterOptions {
     pub authors: Vec<String>,
     pub tags: Vec<String>,
 }
-
-use crate::valid_sha;
 
 fn empty(sha: &str) -> BookMetadata {
     BookMetadata {
@@ -228,60 +256,50 @@ pub(crate) fn project_metadata(
 
 // Business projections are exported only by ReaderQuery.
 impl ReaderCore {
-    pub(crate) fn book_details(
-        &self,
-        book_id: Option<String>,
-        content_sha: Option<String>,
-    ) -> Result<BookDetails> {
+    pub(crate) fn book_details(&self, target: BookTarget) -> Result<BookDetailsResult> {
         let db = self.read_lock()?;
-        let info = if let Some(id) = book_id {
-            Some(book(&db, &crate::library::tools::content_key(&db, &id)?)?)
-        } else if let Some(sha) = &content_sha {
-            db.query_row(
-                "SELECT id FROM reading_books WHERE content_sha256=?1",
-                [sha],
-                |r| r.get::<_, String>(0),
-            )
-            .optional()?
-            .map(|id| book(&db, &id))
-            .transpose()?
-        } else {
-            None
+        let identity = match crate::identity::content::resolve_target(&db, target)? {
+            BookResolution::Unidentified { file_id } => {
+                return Ok(BookDetailsResult::Unidentified { file_id });
+            }
+            BookResolution::Missing { target } => return Ok(BookDetailsResult::Missing { target }),
+            BookResolution::Resolved { record } => record,
         };
-        let sha = info
-            .as_ref()
-            .map(|b| b.content_sha256.clone())
-            .or(content_sha)
-            .unwrap_or_default();
-        let m = if valid_sha(&sha) {
-            metadata(&db, &sha)?
-        } else {
-            empty("")
-        };
-        let (word_count, chapter_count, current_chapter) = if let Some(b) = &info {
-            (
-                db.query_row(
+        let body = match &identity.body {
+            BodyAssociation::Absent => None,
+            BodyAssociation::Associated { book_id } => {
+                let info = book(&db, book_id)?;
+                let word_count = db.query_row(
                     "SELECT COALESCE(MAX(end_char_count),0) FROM chunks WHERE book_id=?1",
-                    [&b.id],
+                    [book_id],
                     |r| unsigned_column(r, 0),
-                )?,
-                db.query_row(
+                )?;
+                let chapter_count = db.query_row(
                     "SELECT COUNT(*) FROM effective_chapters WHERE book_id=?1 AND level=1",
-                    [&b.id],
+                    [book_id],
                     |r| unsigned_column(r, 0),
-                )?,
-                crate::library::tools::chapter(&db, &b.id, b.position_utf8)?.map(|c| c.title),
-            )
-        } else {
-            (0, 0, None)
+                )?;
+                let current_chapter =
+                    crate::library::tools::chapter(&db, book_id, info.position_utf8)?
+                        .map(|c| c.title);
+                Some(BookBodyDetails {
+                    book: info,
+                    word_count,
+                    chapter_count,
+                    current_chapter,
+                })
+            }
         };
-        Ok(BookDetails {
-            book: info,
-            metadata: m,
-            word_count,
-            chapter_count,
-            current_chapter,
-        })
+        match &identity.key {
+            ReadingKey::Formal { sha256 } => Ok(BookDetailsResult::Identified {
+                details: BookDetails {
+                    metadata: metadata(&db, sha256)?,
+                    body,
+                },
+                identity,
+            }),
+            ReadingKey::Pending { .. } => Ok(BookDetailsResult::Pending { identity, body }),
+        }
     }
     pub(crate) fn book_filter_options(
         &self,

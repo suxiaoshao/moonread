@@ -241,7 +241,7 @@ actor AIReadingTools {
       files: files.map(fileResult))
     addMetadata(details.metadata, to: &data)
     data.wordCount = details.wordCount
-    data.chapterCount = UInt64(details.chapterCount)
+    data.chapterCount = details.chapterCount
     data.filesTruncated = false
     if let book = details.book {
       data.totalUtf8 = book.byteCount

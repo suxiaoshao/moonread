@@ -180,7 +180,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
         defaults.removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: root)
       }
-      let target = StatisticsRoute(bookID: id, title: "暂停语义样本", fromReader: true)
+      let target = StatisticsRoute(target: .cached(bookId: id), title: "暂停语义样本", origin: .reader())
       let model = BookInformationModel(service: service)
       await model.load(target)
       model.edit(target)

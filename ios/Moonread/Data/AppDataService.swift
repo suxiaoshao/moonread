@@ -728,7 +728,7 @@ actor AppDataService {
 
     private func importFinished(_ id: String) async {
         defer { dataChanged(); if cloudLibraryRetryAfterImport { scheduleCloudLibraryUpdate() } }
-        imports[id] = nil
+        let sourceFileID = imports.removeValue(forKey: id)?.source.fileID
         let requested = requestedResumes.remove(id) != nil
         let automatic = automaticallyPaused.remove(id) != nil
         if requested || automatic {
@@ -739,6 +739,12 @@ actor AppDataService {
             if (try? core.importStatus(bookId: id).phase) == .complete {
                 do { try await promoteUserData(id) }
                 catch { pendingPromotionIDs.insert(id) }
+                if let key = try? userKey(id), case .formal = key {
+                    NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil, userInfo: [
+                        "keys": [key.storageKey, ReadingKey.pending(bookId: id).storageKey],
+                        "fileIDs": sourceFileID.map { [$0] } ?? [],
+                    ])
+                }
             }
             reclaimReleasedImport(id)
         }

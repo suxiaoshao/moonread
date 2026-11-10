@@ -338,7 +338,7 @@ struct ReaderScreen: View {
                 if let current = toolSession?.editor { toolSession?.finishEditing(current.id) }
             }
             if coverInformation == nil, let metadata = openingRequest?.metadataHint {
-                coverInformation = BookDetails(book: nil, metadata: metadata, wordCount: 0, chapterCount: 0, currentChapter: nil)
+                coverInformation = BookDetails(metadata: metadata, body: nil)
             }
             await session.open(route, request: openingRequest)
         }
@@ -644,7 +644,7 @@ struct ReaderScreen: View {
         guard let sha = session.book?.contentSha256, (try? parseSha256(value: sha)) != nil else { return }
         let request = UUID(); coverRequest = request
         do {
-            let next = try await AppDataService.shared.details(bookID: id, sha: sha)
+            let next = try await AppDataService.shared.details(bookID: id)
             guard !Task.isCancelled, coverRequest == request, session.readingID == id,
                   session.book?.contentSha256 == sha else { return }
             coverInformation = next
@@ -653,9 +653,14 @@ struct ReaderScreen: View {
 
     private var bookDetailsTarget: StatisticsRoute {
         if case let .source(file) = route {
-            return StatisticsRoute(bookID: session.readingID, title: file.title, fileID: file.id, fromReader: true)
+            return StatisticsRoute(target: session.readingID.map { .cached(bookId: $0) } ?? .file(fileId: file.id),
+                                   title: file.title, origin: .reader(fileID: file.id))
         }
-        return StatisticsRoute(bookID: session.readingID, title: session.book?.title ?? route.title, fromReader: true)
+        let target: BookTarget = switch route {
+        case .book(let id): .cached(bookId: session.readingID ?? id)
+        case .source(let file): .file(fileId: file.id)
+        }
+        return StatisticsRoute(target: target, title: session.book?.title ?? route.title, origin: .reader())
     }
 
     private var taskID: String? { renderedNode.taskID }

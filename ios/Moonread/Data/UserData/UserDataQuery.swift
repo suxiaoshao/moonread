@@ -53,6 +53,7 @@ extension AppDataService {
         let query: ReaderQuery
         let statisticsIncomplete: Bool
         let statisticsVersion: String
+        let resolution: BookResolution?
         var compatibilityNotice: String? {
             statisticsIncomplete ? String(localized: "统计不完整：部分记录当前版本无法理解，请更新 App。") : nil
         }
@@ -110,7 +111,7 @@ extension AppDataService {
                         queryCache[read.cacheKey] = CachedQuery(signature: read.signature, identities: read.identities, query: read.query, statisticsIncomplete: read.statisticsIncomplete)
                     }
                     let read = reads.last!
-                    return UserQueryOutput(query: read.query, statisticsIncomplete: read.statisticsIncomplete, statisticsVersion: read.signature.statisticsVersion)
+                    return UserQueryOutput(query: read.query, statisticsIncomplete: read.statisticsIncomplete, statisticsVersion: read.signature.statisticsVersion, resolution: read.signature.selection.resolution)
                 }
                 discarded += 1
                 #if DEBUG

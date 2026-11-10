@@ -353,7 +353,7 @@ import XCTest
         let key = f.book.contentSha256, alias = "pending:" + f.book.id
         try await f.pending.receiveSyncFixture("position", key: alias, payload: UserSyncJSON.encode(positionRecord(key: alias, token: "old-pending", offset: 9), envelope: true))
         let information = BookInformationModel(service: f.service)
-        let route = StatisticsRoute(key: key, bookID: f.book.id, title: "Position fixture")
+        let route = StatisticsRoute(target: .cached(bookId: f.book.id), title: "Position fixture")
         await information.load(route)
         XCTAssertNil(information.error); XCTAssertFalse(information.chapters.isEmpty)
         do { _ = try await f.service.exportReadingData(); XCTFail("A full export must not silently omit pending data") }

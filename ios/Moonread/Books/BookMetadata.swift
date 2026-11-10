@@ -26,13 +26,37 @@ struct BookMetadataEditPlan: Sendable {
     var isEmpty: Bool { values.isEmpty }
 }
 
+extension BookDetails {
+    var book: BookInfo? { body?.book }
+    var wordCount: UInt64? { body?.wordCount }
+    var chapterCount: UInt64? { body?.chapterCount }
+    var currentChapter: String? { body?.currentChapter }
+}
+
+extension BookDetailsResult {
+    func requireIdentified() throws -> BookDetails {
+        switch self {
+        case .identified(_, let details): details
+        case .unidentified, .pending: throw ReaderError.ImportBusy
+        case .missing: throw ReaderError.NotFound
+        }
+    }
+}
+
 extension AppDataService {
-    func details(bookID: String? = nil, sha: String? = nil) async throws -> BookDetails {
-        let result: BookDetails
-        if let bookID { result = try await bookQuery(bookID).bookDetails(bookId: bookID, contentSha: sha) }
-        else { result = try await effectiveQuery(records: try sha.map { .only([try parseReadingKey(value: $0)]) } ?? .all).bookDetails(bookId: bookID, contentSha: sha) }
-        if !result.metadata.sha.isEmpty { try await userStore().requireMetadataReadable(key: result.metadata.sha) }
+    func bookDetails(_ target: BookTarget) async throws -> BookDetailsResult {
+        let result = try await readingQuery(.book(target), options: .init(scope: "book-details", fields: [.position, .metadata, .chapter]))
+            .bookDetails(target: target)
+        if case .identified(_, let details) = result {
+            try await userStore().requireMetadataReadable(key: details.metadata.sha)
+        }
         return result
+    }
+    func details(bookID: String) async throws -> BookDetails {
+        try await bookDetails(.cached(bookId: bookID)).requireIdentified()
+    }
+    func details(sha: String) async throws -> BookDetails {
+        try await bookDetails(.record(key: .formal(sha256: sha))).requireIdentified()
     }
     func metadataOptions(shelfID: String?) async throws -> BookFilterOptions { try await catalogueQuery(shelfID.map { LibraryLocation(shelfID: $0) }, recursive: true).bookFilterOptions(shelfId: shelfID) }
     nonisolated func metadataEditPlan(base: BookMetadata, edited: BookMetadata, fields: Set<String>? = nil) throws -> BookMetadataEditPlan {

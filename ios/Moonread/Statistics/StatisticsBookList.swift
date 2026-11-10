@@ -9,7 +9,8 @@ struct StatisticsBookRow: View {
     var window = StatisticsWindow()
     @Environment(\.theme) private var theme
     var body: some View {
-        NavigationLink(value: LibraryRoute.statistics(StatisticsRoute(key: book.contentKey, bookID: book.bookId, title: book.title, window: window, readingSection: true))) {
+        if let key = try? parseReadingKey(value: book.contentKey) {
+        NavigationLink(value: LibraryRoute.statistics(StatisticsRoute(target: .record(key: key), title: book.title, window: window, readingSection: true))) {
             HStack(spacing: LayoutTokens.control) {
                 BookCoverView(title: book.title, compact: true, cover: book.cover, contentSHA256: book.contentKey, author: book.author).frame(width: 30, height: 42).accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 5) {
@@ -25,6 +26,7 @@ struct StatisticsBookRow: View {
                 }
             }.padding(.vertical, 3)
         }.accessibilityIdentifier("statistics-book-\(book.contentKey)")
+        }
     }
 }
 

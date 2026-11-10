@@ -30,7 +30,7 @@ extension AppDataService {
         for sha in grouped.keys {
             try Task.checkCancellation()
             try await store.requireMetadataReadable(key: sha)
-            metadataSnapshot[sha] = try query.bookDetails(bookId: nil, contentSha: sha).metadata
+            metadataSnapshot[sha] = try query.bookDetails(target: .record(key: .formal(sha256: sha))).requireIdentified().metadata
         }
         let hasCovers = metadataSnapshot.values.contains { $0.cover != nil }
         let writer = try createMetadataWriter(destination: manifest.path, format: format, packaged: hasCovers)
@@ -123,7 +123,7 @@ extension AppDataService {
                 item.messages = [String(localized: "这本书的资料无法读取，未导入", table: "MetadataExchange")]; books.append(item)
                 diagnostics.append(.init(sourceLine: nil, recordIndex: nil, code: "metadata_unreadable", field: nil, contentSha256: sha, message: item.messages[0])); continue
             }
-            let base = try query.bookDetails(bookId: nil, contentSha: sha).metadata
+            let base = try query.bookDetails(target: .record(key: .formal(sha256: sha))).requireIdentified().metadata
             let hasPosition = try query.metadataHasReadingPosition(contentSha256: sha)
             item = MetadataPreviewBook(id: sha, title: item.title, base: base, source: item.source, sourceCount: sources.count, fields: [], messages: [])
             item.coverUnavailable = messagesBySHA[sha, default: []].contains { $0.code == "cover_unavailable" }

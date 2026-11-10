@@ -34,7 +34,7 @@ final class ReaderQueryAdapterRecentReadingRestorationTests: RecentReadingRestor
     let model = BookInformationModel(service: f.service)
     await model.load(
       StatisticsRoute(
-        key: entry.readingKey, bookID: entry.bookId, title: entry.title, fileID: entry.id))
+        target: .file(fileId: entry.id), title: entry.title))
     XCTAssertNil(model.error)
     XCTAssertEqual(model.entry?.positionUtf8, identity.utf8Bytes / 2)
     XCTAssertEqual(model.details?.metadata.tags, ["星港"])
@@ -82,7 +82,7 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(cleared.value, try scopedFull.statisticsOverview(firstDay: 20000, lastDay: 20001, contentKey: key))
     let model = StatisticsModel(service: service)
     let window = StatisticsWindow(period: .month, date: StatisticsDates.date(20000))
-    let target = StatisticsRoute(key: key, bookID: book.id, title: "Synthetic")
+    let target = StatisticsRoute(target: .record(key: .formal(sha256: key)), title: "Synthetic")
     await model.load(window, target: target)
     let state = model.state(window, target: target)
     XCTAssertNil(state.error)
@@ -121,7 +121,7 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
       }
     }
     let query = try await service.bookQuery(book.id)
-    XCTAssertEqual(try query.bookDetails(bookId: book.id, contentSha: nil).metadata.author, "Revision 3")
+    XCTAssertEqual(try query.bookDetails(target: .cached(bookId: book.id)).requireIdentified().metadata.author, "Revision 3")
     let rounds = await attempts.count
     XCTAssertEqual(rounds, 4)
     await service.queryFixture { _, phase in
@@ -335,8 +335,8 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
       try scoped.readingFrame(bookId: book.id, offsetUtf8: 20),
       try batch.readingFrame(bookId: book.id, offsetUtf8: 20))
     XCTAssertEqual(
-      try scoped.bookDetails(bookId: book.id, contentSha: nil),
-      try batch.bookDetails(bookId: book.id, contentSha: nil))
+      try scoped.bookDetails(target: .cached(bookId: book.id)).requireIdentified(),
+      try batch.bookDetails(target: .cached(bookId: book.id)).requireIdentified())
     let same = try await service.bookQuery(book.id)
     XCTAssertEqual(
       try scoped.readingSnapshot(bookId: book.id), try same.readingSnapshot(bookId: book.id),
