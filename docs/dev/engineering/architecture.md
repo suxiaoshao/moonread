@@ -79,6 +79,8 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 自动阅读偏好与计时例外 | Rust `reading/layout.rs::auto_reading_control` / `user/statistics/mod.rs::ReadingClock` | Rust 定义1–30档／默认10及指数 em/min 映射，Swift 经 ReaderSettingsStore 保存本机档位，按实际文本容器／缩放字体／正文行高换算位移；Swift 原生帧驱动只提供真实位移时间，Rust 单源裁决时长，不模拟手动 interaction |
 | 自动阅读运行、打断与原生位移 | Swift `ReaderAutoReading` / `ReadingController` / `ReaderDeviceControls` | 同一附件与显式继续，使用原文位置／预取／有界检查点入口；复用统计可读性事实，临时常亮合并原 lease，不持久化运行状态 |
 | 听书播放、跟随与瞬时高亮 | Swift `Reader/Session/Listening/`、`ReaderSession+Listening`、`ReadingController+Listening` / `ReadingLayoutManager` | AVSpeech/Now Playing 的单一 Session 控制播放；既有 TextCoordinates 映射语音范围，音频锚点与内存浏览分离，渲染只画临时范围；正文/规范化和统计规则仍归 Rust | 不新增位置、CloudKit、备份字段；声音不计阅读统计 |
+| 阅读工具意图、关闭与输入 | Swift `ReaderToolSession` / `ReaderPresentationHost`、`ReaderBottomPanel` | ReaderSession 每次打开持有一个工具 owner。工具通过带 opening、访问 ID 和版本的动作修改 SurfaceIntent；根工具关闭统一从当前有效会话裁决恢复。宿主只记录物理安装和对应快照，同一快照驱动内容与真实页脚；旧回调只能释放原安装 | 不改公共导航、正文容量或存储 |
+| 阅读执行、搜索与听书门禁 | Swift `ReaderExecution`（由 `ReaderSession` 持有）、`ReaderToolsModel`、`ReaderToolSession` / 原生呈现适配 | ReaderExecution 只持有当前执行主体，搜索任务独立于收起或展开；ReaderToolSession 从位置动作、选区和实际原生层的来源裁决一次播放资格。统计和自动阅读继续按正文可读性独立判断 | 均为会话状态；不持久化 |
 | 阅读时长/有效天数/覆盖等统计数值 | Rust `user/statistics/mod.rs`、`user/statistics/coverage.rs`（后续统一 summary） | 事实聚合按固定 local_day；Swift 不再另 reduce 同一总量 | #66 不迁；旧报告第11项仍登记 |
 | 目录结构与覆盖加载 | Rust `library/tools.rs` 共用章节装配，`user/statistics/coverage.rs` 批量映射覆盖端点；Swift `ReaderToolsModel` 分两阶段发布 | 结构不读 facts；覆盖沿用同一查询失效规则，后台补齐不改变筛选/滚动，取消随目录 owner | 无新增持久缓存或事实格式 |
 | 目录/临时跳转与正式续读保存 | Swift `ReaderSession`、`ReaderToolsModel` / Rust `ReadingFrame` | 目录断 visit 并 enqueue，不等统计 writer drain、不预读笔记；跳转 frame/章节标题在 Rust 同一读取事务中返回并一起发布；临时原点只在会话内存，原已接受保存走现有 saveTask 与位置写入 owner 完成，继续/离页最终保存不得被旧保存覆盖 | 不改正式位置格式 |

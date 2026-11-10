@@ -514,30 +514,50 @@ import XCTest
     let playback = ready(app.buttons["compactListeningPlayback"])
     waitUntil { playback.label == "暂停" }
     let text = body()
-    text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
-      .press(forDuration: 0.08, thenDragTo: text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.22)))
-    let back = ready(app.buttons["returnToSpeech"])
-    back.tap()
-    XCTAssertTrue(back.waitForNonExistence(timeout: 8))
-    let point = text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35))
-    point.tap()
-    let more = ready(app.buttons["readerMore"])
-    print("U23 after return: playing=\(playback.label == "暂停") footerHittable=\(more.isHittable)")
-    more.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-    ready(app.buttons["openBookmarks"])
-    more.tap()
-    ready(playback)
-    app.buttons["readingSettings"].tap()
-    ready(app.buttons["moreReadingSettings"])
-    app.buttons["readingSettings"].tap()
-    ready(playback)
-    app.buttons["showChapters"].tap()
-    closeList()
-    ready(playback)
-    controls()
-    app.buttons["showSearch"].tap()
-    ready(app.searchFields.firstMatch)
-    XCTAssertFalse(app.buttons["openBookmarks"].exists)
+    let more = app.buttons["readerMore"]
+    let settings = app.buttons["readingSettings"]
+    let chapters = app.buttons["showChapters"]
+    let search = app.buttons["showSearch"]
+    let back = app.buttons["returnToSpeech"]
+    let center = CGVector(dx: 0.5, dy: 0.5)
+
+    func tapFooter(_ button: XCUIElement) {
+      ready(button)
+      waitUntil { button.isHittable }
+      button.coordinate(withNormalizedOffset: center).tap()
+    }
+
+    for label in ["暂停", "继续"] {
+      if label == "继续" { playback.tap() }
+      waitUntil { playback.label == label }
+      text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.55))
+        .press(forDuration: 0.08, thenDragTo: text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.22)))
+      ready(back).tap()
+      XCTAssertTrue(back.waitForNonExistence(timeout: 8))
+      XCTAssertEqual(playback.label, label)
+      text.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
+
+      tapFooter(more)
+      ready(app.buttons["openBookmarks"])
+      tapFooter(more)
+      XCTAssertEqual(ready(playback).label, label)
+      tapFooter(settings)
+      ready(app.buttons["moreReadingSettings"])
+      tapFooter(settings)
+      XCTAssertEqual(ready(playback).label, label)
+      tapFooter(chapters)
+      closeList()
+      XCTAssertEqual(ready(playback).label, label)
+      controls()
+      tapFooter(search)
+      ready(app.searchFields.firstMatch)
+      let endSearch = app.buttons["closeSearch"]
+      let closeInput = app.navigationBars["搜索"].buttons["关闭"]
+      waitUntil { endSearch.exists || closeInput.exists }
+      if !endSearch.exists { closeInput.tap() }
+      ready(endSearch).tap()
+      XCTAssertEqual(ready(playback).label, label)
+    }
   }
 
   func testU22ListeningKeepsReadingToolsAccessible() {
