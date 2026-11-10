@@ -7,23 +7,41 @@ struct AIReasoningParameter: Codable, Hashable, Sendable {
     var min: Int?
     var max: Int?
 }
+enum AIResolvedReasoningParameter {
+    struct Budget { let minimum: Int?; let maximum: Int? }
+    case effort([String])
+    case budget(Budget)
+    case toggle
+    case unsupported(String)
+}
+extension AIReasoningParameter {
+    var resolved: AIResolvedReasoningParameter {
+        switch type {
+        case "effort": .effort(values?.compactMap { $0 } ?? [])
+        case "budget_tokens": .budget(.init(minimum: min, maximum: max))
+        case "toggle": .toggle
+        default: .unsupported(type)
+        }
+    }
+}
 /// Canonical UI levels are translated through the model's declared control type.
 /// Budget levels follow Pi's simple-options.ts; they are not provider effort values.
 enum AIReasoningControl {
     static func levels(_ parameters: [AIReasoningParameter]) -> [String] {
-        let toggle = parameters.contains { $0.type == "toggle" }
-        var levels = parameters.first { $0.type == "effort" }?.values?.compactMap { $0 } ?? []
-        if levels.isEmpty, parameters.contains(where: { $0.type == "budget_tokens" }) {
+        let options = parameters.map(\.resolved)
+        let toggle = options.contains { if case .toggle = $0 { true } else { false } }
+        var levels: [String] = options.lazy.compactMap { option -> [String]? in if case .effort(let levels) = option { levels } else { nil } }.first ?? []
+        if levels.isEmpty, options.contains(where: { if case .budget = $0 { true } else { false } }) {
             levels = ["minimal", "low", "medium", "high"]
         }
         if levels.isEmpty, toggle { levels = ["on"] }
         if toggle, !levels.contains("none"), !levels.contains("off") { levels.insert("off", at: 0) }
         return levels
     }
-    static func budget(_ level: String, parameter: AIReasoningParameter) -> Int {
+    static func budget(_ level: String, parameter: AIResolvedReasoningParameter.Budget) -> Int {
         let values = ["minimal": 1024, "low": 2048, "medium": 8192, "high": 16384]
         let desired = values[level] ?? 8192
-        return max(parameter.min ?? 0, min(desired, parameter.max ?? desired))
+        return max(parameter.minimum ?? 0, min(desired, parameter.maximum ?? desired))
     }
 }
 struct AIModelOption: Codable, Hashable, Identifiable, Sendable {
@@ -46,6 +64,26 @@ struct AIModelOption: Codable, Hashable, Identifiable, Sendable {
     var connectionOutputLimit: Int?
     var contextIsInputLimit: Bool?
 }
+enum AIDirectorySnapshot: Sendable {
+    struct Fetched: Sendable {
+        let models: [AIModelOption]
+        let checked: Date
+        let origin: AIModelDirectoryOrigin
+        let identity: String
+    }
+    case legacy([AIModelOption])
+    case fetched(Fetched)
+
+    var fetched: Fetched? { if case .fetched(let value) = self { value } else { nil } }
+}
+enum AIModelChoice: Sendable {
+    case unselected
+    case selected(id: String, thinking: String?)
+
+    var id: String? { if case .selected(let id, _) = self { id } else { nil } }
+    var thinking: String? { if case .selected(_, let thinking) = self { thinking } else { nil } }
+}
+
 struct AIConnection: Codable, Identifiable, Sendable {
     var id = UUID().uuidString
     var name: String
@@ -68,6 +106,30 @@ struct AIConnection: Codable, Identifiable, Sendable {
     var catalogIdentity: String { [id, baseURL, providerID, protocolIdentity, catalogCredentialGeneration?.uuidString ?? "legacy"].joined(separator: "\n") }
     var modelID = ""
     var thinking: String?
+    // The original flat members above are the storage codec. Runtime code sees a complete provenance or legacy data.
+    var directorySnapshot: AIDirectorySnapshot {
+        get {
+            guard let checked = modelsChecked, let origin = modelsOrigin, let identity = modelsIdentity else { return .legacy(models) }
+            return .fetched(.init(models: models, checked: checked, origin: origin, identity: identity))
+        }
+        set {
+            switch newValue {
+            case .legacy(let models): self.models = models; modelsChecked = nil; modelsOrigin = nil; modelsIdentity = nil
+            case .fetched(let value): models = value.models; modelsChecked = value.checked; modelsOrigin = value.origin; modelsIdentity = value.identity
+            }
+        }
+    }
+    var modelChoice: AIModelChoice {
+        get { modelID.isEmpty ? .unselected : .selected(id: modelID, thinking: thinking) }
+        set {
+            modelID = newValue.id ?? ""
+            thinking = newValue.thinking
+        }
+    }
+    var verifiedDirectory: AIDirectorySnapshot.Fetched? {
+        guard let value = directorySnapshot.fetched, value.identity == catalogIdentity else { return nil }
+        return value
+    }
 }
 /// Transport, billing and credential acquisition are independent provider properties.
 enum AIWireProtocol: String, Codable, CaseIterable, Sendable { case responses, chat, anthropic, gemini }

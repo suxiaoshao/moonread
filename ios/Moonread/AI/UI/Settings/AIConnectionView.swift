@@ -29,7 +29,7 @@ struct AIConnectionView: View {
     @State private var showingChatGPTWelcome = false
     private var connection: AIConnection? { ai.providers.connections.first { $0.id == connectionID } }
     private var authorizationURL: URL? {
-        if case .browser(let request) = ai.providers.loginStates[connectionID] { return request.url }
+        if case .browser(let request) = ai.providers.loginState(connectionID) { return request.url }
         return nil
     }
     var body: some View {
@@ -185,7 +185,7 @@ struct AIConnectionView: View {
                 } else {
                     Text("API Key 已安全保存").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                 }
-                if !connected, let error = ai.providers.modelErrors[connectionID] { Text(error).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
+                if !connected, let error = ai.providers.modelError(connectionID) { Text(error).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
             } else { statusContent(connection) }
             if ai.providers.isUsingChatGPTPlan(connection) {
                 Label("正在使用 ChatGPT 套餐", systemImage: "checkmark.shield")
@@ -276,7 +276,7 @@ struct AIConnectionView: View {
             .buttonStyle(ThemedProminentButtonStyle())
     }
     private func showsModels(_ connection: AIConnection) -> Bool {
-        ai.providers.isLoggedIn(connection) || !connection.models.isEmpty || ai.providers.modelErrors[connection.id] != nil
+        ai.providers.isLoggedIn(connection) || !connection.models.isEmpty || ai.providers.modelError(connection.id) != nil
     }
     private func modelSettings(_ connection: AIConnection) -> some View {
         let models = AIModelSearch.filter(connection.models.map { ai.providers.model($0.id, in: connection) ?? $0 }, query: modelQuery, connection: connection, ai.providers)
@@ -301,7 +301,7 @@ struct AIConnectionView: View {
                     } label: { Text("全部") }.disabled(models.isEmpty).frame(minHeight: 44).accessibilityIdentifier("bulkAIModels")
                     Button("完成") { editingModels = false }.fontWeight(.semibold).frame(minHeight: 44).accessibilityIdentifier("finishEditingAIModels")
                 } else {
-                    if ai.providers.refreshingModels.contains(connectionID) {
+                    if ai.providers.isRefreshing(connectionID) {
                         ProgressView().accessibilityLabel("正在载入模型…").frame(width: 44, height: 44)
                     } else {
                         Button("刷新可用模型", systemImage: "arrow.clockwise") { Task { await ai.providers.refreshModels(connectionID) } }
@@ -317,7 +317,7 @@ struct AIConnectionView: View {
                 Text("原先选择的型号已不在当前目录中，请重新选择。")
                     .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
             }
-            if let error = ai.providers.modelErrors[connection.id] {
+            if let error = ai.providers.modelError(connection.id) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(verbatim: error).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
                     Button("重新加载模型") { Task { await ai.providers.refreshModels(connectionID) } }
@@ -330,8 +330,8 @@ struct AIConnectionView: View {
             }
             LazyVStack(spacing: 0) {
                 if connection.models.isEmpty {
-                    if ai.providers.refreshingModels.contains(connectionID) { ProgressView("正在载入模型…").padding(20) }
-                    else if ai.providers.modelErrors[connection.id] == nil {
+                    if ai.providers.isRefreshing(connectionID) { ProgressView("正在载入模型…").padding(20) }
+                    else if ai.providers.modelError(connection.id) == nil {
                         ContentUnavailableView("当前目录未列出模型", systemImage: "sparkles")
                     }
                 } else if models.isEmpty {

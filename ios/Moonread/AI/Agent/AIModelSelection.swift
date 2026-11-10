@@ -26,8 +26,8 @@ extension AIService {
             modelID = value.modelID.flatMap { $0.isEmpty ? nil : $0 }; thinking = value.thinking
         }
         guard let connection = providers.connections.first(where: { $0.id == connectionID }),
-              let model = providers.model(modelID ?? connection.modelID, in: connection) else { return nil }
-        let effort = thinking ?? (modelID == nil && model.id == connection.modelID ? connection.thinking : nil)
+              let model = providers.model(modelID ?? connection.modelChoice.id ?? "", in: connection) else { return nil }
+        let effort = thinking ?? (modelID == nil && model.id == connection.modelChoice.id ? connection.modelChoice.thinking : nil)
         return AIModelSelection(connectionID: connection.id, modelID: model.id,
                                 thinking: effort.flatMap { model.thinking.contains($0) ? $0 : nil } ?? AIModelSelection.defaultThinking(model))
     }
@@ -40,7 +40,7 @@ extension AIService {
         switch target {
         case .defaults:
             providers.defaultTextConnectionID = selection.connectionID
-            providers.connections[index].modelID = selection.modelID; providers.connections[index].thinking = thinking
+            providers.connections[index].modelChoice = .selected(id: selection.modelID, thinking: thinking)
             providers.saveConnections(); return true
         case .conversation(let id), .session(let id):
             guard let value = conversation(id) else { return false }

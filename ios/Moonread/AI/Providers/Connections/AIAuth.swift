@@ -17,7 +17,9 @@ enum AIError: LocalizedError {
         }
     }
 }
-struct AICredential: Codable, Sendable {
+struct AICredentialStorage: Codable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
+    var description: String { "<credential>" }
+    var debugDescription: String { description }
     var accessToken: String
     var refreshToken: String
     var expires: Date
@@ -30,6 +32,63 @@ struct AICredential: Codable, Sendable {
         return Data(SHA256.hash(data: Data(text.utf8))).base64EncodedString()
     }
 }
+/// The encoded credential stays byte-compatible with previously published data.
+struct AISecret: Sendable, CustomStringConvertible, CustomDebugStringConvertible {
+    private let value: String
+    init(_ value: String) { self.value = value }
+    var authorizationValue: String { value }
+    var description: String { "<credential>" }
+    var debugDescription: String { description }
+}
+
+struct AIOAuthCredential: Sendable, CustomStringConvertible, CustomDebugStringConvertible {
+    var description: String { "<credential>" }
+    var debugDescription: String { description }
+    let access: AISecret
+    let refresh: AISecret
+    let expires: Date
+    let accountID: String
+    let chatGPT: AIChatGPTAccount?
+
+    init(_ storage: AICredentialStorage) {
+        access = AISecret(storage.accessToken); refresh = AISecret(storage.refreshToken)
+        expires = storage.expires; accountID = storage.accountID; chatGPT = storage.chatGPT
+    }
+    var storage: AICredentialStorage {
+        .init(accessToken: access.authorizationValue, refreshToken: refresh.authorizationValue,
+              expires: expires, accountID: accountID, chatGPT: chatGPT)
+    }
+}
+
+enum RuntimeCredential: Sendable, CustomStringConvertible, CustomDebugStringConvertible {
+    case apiKey(AISecret)
+    case oauth(AIOAuthCredential)
+
+    init(storage: AICredentialStorage, method: AIAuthenticationMethod) {
+        switch method {
+        // OpenRouter exchanges its authorization code for a service API key.
+        case .apiKey, .openrouter: self = .apiKey(AISecret(storage.accessToken))
+        case .chatGPT: self = .oauth(AIOAuthCredential(storage))
+        }
+    }
+    var storage: AICredentialStorage {
+        switch self {
+        case .apiKey(let key): .init(accessToken: key.authorizationValue, refreshToken: "", expires: .distantFuture, accountID: "")
+        case .oauth(let value): value.storage
+        }
+    }
+    var accessToken: String {
+        switch self {
+        case .apiKey(let key): key.authorizationValue
+        case .oauth(let value): value.access.authorizationValue
+        }
+    }
+    var oauth: AIOAuthCredential? { if case .oauth(let value) = self { value } else { nil } }
+    var accountID: String { oauth?.accountID ?? "" }
+    var sessionID: String { storage.sessionID }
+    var description: String { "<credential>" }
+    var debugDescription: String { description }
+}
 protocol CredentialStore: Sendable {
     func read(_ reference: String) throws -> Data?
     func write(_ data: Data, reference: String) throws
@@ -40,7 +99,10 @@ extension CredentialStore {
     func load<T: Decodable>(_ reference: String, as type: T.Type) throws -> T? {
         try read(reference).map { try JSONDecoder().decode(type, from: $0) }
     }
-    func load(_ reference: String) throws -> AICredential? { try load(reference, as: AICredential.self) }
+    func load(_ reference: String) throws -> AICredentialStorage? { try load(reference, as: AICredentialStorage.self) }
+    func load(for connection: AIConnection) throws -> RuntimeCredential? {
+        try load(connection.credentialReference).map { RuntimeCredential(storage: $0, method: connection.authMethod) }
+    }
     func save<T: Encodable>(_ value: T, reference: String) throws {
         try write(JSONEncoder().encode(value), reference: reference)
     }
@@ -71,7 +133,7 @@ enum AIKeychain {
         return KeychainCredentialStore()
     }()
     static func load<T: Decodable>(_ reference: String, as type: T.Type) throws -> T? { try store.load(reference, as: type) }
-    static func load(_ reference: String) throws -> AICredential? { try store.load(reference) }
+    static func load(_ reference: String) throws -> AICredentialStorage? { try store.load(reference) }
     static func save<T: Encodable>(_ value: T, reference: String) throws { try store.save(value, reference: reference) }
     static func remove(_ reference: String) throws { try store.remove(reference) }
 }
@@ -105,7 +167,7 @@ struct KeychainCredentialStore: CredentialStore {
     }
 }
 actor AIAuthentication {
-    private var refreshes: [String: Task<AICredential, Error>] = [:]
+    private var refreshes: [String: Task<RuntimeCredential, Error>] = [:]
     var signingOut = Set<String>()
     let session: URLSession
     nonisolated let network: AINetworkAccess
@@ -116,9 +178,9 @@ actor AIAuthentication {
     var chatGPTListeners: [String: any AIChatGPTCallbackSource] = [:]
     var chatGPTAttempts: [String: (id: String, attempt: AIChatGPTProtocol.Attempt)] = [:]
     var chatGPTIssuedClients: [String: String] = [:]
-    private let credentialResolver: (@Sendable (AIConnection) async throws -> AICredential)?
-    private let credentialSaver: (@Sendable (AICredential, String) throws -> Void)?
-    init(now: @escaping @Sendable () -> Date = { Date() }, makeCallbackSource: @escaping @Sendable () -> any AIChatGPTCallbackSource = { AIChatGPTLoopback(validate: { _ in false }) }, session: URLSession = URLSession(configuration: .ephemeral), credentials: any CredentialStore = AIKeychain.store, chatGPTHostReference: String = "chatgpt/host", credentialSaver: (@Sendable (AICredential, String) throws -> Void)? = nil, credentialResolver: (@Sendable (AIConnection) async throws -> AICredential)? = nil, availability: AIAvailability? = nil) {
+    private let credentialResolver: (@Sendable (AIConnection) async throws -> AICredentialStorage)?
+    private let credentialSaver: (@Sendable (AICredentialStorage, String) throws -> Void)?
+    init(now: @escaping @Sendable () -> Date = { Date() }, makeCallbackSource: @escaping @Sendable () -> any AIChatGPTCallbackSource = { AIChatGPTLoopback(validate: { _ in false }) }, session: URLSession = URLSession(configuration: .ephemeral), credentials: any CredentialStore = AIKeychain.store, chatGPTHostReference: String = "chatgpt/host", credentialSaver: (@Sendable (AICredentialStorage, String) throws -> Void)? = nil, credentialResolver: (@Sendable (AIConnection) async throws -> AICredentialStorage)? = nil, availability: AIAvailability? = nil) {
         self.makeCallbackSource = makeCallbackSource
         self.now = now
         self.credentials = credentials
@@ -137,40 +199,43 @@ actor AIAuthentication {
         #endif
         let key = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !key.isEmpty else { throw AIError.loginRequired }
-        let value = AICredential(accessToken: key, refreshToken: "", expires: .distantFuture, accountID: "")
+        let value = RuntimeCredential.apiKey(AISecret(key)).storage
         if let credentialSaver { try credentialSaver(value, connection.credentialReference) }
         else { try credentials.save(value, reference: connection.credentialReference) }
     }
-    func saveCredential(_ credential: AICredential, reference: String) throws {
+    func saveCredential(_ credential: AICredentialStorage, reference: String) throws {
         if let credentialSaver { try credentialSaver(credential, reference) }
         else { try credentials.save(credential, reference: reference) }
     }
-    func credential(_ connection: AIConnection, availability: AIAvailability? = nil, generation: UUID? = nil) async throws -> AICredential {
+    func credential(_ connection: AIConnection, availability: AIAvailability? = nil, generation: UUID? = nil) async throws -> RuntimeCredential {
         try Task.checkCancellation()
         guard !signingOut.contains(connection.credentialReference) else { throw AIError.loginRequired }
-        if let credentialResolver { return try await credentialResolver(connection) }
+        if let credentialResolver {
+            return try await RuntimeCredential(storage: credentialResolver(connection), method: connection.authMethod)
+        }
         let reference = connection.credentialReference
-        guard let current = try credentials.load(reference) else { throw AIError.loginRequired }
-        if connection.authMethod == .apiKey || connection.authMethod == .openrouter { return current }
-        guard current.chatGPT?.scopes.contains("chatgpt.tokens.use.direct") == true else { throw AIChatGPTError.planPermission }
-        if current.expires > now().addingTimeInterval(60) { return current }
-        if let task = refreshes[reference] {
-            let value = try await task.value
-            guard !signingOut.contains(reference), try credentials.load(reference)?.refreshToken == value.refreshToken else { throw AIError.loginRequired }
-            guard value.chatGPT?.scopes.contains("chatgpt.tokens.use.direct") == true else { throw AIChatGPTError.planPermission }
+        guard let current = try credentials.load(for: connection) else { throw AIError.loginRequired }
+        guard case .oauth(let oauth) = current else { return current }
+        guard oauth.chatGPT?.scopes.contains("chatgpt.tokens.use.direct") == true else { throw AIChatGPTError.planPermission }
+        if oauth.expires > now().addingTimeInterval(60) { return current }
+        func accept(_ value: RuntimeCredential) throws -> RuntimeCredential {
+            guard let latest = value.oauth, !signingOut.contains(reference),
+                  try credentials.load(reference)?.refreshToken == latest.refresh.authorizationValue else { throw AIError.loginRequired }
+            guard latest.chatGPT?.scopes.contains("chatgpt.tokens.use.direct") == true else { throw AIChatGPTError.planPermission }
             return value
         }
+        if let task = refreshes[reference] { return try accept(await task.value) }
         let task = Task {
             do {
-                let refreshed: AICredential
+                let refreshed: AIOAuthCredential
                 if let availability {
-                    // This shared refresh has its own task, independent of any one caller.
-                    refreshed = try await availability.perform(generation: generation) { try await self.refreshChatGPT(current) }
-                } else { refreshed = try await self.refreshChatGPT(current) }
+                    // The shared refresh keeps its original cancellation ownership.
+                    refreshed = try await availability.perform(generation: generation) { try await self.refreshChatGPT(oauth) }
+                } else { refreshed = try await self.refreshChatGPT(oauth) }
                 try Task.checkCancellation()
-                guard try credentials.load(reference)?.refreshToken == current.refreshToken else { throw CancellationError() }
-                try credentials.save(refreshed, reference: reference)
-                return refreshed
+                guard try credentials.load(reference)?.refreshToken == oauth.refresh.authorizationValue else { throw CancellationError() }
+                try credentials.save(refreshed.storage, reference: reference)
+                return RuntimeCredential.oauth(refreshed)
             } catch AIChatGPTError.refreshExpired(let code, _) {
                 guard try credentials.load(reference)?.sessionID == current.sessionID else { throw CancellationError() }
                 throw AIChatGPTError.refreshExpired(code, sessionID: current.sessionID)
@@ -178,10 +243,7 @@ actor AIAuthentication {
         }
         refreshes[reference] = task
         defer { refreshes[reference] = nil }
-        let value = try await task.value
-        guard !signingOut.contains(reference), try credentials.load(reference)?.refreshToken == value.refreshToken else { throw AIError.loginRequired }
-        guard value.chatGPT?.scopes.contains("chatgpt.tokens.use.direct") == true else { throw AIChatGPTError.planPermission }
-        return value
+        return try accept(await task.value)
     }
     /// The connection service owns the single confirmed-expiry transition. This actor performs its guarded storage update.
     func invalidateSession(_ connection: AIConnection, sessionID: String?) throws -> Bool {
@@ -200,8 +262,8 @@ actor AIAuthentication {
         // Settle rotating credentials before revoking; otherwise an in-flight refresh
         // could leave a new refresh token alive after its predecessor was revoked.
         if let refresh = refreshes[connection.credentialReference] { _ = try? await refresh.value }
-        if connection.authMethod == .chatGPT, let current = try credentials.load(connection.credentialReference), let account = current.chatGPT {
-            try await revokeChatGPT(refreshToken: current.refreshToken, clientID: account.clientID)
+        if let oauth = try credentials.load(for: connection)?.oauth, let account = oauth.chatGPT {
+            try await revokeChatGPT(refreshToken: oauth.refresh.authorizationValue, clientID: account.clientID)
             try credentials.save(account.registration, reference: reference + "/registration")
         }
         if forgetRegistration {
@@ -211,16 +273,16 @@ actor AIAuthentication {
         refreshes.removeValue(forKey: connection.credentialReference)?.cancel()
         try credentials.remove(connection.credentialReference)
     }
-    func models(_ connection: AIConnection, credential supplied: AICredential? = nil) async throws -> [AIModelOption] {
+    func models(_ connection: AIConnection, credential supplied: RuntimeCredential? = nil) async throws -> [AIModelOption] {
         if connection.authMethod != .chatGPT {
             let policy = AIModelDirectoryPolicy.policy(connection)
             if policy.kind == .service { return try await directory(connection) }
-            let token: AICredential
+            let token: RuntimeCredential
             if let supplied { token = supplied } else { token = try await credential(connection) }
             return try await directory(connection, credential: token)
         }
         guard connection.baseURL == AIChatGPTProtocol.resource, connection.wireProtocol == .responses else { throw AIError.unsupported }
-        let token: AICredential
+        let token: RuntimeCredential
         if let supplied { token = supplied } else { token = try await credential(connection) }
         guard let url = URL(string: connection.baseURL + "/models") else { throw AIError.invalidResponse }
         var request = URLRequest(url: url)
@@ -272,7 +334,7 @@ actor AIAuthentication {
         let body = try await requestObject(request)
         guard let key = body["key"] as? String, !key.isEmpty else { throw AIError.invalidResponse }
         try Task.checkCancellation()
-        let value = AICredential(accessToken: key, refreshToken: "", expires: .distantFuture, accountID: "")
+        let value = RuntimeCredential.apiKey(AISecret(key)).storage
         if let credentialSaver { try credentialSaver(value, reference) } else { try credentials.save(value, reference: reference) }
     }
 }

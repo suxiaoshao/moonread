@@ -43,10 +43,7 @@ extension AIAgentRuntime {
         guard let config = configuration else { throw AIAgentFailure.invalidResponse }
         responseCount = 0
         committedStepCount = 0
-        eventStep = -1
-        liveParts = []
-        partialText = ""
-        partialReasoning = ""; reasoningActive = false
+        clearLiveOutput(resetCursor: true)
         inFlightCalls = []
         try await config.authorize()
         let input = try await inputMessages(config, force: forceCompression)
@@ -72,11 +69,7 @@ extension AIAgentRuntime {
             try check()
             switch event {
             case .startStep:
-              eventStep += 1
-              liveStep = head.currentStep
-              liveParts = []
-              partialText = ""
-              partialReasoning = ""; reasoningActive = false
+              beginLiveStep()
               observe(.init(status: head.status))
             case .textStart(let spanID, let metadata):
               openPart(.text, id: spanID, metadata: metadata)
@@ -98,15 +91,15 @@ extension AIAgentRuntime {
             case .reasoningDelta(let spanID, let text, let metadata):
               appendPart(.reasoning, id: spanID, text: text, metadata: metadata)
               reasoningActive = true
-              partialReasoning += text
+              updateLiveOutput { $0.reasoning += text }
               if Date().timeIntervalSince(lastPublished) >= 0.1 {
                 observe(.init(status: head.status, text: partialText, reasoning: partialReasoning, reasoningActive: reasoningActive))
                 lastPublished = Date()
               }
             case .textDelta(let spanID, let text, let metadata):
               appendPart(.text, id: spanID, text: text, metadata: metadata)
-              partialText += text
-              if eventStep == committedStepCount, Date().timeIntervalSince(lastPartialSave) >= 1 {
+              updateLiveOutput { $0.text += text }
+              if eventCursor == .step(committedStepCount), Date().timeIntervalSince(lastPartialSave) >= 1 {
                 let parts = liveParts
                 try await transact { $0.pendingParts = parts; return [] }
                 lastPartialSave = Date()

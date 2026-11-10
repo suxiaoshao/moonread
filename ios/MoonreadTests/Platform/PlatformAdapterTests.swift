@@ -18,12 +18,12 @@ final class PlatformAdapterCredentialStoreAdapterTests: CredentialStoreAdapterFi
     let reference = "synthetic-credential"
     defer { try? store.remove(reference) }
     XCTAssertNil(try store.read(reference))
-    let first = AICredential(
+    let first = AICredentialStorage(
       accessToken: "synthetic-first", refreshToken: "", expires: .distantFuture,
       accountID: "fixture")
     try store.save(first, reference: reference)
     XCTAssertEqual(try store.load(reference)?.accessToken, first.accessToken)
-    let next = AICredential(
+    let next = AICredentialStorage(
       accessToken: "synthetic-replacement", refreshToken: "", expires: .distantFuture,
       accountID: "fixture")
     try store.save(next, reference: reference)

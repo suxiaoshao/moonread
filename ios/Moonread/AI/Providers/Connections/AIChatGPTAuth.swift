@@ -343,7 +343,7 @@ extension AIAuthentication {
                 try Task.checkCancellation()
                 guard !signingOut.contains(reference), chatGPTListeners[reference] === listener, let account = value.chatGPT else { throw CancellationError() }
                 try credentials.save(account.registration, reference: reference + "/registration")
-                try saveCredential(value, reference: reference)
+                try saveCredential(value.storage, reference: reference)
                 chatGPTIssuedClients[reference] = nil
                 return
             }
@@ -352,10 +352,10 @@ extension AIAuthentication {
     }
     static let terminalRefreshErrors: Set<String> = ["invalid_grant", "invalid_refresh_token", "token_expired",
         "refresh_token_expired", "refresh_token_invalidated", "refresh_token_reused"]
-    func refreshChatGPT(_ current: AICredential) async throws -> AICredential {
+    func refreshChatGPT(_ current: AIOAuthCredential) async throws -> AIOAuthCredential {
         guard let account = current.chatGPT else { throw AIError.loginRequired }
         return try await exchangeChatGPT(["grant_type": "refresh_token", "client_id": account.clientID,
-            "refresh_token": current.refreshToken, "resource": AIChatGPTProtocol.resource],
+            "refresh_token": current.refresh.authorizationValue, "resource": AIChatGPTProtocol.resource],
             clientID: account.clientID, nonce: nil, previous: account)
     }
     private func form(_ values: [String: String], url: URL) -> URLRequest {
@@ -367,7 +367,7 @@ extension AIAuthentication {
         request.httpBody = Data(values.sorted { $0.key < $1.key }.map { encode($0.key) + "=" + encode($0.value) }.joined(separator: "&").utf8)
         return request
     }
-    func exchangeChatGPT(_ values: [String: String], clientID: String, nonce: String?, previous: AIChatGPTAccount?) async throws -> AICredential {
+    func exchangeChatGPT(_ values: [String: String], clientID: String, nonce: String?, previous: AIChatGPTAccount?) async throws -> AIOAuthCredential {
         let request = form(values, url: URL(string: AIChatGPTProtocol.issuer + "/api/accounts/oauth/token")!)
         let (data, response) = try await requestData(request)
         guard let response = response as? HTTPURLResponse else { throw AIError.invalidResponse }
@@ -398,7 +398,7 @@ extension AIAuthentication {
             guard nonce == nil, let previous else { throw AIError.invalidResponse }
             account = previous; account.scopes = scopes
         }
-        return AICredential(accessToken: access, refreshToken: refresh, expires: now().addingTimeInterval(expires), accountID: account.subject, chatGPT: account)
+        return AIOAuthCredential(.init(accessToken: access, refreshToken: refresh, expires: now().addingTimeInterval(expires), accountID: account.subject, chatGPT: account))
     }
     func revokeChatGPT(refreshToken: String, clientID: String) async throws {
         for attempt in 0..<3 {

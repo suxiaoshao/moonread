@@ -30,14 +30,14 @@ extension AIAgentRuntime {
       committedStepCount += 1
       inFlightCalls = []
       results = [:]
-      if eventStep < committedStepCount { liveParts = []; partialText = ""; partialReasoning = ""; reasoningActive = false }
-      committingStep = false
+      if eventCursor.index.map({ $0 < committedStepCount }) ?? true { clearLiveOutput() }
+      finishStepPublication()
       observe(.init(status: head.status, text: partialText, reasoning: partialReasoning, reasoningActive: reasoningActive))
     }
   }
   func saveInterruptedStep() async throws {
     var parts: [AssistantContentPart] = []
-    if eventStep == committedStepCount || eventStep == -1 {
+    if eventCursor == .step(committedStepCount) || eventCursor == .notStarted {
       for part in liveParts {
         switch part.kind {
         case .text: parts.append(.text(.init(text: part.text, providerOptions: part.providerOptions)))
@@ -66,7 +66,7 @@ extension AIAgentRuntime {
     if let beforeStepPublication { await beforeStepPublication() }
     #endif
     inFlightCalls = []
-    liveParts = []; partialText = ""; partialReasoning = ""; reasoningActive = false
-    committingStep = false
+    clearLiveOutput()
+    finishStepPublication()
   }
 }
