@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		148B00000000000000000001 /* AIUsageAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 148A00000000000000000001 /* AIUsageAdapter.swift */; };
+		148B00000000000000000002 /* AIUsageSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 148A00000000000000000002 /* AIUsageSnapshot.swift */; };
+		148B00000000000000000003 /* AIConnectionUsageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 148A00000000000000000003 /* AIConnectionUsageService.swift */; };
+		148B00000000000000000004 /* AIConnectionUsageSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 148A00000000000000000004 /* AIConnectionUsageSection.swift */; };
+		148B00000000000000000005 /* AIConnectionUsageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 148A00000000000000000005 /* AIConnectionUsageTests.swift */; };
 		E22800000000000000000001 /* UserDataQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = E22800000000000000000002; };
         F18300000000000000000003 /* ThemedGroupedList.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18300000000000000000004; };
         F18300000000000000000001 /* ReaderFontList.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18300000000000000000002; };
@@ -414,6 +419,11 @@ CA0FCD9B82134E7091B5CD9F /* ModelDirectoryDecoding.swift in Sources */ = {isa = 
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		148A00000000000000000001 /* AIUsageAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIUsageAdapter.swift"; sourceTree = "<group>"; };
+		148A00000000000000000002 /* AIUsageSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIUsageSnapshot.swift"; sourceTree = "<group>"; };
+		148A00000000000000000003 /* AIConnectionUsageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIConnectionUsageService.swift"; sourceTree = "<group>"; };
+		148A00000000000000000004 /* AIConnectionUsageSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIConnectionUsageSection.swift"; sourceTree = "<group>"; };
+		148A00000000000000000005 /* AIConnectionUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIConnectionUsageTests.swift"; sourceTree = "SOURCE_ROOT"; };
 		E22800000000000000000002 /* UserDataQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDataQuery.swift; sourceTree = "<group>"; };
         F18300000000000000000004 /* ThemedGroupedList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemedGroupedList.swift; sourceTree = "<group>"; };
         F18300000000000000000002 /* ReaderFontList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderFontList.swift"; sourceTree = "<group>"; };
@@ -816,6 +826,16 @@ D35000000000000000000001,
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		148C00000000000000000001 /* Usage */ = {
+			isa = PBXGroup;
+			children = (
+				148A00000000000000000001 /* AIUsageAdapter.swift */,
+				148A00000000000000000002 /* AIUsageSnapshot.swift */,
+				148A00000000000000000003 /* AIConnectionUsageService.swift */,
+			);
+			path = "Usage";
+			sourceTree = "<group>";
+		};
 		12BD6151DCDE468C8BAEC02A /* Concurrency */ = {isa = PBXGroup; children = (D8E67FFF06C64902B16D3A2D /* MainActorNotifications.swift */,); path = Concurrency; sourceTree = "<group>"; };
 		A50000000000000000000001 = {
 			isa = PBXGroup;
@@ -926,6 +946,7 @@ D35000000000000000000001,
                 9885E1115585BFC576D92B57 /* AIAgentQueueTests.swift */,
                 F5B1F1DDF46216CE59BA4F14 /* AIAuthenticationTests.swift */,
                 3F93DDBA5E540729F4860E1A /* AIAvailabilityTests.swift */,
+                148A00000000000000000005 /* AIConnectionUsageTests.swift */,
                 B633ACC2BFB26FCE7339697A /* AICompactionTests.swift */,
                 10AAE623C3B1DC1FC59DAED1 /* AIConnectionStorageTests.swift */,
                 937C6A32791BD8B0E6407D6E /* AIConversationProjectionTests.swift */,
@@ -1683,6 +1704,7 @@ D35000000000000000000001,
 			children = (
 691E7DA560CC45CBADFE58DB /* Catalog */,
 				A11D153D9A51C001A9FE116A /* Connections */,
+				148C00000000000000000001 /* Usage */,
 				648898574D5A490398DF5331 /* AICoverImageFetcher.swift */,
 				E52000000000000000000002 /* AIProviderRequest.swift */,
 				D32000000000000000000003 /* AITransport.swift */,
@@ -1748,6 +1770,7 @@ D35000000000000000000001,
 				8ACEF8F2A333A8663E9BECEB /* AIThinkingSlider.swift */,
 				E52000000000000000000006 /* AISettingsView.swift */,
 				E52000000000000000000007 /* AIConnectionView.swift */,
+				148A00000000000000000004 /* AIConnectionUsageSection.swift */,
 				EC14CE0E00934BB682B83B4D /* AIDataSharingConsentView.swift */,
 				D32000000000000000000007 /* AIModelPicker.swift */,
 			);
@@ -2141,7 +2164,7 @@ B792EA92E8204EEDB7AA1450,
  D41000000000000000000002,
 CA0FCD9B82134E7091B5CD9F,
 79FDB8BF2A464B4CA138DFB4,
-D31000000000000000000005,E51000000000000000000001,E51000000000000000000002,E51000000000000000000003,E51000000000000000000004,E51000000000000000000005,E51000000000000000000006,E51000000000000000000007,E51000000000000000000008,D31000000000000000000007,
+D31000000000000000000005,E51000000000000000000001,E51000000000000000000002,E51000000000000000000003,E51000000000000000000004,E51000000000000000000005,E51000000000000000000006,E51000000000000000000007,148B00000000000000000001,148B00000000000000000002,148B00000000000000000003,148B00000000000000000004,E51000000000000000000008,D31000000000000000000007,
 FA1000000000000000000002,
 FA1000000000000000000001, FB1000000000000000000001,
 E71000000000000000000001,
@@ -2292,6 +2315,7 @@ F01900000000000000000001,
                 8ECACDBA0D7E7C50A82DCB52,
                 E4A6194DE08E299191611D3F,
                 5D839F8292B36707B3F44EDE,
+                148B00000000000000000005,
                 EF9F15D1120F37D85EE8F10F,
                 BFB4D8321C6FC6CC2E84DF67,
                 81DD9062D9B410471F40DC5D,

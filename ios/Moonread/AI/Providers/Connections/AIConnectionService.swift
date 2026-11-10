@@ -13,6 +13,7 @@ enum AIConnectionState: Equatable {
 @MainActor @Observable final class AIConnectionService {
     let availability: AIAvailability
     let catalog: AIModelCatalog
+    private let usage: AIConnectionUsageService?
     private(set) var catalogActivated = false
     @ObservationIgnored private var accountCatalogAttempts: [String: Date] = [:]
     let sharing: AIDataSharingConsent
@@ -22,6 +23,7 @@ enum AIConnectionState: Equatable {
                 guard let new = connections.first(where: { $0.id == old.id }),
                       old.baseURL == new.baseURL, old.providerID == new.providerID,
                       old.protocolIdentity == new.protocolIdentity, old.catalogCredentialGeneration == new.catalogCredentialGeneration else {
+                    usage?.invalidate(old.id)
                     sharing.revoke(old.id); invalidateCatalog(old.id)
                     if let index = connections.firstIndex(where: { $0.id == old.id }) {
                         let manuals = connections[index].models.filter { $0.isManual == true }.map {
@@ -29,6 +31,7 @@ enum AIConnectionState: Equatable {
                         }
                         connections[index].directorySnapshot = .legacy(manuals)
                         runtime[old.id, default: ConnectionRuntime()].directory = .idle
+                        usage?.refresh(old.id)
                     }
                     continue
                 }
@@ -37,7 +40,9 @@ enum AIConnectionState: Equatable {
     }
     var defaultTextConnectionID: String?
     private(set) var purposeDefaults: [AIModelPurpose: AIPurposeSelection] = [:]
-    @ObservationIgnored private var nativeRequests: [UUID: (String, @Sendable () -> Void)] = [:]
+    enum NativeRequestKind { case content, usage }
+    @ObservationIgnored private var nativeRequests: [UUID: (connectionID: String, kind: NativeRequestKind, cancel: @Sendable () -> Void)] = [:]
+    private var changingCredentials: Set<String> = []
     var error: String?
     var credentialRevision = 0
     var loginConnectionID: String?
@@ -108,6 +113,7 @@ enum AIConnectionState: Equatable {
 
     func loginState(_ id: String) -> AILoginState? { runtime[id]?.authorization.presentation }
     func setLoginPresentation(_ value: AILoginState?, for id: String) {
+        if case .authorizing? = value { usage?.suspend(id) }
         let current = runtime[id]?.authorization.snapshot ?? .disconnected
         runtime[id, default: ConnectionRuntime()].authorization = switch value {
         case nil: .settled(current)
@@ -125,6 +131,7 @@ enum AIConnectionState: Equatable {
     func modelError(_ id: String) -> String? { runtime[id]?.directory.error }
 
     private func setAuthorization(_ value: AuthorizationSnapshot, for id: String) {
+        if case .needsLogin = value { usage?.invalidate(id) }
         let current = runtime[id]?.authorization ?? .settled(.disconnected)
         runtime[id, default: ConnectionRuntime()].authorization = current.updatingSnapshot(value)
     }
@@ -144,11 +151,13 @@ enum AIConnectionState: Equatable {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var loginTask: Task<Void, Never>?
     @ObservationIgnored private var loginRevision = UUID()
-    init(defaults: UserDefaults, auth: AIAuthentication, catalog: AIModelCatalog? = nil, sharing: AIDataSharingConsent? = nil, availability: AIAvailability? = nil) {
+    init(defaults: UserDefaults, auth: AIAuthentication, catalog: AIModelCatalog? = nil, sharing: AIDataSharingConsent? = nil, availability: AIAvailability? = nil, usage: AIConnectionUsageService? = nil) {
         self.availability = availability ?? AIAvailability(defaults: defaults)
         self.sharing = sharing ?? AIDataSharingConsent(defaults: defaults)
         self.catalog = catalog ?? AIModelCatalog()
         self.defaults = defaults; self.auth = auth
+        self.usage = usage
+        usage?.bind(self)
         auth.network.bind(self.availability)
         self.catalog.network.bind(self.availability)
         #if DEBUG
@@ -238,8 +247,9 @@ enum AIConnectionState: Equatable {
         saveConnections(); return connection.id
     }
     @discardableResult func saveAPIKey(_ key: String, for id: String) async -> Bool {
-        guard let connection = connections.first(where: { $0.id == id }) else { return false }
+        guard let connection = connections.first(where: { $0.id == id }), changingCredentials.insert(id).inserted else { return false }
         credentialErrors[id] = nil
+        usage?.suspend(id)
         do {
             // Close content admission before suspending to the credential actor.
             sharing.revoke(id)
@@ -247,9 +257,15 @@ enum AIConnectionState: Equatable {
             try await auth.saveAPIKey(key, connection: connection)
             resetCatalog(id)
             markAuthorized(id); credentialRevision += 1
+            changingCredentials.remove(id)
+            usage?.refresh(id)
             await refreshModels(id)
             return true
-        } catch { credentialErrors[id] = Self.connectionError(error); return false }
+        } catch {
+            changingCredentials.remove(id)
+            credentialErrors[id] = Self.connectionError(error)
+            return false
+        }
     }
     func saveConnections() {
         do {
@@ -265,6 +281,13 @@ enum AIConnectionState: Equatable {
         guard !requiresLogin(connection.id) else { return false }
         if case .available = runtime[connection.id]?.authorization.snapshot { return true }
         return (try? auth.credentials.load(for: connection)) != nil
+    }
+    func canQueryUsage(_ connection: AIConnection) -> Bool {
+        guard !changingCredentials.contains(connection.id) else { return false }
+        switch loginState(connection.id) {
+        case .authorizing, .browser: return false
+        default: return isLoggedIn(connection)
+        }
     }
     func isUsingChatGPTPlan(_ connection: AIConnection) -> Bool {
         isLoggedIn(connection) && chatGPTPlanEnabled(connection)
@@ -320,7 +343,7 @@ enum AIConnectionState: Equatable {
     }
     func login(_ id: String) {
         guard availability.isAvailable else { return }
-        guard let connection = connections.first(where: { $0.id == id }), loginConnectionID == nil else { return }
+        guard let connection = connections.first(where: { $0.id == id }), loginConnectionID == nil, !changingCredentials.contains(id) else { return }
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-testing"), ProcessInfo.processInfo.arguments.contains("--ui-test-ai-login-browser"), id == "fixture-browser" {
             beginOfflineBrowserAuthorization(connection); return
@@ -380,6 +403,7 @@ enum AIConnectionState: Equatable {
                 sharing.revoke(id); resetCatalog(id)
                 markAuthorized(id)
                 credentialRevision += 1; loginConnectionID = nil; setLoginPresentation(nil, for: id)
+                usage?.refresh(id)
                 await refreshModels(id)
             } catch {
                 guard loginRevision == revision else { return }
@@ -408,10 +432,12 @@ enum AIConnectionState: Equatable {
         setLoginPresentation(.failed(Self.connectionError(error)), for: id)
     }
     @discardableResult func logout(_ id: String, forgetRegistration: Bool = false) async -> Bool {
-        guard let connection = connections.first(where: { $0.id == id }) else { return false }
+        guard let connection = connections.first(where: { $0.id == id }), changingCredentials.insert(id).inserted else { return false }
+        defer { changingCredentials.remove(id) }
+        usage?.suspend(id)
         sharing.revoke(id)
         cancelLogin(id)
-        for request in nativeRequests.values where request.0 == id { request.1() }
+        cancelNativeRequests(connectionID: id)
         invalidateCatalog(id)
         do {
             try await auth.logout(connection, forgetRegistration: forgetRegistration); setAuthorization(.disconnected, for: id)
@@ -657,20 +683,22 @@ enum AIConnectionState: Equatable {
         }
         purposeDefaults[purpose] = selection; saveConnections(); return true
     }
-    func trackNativeRequest(connectionID: String, cancel: @escaping @Sendable () -> Void) throws -> UUID {
-        let id = try availability.register(cancel: cancel); nativeRequests[id] = (connectionID, cancel); return id
+    func trackNativeRequest(connectionID: String, kind: NativeRequestKind = .content, cancel: @escaping @Sendable () -> Void) throws -> UUID {
+        let id = try availability.register(cancel: cancel); nativeRequests[id] = (connectionID, kind, cancel); return id
     }
     func cancelAIWork() {
+        usage?.cancelAllAndClear()
         cancelLogin()
         catalog.cancelRefresh()
         for task in modelTasks.values { task.cancel() }; modelTasks.removeAll()
         for id in refreshingModels { invalidateCatalog(id) }
-        for request in nativeRequests.values { request.1() }
+        for request in nativeRequests.values { request.cancel() }
         for request in sharing.requests { sharing.cancel(owner: request.owner) }
         showingChatGPTWelcome = false
     }
     func cancelNativeRequests(connectionID: String) {
-        for request in nativeRequests.values where request.0 == connectionID { request.1() }
+        // Sharing revocation cancels content tasks only; billing sends no book or chat content.
+        for request in nativeRequests.values where request.connectionID == connectionID && request.kind == .content { request.cancel() }
     }
     func finishNativeRequest(_ id: UUID) { nativeRequests[id] = nil; availability.finish(id) }
     static func connectionError(_ error: Error) -> String {

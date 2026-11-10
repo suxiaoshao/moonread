@@ -1,6 +1,47 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "百炼": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Alibaba Cloud Model Studio"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"百煉"}}}},
+    "撤销会停止此连接的内容任务。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Revoking permission stops this connection’s content tasks."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"撤銷會停止此連線的內容任務。"}}}},
+    "在服务控制台查看余额": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"View Balance in the Service Console"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"在服務控制台查看餘額"}}}},
+    "在 %@ 查看": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"View in %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"在 %@ 查看"}}}},
+    "余额与额度": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Balance and Limits"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"餘額與額度"}}}},
+    "配置凭据后可查询。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Set up your credentials to check your balance or limits."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"設定憑證後即可查詢。"}}}},
+    "数据可能已过期，请刷新。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The information may be out of date. Refresh to check again."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"資料可能已過期，請重新整理。"}}}},
+    "正在查询…": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Checking…"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在查詢…"}}}},
+    "正在刷新…": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Refreshing…"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在重新整理…"}}}},
+    "可用余额": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Available balance"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"可用餘額"}}}},
+    "余额组成": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Balance breakdown"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"餘額明細"}}}},
+    "充值余额": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Purchased credits"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"儲值餘額"}}}},
+    "赠送余额": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Granted credits"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"贈送餘額"}}}},
+    "服务报告余额不足以调用 API，请到控制台确认。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The service reports that your balance is too low for API calls. Check the console."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"服務回報餘額不足以呼叫 API，請到控制台確認。"}}}},
+    "当前 Key 未设置限额": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"This key has no spending limit"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"目前的 Key 未設定限額"}}}},
+    "当前 Key 限额剩余": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Remaining key limit"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"目前 Key 的剩餘限額"}}}},
+    "未提供": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Not provided"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"未提供"}}}},
+    "Key 限额": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Key limit"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"Key 限額"}}}},
+    "累计使用额": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Total spent to date"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"累計使用額"}}}},
+    "限额重置": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Limit resets"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"限額重設"}}}},
+    "每日": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Daily"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"每日"}}}},
+    "每周": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Weekly"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"每週"}}}},
+    "每月": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Monthly"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"每月"}}}},
+    "不重置": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Never"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"不重設"}}}},
+    "重置规则请查看控制台。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Check the console for the reset schedule."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"請在控制台查看重設規則。"}}}},
+    "Key 限额包含自带 API Key 的消耗。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Usage with your own API keys counts toward this limit."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"Key 限額包含自備 API Key 的用量。"}}}},
+    "Key 限额不含自带 API Key 的消耗。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Usage with your own API keys does not count toward this limit."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"Key 限額不含自備 API Key 的用量。"}}}},
+    "仅为当前 Key 的限额，不代表账户余额；账户及组织限制仍适用。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"This is the limit for this key. Account and organization limits still apply."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"這只是目前 Key 的限額，不代表帳戶餘額；帳戶與組織的限制仍適用。"}}}},
+    "此连接所属团队的 AI Gateway 额度。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"AI Gateway credits for this connection’s team."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"此連線所屬團隊的 AI Gateway 額度。"}}}},
+    "更新于 今天 %@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Updated today at %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"更新於今天 %@"}}}},
+    "更新于 %@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Updated %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"更新於 %@"}}}},
+    "更新失败，显示上次结果。请检查网络后重试。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Couldn’t refresh. Showing the last result. Check your connection and try again."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"更新失敗，顯示上次結果。請檢查網路後再試。"}}}},
+    "暂时无法查询，请重试。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Couldn’t check right now. Try again."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"暫時無法查詢，請再試一次。"}}}},
+    "余额查询未获授权，显示上次结果。请到控制台确认。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The service denied access. Showing the last result. Check the console."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"餘額查詢未獲授權，顯示上次結果。請到控制台確認。"}}}},
+    "余额查询未获授权，请到控制台确认。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The service denied access to this information. Check the console."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"餘額查詢未獲授權，請到控制台確認。"}}}},
+    "查询过于频繁，显示上次结果。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Too many requests. Showing the last result."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"查詢過於頻繁，顯示上次結果。"}}}},
+    "查询过于频繁，请稍后重试。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Too many requests. Try again later."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"查詢過於頻繁，請稍後再試。"}}}},
+    "可重试时间：%@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Try again at %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"可重試時間：%@"}}}},
+    "暂时无法读取服务数据，显示上次结果。可到控制台查看。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Couldn’t read the service data. Showing the last result. Check the console for details."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"暫時無法讀取服務資料，顯示上次結果。可到控制台查看。"}}}},
+    "暂时无法读取服务数据，可到控制台查看。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Couldn’t read the service data. Check the console for details."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"暫時無法讀取服務資料，可到控制台查看。"}}}},
+    "打开服务控制台": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Open Service Console"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"開啟服務控制台"}}}},
     "回到朗读处": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Back to speech"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"回到朗讀處"}}}},
     "展开听书控制": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Expand listening controls"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"展開聽書控制"}}}},
     "结束听书": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Stop listening"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"結束聽書"}}}},
@@ -2641,28 +2682,6 @@
         "stringUnit": {
           "state": "translated",
           "value": "搜尋查詢；結果網頁和圖片站點也會收到 URL 請求與 IP 地址"
-        }
-      }
-    }
-  },
-    "撤销后会停止此连接的内容任务。已发送给服务的数据无法追回。": {
-    "localizations": {
-      "en": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Withdrawing permission stops content tasks for this connection. Already shared data cannot be recalled."
-        }
-      },
-      "zh-Hans": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "撤销后会停止此连接的内容任务。已发送给服务的数据无法追回。"
-        }
-      },
-      "zh-Hant": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "撤銷後會停止此連線的內容任務。已傳送給服務的資料無法追回。"
         }
       }
     }
