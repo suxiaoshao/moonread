@@ -44,7 +44,7 @@ struct AIConnectionView: View {
                     }
                     VStack(alignment: .leading, spacing: LayoutTokens.control) {
                         Text("数据共享许可").font(.headline)
-                        Text("撤销后会停止此连接的内容任务。已发送给服务的数据无法追回。")
+                        Text("撤销会停止此连接的内容任务。")
                             .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
                         Button("撤销许可", role: .destructive) { ai.sharing.revoke(connection.id) }
                             .accessibilityIdentifier("revokeAIDataSharing")

@@ -2,7 +2,7 @@ import Foundation
 
 enum AIUsageCapability: Equatable {
     enum Destination: Equatable {
-        case console(URL), kimiAccount(URL), chatGPT(URL)
+        case console(URL, name: String?), kimiAccount(URL), chatGPT(URL)
     }
 
     case query(AIUsageAdapter, console: URL)
@@ -36,9 +36,20 @@ enum AIUsageAdapter: Equatable, Sendable {
         case ("kimi-code-plan-cn", .apiKey, _), ("kimi-code-plan-global", .apiKey, _):
             return .linkOnly(.kimiAccount(URL(string: "https://www.kimi.com/code/console")!))
         default:
-            return console[connection.catalogID].map { .linkOnly(.console($0)) } ?? .unavailable
+            return console[connection.catalogID].map { .linkOnly(.console($0, name: consoleNames[connection.catalogID])) } ?? .unavailable
         }
     }
+
+    private static let consoleNames: [String: String] = [
+        "nvidia": "NVIDIA Build",
+        "openai": "OpenAI Platform",
+        "anthropic": "Claude Console",
+        "google": "Google AI Studio",
+        "alibaba": "Model Studio",
+        "alibaba-token-plan": "Model Studio",
+        "alibaba-cn": String(localized: "百炼"),
+        "alibaba-token-plan-cn": String(localized: "百炼")
+    ]
 
     private static let console: [String: URL] = [
         "openrouter": "https://openrouter.ai/settings/credits",

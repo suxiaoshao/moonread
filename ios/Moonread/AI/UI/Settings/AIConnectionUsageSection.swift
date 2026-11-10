@@ -11,27 +11,33 @@ struct AIConnectionUsageSection: View {
     var body: some View {
         if presentation != .hidden {
             VStack(alignment: .leading, spacing: 14) {
-                Text("余额与额度").font(.headline).accessibilityAddTraits(.isHeader)
                 switch presentation {
                 case .hidden:
                     EmptyView()
-                case .linkOnly(let destination):
-                    Text("该服务不提供余额查询").font(.subheadline)
-                    switch destination {
-                    case .console(let url):
-                        note("请在服务控制台查看。")
-                        consoleLink(url)
-                    case .kimiAccount:
-                        note("请使用上方的 Kimi Code 控制台入口查看。")
-                    case .chatGPT, nil:
-                        EmptyView()
+                case .linkOnly(let url, let name):
+                    heading
+                    Link(destination: url) {
+                        HStack(spacing: 6) {
+                            if let name { Text("在 \(name) 查看") }
+                            else { Text("在服务控制台查看余额") }
+                            Image(systemName: "arrow.up.right").accessibilityHidden(true)
+                        }.frame(minHeight: 44).contentShape(.rect)
                     }
+                    .foregroundStyle(Color(uiColor: theme.accent))
                 case .configure(let url):
+                    heading
                     note("配置凭据后可查询。")
                     consoleLink(url)
                 case .query(let state, let url):
                     TimelineView(.explicit(updateDates(for: state))) { context in
-                        queryContent(state, now: context.date)
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack {
+                                heading
+                                Spacer(minLength: 8)
+                                refreshControl(state, now: context.date)
+                            }
+                            queryContent(state, now: context.date)
+                        }
                     }
                     consoleLink(url)
                 }
@@ -41,6 +47,30 @@ struct AIConnectionUsageSection: View {
             .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 22))
             .accessibilityIdentifier("aiConnectionUsage")
         }
+    }
+
+    private var heading: some View {
+        Text("余额与额度").font(.headline).accessibilityAddTraits(.isHeader)
+    }
+
+    private func refreshControl(_ state: AIUsageQueryState, now: Date) -> some View {
+        Group {
+            if case .loading(let previous) = state {
+                ProgressView()
+                    .accessibilityLabel(previous == nil ? Text("正在查询…") : Text("正在刷新…"))
+            } else {
+                Button(action: refresh) {
+                    Label("刷新", systemImage: "arrow.clockwise")
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(Color(uiColor: theme.accent))
+                        .frame(width: 44, height: 44)
+                        .contentShape(.rect)
+                }
+                .buttonStyle(.borderless)
+                .disabled(!state.canRefresh(at: now))
+                .accessibilityIdentifier("refreshAIConnectionUsage")
+            }
+        }.frame(minWidth: 44, minHeight: 44)
     }
 
     private func updateDates(for state: AIUsageQueryState) -> [Date] {
@@ -59,22 +89,11 @@ struct AIConnectionUsageSection: View {
             }
 
             switch state {
-            case .idle, .ready:
+            case .idle, .ready, .loading:
                 EmptyView()
-            case .loading(let previous):
-                ProgressView {
-                    note(previous == nil ? "正在查询…" : "正在刷新…")
-                }
             case .failed(let error, let previous):
                 failure(error, hasPrevious: previous != nil, now: now)
             }
-
-            Button(action: refresh) {
-                Label("刷新", systemImage: "arrow.clockwise").frame(minHeight: 44)
-                    .contentShape(.rect)
-            }
-            .disabled(!state.canRefresh(at: now))
-            .accessibilityIdentifier("refreshAIConnectionUsage")
         }
     }
 
@@ -88,14 +107,15 @@ struct AIConnectionUsageSection: View {
                 VStack(alignment: .leading, spacing: 12) {
                     ForEach(wallets, id: \.currency) { wallet in
                         VStack(alignment: .leading, spacing: 8) {
-                            amount("充值余额", wallet.toppedUp, currency: wallet.currency)
-                            amount("赠送余额", wallet.granted, currency: wallet.currency)
+                            balanceRow("充值余额", wallet.toppedUp, currency: wallet.currency)
+                            balanceRow("赠送余额", wallet.granted, currency: wallet.currency)
                         }
                     }
-                }.padding(.top, 10)
+                }.frame(maxWidth: .infinity, alignment: .leading)
             } label: {
-                Text("余额组成").frame(minHeight: 44).contentShape(.rect)
+                Text("余额组成").font(.subheadline)
             }
+            .tint(Color(uiColor: theme.accent))
             if !available { note("服务报告余额不足以调用 API，请到控制台确认。") }
         case .keyLimit(let limit, let cumulative, let reset, let includesBYOK):
             switch limit {
@@ -129,8 +149,23 @@ struct AIConnectionUsageSection: View {
     }
 
     private func amount(_ title: LocalizedStringKey, _ amount: Decimal, currency: String, prominent: Bool = false) -> some View {
-        let number = amount.formatted(.number.precision(.fractionLength(0...38)).locale(locale))
-        return metric(title, value: Text(verbatim: "\(number) \(currency)"), prominent: prominent)
+        metric(title, value: currencyText(amount, code: currency), prominent: prominent)
+    }
+
+    private func balanceRow(_ title: LocalizedStringKey, _ amount: Decimal, currency: String) -> some View {
+        LabeledContent {
+            currencyText(amount, code: currency).monospacedDigit()
+                .foregroundStyle(Color(uiColor: theme.ink))
+                .multilineTextAlignment(.trailing)
+                .fixedSize(horizontal: false, vertical: true)
+        } label: {
+            note(title)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func currencyText(_ amount: Decimal, code: String) -> Text {
+        Text(amount, format: .currency(code: code).precision(.fractionLength(2)).locale(locale))
     }
 
     private func metric(_ title: LocalizedStringKey, value: Text, prominent: Bool = false) -> some View {

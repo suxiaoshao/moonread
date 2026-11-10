@@ -27,7 +27,7 @@ AI 连接列表不展示余额，也不查询余额。仅打开支持查询且�
 | OpenRouter 登录／API Key | [当前 Key](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-api-key) | 当前 Key 的限额和剩余、累计使用额、重置规则及 BYOK 口径；未设 Key 限额不代表账户余额无限，未知剩余不推算 |
 | Vercel AI Gateway | [团队额度](https://vercel.com/docs/ai-gateway/sdks-and-apis/rest-api#usage-and-billing) | 团队可用 USD 余额和累计使用额，不推算周期或总额度 |
 
-只将现有凭据发给对应的官方 HTTPS 地址，禁止重定向。ChatGPT 保留账户区的官方用量链接，Kimi 复用账户区的控制台链接；其余预设仅提供说明和官方入口，自定义连接不猜测控制台。查询不发送小说或聊天内容，也不改变登录状态、模型可用性或共享许可；地区和总开关由 `AIAvailability` 统一控制。
+只将现有凭据发给对应的官方 HTTPS 地址，禁止重定向。ChatGPT 保留账户区的官方用量链接，Kimi 复用账户区的控制台链接；其余预设仅提供官方入口，自定义连接不猜测控制台。查询不发送小说或聊天内容，也不改变登录状态、模型可用性或共享许可；地区和总开关由 `AIAvailability` 统一控制。
 
 每个连接身份只在内存保留最近一次成功快照；失败时旧值和更新时间不变，五分钟后标记可能过期，不轮询。429 按有效 `Retry-After` 冷却，缺失或无效时为 30 秒；冷却结束只重新允许手动刷新。凭据或端点变化、删除连接、关闭 AI 或店面不再允许 AI 时清除受影响的快照，迟到响应不能写回。不估算余额，不保存账务响应或凭据副本。
 

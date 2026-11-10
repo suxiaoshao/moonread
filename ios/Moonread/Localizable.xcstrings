@@ -1,10 +1,11 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "百炼": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Alibaba Cloud Model Studio"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"百煉"}}}},
+    "撤销会停止此连接的内容任务。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Revoking permission stops this connection’s content tasks."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"撤銷會停止此連線的內容任務。"}}}},
+    "在服务控制台查看余额": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"View Balance in the Service Console"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"在服務控制台查看餘額"}}}},
+    "在 %@ 查看": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"View in %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"在 %@ 查看"}}}},
     "余额与额度": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Balance and Limits"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"餘額與額度"}}}},
-    "该服务不提供余额查询": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Balance lookup is unavailable for this service"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"這項服務不提供餘額查詢"}}}},
-    "请在服务控制台查看。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Check the service console."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"請在服務控制台查看。"}}}},
-    "请使用上方的 Kimi Code 控制台入口查看。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Use the Kimi Code console link above."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"請使用上方的 Kimi Code 控制台入口查看。"}}}},
     "配置凭据后可查询。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Set up your credentials to check your balance or limits."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"設定憑證後即可查詢。"}}}},
     "数据可能已过期，请刷新。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The information may be out of date. Refresh to check again."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"資料可能已過期，請重新整理。"}}}},
     "正在查询…": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Checking…"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在查詢…"}}}},
@@ -2681,28 +2682,6 @@
         "stringUnit": {
           "state": "translated",
           "value": "搜尋查詢；結果網頁和圖片站點也會收到 URL 請求與 IP 地址"
-        }
-      }
-    }
-  },
-    "撤销后会停止此连接的内容任务。已发送给服务的数据无法追回。": {
-    "localizations": {
-      "en": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Withdrawing permission stops content tasks for this connection. Already shared data cannot be recalled."
-        }
-      },
-      "zh-Hans": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "撤销后会停止此连接的内容任务。已发送给服务的数据无法追回。"
-        }
-      },
-      "zh-Hant": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "撤銷後會停止此連線的內容任務。已傳送給服務的資料無法追回。"
         }
       }
     }

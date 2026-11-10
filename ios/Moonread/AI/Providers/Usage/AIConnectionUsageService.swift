@@ -26,7 +26,7 @@ enum AIUsageQueryState: Equatable {
 
 enum AIUsagePresentation: Equatable {
     case hidden
-    case linkOnly(AIUsageCapability.Destination?)
+    case linkOnly(URL, name: String?)
     case configure(console: URL)
     case query(AIUsageQueryState, console: URL)
 }
@@ -66,9 +66,8 @@ enum AIUsagePresentation: Equatable {
     func presentation(for connection: AIConnection) -> AIUsagePresentation {
         guard availability.isAvailable else { return .hidden }
         switch AIUsageAdapter.capability(for: connection) {
-        case .linkOnly(.chatGPT): return .hidden
-        case .linkOnly(let destination): return .linkOnly(destination)
-        case .unavailable: return .linkOnly(nil)
+        case .linkOnly(.console(let url, let name)): return .linkOnly(url, name: name)
+        case .linkOnly(.chatGPT), .linkOnly(.kimiAccount), .unavailable: return .hidden
         case .query(_, let console):
             guard providers?.canQueryUsage(connection) == true else { return .configure(console: console) }
             return .query(state(for: connection), console: console)

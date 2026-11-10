@@ -181,7 +181,7 @@ import XCTest
             defer { fixture.close() }
             let presentation = fixture.usage.presentation(for: fixture.connection)
             if region == "USA" {
-                guard case .linkOnly(.console) = presentation else { return XCTFail("Expected only the official link") }
+                guard case .linkOnly = presentation else { return XCTFail("Expected only the official link") }
             } else {
                 XCTAssertEqual(presentation, .hidden)
             }
