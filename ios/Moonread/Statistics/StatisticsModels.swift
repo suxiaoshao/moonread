@@ -186,11 +186,11 @@ final class StatisticsModel {
         self.service = service; readsDetails = fetch == nil
         self.fetch = fetch ?? { try await Self.read($0, service: service) }
         for name in [Notification.Name.statisticsChanged, .statisticsPreferencesChanged, .bookMetadataChanged, .libraryIdentityChanged] {
-            notifications.publisher(for: name).sink { [weak self] note in
-                let keys = note.userInfo?["keys"] as? [String]
-                let reset = name == .statisticsPreferencesChanged || note.userInfo?["reset"] as? Bool == true
-                if Thread.isMainThread { MainActor.assumeIsolated { self?.invalidate(keys: keys.map(Set.init), reset: reset, metadataOnly: name == .bookMetadataChanged) } }
-                else { Task { @MainActor [weak self] in self?.invalidate(keys: keys.map(Set.init), reset: reset, metadataOnly: name == .bookMetadataChanged) } }
+            MainActorNotifications.observe(name, center: notifications, transform: { @Sendable note in
+                (keys: (note.userInfo?["keys"] as? [String]).map(Set.init),
+                 reset: name == .statisticsPreferencesChanged || note.userInfo?["reset"] as? Bool == true)
+            }) { [weak self] change in
+                self?.invalidate(keys: change.keys, reset: change.reset, metadataOnly: name == .bookMetadataChanged)
             }.store(in: &observations)
         }
     }

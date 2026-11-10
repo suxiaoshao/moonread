@@ -64,7 +64,7 @@ struct AIConversationsView: View {
                 }
         }.task { await ai.load(); await ai.providers.refreshCatalogsIfNeeded() }
         .onAppear { visible = true }.onDisappear { visible = false; notice = nil }
-        .onReceive(NotificationCenter.default.publisher(for: .aiActionFailed)) { notification in
+        .onReceive(MainActorNotifications.publisher(for: .aiActionFailed)) { notification in
             guard visible, path.isEmpty, let event = notification.object as? AIActionNotice, event.sessionID == nil else { return }
             notice = event
         }

@@ -101,7 +101,7 @@ private final class UserProjectionChanges: @unchecked Sendable {
     var revision: UInt64 { lock.lock(); defer { lock.unlock() }; return value }
     private init() {
         for name in [Notification.Name.cloudDataReceived] {
-            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
+            observers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: nil) { @Sendable [weak self] _ in
                 guard let self else { return }
                 lock.lock(); value &+= 1; lock.unlock()
             })

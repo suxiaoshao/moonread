@@ -61,6 +61,62 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
   }
 
   @MainActor
+  func testStatisticsNotificationsFromBackgroundReachMainActor() async {
+    let notifications = NotificationCenter()
+    let model = StatisticsModel(notifications: notifications, fetch: { _ in
+      MainActor.assertIsolated()
+      return self.rangeContent(100)
+    })
+    let window = StatisticsWindow(period: .month, date: Date(timeIntervalSince1970: 1_800_000_000))
+    await model.load(window, target: nil)
+    for name in [Notification.Name.statisticsChanged, .statisticsPreferencesChanged, .bookMetadataChanged, .libraryIdentityChanged] {
+      let invalidated = expectation(description: "statistics invalidated on main actor")
+      let delivered = expectation(description: "callback delivered on main actor")
+      let posted = expectation(description: "background post returned")
+      let revision = model.dataRevision
+      withObservationTracking { _ = model.dataRevision } onChange: { invalidated.fulfill() }
+      let token = MainActorNotifications.observe(name, center: notifications) {
+        MainActor.assertIsolated()
+        delivered.fulfill()
+      }
+      DispatchQueue.global().async {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        notifications.post(name: name, object: nil, userInfo: ["sequence": 1])
+        posted.fulfill()
+      }
+      await fulfillment(of: [invalidated, delivered, posted], timeout: 3)
+      XCTAssertEqual(model.dataRevision, revision + 1)
+      if name == .statisticsPreferencesChanged { XCTAssertNil(model.state(window, target: nil).overview) }
+      else {
+        XCTAssertEqual(model.state(window, target: nil).overview?.totalDurationMs, 100)
+        XCTAssertTrue(model.state(window, target: nil).stale, "1.6 keeps same-scope content during refresh")
+      }
+      await model.load(window, target: nil)
+      XCTAssertEqual(model.state(window, target: nil).overview?.totalDurationMs, 100)
+      token.cancel()
+    }
+    let key = String(repeating: "a", count: 64)
+    let affected = StatisticsRoute(key: key, title: "Synthetic A")
+    let unaffected = StatisticsRoute(key: String(repeating: "b", count: 64), title: "Synthetic B")
+    await model.load(window, target: affected)
+    await model.load(window, target: unaffected)
+    for reset in [false, true] {
+      let invalidated = expectation(description: "scoped background payload applied")
+      withObservationTracking { _ = model.dataRevision } onChange: { invalidated.fulfill() }
+      DispatchQueue.global().async {
+        notifications.post(name: .statisticsChanged, object: nil, userInfo: ["keys": [key], "reset": reset])
+      }
+      await fulfillment(of: [invalidated], timeout: 3)
+      if reset { XCTAssertNil(model.state(window, target: affected).overview) }
+      else { XCTAssertEqual(model.state(window, target: affected).overview?.totalDurationMs, 100) }
+      XCTAssertTrue(model.state(window, target: affected).stale)
+      XCTAssertFalse(model.state(window, target: unaffected).stale)
+      XCTAssertEqual(model.state(window, target: unaffected).overview?.totalDurationMs, 100)
+      await model.load(window, target: affected)
+    }
+  }
+
+  @MainActor
   func testStatisticsRangeResultsAreReusedUntilDataChanges() async {
     let notifications = NotificationCenter()
     var reads = 0
