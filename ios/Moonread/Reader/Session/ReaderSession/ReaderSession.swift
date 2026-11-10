@@ -42,12 +42,15 @@ final class ReaderSession {
     var navigationRevision = 0
     var navigation: ReadingNavigation?
     let viewportAccess = ReadingViewportAccess()
+    @ObservationIgnored private lazy var toolOwner = ReaderToolSession(reader: self)
+    var toolsSession: ReaderToolSession { toolOwner }
     @ObservationIgnored private var listeningOwner: ListeningSession?
     @ObservationIgnored private let listeningFactory: ((ReaderSession) -> ListeningSession)?
     var listening: ListeningSession {
         if let listeningOwner { return listeningOwner }
         let value = listeningFactory?(self) ?? makeListeningSession(); listeningOwner = value; return value
     }
+    var activeListening: ListeningSession? { listeningOwner }
     var listeningWindowTask: Task<Void, Never>?
     var listeningUIActive = true
     var listeningOwnsPosition: Bool { listeningOwner?.ownsPosition == true }
@@ -128,6 +131,7 @@ final class ReaderSession {
         guard !isLeaving else { return }
         if opening.request == nil { opening.begin(request ?? OpeningRequest(target: route)) }
         let attempt = opening.request?.id
+        if let attempt { toolsSession.beginOpening(attempt) }
         ReaderOpenDiagnostics.mark(attempt, "sessionOpen")
         if readingID == nil {
             isLoading = true
@@ -237,6 +241,7 @@ final class ReaderSession {
     @discardableResult
     func leave() -> Task<Void, Never> {
         if let leaveTask { return leaveTask }
+        toolsSession.invalidateOpening()
         stopListening(returnToText: false)
         restartTask?.cancel()
         activityStartTask?.cancel(); activityStartTask = nil

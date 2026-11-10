@@ -1,80 +1,165 @@
 import SwiftUI
 import UIKit
 
-/// Intent belongs to this reading opening. Geometry and native completion never
-/// write the location; the system page Binding is direct navigation input.
-/// All sizes use the same sheet and source navigation.
-enum ReaderTool: Hashable { case library, search, settings, more, automatic, listening }
-enum ReaderToolExposure: Equatable { case hidden, accessory, expanded }
-enum ReaderDestination: Hashable {
-    case library, fullSettings, preview(UUID), palette(UUID), chapter(UUID)
-    case note(String), rebuild(UUID), history, details, ai
+enum ReaderChrome: Equatable { case hidden, visible }
 
-    var editorID: UUID? {
-        switch self { case .palette(let id), .chapter(let id), .rebuild(let id): id; default: nil }
-    }
-}
-struct ReaderToolLocation: Equatable {
-    var selection: ReaderTool = .library
-    var path: [ReaderDestination] = []
+enum ReaderAccessory {
+    case progress
+    case browse(UInt64)
+    case search(ReaderToolsModel)
+    case listening(ListeningSession)
+    case automatic(ReaderAutoReading)
 }
 
-@MainActor @Observable final class ReaderPresentationState {
-    var location = ReaderToolLocation() { didSet { if oldValue != location { revision &+= 1 } } }
-    var exposure = ReaderToolExposure.hidden { didSet { if oldValue != exposure { revision &+= 1 } } }
-    var controlsVisible = false { didSet { if oldValue != controlsVisible { revision &+= 1 } } }
-    private(set) var revision: UInt64 = 0
+enum ReaderLibraryVisit {
+    case listing(ReaderLibraryTab)
+    case note(ReaderLibraryTab, NoteEditorModel)
+    case editing(ReaderLibraryTab, ReaderEditSession)
 
-    /// The source page is part of the same logical path, not another native
-    /// installation. System navigation writes this value directly.
-    var sourcePage: ReaderDestination? {
-        get { location.path.first { $0 == .fullSettings || $0 == .details } }
-        set {
-            guard sourcePage != newValue else { return }
-            if let old = sourcePage { close(old) }
-            if let newValue { push(newValue) }
+    var tab: ReaderLibraryTab {
+        switch self {
+        case .listing(let tab), .note(let tab, _), .editing(let tab, _): tab
         }
     }
+}
 
-    func choose(_ tool: ReaderTool, exposure: ReaderToolExposure) {
-        guard !location.path.contains(where: { route in
-            if case .note = route { return true }; return route.editorID != nil
-        }) else { return }
-        guard location.selection != tool || self.exposure != exposure else { return }
-        location = ReaderToolLocation(selection: tool)
-        self.exposure = exposure
-        if tool == .search, exposure == .expanded { controlsVisible = false }
+enum ReaderSettingsVisit {
+    case main
+    case preview
+    case palette(ReaderEditSession, fromPreview: Bool)
+}
+
+enum ReaderListeningVisit { case controls, voices }
+enum ReaderSourcePage: Equatable { case settings, details }
+enum ReaderQuickTool: Equatable { case more, settings }
+
+enum ReaderToolRoute {
+    case quick(ReaderQuickTool)
+    case library(ReaderLibraryVisit)
+    case search(ReaderToolsModel)
+    case listeningSettings(ListeningSession, ReaderListeningVisit)
+    case automaticSettings(ReaderAutoReading)
+    case settings(ReaderSettingsVisit)
+    case details(StatisticsRoute)
+    case history
+    case ai(AIEntryContext)
+    case note(NoteEditorModel)
+    case chapter(ReaderEditSession)
+
+    enum Container { case compact, expanded, task, source }
+    var container: Container {
+        switch self {
+        case .quick: .compact
+        case .search, .listeningSettings, .automaticSettings: .expanded
+        case .settings, .details: .source
+        case .library, .history, .ai, .note, .chapter: .task
+        }
     }
-    /// A footer intent leaves the auto accessory within the same sheet. Restore
-    /// the ordinary tools explicitly; generic projection must not invent them.
-    @discardableResult func leaveAutomaticAccessory(for tool: ReaderTool) -> Bool {
-        guard location.selection == .automatic else { return false }
-        controlsVisible = true
-        choose(tool, exposure: .accessory)
-        return true
+    var sourcePage: ReaderSourcePage? {
+        switch self {
+        case .settings: .settings
+        case .details: .details
+        default: nil
+        }
     }
-    func push(_ destination: ReaderDestination) {
-        guard location.path.last != destination else { return }
-        location.path.append(destination)
+    var editor: ReaderEditSession? {
+        switch self {
+        case .settings(.palette(let editor, _)), .library(.editing(_, let editor)), .chapter(let editor): editor
+        default: nil
+        }
     }
-    func close(_ destination: ReaderDestination) {
-        guard let index = location.path.firstIndex(of: destination) else { return }
-        location.path.removeSubrange(index...)
+}
+
+struct ReaderReturnContext {
+    enum Target { case reader, more }
+    var target: Target = .reader
+    var chrome: ReaderChrome = .hidden
+}
+
+struct ReaderToolVisit {
+    let id: UUID
+    var route: ReaderToolRoute
+    var resume: ReaderReturnContext
+    init(route: ReaderToolRoute, resume: ReaderReturnContext = .init()) {
+        self.id = UUID(); self.route = route; self.resume = resume
     }
-    func finishEditor(_ id: UUID) {
-        guard let index = location.path.firstIndex(where: { $0.editorID == id }) else { return }
-        location.path.removeSubrange(index...)
+}
+
+enum ReaderSurfaceIntent {
+    case reading(ReaderChrome)
+    case accessory(ReaderAccessory, ReaderChrome)
+    case tool(ReaderToolVisit)
+}
+
+enum ReaderCompactContent: String, Hashable {
+    case none, progress, browse, search, listening, automatic, settings, more
+}
+
+struct ReaderActionContext: Equatable {
+    let opening: UUID
+    let visit: UUID?
+    let revision: UInt64
+}
+
+/// The sheet's render payload is retained during physical dismissal only.
+@MainActor struct ReaderRenderSnapshot {
+    let intent: ReaderSurfaceIntent
+    let context: ReaderActionContext
+    let hasUndo: Bool
+
+    var visit: ReaderToolVisit? {
+        if case .tool(let visit) = intent { return visit }
+        return nil
     }
-    func setControlsVisible(_ visible: Bool) {
-        controlsVisible = visible
-        if !visible, exposure == .accessory, location.path.isEmpty, location.selection != .search, location.selection != .listening { location.selection = .library }
+    var sourcePage: ReaderSourcePage? { visit?.route.sourcePage }
+    var controls: Bool {
+        switch intent {
+        case .reading(let chrome), .accessory(_, let chrome): chrome == .visible
+        case .tool(let visit): visit.route.container == .compact && visit.resume.chrome == .visible
+        }
     }
-    func expandSearch(_ expanded: Bool) {
-        if expanded { location.selection = .search }
-        exposure = expanded ? .expanded : .accessory
-        if expanded { controlsVisible = false }
+    var compact: ReaderCompactContent {
+        switch intent {
+        case .reading: .none
+        case .accessory(let accessory, _):
+            switch accessory {
+            case .progress: .progress
+            case .browse: .browse
+            case .search: .search
+            case .listening: .listening
+            case .automatic: .automatic
+            }
+        case .tool(let visit):
+            switch visit.route {
+            case .quick(.more): .more
+            case .quick(.settings): .settings
+            case .search: .search
+            case .listeningSettings: .listening
+            case .automaticSettings: .automatic
+            default: .none
+            }
+        }
     }
-    func reset() { location = ReaderToolLocation(); exposure = .hidden; controlsVisible = false }
+    var expanded: Bool { visit?.route.container == .expanded }
+    var canExpand: Bool { [.search, .listening, .automatic].contains(compact) }
+    var taskID: String? {
+        switch visit?.route {
+        case .library(.note), .note: "note"
+        case .library: "library"
+        case .history: "history"
+        case .chapter: "chapterEditor"
+        case .ai: "ai"
+        default: nil
+        }
+    }
+    var editor: ReaderEditSession? { visit?.route.editor }
+    var target: ReaderPresentationTarget {
+        switch sourcePage {
+        case .settings: .settings
+        case .details: .details
+        case nil: controls || compact != .none || taskID != nil || hasUndo ? .dock : .none
+        }
+    }
 }
 
 /// A native callback can release only the installation that produced it. Route
@@ -125,36 +210,21 @@ enum ReaderNativePhase: String { case released, requested, confirmed, dismissing
 
 enum ReaderPresentationTarget: Equatable { case none, dock, settings, details }
 
-@MainActor enum ReaderPresentationProjection {
-    static func target(state: ReaderPresentationState,
-                       editorParent: ReaderEditPresenter?, hasNote: Bool,
-                       hasAccessory: Bool, available: Bool) -> ReaderPresentationTarget {
-        guard available else { return .none }
-        let path = state.location.path
-        if path.contains(.details) { return .details }
-        if path.last == .history || path.last == .ai { return .dock }
-        if path.contains(.fullSettings) || (state.location.selection == .settings && state.exposure == .expanded) { return .settings }
-        if editorParent == .settings || editorParent == .preview { return .settings }
-        if !path.isEmpty || hasNote { return .dock }
-        return state.controlsVisible || hasAccessory || ([.automatic, .listening].contains(state.location.selection) && state.exposure != .hidden) ? .dock : .none
-    }
-}
-
 /// Native occupancy only. A changing target requests release; the completion
 /// installs nothing itself. The reader reprojects the latest intent afterwards.
 @MainActor @Observable final class ReaderPresentationHost {
     let installation = ReaderNativeInstallation()
     private(set) var target = ReaderPresentationTarget.none
     var hasModalChild = false
-    private(set) var node: ReaderInstalledNode?
-    func retain(_ node: ReaderInstalledNode) { if !dismissing { self.node = node } }
+    private(set) var node: ReaderRenderSnapshot?
+    func retain(_ node: ReaderRenderSnapshot) { if !dismissing { self.node = node } }
     var token: ReaderHostToken? { installation.token }
     var dismissing: Bool { installation.dismissing }
     var phase: ReaderNativePhase { installation.phase }
     func confirmed(_ token: ReaderHostToken) { installation.confirm(token) }
     var showing: ReaderPresentationTarget { token == nil || dismissing ? .none : target }
     var presentsChapterList: Bool {
-        showing == .dock && node?.taskID == "library" && node?.editor == nil && node?.noteID == nil
+        showing == .dock && node?.taskID == "library" && node?.editor == nil
     }
     func update(_ desired: ReaderPresentationTarget, opening: UUID, generation: UInt64, force: Bool = false) {
         if token == nil {
@@ -171,41 +241,6 @@ enum ReaderPresentationTarget: Equatable { case none, dock, settings, details }
     }
     func acceptsInput(_ token: ReaderHostToken, opening: UUID, generation: UInt64) -> Bool {
         installation.acceptsInput(token, opening: opening, generation: generation)
-    }
-}
-
-/// The currently installed node is retained only while its native container
-/// exits. It never drives intent or supplies a return destination.
-@MainActor struct ReaderInstalledNode {
-    let location: ReaderToolLocation
-    let exposure: ReaderToolExposure
-    let controls: Bool
-    let searchActive: Bool
-    let noteID: String?
-    let noteEditor: NoteEditorModel?
-    let editor: ReaderEditSession?
-    var dock: ReaderDock {
-        switch location.selection { case .settings: .settings; case .more: .more; case .automatic: .automatic; case .listening: .listening; default: .progress }
-    }
-    var searchExpanded: Bool { location.selection == .search && exposure == .expanded }
-    var panel: ReaderPanel? {
-        for route in location.path.reversed() {
-            switch route {
-            case .library, .rebuild: return .library
-            case .fullSettings, .preview, .palette: return .settings
-            case .chapter: return editor?.presenter == .readerTask ? .chapterEditor : .library
-            case .note: break
-            case .history: return .history
-            case .details: return .details
-            case .ai: return .ai
-            }
-        }
-        return searchActive ? .search : nil
-    }
-    var taskID: String? {
-        if let noteID { return "note-\(noteID)" }
-        if let panel, [.library, .history, .chapterEditor, .ai].contains(panel) { return panel.rawValue }
-        return nil
     }
 }
 

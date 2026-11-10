@@ -30,6 +30,7 @@ extension ReaderSession {
                 guard !isLeaving, !Task.isCancelled, readingID == id else { return }
                 opening.begin(OpeningRequest(target: .book(next.id)), navigationSettled: true)
                 let attempt = opening.request?.id
+                if let attempt { toolsSession.beginOpening(attempt) }
                 monitorToken = UUID()
                 monitorTask?.cancel(); windowTask?.cancel(); saveTask?.cancel(); chapterTask?.cancel()
                 navigationTask?.cancel(); navigationTask = nil; navigationGeneration += 1; navigating = false

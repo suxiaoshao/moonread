@@ -11,6 +11,7 @@ struct ReaderSearchContent: View {
     let showsHistory: Bool
     let showHistory: () -> Void
     let closeSearch: () -> Void
+    let selectTarget: (UInt64, UInt64) -> Void
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     @Environment(\.theme) private var theme
     private var panelAnimation: Animation { MotionTokens.panel(reduced: reduceMotion) }
@@ -63,21 +64,25 @@ struct ReaderSearchContent: View {
                     .labelStyle(.iconOnly).frame(width: 44, height: 44)
                     .disabled(session.navigating || model.hits.isEmpty || (activeIndex.map { $0 + 1 >= model.hits.count } ?? false))
                     .accessibilityIdentifier("nextSearchHit")
+                if session.browseOrigin != nil, session.listening.active { closeButton }
             }
             if session.browseOrigin != nil {
                 ReaderBrowseActions(session: session, showsHistory: showsHistory, showHistory: showHistory, finished: close)
             } else {
                 HStack {
                     Spacer()
-                    SystemToolbarButton("结束搜索", role: .close, action: close)
-                        .labelStyle(.iconOnly).frame(width: 44, height: 44)
-                        .tint(Color(uiColor: theme.ink))
-                        .accessibilityIdentifier("closeCollapsedSearch")
+                    closeButton
                 }
             }
         }
         .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 8)
         .accessibilityElement(children: .contain).accessibilityIdentifier("searchCapsule")
+    }
+
+    private var closeButton: some View {
+        SystemToolbarButton("结束搜索", role: .close, action: close)
+            .labelStyle(.iconOnly).frame(width: 44, height: 44)
+            .tint(Color(uiColor: theme.ink)).accessibilityIdentifier("closeCollapsedSearch")
     }
 
     private func collapse() {
@@ -86,8 +91,7 @@ struct ReaderSearchContent: View {
     private func close() { closeSearch() }
     private func select(_ hit: SearchHit) {
         model.searchListPosition = hit.startUtf8
-        session.browse(to: hit.startUtf8, end: hit.endUtf8, bottomObstruction: compactHeight)
-        collapse()
+        selectTarget(hit.startUtf8, hit.endUtf8)
     }
     private func moveResult(_ direction: Int) {
         let index = activeIndex.map { $0 + direction } ?? 0

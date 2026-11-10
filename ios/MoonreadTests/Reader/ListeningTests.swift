@@ -145,9 +145,41 @@ import UIKit
         let saved = try await service.snapshot(book.id).book.positionUtf8
         XCTAssertEqual(saved,spoken,"Browse reports never replace the audio position")
         let ids = audio.items.map(\.id)
-        reader.returnToListening(); await reader.listeningWindowTask?.value
+        let returned = await reader.returnToListening()
+        XCTAssertTrue(returned)
+        await reader.listeningWindowTask?.value
         XCTAssertEqual(audio.items.map(\.id),ids,"Returning reloads only the reading frame, never speech")
         XCTAssertTrue(try XCTUnwrap(reader.window).start <= spoken && spoken < reader.window!.end)
+
+        let opening = try XCTUnwrap(reader.opening.request?.id)
+        let nativeRoot = ListeningTestModal(), controller = ReadingController()
+        nativeRoot.addChild(controller); reader.viewportAccess.controller = controller
+        let tool = ListeningTestModal(), preview = ListeningTestModal()
+        let toolMarker = ReaderListeningToolMarker()
+        toolMarker.opening = opening
+        tool.addChild(toolMarker)
+        nativeRoot.modal = tool; tool.modal = preview
+        preview.mounting = true
+        listening.tick(uptime: 110)
+        XCTAssertTrue(listening.running, "An empty preview host can mount without cutting off current speech")
+        XCTAssertTrue(reader.viewportAccess.hasBlockingListeningPresentation(opening: opening),
+                      "An unmarked transition cannot admit a new play request")
+        let previewMarker = ReaderListeningToolMarker()
+        previewMarker.opening = opening
+        preview.addChild(previewMarker); preview.mounting = false
+        listening.tick(uptime: 115)
+        XCTAssertTrue(listening.running, "Owned reader tools and their previews must survive a tick")
+        XCTAssertTrue(reader.viewportAccess.hasBlockingListeningPresentation(opening: UUID()))
+        previewMarker.removeFromParent()
+        XCTAssertFalse(reader.viewportAccess.hasBlockingListeningPresentation(opening: opening),
+                       "A recognized native host keeps its provenance during dismissal")
+        preview.modal = UIViewController()
+        listening.tick(uptime: 120)
+        XCTAssertEqual(listening.phase, .paused, "An unknown native child still blocks")
+        preview.modal = nil
+        listening.checkPresentation()
+        XCTAssertEqual(listening.phase, .paused, "Closing a native task never starts speech")
+
         reader.stopListening(); await reader.navigationTask?.value
         XCTAssertEqual(reader.anchor,spoken)
         reader.moved(to:far,settled:true,userInitiated:false)
@@ -195,6 +227,15 @@ import UIKit
             XCTAssertEqual(listening.phase, .paused)
             XCTAssertTrue(listening.ownsPosition, "Unconfirmed browsing retains the audio anchor")
             XCTAssertEqual(reader.anchor, target)
+            if searchResult {
+                audio.enqueued = nil
+                listening.start()
+                XCTAssertTrue(listening.running)
+                XCTAssertEqual(listening.safeOffset, spoken, "Resume speaks from the audio anchor")
+                XCTAssertEqual(listening.following, .detached)
+                XCTAssertNotNil(reader.browseOrigin, "Resume preserves the selected reading position")
+                XCTAssertEqual(reader.anchor, target)
+            }
             await reader.continueReading()
             XCTAssertFalse(listening.ownsPosition, "Explicit continuation hands position back to manual reading")
             XCTAssertNil(reader.browseOrigin)
@@ -337,6 +378,8 @@ import UIKit
 
 @MainActor private final class ListeningTestModal: UIViewController {
     var modal: UIViewController?
+    var mounting = false
+    override var isBeingPresented: Bool { mounting }
     override var isBeingDismissed: Bool { true }
     override var presentedViewController: UIViewController? { modal }
 }

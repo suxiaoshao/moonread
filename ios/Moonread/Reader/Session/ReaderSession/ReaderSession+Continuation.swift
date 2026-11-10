@@ -55,6 +55,7 @@ extension ReaderSession {
         guard !isLeaving, !navigating, let id = readingID, let candidate = continuation else { return }
         let attempt = opening.request?.id
         let previous = (snapshot, window, anchor, displayAnchor, showingCover, history, navigation, browseOrigin)
+        pauseListening()
         listening.userNavigated()
         autoReading.end()
         navigating = true; saveTask?.cancel(); activity.breakVisit()

@@ -76,6 +76,7 @@ struct ReaderEncodingMenu: View {
         .onChange(of: isRestarting) { _, busy in if busy { pendingEncoding = nil } }
         .accessibilityLabel(isRestarting ? Text("正在重新读取") : value.map { Text("文字编码，\($0)，可更换") } ?? Text(title))
         .accessibilityIdentifier("readerEncodingMenu")
+        .readerListeningToolPresentation(alertTitle: String(localized: "更换文字编码？"))
         .alert("更换文字编码？", isPresented: Binding(get: { pendingEncoding != nil }, set: { if !$0 { pendingEncoding = nil } }), presenting: pendingEncoding) { encoding in
             Button("重新读取") { pendingEncoding = nil; select(encoding == "auto" ? nil : encoding) }
             Button("取消", role: .cancel) { pendingEncoding = nil }

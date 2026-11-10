@@ -158,16 +158,17 @@ struct ListeningVoicesView: View {
     }
 }
 
-struct ReaderListeningCompact: View {
+struct ReaderListeningCompact<PositionActions: View>: View {
     let session: ListeningSession
     let expand: () -> Void
     let resume: () -> Void
-    let returnToSpeech: () -> Void
+    let stop: () -> Void
+    @ViewBuilder let positionActions: () -> PositionActions
     @Environment(\.theme) private var theme
     var body: some View {
         VStack(alignment: .leading, spacing: LayoutTokens.compact) {
             controls
-            if session.following == .detached { returnButton }
+            positionActions()
             if let notice = session.notice { Text(notice).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
         }
         .padding(.horizontal, LayoutTokens.content).padding(.vertical, LayoutTokens.compact)
@@ -185,12 +186,9 @@ struct ReaderListeningCompact: View {
             Button { if session.running { session.pause() } else { resume() } } label: {
                 Image(systemName: session.running ? "pause.fill" : "play.fill").frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit)
             }.accessibilityLabel(session.running ? "暂停" : "继续").accessibilityIdentifier("compactListeningPlayback")
-            Button(action: expand) { Image(systemName: "chevron.up").frame(minWidth: LayoutTokens.hit, minHeight: LayoutTokens.hit) }
-                .accessibilityLabel("展开听书控制")
+            SystemToolbarButton("结束听书", role: .close, action: stop)
+                .labelStyle(.iconOnly).frame(width: LayoutTokens.hit, height: LayoutTokens.hit)
+                .tint(Color(uiColor: theme.ink)).accessibilityIdentifier("stopListening")
         }.foregroundStyle(Color(uiColor: theme.ink))
-    }
-    private var returnButton: some View {
-        Button(action: returnToSpeech) { Label("回到朗读处", systemImage: "scope").frame(maxWidth: .infinity, minHeight: LayoutTokens.hit) }
-            .accessibilityIdentifier("returnToSpeech")
     }
 }

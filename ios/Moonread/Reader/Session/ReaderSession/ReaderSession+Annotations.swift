@@ -105,7 +105,6 @@ extension ReaderSession {
 
     func openAnnotation(_ id: String) {
         guard !isLeaving else { return }
-        pauseListening()
         autoReading.end()
         Task {
             do {

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct ReaderProgressControls: View {
     @Bindable var session: ReaderSession
-    let didNavigate: () -> Void
+    let navigateTo: (UInt64) -> Void
     @Environment(\.theme) private var theme
     @State private var percentage = 0.0
     @State private var input = ""
@@ -112,7 +112,7 @@ struct ReaderProgressControls: View {
         }
     }
     private func jump(_ offset: UInt64) {
-        editingPercentage = false; session.browse(to: offset, placement: .start); didNavigate()
+        editingPercentage = false; navigateTo(offset)
     }
 }
 
@@ -122,13 +122,21 @@ struct ReaderBrowseActions: View {
     let showsHistory: Bool
     let showHistory: () -> Void
     let finished: () -> Void
+    private var returningToSpeech: Bool { session.listening.active }
 
     var body: some View {
         HStack(spacing: 8) {
             Button {
-                Task { await session.returnFromBrowse(); if session.browseOrigin == nil { finished() } }
-            } label: { Text("回到刚才").frame(minHeight: 44).contentShape(.rect) }
-                .accessibilityIdentifier("returnFromBrowse")
+                Task {
+                    if returningToSpeech {
+                        if await session.returnToListening() { finished() }
+                    } else {
+                        await session.returnFromBrowse()
+                        if session.browseOrigin == nil { finished() }
+                    }
+                }
+            } label: { Text(returningToSpeech ? "回到朗读处" : "回到刚才").frame(minHeight: 44).contentShape(.rect) }
+                .accessibilityIdentifier(returningToSpeech ? "returnToSpeech" : "returnFromBrowse")
             Spacer(minLength: 0)
             if showsHistory {
                 Menu {
@@ -162,6 +170,7 @@ struct ReaderBrowseActions: View {
 
 struct ReaderHistorySheet: View {
     let session: ReaderSession
+    let navigate: (UInt64, String) -> Void
     let close: () -> Void
     @Environment(\.theme) private var theme
     var body: some View {
@@ -169,7 +178,7 @@ struct ReaderHistorySheet: View {
             List(session.history.entries, id: \.id) { visit in
                 let current = session.history.isSelected(visit.id)
                 Button {
-                    session.browse(to: visit.offsetUtf8, placement: .start, historyID: visit.id); close()
+                    navigate(visit.offsetUtf8, visit.id)
                 } label: {
                     HStack {
                         Text(visit.title).foregroundStyle(Color(uiColor: theme.ink))

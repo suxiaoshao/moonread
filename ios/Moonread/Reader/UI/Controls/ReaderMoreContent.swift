@@ -3,8 +3,8 @@ import UIKit
 
 struct ReaderMoreContent: View {
     let session: ReaderSession
-    let openLibrary: (ReaderLibraryTab, Bool) -> Void
-    let presentPanel: (ReaderPanel) -> Void
+    let openLibrary: (ReaderLibraryTab) -> Void
+    let showDetails: () -> Void
     let automaticReading: () -> Void
     let listening: () -> Void
     let changeEncoding: (String?) -> Void
@@ -94,9 +94,9 @@ struct ReaderMoreContent: View {
         return Button {
             switch action {
             case .bookmark: Task { await session.toggleBookmark() }
-            case .bookmarks: openLibrary(.bookmarks, true)
-            case .notes: openLibrary(.notes, true)
-            case .details: presentPanel(.details)
+            case .bookmarks: openLibrary(.bookmarks)
+            case .notes: openLibrary(.notes)
+            case .details: showDetails()
             case .automatic: automaticReading()
             case .listening: listening()
             }

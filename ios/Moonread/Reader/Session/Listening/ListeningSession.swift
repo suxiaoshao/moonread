@@ -34,10 +34,8 @@ struct ListeningContext {
     var active: Bool { phase != .idle }
     var voice: AVSpeechSynthesisVoice? { voiceID.flatMap(AVSpeechSynthesisVoice.init(identifier:)) }
     static var voices: [AVSpeechSynthesisVoice] { AVSpeechSynthesisVoice.speechVoices().filter { !$0.voiceTraits.contains(.isPersonalVoice) } }
-    @ObservationIgnored var readerAccessoryPresented = false
-    @ObservationIgnored var readerTaskPresented = false
     @ObservationIgnored var voiceSelectionPresented = false
-    private var isBlocked: Bool { readerTaskPresented || voiceSelectionPresented || blocked() }
+    private var isBlocked: Bool { voiceSelectionPresented || previewing || blocked() }
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private let context: () -> ListeningContext?
     @ObservationIgnored private let read: (ListeningContext, UInt64, Bool) async throws -> ListeningRead

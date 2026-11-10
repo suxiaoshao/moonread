@@ -173,10 +173,10 @@ private struct ReaderPanelHeight: PreferenceKey {
 /// content is still laid out for its opacity transition, but cannot delay a
 /// shrink or add a second height to the measurement.
 struct ReaderCompactIdentity: LayoutValueKey {
-    static let defaultValue = ReaderDock.progress
+    static let defaultValue = ReaderCompactContent.none
 }
 struct ReaderCompactLayout: Layout {
-    let selection: ReaderDock
+    let selection: ReaderCompactContent
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let target = subviews.first { $0[ReaderCompactIdentity.self] == selection }
         return target?.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil)) ?? .zero

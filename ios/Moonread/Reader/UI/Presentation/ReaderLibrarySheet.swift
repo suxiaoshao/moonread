@@ -108,6 +108,7 @@ struct ReaderLibraryContent: View {
                 }
             }
             .modifier(ReaderLibraryEditorPresentation(editing: editing, session: session, refreshOutline: refreshOutline, closed: editorClosed))
+            .readerListeningToolPresentation(alertTitle: String(localized: "恢复自动目录？"))
             .alert("恢复自动目录？", isPresented: $editing.restoringOutline) {
                 Button("清除人工修正", role: .destructive) {
                     guard let id = session.readingID else { return }
@@ -195,7 +196,7 @@ private struct ReaderLibraryEditorPresentation: ViewModifier {
     private var chapterBinding: Binding<ChapterEditDraft?> {
         let current = editing.readerTools?.editor
         let token = editing.readerTools?.host.token
-        let generation = editing.readerTools?.presentation.revision ?? 0
+        let generation = editing.readerTools?.revision ?? 0
         return Binding(get: { current?.presenter == .library ? editing.chapterEdit : nil }, set: {
             if $0 == nil, let current, editing.readerTools?.acceptsNativeInput(token, generation: generation) == true {
                 editing.readerTools?.finishEditing(current.id)
@@ -205,7 +206,7 @@ private struct ReaderLibraryEditorPresentation: ViewModifier {
     private var rebuildBinding: Binding<Bool> {
         let current = editing.readerTools?.editor
         let token = editing.readerTools?.host.token
-        let generation = editing.readerTools?.presentation.revision ?? 0
+        let generation = editing.readerTools?.revision ?? 0
         return Binding(get: { current?.presenter == .library && editing.rebuildingOutline }, set: {
             if !$0, let current, editing.readerTools?.acceptsNativeInput(token, generation: generation) == true {
                 editing.readerTools?.finishEditing(current.id)

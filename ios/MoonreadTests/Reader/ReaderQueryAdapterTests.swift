@@ -455,14 +455,13 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
   @MainActor func testPresentedDirectoryRefreshesCoverageForStatisticsChangeAndReset() async throws {
     let (root, service, _, formal, _, book, _, suite) = try singleBookFixture()
     defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
-    let state = ReaderPresentationState()
-    state.push(.library) // presentPanel opens a task, not the compact controls.
-    let host = ReaderPresentationHost()
-    host.retain(ReaderInstalledNode(location: state.location, exposure: state.exposure, controls: state.controlsVisible,
-      searchActive: false, noteID: nil, noteEditor: nil, editor: nil))
-    host.update(.dock, opening: UUID(), generation: state.revision)
+    let owner = ReaderToolSession()
+    owner.send(.open(.library(.listing(.chapters))))
+    let host = owner.host
+    host.retain(owner.render)
+    host.update(.dock, opening: owner.opening, generation: owner.revision)
     let token = try XCTUnwrap(host.token); host.confirmed(token)
-    XCTAssertFalse(state.controlsVisible); XCTAssertEqual(host.node?.taskID, "library")
+    XCTAssertFalse(owner.render.controls); XCTAssertEqual(host.node?.taskID, "library")
     XCTAssertTrue(host.presentsChapterList, "A real directory is presented even with compact controls hidden")
     let model = ReaderToolsModel(service: service)
     await model.prepare(bookID: book.id, currentChapter: 0, library: true)
