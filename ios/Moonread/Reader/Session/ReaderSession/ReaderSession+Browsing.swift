@@ -22,7 +22,7 @@ enum ReaderNavigationIntent {
     case returnToSpeech(ListeningSession)
     case listeningFollow(ListeningSession)
     case speechExit(UInt64)
-    case syncedContinuation
+    case positionAdoption
 
     var blocksPositionInput: Bool {
         switch self {
@@ -142,25 +142,13 @@ extension ReaderSession {
 
     func continueReading() async {
         guard !isLeaving, !navigating, let id = readingID else { return }
-        toolsSession.send(.positionHandoff)
-        let revision = navigationGeneration
-        let position = anchor, cover = showingCover
+        let position = showingCover ? nil : anchor
+        let request = beginNavigation(.positionAdoption)
+        defer { finishNavigation(request) }
         do {
-            await saveTask?.value
-            guard !isLeaving, !navigating, revision == navigationGeneration else { return }
-            if listeningOwnsPosition {
-                // Explicit continuation adopts the browsed location. End audio
-                // without its final checkpoint/reveal replacing that selection.
-                activeListening?.end(savePosition: false, returnToText: false)
-            }
-            if !cover {
-                try await service.savePosition(bookID: id, offset: position)
-                hasEnteredBody = true
-                hasLocalReadingInteraction = true
-            } else { hasEnteredBody = false }
-            guard !isLeaving, revision == navigationGeneration else { return }
+            guard try await adoptReadingPosition(position, bookID: id, request: request) else { return }
             clearBrowse(); navigation = nil
-        } catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
+        } catch { if currentNavigation(request) { self.error = ReaderMessages.error(error) } }
     }
 
 }

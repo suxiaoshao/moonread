@@ -147,6 +147,7 @@ final class ReaderSession {
     private var activityStartTask: Task<Void, Never>?
     var monitorTask: Task<Void, Never>?
     var saveTask: Task<Void, Never>?
+    private var positionAdoptionGeneration: Int?
     var windowTask: Task<Void, Never>?
     var chapterTask: Task<Void, Never>?
     var pendingChapterAnchor: UInt64?
@@ -270,20 +271,51 @@ final class ReaderSession {
         if browseOrigin == nil { hasLocalReadingInteraction = true }
     }
 
+    /// The user has selected a formal position. Stop creating audio writes,
+    /// let accepted writes finish, then relinquish the old anchor and save.
+    func adoptReadingPosition(_ position: UInt64?, bookID: String, request: ReaderNavigationRequest,
+                              expectedConfiguration: UUID? = nil, whileCurrent: () -> Bool = { true }) async throws -> Bool {
+        guard currentNavigation(request), readingID == bookID, whileCurrent() else { return false }
+        autoReading?.end()
+        activeListening?.pause(savePosition: false)
+        await saveTask?.value
+        guard currentNavigation(request), readingID == bookID, whileCurrent() else { return false }
+
+        positionAdoptionGeneration = request.generation
+        listeningWindowTask?.cancel()
+        activeListening?.end(savePosition: false, returnToText: false)
+        if let position {
+            // Leaving waits for this already accepted write. Cancelling the
+            // regular save waiter does not cancel the explicit commit.
+            let commit = Task { [service] in
+                try await service.writePosition(bookID, offset: position, expectedConfiguration: expectedConfiguration)
+            }
+            saveTask = Task { _ = await commit.result }
+            try await commit.value
+        }
+        guard currentNavigation(request), readingID == bookID else { return false }
+        hasEnteredBody = position != nil
+        if position != nil { hasLocalReadingInteraction = true }
+        return true
+    }
+
     func flush() async {
-        saveTask?.cancel()
+        let adoption = positionAdoptionGeneration
+        let adopting = if case .positionAdoption = navigationWork?.intent { true } else { false }
+        if !adopting { saveTask?.cancel() }
         let audioOwnedPosition = listeningOwnsPosition
         let currentAnchor = listeningPosition ?? ((autoReading?.phase ?? .idle) == .idle ? anchor : (viewportAccess.capture()?.offset ?? anchor))
         // Capture before any suspension. Exit clears preview state, and settings
         // writes may finish after the reader's UI has started disappearing.
-        let progress = leavingProgress ?? readingID.flatMap { id in
+        let progress = isLeaving ? leavingProgress : readingID.flatMap { id in
             window == nil || !hasEnteredBody || !hasLocalReadingInteraction ? nil : (bookID: id, offset: listeningPosition ?? browseOrigin ?? currentAnchor)
         }
         await settingsStore.flush()
         await saveTask?.value
-        // A paused audio flush may outlive an explicit Continue Reading handoff.
-        // Its captured audio anchor must not overwrite the newly adopted position.
-        guard !audioOwnedPosition || listeningOwnsPosition else { return }
+        // A flush can outlive either kind of explicit position adoption. Its
+        // captured position must not overwrite the selected point.
+        guard !adopting, adoption == positionAdoptionGeneration,
+              !audioOwnedPosition || listeningOwnsPosition else { return }
         guard let progress else { return }
         do { try await service.savePosition(bookID: progress.bookID, offset: progress.offset) }
         catch { reportAutomaticReadingError(error) }
@@ -292,6 +324,7 @@ final class ReaderSession {
     @discardableResult
     func leave() -> Task<Void, Never> {
         if let leaveTask { return leaveTask }
+        let committingPosition = navigationWork?.generation == positionAdoptionGeneration && positionAdoptionGeneration != nil
         toolsSession.invalidateOpening()
         stopListening(returnToText: false)
         restartTask?.cancel()
@@ -301,7 +334,7 @@ final class ReaderSession {
         }
         autoReading?.end()
         activity.stop()
-        leavingProgress = readingID.flatMap { id in
+        leavingProgress = committingPosition ? nil : readingID.flatMap { id in
             window == nil || !hasEnteredBody || !hasLocalReadingInteraction ? nil : (bookID: id, offset: listeningPosition ?? browseOrigin ?? anchor)
         }
         clearContinuation()

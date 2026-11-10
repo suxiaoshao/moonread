@@ -253,6 +253,79 @@ import UIKit
         }
     }
 
+    func testAcceptSyncedContinuationDuringListeningKeepsLaterManualPositionAcrossReopen() async throws {
+        let (root, service, _, _, _, book, _, suite) = try singleBookFixture()
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            UserDefaults.standard.removePersistentDomain(forName: suite)
+        }
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defaults.set("synthetic", forKey: "Moonread.listening.voice")
+        let settingsWriting = expectation(description: "settings write holds the old audio flush")
+        let gate = SourceReadinessGate(entered: settingsWriting)
+        let settingsStore = ReaderSettingsStore(service: service, persist: { _ in await gate.wait() })
+        let audio = FakeListeningAudio()
+        let queued = expectation(description: "first speech segment ready")
+        audio.enqueued = { if audio.items.count == 1 { queued.fulfill() } }
+        let reader = ReaderSession(service: service, settingsStore: settingsStore, makeListening: { owner in
+            owner.makeListeningSession(defaults: defaults, voiceAvailable: { _ in true }, audio: { audio })
+        })
+        await reader.open(.book(book.id))
+        await awaitState { reader.window != nil }
+        reader.showingCover = false
+        let listening = reader.selectListening()
+        listening.start()
+        await fulfillment(of: [queued], timeout: 3)
+        let first = try XCTUnwrap(audio.items.first)
+        audio.event?(.began(first.id))
+        audio.event?(.range(first.id, NSRange(location: 1, length: 1)))
+        let spoken = try XCTUnwrap(listening.safeOffset)
+        XCTAssertTrue(listening.ownsPosition)
+
+        let target = UInt64("第一章 合成甲\n春风吹过合成的书页。\n".utf8.count)
+        let frame = try await service.frame(book.id, offset: target)
+        let accepted = frame.projectionAnchor ?? target
+        let manual = book.byteCount - UInt64("。\n".utf8.count)
+        reader.presentContinuation(.init(contentSHA: try XCTUnwrap(reader.book?.contentSha256),
+            token: "synthetic-continuation", configuration: await service.userCloudConfigurationRevision,
+            location: .init(offsetUtf8: target, percentage: 50, chapter: nil)))
+
+        var settings = try XCTUnwrap(reader.settings)
+        settings.autoReadingSpeed = settings.autoReadingSpeed == 10 ? 11 : 10
+        settingsStore.update(settings)
+        await fulfillment(of: [settingsWriting], timeout: 2)
+        let flushStarted = expectation(description: "flush captured the audio position before acceptance")
+        let staleFlush = Task {
+            flushStarted.fulfill()
+            await reader.flush()
+        }
+        await fulfillment(of: [flushStarted], timeout: 2)
+
+        await reader.acceptSyncedContinuation()
+        XCTAssertFalse(listening.ownsPosition)
+        XCTAssertEqual(listening.phase, .idle)
+        XCTAssertNil(reader.continuation)
+        XCTAssertEqual(reader.anchor, accepted)
+        let adopted = try? await service.snapshot(book.id).book.positionUtf8
+        XCTAssertEqual(adopted, accepted)
+
+        reader.moved(to: manual, settled: true)
+        await reader.saveTask?.value
+        audio.event?(.range(first.id, NSRange(location: 0, length: 1)))
+        await gate.release()
+        await staleFlush.value
+        let afterFlush = try await service.snapshot(book.id).book.positionUtf8
+        XCTAssertEqual(afterFlush, manual)
+        XCTAssertNotEqual(afterFlush, spoken)
+
+        await reader.leave().value
+        let reopened = ReaderSession(service: service)
+        await reopened.open(.book(book.id))
+        await awaitState { reopened.window != nil }
+        XCTAssertEqual(reopened.anchor, manual)
+        await reopened.leave().value
+    }
+
     func testNativeFollowUsesVisiblePagesAndPaintOnlyRanges() async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let window = UIWindow(windowScene: scene)

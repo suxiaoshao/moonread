@@ -18,7 +18,7 @@ import AVFoundation
         case encode(String?)
         case navigate(ReaderNavigationIntent)
         case returnToSpeech, returnToPreview, continueHere
-        case positionHandoff, manualInteraction, selectionChanged, ordinaryEdit
+        case manualInteraction, selectionChanged, ordinaryEdit
         case remote(ListeningSession, ListeningCommand)
         case startAutomaticAfterRelease(Bool)
         case rate(Float), timer(Int), chooseVoice(AVSpeechSynthesisVoice), previewVoice(AVSpeechSynthesisVoice)
@@ -183,8 +183,6 @@ import AVFoundation
             reader?.restart(encoding: encoding)
         case .navigate(let intent):
             requestNavigation(intent)
-        case .positionHandoff:
-            prepareJump()
         case .manualInteraction:
             guard let reader else { return }
             if let player = reader.activeListening {
@@ -232,7 +230,7 @@ import AVFoundation
         if let work = reader.navigationWork {
             switch work.intent {
             case .returnToSpeech: return .keepCurrentOnly(.returning)
-            case .userJump, .returnToPreview, .syncedContinuation: return .keepCurrentOnly(.locating)
+            case .userJump, .returnToPreview, .positionAdoption: return .keepCurrentOnly(.locating)
             case .listeningFollow, .speechExit: break
             }
         }

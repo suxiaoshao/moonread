@@ -166,16 +166,17 @@ enum ListeningAdmission: Equatable {
             if self.generation == generation { preparation = nil }
         }
     }
-    func pause(message: String? = nil) {
+    func pause(message: String? = nil, savePosition: Bool = true) {
         guard running || previewing else { if let message { notice = message }; return }
-        checkpoint()
+        if savePosition { checkpoint() }
         cancelQueue(); native?.silence(); previewID = nil; previewing = false
         if active { phase = .paused }
         if let message { notice = message }
-        publishMedia(); readabilityChanged(); flush()
+        publishMedia(); readabilityChanged()
+        if savePosition { flush() }
     }
     func end(message: String? = nil, savePosition: Bool = true, returnToText: Bool = true) {
-        guard active || previewing || native != nil else { return }
+        guard active || previewing || native != nil || (!savePosition && ownsPosition) else { return }
         if savePosition { checkpoint() }
         else { ownsPosition = false; safeOffset = nil; publishedOffset = nil }
         cancelQueue(); native?.finish(); native = nil
