@@ -1,7 +1,7 @@
 use super::content_key;
 use crate::*;
 use regex::{Regex, RegexBuilder};
-use rusqlite::{Connection, params};
+use rusqlite::Connection;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
