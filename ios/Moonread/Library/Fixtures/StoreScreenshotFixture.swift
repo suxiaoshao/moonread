@@ -6,6 +6,7 @@ enum StoreShotScene: String, CaseIterable {
     case paper = "R01", typography = "R02", continuation = "R03", widget = "R04"
     case shelf = "R05", notes = "R06", statistics = "R07", annotation = "R08"
     case search = "R09", backup = "R10", recap = "R11", mint = "R12", bamboo = "R13"
+    case listening = "R15"
     static var requested: Self? { StoreShotCapture.requested.flatMap { Self(rawValue: $0.scene) } }
     static let statisticsDate = Date(timeIntervalSince1970: 1_792_929_600) // 2026-10-25 12:00 UTC
 }
@@ -18,7 +19,6 @@ enum StoreShotPage: String, CaseIterable {
 /// One DEBUG-only request contract for matrix captures and individual page shots.
 /// Palette IDs are production IDs; their colors/support remain Rust-owned.
 struct StoreShotCapture: Codable {
-    static let fixtureVersion = "StoreShotFixture/1.4-v1"
     let id: String
     let scene: String
     let language: String
@@ -37,6 +37,7 @@ struct StoreShotCapture: Codable {
     var locale: String { language == "en" ? "en_US" : language == "zh-Hant" ? "zh_TW" : "zh_CN" }
     var fontSize: Double { isPad ? 24 : 20 }
     var paged: Bool { ["R01", "R12", "R13", "reader"].contains(scene) }
+    var fixtureVersion: String { scene == StoreShotScene.listening.rawValue ? "StoreShotFixture/1.6-r15" : "StoreShotFixture/1.4-v1" }
     static var requested: Self? {
         let args = ProcessInfo.processInfo.arguments
         guard args.contains("--ui-testing"), args.contains("--ui-test-store-screenshots"),
@@ -50,6 +51,15 @@ struct StoreShotBook: Decodable { let title: String; let text: String }
 struct StoreShotFixture: Decodable {
     let language: String; let author: String; let folders: [String]; let books: [StoreShotBook]
     let notes: [[String]]; let bookmark: String; let progressChapters: [String]; let mainChapters: [String]
+    func listeningCue() throws -> (anchor: UInt64, sentence: Range<UInt64>) {
+        guard let text = books.first?.text, let line = notes.first?.first, !line.isEmpty,
+              let range = text.range(of: line) else { throw CocoaError(.fileReadCorruptFile) }
+        // The preceding paragraph leaves some reading context above the cue.
+        let paragraph = text[..<range.lowerBound].dropLast(2)
+            .range(of: "\n\n", options: .backwards)?.upperBound ?? text.startIndex
+        let start = UInt64(text[..<range.lowerBound].utf8.count)
+        return (UInt64(text[..<paragraph].utf8.count), start..<(start + UInt64(line.utf8.count)))
+    }
     static func localized(_ language: String) throws -> Self {
         let fixtures = try JSONDecoder().decode([String: Self].self, from: Data(#"""
 {

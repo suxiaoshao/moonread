@@ -377,6 +377,9 @@ final class ReaderSession {
         guard !isLeaving, let attempt = opening.request?.id, openedAttempt != attempt,
               let id = readingID, book != nil else { return }
         openedAttempt = attempt
+        #if DEBUG
+        showStoreShotListening()
+        #endif
         let at = Int64(Date().timeIntervalSince1970 * 1000)
         openedTask = Task { [service] in try? await service.recordBookOpened(id, at: at) }
     }

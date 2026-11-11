@@ -107,6 +107,20 @@ enum ListeningAdmission: Equatable {
         native = value
         return value
     }
+    #if DEBUG
+    /// Render the real compact controls and sentence overlay without a synthesizer,
+    /// queue, audio event, media session, or position checkpoint.
+    func showStoreShot(sentence: SourceSpan) {
+        guard phase == .idle, let opening = context() else { return }
+        source = opening
+        title = opening.title; chapter = opening.chapter
+        following = .following; ownsPosition = true
+        cursor = ListeningCursor(sentence: sentence, unit: sentence)
+        phase = .playing
+        readabilityChanged()
+    }
+    #endif
+
     func start() {
         guard !running else { return }
         guard let voiceID, voiceAvailable(voiceID) else {
