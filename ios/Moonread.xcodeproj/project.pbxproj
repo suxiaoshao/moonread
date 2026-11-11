@@ -392,6 +392,10 @@ CA0FCD9B82134E7091B5CD9F /* ModelDirectoryDecoding.swift in Sources */ = {isa = 
 		F082D1DB5AA74D34B3B0BBCE /* ReaderListeningContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B3FA0FBB62D4B56A733E32A /* ReaderListeningContent.swift */; };
 		BD8D1CFA6FD24E97B0C90D6A /* ListeningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A18BA5D42144A6CAF36FCB2; };
 		FC28A3912F1D25B7A584D239 /* ReadingController+Listening.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AF4BED8E0697070C37CB7D /* ReadingController+Listening.swift */; };
+		DEE84EA507BD5833583CE850 /* AIConversationProtocolFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 465891D88D369B6F3EFE2B27 /* AIConversationProtocolFixtures.swift */; };
+		338BB8A6D7043A0DD640FC65 /* AIConnectionFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E81C5D3417332DCB4691CF5 /* AIConnectionFixtures.swift */; };
+		7CE986CF432C7B672BAB0E6F /* AINativeToolsFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1DA2437A2F7FD02A7278FB /* AINativeToolsFixture.swift */; };
+		2F95843B14E06DCFDAE5B2CD /* AIToolPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68BD3AA712178F5BF3F300A2 /* AIToolPresentation.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -792,6 +796,10 @@ A8C3CE03D9A84285ACE6CC41 /* ModelDirectoryDecoding.swift */ = {isa = PBXFileRefe
 		1B3FA0FBB62D4B56A733E32A /* ReaderListeningContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderListeningContent.swift"; sourceTree = "<group>"; };
 		6A18BA5D42144A6CAF36FCB2 /* ListeningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ListeningTests.swift"; sourceTree = "<group>"; };
 		22AF4BED8E0697070C37CB7D /* ReadingController+Listening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingController+Listening.swift"; sourceTree = "<group>"; };
+		465891D88D369B6F3EFE2B27 /* AIConversationProtocolFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIConversationProtocolFixtures.swift"; sourceTree = "<group>"; };
+		9E81C5D3417332DCB4691CF5 /* AIConnectionFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIConnectionFixtures.swift"; sourceTree = "<group>"; };
+		3C1DA2437A2F7FD02A7278FB /* AINativeToolsFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AINativeToolsFixture.swift"; sourceTree = "<group>"; };
+		68BD3AA712178F5BF3F300A2 /* AIToolPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIToolPresentation.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -1442,6 +1450,9 @@ D35000000000000000000001,
 				F7773498FC5E46E7B6D20EE9 /* AIRepositoryTestFixtures.swift */,
 				6E96BC33B1F24360B74F39AF /* BookAITestFixtures.swift */,
 				D32000000000000000000006 /* ConversationTestFixtures.swift */,
+				3C1DA2437A2F7FD02A7278FB /* AINativeToolsFixture.swift */,
+				9E81C5D3417332DCB4691CF5 /* AIConnectionFixtures.swift */,
+				465891D88D369B6F3EFE2B27 /* AIConversationProtocolFixtures.swift */,
 			);
 			path = "AI";
 			sourceTree = "<group>";
@@ -1651,6 +1662,7 @@ D35000000000000000000001,
 				D32000000000000000000005 /* AIConversationsView.swift */,
 				FA2000000000000000000001 /* AIMessageList.swift */,
 				E72000000000000000000001 /* AITurnView.swift */,
+				68BD3AA712178F5BF3F300A2 /* AIToolPresentation.swift */,
 				FB2000000000000000000001 /* AINativeMarkdown.swift */,
 				FC2100000000000000000001 /* AIReplyFeedback.swift */,
 			);
@@ -2168,6 +2180,7 @@ D31000000000000000000005,E51000000000000000000001,E51000000000000000000002,E5100
 FA1000000000000000000002,
 FA1000000000000000000001, FB1000000000000000000001,
 E71000000000000000000001,
+				2F95843B14E06DCFDAE5B2CD /* AIToolPresentation.swift in Sources */,
 E71000000000000000000077,
 E61000000000000000000001,
 E61000000000000000000002,
@@ -2305,6 +2318,9 @@ F01900000000000000000001,
                 E61000000000000000000007,
                 F01800000000000000000003,
                 D31000000000000000000006,
+				7CE986CF432C7B672BAB0E6F /* AINativeToolsFixture.swift in Sources */,
+				338BB8A6D7043A0DD640FC65 /* AIConnectionFixtures.swift in Sources */,
+				DEE84EA507BD5833583CE850 /* AIConversationProtocolFixtures.swift in Sources */,
                 A1000000000000000000000A,
                 AF1000000000000000000005,
                 C21000000000000000000004,
