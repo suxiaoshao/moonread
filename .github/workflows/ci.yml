@@ -22,7 +22,7 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_TARGET_DIR: ${{ github.workspace }}/target
   # One trusted writer; update explicitly when the active release changes.
-  CI_CACHE_WRITE_REF: refs/heads/release/1.6
+  CI_CACHE_WRITE_REF: refs/heads/release/1.7
 
 jobs:
   changes:

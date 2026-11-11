@@ -49,7 +49,7 @@ SwiftPM 的共享仓库缓存放在 `build/DerivedData/SwiftPMPackageCache`，�
 - 开启 squash 与 merge commit，关闭 rebase merge。功能 PR 对当前 `release/x.y` 使用 squash；发布后的 `release/x.y` → `main` 使用普通 merge。线上 hotfix 从 `main` 开 `hotfix/x.y.z`，在分支上修复、打包和提审，上线后才普通 merge 回 `main` 并打 tag，再把 `main` 合进当前 release。合并后自动删除普通开发分支；受保护的 main 与 release 分支禁止删除。合并方式由维护者选择，仓库开关不会按 PR 来源自动限制。
 - PR 合入 `release/x.y` 或 `hotfix` 分支时，GitHub 不会根据 `Closes` 自动关闭 issue。合并后需手动关闭对应 issue，评论注明合入的分支与提交，并把看板状态改为「完成」。
 - Actions 允许范围设为全部允许；仍强制引用固定到完整 SHA，默认 token 只读，不允许其创建或批准 PR。当前工作流只使用 GitHub 官方 Actions 和 Nix 安装 action。
-- 启用 Dependabot 漏洞提醒与安全更新；Cargo 和 Actions 的常规版本更新每周向当前 `release/x.y` 提出 PR，同类兼容更新分组，不自动合并；每次新开版本分支同步修改两个 `target-branch`（当前配置 `release/1.6`）。Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 hotfix 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。Nix 输入由维护者显式更新锁文件并验证。
+- 启用 Dependabot 漏洞提醒与安全更新；Cargo 和 Actions 的常规版本更新每周向当前 `release/x.y` 提出 PR，同类兼容更新分组，不自动合并；每次新开版本分支同步修改两个 `target-branch`（当前配置 `release/1.7`）。Dependabot 安全更新 PR 总是开到默认分支 `main`，不受 `target-branch` 控制；收到后先把 base 改成当前 `release/x.y`，按版本分支流程修复、验证和发布，不提前把 App 修复合入 main。紧急漏洞走上述 hotfix 流程，在补丁上线后再普通 merge 回 main 并同步当前 release。Nix 输入由维护者显式更新锁文件并验证。
 
 `main` 的 App 代码始终对应 App Store 最新发布版本。开发改动（含官网和文档）进入当前 `release/x.y`；正式发布后普通 merge 到 `main` 并打 tag（如 `v1.1`），线上 hotfix 按上述发布流程处理。[TestFlight 工作流](development.md#testflight-手动-ci)只在 `main` 执行，工作流维护先通过 PR 合入 `main`，再同步到当前 release。完整流程见[分支与协作](development.md#分支与协作)。
 
