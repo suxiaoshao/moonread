@@ -121,6 +121,8 @@ xcodebuild "${common[@]}" STORE_SCREENSHOT_DEVICE=iphone-medium \
 | `duo-outer` | iPhone Duo，`6E42EBA5-DA26-4E2C-BF50-0CA9DC193893` | 1398×2034，20 pt；DeviceHub Closed |
 | `duo-inner` | 同一台 Duo | 2853×2007，20 pt；先在 DeviceHub Open。方向参数不能代替真实展开，不自动折叠 |
 
+Duo 必须在 DeviceHub 选择 Closed / Open，再核对 App 布局。Xcode 27.2、iOS 27.1 实测：Closed 时用 `simctl io … screenConfig` 打开内屏 `primary-1`、关闭外屏 `primary`，DeviceHub 姿态仍是 Closed，内屏只输出 2007×2853 的纯黑画面。恢复两块屏幕供电后仍是黑画面；重启同一台模拟器后，用 DeviceHub Open 才得到 2853×2007 的内屏 App 布局，再选 Closed 恢复 1398×2034 的外屏。因此导出器只读取当前姿态对应的屏幕，不通过电源命令切换姿态。
+
 | 场景 | 实际内容 |
 | --- | --- |
 | R01 / R12 / R13 | 同书同锚点与排版，分别为纸色 / 薄荷 / 竹绿及各自正式图案；竹绿只有浅色生产预设，不发明深色 ID |
