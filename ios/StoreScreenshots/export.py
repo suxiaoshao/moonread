@@ -95,9 +95,60 @@ def opaque_pixels(source, target, display_oriented=False):
 DIMENSIONS = {'iphone-medium': (1206, 2622), 'ipad-13': (2064, 2752),
               'ipad-portrait': (2064, 2752), 'ipad-landscape': (2752, 2064),
               'duo-outer': (1398, 2034), 'duo-inner': (2853, 2007)}
-SCENES = [f'R{i:02}' for i in range(1, 14)]
+SCENES = [f'R{i:02}' for i in range(1, 14)] + ['R15']
 PAGES = ['book-details', 'reader-settings', 'settings', 'library-home', 'reader']
 LANGUAGES = ['zh-Hans', 'zh-Hant', 'en']
+GALLERY = Path('build/Release/1.4-screenshots')
+LISTENING_DEVICES = {'iphone-medium': 'F', 'ipad-portrait': 'P', 'ipad-landscape': 'L',
+                     'duo-outer': 'O', 'duo-inner': 'I'}
+LISTENING_CONSUMERS = ['website', 'store-02']
+
+
+def raw_path(item):
+    version = '1.6/' if item['scene'] == 'R15' else ''
+    return f"raw/{version}{item['language']}/{item['group']}/{item['appearance']}/{item['scene']}.png"
+
+
+def listening_id(group, language, appearance):
+    return f'R15-{LISTENING_DEVICES[group]}-{language}-{appearance}'
+
+
+def sync_sources(root):
+    """Register the reviewed 1.6 uses. Paths are planned until the manifest has pixels."""
+    path = root / GALLERY / 'sources.json'
+    document = json.loads(path.read_text())
+    items = document['items']
+    if len({row['id'] for row in items}) != len(items):
+        raise ValueError('sources.json has duplicate IDs')
+    # The #230 store order is independent of the website uses and the file origin.
+    slots = {'R01': 1, 'R12': 1, 'R13': 1, 'R14': 1, 'R08': 3, 'R03': 4,
+             'R04': 5, 'R07': 6, 'R05': 7, 'R11': 8}
+    for row in items:
+        if (row['scene'] not in slots and row['scene'] not in ('R09', 'R10')
+                or not any(use.startswith('store-') for use in row['consumers'])):
+            continue
+        retained = [use for use in row['consumers'] if not use.startswith('store-')]
+        slot = slots.get(row['scene'])
+        if slot and (row['scene'] != 'R11' or row['language'] != 'zh-Hans'):
+            retained.append(f'store-{slot:02}')
+        row['consumers'] = retained
+    by_id = {row['id']: row for row in items}
+    for group, device in LISTENING_DEVICES.items():
+        for language in LANGUAGES:
+            for appearance in ('light', 'dark'):
+                identity = listening_id(group, language, appearance)
+                row = by_id.get(identity)
+                if row is None:
+                    row = {'id': identity}
+                    items.append(row)
+                row.update(scene='R15', device=device, language=language, appearance=appearance,
+                           consumers=LISTENING_CONSUMERS, origin='1.6',
+                           file=raw_path(dict(scene='R15', group=group, language=language, appearance=appearance)))
+    document['note'] = ('原图集按用途 ID 索引；origin 标记原图版本，1.5 / 1.6 新拍图分别位于 raw/1.5 / raw/1.6，旧图保留。'
+                        '索引可包含待拍项；实际原图与捕获凭证以文件和 raw/manifest.json 为准。')
+    temporary = path.with_suffix('.json.tmp')
+    temporary.write_text(json.dumps(document, ensure_ascii=False, indent=2) + '\n')
+    temporary.replace(path)
 
 
 def option(name, default=''):
@@ -124,7 +175,12 @@ def validate(item):
         raise ValueError('Invalid palette ID')
     if not re.fullmatch(r'[A-Za-z0-9-]+', item['id']):
         raise ValueError('Invalid capture ID')
-    path = f"raw/{item['language']}/{item['group']}/{item['appearance']}/{item['scene']}.png"
+    if item['scene'] == 'R15':
+        if item['group'] not in LISTENING_DEVICES or item['id'] != listening_id(item['group'], item['language'], item['appearance']):
+            raise ValueError('R15 requires its canonical device/language/appearance ID')
+        item['rawPath'] = item.get('rawPath', raw_path(item))
+        item['consumers'] = LISTENING_CONSUMERS
+    path = raw_path(item)
     if item.get('rawPath', path) != path:
         raise ValueError('Capture path differs from canonical scene/device/language/appearance path')
     return item
@@ -165,14 +221,20 @@ def make_plan(root, group):
                               else ('black-dark' if appearance == 'dark' else 'white-light') if scene in ('R03', 'R08', 'R09') else app)
                     orientation = option('PAGE_SHOT_ORIENTATION') if page else option('STORE_SCREENSHOT_ORIENTATION')
                     orientation = orientation or ('landscape' if group in ('duo-inner', 'ipad-landscape') or page and group == 'ipad-13' else 'current' if group.startswith('duo-') else 'portrait')
-                    rows.append(validate(dict(id=f'{scene}-{group}-{language}-{appearance}', scene=scene, group=group,
+                    capture_group = group
+                    if scene == 'R15' and group == 'ipad-13':
+                        capture_group = 'ipad-landscape' if orientation == 'landscape' else 'ipad-portrait'
+                    identity = listening_id(capture_group, language, appearance) if scene == 'R15' else f'{scene}-{group}-{language}-{appearance}'
+                    rows.append(validate(dict(id=identity, scene=scene, group=capture_group,
                         language=language, appearance=appearance, systemAppearance=appearance,
                         appPalette=option('STORE_SCREENSHOT_APP_PALETTE', app), readerPalette=option('STORE_SCREENSHOT_READER_PALETTE', reader),
                         readerTextureEnabled=scene in ('R01', 'R12', 'R13'), orientation=orientation,
                         storefront=option('STORE_SCREENSHOT_STOREFRONT', 'CHN' if page else 'USA'))))
     if not rows:
         raise ValueError('No captures match the selected matrix batch')
-    return rows
+    # A single XCTest invocation handles all selected rows. Avoid changing
+    # language/posture back and forth when the matrix is ordered by scene.
+    return sorted(rows, key=lambda item: (LANGUAGES.index(item['language']), item['orientation']))
 
 
 def capture(root):
@@ -224,8 +286,8 @@ def capture(root):
                 short, long = sorted(dimensions)
                 orientation = item['orientation']
                 expected = (long, short) if orientation == 'landscape' else (short, long) if orientation == 'portrait' else dimensions
-                base = root / 'build/Release' / (config['version'] + '-screenshots')
-                target = (root / 'build/PageShots' / group / (item['scene'] + '-' + ('浅' if item['appearance'] == 'light' else '深') + '.png')) if page else base / item.get('rawPath', f"raw/{item['language']}/{group}/{item['appearance']}/{item['scene']}.png")
+                base = root / GALLERY if item['scene'] == 'R15' else root / 'build/Release' / (config['version'] + '-screenshots')
+                target = (root / 'build/PageShots' / group / (item['scene'] + '-' + ('浅' if item['appearance'] == 'light' else '深') + '.png')) if page else base / raw_path(item)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 raw = state / 'raw.png'
                 arguments = ['xcrun', 'simctl', 'io', uid, 'screenshot']
@@ -270,9 +332,14 @@ def prepare(root, device, group, version):
         raise ValueError('Set STORE_SCREENSHOT_DEVICE to a documented device group')
     if not re.fullmatch(r'\d+(?:\.\d+)*', version):
         raise ValueError('Invalid MARKETING_VERSION')
+    plan = make_plan(root, group)
+    if any(item['scene'] == 'R15' for item in plan) and version != '1.6':
+        raise ValueError('R15 output is registered for release 1.6')
     # The selected xcodebuild destination is the only simulator we operate on.
     devices = json.loads(run('xcrun', 'simctl', 'list', 'devices', '--json'))['devices']
     runtime, selected = next((runtime, d) for runtime, ds in devices.items() for d in ds if d['udid'] == device)
+    if any(d['state'] == 'Booted' and d['udid'] != device for ds in devices.values() for d in ds):
+        raise ValueError('Close the other booted simulator before starting the capture batch')
     if selected['state'] != 'Booted':
         run('xcrun', 'simctl', 'boot', device)
     run('xcrun', 'simctl', 'bootstatus', device, '-b')
@@ -283,7 +350,7 @@ def prepare(root, device, group, version):
         'source_commit': run('git', '-C', str(root), 'rev-parse', 'HEAD'),
         'source_dirty': bool(run('git', '-C', str(root), 'status', '--porcelain')),
         'source_diff_sha256': hashlib.sha256(run('git', '-C', str(root), 'diff', 'HEAD').encode()).hexdigest(),
-        'model': selected['name'], 'runtime': runtime, 'plan': make_plan(root, group)}))
+        'model': selected['name'], 'runtime': runtime, 'plan': plan}))
     try:
         container = Path(run('xcrun', 'simctl', 'get_app_container', device, 'dev.moonread.MoonreadUITests.xctrunner', 'data'))
         for name in ('ack', 'request.json', 'plan.json', 'error.txt'):
@@ -309,7 +376,7 @@ def finish(root):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=['prepare', 'capture', 'finish'])
+    parser.add_argument('action', choices=['prepare', 'capture', 'finish', 'sync-sources'])
     parser.add_argument('--root', type=Path, required=True)
     parser.add_argument('--device')
     parser.add_argument('--group')
@@ -319,5 +386,7 @@ if __name__ == '__main__':
         prepare(args.root, args.device, args.group, args.version)
     elif args.action == 'capture':
         capture(args.root)
+    elif args.action == 'sync-sources':
+        sync_sources(args.root)
     else:
         finish(args.root)
