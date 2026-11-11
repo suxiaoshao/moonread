@@ -13,7 +13,7 @@
   let display = params.get('display') === 'outer' ? 'outer' : 'inner';
   let manual = params.has('device');
   const names = {phone:'iPhone', ipad:'iPad', duo:zh ? 'Duo ' + (display === 'inner' ? '内屏' : '外屏') : 'Duo ' + display};
-  const labels = zh ? {R01:'纸色正文',R02:'阅读设置',R03:'跨设备进度',R04:'桌面续读小组件',R05:'文件夹书架',R06:'标注与笔记',R07:'阅读统计',R10:'数据管理'} : {R01:'Reading',R02:'Typography',R03:'Synced progress',R04:'Home Screen widget',R05:'Folder library',R06:'Notes',R07:'Reading statistics',R10:'Data management'};
+  const labels = zh ? {R01:'纸色正文',R02:'阅读设置',R03:'跨设备进度',R04:'桌面续读小组件',R05:'文件夹书架',R06:'标注与笔记',R07:'阅读统计',R10:'数据管理',R15:'听书与逐句高亮'} : {R01:'Reading',R02:'Typography',R03:'Synced progress',R04:'Home Screen widget',R05:'Folder library',R06:'Notes',R07:'Reading statistics',R10:'Data management',R15:'Read aloud with sentence highlighting'};
   function reflect() {
     document.querySelectorAll('[data-device]').forEach(b => b.setAttribute('aria-pressed', b.dataset.device === device));
     document.querySelectorAll('[data-display]').forEach(b => b.setAttribute('aria-pressed', b.dataset.display === display));
