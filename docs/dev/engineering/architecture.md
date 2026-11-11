@@ -76,7 +76,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 目录四封面选择 | Rust `library/bookshelf/::populate_cover_previews` | 独立 top-4 策略，不等于目录列表顺序 | 保持 |
 | 字数定义与 UTF-8 前缀累计字数 | Rust 文本计数共用 helper（后续）；当前 reading/chapters、identity/source、reading/navigation 和 user/coverage | 与导入字数、章节/覆盖分母一致 | 不在 #66 改写；旧报告第8项仍待收敛 |
 | 字节位置→进度比例、百分比跳转 | Rust `reading/navigation.rs::reading_percentage`，阅读数据通过 `identity/content.rs::reading_data_percentage` 查询可信全文长度 | 阅读数据与跳转共用比例/边界计算；Swift 只本地化格式化 | 其余旧报告第9项 Swift 比例副本仍待处理 |
-| 有效章节/位置归属 | Rust `library/tools.rs` 与有效章节关系（后续统一 SQL） | 手动目录需一致；Swift 展开/滚动目标不是同一规则 | #66 不迁；旧报告第10项仍登记 |
+| 有效章节/位置归属 | Rust `library/tools/catalogue.rs` 与有效章节关系（后续统一 SQL） | 手动目录需一致；Swift 展开/滚动目标不是同一规则 | #66 不迁；旧报告第10项仍登记 |
 | 文件目录类别、平台书架来源 | Rust `library/bookshelf`；Swift `LibraryService` | Rust 的业务条目以目录或小说载荷投影，不更改索引行；Swift 解析本机、固定 iCloud 根或外部访问，外部失联不回退内置根 | 各自单源 |
 | 正文准备、目录覆盖与笔记选择 | Rust `reading/progressive`；Swift `AppDataService` 与 `ReaderToolsModel` | 失败仍可有已提交前缀，旧 SQL 读取不迁移；结构先发布，覆盖按结构版本准入；选中时的候选只随取消选择或重新选择更换 | 原算法与 #257 工具归属不变 |
 | 资料状态与统计范围 | Rust `reading/book_details.rs`，Swift `BookInformationModel` / `StatisticsModel` | 资料可无正文，未识别文件保留同一查询入口；统计按目标和日期范围加载，首屏与累计详情独立，缓存按输入版本复用 | 同一身份查询链 |
@@ -89,7 +89,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 阅读工具意图、关闭与输入 | Swift `ReaderToolSession` / `ReaderPresentationHost`、`ReaderBottomPanel` | ReaderSession 每次打开持有一个工具 owner。工具通过带 opening、访问 ID 和版本的动作修改 SurfaceIntent；根工具关闭统一从当前有效会话裁决恢复。宿主只记录物理安装和对应快照，同一快照驱动内容与真实页脚；旧回调只能释放原安装 | 不改公共导航、正文容量或存储 |
 | 阅读执行、搜索与听书门禁 | Swift `ReaderExecution`（由 `ReaderSession` 持有）、`ReaderToolsModel`、`ReaderToolSession` / 原生呈现适配 | ReaderExecution 只持有当前执行主体，搜索任务独立于收起或展开；ReaderToolSession 从位置动作、选区和实际原生层的来源裁决一次播放资格。统计和自动阅读继续按正文可读性独立判断 | 均为会话状态；不持久化 |
 | 阅读时长/有效天数/覆盖等统计数值 | Rust `user/statistics/mod.rs`、`user/statistics/coverage.rs`（后续统一 summary） | 事实聚合按固定 local_day；Swift 不再另 reduce 同一总量 | #66 不迁；旧报告第11项仍登记 |
-| 目录结构与覆盖加载 | Rust `library/tools.rs` 共用章节装配，`user/statistics/coverage.rs` 批量映射覆盖端点；Swift `ReaderToolsModel` 分两阶段发布 | 结构不读 facts；覆盖沿用同一查询失效规则，后台补齐不改变筛选/滚动，取消随目录 owner | 无新增持久缓存或事实格式 |
+| 目录结构与覆盖加载 | Rust `library/tools/catalogue.rs` 共用章节装配，`user/statistics/coverage.rs` 批量映射覆盖端点；Swift `ReaderToolsModel` 分两阶段发布 | 结构不读 facts；覆盖沿用同一查询失效规则，后台补齐不改变筛选/滚动，取消随目录 owner | 无新增持久缓存或事实格式 |
 | 目录/临时跳转与正式续读保存 | Swift `ReaderSession`、`ReaderToolsModel` / Rust `ReadingFrame` | 目录断 visit 并 enqueue，不等统计 writer drain、不预读笔记；跳转 frame/章节标题在 Rust 同一读取事务中返回并一起发布；临时原点只在会话内存，原已接受保存走现有 saveTask；明确采用浏览位置或同步进度共用位置交还，结束听书后提交新位置，旧 flush 不得回写旧位置 | 不改正式位置格式 |
 | 统计范围结果与读取状态 | Swift `Statistics/StatisticsModels.swift::StatisticsModel` | 日期边界／书籍身份／用途作查询键，复用结果和在途读取；已知变更按书使结果过期，同 scope 保留旧内容直到成功替换，真正清除/未知导入撤下旧数；页面关闭取消查询，迟到结果不回填。单书先发布期间统计，累计与时段按同一事实版本补齐，视图只消费状态，Rust 聚合与持久化不变 | 平台查询状态 |
 | 系统统计摘要与连续日 | Rust `user/statistics/mod.rs` | 复用有效日汇总与清除投影；今天未读则截至昨天，不限七天。Swift 只处理 Calendar 和展示，Widget 不读事实库 | 单源 |
@@ -117,7 +117,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 目录 / 入口 | 职责 |
 | --- | --- |
 | `core.rs`、`error.rs` | ReaderCore 连接/锁与入口类型，共享错误类型 |
-| `library/` | `bookshelf/` 分查询、mutations、source、full_index（及原 SQL）和测试；order、tools 保留独立入口 |
+| `library/` | `bookshelf/` 分查询、mutations、source、full_index（及原 SQL）和测试；order 保留独立入口；`tools/mod.rs` 保存原 DTO/导出，text 处理文本范围与段落，search 持有搜索对象和状态，catalogue 装配章节及内部共享查询 |
 | `identity/` | content 阅读键与文件关联、source 原件探测/解码策略、sha |
 | `reading/` | `input/` 汇集 ingest 事务正文导入与 text 解码/分块；chapters 扫描、navigation、layout、cover_page、book_details 保留独立入口 |
 | `reading/progressive/` | 任务类型与状态入口；tasks 生命周期、stream 前缀分块、recovery 恢复/回收、query 不可变读取、原有测试 |
@@ -143,9 +143,9 @@ SQL 内容、迁移顺序和调用时序保持原样；仅按新目录调整 `in
 | `Data` | `AppDataService`、SwiftData 用户数据及同步协调；`UserData/` 中 UserDataModels/UserDataValues 保留原模型与载荷，UserDataStore 的事务/存储留在同目录 UserData.swift，Values/Annotations/Statistics/Projection/Transfer 只物理拆分方法；UserDataService/Backup/SyncJSON/Themes 归入同目录，`Cloud/` 汇集云同步，`Restoration/` 汇集续读恢复，`Management/` 汇集备份/缓存编排，`Sources/` 汇集受保护访问与编码解析；正文准备、导入、云目录 owner 与紧耦合私有类型仍在 `AppDataService` |
 | `SystemIntegration` / `SystemIntegrationShared` | 主 App 派生快照、系统入口路由与平台更新；共享部分只有稳定链接、只读 DTO、最小 Entity/配置与无状态文字卡片。Widget/Control 目标不含数据库/正文服务；任意队列系统回调显式 nonisolated / @Sendable 后再交接 |
 | `Shared` | `Theme`、`MoonView`/`MoonCharacter`/`BrandSeal`、输入焦点及跨功能错误文案 `ReaderMessages` |
-| `AI` | 保持现有分层；`Agent/AIAgentRuntime/` 下 AIAgentRuntime 与 Run/Persistence/Tools/Context 扩展共用原执行状态；`Tools/Reading/` 汇集原契约 DTO、唯一 AIReadingTools actor 和 AppDataService 平台适配，`Tools/Proposals/` 保存审批动作；`UI` 下 Conversations/Tasks/Reading/Settings 分别组织对话、任务、阅读入口和共享模型选择；Conversations 中列表、`AIChatView.swift`、`AIComposer.swift`、`AIReadingAttachmentPreview.swift` 按原类型分文件，Settings 中 `AIModelDetailView.swift`／`AIThinkingSlider.swift` 保留既有详情与思考控件，快速页 presentation owner 不变；`Data` 下 Conversations/Proposals 归拢对应值，`Providers/Connections/` 归拢连接/认证；资源与签名配置路径保持原位 |
+| `AI` | 保持现有分层；`Agent/AIAgentRuntime/` 下 AIAgentRuntime 与 Run/Persistence/Tools/Context 扩展共用原执行状态；`Tools/Reading/` 汇集原契约 DTO、唯一 AIReadingTools actor 和 AppDataService 平台适配，`Tools/Proposals/` 保存审批动作；`UI` 下 Conversations/Tasks/Reading/Settings 分别组织对话、任务、阅读入口和共享模型选择；Conversations 中 `AIToolPresentation.swift` 保留唯一的工具名称/图标/摘要/状态映射；列表、`AIChatView.swift`、`AIComposer.swift`、`AIReadingAttachmentPreview.swift` 按原类型分文件，Settings 中 `AIModelDetailView.swift`／`AIThinkingSlider.swift` 保留既有详情与思考控件，快速页 presentation owner 不变；`Data` 下 Conversations/Proposals 归拢对应值，`Providers/Connections/` 归拢连接/认证；资源与签名配置路径保持原位 |
 
-`ios/MoonreadTests` 按 Library、Reader、Data、Settings、Statistics、Platform 与已有 AI 归目录，AI 夹具在 `Fixtures/AI/`；类/方法名和测试发现保持，UITests/TestPlan/scheme 入口不变。
+`ios/MoonreadTests` 按 Library、Reader、Data、Settings、Statistics、Platform 与已有 AI 归目录，AI 夹具在 `Fixtures/AI/`；会话支撑留在 `ConversationTestFixtures.swift`，会话网络协议及共享状态、连接/认证协议与店面查询、原生事务 fixture 分别位于 `AIConversationProtocolFixtures.swift`、`AIConnectionFixtures.swift`、`AINativeToolsFixture.swift`；类/方法名和测试发现保持，UITests/TestPlan/scheme 入口不变。
 
 `ios/MoonreadShare` 是独立分享扩展 target，只负责接收与取消。`ios/ShareReceiveShared` 同时编译进主 App 与扩展，提供版本化 ShareInbox、原字节复制和 provider 生命周期适配；不依赖主 App 的 Rust、SwiftData、AI 或阅读 UI。App Group 只共享待导入原件，主 App 继续独占书架写入和正文准备。
 

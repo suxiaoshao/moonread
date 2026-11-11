@@ -311,26 +311,6 @@ struct ShelfRecoverySummary: View {
     }
 }
 
-struct ShelfReferenceHints: View {
-    @Environment(\.theme) private var theme
-    let model: LibraryModel
-    var grouped = false
-    var body: some View {
-        if !model.shelfRecovery.references.isEmpty {
-            Section {
-                ForEach(model.shelfRecovery.references) { reference in
-                    ShelfReferenceRow(model: model, reference: reference)
-                }
-            } header: { Text("你之前添加过这些书架", tableName: "ShelfRecovery") } footer: {
-                Text("重新选择原来的文件夹，即可恢复对此书架的访问。")
-                    .foregroundStyle(Color(uiColor: theme.secondary))
-            }
-                .listRowBackground(grouped ? Color(uiColor: theme.surface) : Color.clear)
-                .listRowSeparatorTint(Color(uiColor: theme.separator))
-        }
-    }
-}
-
 struct ShelfReferenceRow: View {
     @Environment(\.theme) private var theme
     let model: LibraryModel
