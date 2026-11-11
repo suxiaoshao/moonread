@@ -2429,8 +2429,8 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
-                CURRENT_PROJECT_VERSION = 15;
-                MARKETING_VERSION = 1.6;
+                CURRENT_PROJECT_VERSION = 16;
+                MARKETING_VERSION = 1.7;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -2480,8 +2480,8 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
-                CURRENT_PROJECT_VERSION = 15;
-                MARKETING_VERSION = 1.6;
+                CURRENT_PROJECT_VERSION = 16;
+                MARKETING_VERSION = 1.7;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
