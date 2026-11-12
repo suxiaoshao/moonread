@@ -83,7 +83,13 @@ jobs:
               jobs.extend(batch)
               if len(batch) < 100: break
               page += 1
-          for name in ['Secret scan', 'Workflow syntax', 'Linux checks', 'iOS unit tests']:
+          required = ['Secret scan', 'Workflow syntax']
+          # Pick the CI shape by job presence, never by whether that job passed.
+          if any(j['name'] == 'Rust and iOS tests' for j in jobs):
+              required.append('Rust and iOS tests')
+          else:
+              required.extend(['Linux checks', 'iOS unit tests'])
+          for name in required:
               matches = [j for j in jobs if j['name'] == name]
               if len(matches) != 1 or matches[0]['conclusion'] != 'success':
                   raise SystemExit(f'Required CI job must succeed (not skip): {name}')

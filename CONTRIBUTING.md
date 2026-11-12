@@ -19,7 +19,7 @@ open ios/Moonread.xcodeproj
 - 已发布数据保持可读；正文身份/解码稳定、迁移与 CloudKit 只增不删要求见架构。不能通过清空数据或要求重装完成升级。
 - SwiftUI 实现与审阅使用仓库 [SwiftUI Expert](.agents/skills/swiftui-expert-skill/SKILL.md)。新增界面文案补齐简中、繁中和英语。
 - 按[测试原则](docs/dev/engineering/verification.md)保护独立的重要规则：Rust 为主，Swift 测边界和自身状态，UI 只留关键用户流程。命令由开发环境文档维护，纯文档改动核对引用和 diff，不启动 App 测试。
-- 当前开发基线为 `release/1.3`；功能 PR 指向版本分支，main 对应线上版本。具体协作、提交与合并门槛见[分支规则](docs/dev/engineering/development.md#分支与协作)。不擅自合并、打 tag、上传或提交审核。
+- 当前开发基线为 `release/1.7`；功能 PR 指向版本分支，main 对应线上版本（当前已发布 1.6）。具体协作、提交与合并门槛见[分支规则](docs/dev/engineering/development.md#分支与协作)。不擅自合并、打 tag、上传或提交审核。
 
 ## 导航
 
