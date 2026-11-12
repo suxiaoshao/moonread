@@ -45,8 +45,32 @@ struct LibraryLocation: Codable, Hashable, Identifiable, Sendable {
 }
 
 extension LibraryEntry {
+    var bookRow: BookRow? { if case .book(let row) = item { row } else { nil } }
+    var folderRow: FolderRow? { if case .folder(let row) = item { row } else { nil } }
+    var directory: Bool { folderRow != nil }
+    var bookId: String? {
+        guard case .resolved(let record) = bookRow?.resolution,
+              case .associated(let bookID) = record.body else { return nil }
+        return bookID
+    }
+    var readingIdentity: ReadingKey? {
+        guard case .resolved(let record) = bookRow?.resolution else { return nil }
+        return record.key
+    }
     /// Reading data follows normalized text; unfinished imports retain their pending namespace.
-    var readingKey: String? { readingIdentity.map { serializeReadingKey(key: $0) } }
+    var readingKey: String? { readingIdentity.map(\.storageKey) }
+    var needsDownload: Bool { bookRow?.needsDownload ?? false }
+    var positionUtf8: UInt64 { bookRow?.positionUtf8 ?? 0 }
+    var byteCount: UInt64 { bookRow?.byteCount ?? 0 }
+    var chapterTitle: String? { bookRow?.chapterTitle }
+    var preferred: Bool { bookRow?.preferred ?? false }
+    var metadata: BookMetadata? { bookRow?.metadata }
+    func withMetadata(_ metadata: BookMetadata?) -> Self {
+        guard var book = bookRow else { return self }
+        book.metadata = metadata
+        var entry = self; entry.item = .book(row: book)
+        return entry
+    }
     var source: SourceFile { SourceFile(id: id, shelfID: shelfId, relativePath: relativePath) }
     var location: LibraryLocation { LibraryLocation(shelfID: shelfId, path: relativePath) }
     var parent: LibraryLocation { LibraryLocation(shelfID: shelfId, path: parentPath) }
@@ -61,20 +85,15 @@ struct LibraryScanSnapshot: Sendable {
 
 extension AppDataService {
     func libraryEntry(_ id: String) async throws -> LibraryEntry {
-        let core = try textCore()
-        // Only this file and its original import alias are needed.
-        let identity = try core.fileIdentity(fileId: id)
-        var selected = identity.key.map { [$0] } ?? []
-        if let alias = identity.pendingAlias { selected.append(alias) }
-        return try await effectiveQuery(keys: selected.map { serializeReadingKey(key: $0) }, scope: "file-" + id).libraryEntry(fileId: id)
+        try await readingQuery(.book(.file(fileId: id)), options: .init(scope: "file-" + id)).libraryEntry(fileId: id)
     }
+
     func catalogueScope(_ location: LibraryLocation?, recursive: Bool) -> CatalogueScope {
-        .init(shelfId: location?.shelfID, parentPath: location?.path, recursive: recursive)
+        location.map { .shelf(shelfId: $0.shelfID, parentPath: $0.path, recursive: recursive) } ?? .all
     }
     func catalogueQuery(_ location: LibraryLocation?, recursive: Bool) async throws -> ReaderQuery {
-        // A directory's last_read aggregates descendants even when only its children are returned.
-        let keys = try textCore().catalogueContentKeys(scope: catalogueScope(location, recursive: true))
-        return try await effectiveQuery(keys: keys.map { serializeReadingKey(key: $0) }, scope: "catalogue")
+        // Folder aggregates include descendants even when displaying only children.
+        try await readingQuery(.catalogue(catalogueScope(location, recursive: true)), options: .init(scope: "catalogue"))
     }
 
     /// Deterministic latency for UI checks; release builds never delay queries.
@@ -228,6 +247,7 @@ extension AppDataService {
             throw CocoaError(.fileReadNoPermission)
         }
         #endif
+        if let location, !recursive { return try await directoryEntries(location, sort: sort) }
         return try await catalogueQuery(location, recursive: recursive).libraryEntries(shelfId: location?.shelfID, parentPath: recursive ? nil : location?.path, sort: sort)
     }
     func searchLibrary(query: String, configuration: BookSearchConfiguration) async throws -> LibraryQueryRules.SearchOutcome {
@@ -250,9 +270,11 @@ extension AppDataService {
         let candidates = try query.librarySearchCandidates(scope: catalogueScope(location, recursive: true), booksOnly: spec.profile == .ai || spec.configuration.booksOnly)
         if spec.profile == .ai { try await requireAIMetadataReadable(nil, recursive: true) }
         var found = LibraryQueryRules.searchOutcome(candidates, spec: spec)
-        for index in found.entries.indices where found.entries[index].directory {
-            found.entries[index].coverPreviews = try query.libraryFolderCoverPreviews(
-                shelfId: found.entries[index].shelfId, relativePath: found.entries[index].relativePath)
+        for index in found.entries.indices {
+            let entry = found.entries[index]
+            guard var folder = entry.folderRow else { continue }
+            folder.coverPreviews = try query.libraryFolderCoverPreviews(shelfId: entry.shelfId, relativePath: entry.relativePath)
+            found.entries[index].item = .folder(row: folder)
         }
         return found
     }
@@ -265,24 +287,13 @@ extension AppDataService {
     }
     func recentLibrary(_ limit: UInt32 = 1000, cold: Bool = false) async throws -> [LibraryEntry] {
         if cold { return try await effectiveQuery(scope: "home-cold").recentLibraryEntries(limit: limit) }
-        let index = try await effectiveQuery(positionsOnly: true, scope: "recent-index").recentLibraryEntries(limit: limit)
-        let keys = index.compactMap(\.readingKey)
-        guard !keys.isEmpty else { return [] }
-        return try await effectiveQuery(keys: Array(Set(keys)), scope: "recent").recentLibraryEntries(limit: limit)
+        return try await readingQuery(.recent(limit), options: .init(scope: "recent")).recentLibraryEntries(limit: limit)
     }
-    func recentBook(_ route: ReaderRoute) async throws -> LibraryEntry? {
-        switch route {
-        case let .book(id): return try await bookQuery(id).recentLibraryEntries(limit: 1).first
-        case let .source(file):
-            let entry = try await libraryEntry(file.id)
-            guard let key = entry.readingKey else { return nil }
-            return try await effectiveQuery(keys: [key], scope: "recent-source").recentLibraryEntries(limit: 1000).first { $0.readingKey == key }
-        }
-    }
+
     func hideRecent(_ value: String) throws {
         let key: String
         if let parsed = try? parseReadingKey(value: value) { key = serializeReadingKey(key: parsed) }
-        else { key = try userKey(value) }
+        else { key = try userKey(value).storageKey }
         var hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
         hidden.insert(key); sourceDefaults.set(Array(hidden), forKey: "Moonread.hiddenRecent"); dataChanged(); scheduleSystemReadingCatalog(immediate: true)
     }
@@ -365,19 +376,48 @@ extension AppDataService {
         }
     }
 
-    private func resolveShelf(_ shelf: LibraryShelf) throws -> URL {
-        var stale = false
-        let url = try shelf.builtin ? builtinLibraryURL() : URL(resolvingBookmarkData: Data(shelf.bookmark), options: .withoutUI, bookmarkDataIsStale: &stale)
-        // Bookmarks follow folders into .Trash, often without becoming stale.
-        // Reject before scanning or rewriting the bookmark so restore can reconnect.
-        guard !url.standardizedFileURL.pathComponents.contains(".Trash") else { throw LibraryFileError.missingShelf }
-        if stale {
-            let access = url.startAccessingSecurityScopedResource()
-            defer { if access { url.stopAccessingSecurityScopedResource() } }
-            let data = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-            try textCore().saveLibraryShelf(id: shelf.id, name: url.lastPathComponent, bookmark: data, location: shelf.location, builtin: false)
+    enum ShelfSource {
+        enum ExternalAccess {
+            case usable(URL, stale: Bool)
+            case needsAuthorization
+            case unavailable(any Error)
         }
-        return url
+        case managedLocal(URL)
+        case managedCloud(URL)
+        case external(ExternalAccess)
+    }
+
+    func shelfSource(_ shelf: LibraryShelf) throws -> ShelfSource {
+        if shelf.builtin {
+            if let cloudLibraryRoot { return .managedCloud(cloudLibraryRoot) }
+            return .managedLocal(try builtinLibraryURL())
+        }
+        guard !shelf.bookmark.isEmpty else { return .external(.needsAuthorization) }
+        do {
+            var stale = false
+            let url = try URL(resolvingBookmarkData: Data(shelf.bookmark), options: .withoutUI, bookmarkDataIsStale: &stale)
+            // Bookmarks can follow folders into Trash without becoming stale.
+            guard !url.standardizedFileURL.pathComponents.contains(".Trash") else { return .external(.needsAuthorization) }
+            return .external(.usable(url, stale: stale))
+        } catch {
+            return .external(.unavailable(error))
+        }
+    }
+
+    private func resolveShelf(_ shelf: LibraryShelf) throws -> URL {
+        switch try shelfSource(shelf) {
+        case .managedLocal(let url), .managedCloud(let url): return url
+        case .external(.needsAuthorization): throw LibraryFileError.missingShelf
+        case .external(.unavailable(let error)): throw error
+        case .external(.usable(let url, let stale)):
+            if stale {
+                let access = url.startAccessingSecurityScopedResource()
+                defer { if access { url.stopAccessingSecurityScopedResource() } }
+                let data = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
+                try textCore().saveLibraryShelf(id: shelf.id, name: url.lastPathComponent, bookmark: data, location: shelf.location, builtin: false)
+            }
+            return url
+        }
     }
 
     func refreshLibraryShelf(_ id: String) throws {
@@ -505,7 +545,8 @@ extension AppDataService {
         let v = try fresh.resourceValues(forKeys: [.isDirectoryKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey])
         guard v.isDirectory == true || v.isUbiquitousItem != true || v.ubiquitousItemDownloadingStatus == .current else { throw AIToolError("needs_preparation") }
     }
-    nonisolated private static func aiSnapshot(_ url: URL, location: LibraryLocation) throws -> AIFileSnapshot {
+    nonisolated private static func aiSnapshot(_ url: URL, location: LibraryLocation,
+                                               fileHash: (URL) throws -> String = CloudDocumentHandoff.bytesHash) throws -> AIFileSnapshot {
         var status = stat()
         guard url.withUnsafeFileSystemRepresentation({ $0.map { Darwin.lstat($0, &status) } ?? -1 }) == 0,
               [S_IFDIR, S_IFREG].contains(status.st_mode & S_IFMT) else { throw AIToolError("permission_denied") }
@@ -514,7 +555,7 @@ extension AppDataService {
         guard resources.isWritable == true else { throw AIToolError("permission_denied") }
         let directory = status.st_mode & S_IFMT == S_IFDIR
         guard directory || resources.isUbiquitousItem != true || resources.ubiquitousItemDownloadingStatus == .current else { throw AIToolError("needs_preparation") }
-        let hash = directory ? nil : try CloudDocumentHandoff.bytesHash(url)
+        let hash = directory ? nil : try fileHash(url)
         var root = url
         for _ in location.path.split(separator: "/") { root.deleteLastPathComponent() }
         return .init(shelfID: location.shelfID, path: location.path, root: root.resolvingSymlinksInPath().path, directory: directory, hash: hash)
@@ -569,8 +610,63 @@ extension AppDataService {
         try refreshLibraryShelf(location.shelfID)
     }
 
+    private enum RenameValidation {
+        case none
+        case snapshot(AIFileSnapshot)
+        case book(ReadingKey, snapshot: AIFileSnapshot, decoding: String)
+
+        var required: Bool {
+            if case .none = self { return false }
+            return true
+        }
+
+        func validate(_ url: URL) throws {
+            switch self {
+            case .none: break
+            case .snapshot(let expected):
+                try AppDataService.aiValidateSnapshot(url, expected: expected)
+            case .book(let key, let expected, let decoding):
+                let observed = try AppDataService.aiSnapshot(url, location: expected.location) { file in
+                    let identity: SourceTextIdentity
+                    do {
+                        identity = try SourceIdentityProbe().identify(filePath: file.path, decoding: decoding)
+                    } catch let error as ReaderError {
+                        switch error {
+                        case .Decode, .EmptyBook, .BinaryContent, .TextCapacityExceeded, .GraphemeTooLong:
+                            throw ReaderError.SourceChanged
+                        default: throw error
+                        }
+                    }
+                    guard ReadingKey.formal(sha256: identity.contentSha256) == key else {
+                        throw ReaderError.SourceChanged
+                    }
+                    return identity.rawSha256
+                }
+                guard observed == expected else { throw ReaderError.SourceChanged }
+            }
+        }
+    }
+
     func renameLibraryItem(_ entry: LibraryEntry, name: String, replace: Bool, expected: AIFileSnapshot? = nil) throws {
-        try performLibraryMove(entry, to: entry.parent, name: name, replace: replace, renameSnapshot: expected)
+        try performLibraryMove(entry, to: entry.parent, name: name, replace: replace,
+                               renameValidation: expected.map(RenameValidation.snapshot) ?? .none)
+    }
+
+    /// Resolve the live file's decoding by raw bytes; the coordinated move then
+    /// proves both those bytes and the preview's normalized reading identity.
+    func renameLibraryBook(_ entry: LibraryEntry, name: String, expected key: ReadingKey) async throws {
+        guard case .formal = key else { throw ReaderError.SourceChanged }
+        let snapshot = try aiFileSnapshot(entry.location)
+        guard !snapshot.directory, let hash = snapshot.hash else { throw ReaderError.SourceChanged }
+        let decoding = try await resolveSourceDecoding(rawSHA: hash)
+        let current: SourceFileLocation
+        do { current = try textCore().sourceFileLocation(fileId: entry.id) }
+        catch ReaderError.NotFound { throw ReaderError.SourceChanged }
+        guard !current.directory, current.shelfId == entry.shelfId, current.relativePath == entry.relativePath else {
+            throw ReaderError.SourceChanged
+        }
+        try performLibraryMove(entry, to: entry.parent, name: name, replace: false,
+                               renameValidation: .book(key, snapshot: snapshot, decoding: decoding))
     }
 
     func moveLibraryItem(_ entry: LibraryEntry, to destination: LibraryLocation, name: String? = nil, replace: Bool) throws {
@@ -593,7 +689,7 @@ extension AppDataService {
             return .init(id: entry.id, stage: error.stage, message: AIRequestError.message(error.underlying), reason: aiFailureReason(error.underlying))
         } catch { return .init(id: entry.id, stage: .notMoved, message: AIRequestError.message(error), reason: aiFailureReason(error)) }
     }
-    private func performLibraryMove(_ entry: LibraryEntry, to destination: LibraryLocation, name: String? = nil, replace: Bool, check: AIFileMoveCheck? = nil, renameSnapshot: AIFileSnapshot? = nil) throws {
+    private func performLibraryMove(_ entry: LibraryEntry, to destination: LibraryLocation, name: String? = nil, replace: Bool, check: AIFileMoveCheck? = nil, renameValidation: RenameValidation = .none) throws {
         var stage: AIFileExecutionStage = .notMoved
         do {
         let target = try libraryChildPath(parent: destination.path, name: name ?? entry.name)
@@ -606,7 +702,7 @@ extension AppDataService {
         let children = try textCore().sourceFiles(shelfId: entry.shelfId)
         pauseFileImports(Set(children.filter { $0.id == entry.id || $0.relativePath.hasPrefix(entry.relativePath + "/") }.map(\.id)))
         try withLibraryURL(entry.location) { source in
-            if check != nil || renameSnapshot != nil { try Self.requirePreparedFile(source) }
+            if check != nil || renameValidation.required { try Self.requirePreparedFile(source) }
             try withLibraryURL(destination) { parent in
                 let targetURL = parent.appendingPathComponent(name ?? entry.name, isDirectory: entry.directory)
                 guard source.standardizedFileURL != targetURL.standardizedFileURL,
@@ -617,7 +713,7 @@ extension AppDataService {
                     let to = coordinatedParent.appendingPathComponent(name ?? entry.name, isDirectory: entry.directory)
                     result = Result {
                         let fm = FileManager.default
-                        if let renameSnapshot { try Self.aiValidateSnapshot(from, expected: renameSnapshot) }
+                        try renameValidation.validate(from)
                         if let check {
                             try Self.aiValidateSnapshot(from, expected: check.source)
                             try Self.aiValidateSnapshot(from.deletingLastPathComponent(), expected: check.sourceParent)
@@ -655,7 +751,7 @@ extension AppDataService {
         try refreshLibraryShelf(entry.shelfId)
         if destination.shelfID != entry.shelfId { try refreshLibraryShelf(destination.shelfID) }
         } catch {
-            if check != nil || renameSnapshot != nil { throw AIFileExecutionError(stage: stage, underlying: error) }
+            if check != nil || renameValidation.required { throw AIFileExecutionError(stage: stage, underlying: error) }
             throw error
         }
     }

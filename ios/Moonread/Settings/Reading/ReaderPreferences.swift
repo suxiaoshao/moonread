@@ -84,14 +84,11 @@ enum ReadingSettingsTab: String, CaseIterable {
 @MainActor @Observable final class ReadingSettingsEditing {
     var editedAppearance: ThemeAppearance?
     private var localPreviewPresented = false
-    let previewID = UUID()
     var previewPresented: Bool {
-        get { readerTools.map { $0.presentation.location.path.contains(.preview(previewID)) } ?? localPreviewPresented }
+        get { readerTools?.settingsPreviewPresented ?? localPreviewPresented }
         set {
-            if let readerTools {
-                if newValue { readerTools.presentation.push(.preview(previewID)) }
-                else { readerTools.presentation.close(.preview(previewID)) }
-            } else { localPreviewPresented = newValue }
+            if let readerTools { readerTools.setSettingsPreview(newValue) }
+            else { localPreviewPresented = newValue }
         }
     }
     var previewDetent = PresentationDetent.height(60)
@@ -184,8 +181,8 @@ struct ReaderSettingsView: View {
     private var previewCollapsed: Bool { verticalSizeClass != .compact && previewDetent == .height(60) }
     private var previewTheme: ThemeSurface {
         if let draft {
-            return ThemeSurface(plan: ResolvedTheme(appearance: draft.palette.appearance, highContrast: themes.highContrast,
-                                                   colors: draft.palette.colors, paletteId: draft.palette.id))
+            return ThemeSurface(plan: ResolvedTheme(highContrast: themes.highContrast,
+                surface: .palette(appearance: draft.palette.appearance, id: draft.palette.id, colors: draft.palette.colors)))
         }
         var snapshot = themes.snapshot
         snapshot.preferences.readerMode = appearance == .light ? .light : .dark
@@ -325,6 +322,7 @@ struct ReaderSettingsView: View {
                     ReadingPreviewBackdrop(surface: previewTheme).ignoresSafeArea()
                 }
                 .preferredColorScheme(previewTheme.scheme)
+                .readerToolPresentation()
                 .interactiveDismissDisabled()
                 .onAppear { previewVisible = true }
                 .sheet(item: paletteBinding(.preview), onDismiss: {
@@ -350,6 +348,7 @@ struct ReaderSettingsView: View {
 
     private func paletteEditor(_ value: PaletteDraft) -> some View {
         PaletteEditor(draft: value, showsAppPreview: false)
+        .readerToolPresentation()
         .themeScope(theme)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
@@ -413,8 +412,9 @@ struct ReadingSettingsControls: View {
         })
     }
     private var fontName: String {
-        if let font = settings.importedFont { return ReaderFontLibrary.shared.name(for: font) }
-        switch settings.font {
+        if case .imported(let font, _) = settings.fontChoice { return ReaderFontLibrary.shared.name(for: font) }
+        guard case .builtin(let font) = settings.fontChoice else { return String(localized: "系统") }
+        switch font {
         case .system: return String(localized: "系统")
         case .serif: return String(localized: "宋体")
         case .rounded: return String(localized: "圆体")

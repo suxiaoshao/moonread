@@ -4,14 +4,26 @@ import UIKit
 extension ReaderSession {
     func moved(to offset: UInt64, settled: Bool, userInitiated: Bool = true) {
         guard !isLeaving, let book, let id = readingID else { return }
+        if listeningOwnsPosition {
+            if userInitiated { beganReadingInteraction() }
+            // The visual anchor may follow a manual browse, but the audio
+            // checkpoint remains the sole formal position until ownership ends.
+            if listeningOwnsPosition, let listening = activeListening {
+                guard listening.active else { return }
+                surface = .body(SourceAnchor(min(offset, book.byteCount)))
+                if listening.following == .detached { refreshChapter(at: anchor, bookID: id) }
+                return
+            }
+        }
+        if case .speechExit = navigationWork?.intent, !userInitiated { return }
         guard !navigating else { return }
-        showingCover = false
         if browseOrigin == nil { hasEnteredBody = true }
         displayAnchor = nil
-        anchor = min(offset, book.byteCount)
-        if userInitiated { hasLocalReadingInteraction = true }
+        surface = .body(SourceAnchor(min(offset, book.byteCount)))
+        if userInitiated && browseOrigin == nil { hasLocalReadingInteraction = true }
         if let continuation, anchor >= continuation.location.offsetUtf8 { clearContinuation() }
         refreshChapter(at: anchor, bookID: id)
+        guard browseOrigin == nil else { return }
         saveTask?.cancel()
         guard hasLocalReadingInteraction else { return }
         let position = anchor
@@ -19,7 +31,7 @@ extension ReaderSession {
             do {
                 try await Task.sleep(for: .milliseconds(350))
                 try Task.checkCancellation()
-                guard self?.isLeaving == false, self?.browseOrigin == nil else { return }
+                guard self?.isLeaving == false else { return }
                 try await self?.service.savePosition(bookID: id, offset: position)
             } catch is CancellationError { } catch { self?.reportAutomaticReadingError(error) }
         }
@@ -41,7 +53,7 @@ extension ReaderSession {
                 acceptExtension(frame,direction:direction)
             } catch {
                 if current(id, attempt: attempt) {
-                    if autoReading.phase == .preparing { autoReading.failed(ReaderMessages.error(error)) }
+                    if autoReading?.phase == .preparing { autoReading?.failed(ReaderMessages.error(error)) }
                     else { self.error = ReaderMessages.error(error) }
                 }
             }
@@ -54,13 +66,7 @@ extension ReaderSession {
         guard !isLeaving, let previous = window else { return }
         guard frame.status != .deferred else { return }
         guard frame.status == .ready else {
-            var retained = previous
-            if direction == .forward {
-                retained.nextCursor = nil
-                retained.isPreparedTail = frame.status == .awaiting
-                retained.isEndOfBook = frame.status == .end && frame.snapshot.phase == .complete
-            } else { retained.previousCursor = nil }
-            window = retained
+            window = previous.retainingContent(availability: frame, direction: direction)
             return
         }
         let visible = viewportAccess.capture()?.offset ?? displayAnchor ?? anchor

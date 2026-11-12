@@ -7,9 +7,9 @@ enum AppSearchSeed: Hashable {
     case author(String), tag(String), shelf(String)
     var node: BookSearchNode {
         switch self {
-        case .author(let value): BookSearchNode(field: .author, values: [.text(value)])
-        case .tag(let value): BookSearchNode(field: .tag, values: [.text(value)], match: .all)
-        case .shelf(let value): BookSearchNode(field: .shelf, values: [.text(value)])
+        case .author(let value): BookSearchNode(kind: .rule(.author([value])))
+        case .tag(let value): BookSearchNode(kind: .rule(.tag(.all, [.text(value)])))
+        case .shelf(let value): BookSearchNode(kind: .rule(.shelf([value])))
         }
     }
 }

@@ -108,20 +108,19 @@ struct ReaderLibraryContent: View {
                 }
             }
             .modifier(ReaderLibraryEditorPresentation(editing: editing, session: session, refreshOutline: refreshOutline, closed: editorClosed))
-            .confirmationDialog("恢复自动目录？", isPresented: $editing.restoringOutline, titleVisibility: .visible) {
-                Button("清除人工修正", role: .destructive) {
-                    guard let id = session.readingID else { return }
-                    Task {
-                        do { try await AppDataService.shared.restoreChapterCorrections(id); await refreshOutline() }
-                        catch { model.error = ReaderMessages.error(error) }
-                    }
+            .readerToolConfirmation("恢复自动目录？", isPresented: $editing.restoringOutline,
+                message: "仅清除目录的人工修正，正文、书签和笔记保持不变。", confirm: "清除人工修正", destructive: true) {
+                guard let id = session.readingID else { return }
+                Task {
+                    do { try await AppDataService.shared.restoreChapterCorrections(id); await refreshOutline() }
+                    catch { model.error = ReaderMessages.error(error) }
                 }
-            } message: { Text("仅清除目录的人工修正，正文、书签和笔记保持不变。") }
+            }
             .task(id: preparedBookID) {
                 guard let id = preparedBookID else { return }
                 var available = session.book?.byteCount
                 var complete = !session.incomplete
-                await session.activity.flush()
+                session.activity.breakVisit()
                 await model.prepare(bookID: id, currentChapter: session.chapter?.startUtf8 ?? 0, library: true, preservingPosition: true)
                 if !Task.isCancelled, model.tab == .chapters {
                     model.showChapter(session.chapter?.startUtf8 ?? 0)
@@ -138,10 +137,13 @@ struct ReaderLibraryContent: View {
                     do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
                 }
             }
-            .onDisappear { session.notesChanged() }
+            .onDisappear { model.cancelChapterLoads(); session.notesChanged() }
             .onChange(of: model.tab) { _, value in
                 chapterFilterFocused = false
-                if value == .chapters { model.showChapter(session.chapter?.startUtf8 ?? 0) }
+                if value == .chapters {
+                    model.showChapter(session.chapter?.startUtf8 ?? 0)
+                    Task { await model.refreshChapters() }
+                }
                 else { Task { await model.loadNotes(reset: true) } }
             }
             .onChange(of: session.marksRevision) { _, _ in
@@ -191,7 +193,7 @@ private struct ReaderLibraryEditorPresentation: ViewModifier {
     private var chapterBinding: Binding<ChapterEditDraft?> {
         let current = editing.readerTools?.editor
         let token = editing.readerTools?.host.token
-        let generation = editing.readerTools?.presentation.revision ?? 0
+        let generation = editing.readerTools?.revision ?? 0
         return Binding(get: { current?.presenter == .library ? editing.chapterEdit : nil }, set: {
             if $0 == nil, let current, editing.readerTools?.acceptsNativeInput(token, generation: generation) == true {
                 editing.readerTools?.finishEditing(current.id)
@@ -201,7 +203,7 @@ private struct ReaderLibraryEditorPresentation: ViewModifier {
     private var rebuildBinding: Binding<Bool> {
         let current = editing.readerTools?.editor
         let token = editing.readerTools?.host.token
-        let generation = editing.readerTools?.presentation.revision ?? 0
+        let generation = editing.readerTools?.revision ?? 0
         return Binding(get: { current?.presenter == .library && editing.rebuildingOutline }, set: {
             if !$0, let current, editing.readerTools?.acceptsNativeInput(token, generation: generation) == true {
                 editing.readerTools?.finishEditing(current.id)

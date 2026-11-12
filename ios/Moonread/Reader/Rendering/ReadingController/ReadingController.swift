@@ -13,9 +13,18 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     #if READER_OPEN_DIAGNOSTICS
     private var displayProbe: ReaderDisplayProbe?
     #endif
+    var listeningCursor: ListeningCursor?
+    var listeningFollows = false
     var autoReading: ReaderAutoReading?
     var pausedAutomaticTouch = false
-    var resumeAutomaticReading: () -> Void = {}
+    var automaticTouchBegan: () -> Bool = { false }
+    var automaticBodyTap: (Bool) -> Bool = { _ in false }
+    var showAutomaticControls: () -> Void = {}
+    var endAutomaticReading: () -> Void = {}
+    var readingSelectionChanged: (Bool) -> Void = { _ in }
+    var bodyDisplayed: () -> Void = {}
+    private var bodyDisplayLink: CADisplayLink?
+    private var displayedOpening: UUID?
     var statisticsInteraction: () -> Void = {}
     var statisticsPresentationChanged: () -> Void = {}
     var annotationChooserChanged: (Bool) -> Void = { _ in }
@@ -133,8 +142,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         observer.cancelsTouchesInView = false; observer.delaysTouchesBegan = false; observer.delaysTouchesEnded = false
         observer.began = { [weak self] in
             guard let self else { return }
-            pausedAutomaticTouch = autoReading?.running == true || autoReading?.phase == .starting
-            autoReading?.pause()
+            pausedAutomaticTouch = automaticTouchBegan()
         }
         readingSurface.addGestureRecognizer(observer)
         let singleTap = UITapGestureRecognizer(target: self, action: #selector(tappedBody(_:)))
@@ -168,10 +176,13 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
         backNavigation.install(on: self)
         deviceControls.start(in: view.window?.windowScene)
         statisticsPresentationChanged()
+        awaitBodyDisplay()
     }
 
     override func viewDidDisappear(_ animated: Bool) {
         super.viewDidDisappear(animated)
+        bodyDisplayLink?.invalidate(); bodyDisplayLink = nil
+        statisticsPresentationChanged()
         autoReading?.pause()
         backNavigation.uninstall()
         deviceControls.stop()
@@ -252,11 +263,9 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
                 let merged = previous.chunks + window.chunks.filter { $0.startUtf8 >= previous.end }
                 if Set(merged.map(\.index)).count <= 256 && merged.reduce(0, { $0+$1.text.utf8.count }) <= 65536 {
                     let paragraphs = previous.paragraphs.filter { $0.startUtf8 < window.start } + window.paragraphs
-                    var combined = window
-                    combined.chunks = merged; combined.paragraphs = paragraphs
-                    combined.sourceStart = previous.start; combined.omitted = previous.omitted + window.omitted
-                    combined.previousCursor = previous.previousCursor; combined.isStartOfBook = previous.isStartOfBook
-                    appendScrollContents(combined)
+                    if let combined = window.extendingScroll(previous, chunks: merged, paragraphs: paragraphs) {
+                        appendScrollContents(combined)
+                    }
                 }
             }
         } else {
@@ -428,10 +437,12 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             pendingNavigation?.keepVisible = false
         }
         applyNavigation()
+        applyListeningFollow()
         if contentGeometry != nil, layoutStatus?.hasValidLayout != true {
             let status = layoutStatus
             Task { @MainActor in status?.committed() }
         }
+        awaitBodyDisplay()
         recordLayout("layout.committed", proposed: nextSurface)
         if let id = openingID, diagnosedOpening != id, !needsRebuild {
             diagnosedOpening = id
@@ -441,6 +452,20 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
             displayProbe = ReaderDisplayProbe(view: view, id: id, cover: isCoverVisible, glyphsVisible: { [weak self] in self?.diagnosticGlyphsVisible() ?? false }) { [weak self] in self?.displayProbe = nil }
             #endif
         }
+    }
+
+    func awaitBodyDisplay() {
+        guard let openingID, displayedOpening != openingID, bodyDisplayLink == nil,
+              statisticsRange() != nil else { return }
+        let link = CADisplayLink(target: self, selector: #selector(didDisplayBody))
+        bodyDisplayLink = link; link.add(to: .main, forMode: .common)
+    }
+    @objc private func didDisplayBody() {
+        bodyDisplayLink?.invalidate(); bodyDisplayLink = nil
+        guard UIApplication.shared.applicationState == .active, let openingID,
+              displayedOpening != openingID, viewIfLoaded?.window != nil, view.alpha >= 0.99,
+              statisticsRange() != nil else { return }
+        displayedOpening = openingID; bodyDisplayed()
     }
 
     private func recordLayout(_ event: String, proposed: CGRect? = nil) {

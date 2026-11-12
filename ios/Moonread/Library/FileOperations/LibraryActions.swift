@@ -87,13 +87,7 @@ struct LibraryPresentations: ViewModifier {
                 Button("知道了", role: .cancel) { model.error = nil }
             } message: { Text(model.error ?? "") }
             .background(LibraryDecisionAlert(model: model, decision: model.pendingDecision, indexPrompt: model.indexPrompt, theme: theme).frame(width: 0, height: 0))
-            .confirmationDialog("移到最近删除？", isPresented: Binding(get: { model.deletion != nil }, set: { if !$0 { model.deletion = nil } }), titleVisibility: .visible, presenting: model.deletion) { entries in
-                Button("移到最近删除", role: .destructive) {
-                    model.deletion = nil; model.runBatch(entries.map { .delete($0) })
-                }
-                Button("取消", role: .cancel) { model.deletion = nil }
-            } message: { _ in Text("可在‘文件’App 的‘最近删除’中恢复。书签和笔记会保留。") }
-            .confirmationDialog("移除书架？", isPresented: Binding(get: { model.removingShelf != nil }, set: { if !$0 { model.removingShelf = nil } }), presenting: model.removingShelf) { shelf in
+            .alert("移除书架？", isPresented: Binding(get: { model.removingShelf != nil }, set: { if !$0 { model.removingShelf = nil } }), presenting: model.removingShelf) { shelf in
                 Button("移除书架", role: .destructive) { model.removingShelf = nil; model.removeShelf(shelf) }
                 Button("取消", role: .cancel) { model.removingShelf = nil }
             } message: { shelf in Text("移除“\(shelf.name)”的入口，目录中的文件仍然保留。") }
@@ -158,7 +152,7 @@ struct LibraryDecisionAlert: UIViewControllerRepresentable {
                 accept = String(localized: "替换"); cancel = String(localized: "取消")
             case .trashUnsupported:
                 title = String(localized: "所在位置不支持最近删除")
-                message = String(localized: "本批中有项目所在位置不支持最近删除，删除后无法恢复。")
+                message = String(localized: "本批中不支持最近删除的项目将永久删除，无法恢复。")
                 accept = String(localized: "永久删除这些项目"); cancel = String(localized: "跳过")
             }
             let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
@@ -199,7 +193,7 @@ struct LibraryItemMenu: View {
             Button("移动", systemImage: "folder") { model.sheet = .move([entry]) }
             if !entry.directory {
                 Button("小说详情", systemImage: "info.circle") {
-                    model.path.append(.statistics(StatisticsRoute(key: entry.readingKey, bookID: entry.bookId, title: entry.title, fileID: entry.id)))
+                    model.path.append(.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title)))
                 }
                 if ai.availability.isAvailable {
                     Button("完善资料", systemImage: "sparkles") { model.aiRequest = .library([entry], family: .metadata) }
@@ -209,7 +203,7 @@ struct LibraryItemMenu: View {
                 Button("分享", systemImage: "square.and.arrow.up.on.square") { model.export([entry], sharing: true) }
             }
             Divider()
-            Button("删除", systemImage: "trash", role: .destructive) { model.deletion = [entry] }
+            Button("删除", systemImage: "trash", role: .destructive) { model.deleteEntries([entry]) }
         }.disabled(!model.canAcceptFileWork)
     }
 }

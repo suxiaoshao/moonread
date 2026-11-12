@@ -25,7 +25,7 @@ fn fact(
     duration: i64,
     range: (u64, u64),
 ) -> serde_json::Value {
-    json!({"content_key":book.content_sha256,"title":book.title,"device":session,"slice":{
+    json!({"content_key":book.reading_key.formal_sha().unwrap(),"title":book.title,"device":session,"slice":{
         "id":id,"session_id":session,"visit_id":visit,"book_id":book.id,"started_ms":started,"ended_ms":started+duration,
         "local_day":20000,"utc_offset_seconds":28800,"preview":false,
         "exposures":[{"start_utf8":range.0,"end_utf8":range.1,"duration_ms":duration}]}})
@@ -33,16 +33,17 @@ fn fact(
 #[test]
 fn temporary_user_inputs_never_persist_in_the_text_database() {
     let (root, core, book) = fixture();
-    let query = core.query_snapshot(json!({"positions":[{"content_key":book.content_sha256,"offset":24,"updated":99,"visible":true,"preferred":null}],"metadata":[{"sha":book.content_sha256,"author":"作者","synopsis":"介绍","tags":["月"],"cover":null,"status":"Reading"}]}).to_string()).unwrap();
+    let query = core.query_snapshot(json!({"positions":[{"content_key":book.reading_key.formal_sha().unwrap(),"offset":24,"updated":99,"visible":true,"preferred":null}],"metadata":[{"sha":book.reading_key.formal_sha().unwrap(),"author":"作者","synopsis":"介绍","tags":["月"],"cover":null,"status":"Reading"}]}).to_string()).unwrap();
     assert_eq!(query.book_info(book.id.clone()).unwrap().position_utf8, 24);
-    assert_eq!(
-        query
-            .book_details(Some(book.id.clone()), None)
-            .unwrap()
-            .metadata
-            .author,
-        "作者"
-    );
+    let moonread_core::BookDetailsResult::Identified { details, .. } = query
+        .book_details(moonread_core::BookTarget::Cached {
+            book_id: book.id.clone(),
+        })
+        .unwrap()
+    else {
+        panic!("prepared details")
+    };
+    assert_eq!(details.metadata.author, "作者");
     drop(core);
     let reopened = ReaderCore::new(root.path().join("db").to_string_lossy().into()).unwrap();
     assert_eq!(
@@ -54,16 +55,15 @@ fn temporary_user_inputs_never_persist_in_the_text_database() {
             .position_utf8,
         0
     );
-    assert_eq!(
-        reopened
-            .query_snapshot("{}".into())
-            .unwrap()
-            .book_details(Some(book.id), None)
-            .unwrap()
-            .metadata
-            .author,
-        ""
-    );
+    let moonread_core::BookDetailsResult::Identified { details, .. } = reopened
+        .query_snapshot("{}".into())
+        .unwrap()
+        .book_details(moonread_core::BookTarget::Cached { book_id: book.id })
+        .unwrap()
+    else {
+        panic!("prepared details")
+    };
+    assert_eq!(details.metadata.author, "");
     let db = rusqlite::Connection::open(root.path().join("db/reader.sqlite3")).unwrap();
     for name in [
         "reading_activity",
@@ -93,7 +93,7 @@ fn overlapping_devices_accumulate_and_fact_retry_does_not_double_count() {
     let cover = json!({"id":"00000000-0000-4000-8000-000000000001","sha256":"a".repeat(64),"extension":"jpg","width":80,"height":120});
     let query = core
         .query_snapshot(json!({"facts":[a.clone(),b,a], "metadata":[{
-            "sha":book.content_sha256,"author":"Example Author","synopsis":"","tags":[],"cover":cover,"status":"Reading"
+            "sha":book.reading_key.formal_sha().unwrap(),"author":"Example Author","synopsis":"","tags":[],"cover":cover,"status":"Reading"
         }]}).to_string())
         .unwrap();
     let overview = query.statistics_overview(20000, 20000, None).unwrap();
@@ -131,6 +131,33 @@ fn coverage_spans_checkpoints_but_does_not_add_disjoint_visits() {
             .unwrap()
             > 0
     );
+    let full = query.chapter_outline(book.id.clone()).unwrap();
+    let structure = query.chapter_structure(book.id.clone()).unwrap();
+    assert_eq!(structure.is_complete, full.is_complete);
+    assert_eq!(structure.items.len(), full.items.len());
+    for (structure, full) in structure.items.iter().zip(&full.items) {
+        assert_eq!(
+            (
+                structure.start_utf8,
+                &structure.title,
+                structure.level,
+                structure.word_count,
+                structure.count_complete,
+                structure.parent_utf8,
+                &structure.parent_title
+            ),
+            (
+                full.start_utf8,
+                &full.title,
+                full.level,
+                full.word_count,
+                full.count_complete,
+                full.parent_utf8,
+                &full.parent_title
+            )
+        );
+        assert_eq!(structure.covered_characters, None);
+    }
     let c = fact(&book, "c", "s", "other", 1500, 1500, (19, 49));
     let query = core
         .query_snapshot(json!({"facts":[a,c]}).to_string())
@@ -179,11 +206,11 @@ fn chapter_corrections_are_inputs_and_rebuild_retains_text_integrity() {
         .unwrap();
     drop(db);
     let core = ReaderCore::new(data).unwrap();
-    let input = json!({"positions":[{"content_key":book.content_sha256,"offset":first,"updated":99,"visible":true,"preferred":null}],
+    let input = json!({"positions":[{"content_key":book.reading_key.formal_sha().unwrap(),"offset":first,"updated":99,"visible":true,"preferred":null}],
         "corrections":[
-            {"content_key":book.content_sha256,"offset":first,"title":"手工分組","level":0,"excluded":false},
-            {"content_key":book.content_sha256,"offset":second,"title":"不顯示","level":1,"excluded":true},
-            {"content_key":book.content_sha256,"offset":ending,"title":"手工結語","level":1,"excluded":false}
+            {"content_key":book.reading_key.formal_sha().unwrap(),"offset":first,"title":"手工分組","level":0,"excluded":false},
+            {"content_key":book.reading_key.formal_sha().unwrap(),"offset":second,"title":"不顯示","level":1,"excluded":true},
+            {"content_key":book.reading_key.formal_sha().unwrap(),"offset":ending,"title":"手工結語","level":1,"excluded":false}
         ]}).to_string();
     let before = core.query_snapshot(input.clone()).unwrap();
     assert_eq!(
@@ -229,8 +256,8 @@ fn chapter_corrections_are_inputs_and_rebuild_retains_text_integrity() {
         core.import_status(book.id.clone())
             .unwrap()
             .text
-            .content_sha256,
-        book.content_sha256
+            .reading_key,
+        book.reading_key
     );
     let rebuilt: String = (0..book.chunk_count)
         .map(|i| core.read_chunk(book.id.clone(), i).unwrap().text)
@@ -291,7 +318,7 @@ fn continuation_uses_whole_book_percentage_and_effective_chapter_boundaries() {
         .unwrap()
         .unwrap();
     assert_eq!(chapter.chapter.unwrap().title, "Chapter 2");
-    let excluded = core.query_snapshot(json!({"corrections":[{"content_key":book.content_sha256,"offset":5000,"title":"Chapter 2","level":1,"excluded":true}]}).to_string()).unwrap();
+    let excluded = core.query_snapshot(json!({"corrections":[{"content_key":book.reading_key.formal_sha().unwrap(),"offset":5000,"title":"Chapter 2","level":1,"excluded":true}]}).to_string()).unwrap();
     assert!(
         excluded
             .reading_continuation(book.id, 4990, 5010)
@@ -379,9 +406,9 @@ fn effective_directory_is_explicit_for_navigation_search_and_isolated_queries() 
     let added = text.find('甲').unwrap() as u64;
     let second = text.find("第二章").unwrap() as u64;
     let corrected = core.query_snapshot(json!({"corrections":[
-        {"content_key":book.content_sha256,"offset":0,"title":"重命名","level":1,"excluded":false},
-        {"content_key":book.content_sha256,"offset":added,"title":"新增目录","level":1,"excluded":false},
-        {"content_key":book.content_sha256,"offset":second,"title":"第二章 星","level":1,"excluded":true}
+        {"content_key":book.reading_key.formal_sha().unwrap(),"offset":0,"title":"重命名","level":1,"excluded":false},
+        {"content_key":book.reading_key.formal_sha().unwrap(),"offset":added,"title":"新增目录","level":1,"excluded":false},
+        {"content_key":book.reading_key.formal_sha().unwrap(),"offset":second,"title":"第二章 星","level":1,"excluded":true}
     ]}).to_string()).unwrap();
     assert_eq!(
         corrected
@@ -471,7 +498,7 @@ fn search_batches_keep_the_directory_snapshot_with_which_the_job_started() {
         .import_book(file.to_string_lossy().into(), "Long search".into())
         .unwrap();
     let query = |name| {
-        core.query_snapshot(json!({"corrections":[{"content_key":book.content_sha256,"offset":0,"title":name,"level":1,"excluded":false}]}).to_string()).unwrap()
+        core.query_snapshot(json!({"corrections":[{"content_key":book.reading_key.formal_sha().unwrap(),"offset":0,"title":name,"level":1,"excluded":false}]}).to_string()).unwrap()
     };
     let old = query("旧目录");
     let job = old
@@ -544,12 +571,12 @@ fn filtered_fact_snapshots_update_overview_book_and_days_without_duplicate_ids()
         );
         assert_eq!(overview.days.len(), days);
         let book = query
-            .statistics_overview(20000, 20001, Some(first.content_sha256.clone()))
+            .statistics_overview(20000, 20001, Some(first.reading_key.clone()))
             .unwrap();
         assert_eq!(book.books[0].duration_ms, first_total);
         assert_eq!(
             query
-                .reading_activities(20000, 20001, Some(second.content_sha256.clone()))
+                .reading_activities(20000, 20001, Some(second.reading_key.clone()))
                 .unwrap()
                 .len(),
             1

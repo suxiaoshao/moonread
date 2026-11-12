@@ -173,6 +173,48 @@ final class LibraryModelRecentReadingRestorationTests: RecentReadingRestorationF
 }
 
 final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
+  @MainActor func testHomeReadsWaitForStableInputsAndKeepRealFailuresVisible() async throws {
+    let (root, service, _, formal, _, book, _, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    try await service.savePosition(bookID: book.id, offset: 12)
+    let model = LibraryModel(service: service, prepareLibrary: {}, refreshLibrary: {})
+    let attempts = QueryAttemptCounter()
+    await service.queryFixture { _, phase in
+      if phase == .built, await attempts.next() <= 3 {
+        try await formal.put("metadata/" + book.fixtureSHA256 + "/author", value: "\"\(UUID().uuidString)\"", device: "fixture")
+      }
+    }
+    let loaded = await model.load()
+    XCTAssertTrue(loaded); XCTAssertTrue(model.homeReady); XCTAssertNil(model.error)
+    await model.refresh(); await service.waitForUserRecovery()
+    let home = model.home
+    let gate = RestorationGate(), refreshAttempts = QueryAttemptCounter()
+    await service.queryFixture { _, phase in
+      if phase == .built, await refreshAttempts.next() <= 3 {
+        await gate.wait()
+        try await formal.put("metadata/" + book.fixtureSHA256 + "/author", value: "\"Updated\"", device: "fixture")
+      }
+    }
+    let refresh = Task { await model.reloadBooks() }
+    await gate.waitForEntry()
+    XCTAssertEqual(model.home, home)
+    await gate.release(); await refresh.value
+    XCTAssertEqual(model.recents.first?.metadata?.author, "Updated"); XCTAssertNil(model.error)
+    await service.queryFixture(nil)
+    let cancelled = Task { @MainActor in
+      withUnsafeCurrentTask { $0?.cancel() }
+      await model.reloadBooks()
+    }
+    await cancelled.value
+    XCTAssertNil(model.error); XCTAssertNil(model.refreshTask)
+    await service.failHomeQueryFixture()
+    await model.reloadBooks()
+    XCTAssertEqual(model.error, ReaderMessages.error(CocoaError(.fileReadNoPermission)))
+    model.error = nil
+    await service.cancelHomeQueryFixture()
+    await model.reloadBooks()
+    XCTAssertEqual(model.error, ReaderMessages.error(CocoaError(.fileReadUnknown)), "A shared dependency failing on its own is a real read failure")
+  }
   // S333: 首页快照一次发布一致的文件/最近列表，替换同一文件不产生两个入口；不锁无变化刷新通知次数。
   @MainActor func testHomeSnapshotPublishesAtomicallyAndIgnoresInvisibleReloadChanges() async throws
   {
@@ -237,8 +279,8 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
       try await service.savePosition(bookID: replacement.id, offset: 6)
       await model.reloadBook(.source(old.source))
       XCTAssertEqual(model.recents.filter { $0.id == old.id }.count, 1)
-      XCTAssertFalse(model.recents.contains { $0.readingKey == book.contentSha256 })
-      XCTAssertEqual(model.recents.first?.readingKey, replacement.contentSha256)
+      XCTAssertFalse(model.recents.contains { $0.readingKey == book.fixtureSHA256 })
+      XCTAssertEqual(model.recents.first?.readingKey, replacement.fixtureSHA256)
       XCTAssertEqual(model.recents.first?.positionUtf8, 6)
 
     }
@@ -252,15 +294,12 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(tools.tab, .notes)
     XCTAssertTrue(tools.notes.isEmpty)
     XCTAssertTrue(tools.loadingNotes, "Waits for its own rows")
-    let note = ReaderMark(
-      id: "note", kind: .annotation, startUtf8: 0, endUtf8: 4, excerpt: "月光", note: "", created: 1)
-    tools.notes = [note]
-    tools.loadingNotes = false
+    tools.beginNoteSelection()
     tools.select(.notes)
-    XCTAssertEqual(tools.notes.map(\.id), ["note"], "The same kind keeps its rows while refreshing")
+    XCTAssertTrue(tools.selectingNotes, "Selecting the same tab preserves its active selection mode")
     tools.select(.chapters)
     XCTAssertEqual(tools.tab, .chapters)
-    XCTAssertEqual(tools.notes.map(\.id), ["note"])
+    XCTAssertFalse(tools.selectingNotes)
     tools.select(.bookmarks)
     XCTAssertEqual(tools.tab, .bookmarks)
     XCTAssertEqual(tools.noteKind, .bookmark)
@@ -342,5 +381,14 @@ final class LibraryModelApplicationStateTests: ApplicationStateFixture {
     }
     XCTAssertNil(state.completedKey)
     XCTAssertTrue(state.entries.isEmpty)
+  }
+}
+
+private extension AppDataService {
+  func cancelHomeQueryFixture() {
+    pendingUserStoreTask = UserStoreInitialization(task: Task { throw CancellationError() })
+  }
+  func failHomeQueryFixture() {
+    pendingUserStoreTask = UserStoreInitialization(task: Task { throw CocoaError(.fileReadNoPermission) })
   }
 }

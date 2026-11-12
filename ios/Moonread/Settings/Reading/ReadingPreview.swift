@@ -62,7 +62,7 @@ struct ReadingPreviewSource: Equatable {
             guard let range = text.range(of: phrase) else { return nil }
             return Mark(start: UInt64(text[..<range.lowerBound].utf8.count), end: UInt64(text[..<range.upperBound].utf8.count), search: search)
         }
-        return Self(window: ReadingWindow(chunks: [TextChunk(index: 0, startUtf8: 0, endUtf8: offset, text: text)], paragraphs: paragraphs, isEndOfBook: true),
+        return Self(window: ReadingWindow.preview(chunks: [TextChunk(index: 0, startUtf8: 0, endUtf8: offset, text: text)], paragraphs: paragraphs, trailing: .end),
                     anchor: 0, title: String(localized: "月光入窗"), marks: marks)
     }
 }

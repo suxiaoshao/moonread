@@ -18,7 +18,7 @@ final class AIResultSourceBookAITests: BookAIFixture {
     let owner = UUID().uuidString
     try await repository.create(.init(id: owner, title: "Sources"))
     let registry = await registry(repository, reader: reader, owner: owner)
-    let bookRef = AIReadingTools.bookRef(book.contentSha256)
+    let bookRef = AIReadingTools.bookRef(book.fixtureSHA256)
     let sourceRef = AIReadingTools.ref("source", "\(bookRef):0:9")
     let partial: JSONValue = .object([
       "status": .string("partial"),
@@ -67,7 +67,7 @@ final class AIResultSourceBookAITests: BookAIFixture {
     let prepared = try await registry.prepare(
       .metadata(
         .init(
-          proposalRef: "private", bookRef: AIReadingTools.bookRef(book.contentSha256),
+          proposalRef: "private", bookRef: AIReadingTools.bookRef(book.fixtureSHA256),
           author: "Author")), owner: owner)
     let before = try await repository.history(owner)
     XCTAssertTrue(before.flatMap { AICommittedResultDecoder.results($0, sessionID: owner) }.isEmpty)

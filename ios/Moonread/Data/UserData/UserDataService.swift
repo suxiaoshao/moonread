@@ -2,6 +2,14 @@ import Foundation
 import SwiftData
 import CryptoKit
 
+extension ReadingKey {
+    var storageKey: String { serializeReadingKey(key: self) }
+    var formalSHA256: String? {
+        if case .formal(let sha256) = self { return sha256 }
+        return nil
+    }
+}
+
 extension AppDataService {
     func userStore(pending: Bool = false, diagnostic: ReaderOpenTrace? = nil) async throws -> UserDataStore {
         let label = pending ? "pendingStore" : "formalStore"
@@ -11,7 +19,7 @@ extension AppDataService {
         if let cached = pending ? pendingUserStoreTask : userStoreTask { initialization = cached }
         else {
             let name = userDirectoryName, factory = userStoreFactory
-            let cloud = !pending && userCloudEnabled
+            let cloud = !pending && userCloudMode.isCloud
             let filename = pending ? "pending-users.store" : "user-data.store"
             let task = Task.detached {
                 diagnostic?.mark(label + ".initialize.begin")
@@ -42,7 +50,10 @@ extension AppDataService {
         }
     }
     func userStore(for key: String) async throws -> UserDataStore {
-        switch try parseReadingKey(value: key) {
+        try await userStore(for: parseReadingKey(value: key))
+    }
+    func userStore(for key: ReadingKey) async throws -> UserDataStore {
+        switch key {
         case .pending: try await userStore(pending: true)
         case .formal: try await userStore()
         }
@@ -56,24 +67,29 @@ extension AppDataService {
         catch ReaderError.NotFound { }
         throw ReaderError.NotFound
     }
-    func configureUserCloud(_ enabled: Bool, account: String?, allowAccountChange: Bool = false) async throws {
+    func configureUserCloud(_ configuration: CloudConfiguration) async throws {
         await acquireUserDataOperation()
         var holdsOperation = true
         defer { if holdsOperation { releaseUserDataOperation() } }
-        if enabled {
-            guard let account else { throw CocoaError(.userCancelled) }
-            if let previous = sourceDefaults.string(forKey: "Moonread.userOwner"), previous != account, !allowAccountChange { throw ReaderError.CloudAccountChanged }
-            // The verified user consent remains valid even if initialization fails.
+        let mode: UserCloudStoreMode
+        switch configuration {
+        case .local: mode = .local
+        case .cloud(let verified, let consent):
+            let account = verified.recordName
+            if let previous = sourceDefaults.string(forKey: "Moonread.userOwner"), previous != account,
+               case .currentOwner = consent { throw ReaderError.CloudAccountChanged }
+            // Verified user consent remains valid even if initialization fails.
             if sourceDefaults.string(forKey: "Moonread.userOwner") == nil { try? adoptLocalShelfBindings(account: account) }
             sourceDefaults.set(account, forKey: "Moonread.userOwner")
+            mode = .cloud(verified)
         }
-        if userCloudEnabled != enabled {
+        if userCloudMode != mode {
             cancelRecentRestoration()
-            userStoreTask = nil; userCloudEnabled = enabled
+            userStoreTask = nil; userCloudMode = mode
             userCloudConfigurationRevision = UUID()
             resetSystemReadingCatalog()
             NotificationCenter.default.post(name: .readingContinuationInvalidated, object: nil)
-            NotificationCenter.default.post(name: .statisticsChanged, object: nil)
+            NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
             let revision = userCloudConfigurationRevision
             // The configuration switch is serialized with deletion, not store
             // bootstrap: a newer configuration must be able to replace a stuck
@@ -81,7 +97,7 @@ extension AppDataService {
             releaseUserDataOperation(); holdsOperation = false
             do { _ = try await userStore() }
             catch {
-                if userCloudConfigurationRevision == revision { userCloudEnabled = false }
+                if userCloudConfigurationRevision == revision { userCloudMode = .local }
                 throw error
             }
             guard userCloudConfigurationRevision == revision else { return }
@@ -112,97 +128,12 @@ extension AppDataService {
         if let store = try? await userStore() { try? await store.importedChanges() }
         if let store = try? await userStore(pending: true) { try? await store.importedChanges() }
     }
-    func bookQuery(_ id: String, diagnostic: ReaderOpenTrace? = nil) async throws -> ReaderQuery {
-        let diagnostic = diagnostic ?? ReaderOpenDiagnostics.trace(book: id)
-        diagnostic?.mark("bookQuery.actor.begin")
-        defer { diagnostic?.mark("bookQuery.actor.return") }
-        let generation = readingChangeRevision(id)
-        diagnostic?.mark("userKey.begin")
-        let key = try userKey(id)
-        diagnostic?.mark("userKey.return")
-        diagnostic?.mark("effectiveQuery.queued")
-        let query = try await effectiveQuery(keys: Array(Set([key, serializeReadingKey(key: .pending(bookId: id))])), scope: "book-\(id)-\(generation)", diagnostic: diagnostic)
-        diagnostic?.mark("effectiveQuery.resumed")
-        return query
-    }
-    func effectiveQuery(facts: Bool = false, keys: [String]? = nil, positionsOnly: Bool = false, statisticsBook: String? = nil, scope: String = "batch", sparseCatalogue: Bool = false, diagnostic: ReaderOpenTrace? = nil) async throws -> ReaderQuery {
-        diagnostic?.mark("effectiveQuery.actor.begin")
-        defer { diagnostic?.mark("effectiveQuery.actor.return") }
-        diagnostic?.mark("formalStore.queued")
-        let store = try await userStore(diagnostic: diagnostic)
-        diagnostic?.mark("formalStore.resumed")
-        diagnostic?.mark("pendingStore.queued")
-        let pending = try await userStore(pending: true, diagnostic: diagnostic)
-        diagnostic?.mark("pendingStore.resumed")
-        diagnostic?.mark("inputSignature.begin")
-        let preferences = statisticsPreferences(), core = try textCore()
-        let formalVersion = store.projectionVersion, pendingVersion = pending.projectionVersion
-        let hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
-        let prefix = "Moonread.preferredFile."
-        let preferred: [String: String]
-        if let keys {
-            preferred = keys.reduce(into: [:]) { result, key in
-                if let file = sourceDefaults.string(forKey: prefix + key) { result[key] = file }
-            }
-        } else {
-            preferred = sourceDefaults.dictionaryRepresentation().reduce(into: [:]) { result, item in
-                if item.key.hasPrefix(prefix), let file = item.value as? String { result[String(item.key.dropFirst(prefix.count))] = file }
-            }
-        }
-        let cacheKey = scope + "-\(facts)-\(positionsOnly)-\(statisticsBook ?? "all")-\(sparseCatalogue)-" + (keys?.sorted().joined(separator: ",") ?? "all")
-        let signature = "\(userCloudConfigurationRevision)-\(formalVersion)-\(pendingVersion)-\(preferences.generation)-\(preferences.enabled)-" + hidden.sorted().joined(separator: ",") + preferred.sorted { $0.key < $1.key }.map { $0.key + "=" + $0.value }.joined(separator: ",")
-        diagnostic?.mark("inputSignature.return")
-        if let cached = queryCache[cacheKey], cached.signature == signature { diagnostic?.mark("query.cacheHit"); return cached.query }
-        diagnostic?.mark("formalProjection.queued")
-        let formalJSON = try await store.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: keys, positionsOnly: positionsOnly, statisticsBook: statisticsBook, diagnostic: diagnostic, diagnosticScope: "formalProjection", sparseCatalogue: sparseCatalogue)
-        diagnostic?.mark("formalProjection.resumed")
-        diagnostic?.mark("pendingProjection.queued")
-        let pendingJSON = try await pending.projection(generation: preferences.generation, enabled: preferences.enabled, includeFacts: facts, keys: keys, positionsOnly: positionsOnly, statisticsBook: statisticsBook, diagnostic: diagnostic, diagnosticScope: "pendingProjection", sparseCatalogue: sparseCatalogue)
-        diagnostic?.mark("pendingProjection.resumed")
-        // Full JSON/TEMP work runs independently, so an exiting reader's batch cannot occupy this actor.
-        diagnostic?.mark("queryBuild.queued")
-        let query = try await Task.detached {
-            diagnostic?.mark("queryBuild.worker.begin")
-            defer { diagnostic?.mark("queryBuild.worker.return") }
-            var combined = try JSONSerialization.jsonObject(with: Data(formalJSON.utf8)) as! [String: Any]
-            let extra = try JSONSerialization.jsonObject(with: Data(pendingJSON.utf8)) as! [String: Any]
-            for field in ["positions", "facts", "metadata", "corrections"] { combined[field] = (combined[field] as! [Any]) + (extra[field] as! [Any]) }
-            let rawPositions = combined["positions"] as! [[String: Any]]
-            var blockedPositions = Set((combined["unsupportedPositions"] as? [String] ?? []) + (extra["unsupportedPositions"] as? [String] ?? []))
-            let rawKeys = Set(rawPositions.compactMap { $0["content_key"] as? String }).union(hidden).union(blockedPositions)
-            let resolutions = try core.resolveReadingKeys(keys: rawKeys.compactMap { try? parseReadingKey(value: $0) })
-            let mapping = Dictionary(uniqueKeysWithValues: resolutions.map { (serializeReadingKey(key: $0.original), serializeReadingKey(key: $0.effective)) })
-            let effectiveHidden = hidden.union(hidden.compactMap { mapping[$0] })
-            blockedPositions.formUnion(blockedPositions.compactMap { mapping[$0] })
-            combined.removeValue(forKey: "unsupportedPositions")
-            let candidates = try rawPositions.compactMap { input -> PositionCandidate? in
-                let candidate = try PositionCandidate(projection: input)
-                guard let key = mapping[candidate.value.content_key], !blockedPositions.contains(key) else { return nil }
-                return try candidate.rekeyed(to: key)
-            }
-            let positions = PositionCandidate.reduce(candidates)
-            combined["positions"] = try positions.keys.sorted().map { key -> [String: Any] in
-                let candidate = positions[key]!
-                var item = try candidate.projection()
-                item["visible"] = !effectiveHidden.contains(key)
-                item["preferred"] = preferred[key] ?? preferred[candidate.sourceKey] ?? NSNull() as Any
-                return item
-            }
-            return try core.querySnapshot(json: String(decoding: JSONSerialization.data(withJSONObject: combined), as: UTF8.self))
-        }.value
-        diagnostic?.mark("queryBuild.resumed")
-        if store.projectionVersion == formalVersion, pending.projectionVersion == pendingVersion {
-            if queryCache.count >= 32 { queryCache.removeAll() }
-            queryCache[cacheKey] = CachedQuery(signature: signature, query: query)
-        }
-        return query
-    }
     var userDevice: String {
         if let id = sourceDefaults.string(forKey: "Moonread.userDevice") { return id }
         let id = UUID().uuidString; sourceDefaults.set(id, forKey: "Moonread.userDevice"); return id
     }
-    func userKey(_ id: String) throws -> String {
-        serializeReadingKey(key: try textCore().resolveBookIdentity(bookId: id).key)
+    func userKey(_ id: String) throws -> ReadingKey {
+        try textCore().resolveBookIdentity(bookId: id).key
     }
     func promoteUserData(_ id: String, retry: Bool = false) async throws {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
@@ -210,8 +141,7 @@ extension AppDataService {
         try await promoteUserDataLocked(id)
     }
     func promoteUserDataLocked(_ id: String) async throws {
-        let key = try userKey(id)
-        guard case .formal = try parseReadingKey(value: key) else { return }
+        guard case .formal(let key) = try userKey(id) else { return }
         let pending = try await userStore(pending: true)
         do {
             // A late CloudKit/import arrival must not be bypassed by the promotion fast path.
@@ -236,16 +166,26 @@ extension AppDataService {
         }
     }
     func readingCompatibilityNotice(_ id: String) async throws -> String? {
-        let key = try userKey(id)
-        if let notice = try await userStore(for: key).compatibilityNotice(key: key) { return notice }
-        if case .formal = try parseReadingKey(value: key) { return try await userStore(pending: true).compatibilityNotice(key: serializeReadingKey(key: .pending(bookId: id))) }
+        let identity = try userKey(id)
+        if let notice = try await userStore(for: identity).compatibilityNotice(key: identity.storageKey) { return notice }
+        if case .formal = identity { return try await userStore(pending: true).compatibilityNotice(key: serializeReadingKey(key: .pending(bookId: id))) }
         return nil
+    }
+    /// Separate LWW fact: never manufactures a reading position or activity.
+    func recordBookOpened(_ id: String, at milliseconds: Int64) async throws {
+        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        let key = try userKey(id).storageKey
+        if let file = readingSourceIDs[id] { sourceDefaults.set(file, forKey: "Moonread.preferredFile." + key) }
+        var hidden = sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []
+        hidden.removeAll { $0 == key }; sourceDefaults.set(hidden, forKey: "Moonread.hiddenRecent")
+        _ = try await userStore(for: key).put("opened/" + key, value: String(milliseconds), device: userDevice)
+        dataChanged()
     }
     func writePosition(_ id: String, offset: UInt64, expectedConfiguration: UUID? = nil) async throws {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         if let expectedConfiguration, expectedConfiguration != userCloudConfigurationRevision { throw CancellationError() }
         try await promoteUserDataLocked(id)
-        let core = try textCore(), key = try userKey(id)
+        let core = try textCore(), key = try userKey(id).storageKey
         let normalized = try core.normalizedPosition(bookId: id, offsetUtf8: offset)
         if let file = readingSourceIDs[id] { sourceDefaults.set(file, forKey: "Moonread.preferredFile." + key) }
         var hidden = sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []; hidden.removeAll { $0 == key }
@@ -266,7 +206,7 @@ extension AppDataService {
     }
     func userMarks(_ id: String, kind: MarkKind? = nil, snapshot: NoteCandidates? = nil) async throws -> [ReaderMark] {
         try await promoteUserData(id)
-        let key = try userKey(id)
+        let key = try userKey(id).storageKey
         let groups: [String: [AnnotationCandidate]]
         if let snapshot {
             guard snapshot.key == key else { throw UserDataConflict(candidates: []) }
@@ -285,7 +225,7 @@ extension AppDataService {
     }
     func userAnnotationRanges(_ id: String, start: UInt64, end: UInt64) async throws -> [ReaderMark] {
         try await promoteUserData(id)
-        let key = try userKey(id), store = try await userStore(for: key)
+        let key = try userKey(id).storageKey, store = try await userStore(for: key)
         let groups = try await store.candidates(key: key)
         var result: [ReaderMark] = []
         for (markID, heads) in groups {
@@ -301,7 +241,7 @@ extension AppDataService {
     func prepareUserAnnotation(_ id: String, start: UInt64, end: UInt64) async throws -> AnnotationEdit {
         guard start < end else { throw ReaderError.InvalidRange }
         try await promoteUserData(id)
-        let key = try userKey(id)
+        let key = try userKey(id).storageKey
         let groups = try await userStore(for: key).candidates(key: key)
         var marks = try await userMarks(id, kind: .annotation)
         for index in marks.indices {
@@ -329,7 +269,7 @@ extension AppDataService {
     func saveUserNote(_ edit: AnnotationEdit, text: String) async throws -> ReaderMark {
         guard text.utf8.count <= 64 * 1024, edit.startUtf8 < edit.endUtf8 else { throw ReaderError.InvalidRange }
         let content = AnnotationContent(start: edit.startUtf8, end: edit.endUtf8, excerpt: edit.excerpt, note: text)
-        let key = try userKey(edit.bookId)
+        let key = try userKey(edit.bookId).storageKey
         let created = edit.marks.map(\.created).min() ?? UInt64(Date().timeIntervalSince1970 * 1000)
         _ = try await userStore(for: key).saveAnnotation(key: key, edit: edit, content: content)
         dataChanged()
@@ -337,11 +277,11 @@ extension AppDataService {
             excerpt: content.excerpt, note: text, created: created)
     }
     func annotationEditingBundle(_ edit: AnnotationEdit) async throws -> [String: [AnnotationCandidate]] {
-        let key = try userKey(edit.bookId)
+        let key = try userKey(edit.bookId).storageKey
         return try await userStore(for: key).editingBundle(key: key, edit: edit)
     }
     func resolveAnnotation(_ edit: AnnotationEdit, expected: [String: [AnnotationCandidate]], content: AnnotationContent?) async throws {
-        let key = try userKey(edit.bookId)
+        let key = try userKey(edit.bookId).storageKey
         if let content {
             guard content.note.utf8.count <= 64 * 1024, content.start < content.end else { throw ReaderError.InvalidRange }
         }

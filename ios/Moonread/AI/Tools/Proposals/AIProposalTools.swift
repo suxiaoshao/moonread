@@ -114,7 +114,7 @@ enum AIResolvedSource: Sendable, Identifiable {
         switch kind { case .author: value.author; case .synopsis: value.synopsis; case .tags: value.tags.sorted().joined(separator: "\n"); case .readingStatus: String(describing: value.status) }
     }
     private func initialCoverReview(_ ref: String, candidates: [String]) async -> AICoverReviewValue {
-        let sha = try? AIReadingReferences.parseBookReference(ref)
+        let sha = try? AIReadingReferences.parseBookReference(ref).sha
         let details: BookDetails?
         if let sha { details = try? await reader.details(sha: sha) } else { details = nil }
         return .init(bookRef: ref, title: details?.book?.title ?? String(localized: "封面"), contentSHA256: sha, candidateAssetIDs: candidates)

@@ -249,8 +249,17 @@ impl ReaderCore {
                 control.id.clone(),
                 ImportFailure {
                     generation: control.generation,
-                    paused,
-                    error: error.clone(),
+                    preparation: if paused {
+                        PreparationState::Paused {
+                            detail: PauseDetail::Interrupted,
+                        }
+                    } else {
+                        PreparationState::Failed {
+                            detail: FailureDetail::Reported {
+                                error: error.clone(),
+                            },
+                        }
+                    },
                 },
             );
         }
@@ -310,31 +319,26 @@ impl ReaderCore {
 
 impl ReaderCore {
     pub(super) fn runtime_state(&self, mut state: ReadingSnapshot) -> ReadingSnapshot {
-        if state.phase == ImportPhase::Complete {
+        if state.preparation.is_complete() {
             return state;
         }
         if let Ok(failures) = self.import_failures.lock()
             && let Some(failure) = failures.get(&state.book.id)
             && failure.generation == state.generation
         {
-            state.phase = if failure.paused {
-                ImportPhase::Paused
-            } else {
-                ImportPhase::Failed
-            };
-            state.error = (!failure.paused).then(|| failure.error.clone());
+            state.preparation = failure.preparation.clone();
             return state;
         }
-        if matches!(
-            state.phase,
-            ImportPhase::Preparing | ImportPhase::Importing | ImportPhase::Finalizing
-        ) && let Ok(active) = self.imports.lock()
+        if state.preparation.is_active()
+            && let Ok(active) = self.imports.lock()
             && active
                 .get(&state.book.id)
                 .and_then(std::sync::Weak::upgrade)
                 .is_none()
         {
-            state.phase = ImportPhase::Paused;
+            state.preparation = PreparationState::Paused {
+                detail: PauseDetail::NoActiveWorker,
+            };
         }
         state
     }

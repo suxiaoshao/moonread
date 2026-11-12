@@ -21,13 +21,16 @@ defaults:
 env:
   CARGO_TERM_COLOR: always
   CARGO_TARGET_DIR: ${{ github.workspace }}/target
+  # One trusted writer; update explicitly when the active release changes.
+  CI_CACHE_WRITE_REF: refs/heads/release/1.7
 
 jobs:
   changes:
     name: Detect changes
     runs-on: ubuntu-24.04
     outputs:
-      linux: ${{ steps.scope.outputs.linux }}
+      rust: ${{ steps.scope.outputs.rust }}
+      cache-writer: ${{ steps.scope.outputs.cache-writer }}
       ios: ${{ steps.scope.outputs.ios }}
       site: ${{ steps.scope.outputs.site }}
       workflows: ${{ steps.scope.outputs.workflows }}
@@ -42,6 +45,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          EVENT_REF: ${{ github.ref }}
         run: |
           python3 - <<'PYTHON'
           import os, subprocess
@@ -63,7 +67,7 @@ jobs:
               b'ios/Moonread/Localizable.xcstrings',
           )
           checks = {
-              'linux': all_checks or github or rust,
+              'rust': all_checks or github or rust,
               'ios': all_checks or github or rust or any(path.startswith((b'ios/', b'assets/icon/')) for path in paths),
               'site': all_checks or github or any(
                   path.startswith((b'docs/site/', b'ios/Moonread/Assets.xcassets/ReaderBackdrop', b'crates/moonread-core/src/user/themes/')) or
@@ -72,6 +76,8 @@ jobs:
                   path == b'crates/moonread-core/Cargo.toml' for path in paths),
               'workflows': all_checks or github,
           }
+          checks['cache-writer'] = (os.environ['EVENT_NAME'] == 'push' and
+                                    os.environ['EVENT_REF'] == os.environ['CI_CACHE_WRITE_REF'])
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               for name, enabled in checks.items():
                   output.write(f'{name}={str(enabled).lower()}\n')
@@ -124,13 +130,20 @@ jobs:
         working-directory: docs/site
         run: nix develop --no-update-lock-file -c zola build
 
-  linux:
-    name: Linux checks
+  macos:
+    name: Rust and iOS tests
     needs: [changes, secrets, workflows]
-    # Scope failure falls back to full checks; secret/workflow failures remain blocking.
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.secrets.result != 'success' || needs.changes.outputs.linux == 'true') }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    # Fail closed on scope/gate failures; unrelated documentation can skip the Mac.
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.secrets.result != 'success' || needs.workflows.result == 'failure' || needs.changes.outputs.ios == 'true') }}
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      SWIFTPM_CACHE: build/DerivedData/SwiftPMPackageCache
+      SWIFTPM_WORKSPACE: build/SwiftPM/SourcePackages
+      SWIFTPM_LOCK: ios/Moonread.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+    outputs:
+      cache-key: ${{ steps.cache-ready.outputs.key }}
     steps:
       - name: Require secret and workflow checks to pass
         if: ${{ needs.secrets.result != 'success' || (needs.workflows.result != 'success' && needs.workflows.result != 'skipped') }}
@@ -139,53 +152,16 @@ jobs:
           exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: restore-linux-cargo
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-target-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'Cargo.toml') }}
-          restore-keys: cargo-target-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock', 'Cargo.lock') }}-
-      - name: Check formatting
-        run: |
-          nix develop --no-update-lock-file -c cargo fmt --all -- --check
-          nix develop --no-update-lock-file -c nixfmt --check flake.nix
-      - name: Lint Rust
-        id: rust-build
-        run: nix develop --no-update-lock-file -c cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
-      - name: Save compiled Rust cache
-        if: ${{ !cancelled() && steps.rust-build.outcome == 'success' && steps.restore-linux-cargo.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ steps.restore-linux-cargo.outputs.cache-primary-key }}
-      - name: Test Rust
-        run: nix develop --no-update-lock-file -c cargo test --locked --workspace --all-features
-
-  ios-unit-tests:
-    name: iOS unit tests
-    needs: changes
-    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.ios == 'true') }}
-    runs-on: xcode-27
-    timeout-minutes: 60
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
           persist-credentials: false
       - name: Require Xcode 27.1 and the existing iOS 27 simulator
         id: simulator
         run: |
-          test "$(xcodebuild -version | head -n 1)" = 'Xcode 27.1'
+          mkdir -p build/CI
+          git rev-parse HEAD | tee build/CI/checkout-sha.txt
+          xcodebuild -version | tee build/CI/xcode.txt
+          test "$(head -n 1 build/CI/xcode.txt)" = 'Xcode 27.1'
+          xcrun --sdk iphonesimulator --show-sdk-version > build/CI/sdk.txt
+          xcrun --sdk iphonesimulator --show-sdk-build-version >> build/CI/sdk.txt
           xcrun simctl list devices available --json > "$RUNNER_TEMP/simulators.json"
           python3 - <<'PY'
           import json, os
@@ -194,82 +170,309 @@ jobs:
           matches = [device['udid'] for runtime, entries in devices.items()
                      if runtime.endswith('.iOS-27-0')
                      for device in entries if device['name'] == 'iPhone 18 Pro' and device['isAvailable']]
-          if not matches:
-              raise SystemExit('Required iOS 27.0 iPhone 18 Pro simulator is unavailable; no fallback is allowed.')
+          if len(matches) != 1:
+              raise SystemExit('Exactly one existing iOS 27.0 iPhone 18 Pro is required; no fallback is allowed.')
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write('udid=' + matches[0] + '\n')
           PY
       - uses: cachix/install-nix-action@75c75c31ebece974e48ebc36b4ad125bd97bd97b # v31.11.3
+      - name: Identify the single cache environment and current inputs
+        id: cache-key
+        env:
+          ENV_INPUTS: ${{ hashFiles('flake.nix', 'flake.lock', 'Cargo.lock', 'ios/**/Package.resolved') }}
+          SOURCE_INPUTS: ${{ hashFiles('ios/**', 'crates/**', 'assets/icon/**', '.cargo/**', 'Cargo.toml', 'Cargo.lock', 'flake.nix', 'flake.lock', '.github/workflows/ci.yml') }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, subprocess
+          nix_cache = pathlib.Path(os.environ.get('NIX_CACHE_HOME') or
+              str(pathlib.Path(os.environ.get('XDG_CACHE_HOME') or str(pathlib.Path.home() / '.cache')) / 'nix')).expanduser().resolve()
+          # Cache only public flake inputs in the user cache, never /nix/store or signing data.
+          if pathlib.Path.home() not in nix_cache.parents:
+              raise SystemExit('Nix input cache must be below the runner home.')
+          identity = {
+              'os': os.environ['RUNNER_OS'], 'arch': os.environ['RUNNER_ARCH'],
+              'macos': subprocess.check_output(['sw_vers', '-productVersion'], text=True).strip(),
+              'xcode': pathlib.Path('build/CI/xcode.txt').read_text(),
+              'sdk': pathlib.Path('build/CI/sdk.txt').read_text(),
+              'nix': subprocess.check_output(['nix', '--version'], text=True).strip(),
+              'environmentInputs': os.environ['ENV_INPUTS'],
+          }
+          environment = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
+          prefix = f'macos-ci-v1-{identity["os"]}-{identity["arch"]}-{environment}-'
+          key = prefix + os.environ['SOURCE_INPUTS']
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'prefix={prefix}\nkey={key}\nnix-inputs={nix_cache}\n')
+          with open(os.environ['GITHUB_ENV'], 'a') as output:
+              output.write(f'NIX_CACHE_HOME={nix_cache}\n')
+          pathlib.Path('build/CI/cache-environment.json').write_text(json.dumps(
+              {**identity, 'sourceInputs': os.environ['SOURCE_INPUTS'], 'key': key, 'nixInputs': str(nix_cache)}, indent=2))
+          PY
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: restore-ios-cargo
+        id: restore-macos
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ios-cargo-target-v2-${{ runner.arch }}-xcode27.1-${{ hashFiles('flake.lock', 'Cargo.lock') }}-${{ hashFiles('crates/**', 'Cargo.toml') }}
-          restore-keys: ios-cargo-target-v2-${{ runner.arch }}-xcode27.1-${{ hashFiles('flake.lock', 'Cargo.lock') }}-
-      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        id: restore-ios-derived
-        with:
-          path: build/DerivedData
-          key: ios-derived-${{ runner.arch }}-xcode27.1-${{ hashFiles('flake.lock', 'Cargo.lock', 'ios/**/Package.resolved', 'ios/**/*.pbxproj') }}-${{ hashFiles('ios/**', 'crates/**') }}
-          restore-keys: ios-derived-${{ runner.arch }}-xcode27.1-${{ hashFiles('flake.lock', 'Cargo.lock', 'ios/**/Package.resolved', 'ios/**/*.pbxproj') }}-
-      - name: Compile MoonreadTests (Rust is built by the Nix Xcode phase)
+            build/DerivedData
+            build/ios/Generated/Debug
+            ${{ steps.cache-key.outputs.nix-inputs }}
+          key: ${{ steps.cache-key.outputs.key }}
+          restore-keys: ${{ steps.cache-key.outputs.prefix }}
+      - name: Prepare the current locked Nix environment
+        run: |
+          start=$SECONDS
+          nix develop --no-update-lock-file -c bash -c 'rustc -Vv; cargo -V' 2>&1 | tee build/CI/NixEnvironment.log
+          printf 'nix_environment\t%s\n' "$((SECONDS - start))" >> build/CI/timings.tsv
+      - name: Check Rust and Nix formatting
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.rust == 'true' }}
+        run: |
+          start=$SECONDS
+          nix develop --no-update-lock-file -c cargo fmt --all -- --check
+          nix develop --no-update-lock-file -c nixfmt --check flake.nix
+          printf 'format\t%s\n' "$((SECONDS - start))" >> build/CI/timings.tsv
+      - name: Lint Rust on the macOS host
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.rust == 'true' }}
+        run: |
+          start=$SECONDS
+          nix develop --no-update-lock-file -c cargo clippy --locked --workspace --all-targets --all-features -- -D warnings 2>&1 | tee build/CI/RustClippy.log
+          printf 'rust_clippy\t%s\n' "$((SECONDS - start))" >> build/CI/timings.tsv
+      - name: Test Rust on the macOS host
+        id: rust-test
+        if: ${{ needs.changes.result != 'success' || needs.changes.outputs.rust == 'true' }}
+        run: |
+          start=$SECONDS
+          nix develop --no-update-lock-file -c cargo test --locked --workspace --all-features 2>&1 | tee build/CI/RustTests.log
+          printf 'rust_tests\t%s\n' "$((SECONDS - start))" >> build/CI/timings.tsv
+      - name: Resolve the current locked Swift packages
+        run: |
+          # The single DerivedData archive carries the shared repository cache,
+          # not the working copies or workspace state used by this checkout.
+          # Remove the implicit SourcePackages directory from older archives.
+          rm -rf -- build/DerivedData/SourcePackages
+          if [[ -e "$SWIFTPM_WORKSPACE" || -L "$SWIFTPM_WORKSPACE" ]]; then
+            echo 'SwiftPM working copies must start outside the restored cache, in a new directory.' >&2
+            exit 1
+          fi
+          git ls-files --error-unmatch -- "$SWIFTPM_LOCK" >/dev/null
+          start=$SECONDS
+          nix develop --no-update-lock-file -c xcodebuild \
+            -project ios/Moonread.xcodeproj -scheme Moonread \
+            -derivedDataPath build/DerivedData \
+            -packageCachePath "$GITHUB_WORKSPACE/$SWIFTPM_CACHE" \
+            -clonedSourcePackagesDirPath "$GITHUB_WORKSPACE/$SWIFTPM_WORKSPACE" \
+            -onlyUsePackageVersionsFromResolvedFile -resolvePackageDependencies \
+            2>&1 | tee build/CI/SwiftPMResolve.log
+          git diff --exit-code HEAD -- "$SWIFTPM_LOCK"
+          printf 'swiftpm_resolve\t%s\n' "$((SECONDS - start))" >> build/CI/timings.tsv
+      - name: Compile current MoonreadTests (never skip a restored build)
         id: ios-build
         env:
           SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
         run: |
-          mkdir -p build/CI
-          # Boot overlaps compilation. A shutdown or already-booted device must not fail this step.
+          # Remove only old launch manifests. The current build must create its own.
+          python3 - <<'PY'
+          import pathlib
+          for manifest in pathlib.Path('build/DerivedData/Build/Products').glob('*.xctestrun'):
+              manifest.unlink()
+          PY
           nohup xcrun simctl boot "$SIMULATOR_UDID" >build/CI/simulator-boot.log 2>&1 &
+          start=$SECONDS
           nix develop --no-update-lock-file -c xcodebuild \
             -project ios/Moonread.xcodeproj -scheme Moonread -configuration Debug \
             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
-            -derivedDataPath build/DerivedData \
+            -derivedDataPath build/DerivedData -showBuildTimingSummary \
+            -packageCachePath "$GITHUB_WORKSPACE/$SWIFTPM_CACHE" \
+            -clonedSourcePackagesDirPath "$GITHUB_WORKSPACE/$SWIFTPM_WORKSPACE" \
+            -onlyUsePackageVersionsFromResolvedFile \
+            COMPILATION_CACHE_ENABLE_CACHING=YES COMPILATION_CACHE_ENABLE_DIAGNOSTIC_REMARKS=YES \
+            "COMPILATION_CACHE_CAS_PATH=$GITHUB_WORKSPACE/build/DerivedData/CompilationCache.noindex" \
             -only-testing:MoonreadTests -parallel-testing-enabled NO \
             -testLanguage zh-Hans -testRegion CN \
             -test-timeouts-enabled YES -default-test-execution-time-allowance 300 \
             -maximum-test-execution-time-allowance 300 \
             CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES "MOONREAD_NIX=$(command -v nix)" build-for-testing \
             2>&1 | tee build/CI/BuildForTesting.log
-      - name: Save compiled iOS Rust cache
-        if: ${{ !cancelled() && steps.ios-build.outcome == 'success' && steps.restore-ios-cargo.outputs.cache-hit != 'true' }}
+          git diff --exit-code HEAD -- "$SWIFTPM_LOCK"
+          printf 'build_for_testing\t%s\n' "$((SECONDS - start))" >> build/CI/timings.tsv
+          python3 - <<'PY'
+          import os, pathlib
+          manifests = list(pathlib.Path('build/DerivedData/Build/Products').glob('*.xctestrun'))
+          if len(manifests) != 1:
+              raise SystemExit('Current build must produce exactly one xctestrun; no cached fallback.')
+          manifest = manifests[0].resolve()
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('xctestrun=' + str(manifest) + '\n')
+          pathlib.Path('build/CI/current-xctestrun.txt').write_text(str(manifest) + '\n')
+          PY
+      - name: Measure the cache payload and Nix input budget
+        id: cache-budget
+        env:
+          NIX_INPUTS: ${{ steps.cache-key.outputs.nix-inputs }}
+          MATCHED_KEY: ${{ steps.restore-macos.outputs.cache-matched-key }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, subprocess
+          paths = [pathlib.Path.home() / '.cargo/registry', pathlib.Path.home() / '.cargo/git',
+                   pathlib.Path('target'), pathlib.Path('build/DerivedData'), pathlib.Path('build/ios/Generated/Debug'),
+                   pathlib.Path(os.environ['NIX_INPUTS'])]
+          sizes = {str(p): int(subprocess.check_output(['du', '-sk', str(p)], text=True).split()[0]) * 1024
+                   if p.exists() else 0 for p in paths}
+          # Conservative expanded-size cap on the new fetcher input; API storage bytes are checked after save.
+          allowed = sizes[os.environ['NIX_INPUTS']] <= 1536 * 1024**2
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('allowed=' + str(allowed).lower() + '\n')
+          # Already included in DerivedData above: report CAS and SwiftPM without double-counting them.
+          cas = pathlib.Path('build/DerivedData/CompilationCache.noindex')
+          cas_bytes = int(subprocess.check_output(['du', '-sk', str(cas)], text=True).split()[0]) * 1024 if cas.exists() else 0
+          swiftpm = pathlib.Path(os.environ['SWIFTPM_CACHE'])
+          swiftpm_bytes = int(subprocess.check_output(['du', '-sk', str(swiftpm)], text=True).split()[0]) * 1024 if swiftpm.exists() else 0
+          pathlib.Path('build/CI/cache-payload.json').write_text(json.dumps(
+              {'expandedBytes': sizes, 'nixInputsWithinBudget': allowed, 'restoredKey': os.environ['MATCHED_KEY'],
+               'compilationCache': {'path': str(cas), 'expandedBytes': cas_bytes, 'includedIn': 'build/DerivedData'},
+               'swiftpmCache': {'path': str(swiftpm), 'expandedBytes': swiftpm_bytes, 'includedIn': 'build/DerivedData'}}, indent=2))
+          if not allowed:
+              print('::warning::Nix input cache exceeds its 1.5 GiB expanded budget; do not publish this generation.')
+          PY
+      - name: Save the single current-release cache
+        id: save-macos
+        if: ${{ needs.changes.outputs.cache-writer == 'true' && steps.rust-test.outcome == 'success' && steps.cache-budget.outputs.allowed == 'true' && steps.restore-macos.outputs.cache-hit != 'true' }}
+        continue-on-error: true
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ steps.restore-ios-cargo.outputs.cache-primary-key }}
-      - name: Save compiled iOS DerivedData cache
-        if: ${{ !cancelled() && steps.ios-build.outcome == 'success' && steps.restore-ios-derived.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: build/DerivedData
-          key: ${{ steps.restore-ios-derived.outputs.cache-primary-key }}
-      - name: Run all MoonreadTests
+            build/DerivedData
+            build/ios/Generated/Debug
+            ${{ steps.cache-key.outputs.nix-inputs }}
+          key: ${{ steps.cache-key.outputs.key }}
+      - name: Identify the cache candidate for trusted post-save verification
+        id: cache-ready
+        if: ${{ needs.changes.outputs.cache-writer == 'true' && steps.rust-test.outcome == 'success' && steps.cache-budget.outputs.allowed == 'true' && (steps.restore-macos.outputs.cache-hit == 'true' || steps.save-macos.outcome == 'success') }}
+        run: printf 'key=%s\n' "$CACHE_KEY" >> "$GITHUB_OUTPUT"
+        env:
+          CACHE_KEY: ${{ steps.cache-key.outputs.key }}
+      - name: Run all current MoonreadTests
         env:
           SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
+          CURRENT_XCTESTRUN: ${{ steps.ios-build.outputs.xctestrun }}
         run: |
-          mkdir -p build/CI
-          # Xcode forwards TEST_RUNNER_* into the test process without the prefix.
+          start=$SECONDS
           export TEST_RUNNER_CI="${CI:-false}"
           nix develop --no-update-lock-file -c xcodebuild \
-            -project ios/Moonread.xcodeproj -scheme Moonread -configuration Debug \
+            -xctestrun "$CURRENT_XCTESTRUN" \
             -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
-            -derivedDataPath build/DerivedData -resultBundlePath build/CI/MoonreadTests.xcresult \
+            -resultBundlePath build/CI/MoonreadTests.xcresult \
             -only-testing:MoonreadTests -parallel-testing-enabled NO \
             -testLanguage zh-Hans -testRegion CN \
             -test-timeouts-enabled YES -default-test-execution-time-allowance 300 \
             -maximum-test-execution-time-allowance 300 \
-            CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=YES "MOONREAD_NIX=$(command -v nix)" -collect-test-diagnostics never test-without-building \
+            -collect-test-diagnostics never test-without-building \
             2>&1 | tee build/CI/MoonreadTests.log
-      - name: Preserve test results
+          printf 'swift_tests\t%s\n' "$((SECONDS - start))" >> build/CI/timings.tsv
+      - name: Summarize measured stages
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, re
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write('## Mac CI stages\n\nActual checkout: `' + os.environ['GITHUB_SHA'] + '`\n\n')
+              timing = pathlib.Path('build/CI/timings.tsv')
+              if timing.exists():
+                  output.write('| Stage | Wall seconds |\n|---|---:|\n')
+                  for row in timing.read_text().splitlines():
+                      name, seconds = row.split('\t')
+                      output.write(f'| {name} | {seconds} |\n')
+              build_log = pathlib.Path('build/CI/BuildForTesting.log')
+              if build_log.exists():
+                  for stage, seconds in re.findall(r'CI_TIMING (\w+)_seconds=(\d+)', build_log.read_text(errors='replace')):
+                      output.write(f'| {stage} | {seconds} |\n')
+              payload = pathlib.Path('build/CI/cache-payload.json')
+              if payload.exists():
+                  import json
+                  caches = json.loads(payload.read_text())
+                  cas = caches['compilationCache']
+                  output.write(f'\nCompilation cache: `{cas["path"]}`, {cas["expandedBytes"]} expanded bytes (included in DerivedData, not an additional cache). Hit/miss remarks are in BuildForTesting.log.\n')
+                  swiftpm = caches['swiftpmCache']
+                  output.write(f'\nSwiftPM package cache: `{swiftpm["path"]}`, {swiftpm["expandedBytes"]} expanded bytes (included in DerivedData). See SwiftPMResolve.log for repository fetches.\n')
+              output.write('\nRestore/save durations are the Actions step durations; expanded bytes are in cache-payload.json. Compressed storage bytes are verified by the trusted cleanup job, not inferred from du.\n')
+          PY
+      - name: Preserve test results and timing evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: MoonreadTests-${{ github.run_attempt }}
+          name: MacTests-${{ github.run_attempt }}
           path: build/CI
           if-no-files-found: ignore
           retention-days: 7
+
+  cache-maintenance:
+    name: Retain one verified release cache
+    needs: [changes, macos]
+    if: ${{ !cancelled() && github.event_name == 'push' && needs.changes.outputs.cache-writer == 'true' && needs.macos.outputs.cache-key != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    # No checkout and no execution of pull-request code in this write-capable job.
+    steps:
+      - name: Confirm the new cache and delete only older CI cache IDs
+        id: prune
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_KEY: ${{ needs.macos.outputs.cache-key }}
+        run: |
+          python3 - <<'PY'
+          import datetime, json, os, re, subprocess
+          writer = os.environ['CI_CACHE_WRITE_REF']
+          if os.environ['GITHUB_EVENT_NAME'] != 'push' or os.environ['GITHUB_REF'] != writer:
+              raise SystemExit('Cache cleanup requires the trusted current-release push.')
+          repo, key = os.environ['GITHUB_REPOSITORY'], os.environ['CANDIDATE_KEY']
+          if not key.startswith('macos-ci-v1-'):
+              raise SystemExit('Unexpected cache namespace.')
+          def api(path, method='GET'):
+              return json.loads(subprocess.check_output(['gh', 'api', '--method', method, path]) or b'null')
+          caches, page = [], 1
+          while True:
+              batch = api(f'repos/{repo}/actions/caches?per_page=100&page={page}')['actions_caches']
+              caches.extend(batch)
+              if len(batch) < 100: break
+              page += 1
+          matches = [c for c in caches if c['key'] == key and c['ref'] == writer]
+          if len(matches) != 1:
+              print('::warning::New cache is not uniquely visible through the API; retaining every previous cache.')
+              raise SystemExit(0)
+          current = matches[0]
+          if current['size_in_bytes'] <= 0:
+              print('::warning::New cache storage is not confirmed; retaining every previous cache.')
+              raise SystemExit(0)
+          if current['size_in_bytes'] > 4 * 1024**3:
+              # Reject only the oversized new generation; never remove the old seed.
+              api(f'repos/{repo}/actions/caches/{current["id"]}', 'DELETE')
+              print('::warning::New cache exceeds 4 GiB; removed the new generation and retained old seeds. Capacity acceptance failed.')
+              raise SystemExit(0)
+          cutoff = datetime.datetime.fromisoformat(current['created_at'].replace('Z', '+00:00'))
+          deleted = []
+          for cache in caches:
+              older = datetime.datetime.fromisoformat(cache['created_at'].replace('Z', '+00:00')) < cutoff
+              legacy = cache['key'].startswith(('cargo-target-v2-', 'ios-cargo-target-v2-', 'ios-derived-'))
+              legacy_ref = (cache['ref'] == 'refs/heads/main' or
+                            re.fullmatch(r'refs/heads/release/\d+\.\d+', cache['ref']) or
+                            re.fullmatch(r'refs/pull/\d+/merge', cache['ref']))
+              old_generation = cache['ref'] == writer and cache['key'].startswith('macos-ci-v1-')
+              if older and cache['id'] != current['id'] and (old_generation or legacy and legacy_ref):
+                  api(f'repos/{repo}/actions/caches/{cache["id"]}', 'DELETE')
+                  deleted.append(cache['id'])
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write(f'Verified current-release cache ID {current["id"]}: {current["size_in_bytes"]} compressed bytes (4 GiB budget). Removed {len(deleted)} older allowlisted CI cache IDs; retained current and newer generations.\n')
+          print(f'Cache verified: {current["size_in_bytes"]} compressed bytes; removed {len(deleted)} older CI cache IDs.')
+          PY
+      - name: Report incomplete cache maintenance
+        if: ${{ !cancelled() && steps.prune.outcome == 'failure' }}
+        run: |
+          echo '::warning::Cache cleanup was incomplete; build/test results are unchanged. Inspect this step before claiming one-generation retention.'
+          echo 'Cache cleanup incomplete; retention has not been confirmed.' >> "$GITHUB_STEP_SUMMARY"

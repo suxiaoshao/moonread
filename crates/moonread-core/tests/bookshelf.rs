@@ -45,15 +45,15 @@ fn scope_tree_and_natural_order_use_only_metadata() {
         root.iter().map(|x| x.name.as_str()).collect::<Vec<_>>(),
         ["奇幻", "2.txt", "02.txt", "10.txt"]
     );
-    assert_eq!(root[0].child_book_count, 1);
-    assert_eq!(root[0].cover_previews[0].name, "山海.txt");
+    assert_eq!(root[0].folder().unwrap().child_book_count, 1);
+    assert_eq!(root[0].folder().unwrap().cover_previews[0].name, "山海.txt");
     let ordinal = core
         .query_snapshot("{}".into())
         .unwrap()
         .library_search_candidates(
-            moonread_core::CatalogueScope {
-                shelf_id: Some("builtin".into()),
-                parent_path: None,
+            moonread_core::CatalogueScope::Shelf {
+                shelf_id: "builtin".into(),
+                parent_path: String::new(),
                 recursive: true,
             },
             true,
@@ -82,15 +82,19 @@ fn scope_tree_and_natural_order_use_only_metadata() {
     assert!(
         catalogue
             .iter()
-            .all(|e| !e.directory && e.shelf_id == "builtin")
+            .all(|e| e.book().is_some() && e.shelf_id == "builtin")
     );
+    assert!(catalogue.iter().all(|entry| matches!(
+        entry.book().unwrap().resolution,
+        moonread_core::BookResolution::Unidentified { .. }
+    )));
     let candidates = core
         .query_snapshot("{}".into())
         .unwrap()
         .library_search_candidates(
-            moonread_core::CatalogueScope {
-                shelf_id: Some("builtin".into()),
-                parent_path: Some("奇幻".into()),
+            moonread_core::CatalogueScope::Shelf {
+                shelf_id: "builtin".into(),
+                parent_path: "奇幻".into(),
                 recursive: true,
             },
             true,
@@ -185,7 +189,7 @@ fn reading_order_mixes_books_and_folders_and_keeps_empty_folders_last() {
             .unwrap();
         core.link_library_file(file.id.clone(), book.id.clone())
             .unwrap();
-        positions.push(serde_json::json!({"content_key": book.content_sha256, "offset": 0, "updated": updated, "visible": true, "preferred": file.id}));
+        positions.push(serde_json::json!({"content_key": book.reading_key.formal_sha().unwrap(), "offset": 0, "updated": updated, "visible": true, "preferred": file.id}));
     }
     let query = core
         .query_snapshot(serde_json::json!({"positions": positions}).to_string())
@@ -215,9 +219,10 @@ fn reading_order_mixes_books_and_folders_and_keeps_empty_folders_last() {
         entries[1].last_read, 200,
         "A folder uses its latest descendant reading time"
     );
-    assert_eq!(entries[5].child_book_count, 1);
+    assert_eq!(entries[5].folder().unwrap().child_book_count, 1);
     assert_eq!(
-        entries[7].child_book_count, 0,
+        entries[7].folder().unwrap().child_book_count,
+        0,
         "Nested empty folders are still empty, and remain visible"
     );
 }
@@ -277,9 +282,11 @@ fn cover_previews_are_bounded_recursive_and_follow_current_files() {
     };
     let folders = preview();
     let folder = folders.iter().find(|e| e.name == "集%_").unwrap();
-    assert_eq!(folder.child_book_count, 6);
+    assert_eq!(folder.folder().unwrap().child_book_count, 6);
     assert_eq!(
         folder
+            .folder()
+            .unwrap()
             .cover_previews
             .iter()
             .map(|p| p.name.as_str())
@@ -291,21 +298,26 @@ fn cover_previews_are_bounded_recursive_and_follow_current_files() {
             .iter()
             .find(|e| e.name == "空目录")
             .unwrap()
+            .folder()
+            .unwrap()
             .cover_previews
             .is_empty()
     );
     // A real move immediately changes the derived preview; there is no separate
     // cover cache or virtual membership to repair.
     core.relocate_library_entry(
-        folder.cover_previews[0].file_id.clone(),
+        folder.folder().unwrap().cover_previews[0].file_id.clone(),
         "external".into(),
         "移出.txt".into(),
     )
     .unwrap();
     let folders = preview();
     let updated = folders.iter().find(|e| e.name == "集%_").unwrap();
-    assert_eq!(updated.child_book_count, 5);
-    assert_eq!(updated.cover_previews[0].name, "小说5.txt");
+    assert_eq!(updated.folder().unwrap().child_book_count, 5);
+    assert_eq!(
+        updated.folder().unwrap().cover_previews[0].name,
+        "小说5.txt"
+    );
     assert_eq!(
         core.query_snapshot("{}".into())
             .unwrap()
@@ -364,9 +376,9 @@ fn candidate_scope_keeps_indexed_unopened_copies_and_excludes_other_shelves() {
     }]}).to_string()).unwrap();
     let books = query
         .library_search_candidates(
-            moonread_core::CatalogueScope {
-                shelf_id: Some("builtin".into()),
-                parent_path: None,
+            moonread_core::CatalogueScope::Shelf {
+                shelf_id: "builtin".into(),
+                parent_path: String::new(),
                 recursive: true,
             },
             true,
@@ -377,7 +389,9 @@ fn candidate_scope_keeps_indexed_unopened_copies_and_excludes_other_shelves() {
         .collect::<Vec<_>>();
     assert_eq!(books.len(), 2);
     assert!(books.iter().all(|b| {
-        b.metadata
+        b.book()
+            .unwrap()
+            .metadata
             .as_ref()
             .is_some_and(|m| m.author == "林澄" && m.tags == ["旅途"])
     }));
@@ -385,7 +399,7 @@ fn candidate_scope_keeps_indexed_unopened_copies_and_excludes_other_shelves() {
     assert!(
         books
             .iter()
-            .all(|b| !b.directory && b.shelf_id == "builtin" && b.book_id.is_none())
+            .all(|b| b.shelf_id == "builtin" && b.book().is_some_and(|row| row.book_id().is_none()))
     );
     assert_eq!(
         books

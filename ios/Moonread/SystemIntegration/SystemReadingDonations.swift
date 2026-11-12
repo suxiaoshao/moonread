@@ -86,7 +86,7 @@ extension AppDataService {
         }
     }
     func systemReadingBegan(_ bookID: String) async {
-        guard libraryDirectoryOverride == nil, testSession == nil, systemCatalog != nil, let sha = try? userKey(bookID), (try? parseSha256(value: sha)) != nil else { return }
+        guard libraryDirectoryOverride == nil, testSession == nil, systemCatalog != nil, case .formal(let sha) = try? userKey(bookID) else { return }
         scheduleSystemReadingCatalog(immediate: true)
         await waitForSystemReadingCatalog()
         guard let catalog = systemCatalog, !catalog.accountPending,

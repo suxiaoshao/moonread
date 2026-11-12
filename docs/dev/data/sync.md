@@ -99,7 +99,7 @@ SwiftData 的 `UserDataStore`（ModelActor）是用户数据持久化入口。`A
 
 ### 同步启停与账户
 
-默认关闭阅读数据同步。用户的开启意愿单独持久化，实际自动同步可以暂停；账户不可用、变化或初始化失败不会关闭开关。同一个已确认账户恢复后尝试恢复同步。只有用户主动关闭才写入关闭意愿，随后使用 `.none` 重新建立本机容器；启用使用 `ModelConfiguration.cloudKitDatabase.private`。
+默认关闭阅读数据同步。用户的开启意愿单独持久化，实际自动同步可以暂停；账户不可用、变化或初始化失败不会关闭开关。同一个已确认账户恢复后尝试恢复同步。只有用户主动关闭才写入关闭意愿，随后使用 `.none` 重新建立本机容器；启用使用 `ModelConfiguration.cloudKitDatabase.private`。本机、账户检查、等待确认、已启用及不可用是独立的运行阶段；传输和最后同步时间单独记录。启用时向串行配置入口提供已核对的账户与确认方式，旧操作不得发布新阶段。
 
 不同账户暂停并提供设置中的确认入口。确认针对当前本机仍存在的阅读数据，冻结目标账户，并在启用前重新核对；账户再次变化则重新确认。取消不启用同步，前台恢复不反复弹窗。已确认账户的初始化失败可以重试，不重复索取相同确认。此确认不移动小说文件，iCloud Documents 原件的账户保护独立执行，不增加账户管理中心。
 
@@ -121,7 +121,7 @@ SwiftData 的 `UserDataStore`（ModelActor）是用户数据持久化入口。`A
 
 真实交接的校验、协调读写、枚举、receipt 持久化及原件清理在后台 I/O 队列执行；共享 AppDataService actor 只接收准备好的结果，重验账户、根与 ImportSource 快照，避免 await 期间变化后错误发布。源与目标协调访问保持到 actor 原子发布完成，顺序为索引提交→published receipt 落盘→原件清理。不能为了响应速度缩短必要权限持有期或提前删源。
 
-回执中的路径、期望原始 SHA、复制状态、published、file id/关联/解码策略用于幂等恢复，不是另一套内容身份。删源前在同次协调中重新核对源与目标字节；目标被逐出、不可读或已替换时保留源，源缺失仅允许已发布状态。账户隔离、完整源检查、同名冲突、路径越界和符号链接保护不变。完整定位规则见[SHA 关联](README.md#文件定位与-sha-关联)，调度原则见[性能设计](../engineering/performance.md)。
+回执中的路径、期望原始 SHA、复制状态、published、file id/关联/解码策略用于幂等恢复，不是另一套内容身份。运行时区分意图、已复制、已发布及旧格式中的不合法组合；旧字段照常编码，缺少复制凭据的回执不能删源。删源前在同次协调中重新核对源与目标字节；目标被逐出、不可读或已替换时保留源，源缺失仅允许已发布状态。账户隔离、完整源检查、同名冲突、路径越界和符号链接保护不变。完整定位规则见[SHA 关联](README.md#文件定位与-sha-关联)，调度原则见[性能设计](../engineering/performance.md)。
 
 ## 同步 payload 的 v1 边界与隔离
 
@@ -140,7 +140,7 @@ v1 写入所有字段，Optional 的 nil 显式写 `null`。读取同时检查**
 
 批注 `content:null` 是删除 tombstone，`mergedInto:null` 是未合并；`relatedMarks` 总是数组。统计清除的 `book:null` / `session:null` 才表示不限定该维度，缺键不能解释为全局。位置内层字段为 content_key/offset/source_hint（历史缺失来源线索按 nil 读取）；章节为 content_key/offset/title/level/excluded；批注 content 为 start/end/excerpt/note。slice、exposures、cover、调色板及颜色对象逐层使用当前声明的完整字段集合；UserCover 的 bytes 不加 envelope，约定同 id 字节不可变。不支持的封面格式显示占位并保留引用与原字节。
 
-v1 key 白名单：`position/{contentKey}`、`chapter/{contentKey}/{offset}`、`palette/{id}`、`metadata/{sha}/{author,synopsis,status,cover,tag-*}`。遍历、投影、批量操作和 pending 转移不处理未知 key；保留其原始记录，metadata 只投影已知属性。内层 null 仅用于声明允许删除的章节、封面、标签、调色板；author/synopsis/status 必须是字符串。
+v1 key 白名单：`position/{contentKey}`、`opened/{contentKey}`（1.6 起的可缺省最近打开毫秒时间，JSON Int64）、`chapter/{contentKey}/{offset}`、`palette/{id}`、`metadata/{sha}/{author,synopsis,status,cover,tag-*}`。遍历、投影、批量操作和 pending 转移不处理未知 key；保留其原始记录，metadata 只投影已知属性。最近打开复用既有 UserValue/StoredValue LWW 与完整备份，不修改位置 payload 或 SwiftData schema；无 opened 值的已发布 1.5 数据保持原阅读时间顺序，pending 晋升沿同一身份与值裁决入口处理。内层 null 仅用于声明允许删除的章节、封面、标签、调色板；author/synopsis/status 必须是字符串。
 
 隔离不修改、不重编码或删除原 payload，不选择一个旧的可理解候选把它遮住，也不当成普通冲突自动解决：
 

@@ -3,6 +3,11 @@ import CoreData
 import SwiftUI
 
 enum CloudConfiguration {
+    struct VerifiedAccount: Equatable, Sendable { let recordName: String }
+    enum Consent: Sendable { case currentOwner, confirmedChange }
+    case local
+    case cloud(VerifiedAccount, Consent)
+
     static let containerID = "iCloud.dev.moonread.Moonread"
     static var availableInBuild: Bool {
         #if DEBUG
@@ -16,13 +21,30 @@ extension Notification.Name {
     static let cloudDataReceived = Notification.Name("Moonread.cloudDataReceived")
     static let cloudStatusChanged = Notification.Name("Moonread.cloudStatusChanged")
 }
+enum CloudActivation: Sendable {
+    case local
+    case checking(revision: UUID)
+    case awaitingAccountConfirmation(CloudConfiguration.VerifiedAccount, revision: UUID, message: String)
+    case enabled(CloudConfiguration.VerifiedAccount, revision: UUID)
+    case unavailable(String)
+}
 struct CloudSyncStatus: Sendable {
     var requested = false
-    var enabled = false
-    var accountToConfirm: String?
+    var activation = CloudActivation.local
     var syncing = false
     var lastSync: Date?
-    var message: String?
+    var transportMessage: String?
+
+    var enabled: Bool { if case .enabled = activation { true } else { false } }
+    var accountToConfirm: String? {
+        if case .awaitingAccountConfirmation(let account, _, _) = activation { account.recordName } else { nil }
+    }
+    var message: String? {
+        switch activation {
+        case .awaitingAccountConfirmation(_, _, let message), .unavailable(let message): message
+        default: transportMessage
+        }
+    }
 }
 
 /// Device-local intent is a tiny thread-safe UserDefaults write, independent of
@@ -64,23 +86,27 @@ actor CloudSyncCoordinator {
         await resume()
     }
     func identityChanged() async {
-        await service.setSystemReadingAccountPending(true)
         operation = UUID()
         let current = operation
-        do { try await service.configureUserCloud(false, account: nil) }
-        catch { if operation == current { status.message = Self.message(error) } }
+        status.activation = .checking(revision: current)
+        status.syncing = false; status.lastSync = nil
+        await service.setSystemReadingAccountPending(true)
         guard operation == current else { return }
-        status.enabled = false; status.syncing = false; status.lastSync = nil
+        do { try await service.configureUserCloud(.local) }
+        catch { if operation == current { status.transportMessage = Self.message(error) } }
+        guard operation == current else { return }
         await resume()
     }
     func resume() async {
         operation = UUID()
         let current = operation
-        status.requested = await service.cloudSyncRequested()
+        let requested = await service.cloudSyncRequested()
         guard operation == current else { return }
+        status.requested = requested
+        status.activation = .checking(revision: current)
+        status.syncing = false
         publish()
         if !status.requested {
-            await service.setSystemReadingAccountPending(false)
             await pause(current, message: nil); return
         }
         guard available else {
@@ -107,10 +133,7 @@ actor CloudSyncCoordinator {
             // Recheck the concrete account immediately before enabling its mirror.
             guard try await account() == target else { throw ReaderError.CloudAccountChanged }
             guard operation == current else { return }
-            try await service.configureUserCloud(true, account: target)
-            await service.setSystemReadingAccountPending(false)
-            guard operation == current else { return }
-            status.enabled = true; status.accountToConfirm = nil; status.message = nil; publish()
+            try await enable(.init(recordName: target), consent: .currentOwner, revision: current)
         } catch {
             guard operation == current else { return }
             await pause(current, message: Self.message(error))
@@ -120,8 +143,9 @@ actor CloudSyncCoordinator {
         guard status.requested, status.accountToConfirm == target else { return }
         operation = UUID()
         let current = operation
+        status.activation = .checking(revision: current)
         do {
-            guard await service.cloudSyncRequested() else { return }
+            guard await service.cloudSyncRequested(), operation == current else { return }
             let first = try await account()
             guard operation == current else { return }
             guard first == target else {
@@ -132,19 +156,30 @@ actor CloudSyncCoordinator {
             guard verified == target else {
                 await pause(current, message: String(localized: "账户已再次变化，请重新确认。"), account: verified); return
             }
-            try await service.configureUserCloud(true, account: target, allowAccountChange: true)
-            await service.setSystemReadingAccountPending(false)
-            guard operation == current else { return }
-            status.enabled = true; status.accountToConfirm = nil; status.message = nil; status.lastSync = nil; publish()
+            try await enable(.init(recordName: target), consent: .confirmedChange, revision: current)
         } catch {
             guard operation == current else { return }
             await pause(current, message: Self.message(error))
         }
     }
+    private func enable(_ account: CloudConfiguration.VerifiedAccount, consent: CloudConfiguration.Consent, revision: UUID) async throws {
+        guard operation == revision else { return }
+        try await service.configureUserCloud(.cloud(account, consent))
+        guard operation == revision else { return }
+        await service.setSystemReadingAccountPending(false)
+        guard operation == revision else { return }
+        if case .confirmedChange = consent { status.lastSync = nil }
+        status.activation = .enabled(account, revision: revision)
+        status.transportMessage = nil; publish()
+    }
     private func pause(_ current: UUID, message: String?, account: String? = nil) async {
-        if account != nil { await service.setSystemReadingAccountPending(true) }
+        guard operation == current else { return }
+        if account != nil {
+            await service.setSystemReadingAccountPending(true)
+            guard operation == current else { return }
+        }
         var reason = message
-        do { try await service.configureUserCloud(false, account: nil) }
+        do { try await service.configureUserCloud(.local) }
         catch {
             guard operation == current else { return }
             reason = Self.message(error)
@@ -152,23 +187,30 @@ actor CloudSyncCoordinator {
         guard operation == current else { return }
         await service.setSystemReadingAccountPending(account != nil)
         guard operation == current else { return }
-        status.enabled = false; status.syncing = false; status.accountToConfirm = account
-        status.message = reason; publish()
+        if let account, let reason {
+            status.activation = .awaitingAccountConfirmation(.init(recordName: account), revision: current, message: reason)
+        } else if let reason {
+            status.activation = .unavailable(reason)
+        } else {
+            status.activation = .local
+        }
+        status.syncing = false
+        status.transportMessage = nil; publish()
     }
     private func receivedEvent(_ event: NSPersistentCloudKitContainer.Event) async {
         guard status.enabled else { return }
         status.syncing = event.endDate == nil
         if let error = event.error {
             if (error as? CKError)?.code == .notAuthenticated { await identityChanged(); return }
-            status.message = Self.message(error)
+            status.transportMessage = Self.message(error)
         }
         else if let end = event.endDate, event.succeeded {
-            status.lastSync = end; status.message = nil
+            status.lastSync = end; status.transportMessage = nil
             if event.type == .import {
                 await service.receivedUserImport()
                 NotificationCenter.default.post(name: .cloudReadingPositionsReceived, object: nil)
                 NotificationCenter.default.post(name: .cloudDataReceived, object: nil)
-                NotificationCenter.default.post(name: .statisticsChanged, object: nil)
+                NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
                 NotificationCenter.default.post(name: .bookMetadataChanged, object: nil)
             }
         }

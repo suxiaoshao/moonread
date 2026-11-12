@@ -145,7 +145,7 @@ final class ShareInboxTests: ShareInboxFixture {
     let core = try ReaderCore(dataDirectory: root.appendingPathComponent("db").path)
     let books = root.appendingPathComponent("books")
     let service = AppDataService(core: core, libraryDirectory: books)
-    let model = LibraryModel(service: service, fileMutationReload: {}, prepareSource: { _, _ in })
+    let model = LibraryModel(service: service, fileMutationReload: {})
     let loaded = await model.load()
     XCTAssertTrue(loaded)
     let first = root.appendingPathComponent("first.txt")

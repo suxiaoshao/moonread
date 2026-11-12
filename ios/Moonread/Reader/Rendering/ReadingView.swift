@@ -19,7 +19,13 @@ struct ReadingView: UIViewControllerRepresentable {
     let dynamicTypeSize: DynamicTypeSize
     var navigationRevision: Int = 0
     var navigation: ReadingNavigation?
-    var resumeAutomaticReading: () -> Void = {}
+    var automaticTouchBegan: () -> Bool = { false }
+    var automaticBodyTap: (Bool) -> Bool = { _ in false }
+    var showAutomaticControls: () -> Void = {}
+    var endAutomaticReading: () -> Void = {}
+    var readingSelectionChanged: (Bool) -> Void = { _ in }
+    var listening: ListeningSession?
+    var listeningUIActive = true
     var autoReading: ReaderAutoReading?
     var viewportAccess: ReadingViewportAccess?
     var annotations: [ReaderMark] = []
@@ -28,6 +34,8 @@ struct ReadingView: UIViewControllerRepresentable {
     var selectionStart: UInt64?
     var selection: (UInt64, UInt64, ReaderSelectionAction) -> Void = { _, _, _ in }
     var allowsBackGesture = false
+    var prepareInteractivePop: () -> Void = {}
+    var endUnstartedInteractivePop: () -> Void = {}
     var allowsSelection = true
     var allowsChapterEditing = true
     var coverTitle: String? = nil
@@ -37,6 +45,7 @@ struct ReadingView: UIViewControllerRepresentable {
     var coverChanged: (Bool) -> Void = { _ in }
     var brightnessChanged: (Double) -> Void = { _ in }
     var orientationFailed: () -> Void = {}
+    var bodyDisplayed: () -> Void = {}
     var statisticsInteraction: () -> Void = {}
     var statisticsPresentationChanged: () -> Void = {}
     var annotationChooserChanged: (Bool) -> Void = { _ in }
@@ -57,7 +66,11 @@ struct ReadingView: UIViewControllerRepresentable {
         return controller
     }
     func updateUIViewController(_ controller: ReadingController, context: Context) {
-        controller.resumeAutomaticReading = resumeAutomaticReading
+        controller.automaticTouchBegan = automaticTouchBegan
+        controller.automaticBodyTap = automaticBodyTap
+        controller.showAutomaticControls = showAutomaticControls
+        controller.endAutomaticReading = endAutomaticReading
+        controller.readingSelectionChanged = readingSelectionChanged
         controller.autoReading = autoReading
         controller.deviceControls.willSuspend = { [weak autoReading] in autoReading?.pause() }
         controller.headerPositionChanged = headerPositionChanged
@@ -67,12 +80,15 @@ struct ReadingView: UIViewControllerRepresentable {
         controller.requestWindow = requestWindow
         controller.openingID = openingID
         controller.allowsBackGesture = allowsBackGesture
+        controller.backNavigation.prepareInteractivePop = prepareInteractivePop
+        controller.backNavigation.endUnstartedInteractivePop = endUnstartedInteractivePop
         controller.allowsSelection = allowsSelection
         controller.allowsChapterEditing = allowsChapterEditing
         controller.deviceControls.brightnessChanged = brightnessChanged
         controller.deviceControls.orientationFailed = orientationFailed
         controller.deviceControls.update(settings)
         controller.annotationChooserChanged = annotationChooserChanged
+        controller.bodyDisplayed = bodyDisplayed
         controller.statisticsInteraction = statisticsInteraction
         controller.statisticsPresentationChanged = statisticsPresentationChanged
         controller.configure(window: window, settings: settings, anchor: anchor,
@@ -85,6 +101,8 @@ struct ReadingView: UIViewControllerRepresentable {
                              compactHeaderHeight: compactHeaderHeight,
                              controlsVisible: controlsVisible, toggleControls: toggleControls,
                              readingBegan: readingBegan, changed: positionChanged)
+        controller.updateListening(cursor: listeningUIActive && listening?.running == true ? listening?.cursor : nil,
+            following: listeningUIActive && listening?.following == .following)
         controller.updateAutomaticReadingEdge()
     }
 }

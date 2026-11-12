@@ -8,10 +8,19 @@ extension ReaderSettings {
         self.mode = mode; self.fontSize = fontSize; self.lineSpacing = lineSpacing
     }
 
+    var fontChoice: ReaderFontChoice { resolveReaderFontChoice(font: font, imported: importedFont) }
+
+    mutating func setFontChoice(_ choice: ReaderFontChoice) {
+        switch choice {
+        case .builtin(let font): self.font = font; importedFont = nil
+        case .imported(let id, let fallback): font = fallback; importedFont = id
+        }
+    }
+
     func hasSameLayout(as other: ReaderSettings?) -> Bool {
         guard let other else { return false }
         return mode == other.mode && fontSize == other.fontSize && lineSpacing == other.lineSpacing
-            && font == other.font && importedFont == other.importedFont && paragraphSpacing == other.paragraphSpacing && indent == other.indent
+            && fontChoice == other.fontChoice && paragraphSpacing == other.paragraphSpacing && indent == other.indent
             && horizontalMargin == other.horizontalMargin && maximumLineWidth == other.maximumLineWidth
     }
 }
@@ -53,12 +62,16 @@ enum ReadingTypography {
 
     static func font(_ settings: ReaderSettings, heading: Bool = false, library: ReaderFontLibrary = .shared) -> UIFont {
         let size = settings.fontSize * (heading ? 1.2 : 1)
-        if let imported = settings.importedFont {
-            let base = library.isAvailable(imported) ? UIFont(name: imported.face, size: size) : nil
-            return UIFontMetrics(forTextStyle: .body).scaledFont(for: base ?? .systemFont(ofSize: size, weight: heading ? .medium : .regular))
+        let base: UIFont
+        func builtin(_ font: ReaderFont) -> UIFont {
+            ReaderBuiltinFonts.shared.font(font, size: size, heading: heading)
+                ?? .systemFont(ofSize: size, weight: heading ? .medium : .regular)
         }
-        let base = ReaderBuiltinFonts.shared.font(settings.font, size: size, heading: heading)
-            ?? .systemFont(ofSize: size, weight: heading ? .medium : .regular)
+        switch settings.fontChoice {
+        case .builtin(let font): base = builtin(font)
+        case .imported(let imported, let fallback):
+            base = (library.isAvailable(imported) ? UIFont(name: imported.face, size: size) : nil) ?? builtin(fallback)
+        }
         return UIFontMetrics(forTextStyle: .body).scaledFont(for: base)
     }
 

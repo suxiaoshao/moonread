@@ -205,7 +205,7 @@ struct MoonreadApp: App {
                 guard let entry = try await library.service.libraryEntries(LibraryLocation(shelfID: "builtin"))
                     .first(where: { $0.title == fixture.books[0].title }) else { throw ReaderError.NotFound }
                 if page == .bookDetails {
-                    library.libraryPath = [.statistics(StatisticsRoute(key: entry.readingKey, bookID: entry.bookId, title: entry.title, fileID: entry.id))]
+                    library.libraryPath = [.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title))]
                 } else { library.open(entry) }
             }
         } catch { library.error = ReaderMessages.error(error) }
@@ -270,11 +270,7 @@ private struct MoonreadRoot: View {
             .environment(\.systemReadingRouter, library.systemReading)
             .environment(\.moonreadReduceMotion, reduceMotion)
             .environment(\.readerTheme, readerTheme)
-            .onChange(of: library.libraryPath) { _, _ in library.cancelOpeningForNavigationChange(); library.returnedToLibrary() }
-            .onChange(of: library.statisticsPath) { _, _ in library.cancelOpeningForNavigationChange() }
-            .onChange(of: library.settingsNavigation.path) { _, _ in library.cancelOpeningForNavigationChange() }
-            .onChange(of: library.searchPath) { _, _ in library.cancelOpeningForNavigationChange() }
-            .onChange(of: library.selectedTab) { _, _ in library.cancelOpeningForNavigationChange() }
+            .onChange(of: library.libraryPath) { _, _ in library.returnedToLibrary() }
             .onReceive(NotificationCenter.default.publisher(for: .libraryFilesChanged).receive(on: DispatchQueue.main)) { _ in library.retryPendingCloudDiscovery(); library.scheduleRefresh() }
             .alert("暂时无法完成", isPresented: Binding(get: { themes.error != nil }, set: { if !$0 { themes.error = nil } })) {
                 Button("知道了", role: .cancel) { themes.error = nil }
@@ -369,7 +365,7 @@ struct LibraryDestination: View {
                 // The reader calls back after its final position is saved.
                 // A destination's onAppear can run before that write finishes.
                 Task { await library.reloadBook(reader.target) }
-            }.themeScope(readerTheme)
+            }.id(reader.id).themeScope(readerTheme)
         case .folder(let location): LibraryFolderView(model: library, location: location)
         case .allBooks(let shelfID): LibraryAllBooksView(model: library, shelfID: shelfID)
         case .recent: RecentLibraryView(model: library)

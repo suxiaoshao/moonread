@@ -39,48 +39,23 @@ extension LibraryModel {
         }
     }
     func open(_ entry: LibraryEntry, expectedContentSHA: String? = nil, push: ((LibraryRoute) -> Void)? = nil, isCurrent: @escaping () -> Bool = { true }) {
-        let tap = ProcessInfo.processInfo.systemUptime
-        if entry.id == openingFileID { return }
-        cancelOpening()
-        if entry.directory { if let push { push(.folder(entry.location)) } else { path.append(.folder(entry.location)) }; return }
-        let origin = path, tab = selectedTab
-        let request = UUID()
-        openingRequest = request
-        openingOrigin = (tab, origin)
-        openingFileID = entry.id
-        openingSource = entry.source
-        showsFileLoading = entry.needsDownload; fileProgress = nil
-        openingTask = Task { [self] in
-            let indicator = Task {
-                try? await Task.sleep(for: LoadingTiming.inlineDelay)
-                guard !Task.isCancelled, openingRequest == request else { return }
-                showsFileLoading = true
-            }
-            defer {
-                indicator.cancel()
-                if openingRequest == request { openingFileID = nil; openingSource = nil; showsFileLoading = false; fileProgress = nil; openingTask = nil; openingRequest = nil }
-            }
-            do {
-                try await prepareSource(entry.source) { [weak self] fraction in
-                    Task { @MainActor in
-                        guard let self, self.openingRequest == request, !Task.isCancelled else { return }
-                        self.fileProgress = fraction
-                        if fraction != nil { self.showsFileLoading = true }
-                    }
-                }
-                try Task.checkCancellation()
-                if let push {
-                    guard isCurrent() else { return }
-                    push(.reader(OpeningRequest(target: .source(entry.source), tap: tap, expectedContentSHA: expectedContentSHA))); return
-                }
-                guard selectedTab == tab, path == origin else { return }
-                path.append(.reader(OpeningRequest(target: .source(entry.source), tap: tap, expectedContentSHA: expectedContentSHA)))
-            } catch is CancellationError { }
-            catch {
-                guard !Task.isCancelled, openingRequest == request, push == nil ? (selectedTab == tab && path == origin) : isCurrent() else { return }
-                self.error = ReaderMessages.error(error)
-            }
+        guard isCurrent() else { return }
+        if entry.directory {
+            if let push { push(.folder(entry.location)) } else { path.append(.folder(entry.location)) }
+            return
         }
+        let target = ReaderRoute.source(entry.source)
+        if push == nil, case .reader(let previous) = path.last,
+           case .source(let source) = previous.target, source.id == entry.id,
+           previous.expectedContentSHA == expectedContentSHA { return }
+
+        let route = LibraryRoute.reader(OpeningRequest(target: target, tap: ProcessInfo.processInfo.systemUptime,
+            expectedContentSHA: expectedContentSHA, metadataHint: entry.metadata))
+        if let push { push(route) }
+        // A second tap queued during the push supersedes its destination,
+        // rather than stacking two readers. Destinations own their own tasks.
+        else if path.last?.isReader == true { path[path.count - 1] = route }
+        else { path.append(route) }
     }
     func readerDestinationLocation(_ id: UUID) -> (tab: AppTab, depth: Int)? {
         for (tab, path) in [(AppTab.library, libraryPath), (.statistics, statisticsPath),
@@ -100,22 +75,6 @@ extension LibraryModel {
         }
         libraryPath = removing(libraryPath); statisticsPath = removing(statisticsPath)
         settingsNavigation.path = removing(settingsNavigation.path); searchPath = removing(searchPath)
-    }
-    func cancelOpeningForNavigationChange() {
-        guard let (tab, origin) = openingOrigin, selectedTab != tab || path != origin else { return }
-        cancelOpening()
-    }
-    func cancelOpening() {
-        openingOrigin = nil
-        openingTask?.cancel(); openingTask = nil
-        openingFileID = nil; openingSource = nil; showsFileLoading = false; fileProgress = nil; openingRequest = nil
-    }
-    func cancelOpening(deleting entry: LibraryEntry) {
-        guard let source = openingSource, source.shelfID == entry.shelfId else { return }
-        let opened = source.relativePath.split(separator: "/")
-        let deleted = entry.relativePath.split(separator: "/")
-        guard opened == deleted || (entry.directory && opened.count > deleted.count && opened.starts(with: deleted)) else { return }
-        cancelOpening()
     }
     func hideRecent(_ entry: LibraryEntry) async {
         guard let id = entry.readingKey else { return }

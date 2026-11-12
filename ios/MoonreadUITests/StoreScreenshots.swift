@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 /// Opt-in synthetic photography; never part of the critical UI test plan.
 @MainActor final class StoreScreenshots: XCTestCase {
@@ -29,7 +30,8 @@ import XCTest
         try exchange(["kind": "setup", "capture": try object(capture)])
         // Duo posture is selected in DeviceHub; rotating XCUIDevice cannot unfold it.
         if !capture.group.hasPrefix("duo-") && capture.orientation != "current" {
-            XCUIDevice.shared.orientation = capture.orientation == "landscape" ? .landscapeLeft : .portrait
+            let target: UIDeviceOrientation = capture.orientation == "landscape" ? .landscapeLeft : .portrait
+            if XCUIDevice.shared.orientation != target { XCUIDevice.shared.orientation = target }
         }
         let json = String(decoding: try JSONEncoder().encode(capture), as: UTF8.self)
         app.launchArguments = ["--ui-testing", "--ui-test-session", UUID().uuidString,
@@ -73,6 +75,12 @@ import XCTest
                 ready(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'searchHit-' ")).firstMatch, timeout: 20)
                 settled(ready(element("searchStatus"), timeout: 20))
             case .continuation: readableBody(); settled(ready(app.buttons["acceptSyncedProgress"], timeout: 20))
+            case .listening:
+                readableBody()
+                let playback = ready(app.buttons["compactListeningPlayback"], timeout: 20)
+                let pause = language == "en" ? "Pause" : language == "zh-Hant" ? "暫停" : "暂停"
+                waitUntil { playback.label == pause && playback.isHittable }
+                settled(playback)
             default: readableBody(); settled(body())
             }
         }
@@ -85,15 +93,22 @@ import XCTest
         // some runtimes, so photography does not automate its edit/gallery UI.
         XCUIDevice.shared.press(.home)
         let home = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        let widget = home.descendants(matching: .any).matching(NSPredicate(
-            format: "label IN %@ AND value IN %@", ["月读", "月讀", "Moonread"], ["小组件", "小工具", "Widget"])).firstMatch
-        settled(ready(widget, timeout: 30))
-        // A single predicate snapshot avoids stale child indices while WidgetKit
-        // replaces its remote view with the new language/appearance timeline.
+        let widgets = home.descendants(matching: .any).matching(NSPredicate(
+            format: "label IN %@ AND value IN %@", ["月读", "月讀", "Moonread"], ["小组件", "小工具", "Widget"]))
+        func visible(_ element: XCUIElement) -> Bool {
+            element.exists && !element.frame.isEmpty && home.frame.contains(element.frame)
+        }
+        // The last Home page hosts the retained development icons. Its
+        // previous page is the dedicated widget page; do not edit/uninstall.
+        if !widgets.allElementsBoundByIndex.contains(where: visible) { home.swipeRight() }
         let content = home.descendants(matching: .any).matching(NSPredicate(
             format: "label CONTAINS %@ AND label CONTAINS %@ AND label CONTAINS %@",
-            fixture.books[0].title, fixture.mainChapters[1], "42%")).firstMatch
-        settled(ready(content, timeout: 30))
+            fixture.books[0].title, fixture.mainChapters[1], "42%"))
+        // WidgetKit can replace the remote view during the wait. Require a
+        // visible widget and the current localized content in the same check.
+        waitUntil(timeout: 45, message: "R04: open the widget-only page (before the runner page) and check the system language") {
+            widgets.allElementsBoundByIndex.contains(where: visible) && content.allElementsBoundByIndex.contains(where: visible)
+        }
     }
     private func element(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
     private func file(_ title: String) -> XCUIElement { app.buttons["library-file-" + title].firstMatch }
@@ -115,10 +130,10 @@ import XCTest
         if !app.buttons["readingSettings"].exists { body().tap() }
         ready(app.buttons["readingSettings"])
     }
-    private func waitUntil(_ condition: @escaping () -> Bool) {
+    private func waitUntil(timeout: TimeInterval = 15, message: String = "", _ condition: @escaping () -> Bool) {
         if condition() { return }
         let expectation = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)
-        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 15), .completed)
+        XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: timeout), .completed, message)
     }
     private func settled(_ element: XCUIElement) {
         var previous = CGRect.null

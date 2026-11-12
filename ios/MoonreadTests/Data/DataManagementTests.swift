@@ -27,7 +27,8 @@ import XCTest
     }
     func testCompleteBackupPreservesAuthorityPayloadsAndRepeatedMergeIsIdempotent() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
-        let source = f.formal, key = f.book.contentSha256
+        let source = f.formal, key = f.book.fixtureSHA256
+        try await value(source, "opened/" + key, "123456", token: "opened")
         try await receiveBackupPosition(positionRecord(key: key, token: "original-clock", offset: 12), key: key, store: source)
         try await value(source, "metadata/" + key + "/author", UserSyncJSON.encode("Original Author"), token: "author")
         for (offset, title, excluded) in [(UInt64(0), "Manual title", false), (9, "Excluded", true)] {
@@ -82,7 +83,7 @@ import XCTest
     }
     func testReleasedLegacyPositionAndPendingClearRoundtripWithoutUnsupported() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
-        let key = f.book.contentSha256, alias = "pending:" + f.aliases[0]
+        let key = f.book.fixtureSHA256, alias = "pending:" + f.aliases[0]
         let legacy = "{\"content_key\":\"\(key)\",\"offset\":12}"
         try await value(f.formal, "position/" + key, legacy, token: "build-2")
         let other = String(repeating: "c", count: 64)
@@ -195,7 +196,7 @@ import XCTest
     }
     func testInventoryShowsSourceHintAndRustProgressWithoutRequiringALocalFile() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
-        let key = f.book.contentSha256, unknown = String(repeating: "c", count: 64)
+        let key = f.book.fixtureSHA256, unknown = String(repeating: "c", count: 64)
         let hint = PositionSourceHint(source_kind: .external, relative_path: "已读/合成.txt", file_name: "合成.txt", byte_size: 200, decoding: "gb18030")
         let position = StoredValue(updated: 123456, token: "hint", value: try UserSyncJSON.encode(PositionValue(content_key: key, offset: 12, source_hint: hint)))
         try await receiveBackupPosition(position, key: key, store: f.formal)
@@ -210,7 +211,7 @@ import XCTest
     }
     func testDiscardUsesOriginalPendingKeyAfterItAlreadyResolvesToFormalSha() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
-        let key = f.book.contentSha256, alias = "pending:" + f.aliases[0]
+        let key = f.book.fixtureSHA256, alias = "pending:" + f.aliases[0]
         try await receiveBackupPosition(positionRecord(key: key, token: "formal", offset: 12), key: key, store: f.formal)
         try await receiveBackupPosition(positionRecord(key: alias, token: "pending", offset: 3), key: alias, store: f.pending)
         try await f.pending.receiveSyncFixture("fact", key: alias, id: "fact", payload: syncFact(alias))
@@ -262,12 +263,12 @@ import XCTest
         try await receiveBackupPosition(positionRecord(key: completed, token: "z-late", offset: 18), key: completed, store: f.pending)
         await model.prepareIssues()
         XCTAssertFalse(model.inventory.pendingItems.contains { $0.id == completed })
-        let winner = try await f.formal.positionValues()["position/" + f.book.contentSha256]
+        let winner = try await f.formal.positionValues()["position/" + f.book.fixtureSHA256]
         XCTAssertEqual(try winner.map(PositionCandidate.init)?.value.offset, 18)
     }
     func testImportPreviewRejectsConflictingIDsUnknownPayloadsAndMissingAssetsWithoutWrites() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
-        let source = f.formal, target = try store(), key = f.book.contentSha256
+        let source = f.formal, target = try store(), key = f.book.fixtureSHA256
         try await value(source, "metadata/" + key + "/author", UserSyncJSON.encode("New author"), token: "author")
         try await source.receiveSyncFixture("fact", key: key, id: "same", payload: syncFact(key, id: "same"))
         let changed = try syncJSON(syncFact(key, id: "same")) { $0["title"] = "Different payload with same ID" }
@@ -285,7 +286,7 @@ import XCTest
         let retained = try await snapshot(source); XCTAssertEqual(retained, protected)
         let archive = try XCTUnwrap(FileManager.default.contentsOfDirectory(at: f.root, includingPropertiesForKeys: nil).first { $0.pathExtension == "moonread-backup" })
         let accountPreview = try await f.service.previewReadingBackup(archive)
-        try await f.service.configureUserCloud(true, account: "backup-fixture")
+        try await f.service.configureUserCloud(.cloud(.init(recordName: "backup-fixture"), .currentOwner))
         do { try await f.service.importReadingBackup(accountPreview); XCTFail("A preview from the old configuration cannot commit") }
         catch ReadingDataError.changed { }
         let unchanged = try await snapshot(source); XCTAssertEqual(unchanged, protected)
@@ -296,7 +297,7 @@ import XCTest
     }
     func testWholeBookDeletionUsesOwnershipPreservesUnknownOwnersAndConservesCovers() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
-        let key = f.book.contentSha256, other = String(repeating: "b", count: 64)
+        let key = f.book.fixtureSHA256, other = String(repeating: "b", count: 64)
         try await receiveBackupPosition(positionRecord(key: key, token: "old", offset: 12), key: key, store: f.formal)
         try await value(f.formal, "metadata/" + key + "/author", UserSyncJSON.encode("Old"), token: "old-author")
         let bytes = Data("shared immutable cover".utf8), id = UUID().uuidString
@@ -349,10 +350,10 @@ import XCTest
     }
     func testDeletionWaitsForPositionFlushAndPendingTransferThenAllowsNewReading() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
-        let key = f.book.contentSha256, alias = "pending:" + f.book.id
+        let key = f.book.fixtureSHA256, alias = "pending:" + f.book.id
         try await f.pending.receiveSyncFixture("position", key: alias, payload: UserSyncJSON.encode(positionRecord(key: alias, token: "old-pending", offset: 9), envelope: true))
         let information = BookInformationModel(service: f.service)
-        let route = StatisticsRoute(key: key, bookID: f.book.id, title: "Position fixture")
+        let route = StatisticsRoute(target: .record(key: .formal(sha256: key)), title: "Position fixture")
         await information.load(route)
         XCTAssertNil(information.error); XCTAssertFalse(information.chapters.isEmpty)
         do { _ = try await f.service.exportReadingData(); XCTFail("A full export must not silently omit pending data") }
@@ -382,7 +383,7 @@ import XCTest
     }
     func testExportWaitsForPositionFlushAndStatisticsBeforeTakingItsSnapshot() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
-        let key = f.book.contentSha256, alias = "pending:" + f.book.id
+        let key = f.book.fixtureSHA256, alias = "pending:" + f.book.id
         try await f.pending.receiveSyncFixture("position", key: alias, payload: UserSyncJSON.encode(positionRecord(key: alias, token: "pending", offset: 3), envelope: true))
         let positionGate = RestorationGate(), statisticsGate = RestorationGate()
         let writer = StatisticsWriter { slices, generation in
@@ -420,8 +421,9 @@ import XCTest
         XCTAssertFalse(FileManager.default.fileExists(atPath: stale.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: preview.staging.directory.path), "Keep the current preview staging")
         let refreshed = expectation(forNotification: .cloudDataReceived, object: nil)
+        let metadataChanged = expectation(forNotification: .bookMetadataChanged, object: nil)
         try await service.importReadingBackup(preview)
-        await fulfillment(of: [refreshed], timeout: 2)
+        await fulfillment(of: [refreshed, metadataChanged], timeout: 2)
     }
     func testStatisticsFailureDropsBatchReleasesLeaseAndAllowsDeletionAfterClosing() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }
@@ -433,7 +435,7 @@ import XCTest
         }
         let service = AppDataService(core: f.core, sourceDefaultsSuite: f.suite, dataManagementWriter: writer,
             userStoreFactory: { name, _ in name == "pending-users.store" ? f.pending : f.formal })
-        try await receiveBackupPosition(positionRecord(key: f.book.contentSha256, token: "old", offset: 12), key: f.book.contentSha256, store: f.formal)
+        try await receiveBackupPosition(positionRecord(key: f.book.fixtureSHA256, token: "old", offset: 12), key: f.book.fixtureSHA256, store: f.formal)
         func slices(_ book: String) -> [ReadingSlice] {
             let clock = ReadingClock(bookId: book)
             var moment = ReadingMoment(monotonicMs: 0, unixMs: 0, utcOffsetSeconds: 0, readable: true, interaction: true, automaticMoving: false, automaticMilliseconds: 0, preview: false, startUtf8: 0, endUtf8: 9)
@@ -449,10 +451,10 @@ import XCTest
         await gate.release(); await writer.drain()
         XCTAssertEqual(calls, [f.book.id, "later"], "Failure drops the batch and does not prevent the next write")
         XCTAssertNotNil(writer.error, "Keep the failed write visible even if a later batch succeeds")
-        do { _ = try await service.deleteReadingData([f.book.contentSha256]); XCTFail("The reader is still open") }
+        do { _ = try await service.deleteReadingData([f.book.fixtureSHA256]); XCTFail("The reader is still open") }
         catch ReadingDataError.busy { }
         lease = nil // The reader closes; a failed batch must not keep this lease alive.
-        _ = try await service.deleteReadingData([f.book.contentSha256])
+        _ = try await service.deleteReadingData([f.book.fixtureSHA256])
         XCTAssertNil(retained)
         let remaining = try await f.formal.positionValues()
         XCTAssertTrue(remaining.isEmpty)

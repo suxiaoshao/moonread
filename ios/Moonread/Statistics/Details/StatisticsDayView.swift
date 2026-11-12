@@ -5,10 +5,16 @@ import Charts
 struct StatisticsDayView: View {
     let route: StatisticsDayRoute
     @Environment(\.theme) private var theme
-    @State private var spans: [StatisticsSpan] = []
-    @State private var compatibilityNotice: String?
-    @State private var loaded = false
-    @State private var error: String?
+    @State private var model = StatisticsModel()
+    private var scope: StatisticsModel.Scope {
+        .init(bounds: route.day...route.day, target: route.book.flatMap { try? parseReadingKey(value: $0) }.map { .book(.record(key: $0)) } ?? .all,
+              cumulativeLast: nil, purpose: .activities)
+    }
+    private var state: StatisticsModel.State { model.state(scope) }
+    private var spans: [StatisticsSpan] { state.spans }
+    private var compatibilityNotice: String? { state.compatibilityNotice }
+    private var loaded: Bool { state.content != nil }
+    private var error: String? { state.error }
     private var total: UInt64 { spans.reduce(0) { $0 + $1.milliseconds } }
     var body: some View {
         GeometryReader { geometry in
@@ -47,10 +53,9 @@ struct StatisticsDayView: View {
                 }
             }
         }
-        .task { await load() }
-        .onReceive(NotificationCenter.default.publisher(for: .statisticsChanged).receive(on: DispatchQueue.main)) { _ in Task { await load() } }
+        .task(id: "\(route.id)-\(model.dataRevision)") { await model.load(scope) }
         .accessibilityIdentifier("statisticsDay")
-        .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in Task { await load() } }
+        .onDisappear { model.cancel() }
     }
     @ViewBuilder private var summary: some View {
         if let error {
@@ -77,13 +82,5 @@ struct StatisticsDayView: View {
             if let compatibilityNotice { Text(compatibilityNotice).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
         }
     }
-    private func load() async {
-        do {
-            await StatisticsWriter.shared.drain()
-            compatibilityNotice = try await AppDataService.shared.statisticsCompatibilityNotice(book: route.book)
-            spans = StatisticsSpan.merge(try await AppDataService.shared.activities(first: route.day, last: route.day, book: route.book))
-            error = nil
-        } catch { self.error = ReaderMessages.error(error) }
-        loaded = true
-    }
+    private func load() async { await model.load(scope) }
 }

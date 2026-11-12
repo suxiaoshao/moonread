@@ -4,6 +4,7 @@ use rusqlite::Connection;
 use rusqlite::OptionalExtension;
 use rusqlite::params;
 use serde::Deserialize;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -11,6 +12,8 @@ use std::sync::Mutex;
 struct UserProjection {
     #[serde(default)]
     positions: Vec<PositionInput>,
+    #[serde(default)]
+    opened: Vec<OpenedInput>,
     #[serde(default)]
     metadata: Vec<BookMetadata>,
     #[serde(default)]
@@ -34,6 +37,12 @@ struct PositionInput {
     preferred: Option<String>,
 }
 #[derive(Deserialize)]
+struct OpenedInput {
+    content_key: String,
+    updated: i64,
+    preferred: Option<String>,
+}
+#[derive(Deserialize)]
 struct FactInput {
     content_key: String,
     title: String,
@@ -51,7 +60,8 @@ struct ChapterInput {
 
 pub(crate) fn initialize(db: &Connection) -> Result<()> {
     crate::identity::content::initialize(db)?;
-    db.execute_batch(&format!("CREATE TEMP TABLE user_positions(content_key TEXT PRIMARY KEY,position_utf8 INTEGER,last_read INTEGER,recent_visible INTEGER,preferred_file_id TEXT);
+    db.execute_batch(&format!("CREATE TEMP TABLE user_opened(content_key TEXT PRIMARY KEY,opened_ms INTEGER,preferred_file_id TEXT);
+    CREATE TEMP TABLE user_positions(content_key TEXT PRIMARY KEY,position_utf8 INTEGER,last_read INTEGER,recent_visible INTEGER,preferred_file_id TEXT);
     CREATE TEMP VIEW ranked_library_sources AS
     SELECT f.id file_id,fi.content_sha256,
       ROW_NUMBER() OVER (PARTITION BY fi.content_sha256 ORDER BY {source_order}) source_rank
@@ -71,7 +81,7 @@ pub(crate) fn initialize(db: &Connection) -> Result<()> {
 }
 fn apply(db: &mut Connection, value: &UserProjection) -> Result<()> {
     let tx = db.transaction()?;
-    tx.execute_batch("DELETE FROM user_positions; DELETE FROM book_metadata; DELETE FROM chapter_overrides; DELETE FROM reading_activity;")?;
+    tx.execute_batch("DELETE FROM user_positions; DELETE FROM user_opened; DELETE FROM book_metadata; DELETE FROM chapter_overrides; DELETE FROM reading_activity;")?;
     tx.execute(
         "UPDATE statistics_preferences SET enabled=?1,generation=?2",
         params![value.enabled, value.generation as i64],
@@ -87,6 +97,10 @@ fn apply(db: &mut Connection, value: &UserProjection) -> Result<()> {
                 p.preferred
             ],
         )?;
+    }
+    for o in &value.opened {
+        tx.execute("INSERT INTO user_opened VALUES(?1,?2,?3) ON CONFLICT(content_key) DO UPDATE SET opened_ms=max(opened_ms,excluded.opened_ms),preferred_file_id=CASE WHEN excluded.opened_ms>=opened_ms THEN excluded.preferred_file_id ELSE preferred_file_id END",
+            params![o.content_key, o.updated, o.preferred])?;
     }
     for m in &value.metadata {
         tx.execute(
@@ -142,6 +156,83 @@ impl ReaderCore {
     pub fn query_snapshot(&self, json: String) -> Result<Arc<ReaderQuery>> {
         let value: UserProjection =
             serde_json::from_str(&json).map_err(|_| ReaderError::InvalidSettings)?;
+        self.snapshot_with_projection(value)
+    }
+
+    /// Keep the details' complete records for selected books and fill in
+    /// timestamps for the remaining descendants from the index pass.
+    pub fn query_snapshot_with_directory_activity(
+        &self,
+        json: String,
+        activity: Arc<ReaderQuery>,
+    ) -> Result<Arc<ReaderQuery>> {
+        let mut value: UserProjection =
+            serde_json::from_str(&json).map_err(|_| ReaderError::InvalidSettings)?;
+        {
+            let db = activity.core.read_lock()?;
+            let mut positions = db.prepare("SELECT content_key,last_read FROM user_positions")?;
+            let mut opened = db
+                .prepare("SELECT content_key,opened_ms FROM user_opened")?
+                .query_map([], |r| {
+                    Ok(OpenedInput {
+                        content_key: r.get(0)?,
+                        updated: r.get(1)?,
+                        preferred: None,
+                    })
+                })?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            let mut ranks = positions
+                .query_map([], |r| {
+                    Ok(PositionInput {
+                        content_key: r.get(0)?,
+                        offset: 0,
+                        updated: r.get(1)?,
+                        visible: true,
+                        preferred: None,
+                    })
+                })?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            let detailed: HashSet<_> = value
+                .positions
+                .iter()
+                .map(|row| row.content_key.as_str())
+                .collect();
+            ranks.retain(|row| !detailed.contains(row.content_key.as_str()));
+            let detailed: HashSet<_> = value
+                .opened
+                .iter()
+                .map(|row| row.content_key.as_str())
+                .collect();
+            opened.retain(|row| !detailed.contains(row.content_key.as_str()));
+            value.positions.extend(ranks);
+            value.opened.extend(opened);
+        }
+        self.snapshot_with_projection(value)
+    }
+    pub fn validate_chapter_offset(&self, book_id: String, offset_utf8: u64) -> Result<()> {
+        let db = self.read_lock()?;
+        let id = crate::library::tools::content_key(&db, &book_id)?;
+        crate::reading::navigation::chapter_counts(&db, &id, offset_utf8)?;
+        Ok(())
+    }
+    pub fn normalized_position(&self, book_id: String, offset_utf8: u64) -> Result<u64> {
+        let db = self.read_lock()?;
+        let id = crate::library::tools::content_key(&db, &book_id)?;
+        let info = book(&db, &id)?;
+        if info.byte_count == 0 {
+            return Ok(0);
+        }
+        let mut offset = offset_utf8.min(info.byte_count);
+        let c = chunk(&db, &id, chunk_index(&db, &id, offset)?)?;
+        while !c.text.is_char_boundary((offset - c.start_utf8) as usize) {
+            offset -= 1;
+        }
+        Ok(offset)
+    }
+}
+
+impl ReaderCore {
+    fn snapshot_with_projection(&self, value: UserProjection) -> Result<Arc<ReaderQuery>> {
         let open = || -> Result<Connection> {
             let mut db = Connection::open(&self.database_path)?;
             db.busy_timeout(std::time::Duration::from_secs(5))?;
@@ -170,26 +261,6 @@ impl ReaderCore {
                 database_path: self.database_path.clone(),
             },
         }))
-    }
-    pub fn validate_chapter_offset(&self, book_id: String, offset_utf8: u64) -> Result<()> {
-        let db = self.read_lock()?;
-        let id = crate::library::tools::content_key(&db, &book_id)?;
-        crate::reading::navigation::chapter_counts(&db, &id, offset_utf8)?;
-        Ok(())
-    }
-    pub fn normalized_position(&self, book_id: String, offset_utf8: u64) -> Result<u64> {
-        let db = self.read_lock()?;
-        let id = crate::library::tools::content_key(&db, &book_id)?;
-        let info = book(&db, &id)?;
-        if info.byte_count == 0 {
-            return Ok(0);
-        }
-        let mut offset = offset_utf8.min(info.byte_count);
-        let c = chunk(&db, &id, chunk_index(&db, &id, offset)?)?;
-        while !c.text.is_char_boundary((offset - c.start_utf8) as usize) {
-            offset -= 1;
-        }
-        Ok(offset)
     }
 }
 #[uniffi::export]
@@ -259,6 +330,9 @@ impl ReaderQuery {
     pub fn chapter_at(&self, book_id: String, offset_utf8: u64) -> Result<Option<ChapterInfo>> {
         self.core.chapter_at(book_id, offset_utf8)
     }
+    pub fn chapter_structure(&self, book_id: String) -> Result<ChapterOutline> {
+        self.core.chapter_structure(book_id)
+    }
     pub fn chapter_outline(&self, book_id: String) -> Result<ChapterOutline> {
         self.core.chapter_outline(book_id)
     }
@@ -293,12 +367,8 @@ impl ReaderQuery {
         self.core
             .start_search(book_id, query, regular_expression, case_sensitive, range)
     }
-    pub fn book_details(
-        &self,
-        book_id: Option<String>,
-        content_sha: Option<String>,
-    ) -> Result<BookDetails> {
-        self.core.book_details(book_id, content_sha)
+    pub fn book_details(&self, target: BookTarget) -> Result<BookDetailsResult> {
+        self.core.book_details(target)
     }
     pub fn metadata_has_reading_position(&self, content_sha256: String) -> Result<bool> {
         crate::parse_sha256(content_sha256.clone())?;
@@ -315,6 +385,14 @@ impl ReaderQuery {
         sort: LibrarySort,
     ) -> Result<Vec<LibraryEntry>> {
         self.core.library_entries(shelf_id, parent_path, sort)
+    }
+    pub fn library_directory_detail_keys(
+        &self,
+        shelf_id: String,
+        parent_path: String,
+    ) -> Result<Vec<ReadingKey>> {
+        self.core
+            .library_directory_detail_keys(shelf_id, parent_path)
     }
     pub fn library_folder_cover_previews(
         &self,
@@ -353,10 +431,10 @@ impl ReaderQuery {
         &self,
         first_day: i64,
         last_day: i64,
-        content_key: Option<String>,
+        content_key: Option<ReadingKey>,
     ) -> Result<StatisticsOverview> {
         self.core
-            .statistics_overview(first_day, last_day, content_key)
+            .statistics_overview(first_day, last_day, content_key.map(serialize_reading_key))
     }
     pub fn statistics_widget_summary(
         &self,
@@ -369,9 +447,9 @@ impl ReaderQuery {
         &self,
         first_day: i64,
         last_day: i64,
-        content_key: Option<String>,
+        content_key: Option<ReadingKey>,
     ) -> Result<Vec<ReadingActivity>> {
         self.core
-            .reading_activities(first_day, last_day, content_key)
+            .reading_activities(first_day, last_day, content_key.map(serialize_reading_key))
     }
 }

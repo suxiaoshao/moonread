@@ -260,6 +260,34 @@ pub fn builtin_theme_palettes() -> Vec<ThemePalette> {
         .collect()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ThemePaletteDraftIssue {
+    MissingName,
+    NameTooLong,
+    InvalidColors,
+}
+
+fn palette_draft_issue(name: &str, colors: &ThemeColors) -> Option<ThemePaletteDraftIssue> {
+    let name = name.trim();
+    if name.is_empty() {
+        Some(ThemePaletteDraftIssue::MissingName)
+    } else if name.chars().count() > 40 {
+        Some(ThemePaletteDraftIssue::NameTooLong)
+    } else if !theme_colors_valid(colors) {
+        Some(ThemePaletteDraftIssue::InvalidColors)
+    } else {
+        None
+    }
+}
+
+#[uniffi::export]
+pub fn validate_theme_palette_draft(
+    name: String,
+    colors: ThemeColors,
+) -> Option<ThemePaletteDraftIssue> {
+    palette_draft_issue(&name, &colors)
+}
+
 #[uniffi::export]
 pub fn make_theme_palette(
     id: String,
@@ -267,13 +295,12 @@ pub fn make_theme_palette(
     appearance: ThemeAppearance,
     colors: ThemeColors,
 ) -> Result<ThemePalette> {
-    let name = name.trim().to_owned();
-    if name.is_empty() || name.chars().count() > 40 || !theme_colors_valid(&colors) {
+    if palette_draft_issue(&name, &colors).is_some() {
         return Err(ReaderError::InvalidSettings);
     }
     Ok(ThemePalette {
         id,
-        name,
+        name: name.trim().to_owned(),
         appearance,
         custom: true,
         high_contrast: increased_contrast(&colors, appearance),

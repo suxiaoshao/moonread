@@ -45,7 +45,7 @@ struct BookSearchEditor: View {
             VStack(spacing: 0) {
                 Picker("编辑内容", selection: $segment) { Text("条件").tag(0); Text("排序").tag(1) }
                     .pickerStyle(.segmented).padding()
-                if segment == 0 { BookSearchGroupPage(draft: draft, id: draft.value.root.id, model: model) }
+                if segment == 0 { BookSearchGroupPage(draft: draft, id: draft.value.root.id, model: model, navigate: { path.append($0) }) }
                 else { sortPage }
                 if let error { Text(error).foregroundStyle(Color(uiColor: theme.destructive)).padding() }
             }
@@ -57,15 +57,15 @@ struct BookSearchEditor: View {
                         SystemToolbarButton("应用", role: .confirm) {
                             if let validation = draft.value.validation { error = validation; segment = 0; return }
                             var value = draft.value
-                            if value.root.children.isEmpty { value.root = BookSearchNode() }
+                            if value.root.children.isEmpty { value.root = BookSearchNode(id: value.root.id) }
                             search.configuration = value
                             dismiss()
                         }.fontWeight(.semibold).accessibilityIdentifier("applySearchFilters")
                     }
                     ToolbarItemGroup(placement: .bottomBar) {
                         Button("重置筛选与排序") {
-                            var reset = BookSearchConfiguration(); reset.root.id = draft.original.root.id
-                            draft.value = reset; error = nil
+                            draft.value = BookSearchConfiguration(root: BookSearchNode(id: draft.original.root.id))
+                            error = nil
                         }
                         Spacer()
                         NavigationLink("预览完整条件", value: BookSearchEditorRoute.preview)
@@ -74,7 +74,7 @@ struct BookSearchEditor: View {
             }
             .navigationDestination(for: BookSearchEditorRoute.self) { route in
                 switch route {
-                case .group(let id): BookSearchGroupPage(draft: draft, id: id, model: model).navigationTitle("条件组")
+                case .group(let id): BookSearchGroupPage(draft: draft, id: id, model: model, navigate: { path.append($0) }).navigationTitle("条件组")
                 case .fields(let parent):
                     List(BookSearchField.allCases) { field in
                         Button(field.title) { path.append(.rule(parent: parent, node: BookSearchNode(field: field))) }
@@ -91,8 +91,7 @@ struct BookSearchEditor: View {
                         }
                     }.scrollContentBackground(.hidden).themedPage().navigationTitle("添加排序").navigationBarTitleDisplayMode(.inline)
                 case .preview:
-                    ScrollView { BookSearchSummary(configuration: draft.value, term: search.term, shelfTitle: model.shelfTitle, expanded: true).padding() }
-                        .themedPage().navigationTitle("预览完整条件").navigationBarTitleDisplayMode(.inline)
+                    fullPreview
                 }
             }
         }
@@ -101,45 +100,57 @@ struct BookSearchEditor: View {
         .presentationSizing(.form)
         .presentationDetents([.large])
         .background(BookSearchDismissalGuard(changed: draft.changed) { discard = true })
-        .confirmationDialog("放弃筛选更改？", isPresented: $discard, titleVisibility: .visible) {
+        .alert("放弃筛选更改？", isPresented: $discard) {
             Button("放弃更改", role: .destructive) { dismiss() }
-            Button("继续编辑", role: .cancel) {}
+            Button("取消", role: .cancel) {}
         }
     }
     private func cancel() { if draft.changed { discard = true } else { dismiss() } }
+    private var fullPreview: some View {
+        ScrollView {
+            BookSearchSummary(configuration: draft.value, term: search.term, shelfTitle: model.shelfTitle, expanded: true)
+                .padding()
+        }.themedPage().navigationTitle("预览完整条件").navigationBarTitleDisplayMode(.inline)
+    }
     private var sortPage: some View {
-        List {
-            Section {
-                if draft.value.sorts.isEmpty {
-                    Text("默认：匹配程度 → 最近阅读 → 自然名称")
-                        .foregroundStyle(Color(uiColor: theme.secondary))
-                        .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-                }
-                ForEach(draft.value.sorts) { item in
-                    VStack(alignment: .leading) {
-                        HStack {
-                            Text("\((draft.value.sorts.firstIndex(where: { $0.field == item.field }) ?? 0) + 1). " + item.field.title)
-                            Spacer()
-                            Picker("方向", selection: Binding(get: { item.descending }, set: { direction in
-                                if let i = draft.value.sorts.firstIndex(where: { $0.field == item.field }) { draft.value.sorts[i].descending = direction }
-                            })) { Text("升序").tag(false); Text("降序").tag(true) }.pickerStyle(.menu)
-                        }
-                        if item.field == .rank && search.term.isEmpty { Text("无文字时跳过").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
+        ThemedGroupedList(sections: sortSections, theme: theme, reordered: { ids in
+            let current = Dictionary(uniqueKeysWithValues: draft.value.sorts.map { ($0.field.rawValue, $0) })
+            draft.value.sorts = ids.compactMap { current[$0] }
+        })
+    }
+    private var sortSections: [ThemedGroupedList.Section] {
+        var rows: [ThemedGroupedList.Row] = draft.value.sorts.map { item in
+            .init(item.field.rawValue, actions: [
+                .init(title: String(localized: "删除"), destructive: true, perform: { draft.value.sorts.removeAll { $0.field == item.field } })
+            ], reorderable: true) {
+                VStack(alignment: .leading) {
+                    HStack {
+                        Text("\((draft.value.sorts.firstIndex(where: { $0.field == item.field }) ?? 0) + 1). " + item.field.title)
+                        Spacer()
+                        Picker("方向", selection: Binding(get: {
+                            draft.value.sorts.first(where: { $0.field == item.field })?.descending ?? item.descending
+                        }, set: { direction in
+                            if let i = draft.value.sorts.firstIndex(where: { $0.field == item.field }) { draft.value.sorts[i].descending = direction }
+                        })) { Text("升序").tag(false); Text("降序").tag(true) }.pickerStyle(.menu)
                     }
-                    .accessibilityAction(named: Text("上移")) { move(item.field, by: -1) }
-                    .accessibilityAction(named: Text("下移")) { move(item.field, by: 1) }
-                    .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                    if item.field == .rank && search.term.isEmpty { Text("无文字时跳过").font(.caption).foregroundStyle(Color(uiColor: theme.secondary)) }
                 }
-                .onMove { draft.value.sorts.move(fromOffsets: $0, toOffset: $1) }
-                .onDelete { draft.value.sorts.remove(atOffsets: $0) }
-            } footer: { Text("自定义顺序会替代默认匹配优先级；前一项相同时才比较下一项。缺少作者或阅读时间的小说始终排在最后。").foregroundStyle(Color(uiColor: theme.secondary)) }
-            Section {
-                Button("恢复默认排序") { draft.value.sorts = [] }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-                NavigationLink("添加排序", value: BookSearchEditorRoute.sortFields)
-                    .disabled(draft.value.sorts.count == BookSearchSortField.allCases.count)
-                    .environment(\.editMode, .constant(.inactive)).listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
+                .accessibilityAction(named: Text("上移")) { move(item.field, by: -1) }
+                .accessibilityAction(named: Text("下移")) { move(item.field, by: 1) }
             }
-        }.environment(\.editMode, .constant(.active)).scrollContentBackground(.hidden)
+        }
+        if rows.isEmpty {
+            rows.append(.init("default") { Text("默认：匹配程度 → 最近阅读 → 自然名称").foregroundStyle(Color(uiColor: theme.secondary)) })
+        }
+        return [
+            .init(id: "sorts", footer: String(localized: "自定义顺序会替代默认匹配优先级；前一项相同时才比较下一项。缺少作者或阅读时间的小说始终排在最后。"), rows: rows),
+            .init(id: "actions", rows: [
+                .init("reset", action: { draft.value.sorts = [] }) { Text("恢复默认排序").foregroundStyle(Color(uiColor: theme.accent)) },
+                .init("add", action: draft.value.sorts.count < BookSearchSortField.allCases.count ? { path.append(.sortFields) } : nil, disclosure: true) {
+                    Text("添加排序").foregroundStyle(Color(uiColor: draft.value.sorts.count == BookSearchSortField.allCases.count ? theme.secondary : theme.ink))
+                }
+            ])
+        ]
     }
     private func move(_ field: BookSearchSortField, by offset: Int) {
         guard let i = draft.value.sorts.firstIndex(where: { $0.field == field }), draft.value.sorts.indices.contains(i + offset) else { return }
@@ -150,6 +161,7 @@ private struct BookSearchGroupPage: View {
     @Bindable var draft: BookSearchDraft
     let id: UUID
     let model: LibraryModel
+    let navigate: (BookSearchEditorRoute) -> Void
     @Environment(\.theme) private var theme
     @State private var deleting: [UUID] = []
     private var node: BookSearchNode { draft.node(id) ?? BookSearchNode(id: id) }
@@ -158,37 +170,43 @@ private struct BookSearchGroupPage: View {
         return node.children.filter { deleting.contains($0.id) }.reduce(0) { $0 + count($1) }
     }
     var body: some View {
-        List {
-            Section {
-                Picker("匹配关系", selection: Binding(get: { node.group }, set: { value in draft.edit(id) { $0.group = value } })) {
-                    ForEach(BookSearchGroup.allCases, id: \.self) { Text($0.title).tag($0) }
-                }.pickerStyle(.segmented)
-                Toggle("排除本组", isOn: Binding(get: { node.excluded }, set: { value in draft.edit(id) { $0.excluded = value } }))
-            } footer: { if node.excluded { Text("排除：满足本组的小说不显示").foregroundStyle(Color(uiColor: theme.secondary)) } }
-            .listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            Section {
-                ForEach(node.children) { child in
-                    NavigationLink(value: child.field == nil ? BookSearchEditorRoute.group(child.id) : .rule(parent: id, node: child)) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(child.summary(shelfTitle: model.shelfTitle))
-                            if let error = child.validation() { Text(error).font(.caption).foregroundStyle(Color(uiColor: theme.destructive)) }
-                        }.padding(.vertical, 4)
-                    }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-                }.onDelete { offsets in deleting = offsets.map { node.children[$0].id } }
-                NavigationLink("添加条件", value: BookSearchEditorRoute.fields(id))
-                    .accessibilityIdentifier("addSearchCondition").listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-                Button("添加条件组", systemImage: "rectangle.stack.badge.plus") {
-                    draft.edit(id) { $0.children.append(BookSearchNode()) }
-                }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
-            } footer: { if node.children.isEmpty { Text("添加条件，或保留空的根组以取消筛选。").foregroundStyle(Color(uiColor: theme.secondary)) } }
-        }
-        .scrollContentBackground(.hidden).themedPage()
+        ThemedGroupedList(sections: groupSections, theme: theme).themedPage()
         .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("删除条件及其子条件？", isPresented: Binding(get: { !deleting.isEmpty }, set: { if !$0 { deleting = [] } }), titleVisibility: .visible) {
+        .alert("删除条件及其子条件？", isPresented: Binding(get: { !deleting.isEmpty }, set: { if !$0 { deleting = [] } })) {
             Button("删除条件", role: .destructive) { let ids = Set(deleting); draft.edit(id) { $0.children.removeAll { ids.contains($0.id) } }; deleting = [] }
             Button("取消", role: .cancel) { deleting = [] }
         } message: { Text("将删除 \(deletionCount) 条条件（含子条件），仅修改当前草稿。") }
     }
+    private var groupSections: [ThemedGroupedList.Section] {
+        let options = ThemedGroupedList.Section(id: "options", footer: node.excluded ? String(localized: "排除：满足本组的小说不显示") : nil, rows: [
+            .init("relation") {
+                Picker("匹配关系", selection: Binding(get: { node.group }, set: { value in draft.edit(id) { $0.group = value } })) {
+                    ForEach(BookSearchGroup.allCases, id: \.self) { Text($0.title).tag($0) }
+                }.pickerStyle(.segmented)
+            },
+            .init("exclude") {
+                Toggle("排除本组", isOn: Binding(get: { node.excluded }, set: { value in draft.edit(id) { $0.excluded = value } }))
+            }
+        ])
+        var rows: [ThemedGroupedList.Row] = node.children.map { child in
+            .init(child.id.uuidString, action: {
+                navigate(child.field == nil ? .group(child.id) : .rule(parent: id, node: child))
+            }, disclosure: true, actions: [
+                .init(title: String(localized: "删除"), destructive: true, perform: { deleting = [child.id] })
+            ]) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(child.summary(shelfTitle: model.shelfTitle))
+                    if let error = child.validation() { Text(error).font(.caption).foregroundStyle(Color(uiColor: theme.destructive)) }
+                }.padding(.vertical, 4)
+            }
+        }
+        rows.append(.init("addSearchCondition", action: { navigate(.fields(id)) }, disclosure: true) { Text("添加条件") })
+        rows.append(.init("addGroup", action: {
+            draft.edit(id) { $0.children.append(BookSearchNode()) }
+        }) { Label("添加条件组", systemImage: "rectangle.stack.badge.plus").foregroundStyle(Color(uiColor: theme.accent)) })
+        return [options, .init(id: "children", footer: node.children.isEmpty ? String(localized: "添加条件，或保留空的根组以取消筛选。") : nil, rows: rows)]
+    }
+
 }
 private struct BookSearchRulePage: View {
     let draft: BookSearchDraft
@@ -210,7 +228,7 @@ private struct BookSearchRulePage: View {
     private var field: BookSearchField { node.field ?? .status }
     private var available: [BookSearchValue] {
         switch field {
-        case .status: ["reading", "finished", "paused", "unread"].map(BookSearchValue.text)
+        case .status: BookSearchStatus.allCases.map { .text($0.rawValue) }
         case .tag: [.untagged] + (options?.tags ?? []).map(BookSearchValue.text)
         case .author: (options?.authors ?? []).map(BookSearchValue.text)
         case .shelf: model.shelves.filter { $0.error == nil }.map { .text($0.id) }

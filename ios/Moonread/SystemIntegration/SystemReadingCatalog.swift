@@ -36,6 +36,7 @@ struct SystemReadingCatalog: Sendable {
     var displaySnapshot: SystemReadingSnapshot?
     var configuredBooks: [String] = []
     var spotlightCovers: [String: BookCoverAsset] = [:]
+    var coverSizes: [String: Int] = [:]
     var revision = UUID()
     var task: Task<Void, Never>?
     var taskID = UUID()
@@ -124,8 +125,7 @@ extension AppDataService {
         do {
             while let catalog = systemCatalog, catalog.taskID == taskID, !catalog.accountPending, !Task.isCancelled {
                 let configuration = userCloudConfigurationRevision, revision = catalog.revision
-                let keys = try textCore().catalogueContentKeys(scope: catalogueScope(nil, recursive: true))
-                let query = try await effectiveQuery(keys: keys.map { serializeReadingKey(key: $0) }, scope: "system-catalogue", sparseCatalogue: true)
+                let query = try await readingQuery(.catalogue(.all), options: .init(scope: "system-catalogue", sparseCatalogue: true))
                 let projected = try await Task.detached(priority: .utility) { try query.systemReadingCatalogue() }.value
                 try Task.checkCancellation()
                 guard systemCatalog?.taskID == taskID, userCloudConfigurationRevision == configuration else { return }
@@ -135,7 +135,7 @@ extension AppDataService {
                 let policy = systemExposurePolicy(), excluded = Set(policy.excludedShelfIDs)
                 let appearance = await systemWidgetAppearance()
                 let statistics = catalog.statisticsDirty || catalog.displaySnapshot?.statistics?.isCurrent(at: Date()) != true
-                    ? await systemWidgetStatistics() : catalog.displaySnapshot?.statistics
+                    ? try await systemWidgetStatistics() : catalog.displaySnapshot?.statistics
                 var books = try projected.map { book in
                     SystemReadingSnapshot.Book(id: try SystemReadingBookID(sha: book.contentSha256).rawValue,
                         title: book.title, author: book.author, tags: book.tags,
@@ -152,6 +152,7 @@ extension AppDataService {
                     book.cover.map { (SystemReadingLink.bookIDPrefix + book.contentSha256, $0) }
                 })
                 let oldReferences = Dictionary(uniqueKeysWithValues: (catalog.displaySnapshot?.books ?? []).compactMap { book in book.coverThumbnail.map { (book.id, $0) } })
+                var coverSizes = catalog.coverSizes
                 var used = 0, references: [String: SystemReadingSnapshot.CoverThumbnail] = [:], visited = Set<String>()
                 for id in catalog.configuredBooks + recent + books.map(\.id) where visited.insert(id).inserted {
                     guard let index = indices[id], let cover = covers[id] else { continue }
@@ -159,17 +160,30 @@ extension AppDataService {
                           userCloudConfigurationRevision == configuration, !Task.isCancelled else { break }
                     if let reference = references[cover.sha256] { books[index].coverThumbnail = reference; continue }
                     // Already-published thumbnails avoid re-encoding on position-only updates.
-                    if let previous = oldReferences[id],
-                       previous.revision == "r1-" + cover.sha256, let data = catalog.file.coverData(previous),
-                       used + data.count <= SystemReadingSnapshotFile.coverBudget {
-                        books[index].coverThumbnail = previous; references[cover.sha256] = previous; used += data.count; continue
+                    if let previous = oldReferences[id], previous.revision == "r1-" + cover.sha256,
+                       let url = catalog.file.coverURL(previous), FileManager.default.fileExists(atPath: url.path) {
+                        let size = coverSizes[previous.fileName] ?? catalog.file.coverData(previous)?.count
+                        if let size, used + size <= SystemReadingSnapshotFile.coverBudget {
+                            coverSizes[previous.fileName] = size
+                            books[index].coverThumbnail = previous; references[cover.sha256] = previous; used += size; continue
+                        }
                     }
                     guard used + SystemReadingSnapshotFile.maximumCoverBytes <= SystemReadingSnapshotFile.coverBudget else { break }
-                    guard let value = await systemDerivedCover(cover), used + value.data.count <= SystemReadingSnapshotFile.coverBudget else { continue }
+                    guard let value = await systemDerivedCover(cover), used + value.data.count <= SystemReadingSnapshotFile.coverBudget else {
+                        // A failed replacement keeps this book's prior valid resource, never another book's.
+                        if let previous = oldReferences[id], let url = catalog.file.coverURL(previous),
+                           FileManager.default.fileExists(atPath: url.path),
+                           let size = coverSizes[previous.fileName] ?? catalog.file.coverData(previous)?.count,
+                           used + size <= SystemReadingSnapshotFile.coverBudget {
+                            books[index].coverThumbnail = previous; used += size; coverSizes[previous.fileName] = size
+                        }
+                        continue
+                    }
                     guard systemCatalog?.taskID == taskID, systemCatalog?.revision == revision,
                           userCloudConfigurationRevision == configuration, !Task.isCancelled else { break }
                     do {
                         try catalog.file.publishCover(value)
+                        coverSizes[value.reference.fileName] = value.data.count
                         books[index].coverThumbnail = value.reference; references[cover.sha256] = value.reference; used += value.data.count
                     } catch { /* A derived-image failure uses the shared text cover, never drops a book. */ }
                 }
@@ -182,6 +196,7 @@ extension AppDataService {
                 systemCatalog?.spotlightCovers = Dictionary(uniqueKeysWithValues: projected.compactMap { book in
                     book.cover.map { (SystemReadingLink.bookIDPrefix + book.contentSha256, $0) }
                 })
+                systemCatalog?.coverSizes = coverSizes.filter { size in books.contains { $0.coverThumbnail?.fileName == size.key } }
                 systemCatalog?.publishedGeneration = snapshot.generation
                 systemCatalog?.statisticsDirty = false
                 let previous = systemCatalog?.displaySnapshot
@@ -197,7 +212,7 @@ extension AppDataService {
         catch { if systemCatalog?.taskID == taskID { publishSystemCatalogError(error) } }
     }
     func resolveSystemReadingBook(_ id: SystemReadingBookID, automatic: Bool = false) async throws -> LibraryEntry {
-        let query = try await effectiveQuery(keys: [id.sha], scope: "system-open-" + id.sha)
+        let query = try await effectiveQuery(records: .only([.formal(sha256: id.sha)]), scope: "system-open-" + id.sha)
         let sources = try query.systemReadingSources(contentSha256: id.sha)
         guard !sources.isEmpty else { throw SystemReadingRouteError.unavailable }
         if automatic {

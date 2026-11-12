@@ -36,6 +36,11 @@
 <div class="scene-choice" hidden role="group" aria-label="{% if zh %}阅读画面{% else %}Reading screenshots{% endif %}"><button type="button" data-scene="R02" aria-pressed="true">{% if zh %}阅读设置{% else %}Typography{% endif %}</button><button type="button" data-scene="R01" aria-pressed="false">{% if zh %}正文{% else %}Reading{% endif %}</button></div></div>
 {{ <screenshot scene="R02" lang={section.lang} label={section.extra.typography_alt} /> }}
 </section>
+<section class="section story reverse" id="listening" data-gallery>
+<div class="story-copy"><h2 class="section-title">{% if zh %}换一种方式，听故事。{% else %}Let the story come to you.{% endif %}</h2>
+<p>{% if zh %}让月读把你的 TXT 读给你听，锁屏后也能继续。想边听边看时，当前句子会高亮，跟着声音读下去。{% else %}Have Moonread read your TXT books aloud, even with the screen locked. When you want to follow along, each sentence is highlighted as it is read.{% endif %}</p></div>
+{{ <screenshot scene="R15" lang={section.lang} label={section.extra.listening_alt} /> }}
+</section>
 <section class="section story reverse" data-gallery>
 <div class="story-copy"><h2 class="section-title">{% if zh %}换个地方，接着这一段。{% else %}Pick up the story wherever you are.{% endif %}</h2>
 <p>{% if zh %}从小组件、快捷指令或 Siri 回到书中。开启 iCloud 同步后，“我的书架”里的文件与阅读记录分别同步；收到更靠后的进度时，由你决定是否跳过去。{% else %}Return with a widget, Shortcuts, or Siri. With iCloud sync enabled, files in My Library and reading records sync separately. When a later position arrives, you choose whether to jump there.{% endif %}</p>

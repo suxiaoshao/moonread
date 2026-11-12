@@ -12,7 +12,12 @@ import SwiftAISDK
   let definitions: [AIAgentTool]
   private var observer: @MainActor (AIAgentActivity) -> Void
   private var unpublishedEntries: [AIAgentEntry] = []
-  var committingStep = false
+  private enum Publication {
+    case idle
+    case committing(turn: String, step: Int)
+  }
+  private var publication = Publication.idle
+  func finishStepPublication() { publication = .idle }
   private var sharingWaiting = false
   #if DEBUG || AI_TESTING
   var beforeStepPublication: (@MainActor () async -> Void)?
@@ -35,13 +40,51 @@ import SwiftAISDK
   var turn: String { head.currentTurn }
   var responseCount = 0
   var committedStepCount = 0
-  var eventStep = -1
+  enum EventCursor: Equatable {
+    case notStarted
+    case step(Int)
+    var index: Int? { if case .step(let index) = self { index } else { nil } }
+    var next: Self { .step(index.map { $0 + 1 } ?? 0) }
+  }
+  struct LiveOutput {
+    let cursor: EventCursor
+    let step: Int
+    var parts: [AIAgentLivePart] = []
+    var text = ""
+    var reasoning = ""
+  }
+  private enum LiveStep {
+    case absent(EventCursor, lastDisplayStep: Int)
+    case active(LiveOutput)
+    var cursor: EventCursor {
+      switch self { case .absent(let cursor, _): cursor; case .active(let output): output.cursor }
+    }
+    var output: LiveOutput? { if case .active(let output) = self { output } else { nil } }
+    var displayStep: Int {
+      switch self { case .absent(_, let step): step; case .active(let output): output.step }
+    }
+  }
+  private var live = LiveStep.absent(.notStarted, lastDisplayStep: 0)
+  var eventCursor: EventCursor { live.cursor }
+  var liveParts: [AIAgentLivePart] { live.output?.parts ?? [] }
+  var partialText: String { live.output?.text ?? "" }
+  var partialReasoning: String { live.output?.reasoning ?? "" }
   var lastPartialSave = Date.distantPast
   var reasoningActive = false
-  var liveStep = 0
-  var liveParts: [AIAgentLivePart] = []
-  var partialText = ""
-  var partialReasoning = ""
+
+  func updateLiveOutput(_ update: (inout LiveOutput) -> Void) {
+    var output = live.output ?? LiveOutput(cursor: live.cursor, step: live.displayStep)
+    update(&output)
+    live = .active(output)
+  }
+  func clearLiveOutput(resetCursor: Bool = false) {
+    live = .absent(resetCursor ? .notStarted : live.cursor, lastDisplayStep: live.displayStep)
+    reasoningActive = false
+  }
+  func beginLiveStep() {
+    live = .active(.init(cursor: live.cursor.next, step: head.currentStep))
+    reasoningActive = false
+  }
   var lastPublished = Date.distantPast
   var inFlightCalls: [(String, String, JSONValue)] = []
   var generation = UUID()
@@ -73,10 +116,10 @@ import SwiftAISDK
         uniqueKeysWithValues: head.pendingCalls.compactMap { call in
           call.output.map { (call.id, $0) }
         })
-      liveStep = head.currentStep
-      liveParts = head.pendingParts
-      partialText = liveParts.filter { $0.kind == .text }.map(\.text).joined()
-      partialReasoning = liveParts.filter { $0.kind == .reasoning }.map(\.text).joined()
+      let parts = head.pendingParts
+      live = .active(.init(cursor: .notStarted, step: head.currentStep, parts: parts,
+                           text: parts.filter { $0.kind == .text }.map(\.text).joined(),
+                           reasoning: parts.filter { $0.kind == .reasoning }.map(\.text).joined()))
       try await saveInterruptedStep()
       try await status(.interrupted)
     }
@@ -165,14 +208,14 @@ import SwiftAISDK
   }
   /// Publish committed deltas with the normalized live state in one MainActor segment.
   func observe(_ activity: AIAgentActivity) {
-    if !committingStep, !unpublishedEntries.isEmpty {
+    if case .idle = publication, !unpublishedEntries.isEmpty {
       let changes = unpublishedEntries; unpublishedEntries = []
       committedEntries(changes, head)
     }
     var activity = activity
     if sharingWaiting { activity.status = .waitingDataSharing }
     activity.parts = liveParts
-    activity.step = liveStep
+    activity.step = live.displayStep
     observer(activity)
   }
   func setSharingWaiting(_ waiting: Bool) {
@@ -201,8 +244,8 @@ import SwiftAISDK
   }
   func append(_ messages: [ModelMessage], usage: LanguageModelUsage? = nil, reason: String? = nil, clearPending: Bool = false) async throws {
     // Reentrant queue/stream activity cannot publish a step before its live text is normalized.
-    committingStep = true
     let provider = configuration?.provider ?? "", model = configuration?.modelID ?? "", expectedTurn = turn
+    publication = .committing(turn: expectedTurn, step: head.currentStep)
     do { try await transact { next in
       guard next.currentTurn == expectedTurn else { throw CancellationError() }
       if clearPending { next.pendingCalls = []; next.pendingParts = [] }
@@ -215,7 +258,7 @@ import SwiftAISDK
           cacheWriteTokens: index == 0 ? usage?.inputTokenDetails.cacheWriteTokens : nil, reasoningTokens: index == 0 ? usage?.outputTokenDetails.reasoningTokens : nil,
           finishReason: reason, thinking: next.activeThinking)
       }
-    } } catch { committingStep = false; throw error }
+    } } catch { finishStepPublication(); throw error }
   }
   func consume(_ mode: AIAgentQueueMode, one: Bool = false) async throws {
     try await transact { next in

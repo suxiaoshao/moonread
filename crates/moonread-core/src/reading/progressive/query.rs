@@ -2,14 +2,34 @@ use super::*;
 use rusqlite::Connection;
 use rusqlite::OptionalExtension;
 use rusqlite::params;
-fn phase(value: &str) -> ImportPhase {
-    match value {
-        "preparing" => ImportPhase::Preparing,
-        "importing" => ImportPhase::Importing,
-        "finalizing" => ImportPhase::Finalizing,
-        "complete" => ImportPhase::Complete,
-        "failed" => ImportPhase::Failed,
-        _ => ImportPhase::Paused,
+fn preparation(value: &str, error: Option<String>) -> Result<PreparationState> {
+    use PreparationState::*;
+    Ok(match value {
+        "preparing" => Preparing,
+        "importing" => Importing,
+        "finalizing" => Finalizing,
+        "complete" => Complete,
+        "failed" => Failed {
+            detail: match error {
+                Some(json) => FailureDetail::Reported {
+                    error: serde_json::from_str(&json).map_err(|error| ReaderError::Storage {
+                        message: error.to_string(),
+                    })?,
+                },
+                None => FailureDetail::Unavailable,
+            },
+        },
+        _ => Paused {
+            detail: PauseDetail::Unknown,
+        },
+    })
+}
+
+fn readable_prefix(visible: bool) -> ReadablePrefix {
+    if visible {
+        ReadablePrefix::Readable
+    } else {
+        ReadablePrefix::Unavailable
     }
 }
 
@@ -26,14 +46,12 @@ pub(crate) fn snapshot(db: &Connection, id: &str) -> Result<ReadingSnapshot> {
     ).optional()?;
     let Some((state, generation, read, size, visible, error, canonical)) = job else {
         return Ok(ReadingSnapshot {
-            can_read: value.chunk_count > 0,
+            readable_prefix: readable_prefix(value.chunk_count > 0),
             has_started,
             book: value,
-            phase: ImportPhase::Complete,
+            preparation: PreparationState::Complete,
             generation: 0,
-            source_bytes_read: 0,
-            source_byte_count: 0,
-            error: None,
+            byte_progress: ImportByteProgress { read: 0, total: 0 },
         });
     };
     if let Some(canonical) = canonical {
@@ -41,26 +59,16 @@ pub(crate) fn snapshot(db: &Connection, id: &str) -> Result<ReadingSnapshot> {
         value.position_utf8 = existing.position_utf8;
         value.byte_count = existing.byte_count;
         value.chunk_count = existing.chunk_count;
-        value.content_sha256 = existing.content_sha256;
+        value.reading_key = existing.reading_key;
         value.encoding = existing.encoding;
-    } else if value.content_sha256.starts_with("pending:") {
-        value.content_sha256.clear();
     }
     Ok(ReadingSnapshot {
         book: value,
-        phase: phase(&state),
+        preparation: preparation(&state, error)?,
         generation,
-        can_read: visible,
+        readable_prefix: readable_prefix(visible),
         has_started,
-        source_bytes_read: read,
-        source_byte_count: size,
-        error: error
-            .map(|json| {
-                serde_json::from_str(&json).map_err(|e| ReaderError::Storage {
-                    message: e.to_string(),
-                })
-            })
-            .transpose()?,
+        byte_progress: ImportByteProgress { read, total: size },
     })
 }
 
@@ -183,29 +191,29 @@ impl ReaderCore {
         } else {
             requested
         };
-        let target = if locate && normalized >= confirmed && state.phase != ImportPhase::Complete {
+        let target = if locate && normalized >= confirmed && !state.preparation.is_complete() {
             None
         } else {
             resolve(normalized, forward)?
         };
         let mut status = if target.is_some() {
             ReadingWindowStatus::Ready
-        } else if locate && normalized >= confirmed && state.phase != ImportPhase::Complete {
+        } else if locate && normalized >= confirmed && !state.preparation.is_complete() {
             ReadingWindowStatus::Awaiting
         } else if !forward {
             ReadingWindowStatus::Beginning
-        } else if state.phase == ImportPhase::Complete {
+        } else if state.preparation.is_complete() {
             ReadingWindowStatus::End
         } else {
             ReadingWindowStatus::Awaiting
         };
         // At complete EOF locate can restore the last retained scalar, including spaces.
-        let mut projection_anchor =
-            if locate && target.is_none() && state.phase == ImportPhase::Complete {
-                resolve(requested, !forward)?
-            } else {
-                target
-            };
+        let mut projection_anchor = if locate && target.is_none() && state.preparation.is_complete()
+        {
+            resolve(requested, !forward)?
+        } else {
+            target
+        };
         let neighbor = |offset: u64, forward: bool| -> Result<Option<u64>> {
             if offset >= confirmed {
                 return Ok(None);
@@ -440,7 +448,7 @@ impl ReaderCore {
         } else {
             None
         };
-        let end = state.phase == ImportPhase::Complete
+        let end = state.preparation.is_complete()
             && (!chunks.is_empty() && next_cursor.is_none() || status == ReadingWindowStatus::End);
         let projection_revision: u64 = tx.query_row(
             "SELECT projection_revision FROM books WHERE id=?1",
@@ -455,9 +463,15 @@ impl ReaderCore {
                 .iter()
                 .any(|c| c.start_utf8 <= *anchor && *anchor < c.end_utf8)
         });
+        let chapter = if locate {
+            crate::library::tools::chapter(&tx, &id, requested)?
+        } else {
+            None
+        };
         tx.commit()?;
         Ok(ReadingFrame {
             snapshot: state,
+            chapter,
             chunks,
             paragraphs,
             is_end_of_book: end,
@@ -480,10 +494,10 @@ impl ReaderCore {
         let state = self.reading_snapshot(book_id)?;
         Ok(ImportStatus {
             text: state.book.into(),
-            phase: state.phase,
+            phase: state.preparation.legacy_phase(),
         })
     }
     pub fn import_source_byte_count(&self, book_id: String) -> Result<u64> {
-        Ok(self.reading_snapshot(book_id)?.source_byte_count)
+        Ok(self.reading_snapshot(book_id)?.byte_progress.total)
     }
 }

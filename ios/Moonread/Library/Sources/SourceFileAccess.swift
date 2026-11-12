@@ -89,6 +89,7 @@ final class SourceFileAccess: @unchecked Sendable {
         query.start()
     }
     func stop() {
+        guard !stopped else { return }
         stopped = true
         query.stop()
         notifications.removeAll()

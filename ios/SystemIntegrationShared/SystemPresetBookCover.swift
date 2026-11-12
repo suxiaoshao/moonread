@@ -352,7 +352,7 @@ struct SystemPresetBookCover: View {
             #else
             Group {
                 if rendersSynchronously { Image(uiImage: SystemPresetCoverRenderer.image(request)).resizable() }
-                else if let rendered, rendered.0 == request { Image(uiImage: rendered.1).resizable() }
+                else if let rendered, rendered.0.id == request.id, rendered.0.title == request.title { Image(uiImage: rendered.1).resizable() }
                 else { Image(id.assetName).resizable().scaledToFill() }
             }.frame(width: geometry.size.width, height: geometry.size.height).clipped()
                 .task(id: request) {

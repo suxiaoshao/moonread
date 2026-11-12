@@ -149,7 +149,7 @@ extension AppDataService {
             if arguments.contains("--ui-test-blank-line-no-cover") {
                 try await savePosition(bookID:prepared.id,offset:UInt64(gap.utf8.count))
                 let saved = try await snapshot(prepared.id)
-                print("BLANK_FIXTURE_PREPARED", saved.phase, "hasStarted", saved.hasStarted, "position", saved.book.positionUtf8)
+                print("BLANK_FIXTURE_PREPARED", saved.preparation, "hasStarted", saved.hasStarted, "position", saved.book.positionUtf8)
             }
             withExtendedLifetime(prepared) {}
             return
@@ -174,7 +174,7 @@ extension AppDataService {
             let baseline = try await prepareAnnotation(book.id, start: range.startUtf8, end: range.endUtf8)
             _ = try await saveNote(baseline, text: "设备甲的评论")
             if ProcessInfo.processInfo.arguments.contains("--ui-test-annotation-delete-conflict") {
-                let key = try userKey(book.id)
+                let key = try userKey(book.id).storageKey
                 try await userStore(for: key).changeDeletion(baseline.id, baseline: baseline.baselines[baseline.id] ?? [], deleted: true, restoring: nil)
             } else {
                 _ = try await saveNote(baseline, text: "设备乙的评论")
@@ -195,8 +195,8 @@ extension AppDataService {
         let local = try query.readingLocation(bookId: prepared.id, percentage: 10)
         try await savePosition(bookID: prepared.id, offset: local.offsetUtf8)
         let target = try query.readingLocation(bookId: prepared.id, percentage: 75)
-        let value = PositionValue(content_key: actual.contentSha256, offset: target.offsetUtf8)
-        try await userStore().put("position/" + actual.contentSha256, value: UserSyncJSON.encode(value), device: "synthetic-remote")
+        let value = PositionValue(content_key: actual.readingKey.storageKey, offset: target.offsetUtf8)
+        try await userStore().put("position/" + actual.readingKey.storageKey, value: UserSyncJSON.encode(value), device: "synthetic-remote")
         sourceDefaults.set(true, forKey: marker)
         withExtendedLifetime(prepared) {}
     }

@@ -157,8 +157,8 @@ final class AIDataSharingConsentAIDataSharingConsentTests: AIDataSharingConsentF
       let pending = Task {
         try await providers.authorizeSharing(
           connection: first, model: model,
-          credential: .init(
-            accessToken: "synthetic", refreshToken: "", expires: .distantFuture, accountID: account),
+          credential: .init(storage: .init(
+            accessToken: "synthetic", refreshToken: "", expires: .distantFuture, accountID: account), method: .chatGPT),
           owner: "chat", purpose: "chat", scopes: [.conversation], accountGeneration: generation)
       }
       await wait { !consent.requests.isEmpty }

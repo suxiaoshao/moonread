@@ -29,7 +29,7 @@ final class AIModelCatalogAuthenticationTests: AuthenticationFixture {
       clientID: "oaiapp_fixture", subject: "synthetic", idToken: "synthetic",
       scopes: ["chatgpt.tokens.use.direct"])
     try TestCredentials.save(
-      AICredential(
+      AICredentialStorage(
         accessToken: "synthetic", refreshToken: "synthetic", expires: .distantFuture,
         accountID: account.subject, chatGPT: account), reference: connection.credentialReference)
     let config = URLSessionConfiguration.ephemeral
@@ -100,7 +100,7 @@ final class AIModelCatalogAuthenticationTests: AuthenticationFixture {
     ChatGPTURLProtocol.fixture.set { _ in (503, Data()) }
     await providers.refreshModels(id, refreshPublic: false)
     XCTAssertTrue(providers.connections[0].models.isEmpty, "First account failure must not enumerate public models")
-    XCTAssertNotNil(providers.modelErrors[id])
+    XCTAssertNotNil(providers.modelError(id))
     let publicID = try XCTUnwrap(providers.catalog.providers[connection.catalogID]?.models.keys.first)
     var stale = connection
     stale.models = [AIModelOption(id: publicID, name: publicID, thinking: [], directoryOrigin: .metadata),
@@ -128,7 +128,7 @@ final class AIModelCatalogAuthenticationTests: AuthenticationFixture {
     ChatGPTURLProtocol.fixture.set { _ in (403, Data()) }
     await providers.refreshModels(id, refreshPublic: false)
     XCTAssertEqual(providers.connections[0].models.map(\.id), ["new"])
-    XCTAssertFalse(providers.needsLogin.contains(id)); XCTAssertNotNil(providers.modelErrors[id])
+    XCTAssertFalse(providers.requiresLogin(id)); XCTAssertNotNil(providers.modelError(id))
     ChatGPTURLProtocol.fixture.set { _ in (200, Data(#"{"data":[]}"#.utf8)) }
     await providers.refreshModels(id, refreshPublic: false)
     XCTAssertEqual(providers.connections[0].models[0].isListed, false, "Manual record stays, but cannot bypass a filtered successful empty directory")
@@ -201,7 +201,7 @@ final class AIModelCatalogAuthenticationTests: AuthenticationFixture {
     ChatGPTURLProtocol.fixture.set { _ in (503, Data()) }
     await sourceProviders.refreshModels(serviceID, refreshPublic: false)
     XCTAssertTrue(sourceProviders.connections[0].models.isEmpty, "First service failure must stay empty despite P metadata")
-    XCTAssertNotNil(sourceProviders.modelErrors[serviceID])
+    XCTAssertNotNil(sourceProviders.modelError(serviceID))
     XCTAssertTrue(sourceCatalog.models(for: serviceConnection).isEmpty)
     let metadataID = sourceProviders.addConnection(metadataConnection)
     await sourceProviders.refreshModels(metadataID, refreshPublic: false)

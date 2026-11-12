@@ -60,15 +60,30 @@ final class SourceDecodingRead: @unchecked Sendable {
             return identity
         }
     }
-    func read(bookmark: Data, relativePath: String) async throws -> RawSourceIdentity {
-        try await withTaskCancellationHandler {
-            try await Task.detached(priority: .userInitiated) { [self] in
-                let source = try ProtectedFileAccess.Source(bookmark: bookmark, relativePath: relativePath)
-                defer { withExtendedLifetime(source) {} }
-                try source.requireContained()
+    func read(bookmark: Data, relativePath: String, progress: (@Sendable (Double?) -> Void)? = nil) async throws -> RawSourceIdentity {
+        let work = Task.detached(priority: .userInitiated) { [self] in
+            try checkCancellation()
+            let source = try ProtectedFileAccess.Source(bookmark: bookmark, relativePath: relativePath)
+            defer { withExtendedLifetime(source) {} }
+            try source.requireContained()
+            guard let progress, (try? source.url.resourceValues(forKeys: [.isUbiquitousItemKey]).isUbiquitousItem) == true else {
                 return try await hash(at: source.url)
-            }.value
-        } onCancel: { self.cancel() }
+            }
+            let url = source.url
+            let monitor = await MainActor.run {
+                let monitor = SourceDownloadProgress(url: url, report: progress)
+                monitor.start()
+                return monitor
+            }
+            return try await withTaskCancellationHandler {
+                defer { Task { @MainActor in monitor.stop() } }
+                try checkCancellation()
+                return try await hash(at: url)
+            } onCancel: { Task { @MainActor in monitor.stop() } }
+        }
+        return try await withTaskCancellationHandler {
+            try await work.value
+        } onCancel: { work.cancel(); self.cancel() }
     }
 }
 

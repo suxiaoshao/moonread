@@ -34,7 +34,7 @@ final class ReaderQueryAdapterRecentReadingRestorationTests: RecentReadingRestor
     let model = BookInformationModel(service: f.service)
     await model.load(
       StatisticsRoute(
-        key: entry.readingKey, bookID: entry.bookId, title: entry.title, fileID: entry.id))
+        target: .file(fileId: entry.id), title: entry.title))
     XCTAssertNil(model.error)
     XCTAssertEqual(model.entry?.positionUtf8, identity.utf8Bytes / 2)
     XCTAssertEqual(model.details?.metadata.tags, ["星港"])
@@ -47,11 +47,394 @@ final class ReaderQueryAdapterRecentReadingRestorationTests: RecentReadingRestor
 }
 
 final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
+  @MainActor func testDirectoryCompletesWithPendingImportInFolderCover() async throws {
+    let (root, service, core, _, _, _, _, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    try core.scanLibraryShelf(shelfId: "builtin", items: [
+      .init(relativePath: "folder", directory: true, size: 0, modified: 0, needsDownload: false),
+      .init(relativePath: "folder/fixture.txt", directory: false, size: 10, modified: 0, needsDownload: false)
+    ])
+    let file = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { !$0.directory })
+    let job = try core.createImport(title: "Synthetic")
+    let key = ReadingKey.pending(bookId: job.bookId())
+    try core.linkLibraryFile(fileId: file.id, bookId: job.bookId())
+    await service.queryFixture { scope, phase in
+      if scope == "directory", phase == .retry { throw ReaderError.InvalidSettings }
+    }
+    let location = LibraryLocation(shelfID: "builtin")
+    let entries = try await service.libraryEntries(location)
+    XCTAssertEqual(entries.first?.folderRow?.childBookCount, 1)
+    XCTAssertEqual(entries.first?.folderRow?.coverPreviews.map(\.readingKey), [key])
+    let nested = try await service.libraryEntries(.init(shelfID: "builtin", path: "folder"))
+    XCTAssertEqual(nested.first?.readingIdentity, key)
+    XCTAssertEqual(try core.importStatus(bookId: job.bookId()).text.readingKey, key)
+  }
+
+  @MainActor func testDirectoryDetailsFollowCoverSelectionAndRevalidateActivity() async throws {
+    let (root, service, core, formal, pending, direct, _, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    var contents = ["a.txt": direct]
+    let nested = (1...5).map { "nested/deeper/\($0).txt" }
+    for (index, path) in nested.enumerated() {
+      let input = root.appendingPathComponent("input-\(index).txt")
+      try "第一章\n合成测试内容 \(index)\n".write(to: input, atomically: true, encoding: .utf8)
+      contents[path] = try core.importBook(filePath: input.path, title: "Synthetic")
+    }
+    var items: [ScannedLibraryItem] = ["nested", "nested/deeper"].map {
+      .init(relativePath: $0, directory: true, size: 0, modified: 0, needsDownload: false)
+    }
+    items += contents.map { path, book in
+      .init(relativePath: path, directory: false, size: book.byteCount, modified: 0, needsDownload: false)
+    }
+    try core.scanLibraryShelf(shelfId: "builtin", items: items)
+    for file in try core.sourceFiles(shelfId: "builtin") where !file.directory {
+      let book = try XCTUnwrap(contents[file.relativePath])
+      try core.linkLibraryFile(fileId: file.id, bookId: book.id)
+      try await formal.put("metadata/\(book.fixtureSHA256)/author", value: "\"\(file.relativePath)\"", device: "fixture")
+    }
+    func positionPayload(key: String, updated: Int64) throws -> String {
+      try UserSyncJSON.encode(StoredValue(updated: updated, token: "fixture-\(updated)",
+        value: UserSyncJSON.encode(PositionValue(content_key: key, offset: 3))))
+    }
+    for (index, path) in nested.enumerated() {
+      let key = try XCTUnwrap(contents[path]).fixtureSHA256
+      try await formal.receiveSyncFixture("position", key: key, payload: positionPayload(key: key, updated: Int64(index + 1)))
+    }
+    try await formal.receiveSyncFixture("position", key: direct.fixtureSHA256,
+      payload: positionPayload(key: direct.fixtureSHA256, updated: 10))
+    try await service.correctChapter(direct.id, offset: 0, title: "Synthetic correction", level: 0)
+    let promoted = try XCTUnwrap(contents[nested[0]]), omitted = try XCTUnwrap(contents[nested[1]])
+    let alias = "pending:" + promoted.id
+    let payload = try positionPayload(key: alias, updated: 20)
+    let details = QueryAttemptCounter()
+    await service.queryFixture { scope, phase in
+      guard scope == "directory-details", phase == .built else { return }
+      switch await details.next() {
+      case 1: try await pending.receiveSyncFixture("value", key: "position/" + alias, payload: payload)
+      case 2: try await formal.put("metadata/\(omitted.fixtureSHA256)/author", value: "\"Unselected\"", device: "fixture")
+      default: break
+      }
+    }
+    let location = LibraryLocation(shelfID: "builtin")
+    let staged = try await service.libraryEntries(location)
+    await service.queryFixture(nil)
+    let full = try await service.catalogueQuery(location, recursive: true)
+      .libraryEntries(shelfId: "builtin", parentPath: "", sort: .reading)
+    XCTAssertEqual(staged.map(\.id), full.map(\.id))
+    XCTAssertEqual(staged.map(\.lastRead), full.map(\.lastRead))
+    let folder = try XCTUnwrap(staged.first?.folderRow)
+    XCTAssertEqual(folder.childBookCount, 5)
+    XCTAssertEqual(folder.coverPreviews.compactMap(\.author), [nested[0], nested[4], nested[3], nested[2]])
+    XCTAssertEqual(folder.coverPreviews, full.first?.folderRow?.coverPreviews)
+    XCTAssertEqual(staged.last?.metadata, full.last?.metadata)
+    XCTAssertEqual(staged.last?.positionUtf8, 3)
+    XCTAssertEqual(staged.last?.chapterTitle, "Synthetic correction")
+    let rounds = await details.count
+    XCTAssertEqual(rounds, 2, "Activity selects a different cover; unselected metadata cannot invalidate this directory")
+  }
+
+  @MainActor func testBatchedProjectionOnlyReadsScopedCandidatesAndKeepsCompatibility() async throws {
+    let store = try makeInMemoryUserStore()
+    let keys = (1...140).map { String(format: "%064x", $0) }
+    let first = keys[0], last = keys[139], blocked = keys[128]
+    let outside = String(repeating: "f", count: 64)
+    func envelope(_ key: String, offset: UInt64, updated: Int64) throws -> String {
+      try UserSyncJSON.encode(StoredValue(updated: updated, token: "fixture-\(updated)",
+        value: UserSyncJSON.encode(PositionValue(content_key: key, offset: offset))))
+    }
+    try await store.receiveSyncFixture("value", key: "position/" + last, payload: envelope(last, offset: 1, updated: 1))
+    try await store.receiveSyncFixture("position", key: last, payload: envelope(last, offset: 2, updated: 2))
+    try await store.receiveSyncFixture("value", key: "position/" + blocked, payload: envelope(blocked, offset: 3, updated: 1))
+    try await store.receiveSyncFixture("position", key: blocked, payload: "{}")
+    try await store.receiveSyncFixture("position", key: outside, payload: envelope(outside, offset: 9, updated: 9))
+    try await store.put("metadata/\(first)/tag-fixture", value: "\"Synthetic\"", device: "fixture")
+    try await store.put("metadata/\(outside)/author", value: "\"Outside\"", device: "fixture")
+    try await store.put("opened/\(last)", value: "12345", device: "fixture")
+    let input = try await store.projection(generation: 0, enabled: true, includeFacts: false, keys: keys)
+    let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: Any])
+    let positions = try XCTUnwrap(json["positions"] as? [[String: Any]])
+    XCTAssertEqual(positions.map { $0["content_key"] as? String }, [last])
+    XCTAssertEqual(positions.first?["offset"] as? Int, 2)
+    XCTAssertEqual(json["unsupportedPositions"] as? [String], [blocked])
+    let metadata = try XCTUnwrap(json["metadata"] as? [[String: Any]])
+    XCTAssertEqual(metadata.map { $0["sha"] as? String }, [first])
+    XCTAssertEqual(metadata.first?["tags"] as? [String], ["Synthetic"])
+    XCTAssertFalse(input.contains(outside))
+    let onlyOpened = try await store.projection(generation: 0, enabled: true, includeFacts: false, keys: keys, fields: [.opened])
+    XCTAssertTrue(onlyOpened.contains("12345"))
+    XCTAssertFalse(onlyOpened.contains(first))
+    XCTAssertFalse(onlyOpened.contains(blocked))
+  }
+
+  @MainActor func testPreparedStatisticsDatesMatchFullProjectionAndInvalidateByInput() async throws {
+    let (root, service, _, formal, pending, book, other, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    func fact(_ id: String, key: String, day: Int, preview: Bool = false) throws -> (String, String, String) {
+      let value: [String: Any] = ["content_key": key, "title": "Synthetic", "device": "fixture", "slice": ["id": id, "session_id": id, "visit_id": id, "book_id": book.id, "started_ms": day * 86400000, "ended_ms": day * 86400000 + 1000, "local_day": day, "utc_offset_seconds": 3600, "preview": preview, "exposures": [["start_utf8": 3,"end_utf8": 6,"duration_ms": 500],["start_utf8": 6,"end_utf8": 9,"duration_ms": 500]]]]
+      return (id, key, String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self))
+    }
+    let key = book.fixtureSHA256
+    try await formal.saveFacts([fact("old", key: key, day: 19000), fact("new", key: key, day: 20000), fact("preview", key: other.fixtureSHA256, day: 20001, preview: true)], generation: 0, current: 0, enabled: true)
+    try await pending.saveFacts([fact("pending", key: "pending:" + book.id, day: 20001)], generation: 0, current: 0, enabled: true)
+    let full = try await service.effectiveQuery(facts: .all, fields: .metadata)
+    for bounds in [19000...20001, 20000...20001, 20000...20000] {
+      let first = Int64(bounds.lowerBound), last = Int64(bounds.upperBound)
+      let read = try await service.statisticsRead(first: first, last: last)
+      XCTAssertEqual(read.value, try full.statisticsOverview(firstDay: first, lastDay: last, contentKey: nil))
+      let activities = try await service.activitiesRead(first: first, last: last)
+      XCTAssertEqual(activities.value, try full.readingActivities(firstDay: first, lastDay: last, contentKey: nil))
+      XCTAssertEqual(read.version, activities.version)
+      XCTAssertNil(read.compatibilityNotice)
+    }
+    let before = try await service.statisticsRead(first: 20000, last: 20001, book: key)
+    try await formal.put("metadata/" + other.fixtureSHA256 + "/author", value: "\"Other\"", device: "fixture")
+    let unchanged = try await service.statisticsRead(first: 20000, last: 20001, book: key)
+    XCTAssertEqual(before.version, unchanged.version)
+    try await formal.saveFacts([fact("later", key: key, day: 20000)], generation: 0, current: 0, enabled: true)
+    let changed = try await service.statisticsRead(first: 20000, last: 20001, book: key)
+    XCTAssertNotEqual(before.version, changed.version)
+    XCTAssertEqual(changed.value.totalDurationMs, before.value.totalDurationMs + 1000)
+    try await formal.clear(book: key, session: "new")
+    let cleared = try await service.statisticsRead(first: 20000, last: 20001, book: key)
+    XCTAssertEqual(cleared.value.totalDurationMs, before.value.totalDurationMs)
+    let scopedFull = try await service.effectiveQuery(records: .only([.formal(sha256: key)]), facts: .only([.formal(sha256: key)]), fields: .metadata)
+    XCTAssertEqual(cleared.value, try scopedFull.statisticsOverview(firstDay: 20000, lastDay: 20001, contentKey: .formal(sha256: key)))
+    let model = StatisticsModel(service: service)
+    let window = StatisticsWindow(period: .month, date: StatisticsDates.date(20000))
+    let target = StatisticsRoute(target: .record(key: .formal(sha256: key)), title: "Synthetic")
+    await model.load(window, target: target)
+    let state = model.state(window, target: target)
+    XCTAssertNil(state.error)
+    XCTAssertTrue(state.content?.detailsLoaded == true)
+    XCTAssertEqual(state.cumulative?.durationMs, 2000)
+    XCTAssertEqual(state.overview?.totalDurationMs, 1000)
+    XCTAssertEqual(state.spans.count, 1)
+    try await service.savePosition(bookID: book.id, offset: 3)
+    let withoutRecords = try await service.effectiveQuery(records: .only([]), facts: .all)
+    let withRecords = try await service.effectiveQuery(facts: .all)
+    let withoutFacts = try await service.effectiveQuery()
+    let emptyFacts = try await service.effectiveQuery(facts: .only([]))
+    XCTAssertEqual(try withoutFacts.bookInfo(bookId: book.id).positionUtf8, 3)
+    XCTAssertEqual(try withoutRecords.bookInfo(bookId: book.id).positionUtf8, 0)
+    XCTAssertEqual(try withoutRecords.statisticsOverview(firstDay: 19000, lastDay: 20001, contentKey: nil).totalDurationMs,
+                   try withRecords.statisticsOverview(firstDay: 19000, lastDay: 20001, contentKey: nil).totalDurationMs)
+    for query in [withoutFacts, emptyFacts] {
+      XCTAssertEqual(try query.statisticsOverview(firstDay: 19000, lastDay: 20001, contentKey: nil).totalDurationMs, 0)
+    }
+
+  }
+
+  @MainActor func testActiveQueriesRebuildCompleteInputsUntilStableAndKeepRealFailures() async throws {
+    let (root, service, core, formal, _, book, other, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let attempts = QueryAttemptCounter()
+    await service.queryFixture { scope, phase in
+      guard scope.hasPrefix("book-"), phase == .built else { return }
+      let n = await attempts.next()
+      if n <= 3 {
+        try await formal.put("metadata/" + book.fixtureSHA256 + "/author", value: "\"Revision \(n)\"", device: "fixture")
+      } else {
+        // Import progress and unrelated books must not make this readable prefix starve.
+        await service.readingChanged(book.id)
+        try await formal.put("metadata/" + other.fixtureSHA256 + "/author", value: "\"Unrelated\"", device: "fixture")
+      }
+    }
+    let query = try await service.bookQuery(book.id)
+    XCTAssertEqual(try query.bookDetails(target: .cached(bookId: book.id)).requireIdentified().metadata.author, "Revision 3")
+    let rounds = await attempts.count
+    XCTAssertEqual(rounds, 4)
+    await service.queryFixture { _, phase in
+      if phase == .built { throw CocoaError(.fileReadNoPermission) }
+    }
+    do { _ = try await service.bookQuery(book.id); XCTFail("Real failure must escape, not retry") }
+    catch let error as CocoaError { XCTAssertEqual(error.code, .fileReadNoPermission) }
+    // Recent's details must revalidate the INDEX even if only a different book changed.
+    try await service.recordBookOpened(book.id, at: 100)
+    try await formal.put("metadata/" + other.fixtureSHA256 + "/author", value: "\"New recent\"", device: "fixture")
+    let recentAttempts = QueryAttemptCounter()
+    await service.queryFixture { scope, phase in
+      if scope == "recent", phase == .built, await recentAttempts.next() == 1 {
+        try await service.recordBookOpened(other.id, at: 200)
+      }
+    }
+    let recent = try await service.recentLibrary(1)
+    XCTAssertEqual(recent.first?.readingKey, other.fixtureSHA256)
+    XCTAssertEqual(recent.first?.metadata?.author, "New recent")
+    // A new directory member changes the semantic scope, not just its old value versions.
+    let catalogueAttempts = QueryAttemptCounter()
+    await service.queryFixture { scope, phase in
+      if scope == "catalogue", phase == .built, await catalogueAttempts.next() == 1 {
+        let extra = root.appendingPathComponent("extra.txt")
+        try "第一章 新的合成章节\n用于目录输入范围变化。".write(to: extra, atomically: true, encoding: .utf8)
+        let added = try core.importBook(filePath: extra.path, title: "Extra fixture")
+        try core.scanLibraryShelf(shelfId: "builtin", items: [
+          .init(relativePath: "a.txt", directory: false, size: book.byteCount, modified: 0, needsDownload: false),
+          .init(relativePath: "b.txt", directory: false, size: other.byteCount, modified: 0, needsDownload: false),
+          .init(relativePath: "extra.txt", directory: false, size: added.byteCount, modified: 0, needsDownload: false)])
+        let file = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "extra.txt" })
+        try core.linkLibraryFile(fileId: file.id, bookId: added.id)
+        try await formal.put("metadata/" + added.fixtureSHA256 + "/author", value: "\"Directory update\"", device: "fixture")
+      }
+    }
+    let entries = try await service.catalogueQuery(.init(shelfID: "builtin"), recursive: true).allLibraryBooks(shelfId: "builtin")
+    XCTAssertEqual(entries.count, 3)
+    XCTAssertEqual(entries.first { $0.name == "extra.txt" }?.metadata?.author, "Directory update")
+    let file = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "a.txt" })
+    let fileAttempts = QueryAttemptCounter()
+    await service.queryFixture { scope, phase in
+      if scope == "file-" + file.id, phase == .built, await fileAttempts.next() == 1 {
+        try core.linkLibraryFile(fileId: file.id, bookId: other.id)
+      }
+    }
+    let relinked = try await service.libraryEntry(file.id)
+    XCTAssertEqual(relinked.readingKey, other.fixtureSHA256)
+    XCTAssertEqual(relinked.metadata?.author, "New recent")
+    let preferences = QueryAttemptCounter()
+    await service.queryFixture { _, phase in
+      if phase == .built, await preferences.next() == 1 {
+        UserDefaults(suiteName: suite)!.set([other.fixtureSHA256], forKey: "Moonread.hiddenRecent")
+      }
+    }
+    let hidden = try await service.bookQuery(other.id)
+    XCTAssertTrue(try hidden.recentLibraryEntries(limit: 2).isEmpty)
+    let preferenceRounds = await preferences.count
+    XCTAssertEqual(preferenceRounds, 2, "The same input signature validates cache hits and completed builds")
+    await service.queryFixture(nil)
+  }
+
+  @MainActor func testCancelledQueryDoesNotPublishCacheOrRestartAndSharedInitializationSurvives() async throws {
+    let (root, service, _, formal, pending, book, _, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    for cancelAt in [AppDataService.UserQueryTestPhase.built, .retry] {
+      let gate = RestorationGate(), attempts = QueryAttemptCounter()
+      await service.queryFixture { _, phase in
+        if phase == .built {
+          _ = await attempts.next()
+          if cancelAt == .retry { try await formal.put("metadata/" + book.fixtureSHA256 + "/author", value: "\"Changed\"", device: "fixture") }
+        }
+        if phase == cancelAt { await gate.wait() }
+      }
+      let work = Task { try await service.bookQuery(book.id) }
+      await gate.waitForEntry(); work.cancel(); await gate.release()
+      do { _ = try await work.value; XCTFail("Actual task cancellation must escape") } catch is CancellationError { }
+      let count = await attempts.count, cacheCount = await service.queryFixtureCacheCount()
+      XCTAssertEqual(count, 1); XCTAssertEqual(cacheCount, 0)
+    }
+    await service.queryFixture(nil)
+    let gate = RestorationGate(), starts = QueryAttemptCounter()
+    let shared = AppDataService(core: try ReaderCore(dataDirectory: root.appendingPathComponent("shared-db").path),
+      sourceDefaultsSuite: suite, userStoreFactory: { name, _ in
+        if name == "pending-users.store" { return pending }
+        _ = await starts.next(); await gate.wait(); return formal
+      })
+    let first = Task { try await shared.effectiveQuery() }
+    await gate.waitForEntry()
+    let second = Task { try await shared.effectiveQuery() }
+    first.cancel(); await gate.release()
+    do { _ = try await first.value; XCTFail("Cancelled waiter") } catch is CancellationError { }
+    _ = try await second.value
+    let count = await starts.count
+    XCTAssertEqual(count, 1, "A cancelled waiter cannot cancel shared initialization")
+    // Configuration changes while initialization waits cannot pair an old store with a new epoch.
+    let configGate = RestorationGate()
+    let replacement = AppDataService(core: try ReaderCore(dataDirectory: root.appendingPathComponent("config-db").path),
+      sourceDefaultsSuite: suite, userStoreFactory: { name, cloud in
+        if name == "pending-users.store" { return pending }
+        if !cloud { await configGate.wait(); return formal }
+        return pending
+      })
+    try await formal.put("metadata/" + book.fixtureSHA256 + "/author", value: "\"Old account\"", device: "fixture")
+    let waiting = Task { try await replacement.effectiveQuery(fields: .metadata) }
+    await configGate.waitForEntry()
+    try await replacement.configureUserCloud(.cloud(.init(recordName: "fixture"), .currentOwner))
+    await configGate.release()
+    let result = try await waiting.value
+    let current = try await replacement.effectiveQuery(fields: .metadata)
+    XCTAssertTrue(result === current)
+  }
+
+  @MainActor func testReaderMonitorAndDirectoryOwnersHandleInvalidationAndExit() async throws {
+    let (root, service, _, formal, _, book, _, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    for resume in [true, false] {
+      let attempts = QueryAttemptCounter()
+      await service.queryFixture { scope, phase in
+        if scope.hasPrefix("book-"), phase == .built, await attempts.next() <= 3 {
+          try await formal.put("metadata/" + book.fixtureSHA256 + "/author", value: "\"\(UUID().uuidString)\"", device: "fixture")
+        }
+      }
+      let session = ReaderSession(service: service, readContinuation: { id, _ in
+        if resume { _ = try await service.bookQuery(id) }
+        return .init(localOffset: nil, candidate: nil)
+      })
+      await session.open(.book(book.id))
+      await awaitState { session.window != nil && !session.incomplete }
+      XCTAssertNil(session.error); XCTAssertNotNil(session.window?.projectionAnchor)
+      await session.leave().value
+      let count = await attempts.count
+      XCTAssertGreaterThanOrEqual(count, 4)
+    }
+    for leave in [true, false] {
+      let gate = RestorationGate()
+      await service.queryFixture { _, phase in if phase == .built { await gate.wait() } }
+      let tools = ReaderToolsModel(service: service)
+      let work = Task { await tools.prepare(bookID: book.id, currentChapter: 0, library: true) }
+      await gate.waitForEntry()
+      if leave { tools.leave() } else { work.cancel() }
+      await gate.release(); await work.value
+      XCTAssertTrue(tools.chapters.isEmpty); XCTAssertFalse(tools.loadingChapters); XCTAssertNil(tools.error)
+      XCTAssertNil(tools.notesLoadError)
+    }
+    await service.queryFixture(nil)
+  }
+
+  @MainActor func testSystemStatisticsCancellationIsNotUnavailableAndRealFailureStillIs() async throws {
+    let (root, service, _, formal, _, book, _, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let gate = RestorationGate()
+    await service.queryFixture { _, phase in if phase == .built { await gate.wait() } }
+    let work = Task { try await service.systemWidgetStatistics() }
+    await gate.waitForEntry(); work.cancel(); await gate.release()
+    do { _ = try await work.value; XCTFail("Cancellation cannot replace previous widget statistics") } catch is CancellationError { }
+    await service.queryFixture { _, phase in if phase == .built { throw CocoaError(.fileReadNoPermission) } }
+    let failed = try await service.systemWidgetStatistics()
+    XCTAssertEqual(failed.status, "unavailable")
+    let rounds = QueryAttemptCounter()
+    await service.queryFixture { scope, phase in
+      if scope == "system-catalogue", phase == .built, await rounds.next() <= 3 {
+        try await formal.put("metadata/" + book.fixtureSHA256 + "/author", value: "\"\(UUID().uuidString)\"", device: "fixture")
+      }
+    }
+    let file = SystemReadingSnapshotFile(directory: root.appendingPathComponent("system-snapshot"))
+    await service.startSystemReadingCatalog(file: file)
+    await service.waitForSystemReadingCatalog()
+    let before = try file.read()
+    XCTAssertEqual(before.books.count, 2)
+    let builds = await rounds.count
+    XCTAssertEqual(builds, 4)
+    let cancelling = RestorationGate()
+    await service.queryFixture { scope, phase in
+      if scope == "system-widget-statistics", phase == .built { await cancelling.wait() }
+    }
+    await service.scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
+    await cancelling.waitForEntry()
+    await service.cancelSystemQueryFixture()
+    await cancelling.release(); await service.waitForSystemReadingCatalog()
+    XCTAssertEqual(try file.read().generation, before.generation, "Cancelled refresh must preserve the previous published snapshot")
+    await service.queryFixture { scope, phase in
+      if scope == "system-widget-statistics", phase == .built { throw CocoaError(.fileReadNoPermission) }
+    }
+    await service.scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
+    await service.waitForSystemReadingCatalog()
+    XCTAssertEqual(try file.read().statistics?.status, "unavailable")
+    await service.queryFixture(nil)
+  }
+
   // S319: 单书查询输入按版本失效且旧 snapshot 不变；仅比较 Swift 送出的 facts，不重复 Rust 最终排序/统计。
   @MainActor func testSingleBookProjectionMatchesBatchAndInvalidatesWithoutMutatingOldSnapshot()
     async throws
   {
-    let (root, service, _, formal, _, book, other, suite) = try singleBookFixture()
+    let (root, service, _, formal, pending, book, other, suite) = try singleBookFixture()
     defer {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -59,9 +442,9 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     try await service.savePosition(bookID: book.id, offset: 20)
     try await service.savePosition(bookID: other.id, offset: 0)
     try await formal.put(
-      "metadata/\(book.contentSha256)/author", value: "\"合成作者\"", device: "fixture")
+      "metadata/\(book.fixtureSHA256)/author", value: "\"合成作者\"", device: "fixture")
     try await formal.put(
-      "metadata/\(other.contentSha256)/author", value: "\"其他作者\"", device: "fixture")
+      "metadata/\(other.fixtureSHA256)/author", value: "\"其他作者\"", device: "fixture")
     try await service.correctChapter(book.id, offset: 0, title: "覆盖章名", level: 1)
     let scoped = try await service.bookQuery(book.id)
     let batch = try await service.effectiveQuery()
@@ -71,12 +454,49 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
       try scoped.readingFrame(bookId: book.id, offsetUtf8: 20),
       try batch.readingFrame(bookId: book.id, offsetUtf8: 20))
     XCTAssertEqual(
-      try scoped.bookDetails(bookId: book.id, contentSha: nil),
-      try batch.bookDetails(bookId: book.id, contentSha: nil))
+      try scoped.bookDetails(target: .cached(bookId: book.id)).requireIdentified(),
+      try batch.bookDetails(target: .cached(bookId: book.id)).requireIdentified())
     let same = try await service.bookQuery(book.id)
     XCTAssertEqual(
       try scoped.readingSnapshot(bookId: book.id), try same.readingSnapshot(bookId: book.id),
       "Unchanged facts have equal query results; framework notifications may evict a cached object")
+    let beforeOther = formal.version(keys: [book.fixtureSHA256, "pending:" + book.id], positionsOnly: false, includeFacts: false, statisticsKeys: nil)
+    try await service.savePosition(bookID: other.id, offset: 12)
+    let afterOther = formal.version(keys: [book.fixtureSHA256, "pending:" + book.id], positionsOnly: false, includeFacts: false, statisticsKeys: nil)
+    XCTAssertEqual(beforeOther, afterOther, "Only related input versions may change")
+    let unrelated = try await service.bookQuery(book.id)
+    XCTAssertTrue(same === unrelated, "An unrelated book position must reuse this query")
+    func fact(_ key: String) throws -> (String, String, String) {
+      let id = UUID().uuidString
+      let payload: [String: Any] = ["content_key": key, "title": "Synthetic", "device": "fixture", "slice": [
+        "id": id, "session_id": "fixture", "visit_id": "fixture", "book_id": book.id,
+        "started_ms": 1000, "ended_ms": 2000, "local_day": 20000, "utc_offset_seconds": 0,
+        "preview": false, "exposures": [["start_utf8": 0, "end_utf8": 9, "duration_ms": 1000]]]]
+      return (id, key, String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self))
+    }
+    try await formal.saveFacts([fact(book.fixtureSHA256), fact(other.fixtureSHA256)], generation: 0, current: 0, enabled: true)
+    try await pending.saveFacts([fact("pending:" + book.id)], generation: 0, current: 0, enabled: true)
+    let noFactsChanged = try await service.bookQuery(book.id)
+    XCTAssertTrue(unrelated === noFactsChanged, "Reading facts cannot invalidate a query that does not depend on them")
+    let statsOnly = try await formal.projection(generation: 0, enabled: true, includeFacts: true,
+      keys: [book.fixtureSHA256], statisticsKeys: [book.fixtureSHA256, "pending:" + book.id])
+    XCTAssertFalse(statsOnly.contains(other.fixtureSHA256))
+    let formalJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(statsOnly.utf8)) as? [String: Any])
+    XCTAssertEqual((formalJSON["facts"] as? [Any])?.count, 1)
+    let pendingInput = try await pending.projection(generation: 0, enabled: true, includeFacts: true,
+      keys: [book.fixtureSHA256, "pending:" + book.id], statisticsKeys: [book.fixtureSHA256, "pending:" + book.id])
+    let pendingJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(pendingInput.utf8)) as? [String: Any])
+    XCTAssertEqual((pendingJSON["facts"] as? [Any])?.count, 1, "Both identities retain their own facts")
+    let outline = try await service.bookQuery(book.id, facts: true).chapterOutline(bookId: book.id)
+    let full = try await service.effectiveQuery(facts: .all)
+    XCTAssertEqual(outline, try full.chapterOutline(bookId: book.id))
+    let widget = try await service.effectiveQuery(facts: .all, fields: [])
+    XCTAssertEqual(try widget.statisticsWidgetSummary(today: 20000, weekStart: 19994),
+      try full.statisticsWidgetSummary(today: 20000, weekStart: 19994))
+    let withFacts = try await service.bookQuery(book.id, facts: true)
+    try await formal.saveFacts([fact(other.fixtureSHA256)], generation: 0, current: 0, enabled: true)
+    let unrelatedFacts = try await service.bookQuery(book.id, facts: true)
+    XCTAssertTrue(withFacts === unrelatedFacts)
     let old = try scoped.readingSnapshot(bookId: book.id).book.positionUtf8
     try await service.savePosition(bookID: book.id, offset: 44)
     let newer = try await service.bookQuery(book.id)
@@ -93,14 +513,30 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     let generation = try await service.bookQuery(book.id)
     XCTAssertFalse(generation === remote)
     UserDefaults(suiteName: suite)!.set(
-      "fixture-preferred", forKey: "Moonread.preferredFile." + book.contentSha256)
+      "fixture-preferred", forKey: "Moonread.preferredFile." + book.fixtureSHA256)
     let preferred = try await service.bookQuery(book.id)
     XCTAssertFalse(preferred === generation)
     XCTAssertEqual(try preferred.readingSnapshot(bookId: book.id).book.positionUtf8, 44)
     let input = try await formal.projection(
-      generation: 0, enabled: true, includeFacts: false, keys: [book.contentSha256])
+      generation: 0, enabled: true, includeFacts: false, keys: [book.fixtureSHA256])
     XCTAssertFalse(
-      input.contains(other.contentSha256), "Single-book inputs must not fetch/project another book")
+      input.contains(other.fixtureSHA256), "Single-book inputs must not fetch/project another book")
+  }
+
+  @MainActor func testOpeningIsPersistedSeparatelyWithoutMovingReadingPosition() async throws {
+    let (root, service, _, formal, _, book, _, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let before = try await service.snapshot(book.id)
+    try await service.recordBookOpened(book.id, at: 12345)
+    let opened = try await formal.value("opened/" + book.fixtureSHA256)
+    XCTAssertEqual(opened, "12345")
+    let after = try await service.snapshot(book.id)
+    XCTAssertEqual(before.book.positionUtf8, after.book.positionUtf8)
+    XCTAssertEqual(before.hasStarted, after.hasStarted)
+    let position = try await formal.value("position/" + book.fixtureSHA256)
+    XCTAssertNil(position)
+    let restored = try await formal.projection(generation: 0, enabled: true, includeFacts: false, positionsOnly: true)
+    XCTAssertTrue(restored.contains("12345"))
   }
 
   // S320: 启动恢复尚未结束时 pending 别名的位置仍进入正确开书查询；裁决算法只 S457。
@@ -117,7 +553,19 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
       decoding: try JSONEncoder().encode(PositionValue(content_key: "pending:" + id, offset: 20)),
       as: UTF8.self)
     try await pending.put("position/pending:" + id, value: position, device: "fixture")
-    try core.reuseImport(control: control, existingId: book.id)
+    try await service.recordBookOpened(id, at: 34567)
+    let identities = QueryAttemptCounter()
+    await service.queryFixture { scope, phase in
+      if scope.hasPrefix("book-"), phase == .built, await identities.next() == 1 {
+        try core.reuseImport(control: control, existingId: book.id)
+      }
+    }
+    let canonical = try await service.bookQuery(book.id)
+    await service.queryFixture(nil)
+    let rounds = await identities.count
+    XCTAssertEqual(rounds, 2, "The query must resolve the newly associated pending alias")
+    XCTAssertEqual(try canonical.readingSnapshot(bookId: book.id).book.positionUtf8, 20,
+      "A scoped canonical query still includes the original pending alias")
     let update = try await service.openingFrame(id, offset: nil)
     XCTAssertTrue(update.0.hasStarted)
     XCTAssertEqual(update.0.book.positionUtf8, 20)
@@ -130,6 +578,95 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     let after = try await service.snapshot(book.id)
     XCTAssertEqual(after.book.positionUtf8, 20)
     XCTAssertTrue(after.hasStarted)
+    let formalOpened = try await service.userStore().value("opened/" + book.fixtureSHA256)
+    let pendingOpened = try await pending.value("opened/pending:" + id)
+    XCTAssertEqual(formalOpened, "34567")
+    XCTAssertNil(pendingOpened)
+  }
+
+  @MainActor func testPresentedDirectoryRefreshesCoverageForStatisticsChangeAndReset() async throws {
+    let (root, service, _, formal, _, book, _, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let owner = ReaderToolSession()
+    owner.send(.open(.library(.listing(.chapters))))
+    let host = owner.host
+    host.update(owner.render)
+    let token = try XCTUnwrap(host.token); host.confirmed(token)
+    XCTAssertFalse(owner.render.controls); XCTAssertEqual(host.node?.taskID, "library")
+    XCTAssertTrue(host.presentsChapterList, "A real directory is presented even with compact controls hidden")
+    let model = ReaderToolsModel(service: service)
+    await model.prepare(bookID: book.id, currentChapter: 0, library: true)
+    await awaitState { model.chapterCoverageReady }
+    XCTAssertTrue(model.chapterSnapshot.allSatisfy { $0.coveredCharacters == nil })
+    model.filterChapters("合成")
+    let jump = model.chapterJumpRevision
+    let key = book.fixtureSHA256
+    let payload: [String: Any] = ["content_key": key, "title": "Synthetic", "device": "fixture", "slice": [
+      "id": "directory-change", "session_id": "fixture", "visit_id": "fixture", "book_id": book.id,
+      "started_ms": 1000, "ended_ms": 4000, "local_day": 20000, "utc_offset_seconds": 0,
+      "preview": false, "exposures": [["start_utf8": 0, "end_utf8": book.byteCount, "duration_ms": 3000]]]]
+    try await formal.saveFacts([("directory-change", key, String(decoding: try JSONSerialization.data(withJSONObject: payload), as: UTF8.self))], generation: 0, current: 0, enabled: true)
+    await model.refreshChapterStatistics(reset: false, presented: host.presentsChapterList)
+    await awaitState { model.chapterSnapshot.contains { ($0.coveredCharacters ?? 0) > 0 } }
+    XCTAssertTrue(model.chapterSnapshot.contains { ($0.coveredCharacters ?? 0) > 0 })
+    XCTAssertEqual(model.chapterFilter, "合成"); XCTAssertEqual(model.chapterJumpRevision, jump)
+
+    try await formal.clear(book: key, session: nil)
+    let gate = RestorationGate()
+    await service.queryFixture { scope, phase in
+      if scope.hasPrefix("chapters-"), phase == .built { await gate.wait() }
+    }
+    await model.refreshChapterStatistics(reset: true, presented: host.presentsChapterList)
+    await gate.waitForEntry()
+    XCTAssertFalse(model.chapterCoverageReady, "Reset hides obsolete coverage before replacement is ready")
+    XCTAssertFalse(model.chapters.isEmpty)
+    await gate.release()
+    await awaitState { model.chapterCoverageReady }
+    XCTAssertTrue(model.chapterCoverageReady, "An open directory reloads coverage after reset")
+    XCTAssertTrue(model.chapterSnapshot.allSatisfy { $0.coveredCharacters == nil })
+    XCTAssertEqual(model.chapterFilter, "合成"); XCTAssertEqual(model.chapterJumpRevision, jump)
+    host.update(nil)
+    XCTAssertFalse(host.presentsChapterList, "A retained outgoing node is not an open directory")
+    model.leave(); await service.queryFixture(nil)
+  }
+
+  @MainActor func testChapterStructurePublishesBeforeCoverageAndCancellationRejectsLateCoverage() async throws {
+    let (root, service, _, _, _, book, _, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let gate = RestorationGate()
+    await service.queryFixture { scope, phase in
+      if scope.hasPrefix("chapters-"), phase == .built { await gate.wait() }
+    }
+    let model = ReaderToolsModel(service: service)
+    await model.prepare(bookID: book.id, currentChapter: 0, library: true)
+    await gate.waitForEntry()
+    XCTAssertFalse(model.chapters.isEmpty, "Structure is usable while coverage is still reading")
+    XCTAssertFalse(model.loadingChapters); XCTAssertFalse(model.chapterCoverageReady)
+    model.filterChapters("no-matching-chapter")
+    let jump = model.chapterJumpRevision
+    await gate.release()
+    await awaitState { model.chapterCoverageReady }
+    XCTAssertTrue(model.chapterCoverageReady)
+    XCTAssertEqual(model.chapterFilter, "no-matching-chapter"); XCTAssertTrue(model.chapters.isEmpty)
+    XCTAssertEqual(model.chapterJumpRevision, jump, "Background coverage never scrolls the list")
+
+    let late = RestorationGate()
+    await service.queryFixture { scope, phase in
+      if scope.hasPrefix("chapters-"), phase == .built { await late.wait() }
+    }
+    model.invalidateChapterCoverage()
+    await model.refreshChapters()
+    await late.waitForEntry()
+    model.invalidateChapterCoverage() // A clear, including while the sheet is closed, invalidates late work.
+    await late.release()
+    await service.queryFixture { scope, phase in
+      if scope.hasPrefix("chapters-"), phase == .built { throw CocoaError(.fileReadNoPermission) }
+    }
+    await model.refreshChapters()
+    await awaitState { model.error != nil }
+    XCTAssertFalse(model.chapterCoverageReady); XCTAssertNotNil(model.error)
+    XCTAssertFalse(model.chapterSnapshot.isEmpty, "Coverage errors never remove usable chapters")
+    model.leave(); await service.queryFixture(nil)
   }
 
   // S359: 目录刷新使当前目录 snapshot 更新，展开/筛选不混用旧版本；目录查找算法只在 Rust。
@@ -160,6 +697,12 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     await model.prepare(bookID: book.id, currentChapter: current.startUtf8, library: true)
     XCTAssertEqual(model.chapters.count, 202)
     XCTAssertEqual(model.chapterTarget, current.startUtf8)
+    XCTAssertNil(model.noteSnapshot, "Opening the chapter list does not prefetch notes")
+    await awaitState { model.chapterCoverageReady }
+    let beforePosition = try await service.chapterQuery(book.id)
+    try await service.savePosition(bookID: book.id, offset: current.startUtf8)
+    let afterPosition = try await service.chapterQuery(book.id)
+    XCTAssertTrue(beforePosition === afterPosition, "Position changes do not invalidate chapter/coverage inputs")
     model.toggleVolume(0)
     model.toggleVolume(UInt64(first.utf8.count))
     XCTAssertEqual(model.chapters.count, 2)
@@ -271,4 +814,16 @@ final class ReaderQueryAdapterUserDataTests: UserDataFixture {
     let overview = try await service.statistics(first: 0, last: 0, book: nil)
     XCTAssertEqual(overview.books.first?.durationMs, 5000)
   }
+}
+
+actor QueryAttemptCounter {
+  var count = 0
+  func next() -> Int { count += 1; return count }
+}
+extension AppDataService {
+  func queryFixture(_ boundary: (@Sendable (String, UserQueryTestPhase) async throws -> Void)?) {
+    queryTestBoundary = boundary; queryCache.removeAll()
+  }
+  func queryFixtureCacheCount() -> Int { queryCache.count }
+  func cancelSystemQueryFixture() { systemCatalog?.task?.cancel() }
 }

@@ -5,20 +5,22 @@ import SwiftAISDK
 
 extension AIAgentRuntime {
   func openPart(_ kind: AIAgentLivePart.Kind, id: String, metadata: ProviderOptions? = nil) {
-    liveParts.append(.init(kind: kind, spanID: id, providerOptions: metadata))
+    updateLiveOutput { $0.parts.append(.init(kind: kind, spanID: id, providerOptions: metadata)) }
   }
   func appendPart(_ kind: AIAgentLivePart.Kind, id: String, text: String, metadata: ProviderOptions? = nil) {
-    guard let index = liveParts.lastIndex(where: { $0.kind == kind && $0.spanID == id }) else {
-      liveParts.append(.init(kind: kind, spanID: id, text: text, providerOptions: metadata))
-      return
-    }
-    liveParts[index].text += text
-    if let metadata {
-      var options = liveParts[index].providerOptions ?? [:]
-      for (provider, values) in metadata {
-        options[provider, default: [:]].merge(values) { _, new in new }
+    updateLiveOutput { output in
+      guard let index = output.parts.lastIndex(where: { $0.kind == kind && $0.spanID == id }) else {
+        output.parts.append(.init(kind: kind, spanID: id, text: text, providerOptions: metadata))
+        return
       }
-      liveParts[index].providerOptions = options
+      output.parts[index].text += text
+      if let metadata {
+        var options = output.parts[index].providerOptions ?? [:]
+        for (provider, values) in metadata {
+          options[provider, default: [:]].merge(values) { _, new in new }
+        }
+        output.parts[index].providerOptions = options
+      }
     }
   }
   func toolSet() -> ToolSet {

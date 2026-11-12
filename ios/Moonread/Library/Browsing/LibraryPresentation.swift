@@ -36,14 +36,14 @@ struct LibraryListHeading: ViewModifier {
 
 extension LibraryEntry {
     var libraryDetail: String {
-        if directory { return String(localized: "\(childBookCount) 本小说") }
+        if case .folder(let folder) = item { return String(localized: "\(folder.childBookCount) 本小说") }
         if needsDownload { return String(localized: "待下载") }
-        guard contentSha256 != nil, positionUtf8 > 0 else { return String(localized: "未读") }
+        guard readingIdentity != nil, positionUtf8 > 0 else { return String(localized: "未读") }
         return libraryProgress + (chapterTitle.map { " · " + $0 } ?? "")
     }
     var libraryProgress: String {
         if needsDownload { return String(localized: "待下载") }
-        guard contentSha256 != nil, positionUtf8 > 0 else { return String(localized: "未读") }
+        guard readingIdentity != nil, positionUtf8 > 0 else { return String(localized: "未读") }
         return (Double(positionUtf8) / Double(max(1, byteCount))).formatted(.percent.precision(.fractionLength(1)))
     }
 }
@@ -80,7 +80,7 @@ struct LibraryFolderCover: View {
     private func previewRow(_ items: [LibraryCoverPreview]) -> some View {
         HStack(spacing: 5) {
             ForEach(items, id: \.fileId) { preview in
-                BookCoverView(title: URL(fileURLWithPath: preview.name).deletingPathExtension().lastPathComponent, compact: true, cover: preview.cover, contentSHA256: preview.contentSha256, author: preview.author)
+                BookCoverView(title: URL(fileURLWithPath: preview.name).deletingPathExtension().lastPathComponent, compact: true, cover: preview.cover, contentSHA256: preview.readingKey?.formalSHA256, author: preview.author)
                     .frame(width: 39.5, height: 59)
             }
             if items.count < 2 { Color.clear.frame(width: 39.5, height: 59) }
@@ -101,9 +101,9 @@ struct LibraryBookTile: View {
             Button { if let select { select() } else { model.open(entry) } } label: {
                 VStack(alignment: .leading, spacing: LayoutTokens.compact) {
                     Group {
-                        if entry.directory {
-                            LibraryFolderCover(previews: entry.coverPreviews).aspectRatio(0.7, contentMode: .fit)
-                        } else { BookCoverView(title: entry.title, cover: entry.metadata?.cover, contentSHA256: entry.contentSha256, author: entry.metadata?.author).aspectRatio(0.7, contentMode: .fit) }
+                        if case .folder(let folder) = entry.item {
+                            LibraryFolderCover(previews: folder.coverPreviews).aspectRatio(0.7, contentMode: .fit)
+                        } else { BookCoverView(title: entry.title, cover: entry.metadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.metadata?.author).aspectRatio(0.7, contentMode: .fit) }
                     }
                         .overlay {
                             if selected {
@@ -125,7 +125,7 @@ struct LibraryBookTile: View {
                 .accessibilityAddTraits(selected ? .isSelected : [])
                 .overlay(alignment: .top) {
                     if select == nil && !entry.directory {
-                        LibraryFileLoading(model: model, entry: entry).aspectRatio(0.7, contentMode: .fit)
+                        LibraryFileAvailability(entry: entry).aspectRatio(0.7, contentMode: .fit)
                     }
                 }
             HStack(spacing: 0) {
@@ -227,33 +227,12 @@ struct LibraryAlphabetIndex: View {
     }
 }
 
-struct LibraryFileLoading: View {
-    let model: LibraryModel
+struct LibraryFileAvailability: View {
     let entry: LibraryEntry
     var compact = false
     @Environment(\.theme) private var theme
     var body: some View {
-        if model.openingFileID == entry.id && model.showsFileLoading {
-            Button { model.cancelOpening() } label: {
-                ZStack {
-                    Color(uiColor: theme.accentSurface)
-                    VStack(spacing: compact ? 5 : 8) {
-                        if let progress = model.fileProgress {
-                            ProgressView(value: progress).progressViewStyle(.linear)
-                                .tint(Color(uiColor: theme.accent))
-                            Text(progress, format: .percent.precision(.fractionLength(0)))
-                                .font(compact ? .caption2 : .caption).monospacedDigit()
-                                .foregroundStyle(Color(uiColor: theme.ink))
-                        } else {
-                            ProgressView().progressViewStyle(.circular)
-                                .tint(Color(uiColor: theme.accent))
-                        }
-                    }.padding(.horizontal, compact ? 6 : 12).frame(maxWidth: 92)
-                }.clipShape(.rect(cornerRadius: compact ? 3 : 6)).contentShape(.rect)
-            }.buttonStyle(.plain).accessibilityLabel("取消下载")
-                .accessibilityValue(model.fileProgress.map { $0.formatted(.percent.precision(.fractionLength(0))) } ?? String(localized: "正在获取文件"))
-                .accessibilityIdentifier("library-file-loading")
-        } else if entry.needsDownload {
+        if entry.needsDownload {
             ZStack(alignment: .bottomTrailing) {
                 Color.clear
                 Image(systemName: "icloud.and.arrow.down")

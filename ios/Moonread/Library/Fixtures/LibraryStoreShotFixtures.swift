@@ -44,7 +44,7 @@ extension AppDataService {
             try await saveMetadata(base: metadata, edited: edited)
             if title == f.books[0].title {
                 let original = f.books[0].text
-                for pair in (StoreShotScene.requested.map { [StoreShotScene.paper, .mint, .bamboo].contains($0) } == true ? [] : f.notes) {
+                for pair in (StoreShotScene.requested.map { [StoreShotScene.paper, .mint, .bamboo, .listening].contains($0) } == true ? [] : f.notes) {
                     guard let range = original.range(of: pair[0]) else { throw ReaderError.InvalidRange }
                     let start = UInt64(original[..<range.lowerBound].utf8.count), end = start + UInt64(pair[0].utf8.count)
                     let edit = try await prepareAnnotation(book.id, start: start, end: end)
@@ -71,6 +71,7 @@ extension AppDataService {
                         start = original.index(original.range(of: f.mainChapters[2])!.lowerBound, offsetBy: -2)
                     }
                     var offset = UInt64(original[..<start].utf8.count)
+                    if scene == .listening { offset = try f.listeningCue().anchor }
                     if scene == .widget {
                         // A synthetic resume point, not a second progress rule.
                         // The widget percentage/chapter is queried below through Rust.
@@ -81,12 +82,12 @@ extension AppDataService {
                     try await savePosition(bookID: book.id, offset: offset)
                     if scene == .continuation {
                         let ahead = original.range(of: f.mainChapters[2])!.lowerBound
-                        let winner = PositionValue(content_key: book.contentSha256,
+                        let winner = PositionValue(content_key: book.readingKey.storageKey,
                                                    offset: UInt64(original[..<ahead].utf8.count))
                         // Same persisted candidate path as sync, without changing
                         // this device's just-written local resume baseline.
                         let json = String(decoding: try JSONEncoder().encode(winner), as: UTF8.self)
-                        try await userStore().put("position/" + book.contentSha256, value: json, device: "store-shot-other-device")
+                        try await userStore().put("position/" + book.readingKey.storageKey, value: json, device: "store-shot-other-device")
                         dataChanged()
                     }
                     if scene == .statistics { try await createStoreShotStatistics(bookID: book.id) }
@@ -106,7 +107,7 @@ extension AppDataService {
         let preferences = try decodeThemePreferences(json: sourceDefaults.string(forKey: "Moonread.themePreferences")!)
         var snapshot = defaultThemeSnapshot(); snapshot.preferences = preferences
         let resolved = try resolveThemes(value: snapshot, system: capture.systemAppearance == "dark" ? .dark : .light, highContrast: false)
-        let receipt: [String: Any] = ["id": capture.id, "fixtureVersion": StoreShotCapture.fixtureVersion,
+        let receipt: [String: Any] = ["id": capture.id, "fixtureVersion": capture.fixtureVersion,
             "appPalette": resolved.app.paletteId, "readerPalette": resolved.reader.paletteId,
             "readerAppearance": resolved.reader.appearance == .dark ? "dark" : "light",
             "readerTextureEnabled": resolved.readerTexture.enabled,
@@ -144,10 +145,10 @@ extension AppDataService {
         guard let root = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: SystemReadingSnapshotFile.groupIdentifier) else {
             throw LibraryFileError.invalidDestination
         }
-        let id = try SystemReadingBookID(sha: book.contentSha256).rawValue
-        let keys = try textCore().catalogueContentKeys(scope: catalogueScope(nil, recursive: true))
-        let query = try await effectiveQuery(keys: keys.map { serializeReadingKey(key: $0) }, scope: "store-shot-widget", sparseCatalogue: true)
-        guard let projected = try query.systemReadingCatalogue().first(where: { $0.contentSha256 == book.contentSha256 }) else { throw ReaderError.NotFound }
+        guard let sha = book.readingKey.formalSHA256 else { throw ReaderError.NotFound }
+        let id = try SystemReadingBookID(sha: sha).rawValue
+        let query = try await readingQuery(.catalogue(.all), options: .init(scope: "store-shot-widget", sparseCatalogue: true))
+        guard let projected = try query.systemReadingCatalogue().first(where: { $0.contentSha256 == sha }) else { throw ReaderError.NotFound }
         let entry = SystemReadingSnapshot.Book(id: id, title: book.title, author: fixture.author, tags: [],
             availability: .available, sourceCount: 1, naturalOrdinal: 0, progress: projected.percentage,
             chapterLabel: projected.chapterTitle, recentRank: 0, allowsAutomaticExposure: true)
@@ -157,6 +158,17 @@ extension AppDataService {
         UserDefaults(suiteName: SystemReadingSnapshotFile.groupIdentifier)?.set(fixture.language, forKey: "StoreScreenshots.language")
         await MainActor.run { WidgetCenter.shared.reloadAllTimelines() }
         #endif
+    }
+}
+
+extension ReaderSession {
+    func showStoreShotListening() {
+        guard StoreShotScene.requested == .listening, let capture = StoreShotCapture.requested,
+              let fixture = try? StoreShotFixture.localized(capture.language), book?.title == fixture.books.first?.title,
+              let cue = try? fixture.listeningCue(), let window,
+              cue.sentence.lowerBound >= window.start, cue.sentence.upperBound <= window.end else { return }
+        toolsSession.send(.openListening)
+        activeListening?.showStoreShot(sentence: .init(startUtf8: cue.sentence.lowerBound, endUtf8: cue.sentence.upperBound))
     }
 }
 #endif

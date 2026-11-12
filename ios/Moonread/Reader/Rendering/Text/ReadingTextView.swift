@@ -4,6 +4,11 @@ import UIKit
 @MainActor
 class ReadingTextView: UITextView {
     var readingText = ReadingText(text: "")
+    var accessibilityNavigation: (() -> Void)?
+    override func accessibilityScroll(_ direction: UIAccessibilityScrollDirection) -> Bool {
+        accessibilityNavigation?()
+        return super.accessibilityScroll(direction)
+    }
     var copySelection: ((UInt64, UInt64) -> Void)?
     override func closestPosition(to point: CGPoint) -> UITextPosition? {
         guard let position = super.closestPosition(to: point) else { return nil }

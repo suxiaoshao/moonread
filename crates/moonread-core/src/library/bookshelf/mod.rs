@@ -2,6 +2,7 @@
 //! reading records remain independently keyed by the normalized text hash.
 pub(crate) mod full_index;
 
+use crate::identity::content::reading_key_column;
 use crate::{ReaderCore, ReaderError, Result, SourceContentKey, valid_source_key};
 use rusqlite::{Connection, params};
 use std::collections::HashSet;
@@ -56,7 +57,7 @@ pub struct SourceFileSnapshot {
 pub struct LibraryCoverPreview {
     pub file_id: String,
     pub name: String,
-    pub content_sha256: Option<String>,
+    pub reading_key: Option<crate::ReadingKey>,
     pub author: Option<String>,
     pub cover: Option<crate::BookCoverAsset>,
 }
@@ -69,21 +70,75 @@ pub struct LibraryEntry {
     pub relative_path: String,
     pub parent_path: String,
     pub name: String,
-    pub directory: bool,
     pub size: u64,
     pub modified: i64,
+    pub last_read: i64,
+    pub item: LibraryItem,
+}
+
+#[derive(Clone, Debug, uniffi::Enum)]
+pub enum LibraryItem {
+    Folder { row: FolderRow },
+    Book { row: Box<BookRow> },
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct FolderRow {
+    pub child_book_count: u64,
+    pub cover_previews: Vec<LibraryCoverPreview>,
+}
+
+#[derive(Clone, Debug, uniffi::Record)]
+pub struct BookRow {
+    pub resolution: crate::BookResolution,
     pub needs_download: bool,
-    pub book_id: Option<String>,
     pub position_utf8: u64,
     pub byte_count: u64,
     pub chapter_title: Option<String>,
-    pub child_book_count: u64,
-    pub last_read: i64,
     pub preferred: bool,
-    pub cover_previews: Vec<LibraryCoverPreview>,
     pub metadata: Option<crate::BookMetadata>,
-    pub content_sha256: Option<String>,
-    pub reading_identity: Option<crate::ReadingKey>,
+}
+
+impl LibraryEntry {
+    pub fn book(&self) -> Option<&BookRow> {
+        match &self.item {
+            LibraryItem::Book { row } => Some(row),
+            LibraryItem::Folder { .. } => None,
+        }
+    }
+
+    pub fn folder(&self) -> Option<&FolderRow> {
+        match &self.item {
+            LibraryItem::Folder { row } => Some(row),
+            LibraryItem::Book { .. } => None,
+        }
+    }
+}
+
+impl BookRow {
+    pub fn key(&self) -> Option<&crate::ReadingKey> {
+        match &self.resolution {
+            crate::BookResolution::Resolved { record } => Some(&record.key),
+            _ => None,
+        }
+    }
+
+    pub fn book_id(&self) -> Option<&str> {
+        match &self.resolution {
+            crate::BookResolution::Resolved {
+                record:
+                    crate::ResolvedBookRecord {
+                        body: crate::BodyAssociation::Associated { book_id },
+                        ..
+                    },
+            } => Some(book_id),
+            _ => None,
+        }
+    }
+
+    pub fn formal_sha(&self) -> Option<&str> {
+        self.key().and_then(crate::ReadingKey::formal_sha)
+    }
 }
 
 /// A virtual tag section in one shelf's file catalogue, never a filesystem folder.
@@ -159,30 +214,56 @@ fn filtered_entries(
 }
 
 fn library_entry_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<LibraryEntry> {
+    let id: String = r.get(0)?;
+    let item = if r.get::<_, bool>(6)? {
+        LibraryItem::Folder {
+            row: FolderRow {
+                child_book_count: r.get::<_, i64>(14)? as u64,
+                cover_previews: Vec::new(),
+            },
+        }
+    } else {
+        let key = reading_key_column(r, 18)?;
+        let resolution = if let Some(key) = key {
+            crate::BookResolution::Resolved {
+                record: crate::ResolvedBookRecord {
+                    key,
+                    body: r
+                        .get::<_, Option<String>>(10)?
+                        .map(|book_id| crate::BodyAssociation::Associated { book_id })
+                        .unwrap_or(crate::BodyAssociation::Absent),
+                    // This is a catalogue row, not a request to traverse historical aliases.
+                    aliases: Vec::new(),
+                },
+            }
+        } else {
+            crate::BookResolution::Unidentified {
+                file_id: id.clone(),
+            }
+        };
+        LibraryItem::Book {
+            row: Box::new(BookRow {
+                resolution,
+                needs_download: r.get(9)?,
+                position_utf8: r.get::<_, i64>(11)? as u64,
+                byte_count: r.get::<_, i64>(12)? as u64,
+                chapter_title: r.get(13)?,
+                preferred: r.get(16)?,
+                metadata: metadata_column(r, 17)?,
+            }),
+        }
+    };
     Ok(LibraryEntry {
-        id: r.get(0)?,
+        id,
         shelf_id: r.get(1)?,
         shelf_name: r.get(2)?,
         relative_path: r.get(3)?,
         parent_path: r.get(4)?,
         name: r.get(5)?,
-        directory: r.get(6)?,
         size: r.get::<_, i64>(7)? as u64,
         modified: r.get(8)?,
-        needs_download: r.get(9)?,
-        book_id: r.get(10)?,
-        position_utf8: r.get::<_, i64>(11)? as u64,
-        byte_count: r.get::<_, i64>(12)? as u64,
-        chapter_title: r.get(13)?,
-        child_book_count: r.get::<_, i64>(14)? as u64,
         last_read: r.get(15)?,
-        preferred: r.get(16)?,
-        cover_previews: Vec::new(),
-        metadata: metadata_column(r, 17)?,
-        content_sha256: r.get(18)?,
-        reading_identity: r
-            .get::<_, Option<String>>(18)?
-            .and_then(|s| crate::parse_reading_key(s).ok()),
+        item,
     })
 }
 
@@ -213,7 +294,7 @@ fn folder_cover_previews(
         .query_map(params![shelf_id, prefix, end], |r| {
             let metadata = metadata_column(r, 2)?;
             Ok(LibraryCoverPreview {
-                content_sha256: r.get(3)?,
+                reading_key: reading_key_column(r, 3)?,
                 author: metadata
                     .as_ref()
                     .map(|m| m.author.clone())
@@ -227,8 +308,10 @@ fn folder_cover_previews(
 }
 
 fn populate_cover_previews(db: &Connection, entries: &mut [LibraryEntry]) -> Result<()> {
-    for folder in entries.iter_mut().filter(|e| e.directory) {
-        folder.cover_previews = folder_cover_previews(db, &folder.shelf_id, &folder.relative_path)?;
+    for entry in entries {
+        if let LibraryItem::Folder { row } = &mut entry.item {
+            row.cover_previews = folder_cover_previews(db, &entry.shelf_id, &entry.relative_path)?;
+        }
     }
     Ok(())
 }
@@ -262,10 +345,43 @@ impl ReaderCore {
             validate_relative(parent, true)?;
         }
         let db = self.read_lock()?;
-        let mut entries = entries(&db, shelf_id.as_deref(), parent_path.as_deref(), false)?;
+        // Rows, aggregates and cover candidates must see the same file index.
+        let tx = db.unchecked_transaction()?;
+        let mut entries = entries(&tx, shelf_id.as_deref(), parent_path.as_deref(), false)?;
         entries.sort_by(|a, b| crate::library::order::directory_order(a, b, sort));
-        populate_cover_previews(&db, &mut entries)?;
+        populate_cover_previews(&tx, &mut entries)?;
+        tx.commit()?;
         Ok(entries)
+    }
+    pub(crate) fn library_directory_detail_keys(
+        &self,
+        shelf_id: String,
+        parent_path: String,
+    ) -> Result<Vec<crate::ReadingKey>> {
+        validate_relative(&parent_path, true)?;
+        let db = self.read_lock()?;
+        let tx = db.unchecked_transaction()?;
+        let mut stmt = tx.prepare_cached(
+            "SELECT f.shelf_id,f.relative_path,f.directory,fi.content_sha256
+             FROM library_files f LEFT JOIN file_identities fi ON fi.file_id=f.id
+             WHERE f.shelf_id=?1 AND f.parent_path=?2",
+        )?;
+        let mut rows = stmt.query(params![shelf_id, parent_path])?;
+        let mut keys = HashSet::new();
+        while let Some(row) = rows.next()? {
+            if row.get::<_, bool>(2)? {
+                let shelf: String = row.get(0)?;
+                let path: String = row.get(1)?;
+                keys.extend(
+                    folder_cover_previews(&tx, &shelf, &path)?
+                        .into_iter()
+                        .filter_map(|preview| preview.reading_key),
+                );
+            } else if let Some(key) = reading_key_column(row, 3)? {
+                keys.insert(key);
+            }
+        }
+        Ok(keys.into_iter().collect())
     }
     pub(crate) fn library_folder_cover_previews(
         &self,
@@ -282,23 +398,18 @@ impl ReaderCore {
         scope: crate::CatalogueScope,
         books_only: bool,
     ) -> Result<Vec<LibrarySearchCandidate>> {
-        if let Some(p) = &scope.parent_path {
+        let (shelf, parent, recursive) = scope.sql_scope();
+        if let Some(p) = parent {
             validate_relative(p, true)?;
         }
         let db = self.read_lock()?;
         let mut values = entries(
             &db,
-            scope.shelf_id.as_deref(),
-            if scope.recursive {
-                None
-            } else {
-                scope.parent_path.as_deref()
-            },
+            shelf,
+            if recursive { None } else { parent },
             books_only,
         )?;
-        if scope.recursive
-            && let Some(parent) = scope.parent_path.filter(|p| !p.is_empty())
-        {
+        if recursive && let Some(parent) = parent.filter(|p| !p.is_empty()) {
             let prefix = format!("{parent}/");
             values.retain(|e| e.relative_path.starts_with(&prefix));
         }
@@ -320,17 +431,15 @@ impl ReaderCore {
                     name_ordinal += 1;
                 }
                 previous_name = Some(entry.name.clone());
-                let resolved_metadata = entry
-                    .content_sha256
-                    .as_ref()
-                    .filter(|sha| crate::valid_sha(sha))
-                    .map(|sha| {
+                let resolved_metadata = entry.book().and_then(|book| {
+                    book.formal_sha().map(|sha| {
                         crate::reading::book_details::project_metadata(
                             sha,
-                            entry.metadata.clone(),
+                            book.metadata.clone(),
                             reading.contains(sha),
                         )
-                    });
+                    })
+                });
                 Ok(LibrarySearchCandidate {
                     entry,
                     natural_order_ordinal: i as u64,
@@ -357,11 +466,12 @@ impl ReaderCore {
         let mut untagged = Vec::new();
         let mut unindexed = Vec::new();
         for book in books {
-            if book.content_sha256.is_none() {
+            let Some(row) = book.book() else { continue };
+            if row.key().is_none() {
                 unindexed.push(book);
                 continue;
             }
-            let tags: std::collections::BTreeSet<_> = book
+            let tags: std::collections::BTreeSet<_> = row
                 .metadata
                 .as_ref()
                 .map(|m| m.tags.iter().collect())
@@ -408,8 +518,14 @@ impl ReaderCore {
         let db = self.read_lock()?;
         let mut statement = db.prepare(&format!(
             "WITH recent_positions AS (
-                SELECT * FROM user_positions
-                WHERE last_read>0 AND COALESCE(recent_visible,1)=1
+                SELECT p.content_key,p.position_utf8,p.last_read,p.recent_visible,
+                    COALESCE(o.preferred_file_id,p.preferred_file_id) preferred_file_id,
+                    COALESCE(o.opened_ms,p.last_read) recent_order
+                FROM user_positions p LEFT JOIN user_opened o ON o.content_key=p.content_key
+                WHERE (p.last_read>0 OR o.opened_ms>0) AND COALESCE(p.recent_visible,1)=1
+                UNION ALL
+                SELECT o.content_key,0,0,1,o.preferred_file_id,o.opened_ms
+                FROM user_opened o WHERE o.opened_ms>0 AND NOT EXISTS(SELECT 1 FROM user_positions p WHERE p.content_key=o.content_key)
             ), ranked AS (
                 SELECT f.id,f.shelf_id,s.name shelf_name,f.relative_path,f.parent_path,f.name,
                     f.directory,f.size,f.modified,f.needs_download,
@@ -419,7 +535,7 @@ impl ReaderCore {
                         AND c.start_utf8<=p.position_utf8 ORDER BY c.start_utf8 DESC LIMIT 1) chapter_title,
                     0 child_book_count,p.last_read,COALESCE(p.preferred_file_id=f.id,0) preferred,
                     m.value,p.content_key,
-                    ROW_NUMBER() OVER (PARTITION BY p.content_key ORDER BY {source_order}) chosen
+                    ROW_NUMBER() OVER (PARTITION BY p.content_key ORDER BY {source_order}) chosen,p.recent_order
                 FROM recent_positions p
                 JOIN file_identities fi ON fi.content_sha256=p.content_key
                 JOIN library_files f ON f.id=fi.file_id
@@ -429,7 +545,7 @@ impl ReaderCore {
                 LEFT JOIN book_metadata m ON m.content_sha=fi.content_sha256
             )
             SELECT * FROM ranked WHERE chosen=1
-            ORDER BY last_read DESC,preferred DESC,id LIMIT ?1",
+            ORDER BY recent_order DESC,preferred DESC,id LIMIT ?1",
             source_order = PREFERRED_SOURCE_ORDER,
         ))?;
         Ok(statement

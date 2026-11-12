@@ -28,13 +28,14 @@ enum UserSyncJSON {
         case string, uint, int, uint32, int32, bool
         case choice(Set<String>), nullable(Shape), array(Shape), object([String: Shape], optional: Set<String> = [])
     }
-    enum ValueKind { case position, chapter, author, synopsis, status, cover, tag, palette, shelfReference, sourceDecoding }
+    enum ValueKind { case position, opened, chapter, author, synopsis, status, cover, tag, palette, shelfReference, sourceDecoding }
     static func kind(_ key: String) -> ValueKind? {
         let parts = key.split(separator: "/", omittingEmptySubsequences: false)
         guard parts.count >= 2, !parts[1].isEmpty else { return nil }
         if parts.count == 2 {
             switch parts[0] {
             case "position": return .position
+            case "opened": return .opened
             case "palette": return .palette
             case "source-decoding": return .sourceDecoding
             case "shelf-reference": return UUID(uuidString: String(parts[1])) == nil ? nil : .shelfReference
@@ -144,7 +145,7 @@ enum UserSyncJSON {
     static func validateValue(_ text: String, key: String) throws {
         guard let kind = kind(key) else {
             let parts = key.split(separator: "/", omittingEmptySubsequences: false)
-            let knownPrefix = parts.first.map { ["position", "chapter", "metadata", "palette", "shelf-reference", "source-decoding"].contains(String($0)) } ?? false
+            let knownPrefix = parts.first.map { ["position", "opened", "chapter", "metadata", "palette", "shelf-reference", "source-decoding"].contains(String($0)) } ?? false
             let unknownField = parts.count == 3 && parts.first == "metadata" && !parts[2].isEmpty
             throw UserSyncCompatibilityError(reason: !knownPrefix || unknownField ? .newerFormat : .unreadable)
         }
@@ -152,6 +153,9 @@ enum UserSyncJSON {
         case .position:
             let value = try decode(PositionValue.self, text, as: position)
             guard "position/" + value.content_key == key else { throw UserSyncCompatibilityError() }
+        case .opened:
+            guard (try? parseReadingKey(value: String(key.dropFirst(7)))) != nil else { throw UserSyncCompatibilityError() }
+            try validate(text, as: .int)
         case .chapter:
             if text == "null" { return }
             let value = try decode(ChapterValue.self, text, as: chapter)

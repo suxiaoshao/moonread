@@ -7,6 +7,14 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		148B00000000000000000001 /* AIUsageAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 148A00000000000000000001 /* AIUsageAdapter.swift */; };
+		148B00000000000000000002 /* AIUsageSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 148A00000000000000000002 /* AIUsageSnapshot.swift */; };
+		148B00000000000000000003 /* AIConnectionUsageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 148A00000000000000000003 /* AIConnectionUsageService.swift */; };
+		148B00000000000000000004 /* AIConnectionUsageSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 148A00000000000000000004 /* AIConnectionUsageSection.swift */; };
+		148B00000000000000000005 /* AIConnectionUsageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 148A00000000000000000005 /* AIConnectionUsageTests.swift */; };
+		E22800000000000000000001 /* UserDataQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = E22800000000000000000002; };
+        F18300000000000000000003 /* ThemedGroupedList.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18300000000000000000004; };
+        F18300000000000000000001 /* ReaderFontList.swift in Sources */ = {isa = PBXBuildFile; fileRef = F18300000000000000000002; };
 		6FE86863DC904E4183EE7017 /* MainActorNotifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8E67FFF06C64902B16D3A2D /* MainActorNotifications.swift */; };
         F15200000000000000000005 /* ReaderBuiltinFonts.swift in Sources */ = {isa = PBXBuildFile; fileRef = F15200000000000000000006; };
         152000000000000000000003 /* ReaderFontPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 152000000000000000000004; };
@@ -377,6 +385,17 @@ CA0FCD9B82134E7091B5CD9F /* ModelDirectoryDecoding.swift in Sources */ = {isa = 
 		2D2BA9F36327CC9404EEC2D1 /* AIModelDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36D6C0F3CCD6A30E6A607404 /* AIModelDetailView.swift */; };
 		EC01BD4B8052624B73BD6031 /* LibraryDirectoryObserver.swift in Sources */ = {isa = PBXBuildFile; fileRef = F54437FA5E94BE01B694DE2D /* LibraryDirectoryObserver.swift */; };
 		6F0F9A8C149BDA5EEAD6DF01 /* LibraryExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1552663E85DD907D9582A20 /* LibraryExport.swift */; };
+		2D1B236D8713432E89CE0ED8 /* ListeningTextProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FEED0591FCDF4D9B875C2D65 /* ListeningTextProvider.swift */; };
+		8D74048A90F64B17A95EE475 /* ListeningAudio.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38613D51CE20472BA3CD7959 /* ListeningAudio.swift */; };
+		2DCBBA9F75784F3DB0AFA4C6 /* ListeningSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 757662F1BC2C46D892CDD12D /* ListeningSession.swift */; };
+		FEF5731A64AE45B8A2C5A152 /* ReaderSession+Listening.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EADC4B15AED40D6AABE1DD3 /* ReaderSession+Listening.swift */; };
+		F082D1DB5AA74D34B3B0BBCE /* ReaderListeningContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B3FA0FBB62D4B56A733E32A /* ReaderListeningContent.swift */; };
+		BD8D1CFA6FD24E97B0C90D6A /* ListeningTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A18BA5D42144A6CAF36FCB2; };
+		FC28A3912F1D25B7A584D239 /* ReadingController+Listening.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22AF4BED8E0697070C37CB7D /* ReadingController+Listening.swift */; };
+		DEE84EA507BD5833583CE850 /* AIConversationProtocolFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 465891D88D369B6F3EFE2B27 /* AIConversationProtocolFixtures.swift */; };
+		338BB8A6D7043A0DD640FC65 /* AIConnectionFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E81C5D3417332DCB4691CF5 /* AIConnectionFixtures.swift */; };
+		7CE986CF432C7B672BAB0E6F /* AINativeToolsFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C1DA2437A2F7FD02A7278FB /* AINativeToolsFixture.swift */; };
+		2F95843B14E06DCFDAE5B2CD /* AIToolPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68BD3AA712178F5BF3F300A2 /* AIToolPresentation.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -404,6 +423,14 @@ CA0FCD9B82134E7091B5CD9F /* ModelDirectoryDecoding.swift in Sources */ = {isa = 
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		148A00000000000000000001 /* AIUsageAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIUsageAdapter.swift"; sourceTree = "<group>"; };
+		148A00000000000000000002 /* AIUsageSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIUsageSnapshot.swift"; sourceTree = "<group>"; };
+		148A00000000000000000003 /* AIConnectionUsageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIConnectionUsageService.swift"; sourceTree = "<group>"; };
+		148A00000000000000000004 /* AIConnectionUsageSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIConnectionUsageSection.swift"; sourceTree = "<group>"; };
+		148A00000000000000000005 /* AIConnectionUsageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/AI/AIConnectionUsageTests.swift"; sourceTree = "SOURCE_ROOT"; };
+		E22800000000000000000002 /* UserDataQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserDataQuery.swift; sourceTree = "<group>"; };
+        F18300000000000000000004 /* ThemedGroupedList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemedGroupedList.swift; sourceTree = "<group>"; };
+        F18300000000000000000002 /* ReaderFontList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderFontList.swift"; sourceTree = "<group>"; };
 		D8E67FFF06C64902B16D3A2D /* MainActorNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainActorNotifications.swift; sourceTree = "<group>"; };
         F15200000000000000000006 /* ReaderBuiltinFonts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderBuiltinFonts.swift"; sourceTree = "<group>"; };
         152000000000000000000004 /* ReaderFontPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderFontPicker.swift"; sourceTree = "<group>"; };
@@ -762,6 +789,17 @@ A8C3CE03D9A84285ACE6CC41 /* ModelDirectoryDecoding.swift */ = {isa = PBXFileRefe
 		36D6C0F3CCD6A30E6A607404 /* AIModelDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIModelDetailView.swift; sourceTree = "<group>"; };
 		F54437FA5E94BE01B694DE2D /* LibraryDirectoryObserver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDirectoryObserver.swift; sourceTree = "<group>"; };
 		A1552663E85DD907D9582A20 /* LibraryExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryExport.swift; sourceTree = "<group>"; };
+		FEED0591FCDF4D9B875C2D65 /* ListeningTextProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ListeningTextProvider.swift"; sourceTree = "<group>"; };
+		38613D51CE20472BA3CD7959 /* ListeningAudio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ListeningAudio.swift"; sourceTree = "<group>"; };
+		757662F1BC2C46D892CDD12D /* ListeningSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ListeningSession.swift"; sourceTree = "<group>"; };
+		3EADC4B15AED40D6AABE1DD3 /* ReaderSession+Listening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderSession+Listening.swift"; sourceTree = "<group>"; };
+		1B3FA0FBB62D4B56A733E32A /* ReaderListeningContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderListeningContent.swift"; sourceTree = "<group>"; };
+		6A18BA5D42144A6CAF36FCB2 /* ListeningTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ListeningTests.swift"; sourceTree = "<group>"; };
+		22AF4BED8E0697070C37CB7D /* ReadingController+Listening.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingController+Listening.swift"; sourceTree = "<group>"; };
+		465891D88D369B6F3EFE2B27 /* AIConversationProtocolFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIConversationProtocolFixtures.swift"; sourceTree = "<group>"; };
+		9E81C5D3417332DCB4691CF5 /* AIConnectionFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIConnectionFixtures.swift"; sourceTree = "<group>"; };
+		3C1DA2437A2F7FD02A7278FB /* AINativeToolsFixture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AINativeToolsFixture.swift"; sourceTree = "<group>"; };
+		68BD3AA712178F5BF3F300A2 /* AIToolPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIToolPresentation.swift"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -796,6 +834,16 @@ D35000000000000000000001,
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		148C00000000000000000001 /* Usage */ = {
+			isa = PBXGroup;
+			children = (
+				148A00000000000000000001 /* AIUsageAdapter.swift */,
+				148A00000000000000000002 /* AIUsageSnapshot.swift */,
+				148A00000000000000000003 /* AIConnectionUsageService.swift */,
+			);
+			path = "Usage";
+			sourceTree = "<group>";
+		};
 		12BD6151DCDE468C8BAEC02A /* Concurrency */ = {isa = PBXGroup; children = (D8E67FFF06C64902B16D3A2D /* MainActorNotifications.swift */,); path = Concurrency; sourceTree = "<group>"; };
 		A50000000000000000000001 = {
 			isa = PBXGroup;
@@ -906,6 +954,7 @@ D35000000000000000000001,
                 9885E1115585BFC576D92B57 /* AIAgentQueueTests.swift */,
                 F5B1F1DDF46216CE59BA4F14 /* AIAuthenticationTests.swift */,
                 3F93DDBA5E540729F4860E1A /* AIAvailabilityTests.swift */,
+                148A00000000000000000005 /* AIConnectionUsageTests.swift */,
                 B633ACC2BFB26FCE7339697A /* AICompactionTests.swift */,
                 10AAE623C3B1DC1FC59DAED1 /* AIConnectionStorageTests.swift */,
                 937C6A32791BD8B0E6407D6E /* AIConversationProjectionTests.swift */,
@@ -964,6 +1013,7 @@ D35000000000000000000001,
 			children = (
 				0E3ED36AE3569A81A0BD2A1E /* ReaderSession */,
 				FDA37E7E44EF4E73B8BC6A70 /* ReaderAutoReading.swift */,
+				98265A1B27CF4EA8806DAB39 /* Listening */,
 				C612670FEE4503CB6D595987 /* Opening */,
 			);
 			path = "Session";
@@ -978,6 +1028,7 @@ D35000000000000000000001,
 				DB8C8C172290509EDEBFEBB6 /* Notes */,
 				D8A9053AADFD64D37A2701E0 /* Chapters */,
 				7DCDF56553412C6438775D26 /* Controls */,
+				26591D9AEDAC45B48997D4C9 /* Listening */,
 				8C6B979018CD9ADE9446E532 /* Tools */,
 			);
 			path = "UI";
@@ -1073,7 +1124,8 @@ D35000000000000000000001,
 		6690B829BEF0465DA1786DB9 /* Components */ = {
 			isa = PBXGroup;
 			children = (
-				AC2000000000000000000003 /* MoonView.swift */,
+				F18300000000000000000004 /* ThemedGroupedList.swift */,
+                AC2000000000000000000003 /* MoonView.swift */,
 				AC2000000000000000000077 /* MoonCharacter.swift */,
 				AC2000000000000000000006 /* InputFocus.swift */,
 			);
@@ -1141,6 +1193,7 @@ D35000000000000000000001,
 			isa = PBXGroup;
 			children = (
 				86D90F0376D344A3842137FB /* ReaderSession.swift */,
+				3EADC4B15AED40D6AABE1DD3 /* ReaderSession+Listening.swift */,
 				ECC2811577B9D46B2B2E4B22 /* ReaderSession+Annotations.swift */,
 				C7AE5C4807C48AC11277C1D6 /* ReaderSession+Browsing.swift */,
 				53DA632BE52105B1B9FE45B9 /* ReaderSession+Continuation.swift */,
@@ -1214,6 +1267,7 @@ D35000000000000000000001,
 				E0D371B9C6A60C0708C4C049 /* UserDataStore+Transfer.swift */,
 				DF3479613D2459E809884460 /* UserDataStore+Values.swift */,
 				C22000000000000000000002 /* UserDataService.swift */,
+				E22800000000000000000002 /* UserDataQuery.swift */,
 				D50620000000000000000001 /* UserDataBackup.swift */,
 				FF2000000000000000000001 /* UserSyncJSON.swift */,
 				C22000000000000000000003 /* UserThemes.swift */,
@@ -1276,6 +1330,7 @@ D35000000000000000000001,
 			isa = PBXGroup;
 			children = (
 				AA1BA926631B40A984117791 /* ReadingController.swift */,
+				22AF4BED8E0697070C37CB7D /* ReadingController+Listening.swift */,
 				3E544CBFC00B4DC4933A41F6 /* ReadingController+Navigation.swift */,
 				84865B4171AD4E3FA50E0C27 /* ReadingController+Pages.swift */,
 				15890ED074464D47AAEC9260 /* ReadingController+Scroll.swift */,
@@ -1336,6 +1391,7 @@ D35000000000000000000001,
 				CE5867905A13943FB39F9895 /* ReaderSessionApplicationStateTests.swift */,
 				C90B1D5654EB92E2B3090088 /* ReaderSessionSelectionTests.swift */,
 				0332D3DCAB24BD0EBEEB7BB4 /* ReaderSessionTests.swift */,
+				6A18BA5D42144A6CAF36FCB2 /* ListeningTests.swift */,
 				B92506C06C6ABDA44B30C8AE /* ReadingActivityTests.swift */,
 				285C1ED4B1E1FD8BAF9996F5 /* TextCoordinatesTests.swift */,
 			);
@@ -1394,6 +1450,9 @@ D35000000000000000000001,
 				F7773498FC5E46E7B6D20EE9 /* AIRepositoryTestFixtures.swift */,
 				6E96BC33B1F24360B74F39AF /* BookAITestFixtures.swift */,
 				D32000000000000000000006 /* ConversationTestFixtures.swift */,
+				3C1DA2437A2F7FD02A7278FB /* AINativeToolsFixture.swift */,
+				9E81C5D3417332DCB4691CF5 /* AIConnectionFixtures.swift */,
+				465891D88D369B6F3EFE2B27 /* AIConversationProtocolFixtures.swift */,
 			);
 			path = "AI";
 			sourceTree = "<group>";
@@ -1603,6 +1662,7 @@ D35000000000000000000001,
 				D32000000000000000000005 /* AIConversationsView.swift */,
 				FA2000000000000000000001 /* AIMessageList.swift */,
 				E72000000000000000000001 /* AITurnView.swift */,
+				68BD3AA712178F5BF3F300A2 /* AIToolPresentation.swift */,
 				FB2000000000000000000001 /* AINativeMarkdown.swift */,
 				FC2100000000000000000001 /* AIReplyFeedback.swift */,
 			);
@@ -1635,6 +1695,7 @@ D35000000000000000000001,
 				F15200000000000000000006 /* ReaderBuiltinFonts.swift */,
 				152000000000000000000002 /* ReaderFontLibrary.swift */,
 				152000000000000000000004 /* ReaderFontPicker.swift */,
+                F18300000000000000000002 /* ReaderFontList.swift */,
 			);
 			path = "Fonts";
 			sourceTree = "<group>";
@@ -1655,6 +1716,7 @@ D35000000000000000000001,
 			children = (
 691E7DA560CC45CBADFE58DB /* Catalog */,
 				A11D153D9A51C001A9FE116A /* Connections */,
+				148C00000000000000000001 /* Usage */,
 				648898574D5A490398DF5331 /* AICoverImageFetcher.swift */,
 				E52000000000000000000002 /* AIProviderRequest.swift */,
 				D32000000000000000000003 /* AITransport.swift */,
@@ -1720,6 +1782,7 @@ D35000000000000000000001,
 				8ACEF8F2A333A8663E9BECEB /* AIThinkingSlider.swift */,
 				E52000000000000000000006 /* AISettingsView.swift */,
 				E52000000000000000000007 /* AIConnectionView.swift */,
+				148A00000000000000000004 /* AIConnectionUsageSection.swift */,
 				EC14CE0E00934BB682B83B4D /* AIDataSharingConsentView.swift */,
 				D32000000000000000000007 /* AIModelPicker.swift */,
 			);
@@ -1766,6 +1829,14 @@ D35000000000000000000001,
 			path = DataManagement;
 			sourceTree = "<group>";
 		};
+		98265A1B27CF4EA8806DAB39 /* Listening */ = {isa = PBXGroup; children = (
+				FEED0591FCDF4D9B875C2D65 /* ListeningTextProvider.swift */,
+				38613D51CE20472BA3CD7959 /* ListeningAudio.swift */,
+				757662F1BC2C46D892CDD12D /* ListeningSession.swift */,
+			); path = "Listening"; sourceTree = "<group>"; };
+		26591D9AEDAC45B48997D4C9 /* Listening */ = {isa = PBXGroup; children = (
+				1B3FA0FBB62D4B56A733E32A /* ReaderListeningContent.swift */,
+			); path = "Listening"; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -1959,7 +2030,7 @@ E51000000000000000000009,D41000000000000000000001,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -eu\ncd \"${SRCROOT}/..\"\nexport CARGO_TARGET_DIR=\"$PWD/target\"\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command bash -c '\n  builder=cargo\n  if [ -z \"${CI:-}\" ]; then\n    if command -v mbx >/dev/null 2>&1; then\n      builder=$(command -v mbx)\n    elif [ -x \"$HOME/.cargo/bin/mbx\" ]; then\n      builder=\"$HOME/.cargo/bin/mbx\"\n    fi\n  fi\n  echo \"Rust builder: $builder; rustc: $(command -v rustc)\"\n  exec \"$builder\" build --locked --package moonread-core --lib --profile \"$1\" ${2}\n' bash \"${MOONREAD_CARGO_PROFILE}\" \"${MOONREAD_RUST_TARGET_FLAGS}\"\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command cargo run --locked --package moonread-core --features cli --bin uniffi-bindgen -- generate --library \"${MOONREAD_BINDGEN_LIBRARY}\" --language swift --no-format --out-dir \"${MOONREAD_BINDINGS_DIR}\"\n";
+			shellScript = "set -euo pipefail\ncd \"${SRCROOT}/..\"\nexport CARGO_TARGET_DIR=\"$PWD/target\"\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command bash -c '\n  set -eu\n  builder=cargo\n  if [ -z \"${CI:-}\" ]; then\n    if command -v mbx >/dev/null 2>&1; then\n      builder=$(command -v mbx)\n    elif [ -x \"$HOME/.cargo/bin/mbx\" ]; then\n      builder=\"$HOME/.cargo/bin/mbx\"\n    fi\n  fi\n  echo \"Rust builder: $builder; rustc: $(command -v rustc)\"\n  start=$SECONDS\n  \"$builder\" build --locked --package moonread-core --lib --profile \"$1\" ${2}\n  printf \"CI_TIMING rust_library_seconds=%s\\n\" \"$((SECONDS - start))\"\n' bash \"${MOONREAD_CARGO_PROFILE}\" \"${MOONREAD_RUST_TARGET_FLAGS}\"\nstart=$SECONDS\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command cargo build --locked --package moonread-core --features cli --bin uniffi-bindgen\nprintf 'CI_TIMING rust_bindgen_build_seconds=%s\\n' \"$((SECONDS - start))\"\nmkdir -p \"${MOONREAD_BINDINGS_DIR}\"\ngenerated=$(mktemp -d \"${MOONREAD_BINDINGS_DIR}.XXXXXX\")\ntrap 'rm -rf \"$generated\"' EXIT\nstart=$SECONDS\n\"${MOONREAD_NIX}\" develop --no-update-lock-file . --command \"$CARGO_TARGET_DIR/debug/uniffi-bindgen\" generate --library \"${MOONREAD_BINDGEN_LIBRARY}\" --language swift --no-format --out-dir \"$generated\"\nprintf 'CI_TIMING uniffi_generation_seconds=%s\\n' \"$((SECONDS - start))\"\n# Check the complete known output contract before replacing any owned file.\nfor name in moonread_core.swift module.h module.modulemap; do\n  if [ ! -s \"$generated/$name\" ]; then\n    printf 'Missing expected UniFFI output: %s\\n' \"$name\" >&2\n    exit 1\n  fi\ndone\nfor name in moonread_core.swift module.h module.modulemap; do\n  if ! cmp -s \"$generated/$name\" \"${MOONREAD_BINDINGS_DIR}/$name\"; then\n    mv -f \"$generated/$name\" \"${MOONREAD_BINDINGS_DIR}/$name\"\n  fi\ndone\n";
 		};
 		A60000000000000000000008 /* Prune unused math fonts */ = {
 			isa = PBXShellScriptBuildPhase;
@@ -2010,6 +2081,7 @@ E51000000000000000000009,D41000000000000000000001,
 				14DD958CABDFDE3272DDD374 /* LibraryModel+Discovery.swift in Sources */,
 				173E9176A10B09A7DC9BABE4 /* LibraryRoutes.swift in Sources */,
 				A2F368BD3C3638D87A341C2F /* UserDataStore+Projection.swift in Sources */,
+				E22800000000000000000001 /* UserDataQuery.swift in Sources */,
 				20396341363C7FE0150EE103 /* UserDataStore+Statistics.swift in Sources */,
 				0EC6C0D2525AD80826CE3AA6 /* UserDataStore+Annotations.swift in Sources */,
 				E6D7C1E870611C3861CBCD58 /* UserDataStore+Values.swift in Sources */,
@@ -2088,6 +2160,11 @@ B792EA92E8204EEDB7AA1450,
 				9691E8B4840C4F38B899F26B /* LibraryModel.swift in Sources */,
 				D4FB0F4457504C4CA4DD4F73 /* ReaderSession.swift in Sources */,
 				6D93C1035BB54BA388AEDB7C /* ReaderAutoReading.swift in Sources */,
+				F082D1DB5AA74D34B3B0BBCE /* ReaderListeningContent.swift in Sources */,
+				FEF5731A64AE45B8A2C5A152 /* ReaderSession+Listening.swift in Sources */,
+				2DCBBA9F75784F3DB0AFA4C6 /* ListeningSession.swift in Sources */,
+				8D74048A90F64B17A95EE475 /* ListeningAudio.swift in Sources */,
+				2D1B236D8713432E89CE0ED8 /* ListeningTextProvider.swift in Sources */,
 				338EBE51F11D4BDC98985D77 /* ReaderOpenBenchmark.swift in Sources */,
 				267C2529F2B14483B0424293 /* ReaderOpenDiagnostics.swift in Sources */,
 				7A278708BAB942A99014C0D3 /* ReaderOpening.swift in Sources */,
@@ -2099,10 +2176,11 @@ B792EA92E8204EEDB7AA1450,
  D41000000000000000000002,
 CA0FCD9B82134E7091B5CD9F,
 79FDB8BF2A464B4CA138DFB4,
-D31000000000000000000005,E51000000000000000000001,E51000000000000000000002,E51000000000000000000003,E51000000000000000000004,E51000000000000000000005,E51000000000000000000006,E51000000000000000000007,E51000000000000000000008,D31000000000000000000007,
+D31000000000000000000005,E51000000000000000000001,E51000000000000000000002,E51000000000000000000003,E51000000000000000000004,E51000000000000000000005,E51000000000000000000006,E51000000000000000000007,148B00000000000000000001,148B00000000000000000002,148B00000000000000000003,148B00000000000000000004,E51000000000000000000008,D31000000000000000000007,
 FA1000000000000000000002,
 FA1000000000000000000001, FB1000000000000000000001,
 E71000000000000000000001,
+				2F95843B14E06DCFDAE5B2CD /* AIToolPresentation.swift in Sources */,
 E71000000000000000000077,
 E61000000000000000000001,
 E61000000000000000000002,
@@ -2131,6 +2209,7 @@ F01900000000000000000001,
 				AD2E4CEA11114B348BD4001C /* ReadingController.swift in Sources */,
 				5D3597B4FF844A3FAECAB599 /* ReadingController+Selection.swift in Sources */,
 				6815BF660F5E4ADCA0560E68 /* ReadingController+Pages.swift in Sources */,
+				FC28A3912F1D25B7A584D239 /* ReadingController+Listening.swift in Sources */,
 				7EFE92CC1E2F4EABA11F303E /* ReadingController+Navigation.swift in Sources */,
 				56A29F1440F34C9BA64DD055 /* ReadingController+Scroll.swift in Sources */,
 				BCA9FC224516449E85299411 /* ReadingTextDecorations.swift in Sources */,
@@ -2190,6 +2269,8 @@ F01900000000000000000001,
                 F14100000000000000000001 /* ReaderSettingsStore.swift in Sources */,
                 F15200000000000000000005 /* ReaderBuiltinFonts.swift in Sources */,
                 152000000000000000000003 /* ReaderFontPicker.swift in Sources */,
+                F18300000000000000000003 /* ThemedGroupedList.swift in Sources */,
+                F18300000000000000000001 /* ReaderFontList.swift in Sources */,
                 152000000000000000000001 /* ReaderFontLibrary.swift in Sources */,
                 AD1000000000000000000004,
                 AD1000000000000000000005,
@@ -2237,6 +2318,9 @@ F01900000000000000000001,
                 E61000000000000000000007,
                 F01800000000000000000003,
                 D31000000000000000000006,
+				7CE986CF432C7B672BAB0E6F /* AINativeToolsFixture.swift in Sources */,
+				338BB8A6D7043A0DD640FC65 /* AIConnectionFixtures.swift in Sources */,
+				DEE84EA507BD5833583CE850 /* AIConversationProtocolFixtures.swift in Sources */,
                 A1000000000000000000000A,
                 AF1000000000000000000005,
                 C21000000000000000000004,
@@ -2247,6 +2331,7 @@ F01900000000000000000001,
                 8ECACDBA0D7E7C50A82DCB52,
                 E4A6194DE08E299191611D3F,
                 5D839F8292B36707B3F44EDE,
+                148B00000000000000000005,
                 EF9F15D1120F37D85EE8F10F,
                 BFB4D8321C6FC6CC2E84DF67,
                 81DD9062D9B410471F40DC5D,
@@ -2281,6 +2366,7 @@ F01900000000000000000001,
                 7891AB4965911CD34494B49C,
                 CDB74E1096C129C2320BDFA6,
                 9FF775D0B6877A398441A100,
+                BD8D1CFA6FD24E97B0C90D6A,
                 40E0B67600F95CF2A77449F3,
                 4DD3C6345D4E4CA57EDFC02D,
                 2765FCAA8DAFFD989EB8DE8B,
@@ -2343,8 +2429,8 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
-                CURRENT_PROJECT_VERSION = 14;
-                MARKETING_VERSION = 1.5.1;
+                CURRENT_PROJECT_VERSION = 15;
+                MARKETING_VERSION = 1.6;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;
@@ -2394,8 +2480,8 @@ D34000000000000000000008 = {isa = XCSwiftPackageProductDependency; package = D33
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A2000000000000000000000E /* Configuration.xcconfig */;
 			buildSettings = {
-                CURRENT_PROJECT_VERSION = 14;
-                MARKETING_VERSION = 1.5.1;
+                CURRENT_PROJECT_VERSION = 15;
+                MARKETING_VERSION = 1.6;
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ENABLE_MODULES = YES;
 				CLANG_ENABLE_OBJC_ARC = YES;

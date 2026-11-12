@@ -196,6 +196,10 @@ final class SyncCompatibilityTests: UserDataFixture {
     let json = try XCTUnwrap(
       JSONSerialization.jsonObject(with: Data(visible.utf8)) as? [String: Any])
     XCTAssertEqual((json["facts"] as? [Any])?.count, 1)
+    let narrow = try await partial.projection(generation: 0, enabled: true, includeFacts: true, statisticsRange: 0...1)
+    let narrowJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(narrow.utf8)) as? [String: Any])
+    XCTAssertEqual(narrowJSON["statisticsIncomplete"] as? Bool, true, "Date pruning must not hide unsupported facts outside the range")
+    XCTAssertTrue((narrowJSON["facts"] as? [Any])?.isEmpty == true)
     let facts = try await partial.syncFixturePayloads("fact")
     XCTAssertTrue(facts.contains(futureFact))
     do {
@@ -290,7 +294,7 @@ final class SyncCompatibilityTests: UserDataFixture {
       let (root, service, book, formal) = try await editorFixture()
       defer { try? FileManager.default.removeItem(at: root) }
       try await service.savePosition(bookID: book.id, offset: 9)
-      let before = try await formal.syncFixturePayloads("position", key: book.contentSha256)
+      let before = try await formal.syncFixturePayloads("position", key: book.fixtureSHA256)
       let pending = try await service.userStore(pending: true)
       let sourceKey = "pending:" + book.id
       let raw = try syncPosition(sourceKey)
@@ -299,7 +303,7 @@ final class SyncCompatibilityTests: UserDataFixture {
       await Self.rejectSync { try await service.savePosition(bookID: book.id, offset: 18) }
       let retained = try await pending.syncFixturePayloads("position", key: sourceKey)
       XCTAssertEqual(retained, [future])
-      let after = try await formal.syncFixturePayloads("position", key: book.contentSha256)
+      let after = try await formal.syncFixturePayloads("position", key: book.fixtureSHA256)
       XCTAssertEqual(after, before)
       let snapshot = try await service.snapshot(book.id)
       XCTAssertEqual(
@@ -315,7 +319,7 @@ final class SyncCompatibilityTests: UserDataFixture {
       let futureClear = try syncJSON(clear) { $0["v"] = 2 }
       try await pending.receiveSyncFixture("clear", payload: futureClear)
       await Self.rejectSync {
-        try await service.statistics(first: 0, last: 20000, book: book.contentSha256)
+        try await service.statistics(first: 0, last: 20000, book: book.fixtureSHA256)
       }
 
     }
@@ -327,7 +331,7 @@ final class SyncCompatibilityTests: UserDataFixture {
   {
     let (root, service, book, store) = try await editorFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let key = "metadata/" + book.contentSha256 + "/status"
+    let key = "metadata/" + book.fixtureSHA256 + "/status"
     try await store.put(key, value: "\"FutureReadingState\"", device: "remote")
     let initial = try await service.details(bookID: book.id)
     XCTAssertEqual(initial.metadata.status, .other(value: "FutureReadingState"))
@@ -357,7 +361,7 @@ final class SyncCompatibilityTests: UserDataFixture {
       decoding: try JSONSerialization.data(withJSONObject: XCTUnwrap(encoded["cover"])),
       as: UTF8.self)
     try await store.put(
-      "metadata/" + book.contentSha256 + "/cover", value: coverJSON, device: "remote")
+      "metadata/" + book.fixtureSHA256 + "/cover", value: coverJSON, device: "remote")
     let restored = try await service.details(bookID: book.id)
     XCTAssertEqual(restored.metadata.cover, cover)
     let retainedBytes = try await store.cover(cover.id)
@@ -446,46 +450,46 @@ final class SyncCompatibilityTests: UserDataFixture {
     let (root, service, book, store) = try await editorFixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let model = BookInformationModel(
-      readInformation: { _ in (nil, try await service.details(bookID: book.id)) },
+      readInformation: { _ in (nil, try await service.bookDetails(.cached(bookId: book.id))) },
       readChapters: { _ in [] })
-    let target = StatisticsRoute(bookID: book.id, title: "Original sample", fromReader: true)
+    let target = StatisticsRoute(target: .cached(bookId: book.id), title: "Original sample", origin: .reader())
     await model.load(target)
     XCTAssertNotNil(model.details)
     let payload = try UserSyncJSON.encode(
       StoredValue(updated: 1, token: "future", value: "\"Future author\""), envelope: true)
     let future = try syncJSON(payload) { $0["v"] = 2 }
     try await store.receiveSyncFixture(
-      "value", key: "metadata/" + book.contentSha256 + "/author", payload: future)
+      "value", key: "metadata/" + book.fixtureSHA256 + "/author", payload: future)
     await model.load(target)
     XCTAssertNil(model.details)
     XCTAssertNil(model.draft)
     XCTAssertNotNil(model.error)
     let retained = try await store.syncFixturePayloads(
-      "value", key: "metadata/" + book.contentSha256 + "/author")
+      "value", key: "metadata/" + book.fixtureSHA256 + "/author")
     XCTAssertEqual(retained, [future])
     do {
 
       let (root, service, book, store) = try await editorFixture()
       defer { try? FileManager.default.removeItem(at: root) }
-      let fact = syncFact(book.contentSha256)
+      let fact = syncFact(book.fixtureSHA256)
       try await store.saveFacts(
-        [("fact", book.contentSha256, fact)], generation: 0, current: 0, enabled: true)
+        [("fact", book.fixtureSHA256, fact)], generation: 0, current: 0, enabled: true)
       let model = StatisticsModel(service: service, notifications: NotificationCenter())
       let window = StatisticsWindow(period: .all)
-      let target = StatisticsRoute(key: book.contentSha256, title: "Synthetic")
+      let target = StatisticsRoute(target: .record(key: .formal(sha256: book.fixtureSHA256)), title: "Synthetic")
       await model.load(window, target: target)
       XCTAssertNotNil(model.state(window, target: target).overview)
-      let futureFact = try syncJSON(syncFact(book.contentSha256, id: "futureFact")) { $0["v"] = 2 }
+      let futureFact = try syncJSON(syncFact(book.fixtureSHA256, id: "futureFact")) { $0["v"] = 2 }
       try await store.receiveSyncFixture(
-        "fact", key: book.contentSha256, id: "futureFact", payload: futureFact)
-      let notice = try await service.statisticsCompatibilityNotice(book: book.contentSha256)
+        "fact", key: book.fixtureSHA256, id: "futureFact", payload: futureFact)
+      let notice = try await service.statisticsCompatibilityNotice(book: book.fixtureSHA256)
       XCTAssertNotNil(notice)
       let clear = try UserSyncJSON.encode(
-        ClearValue(book: book.contentSha256, session: nil, through: 10000, ids: []), envelope: true)
+        ClearValue(book: book.fixtureSHA256, session: nil, through: 10000, ids: []), envelope: true)
       let future = try syncJSON(clear) { $0["v"] = 2 }
       try await store.receiveSyncFixture("clear", payload: future)
       do {
-        _ = try await service.statistics(first: 20000, last: 20000, book: book.contentSha256)
+        _ = try await service.statistics(first: 20000, last: 20000, book: book.fixtureSHA256)
         XCTFail("Unknown clear must not display totals")
       } catch is UserSyncCompatibilityError {
         model.report(UserSyncCompatibilityError(statistics: true), window: window, target: target)
@@ -496,7 +500,7 @@ final class SyncCompatibilityTests: UserDataFixture {
       XCTAssertTrue(state.spans.isEmpty)
       XCTAssertNotNil(state.error)
       XCTAssertFalse(state.loading)
-      await Self.rejectSync { try await service.deleteStatistics(book: book.contentSha256) }
+      await Self.rejectSync { try await service.deleteStatistics(book: book.fixtureSHA256) }
       let retained = try await store.syncFixturePayloads("clear")
       XCTAssertEqual(retained, [future])
 
@@ -509,8 +513,8 @@ final class SyncCompatibilityTests: UserDataFixture {
         UserDefaults(suiteName: "Review-\(root.lastPathComponent)")?.removePersistentDomain(
           forName: "Review-\(root.lastPathComponent)")
       }
-      let future = try syncJSON(syncPosition(book.contentSha256)) { $0["v"] = 2 }
-      try await store.receiveSyncFixture("position", key: book.contentSha256, payload: future)
+      let future = try syncJSON(syncPosition(book.fixtureSHA256)) { $0["v"] = 2 }
+      try await store.receiveSyncFixture("position", key: book.fixtureSHA256, payload: future)
       for _ in 0..<2 {
         let session = ReaderSession(
           service: service,
@@ -546,7 +550,7 @@ final class SyncCompatibilityTests: UserDataFixture {
         await session.leave().value
         XCTAssertNil(session.error, "Leaving must not resurrect the dismissed compatibility notice")
       }
-      let retained = try await store.syncFixturePayloads("position", key: book.contentSha256)
+      let retained = try await store.syncFixturePayloads("position", key: book.fixtureSHA256)
       XCTAssertEqual(retained, [future])
 
     }

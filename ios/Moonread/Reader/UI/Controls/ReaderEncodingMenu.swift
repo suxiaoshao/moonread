@@ -76,11 +76,12 @@ struct ReaderEncodingMenu: View {
         .onChange(of: isRestarting) { _, busy in if busy { pendingEncoding = nil } }
         .accessibilityLabel(isRestarting ? Text("正在重新读取") : value.map { Text("文字编码，\($0)，可更换") } ?? Text(title))
         .accessibilityIdentifier("readerEncodingMenu")
-        .alert("更换文字编码？", isPresented: Binding(get: { pendingEncoding != nil }, set: { if !$0 { pendingEncoding = nil } }), presenting: pendingEncoding) { encoding in
-            Button("重新读取") { pendingEncoding = nil; select(encoding == "auto" ? nil : encoding) }
-            Button("取消", role: .cancel) { pendingEncoding = nil }
-        } message: { _ in
-            Text("正文会按新编码重新读取。当前编码下的阅读位置、书签和批注不会带到不同的新正文，原数据会保留。原文件未变时，换回原编码可找回。")
+        .readerToolConfirmation("更换文字编码？", isPresented: Binding(get: { pendingEncoding != nil }, set: { if !$0 { pendingEncoding = nil } }),
+            message: "正文会按新编码重新读取。当前编码下的阅读位置、书签和批注不会带到不同的新正文，原数据会保留。原文件未变时，换回原编码可找回。",
+            confirm: "重新读取") {
+            guard let encoding = pendingEncoding else { return }
+            pendingEncoding = nil
+            select(encoding == "auto" ? nil : encoding)
         }
     }
 }

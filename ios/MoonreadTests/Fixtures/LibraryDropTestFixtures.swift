@@ -114,7 +114,7 @@ final class CallbackURLProvider: NSItemProvider {
       -> LibraryModel
     {
       LibraryModel(
-        service: service, fileMutationReload: {}, prepareSource: { _, _ in },
+        service: service, fileMutationReload: {},
         lookupDropEntry: lookup)
     }
     func remove() { try? FileManager.default.removeItem(at: root) }
@@ -151,9 +151,10 @@ final class CallbackURLProvider: NSItemProvider {
       id: path, shelfId: "builtin", shelfName: "Builtin", relativePath: path,
       parentPath: (path as NSString).deletingLastPathComponent,
       name: (path as NSString).lastPathComponent,
-      directory: directory, size: 0, modified: 0, needsDownload: false, bookId: nil,
-      positionUtf8: 0, byteCount: 0, chapterTitle: nil, childBookCount: 0, lastRead: 0,
-      preferred: false, coverPreviews: [], metadata: nil, contentSha256: nil, readingIdentity: nil)
+      size: 0, modified: 0, lastRead: 0,
+      item: directory ? .folder(row: .init(childBookCount: 0, coverPreviews: [])) :
+        .book(row: .init(resolution: .unidentified(fileId: path), needsDownload: false,
+          positionUtf8: 0, byteCount: 0, chapterTitle: nil, preferred: false, metadata: nil)))
   }
 
 }

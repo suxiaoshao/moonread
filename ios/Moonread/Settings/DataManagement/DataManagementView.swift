@@ -7,7 +7,6 @@ struct DataManagementView: View {
     @Environment(\.theme) private var theme
     @Bindable var model: DataManagementModel
     @State private var picker = false
-    @State private var exportConfirmation = false
     @State private var sharing: LibraryExport?
     var body: some View {
         ScrollView {
@@ -75,24 +74,26 @@ struct DataManagementView: View {
         .onReceive(NotificationCenter.default.publisher(for: .cloudStatusChanged).receive(on: DispatchQueue.main)) { _ in if !model.busy { Task { await model.load() } } }
         .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in if !model.busy { Task { await model.load() } } }
         .fileImporter(isPresented: $picker, allowedContentTypes: [.moonreadBackup]) { result in
-            switch result { case .success(let url): Task { await model.prepareImport(url) }; case .failure(let error): model.error = error.localizedDescription }
+            switch result { case .success(let url): Task { await model.prepareImport(url) }; case .failure(let error): model.showError(error.localizedDescription) }
         }
-        .confirmationDialog(Text("导出全部阅读数据？", tableName: "DataManagement"), isPresented: $exportConfirmation, titleVisibility: .visible) {
-            Button { Task {
-                await model.exportAll()
-                #if DEBUG
-                // U21 reimports this real export through its existing isolated
-                // backup fixture; system sharing is outside the business flow.
-                if await model.chooseBackup() != nil { return }
-                #endif
-                if model.exported != nil { do { sharing = try await model.shareBackup() } catch { model.error = ReaderMessages.error(error) } }
-            } } label: { Text("生成全部备份", tableName: "DataManagement") }.accessibilityIdentifier("confirmExportAllReadingData")
-        } message: { Text("全部 \(model.inventory.items.count) 本阅读数据与配色；身份未完成或附件缺失时将提示重试。", tableName: "DataManagement") }
         .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) { if let sharing { LibraryShareSheet(files: sharing) } }
-        .sheet(isPresented: Binding(get: { model.preview != nil }, set: { if !$0 && !model.busy { model.preview = nil } })) { BackupImportPreviewView(model: model) }
+        .sheet(isPresented: Binding(get: { model.preview != nil }, set: { if !$0 && !model.busy { model.closePreview() } })) { BackupImportPreviewView(model: model) }
+    }
+    private func exportBackup() {
+        Task {
+            await model.exportAll()
+            #if DEBUG
+            // U21 uses the original export bytes without driving system sharing.
+            if await model.chooseBackup() != nil { return }
+            #endif
+            if model.exported != nil {
+                do { sharing = try await model.shareBackup() }
+                catch { model.showError(ReaderMessages.error(error)) }
+            }
+        }
     }
     @ViewBuilder private var backupButtons: some View {
-        Button { exportConfirmation = true } label: {
+        Button { exportBackup() } label: {
             Label { Text("导出备份", tableName: "MetadataExchange") } icon: { Image(systemName: "square.and.arrow.up") }.frame(maxWidth: .infinity)
         }.buttonStyle(MetadataActionButtonStyle()).accessibilityIdentifier("exportAllReadingData")
         #if DEBUG
@@ -108,9 +109,9 @@ struct ReadingDataWorking: ViewModifier {
     @Bindable var model: DataManagementModel
     func body(content: Content) -> some View {
         content.disabled(model.busy).overlay {
-            if model.busy {
+            if let working = model.working {
                 VStack(spacing: 12) {
-                    ProgressView(model.working)
+                    ProgressView(working)
                     if model.canCancel { Button("取消") { model.cancel() } }
                 }.padding().background(theme.floatingBackground(), in: .rect(cornerRadius: 12)).accessibilityIdentifier("readingDataWorking")
             }
@@ -136,15 +137,16 @@ private struct ReadingDataCacheView: View {
             }.padding()
         }.themedPage().navigationTitle(Text("可重建缓存", tableName: "DataManagement"))
         .modifier(ReadingDataWorking(model: model))
-        .confirmationDialog(Text("清理可重建缓存？", tableName: "DataManagement"), isPresented: $confirmation, titleVisibility: .visible) {
-            Button { Task { await model.clearCache() } } label: { Text("确认清理缓存", tableName: "DataManagement") }
+        .alert(Text("清理可重建缓存？", tableName: "DataManagement"), isPresented: $confirmation) {
+            Button(role: .destructive) { Task { await model.clearCache() } } label: { Text("确认清理缓存", tableName: "DataManagement") }
+            Button("取消", role: .cancel) {}
         }
     }
 }
 struct ReadingDataDeletionPrompt: ViewModifier {
     @Bindable var model: DataManagementModel
     func body(content: Content) -> some View {
-        content.confirmationDialog(Text("清除这 \(model.deleting?.count ?? 0) 本小说的阅读数据？", tableName: "DataManagement"), isPresented: Binding(get: { model.deleting != nil }, set: { if !$0 { model.deleting = nil } }), titleVisibility: .visible) {
+        content.alert(Text("清除这 \(model.deleting?.count ?? 0) 本小说的阅读数据？", tableName: "DataManagement"), isPresented: Binding(get: { model.deleting != nil }, set: { if !$0 { model.deleting = nil } })) {
             if let keys = model.deleting {
                 Button(role: .destructive) { Task { await model.deleteConfirmed(keys) } } label: { Text("确认清除阅读数据", tableName: "DataManagement") }.accessibilityIdentifier("confirmDeleteReadingData")
             }
@@ -177,7 +179,7 @@ private struct BackupImportPreviewView: View {
                 }.padding().background(Color(uiColor: theme.canvas))
             }
             .modifier(ReadingDataWorking(model: model))
-            .toolbar { ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("取消", role: .cancel) { if !model.busy { model.preview = nil } }.disabled(model.busy) } }
+            .toolbar { ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("取消", role: .cancel) { if !model.busy { model.closePreview() } }.disabled(model.busy) } }
             .interactiveDismissDisabled(model.busy)
         }
     }

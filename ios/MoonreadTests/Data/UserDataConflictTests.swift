@@ -12,7 +12,7 @@ final class UserDataConflictTests: UserDataFixture {
     for formalWins in [true, false] {
       let f = try positionWinnerFixture()
       defer { f.clean() }
-      let sha = f.book.contentSha256
+      let sha = f.book.fixtureSHA256
       let alias = "pending:" + f.aliases[1]
       let formal = try positionRecord(
         key: sha, token: formalWins ? "z-formal" : "a-formal", offset: 7)
@@ -22,7 +22,7 @@ final class UserDataConflictTests: UserDataFixture {
       try await receivePosition(pending, key: alias, store: f.pending)
       let keys = [sha, alias]
       let expected: UInt64 = formalWins ? 7 : 19
-      let before = try await f.service.effectiveQuery(keys: keys).bookInfo(bookId: f.book.id)
+      let before = try await f.service.effectiveQuery(records: .only(try keys.map { try parseReadingKey(value: $0) })).bookInfo(bookId: f.book.id)
       XCTAssertEqual(before.positionUtf8, expected)
       // Scoped projection must carry the exact token used by the reducer.
       let scoped = try await f.formal.projection(
@@ -35,7 +35,7 @@ final class UserDataConflictTests: UserDataFixture {
       let transfer = try await f.pending.exportPending(key: alias)
       try await f.formal.importPending(transfer, from: alias, to: sha)
       try await f.pending.removePending(key: alias)
-      let after = try await f.service.effectiveQuery(keys: keys).bookInfo(bookId: f.book.id)
+      let after = try await f.service.effectiveQuery(records: .only(try keys.map { try parseReadingKey(value: $0) })).bookInfo(bookId: f.book.id)
       XCTAssertEqual(after.positionUtf8, before.positionUtf8)
       let winner = try await f.formal.positionValues()["position/" + sha]
       XCTAssertEqual(winner?.token, formalWins ? formal.token : pending.token)
@@ -46,7 +46,7 @@ final class UserDataConflictTests: UserDataFixture {
       for reverse in [false, true] {
         let f = try positionWinnerFixture()
         defer { f.clean() }
-        let sha = f.book.contentSha256
+        let sha = f.book.fixtureSHA256
         let keys = f.aliases.map { "pending:" + $0 }
         let a = try positionRecord(key: keys[0], token: "a-alias", offset: 7)
         let z = try positionRecord(key: keys[1], token: "z-alias", offset: 19)
@@ -60,7 +60,7 @@ final class UserDataConflictTests: UserDataFixture {
           try await receivePosition(record, key: key, store: f.pending)
         }
         let scopedKeys = reverse ? Array(keys.reversed()) : keys
-        let before = try await f.service.effectiveQuery(keys: scopedKeys).bookInfo(
+        let before = try await f.service.effectiveQuery(records: .only(try scopedKeys.map { try parseReadingKey(value: $0) })).bookInfo(
           bookId: f.book.id)
         XCTAssertEqual(before.positionUtf8, 19, "Only the final SHA winner is loaded by Rust")
         for key in scopedKeys {
@@ -68,7 +68,7 @@ final class UserDataConflictTests: UserDataFixture {
           try await f.formal.importPending(transfer, from: key, to: sha)
           try await f.pending.removePending(key: key)
         }
-        let after = try await f.service.effectiveQuery(keys: [sha]).bookInfo(bookId: f.book.id)
+        let after = try await f.service.effectiveQuery(records: .only([.formal(sha256: sha)])).bookInfo(bookId: f.book.id)
         XCTAssertEqual(after.positionUtf8, before.positionUtf8)
         let winner = try await f.formal.positionValues()["position/" + sha]
         XCTAssertEqual(winner?.token, "z-alias")
@@ -276,7 +276,7 @@ final class UserDataConflictTests: UserDataFixture {
   func testNoteExportUsesWholeReadOnlySnapshotAndPreservesVersions() async throws {
     let (root, service, book, store) = try await editorFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let key = book.contentSha256
+    let key = book.fixtureSHA256
     for index in 0..<62 {
       let value = AnnotationCandidate(id: "operation-\(index)", ancestors: [],
         content: .init(start: UInt64(index), end: UInt64(index + 1), excerpt: "line \(index)\n<quote>*", note: "[note]\n`code`"),
@@ -369,7 +369,7 @@ final class UserDataConflictTests: UserDataFixture {
   func testSelectedNoteDeletionRejectsEntireChangedBatchAndReusesUndo() async throws {
     let (root, service, book, store) = try await editorFixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let key = book.contentSha256
+    let key = book.fixtureSHA256
     let a = candidate("a", content: content("first"))
     let b = candidate("b", content: content("second"))
     try await store.receiveFixture(key: key, mark: "first", candidate: a)
@@ -383,10 +383,11 @@ final class UserDataConflictTests: UserDataFixture {
     await tools.prepare(bookID: book.id, currentChapter: 0, library: true)
     XCTAssertEqual(tools.notes.count, 60)
     XCTAssertTrue(tools.moreNotes)
+    tools.beginNoteSelection()
     tools.updateNoteSelection(["first", "second"])
-    XCTAssertEqual(Set(tools.selectedCandidates.keys), tools.selectedNotes)
+    XCTAssertEqual(tools.selectedNotes, ["first", "second"])
     tools.updateNoteSelection(["second"])
-    XCTAssertNil(tools.selectedCandidates["first"])
+    XCTAssertEqual(tools.selectedNotes, ["second"])
     tools.updateNoteSelection(["first", "second"])
     let changed = candidate("changed", parents: ["b"], content: content("edited remotely"))
     try await store.receiveFixture(key: key, mark: "second", candidate: changed)
@@ -394,14 +395,13 @@ final class UserDataConflictTests: UserDataFixture {
     XCTAssertEqual(tools.notes.count, 62)
     tools.updateNoteSelection(["first", "second"])
     XCTAssertEqual(tools.notes.first { $0.id == "second" }?.note, "second")
-    XCTAssertEqual(tools.selectedCandidates["second"]?.map(\.id), ["b"])
     XCTAssertEqual(tools.noteSnapshot?.groups["second"]?.map(\.id), ["b"])
-    let selected = NoteCandidates(key: key, groups: tools.selectedCandidates, blocked: [])
+    // A full refresh changes the displayed row but cannot silently change the user's selection baseline.
+    await tools.loadNotes(reset: true, preservingCount: tools.notes.count)
+    XCTAssertEqual(tools.notes.first { $0.id == "second" }?.note, "edited remotely")
     let before = try await store.syncFixturePayloads("mark")
-    do {
-      try await service.deleteNoteSelection(book.id, expected: selected, ids: ["first", "second"])
-      XCTFail("Stale selection must not delete even the unchanged first record")
-    } catch is UserDataConflict {}
+    await tools.deleteSelectedNotes()
+    XCTAssertNotNil(tools.error)
     let after = try await store.syncFixturePayloads("mark")
     XCTAssertEqual(after, before)
     let latest = try await service.noteCandidates(book.id)
@@ -413,7 +413,6 @@ final class UserDataConflictTests: UserDataFixture {
     XCTAssertEqual(deleted.groups.filter { $0.key.hasPrefix("page-") && $0.value.first?.content != nil }.count, 60)
     await tools.loadNotes(reset: true)
     XCTAssertTrue(tools.selectedNotes.isEmpty)
-    XCTAssertTrue(tools.selectedCandidates.isEmpty)
     try await service.deleteMarks(["first", "second"], deleted: false)
     let restored = try await store.noteCandidates(key: key)
     XCTAssertEqual(restored.groups["first"]?.first?.content, a.content)

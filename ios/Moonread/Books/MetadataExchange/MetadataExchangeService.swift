@@ -9,12 +9,12 @@ extension AppDataService {
         let shelves = try shelves(), names = Dictionary(uniqueKeysWithValues: shelves.map { ($0.id, $0.name) })
         let entries: [LibraryEntry]
         if let shelfID { entries = try query.allLibraryBooks(shelfId: shelfID) }
-        else { entries = try query.librarySearchCandidates(scope: .init(shelfId: nil, parentPath: nil, recursive: true), booksOnly: true).map(\.entry) }
+        else { entries = try query.librarySearchCandidates(scope: .all, booksOnly: true).map(\.entry) }
         var grouped: [String: [LibraryEntry]] = [:]
         var skipped: [MetadataSkippedFile] = []
         for entry in entries where !entry.directory {
             try Task.checkCancellation()
-            guard let sha = entry.contentSha256, (try? parseSha256(value: sha)) != nil else { skipped.append(.init(id: entry.id, shelf: names[entry.shelfId] ?? "", path: entry.relativePath)); continue }
+            guard let sha = entry.readingIdentity?.formalSHA256 else { skipped.append(.init(id: entry.id, shelf: names[entry.shelfId] ?? "", path: entry.relativePath)); continue }
             grouped[sha, default: []].append(entry)
         }
         await progress(0, grouped.count)
@@ -30,7 +30,7 @@ extension AppDataService {
         for sha in grouped.keys {
             try Task.checkCancellation()
             try await store.requireMetadataReadable(key: sha)
-            metadataSnapshot[sha] = try query.bookDetails(bookId: nil, contentSha: sha).metadata
+            metadataSnapshot[sha] = try query.bookDetails(target: .record(key: .formal(sha256: sha))).requireIdentified().metadata
         }
         let hasCovers = metadataSnapshot.values.contains { $0.cover != nil }
         let writer = try createMetadataWriter(destination: manifest.path, format: format, packaged: hasCovers)
@@ -112,20 +112,24 @@ extension AppDataService {
         for sha in shas {
             try Task.checkCancellation()
             let sources = try query.systemReadingSources(contentSha256: sha)
-            var item = MetadataPreviewBook(id: sha, title: sources.first.map { ($0.name as NSString).deletingPathExtension } ?? String(localized: "找不到这本书", table: "MetadataExchange"), base: nil, source: sources.count == 1 ? sources[0] : nil, sourceCount: sources.count, fields: [], messages: [])
+            let source = MetadataPreviewBook.Source(sources)
+            let title = sources.first.map { ($0.name as NSString).deletingPathExtension }
+                ?? String(localized: "找不到这本书", table: "MetadataExchange")
             guard !sources.isEmpty else {
-                item.messages = [String(localized: "找不到这本书", table: "MetadataExchange")]; books.append(item)
+                let message = String(localized: "找不到这本书", table: "MetadataExchange")
+                books.append(.init(id: sha, title: title, match: .unmatched, messages: [message]))
                 let record = try session.document.records(sha: sha, cursor: 0, count: 1).records.first
-                diagnostics.append(.init(sourceLine: record?.sourceLine, recordIndex: record?.recordIndex, code: "book_not_found", field: "content_sha256", contentSha256: sha, message: item.messages[0])); continue
+                diagnostics.append(.init(sourceLine: record?.sourceLine, recordIndex: record?.recordIndex, code: "book_not_found", field: "content_sha256", contentSha256: sha, message: message)); continue
             }
             do { try await store.requireMetadataReadable(key: sha) }
             catch {
-                item.messages = [String(localized: "这本书的资料无法读取，未导入", table: "MetadataExchange")]; books.append(item)
-                diagnostics.append(.init(sourceLine: nil, recordIndex: nil, code: "metadata_unreadable", field: nil, contentSha256: sha, message: item.messages[0])); continue
+                let message = String(localized: "这本书的资料无法读取，未导入", table: "MetadataExchange")
+                books.append(.init(id: sha, title: title, match: .skipped(reason: message, source), messages: [message]))
+                diagnostics.append(.init(sourceLine: nil, recordIndex: nil, code: "metadata_unreadable", field: nil, contentSha256: sha, message: message)); continue
             }
-            let base = try query.bookDetails(bookId: nil, contentSha: sha).metadata
+            let base = try query.bookDetails(target: .record(key: .formal(sha256: sha))).requireIdentified().metadata
             let hasPosition = try query.metadataHasReadingPosition(contentSha256: sha)
-            item = MetadataPreviewBook(id: sha, title: item.title, base: base, source: item.source, sourceCount: sources.count, fields: [], messages: [])
+            var item = MetadataPreviewBook(id: sha, title: title, match: .matched(.init(base: base, source: source)))
             item.coverUnavailable = messagesBySHA[sha, default: []].contains { $0.code == "cover_unavailable" }
             var choices: [MetadataField: [MetadataOption]] = [:]
             var acceptedCovers: [BookCoverAsset] = []
@@ -227,8 +231,7 @@ extension AppDataService {
             if let name = book.renameName, let source = book.source {
                 // Only this explicit file-operation phase touches original bytes. Never download.
                 do {
-                    let snapshot = try aiFileSnapshot(source.location)
-                    try renameLibraryItem(source, name: name, replace: false, expected: snapshot)
+                    try await renameLibraryBook(source, name: name, expected: .formal(sha256: book.id))
                     renamed = true
                 } catch let error as AIFileExecutionError {
                     switch error.stage {
@@ -248,7 +251,10 @@ extension AppDataService {
             return String(localized: "资料已保存，文件未改名：原文件尚未下载；本次不会下载", table: "MetadataExchange")
         }
         if case LibraryFileError.conflict = error { return String(localized: "资料已保存，文件未改名：目标名称已存在", table: "MetadataExchange") }
-        if let error = error as? AIToolError, error.code == "stale_reference" { return String(localized: "资料已保存，文件未改名：原文件已变化", table: "MetadataExchange") }
+        let changed: Bool
+        if case ReaderError.SourceChanged = error { changed = true }
+        else { changed = (error as? AIToolError)?.code == "stale_reference" }
+        if changed { return String(localized: "资料已保存，文件未改名：原文件已变化", table: "MetadataExchange") }
         return String(localized: "资料已保存，文件未改名：原文件不可用、无权限或名称无效", table: "MetadataExchange")
     }
 }

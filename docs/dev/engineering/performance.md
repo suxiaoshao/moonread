@@ -1,10 +1,10 @@
 # 性能设计与待优化
 
-现行设计核对：2026-10-13。本文维护已采用的性能边界、诊断方法与未实施候选；实际测量、用户反馈、构建和安装证据只记在[验证记录](verification.md)。候选由 [roadmap](../roadmap.md#性能待优化) 索引，不构成自动开始开发的授权。
+开书与目录链路核对：2026-11-11。本文维护已采用的性能边界、诊断方法与未实施候选；实际测量、用户反馈、构建和安装证据只记在[验证历史](verification-history.md#阅读界面与性能)。候选由 [roadmap](../roadmap.md#性能待优化) 索引，不构成自动开始开发的授权。
 
 ## 开书关键路径
 
-`LibraryModel.open` 点按 → 文件可用性准备 → `OpeningRequest`/系统 push → `ReaderSession` 创建 lease/启动 worker → 后台协调读原始 SHA → 快开 reuse 或渐进导入 → 单书 snapshot/frame → window/settings/anchor 安装 → UIKit/TextKit 布局 → 可见正文。文件下载留在书架反馈；原生导航与准备可重叠，不把动画、SHA 和排版各段机械相加。
+`LibraryModel.open` 点按 → `OpeningRequest`/系统 push → `ReaderSession` 在页内获取文件并报告进度 → 原件协调读与原始 SHA → 快开 reuse 或渐进导入/lease → 单书 snapshot/frame → window/settings/anchor 安装 → UIKit/TextKit 布局 → 可见正文。导航提交不等待文件准备；原生转场与准备可重叠，不把动画、SHA 和排版各段机械相加。失败、重试及返回取消的生命周期见[开书流程](../reader/import.md#流式管线与并行)。
 
 - 内容身份始终是规范正文 SHA-256；每次打开完整验证原始字节，快开键包含解码策略。`sha2 0.11` 使用可用的硬件 SHA 后端，摘要仍为 64 位小写十六进制。首次未命中仍需解码一遍并校验期望 raw SHA，不恢复路径/mtime 快开，也不预哈希全书库。详见[文件身份](../data/README.md#文件定位与-sha-关联)。
 - 就绪通知以带代次的 waiter 唤醒；先读代次、查询、再登记等待，消除完成与订阅之间的漏信号。worker token、attempt、monitor、leave 共同过滤迟到返回，超时仅作兜底。完整生命周期见[开书流程](../reader/import.md#就绪通知与生命周期)。
@@ -14,7 +14,9 @@
 
 ## 单书投影与保存
 
-`UserDataStore` 按 content SHA/pending key 取单书所需位置、资料、章节覆盖；首次 `openingFrame` 合并 snapshot/frame，使用同一次不可变 ReaderQuery。冷首页确需的批量投影可按输入版本复用；目录只补相关子树用户数据，普通最近列表先读位置索引。需要 facts 的统计/章节查询仍有全量成本，列为下方候选。
+`UserDataStore` 按 content SHA/pending key 取单书所需位置、资料、章节覆盖；首次 `openingFrame` 合并 snapshot/frame，使用同一次不可变 ReaderQuery。冷首页确需的批量投影可按输入版本复用；普通目录先按子树只读位置/打开时间并裁决身份，由 Rust 的既有规则决定排序、计数和每个文件夹前四个封面候选；第二步只为直接子书、入选封面及参与裁决的别名读取完整记录。两个阶段都重验版本、身份与范围，旧响应不覆盖新目录。直接子书多时仍需读取相应详情；额外范围选择和校验也可能增加热缓存成本，不承诺所有路径更快。搜索、资料导出等完整书目查询保持各自范围；普通最近列表先读位置/打开时间索引。单书章节 facts 与资料共同限定正式/pending 范围；统计概览只取资料/事实，小组件统计只取事实。只有相关书/领域的写入使相应缓存失效，未知云导入保守全局失效。原 ModelActor 只提取 Sendable 值；事实解码/过滤与 JSON 组装在 detached 任务执行，同版本请求合并，版本变化拒绝缓存与发布，不增加只读 context。
+
+封面 ready 缓存与订阅分离，资源 actor 有界缓存 32MiB/64 项、视图完成呈现缓存 24MiB/64 项；尺寸按固定档位复用，首页预热与实际小封面使用相同档位。同书新图就绪前保留旧成功图，明确删除立即转预设；主 App 的小组件/Spotlight 也经过同一资源读取路径，纯进度更新不重绘同输入缩略图。
 
 位置压缩移到该 key 写入，读路径不写库；CloudKit 导入失效缓存，已知 keys 可按书处理，否则下次该书写入再压缩。缓存要覆盖本机写入、远端导入、pending→SHA、统计开关/清理代次、最近隐藏和首选文件变化；查询版本一致，不能缓存混合代次结果。query 保留独立不可变 TEMP 输入，不换回共享可变投影。
 
@@ -46,31 +48,31 @@ display-link、onAppear、layout completion 都是程序代理，不能声称光
 
 专门性能实验需另按授权执行：同包交错消融、小/长书、首次/续读、热缓存/进程冷启、静止/云刷新、真实库/隔离库分组，每条件足量采样再报中位数、P95、最大值。重启进程不等于清空 OS 缓存。状态机用可取消延迟 gate 测 299/301、799/801ms、ready 与 timer 同轮、取消/旧 worker、push 中返回/取消 pop、无回调 watchdog、后台和错误；不修改原书、不延长协调访问、不拿测试延迟算性能。
 
-首页内部测量尚需 `rootTaskStart/themeReady/localPrepareStart-End/shelvesReady/recentsReady/coverRequest-Ready/homeSnapshotCommitted/launchCoverFadeStart-End/scanStart-End/reloadChanged`，区分封面 memory/disk/generated/missing。先前录屏的视觉暴露窗口不能代替本地查询用时。超时、缺图/云端附件、无最近、初装欢迎书计数、真实增删、重复云通知、大字号/减弱动态和滚动锚点按受影响范围验证；证据集中记 verification。
+首页内部测量尚需 `rootTaskStart/themeReady/localPrepareStart-End/shelvesReady/recentsReady/coverRequest-Ready/homeSnapshotCommitted/launchCoverFadeStart-End/scanStart-End/reloadChanged`，区分封面 memory/disk/generated/missing。先前录屏的视觉暴露窗口不能代替本地查询用时。超时、缺图/云端附件、无最近、初装欢迎书计数、真实增删、重复云通知、大字号/减弱动态和滚动锚点按受影响范围验证；证据集中记[验证历史](verification-history.md#阅读界面与性能)。
 
 ## 待优化
 
-以下保留原评审编号便于定位。代码入口用于复核，旧行号不当作永久证据；当前无专项规模数据的项均属推断。开书 P1-1 的单书投影、设置内存副本、首页稳定与云交接阻塞已经实施，不重复列成待做；验收及仍未覆盖环境见 verification。
+以下保留原评审编号便于定位。代码入口用于复核，旧行号不当作永久证据；当前无专项规模数据的项均属推断。开书 P1-1 的单书投影、设置内存副本、首页稳定与云交接阻塞已经实施，不重复列成待做；分期验收见[验证历史](verification-history.md#阅读界面与性能)，仍未覆盖环境见[验证边界](verification.md#待完成的验证)。
 
 | 项目与证据入口 | 剩余风险及建议 | 重新启动的测量条件 |
 | --- | --- | --- |
 | **P1-2 AI 启动与会话列表**：`AIService.load/connect`、`AIRepository.sessions` | 启动逐个连接会话、每个读取最近历史；未分页会话数和长消息解码可能抢首屏/开书。先加载摘要、打开会话才取历史，仅恢复确需运行/确认/排队的 runtime；不能丢恢复语义。对话列表分页为明确未实现项 | 1/100/500 会话，消息 0.8/20KB，启动可交互、actor/主线程等待、RSS；延迟 AI 初始化消融。单会话回放不能覆盖此成本 |
 | **P1-3 统计与章节 facts**：`UserData.visibleFacts/projection(includeFacts:)`、`StatisticsView` | 全事实解码、清理标记遍历、TEMP apply；单书页面期间/累计/活动重复查询。按书/期间下推、同快照批量算、可重建章节范围汇总，实体化查询字段；合并/取消过期查询。exportPending 按 key 已处理，不再列旧全库缺陷 | 1万/10万事实 × 0/100 清理标记，连续切期间；投影字节、CPU/RSS、耗时和废弃查询数。保持时区、查阅、清理、跨设备事实语义 |
 | **P1-4 AI 长会话内存与长帧**：`AINativeMarkdown`、`AIConversation` | sizing pool 有界，但 parsed/retained views、高度和用户已加载历史仍可能累计；先测 1000 条及多会话，再决定各缓存 cost 上限、近邻逐出。不能全清缓存导致空白重建 | 缓存项/RSS、流结束/队列换 turn/胶囊消失/拖动结束复合时序。保留历史坏样本，未复现不算修复 |
-| **P2-5 搜索规模**：`Reader/UI/Tools/ReaderTools.swift`、`library/tools.rs`、`AIRepository`、`library/bookshelf/` | 单批有界但 UI hits 持续累计；扫描 sleep 与 UI 节流耦合。跨会话先全 fetch 再筛允许会话，书架搜索全取排序。考虑分页显示/内存窗口、存储范围下推与扫描发布解耦，不静默截断既有全结果 | 高频单字/无命中/regex/1MiB 长行/连续改词，首批、全搜、取消、结果数与 RSS。分批等待的估计不当实测 |
+| **P2-5 搜索规模**：`Reader/UI/Tools/ReaderTools.swift`、`library/tools/search.rs`、`AIRepository`、`library/bookshelf/` | 单批有界但 UI hits 持续累计；扫描 sleep 与 UI 节流耦合。跨会话先全 fetch 再筛允许会话，书架搜索全取排序。考虑分页显示/内存窗口、存储范围下推与扫描发布解耦，不静默截断既有全结果 | 高频单字/无命中/regex/1MiB 长行/连续改词，首批、全搜、取消、结果数与 RSS。分批等待的估计不当实测 |
 | **P2-6 云刷新与其他文件操作**：`CloudLibrary`、`LibraryService`、`LibraryModel` | 云交接主因已修。剩余 metadata 全量映射、重复通知扫描及其他同步移动/复制/导出是否阻塞共享 actor 待测；按真实变化合并 dirty 代次、保留 single-flight 与原子发布，不因每个等待者补跑一轮 | 393 本含未下载占位、后台变更/下载叠加开书，通知/扫描次数与入队等待；不为摘要/封面下载原书 |
 | **P2-7 翻页选字与窗口交接**：`Reader/Rendering/ReadingView.swift`、`ReaderSession`、批注查询 | 已有有限窗口、页边界/coordinates 复用；TextKit、字号/方向变化、选区坐标和大量批注装饰仍在主线程。按窗口修订缓存必要范围，交互中保护当前行/页与选区；实测排版占主导时再考虑当前页及邻页优先、完整排版键缓存、仅实际阅读字体的空闲预热，不无条件预热所有字体或先重写 renderer | 连续阅读、边缘选区拖动、数千批注、调字号/转屏/导入完成；P95/P99/最大帧、CPU、块数/RSS和录屏位置联合判断 |
 | **P3-8 封面与首次长书冷态**：`BookMetadata`、`SourceImportWork`、`reading/progressive/` | 已有 1600px 下采样、目标像素磁盘缩略图、共享订阅；冷滚动和释放后回看可能重复解码/争用 service。测后再加 cost 有界缓存或独立图像队列。首次 raw hash+解码、恢复重放是正确性成本，保留完整校验 | 393 本冷缩略图命中/解码栈/峰值字节；20MB+/100MB 冷页、下载、热降频下首块/EOF/RSS/取消与耗电趋势，热 SHA 不覆盖这些 |
-| **MainActor 调度恢复**：`ThemeStore` 偏好保存及开书返回 | 偏好 queued→invoke 的旧成功样本存在长间隔，但没有 CPU 栈证明具体视图重建。后台保存保护已加，不把同类现象都归为此原因 | 再复现时同时采主线程栈、视图失效和动画事件；先收窄等值发布/重复更新，不仅调 Task 优先级。旧约 337ms 事实见 verification |
+| **MainActor 调度恢复**：`ThemeStore` 偏好保存及开书返回 | 偏好 queued→invoke 的旧成功样本存在长间隔，但没有 CPU 栈证明具体视图重建。后台保存保护已加，不把同类现象都归为此原因 | 再复现时同时采主线程栈、视图失效和动画事件；先收窄等值发布/重复更新，不仅调 Task 优先级。旧约 337ms 的证据边界见[验证历史](verification-history.md#阅读界面与性能) |
 | **首页/目录结构更新**：`LibraryCollection`、`HomeSnapshot` | 等值首页稳定不等于目录 grid hosting cell 无重配；真实增删/远端最近项改变仍可能移动。测 opening 状态影响范围，再按行更新；交互期间结构更新延后或恢复 anchor/offset。初装欢迎书 0→1 是否还会暴露、超时兜底与持久首屏缓存必要性待数据 | 原 393 本目录列表/网格实际入口、冷揭幕后立即点书、真实更新时滚动；无动画不能代替锚点保护，不承诺所有结构变化零位移 |
 
 ### 开书暂缓项
 
-收益都是条件估计，不能相加，也不是修复后的真机承诺。具体历史阶段数值与限制在 verification。
+收益都是条件估计，不能相加，也不是修复后的真机承诺。具体历史阶段数值与限制见[验证历史](verification-history.md#阅读界面与性能)。
 
 | 项目 | 预期剩余价值、代价与决定 |
 | --- | --- |
-| 提前启动 worker/SHA | tap 后已做文件可用性准备；尚可提前的是 lease/worker。正常可隐藏几毫秒到数十毫秒，去掉设置排队后更少。需重划导航前 attempt、权限、lease、取消及失败所有权。**等数据再定，优先于预排版**：只有 worker 迟启且就绪落后 push 才做；未下载仍留书架，不删协调校验 |
+| 继续前移 worker/SHA | #269 已让导航先于文件准备，文件获取与失败反馈在阅读页，由同一会话持有请求和取消；不再把这一改动列为待做。其后 lease/worker 是否仍有可消除的迟启，须有新分段证据再决定，不能沿用旧重叠收益估计；保留协调、授权、预期身份和完整字节校验 |
 | SHA 期间预排版 | 小书几乎无收益，长书假设硬件 SHA 剩 10–20ms 时理论重叠约 0–20ms；可能被 push 遮住或反抢主线程。身份、真实 viewport、安全区、字体、取消及副作用隔离成本高。**暂缓**，仅仍有可重叠空档且纯布局可复用时重启；必须遵守下节候选契约 |
 | 后台排版 | 可释放部分主线程 TextKit 预算，端到端可能只省几帧甚至不减；window→layout 包含调度不能全搬走。**等数据再定**：先查重复 rebuild/字体，再拆纯值输入、独占布局对象、generation/viewport/settings 校验、主线程安装；保持选字、翻页和位置 |
 | XXH3-128 raw key | 小书接近零，长书硬件 SHA 后可能仅个位到约 10ms，仍须读文件；误命中可复用错误正文，canonical SHA 名字不能补救。**不做**，除非新证据显示哈希仍是主要瓶颈且足够收益值得正确性成本；正文身份仍 SHA-256，不做旧缓存兼容 |
@@ -88,9 +90,11 @@ display-link、onAppear、layout completion 都是程序代理，不能声称光
 
 ### 单书路径的剩余小项
 
-`UserDataStore.projectionVersion` 与 ReaderQuery 签名仍含全局版本，其他书/统计写入可能使当前无 facts 单书缓存 miss；新 draft scope 也不保证跨会话命中。当前缓存约32项有界，单书 preferred 值已按 key 读，不再声称每次单书查询扫描全部 UserDefaults。若有残余热点，再区分位置/资料/章节、facts、可见性/首选等失效域，合并同 scope 的并发构建；先保证 miss 本身足够小，不无证据引入复杂 LRU。
+单书查询已按正式与 pending 身份、位置/资料/目录/facts 领域版本复用；未知云导入保守全局失效。目录显示仅断 visit 并 enqueue，不等整个统计写入队列，也不预读笔记；目标正文与章节标题由同一不可变查询返回，旧正文保持到新结果就绪。临时浏览的原点/视口留在会话内存，已接受的正式保存沿原 saveTask 路径完成；继续阅读与离页最终保存等待它，不能靠取消旧写入换速度。首次空目录复用 300ms 反馈延迟，跳转沿用原有延迟，不叠加。
 
-Rust ReaderQuery 的固定建连与 TEMP apply 成本仍存在。只有新数据说明其占主要残余成本时再优化连接或重复 apply，保持独立不可变快照和 search job 持有期。必要的最终位置保存、后台统计 drain、启动恢复与 facts 查询仍应在原入口交错检查，不能把 utility 优先级理解为可抢占或绕过同书最终提交。
+统计事实和 clear 由 UserDataStore 同版本取 Sendable 值、合并准备兼容性与可见候选；相关历史冷读仍要一次解析，未增加日期持久索引或 CloudKit 字段。范围请求在准备结果上按事实的 local_day 选择，再把统计所需的最小 exposure（活动跳转的原起点）送给 Rust，目录覆盖仍用完整 exposure。资料仅取该范围事实涉及的键；日期详情、小组件与 Siri 复用同一事实准备 owner，连续日/历史状态保留完整历史输入。纯读取不 drain writer；同范围旧内容静默更新，清除与未知导入不保留不可信旧数。单书所选范围先显示，资料/章节独立加载，累计按书/事实版本复用、时段随后补齐，版本不一致不得拼装。
+
+Rust ReaderQuery 的固定建连与 TEMP apply 成本仍存在。只有新数据说明其占主要残余成本时再优化连接或重复 apply，保持独立不可变快照和 search job 持有期。本轮不增加独立 ModelContext/读库、聚合持久缓存或新队列；必要的最终位置保存、清除/导入和退出 drain 继续保留，后台任务仍受原 actor 与存储约束。
 
 ## 隔离开书诊断
 

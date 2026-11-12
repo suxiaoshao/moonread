@@ -123,10 +123,10 @@ struct ReadingReviewCandidate: Equatable {
 
     private var canPresent: Bool {
         guard phase == .active, Onboarding.shared.completed, themes.error == nil,
-              library.selectedTab == .library, library.openingFileID == nil, !library.busy,
+              library.selectedTab == .library, !library.busy,
               library.error == nil, library.readerExitError == nil,
               library.sheet == nil, library.aiRequest == nil, !library.filePickerPresented,
-              library.pendingDecision == nil, library.deletion == nil, library.removingShelf == nil, presentationIsIdle else { return false }
+              library.pendingDecision == nil, library.removingShelf == nil, presentationIsIdle else { return false }
         return isBookshelf
     }
 

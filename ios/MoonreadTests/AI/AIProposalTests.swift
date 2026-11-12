@@ -19,7 +19,7 @@ final class AIProposalTests: BookAIFixture {
       let source = try XCTUnwrap(files.first)
       try await reader.savePosition(bookID: book.id, offset: 9)
       let input = AIMetadataProposalInput(
-        bookRef: AIReadingTools.bookRef(book.contentSha256), author: "Updated author",
+        bookRef: AIReadingTools.bookRef(book.fixtureSHA256), author: "Updated author",
         rename: .init(fileRef: AIReadingTools.ref("f", source.id), name: "New title"))
       let proposal = try await registry.metadataProposal(input)
       let value = try XCTUnwrap(
@@ -37,7 +37,7 @@ final class AIProposalTests: BookAIFixture {
         try await reader.renameLibraryItem(source, name: "External.txt", replace: false)
       }
       await registry.applyMetadata([value.id])
-      let details = try await reader.details(sha: book.contentSha256)
+      let details = try await reader.details(sha: book.fixtureSHA256)
       XCTAssertEqual(details.metadata.author, "Updated author", scenario)
       XCTAssertNotNil(registry.feedback[value.id], scenario)
       XCTAssertNil(registry.lastErrors[value.id], scenario)
@@ -74,7 +74,7 @@ final class AIProposalTests: BookAIFixture {
   func testMetadataReviewCountsAndReplaceDefaults() async throws {
     let (root, reader, book, _, _) = try await fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let base = try await reader.details(sha: book.contentSha256).metadata
+    let base = try await reader.details(sha: book.fixtureSHA256).metadata
     var initial = base
     initial.author = "Author"
     initial.tags = ["keep", "remove"]
@@ -83,7 +83,7 @@ final class AIProposalTests: BookAIFixture {
     let registry = await registry(
       try await AIRepository.open(inMemory: true), reader: reader, owner: owner)
     let proposal = AIMetadataProposal(
-      proposalRef: "review", bookRef: AIReadingTools.bookRef(book.contentSha256), author: "Author",
+      proposalRef: "review", bookRef: AIReadingTools.bookRef(book.fixtureSHA256), author: "Author",
       synopsis: "New synopsis", tags: ["keep", " add ", "add", " "], tagsMode: .replace)
     let value = try XCTUnwrap(
       AICommittedResultDecoder.results(
@@ -109,7 +109,7 @@ final class AIProposalTests: BookAIFixture {
     registry.editMetadata(value.id, kind: .synopsis, selected: true)
     registry.editMetadata(value.id, kind: .tags, tag: "remove")
     await registry.applyMetadata([value.id])
-    let saved = try await reader.details(sha: book.contentSha256).metadata
+    let saved = try await reader.details(sha: book.fixtureSHA256).metadata
     XCTAssertEqual(saved.synopsis, "Edited synopsis")
     XCTAssertEqual(saved.tags, ["keep"])
     registry.editMetadata(value.id, kind: .synopsis, text: "Discarded draft", selected: true)
@@ -136,7 +136,7 @@ final class AIProposalTests: BookAIFixture {
       do {
         _ = try await registry.metadataProposal(
           .init(
-            bookRef: AIReadingTools.bookRef(book.contentSha256),
+            bookRef: AIReadingTools.bookRef(book.fixtureSHA256),
             rename: .init(fileRef: ref, name: name)))
         XCTFail("Accepted \(name)")
       } catch {}
@@ -157,7 +157,7 @@ final class AIProposalTests: BookAIFixture {
     let first = try await reader.ensureBookmark(book.id, at: 0)
     let again = try await reader.ensureBookmark(book.id, at: 0)
     XCTAssertEqual(first.id, again.id)
-    let heads = try await store.candidates(key: book.contentSha256)
+    let heads = try await store.candidates(key: book.fixtureSHA256)
     XCTAssertEqual(heads[first.id]?.count, 1)
     let toggled = try await reader.toggleBookmark(book.id, at: 0)
     XCTAssertFalse(toggled)
@@ -193,6 +193,7 @@ final class AIProposalTests: BookAIFixture {
     XCTAssertTrue(saved)
     XCTAssertEqual(writes, 2)
     let tools = ReaderToolSession()
+    tools.send(.open(.library(.listing(.chapters))))
     tools.beginEditing(.rebuild(model), presenter: .library)
     model.startIfNeeded()
     XCTAssertTrue(model.canApply, "reappearing must not cancel the rebuild")
@@ -213,7 +214,7 @@ final class AIProposalTests: BookAIFixture {
     try await repository.create(.init(id: owner, title: "Notes", listed: false))
     let registry = await registry(repository, reader: reader, owner: owner)
     let proposal = AINoteProposal(
-      proposalRef: "note", bookRef: AIReadingTools.bookRef(book.contentSha256), kind: .note,
+      proposalRef: "note", bookRef: AIReadingTools.bookRef(book.fixtureSHA256), kind: .note,
       startUtf8: 0, endUtf8: 9, note: "Original suggestion", markRef: nil)
     let original = entry(
       try AIAgentEntry.json(AIToolResponse(data: AIProposalSnapshot.notes(proposal))),
@@ -268,7 +269,7 @@ final class AIProposalTests: BookAIFixture {
     defer { Task { await AIImageStore.shared.forget(owner) } }
     let image = try await AIImageStore.shared.save(pixels(), owner: owner)
     let proposal = AICoverProposal(
-      proposalRef: "cover", bookRef: AIReadingTools.bookRef(book.contentSha256), attachment: image,
+      proposalRef: "cover", bookRef: AIReadingTools.bookRef(book.fixtureSHA256), attachment: image,
       origin: .unknown)
     let registry = await registry(repository, reader: reader, owner: owner)
     let result = entry(
@@ -281,7 +282,7 @@ final class AIProposalTests: BookAIFixture {
     let first = await registry.setCover(id, attachmentRef: image.id)
     XCTAssertTrue(first)
     registry.closeResult(id)
-    let base = try await reader.details(sha: book.contentSha256).metadata
+    let base = try await reader.details(sha: book.fixtureSHA256).metadata
     var manual = base
     manual.cover = nil
     try await reader.saveMetadata(base: base, edited: manual)
@@ -296,7 +297,7 @@ final class AIProposalTests: BookAIFixture {
     XCTAssertEqual(fresh.candidateAssetIDs, [image.id])
     let second = await reopened.setCover(id, attachmentRef: image.id)
     XCTAssertTrue(second)
-    let actual = try await reader.details(sha: book.contentSha256).metadata
+    let actual = try await reader.details(sha: book.fixtureSHA256).metadata
     XCTAssertNotNil(actual.cover)
     let history = try await repository.history(owner, limit: nil)
     XCTAssertEqual(history.map(\.id), [result.id])

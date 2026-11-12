@@ -104,7 +104,7 @@ struct LibraryFolderView: View {
                         } label: { Label("AI 助手", systemImage: "sparkles") }
                             .disabled(selection.isEmpty || fileActionsDisabled).accessibilityIdentifier("libraryAISelection")
                     }
-                    Button("删除", systemImage: "trash", role: .destructive) { model.deletion = selectedEntries }
+                    Button("删除", systemImage: "trash", role: .destructive) { model.deleteEntries(selectedEntries) }
                         .disabled(selection.isEmpty || fileActionsDisabled)
                 }
                 ToolbarItem(placement: .bottomBar) { Spacer() }
@@ -130,7 +130,6 @@ struct LibraryFolderView: View {
             }
         }
 
-        .onChange(of: editing) { _, value in if value.isEditing { model.cancelOpening() } }
         .modifier(PageLoadingOverlay(request: model.processingFiles || model.nativeRefreshing ? nil : model.shelfScans[location.shelfID] ?? loading.request ?? model.refreshing.request,
                                      hasContent: !entries.isEmpty, label: "正在加载书架", immediate: model.explicitRefresh || model.shelfScans[location.shelfID] != nil))
     }

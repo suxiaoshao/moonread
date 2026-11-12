@@ -17,6 +17,20 @@
 
 原生工具已接入 ChatGPT 账户的允许搜索、OpenAI API 搜索与生图、xAI API Key 搜索与 Images、Google grounding/Imagen/Gemini 图片输出。具体通道、默认用途和限制见[原生工具](native-tools.md)。本轮协议回归使用合成认证，未新增真实账户证据，不能把适配器实现当作所有账号的能力验收。
 
+## 连接余额与额度
+
+AI 连接列表不展示余额，也不查询余额。仅打开支持查询且已配置凭据的详情、在详情内更换凭据成功或主动点「刷新」才查询当前连接。同一详情的在途请求合并；离开详情取消请求，返回时重新查询。模型刷新、前后台切换和推理完成不触发余额查询。
+
+| 连接 | 公开契约 | 显示口径 |
+| --- | --- | --- |
+| DeepSeek | [用户余额](https://api-docs.deepseek.com/api/get-user-balance/) | 分币种可用余额与充值/赠送组成，不把组成再加到总额，不推算到期日 |
+| OpenRouter 登录／API Key | [当前 Key](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-api-key) | 当前 Key 的限额和剩余、累计使用额、重置规则及 BYOK 口径；未设 Key 限额不代表账户余额无限，未知剩余不推算 |
+| Vercel AI Gateway | [团队额度](https://vercel.com/docs/ai-gateway/sdks-and-apis/rest-api#usage-and-billing) | 团队可用 USD 余额和累计使用额，不推算周期或总额度 |
+
+只将现有凭据发给对应的官方 HTTPS 地址，禁止重定向。ChatGPT 保留账户区的官方用量链接，Kimi 复用账户区的控制台链接；其余预设仅提供官方入口，自定义连接不猜测控制台。查询不发送小说或聊天内容，也不改变登录状态、模型可用性或共享许可；地区和总开关由 `AIAvailability` 统一控制。
+
+每个连接身份只在内存保留最近一次成功快照；失败时旧值和更新时间不变，五分钟后标记可能过期，不轮询。429 按有效 `Retry-After` 冷却，缺失或无效时为 30 秒；冷却结束只重新允许手动刷新。凭据或端点变化、删除连接、关闭 AI 或店面不再允许 AI 时清除受影响的快照，迟到响应不能写回。不估算余额，不保存账务响应或凭据副本。
+
 ### 授权实现与未完成边界
 
 | 路径 | 当前状态 | 尚需工作 |

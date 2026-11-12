@@ -115,7 +115,7 @@ struct ReaderChapterList: View {
             }
             .overlay {
                 if model.chapters.isEmpty {
-                    if model.loadingChapters { LoadingActivity(fullPage: true) }
+                    if model.loadingChapters { LoadingActivity(fullPage: true, delay: LoadingTiming.inlineDelay) }
                     else { ThemedEmptyState(title: String(localized: "没有找到章节"), symbol: "list.bullet") }
                 }
             }
@@ -169,7 +169,7 @@ struct ReaderChapterList: View {
     }
     private func chapterRow(_ chapter: ChapterEntry) -> some View {
         let current = isCurrent(chapter)
-        return ReaderChapterRow(chapter: chapter, current: current, viewportHeight: viewportHeight) {
+        return ReaderChapterRow(chapter: chapter, current: current, showsCoverage: model.chapterCoverageReady, viewportHeight: viewportHeight) {
             chapterFilterFocused = false
             if editingOutline { editChapter(ChapterEditDraft(start: chapter.startUtf8, title: chapter.title, level: chapter.level)) }
             else if chapter.level == 0 { model.toggleVolume(chapter.startUtf8) }

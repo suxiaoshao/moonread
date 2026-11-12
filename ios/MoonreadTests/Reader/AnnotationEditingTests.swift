@@ -102,7 +102,7 @@ final class AnnotationEditingUserDataTests: UserDataFixture {
     let c = candidate("c", content: content("B", start: 8, end: 20))
     let d = candidate("d", content: content("third", start: 18, end: 30))
     for (mark, value) in [("a", a), ("b", b), ("b", c), ("c", d)] {
-      try await store.receiveFixture(key: book.contentSha256, mark: mark, candidate: value)
+      try await store.receiveFixture(key: book.fixtureSHA256, mark: mark, candidate: value)
     }
     let edit = try await service.prepareAnnotation(book.id, start: 0, end: 2)
     XCTAssertEqual(Set(edit.baselines.keys), ["a", "b", "c"])
@@ -113,7 +113,7 @@ final class AnnotationEditingUserDataTests: UserDataFixture {
     XCTAssertTrue(model.text.contains("A"))
     XCTAssertTrue(model.text.contains("B"))
     try await store.receiveFixture(
-      key: book.contentSha256, mark: "b",
+      key: book.fixtureSHA256, mark: "b",
       candidate: candidate("late", content: content("late", start: 8, end: 20)))
     await model.loadConflicts()
     XCTAssertFalse(model.conflictChoice)
@@ -124,14 +124,14 @@ final class AnnotationEditingUserDataTests: UserDataFixture {
     model.text += "\nmanual"
     let saved = await model.commit()
     XCTAssertTrue(saved)
-    let results = try await store.candidates(key: book.contentSha256).values.flatMap { $0 }
+    let results = try await store.candidates(key: book.fixtureSHA256).values.flatMap { $0 }
       .compactMap(\.content)
     XCTAssertEqual(results.count, 1)
     XCTAssertTrue(results[0].note.contains("late"))
     XCTAssertTrue(results[0].note.contains("manual"))
     let reopened = try await service.prepareAnnotation(book.id, start: 0, end: 2)
     _ = try await service.saveNote(reopened, text: "edited after merge")
-    let subsequent = try await store.candidates(key: book.contentSha256).values.flatMap { $0 }
+    let subsequent = try await store.candidates(key: book.fixtureSHA256).values.flatMap { $0 }
       .compactMap(\.content)
     XCTAssertEqual(subsequent.count, 1)
     XCTAssertEqual(subsequent[0].note, "edited after merge")
@@ -147,7 +147,7 @@ final class AnnotationEditingUserDataTests: UserDataFixture {
       let live = candidate("live", content: content("retained"))
       let deletion = candidate("delete", content: nil)
       for value in [live, deletion] {
-        try await store.receiveFixture(key: book.contentSha256, mark: "m", candidate: value)
+        try await store.receiveFixture(key: book.fixtureSHA256, mark: "m", candidate: value)
       }
       let edit = try await service.prepareAnnotation(book.id, start: 0, end: 2)
       let model = NoteEditorModel(edit: edit, service: service)
@@ -155,7 +155,7 @@ final class AnnotationEditingUserDataTests: UserDataFixture {
       model.choose(deletion)
       XCTAssertTrue(model.deleteChoice)
       XCTAssertEqual(model.text, "")
-      let afterClose = try await store.candidates(key: book.contentSha256)["m"] ?? []
+      let afterClose = try await store.candidates(key: book.fixtureSHA256)["m"] ?? []
       XCTAssertEqual(afterClose.count, 2)
       let reopened = NoteEditorModel(
         edit: try await service.prepareAnnotation(book.id, start: 0, end: 2), service: service)
@@ -166,17 +166,17 @@ final class AnnotationEditingUserDataTests: UserDataFixture {
       reopened.text = "manual kept"
       let kept = await reopened.commit()
       XCTAssertTrue(kept)
-      let keptHeads = try await store.candidates(key: book.contentSha256)["m"] ?? []
+      let keptHeads = try await store.candidates(key: book.fixtureSHA256)["m"] ?? []
       XCTAssertEqual(keptHeads.first?.content?.note, "manual kept")
       try await store.receiveFixture(
-        key: book.contentSha256, mark: "m", candidate: candidate("delete-again", content: nil))
+        key: book.fixtureSHA256, mark: "m", candidate: candidate("delete-again", content: nil))
       let final = NoteEditorModel(
         edit: try await service.prepareAnnotation(book.id, start: 0, end: 2), service: service)
       await final.loadConflicts()
       final.choose(candidate("delete-again", content: nil))
       let removed = await final.commit()
       XCTAssertTrue(removed)
-      let deleted = try await store.candidates(key: book.contentSha256)["m"] ?? []
+      let deleted = try await store.candidates(key: book.fixtureSHA256)["m"] ?? []
       XCTAssertEqual(deleted.count, 1)
       XCTAssertNil(deleted.first?.content)
 
@@ -194,7 +194,7 @@ final class AnnotationEditingUserDataTests: UserDataFixture {
     session?.text = "unconfirmed new comment"
     session?.edit.endUtf8 = 18
     session = nil  // X and swipe simply release the editing session.
-    let afterNew = try await store.candidates(key: book.contentSha256)
+    let afterNew = try await store.candidates(key: book.fixtureSHA256)
     XCTAssertTrue(afterNew.isEmpty)
     let empty = try await service.prepareAnnotation(book.id, start: 0, end: 8)
     XCTAssertEqual(empty.note, "")

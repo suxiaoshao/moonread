@@ -46,7 +46,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
         .source(SourceFile(id: file.id, shelfID: "builtin", relativePath: "a.txt")))
       let ready = XCTNSPredicateExpectation(
         predicate: NSPredicate { _, _ in
-          session.window != nil && session.snapshot?.phase == .complete
+          session.window != nil && session.snapshot?.preparation.isComplete == true
         }, object: nil)
       await fulfillment(of: [ready], timeout: 5)
       let previous = try XCTUnwrap(session.readingID)
@@ -59,7 +59,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
       let finished = XCTNSPredicateExpectation(
         predicate: NSPredicate { _, _ in
           !session.restartingEncoding
-            && (outcome != "success" || session.snapshot?.phase == .complete)
+            && (outcome != "success" || session.snapshot?.preparation.isComplete == true)
         }, object: nil)
       await fulfillment(of: [finished], timeout: 5)
       if outcome == "success" {
@@ -109,7 +109,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     func complete(_ lease: ReadingLease) async throws -> ReadingSnapshot {
       try await service.waitForImportsIdle()
       let snapshot = try await service.snapshot(lease.id)
-      XCTAssertEqual(snapshot.phase, .complete)
+      XCTAssertTrue(snapshot.preparation.isComplete)
       return snapshot
     }
     let first = try await service.openSourceFile(entry.source)
@@ -124,13 +124,13 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
     // cannot solve this case. Completion must not prevent a new import.
     let changed = try await service.restartImport(first.id, encoding: "windows-1252")
     let changedBook = try await complete(changed)
-    XCTAssertNotEqual(changedBook.book.contentSha256, initial.book.contentSha256)
+    XCTAssertNotEqual(changedBook.book.fixtureSHA256, initial.book.fixtureSHA256)
     XCTAssertEqual(changedBook.book.positionUtf8, 0)
     let newMarks = try await service.marks(changed.id, kind: .annotation, offset: 0)
     XCTAssertTrue(newMarks.items.isEmpty)
     let restored = try await service.restartImport(changed.id, encoding: "UTF-8")
     let restoredBook = try await complete(restored)
-    XCTAssertEqual(restoredBook.book.contentSha256, initial.book.contentSha256)
+    XCTAssertEqual(restoredBook.book.fixtureSHA256, initial.book.fixtureSHA256)
     XCTAssertEqual(restoredBook.book.positionUtf8, 10)
     let bookmark = try await service.hasBookmark(restored.id, at: 10)
     XCTAssertTrue(bookmark)
@@ -143,7 +143,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
       userStoreFactory: { name, _ in name == "pending-users.store" ? pending : formal })
     let reopened = try await reopenedService.aiPrepare(entry.source)
     let result = try await reopenedService.snapshot(reopened.id)
-    XCTAssertEqual(result.book.contentSha256, initial.book.contentSha256)
+    XCTAssertEqual(result.book.fixtureSHA256, initial.book.fixtureSHA256)
     XCTAssertEqual(result.book.positionUtf8, 10)
     withExtendedLifetime([first, changed, restored, reopened]) {}
   }
@@ -180,7 +180,7 @@ final class ImportCoordinatorTests: ReaderIntegrationFixture {
         defaults.removePersistentDomain(forName: suite)
         try? FileManager.default.removeItem(at: root)
       }
-      let target = StatisticsRoute(bookID: id, title: "暂停语义样本", fromReader: true)
+      let target = StatisticsRoute(target: .cached(bookId: id), title: "暂停语义样本", origin: .reader())
       let model = BookInformationModel(service: service)
       await model.load(target)
       model.edit(target)

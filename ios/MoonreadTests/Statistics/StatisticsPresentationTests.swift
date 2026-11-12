@@ -8,9 +8,52 @@ import XCTest
 @testable import Moonread
 
 final class StatisticsPresentationTests: ReaderIntegrationFixture {
+
+  @MainActor
+  func testFileOnlyStatisticsRouteRecoversAfterPreparingForMetadataEditing() async throws {
+    let (root, service, _, suite) = try introductionFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let file = root.appendingPathComponent("library/synthetic.txt")
+    try Data("第一章 合成章节\n用于统计身份回归的原创正文。\n".utf8).write(to: file)
+    _ = try await service.scanLibraryShelf("builtin")
+    let entries = try await service.libraryEntries(nil)
+    let entry = try XCTUnwrap(entries.first { !$0.directory })
+    let route = StatisticsRoute(target: .file(fileId: entry.id), title: "Synthetic")
+    XCTAssertNil(entry.readingKey)
+    XCTAssertNil(entry.bookId)
+    let information = BookInformationModel(service: service)
+    let model = StatisticsModel(service: service)
+    let month = StatisticsWindow(period: .month, date: Date(timeIntervalSince1970: 1_800_000_000))
+    await information.load(route)
+    XCTAssertNil(information.error)
+    let scope = model.scope(month, target: route)
+    let other = StatisticsRoute(target: .file(fileId: "other-file"), title: route.title)
+    XCTAssertNotEqual(scope, model.scope(month, target: other))
+    await model.load(month, target: route)
+    XCTAssertTrue(model.state(month, target: route).content?.waitingForIdentity == true)
+
+    let revision = model.dataRevision
+    information.prepareEditing(route)
+    await awaitState { (information.draft != nil && model.dataRevision > revision) || information.error != nil }
+    XCTAssertNil(information.error)
+    XCTAssertNotNil(information.draft)
+    let sha = try XCTUnwrap(information.contentSHA(for: route))
+    XCTAssertTrue(information.chapters.isEmpty, "Statistics must not wait for the separate chapter load")
+    await model.load(month, target: route)
+    XCTAssertEqual(model.scope(month, target: route), scope, "Preparation does not replace the original file target")
+    XCTAssertNotNil(model.state(month, target: route).overview)
+    XCTAssertNil(model.state(month, target: route).error)
+    XCTAssertEqual(model.state(month, target: route).key, sha)
+    let year = StatisticsWindow(period: .year, date: month.date)
+    await model.load(year, target: route)
+    XCTAssertNotNil(model.state(year, target: route).overview)
+    XCTAssertNil(model.state(year, target: route).error)
+    XCTAssertNil(information.contentSHA(for: other))
+    await information.finishPreparationForDataDeletion()
+  }
   @MainActor
   private func rangeContent(_ total: UInt64) -> StatisticsModel.Content {
-    .init(overview: .init(totalDurationMs: total, books: [], days: [], preferences: .init(enabled: true, generation: 0)))
+    .init(payload: .overview(.init(totalDurationMs: total, books: [], days: [], preferences: .init(enabled: true, generation: 0)), .notRequested))
   }
 
   @MainActor
@@ -39,10 +82,33 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
       }
       await fulfillment(of: [invalidated, delivered, posted], timeout: 3)
       XCTAssertEqual(model.dataRevision, revision + 1)
-      XCTAssertNil(model.state(window, target: nil).overview)
+      if name == .statisticsPreferencesChanged { XCTAssertNil(model.state(window, target: nil).overview) }
+      else {
+        XCTAssertEqual(model.state(window, target: nil).overview?.totalDurationMs, 100)
+        XCTAssertTrue(model.state(window, target: nil).stale, "1.6 keeps same-scope content during refresh")
+      }
       await model.load(window, target: nil)
       XCTAssertEqual(model.state(window, target: nil).overview?.totalDurationMs, 100)
       token.cancel()
+    }
+    let key = String(repeating: "a", count: 64)
+    let affected = StatisticsRoute(target: .record(key: .formal(sha256: key)), title: "Synthetic A")
+    let unaffected = StatisticsRoute(target: .record(key: .formal(sha256: String(repeating: "b", count: 64))), title: "Synthetic B")
+    await model.load(window, target: affected)
+    await model.load(window, target: unaffected)
+    for reset in [false, true] {
+      let invalidated = expectation(description: "scoped background payload applied")
+      withObservationTracking { _ = model.dataRevision } onChange: { invalidated.fulfill() }
+      DispatchQueue.global().async {
+        notifications.post(name: .statisticsChanged, object: nil, userInfo: ["keys": [key], "reset": reset])
+      }
+      await fulfillment(of: [invalidated], timeout: 3)
+      if reset { XCTAssertNil(model.state(window, target: affected).overview) }
+      else { XCTAssertEqual(model.state(window, target: affected).overview?.totalDurationMs, 100) }
+      XCTAssertTrue(model.state(window, target: affected).stale)
+      XCTAssertFalse(model.state(window, target: unaffected).stale)
+      XCTAssertEqual(model.state(window, target: unaffected).overview?.totalDurationMs, 100)
+      await model.load(window, target: affected)
     }
   }
 
@@ -71,11 +137,12 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     notifications.post(name: .readingDataChanged, object: nil)
     await model.load(month, target: nil)
     XCTAssertEqual(reads, 2)
-    let otherBook = StatisticsRoute(key: String(repeating: "a", count: 64), title: "Synthetic")
+    let otherBook = StatisticsRoute(target: .record(key: .formal(sha256: String(repeating: "a", count: 64))), title: "Synthetic")
     await model.load(month, target: otherBook)
     XCTAssertEqual(reads, 3)
     notifications.post(name: .statisticsChanged, object: nil)
-    XCTAssertNil(model.state(month, target: nil).overview)
+    XCTAssertEqual(model.state(month, target: nil).overview?.totalDurationMs, 100, "Keep same-scope content until its replacement is ready")
+    XCTAssertTrue(model.state(month, target: nil).stale)
     XCTAssertFalse(model.state(month, target: nil).loading, "Invalidation alone is not a running read")
     await model.load(month, target: nil)
     XCTAssertEqual(reads, 4)
@@ -86,13 +153,20 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     fail = true
     notifications.post(name: .statisticsChanged, object: nil)
     await model.load(month, target: nil)
-    XCTAssertNil(model.state(month, target: nil).overview)
+    XCTAssertEqual(model.state(month, target: nil).overview?.totalDurationMs, 500, "A real refresh error preserves the last result and remains visible")
     XCTAssertNotNil(model.state(month, target: nil).error)
     XCTAssertFalse(model.state(month, target: nil).loading)
     fail = false
     await model.load(month, target: nil)
     XCTAssertEqual(reads, 7, "A failed range can be explicitly retried")
     XCTAssertNotNil(model.state(month, target: nil).overview)
+    await model.load(month, target: otherBook)
+    let before = reads
+    notifications.post(name: .statisticsChanged, object: nil, userInfo: ["keys": [String(repeating: "b", count: 64)]])
+    await model.load(month, target: otherBook)
+    XCTAssertEqual(reads, before, "An unrelated book does not invalidate a loaded single-book scope")
+    notifications.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
+    XCTAssertNil(model.state(month, target: nil).overview, "Destructive/unknown imports cannot keep old totals visible")
   }
 
   @MainActor
@@ -106,7 +180,7 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
       reads += 1
       return try await withCheckedThrowingContinuation { continuation in
         gates[scope, default: []].append(continuation)
-        if reads <= 2 { started.fulfill() } else { restarted.fulfill() }
+        if reads <= 2 { started.fulfill() } else if reads == 3 { restarted.fulfill() }
       }
     })
     let date = ISO8601DateFormatter().date(from: "2026-10-05T12:00:00Z")!
@@ -139,6 +213,15 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     XCTAssertFalse(model.state(year, target: nil).loading)
     await model.load(year, target: nil)
     XCTAssertEqual(reads, 3)
+    model.invalidate()
+    let cancelled = model.request(year, target: nil)!
+    for _ in 0..<200 where gates[yearScope]!.count < 3 { await Task.yield() }
+    guard gates[yearScope]!.count == 3 else { return XCTFail("Cancellation read did not start") }
+    model.cancel()
+    gates[yearScope]![2].resume(returning: rangeContent(999))
+    await cancelled.value
+    XCTAssertEqual(model.state(year, target: nil).overview?.totalDurationMs, 300)
+    XCTAssertFalse(model.state(year, target: nil).loading)
   }
 
   // S361: 本应用展示窗口按阅读地点公历日构造，固定跨月/跨年两个输入；删除统计值重算，补零仅在当前 Swift 展示 owner 测。
@@ -184,7 +267,7 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
         year.bounds(today: today, calendar: calendar), civil(2026, 1, 1)...civil(2026, 12, 31))
       var recent = StatisticsWindow(period: .recent, date: evening)
       recent.shift(-1, calendar: calendar)
-      XCTAssertEqual(recent.date, evening, "The recent window has no history to step through")
+      XCTAssertEqual(recent, .recent, "The recent window has no historical date to step through")
 
     }
     do {

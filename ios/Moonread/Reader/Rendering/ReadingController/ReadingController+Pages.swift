@@ -1,9 +1,22 @@
 import SwiftUI
 import UIKit
 
+struct PageIndex: Equatable {
+    let value: Int
+    init(_ value: Int) { self.value = value }
+}
+
+enum RenderedPage: Equatable {
+    case cover
+    case body(PageIndex)
+
+    var bodyIndex: Int? { if case .body(let index) = self { index.value } else { nil } }
+}
+
 extension ReadingController {
-    func makePage(at index: Int, endingBefore end: Int? = nil) -> UIViewController {
-        if index == -1 { return makeCover() }
+    func makePage(at page: RenderedPage, endingBefore end: Int? = nil) -> UIViewController {
+        guard case .body(let body) = page else { return makeCover() }
+        let index = body.value
         guard leafFrames.count > 1 else { return makeLeaf(at: index) }
         let indices = index..<min(end ?? pages.count, index + leafFrames.count)
         let group = ReadingPageGroupController(leaves: indices.map(makeLeaf), frames: leafFrames,
@@ -37,7 +50,7 @@ extension ReadingController {
     }
     func lastPageIndex(_ controller: UIViewController?) -> Int? {
         if let last = (controller as? ReadingPageGroupController)?.leaves.last { return sourceIndex(of: last.page) }
-        return pageIndex(controller)
+        return renderedPage(controller)?.bodyIndex
     }
 
     private func sourceIndex(of page: TextPage) -> Int? {
@@ -101,6 +114,7 @@ extension ReadingController {
     }
 
     func reportCover(_ visible: Bool) {
+        if !visible { Task { @MainActor [weak self] in self?.awaitBodyDisplay() } }
         guard isCoverVisible != visible else { return }
         isCoverVisible = visible
         visibleTextViews.forEach(configureAccessibility)
@@ -111,56 +125,70 @@ extension ReadingController {
         }
     }
 
-    func pageIndex(_ controller: UIViewController?) -> Int? {
-        if controller is ReaderCoverController { return -1 }
+    func renderedPage(_ controller: UIViewController?) -> RenderedPage? {
+        if controller is ReaderCoverController { return .cover }
         let first = (controller as? ReadingPageGroupController)?.leaves.first ?? (controller as? PageController)
-        return first.flatMap { sourceIndex(of: $0.page) }
+        return first.flatMap { sourceIndex(of: $0.page) }.map { .body(PageIndex($0)) }
     }
 
-    private func reportPage(_ index: Int) {
-        reportCover(index == -1)
-        if pages.indices.contains(index) {
+    private func reportPage(_ page: RenderedPage) {
+        reportCover(page == .cover)
+        if let index = page.bodyIndex, pages.indices.contains(index) {
             report(pages[index].firstVisibleOffset, settled: true)
             if (lastPageIndex(pageController?.viewControllers?.first) ?? index) >= pages.count - max(2, leafFrames.count * 2) { requestMore(.forward) }
             if index <= 1 { requestMore(.backward) }
         }
     }
 
+    private func previousPage(from current: RenderedPage) -> RenderedPage? {
+        guard let index = current.bodyIndex else { return nil }
+        if index == 0 { return hasCover ? .cover : nil }
+        return .body(PageIndex(max(0, index - leafFrames.count)))
+    }
+
+    private func nextPage(from current: RenderedPage, controller: UIViewController?) -> RenderedPage? {
+        let index = if let last = lastPageIndex(controller) ?? current.bodyIndex { last + 1 } else { 0 }
+        return pages.indices.contains(index) ? .body(PageIndex(index)) : nil
+    }
+
     func movePage(_ direction: Int) {
         guard !rebuilding, !pageTransitioning, let paging = pageController,
-              let current = pageIndex(paging.viewControllers?.first) else { return }
-        guard direction > 0 || current > (hasCover ? -1 : 0) else { requestMore(.backward); return }
-        let index = direction > 0 ? (lastPageIndex(paging.viewControllers?.first) ?? current) + 1 : (current == 0 && hasCover ? -1 : max(0, current - leafFrames.count))
-        guard pages.indices.contains(index) || (index == -1 && hasCover) else { updateEdge(direction > 0); requestMore(direction > 0 ? .forward : .backward); return }
+              let current = renderedPage(paging.viewControllers?.first) else { return }
+        let target = direction > 0 ? nextPage(from: current, controller: paging.viewControllers?.first) : previousPage(from: current)
+        guard let target else {
+            if direction > 0 { updateEdge(true) }
+            requestMore(direction > 0 ? .forward : .backward)
+            return
+        }
         statisticsInteraction(); readingBegan?()
         pageTransitioning = true
         programmaticPageTransition = true
         let generation = reportGeneration
-        paging.setViewControllers([makePage(at: index, endingBefore: direction < 0 ? current : nil)],
+        paging.setViewControllers([makePage(at: target, endingBefore: direction < 0 ? current.bodyIndex : nil)],
                                   direction: direction > 0 ? .forward : .reverse,
                                   animated: !reduceMotion && !UIAccessibility.isReduceMotionEnabled) { [weak self] complete in
             guard let self, generation == self.reportGeneration else { return }
             self.pageTransitioning = false
             self.programmaticPageTransition = false
-            if complete { self.reportPage(index) }
-            self.updateEdge((self.lastPageIndex(paging.viewControllers?.first) ?? index) == self.pages.count - 1)
+            if complete { self.reportPage(target) }
+            self.updateEdge((self.lastPageIndex(paging.viewControllers?.first) ?? target.bodyIndex) == self.pages.count - 1)
             self.applyPendingWindow()
         }
     }
 
     func pageViewController(_ pageViewController: UIPageViewController, viewControllerBefore viewController: UIViewController) -> UIViewController? {
-        guard let current = pageIndex(viewController), current > (hasCover ? -1 : 0) else { return nil }
-        return makePage(at: (current == 0 && hasCover ? -1 : max(0, current - leafFrames.count)), endingBefore: current)
+        guard let current = renderedPage(viewController), let target = previousPage(from: current) else { return nil }
+        return makePage(at: target, endingBefore: current.bodyIndex)
     }
     func pageViewController(_ pageViewController: UIPageViewController, viewControllerAfter viewController: UIViewController) -> UIViewController? {
-        guard let current = pageIndex(viewController), (lastPageIndex(viewController) ?? current) + 1 < pages.count else { return nil }
-        return makePage(at: (lastPageIndex(viewController) ?? current) + 1)
+        guard let current = renderedPage(viewController), let target = nextPage(from: current, controller: viewController) else { return nil }
+        return makePage(at: target)
     }
     func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool,
                             previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
         guard pageViewController === pageController else { return }
         pageTransitioning = false
-        guard completed, let current = pageIndex(pageViewController.viewControllers?.first) else { applyPendingWindow(); return }
+        guard completed, let current = renderedPage(pageViewController.viewControllers?.first) else { applyPendingWindow(); return }
         visibleTextViews.forEach(configureAccessibility)
         reportPage(current)
         updateEdge(lastPageIndex(pageViewController.viewControllers?.first) == pages.count - 1)

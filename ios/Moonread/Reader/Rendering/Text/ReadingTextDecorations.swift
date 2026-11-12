@@ -26,6 +26,19 @@ final class ReadingLayoutManager: NSLayoutManager {
     }
     private(set) var decorations: [Decoration] = []
     var invalidatePaint: ((NSRange) -> Void)?
+    private(set) var listeningDecoration: Decoration?
+    func setListeningDecoration(_ value: Decoration?) {
+        guard listeningDecoration != value else { return }
+        let old = listeningDecoration; listeningDecoration = value
+        for range in [old?.range, value?.range].compactMap({ $0 }) {
+            if let invalidatePaint { invalidatePaint(range) } else { invalidateDisplay(forCharacterRange: range) }
+        }
+    }
+    private var listeningOverlapsAnnotation: Bool {
+        guard let listeningDecoration else { return false }
+        return decorations.contains { NSIntersectionRange($0.range, listeningDecoration.range).length > 0 }
+    }
+
 
     func setDecorations(_ decorations: [Decoration]) {
         guard self.decorations != decorations else { return }
@@ -40,7 +53,8 @@ final class ReadingLayoutManager: NSLayoutManager {
         // Draw annotations first so native selection/search emphasis stays above them.
         if let context = UIGraphicsGetCurrentContext() {
             context.saveGState()
-            for fill in decorationBackgrounds(forGlyphRange: glyphsToShow) {
+            let speech = listeningOverlapsAnnotation ? [] : listeningDecoration.map { [$0] } ?? []
+            for fill in decorationBackgrounds(forGlyphRange: glyphsToShow, items: decorations + speech) {
                 fill.color.setFill()
                 let rect = fill.rect.offsetBy(dx: origin.x, dy: origin.y)
                 UIBezierPath(roundedRect: rect, cornerRadius: min(2, rect.height * 0.1)).fill()
@@ -50,11 +64,21 @@ final class ReadingLayoutManager: NSLayoutManager {
         super.drawBackground(forGlyphRange: glyphsToShow, at: origin)
     }
 
-    func decorationBackgrounds(forGlyphRange glyphs: NSRange) -> [(rect: CGRect, color: UIColor)] {
+    override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: CGPoint) {
+        super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+        guard listeningOverlapsAnnotation, let listeningDecoration, let context = UIGraphicsGetCurrentContext() else { return }
+        context.saveGState(); defer { context.restoreGState() }
+        listeningDecoration.color.withAlphaComponent(0.7).setStroke(); context.setLineWidth(1)
+        for fill in decorationBackgrounds(forGlyphRange: glyphsToShow, items: [listeningDecoration]) {
+            context.move(to: CGPoint(x: fill.rect.minX + origin.x, y: fill.rect.maxY + origin.y))
+            context.addLine(to: CGPoint(x: fill.rect.maxX + origin.x, y: fill.rect.maxY + origin.y)); context.strokePath()
+        }
+    }
+    func decorationBackgrounds(forGlyphRange glyphs: NSRange, items: [Decoration]? = nil) -> [(rect: CGRect, color: UIColor)] {
         guard glyphs.length > 0, let storage = textStorage else { return [] }
         let characters = characterRange(forGlyphRange: glyphs, actualGlyphRange: nil)
         var fills: [(rect: CGRect, color: UIColor)] = []
-        for decoration in decorations {
+        for decoration in items ?? decorations {
             let range = NSIntersectionRange(decoration.range, characters)
             guard range.length > 0 else { continue }
             let marked = NSIntersectionRange(self.glyphRange(forCharacterRange: range, actualCharacterRange: nil), glyphs)
@@ -187,6 +211,7 @@ extension ReadingController {
             add(range, color: theme.selection.withAlphaComponent(0.25))
         }
         layout.setDecorations(decorations)
+        decorateListening(text)
         if let text = text as? ReadingTextView {
             // Page storage includes hidden lookahead for typography. Its marks
             // belong to the next page, even when the current layout sees them.

@@ -108,7 +108,7 @@ extension ReadingController {
     }
 
     /// Coordinates here include the text container's inset, unlike TextKit's rectangles.
-    private func targetRect(_ offset: UInt64, end: UInt64? = nil, in text: ReadingTextView) -> CGRect? {
+    func targetRect(_ offset: UInt64, end: UInt64? = nil, in text: ReadingTextView) -> CGRect? {
         let projection = text.readingText
         guard offset >= projection.sourceStart, offset < projection.sourceEnd, text.textStorage.length > 0 else { return nil }
         guard let start = projection.coordinates.displayPoint(Int(offset - projection.sourceStart)) else { return nil }
@@ -119,7 +119,7 @@ extension ReadingController {
         return rect.offsetBy(dx: text.textContainerInset.left, dy: text.textContainerInset.top)
     }
 
-    private func contextViewport(in text: UITextView, bottomObstruction: CGFloat) -> CGRect {
+    func contextViewport(in text: UITextView, bottomObstruction: CGFloat) -> CGRect {
         // A collapsed search sheet excludes the home-indicator safe area from
         // its detent height. The ordinary return pill needs the same clearance.
         let obstruction = max(bottomObstruction, UIFontMetrics(forTextStyle: .subheadline).scaledValue(for: 60))
@@ -199,8 +199,8 @@ extension ReadingController {
             let target = restoration?.offset ?? anchor
             let index = pending.request.pageIndex(in: pages, anchor: restoration?.groupStart ?? target)
             if !reuseCurrentPageGroup(containing: index, startingAt: restoration?.groupStart == nil ? nil : index) {
-                let current = pageIndex(paging.viewControllers?.first) ?? index
-                paging.setViewControllers([makePage(at: index)], direction: index >= current ? .forward : .reverse, animated: false)
+                let current = renderedPage(paging.viewControllers?.first)?.bodyIndex ?? index
+                paging.setViewControllers([makePage(at: .body(PageIndex(index)))], direction: index >= current ? .forward : .reverse, animated: false)
             }
             if let leaf = currentLeaves.first(where: { target >= $0.page.start && target < $0.page.end }), let text = leaf.view as? UITextView { activateLeaf(text) }
             updateEdge(lastPageIndex(paging.viewControllers?.first) == pages.count - 1)
@@ -276,7 +276,7 @@ extension ReadingController {
             let index = ReadingNavigation().pageIndex(in: pages, anchor: visible)
             let active = anchorLeaf?.page.firstVisibleOffset
             if !reuseCurrentPageGroup(containing: index) {
-                paging.setViewControllers([makePage(at: index)], direction: .forward, animated: false)
+                paging.setViewControllers([makePage(at: .body(PageIndex(index)))], direction: .forward, animated: false)
             } else if let group = paging.viewControllers?.first {
                 paging.setViewControllers([group], direction: .forward, animated: false)
             }
@@ -326,6 +326,9 @@ extension ReadingController {
             text.backgroundColor = .clear
             text.isOpaque = false
             text.contentInsetAdjustmentBehavior = .never
+            // The fixed reader header already separates this text from chrome.
+            // An automatic top blur can survive an interactive-pop cancellation.
+            if #available(iOS 26, *) { text.topEdgeEffect.isHidden = true }
             text.contentInset.bottom = ReadingTextMetrics.scrollFadeHeight(bottomSafeArea: stableInsets.bottom)
             text.textContainerInset = textInsets
             // Populate after UITextView has configured the typesetter, just as
@@ -368,8 +371,9 @@ extension ReadingController {
             readingSurface.addSubview(paging.view)
             paging.didMove(toParent: self)
             pageController = paging
-            let index = hasCover && isCoverVisible ? -1 : ReadingNavigation().pageIndex(in: pages, anchor: anchor)
-            paging.setViewControllers([makePage(at: index)], direction: .forward, animated: false)
+            let page: RenderedPage = hasCover && isCoverVisible ? .cover
+                : .body(PageIndex(ReadingNavigation().pageIndex(in: pages, anchor: anchor)))
+            paging.setViewControllers([makePage(at: page)], direction: .forward, animated: false)
         }
         decorateVisibleText()
         updateBottomFade()

@@ -30,6 +30,25 @@ enum MotionTokens {
     static let color = Animation.easeInOut(duration: 0.18)
 }
 
+extension ResolvedTheme {
+    var appearance: ThemeAppearance {
+        switch surface {
+        case .system(let appearance), .palette(let appearance, _, _): appearance
+        }
+    }
+    var colors: ThemeColors? { if case .palette(_, _, let colors) = surface { colors } else { nil } }
+    var paletteId: String { if case .palette(_, let id, _) = surface { id } else { "system" } }
+}
+extension ResolvedReaderTexture {
+    var descriptor: ReaderTextureDescriptor? {
+        switch self {
+        case .unsupported: nil
+        case .off(let descriptor), .on(let descriptor): descriptor
+        }
+    }
+    var enabled: Bool { if case .on = self { true } else { false } }
+    var activeDescriptor: ReaderTextureDescriptor? { if case .on(let descriptor) = self { descriptor } else { nil } }
+}
 struct ThemeSurface: Equatable {
     let plan: ResolvedTheme
     var readerTexture: ResolvedReaderTexture? = nil
@@ -86,7 +105,7 @@ struct ThemeSurface: Equatable {
         let descriptor: ReaderTextureDescriptor?
     }
     func paperInput() -> PaperInput {
-        PaperInput(paper: paper.opaqueRGB, descriptor: readerTexture?.enabled == true ? readerTexture?.descriptor : nil)
+        PaperInput(paper: paper.opaqueRGB, descriptor: readerTexture?.activeDescriptor)
     }
     /// Prepare at the artwork's fixed reference resolution, independently of
     /// view bounds/display scale. Resizing only places this already mixed image.
@@ -290,6 +309,8 @@ final class ThemeStore {
             }
         }
     }
+    func paletteDeletionImpact(_ id: String) -> PaletteDeletionImpact { AppDataService.paletteDeletionImpact(id, in: snapshot.preferences) }
+    var paletteCreationIssue: PaletteSaveIssue? { AppDataService.paletteSaveIssue(in: snapshot) }
     func flushPreferences() async { await preferencesTask?.value }
     func savePalette(_ palette: ThemePalette, creating: Bool) async throws {
         guard !saving else { return }

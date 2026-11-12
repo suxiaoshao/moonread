@@ -11,34 +11,28 @@ final class AIReadingContextTests: BookAIFixture {
   func testSingleBookStatisticsReadinessUsesRouteIdentityAndIgnoresStaleDetails() async throws {
     let (root, reader, book, _, _) = try await fixture()
     defer { try? FileManager.default.removeItem(at: root) }
-    let details = try await reader.details(sha: book.contentSha256)
+    let details = try await reader.details(sha: book.fixtureSHA256)
     let gate = CoverCallGate()
     var oldDetails = details
     oldDetails.metadata.author = "Old"
-    let old = StatisticsRoute(key: nil, bookID: "old", title: "Old", fileID: "old-file")
-    let current = StatisticsRoute(
-      key: nil, bookID: book.id, title: "Current", fileID: "current-file")
+    let old = StatisticsRoute(target: .file(fileId: "old-file"), title: "Old")
+    let current = StatisticsRoute(target: .file(fileId: "current-file"), title: "Current")
+    let identity = ResolvedBookRecord(key: .formal(sha256: book.fixtureSHA256), body: .associated(bookId: book.id), aliases: [])
     let model = BookInformationModel(
       readInformation: { route in
         if route.fileID == old.fileID {
           await gate.park()
-          return (nil, oldDetails)
+          return (nil, .identified(identity: identity, details: oldDetails))
         }
-        return (nil, details)
+        return (nil, .identified(identity: identity, details: details))
       }, readChapters: { _ in [] })
     var window = StatisticsWindow()
     XCTAssertNil(AIQuickTaskRequest.statistics(window: window, target: current, information: model))
     let overview = try XCTUnwrap(
       AIQuickTaskRequest.statistics(window: window, target: nil, information: model))
     XCTAssertNil(overview.attachments.first?.bookRef)
-    var known = current
-    known.key = book.contentSha256
-    XCTAssertEqual(
-      model.contentSHA(for: known), book.contentSha256, "A valid route SHA is ready before any load"
-    )
-    var invalid = known
-    invalid.key = String(repeating: "g", count: 64)
-    XCTAssertNil(model.contentSHA(for: invalid))
+    let known = StatisticsRoute(target: .record(key: .formal(sha256: book.fixtureSHA256)), title: current.title)
+    XCTAssertEqual(model.contentSHA(for: known), book.fixtureSHA256, "A formal target is ready before any load")
     let staleLoad = Task { await model.load(old) }
     for _ in 0..<200 {
       if await gate.started { break }
@@ -47,14 +41,12 @@ final class AIReadingContextTests: BookAIFixture {
     await model.load(current)
     let request = try XCTUnwrap(
       AIQuickTaskRequest.statistics(window: window, target: current, information: model))
-    XCTAssertEqual(request.attachments.first?.bookRef, AIReadingTools.bookRef(book.contentSha256))
+    XCTAssertEqual(request.attachments.first?.bookRef, AIReadingTools.bookRef(book.fixtureSHA256))
     XCTAssertNil(model.contentSHA(for: old))
     for route in [
-      StatisticsRoute(key: nil, bookID: "other", title: "Current", fileID: current.fileID),
-      StatisticsRoute(key: nil, bookID: current.bookID, title: "Current", fileID: "other"),
-      StatisticsRoute(
-        key: nil, bookID: current.bookID, title: "Current", fileID: current.fileID, fromReader: true
-      ),
+      StatisticsRoute(target: .file(fileId: "other"), title: current.title),
+      StatisticsRoute(target: .cached(bookId: book.id), title: current.title),
+      StatisticsRoute(target: current.target, title: current.title, origin: .reader(fileID: current.fileID)),
     ] {
       XCTAssertNil(
         model.contentSHA(for: route),
@@ -62,7 +54,7 @@ final class AIReadingContextTests: BookAIFixture {
     }
     let capturedFrom = request.attachments.first?.fromDate
     let capturedTo = request.attachments.first?.toDate
-    window.period = .all
+    window = .all
     XCTAssertEqual(request.attachments.first?.fromDate, capturedFrom)
     XCTAssertEqual(request.attachments.first?.toDate, capturedTo)
     await gate.release()
@@ -71,10 +63,10 @@ final class AIReadingContextTests: BookAIFixture {
     XCTAssertEqual(model.details?.metadata.author, details.metadata.author)
     XCTAssertNil(model.error)
     let chapterFailure = BookInformationModel(
-      readInformation: { _ in (nil, details) }, readChapters: { _ in throw ReaderError.NotFound })
+      readInformation: { _ in (nil, .identified(identity: identity, details: details)) }, readChapters: { _ in throw ReaderError.NotFound })
     await chapterFailure.load(current)
     XCTAssertEqual(
-      chapterFailure.contentSHA(for: current), book.contentSha256,
+      chapterFailure.contentSHA(for: current), book.fixtureSHA256,
       "chapter failure must not erase a known content identity")
     XCTAssertNil(chapterFailure.contentSHA(for: old))
   }

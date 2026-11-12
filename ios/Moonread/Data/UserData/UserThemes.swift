@@ -1,6 +1,45 @@
 import Foundation
 
+enum PaletteSaveIssue: LocalizedError, Equatable {
+    case customLimit, missingTarget
+    var errorDescription: String? {
+        switch self {
+        case .customLimit: String(localized: "最多可保存 64 个自定义配色，请先删除不需要的配色。")
+        case .missingTarget: String(localized: "这个配色已被删除，无法保存更改。")
+        }
+    }
+}
+
+struct PaletteDeletionImpact: Equatable {
+    let appSlots: Bool
+    let readerSlots: Bool
+    var message: String? {
+        switch (appSlots, readerSlots) {
+        case (false, false): nil
+        case (true, false): String(localized: "使用此配色的应用槽位将恢复纸色。")
+        case (false, true): String(localized: "使用此配色的阅读槽位将恢复跟随应用。")
+        case (true, true): String(localized: "使用此配色的应用槽位将恢复纸色，阅读槽位将恢复跟随应用。")
+        }
+    }
+}
+
 extension AppDataService {
+    nonisolated static func paletteDeletionImpact(_ id: String, in preferences: ThemePreferences) -> PaletteDeletionImpact {
+        let app = [preferences.appLight, preferences.appDark].contains { source in
+            if case let .palette(value) = source { return value == id }; return false
+        }
+        let reader = [preferences.readerLight, preferences.readerDark].contains { source in
+            if case let .palette(value) = source { return value == id }; return false
+        }
+        return .init(appSlots: app, readerSlots: reader)
+    }
+
+    nonisolated static func paletteSaveIssue(in snapshot: ThemeSnapshot, editing value: ThemePalette? = nil) -> PaletteSaveIssue? {
+        if let value {
+            return snapshot.palettes.contains { $0.custom && $0.id == value.id && $0.appearance == value.appearance } ? nil : .missingTarget
+        }
+        return snapshot.palettes.filter(\.custom).count < 64 ? nil : .customLimit
+    }
     func themes() async throws -> ThemeSnapshot {
         var snapshot = defaultThemeSnapshot()
         if let stored = sourceDefaults.object(forKey: "Moonread.themePreferences") {
@@ -27,7 +66,7 @@ extension AppDataService {
     }
     func savePalette(_ value: ThemePalette, creating: Bool) async throws -> ThemePalette {
         let snapshot = try await themes()
-        guard creating ? snapshot.palettes.filter(\.custom).count < 64 : snapshot.palettes.contains(where: { $0.custom && $0.id == value.id && $0.appearance == value.appearance }) else { throw ReaderError.InvalidSettings }
+        if let issue = Self.paletteSaveIssue(in: snapshot, editing: creating ? nil : value) { throw issue }
         let palette = try makeThemePalette(id: creating ? "custom-\(UUID().uuidString)" : value.id, name: value.name, appearance: value.appearance, colors: value.colors)
         let json = try encodeThemePalette(value: palette)
         try await userStore().put("palette/\(palette.id)", value: json, device: userDevice)

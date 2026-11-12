@@ -76,13 +76,31 @@ pub struct ThemeSnapshot {
     pub preferences: ThemePreferences,
     pub palettes: Vec<ThemePalette>,
 }
+#[derive(Clone, Debug, PartialEq, Eq, uniffi::Enum)]
+pub enum ResolvedSurface {
+    System {
+        appearance: ThemeAppearance,
+    },
+    Palette {
+        appearance: ThemeAppearance,
+        id: String,
+        colors: ThemeColors,
+    },
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, uniffi::Record)]
 pub struct ResolvedTheme {
-    pub appearance: ThemeAppearance,
     pub high_contrast: bool,
-    /// None requests native semantic system colors in this appearance scope.
-    pub colors: Option<ThemeColors>,
-    pub palette_id: String,
+    pub surface: ResolvedSurface,
+}
+
+impl ResolvedTheme {
+    pub fn palette_id(&self) -> &str {
+        match &self.surface {
+            ResolvedSurface::System { .. } => "system",
+            ResolvedSurface::Palette { id, .. } => id,
+        }
+    }
 }
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]
 pub struct ResolvedThemes {

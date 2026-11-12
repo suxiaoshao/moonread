@@ -12,7 +12,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
   @MainActor func testPreviewCancelContinueBookmarkAndImmediateReopenUseFormalPosition()
     async throws
   {
-    let (root, service, _, _, _, book, _, suite) = try singleBookFixture()
+    let (root, service, _, _, _, book, other, suite) = try singleBookFixture()
     defer {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -22,11 +22,18 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     await awaitState { session.window != nil }
     let origin = UInt64("第一章 合成甲\n".utf8.count)
     let target = origin + 6
-    session.showingCover = false
+    session.coverVisibilityChanged(false)
     session.moved(to: origin, settled: true)
     await session.flush()
     let added = await session.toggleBookmark()
     XCTAssertTrue(added)
+    let accepted = expectation(description: "accepted formal save held before IO")
+    let gate = SourceReadinessGate(entered: accepted)
+    session.saveTask = Task {
+      await gate.wait()
+      try? await service.savePosition(bookID: book.id, offset: origin)
+    }
+    await fulfillment(of: [accepted], timeout: 2)
     session.browse(to: target)
     await awaitState { !session.navigating }
     XCTAssertEqual(session.browseOrigin, origin)
@@ -38,7 +45,9 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertNil(session.browseOrigin)
     session.browse(to: target)
     await awaitState { !session.navigating }
-    await session.continueReading()
+    let continuing = Task { await session.continueReading() }
+    await gate.release()
+    await continuing.value
     XCTAssertNil(session.browseOrigin)
     await session.leave().value
     let reopened = ReaderSession(service: service)
@@ -46,6 +55,17 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     await awaitState { reopened.window != nil }
     XCTAssertEqual(reopened.anchor, target)
     await reopened.leave().value
+    let previewOnly = ReaderSession(service: service)
+    await previewOnly.open(.book(other.id))
+    await awaitState { previewOnly.window != nil }
+    previewOnly.coverVisibilityChanged(false)
+    previewOnly.moved(to: 3, settled: true, userInitiated: false)
+    previewOnly.browse(to: 6)
+    await awaitState { !previewOnly.navigating }
+    previewOnly.moved(to: 9, settled: true)
+    await previewOnly.leave().value
+    let untouched = try await service.snapshot(other.id)
+    XCTAssertFalse(untouched.hasStarted, "A preview-only visit must not create a formal reading timestamp")
   }
 
   // S318: 上下文任务返回原宿主路由，不破坏挂起的阅读路径或串到别的书。
@@ -56,7 +76,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
       UserDefaults.standard.removePersistentDomain(forName: suite)
     }
     let entry = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")[1]
-    let model = LibraryModel(service: service, prepareSource: { _, _ in })
+    let model = LibraryModel(service: service)
     model.path = [.folder(.init(shelfID: "builtin"))]
     let origin = model.path
     let pushed = expectation(description: "Context host receives actual source route")
@@ -172,52 +192,47 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(state.phase, .reading)
   }
 
-  // S400: 开书必须等源就绪，取消/被替代后完成不得导航或处理旧源。
-  @MainActor func testOpeningWaitsForSourceAndCancellationCannotNavigate() async throws {
-    let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-    defer { try? FileManager.default.removeItem(at: temporary) }
-    let service = AppDataService(
-      core: try ReaderCore(dataDirectory: temporary.appendingPathComponent("db").path),
-      libraryDirectory: temporary.appendingPathComponent("books"))
-    try await service.prepareLibrary()
-    try await service.refreshLibrary()
-    var entry = try await service.libraryEntries(LibraryLocation(shelfID: "builtin"))[0]
-    entry.needsDownload = true
-    let entered = expectation(description: "source requested")
-    let finished = expectation(description: "cancelled source finished")
+  // S400: 点击先提交阅读页；返回后的进度和 lease 不得进入旧会话。
+  @MainActor func testOpeningRoutesBeforeSourceAndDiscardsLateResultAfterReturn() async throws {
+    let (root, service, core, _, _, book, _, suite) = try singleBookFixture()
+    defer {
+      try? FileManager.default.removeItem(at: root)
+      UserDefaults.standard.removePersistentDomain(forName: suite)
+    }
+    let entries = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")
+    let first = try XCTUnwrap(entries.first), next = try XCTUnwrap(entries.dropFirst().first)
+    let model = LibraryModel(service: service)
+    model.open(first)
+    let firstPath = model.path
+    model.open(first)
+    XCTAssertEqual(model.path, firstPath, "A repeat tap must not push another reader")
+    model.open(next, expectedContentSHA: book.fixtureSHA256)
+    XCTAssertEqual(model.path.count, 1, "A later tap must replace the in-flight destination")
+    guard case .reader(let opening) = model.path.last else { return XCTFail("Reader route was not submitted synchronously") }
+    XCTAssertEqual(opening.target, .source(next.source))
+    XCTAssertEqual(opening.expectedContentSHA, book.fixtureSHA256)
+
+    let entered = expectation(description: "source requested by the destination")
     let gate = SourceReadinessGate(entered: entered)
-    let model = LibraryModel(prepareSource: { _, report in
+    let session = ReaderSession(service: service, openSource: { _, _, report in
       report(0.25)
       await gate.wait()
       report(0.9)
-      finished.fulfill()
+      return try await service.openReading(book.id)
     })
-    model.open(entry)
+    let work = Task { await session.open(opening.target, request: opening) }
     await fulfillment(of: [entered], timeout: 2)
-    XCTAssertTrue(model.path.isEmpty, "Downloading must stay on the shelf")
-    XCTAssertEqual(model.openingFileID, entry.id)
-    XCTAssertTrue(model.showsFileLoading, "A known download must show feedback immediately")
-    XCTAssertEqual(model.fileProgress, 0.25)
-    model.cancelOpening()
+    await awaitState { session.sourceProgress == 0.25 }
+    XCTAssertTrue(session.isFetchingSource)
+    XCTAssertNil(session.readingLease)
+    model.path.removeLast()
+    let leaving = session.leave()
     await gate.release()
-    await fulfillment(of: [finished], timeout: 2)
-    await Task.yield()
-    XCTAssertNil(model.openingFileID)
-    XCTAssertNil(model.fileProgress, "Cancelled progress must not return from a late callback")
+    await work.value
+    await leaving.value
+    XCTAssertNil(session.readingLease)
+    XCTAssertNil(session.sourceProgress, "Cancelled progress must not return from a late callback")
     XCTAssertTrue(model.path.isEmpty)
-
-    let ready = expectation(description: "next source requested")
-    let nextGate = SourceReadinessGate(entered: ready)
-    let next = LibraryModel(prepareSource: { _, _ in await nextGate.wait() })
-    next.open(entry)
-    await fulfillment(of: [ready], timeout: 2)
-    XCTAssertTrue(next.path.isEmpty)
-    await nextGate.release()
-    await awaitState { !next.path.isEmpty }
-    guard case .reader(let opening) = next.path.first else {
-      return XCTFail("Missing reader opening")
-    }
-    XCTAssertEqual(opening.target, .source(entry.source))
 
     let loading = LoadingState()
     let superseded = loading.begin()
@@ -277,22 +292,32 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
   func testNavigationCancellationWaitsForSheetDismissalInEitherOrder() {
     for dismissFirst in [true, false] {
       let state = NavigationPresentationState()
+      state.prepareInteractivePop()
+      XCTAssertTrue(state.revealsNavigation)
       state.begin(hasPresentation: true)
+      state.endUnstartedInteractivePop()
+      XCTAssertTrue(state.revealsNavigation, "Gesture ending does not clear a tracked transition")
       if dismissFirst { XCTAssertTrue(state.presentationDismissed()) }
       state.finish(cancelled: true)
+      XCTAssertFalse(state.revealsNavigation, "Cancelled pop clears the temporary navigation reveal")
       XCTAssertEqual(state.isSuspended, !dismissFirst)
       if !dismissFirst { XCTAssertTrue(state.presentationDismissed()) }
       XCTAssertFalse(state.isSuspended)
       XCTAssertFalse(state.presentationDismissed(), "Only the navigation dismissal is consumed")
     }
     let state = NavigationPresentationState()
+    state.prepareInteractivePop()
+    state.endUnstartedInteractivePop()
+    XCTAssertFalse(state.revealsNavigation, "Preparation without a transition must not leave a bar")
     state.begin(hasPresentation: false)
     state.finish(cancelled: true)
     XCTAssertFalse(state.isSuspended)
 
     let completed = NavigationPresentationState()
+    completed.prepareInteractivePop()
     completed.begin(hasPresentation: true)
     completed.finish(cancelled: false)
+    XCTAssertFalse(completed.revealsNavigation)
     XCTAssertTrue(completed.presentationDismissed())
     XCTAssertTrue(completed.isSuspended)
     completed.appear()
@@ -351,11 +376,13 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     scroll.contentSize = CGSize(width: 320, height: 2000)
     scroll.contentOffset = .zero
     reader.scrollText = scroll; reader.settings = defaultReaderSettings()
-    reader.window = ReadingWindow(chunks: readingChunks())
+    reader.window = ReadingWindow.preview(chunks: readingChunks())
     reader.needsRebuild = false
     let opening = UUID(); reader.openingID = opening
-    let viewport = ReadingViewportAccess(); viewport.controller = reader
-    let automatic = ReaderAutoReading(viewport: viewport); reader.autoReading = automatic
+    let session = ReaderSession()
+    session.viewportAccess.controller = reader
+    let automatic = session.selectAutomaticReading(); reader.autoReading = automatic
+    reader.readingBegan = { session.toolsSession.send(.endAutomatic) }
     defer { automatic.end() }
     var readable = true
     automatic.readable = { readable }
@@ -396,7 +423,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     automatic.frame(at: 5)
     XCTAssertEqual(scroll.contentOffset.y, 1620, "Prepared content still waits for Continue")
     automatic.requestStart(); automatic.startAfterDismissal(opening: opening, speed: 20)
-    reader.window?.isEndOfBook = true
+    reader.window = ReadingWindow.preview(chunks: readingChunks(), trailing: .end)
     scroll.contentOffset.y = 2020
     automatic.frame(at: 6); automatic.frame(at: 6.1)
     XCTAssertEqual(automatic.phase, .finished)
@@ -439,8 +466,8 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     // Enter the body before simulating a temporary preview; the cover is unread.
     session.moved(to: original, settled: true)
     XCTAssertFalse(session.showingCover)
-    session.anchor = preview
-    session.browseOrigin = original
+    session.surface = .body(SourceAnchor(preview))
+    session.browseState = .preview(.init(origin: original, viewport: nil, target: preview, focus: nil, history: session.history))
     session.selectionStart = original
     let mark = try await service.annotate(book.id, start: 0, end: original)
     // This task has been requested but has not returned its editor yet.
@@ -493,7 +520,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
       ReadingNavigation().scrollTarget(
         lineY: 500, textInset: 16, target: .zero, visible: .zero, keepVisible: false), 500)
     let chunks = readingChunks()
-    let window = ReadingWindow(chunks: Array(chunks.prefix(3)))
+    let window = ReadingWindow.preview(chunks: Array(chunks.prefix(3)))
     let pages = syntheticPages(window)
     let savedPage = pages[1]
     let pageRestore = ReadingViewport(
@@ -522,7 +549,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     let savedGroup = ReadingViewport(
       offset: pages[2].firstVisibleOffset, lineY: 0, size: size, settings: settings,
       typeSize: .large, pages: pages, pageSize: leafSize, leafCount: 2, groupStart: pages[1].start)
-    pager.setViewControllers([controller.makePage(at: 0)], direction: .forward, animated: false)
+    pager.setViewControllers([controller.makePage(at: .body(PageIndex(0)))], direction: .forward, animated: false)
     controller.pendingNavigation = (ReadingNavigation(restoring: savedGroup), false)
     controller.applyNavigation()
     XCTAssertEqual(controller.currentLeaves.map { $0.page.start }, [pages[1].start, pages[2].start])
@@ -541,7 +568,7 @@ final class ReaderSessionReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertTrue(pager.viewControllers?.first === restoredGroup)
     XCTAssertEqual(controller.currentLeaves.map(\.index), [0, 1])
     let nextGroup = try XCTUnwrap(controller.pageViewController(pager, viewControllerAfter: try XCTUnwrap(restoredGroup)))
-    XCTAssertEqual(controller.pageIndex(nextGroup), 2)
+    XCTAssertEqual(controller.renderedPage(nextGroup), .body(PageIndex(2)))
     XCTAssertEqual((nextGroup as? ReadingPageGroupController)?.leaves.first?.page.start, pages[3].start)
   }
 }

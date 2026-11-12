@@ -48,13 +48,14 @@ struct MetadataImportView: View {
         .fileImporter(isPresented: $selectingFile, allowedContentTypes: UTType.metadataImportTypes) { result in
             switch result {
             case .success(let url): selected = nil; Task { await model.load(url) }
-            case .failure(let error): model.error = ReaderMessages.error(error)
+            case .failure(let error): model.showError(ReaderMessages.error(error))
             }
         }
         .interactiveDismissDisabled(model.saving)
-        .confirmationDialog(Text("确认导入？", tableName: "MetadataExchange"), isPresented: $confirm, titleVisibility: .visible) {
+        .alert(Text("导入小说信息？", tableName: "MetadataExchange"), isPresented: $confirm) {
             Button { Task { await model.save() } } label: { Text("导入 \(model.pending.count) 本", tableName: "MetadataExchange") }
                 .accessibilityIdentifier("executeMetadataImport")
+            Button("取消", role: .cancel) {}
         } message: { Text(verbatim: model.confirmation) }
         .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) { if let sharing { LibraryShareSheet(files: sharing) } }
     }
@@ -129,7 +130,7 @@ struct MetadataImportView: View {
                     }.listRowBackground(Color(uiColor: theme.surface)).listRowSeparatorTint(Color(uiColor: theme.separator))
                 }.themedPage().navigationTitle(Text("未应用内容", tableName: "MetadataExchange"))
             } label: { Text("\(diagnostics.count) 条未应用内容", tableName: "MetadataExchange") }
-            Button { do { sharing = try model.diagnosticFile() } catch { model.error = ReaderMessages.error(error) } } label: { Text("导出问题清单", tableName: "MetadataExchange") }
+            Button { do { sharing = try model.diagnosticFile() } catch { model.showError(ReaderMessages.error(error)) } } label: { Text("导出问题清单", tableName: "MetadataExchange") }
         }.font(.footnote).foregroundStyle(Color(uiColor: theme.accent))
     }
     @ToolbarContentBuilder private var closeButton: some ToolbarContent {

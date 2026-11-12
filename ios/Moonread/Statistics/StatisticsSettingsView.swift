@@ -22,8 +22,9 @@ struct StatisticsSettingsView: View {
                 .listRowBackground(Color(uiColor: theme.surface))
         }.themedPage().navigationTitle("阅读统计设置").navigationBarTitleDisplayMode(.inline)
             .task { enabled = await AppDataService.shared.statisticsPreferences().enabled }
-            .confirmationDialog("清除阅读统计？", isPresented: $clearing, titleVisibility: .visible) {
+            .alert("清除阅读统计？", isPresented: $clearing) {
                 Button("清除阅读统计", role: .destructive) { Task { do { try await AppDataService.shared.deleteStatistics() } catch { self.error = ReaderMessages.error(error) } } }
+                Button("取消", role: .cancel) {}
             }
             .alert("暂时无法完成", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button("知道了", role: .cancel) { error = nil } } message: { Text(error ?? "") }
     }

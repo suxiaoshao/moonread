@@ -1,6 +1,90 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "百炼": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Alibaba Cloud Model Studio"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"百煉"}}}},
+    "撤销会停止此连接的内容任务。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Revoking permission stops this connection’s content tasks."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"撤銷會停止此連線的內容任務。"}}}},
+    "在服务控制台查看余额": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"View Balance in the Service Console"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"在服務控制台查看餘額"}}}},
+    "在 %@ 查看": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"View in %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"在 %@ 查看"}}}},
+    "余额与额度": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Balance and Limits"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"餘額與額度"}}}},
+    "配置凭据后可查询。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Set up your credentials to check your balance or limits."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"設定憑證後即可查詢。"}}}},
+    "数据可能已过期，请刷新。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The information may be out of date. Refresh to check again."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"資料可能已過期，請重新整理。"}}}},
+    "正在查询…": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Checking…"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在查詢…"}}}},
+    "正在刷新…": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Refreshing…"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在重新整理…"}}}},
+    "可用余额": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Available balance"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"可用餘額"}}}},
+    "余额组成": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Balance breakdown"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"餘額明細"}}}},
+    "充值余额": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Purchased credits"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"儲值餘額"}}}},
+    "赠送余额": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Granted credits"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"贈送餘額"}}}},
+    "服务报告余额不足以调用 API，请到控制台确认。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The service reports that your balance is too low for API calls. Check the console."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"服務回報餘額不足以呼叫 API，請到控制台確認。"}}}},
+    "当前 Key 未设置限额": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"This key has no spending limit"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"目前的 Key 未設定限額"}}}},
+    "当前 Key 限额剩余": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Remaining key limit"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"目前 Key 的剩餘限額"}}}},
+    "未提供": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Not provided"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"未提供"}}}},
+    "Key 限额": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Key limit"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"Key 限額"}}}},
+    "累计使用额": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Total spent to date"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"累計使用額"}}}},
+    "限额重置": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Limit resets"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"限額重設"}}}},
+    "每日": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Daily"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"每日"}}}},
+    "每周": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Weekly"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"每週"}}}},
+    "每月": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Monthly"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"每月"}}}},
+    "不重置": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Never"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"不重設"}}}},
+    "重置规则请查看控制台。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Check the console for the reset schedule."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"請在控制台查看重設規則。"}}}},
+    "Key 限额包含自带 API Key 的消耗。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Usage with your own API keys counts toward this limit."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"Key 限額包含自備 API Key 的用量。"}}}},
+    "Key 限额不含自带 API Key 的消耗。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Usage with your own API keys does not count toward this limit."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"Key 限額不含自備 API Key 的用量。"}}}},
+    "仅为当前 Key 的限额，不代表账户余额；账户及组织限制仍适用。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"This is the limit for this key. Account and organization limits still apply."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"這只是目前 Key 的限額，不代表帳戶餘額；帳戶與組織的限制仍適用。"}}}},
+    "此连接所属团队的 AI Gateway 额度。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"AI Gateway credits for this connection’s team."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"此連線所屬團隊的 AI Gateway 額度。"}}}},
+    "更新于 今天 %@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Updated today at %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"更新於今天 %@"}}}},
+    "更新于 %@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Updated %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"更新於 %@"}}}},
+    "更新失败，显示上次结果。请检查网络后重试。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Couldn’t refresh. Showing the last result. Check your connection and try again."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"更新失敗，顯示上次結果。請檢查網路後再試。"}}}},
+    "暂时无法查询，请重试。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Couldn’t check right now. Try again."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"暫時無法查詢，請再試一次。"}}}},
+    "余额查询未获授权，显示上次结果。请到控制台确认。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The service denied access. Showing the last result. Check the console."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"餘額查詢未獲授權，顯示上次結果。請到控制台確認。"}}}},
+    "余额查询未获授权，请到控制台确认。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The service denied access to this information. Check the console."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"餘額查詢未獲授權，請到控制台確認。"}}}},
+    "查询过于频繁，显示上次结果。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Too many requests. Showing the last result."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"查詢過於頻繁，顯示上次結果。"}}}},
+    "查询过于频繁，请稍后重试。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Too many requests. Try again later."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"查詢過於頻繁，請稍後再試。"}}}},
+    "可重试时间：%@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Try again at %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"可重試時間：%@"}}}},
+    "暂时无法读取服务数据，显示上次结果。可到控制台查看。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Couldn’t read the service data. Showing the last result. Check the console for details."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"暫時無法讀取服務資料，顯示上次結果。可到控制台查看。"}}}},
+    "暂时无法读取服务数据，可到控制台查看。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Couldn’t read the service data. Check the console for details."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"暫時無法讀取服務資料，可到控制台查看。"}}}},
+    "打开服务控制台": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Open Service Console"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"開啟服務控制台"}}}},
+    "回到朗读处": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Back to speech"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"回到朗讀處"}}}},
+    "展开听书控制": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Expand listening controls"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"展開聽書控制"}}}},
+    "结束听书": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Stop listening"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"結束聽書"}}}},
+    "正在朗读": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading aloud"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在朗讀"}}}},
+    "已调整，将从当前片段继续。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Updated. Resume from the current passage."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"已調整，將從目前片段繼續。"}}}},
+    "听书": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Listen"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"聽書"}}}},
+    "声音": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Voice"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"聲音"}}}},
+    "选择声音": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Choose Voice"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"選擇聲音"}}}},
+    "语速": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Speech Rate"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"語速"}}}},
+    "慢": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Slow"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"慢"}}}},
+    "快": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Fast"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"快"}}}},
+    "定时": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sleep Timer"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"定時"}}}},
+    "不定时": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Off"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"不定時"}}}},
+    "%lld 分钟后结束": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Stop After %lld Minutes"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"%lld 分鐘後結束"}}}},
+    "正在准备听书": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Preparing to Read Aloud"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在準備聽書"}}}},
+    "从当前段开始，听看共用阅读位置": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Starts from this paragraph. Listening and reading share your place."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"從目前段落開始，聽書與閱讀共用進度"}}}},
+    "声音不可用，请重新选择系统声音。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"This voice is unavailable. Please choose another system voice."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"聲音無法使用，請重新選擇系統聲音。"}}}},
+    "请先关闭当前操作再继续听书。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Close the current task before continuing to listen."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"請先關閉目前操作再繼續聽書。"}}}},
+    "这部分正文还未准备好": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"This part of the book is not ready yet."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"這部分正文尚未準備好"}}}},
+    "正文已变化，请重新打开小说。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The book content has changed. Please reopen it."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正文已變更，請重新開啟小說。"}}}},
+    "已调整，将从本句继续。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Updated. Continue from this sentence."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"已調整，將從本句繼續。"}}}},
+    "你好，欢迎使用月读。愿每一个故事，都陪你度过一段好时光。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Welcome to Moonread. May every story bring you a moment to enjoy."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"你好，歡迎使用月讀。願每一個故事，都陪你度過一段好時光。"}}}},
+    "定时已结束": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Sleep Timer Finished"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"定時已結束"}}}},
+    "播放已中断，点继续恢复。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Playback was interrupted. Tap Continue to resume."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"播放已中斷，點繼續恢復。"}}}},
+    "音频设备已断开，点继续恢复。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Audio device disconnected. Tap Continue to resume."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"音訊裝置已斷開，點繼續恢復。"}}}},
+    "音频服务已重置，点继续重试。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Audio service reset. Tap Continue to try again."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"音訊服務已重置，點繼續重試。"}}}},
+    "没有可用的系统声音": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"No System Voices Available"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"沒有可用的系統聲音"}}}},
+    "试听 %@": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Preview %@"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"試聽 %@"}}}},
+    "在系统设置的“辅助功能 → 朗读内容 → 声音”中管理声音。此处只列出系统可用声音，不会自动下载。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Manage voices in Settings → Accessibility → Spoken Content → Voices. Only system-available voices appear here; Moonread does not download voices automatically."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"在系統設定的「輔助使用 → 朗讀內容 → 聲音」中管理聲音。此處只列出系統可用聲音，不會自動下載。"}}}},
+    "搜索声音": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Search Voices"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"搜尋聲音"}}}},
+    "优质": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Premium"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"優質"}}}},
+    "增强": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Enhanced"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"增強"}}}},
+    "标准": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Standard"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"標準"}}}},
+    "删除配色“%@”？": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Delete palette “%@”?"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"刪除配色「%@」？"}}}},
+    "使用此配色的应用槽位将恢复纸色。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"App slots using this palette will return to Paper."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"使用此配色的應用程式欄位將恢復紙色。"}}}},
+    "使用此配色的阅读槽位将恢复跟随应用。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading slots using this palette will return to Follow App."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"使用此配色的閱讀欄位將恢復跟隨應用程式。"}}}},
+    "请输入名称，最多 40 个字符。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Enter a name, up to 40 characters."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"請輸入名稱，最多 40 個字元。"}}}},
+    "请输入配色名称。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Enter a palette name."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"請輸入配色名稱。"}}}},
+    "名称太长，请缩短到 40 个字符以内。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The name is too long. Shorten it to 40 characters or fewer."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"名稱太長，請縮短至 40 個字元以內。"}}}},
+    "配色包含无效颜色，请重新选择。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"The palette contains an invalid color. Choose it again."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"配色包含無效顏色，請重新選擇。"}}}},
+    "最多可保存 64 个自定义配色，请先删除不需要的配色。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"You can save up to 64 custom palettes. Delete an unused palette first."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"最多可儲存 64 個自訂配色，請先刪除不需要的配色。"}}}},
+    "这个配色已被删除，无法保存更改。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"This palette has been deleted. Your changes cannot be saved."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"這個配色已被刪除，無法儲存更改。"}}}},
+    "正在保存": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Saving"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在儲存"}}}},
     "尚未取得模型目录，请刷新重试。":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"The model directory has not been loaded. Refresh to try again."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"尚未取得模型目錄，請重新整理再試。"}}}},
     "这是手填型号，将尝试通用文字请求；能力并未经目录确认。":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"This is a manually entered model. A generic text request will be attempted; its capabilities have not been confirmed by the directory."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"這是手填型號，將嘗試通用文字請求；能力並未經目錄確認。"}}}},
     "输入上限 · tokens":{"localizations":{"en":{"stringUnit":{"state":"translated","value":"Input Limit · tokens"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"輸入上限 · tokens"}}}},
@@ -2602,28 +2686,6 @@
       }
     }
   },
-    "撤销后会停止此连接的内容任务。已发送给服务的数据无法追回。": {
-    "localizations": {
-      "en": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Withdrawing permission stops content tasks for this connection. Already shared data cannot be recalled."
-        }
-      },
-      "zh-Hans": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "撤销后会停止此连接的内容任务。已发送给服务的数据无法追回。"
-        }
-      },
-      "zh-Hant": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "撤銷後會停止此連線的內容任務。已傳送給服務的資料無法追回。"
-        }
-      }
-    }
-  },
     "撤销许可": {
     "localizations": {
       "en": {
@@ -4425,7 +4487,7 @@
     "可在‘文件’App 的‘最近删除’中恢复。书签和笔记会保留。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"You can restore these items from Recently Deleted in the Files app. Bookmarks and notes will be kept."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "可在‘檔案’App 的‘最近刪除’中恢復。書籤和筆記會保留。"}}}},
     "所在位置不支持最近删除。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"This location does not support Recently Deleted."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "所在位置不支援最近刪除。"}}}},
     "所在位置不支持最近删除": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Recently Deleted Is Not Supported"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "所在位置不支援最近刪除"}}}},
-    "本批中有项目所在位置不支持最近删除，删除后无法恢复。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Some items in this batch are in locations that do not support Recently Deleted. Permanently deleted items cannot be restored."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "本批中有項目所在位置不支援最近刪除，刪除後無法恢復。"}}}},
+    "本批中不支持最近删除的项目将永久删除，无法恢复。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Items in this batch that cannot be moved to Recently Deleted will be permanently deleted and cannot be restored."}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "本批中不支援最近刪除的項目將永久刪除，無法恢復。"}}}},
     "永久删除这些项目": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Permanently Delete These Items"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "永久刪除這些項目"}}}},
     "跳过": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Skip"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "跳過"}}}},
     "替换同名文件？": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Replace Existing File?"}}, "zh-Hant": {"stringUnit": {"state": "translated", "value": "替換同名檔案？"}}}},

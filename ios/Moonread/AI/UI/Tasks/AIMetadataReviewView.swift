@@ -7,11 +7,12 @@ enum AIProposalSources {
     }
     @MainActor static func resolve(_ refs: [String], session: String, _ ai: AIService) async -> [Item] {
         guard !refs.isEmpty, let values = try? await ai.resolveSources(refs, session: session) else { return [] }
-        return values.map { value in
+        return values.compactMap { value -> Item? in
             switch value {
             case .text(let bookRef, let start, let end, let title):
-                .text(AIResultSource(id: value.id, bookRef: bookRef, start: start, end: end, title: title))
-            case .web(let source): .web(source)
+                guard let book = try? AIReadingReferences.parseBookReference(bookRef) else { return nil }
+                return .text(AIResultSource(id: value.id, book: book, start: start, end: end, title: title))
+            case .web(let source): return .web(source)
             }
         }
     }

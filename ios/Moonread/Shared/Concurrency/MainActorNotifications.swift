@@ -9,11 +9,20 @@ enum MainActorNotifications {
         _ name: Notification.Name, object: Any? = nil, center: NotificationCenter = .default,
         using action: @escaping @MainActor @Sendable () -> Void
     ) -> AnyCancellable {
-        let token = center.addObserver(forName: name, object: object, queue: nil) { @Sendable _ in
+        observe(name, object: object, center: center, transform: { _ in () }) { _ in action() }
+    }
+
+    nonisolated static func observe<Value: Sendable>(
+        _ name: Notification.Name, object: Any? = nil, center: NotificationCenter = .default,
+        transform: @escaping @Sendable (Notification) -> Value,
+        using action: @escaping @MainActor @Sendable (Value) -> Void
+    ) -> AnyCancellable {
+        let token = center.addObserver(forName: name, object: object, queue: nil) { @Sendable notification in
+            let value = transform(notification)
             // Safe here because this closure is created nonisolated, not inside
             // a MainActor client's init. Preserve immediate main-thread delivery.
-            if Thread.isMainThread { MainActor.assumeIsolated { action() } }
-            else { Task { @MainActor in action() } }
+            if Thread.isMainThread { MainActor.assumeIsolated { action(value) } }
+            else { Task { @MainActor in action(value) } }
         }
         return AnyCancellable { center.removeObserver(token) }
     }

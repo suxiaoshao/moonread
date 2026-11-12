@@ -21,6 +21,17 @@ enum ReadingTextMetrics {
 }
 
 
+struct SourceAnchor: Equatable, Sendable {
+    let offset: UInt64
+    init(_ offset: UInt64) { self.offset = offset }
+}
+
+enum ReadingSurface: Equatable, Sendable {
+    case cover
+    case body(SourceAnchor)
+    var anchor: SourceAnchor? { if case .body(let anchor) = self { anchor } else { nil } }
+}
+
 enum ReadingTargetPlacement { case start, context, cover }
 
 
@@ -71,7 +82,7 @@ final class ReadingViewportAccess {
     init(capture: (() -> ReadingViewport?)? = nil, range: (() -> (UInt64, UInt64)?)? = nil) { captureOverride = capture; rangeOverride = range }
     func statisticsRange() -> (UInt64, UInt64)? { rangeOverride.map { $0() } ?? controller?.statisticsRange() }
     func capture() -> ReadingViewport? { captureOverride.map { $0() } ?? controller?.captureViewport() }
-    func hasBlockingPresentation(allowingReaderAccessory: Bool) -> Bool {
+    func hasBlockingPresentation(allowingReaderAccessory: Bool, allowAccessoryTransitions: Bool = false) -> Bool {
         guard let controller else { return false }
         func modal(in container: UIViewController) -> UIViewController? {
             if let presented = container.presentedViewController { return presented }
@@ -88,13 +99,51 @@ final class ReadingViewportAccess {
             ancestor = current.parent
         }
         guard let presented else { return false }
-        guard allowingReaderAccessory, !presented.isBeingPresented, !presented.isBeingDismissed else { return true }
+        guard allowingReaderAccessory else { return true }
+        if !allowAccessoryTransitions, presented.isBeingPresented || presented.isBeingDismissed { return true }
         // SwiftUI identifies the current small accessory. Exempt only its own
         // layer; a task presented above it (even by a contained child) blocks.
         return modal(in: presented) != nil
     }
-}
 
+    func nativeListeningFacts(registry: ReaderNativeLayerRegistry, opening: UUID, requestingDock: Bool,
+                              searchVisit: UUID? = nil) -> ReaderNativeListeningFacts {
+        guard let controller else { return .clear }
+        var checked = Set<ObjectIdentifier>()
+        var facts = ReaderNativeListeningFacts.clear
+        func inspect(_ owner: UIViewController, includeChildren: Bool) {
+            if let presented = owner.presentedViewController, checked.insert(ObjectIdentifier(presented)).inserted {
+                switch registry.origin(for: presented) {
+                case .readerTool(let origin, _) where origin == opening: break
+                case .selectionTask(let origin) where origin == opening: facts = .selection
+                case .voiceTask(let origin) where origin == opening: facts = .voice
+                case .external where searchVisit.map({ visit in
+                    guard let search = presented as? UISearchController else { return false }
+                    return registry.registerSearchInput(search, opening: opening, visit: visit)
+                }) == true: break
+                default:
+                    ReaderSceneDiagnostics.record("native.unregistered", opening: opening, fields: [
+                        "type": String(describing: type(of: presented)), "owner": String(describing: type(of: owner)),
+                    ])
+                    facts = .external
+                }
+                if facts == .external { return }
+                inspect(presented, includeChildren: true)
+            }
+            if includeChildren {
+                for child in owner.children where facts != .external {
+                    inspect(child, includeChildren: true)
+                }
+            }
+        }
+        var ancestor: UIViewController? = controller
+        while let current = ancestor, facts != .external {
+            inspect(current, includeChildren: current === controller)
+            ancestor = current.parent
+        }
+        return facts == .clear && requestingDock ? .mountingTool : facts
+    }
+}
 
 @MainActor
 /// Admission belongs to the application, independently of native viewport geometry.

@@ -25,21 +25,21 @@ final class AIAuthenticationAuthenticationTests: AuthenticationFixture {
     let current = AIAuthentication.BrowserAuthorization(
       id: "current", url: URL(string: "https://example.invalid/current")!, expires: .distantFuture)
     providers.loginConnectionID = id
-    providers.loginStates[id] = .browser(current)
+    providers.setLoginPresentation(.browser(current), for: id)
     providers.browserPresentationFailed(
       id, url: URL(string: "https://example.invalid/old")!, error: AIChatGPTError.loginCancelled)
-    XCTAssertEqual(providers.loginStates[id], .browser(current))
+    XCTAssertEqual(providers.loginState(id), .browser(current))
     providers.browserPresentationFailed(id, url: current.url, error: AIChatGPTError.loginCancelled)
     XCTAssertNil(providers.loginConnectionID)
-    XCTAssertEqual(providers.loginStates[id], .failed(String(localized: "已取消登录")))
+    XCTAssertEqual(providers.loginState(id), .failed(String(localized: "已取消登录")))
     let router = providers.addConnection(
       AIProviderPreset.all.first { $0.auth == .openrouter }!.connection())
     providers.loginConnectionID = router
-    providers.loginStates[router] = .browser(current)
+    providers.setLoginPresentation(.browser(current), for: router)
     providers.browserPresentationFailed(
       router, url: current.url, error: AIChatGPTError.loginCancelled)
     XCTAssertEqual(
-      providers.loginStates[router], .browser(current),
+      providers.loginState(router), .browser(current),
       "OpenRouter still needs to paste its code after closing the browser")
     providers.cancelLogin(router)
     XCTAssertNil(providers.loginConnectionID)
@@ -356,7 +356,7 @@ final class AIAuthenticationAuthenticationTests: AuthenticationFixture {
     expired.expires = .distantPast
     try TestCredentials.save(expired, reference: reference)
     let rotated = try await reloaded.credential(connection)
-    XCTAssertEqual(rotated.refreshToken, "synthetic-rotated")
+    XCTAssertEqual(rotated.oauth?.refresh.authorizationValue, "synthetic-rotated")
     XCTAssertEqual(
       try TestCredentials.load(reference)?.refreshToken, "synthetic-rotated",
       "Rotation is committed, not only returned")
@@ -484,7 +484,7 @@ final class AIAuthenticationAuthenticationTests: AuthenticationFixture {
         clientID: "oaiapp_fixture", subject: "synthetic", idToken: "synthetic-hint",
         scopes: ["chatgpt.tokens.use.direct"])
       try TestCredentials.save(
-        AICredential(
+        AICredentialStorage(
           accessToken: "synthetic", refreshToken: "synthetic-refresh", expires: .distantPast,
           accountID: account.subject, chatGPT: account), reference: reference)
       let config = URLSessionConfiguration.ephemeral
@@ -508,7 +508,7 @@ final class AIAuthenticationAuthenticationTests: AuthenticationFixture {
         await providers.refreshModels(id, refreshPublic: false)
       }
       XCTAssertNil(try TestCredentials.load(reference))
-      XCTAssertTrue(providers.needsLogin.contains(id))
+      XCTAssertTrue(providers.requiresLogin(id))
       XCTAssertEqual(providers.connectionState(providers.connections[0]), .needsLogin)
       let registration = try XCTUnwrap(
         TestCredentials.load(reference + "/registration", as: AIChatGPTAccount.self))
@@ -540,7 +540,7 @@ final class AIAuthenticationAuthenticationTests: AuthenticationFixture {
     let account = AIChatGPTAccount(
       clientID: "oaiapp_fixture", subject: "synthetic", idToken: "synthetic-hint",
       scopes: ["chatgpt.tokens.use.direct"])
-    let current = AICredential(
+    let current = AICredentialStorage(
       accessToken: "synthetic", refreshToken: "synthetic-old", expires: .distantPast,
       accountID: account.subject, chatGPT: account)
     let config = URLSessionConfiguration.ephemeral
@@ -601,7 +601,7 @@ final class AIAuthenticationAuthenticationTests: AuthenticationFixture {
         clientID: "oaiapp_fixture", subject: "synthetic", idToken: "synthetic-hint",
         scopes: allowed ? ["openid", "chatgpt.tokens.use.direct"] : ["openid"])
       try TestCredentials.save(
-        AICredential(
+        AICredentialStorage(
           accessToken: "synthetic", refreshToken: "synthetic", expires: .distantFuture,
           accountID: account.subject, chatGPT: account), reference: reference)
       let config = URLSessionConfiguration.ephemeral
@@ -667,7 +667,7 @@ final class AIAuthenticationAuthenticationTests: AuthenticationFixture {
       clientID: "oaiapp_fixture", subject: "synthetic", idToken: "synthetic",
       scopes: ["chatgpt.tokens.use.direct"])
     try TestCredentials.save(
-      AICredential(
+      AICredentialStorage(
         accessToken: "synthetic", refreshToken: "synthetic", expires: .distantPast,
         accountID: account.subject, chatGPT: account), reference: selected.credentialReference)
     let config = URLSessionConfiguration.ephemeral

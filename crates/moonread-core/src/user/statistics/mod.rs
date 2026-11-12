@@ -201,7 +201,7 @@ pub struct StatisticsPreferences {
 
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct StatisticsBook {
-    pub content_key: String,
+    pub content_key: ReadingKey,
     pub book_id: Option<String>,
     pub title: String,
     pub author: Option<String>,
@@ -242,7 +242,7 @@ pub struct StatisticsWidgetSummary {
 pub struct ReadingActivity {
     pub id: String,
     pub session_id: String,
-    pub content_key: String,
+    pub content_key: ReadingKey,
     pub book_id: Option<String>,
     pub title: String,
     pub started_ms: i64,
@@ -303,7 +303,8 @@ impl ReaderCore {
                         .map(|m| m.author.clone())
                         .filter(|a| !a.is_empty()),
                     cover: metadata.and_then(|m| m.cover),
-                    content_key: r.get(0)?,
+                    content_key: crate::identity::content::reading_key_column(r, 0)?
+                        .ok_or(rusqlite::Error::InvalidQuery)?,
                     book_id: r.get(1)?,
                     title: r.get(2)?,
                     duration_ms: unsigned_column(r, 3)?,
@@ -381,7 +382,8 @@ impl ReaderCore {
                 Ok(ReadingActivity {
                     id: r.get(0)?,
                     session_id: r.get(1)?,
-                    content_key: r.get(2)?,
+                    content_key: crate::identity::content::reading_key_column(r, 2)?
+                        .ok_or(rusqlite::Error::InvalidQuery)?,
                     book_id: r.get(3)?,
                     title: r.get(4)?,
                     started_ms: r.get(5)?,

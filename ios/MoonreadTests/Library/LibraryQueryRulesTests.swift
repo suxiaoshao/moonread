@@ -56,10 +56,14 @@ final class LibraryQueryRulesTests: XCTestCase {
     }
 
     private func candidate(_ name: String, ordinal: UInt64, folder: Bool = false, metadata: BookMetadata? = nil, recent: Int64 = 0) -> LibrarySearchCandidate {
+        let resolution: BookResolution = metadata.map {
+            .resolved(record: .init(key: .formal(sha256: $0.sha), body: .absent, aliases: []))
+        } ?? .unidentified(fileId: name)
+        let item: Moonread.LibraryItem = folder ? .folder(row: .init(childBookCount: 0, coverPreviews: []))
+            : .book(row: .init(resolution: resolution, needsDownload: false, positionUtf8: 0, byteCount: 0,
+                              chapterTitle: nil, preferred: false, metadata: metadata))
         let entry = LibraryEntry(id: name, shelfId: "s", shelfName: "Shelf", relativePath: name, parentPath: "", name: name,
-            directory: folder, size: 0, modified: 0, needsDownload: false, bookId: nil, positionUtf8: 0, byteCount: 0,
-            chapterTitle: nil, childBookCount: 0, lastRead: recent, preferred: false, coverPreviews: [], metadata: metadata,
-            contentSha256: metadata?.sha, readingIdentity: metadata.map { .formal(sha256: $0.sha) })
+                                 size: 0, modified: 0, lastRead: recent, item: item)
         return .init(entry: entry, naturalNameOrdinal: ordinal, naturalOrderOrdinal: ordinal, resolvedMetadata: metadata)
     }
     func testBookMatchingProfilesKeepTheirExistingContracts() {
@@ -118,21 +122,21 @@ final class LibraryQueryRulesTests: XCTestCase {
         let known = candidate("已索引.txt", ordinal: 0, metadata: .init(sha: String(repeating: "a", count: 64), author: "林澄", synopsis: "", tags: [], cover: nil, status: .unread))
         let unknown = candidate("未索引.txt", ordinal: 1)
         var future = known; future.resolvedMetadata?.status = .other(value: "Future")
-        let unread = BookSearchNode(field: .status, values: [.text("unread")])
+        let unread = BookSearchNode(kind: .rule(.status([.unread])))
         XCTAssertEqual(LibraryQueryRules.evaluate(unread, candidate: known), .yes)
         XCTAssertEqual(LibraryQueryRules.evaluate(unread, candidate: unknown), .unknown)
         XCTAssertEqual(LibraryQueryRules.evaluate(unread, candidate: future), .unknown)
-        var notRead = BookSearchNode(excluded: true, children: [unread])
+        var notRead = BookSearchNode(excluded: true, kind: .group(.all, [unread]))
         XCTAssertEqual(LibraryQueryRules.evaluate(notRead, candidate: unknown), .unknown)
-        let author = BookSearchNode(field: .author, values: [.text("林澄")])
-        var either = BookSearchNode(group: .any, children: [author, unread])
+        let author = BookSearchNode(kind: .rule(.author(["林澄"])))
+        var either = BookSearchNode(kind: .group(.any, [author, unread]))
         XCTAssertEqual(LibraryQueryRules.evaluate(either, candidate: future), .yes, "Known true OR unknown is true")
         either.group = .all
         XCTAssertEqual(LibraryQueryRules.evaluate(either, candidate: future), .unknown)
-        notRead.children = [BookSearchNode(field: .tag, values: [.untagged])]
+        notRead.children = [BookSearchNode(kind: .rule(.tag(.any, [.untagged])))]
         XCTAssertEqual(LibraryQueryRules.evaluate(notRead, candidate: known), .no)
         XCTAssertEqual(LibraryQueryRules.evaluate(notRead, candidate: unknown), .unknown)
-        var tags = BookSearchNode(field: .tag, values: [.untagged, .text("生活")], match: .any)
+        var tags = BookSearchNode(kind: .rule(.tag(.any, [.untagged, .text("生活")])))
         XCTAssertEqual(LibraryQueryRules.evaluate(tags, candidate: known), .yes)
         tags.match = .all
         XCTAssertNotNil(tags.validation())
@@ -142,12 +146,12 @@ final class LibraryQueryRulesTests: XCTestCase {
         tags.values = [.text("生活")]
         XCTAssertEqual(LibraryQueryRules.evaluate(tags, candidate: known), .yes)
         XCTAssertEqual(LibraryQueryRules.evaluate(tags, candidate: unknown), .unknown)
-        XCTAssertNotNil(BookSearchNode(children: [BookSearchNode()]).validation(isRoot: true))
-        let config = BookSearchConfiguration(root: BookSearchNode(children: [unread]))
+        XCTAssertNotNil(BookSearchNode(kind: .group(.all, [BookSearchNode()])).validation(isRoot: true))
+        let config = BookSearchConfiguration(root: BookSearchNode(kind: .group(.all, [unread])))
         let result = LibraryQueryRules.searchOutcome([known, unknown, future], spec: .init(profile: .library, configuration: config))
         XCTAssertEqual(result.entries.map(\.id), [known.entry.id])
         XCTAssertEqual(result.unknownCount, 2)
-        let scope = BookSearchConfiguration(root: BookSearchNode(children: [BookSearchNode(field: .shelf, values: [.text(known.entry.shelfId)])]))
+        let scope = BookSearchConfiguration(root: BookSearchNode(kind: .group(.all, [BookSearchNode(kind: .rule(.shelf([known.entry.shelfId])))])))
         XCTAssertEqual(LibraryQueryRules.filterAndRank([known, unknown], spec: .init(profile: .library, configuration: scope)).count, 2, "Shelf-only queries include unindexed files")
     }
     func testExplicitBookSortingOverridesMatchAndMissingValuesStayLast() {
