@@ -13,16 +13,16 @@ import BackgroundTasks
         var title: LocalizedStringKey {
             switch self {
             case .idle: "导入信息"
-            case .receiving: "接收资料包"
-            case .preparing: "准备预览"
+            case .receiving: "正在接收资料"
+            case .preparing: "正在准备预览"
             case .review: "等待确认"
-            case .saving: "保存资料"
-            case .renaming: "文件改名"
-            case .completed: "导入完成"
+            case .saving: "正在保存资料"
+            case .renaming: "正在整理文件名"
+            case .completed: "导入已完成"
             case .stopped: "导入已停止"
             case .paused: "导入已暂停"
-            case .failed: "导入未完成"
-            case .interrupted: "上次导入中断"
+            case .failed: "保存未完成"
+            case .interrupted: "上次导入已中断"
             }
         }
     }
@@ -73,8 +73,44 @@ import BackgroundTasks
     var savedCount: Int { result?.outcomes.filter(\.saved).count ?? record?.summary?.saved ?? 0 }
     var renamedCount: Int { result?.outcomes.filter(\.renamed).count ?? record?.summary?.renamed ?? 0 }
     var renameIssueCount: Int { result?.outcomes.filter { $0.renameAttempted && $0.message != nil }.count ?? record?.summary?.renameIssues ?? 0 }
-    var remainingWrites: Int { result?.remaining.count ?? 0 }
-    var remainingRenames: Int { result?.remainingRenames.count ?? 0 }
+    // Presentation reads the existing checkpoint; it does not advance the task.
+    var renameOnlyContinuation: Bool {
+        guard let checkpoint else { return false }
+        return checkpoint.committed == checkpoint.writeIndices.count && continueNeedsRenameConfirmation
+    }
+    var knownRemainingWrites: Int? {
+        if let result { return result.remaining.count }
+        if let checkpoint { return checkpoint.writeIndices.count - checkpoint.committed }
+        if preview != nil && (phase == .failed || phase == .stopped || phase == .paused) {
+            return pending.filter { !$0.changedMetadataFields.isEmpty }.count
+        }
+        return nil
+    }
+    var knownRemainingRenames: Int {
+        if let result { return result.remainingRenames.count }
+        if let checkpoint { return checkpoint.renameIndices.count - checkpoint.renamedThrough }
+        if preview != nil && (phase == .failed || phase == .stopped || phase == .paused) {
+            return pending.filter { $0.renameName != nil }.count
+        }
+        return 0
+    }
+    var knownAttemptedRenames: Int {
+        if let checkpoint { return checkpoint.renamedThrough }
+        return result?.outcomes.filter(\.renameAttempted).count ?? 0
+    }
+    var knownRenameTotal: Int? {
+        if let checkpoint { return checkpoint.renameIndices.count }
+        return result.map { $0.outcomes.filter(\.renameAttempted).count + $0.remainingRenames.count }
+    }
+    var hasCommittedMetadataBeforeRenaming: Bool { (checkpoint?.writeIndices.count ?? 0) > 0 }
+    var displayPhase: Phase {
+        if phase == .saving && (total == 0 || renameOnlyContinuation) { return .renaming }
+        return phase
+    }
+    var displayedProgress: (completed: Int, total: Int) {
+        if displayPhase != phase { return (knownAttemptedRenames, knownRenameTotal ?? 0) }
+        return (completed, total)
+    }
     @ObservationIgnored private var work: Task<Void, Never>?
     @ObservationIgnored private var checkpoint: MetadataConfirmedImport?
     @ObservationIgnored private var systemPaused = false
@@ -130,6 +166,11 @@ import BackgroundTasks
     var invalidSelection: Bool { books.contains { $0.selectionError != nil } }
     var pending: [MetadataPreviewBook] { books.filter { $0.disposition == .changes } }
     var unchangedCount: Int { books.filter { $0.disposition == .unchanged }.count }
+    var isUnchangedPreview: Bool {
+        phase == .review && !books.isEmpty && error == nil
+            && preview?.diagnostics.isEmpty == true && !invalidSelection
+            && books.allSatisfy { $0.disposition == .unchanged && !$0.hasSuggestedChanges }
+    }
     var unmatchedCount: Int { books.filter { $0.disposition == .unmatched }.count }
     var skippedCount: Int { books.filter { $0.disposition == .skipped }.count }
     func visible(query: String, filter: Int) -> [MetadataPreviewBook] {
@@ -257,7 +298,22 @@ import BackgroundTasks
         let removed = books.reduce(0) { $0 + Set($1.base?.tags ?? []).subtracting($1.edited?.tags ?? []).count }
         let rename = books.filter { $0.renameName != nil }.count
         let writeCount = books.filter { !$0.changedMetadataFields.isEmpty }.count
-        return String(localized: "保存 \(writeCount) 本资料，清空 \(clear) 个字段，移除 \(removed) 个标签，改名 \(rename) 个文件。已保存的资料不会因取消或后续失败撤回。", table: "MetadataExchange")
+        var details: [String] = []
+        if writeCount > 0 {
+            details.append(rename > 0
+                ? String(localized: "保存 \(writeCount) 本资料，另将 \(rename) 个文件改名。", table: "MetadataExchange")
+                : String(localized: "保存 \(writeCount) 本资料。", table: "MetadataExchange"))
+        } else {
+            details.append(String(localized: "改名 \(rename) 个文件。", table: "MetadataExchange"))
+        }
+        if clear > 0 { details.append(String(localized: "清空 \(clear) 个字段。", table: "MetadataExchange")) }
+        if removed > 0 { details.append(String(localized: "移除 \(removed) 个标签。", table: "MetadataExchange")) }
+        if writeCount > 0 {
+            details.append(String(localized: "已保存的资料不会因停止或后续失败撤回。", table: "MetadataExchange"))
+        } else {
+            details.append(String(localized: "已完成的改名不会因停止或后续失败撤回。", table: "MetadataExchange"))
+        }
+        return details.joined(separator: "\n")
     }
 
     func save() {

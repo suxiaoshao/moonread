@@ -20,8 +20,6 @@ struct MetadataTasksSection: View {
             Text("导入或导出小说信息；可编辑清单，也可从 TXT 生成。", tableName: "MetadataExchange")
                 .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
             ViewThatFits(in: .horizontal) { HStack(spacing: 10) { buttons }; VStack(spacing: 10) { buttons } }
-                .controlSize(.regular)
-                .tint(Color(uiColor: theme.accent))
             if let pickerError { Text(verbatim: pickerError).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
             if task.hasTask {
                 ThemedDivider()
@@ -56,51 +54,68 @@ struct MetadataTasksSection: View {
         } label: {
             Label { Text("导入信息", tableName: "MetadataExchange") }
                 icon: { Image(systemName: "square.and.arrow.down") }.frame(maxWidth: .infinity)
-        }.buttonStyle(.borderedProminent).disabled(!task.canStartNew).accessibilityIdentifier("importMetadata")
+        }.buttonStyle(MetadataActionButtonStyle()).disabled(!task.canStartNew).accessibilityIdentifier("importMetadata")
         Button { exporting = true } label: {
             Label { Text("导出信息", tableName: "MetadataExchange") }
                 icon: { Image(systemName: "square.and.arrow.up") }.frame(maxWidth: .infinity)
-        }.buttonStyle(.bordered).accessibilityIdentifier("exportMetadata")
+        }.buttonStyle(MetadataActionButtonStyle()).accessibilityIdentifier("exportMetadata")
     }
 
     private var activeTask: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 5) {
-                switch task.phase {
-                case .receiving, .preparing:
-                    ProgressView { phaseTitle }
-                    detail(Text("可关闭页面，稍后查看", tableName: "MetadataExchange"))
-                case .saving, .renaming:
-                    if task.total > 0 {
-                        ProgressView(value: Double(task.completed), total: Double(task.total)) { phaseTitle }
-                        if task.phase == .renaming {
-                            detail(Text("已处理 \(task.completed) / \(task.total) 个改名", tableName: "MetadataExchange"))
-                        } else {
-                            detail(Text("已保存 \(task.completed) / \(task.total) 本", tableName: "MetadataExchange"))
+        let phase = task.displayPhase
+        let (completed, total) = task.displayedProgress
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Group {
+                    switch phase {
+                    case .receiving, .preparing:
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small).accessibilityHidden(true)
+                            phaseTitle
                         }
+                    case .saving, .renaming: phaseTitle
+                    case .review: taskLabel("doc.text")
+                    case .stopped: taskLabel("stop.circle")
+                    case .paused: taskLabel("pause.circle")
+                    case .failed: taskLabel("exclamationmark.circle")
+                    case .interrupted: taskLabel("arrow.clockwise")
+                    case .idle, .completed: EmptyView()
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading)
+                taskAction(Text("查看", tableName: "MetadataExchange"))
+            }
+            switch phase {
+            case .receiving, .preparing:
+                detail(Text("可以关闭页面，稍后查看。", tableName: "MetadataExchange"))
+            case .saving, .renaming:
+                if total > 0 {
+                    ProgressView(value: Double(completed), total: Double(total))
+                        .tint(Color(uiColor: theme.accent)).accessibilityHidden(true)
+                    if phase == .renaming {
+                        detail(Text("已处理 \(completed) / \(total) 个改名", tableName: "MetadataExchange"))
                     } else {
-                        ProgressView { phaseTitle }
+                        detail(Text("已保存 \(completed) / \(total) 本", tableName: "MetadataExchange"))
                     }
-                case .review:
-                    taskLabel("doc.text")
-                    detail(Text("预览已准备好", tableName: "MetadataExchange"))
-                case .stopped, .paused:
-                    taskLabel(task.phase == .stopped ? "stop.circle" : "pause.circle")
-                    if task.result != nil {
-                        detail(Text("已保存 \(task.savedCount) 本", tableName: "MetadataExchange"))
-                    }
-                case .failed:
-                    taskLabel("exclamationmark.circle")
-                    if let error = task.error { detail(Text(verbatim: error).lineLimit(2)) }
-                case .interrupted:
-                    taskLabel("arrow.clockwise")
-                    detail(Text(task.hasCompleteInput ? "请重新预览" : "资料包尚未接收完整", tableName: "MetadataExchange"))
-                case .idle, .completed:
-                    EmptyView()
+                } else {
+                    ProgressView().controlSize(.small)
+                        .accessibilityLabel(phaseTitle)
                 }
-            }.frame(maxWidth: .infinity, alignment: .leading)
-            taskAction(Text("查看", tableName: "MetadataExchange"))
-        }
+            case .review:
+                detail(Text("预览已准备好，等待你确认。", tableName: "MetadataExchange"))
+            case .stopped, .paused, .failed:
+                if task.result != nil || task.knownRemainingWrites != nil {
+                    detail(Text("已保存 \(task.savedCount) 本", tableName: "MetadataExchange"))
+                } else if let error = task.error {
+                    detail(Text(verbatim: error).lineLimit(2))
+                } else if !task.hasCompleteInput {
+                    detail(Text("资料包尚未接收完整", tableName: "MetadataExchange"))
+                }
+            case .interrupted:
+                detail(Text(task.hasCompleteInput ? "请重新预览并确认。" : "资料包尚未接收完整", tableName: "MetadataExchange"))
+            case .idle, .completed:
+                EmptyView()
+            }
+        }.frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var completedTask: some View {
@@ -133,8 +148,8 @@ struct MetadataTasksSection: View {
         }
     }
 
-    private var phaseTitle: some View {
-        Text(task.phase.title, tableName: "MetadataExchange").font(.subheadline.weight(.medium))
+    private var phaseTitle: Text {
+        Text(task.displayPhase.title, tableName: "MetadataExchange").font(.subheadline.weight(.medium))
     }
 
     private func taskLabel(_ symbol: String) -> some View {
