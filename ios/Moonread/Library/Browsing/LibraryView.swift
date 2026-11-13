@@ -203,23 +203,38 @@ private struct ContinueReadingRow: View {
 struct RecentBookRow: View {
     let model: LibraryModel
     let entry: LibraryEntry
+    var inFullList = false
     @Environment(\.theme) private var theme
     var body: some View {
         Button { model.open(entry) } label: {
-            HStack(spacing: 15) {
+            HStack(spacing: inFullList ? 12 : 15) {
                 BookCoverView(title: entry.title, compact: true, cover: entry.displayMetadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author).frame(width: 44, height: 62)
-                VStack(alignment: .leading, spacing: 7) {
+                VStack(alignment: .leading, spacing: inFullList ? 4 : 7) {
                     Text(verbatim: entry.title).font(.body.weight(.medium)).foregroundStyle(Color(uiColor: theme.ink)).lineLimit(1)
-                    HStack {
-                        Text(entry.chapterTitle ?? String(localized: "继续阅读")).lineLimit(1); Spacer(minLength: 8)
-                        Text(Double(entry.positionUtf8) / Double(max(1, entry.byteCount)), format: .percent.precision(.fractionLength(1))).monospacedDigit()
+                    HStack(spacing: inFullList ? 8 : nil) {
+                        if inFullList {
+                            chapter.frame(maxWidth: .infinity, alignment: .leading)
+                            progress.fixedSize()
+                        } else {
+                            chapter
+                            Spacer(minLength: 8)
+                            progress
+                        }
                     }.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                 }
-            }.padding(.vertical, 6).contentShape(.rect)
+            }.padding(.vertical, inFullList ? 0 : 6)
+                .frame(maxWidth: inFullList ? .infinity : nil, alignment: .leading)
+                .contentShape(.rect)
         }.buttonStyle(.plain).accessibilityIdentifier("library-file-\(entry.name)")
             .overlay(alignment: .leading) {
                 LibraryFileAvailability(entry: entry, compact: true).frame(width: 44, height: 62)
             }
+    }
+    private var chapter: some View {
+        Text(entry.chapterTitle ?? String(localized: "继续阅读")).lineLimit(1)
+    }
+    private var progress: Text {
+        Text(Double(entry.positionUtf8) / Double(max(1, entry.byteCount)), format: .percent.precision(.fractionLength(1))).monospacedDigit()
     }
 }
 
