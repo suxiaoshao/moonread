@@ -3,11 +3,6 @@ import SwiftData
 import CryptoKit
 import os
 
-struct CacheSummary: Sendable {
-    var bytes: UInt64 = 0
-    var protected = 0
-    var bodies = 0
-}
 struct CacheCleanupResult: Sendable { var bytes: UInt64 = 0; var removed = 0; var retained = 0 }
 
 /// Source authorization remains scoped throughout hashing and the eviction transaction.
@@ -45,15 +40,12 @@ private final class CacheSourceWork: @unchecked Sendable {
     }
 }
 extension AppDataService {
-    func cacheSummary() throws -> CacheSummary {
-        let core = try textCore(), bodies = try core.cacheInventory(protectedBookIds: cacheProtectedBookIDs())
-        var summary = CacheSummary()
-        for body in bodies {
-            let sources = try core.sourceFilesForSha(sha: body.contentSha256)
-            if body.protected || !sources.contains(where: { !$0.needsDownload }) { summary.protected += 1 }
-            else { summary.bytes += body.bytes; summary.bodies += 1 }
-        }
-        return summary
+    func cacheSummary() async throws -> CacheSummary {
+        let core = try textCore(), protected = cacheProtectedBookIDs()
+        // Only the handle and active IDs belong to the service actor.
+        return try await Task.detached(priority: .utility) {
+            try core.cacheSummary(protectedBookIds: protected)
+        }.value
     }
     func clearRebuildableCaches() async throws -> CacheCleanupResult {
         let core = try textCore(), bodies = try core.cacheInventory(protectedBookIds: cacheProtectedBookIDs())

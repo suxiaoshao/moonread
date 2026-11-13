@@ -7,6 +7,7 @@ import BackgroundTasks
         .appending(path: "Moonread", directoryHint: .isDirectory).appending(path: "MetadataImport", directoryHint: .isDirectory))
 
     let service: AppDataService
+    let exportTask: MetadataExportTask
     enum Phase: Equatable {
         case idle, receiving, preparing, review, saving, renaming, completed, stopped, paused, failed, interrupted
 
@@ -114,7 +115,7 @@ import BackgroundTasks
     @ObservationIgnored private var work: Task<Void, Never>?
     @ObservationIgnored private var checkpoint: MetadataConfirmedImport?
     @ObservationIgnored private var systemPaused = false
-    @ObservationIgnored private var execution: Execution?
+    @ObservationIgnored private let systemExecution = MetadataSystemExecution()
     @ObservationIgnored private var preparedDirectory = false
     @ObservationIgnored private var preparation: MetadataPreparationProgress?
     private(set) var pauseReason: PauseReason?
@@ -130,6 +131,7 @@ import BackgroundTasks
 
     init(service: AppDataService, directory: URL? = nil) {
         self.service = service
+        exportTask = MetadataExportTask(service: service, usesSystemExecution: directory != nil)
         self.directory = directory
         if let recordURL, let data = try? Data(contentsOf: recordURL),
            let saved = try? JSONDecoder().decode(Record.self, from: data), saved.version == 1,
@@ -412,12 +414,23 @@ import BackgroundTasks
         systemPaused = false
         pauseReason = nil
         preparation = nil
-        let execution = Execution()
-        self.execution = execution
-        beginSystemExecution(execution)
+        if directory != nil {
+            systemExecution.begin(
+                kind: "metadata-import",
+                title: String(localized: "导入小说信息", table: "MetadataExchange"),
+                subtitle: String(localized: "正在处理已选择的资料", table: "MetadataExchange"),
+                canAttach: { [weak self] in self?.cancellationRequested == false },
+                didAttach: { [weak self] in self?.publishSystemProgress() },
+                didExpire: { [weak self] reason in
+                    guard let self, !self.cancellationRequested else { return }
+                    self.systemPaused = true
+                    self.pauseReason = reason
+                    self.cancel()
+                })
+        }
         work = Task {
             defer {
-                finishSystemExecution(execution, success: phase == .review || phase == .completed)
+                systemExecution.finish(success: phase == .review || phase == .completed)
                 work = nil; cancellationRequested = false
             }
             do { try await action(self) }
@@ -438,83 +451,13 @@ import BackgroundTasks
         }
     }
 
-    private final class Execution {
-        let id = UUID()
-        var request: String?
-        var background: BGTask?
-        var assertion: UIBackgroundTaskIdentifier = .invalid
-    }
-
-    private func beginSystemExecution(_ run: Execution) {
-        guard directory != nil, UIApplication.shared.applicationState != .background else { return }
-        let title = String(localized: "导入小说信息", table: "MetadataExchange")
-        let id = run.id
-        if #available(iOS 26, *) {
-            let requestID = (Bundle.main.bundleIdentifier ?? "dev.moonread.Moonread") + ".metadata-import.continued." + id.uuidString
-            let request = BGContinuedProcessingTaskRequest(identifier: requestID, title: title,
-                subtitle: String(localized: "正在处理已选择的资料", table: "MetadataExchange"))
-            request.strategy = .fail
-            if BGTaskScheduler.shared.register(forTaskWithIdentifier: requestID, using: nil,
-                launchHandler: FullIndexSystemCallback.launch { [weak self] task in
-                    guard let self else { task.setTaskCompleted(success: false); return }
-                    self.attachSystemExecution(task, id: id)
-                }) {
-                do {
-                    try BGTaskScheduler.shared.submit(request)
-                    run.request = requestID
-                } catch { /* Work continues while the app remains in the foreground. */ }
-            }
-        } else {
-            run.assertion = UIApplication.shared.beginBackgroundTask(withName: title) { [weak self] in
-                self?.expireSystemExecution(id, reason: .expired)
-            }
-        }
-    }
-
-    private func attachSystemExecution(_ task: BGTask, id: UUID) {
-        guard let execution, execution.id == id, execution.request == task.identifier,
-              execution.background == nil, !cancellationRequested else {
-            task.setTaskCompleted(success: false); return
-        }
-        execution.background = task
-        task.expirationHandler = FullIndexSystemCallback.expiration { [weak self] in self?.expireSystemExecution(id, reason: .expired) }
-        publishSystemProgress()
-    }
-
     func sceneDidEnterBackground() {
-        guard let execution, execution.background == nil, execution.assertion == .invalid else { return }
-        expireSystemExecution(execution.id, reason: .unavailable)
-    }
-
-    private func expireSystemExecution(_ id: UUID, reason: PauseReason) {
-        guard let execution, execution.id == id else { return }
-        if !cancellationRequested {
-            systemPaused = true
-            pauseReason = reason
-            cancel()
-        }
-        // End the platform assertion at expiration, but keep ownership of work
-        // and its inputs until the underlying operation actually returns.
-        finishSystemExecution(execution, success: false)
-    }
-
-    private func finishSystemExecution(_ run: Execution, success: Bool) {
-        guard execution === run else { return }
-        execution = nil
-        if let task = run.background {
-            task.expirationHandler = nil
-            if #available(iOS 26, *), let continued = task as? BGContinuedProcessingTask, success {
-                continued.progress.completedUnitCount = continued.progress.totalUnitCount
-            }
-            task.setTaskCompleted(success: success)
-        } else if let request = run.request {
-            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: request)
-        }
-        if run.assertion != .invalid { UIApplication.shared.endBackgroundTask(run.assertion) }
+        systemExecution.sceneDidEnterBackground()
+        exportTask.sceneDidEnterBackground()
     }
 
     private func publishSystemProgress() {
-        if #available(iOS 26, *), let task = execution?.background as? BGContinuedProcessingTask {
+        if #available(iOS 26, *), let task = systemExecution.background as? BGContinuedProcessingTask {
             if loading {
                 let subtitle: String
                 switch preparation {
@@ -563,6 +506,238 @@ import BackgroundTasks
                 try handle.write(contentsOf: Data([10]))
             }
             return [url]
+        }
+    }
+}
+
+/// Shared platform execution for user-initiated metadata work. Each task keeps
+/// its own run, so finishing one import/export never ends the other's claim.
+@MainActor private final class MetadataSystemExecution {
+    private final class Run {
+        let id = UUID()
+        let canAttach: @MainActor () -> Bool
+        let didAttach: @MainActor () -> Void
+        let didExpire: @MainActor (MetadataExchangeModel.PauseReason) -> Void
+        var request: String?
+        var background: BGTask?
+        var assertion: UIBackgroundTaskIdentifier = .invalid
+
+        init(canAttach: @escaping @MainActor () -> Bool, didAttach: @escaping @MainActor () -> Void,
+             didExpire: @escaping @MainActor (MetadataExchangeModel.PauseReason) -> Void) {
+            self.canAttach = canAttach
+            self.didAttach = didAttach
+            self.didExpire = didExpire
+        }
+    }
+
+    private var run: Run?
+    var background: BGTask? { run?.background }
+
+    func begin(kind: String, title: String, subtitle: String,
+               canAttach: @escaping @MainActor () -> Bool,
+               didAttach: @escaping @MainActor () -> Void,
+               didExpire: @escaping @MainActor (MetadataExchangeModel.PauseReason) -> Void) {
+        guard run == nil else { return }
+        let run = Run(canAttach: canAttach, didAttach: didAttach, didExpire: didExpire)
+        self.run = run
+        guard UIApplication.shared.applicationState != .background else { return }
+        let id = run.id
+        if #available(iOS 26, *) {
+            let identifier = (Bundle.main.bundleIdentifier ?? "dev.moonread.Moonread") + "." + kind + ".continued." + id.uuidString
+            let request = BGContinuedProcessingTaskRequest(identifier: identifier, title: title, subtitle: subtitle)
+            request.strategy = .fail
+            if BGTaskScheduler.shared.register(forTaskWithIdentifier: identifier, using: nil,
+                launchHandler: FullIndexSystemCallback.launch { [weak self] task in
+                    guard let self else { task.setTaskCompleted(success: false); return }
+                    self.attach(task, id: id)
+                }) {
+                do { try BGTaskScheduler.shared.submit(request); run.request = identifier }
+                catch { /* Foreground work can continue without system execution. */ }
+            }
+        } else {
+            run.assertion = UIApplication.shared.beginBackgroundTask(withName: title) { [weak self] in
+                self?.expire(id, reason: .expired)
+            }
+        }
+    }
+
+    private func attach(_ task: BGTask, id: UUID) {
+        guard let run, run.id == id, run.request == task.identifier, run.background == nil, run.canAttach() else {
+            task.setTaskCompleted(success: false); return
+        }
+        run.background = task
+        task.expirationHandler = FullIndexSystemCallback.expiration { [weak self] in self?.expire(id, reason: .expired) }
+        run.didAttach()
+    }
+
+    func sceneDidEnterBackground() {
+        guard let run, run.background == nil, run.assertion == .invalid else { return }
+        expire(run.id, reason: .unavailable)
+    }
+
+    private func expire(_ id: UUID, reason: MetadataExchangeModel.PauseReason) {
+        guard let run, run.id == id else { return }
+        run.didExpire(reason)
+        // The owner keeps its worker and inputs until the operation returns.
+        finish(success: false)
+    }
+
+    func finish(success: Bool) {
+        guard let run else { return }
+        self.run = nil
+        if let task = run.background {
+            task.expirationHandler = nil
+            if #available(iOS 26, *), let continued = task as? BGContinuedProcessingTask, success {
+                continued.progress.completedUnitCount = continued.progress.totalUnitCount
+            }
+            task.setTaskCompleted(success: success)
+        } else if let request = run.request {
+            BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: request)
+        }
+        if run.assertion != .invalid { UIApplication.shared.endBackgroundTask(run.assertion) }
+    }
+}
+
+@MainActor @Observable final class MetadataExportTask {
+    enum Phase {
+        case idle, running, completed, stopped, failed
+
+        var title: LocalizedStringKey {
+            switch self {
+            case .idle: "导出小说信息"
+            case .running: "正在导出"
+            case .completed: "导出完成"
+            case .stopped: "导出已停止"
+            case .failed: "导出失败"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .idle, .running: "square.and.arrow.up"
+            case .completed: "checkmark.circle"
+            case .stopped: "stop.circle"
+            case .failed: "exclamationmark.circle"
+            }
+        }
+    }
+
+    private struct Request {
+        let shelfID: String?
+        let format: MetadataFormat
+    }
+
+    let service: AppDataService
+    private let usesSystemExecution: Bool
+    @ObservationIgnored private let systemExecution = MetadataSystemExecution()
+    @ObservationIgnored private var work: Task<Void, Never>?
+    @ObservationIgnored private var request: Request?
+    private(set) var phase: Phase = .idle
+    private(set) var completed = 0
+    private(set) var total: Int?
+    private(set) var output: MetadataExportResult?
+    private(set) var error: String?
+    private(set) var stopReason: MetadataExchangeModel.PauseReason?
+    private(set) var stopping = false
+    var progressText: LocalizedStringKey {
+        if stopping { return "正在停止导出。" }
+        if let total, completed < total { return "正在导出 \(completed) / \(total) 本" }
+        if total != nil { return "正在生成导出文件。" }
+        return "正在准备导出…"
+    }
+
+    fileprivate init(service: AppDataService, usesSystemExecution: Bool) {
+        self.service = service
+        self.usesSystemExecution = usesSystemExecution
+    }
+
+    func start(shelfID: String?, format: MetadataFormat) {
+        guard work == nil, phase == .idle else { return }
+        launch(.init(shelfID: shelfID, format: format))
+    }
+
+    func retry() {
+        guard work == nil, (phase == .stopped || phase == .failed), let request else { return }
+        launch(request)
+    }
+
+    func cancel() {
+        guard phase == .running, !stopping else { return }
+        stopping = true
+        work?.cancel()
+    }
+
+    func clear() {
+        guard work == nil, phase != .running else { return }
+        output = nil; error = nil; request = nil; stopReason = nil
+        completed = 0; total = nil; phase = .idle
+    }
+
+    fileprivate func sceneDidEnterBackground() {
+        systemExecution.sceneDidEnterBackground()
+    }
+
+    private func launch(_ request: Request) {
+        self.request = request
+        phase = .running; output = nil; error = nil
+        completed = 0; total = nil; stopReason = nil
+        if usesSystemExecution {
+            systemExecution.begin(
+                kind: "metadata-export",
+                title: String(localized: "导出小说信息", table: "MetadataExchange"),
+                subtitle: String(localized: "正在准备导出…", table: "MetadataExchange"),
+                canAttach: { [weak self] in self?.stopping == false },
+                didAttach: { [weak self] in self?.publishSystemProgress() },
+                didExpire: { [weak self] reason in
+                    guard let self, !self.stopping else { return }
+                    self.stopReason = reason
+                    self.cancel()
+                })
+        }
+        work = Task {
+            defer {
+                systemExecution.finish(success: phase == .completed)
+                work = nil
+                stopping = false
+            }
+            do {
+                let result = try await service.exportMetadata(shelfID: request.shelfID, format: request.format) { [weak self] done, count in
+                    await self?.updateProgress(done, count)
+                }
+                try Task.checkCancellation()
+                output = result
+                phase = .completed
+            } catch {
+                if Task.isCancelled || error is CancellationError {
+                    phase = .stopped
+                } else {
+                    self.error = ReaderMessages.error(error)
+                    phase = .failed
+                }
+            }
+        }
+    }
+
+    private func updateProgress(_ done: Int, _ count: Int) {
+        guard !stopping else { return }
+        completed = done
+        total = count
+        publishSystemProgress()
+    }
+
+    private func publishSystemProgress() {
+        if #available(iOS 26, *), let task = systemExecution.background as? BGContinuedProcessingTask {
+            // Keep one final unit for writing and publishing the output file.
+            task.progress.totalUnitCount = Int64((total ?? 0) + 1)
+            task.progress.completedUnitCount = Int64(completed)
+            let subtitle = if let total, completed < total {
+                String(localized: "正在导出 \(completed) / \(total) 本", table: "MetadataExchange")
+            } else if total != nil {
+                String(localized: "正在生成导出文件。", table: "MetadataExchange")
+            } else {
+                String(localized: "正在准备导出…", table: "MetadataExchange")
+            }
+            task.updateTitle(task.title, subtitle: subtitle)
         }
     }
 }

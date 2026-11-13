@@ -469,7 +469,7 @@ struct BookReadingDataClearSection: View {
                 Task {
                     if !target.fromReader { await book.finishPreparationForDataDeletion() }
                     await manager.load()
-                    manager.deleting = [key]
+                    manager.requestDelete([key])
                 }
             } label: {
                 Text("清除本书阅读数据").frame(maxWidth: .infinity)

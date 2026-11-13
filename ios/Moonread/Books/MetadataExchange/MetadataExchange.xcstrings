@@ -1,6 +1,188 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "所选书架已不可用": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Selected Bookshelf Is Unavailable" } },
+        "zh-Hant": { "stringUnit": { "state": "translated", "value": "所選書架已無法使用" } }
+      }
+    },
+    "导出完成": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export Complete"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯出完成"
+          }
+        }
+      }
+    },
+    "导出已停止": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Export Stopped"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯出已停止"
+          }
+        }
+      }
+    },
+    "正在停止导出。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopping export."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在停止匯出。"
+          }
+        }
+      }
+    },
+    "正在生成导出文件。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Creating the export file."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在產生匯出檔案。"
+          }
+        }
+      }
+    },
+    "无法分享导出文件": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can’t Share Export File"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法分享匯出檔案"
+          }
+        }
+      }
+    },
+    "无法读取书架": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Can’t Read Bookshelves"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "無法讀取書架"
+          }
+        }
+      }
+    },
+    "系统未提供后台执行资格。返回后可以重试导出。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background execution wasn’t available. You can retry the export here."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系統未提供背景執行資格。返回後可以重試匯出。"
+          }
+        }
+      }
+    },
+    "系统后台执行时间已结束。返回后可以重试导出。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background time ended. You can retry the export here."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系統背景執行時間已結束。返回後可以重試匯出。"
+          }
+        }
+      }
+    },
+    "未生成可分享的文件。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No file was created to share."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未產生可分享的檔案。"
+          }
+        }
+      }
+    },
+    "停止导出": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop Export"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止匯出"
+          }
+        }
+      }
+    },
+    "重新选择导出范围": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Choose a New Export Scope"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "重新選擇匯出範圍"
+          }
+        }
+      }
+    },
     "%@待更新": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Will update: %@" } },

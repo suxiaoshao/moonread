@@ -1,6 +1,6 @@
 //! Derived body eviction. Never touches user facts, authorization, decoding or unfinished jobs.
 use crate::{ReaderCore, Result, SourceFileSnapshot, parse_sha256};
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 #[derive(Debug, Clone, uniffi::Record)]
 pub struct CachedBody {
@@ -9,6 +9,12 @@ pub struct CachedBody {
     pub title: String,
     pub bytes: u64,
     pub protected: bool,
+}
+#[derive(Debug, Clone, Default, PartialEq, Eq, uniffi::Record)]
+pub struct CacheSummary {
+    pub bytes: u64,
+    pub protected: u64,
+    pub bodies: u64,
 }
 fn in_use(db: &rusqlite::Connection, id: &str, protected: &[String]) -> Result<bool> {
     // Jobs protect their canonical text as well as their draft/paused prefix.
@@ -21,6 +27,47 @@ fn in_use(db: &rusqlite::Connection, id: &str, protected: &[String]) -> Result<b
 }
 #[uniffi::export]
 impl ReaderCore {
+    /// One read snapshot, separate from both the text writer and interactive reads.
+    pub fn cache_summary(&self, protected_book_ids: Vec<String>) -> Result<CacheSummary> {
+        let db =
+            Connection::open_with_flags(&self.database_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        db.busy_timeout(std::time::Duration::from_secs(5))?;
+        crate::identity::content::initialize(&db)?;
+        let protected = serde_json::json!(protected_book_ids).to_string();
+        Ok(db.query_row(
+            "WITH available(sha) AS MATERIALIZED (
+                SELECT DISTINCT fi.content_sha256 FROM file_identities fi
+                JOIN main.library_files f ON f.id=fi.file_id
+                WHERE f.directory=0 AND f.needs_download=0
+             ),
+             protected(id) AS MATERIALIZED (
+                SELECT value FROM json_each(?1)
+                UNION SELECT book_id FROM main.import_jobs
+                UNION SELECT canonical_id FROM main.import_jobs WHERE canonical_id IS NOT NULL
+             ),
+             candidates(id, reclaimable) AS MATERIALIZED (
+                SELECT b.id, a.sha IS NOT NULL AND p.id IS NULL FROM main.books b
+                LEFT JOIN available a ON a.sha=b.content_sha256
+                LEFT JOIN protected p ON p.id=b.id
+                WHERE b.content_sha256 NOT LIKE 'pending:%' AND b.chunk_count>0
+             )
+             SELECT COALESCE(SUM(CASE WHEN reclaimable THEN
+                        (SELECT SUM(length(CAST(text AS BLOB))) FROM main.chunks WHERE book_id=c.id)
+                        ELSE 0 END), 0),
+                    COUNT(*) FILTER (WHERE NOT reclaimable),
+                    COUNT(*) FILTER (WHERE reclaimable)
+             FROM candidates c",
+            [protected],
+            |r| {
+                Ok(CacheSummary {
+                    bytes: r.get::<_, i64>(0)? as u64,
+                    protected: r.get::<_, i64>(1)? as u64,
+                    bodies: r.get::<_, i64>(2)? as u64,
+                })
+            },
+        )?)
+    }
+
     pub fn cache_inventory(&self, protected_book_ids: Vec<String>) -> Result<Vec<CachedBody>> {
         let db = self.lock()?;
         let mut statement = db.prepare("SELECT b.id,b.content_sha256,b.title,COALESCE((SELECT SUM(length(CAST(text AS BLOB))) FROM chunks WHERE book_id=b.id),0) FROM books b WHERE b.content_sha256 NOT LIKE 'pending:%' AND b.chunk_count>0")?;
@@ -125,6 +172,14 @@ mod tests {
         )
         .unwrap();
         let file = core.source_file_snapshots(None).unwrap().remove(0);
+        assert_eq!(
+            core.cache_summary(vec![]).unwrap(),
+            CacheSummary {
+                bytes: 0,
+                protected: 1,
+                bodies: 0
+            }
+        );
         assert!(
             !core
                 .evict_cached_body(
@@ -138,6 +193,18 @@ mod tests {
         );
         core.publish_source_identity(file.clone(), identity)
             .unwrap();
+        let summary = core.cache_summary(vec![]).unwrap();
+        assert_eq!(summary.bodies, 1);
+        assert_eq!(summary.protected, 0);
+        assert_eq!(summary.bytes, book.byte_count);
+        assert_eq!(
+            core.cache_summary(vec![book.id.clone()]).unwrap(),
+            CacheSummary {
+                bytes: 0,
+                protected: 1,
+                bodies: 0
+            }
+        );
         assert!(
             !core
                 .evict_cached_body(
@@ -201,6 +268,7 @@ mod tests {
         );
         assert_eq!(core.library_shelves().unwrap()[0].bookmark, vec![1, 2]);
         assert!(core.import_status(other.book_id()).is_ok());
+        assert_eq!(core.cache_summary(vec![]).unwrap(), CacheSummary::default());
         let rebuilt = core
             .import_book(path.to_string_lossy().into(), "Rebuilt".into())
             .unwrap();

@@ -11,7 +11,7 @@ extension AppDataService {
         }
     }
     func exportMetadata(shelfID: String?, format: MetadataFormat, progress: @escaping @Sendable (Int, Int) async -> Void = { _, _ in }) async throws -> MetadataExportResult {
-        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
         let configuration = userCloudConfigurationRevision
         let inputs = try await metadataExchangeInputs(.export(shelfId: shelfID), configuration: configuration)

@@ -69,7 +69,11 @@ import SwiftUI
     private var dataOperation = DataOperation.idle
     private var latestExport: URL?
     var inventory: ReadingDataInventory { dataLoad.result?.inventory ?? .init(items: [], pending: 0, unsupported: 0) }
-    private(set) var cache = CacheSummary()
+    private(set) var issueCount: Int?
+    private(set) var cache: CacheSummary?
+    private(set) var cacheError: String?
+    @ObservationIgnored private var cacheLoad: Task<Void, Never>?
+    @ObservationIgnored private var cacheRefreshRequested = false
     var busy: Bool { working != nil }
     var loading: Bool { if case .loading = dataLoad { true } else { false } }
     var loaded: Bool { dataLoad.result != nil }
@@ -109,7 +113,11 @@ import SwiftUI
     var unlinkedOnly = false { didSet { if oldValue != unlinkedOnly { selected.removeAll() } } }
     var recent = true
     var selecting = false
-    var deleting: Set<String>?
+    struct DeletionRequest {
+        let keys: Set<String>
+        let configuration: UUID
+    }
+    var deleting: DeletionRequest?
     var issueErrors: [String: String] = [:]
     private(set) var duplicateNames: [String: (index: Int, count: Int)] = [:]
     private var operationTask: Task<Void, Never>?
@@ -152,21 +160,43 @@ import SwiftUI
                 dataLoad = .loading(previous: dataLoad.result)
                 do {
                     let value = try await service.readingDataInventory()
-                    // Keep the list if the independent cache summary subsequently fails.
-                    dataLoad = .loading(previous: .ready(value))
                     updateOrder(value)
-                    cache = try await service.cacheSummary()
                     dataLoad = .finished(.ready(value))
-                } catch { dataLoad = .finished(.failed(ReaderMessages.error(error), previous: dataLoad.result?.inventory)) }
+                    issueCount = value.diagnostics.count
+                } catch {
+                    issueCount = nil
+                    dataLoad = .finished(.failed(ReaderMessages.error(error), previous: dataLoad.result?.inventory))
+                }
             } while inventoryRefreshRequested
         }
         inventoryLoad = task
         await task.value
     }
+    func loadCache() async {
+        if let cacheLoad {
+            cacheRefreshRequested = true
+            await cacheLoad.value
+            return
+        }
+        let task = Task { @MainActor in
+            defer { cacheLoad = nil }
+            repeat {
+                cacheRefreshRequested = false
+                do {
+                    cache = try await service.cacheSummary()
+                    cacheError = nil
+                } catch { cacheError = ReaderMessages.error(error) }
+            } while cacheRefreshRequested
+        }
+        cacheLoad = task
+        await task.value
+    }
     func updateInventory(_ value: ReadingDataInventory) {
         dataLoad = .finished(.ready(value))
+        issueCount = value.diagnostics.count
         updateOrder(value)
     }
+    func invalidateIssueCount() { issueCount = nil }
     private func updateOrder(_ value: ReadingDataInventory) {
         let entries = value.items.map { ReadingDataSortEntry(key: $0.id, title: $0.title, lastRead: $0.lastRead) }
             nameOrder = readingDataOrder(entries: entries, recent: false)
@@ -224,34 +254,43 @@ import SwiftUI
         dataOperation = .importing(candidate)
         do {
             try await service.importReadingBackup(candidate)
-            await load()
+            if loaded { await load() }
             dataOperation = .completed(.imported)
         } catch ReadingDataError.changed {
             let refreshed = try? await service.refreshReadingBackupPreview(candidate.staging)
             dataOperation = .failed(ReadingDataError.changed.localizedDescription, preview: refreshed)
         } catch { dataOperation = .failed(ReaderMessages.error(error), preview: candidate) }
     }
-    func deleteConfirmed(_ keys: Set<String>) async {
+    func requestDelete(_ keys: Set<String>) {
+        guard !busy, !keys.isEmpty else { return }
+        guard let configuration = inventory.configuration else { showError(ReadingDataError.changed.localizedDescription); return }
+        deleting = .init(keys: keys, configuration: configuration)
+    }
+    func deleteConfirmed(_ request: DeletionRequest) async {
+        let keys = request.keys
         guard !busy, !keys.isEmpty else { return }
         deleting = nil
-        let configuration = inventory.configuration
         dataOperation = .deleting(keys)
         do {
-            guard let configuration else { throw ReadingDataError.changed }
-            let cleaned = try await service.deleteReadingData(keys, configuration: configuration)
-            selected.subtract(keys); await load()
+            let cleaned = try await service.deleteReadingData(keys, configuration: request.configuration)
+            selected.subtract(keys)
+            if loaded { await load() }
+            await loadCache()
             dataOperation = .completed(.deleted(cacheCleaned: cleaned))
         } catch { dataOperation = .failed(ReaderMessages.error(error), preview: nil) }
     }
     func requestDeleteAll() async {
         guard !busy else { return }
-        do { deleting = try await service.allReadingDataKeys() }
+        do {
+            let (keys, configuration) = try await service.allReadingDataKeysForDeletion()
+            deleting = .init(keys: keys, configuration: configuration)
+        }
         catch { dataOperation = .failed(ReaderMessages.error(error), preview: nil) }
     }
     func clearCache() async {
         await runCancellable(.cleaningCache) {
             let result = try await self.service.clearRebuildableCaches()
-            await self.load()
+            await self.loadCache()
             return .completed(.cacheCleaned(removed: result.removed, retained: result.retained))
         }
     }

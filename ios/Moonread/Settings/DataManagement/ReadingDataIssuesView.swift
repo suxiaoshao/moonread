@@ -4,7 +4,7 @@ struct ReadingDataIssuesView: View {
     @Environment(\.theme) private var theme
     @Environment(LibraryModel.self) private var library
     @Bindable var model: DataManagementModel
-    @State private var discarding: PendingReadingData?
+    @State private var discarding: DataManagementModel.DeletionRequest?
     private var pending: [PendingReadingData] { model.inventory.pendingItems.filter(\.readable) }
     private var unreadable: [ReadingDataDiagnostic] { model.inventory.diagnostics.filter { $0.reason != .pending } }
     var body: some View {
@@ -52,9 +52,14 @@ struct ReadingDataIssuesView: View {
         .refreshable { await model.load() }
         .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in Task { await model.load() } }
         .onReceive(NotificationCenter.default.publisher(for: .libraryIndexScanCommitted).receive(on: DispatchQueue.main)) { _ in Task { await model.load() } }
+        .onReceive(NotificationCenter.default.publisher(for: .cloudStatusChanged).receive(on: DispatchQueue.main)) { _ in if !model.busy { Task { await model.load() } } }
+        .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in if !model.busy { Task { await model.load() } } }
         .alert(Text("丢弃这本书的待关联记录？", tableName: "DataManagement"), isPresented: Binding(get: { discarding != nil }, set: { if !$0 { discarding = nil } })) {
-            if let item = discarding {
-                Button(role: .destructive) { discarding = nil; Task { await model.deleteConfirmed([item.id]) } } label: { Text("丢弃记录", tableName: "DataManagement") }
+            if let request = discarding {
+                Button(role: .destructive) {
+                    discarding = nil
+                    Task { await model.deleteConfirmed(request) }
+                } label: { Text("丢弃记录", tableName: "DataManagement") }
                     .accessibilityIdentifier("confirmDiscardPending")
             }
             Button("取消", role: .cancel) { discarding = nil }
@@ -80,7 +85,11 @@ struct ReadingDataIssuesView: View {
                             }
                             Spacer(minLength: 8)
                             Menu {
-                                Button(role: .destructive) { discarding = item } label: { Text("丢弃记录", tableName: "DataManagement") }
+                                Button(role: .destructive) {
+                                    if let configuration = model.inventory.configuration {
+                                        discarding = .init(keys: [item.id], configuration: configuration)
+                                    }
+                                } label: { Text("丢弃记录", tableName: "DataManagement") }
                                     .accessibilityIdentifier("discardPending-" + item.id)
                             } label: { Label("更多", systemImage: "ellipsis").labelStyle(.iconOnly).frame(minWidth: 44, minHeight: 44) }
                                 .foregroundStyle(Color(uiColor: theme.secondary)).accessibilityIdentifier("pendingMore-" + item.id)
