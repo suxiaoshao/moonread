@@ -126,7 +126,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
     var selectionStart: UInt64?
     var selection: ((UInt64, UInt64, ReaderSelectionAction) -> Void)?
     var coverTitle: String?
-    var coverInformation: BookDetails?
+    var coverInformation: ReaderCoverInformation?
     var showBookDetails: () -> Void = {}
     var isCoverVisible = false
     var coverChanged: ((Bool) -> Void)?
@@ -196,7 +196,7 @@ final class ReadingController: UIViewController, UITextViewDelegate, UIPageViewC
                    annotations: [ReaderMark] = [], bookmarkPositions: [UInt64] = [], focusRange: TextRange? = nil,
                    selectionStart: UInt64? = nil, selection: @escaping (UInt64, UInt64, ReaderSelectionAction) -> Void = { _, _, _ in },
                    edgeChanged: @escaping (Bool) -> Void = { _ in },
-                   coverTitle: String? = nil, coverInformation: BookDetails? = nil, showBookDetails: @escaping () -> Void = {},
+                   coverTitle: String? = nil, coverInformation: ReaderCoverInformation? = nil, showBookDetails: @escaping () -> Void = {},
                    showingCover: Bool = false, coverChanged: @escaping (Bool) -> Void = { _ in },
                    compactHeaderHeight: CGFloat,
                    controlsVisible: Bool, toggleControls: @escaping () -> Void,

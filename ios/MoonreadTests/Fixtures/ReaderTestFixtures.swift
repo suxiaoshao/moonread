@@ -410,3 +410,8 @@ extension ImportText {
 extension BookInfo {
   var fixtureSHA256: String { readingKey.formalSHA256! }
 }
+
+
+func requireStoreProjection(_ projection: UserDataStore.StoreProjection?) throws -> UserDataStore.StoreProjection {
+  try XCTUnwrap(projection)
+}

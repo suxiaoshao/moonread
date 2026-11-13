@@ -226,7 +226,7 @@ final class ReaderSettingsUserDataTests: UserDataFixture {
     XCTAssertEqual(AppDataService.paletteSaveIssue(in: full), .customLimit)
     let existing = try XCTUnwrap(full.palettes.last)
     XCTAssertNil(AppDataService.paletteSaveIssue(in: full, editing: existing), "The limit blocks creation, never editing")
-    try await store.putValues(values, device: "fixture")
+    for (key, value) in values { try await store.put(key, value: value, device: "fixture") }
     do { _ = try await service.savePalette(template, creating: true); XCTFail("Enforce current storage capacity") }
     catch PaletteSaveIssue.customLimit { }
     var renamed = existing; renamed.name = "Edited at capacity"

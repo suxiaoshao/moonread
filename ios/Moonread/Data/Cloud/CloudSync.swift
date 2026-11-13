@@ -233,5 +233,8 @@ extension AppDataService {
     func cloudSyncRequested() -> Bool { cloudSyncIntent.requested }
     func setCloudSyncRequested(_ requested: Bool) { cloudSyncIntent.set(requested) }
     func userCloudOwner() -> String? { sourceDefaults.string(forKey: "Moonread.userOwner") }
-    func dataChanged() { scheduleSystemReadingCatalog(); NotificationCenter.default.post(name: .readingDataChanged, object: nil) }
+    func dataChanged(refreshSystemCatalog: Bool = true) {
+        if refreshSystemCatalog { scheduleSystemReadingCatalog() }
+        NotificationCenter.default.post(name: .readingDataChanged, object: nil)
+    }
 }

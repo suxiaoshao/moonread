@@ -134,7 +134,8 @@ pub(crate) fn initialize(db: &Connection) -> Result<()> {
     WHERE f.directory=0;
     CREATE TEMP VIEW file_identities AS
     SELECT f.id file_id,COALESCE(si.content_sha256,b.content_sha256) content_sha256,
-      CASE WHEN b.content_sha256=COALESCE(si.content_sha256,b.content_sha256) THEN b.id END associated_book_id
+      CASE WHEN b.content_sha256=COALESCE(si.content_sha256,b.content_sha256) THEN b.id END associated_book_id,
+      b.content_sha256 catalogue_book_sha
     FROM main.library_files f
     LEFT JOIN valid_indexed_identities si ON si.file_id=f.id
     LEFT JOIN main.import_jobs j ON j.book_id=f.book_id
@@ -320,6 +321,26 @@ impl ReaderCore {
             }
         }
         keys.into_iter().map(parse_reading_key).collect()
+    }
+    /// The requested record and the original aliases contributed by actual
+    /// catalogue files, including an original book behind a different index key.
+    pub fn catalogue_record_keys(&self, sha: String) -> Result<Vec<ReadingKey>> {
+        let sha = parse_sha256(sha)?;
+        let db = self.read_lock()?;
+        let mut statement = db.prepare_cached(
+            "SELECT DISTINCT f.book_id FROM file_identities fi
+             JOIN main.library_files f ON f.id=fi.file_id
+             WHERE fi.catalogue_book_sha=?1 AND f.book_id IS NOT NULL",
+        )?;
+        let mut keys = statement
+            .query_map([&sha], |row| {
+                Ok(ReadingKey::Pending {
+                    book_id: row.get(0)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        keys.push(ReadingKey::Formal { sha256: sha });
+        Ok(keys)
     }
     pub fn source_files_for_sha(&self, sha: String) -> Result<Vec<SourceFileSnapshot>> {
         parse_sha256(sha.clone())?;

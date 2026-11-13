@@ -50,7 +50,8 @@ extension LibraryModel {
            previous.expectedContentSHA == expectedContentSHA { return }
 
         let route = LibraryRoute.reader(OpeningRequest(target: target, tap: ProcessInfo.processInfo.systemUptime,
-            expectedContentSHA: expectedContentSHA, metadataHint: entry.metadata))
+            expectedContentSHA: expectedContentSHA, metadataHint: entry.metadata,
+            coverHint: entry.bookRow?.cardMetadata.map { .init(sha: entry.readingIdentity?.formalSHA256, card: $0) }))
         if let push { push(route) }
         // A second tap queued during the push supersedes its destination,
         // rather than stacking two readers. Destinations own their own tasks.

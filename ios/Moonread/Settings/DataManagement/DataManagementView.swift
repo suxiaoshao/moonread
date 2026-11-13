@@ -93,15 +93,15 @@ struct DataManagementView: View {
         }
     }
     @ViewBuilder private var backupButtons: some View {
+        Button { Task { if let url = await model.chooseBackup() { await model.prepareImport(url) } else { picker = true } } } label: {
+            Label { Text("导入备份", tableName: "MetadataExchange") } icon: { Image(systemName: "square.and.arrow.down") }.frame(maxWidth: .infinity)
+        }.buttonStyle(MetadataActionButtonStyle()).accessibilityIdentifier("importReadingBackup")
         Button { exportBackup() } label: {
             Label { Text("导出备份", tableName: "MetadataExchange") } icon: { Image(systemName: "square.and.arrow.up") }.frame(maxWidth: .infinity)
         }.buttonStyle(MetadataActionButtonStyle()).accessibilityIdentifier("exportAllReadingData")
         #if DEBUG
         .accessibilityValue(model.exported == nil ? "not-ready" : "backup-ready")
         #endif
-        Button { Task { if let url = await model.chooseBackup() { await model.prepareImport(url) } else { picker = true } } } label: {
-            Label { Text("导入备份", tableName: "MetadataExchange") } icon: { Image(systemName: "square.and.arrow.down") }.frame(maxWidth: .infinity)
-        }.buttonStyle(MetadataActionButtonStyle()).accessibilityIdentifier("importReadingBackup")
     }
 }
 struct ReadingDataWorking: ViewModifier {

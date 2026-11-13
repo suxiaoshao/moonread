@@ -172,7 +172,7 @@ extension LibraryQueryRules {
         let result: Truth
         switch node.kind {
         case .rule(let predicate):
-            let metadata = candidate.resolvedMetadata
+            let metadata = candidate.resolvedSearchMetadata
             switch predicate {
             case .shelf(let values): result = values.contains(candidate.entry.shelfId) ? .yes : .no
             case .status(let values):

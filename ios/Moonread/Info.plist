@@ -16,7 +16,7 @@
         </dict>
     </dict>
     <key>UIBackgroundModes</key><array><string>remote-notification</string><string>processing</string><string>audio</string></array>
-    <key>BGTaskSchedulerPermittedIdentifiers</key><array><string>dev.moonread.Moonread.full-index.processing</string><string>dev.moonread.Moonread.full-index.continued.*</string></array>
+    <key>BGTaskSchedulerPermittedIdentifiers</key><array><string>dev.moonread.Moonread.full-index.processing</string><string>dev.moonread.Moonread.full-index.continued.*</string><string>$(PRODUCT_BUNDLE_IDENTIFIER).metadata-import.continued.*</string></array>
     <key>CFBundleDocumentTypes</key>
     <array><dict>
         <key>CFBundleTypeName</key><string>TXT Novel</string>

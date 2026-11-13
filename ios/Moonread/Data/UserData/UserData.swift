@@ -7,20 +7,39 @@ import CoreData
     static let schema = Schema(modelTypes)
 
     nonisolated let changes = UserInputRevision()
-    struct ProjectionWork { let version: String; let id: UUID; let task: Task<String, Error> }
+    struct ProjectionWork { let version: String; let id: UUID; let task: Task<ProjectionInput, Error> }
     var projectionWork: [String: ProjectionWork] = [:]
     var preparedFactsCache: [String: (version: String, value: PreparedFacts)] = [:]
     var preparedFactsWork: [String: (version: String, id: UUID, task: Task<PreparedFacts, Error>)] = [:]
-    var projectionCache: [String: (String, String)] = [:]
+    var projectionCache: [String: (String, ProjectionInput)] = [:]
     func importedChanges(keys: Set<String> = []) throws {
         if keys.isEmpty { invalidateProjection() }
         else { changes.invalidate(keys: Array(keys)) }
         for key in keys { try compactPositions(key: key) }
     }
-    func invalidateProjection() { changes.invalidate(); projectionCache.removeAll(); preparedFactsCache.removeAll() }
-    nonisolated func version(keys: [String]?, positionsOnly: Bool, includeFacts: Bool, statisticsKeys: [String]?, fields: UserProjectionDomain = .reading) -> String {
+    func invalidateProjection() {
+        changes.invalidate()
+        projectionCache.removeAll()
+        preparedFactsCache.removeAll()
+        for work in preparedFactsWork.values { work.task.cancel() }
+        preparedFactsWork.removeAll()
+    }
+    nonisolated func version(keys: [String]?, positionsOnly: Bool, includeFacts: Bool, statisticsKeys: [String]?, fields: UserProjectionDomain = .reading, filter: UserProjectionFilter = .init()) -> String {
         let values: UserProjectionDomain = positionsOnly ? [.position, .opened] : fields
-        return "\(changes.version(keys: keys, domains: values))-\(includeFacts ? changes.version(keys: statisticsKeys, domains: .statistics) : 0)-\(UserProjectionChanges.shared.revision)"
+        var scoped = values
+        var revision: UInt64 = 0
+        if let keys, !filter.coverOnly.isEmpty {
+            scoped.subtract([.position, .chapter])
+            revision = changes.version(keys: keys.filter { !filter.coverOnly.contains($0) },
+                                       domains: values.intersection([.position, .chapter]))
+        }
+        if let keys, filter.openedAliasesOnly, scoped.contains(.opened) {
+            scoped.remove(.opened)
+            revision = max(revision, changes.version(keys: keys.filter { $0.hasPrefix("pending:") }, domains: .opened))
+        }
+        if filter.preserveMetadataWinner, !scoped.intersection(.metadataFields).isEmpty { scoped.insert(.metadata) }
+        revision = max(revision, changes.version(keys: keys, domains: scoped))
+        return "\(revision)-\(includeFacts ? changes.version(keys: statisticsKeys, domains: .statistics) : 0)-\(UserProjectionChanges.shared.revision)"
     }
     var recordingGeneration: UInt64?
     var recordingEnabled = true
@@ -43,14 +62,25 @@ import CoreData
         }
         return try UserSyncJSON.decode(type, value, as: shape, envelope: envelope)
     }
-    func transaction<T>(_ body: () throws -> T) throws -> T {
+    func transaction<T>(metadataBatch: Bool = false, _ body: () throws -> T) throws -> T {
         modelContext.autosaveEnabled = false
         do {
             let value = try body()
             // Invalidate before save makes changes visible: a concurrent cache
             // lookup must then enter this actor, after commit or rollback.
             let dependencies = (modelContext.insertedModelsArray + modelContext.changedModelsArray + modelContext.deletedModelsArray).map(Self.dependency)
-            for (key, domain) in dependencies { changes.invalidate(keys: key.map { [$0] }, domains: domain) }
+            if metadataBatch {
+                try Task.checkCancellation()
+                var affected: [String: UserProjectionDomain] = [:]
+                for (key, domain) in dependencies where !domain.isEmpty {
+                    guard let key, domain.contains(.metadata) else { throw ReaderError.InvalidSettings }
+                    affected[key, default: []].formUnion(domain)
+                }
+                changes.invalidateMetadata(affected)
+                try Task.checkCancellation()
+            } else {
+                for (key, domain) in dependencies { changes.invalidate(keys: key.map { [$0] }, domains: domain) }
+            }
             try modelContext.save()
             return value
         }
@@ -67,7 +97,7 @@ import CoreData
             let domain: UserProjectionDomain = switch parts.first {
             case "position": .position
             case "opened": .opened
-            case "metadata": .metadata
+            case "metadata": parts.count == 3 ? [.metadata, .metadataField(parts[2])] : .metadata
             case "chapter": .chapter
             case "palette", "shelf-reference", "source-decoding": []
             default: .all
@@ -116,8 +146,31 @@ struct UserProjectionDomain: OptionSet, Sendable {
     static let chapter = Self(rawValue: 4)
     static let statistics = Self(rawValue: 8)
     static let opened = Self(rawValue: 16)
+    static let author = Self(rawValue: 32)
+    static let cover = Self(rawValue: 64)
+    static let tags = Self(rawValue: 128)
+    static let status = Self(rawValue: 256)
+    static let synopsis = Self(rawValue: 512)
+    static let fixedMetadata: [(String, Self)] = [("author", .author), ("cover", .cover), ("status", .status), ("synopsis", .synopsis)]
+    static func metadataField(_ name: String) -> Self {
+        if name.hasPrefix("tag-") { return .tags }
+        return fixedMetadata.first { $0.0 == name }?.1 ?? []
+    }
+    static let metadataFields: Self = [.author, .cover, .tags, .status, .synopsis]
+    static let card: Self = [.author, .cover]
     static let reading: Self = [.position, .metadata, .chapter, .opened]
-    static let all: Self = [.position, .metadata, .chapter, .statistics, .opened]
+    static let all: Self = [.reading, .statistics, .metadataFields]
+    static let revisionBits = [position, metadata, chapter, statistics, opened, author, cover, tags, status, synopsis].map(\.rawValue)
+}
+
+struct UserProjectionFilter: Sendable, Equatable {
+    var coverOnly: Set<String> = []
+    var openedAliasesOnly = false
+    var preserveMetadataWinner = false
+
+    var cacheKey: String {
+        "\(openedAliasesOnly)-\(preserveMetadataWinner)-" + coverOnly.sorted().joined(separator: ",")
+    }
 }
 
 final class UserInputRevision: @unchecked Sendable {
@@ -129,15 +182,25 @@ final class UserInputRevision: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         guard !domains.isEmpty else { return }
         value &+= 1
-        for bit in [1, 2, 4, 8, 16] where domains.rawValue & bit != 0 {
+        for bit in UserProjectionDomain.revisionBits where domains.rawValue & bit != 0 {
             if let keys { for key in keys { books[key, default: [:]][bit] = value } }
             else { global[bit] = value }
+        }
+    }
+    func invalidateMetadata(_ affected: [String: UserProjectionDomain]) {
+        guard !affected.isEmpty else { return }
+        lock.lock(); defer { lock.unlock() }
+        value &+= 1
+        for (key, domain) in affected {
+            for bit in UserProjectionDomain.revisionBits where domain.rawValue & bit != 0 {
+                books[key, default: [:]][bit] = value
+            }
         }
     }
     func version(keys: [String]?, domains: UserProjectionDomain) -> UInt64 {
         lock.lock(); defer { lock.unlock() }
         var result: UInt64 = 0
-        for bit in [1, 2, 4, 8, 16] where domains.rawValue & bit != 0 {
+        for bit in UserProjectionDomain.revisionBits where domains.rawValue & bit != 0 {
             result = max(result, global[bit] ?? 0)
             if let keys { for key in keys { result = max(result, books[key]?[bit] ?? 0) } }
             else { for revisions in books.values { result = max(result, revisions[bit] ?? 0) } }

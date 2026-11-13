@@ -4,9 +4,9 @@ import Foundation
 final class MetadataImportSession: @unchecked Sendable {
     let document: MetadataDocument
     let configuration: UUID
-    private var drafts: [URL] = []
+    private var drafts: Set<URL> = []
     init(document: MetadataDocument, configuration: UUID) { self.document = document; self.configuration = configuration }
-    func retainDraft(_ url: URL) { drafts.append(url) }
+    func retainDrafts(_ urls: [URL]) { drafts.formUnion(urls) }
     deinit { for url in drafts { try? FileManager.default.removeItem(at: url) } }
 }
 
@@ -67,15 +67,13 @@ struct MetadataPreviewBook: Identifiable, Sendable {
     let title: String
     enum Source: Sendable {
         case none
-        case unique(LibraryEntry)
+        case unique(MetadataExchangeFile)
         case multiple(Int)
 
-        init(_ sources: [LibraryEntry]) {
-            switch sources.count {
-            case 0: self = .none
-            case 1: self = .unique(sources[0])
-            default: self = .multiple(sources.count)
-            }
+        init(_ book: MetadataExchangeBook?) {
+            if let source = book?.uniqueSource { self = .unique(source) }
+            else if let book { self = .multiple(Int(book.sourceCount)) }
+            else { self = .none }
         }
         var count: Int {
             switch self {
@@ -99,7 +97,7 @@ struct MetadataPreviewBook: Identifiable, Sendable {
     var match: Match
     var messages: [String] = []
     var base: BookMetadata? { if case .matched(let book) = match { book.base } else { nil } }
-    var source: LibraryEntry? {
+    var source: MetadataExchangeFile? {
         guard case .matched(let book) = match, case .unique(let source) = book.source else { return nil }
         return source
     }
@@ -251,11 +249,14 @@ struct MetadataImportOutcome: Identifiable, Sendable {
     let id: String
     let title: String
     let saved: Bool
-    let message: String?
+    var message: String?
     var cover: BookCoverAsset? = nil
     var savedFieldCount = 0
     var renamed = false
+    var renameAttempted = false
     var summary: String {
+        if !saved && renamed { return String(localized: "文件已改名", table: "MetadataExchange") }
+        if !saved && renameAttempted { return message ?? String(localized: "文件未改名", table: "MetadataExchange") }
         guard saved else { return message ?? String(localized: "尚未开始保存", table: "MetadataExchange") }
         var parts = [String(localized: "\(savedFieldCount) 项资料已保存", table: "MetadataExchange")]
         if renamed { parts.append(String(localized: "文件已改名", table: "MetadataExchange")) }
@@ -266,6 +267,49 @@ struct MetadataBatchResult: Sendable {
     var outcomes: [MetadataImportOutcome] = []
     var remaining: [MetadataImportOutcome] = []
     var cancelled = false
+    var requiresNewPreview = false
+    var failure: String?
+    var remainingRenames: [MetadataImportOutcome] = []
+}
+
+struct MetadataBatchBudget: Equatable, Sendable {
+    var keys: Int
+    var text: Int
+    var covers: Int
+    static let target = Self(keys: 512, text: 4 * 1024 * 1024, covers: 4 * 1024 * 1024)
+    static let zero = Self(keys: 0, text: 0, covers: 0)
+
+    func adding(_ cost: Self, within limit: Self) -> Self? {
+        guard keys <= limit.keys, text <= limit.text, covers <= limit.covers,
+              cost.keys <= limit.keys - keys, cost.text <= limit.text - text, cost.covers <= limit.covers - covers else { return nil }
+        return .init(keys: keys + cost.keys, text: text + cost.text, covers: covers + cost.covers)
+    }
+}
+
+struct MetadataApplyProgress: Sendable {
+    enum Phase: Sendable { case saving, renaming }
+    let phase: Phase
+    let completed: Int
+    let total: Int
+}
+
+enum MetadataPreparationProgress: Sendable {
+    case readingPackage
+    case matchingBooks(Int)
+    case preparingBooks(completed: Int, total: Int)
+}
+
+struct MetadataConfirmedImport: Sendable {
+    let session: MetadataImportSession
+    let books: [MetadataPreviewBook]
+    let writeIndices: [Int]
+    let renameIndices: [Int]
+    let store: UserDataStore
+    let storeID: UUID
+    let deletionTokens: [String: UUID]
+    var committed = 0
+    var renamedThrough = 0
+    var outcomes: [Int: MetadataImportOutcome] = [:]
 }
 struct MetadataSkippedFile: Identifiable, Sendable {
     let id: String

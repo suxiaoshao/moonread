@@ -1,9 +1,11 @@
 //! Disposable inputs for Rust calculations. These TEMP tables never enter reader.sqlite3.
+use super::reading_fact::FactData;
 use crate::*;
 use rusqlite::Connection;
 use rusqlite::OptionalExtension;
 use rusqlite::params;
-use serde::Deserialize;
+use rusqlite::types::Value;
+use serde::{Deserialize, de::IgnoredAny};
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -17,13 +19,22 @@ struct UserProjection {
     #[serde(default)]
     metadata: Vec<BookMetadata>,
     #[serde(default)]
-    facts: Vec<FactInput>,
+    // Reject obsolete fact input explicitly; never drop data silently.
+    facts: Vec<IgnoredAny>,
     #[serde(default)]
     corrections: Vec<ChapterInput>,
     #[serde(default)]
     generation: u64,
     #[serde(default = "enabled")]
     enabled: bool,
+}
+fn parse_projection(json: &str) -> Result<UserProjection> {
+    let value: UserProjection =
+        serde_json::from_str(json).map_err(|_| ReaderError::InvalidSettings)?;
+    if !value.facts.is_empty() {
+        return Err(ReaderError::InvalidSettings);
+    }
+    Ok(value)
 }
 fn enabled() -> bool {
     true
@@ -41,13 +52,6 @@ struct OpenedInput {
     content_key: String,
     updated: i64,
     preferred: Option<String>,
-}
-#[derive(Deserialize)]
-struct FactInput {
-    content_key: String,
-    title: String,
-    device: String,
-    slice: ReadingSlice,
 }
 #[derive(Deserialize)]
 struct ChapterInput {
@@ -76,10 +80,15 @@ pub(crate) fn initialize(db: &Connection) -> Result<()> {
     UNION ALL SELECT o.book_id,o.start_utf8,o.title,o.level,o.start_char_count,o.body_char_count FROM chapter_overrides o WHERE o.excluded=0 AND NOT EXISTS(SELECT 1 FROM import_chapters a WHERE a.book_id=o.book_id AND a.start_utf8=o.start_utf8);
     CREATE TEMP TABLE statistics_preferences(singleton INTEGER,enabled INTEGER,generation INTEGER);
     INSERT INTO statistics_preferences VALUES(1,1,0);
-    CREATE TEMP TABLE reading_activity(id TEXT PRIMARY KEY,session_id TEXT,book_id TEXT,content_key TEXT,title TEXT,device_id TEXT,started_ms INTEGER,ended_ms INTEGER,local_day INTEGER,utc_offset_seconds INTEGER,preview INTEGER,exposures TEXT,visit_id TEXT,deleted INTEGER DEFAULT 0);", source_order = crate::library::bookshelf::PREFERRED_SOURCE_ORDER))?;
+    CREATE TEMP TABLE reading_activity(id TEXT PRIMARY KEY,session_id TEXT,book_id TEXT,content_key TEXT,title TEXT,device_id TEXT,started_ms INTEGER,ended_ms INTEGER,local_day INTEGER,utc_offset_seconds INTEGER,preview INTEGER,first_exposure_start,visit_id TEXT,deleted INTEGER DEFAULT 0,exposure_slot INTEGER);", source_order = crate::library::bookshelf::PREFERRED_SOURCE_ORDER))?;
     Ok(())
 }
-fn apply(db: &mut Connection, value: &UserProjection) -> Result<()> {
+struct FactRow<'a> {
+    content_key: &'a str,
+    data: &'a FactData,
+}
+
+fn apply(db: &mut Connection, value: &UserProjection, facts: &[FactRow<'_>]) -> Result<Vec<bool>> {
     let tx = db.transaction()?;
     tx.execute_batch("DELETE FROM user_positions; DELETE FROM user_opened; DELETE FROM book_metadata; DELETE FROM chapter_overrides; DELETE FROM reading_activity;")?;
     tx.execute(
@@ -111,8 +120,9 @@ fn apply(db: &mut Connection, value: &UserProjection) -> Result<()> {
             ],
         )?;
     }
-    for f in &value.facts {
-        let s = &f.slice;
+    let mut inserted = Vec::with_capacity(facts.len());
+    for (slot, f) in facts.iter().enumerate() {
+        let s = &f.data.slice;
         let id: Option<String> = tx
             .query_row(
                 "SELECT id FROM main.books WHERE content_sha256=?1",
@@ -120,7 +130,20 @@ fn apply(db: &mut Connection, value: &UserProjection) -> Result<()> {
                 |r| r.get(0),
             )
             .optional()?;
-        tx.execute("INSERT OR IGNORE INTO reading_activity VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,0)",params![s.id,s.session_id,id,f.content_key,f.title,f.device,s.started_ms,s.ended_ms,s.local_day,s.utc_offset_seconds,s.preview,serde_json::to_string(&s.exposures).map_err(|_|ReaderError::InvalidSettings)?,s.visit_id])?;
+        let first = f.data.exposures.first().map_or(0, |e| e.start_utf8);
+        // Legacy json_extract uses a SQLite Real outside signed range. Keep
+        // that type so only the activity detail read fails, not the snapshot.
+        let first = i64::try_from(first).map_or_else(|_| Value::Real(first as f64), Value::Integer);
+        let exposure_slot = if f.data.exposures.is_empty() {
+            None
+        } else {
+            Some(i64::try_from(slot).map_err(|_| ReaderError::InvalidRange)?)
+        };
+        let count = tx.execute(
+            "INSERT OR IGNORE INTO reading_activity VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,0,?14)",
+            params![s.id,s.session_id,id,f.content_key,f.data.title,f.data.device,s.started_ms,s.ended_ms,s.local_day,s.utc_offset_seconds,s.preview,first,s.visit_id,exposure_slot],
+        )?;
+        inserted.push(count != 0);
     }
     for c in &value.corrections {
         let id: Option<String> = tx
@@ -147,16 +170,37 @@ fn apply(db: &mut Connection, value: &UserProjection) -> Result<()> {
         }
     }
     tx.commit()?;
-    Ok(())
+    Ok(inserted)
 }
 #[uniffi::export]
 impl ReaderCore {
     /// A query owns its complete user input. It never changes the core's shared
     /// connections; subsequent queries cannot alter this snapshot or its jobs.
     pub fn query_snapshot(&self, json: String) -> Result<Arc<ReaderQuery>> {
-        let value: UserProjection =
-            serde_json::from_str(&json).map_err(|_| ReaderError::InvalidSettings)?;
-        self.snapshot_with_projection(value)
+        let value = parse_projection(&json)?;
+        self.snapshot_with_projection(&value, &[], FactGeometry::Full)
+    }
+
+    /// A non-fact projection plus Swift's store-local winners, already
+    /// filtered by date, in formal then pending order.
+    pub fn query_snapshot_with_facts(
+        &self,
+        non_fact_json: String,
+        formal: Option<FactQuerySelection>,
+        pending: Option<FactQuerySelection>,
+        geometry: FactGeometry,
+    ) -> Result<Arc<ReaderQuery>> {
+        let value = parse_projection(&non_fact_json)?;
+        let mut rows = Vec::new();
+        for selection in [&formal, &pending].into_iter().flatten() {
+            selection.try_each(|item| {
+                rows.push(FactRow {
+                    content_key: &item.content_key,
+                    data: &item.fact.data,
+                });
+            })?;
+        }
+        self.snapshot_with_projection(&value, &rows, geometry)
     }
 
     /// Keep the details' complete records for selected books and fill in
@@ -166,8 +210,7 @@ impl ReaderCore {
         json: String,
         activity: Arc<ReaderQuery>,
     ) -> Result<Arc<ReaderQuery>> {
-        let mut value: UserProjection =
-            serde_json::from_str(&json).map_err(|_| ReaderError::InvalidSettings)?;
+        let mut value = parse_projection(&json)?;
         {
             let db = activity.core.read_lock()?;
             let mut positions = db.prepare("SELECT content_key,last_read FROM user_positions")?;
@@ -207,7 +250,7 @@ impl ReaderCore {
             value.positions.extend(ranks);
             value.opened.extend(opened);
         }
-        self.snapshot_with_projection(value)
+        self.snapshot_with_projection(&value, &[], FactGeometry::Full)
     }
     pub fn validate_chapter_offset(&self, book_id: String, offset_utf8: u64) -> Result<()> {
         let db = self.read_lock()?;
@@ -232,20 +275,44 @@ impl ReaderCore {
 }
 
 impl ReaderCore {
-    fn snapshot_with_projection(&self, value: UserProjection) -> Result<Arc<ReaderQuery>> {
-        let open = || -> Result<Connection> {
+    fn snapshot_with_projection(
+        &self,
+        value: &UserProjection,
+        facts: &[FactRow<'_>],
+        geometry: FactGeometry,
+    ) -> Result<Arc<ReaderQuery>> {
+        let open = || -> Result<(Connection, Vec<bool>)> {
             let mut db = Connection::open(&self.database_path)?;
             db.busy_timeout(std::time::Duration::from_secs(5))?;
             db.execute_batch("PRAGMA foreign_keys=ON;")?;
             initialize(&db)?;
-            apply(&mut db, &value)?;
+            let inserted = apply(&mut db, value, facts)?;
             db.execute_batch("PRAGMA query_only=ON;")?;
-            Ok(db)
+            Ok((db, inserted))
         };
+        let (db, db_inserted) = open()?;
+        let (reader, reader_inserted) = open()?;
+        // The slot is the input index in both connections. Retain only if at
+        // least one connection inserted that input. No entire prepared object
+        // or consumed fact (title, key, etc.) is retained by a query.
+        let exposures = facts
+            .iter()
+            .zip(db_inserted.into_iter().zip(reader_inserted))
+            .map(|(row, (in_db, in_reader))| {
+                if !(in_db || in_reader) {
+                    return None;
+                }
+                let first = row.data.exposures.first()?;
+                Some(match geometry {
+                    FactGeometry::Full => ExposureSlot::Full(row.data.exposures.clone()),
+                    FactGeometry::FirstExposure => ExposureSlot::First(first.clone()),
+                })
+            })
+            .collect();
         Ok(Arc::new(ReaderQuery {
             core: ReaderCore {
-                db: Mutex::new(open()?),
-                reader: Mutex::new(open()?),
+                db: Mutex::new(db),
+                reader: Mutex::new(reader),
                 imports: Mutex::new(
                     self.imports
                         .lock()
@@ -260,9 +327,25 @@ impl ReaderCore {
                 ),
                 database_path: self.database_path.clone(),
             },
+            exposures,
         }))
     }
 }
+
+pub(crate) enum ExposureSlot {
+    Full(Arc<[ReadingExposure]>),
+    First(ReadingExposure),
+}
+
+impl ExposureSlot {
+    pub(crate) fn values(&self) -> &[ReadingExposure] {
+        match self {
+            Self::Full(exposures) => exposures,
+            Self::First(exposure) => std::slice::from_ref(exposure),
+        }
+    }
+}
+
 #[uniffi::export]
 pub fn encode_reader_settings(value: ReaderSettings) -> Result<String> {
     serde_json::to_string(&value).map_err(|_| ReaderError::InvalidSettings)
@@ -284,14 +367,10 @@ pub fn encode_book_metadata(value: BookMetadata) -> Result<String> {
 pub fn decode_book_metadata(json: String) -> Result<BookMetadata> {
     serde_json::from_str(&json).map_err(|_| ReaderError::InvalidSettings)
 }
-#[uniffi::export]
-pub fn encode_reading_slice(value: ReadingSlice) -> Result<String> {
-    serde_json::to_string(&value).map_err(|_| ReaderError::InvalidSettings)
-}
-
 #[derive(uniffi::Object)]
 pub struct ReaderQuery {
     core: ReaderCore,
+    exposures: Box<[Option<ExposureSlot>]>,
 }
 #[uniffi::export]
 impl ReaderQuery {
@@ -334,7 +413,7 @@ impl ReaderQuery {
         self.core.chapter_structure(book_id)
     }
     pub fn chapter_outline(&self, book_id: String) -> Result<ChapterOutline> {
-        self.core.chapter_outline(book_id)
+        self.core.chapter_outline(book_id, &self.exposures)
     }
     pub fn reading_location(&self, book_id: String, percentage: f64) -> Result<ReadingLocation> {
         self.core.reading_location(book_id, percentage)
@@ -375,6 +454,13 @@ impl ReaderQuery {
         let db = self.core.read_lock()?;
         crate::reading::book_details::has_reading_position(&db, &content_sha256)
     }
+    pub fn metadata_exchange_read(
+        &self,
+        request: crate::MetadataExchangeRequest,
+        inventory: Arc<crate::MetadataExchangeInventory>,
+    ) -> Result<Option<crate::MetadataExchangeRead>> {
+        self.core.metadata_exchange_read(request, inventory)
+    }
     pub fn book_filter_options(&self, shelf_id: Option<String>) -> Result<BookFilterOptions> {
         self.core.book_filter_options(shelf_id)
     }
@@ -386,11 +472,20 @@ impl ReaderQuery {
     ) -> Result<Vec<LibraryEntry>> {
         self.core.library_entries(shelf_id, parent_path, sort)
     }
+    pub fn library_directory_cards(
+        &self,
+        shelf_id: String,
+        parent_path: String,
+        sort: LibrarySort,
+    ) -> Result<Vec<LibraryEntry>> {
+        self.core
+            .library_directory_cards(shelf_id, parent_path, sort)
+    }
     pub fn library_directory_detail_keys(
         &self,
         shelf_id: String,
         parent_path: String,
-    ) -> Result<Vec<ReadingKey>> {
+    ) -> Result<crate::LibraryDirectoryDetailKeys> {
         self.core
             .library_directory_detail_keys(shelf_id, parent_path)
     }
@@ -409,6 +504,28 @@ impl ReaderQuery {
     ) -> Result<Vec<LibrarySearchCandidate>> {
         self.core.library_search_candidates(scope, books_only)
     }
+    pub fn all_library_book_cards(&self, shelf_id: String) -> Result<Vec<LibraryEntry>> {
+        self.core.all_library_book_cards(shelf_id)
+    }
+    pub fn all_library_tag_cards(&self, shelf_id: String) -> Result<crate::LibraryTaggedCards> {
+        self.core.all_library_tag_cards(shelf_id)
+    }
+    pub fn library_search_matches(
+        &self,
+        scope: crate::CatalogueScope,
+        books_only: bool,
+    ) -> Result<Vec<LibrarySearchCandidate>> {
+        self.core.library_search_matches(scope, books_only)
+    }
+    pub fn library_search_detail_keys(
+        &self,
+        file_ids: Vec<String>,
+    ) -> Result<crate::LibraryDirectoryDetailKeys> {
+        self.core.library_search_detail_keys(file_ids)
+    }
+    pub fn library_search_cards(&self, file_ids: Vec<String>) -> Result<Vec<LibraryEntry>> {
+        self.core.library_search_cards(file_ids)
+    }
     pub fn all_library_books(&self, shelf_id: String) -> Result<Vec<LibraryEntry>> {
         self.core.all_library_books(shelf_id)
     }
@@ -423,6 +540,24 @@ impl ReaderQuery {
     }
     pub fn system_reading_sources(&self, content_sha256: String) -> Result<Vec<LibraryEntry>> {
         self.core.system_reading_sources(content_sha256)
+    }
+    pub fn book_information_source(&self, target: BookTarget) -> Result<Option<LibraryEntry>> {
+        self.core.book_information_source(target)
+    }
+    pub fn recent_library_ranking(&self, limit: u32) -> Result<Arc<crate::RecentLibraryRanking>> {
+        self.core.recent_library_ranking(limit)
+    }
+    pub fn recent_library_ranking_matches(
+        &self,
+        ranking: Arc<crate::RecentLibraryRanking>,
+    ) -> Result<bool> {
+        self.core.recent_library_ranking_matches(&ranking)
+    }
+    pub fn hydrate_recent_library_cards(
+        &self,
+        ranking: Arc<crate::RecentLibraryRanking>,
+    ) -> Result<Option<Vec<LibraryEntry>>> {
+        self.core.hydrate_recent_library(&ranking, true)
     }
     pub fn recent_library_entries(&self, limit: u32) -> Result<Vec<LibraryEntry>> {
         self.core.recent_library_entries(limit)
@@ -451,5 +586,121 @@ impl ReaderQuery {
     ) -> Result<Vec<ReadingActivity>> {
         self.core
             .reading_activities(first_day, last_day, content_key.map(serialize_reading_key))
+    }
+}
+
+#[cfg(test)]
+mod fact_snapshot_tests {
+    use super::*;
+    use crate::user::reading_fact::tests::{payload, pick};
+
+    #[test]
+    fn exposure_slots_survive_input_release_and_keep_snapshots_isolated() -> Result<()> {
+        let root = tempfile::tempdir()?;
+        let core = ReaderCore::new(root.path().to_string_lossy().into())?;
+        let book = core.create_sample_book()?;
+        let key = serialize_reading_key(book.reading_key.clone());
+        let first = r#"{"start_utf8":16,"end_utf8":32,"duration_ms":3000}"#;
+        let second = r#"{"start_utf8":200,"end_utf8":250,"duration_ms":3000}"#;
+        let full = format!("[{first},{second}]");
+        let wide = r#"[{"start_utf8":18446744073709551615,"end_utf8":32,"duration_ms":3000}]"#;
+        let prepare = |base, rows: Vec<String>| -> Result<Arc<PreparedReadingFacts>> {
+            let count = rows.len() as u64;
+            let batch = decode_fact_batch(base, rows)?;
+            let picks = (base..base + count)
+                .map(|ordinal| pick(&batch, ordinal, &key))
+                .collect();
+            seal_prepared_facts(vec![FactBatchSelection { batch, picks }])
+        };
+        let formal = prepare(
+            0,
+            vec![payload("winner", 12, &full), payload("empty", 13, "[]")],
+        )?;
+        let pending = prepare(
+            0,
+            vec![
+                payload("winner", 12, &format!("[{second}]")),
+                payload("wide", 14, wide),
+            ],
+        )?;
+        let selected = Arc::downgrade(&formal.selected[0].fact.data.exposures);
+        let ignored = Arc::downgrade(&pending.selected[0].fact.data.exposures);
+        let choose = |prepared: Arc<PreparedReadingFacts>, indices| FactQuerySelection {
+            prepared_id: prepared.prepared_id(),
+            prepared,
+            indices,
+        };
+        // A formal candidate omitted by Swift's clear/date rules must not
+        // hide the selected pending fact with the same ID.
+        let pending_only = core.query_snapshot_with_facts(
+            "{}".into(),
+            Some(choose(formal.clone(), Some(vec![]))),
+            Some(choose(pending.clone(), Some(vec![0]))),
+            FactGeometry::FirstExposure,
+        )?;
+        let pending_activities = pending_only.reading_activities(12, 14, None)?;
+        assert_eq!(pending_activities.len(), 1);
+        assert_eq!(pending_activities[0].start_utf8, 200);
+
+        let all = core.query_snapshot_with_facts(
+            "{}".into(),
+            Some(choose(formal.clone(), None)),
+            Some(choose(pending, None)),
+            FactGeometry::Full,
+        )?;
+        assert!(ignored.upgrade().is_none());
+
+        let first_only = core.query_snapshot_with_facts(
+            "{}".into(),
+            Some(choose(formal, Some(vec![0]))),
+            None,
+            FactGeometry::FirstExposure,
+        )?;
+        let slots = |db: &Connection| -> rusqlite::Result<Vec<(String, Option<i64>)>> {
+            db.prepare("SELECT id,exposure_slot FROM reading_activity ORDER BY id")?
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect()
+        };
+        let expected = [
+            ("empty".into(), None),
+            ("wide".into(), Some(3)),
+            ("winner".into(), Some(0)),
+        ];
+        assert_eq!(slots(&all.core.db.lock().unwrap())?, expected);
+        assert_eq!(slots(&all.core.reader.lock().unwrap())?, expected);
+        assert!(selected.upgrade().is_some());
+
+        // The two immutable queries can read on separate threads; a newer
+        // first-exposure projection cannot replace the older complete geometry.
+        std::thread::scope(|scope| -> Result<()> {
+            let read_old = scope.spawn(|| all.chapter_outline(book.id.clone()));
+            let read_new = scope.spawn(|| first_only.chapter_outline(book.id.clone()));
+            assert_eq!(
+                read_old.join().unwrap()?.items[0].covered_characters,
+                Some(17)
+            );
+            assert_eq!(
+                read_new.join().unwrap()?.items[0].covered_characters,
+                Some(0)
+            );
+            Ok(())
+        })?;
+        assert_eq!(
+            all.statistics_overview(12, 14, None)?.total_duration_ms,
+            9000
+        );
+        assert_eq!(all.reading_activities(12, 12, None)?[0].start_utf8, 16);
+        assert_eq!(all.reading_activities(13, 13, None)?[0].start_utf8, 0);
+        assert!(matches!(
+            all.reading_activities(14, 14, None),
+            Err(ReaderError::Storage { message }) if message.contains("Invalid column type Real")
+        ));
+        drop(all);
+        assert!(selected.upgrade().is_none());
+        assert_eq!(
+            first_only.reading_activities(12, 12, None)?[0].start_utf8,
+            16
+        );
+        Ok(())
     }
 }

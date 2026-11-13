@@ -32,6 +32,7 @@ pub struct ReadingMoment {
 
 /// A bounded observation of visible text. It is evidence, not a claim of read coverage.
 #[derive(Clone, Debug, Serialize, Deserialize, uniffi::Record)]
+#[serde(deny_unknown_fields)]
 pub struct ReadingExposure {
     pub start_utf8: u64,
     pub end_utf8: u64,
@@ -39,6 +40,7 @@ pub struct ReadingExposure {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, uniffi::Record)]
+#[serde(deny_unknown_fields)]
 pub struct ReadingSlice {
     pub id: String,
     pub session_id: String,
@@ -50,6 +52,7 @@ pub struct ReadingSlice {
     pub local_day: i64,
     pub utc_offset_seconds: i32,
     pub preview: bool,
+    #[serde(deserialize_with = "super::reading_fact::deserialize_exposures")]
     pub exposures: Vec<ReadingExposure>,
 }
 
@@ -376,7 +379,7 @@ impl ReaderCore {
         content_key: Option<String>,
     ) -> Result<Vec<ReadingActivity>> {
         let db = self.read_lock()?;
-        let mut query = db.prepare("SELECT id,session_id,content_key,book_id,title,started_ms,ended_ms,local_day,utc_offset_seconds,preview,COALESCE(json_extract(exposures,'$[0].start_utf8'),0) FROM reading_activity WHERE deleted=0 AND local_day>=?1 AND local_day<=?2 AND (?3 IS NULL OR content_key=?3) ORDER BY started_ms,id")?;
+        let mut query = db.prepare("SELECT id,session_id,content_key,book_id,title,started_ms,ended_ms,local_day,utc_offset_seconds,preview,first_exposure_start FROM reading_activity WHERE deleted=0 AND local_day>=?1 AND local_day<=?2 AND (?3 IS NULL OR content_key=?3) ORDER BY started_ms,id")?;
         let rows = query
             .query_map(params![first_day, last_day, content_key], |r| {
                 Ok(ReadingActivity {
@@ -427,7 +430,7 @@ mod tests {
             let db = core.read_lock().unwrap();
             // Populate the same effective TEMP projection used after fact/clear adjudication.
             for day in 80..=100 {
-                db.execute("INSERT INTO reading_activity(id,session_id,content_key,book_id,title,started_ms,ended_ms,local_day,utc_offset_seconds,preview,exposures,deleted) VALUES(?1,'s','key',NULL,'synthetic',0,60000,?2,0,0,'[]',0)", params![format!("day-{day}"),day]).unwrap();
+                db.execute("INSERT INTO reading_activity(id,session_id,content_key,book_id,title,started_ms,ended_ms,local_day,utc_offset_seconds,preview,first_exposure_start,deleted) VALUES(?1,'s','key',NULL,'synthetic',0,60000,?2,0,0,0,0)", params![format!("day-{day}"),day]).unwrap();
             }
         }
         let summary = core.statistics_widget_summary(100, 99).unwrap();

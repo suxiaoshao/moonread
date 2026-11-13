@@ -61,10 +61,19 @@ final class LibraryQueryRulesTests: XCTestCase {
         } ?? .unidentified(fileId: name)
         let item: Moonread.LibraryItem = folder ? .folder(row: .init(childBookCount: 0, coverPreviews: []))
             : .book(row: .init(resolution: resolution, needsDownload: false, positionUtf8: 0, byteCount: 0,
-                              chapterTitle: nil, preferred: false, metadata: metadata))
+                              chapterTitle: nil, preferred: false, metadata: metadata, cardMetadata: nil))
         let entry = LibraryEntry(id: name, shelfId: "s", shelfName: "Shelf", relativePath: name, parentPath: "", name: name,
                                  size: 0, modified: 0, lastRead: recent, item: item)
-        return .init(entry: entry, naturalNameOrdinal: ordinal, naturalOrderOrdinal: ordinal, resolvedMetadata: metadata)
+        return .init(entry: entry, naturalNameOrdinal: ordinal, naturalOrderOrdinal: ordinal, resolvedMetadata: metadata, matchFields: nil)
+    }
+    func testReplacingBookMetadataInvalidatesNarrowCardPresentation() throws {
+        var entry = candidate("fixture.txt", ordinal: 0).entry
+        var row = try XCTUnwrap(entry.bookRow)
+        row.cardMetadata = .init(author: "Stale card", cover: nil)
+        entry.item = .book(row: row)
+        let actual = BookMetadata(sha: String(repeating: "a", count: 64), author: "New full value", synopsis: "", tags: [], cover: nil, status: .unread)
+        XCTAssertEqual(entry.withMetadata(actual).displayMetadata?.author, actual.author)
+        XCTAssertNil(entry.withMetadata(nil).displayMetadata)
     }
     func testBookMatchingProfilesKeepTheirExistingContracts() {
         let metadata = BookMetadata(sha: String(repeating: "a", count: 64), author: "林澄", synopsis: "月港漫游", tags: ["武侠", "原创"], cover: nil, status: .paused)

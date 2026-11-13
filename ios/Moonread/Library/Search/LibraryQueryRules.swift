@@ -13,6 +13,44 @@ extension LibraryQueryRules {
         var nameOrder = false
         var configuration = BookSearchConfiguration()
     }
+    struct SearchMetadata {
+        let author: String
+        let synopsis: String
+        let tags: [String]
+        let status: BookReadingStatus
+        init(_ value: BookMetadata) {
+            author = value.author; synopsis = value.synopsis; tags = value.tags; status = value.status
+        }
+        init(_ value: LibrarySearchFields) {
+            author = value.author; synopsis = ""; tags = value.tags; status = value.status
+        }
+    }
+    static func matchDomains(_ spec: SearchSpec) -> UserProjectionDomain {
+        // A raw empty-author filter distinguishes an absent object from a
+        // default object, so it uses the full presence boundary.
+        if spec.author == "" { return [.position, .metadata] }
+        var domains: UserProjectionDomain = .position // includes folder activity and default reading state
+        if !literalQuery(spec.query).isEmpty || spec.author != nil || spec.configuration.sorts.contains(where: { $0.field == .author }) {
+            domains.insert(.author)
+        }
+        if !spec.tags.isEmpty { domains.insert(.tags) }
+        if spec.status != nil { domains.insert(.status) }
+        func add(_ node: BookSearchNode) {
+            switch node.kind {
+            case .rule(let predicate):
+                switch predicate.field {
+                case .author: domains.insert(.author)
+                case .tag: domains.insert(.tags)
+                case .status: domains.insert(.status)
+                case .shelf: break
+                }
+            case .group(_, let children):
+                for child in children { add(child) }
+            }
+        }
+        if spec.configuration.booksOnly { add(spec.configuration.root) }
+        return domains
+    }
     static func selectionMatches(_ title: String, query: String) -> Bool {
         query.isEmpty || title.localizedStandardContains(query)
     }
@@ -78,7 +116,7 @@ extension LibraryQueryRules {
         let ranked = candidates.compactMap { candidate -> (LibrarySearchCandidate, LibraryEntry, Int)? in
             var row = candidate.entry
             if !literal { row = row.withMetadata(candidate.resolvedMetadata) }
-            let metadata = row.metadata
+            let metadata = literal ? candidate.storedSearchMetadata : candidate.resolvedSearchMetadata
             if literal {
                 if spec.configuration.booksOnly || spec.status != nil { guard !row.directory else { return nil } }
                 if spec.author != nil || !spec.tags.isEmpty {
@@ -93,7 +131,7 @@ extension LibraryQueryRules {
                 else if !row.directory, metadata.map({ literalContains($0.author.lowercased(), query) || pinyinRank($0.author) != nil }) == true { rank = 2 }
                 else { return nil }
                 if let status = spec.status {
-                    guard let metadata = candidate.resolvedMetadata, statusName(metadata.status) != "other" else { unknownCount += 1; return nil }
+                    guard let metadata = candidate.resolvedSearchMetadata, statusName(metadata.status) != "other" else { unknownCount += 1; return nil }
                     guard statusName(metadata.status) == status else { return nil }
                 }
                 if spec.configuration.booksOnly {
@@ -126,7 +164,7 @@ extension LibraryQueryRules {
                         if (av == 0) != (bv == 0) { return av != 0 }
                         order = av == bv ? .orderedSame : av < bv ? .orderedAscending : .orderedDescending
                     case .author:
-                        let av = a.0.resolvedMetadata?.author ?? "", bv = b.0.resolvedMetadata?.author ?? ""
+                        let av = a.0.resolvedSearchMetadata?.author ?? "", bv = b.0.resolvedSearchMetadata?.author ?? ""
                         if av.isEmpty != bv.isEmpty { return !av.isEmpty }
                         order = compareAuthors(av, bv)
                     }
@@ -148,6 +186,19 @@ extension LibraryQueryRules {
     }
 }
 
+extension LibrarySearchCandidate {
+    var storedSearchMetadata: LibraryQueryRules.SearchMetadata? {
+        if let fields = matchFields { return fields.stored ? .init(fields) : nil }
+        return entry.metadata.map(LibraryQueryRules.SearchMetadata.init)
+    }
+    var resolvedSearchMetadata: LibraryQueryRules.SearchMetadata? {
+        if let fields = matchFields {
+            return entry.readingIdentity?.formalSHA256 == nil ? nil : .init(fields)
+        }
+        return resolvedMetadata.map(LibraryQueryRules.SearchMetadata.init)
+    }
+}
+
 /// A superseded directory response cannot publish into a new input scope.
 /// SwiftUI cancels its task; the token also guards services which finish after cancellation.
 @MainActor
@@ -156,6 +207,7 @@ final class LibraryCatalogueRequest {
         let location: LibraryLocation
         let libraryRevision: Int
         let readingRevision: UInt64
+        var metadataRevision: UInt64 = 0
     }
     private var generation = UUID()
     func read(_ fetch: () async throws -> [LibraryEntry]) async throws -> [LibraryEntry]? {

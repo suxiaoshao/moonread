@@ -108,7 +108,8 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: SystemReadingIntentDelivery.notification).receive(on: DispatchQueue.main)) { _ in
                 library.systemReading.receiveIntent()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { change in
+                guard !change.defersBookMetadataCatalogRefresh else { return }
                 Task { await library.service.scheduleSystemReadingCatalog(immediate: true) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in
@@ -146,6 +147,7 @@ struct MoonreadApp: App {
                 library.systemReading.sceneActive = phase == .active
                 library.fullIndex.scene(active: phase == .active)
                 if phase == .background {
+                    MetadataExchangeModel.shared.sceneDidEnterBackground()
                     Task { await library.service.scheduleSystemReadingCatalog(immediate: true) }
                     BackgroundSave.perform(name: "保存显示偏好") { await themes.flushPreferences(); await readerSettings.flush() }
                     Task { await AppDataService.shared.pauseImports() }

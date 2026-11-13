@@ -12,7 +12,7 @@ struct ReaderScreen: View {
     let onExit: (String?, UInt64) -> Void
     @State private var reviewExitIsNormal = false
     @State private var session = ReaderSession()
-    @State var coverInformation: BookDetails?
+    @State var coverInformation: ReaderCoverInformation?
     @State private var coverRequest = UUID()
     @Environment(LibraryModel.self) private var library
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -281,8 +281,12 @@ struct ReaderScreen: View {
                 session?.editor = nil; session?.chapterDraft = nil
                 if let current = toolSession?.editor { toolSession?.finishEditing(current.id) }
             }
-            if coverInformation == nil, let metadata = openingRequest?.metadataHint {
-                coverInformation = BookDetails(metadata: metadata, body: nil)
+            if coverInformation == nil {
+                if let metadata = openingRequest?.metadataHint {
+                    coverInformation = .details(BookDetails(metadata: metadata, body: nil))
+                } else if let hint = openingRequest?.coverHint {
+                    coverInformation = .hint(hint)
+                }
             }
             await session.open(route, request: openingRequest)
         }
@@ -582,10 +586,10 @@ struct ReaderScreen: View {
             let next = try await AppDataService.shared.details(bookID: id)
             guard !Task.isCancelled, coverRequest == request, session.readingID == id,
                   session.book?.readingKey.formalSHA256 == sha else { return }
-            coverInformation = next
+            coverInformation = .details(next)
         } catch { /* Keep the last successful value; failure is not a cover deletion. */ }
         listening?.updateCover(title: session.book?.title ?? route.title, sha: session.book?.readingKey.formalSHA256,
-            author: coverInformation?.metadata.author, cover: coverInformation?.metadata.cover, service: session.service)
+            author: coverInformation?.author, cover: coverInformation?.cover, service: session.service)
     }
 
     private var bookDetailsTarget: StatisticsRoute {

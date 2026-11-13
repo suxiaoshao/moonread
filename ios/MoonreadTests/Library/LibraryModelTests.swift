@@ -199,7 +199,7 @@ final class LibraryModelReaderIntegrationTests: ReaderIntegrationFixture {
     await gate.waitForEntry()
     XCTAssertEqual(model.home, home)
     await gate.release(); await refresh.value
-    XCTAssertEqual(model.recents.first?.metadata?.author, "Updated"); XCTAssertNil(model.error)
+    XCTAssertEqual(model.recents.first?.displayMetadata?.author, "Updated"); XCTAssertNil(model.error)
     await service.queryFixture(nil)
     let cancelled = Task { @MainActor in
       withUnsafeCurrentTask { $0?.cancel() }

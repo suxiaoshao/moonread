@@ -17,11 +17,34 @@ struct ReadingBackupPreview: Sendable {
 extension AppDataService {
     /// Serializes only local writes/pending transfer/deletion across actor awaits.
     func acquireUserDataOperation() async {
-        if userDataOperationBusy { await withCheckedContinuation { userDataOperationWaiters.append($0) } }
+        if userDataOperationBusy {
+            await withCheckedContinuation { continuation in
+                userDataOperationWaiters.append(.init(id: nil) { _ in continuation.resume() })
+            }
+        }
         else { userDataOperationBusy = true }
     }
+    func acquireCancellableUserDataOperation() async throws {
+        try Task.checkCancellation()
+        guard userDataOperationBusy else { userDataOperationBusy = true; return }
+        let id = UUID()
+        let acquired = await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if Task.isCancelled { continuation.resume(returning: false); return }
+                userDataOperationWaiters.append(.init(id: id) { continuation.resume(returning: $0) })
+            }
+        } onCancel: {
+            Task { await self.cancelUserDataOperationWait(id) }
+        }
+        guard acquired else { throw CancellationError() }
+        // Once handed over, the caller owns the gate even if cancellation raced the handoff.
+    }
+    private func cancelUserDataOperationWait(_ id: UUID) {
+        guard let index = userDataOperationWaiters.firstIndex(where: { $0.id == id }) else { return }
+        userDataOperationWaiters.remove(at: index).resume(false)
+    }
     func releaseUserDataOperation() {
-        if !userDataOperationWaiters.isEmpty { userDataOperationWaiters.removeFirst().resume() }
+        if !userDataOperationWaiters.isEmpty { userDataOperationWaiters.removeFirst().resume(true) }
         else { userDataOperationBusy = false }
     }
     func localReadingWriteLease(_ key: String) -> UUID {
@@ -166,7 +189,7 @@ extension AppDataService {
         // No durable receipt can later delete data that has arrived since then.
         try await pending.deleteReadingData(keys: aliases)
         try await formal.deleteReadingData(keys: keys.union(aliases))
-        for key in keys.union(aliases) { localReadingWriteLeases[key] = UUID() }
+        for key in busyKeys.union(aliases) { localReadingWriteLeases[key] = UUID() }
         for alias in aliases {
             if case let .pending(id) = try parseReadingKey(value: alias) { promotedUserKeys.remove(id); pendingPromotionIDs.remove(id) }
         }

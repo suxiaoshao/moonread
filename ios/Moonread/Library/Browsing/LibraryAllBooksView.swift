@@ -16,6 +16,7 @@ struct LibraryAllBooksView: View {
     @State private var tagGroups: [LibraryTagGroup] = []
     @State private var bookCount: UInt64 = 0
     @State private var loaded = false
+    @State private var metadataRevision: UInt64 = 0
     @State private var loading = LoadingState()
     @Environment(\.theme) private var theme
     @Environment(\.moonreadReduceMotion) private var reduceMotion
@@ -117,7 +118,14 @@ struct LibraryAllBooksView: View {
         .overlay { if loaded && !loading.active && !model.refreshing.active && model.shelfScans[shelfID] == nil && bookCount == 0 { ContentUnavailableView("暂无小说", systemImage: "books.vertical") } }
         .modifier(PageLoadingOverlay(request: model.processingFiles || model.nativeRefreshing ? nil : model.shelfScans[shelfID] ?? loading.request ?? model.refreshing.request,
                                      hasContent: bookCount > 0, label: "正在加载书架", immediate: model.explicitRefresh || model.shelfScans[shelfID] != nil))
-        .task(id: "\(model.revision):\(model.grouping.rawValue)") {
+        .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { change in
+            let domains: UserProjectionDomain = model.grouping == .tags ? [.card, .tags] : .card
+            if change.affectsLibraryMetadata(domains, keys: loaded ?
+                (model.grouping == .tags ? tagGroups.flatMap(\.entries) : groups.flatMap(\.entries)).displayedMetadataKeys : nil) {
+                metadataRevision &+= 1
+            }
+        }
+        .task(id: "\(model.revision):\(model.readingInputRevision):\(metadataRevision):\(model.grouping.rawValue)") {
             let request = loading.begin(); defer { loading.finish(request) }
             do {
                 try await AppDataService.libraryTestLatency()

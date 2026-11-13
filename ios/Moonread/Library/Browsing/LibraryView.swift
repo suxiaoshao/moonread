@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct LibraryView: View {
     @Bindable var model: LibraryModel
+    @State private var metadataRevision: UInt64 = 0
     @Environment(AIService.self) private var ai
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
@@ -47,6 +48,12 @@ struct LibraryView: View {
             }
         }
         .task { await model.load() }
+        .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { change in
+            if change.affectsLibraryMetadata(.card, keys: model.recents.displayedMetadataKeys) { metadataRevision &+= 1 }
+        }
+        .task(id: metadataRevision) {
+            if metadataRevision > 0 { await model.refreshRecentCards() }
+        }
         .modifier(PageLoadingOverlay(request: !themes.loaded || model.busy || model.nativeRefreshing ? nil : (!model.homeReady ? model.loading.request : (model.explicitRefresh ? model.refreshing.request : nil)),
                                      hasContent: !model.shelves.isEmpty, label: "正在加载书架", immediate: model.explicitRefresh))
     }
@@ -168,7 +175,7 @@ private struct ContinueReadingRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 16) {
-                BookCoverView(title: entry.title, compact: true, cover: entry.metadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.metadata?.author).frame(width: 60, height: 84)
+                BookCoverView(title: entry.title, compact: true, cover: entry.displayMetadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author).frame(width: 60, height: 84)
                     .overlay { LibraryFileAvailability(entry: entry, compact: true) }
                 VStack(alignment: .leading, spacing: 8) {
                     Text(verbatim: entry.title).font(.title3.weight(.semibold)).foregroundStyle(Color(uiColor: theme.ink)).lineLimit(2)
@@ -200,7 +207,7 @@ struct RecentBookRow: View {
     var body: some View {
         Button { model.open(entry) } label: {
             HStack(spacing: 15) {
-                BookCoverView(title: entry.title, compact: true, cover: entry.metadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.metadata?.author).frame(width: 44, height: 62)
+                BookCoverView(title: entry.title, compact: true, cover: entry.displayMetadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author).frame(width: 44, height: 62)
                 VStack(alignment: .leading, spacing: 7) {
                     Text(verbatim: entry.title).font(.body.weight(.medium)).foregroundStyle(Color(uiColor: theme.ink)).lineLimit(1)
                     HStack {
@@ -228,7 +235,7 @@ private struct RecentCoverTile<Actions: View>: View {
     var body: some View {
         Menu { actions } label: {
             VStack(alignment: .leading, spacing: LayoutTokens.compact) {
-                BookCoverView(title: entry.title, cover: entry.metadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.metadata?.author).aspectRatio(0.7, contentMode: .fit)
+                BookCoverView(title: entry.title, cover: entry.displayMetadata?.cover, contentSHA256: entry.readingIdentity?.formalSHA256, author: entry.displayMetadata?.author).aspectRatio(0.7, contentMode: .fit)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: entry.title).font(.subheadline.weight(.medium))
                         .foregroundStyle(Color(uiColor: theme.ink)).lineLimit(2, reservesSpace: true)

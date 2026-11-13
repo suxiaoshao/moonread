@@ -42,9 +42,19 @@ pub(crate) fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
 }
 
 pub(crate) fn file_order(a: &crate::LibraryEntry, b: &crate::LibraryEntry) -> std::cmp::Ordering {
-    natural_cmp(&a.name, &b.name)
-        .then_with(|| a.relative_path.cmp(&b.relative_path))
-        .then_with(|| a.id.cmp(&b.id))
+    file_order_fields(
+        (&a.name, &a.relative_path, &a.id),
+        (&b.name, &b.relative_path, &b.id),
+    )
+}
+
+pub(crate) fn file_order_fields(
+    a: (&str, &str, &str),
+    b: (&str, &str, &str),
+) -> std::cmp::Ordering {
+    natural_cmp(a.0, b.0)
+        .then_with(|| a.1.cmp(b.1))
+        .then_with(|| a.2.cmp(b.2))
 }
 
 pub(crate) fn directory_order(

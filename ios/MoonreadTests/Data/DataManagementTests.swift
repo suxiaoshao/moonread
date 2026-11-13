@@ -465,7 +465,7 @@ import XCTest
 }
 
 private extension UserDataStore {
-    func backupTestFactCount(_ key: String) throws -> Int { try visibleFacts(key: key).count }
+    func backupTestFactCount(_ key: String) throws -> Int { try visibleFacts(key: key).facts.count }
 }
 
 private enum BackupTestFailure: Error { case beforeSave }

@@ -154,7 +154,7 @@ final class CallbackURLProvider: NSItemProvider {
       size: 0, modified: 0, lastRead: 0,
       item: directory ? .folder(row: .init(childBookCount: 0, coverPreviews: [])) :
         .book(row: .init(resolution: .unidentified(fileId: path), needsDownload: false,
-          positionUtf8: 0, byteCount: 0, chapterTitle: nil, preferred: false, metadata: nil)))
+          positionUtf8: 0, byteCount: 0, chapterTitle: nil, preferred: false, metadata: nil, cardMetadata: nil)))
   }
 
 }

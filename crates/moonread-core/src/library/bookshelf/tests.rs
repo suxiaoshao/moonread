@@ -276,6 +276,24 @@ fn recent_entries_include_index_only_and_null_visibility() {
     assert_eq!(unopened_position[0].id, "prepared-file");
     assert_eq!(unopened_position[0].book().unwrap().position_utf8, 0);
     assert_eq!(unopened_position[0].last_read, 0);
+    // Equal timestamps keep the preferred representative first. Ranking must
+    // not touch full metadata; hydrating the first hit ignores the unselected row.
+    core.read_lock().unwrap().execute_batch(
+        "UPDATE user_opened SET opened_ms=20 WHERE content_key LIKE 'b%';
+         INSERT INTO user_opened VALUES('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',20,'indexed-copy');
+         INSERT INTO book_metadata VALUES('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','invalid json');",
+    ).unwrap();
+    let ranked = core.recent_library_ranking(1).unwrap();
+    assert!(core.recent_library_ranking_matches(&ranked).unwrap());
+    let first = core
+        .hydrate_recent_library(&ranked, false)
+        .unwrap()
+        .unwrap();
+    assert_eq!(first[0].id, "indexed-copy");
+    assert_eq!(first[0].book().unwrap().position_utf8, 50);
+    let both = core.recent_library_ranking(2).unwrap();
+    assert_eq!(both.reading_keys().unwrap().len(), 2);
+    assert!(core.hydrate_recent_library(&both, false).is_err());
 }
 
 #[test]

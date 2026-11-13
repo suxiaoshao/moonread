@@ -25,10 +25,10 @@ final class UserDataConflictTests: UserDataFixture {
       let before = try await f.service.effectiveQuery(records: .only(try keys.map { try parseReadingKey(value: $0) })).bookInfo(bookId: f.book.id)
       XCTAssertEqual(before.positionUtf8, expected)
       // Scoped projection must carry the exact token used by the reducer.
-      let scoped = try await f.formal.projection(
-        generation: 0, enabled: true, includeFacts: false, keys: [sha, sha])
+      let scoped = try requireStoreProjection(try await f.formal.projection(
+        generation: 0, enabled: true, includeFacts: false, keys: [sha, sha]))
       let json = try XCTUnwrap(
-        JSONSerialization.jsonObject(with: Data(scoped.utf8)) as? [String: Any])
+        JSONSerialization.jsonObject(with: Data(scoped.json.utf8)) as? [String: Any])
       let positions = try XCTUnwrap(json["positions"] as? [[String: Any]])
       XCTAssertEqual(positions.count, 1)
       XCTAssertEqual(positions.first?["token"] as? String, formal.token)

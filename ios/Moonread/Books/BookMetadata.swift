@@ -10,6 +10,25 @@ extension Notification.Name {
     static let bookMetadataChanged = Notification.Name("Moonread.bookMetadataChanged")
 }
 
+extension Notification {
+    var defersBookMetadataCatalogRefresh: Bool {
+        userInfo?[BookMetadataChange.catalogRefreshDeferredKey] as? Bool == true
+    }
+
+    func affectsLibraryMetadata(_ domains: UserProjectionDomain, keys: @autoclosure () -> Set<String>? = nil) -> Bool {
+        if let fields = userInfo?[BookMetadataChange.projectionFieldsKey] as? Int,
+           !domains.contains(.metadata), domains.intersection(.init(rawValue: fields)).isEmpty { return false }
+        if let changed = userInfo?["keys"] as? [String], let keys = keys(), keys.isDisjoint(with: changed) { return false }
+        return true
+    }
+
+}
+
+private enum BookMetadataChange {
+    static let catalogRefreshDeferredKey = "catalogRefreshDeferred"
+    static let projectionFieldsKey = "projectionFields"
+}
+
 extension BookMetadata {
     nonisolated var normalizedForSaving: BookMetadata {
         var value = self
@@ -58,7 +77,11 @@ extension AppDataService {
     func details(sha: String) async throws -> BookDetails {
         try await bookDetails(.record(key: .formal(sha256: sha))).requireIdentified()
     }
-    func metadataOptions(shelfID: String?) async throws -> BookFilterOptions { try await catalogueQuery(shelfID.map { LibraryLocation(shelfID: $0) }, recursive: true).bookFilterOptions(shelfId: shelfID) }
+    func metadataOptions(shelfID: String?) async throws -> BookFilterOptions {
+        try await readingQuery(.catalogue(catalogueScope(shelfID.map { .init(shelfID: $0) }, recursive: true)),
+                               options: .init(scope: "library-filter-options", fields: [.author, .tags]))
+            .bookFilterOptions(shelfId: shelfID)
+    }
     nonisolated func metadataEditPlan(base: BookMetadata, edited: BookMetadata, fields: Set<String>? = nil) throws -> BookMetadataEditPlan {
         guard base.sha == edited.sha, (try? parseSha256(value: base.sha)) != nil, edited.author.utf8.count <= 1024,
               edited.synopsis.utf8.count <= 64 * 1024, edited.tags.count <= 100 else { throw ReaderError.InvalidSettings }
@@ -93,9 +116,32 @@ extension AppDataService {
     func commitMetadata(_ plan: BookMetadataEditPlan, cover: BookCoverAsset?) async throws {
         guard !plan.values.isEmpty else { return }
         let store = try await userStore()
-        let asset = try cover.map { UserDataStore.CoverWrite(id: $0.id, bytes: try Data(contentsOf: coverDraftURL($0))) }
-        try await store.putValues(plan.values, device: userDevice, cover: asset)
-        dataChanged(); NotificationCenter.default.post(name: .bookMetadataChanged, object: nil, userInfo: ["keys": [plan.sha]])
+        let asset = try cover.map { try Self.readCoverDraft($0, url: coverDraftURL($0), length: nil) }
+        try await store.putMetadata([.init(plan: plan, cover: asset)], device: userDevice)
+        publishMetadataCommit([plan], deferCatalogRefresh: false)
+    }
+    nonisolated static func readCoverDraft(_ cover: BookCoverAsset, url: URL, length: Int?) throws -> UserDataStore.CoverWrite {
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true, let size = values.fileSize, size > 0, length == nil || size == length else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        let bytes = try file.read(upToCount: size) ?? Data()
+        guard bytes.count == size, try file.read(upToCount: 1)?.isEmpty != false,
+              coverDigestString(bytes) == cover.sha256 else { throw CocoaError(.fileReadCorruptFile) }
+        return .init(id: cover.id, bytes: bytes)
+    }
+    func publishMetadataCommit(_ plans: [BookMetadataEditPlan], deferCatalogRefresh: Bool) {
+        dataChanged(refreshSystemCatalog: !deferCatalogRefresh)
+        NotificationCenter.default.post(name: .bookMetadataChanged, object: nil, userInfo: [
+            "keys": plans.map(\.sha), BookMetadataChange.catalogRefreshDeferredKey: deferCatalogRefresh,
+            BookMetadataChange.projectionFieldsKey: plans.lazy.flatMap { $0.values.keys }.reduce(into: UserProjectionDomain()) { result, key in
+                if let field = key.split(separator: "/", maxSplits: 2).last {
+                    result.formUnion(.metadataField(String(field)))
+                }
+            }.rawValue
+        ])
     }
     func coverDirectory() throws -> URL {
         let root = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
@@ -113,14 +159,16 @@ extension AppDataService {
             .appendingPathComponent("\(cover.id)-\(cover.sha256).\(cover.extension)")
     }
     func discardCoverDraft(_ cover: BookCoverAsset) { try? FileManager.default.removeItem(at: coverDraftURL(cover)) }
-    private struct NormalizedCover {
+    fileprivate struct NormalizedCover {
         let bytes: Data
         let ext: String
         let width: UInt32
         let height: UInt32
     }
     private func normalizedCover(_ data: Data) throws -> NormalizedCover {
-        let image = try normalizedCoverImage(data)
+        try normalizedCover(normalizedCoverImage(data))
+    }
+    private func normalizedCover(_ image: CGImage) throws -> NormalizedCover {
         let alpha = ![CGImageAlphaInfo.none, .noneSkipFirst, .noneSkipLast].contains(image.alphaInfo)
         let output = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(output, (alpha ? UTType.png : .jpeg).identifier as CFString, 1, nil) else { throw CocoaError(.fileWriteUnknown) }
@@ -130,21 +178,182 @@ extension AppDataService {
         return .init(bytes: bytes, ext: alpha ? "png" : "jpg", width: UInt32(image.width), height: UInt32(image.height))
     }
     func makeCover(_ data: Data) throws -> BookCoverAsset { try stageCover(normalizedCover(data)) }
-    /// An exported asset is already normalized; compare its original bytes too,
-    /// since encoding a saved JPEG again can change its pixels.
-    func importedCover(_ data: Data, reusing assets: [BookCoverAsset]) async throws -> BookCoverAsset {
-        let normalized = try normalizedCover(data)
-        for asset in assets {
-            let bytes: Data?
-            if FileManager.default.fileExists(atPath: coverDraftURL(asset).path) { bytes = try Data(contentsOf: coverDraftURL(asset)) }
-            else { bytes = try? await coverBytes(asset) }
-            if let bytes, bytes == data || bytes == normalized.bytes || sameCoverPixels(bytes, normalized.bytes) { return asset }
+    /// One comparison pass owns compressed inputs/results; the book owns its ordered assets.
+    struct PreviewCoverCache {
+        fileprivate struct Input {
+            let bytes: Data
+            var validated = false
+            var normalized: NormalizedCover?
+            var normalizedDigest: SHA256.Digest?
+            var pixels: PixelKey?
+            var cost: Int { bytes.count + (normalized?.bytes.count ?? 0) }
         }
-        return try stageCover(normalized)
+        private var entries: [SHA256.Digest: (Input, UInt64)] = [:]
+        private var paths: [String: SHA256.Digest] = [:]
+        private var cost = 0
+        private var tick: UInt64 = 0
+        private let budget = 16 * 1024 * 1024
+        #if DEBUG
+        fileprivate(set) var normalizationCount = 0
+        @TaskLocal static var pixelConversionFixture: (@Sendable () -> Void)?
+        @TaskLocal static var stagedFixture: (@Sendable (URL) -> Void)?
+        #endif
+
+        fileprivate func input(path: String, read: () throws -> Data) throws -> (SHA256.Digest, Input) {
+            if let digest = paths[path], let entry = entries[digest] { return (digest, entry.0) }
+            let bytes = try read(), digest = SHA256.hash(data: bytes)
+            // A digest only selects a candidate. An unverified path never aliases it.
+            if let entry = entries[digest], entry.0.bytes == bytes { return (digest, entry.0) }
+            return (digest, Input(bytes: bytes))
+        }
+        fileprivate mutating func remember(_ input: Input, digest: SHA256.Digest, path: String) {
+            if let old = entries[digest], old.0.bytes != input.bytes { return }
+            guard input.cost <= budget else { return }
+            tick &+= 1
+            cost += input.cost - (entries.updateValue((input, tick), forKey: digest)?.0.cost ?? 0)
+            if paths.count >= 128, paths[path] == nil { paths.removeAll(keepingCapacity: true) }
+            paths[path] = digest
+            while cost > budget || entries.count > 64 {
+                guard let oldest = entries.min(by: { $0.value.1 < $1.value.1 }) else { break }
+                cost -= oldest.value.0.cost
+                entries[oldest.key] = nil
+                paths = paths.filter { $0.value != oldest.key }
+            }
+        }
     }
-    private func stageCover(_ normalized: NormalizedCover) throws -> BookCoverAsset {
+
+    struct PreviewCoverCandidates {
+        fileprivate var baseBytes: Data?
+        fileprivate var basePixels: PixelKey?
+        fileprivate var drafts: [BookCoverAsset] = []
+        fileprivate var byBytes: [SHA256.Digest: [Int]] = [:]
+        fileprivate var byPixels: [PixelKey: [Int]] = [:]
+        fileprivate var indexedPrefix = 0
+    }
+
+    func importedCover(path: String, base: BookCoverAsset?, cache: inout PreviewCoverCache,
+                       candidates: inout PreviewCoverCandidates, read: @Sendable () throws -> Data,
+                       drafts: inout [URL]) async throws -> BookCoverAsset {
+        try Task.checkCancellation()
+        let (digest, original) = try cache.input(path: path, read: read)
+        var input = original
+        if candidates.baseBytes == nil, let base {
+            let draft = coverDraftURL(base)
+            if FileManager.default.fileExists(atPath: draft.path) {
+                let bytes = try Data(contentsOf: draft)
+                // A draft has the same immutable identity contract as a saved asset.
+                if Self.coverDigestString(bytes) == base.sha256 { candidates.baseBytes = bytes }
+            } else {
+                candidates.baseBytes = try? await coverBytes(base)
+            }
+            try Task.checkCancellation()
+        }
+
+        if let base, candidates.baseBytes == input.bytes {
+            // Still validate the image; equal unreadable bytes are not an asset.
+            if !input.validated { _ = try normalizedCoverImage(input.bytes); input.validated = true }
+            cache.remember(input, digest: digest, path: path)
+            return base
+        }
+
+        let normalized: NormalizedCover
+        if let ready = input.normalized { normalized = ready }
+        else {
+            normalized = try normalizedCover(input.bytes)
+            #if DEBUG
+            cache.normalizationCount += 1
+            #endif
+            input.normalized = normalized
+            input.validated = true
+        }
+        defer { cache.remember(input, digest: digest, path: path) }
+        if let base, candidates.baseBytes == normalized.bytes { return base }
+
+        // Compare the encoded output, not the source. Keep only keys
+        // between comparisons; both RGBA buffers are local to this call.
+        var incoming: CoverPixels?
+        var triedIncoming = false
+        func incomingPixels() -> CoverPixels? {
+            if !triedIncoming {
+                triedIncoming = true
+                incoming = coverPixels(normalized.bytes)
+            }
+            return incoming
+        }
+        func incomingKey() -> PixelKey? {
+            if input.pixels == nil { input.pixels = incomingPixels()?.key }
+            return input.pixels
+        }
+        if let base, let bytes = candidates.baseBytes, let key = incomingKey() {
+            var old: CoverPixels?
+            if candidates.basePixels == nil {
+                old = coverPixels(bytes)
+                candidates.basePixels = old?.key
+            }
+            if candidates.basePixels == key, let new = incomingPixels(),
+               (old ?? coverPixels(bytes)) == new { return base }
+        }
+
+        let normalizedDigest = input.normalizedDigest ?? SHA256.hash(data: normalized.bytes)
+        input.normalizedDigest = normalizedDigest
+        func readDraft(_ asset: BookCoverAsset) throws -> Data? {
+            let url = coverDraftURL(asset)
+            guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+            let bytes = try Data(contentsOf: url)
+            return Self.coverDigestString(bytes) == asset.sha256 ? bytes : nil
+        }
+
+        // A byte match bounds the search, but earlier pixel matches still win.
+        let byteCandidates = Set(candidates.byBytes[digest] ?? []).union(candidates.byBytes[normalizedDigest] ?? [])
+        var exact: Int?
+        for index in byteCandidates.sorted() {
+            if let bytes = try? readDraft(candidates.drafts[index]), bytes == input.bytes || bytes == normalized.bytes {
+                exact = index
+                break
+            }
+        }
+        let limit = exact ?? candidates.drafts.count
+        if limit > 0, let key = incomingKey() {
+            for index in candidates.byPixels[key, default: []] where index < limit {
+                if let bytes = try readDraft(candidates.drafts[index]), let new = incomingPixels(),
+                   coverPixels(bytes) == new { return candidates.drafts[index] }
+            }
+            // A draft can be staged without decoding its output. Visit any
+            // unindexed prefix in order before accepting a later exact match.
+            for index in min(candidates.indexedPrefix, limit)..<limit {
+                try Task.checkCancellation()
+                let asset = candidates.drafts[index]
+                guard let bytes = try readDraft(asset), let old = coverPixels(bytes) else { continue }
+                let oldKey = old.key
+                // Keep the prefix contiguous, and retry unavailable drafts on a later search.
+                if index == candidates.indexedPrefix {
+                    candidates.byPixels[oldKey, default: []].append(index)
+                    candidates.indexedPrefix += 1
+                }
+                if oldKey == key, let new = incomingPixels(), old == new { return asset }
+            }
+        }
+        if let exact { return candidates.drafts[exact] }
+
+        try Task.checkCancellation()
+        let asset = try stageCover(normalized, digest: normalizedDigest)
+        let draft = coverDraftURL(asset)
+        drafts.append(draft)
+        #if DEBUG
+        PreviewCoverCache.stagedFixture?(draft)
+        #endif
+        let index = candidates.drafts.count
+        candidates.drafts.append(asset)
+        candidates.byBytes[normalizedDigest, default: []].append(index)
+        if candidates.indexedPrefix == index, let pixels = input.pixels {
+            candidates.byPixels[pixels, default: []].append(index)
+            candidates.indexedPrefix += 1
+        }
+        return asset
+    }
+    private func stageCover(_ normalized: NormalizedCover, digest: SHA256.Digest? = nil) throws -> BookCoverAsset {
         let bytes = normalized.bytes
-        let cover = BookCoverAsset(id: UUID().uuidString, sha256: SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined(),
+        let cover = BookCoverAsset(id: UUID().uuidString, sha256: Self.coverDigestString(bytes, digest: digest),
                                   extension: normalized.ext, width: normalized.width, height: normalized.height)
         let url = coverDraftURL(cover)
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -158,23 +367,39 @@ extension AppDataService {
                   kCGImageSourceShouldCacheImmediately: true] as CFDictionary) else { throw CocoaError(.fileReadCorruptFile) }
         return image
     }
+    fileprivate struct PixelKey: Hashable {
+        let width: Int
+        let height: Int
+        let digest: SHA256.Digest
+    }
+    private struct CoverPixels: Equatable {
+        let width: Int
+        let height: Int
+        let bytes: Data
+        var key: PixelKey { .init(width: width, height: height, digest: SHA256.hash(data: bytes)) }
+    }
+    private func coverPixels(_ bytes: Data) -> CoverPixels? {
+        guard let image = try? normalizedCoverImage(bytes) else { return nil }
+        let width = image.width, height = image.height
+        var data = Data(count: width * height * 4)
+        let made = data.withUnsafeMutableBytes { bytes -> Bool in
+            guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+                  let context = CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
+            context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height)); return true
+        }
+        #if DEBUG
+        if made { PreviewCoverCache.pixelConversionFixture?() }
+        #endif
+        return made ? .init(width: width, height: height, bytes: data) : nil
+    }
     func sameCoverPixels(_ a: Data, _ b: Data) -> Bool {
         if a == b { return true }
-        guard let first = try? normalizedCoverImage(a), let second = try? normalizedCoverImage(b),
-              first.width == second.width, first.height == second.height else { return false }
-        func pixels(_ image: CGImage) -> Data? {
-            let width = image.width, height = image.height
-            var data = Data(count: width * height * 4)
-            let made = data.withUnsafeMutableBytes { bytes -> Bool in
-                guard let space = CGColorSpace(name: CGColorSpace.sRGB),
-                      let context = CGContext(data: bytes.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
-                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue) else { return false }
-                context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height)); return true
-            }
-            return made ? data : nil
-        }
-        guard let left = pixels(first), let right = pixels(second) else { return false }
+        guard let left = coverPixels(a), let right = coverPixels(b) else { return false }
         return left == right
+    }
+    private static func coverDigestString(_ bytes: Data, digest: SHA256.Digest? = nil) -> String {
+        (digest ?? SHA256.hash(data: bytes)).map { String(format: "%02x", $0) }.joined()
     }
     /// Original user asset, verified independently of reconstructible thumbnails.
     func coverBytes(_ cover: BookCoverAsset) async throws -> Data {
@@ -183,7 +408,7 @@ extension AppDataService {
         if FileManager.default.fileExists(atPath: url.path) { bytes = try Data(contentsOf: url) }
         else if let value = try await userStore().cover(cover.id) { bytes = value }
         else { throw CocoaError(.fileNoSuchFile) }
-        guard SHA256.hash(data: bytes).map({ String(format: "%02x", $0) }).joined() == cover.sha256 else { throw CocoaError(.fileReadCorruptFile) }
+        guard Self.coverDigestString(bytes) == cover.sha256 else { throw CocoaError(.fileReadCorruptFile) }
         return bytes
     }
     func coverImage(_ cover: BookCoverAsset, pixels: Int, exactSize: Bool = false) async throws -> UIImage? {

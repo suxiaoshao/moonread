@@ -25,9 +25,10 @@ extension AppDataService {
         case fixed(records: RecordSelection, facts: FactsSelection)
         case book(BookTarget, facts: Bool = false)
         case catalogue(CatalogueScope)
+        case catalogueRecord(String)
         case directoryActivity(CatalogueScope)
-        case directoryDetails([ReadingKey])
-        case recent(UInt32)
+        case directoryDetails(direct: [ReadingKey], covers: [ReadingKey])
+        case metadataExchange([ReadingKey])
 
         var isDirectoryActivity: Bool {
             if case .directoryActivity = self { return true }
@@ -45,6 +46,7 @@ extension AppDataService {
         let records: RecordSelection
         let facts: FactsSelection
         var resolution: BookResolution? = nil
+        var coverOnly: Set<String> = []
     }
     struct UserQuerySignature: Equatable {
         let configuration: UUID
@@ -75,6 +77,7 @@ extension AppDataService {
         let identities: [String: String]
         let statisticsIncomplete: Bool
         let directoryActivity: ReaderQuery?
+        let formalBlockedMetadata: Set<String>
     }
     #if DEBUG
     // Deterministic gates at real query boundaries; no production timing or data changes.
@@ -96,23 +99,72 @@ extension AppDataService {
     }
     func readingQueryResult(_ source: UserQuerySource, options: UserQueryOptions, diagnostic: ReaderOpenTrace? = nil) async throws -> UserQueryOutput {
         try await withValidQueryInputs(scope: options.scope) {
-            let reads: [UserQueryRead]
-            if case let .recent(limit) = source {
-                // Revalidate the index too, or a new recent book can disappear from this result.
-                guard let index = try await queryAttempt(.fixed(records: .all, facts: .none),
-                    options: .init(positionsOnly: true, scope: "recent-index"), diagnostic: diagnostic) else { return nil }
-                let keys = try index.query.recentLibraryEntries(limit: limit).compactMap(\.readingIdentity)
-                guard let detail = try await queryAttempt(.fixed(records: .only(keys), facts: .none),
-                    options: options, diagnostic: diagnostic) else { return nil }
-                reads = [index, detail]
-            } else {
-                guard let read = try await queryAttempt(source, options: options, diagnostic: diagnostic) else { return nil }
-                reads = [read]
-            }
-            let read = reads[reads.count - 1]
-            return (reads, UserQueryOutput(query: read.query, statisticsIncomplete: read.statisticsIncomplete,
+            guard let read = try await queryAttempt(source, options: options, diagnostic: diagnostic) else { return nil }
+            return ([read], UserQueryOutput(query: read.query, statisticsIncomplete: read.statisticsIncomplete,
                 statisticsVersion: read.signature.statisticsVersion, resolution: read.signature.selection.resolution))
         }
+    }
+
+    func recentLibraryEntries(_ limit: UInt32, cold: Bool) async throws -> [LibraryEntry] {
+        try await withValidQueryInputs(scope: cold ? "home-cold" : "recent") {
+            guard let index = try await queryAttempt(.fixed(records: .all, facts: .none),
+                options: .init(positionsOnly: true, scope: "recent-index"), diagnostic: nil) else { return nil }
+            let ranking = try index.query.recentLibraryRanking(limit: limit)
+            let keys = try ranking.readingKeys()
+            guard let detail = try await queryAttempt(.fixed(records: .only(keys), facts: .none),
+                options: .init(scope: "recent", fields: [.card, .chapter]), diagnostic: nil) else { return nil }
+            // Hydration cannot reselect a copy. Recheck the live index too:
+            // unchanged user inputs can still admit a new source into the rank.
+            guard let entries = try detail.query.hydrateRecentLibraryCards(ranking: ranking),
+                  try index.query.recentLibraryRankingMatches(ranking: ranking) else { return nil }
+            return ([index, detail], entries)
+        }
+    }
+
+    func bookInformation(_ target: BookTarget, fileID: String?, includeRecordSource: Bool) async throws
+        -> (LibraryEntry?, BookDetailsResult) {
+        let (entry, details, blocked, missingSource): (LibraryEntry?, BookDetailsResult, Bool, Bool) =
+            try await withValidQueryInputs(scope: "book-information") {
+                guard let detail = try await queryAttempt(.book(target),
+                    options: .init(scope: "book-information", fields: [.position, .metadata, .chapter]),
+                    diagnostic: nil) else { return nil }
+                let details = try detail.query.bookDetails(target: target)
+                if case .missing = details { return ([detail], (nil, details, false, false)) }
+                if case .identified(_, let value) = details, detail.formalBlockedMetadata.contains(value.metadata.sha) {
+                    return ([detail], (nil, details, true, false))
+                }
+
+                let sourceTarget: BookTarget
+                let source: UserQuerySource
+                if let fileID {
+                    sourceTarget = .file(fileId: fileID)
+                    source = .book(sourceTarget)
+                } else if includeRecordSource,
+                          case .identified(let identity, _) = details,
+                          case .associated = identity.body,
+                          case .formal(let sha) = identity.key {
+                    sourceTarget = .record(key: identity.key)
+                    source = .catalogueRecord(sha)
+                } else {
+                    return ([detail], (nil, details, false, false))
+                }
+                let sourceRead: UserQueryRead
+                if sourceTarget == target, case .file = target {
+                    sourceRead = detail
+                } else {
+                    guard let scoped = try await queryAttempt(source,
+                        options: .init(scope: "book-information-source", fields: .position), diagnostic: nil)
+                    else { return nil }
+                    sourceRead = scoped
+                }
+                let entry = try sourceRead.query.bookInformationSource(target: sourceTarget)
+                let missingSource = fileID != nil && entry == nil
+                return (sourceRead.query === detail.query ? [detail] : [detail, sourceRead],
+                        (entry, details, false, missingSource))
+            }
+        if blocked { throw UserSyncCompatibilityError() }
+        if missingSource { throw ReaderError.NotFound }
+        return (entry, details)
     }
 
     func directoryEntries(_ location: LibraryLocation, sort: LibrarySort) async throws -> [LibraryEntry] {
@@ -121,23 +173,22 @@ extension AppDataService {
             guard let index = try await queryAttempt(source,
                 options: .init(scope: "directory-activity", fields: [.position, .opened]), diagnostic: nil) else { return nil }
             let keys = try index.query.libraryDirectoryDetailKeys(shelfId: location.shelfID, parentPath: location.path)
-            let selected = Set(keys.map(\.storageKey))
-            // Keep any pending candidates that contributed to these identities
-            // in this subtree, including duplicates of a selected copy.
-            let aliases = try index.identities.compactMap { raw, effective in
-                if raw != effective, selected.contains(effective) { return try parseReadingKey(value: raw) }
-                return nil
+            let direct = Set(keys.direct)
+            let covers = Set(keys.covers)
+            func includingAliases(_ keys: Set<ReadingKey>) throws -> [ReadingKey] {
+                let selected = Set(keys.map(\.storageKey))
+                let aliases = try index.identities.compactMap { raw, effective in
+                    raw != effective && selected.contains(effective) ? try parseReadingKey(value: raw) : nil
+                }
+                return (Array(keys) + aliases).sorted { $0.storageKey < $1.storageKey }
             }
-            let detailKeys = (keys + aliases).sorted { $0.storageKey < $1.storageKey }
-            guard let detail = try await queryAttempt(.directoryDetails(detailKeys),
-                options: .init(scope: "directory-details"), diagnostic: nil,
+            guard let detail = try await queryAttempt(.directoryDetails(direct: includingAliases(direct), covers: includingAliases(covers)),
+                options: .init(scope: "directory-details", fields: [.position, .chapter, .card]), diagnostic: nil,
                 directoryActivity: index.query) else { return nil }
-            let entries = try detail.query.libraryEntries(shelfId: location.shelfID, parentPath: location.path, sort: sort)
-            // The file index is live, including modified-time tie breakers. A
-            // newly selected file may need details that weren't in this pass.
-            let loaded = Set(keys)
+            let entries = try detail.query.libraryDirectoryCards(shelfId: location.shelfID, parentPath: location.path, sort: sort)
+            let loaded = direct.union(covers)
             guard entries.allSatisfy({ entry in
-                (entry.readingIdentity.map(loaded.contains) ?? true)
+                (entry.readingIdentity.map(direct.contains) ?? true)
                     && (entry.folderRow?.coverPreviews.allSatisfy { preview in
                         preview.readingKey.map(loaded.contains) ?? true
                     } ?? true)
@@ -148,6 +199,71 @@ extension AppDataService {
                 return nil
             }
             return ([index, detail], entries)
+        }
+    }
+
+    func libraryCatalogueSearch(_ scope: CatalogueScope, spec: LibraryQueryRules.SearchSpec) async throws -> LibraryQueryRules.SearchOutcome {
+        try await withValidQueryInputs(scope: "library-search") {
+            guard let match = try await queryAttempt(.catalogue(scope),
+                options: .init(scope: "library-search-match", fields: LibraryQueryRules.matchDomains(spec)),
+                diagnostic: nil) else { return nil }
+            let candidates = try match.query.librarySearchMatches(scope: scope, booksOnly: spec.configuration.booksOnly)
+            var found = LibraryQueryRules.searchOutcome(candidates, spec: spec)
+            guard !found.entries.isEmpty else { return ([match], found) }
+            let ids = found.entries.map(\.id)
+            let keys = try match.query.librarySearchDetailKeys(fileIds: ids)
+            let direct = Set(keys.direct), covers = Set(keys.covers)
+            // Search previously used the whole recursive catalogue. Include
+            // its actual participating aliases, including metadata/chapter-only
+            // records, rather than expanding all historical aliases.
+            let aliasKeys = (match.signature.selection.records.storageKeys ?? []).filter { $0.hasPrefix("pending:") }
+            let aliases = try queryIdentities(aliasKeys)
+            func scoped(_ keys: Set<ReadingKey>) throws -> [ReadingKey] {
+                let effective = Set(keys.map(\.storageKey))
+                return try (Array(keys) + aliases.compactMap { raw, resolved in
+                    raw != resolved && effective.contains(resolved) ? try parseReadingKey(value: raw) : nil
+                }).sorted { $0.storageKey < $1.storageKey }
+            }
+            guard let detail = try await queryAttempt(.directoryDetails(direct: scoped(direct), covers: scoped(covers)),
+                options: .init(scope: "library-search-cards", fields: [.position, .chapter, .card]),
+                diagnostic: nil, directoryActivity: match.query) else { return nil }
+            let cards = try detail.query.librarySearchCards(fileIds: ids)
+            let byID = Dictionary(uniqueKeysWithValues: cards.map { ($0.id, $0) })
+            let loaded = direct.union(covers)
+            var ordered: [LibraryEntry] = []
+            for hit in found.entries {
+                guard let card = byID[hit.id], hit.directory == card.directory,
+                      hit.readingIdentity == card.readingIdentity, hit.relativePath == card.relativePath,
+                      hit.name.utf8.elementsEqual(card.name.utf8), hit.shelfId == card.shelfId,
+                      (card.readingIdentity.map(direct.contains) ?? true),
+                      (card.folderRow?.coverPreviews.allSatisfy { $0.readingKey.map(loaded.contains) ?? true } ?? true)
+                else { return nil }
+                ordered.append(card)
+            }
+            guard try queryIdentities(aliasKeys) == aliases else { return nil }
+            found.entries = ordered
+            return ([match, detail], found)
+        }
+    }
+
+    struct MetadataExchangeInputs: Sendable {
+        let read: MetadataExchangeRead
+        let formalBlockedMetadata: Set<String>
+    }
+
+    func metadataExchangeInputs(_ request: MetadataExchangeRequest, configuration: UUID) async throws -> MetadataExchangeInputs {
+        try await withValidQueryInputs(scope: "metadata-exchange") {
+            guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
+            let core = try textCore()
+            let inventory = try core.metadataExchangeInventory(request: request)
+            let source = UserQuerySource.metadataExchange(inventory.recordKeys())
+            guard let read = try await queryAttempt(source, options: .init(scope: "metadata-exchange",
+                fields: [.position, .metadata]), diagnostic: nil) else { return nil }
+            guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
+            // On the same Rust read transaction, compare the live source rows
+            // and counts before producing results. Retry reads only.
+            guard let result = try read.query.metadataExchangeRead(request: request, inventory: inventory) else { return nil }
+            return ([read], .init(read: result, formalBlockedMetadata: read.formalBlockedMetadata))
         }
     }
 
@@ -163,7 +279,8 @@ extension AppDataService {
                     if queryCache.count >= 32 { queryCache.removeAll() }
                     for read in reads {
                         queryCache[read.cacheKey] = CachedQuery(signature: read.signature, identities: read.identities,
-                            query: read.query, statisticsIncomplete: read.statisticsIncomplete, directoryActivity: read.directoryActivity)
+                            query: read.query, statisticsIncomplete: read.statisticsIncomplete, directoryActivity: read.directoryActivity,
+                            formalBlockedMetadata: read.formalBlockedMetadata)
                     }
                     return output
                 }
@@ -211,11 +328,14 @@ extension AppDataService {
             return .init(records: .only(keys), facts: facts ? .only(keys) : .none, resolution: resolution)
         case let .catalogue(scope), let .directoryActivity(scope):
             return .init(records: .only(try sorted(core.catalogueContentKeys(scope: scope))), facts: .none)
-        case let .directoryDetails(keys):
-            // The index identifies the participating aliases in this subtree.
-            // Don't expand to aliases from unrelated shelves or folders.
+        case let .catalogueRecord(sha):
+            return .init(records: .only(try sorted(core.catalogueRecordKeys(sha: sha))), facts: .none)
+        case let .directoryDetails(direct, covers):
+            return .init(records: .only(sorted(direct + covers)), facts: .none,
+                         coverOnly: Set(covers.map(\.storageKey)).subtracting(direct.map(\.storageKey)))
+        case let .metadataExchange(keys):
+            // Inventory already selected the catalogue's participating aliases.
             return .init(records: .only(sorted(keys)), facts: .none)
-        case .recent: preconditionFailure("Recent queries prepare their index before details")
         }
     }
     private func querySignature(_ source: UserQuerySource, options: UserQueryOptions,
@@ -237,12 +357,14 @@ extension AppDataService {
                 if item.key.hasPrefix(prefix), let file = item.value as? String { result[String(item.key.dropFirst(prefix.count))] = file }
             }
         }
-        func version(_ store: UserDataStore) -> String {
+        func version(_ store: UserDataStore, pending: Bool) -> String {
             store.version(keys: recordKeys, positionsOnly: options.positionsOnly, includeFacts: selection.facts.included,
-                statisticsKeys: factKeys, fields: options.fields)
+                statisticsKeys: factKeys, fields: options.fields,
+                          filter: .init(coverOnly: selection.coverOnly, openedAliasesOnly: source.isDirectoryActivity,
+                                        preserveMetadataWinner: pending))
         }
         return .init(configuration: userCloudConfigurationRevision, formalID: userStoreTask?.id, pendingID: pendingUserStoreTask?.id,
-            source: source, selection: selection, formalVersion: version(formal), pendingVersion: version(pending), generation: preferences.generation,
+            source: source, selection: selection, formalVersion: version(formal, pending: false), pendingVersion: version(pending, pending: true), generation: preferences.generation,
             enabled: preferences.enabled, statisticsVersion: selection.facts.included ? "\(userCloudConfigurationRevision)-\(userStoreTask?.id.uuidString ?? "")-\(pendingUserStoreTask?.id.uuidString ?? "")-\(factKeys?.joined(separator: ",") ?? "all")-\(formal.version(keys: [], positionsOnly: false, includeFacts: true, statisticsKeys: factKeys, fields: []))-\(pending.version(keys: [], positionsOnly: false, includeFacts: true, statisticsKeys: factKeys, fields: []))-\(preferences.generation)-\(preferences.enabled)" : "", hidden: hidden, preferred: preferred)
     }
     private func queryReadIsValid(_ read: UserQueryRead) throws -> Bool {
@@ -296,26 +418,32 @@ extension AppDataService {
            cached.directoryActivity === directoryActivity {
             let read = UserQueryRead(source: source, options: options, formal: formal, pending: pending, signature: signature,
                 cacheKey: cacheKey, query: cached.query, identities: cached.identities,
-                statisticsIncomplete: cached.statisticsIncomplete, directoryActivity: directoryActivity)
+                statisticsIncomplete: cached.statisticsIncomplete, directoryActivity: directoryActivity,
+                formalBlockedMetadata: cached.formalBlockedMetadata)
             return read
         }
-        let formalJSON = try await formal.projection(generation: signature.generation, enabled: signature.enabled, includeFacts: selection.facts.included,
+        guard let formalProjection = try await formal.projection(generation: signature.generation, enabled: signature.enabled, includeFacts: selection.facts.included,
             keys: keys, positionsOnly: options.positionsOnly, statisticsKeys: factKeys, fields: options.fields, diagnostic: diagnostic,
-            diagnosticScope: "formalProjection", sparseCatalogue: options.sparseCatalogue, statisticsRange: options.statisticsRange)
+            diagnosticScope: "formalProjection", sparseCatalogue: options.sparseCatalogue, statisticsRange: options.statisticsRange,
+            filter: .init(coverOnly: selection.coverOnly, openedAliasesOnly: source.isDirectoryActivity)) else { return nil }
         try Task.checkCancellation()
-        let pendingJSON = try await pending.projection(generation: signature.generation, enabled: signature.enabled, includeFacts: selection.facts.included,
+        guard let pendingProjection = try await pending.projection(generation: signature.generation, enabled: signature.enabled, includeFacts: selection.facts.included,
             keys: keys, positionsOnly: options.positionsOnly, statisticsKeys: factKeys, fields: options.fields, diagnostic: diagnostic,
-            diagnosticScope: "pendingProjection", sparseCatalogue: options.sparseCatalogue, statisticsRange: options.statisticsRange)
+            diagnosticScope: "pendingProjection", sparseCatalogue: options.sparseCatalogue, statisticsRange: options.statisticsRange,
+            filter: .init(coverOnly: selection.coverOnly, openedAliasesOnly: source.isDirectoryActivity, preserveMetadataWinner: true)) else { return nil }
         try Task.checkCancellation()
+        guard configuration == userCloudConfigurationRevision,
+              signature.formalID == userStoreTask?.id, signature.pendingID == pendingUserStoreTask?.id else { return nil }
         let core = try textCore(), hidden = signature.hidden, preferred = signature.preferred
         let activityOnly = source.isDirectoryActivity
+        let includeFacts = selection.facts.included
+        let geometry: FactGeometry = options.statisticsRange == nil ? .full : .firstExposure
         let build = Task.detached(priority: Task.currentPriority) {
             try Task.checkCancellation()
-            var combined = try JSONSerialization.jsonObject(with: Data(formalJSON.utf8)) as! [String: Any]
-            let extra = try JSONSerialization.jsonObject(with: Data(pendingJSON.utf8)) as! [String: Any]
-            for field in ["positions", "opened", "facts", "metadata", "corrections"] { combined[field] = (combined[field] as! [Any]) + (extra[field] as! [Any]) }
-            let incomplete = (combined["statisticsIncomplete"] as? Bool ?? false) || (extra["statisticsIncomplete"] as? Bool ?? false)
-            combined.removeValue(forKey: "statisticsIncomplete")
+            var combined = try JSONSerialization.jsonObject(with: Data(formalProjection.json.utf8)) as! [String: Any]
+            let extra = try JSONSerialization.jsonObject(with: Data(pendingProjection.json.utf8)) as! [String: Any]
+            for field in ["positions", "opened", "metadata", "corrections"] { combined[field] = (combined[field] as! [Any]) + (extra[field] as! [Any]) }
+            let incomplete = formalProjection.statisticsIncomplete || pendingProjection.statisticsIncomplete
             let rawPositions = combined["positions"] as! [[String: Any]]
             var blockedPositions = Set((combined["unsupportedPositions"] as? [String] ?? []) + (extra["unsupportedPositions"] as? [String] ?? []))
             let rawOpened = combined["opened"] as! [[String: Any]]
@@ -332,7 +460,9 @@ extension AppDataService {
             }
             var opened = UserDataStore.ValueSnapshot()
             var openedSources: [String: [String: String]] = [:]
-            for row in rawOpened {
+            // Directory activity only used opened to find participating aliases.
+            // No directory sort or cover rule uses opened timestamps.
+            for row in activityOnly ? [] : rawOpened {
                 guard let source = row["content_key"] as? String, let key = mapping[source],
                       !effectiveHidden.contains(key), let at = row["opened_ms"] as? NSNumber,
                       let updated = row["updated"] as? NSNumber, let token = row["token"] as? String else { continue }
@@ -357,7 +487,9 @@ extension AppDataService {
             try Task.checkCancellation()
             let json = String(decoding: try JSONSerialization.data(withJSONObject: combined), as: UTF8.self)
             let query = if let directoryActivity { try core.querySnapshotWithDirectoryActivity(json: json, activity: directoryActivity) }
-                else { try core.querySnapshot(json: json) }
+                else if includeFacts {
+                    try core.querySnapshotWithFacts(nonFactJson: json, formal: formalProjection.facts, pending: pendingProjection.facts, geometry: geometry)
+                } else { try core.querySnapshot(json: json) }
             try Task.checkCancellation()
             return (query, mapping, incomplete)
 
@@ -369,6 +501,6 @@ extension AppDataService {
         try Task.checkCancellation()
         return UserQueryRead(source: source, options: options, formal: formal, pending: pending, signature: signature,
             cacheKey: cacheKey, query: query, identities: identities, statisticsIncomplete: incomplete,
-            directoryActivity: directoryActivity)
+            directoryActivity: directoryActivity, formalBlockedMetadata: formalProjection.input.blockedMetadata)
     }
 }

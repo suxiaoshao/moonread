@@ -291,6 +291,9 @@ private struct BookSearchRulePage: View {
             }.disabled(node.validation() != nil)
                 .accessibilityIdentifier("saveSearchCondition")
         } }
+        .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { change in
+            if change.affectsLibraryMetadata([.author, .tags]) { retry += 1 }
+        }
         .task(id: retry) {
             guard field == .tag || field == .author else { return }
             loading = true; error = nil

@@ -1,4 +1,5 @@
 //! Continuous visible-text dwell, independently of duration totals and layout pages.
+use crate::user::projection::ExposureSlot;
 use crate::*;
 use rusqlite::Connection;
 use rusqlite::params;
@@ -71,8 +72,12 @@ impl VisibleDwell {
 }
 
 /// One query for the entire outline. Returning None distinguishes missing evidence from zero.
-pub(crate) fn covered_char_ranges(db: &Connection, id: &str) -> Result<Option<Vec<(u64, u64)>>> {
-    let mut q = db.prepare("SELECT visit_id,started_ms,ended_ms,exposures FROM reading_activity WHERE book_id=?1 AND deleted=0 ORDER BY session_id,visit_id,started_ms,id")?;
+pub(crate) fn covered_char_ranges(
+    db: &Connection,
+    id: &str,
+    exposures: &[Option<ExposureSlot>],
+) -> Result<Option<Vec<(u64, u64)>>> {
+    let mut q = db.prepare("SELECT visit_id,started_ms,ended_ms,exposure_slot FROM reading_activity WHERE book_id=?1 AND deleted=0 ORDER BY session_id,visit_id,started_ms,id")?;
     let mut dwell = VisibleDwell::default();
     let mut previous: Option<(String, i64)> = None;
     let mut observed = false;
@@ -81,21 +86,28 @@ pub(crate) fn covered_char_ranges(db: &Connection, id: &str) -> Result<Option<Ve
             r.get::<_, String>(0)?,
             r.get::<_, i64>(1)?,
             r.get::<_, i64>(2)?,
-            r.get::<_, String>(3)?,
+            r.get::<_, Option<i64>>(3)?,
         ))
     })? {
-        let (visit, start, end, json) = row?;
+        let (visit, start, end, slot) = row?;
         if previous
             .as_ref()
             .is_none_or(|(v, at)| *v != visit || *at != start)
         {
             dwell.active.clear();
         }
-        let exposures: Vec<ReadingExposure> =
-            serde_json::from_str(&json).map_err(|_| ReaderError::InvalidSettings)?;
-        for e in exposures {
-            observed = true;
-            dwell.observe(e.start_utf8, e.end_utf8, e.duration_ms);
+        if let Some(slot) = slot {
+            let values = usize::try_from(slot)
+                .ok()
+                .and_then(|slot| exposures.get(slot))
+                .and_then(Option::as_ref)
+                .ok_or_else(|| ReaderError::Storage {
+                    message: "Invalid reading exposure slot".into(),
+                })?;
+            for e in values.values() {
+                observed = true;
+                dwell.observe(e.start_utf8, e.end_utf8, e.duration_ms);
+            }
         }
         previous = Some((visit, end));
     }

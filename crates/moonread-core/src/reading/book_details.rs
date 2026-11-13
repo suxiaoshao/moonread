@@ -312,10 +312,15 @@ impl ReaderCore {
         JOIN book_metadata m ON m.content_sha=fi.content_sha256
         WHERE (?1 IS NULL OR f.shelf_id=?1)",
         )?;
+        #[derive(serde::Deserialize)]
+        struct FilterMetadata {
+            author: String,
+            tags: Vec<String>,
+        }
         let mut authors = BTreeSet::new();
         let mut tags = BTreeSet::new();
         for row in q.query_map([shelf_id], |r| r.get::<_, String>(0))? {
-            let m: BookMetadata =
+            let m: FilterMetadata =
                 serde_json::from_str(&row?).map_err(|_| ReaderError::InvalidSettings)?;
             if !m.author.is_empty() {
                 authors.insert(m.author);

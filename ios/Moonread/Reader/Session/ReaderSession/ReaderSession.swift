@@ -358,7 +358,7 @@ final class ReaderSession {
     func retry(_ route: ReaderRoute) async {
         guard !isLeaving, openingWork == nil else { return }
         opening.begin(OpeningRequest(target: route, expectedContentSHA: opening.request?.expectedContentSHA,
-                                     metadataHint: opening.request?.metadataHint), navigationSettled: true)
+                                     metadataHint: opening.request?.metadataHint, coverHint: opening.request?.coverHint), navigationSettled: true)
         error = nil; await open(route)
     }
     func current(_ id: String, attempt: UUID?, monitor: UUID? = nil) -> Bool {

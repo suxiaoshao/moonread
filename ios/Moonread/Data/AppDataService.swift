@@ -229,6 +229,7 @@ actor AppDataService {
         let query: ReaderQuery
         let statisticsIncomplete: Bool
         let directoryActivity: ReaderQuery?
+        let formalBlockedMetadata: Set<String>
     }
     #if DEBUG
     var queryTestBoundary: (@Sendable (String, UserQueryTestPhase) async throws -> Void)?
@@ -266,7 +267,11 @@ actor AppDataService {
     var inFlightBackupDirectories = Set<URL>()
     var backupShareCopies: [URL: Int] = [:]
     var userDataOperationBusy = false
-    var userDataOperationWaiters: [CheckedContinuation<Void, Never>] = []
+    struct UserDataOperationWaiter {
+        let id: UUID?
+        let resume: (Bool) -> Void
+    }
+    var userDataOperationWaiters: [UserDataOperationWaiter] = []
     var localReadingWriteLeases: [String: UUID] = [:]
     var promotedUserKeys = Set<String>()
     var shownCandidates: [String: [AnnotationCandidate]] = [:]

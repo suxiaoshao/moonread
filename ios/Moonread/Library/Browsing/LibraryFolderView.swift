@@ -13,6 +13,7 @@ struct LibraryFolderView: View {
     @State private var selection = Set<String>()
     @State private var editing = EditMode.inactive
     @State private var catalogue = LibraryCatalogueRequest()
+    @State private var metadataRevision: UInt64 = 0
     @State private var metadataExporting = false
     private var shelf: LibraryShelf? { model.shelves.first { $0.id == location.shelfID } }
     private var title: String { location.path.isEmpty ? model.shelfTitle(location.shelfID) : URL(fileURLWithPath: location.path).lastPathComponent }
@@ -111,7 +112,12 @@ struct LibraryFolderView: View {
             }
         }
         .sheet(isPresented: $metadataExporting) { MetadataExportView(service: model.service, shelfID: location.shelfID).presentationSizing(.page) }
-        .task(id: LibraryCatalogueRequest.Input(location: location, libraryRevision: model.revision, readingRevision: model.readingInputRevision)) {
+        .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { change in
+            if change.affectsLibraryMetadata(.card, keys: loaded ? entries.displayedMetadataKeys : nil) {
+                metadataRevision &+= 1
+            }
+        }
+        .task(id: LibraryCatalogueRequest.Input(location: location, libraryRevision: model.revision, readingRevision: model.readingInputRevision, metadataRevision: metadataRevision)) {
             let request = loading.begin(); defer { loading.finish(request) }
             let cloudGeneration = model.discoveryGeneration, cloudRevision = model.discoveryRevision
             do {
