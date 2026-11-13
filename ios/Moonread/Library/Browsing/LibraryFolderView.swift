@@ -111,7 +111,10 @@ struct LibraryFolderView: View {
                 ToolbarItem(placement: .bottomBar) { Spacer() }
             }
         }
-        .sheet(isPresented: $metadataExporting) { MetadataExportView(service: model.service, shelfID: location.shelfID).presentationSizing(.page) }
+        .sheet(isPresented: $metadataExporting) {
+            MetadataExportView(task: MetadataExchangeModel.shared.exportTask, shelfID: location.shelfID,
+                               shelfName: model.shelfTitle(location.shelfID)).presentationSizing(.page)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { change in
             if change.affectsLibraryMetadata(.card, keys: loaded ? entries.displayedMetadataKeys : nil) {
                 metadataRevision &+= 1
