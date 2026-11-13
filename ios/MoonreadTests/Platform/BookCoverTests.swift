@@ -63,10 +63,16 @@ final class BookCoverReaderIntegrationTests: ReaderIntegrationFixture {
     try await service.saveMetadata(base: base, edited: edited)
     let saved = try await service.details(bookID: book.id).metadata
     XCTAssertEqual(saved.cover, cover)
-    let repeatedCover = try await service.importedCover(data, reusing: [cover])
+    var cache = AppDataService.PreviewCoverCache()
+    var candidates = AppDataService.PreviewCoverCandidates()
+    var reuseDrafts: [URL] = []
+    defer { for draft in reuseDrafts { try? FileManager.default.removeItem(at: draft) } }
+    let repeatedCover = try await service.importedCover(path: "input", base: cover, cache: &cache,
+      candidates: &candidates, read: { data }, drafts: &reuseDrafts)
     XCTAssertEqual(repeatedCover, cover, "Equivalent imported pixels must keep the existing asset ID")
     let exportedBytes = try await service.coverBytes(cover)
-    let unchangedCover = try await service.importedCover(exportedBytes, reusing: [cover])
+    let unchangedCover = try await service.importedCover(path: "exported", base: cover, cache: &cache,
+      candidates: &candidates, read: { exportedBytes }, drafts: &reuseDrafts)
     XCTAssertEqual(unchangedCover, cover, "An exported JPEG must reuse the saved asset without recompression")
     let persistedCover = try await service.coverImage(cover, pixels: 321)
     XCTAssertNotNil(persistedCover)

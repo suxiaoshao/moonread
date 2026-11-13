@@ -152,8 +152,10 @@ struct AppSearchView: View {
     private var books: [LibraryEntry] { entries.filter { !$0.directory } }
     private var folders: [LibraryEntry] { host.showsFolders ? entries.filter(\.directory) : [] }
     private var groupCount: Int { [!books.isEmpty, !folders.isEmpty, ai.availability.isAvailable && !conversations.isEmpty].filter { $0 }.count }
+    @State private var metadataRevision: UInt64 = 0
     private var key: SearchKey {
-        SearchKey(term: search.term, configuration: search.configuration, revision: model.revision, retry: retry, aiAvailable: ai.availability.isAvailable)
+        SearchKey(term: search.term, configuration: search.configuration, revision: model.revision, retry: retry, aiAvailable: ai.availability.isAvailable,
+                  readingRevision: model.readingInputRevision, metadataRevision: metadataRevision)
     }
     var body: some View {
         List {
@@ -255,6 +257,14 @@ struct AppSearchView: View {
         }
         .modifier(PageLoadingOverlay(request: search.hasCriteria ? loading.request : nil,
                                      hasContent: search.configuration.booksOnly || !entries.isEmpty || !conversations.isEmpty, label: "正在搜索"))
+        .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { change in
+            guard search.hasCriteria else { return }
+            let domains = LibraryQueryRules.matchDomains(.init(profile: .library, query: search.term, configuration: search.configuration))
+            if change.affectsLibraryMetadata(domains) ||
+                change.affectsLibraryMetadata(.card, keys: completedKey == key ? entries.displayedMetadataKeys : nil) {
+                metadataRevision &+= 1
+            }
+        }
         .task(id: key) { await run(key) }
         .simultaneousGesture(TapGesture().onEnded { search.keyboardDismissals += 1 })
     }
@@ -313,6 +323,8 @@ struct SearchKey: Hashable {
     let revision: Int
     let retry: Int
     let aiAvailable: Bool
+    var readingRevision: UInt64 = 0
+    var metadataRevision: UInt64 = 0
 }
 
 /// A snapshot of what matched when searched: the title and one line from the newest

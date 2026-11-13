@@ -211,6 +211,7 @@ actor AppDataService {
         return AppDataService()
     }()
     var systemCatalog: SystemReadingCatalog?
+    var metadataCatalogBatchDirty = false
     var systemReadingLastError: String?
     var systemExposureTask: Task<Void, Never>?
     var systemWidgetReloadSnapshot: SystemReadingSnapshot?
@@ -229,6 +230,7 @@ actor AppDataService {
         let query: ReaderQuery
         let statisticsIncomplete: Bool
         let directoryActivity: ReaderQuery?
+        let formalBlockedMetadata: Set<String>
     }
     #if DEBUG
     var queryTestBoundary: (@Sendable (String, UserQueryTestPhase) async throws -> Void)?

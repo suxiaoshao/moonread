@@ -108,7 +108,8 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: SystemReadingIntentDelivery.notification).receive(on: DispatchQueue.main)) { _ in
                 library.systemReading.receiveIntent()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { _ in
+            .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { change in
+                guard !change.defersBookMetadataCatalogRefresh else { return }
                 Task { await library.service.scheduleSystemReadingCatalog(immediate: true) }
             }
             .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in

@@ -146,7 +146,8 @@ enum BackupRows {
         guard let key, (try? parseReadingKey(value: key)) != nil else { return nil }
         return key
     }
-    static func validate(_ record: BackupRecord, kind: String, allowPending: Bool = false) throws {
+    @discardableResult
+    static func validate(_ record: BackupRecord, kind: String, allowPending: Bool = false) throws -> UserSyncJSON.ValidatedFact? {
         func owner(_ key: String) throws {
             if allowPending { _ = try parseReadingKey(value: key) } else { try formal(key) }
         }
@@ -163,20 +164,22 @@ enum BackupRows {
             guard !record.mark.isEmpty else { throw ReadingDataError.invalid }
             _ = try UserSyncJSON.annotation(record.payload, id: record.id)
         case "facts":
-            try owner(record.key); try UserSyncJSON.validateFact(record.payload, id: record.id)
-            let value = try JSONSerialization.jsonObject(with: Data(record.payload.utf8)) as? [String: Any]
-            guard let inner = value?["content_key"] as? String else { throw ReadingDataError.invalid }
+            try owner(record.key)
+            let fact = try UserSyncJSON.validateFact(record.payload, id: record.id, includeContentKey: true)
+            guard let inner = fact.payloadContentKey else { throw ReadingDataError.invalid }
             // Historical pending promotion keeps the original fact payload; the
-            // authoritative row key routes it (as visibleFacts already does).
+            // authoritative row key routes it.
             switch try parseReadingKey(value: inner) {
             case .pending: break
             case .formal: guard inner == record.key else { throw ReadingDataError.invalid }
             }
+            return fact
         case "statistics-clears":
             let value = try UserSyncJSON.decode(ClearValue.self, record.payload, as: UserSyncJSON.clear, envelope: true)
             if let key = value.book { _ = try parseReadingKey(value: key) }
         default: throw ReadingDataError.updateRequired
         }
+        return nil
     }
 }
 
@@ -238,13 +241,13 @@ extension UserDataStore {
         for key in Array(items.keys) {
             do {
                 let facts = try visibleFacts(key: key)
-                items[key]?.title = facts.first?["title"] as? String ?? ""
+                items[key]?.title = facts.firstTitle ?? ""
                 let values = try allValues(prefix: "metadata/" + key + "/")
                 let chapters = try allValues(prefix: "chapter/" + key + "/")
                 let heads = try candidates(key: key, compacting: false)
                 let opened = try value("opened/" + key)
                 let live = opened != nil || positions["position/" + key] != nil || values.values.contains { $0 != "null" } || chapters.values.contains { $0 != "null" }
-                    || heads.values.contains { $0.contains { $0.content != nil } } || !facts.isEmpty
+                    || heads.values.contains { $0.contains { $0.content != nil } } || !facts.facts.isEmpty
                 if !live, items[key]?.unsupported == false { items.removeValue(forKey: key); continue }
                 items[key]?.author = values["metadata/" + key + "/author"].flatMap { try? JSONDecoder().decode(String.self, from: Data($0.utf8)) } ?? ""
                 items[key]?.tags = values.filter { $0.key.hasPrefix("metadata/" + key + "/tag-") }.values.compactMap { try? JSONDecoder().decode(String.self, from: Data($0.utf8)) }
@@ -255,10 +258,9 @@ extension UserDataStore {
                     items[key]?.sourceHint = position.source_hint
                     items[key]?.positionUtf8 = position.offset
                 }
-                items[key]?.hasStatistics = !facts.isEmpty
+                items[key]?.hasStatistics = !facts.facts.isEmpty
                 items[key]?.bookmarks = heads.values.filter { $0.contains { $0.bookmark && $0.content != nil } }.count
                 items[key]?.annotations = heads.values.filter { $0.contains { !$0.bookmark && $0.content != nil } }.count
-                items[key]?.title = facts.first?["title"] as? String ?? ""
             } catch {
                 // The raw pass already explained a malformed/future row. Do not
                 // relabel its generic projection barrier as another root cause.
@@ -348,12 +350,12 @@ extension UserDataStore {
         let winners = try values()
         let oldOperations = Dictionary(grouping: try backupRows("annotations"), by: \.id)
         let oldFacts = Dictionary(grouping: try backupRows("facts"), by: \.id)
-        var identities: [String: BackupRecord] = [:]
+        var identities: [String: (record: BackupRecord, fact: UserSyncJSON.ValidatedFact?)] = [:]
         var keys = Set<String>(), newer = 0
         var annotations: [String: [AnnotationCandidate]] = [:]
         for kind in BackupRows.files {
             try BackupRows.forEach(directory.appendingPathComponent("records/" + kind + ".jsonl")) { row in
-                try BackupRows.validate(row, kind: kind)
+                let fact = try BackupRows.validate(row, kind: kind)
                 let key = kind == "values" ? try BackupRows.valueKey(row.key) : (kind == "statistics-clears" ? nil : row.key)
                 if let key { keys.insert(key) }
                 var identity = kind + "/" + row.id
@@ -372,15 +374,19 @@ extension UserDataStore {
                 }
                 if kind == "annotations" || kind == "facts" {
                     for old in (kind == "annotations" ? oldOperations[row.id] : oldFacts[row.id]) ?? [] {
-                        try BackupRows.validate(old, kind: kind)
-                        guard old.key == row.key, old.mark == row.mark, Self.samePayload(old.payload, row.payload) else { throw ReadingDataError.invalid }
+                        let oldFact = try BackupRows.validate(old, kind: kind)
+                        let same = if let oldFact, let fact { Self.sameFactPayload(oldFact, fact) }
+                            else { Self.samePayload(old.payload, row.payload) }
+                        guard old.key == row.key, old.mark == row.mark, same else { throw ReadingDataError.invalid }
                     }
                 }
                 if kind != "statistics-clears" {
                     if let old = identities[identity] {
                         let valueKey = kind == "positions" ? "position/" + row.key : (kind == "values" ? row.key : nil)
-                        guard old.key == row.key, old.mark == row.mark, Self.samePayload(old.payload, row.payload, valueKey: valueKey) else { throw ReadingDataError.invalid }
-                    } else { identities[identity] = row }
+                        let same = if let oldFact = old.fact, let fact { Self.sameFactPayload(oldFact, fact) }
+                            else { Self.samePayload(old.record.payload, row.payload, valueKey: valueKey) }
+                        guard old.record.key == row.key, old.record.mark == row.mark, same else { throw ReadingDataError.invalid }
+                    } else { identities[identity] = (row, fact) }
                 }
                 if kind == "annotations" {
                     let candidate = try UserSyncJSON.annotation(row.payload, id: row.id)
@@ -417,8 +423,15 @@ extension UserDataStore {
                   let right = try? UserSyncJSON.storedValue(b, key: valueKey) else { return false }
             return left.token == right.token && ((try? PositionCandidate.sameUpdate(left, right)) == true)
         }
-        guard let a = try? UserSyncJSON.versioned(a), let b = try? UserSyncJSON.versioned(b),
-              let left = try? JSONSerialization.jsonObject(with: Data(a.utf8)) as? NSDictionary,
+        guard let a = try? UserSyncJSON.versioned(a), let b = try? UserSyncJSON.versioned(b) else { return false }
+        return sameVersionedPayload(a, b)
+    }
+    static func sameFactPayload(_ a: UserSyncJSON.ValidatedFact, _ b: UserSyncJSON.ValidatedFact) -> Bool {
+        guard let a = try? a.versioned(), let b = try? b.versioned() else { return false }
+        return sameVersionedPayload(a, b)
+    }
+    private static func sameVersionedPayload(_ a: String, _ b: String) -> Bool {
+        guard let left = try? JSONSerialization.jsonObject(with: Data(a.utf8)) as? NSDictionary,
               let right = try? JSONSerialization.jsonObject(with: Data(b.utf8)) as? NSDictionary else { return false }
         return left.isEqual(right)
     }
@@ -450,7 +463,9 @@ extension UserDataStore {
                         try mergeValueRecord(key: row.key, device: row.device, payload: row.payload)
                     case "positions": try mergePositionRecord(key: row.key, payload: row.payload)
                     case "annotations": try mergeOperationRecord(key: row.key, id: row.id, mark: row.mark, payload: row.payload)
-                    case "facts": try mergeFactRecord(key: row.key, id: row.id, payload: row.payload)
+                    case "facts":
+                        guard let fact = try BackupRows.validate(row, kind: kind) else { throw ReadingDataError.invalid }
+                        try mergeFactRecord(key: row.key, fact: fact)
                     case "statistics-clears":
                         let old = try modelContext.fetch(FetchDescriptor<StatisticsClear>())
                         if !old.contains(where: { Self.samePayload($0.payload, row.payload) }) { modelContext.insert(StatisticsClear(payload: row.payload)) }

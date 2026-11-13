@@ -25,7 +25,7 @@ enum UserSyncJSON {
         init?(intValue: Int) { return nil }
     }
     indirect enum Shape: Sendable {
-        case string, uint, int, uint32, int32, bool
+        case string, uint, int, uint32, bool
         case choice(Set<String>), nullable(Shape), array(Shape), object([String: Shape], optional: Set<String> = [])
     }
     enum ValueKind { case position, opened, chapter, author, synopsis, status, cover, tag, palette, shelfReference, sourceDecoding }
@@ -65,11 +65,6 @@ enum UserSyncJSON {
                                           "bookmark": .bool, "relatedMarks": .array(.string), "mergedInto": .nullable(.string)])
     static let clear: Shape = .object(["book": .nullable(.string), "session": .nullable(.string), "through": .int, "ids": .array(.string)])
     static let cover: Shape = .object(["id": .string, "sha256": .string, "extension": .string, "width": .uint32, "height": .uint32])
-    static let exposure: Shape = .object(["start_utf8": .uint, "end_utf8": .uint, "duration_ms": .uint])
-    static let slice: Shape = .object(["id": .string, "session_id": .string, "visit_id": .string, "book_id": .string,
-                                      "started_ms": .int, "ended_ms": .int, "local_day": .int, "utc_offset_seconds": .int32,
-                                      "preview": .bool, "exposures": .array(exposure)])
-    static let fact: Shape = .object(["content_key": .string, "title": .string, "device": .string, "slice": slice])
     private static let colorNames = "canvas surface raised input paper ink secondary disabled accent accent_surface on_accent border separator focus pressed selected annotation search search_current selection destructive on_destructive warning success moon maria".split(separator: " ").map(String.init)
     static let palette: Shape = .object(["id": .string, "name": .string, "appearance": .choice(["Light", "Dark"]), "custom": .bool,
                                         "colors": .object(Dictionary(uniqueKeysWithValues: colorNames.map { ($0, .uint32) })),
@@ -114,7 +109,6 @@ enum UserSyncJSON {
         case .uint: _ = try decoder.singleValueContainer().decode(UInt64.self)
         case .int: _ = try decoder.singleValueContainer().decode(Int64.self)
         case .uint32: _ = try decoder.singleValueContainer().decode(UInt32.self)
-        case .int32: _ = try decoder.singleValueContainer().decode(Int32.self)
         }
     }
     static func decode<T: Decodable>(_ type: T.Type, _ text: String, as shape: Shape, envelope: Bool = false) throws -> T {
@@ -189,13 +183,29 @@ enum UserSyncJSON {
         guard value.id == id, !id.isEmpty else { throw UserSyncCompatibilityError() }
         return value
     }
-    private struct FactIdentity: Decodable {
-        struct Slice: Decodable { let id: String }
-        let slice: Slice
+    struct ValidatedFact {
+        let id: String
+        let payload: String
+        let hasVersion: Bool
+        let payloadContentKey: String?
+        fileprivate init(id: String, payload: String, hasVersion: Bool, payloadContentKey: String?) {
+            self.id = id; self.payload = payload; self.hasVersion = hasVersion; self.payloadContentKey = payloadContentKey
+        }
+        func versioned() throws -> String { hasVersion ? payload : try UserSyncJSON.envelope(payload) }
     }
-    static func validateFact(_ payload: String, id: String) throws {
-        try validate(payload, as: fact, envelope: true)
-        guard try JSONDecoder().decode(FactIdentity.self, from: Data(payload.utf8)).slice.id == id, !id.isEmpty else { throw UserSyncCompatibilityError() }
+    static func bindFact(_ cue: FactCue, id: String) throws -> FactSelectionCue {
+        guard cue.status == .accepted, let value = cue.selection, value.id == id, !id.isEmpty else {
+            throw UserSyncCompatibilityError(reason: cue.status == .newerFormat ? .newerFormat : .unreadable)
+        }
+        return value
+    }
+    @discardableResult
+    static func validateFact(_ payload: String, id: String, includeContentKey: Bool = false) throws -> ValidatedFact {
+        let batch = try decodeFactBatch(base: 0, payloads: [payload])
+        guard let cue = batch.cues().first else { throw UserSyncCompatibilityError() }
+        let fact = try bindFact(cue, id: id)
+        let key = includeContentKey ? try batch.payloadContentKey(ordinal: cue.ordinal) : nil
+        return ValidatedFact(id: id, payload: payload, hasVersion: fact.hasVersion, payloadContentKey: key)
     }
     static func quarantined(_ type: String) {
         Logger(subsystem: "dev.moonread.Moonread", category: "SyncCompatibility").error("Quarantined unsupported \(type, privacy: .public) record")

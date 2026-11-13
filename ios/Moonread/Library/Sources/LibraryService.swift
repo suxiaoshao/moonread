@@ -64,10 +64,14 @@ extension LibraryEntry {
     var byteCount: UInt64 { bookRow?.byteCount ?? 0 }
     var chapterTitle: String? { bookRow?.chapterTitle }
     var preferred: Bool { bookRow?.preferred ?? false }
+    var displayMetadata: LibraryCardMetadata? {
+        bookRow?.cardMetadata ?? metadata.map { .init(author: $0.author, cover: $0.cover) }
+    }
     var metadata: BookMetadata? { bookRow?.metadata }
     func withMetadata(_ metadata: BookMetadata?) -> Self {
         guard var book = bookRow else { return self }
         book.metadata = metadata
+        book.cardMetadata = nil
         var entry = self; entry.item = .book(row: book)
         return entry
     }
@@ -81,6 +85,15 @@ struct LibraryScanSnapshot: Sendable {
     var items: [ScannedLibraryItem]
     var failedPaths: [String] = []
     var failures: [String] = []
+}
+
+extension Collection where Element == LibraryEntry {
+    var displayedMetadataKeys: Set<String> {
+        Set(flatMap { entry in
+            [entry.readingKey].compactMap { $0 } +
+                (entry.folderRow?.coverPreviews.compactMap { $0.readingKey?.storageKey } ?? [])
+        })
+    }
 }
 
 extension AppDataService {
@@ -266,6 +279,9 @@ extension AppDataService {
         try await searchCatalogueOutcome(location, spec: spec).entries
     }
     private func searchCatalogueOutcome(_ location: LibraryLocation?, spec: LibraryQueryRules.SearchSpec) async throws -> LibraryQueryRules.SearchOutcome {
+        if spec.profile == .library {
+            return try await libraryCatalogueSearch(catalogueScope(location, recursive: true), spec: spec)
+        }
         let query = try await catalogueQuery(location, recursive: true)
         let candidates = try query.librarySearchCandidates(scope: catalogueScope(location, recursive: true), booksOnly: spec.profile == .ai || spec.configuration.booksOnly)
         if spec.profile == .ai { try await requireAIMetadataReadable(nil, recursive: true) }
@@ -280,14 +296,21 @@ extension AppDataService {
     }
 
     func allLibraryBooks(_ shelfID: String) async throws -> [LibraryEntry] {
-        try await catalogueQuery(LibraryLocation(shelfID: shelfID), recursive: true).allLibraryBooks(shelfId: shelfID)
+        try await readingQuery(.catalogue(catalogueScope(.init(shelfID: shelfID), recursive: true)),
+                               options: .init(scope: "library-name-cards", fields: [.position, .chapter, .card]))
+            .allLibraryBookCards(shelfId: shelfID)
     }
     func libraryTagGroups(_ shelfID: String) async throws -> LibraryTagCatalogue {
-        try await catalogueQuery(LibraryLocation(shelfID: shelfID), recursive: true).allLibraryTagGroups(shelfId: shelfID)
+        let tagged = try await readingQuery(.catalogue(catalogueScope(.init(shelfID: shelfID), recursive: true)),
+                               options: .init(scope: "library-tag-cards", fields: [.position, .chapter, .card, .tags]))
+            .allLibraryTagCards(shelfId: shelfID)
+        let cards = Dictionary(uniqueKeysWithValues: tagged.cards.map { ($0.id, $0) })
+        return .init(bookCount: UInt64(tagged.cards.count), groups: tagged.groups.map { group in
+            .init(kind: group.kind, tag: group.tag, entries: group.fileIds.compactMap { cards[$0] })
+        })
     }
     func recentLibrary(_ limit: UInt32 = 1000, cold: Bool = false) async throws -> [LibraryEntry] {
-        if cold { return try await effectiveQuery(scope: "home-cold").recentLibraryEntries(limit: limit) }
-        return try await readingQuery(.recent(limit), options: .init(scope: "recent")).recentLibraryEntries(limit: limit)
+        try await recentLibraryEntries(limit, cold: cold)
     }
 
     func hideRecent(_ value: String) throws {
@@ -654,9 +677,9 @@ extension AppDataService {
 
     /// Resolve the live file's decoding by raw bytes; the coordinated move then
     /// proves both those bytes and the preview's normalized reading identity.
-    func renameLibraryBook(_ entry: LibraryEntry, name: String, expected key: ReadingKey) async throws {
+    func renameLibraryBook(_ entry: MetadataExchangeFile, name: String, expected key: ReadingKey) async throws {
         guard case .formal = key else { throw ReaderError.SourceChanged }
-        let snapshot = try aiFileSnapshot(entry.location)
+        let snapshot = try aiFileSnapshot(.init(shelfID: entry.shelfId, path: entry.relativePath))
         guard !snapshot.directory, let hash = snapshot.hash else { throw ReaderError.SourceChanged }
         let decoding = try await resolveSourceDecoding(rawSHA: hash)
         let current: SourceFileLocation
@@ -665,7 +688,9 @@ extension AppDataService {
         guard !current.directory, current.shelfId == entry.shelfId, current.relativePath == entry.relativePath else {
             throw ReaderError.SourceChanged
         }
-        try performLibraryMove(entry, to: entry.parent, name: name, replace: false,
+        let source = MoveSource(id: entry.id, shelfId: entry.shelfId, relativePath: entry.relativePath,
+                                name: entry.name, directory: false)
+        try performLibraryMove(source, to: .init(shelfID: entry.shelfId, path: entry.parentPath), name: name, replace: false,
                                renameValidation: .book(key, snapshot: snapshot, decoding: decoding))
     }
 
@@ -689,7 +714,20 @@ extension AppDataService {
             return .init(id: entry.id, stage: error.stage, message: AIRequestError.message(error.underlying), reason: aiFailureReason(error.underlying))
         } catch { return .init(id: entry.id, stage: .notMoved, message: AIRequestError.message(error), reason: aiFailureReason(error)) }
     }
+    private struct MoveSource {
+        let id: String
+        let shelfId: String
+        let relativePath: String
+        let name: String
+        let directory: Bool
+        var location: LibraryLocation { .init(shelfID: shelfId, path: relativePath) }
+    }
     private func performLibraryMove(_ entry: LibraryEntry, to destination: LibraryLocation, name: String? = nil, replace: Bool, check: AIFileMoveCheck? = nil, renameValidation: RenameValidation = .none) throws {
+        try performLibraryMove(MoveSource(id: entry.id, shelfId: entry.shelfId, relativePath: entry.relativePath,
+                                         name: entry.name, directory: entry.directory),
+                               to: destination, name: name, replace: replace, check: check, renameValidation: renameValidation)
+    }
+    private func performLibraryMove(_ entry: MoveSource, to destination: LibraryLocation, name: String?, replace: Bool, check: AIFileMoveCheck? = nil, renameValidation: RenameValidation = .none) throws {
         var stage: AIFileExecutionStage = .notMoved
         do {
         let target = try libraryChildPath(parent: destination.path, name: name ?? entry.name)

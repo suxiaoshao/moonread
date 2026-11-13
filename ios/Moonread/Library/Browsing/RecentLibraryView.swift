@@ -6,6 +6,7 @@ struct RecentLibraryView: View {
     @Bindable var model: LibraryModel
     @State private var loading = LoadingState()
     @State private var entries: [LibraryEntry] = []
+    @State private var metadataRevision: UInt64 = 0
     var body: some View {
         List(entries, id: \.id) { entry in
             RecentBookRow(model: model, entry: entry)
@@ -16,17 +17,22 @@ struct RecentLibraryView: View {
         }.listStyle(.plain).themedPage().navigationTitle("最近阅读")
             .refreshable { await model.refresh(showIndicator: false, userInitiated: true); await loadEntries() }
             .modifier(PageLoadingOverlay(request: loading.request, hasContent: !entries.isEmpty, label: "正在加载"))
-            .task { let request = loading.begin(); defer { loading.finish(request) }; await loadEntries() }
-            .onChange(of: model.recents) { _, recents in updateEntries(recents) }
-    }
-    private func updateEntries(_ recents: [LibraryEntry]) {
-        let updates = Dictionary(uniqueKeysWithValues: recents.map { ($0.id, $0) })
-        var next = entries.map { updates[$0.id] ?? $0 }
-        next.sort { a, b in a.lastRead == b.lastRead ? a.id < b.id : a.lastRead > b.lastRead }
-        if next != entries { entries = next }
+            .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { change in
+                if change.affectsLibraryMetadata(.card, keys: loading.active ? nil : entries.displayedMetadataKeys) {
+                    metadataRevision &+= 1
+                }
+            }
+            .task(id: [model.readingInputRevision, metadataRevision]) {
+                let request = loading.begin(); defer { loading.finish(request) }
+                await loadEntries()
+            }
     }
     private func loadEntries() async {
-        do { let next = try await AppDataService.shared.recentLibrary(); if next != entries { entries = next } }
+        do {
+            let next = try await model.service.recentLibrary()
+            try Task.checkCancellation()
+            if next != entries { entries = next }
+        } catch is CancellationError { }
         catch { model.error = ReaderMessages.error(error) }
     }
 }

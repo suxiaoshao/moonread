@@ -66,14 +66,7 @@ final class BookInformationModel {
         self.readChapters = readChapters ?? { try await service.chapters($0).items }
     }
     private static func read(_ route: StatisticsRoute, service: AppDataService) async throws -> (LibraryEntry?, BookDetailsResult) {
-        let details = try await service.bookDetails(route.target)
-        let entry: LibraryEntry?
-        if case .missing = details { entry = nil }
-        else if let file = route.fileID { entry = try await service.libraryEntry(file) }
-        else if !route.fromReader, case .identified(let identity, _) = details, case .associated = identity.body {
-            entry = try await service.libraryEntries(nil).first { $0.readingIdentity == identity.key && !$0.directory }
-        } else { entry = nil }
-        return (entry, details)
+        try await service.bookInformation(route.target, fileID: route.fileID, includeRecordSource: !route.fromReader)
     }
     func contentSHA(for route: StatisticsRoute) -> String? {
         if case .record(.formal(let sha)) = route.target { return sha }
@@ -347,7 +340,10 @@ struct BookInformationSections: View {
             Button { dismiss() } label: { Text("返回阅读").frame(maxWidth: .infinity) }
                 .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
         } else if let entry = model.entry, let library {
-            Button { library.open(entry) } label: { Text(entry.lastRead == 0 ? "开始阅读" : "继续阅读").frame(maxWidth: .infinity) }
+            Button {
+                let metadata = model.details?.metadata
+                library.open(entry.withMetadata(metadata?.sha == entry.readingIdentity?.formalSHA256 ? metadata : nil))
+            } label: { Text(entry.lastRead == 0 ? "开始阅读" : "继续阅读").frame(maxWidth: .infinity) }
                 .buttonStyle(ThemedProminentButtonStyle()).controlSize(.large)
         } else if let book = model.readableBook, let library {
             Button { library.path.append(.reader(OpeningRequest(target: .book(book.id)))) } label: { Text("继续阅读").frame(maxWidth: .infinity) }

@@ -1,6 +1,22 @@
 import SwiftUI
 import UIKit
 
+struct ReaderCoverHint: Hashable, Sendable {
+    let sha: String?
+    let card: LibraryCardMetadata
+}
+
+enum ReaderCoverInformation: Equatable {
+    case details(BookDetails)
+    case hint(ReaderCoverHint)
+
+    var details: BookDetails? { if case let .details(value) = self { value } else { nil } }
+    private var hint: ReaderCoverHint? { if case let .hint(value) = self { value } else { nil } }
+    var sha: String? { details?.metadata.sha ?? hint?.sha }
+    var author: String? { details?.metadata.author ?? hint?.card.author }
+    var cover: BookCoverAsset? { details?.metadata.cover ?? hint?.card.cover }
+}
+
 /// One request to enter reading; file identity and the route target stay independent.
 struct OpeningRequest: Hashable, Sendable {
     let id: UUID
@@ -9,8 +25,9 @@ struct OpeningRequest: Hashable, Sendable {
     let tap: TimeInterval?
     let expectedContentSHA: String?
     let metadataHint: BookMetadata?
-    init(target: ReaderRoute, tap: TimeInterval? = nil, expectedContentSHA: String? = nil, metadataHint: BookMetadata? = nil, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
-        id = UUID(); self.metadataHint = metadataHint; self.expectedContentSHA = expectedContentSHA; self.target = target; routeRequested = now; self.tap = tap
+    let coverHint: ReaderCoverHint?
+    init(target: ReaderRoute, tap: TimeInterval? = nil, expectedContentSHA: String? = nil, metadataHint: BookMetadata? = nil, coverHint: ReaderCoverHint? = nil, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
+        id = UUID(); self.metadataHint = metadataHint; self.coverHint = coverHint; self.expectedContentSHA = expectedContentSHA; self.target = target; routeRequested = now; self.tap = tap
         ReaderOpenDiagnostics.begin(self)
     }
 }

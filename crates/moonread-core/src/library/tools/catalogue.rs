@@ -1,3 +1,4 @@
+use crate::user::projection::ExposureSlot;
 use crate::*;
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -13,16 +14,20 @@ pub(crate) fn chapter(db: &Connection, id: &str, offset: u64) -> Result<Option<C
 impl ReaderCore {
     /// A complete, lightweight snapshot of every published heading. Counts use
     /// prefix totals built with the text cache; this query never loads prose.
-    pub(crate) fn chapter_outline(&self, book_id: String) -> Result<ChapterOutline> {
-        self.chapter_outline_with_coverage(book_id, true)
+    pub(crate) fn chapter_outline(
+        &self,
+        book_id: String,
+        exposures: &[Option<ExposureSlot>],
+    ) -> Result<ChapterOutline> {
+        self.chapter_outline_with_coverage(book_id, Some(exposures))
     }
     pub(crate) fn chapter_structure(&self, book_id: String) -> Result<ChapterOutline> {
-        self.chapter_outline_with_coverage(book_id, false)
+        self.chapter_outline_with_coverage(book_id, None)
     }
     fn chapter_outline_with_coverage(
         &self,
         book_id: String,
-        include_coverage: bool,
+        exposures: Option<&[Option<ExposureSlot>]>,
     ) -> Result<ChapterOutline> {
         let mut db = self.reader.lock().map_err(|_| ReaderError::ImportBusy)?;
         let tx = db.transaction()?;
@@ -50,8 +55,8 @@ impl ReaderCore {
                 })
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        let coverage = if include_coverage {
-            crate::user::statistics::coverage::covered_char_ranges(&tx, &id)?
+        let coverage = if let Some(exposures) = exposures {
+            crate::user::statistics::coverage::covered_char_ranges(&tx, &id, exposures)?
         } else {
             None
         };

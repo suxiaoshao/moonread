@@ -91,7 +91,7 @@ SwiftData 的 `UserDataStore`（ModelActor）是用户数据持久化入口。`A
 
 ### 阅读事实、清理与正文准备
 
-`ReadingFact` 保存稳定片段 ID、设备、会话、连续访问、UTC 起止、发生地自然日/时区、查阅类型及可见范围证据。Rust 保留 120 秒闲置、15 秒切片、午夜和连续 3 秒覆盖计算，统计查询从 Swift 提供的 TEMP 输入聚合，不持久化用户事实。
+`ReadingFact` 保存稳定片段 ID、设备、会话、连续访问、UTC 起止、发生地自然日/时区、查阅类型及可见范围证据。Rust 保留 120 秒闲置、15 秒切片、午夜和连续 3 秒覆盖计算，统计查询从 SwiftData 取得原始事实，按批由 Rust 类型化解析；Swift 只保留行 id、书键、日期和选中索引。计算和章节覆盖复用选中的 Rust 对象，TEMP 私有且不持久化或同步用户事实。
 
 清理不动 TXT、批注、书签、位置或小说信息。记录开关和本机代次在 ModelActor 的写入门槛中检查；旧队列不会因暂停/清理后重试而重新入账。同步清理边界包含目标书/会话、已知事实 ID 和清理时刻；迟到的已知事实及清理时刻以前的目标片段不再参与聚合。跨设备时钟偏移及离线新事实的真实清理传播仍须云端验证，不能以本地注入替代。
 
@@ -127,7 +127,7 @@ SwiftData 的 `UserDataStore`（ModelActor）是用户数据持久化入口。`A
 
 发布后的扩展优先使用新 key / 新记录类型；不要向既有对象追加旧版会忽略的字段。改变既有意义的新类型（例如新的清除或合并规则）必须同时在相关作用域写一条旧版认识的高 `v` 标记，让旧版停止编辑该作用域。已发布的类型、key、作用域与排序元数据含义保持稳定。CloudKit 生产 schema 只增不删。
 
-同步字符串 payload 的顶层 envelope 使用整数 `v`，缺失单独视为 1；非整数、非法版本或高于 1 不理解。版本覆盖内层 value，不在嵌套对象重复，也不在 SwiftData `@Model` 上添加版本属性。校验集中在 Swift `UserSyncJSON` 存储边界，不给 Rust/UniFFI 类型增加 serde Map；通过校验后才交给计算投影。整数字段按声明宽度直接解码，不先经过 Double。
+同步字符串 payload 的顶层 envelope 使用整数 `v`，缺失单独视为 1；非整数、非法版本或高于 1 不理解。版本覆盖内层 value，不在嵌套对象重复，也不在 SwiftData `@Model` 上添加版本属性。阅读事实由 Rust `user/reading_fact.rs` 用 serde_json 类型化校验和编解码；Swift `UserSyncJSON` 的事实适配绑定行 id，SwiftData 保留候选裁决和事务。其他同步 payload（包括统计清除）仍由 Swift `UserSyncJSON` 校验。整数字段按声明宽度直接解码，不先经过 Double；不引入通用 serde Map。
 
 v1 写入所有字段，Optional 的 nil 显式写 `null`。读取同时检查**键集合与类型**：必需键缺失、null 用在非 Optional 上、错误类型、未声明字段（含嵌套对象）、解码失败都隔离。位置的 `source_hint` 是兼容例外：TestFlight 1.0.0(2) 未写此字段，缺失按 nil 读取；其他必需字段仍不能缺失。未分发开发版的其他省略 nil 编码不作为通用缺省例外；已发布数据按明确的兼容规则保留，不运行时自动清库。
 
@@ -138,7 +138,7 @@ v1 写入所有字段，Optional 的 nil 显式写 `null`。读取同时检查**
 | ReadingFact | content_key、title、device、slice |
 | StatisticsClear | book、session、through（Int64）、ids |
 
-批注 `content:null` 是删除 tombstone，`mergedInto:null` 是未合并；`relatedMarks` 总是数组。统计清除的 `book:null` / `session:null` 才表示不限定该维度，缺键不能解释为全局。位置内层字段为 content_key/offset/source_hint（历史缺失来源线索按 nil 读取）；章节为 content_key/offset/title/level/excluded；批注 content 为 start/end/excerpt/note。slice、exposures、cover、调色板及颜色对象逐层使用当前声明的完整字段集合；UserCover 的 bytes 不加 envelope，约定同 id 字节不可变。不支持的封面格式显示占位并保留引用与原字节。
+批注 `content:null` 是删除 tombstone，`mergedInto:null` 是未合并；`relatedMarks` 总是数组。统计清除的 `book:null` / `session:null` 才表示不限定该维度，缺键不能解释为全局。位置内层字段为 content_key/offset/source_hint（历史缺失来源线索按 nil 读取）；章节为 content_key/offset/title/level/excluded；批注 content 为 start/end/excerpt/note。slice、exposures、cover、调色板及颜色对象逐层使用当前声明的完整字段集合；阅读事实（含 slice/exposures）由 Rust 的 serde_json 类型化校验，历史缺 v 按 1，显式 null、错误类型、未知字段和不支持的版本不参与读写。数字、重复键及其他特殊 JSON 按 serde 的标准行为，不复现旧 Foundation 特殊接受或舍入；UserCover 的 bytes 不加 envelope，约定同 id 字节不可变。不支持的封面格式显示占位并保留引用与原字节。
 
 v1 key 白名单：`position/{contentKey}`、`opened/{contentKey}`（1.6 起的可缺省最近打开毫秒时间，JSON Int64）、`chapter/{contentKey}/{offset}`、`palette/{id}`、`metadata/{sha}/{author,synopsis,status,cover,tag-*}`。遍历、投影、批量操作和 pending 转移不处理未知 key；保留其原始记录，metadata 只投影已知属性。最近打开复用既有 UserValue/StoredValue LWW 与完整备份，不修改位置 payload 或 SwiftData schema；无 opened 值的已发布 1.5 数据保持原阅读时间顺序，pending 晋升沿同一身份与值裁决入口处理。内层 null 仅用于声明允许删除的章节、封面、标签、调色板；author/synopsis/status 必须是字符串。
 
@@ -148,7 +148,7 @@ v1 key 白名单：`position/{contentKey}`、`opened/{contentKey}`（1.6 起的�
 - **批注**：该 mark 的全部候选保留，不压缩、不返回为可编辑内容；append、删除/撤销、合并和 resolve 都先检查隔离。无关 mark 仍可处理，关联到隔离 mark 的整组编辑停止并提示更新。
 - **书目与目录/主题值**：不以错误记录的缺省值开启编辑；已知 key 的写入被拒，完整书目编辑入口在无法理解已知书目字段时停止。新增未知 key 不妨碍现有独立 key。章节恢复不会删除未知 key。
 - **统计清除**：无法理解时，若 book/session 两个键都存在且类型可解释，阻断与其相交的统计展示和清除；无法判断作用域则阻断全部，提示“统计数据来自更新版本，请更新 App”。包括已显示的旧统计，不能只禁用清除按钮。全库统计包含该作用域，因此也阻断。
-- **统计事实**：不理解的事实保留、不参与计算；同 id 有未知副本时不选择一个旧副本代替。相应统计页（包括按日页）提示“统计不完整”。
+- **统计事实**：不理解的事实原串保留、不参与计算或被旧写入覆盖；同一个库内已读取的同 id 有未知副本时不改选旧副本。Swift 先判同库候选，再检查 session/清除，最后筛日期；即使坏行不在日期窗口内，仍提示“统计不完整”。正式与 pending 各自裁决并合并不完整状态；Rust TEMP 在日期选择后按正式在前、pending 在后的顺序保留同 id 第一项。
 - **pending**：转移与删除前检查同一作用域的记录；源端不理解则不导出/删除，目标端不理解或传入快照不完整则事务不导入。转正快速路径不能绕过后来到达的未知记录。只转移已知记录类型，未知 key 留在原处。
 
 阅读状态是独立字符串 key，未知字符串保留为带原值的 Other，不当作未读、不触发自动升级到“阅读中”，显示“其他（当前版本不支持）”。编辑作者等其他属性不写回状态；只有用户明确选择已支持状态才替换。AI `search_books` 状态过滤支持 `other`，未指定状态时为全部；写入建议仍只接受已知状态，不创造丢失原值的“其他”。
@@ -171,7 +171,7 @@ UserValue 按 `(updated, token)` 做整值 LWW；位置候选写入与压缩也�
 
 同 token 的位置重试按 updated 与解码后 PositionValue 的内容相等判断，不比较 JSON 键排列；pending 晋升和备份位置接入共用该判断。备份快照是 UserDataStore 上不挂起的同步调用；预览后的最终校验在导入事务中执行，保留账户/configuration 检查，不将全局投影缓存 epoch 当成该 store 的一致性凭据。
 
-库存诊断区分较新格式（高 v、未知类型或字段）、数据无法读取（坏结构）与读取失败（存储/查询异常）；只在确认为较新格式时建议更新。诊断只返回书键、可得书名/来源、记录类型和原因，不返回 payload。统计清除的 book 可以是正式 SHA 或非空 pending 键，旧作用域在库存、备份和整书删除中保持可读。
+库存诊断区分较新格式、数据无法读取与读取失败（存储/查询异常）。阅读事实仅在可按已知结构读取到高 v 时明确标为较新格式，其他不支持结构仍隔离；只在确认为较新格式时建议更新。诊断只返回书键、可得书名/来源、记录类型和原因，不返回 payload。统计清除的 book 可以是正式 SHA 或非空 pending 键，旧作用域在库存、备份和整书删除中保持可读。
 
 ## 1.3 同步进度与编码
 

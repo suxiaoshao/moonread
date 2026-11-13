@@ -47,9 +47,7 @@ extension AppDataService {
             let key = identity.storageKey
             leases[key] = localReadingWriteLease(key)
             let book = try await snapshot(slice.bookId).book
-            let value: [String: Any] = ["content_key": key, "title": book.title, "device": userDevice,
-                "slice": try JSONSerialization.jsonObject(with: Data(encodeReadingSlice(value: slice).utf8))]
-            let fact = (slice.id, key, String(decoding: try JSONSerialization.data(withJSONObject: value), as: UTF8.self))
+            let fact = (slice.id, key, try encodeReadingFact(contentKey: key, title: book.title, device: userDevice, slice: slice))
             switch identity { case .pending: pendingFacts.append(fact); case .formal: facts.append(fact) }
         }
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }

@@ -126,22 +126,16 @@ final class UserPersistenceUserDataTests: UserDataFixture {
     let a = try fact("a", start: 1)
     let b = try fact("b", start: 1)
     try await store.saveFacts([a, b, a], generation: 0, current: 0, enabled: true)
-    let json = try await store.projection(generation: 0, enabled: true, includeFacts: true)
-    let facts =
-      (try JSONSerialization.jsonObject(with: Data(json.utf8)) as! [String: Any])["facts"]
-      as! [[String: Any]]
-    XCTAssertEqual(
-      facts.count, 2, "Independent overlapping devices both contribute; retry contributes once")
+    let prepared = try await store.preparedFacts(keys: nil)
+    XCTAssertEqual(Set(prepared?.facts.map(\.id) ?? []), ["a", "b"],
+      "Independent overlapping devices both contribute; retry contributes once")
     try await store.clear(book: "sha", session: "s")
     try await store.saveFacts(
       [try fact("offline", start: 1)], generation: 0, current: 0, enabled: true)
     try await store.saveFacts(
       [try fact("paused", start: Int64.max - 15_001)], generation: 0, current: 1, enabled: true)
-    let clearedJSON = try await store.projection(generation: 1, enabled: true, includeFacts: true)
-    let cleared =
-      (try JSONSerialization.jsonObject(with: Data(clearedJSON.utf8)) as! [String: Any])["facts"]
-      as! [Any]
-    XCTAssertTrue(cleared.isEmpty)
+    let cleared = try await store.preparedFacts(keys: nil)
+    XCTAssertTrue(cleared?.facts.isEmpty == true)
   }
 
   // S467: pending 提升幂等，清除事实不复活且成功后才移除 pending；独立跨库边界。

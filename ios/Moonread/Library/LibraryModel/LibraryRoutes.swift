@@ -37,7 +37,7 @@ struct HomeSnapshot: Equatable {
     }
     private struct BookSurface: Equatable {
         let id: String, shelf: String, shelfName: String, path: String, name: String
-        let book: String?, position: UInt64, bytes: UInt64, chapter: String?, metadata: BookMetadata?, download: Bool
-        init(_ v: LibraryEntry) { id = v.id; shelf = v.shelfId; shelfName = v.shelfName; path = v.relativePath; name = v.name; book = v.readingKey; position = v.positionUtf8; bytes = v.byteCount; chapter = v.chapterTitle; metadata = v.metadata; download = v.needsDownload }
+        let book: String?, position: UInt64, bytes: UInt64, chapter: String?, metadata: LibraryCardMetadata?, download: Bool
+        init(_ v: LibraryEntry) { id = v.id; shelf = v.shelfId; shelfName = v.shelfName; path = v.relativePath; name = v.name; book = v.readingKey; position = v.positionUtf8; bytes = v.byteCount; chapter = v.chapterTitle; metadata = v.displayMetadata; download = v.needsDownload }
     }
 }

@@ -85,17 +85,55 @@ fn temporary_user_inputs_never_persist_in_the_text_database() {
         );
     }
 }
+fn with_facts(
+    core: &moonread_core::ReaderCore,
+    input: serde_json::Value,
+    facts: Vec<serde_json::Value>,
+) -> std::sync::Arc<moonread_core::ReaderQuery> {
+    use moonread_core::{
+        FactBatchPick, FactBatchSelection, FactGeometry, FactQuerySelection, decode_fact_batch,
+        seal_prepared_facts,
+    };
+    let batch = decode_fact_batch(0, facts.iter().map(ToString::to_string).collect()).unwrap();
+    let picks = batch
+        .cues()
+        .iter()
+        .zip(&facts)
+        .map(|(cue, row)| {
+            assert!(cue.selection.is_some());
+            FactBatchPick {
+                batch_id: cue.batch_id,
+                ordinal: cue.ordinal,
+                content_key: row["content_key"].as_str().unwrap().into(),
+            }
+        })
+        .collect();
+    let prepared = seal_prepared_facts(vec![FactBatchSelection { batch, picks }]).unwrap();
+    let formal = FactQuerySelection {
+        prepared_id: prepared.prepared_id(),
+        prepared,
+        indices: None,
+    };
+    core.query_snapshot_with_facts(input.to_string(), Some(formal), None, FactGeometry::Full)
+        .unwrap()
+}
 #[test]
 fn overlapping_devices_accumulate_and_fact_retry_does_not_double_count() {
     let (_root, core, book) = fixture();
+    assert!(matches!(
+        core.query_snapshot(r#"{"facts":[{}]}"#.into()),
+        Err(moonread_core::ReaderError::InvalidSettings)
+    ));
     let a = fact(&book, "a", "device-a", "visit-a", 1_000, 15_000, (20, 50));
     let b = fact(&book, "b", "device-b", "visit-b", 1_000, 15_000, (20, 50));
     let cover = json!({"id":"00000000-0000-4000-8000-000000000001","sha256":"a".repeat(64),"extension":"jpg","width":80,"height":120});
-    let query = core
-        .query_snapshot(json!({"facts":[a.clone(),b,a], "metadata":[{
+    let query = with_facts(
+        &core,
+        json!({"metadata":[{
             "sha":book.reading_key.formal_sha().unwrap(),"author":"Example Author","synopsis":"","tags":[],"cover":cover,"status":"Reading"
-        }]}).to_string())
-        .unwrap();
+        }]}),
+        vec![a.clone(), b, a],
+    );
     let overview = query.statistics_overview(20000, 20000, None).unwrap();
     assert_eq!(overview.books[0].duration_ms, 30_000);
     assert_eq!(overview.books[0].author.as_deref(), Some("Example Author"));
@@ -122,9 +160,7 @@ fn coverage_spans_checkpoints_but_does_not_add_disjoint_visits() {
     let (_root, core, book) = fixture();
     let a = fact(&book, "a", "s", "v", 0, 1500, (19, 49));
     let b = fact(&book, "b", "s", "v", 1500, 1500, (19, 49));
-    let query = core
-        .query_snapshot(json!({"facts":[a.clone(),b]}).to_string())
-        .unwrap();
+    let query = with_facts(&core, json!({}), vec![a.clone(), b]);
     assert!(
         query.chapter_outline(book.id.clone()).unwrap().items[0]
             .covered_characters
@@ -159,9 +195,7 @@ fn coverage_spans_checkpoints_but_does_not_add_disjoint_visits() {
         assert_eq!(structure.covered_characters, None);
     }
     let c = fact(&book, "c", "s", "other", 1500, 1500, (19, 49));
-    let query = core
-        .query_snapshot(json!({"facts":[a,c]}).to_string())
-        .unwrap();
+    let query = with_facts(&core, json!({}), vec![a, c]);
     assert_eq!(
         query.chapter_outline(book.id).unwrap().items[0].covered_characters,
         Some(0)
@@ -556,9 +590,7 @@ fn filtered_fact_snapshots_update_overview_book_and_days_without_duplicate_ids()
         (vec![b.clone(), c.clone()], 5000, 2000, 1),
         (vec![a.clone(), c.clone(), c.clone()], 4000, 1000, 2),
     ] {
-        let query = core
-            .query_snapshot(json!({"facts": facts}).to_string())
-            .unwrap();
+        let query = with_facts(&core, json!({}), facts);
         let overview = query.statistics_overview(20000, 20001, None).unwrap();
         assert_eq!(overview.total_duration_ms, total);
         assert_eq!(

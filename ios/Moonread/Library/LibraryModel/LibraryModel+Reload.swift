@@ -55,7 +55,7 @@ extension LibraryModel {
     }
     private func warmHomeCovers(_ entries: [LibraryEntry]) async {
         // The resume card and the covers visible in the first screen of the recent row.
-        homeCovers = entries.prefix(4).compactMap { $0.metadata?.cover }.map { CoverImageLoader.shared.subscribe($0, pixels: 384) }
+        homeCovers = entries.prefix(4).compactMap { $0.displayMetadata?.cover }.map { CoverImageLoader.shared.subscribe($0, pixels: 384) }
         let deadline = ContinuousClock.now.advanced(by: .milliseconds(150))
         while homeCovers.contains(where: { $0.presentation.phase == .loading }), ContinuousClock.now < deadline {
             do { try await Task.sleep(for: .milliseconds(5)) } catch { return }
@@ -68,6 +68,20 @@ extension LibraryModel {
         var transaction = Transaction(); transaction.disablesAnimations = true
         withTransaction(transaction) { home = next; if shelfChanged { revision += 1 } }
     }
+    func refreshRecentCards() async {
+        guard homeReady else { return }
+        let request = homeRequest, readingRevision = readingInputRevision
+        do {
+            let cards = try await service.recentLibrary(UInt32(Self.homeRecentLimit))
+            try Task.checkCancellation()
+            guard request == homeRequest, readingRevision == readingInputRevision else { return }
+            var next = homeIndex
+            next.recents = cards
+            publishHome(next)
+        } catch is CancellationError { }
+        catch { self.error = ReaderMessages.error(error) }
+    }
+
     /// Called only after the reader's existing final-save contract completes.
     func reloadBook(_ route: ReaderRoute) async {
         defer { readingInputRevision &+= 1 }

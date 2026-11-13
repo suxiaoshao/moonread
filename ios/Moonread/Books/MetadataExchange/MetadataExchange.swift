@@ -4,9 +4,9 @@ import Foundation
 final class MetadataImportSession: @unchecked Sendable {
     let document: MetadataDocument
     let configuration: UUID
-    private var drafts: [URL] = []
+    private var drafts: Set<URL> = []
     init(document: MetadataDocument, configuration: UUID) { self.document = document; self.configuration = configuration }
-    func retainDraft(_ url: URL) { drafts.append(url) }
+    func retainDrafts(_ urls: [URL]) { drafts.formUnion(urls) }
     deinit { for url in drafts { try? FileManager.default.removeItem(at: url) } }
 }
 
@@ -67,15 +67,13 @@ struct MetadataPreviewBook: Identifiable, Sendable {
     let title: String
     enum Source: Sendable {
         case none
-        case unique(LibraryEntry)
+        case unique(MetadataExchangeFile)
         case multiple(Int)
 
-        init(_ sources: [LibraryEntry]) {
-            switch sources.count {
-            case 0: self = .none
-            case 1: self = .unique(sources[0])
-            default: self = .multiple(sources.count)
-            }
+        init(_ book: MetadataExchangeBook?) {
+            if let source = book?.uniqueSource { self = .unique(source) }
+            else if let book { self = .multiple(Int(book.sourceCount)) }
+            else { self = .none }
         }
         var count: Int {
             switch self {
@@ -99,7 +97,7 @@ struct MetadataPreviewBook: Identifiable, Sendable {
     var match: Match
     var messages: [String] = []
     var base: BookMetadata? { if case .matched(let book) = match { book.base } else { nil } }
-    var source: LibraryEntry? {
+    var source: MetadataExchangeFile? {
         guard case .matched(let book) = match, case .unique(let source) = book.source else { return nil }
         return source
     }

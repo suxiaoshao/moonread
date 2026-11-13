@@ -19,6 +19,8 @@ Rust 索引、身份、来源状态 ─────────┴→ AppDataSer
 
 主 App 的 `SystemIntegration/SystemReadingCatalog.swift` 负责生产，`SystemReadingRouter.swift` 负责开书路由，共享 DTO 位于 `ios/SystemIntegrationShared/`；未引入包管理工具或通用事件总线。
 
+批量导入小说资料时，每本仍各自提交，并通知页面和同步。系统书目把本批成功写入合并为退出时的一次刷新请求，正常完成、失败和取消均走同一收尾。单本编辑、云导入和文件索引变化等其他失效仍按各自路径处理。
+
 ## 身份与字段
 
 稳定实体 ID 为 `book:<normalization-v1 content_sha256>`，调用 Rust `parse_sha256`，不以 bookId/fileId/路径作身份。尚无正文 SHA 的书不发布实体或 Spotlight 项；不为系统搜索自动下载全库。以后建立索引/正常开书后自然出现。

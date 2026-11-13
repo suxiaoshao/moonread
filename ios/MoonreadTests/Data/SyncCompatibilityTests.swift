@@ -76,10 +76,10 @@ final class SyncCompatibilityTests: UserDataFixture {
         }
         let after = try await store.syncFixturePayloads("position", key: "sha")
         XCTAssertEqual(after, before)
-        let projection = try await store.projection(
-          generation: 0, enabled: true, includeFacts: false)
+        let projection = try requireStoreProjection(try await store.projection(
+          generation: 0, enabled: true, includeFacts: false))
         let json = try XCTUnwrap(
-          JSONSerialization.jsonObject(with: Data(projection.utf8)) as? [String: Any])
+          JSONSerialization.jsonObject(with: Data(projection.json.utf8)) as? [String: Any])
         XCTAssertTrue((json["positions"] as? [Any])?.isEmpty == true)
         XCTAssertEqual(json["unsupportedPositions"] as? [String], ["sha"])
         let notice = try await store.compatibilityNotice(key: "sha")
@@ -99,9 +99,9 @@ final class SyncCompatibilityTests: UserDataFixture {
     let text = try XCTUnwrap(storedText)
     XCTAssertEqual(
       try JSONDecoder().decode(PositionValue.self, from: Data(text.utf8)).offset, offset)
-    let projected = try await precise.projection(generation: 0, enabled: true, includeFacts: false)
+    let projected = try requireStoreProjection(try await precise.projection(generation: 0, enabled: true, includeFacts: false))
     let json = try XCTUnwrap(
-      JSONSerialization.jsonObject(with: Data(projected.utf8)) as? [String: Any])
+      JSONSerialization.jsonObject(with: Data(projected.json.utf8)) as? [String: Any])
     let position = try XCTUnwrap((json["positions"] as? [[String: Any]])?.first)
     XCTAssertEqual((position["offset"] as? NSNumber)?.uint64Value, offset)
   }
@@ -172,9 +172,11 @@ final class SyncCompatibilityTests: UserDataFixture {
         generation: 0, enabled: true, includeFacts: true, statisticsBook: "sha")
     }
     await Self.rejectSync { try await store.clear(book: "sha", session: nil) }
-    let other = try await store.projection(
-      generation: 0, enabled: true, includeFacts: true, statisticsBook: "other")
-    XCTAssertTrue(other.contains("other-fact"))
+    let other = try requireStoreProjection(try await store.projection(
+      generation: 0, enabled: true, includeFacts: true, statisticsBook: "other"))
+    XCTAssertNotNil(other.facts)
+    let scopedFacts = try await store.preparedFacts(keys: ["other"])
+    XCTAssertEqual(scopedFacts?.facts.map(\.id), ["other-fact"])
     let retained = try await store.syncFixturePayloads("clear")
     XCTAssertEqual(retained, [future])
     try await store.clear(book: "other", session: nil)
@@ -185,6 +187,10 @@ final class SyncCompatibilityTests: UserDataFixture {
         generation: 0, enabled: true, includeFacts: true, statisticsBook: "other")
     }
     await Self.rejectSync { try await store.clear(book: "other", session: nil) }
+    // A query that does not include facts never touches even a blocking clear.
+    let withoutFacts = try requireStoreProjection(try await store.projection(generation: 0, enabled: true, includeFacts: false))
+    XCTAssertNil(withoutFacts.facts)
+    XCTAssertFalse(withoutFacts.statisticsIncomplete)
     let partial = try self.store()
     let futureFact = try syncJSON(known) { $0["future"] = 1 }
     try await partial.receiveSyncFixture("fact", id: "fact", payload: futureFact)
@@ -192,16 +198,23 @@ final class SyncCompatibilityTests: UserDataFixture {
       [("known", "sha", syncFact("sha", id: "known"))], generation: 0, current: 0, enabled: true)
     let incomplete = try await partial.statisticsIncomplete(book: "sha")
     XCTAssertTrue(incomplete)
-    let visible = try await partial.projection(generation: 0, enabled: true, includeFacts: true)
-    let json = try XCTUnwrap(
-      JSONSerialization.jsonObject(with: Data(visible.utf8)) as? [String: Any])
-    XCTAssertEqual((json["facts"] as? [Any])?.count, 1)
-    let narrow = try await partial.projection(generation: 0, enabled: true, includeFacts: true, statisticsRange: 0...1)
-    let narrowJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(narrow.utf8)) as? [String: Any])
-    XCTAssertEqual(narrowJSON["statisticsIncomplete"] as? Bool, true, "Date pruning must not hide unsupported facts outside the range")
-    XCTAssertTrue((narrowJSON["facts"] as? [Any])?.isEmpty == true)
+    let visible = try requireStoreProjection(try await partial.projection(generation: 0, enabled: true, includeFacts: true))
+    XCTAssertNotNil(visible.facts)
+    let prepared = try await partial.preparedFacts(keys: nil)
+    XCTAssertEqual(prepared?.facts.map(\.id), ["known"])
+    let narrow = try requireStoreProjection(try await partial.projection(generation: 0, enabled: true, includeFacts: true, statisticsRange: 0...1))
+    XCTAssertTrue(narrow.statisticsIncomplete, "Date pruning must not hide unsupported facts outside the range")
+    XCTAssertEqual(narrow.facts?.indices, [])
     let facts = try await partial.syncFixturePayloads("fact")
     XCTAssertTrue(facts.contains(futureFact))
+    let target = UserDataStore.FactInput(id: "fact", contentKey: "sha", payload: known)
+    let filler = UserDataStore.FactInput(id: "filler", contentKey: "sha", payload: syncFact("sha", id: "filler"))
+    let unreadable = UserDataStore.FactInput(id: "fact", contentKey: "sha", payload: futureFact)
+    var acrossBatches = UserDataStore.FactsInput(rows: [target] + Array(repeating: filler, count: 128) + [unreadable],
+      clearPayloads: [], keys: ["sha"])
+    let batchResult = try acrossBatches.prepare()
+    XCTAssertTrue(batchResult.incomplete)
+    XCTAssertEqual(batchResult.facts.map(\.id), ["filler"])
     do {
 
       let fact = syncFact("sha")
@@ -224,11 +237,10 @@ final class SyncCompatibilityTests: UserDataFixture {
         for payload in reverse ? [futureFact, fact] : [fact, futureFact] {
           try await partial.receiveSyncFixture("fact", id: "fact", payload: payload)
         }
-        let projection = try await partial.projection(
-          generation: 0, enabled: true, includeFacts: true)
-        let json = try XCTUnwrap(
-          JSONSerialization.jsonObject(with: Data(projection.utf8)) as? [String: Any])
-        XCTAssertTrue((json["facts"] as? [Any])?.isEmpty == true)
+        let projection = try requireStoreProjection(try await partial.projection(
+          generation: 0, enabled: true, includeFacts: true))
+        XCTAssertNil(projection.facts)
+        XCTAssertTrue(projection.statisticsIncomplete)
         let incomplete = try await partial.statisticsIncomplete(book: "sha")
         XCTAssertTrue(incomplete)
         await Self.rejectSync {
@@ -279,8 +291,8 @@ final class SyncCompatibilityTests: UserDataFixture {
     try await store.receiveSyncFixture("value", key: "metadata/sha/future", payload: unknown)
     try await store.receiveSyncFixture("value", key: "future/pending:book", payload: unknown)
     try await store.put("metadata/sha/author", value: "\"Original author\"", device: "device")
-    let projection = try await store.projection(generation: 0, enabled: true, includeFacts: false)
-    XCTAssertFalse(projection.contains("future"))
+    let projection = try requireStoreProjection(try await store.projection(generation: 0, enabled: true, includeFacts: false))
+    XCTAssertFalse(projection.json.contains("future"))
     try await store.requireMetadataReadable(keys: ["sha"]) // Unknown future keys remain opaque, as before.
     try await store.receiveSyncFixture("value", key: "metadata/sha/synopsis", payload: unknown)
     await Self.rejectSync { try await store.requireMetadataReadable(keys: ["sha"]) }
@@ -424,10 +436,9 @@ final class SyncCompatibilityTests: UserDataFixture {
       try await store.receiveSyncFixture("fact", id: "fact", payload: payload)
       let incomplete = try await store.statisticsIncomplete(book: key)
       XCTAssertTrue(incomplete)
-      let projection = try await store.projection(generation: 0, enabled: true, includeFacts: true)
-      let json = try XCTUnwrap(
-        JSONSerialization.jsonObject(with: Data(projection.utf8)) as? [String: Any])
-      XCTAssertTrue((json["facts"] as? [Any])?.isEmpty == true)
+      let projection = try requireStoreProjection(try await store.projection(generation: 0, enabled: true, includeFacts: true))
+      XCTAssertNil(projection.facts)
+      XCTAssertTrue(projection.statisticsIncomplete)
       let retained = try await store.syncFixturePayloads("fact")
       XCTAssertEqual(retained, [payload])
     }

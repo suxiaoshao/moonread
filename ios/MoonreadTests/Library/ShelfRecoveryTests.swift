@@ -26,8 +26,8 @@ final class ShelfRecoveryTests: RecentReadingRestorationFixture {
     XCTAssertEqual(result.references, [ShelfReference(id: id, value: newer)])
     let retained = try await f.store.syncFixturePayloads("value", key: "shelf-reference/" + futureID)
     XCTAssertEqual(retained, [payload])
-    let projection = try await f.store.projection(generation: 0, enabled: true, includeFacts: false)
-    XCTAssertFalse(projection.contains("远方书架"), "Descriptions do not enter reading projections")
+    let projection = try requireStoreProjection(try await f.store.projection(generation: 0, enabled: true, includeFacts: false))
+    XCTAssertFalse(projection.json.contains("远方书架"), "Descriptions do not enter reading projections")
     XCTAssertNil(UserSyncJSON.kind("shelf-reference/not-a-uuid"))
     let withBookmark = "{\"schemaVersion\":1,\"name\":\"Name\",\"locationDescription\":\"file-provider\",\"bookmark\":\"not-syncable\"}"
     XCTAssertThrowsError(try UserSyncJSON.validateValue(withBookmark, key: "shelf-reference/" + id))

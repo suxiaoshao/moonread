@@ -96,6 +96,17 @@ extension AppDataService {
             NotificationCenter.default.post(name: .systemReadingCatalogChanged, object: nil)
         } catch { publishSystemCatalogError(error) }
     }
+    // The import holds the user-data operation lock, so only one batch records
+    // successful metadata writes here. Other invalidations still schedule normally.
+    func markMetadataCatalogBatchDirty() {
+        metadataCatalogBatchDirty = true
+    }
+    func finishMetadataCatalogBatch() {
+        guard metadataCatalogBatchDirty else { return }
+        metadataCatalogBatchDirty = false
+        // Let an existing task recheck its revision rather than cancel it.
+        scheduleSystemReadingCatalog(immediate: systemCatalog?.task == nil)
+    }
     func scheduleSystemReadingCatalog(immediate: Bool = false, statisticsChanged: Bool = false) {
         if statisticsChanged { systemCatalog?.statisticsDirty = true }
         guard let catalog = systemCatalog, !catalog.accountPending else { return }

@@ -126,11 +126,168 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(folder.childBookCount, 5)
     XCTAssertEqual(folder.coverPreviews.compactMap(\.author), [nested[0], nested[4], nested[3], nested[2]])
     XCTAssertEqual(folder.coverPreviews, full.first?.folderRow?.coverPreviews)
-    XCTAssertEqual(staged.last?.metadata, full.last?.metadata)
+    XCTAssertEqual(staged.last?.displayMetadata, full.last?.displayMetadata)
+    XCTAssertNil(staged.last?.metadata)
     XCTAssertEqual(staged.last?.positionUtf8, 3)
     XCTAssertEqual(staged.last?.chapterTitle, "Synthetic correction")
     let rounds = await details.count
     XCTAssertEqual(rounds, 2, "Activity selects a different cover; unselected metadata cannot invalidate this directory")
+  }
+
+  @MainActor func testCatalogueKeepsWholeMetadataWinnerAcrossStores() async throws {
+    let (root, service, _, formal, pending, first, second, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let cover = BookCoverAsset(id: UUID().uuidString, sha256: String(repeating: "a", count: 64), extension: "jpg", width: 10, height: 12)
+    let coverJSON = try String(decoding: JSONSerialization.data(withJSONObject: [
+      "id": cover.id, "sha256": cover.sha256, "extension": "jpg", "width": 10, "height": 12
+    ]), as: UTF8.self)
+    for sha in [first.fixtureSHA256, second.fixtureSHA256] {
+      try await formal.put("metadata/\(sha)/author", value: "\"Formal\"", device: "fixture")
+      try await formal.put("metadata/\(sha)/cover", value: coverJSON, device: "fixture")
+    }
+    try await pending.put("metadata/\(first.fixtureSHA256)/synopsis", value: "\"Pending synopsis only\"", device: "fixture")
+    try await pending.receiveSyncFixture("value", key: "metadata/\(second.fixtureSHA256)/synopsis", payload: "{\"v\":2}")
+
+    let full = try await service.catalogueQuery(.init(shelfID: "builtin"), recursive: true).allLibraryBooks(shelfId: "builtin")
+    let masked = try XCTUnwrap(full.first { $0.readingKey == first.fixtureSHA256 }?.metadata)
+    let isolated = try XCTUnwrap(full.first { $0.readingKey == second.fixtureSHA256 }?.metadata)
+    XCTAssertEqual(masked.synopsis, "Pending synopsis only")
+    XCTAssertEqual(masked.author, "")
+    XCTAssertNil(masked.cover, "The readable pending object replaces the entire formal object")
+    XCTAssertEqual(isolated.author, "Formal")
+    XCTAssertEqual(isolated.cover, cover, "An isolated field does not create a pending object")
+    let attempts = QueryAttemptCounter()
+    await service.queryFixture { scope, phase in
+      if scope == "directory-details", phase == .built { _ = await attempts.next() }
+    }
+    let location = LibraryLocation(shelfID: "builtin")
+    let narrow = try await service.libraryEntries(location)
+    XCTAssertEqual(narrow.first { $0.readingKey == first.fixtureSHA256 }?.displayMetadata?.author, "")
+    XCTAssertNil(narrow.first { $0.readingKey == first.fixtureSHA256 }?.displayMetadata?.cover)
+    XCTAssertEqual(narrow.first { $0.readingKey == second.fixtureSHA256 }?.displayMetadata?.cover, cover)
+    XCTAssertTrue(narrow.allSatisfy { $0.metadata == nil })
+    try await formal.put("metadata/\(second.fixtureSHA256)/synopsis", value: "\"Unrelated synopsis\"", device: "fixture")
+    _ = try await service.libraryEntries(location)
+    let afterSynopsis = await attempts.count
+    XCTAssertEqual(afterSynopsis, 1)
+    try await formal.put("metadata/\(second.fixtureSHA256)/author", value: "\"New author\"", device: "fixture")
+    let refreshed = try await service.libraryEntries(location)
+    XCTAssertEqual(refreshed.first { $0.readingKey == second.fixtureSHA256 }?.displayMetadata?.author, "New author")
+    let afterAuthor = await attempts.count
+    XCTAssertEqual(afterAuthor, 2)
+    await service.queryFixture(nil)
+
+  }
+
+  @MainActor func testDirectoryRetainsOpenedOnlyAliasWithoutFormalOpenedInput() async throws {
+    let (root, service, _, formal, pending, first, _, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let alias = "pending:" + first.id
+    try await pending.put("opened/" + alias, value: "350", device: "fixture")
+    try await formal.put("opened/" + first.fixtureSHA256, value: "450", device: "fixture")
+    let value = ChapterValue(content_key: alias, offset: 0, title: "Alias chapter", level: 0, excluded: false)
+    try await pending.put("chapter/" + alias + "/0", value: UserSyncJSON.encode(value), device: "fixture")
+    let cards = try await service.libraryEntries(.init(shelfID: "builtin"))
+    XCTAssertEqual(cards.first { $0.readingKey == first.fixtureSHA256 }?.lastRead, 0)
+    let formalInputs = await formal.projectionCache.values.map { $0.1.json }
+    XCTAssertTrue(formalInputs.allSatisfy { !$0.contains("\"opened_ms\"") })
+    let pendingInputs = await pending.projectionCache.values.map { $0.1.json }
+    XCTAssertTrue(pendingInputs.contains { $0.contains("Alias chapter") },
+                  "The only-opened alias still contributes to detail keys")
+  }
+
+  @MainActor func testCatalogueCardsFilterOptionsAndSearchMatchTheWideBaseline() async throws {
+    let (root, service, core, formal, _, first, second, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let a = first.fixtureSHA256, b = second.fixtureSHA256
+    try await formal.put("metadata/\(a)/author", value: "\"Synthetic Writer\"", device: "fixture")
+    try await formal.put("metadata/\(a)/tag-1", value: "\"Group 2\"", device: "fixture")
+    try await formal.put("metadata/\(a)/tag-2", value: "\"Group 10\"", device: "fixture")
+    try await formal.put("metadata/\(b)/synopsis", value: "\"Unique synopsis token\"", device: "fixture")
+    try await service.savePosition(bookID: first.id, offset: 12)
+    let originals = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")
+    try core.scanLibraryShelf(shelfId: "builtin", items: originals.map {
+      .init(relativePath: $0.relativePath, directory: false, size: $0.size, modified: $0.modified, needsDownload: $0.needsDownload)
+    } + [
+      .init(relativePath: "sub", directory: true, size: 0, modified: 1, needsDownload: false),
+      .init(relativePath: "sub/a2.txt", directory: false, size: first.byteCount, modified: 1, needsDownload: false)
+    ])
+    let copy = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "sub/a2.txt" })
+    try core.linkLibraryFile(fileId: copy.id, bookId: first.id)
+
+    let location = LibraryLocation(shelfID: "builtin")
+    let old = try await service.catalogueQuery(location, recursive: true)
+    let names = try await service.allLibraryBooks(location.shelfID)
+    XCTAssertEqual(names.map(\.id), try old.allLibraryBooks(shelfId: location.shelfID).map(\.id))
+    XCTAssertEqual(names.count, 3, "Copies stay separate physical files")
+    XCTAssertTrue(names.allSatisfy { $0.metadata == nil })
+    let groups = try await service.libraryTagGroups(location.shelfID)
+    let oldGroups = try old.allLibraryTagGroups(shelfId: location.shelfID)
+    XCTAssertEqual(groups.bookCount, oldGroups.bookCount)
+    XCTAssertEqual(groups.groups.map(\.tag), oldGroups.groups.map(\.tag))
+    XCTAssertEqual(groups.groups.map { $0.entries.map(\.id) }, oldGroups.groups.map { $0.entries.map(\.id) })
+    XCTAssertTrue(groups.groups.prefix(2).allSatisfy { $0.entries.count == 2 && $0.entries.allSatisfy { $0.metadata == nil } })
+    let options = try await service.metadataOptions(shelfID: location.shelfID)
+    XCTAssertEqual(options, try old.bookFilterOptions(shelfId: location.shelfID))
+    let configuration = BookSearchConfiguration(root: .init(kind: .group(.all, [
+      .init(kind: .rule(.status([.reading]))),
+      .init(kind: .rule(.tag(.all, [.text("Group 10")]))),
+      .init(kind: .rule(.author(["Synthetic Writer"])))
+    ])), sorts: [.init(field: .author)])
+    let scope = CatalogueScope.shelf(shelfId: location.shelfID, parentPath: "", recursive: true)
+    for spec: LibraryQueryRules.SearchSpec in [
+      .init(profile: .library, query: "synthetic", configuration: configuration),
+      .init(profile: .library, query: "sub"),
+      .init(profile: .library, author: ""),
+    ] {
+      let expected = LibraryQueryRules.searchOutcome(
+        try old.librarySearchCandidates(scope: scope, booksOnly: spec.configuration.booksOnly), spec: spec)
+      let narrow = try await service.libraryCatalogueSearch(scope, spec: spec)
+      XCTAssertEqual(narrow.entries.map(\.id), expected.entries.map(\.id))
+      XCTAssertEqual(narrow.unknownCount, expected.unknownCount)
+      XCTAssertTrue(narrow.entries.allSatisfy { $0.metadata == nil })
+      if spec.query == "sub" {
+        XCTAssertEqual(narrow.entries.first?.folderRow?.coverPreviews.first?.author, "Synthetic Writer")
+      }
+    }
+    let aiSpec = LibraryQueryRules.SearchSpec(profile: .ai, query: "synopsis token")
+    let ai = try await service.searchCatalogue(nil, spec: aiSpec)
+    XCTAssertEqual(ai.map(\.readingKey), [b])
+    try await formal.receiveSyncFixture("value", key: "metadata/\(b)/synopsis", payload: "{\"v\":2}")
+    do {
+      _ = try await service.searchCatalogue(nil, spec: aiSpec)
+      XCTFail("AI synopsis search keeps the formal compatibility barrier")
+    } catch is UserSyncCompatibilityError {}
+  }
+
+  @MainActor func testMetadataEditNotificationRoutesOnlyRelevantVisibleInputs() async throws {
+    let (root, service, _, _, _, first, second, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let keys: Set<String> = [first.fixtureSHA256]
+    let otherKeys: Set<String> = [second.fixtureSHA256]
+    let notices = expectation(description: "Existing book metadata signal carries two concrete field changes")
+    notices.expectedFulfillmentCount = 2
+    let changes = QueryAttemptCounter()
+    let token = NotificationCenter.default.addObserver(forName: .bookMetadataChanged, object: nil, queue: nil) { note in
+      guard (note.userInfo?["keys"] as? [String]) == [first.fixtureSHA256] else { return }
+      let refresh = note.affectsLibraryMetadata(.card, keys: keys)
+      let sameDomainWrongBook = note.affectsLibraryMetadata(.card, keys: otherKeys)
+      XCTAssertFalse(sameDomainWrongBook)
+      if refresh { Task { _ = await changes.next(); notices.fulfill() } }
+      else { notices.fulfill() }
+    }
+    defer { NotificationCenter.default.removeObserver(token) }
+    let base = try await service.details(sha: first.fixtureSHA256).metadata
+    var synopsis = base; synopsis.synopsis = "Not displayed on the card"
+    try await service.saveMetadata(base: base, edited: synopsis)
+    var author = synopsis; author.author = "Visible author"
+    try await service.saveMetadata(base: synopsis, edited: author)
+    await fulfillment(of: [notices], timeout: 2)
+    let count = await changes.count
+    XCTAssertEqual(count, 1)
+    let cards = try await service.libraryEntries(.init(shelfID: "builtin"))
+    XCTAssertEqual(cards.first { $0.readingKey == first.fixtureSHA256 }?.displayMetadata?.author, "Visible author")
+    XCTAssertTrue(Notification(name: .bookMetadataChanged).affectsLibraryMetadata(.card, keys: keys))
   }
 
   @MainActor func testBatchedProjectionOnlyReadsScopedCandidatesAndKeepsCompatibility() async throws {
@@ -150,8 +307,8 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     try await store.put("metadata/\(first)/tag-fixture", value: "\"Synthetic\"", device: "fixture")
     try await store.put("metadata/\(outside)/author", value: "\"Outside\"", device: "fixture")
     try await store.put("opened/\(last)", value: "12345", device: "fixture")
-    let input = try await store.projection(generation: 0, enabled: true, includeFacts: false, keys: keys)
-    let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.utf8)) as? [String: Any])
+    let input = try requireStoreProjection(try await store.projection(generation: 0, enabled: true, includeFacts: false, keys: keys))
+    let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(input.json.utf8)) as? [String: Any])
     let positions = try XCTUnwrap(json["positions"] as? [[String: Any]])
     XCTAssertEqual(positions.map { $0["content_key"] as? String }, [last])
     XCTAssertEqual(positions.first?["offset"] as? Int, 2)
@@ -159,11 +316,26 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     let metadata = try XCTUnwrap(json["metadata"] as? [[String: Any]])
     XCTAssertEqual(metadata.map { $0["sha"] as? String }, [first])
     XCTAssertEqual(metadata.first?["tags"] as? [String], ["Synthetic"])
-    XCTAssertFalse(input.contains(outside))
-    let onlyOpened = try await store.projection(generation: 0, enabled: true, includeFacts: false, keys: keys, fields: [.opened])
-    XCTAssertTrue(onlyOpened.contains("12345"))
-    XCTAssertFalse(onlyOpened.contains(first))
-    XCTAssertFalse(onlyOpened.contains(blocked))
+    XCTAssertFalse(input.json.contains(outside))
+    let onlyOpened = try requireStoreProjection(try await store.projection(generation: 0, enabled: true, includeFacts: false, keys: keys, fields: [.opened]))
+    XCTAssertTrue(onlyOpened.json.contains("12345"))
+    XCTAssertFalse(onlyOpened.json.contains(first))
+    XCTAssertFalse(onlyOpened.json.contains(blocked))
+  }
+
+  @MainActor func testObsoleteSharedFactPreparationDoesNotSurfaceItsFailure() async throws {
+    let schema = UserDataStore.schema
+    let formal = UserDataStore(modelContainer: try ModelContainer(for: schema, configurations: [
+      ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
+    ]))
+    let stale = try await formal.fixtureFailedFactPreparation(invalidate: true)
+    XCTAssertNil(stale, "An error from obsolete shared work must become an attempt retry")
+    do {
+      _ = try await formal.fixtureFailedFactPreparation(invalidate: false)
+      XCTFail("A failure from current inputs must surface")
+    } catch let error as CocoaError {
+      XCTAssertEqual(error.code, .fileReadNoPermission)
+    }
   }
 
   @MainActor func testPreparedStatisticsDatesMatchFullProjectionAndInvalidateByInput() async throws {
@@ -176,6 +348,12 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     let key = book.fixtureSHA256
     try await formal.saveFacts([fact("old", key: key, day: 19000), fact("new", key: key, day: 20000), fact("preview", key: other.fixtureSHA256, day: 20001, preview: true)], generation: 0, current: 0, enabled: true)
     try await pending.saveFacts([fact("pending", key: "pending:" + book.id, day: 20001)], generation: 0, current: 0, enabled: true)
+    let early = try requireStoreProjection(try await formal.projection(generation: 0, enabled: true, includeFacts: true, statisticsRange: 19000...19000))
+    let later = try requireStoreProjection(try await formal.projection(generation: 0, enabled: true, includeFacts: true, statisticsRange: 20000...20000))
+    XCTAssertNotNil(early.facts)
+    XCTAssertEqual(early.facts?.preparedId, later.facts?.preparedId, "Different dates reuse the decoded handle")
+    XCTAssertNotEqual(early.facts?.indices, later.facts?.indices)
+    XCTAssertFalse(early.json.contains("\"facts\""), "Facts must not enter non-fact JSON")
     let full = try await service.effectiveQuery(facts: .all, fields: .metadata)
     for bounds in [19000...20001, 20000...20001, 20000...20000] {
       let first = Int64(bounds.lowerBound), last = Int64(bounds.upperBound)
@@ -259,7 +437,7 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     }
     let recent = try await service.recentLibrary(1)
     XCTAssertEqual(recent.first?.readingKey, other.fixtureSHA256)
-    XCTAssertEqual(recent.first?.metadata?.author, "New recent")
+    XCTAssertEqual(recent.first?.displayMetadata?.author, "New recent")
     // A new directory member changes the semantic scope, not just its old value versions.
     let catalogueAttempts = QueryAttemptCounter()
     await service.queryFixture { scope, phase in
@@ -300,6 +478,122 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     let preferenceRounds = await preferences.count
     XCTAssertEqual(preferenceRounds, 2, "The same input signature validates cache hits and completed builds")
     await service.queryFixture(nil)
+  }
+
+  @MainActor func testRecentColdAndWarmMatchFullProjectionAndOnlyLoadSelectedDetails() async throws {
+    let (root, service, core, formal, pending, book, other, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let first = book.fixtureSHA256, second = other.fixtureSHA256
+    let alias = "pending:" + book.id
+    let position = try UserSyncJSON.encode(StoredValue(updated: 50, token: "alias",
+      value: UserSyncJSON.encode(PositionValue(content_key: alias, offset: 12))))
+    try await pending.receiveSyncFixture("position", key: alias, payload: position)
+    try await formal.put("opened/\(second)", value: "30", device: "fixture")
+    try await formal.put("metadata/\(first)/author", value: "\"Selected\"", device: "fixture")
+    try await formal.put("metadata/\(second)/synopsis", value: "\"Do not read for one card\"", device: "fixture")
+
+    let items = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")
+    try core.scanLibraryShelf(shelfId: "builtin", items: items.map {
+      .init(relativePath: $0.relativePath, directory: false, size: $0.size, modified: $0.modified, needsDownload: $0.needsDownload)
+    } + [.init(relativePath: "copy.txt", directory: false, size: book.byteCount, modified: 1, needsDownload: true)])
+    let copy = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "copy.txt" })
+    try core.linkLibraryFile(fileId: copy.id, bookId: book.id)
+    UserDefaults(suiteName: suite)?.set(copy.id, forKey: "Moonread.preferredFile." + alias)
+
+    let cold = try await service.recentLibrary(1, cold: true)
+    let warm = try await service.recentLibrary(1)
+    let storeCache = await formal.projectionCache
+    let projections = try storeCache.values.map {
+      try XCTUnwrap(JSONSerialization.jsonObject(with: Data($0.1.json.utf8)) as? [String: Any])
+    }
+    XCTAssertEqual(projections.count, 2, "Cold and warm reuse the same two input shapes")
+    let details = try XCTUnwrap(projections.first { ($0["metadata"] as? [Any])?.count == 1 })
+    XCTAssertEqual((details["metadata"] as? [[String: Any]])?.first?["sha"] as? String, first)
+    XCTAssertEqual((details["opened"] as? [Any])?.count, 0)
+    XCTAssertEqual((details["positions"] as? [Any])?.count, 0)
+    let index = try XCTUnwrap(projections.first { ($0["opened"] as? [Any])?.count == 1 })
+    XCTAssertEqual((index["metadata"] as? [Any])?.count, 0)
+    XCTAssertEqual((index["corrections"] as? [Any])?.count, 0)
+    XCTAssertEqual((index["opened"] as? [[String: Any]])?.first?["content_key"] as? String, second)
+
+    let full = try await service.effectiveQuery().recentLibraryEntries(limit: 1)
+    XCTAssertEqual(cold.map(\.id), [copy.id])
+    for rows in [cold, warm, full] {
+      let entry = try XCTUnwrap(rows.first)
+      XCTAssertEqual(rows.count, 1)
+      XCTAssertEqual(entry.id, copy.id)
+      XCTAssertEqual(entry.readingIdentity, .formal(sha256: first))
+      XCTAssertEqual(entry.positionUtf8, 12)
+      XCTAssertEqual(entry.byteCount, book.byteCount)
+      XCTAssertNotNil(entry.chapterTitle)
+      XCTAssertEqual(entry.chapterTitle, full.first?.chapterTitle)
+      XCTAssertEqual(entry.displayMetadata?.author, "Selected")
+    }
+  }
+
+  @MainActor func testRecentRechecksLiveIdentityAfterHydrationInputs() async throws {
+    let (root, service, core, _, _, first, second, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    try await service.recordBookOpened(first.id, at: 200)
+    try await service.recordBookOpened(second.id, at: 100)
+    let file = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "a.txt" })
+    let attempts = QueryAttemptCounter()
+    await service.queryFixture { scope, phase in
+      if scope == "recent", phase == .built, await attempts.next() == 1 {
+        try core.linkLibraryFile(fileId: file.id, bookId: second.id)
+      }
+    }
+    let result = try await service.recentLibrary(1, cold: true)
+    XCTAssertEqual(result.map(\.readingIdentity), [.formal(sha256: second.fixtureSHA256)])
+    let rounds = await attempts.count
+    XCTAssertEqual(rounds, 2)
+    await service.queryFixture(nil)
+  }
+
+  @MainActor func testInformationSourceUsesDirectoryOrderAndHonorsExplicitFile() async throws {
+    let (root, service, core, formal, _, book, _, suite) = try singleBookFixture()
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let key = ReadingKey.formal(sha256: book.fixtureSHA256)
+    let initial = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")
+    try core.scanLibraryShelf(shelfId: "builtin", items: initial.map {
+      .init(relativePath: $0.relativePath, directory: false, size: $0.size, modified: $0.modified, needsDownload: $0.needsDownload)
+    } + [.init(relativePath: "z-copy.txt", directory: false, size: book.byteCount, modified: 100, needsDownload: true)])
+    let files = try core.sourceFiles(shelfId: "builtin")
+    let first = try XCTUnwrap(files.first { $0.relativePath == "a.txt" })
+    let copy = try XCTUnwrap(files.first { $0.relativePath == "z-copy.txt" })
+    try core.linkLibraryFile(fileId: copy.id, bookId: book.id)
+    try await formal.put("metadata/\(book.fixtureSHA256)/synopsis", value: "\"Full details remain available\"", device: "fixture")
+    let route = StatisticsRoute(target: .record(key: key), title: "Synthetic")
+    let model = BookInformationModel(service: service)
+    await model.load(route)
+    XCTAssertEqual(model.entry?.id, copy.id, "Unread copies follow modification time")
+    XCTAssertEqual(model.entry?.needsDownload, true)
+
+    try await service.savePosition(bookID: book.id, offset: 12)
+    UserDefaults(suiteName: suite)?.set(copy.id, forKey: "Moonread.preferredFile." + book.fixtureSHA256)
+    let old = try await service.libraryEntries(nil).first { $0.readingIdentity == key }
+    await model.load(route)
+    XCTAssertEqual(old?.id, first.id)
+    XCTAssertEqual(model.entry?.id, old?.id, "Details uses natural name after the shared reading time, not the preferred copy")
+    XCTAssertEqual(model.entry?.positionUtf8, old?.positionUtf8)
+    XCTAssertEqual(model.entry?.byteCount, old?.byteCount)
+    XCTAssertNil(model.entry?.metadata)
+    XCTAssertNil(model.entry?.chapterTitle)
+    XCTAssertEqual(model.details?.metadata.synopsis, "Full details remain available")
+    XCTAssertNotNil(model.details?.currentChapter)
+    XCTAssertFalse(model.chapters.isEmpty)
+    XCTAssertNil(model.error)
+
+    await model.load(.init(target: .file(fileId: copy.id), title: "Explicit"))
+    XCTAssertEqual(model.entry?.id, copy.id)
+    await model.load(.init(target: route.target, title: route.title, origin: .reader()))
+    XCTAssertNil(model.entry)
+    XCTAssertNotNil(model.details)
+
+    try await formal.receiveSyncFixture("value", key: "metadata/\(book.fixtureSHA256)/synopsis", payload: "{\"v\":2}")
+    await model.load(route)
+    XCTAssertNil(model.details)
+    XCTAssertNotNil(model.error, "The actual details read still enforces the formal metadata barrier")
   }
 
   @MainActor func testCancelledQueryDoesNotPublishCacheOrRestartAndSharedInitializationSurvives() async throws {
@@ -434,7 +728,7 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
   @MainActor func testSingleBookProjectionMatchesBatchAndInvalidatesWithoutMutatingOldSnapshot()
     async throws
   {
-    let (root, service, _, formal, pending, book, other, suite) = try singleBookFixture()
+    let (root, service, projectedCore, formal, pending, book, other, suite) = try singleBookFixture()
     defer {
       try? FileManager.default.removeItem(at: root)
       UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -478,15 +772,16 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     try await pending.saveFacts([fact("pending:" + book.id)], generation: 0, current: 0, enabled: true)
     let noFactsChanged = try await service.bookQuery(book.id)
     XCTAssertTrue(unrelated === noFactsChanged, "Reading facts cannot invalidate a query that does not depend on them")
-    let statsOnly = try await formal.projection(generation: 0, enabled: true, includeFacts: true,
-      keys: [book.fixtureSHA256], statisticsKeys: [book.fixtureSHA256, "pending:" + book.id])
-    XCTAssertFalse(statsOnly.contains(other.fixtureSHA256))
-    let formalJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(statsOnly.utf8)) as? [String: Any])
-    XCTAssertEqual((formalJSON["facts"] as? [Any])?.count, 1)
-    let pendingInput = try await pending.projection(generation: 0, enabled: true, includeFacts: true,
-      keys: [book.fixtureSHA256, "pending:" + book.id], statisticsKeys: [book.fixtureSHA256, "pending:" + book.id])
-    let pendingJSON = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(pendingInput.utf8)) as? [String: Any])
-    XCTAssertEqual((pendingJSON["facts"] as? [Any])?.count, 1, "Both identities retain their own facts")
+    let statsOnly = try requireStoreProjection(try await formal.projection(generation: 0, enabled: true, includeFacts: true,
+      keys: [book.fixtureSHA256], statisticsKeys: [book.fixtureSHA256, "pending:" + book.id]))
+    XCTAssertFalse(statsOnly.json.contains(other.fixtureSHA256))
+    let pendingInput = try requireStoreProjection(try await pending.projection(generation: 0, enabled: true, includeFacts: true,
+      keys: [book.fixtureSHA256, "pending:" + book.id], statisticsKeys: [book.fixtureSHA256, "pending:" + book.id]))
+    let formalFacts = try projectedCore.querySnapshotWithFacts(nonFactJson: "{}", formal: statsOnly.facts, pending: nil, geometry: .full)
+    let pendingFacts = try projectedCore.querySnapshotWithFacts(nonFactJson: "{}", formal: nil, pending: pendingInput.facts, geometry: .full)
+    XCTAssertEqual(try formalFacts.readingActivities(firstDay: 20000, lastDay: 20000, contentKey: nil).count, 1)
+    XCTAssertEqual(try pendingFacts.readingActivities(firstDay: 20000, lastDay: 20000, contentKey: nil).count, 1,
+      "Both identities retain their own facts")
     let outline = try await service.bookQuery(book.id, facts: true).chapterOutline(bookId: book.id)
     let full = try await service.effectiveQuery(facts: .all)
     XCTAssertEqual(outline, try full.chapterOutline(bookId: book.id))
@@ -517,10 +812,10 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     let preferred = try await service.bookQuery(book.id)
     XCTAssertFalse(preferred === generation)
     XCTAssertEqual(try preferred.readingSnapshot(bookId: book.id).book.positionUtf8, 44)
-    let input = try await formal.projection(
-      generation: 0, enabled: true, includeFacts: false, keys: [book.fixtureSHA256])
+    let input = try requireStoreProjection(try await formal.projection(
+      generation: 0, enabled: true, includeFacts: false, keys: [book.fixtureSHA256]))
     XCTAssertFalse(
-      input.contains(other.fixtureSHA256), "Single-book inputs must not fetch/project another book")
+      input.json.contains(other.fixtureSHA256), "Single-book inputs must not fetch/project another book")
   }
 
   @MainActor func testOpeningIsPersistedSeparatelyWithoutMovingReadingPosition() async throws {
@@ -535,8 +830,8 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(before.hasStarted, after.hasStarted)
     let position = try await formal.value("position/" + book.fixtureSHA256)
     XCTAssertNil(position)
-    let restored = try await formal.projection(generation: 0, enabled: true, includeFacts: false, positionsOnly: true)
-    XCTAssertTrue(restored.contains("12345"))
+    let restored = try requireStoreProjection(try await formal.projection(generation: 0, enabled: true, includeFacts: false, positionsOnly: true))
+    XCTAssertTrue(restored.json.contains("12345"))
   }
 
   // S320: 启动恢复尚未结束时 pending 别名的位置仍进入正确开书查询；裁决算法只 S457。
@@ -826,4 +1121,15 @@ extension AppDataService {
   }
   func queryFixtureCacheCount() -> Int { queryCache.count }
   func cancelSystemQueryFixture() { systemCatalog?.task?.cancel() }
+}
+
+
+private extension UserDataStore {
+  func fixtureFailedFactPreparation(invalidate: Bool) throws -> PreparedFacts? {
+    let scope = [UUID().uuidString]
+    let inputVersion = version(keys: [], positionsOnly: false, includeFacts: true, statisticsKeys: scope, fields: [])
+    if invalidate { invalidateProjection() }
+    // Feed the completed failure into the same revalidation used for shared work.
+    return try preparedFactsResult(.failure(CocoaError(.fileReadNoPermission)), keys: scope, version: inputVersion)
+  }
 }
