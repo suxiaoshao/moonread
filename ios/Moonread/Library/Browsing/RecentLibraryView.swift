@@ -9,7 +9,9 @@ struct RecentLibraryView: View {
     @State private var metadataRevision: UInt64 = 0
     var body: some View {
         List(entries, id: \.id) { entry in
-            RecentBookRow(model: model, entry: entry)
+            RecentBookRow(model: model, entry: entry, inFullList: true)
+                .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+                .alignmentGuide(.listRowSeparatorLeading) { _ in 56 } // 44-point cover + 12-point gap
                 .contextMenu {
                     Button("小说详情", systemImage: "info.circle") { model.path.append(.statistics(StatisticsRoute(target: .file(fileId: entry.id), title: entry.title))) }
                     Button("从最近移除", systemImage: "minus.circle") { Task { await model.hideRecent(entry); await loadEntries() } }
