@@ -147,6 +147,7 @@ struct MoonreadApp: App {
                 library.systemReading.sceneActive = phase == .active
                 library.fullIndex.scene(active: phase == .active)
                 if phase == .background {
+                    MetadataExchangeModel.shared.sceneDidEnterBackground()
                     Task { await library.service.scheduleSystemReadingCatalog(immediate: true) }
                     BackgroundSave.perform(name: "保存显示偏好") { await themes.flushPreferences(); await readerSettings.flush() }
                     Task { await AppDataService.shared.pauseImports() }

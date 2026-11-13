@@ -112,22 +112,12 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         XCTAssertEqual(model.unchangedCount, 1)
         XCTAssertEqual(model.unmatchedCount, 1)
         XCTAssertEqual(model.skippedCount, 1)
-        model.filter = 2
-        XCTAssertEqual(model.visible.count, 3)
+        XCTAssertEqual(model.visible(query: "", filter: 2).count, 3)
         XCTAssertEqual(mixed.books.first { $0.sourceCount == 0 }?.disposition, .unmatched)
     }
-    @MainActor func testPerBookAtomicCoverFailureAndBatchStopsKeepingCompletedBooks() async throws {
+    @MainActor func testFailedBatchRollsBackAllBooksAndNewCover() async throws {
         let (root, service, _, store, _, first, second, suite) = try singleBookFixture()
         defer { UserDefaults.standard.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
-        let sha = first.fixtureSHA256, assetID = UUID().uuidString
-        let before = try await store.syncFixturePayloads("value")
-        do {
-            try await store.putValues(["metadata/\(sha)/author": "not JSON"], device: "fixture", cover: .init(id: assetID, bytes: Data([1, 2, 3])))
-            XCTFail("Invalid field must roll back the whole book, including its cover")
-        } catch {}
-        let missing = try await store.cover(assetID)
-        let after = try await store.syncFixturePayloads("value")
-        XCTAssertNil(missing); XCTAssertEqual(before, after)
         func coverBytes(_ color: UIColor) throws -> Data {
             let image = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 6)).image { context in
                 color.setFill(); context.fill(CGRect(x: 0, y: 0, width: 4, height: 6))
@@ -139,6 +129,27 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         var oldWithCover = oldMetadata; oldWithCover.cover = existingCover
         try await service.saveMetadata(base: oldMetadata, edited: oldWithCover)
         let proposedCover = try await service.makeCover(coverBytes(.green))
+        let firstBase = try await service.details(sha: first.fixtureSHA256).metadata
+        var firstEdit = firstBase
+        firstEdit.author = "Temporary author"
+        firstEdit.cover = proposedCover
+        let initialValues = try await store.syncFixturePayloads("value")
+        let firstWrite = try service.metadataEditPlan(base: firstBase, edited: firstEdit)
+        let draft = await service.coverDraftURL(proposedCover)
+        let validCover = try Data(contentsOf: draft)
+        let badField = BookMetadataEditPlan(sha: second.fixtureSHA256,
+            values: ["metadata/\(second.fixtureSHA256)/author": "not JSON"])
+        do {
+            try await store.putMetadata([
+                .init(plan: firstWrite, cover: .init(id: proposedCover.id, bytes: validCover)),
+                .init(plan: badField, cover: nil),
+            ], device: "fixture")
+            XCTFail("Failure after inserting a cover and fields must roll back the whole batch")
+        } catch {}
+        let missing = try await store.cover(proposedCover.id)
+        let after = try await store.syncFixturePayloads("value")
+        XCTAssertNil(missing)
+        XCTAssertEqual(initialValues, after)
         let input = root.appendingPathComponent("batch.jsonl")
         try [first, second].map { "{\"v\":1,\"content_sha256\":\"\($0.fixtureSHA256)\",\"author\":\"Imported\"}" }.joined(separator: "\n").write(to: input, atomically: true, encoding: .utf8)
         var preview = try await service.previewMetadata(input)
@@ -149,14 +160,15 @@ final class MetadataExchangeTests: ReaderIntegrationFixture {
         }
         try await store.receiveSyncFixture("value", key: "metadata/\(second.fixtureSHA256)/author", payload: "{\"v\":2}")
         let result = await service.applyMetadata(preview) { _, _ in }
-        XCTAssertEqual(result.outcomes.map(\.saved), [true, false])
+        XCTAssertTrue(result.outcomes.isEmpty)
+        XCTAssertNotNil(result.failure)
+        XCTAssertEqual(result.remaining.count, 2)
         let saved = try await service.details(sha: first.fixtureSHA256).metadata
-        XCTAssertEqual(saved.author, "Imported")
-        XCTAssertEqual(result.outcomes[0].cover, saved.cover)
-        XCTAssertEqual(result.outcomes[0].cover, proposedCover)
-        XCTAssertEqual(result.outcomes[0].savedFieldCount, 2)
-        XCTAssertEqual(result.outcomes[1].cover, existingCover, "A failed book must not display its pending new cover")
-        // Cancellation is checked at the next book boundary; completed work stays saved.
+        XCTAssertTrue(saved.author.isEmpty)
+        XCTAssertNil(saved.cover)
+        let discardedCover = try await store.cover(proposedCover.id)
+        XCTAssertNil(discardedCover)
+        XCTAssertEqual(result.remaining.first { $0.id == second.fixtureSHA256 }?.cover, existingCover)
         let task = Task { () -> MetadataBatchResult in
             withUnsafeCurrentTask { $0?.cancel() }
             return await service.applyMetadata(preview) { _, _ in }

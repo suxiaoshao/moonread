@@ -6,19 +6,25 @@ struct MetadataImportView: View {
     @Environment(\.theme) private var theme
     @Environment(\.horizontalSizeClass) private var width
     @Environment(\.dynamicTypeSize) private var typeSize
-    @State private var model: MetadataExchangeModel
+    let model: MetadataExchangeModel
+    @State private var query = ""
+    @State private var filter = 0
     @State private var selected: String?
     @State private var compactColumn = NavigationSplitViewColumn.sidebar
     @State private var confirm = false
-    @State private var selectingFile = false
+    @State private var confirmEnd = false
+    @State private var confirmContinue = false
     @State private var sharing: LibraryExport?
-    let file: URL
-    init(service: AppDataService, file: URL) { _model = State(initialValue: MetadataExchangeModel(service: service)); self.file = file }
+    private var visible: [MetadataPreviewBook] { model.visible(query: query, filter: filter) }
     private var wide: Bool { width == .regular && !typeSize.isAccessibilitySize }
     var body: some View {
         Group {
-            if model.loading || model.preview == nil || model.books.isEmpty || model.result != nil || model.saving {
-                NavigationStack { status.themedPage().navigationTitle(statusTitle).navigationBarTitleDisplayMode(.inline).toolbar { closeButton } }
+            if model.phase != .review || model.books.isEmpty {
+                NavigationStack {
+                    status.themedPage()
+                        .navigationTitle(model.loading || model.saving ? statusTitle : Text("导入小说信息", tableName: "MetadataExchange"))
+                        .navigationBarTitleDisplayMode(.inline).toolbar { closeButton }
+                }
             } else if wide {
                 NavigationSplitView(preferredCompactColumn: $compactColumn) {
                     bookList.navigationTitle(Text("导入预览", tableName: "MetadataExchange")).toolbar { previewToolbar }
@@ -40,23 +46,23 @@ struct MetadataImportView: View {
                 }
             }
         }
-        .task {
-            if model.preview == nil {
-                await model.load(file)
-            }
-        }
-        .fileImporter(isPresented: $selectingFile, allowedContentTypes: UTType.metadataImportTypes) { result in
-            switch result {
-            case .success(let url): selected = nil; Task { await model.load(url) }
-            case .failure(let error): model.showError(ReaderMessages.error(error))
-            }
-        }
-        .interactiveDismissDisabled(model.saving)
         .alert(Text("导入小说信息？", tableName: "MetadataExchange"), isPresented: $confirm) {
-            Button { Task { await model.save() } } label: { Text("导入 \(model.pending.count) 本", tableName: "MetadataExchange") }
+            Button { model.save() } label: { Text("导入 \(model.pending.count) 本", tableName: "MetadataExchange") }
                 .accessibilityIdentifier("executeMetadataImport")
             Button("取消", role: .cancel) {}
         } message: { Text(verbatim: model.confirmation) }
+        .alert(Text("结束本次导入？", tableName: "MetadataExchange"), isPresented: $confirmEnd) {
+            Button(role: .destructive) { model.clear(); dismiss() } label: { Text("结束本次导入", tableName: "MetadataExchange") }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("未保存的选择将丢弃，已保存的资料和已完成的改名会保留。", tableName: "MetadataExchange")
+        }
+        .alert(Text("继续导入和改名？", tableName: "MetadataExchange"), isPresented: $confirmContinue) {
+            Button { model.continueTask() } label: { Text("继续导入", tableName: "MetadataExchange") }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("会继续保存未提交的资料，并处理尚未执行的改名。", tableName: "MetadataExchange")
+        }
         .sheet(isPresented: Binding(get: { sharing != nil }, set: { if !$0 { sharing = nil } })) { if let sharing { LibraryShareSheet(files: sharing) } }
     }
     private var bookList: some View {
@@ -71,27 +77,27 @@ struct MetadataImportView: View {
                         Text(verbatim: previewSummary).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
                     }.padding(.vertical, 8)
                 }
-                Picker(selection: $model.filter) {
+                Picker(selection: $filter) {
                     Text("全部", tableName: "MetadataExchange").tag(0)
                     Text("将更新", tableName: "MetadataExchange").tag(1)
                     Text("未更新", tableName: "MetadataExchange").tag(2)
                 } label: { Text("预览范围", tableName: "MetadataExchange") }.pickerStyle(.segmented)
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass").foregroundStyle(Color(uiColor: theme.secondary))
-                    TextField(text: $model.query) { Text("搜索本次清单", tableName: "MetadataExchange") }
+                    TextField(text: $query) { Text("搜索本次清单", tableName: "MetadataExchange") }
                         .textInputAutocapitalization(.never).autocorrectionDisabled().submitLabel(.search)
                         .accessibilityIdentifier("metadataManifestSearch")
                 }.padding(10).background(Color(uiColor: theme.input), in: .rect(cornerRadius: 11))
-                if model.visible.isEmpty { ContentUnavailableView.search(text: model.query) }
+                if visible.isEmpty { ContentUnavailableView.search(text: query) }
                 else {
                     LazyVStack(spacing: 0) {
-                        ForEach(model.visible) { book in
+                        ForEach(visible) { book in
                             Button {
                                 selected = book.id
                                 if wide { compactColumn = .detail }
                             } label: { bookRow(book) }
                                 .buttonStyle(.plain).accessibilityIdentifier("metadataBook-" + book.id)
-                            if book.id != model.visible.last?.id { ThemedDivider().padding(.leading, 16) }
+                            if book.id != visible.last?.id { ThemedDivider().padding(.leading, 16) }
                         }
                     }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 17)).clipShape(.rect(cornerRadius: 17))
                 }
@@ -134,7 +140,9 @@ struct MetadataImportView: View {
         }.font(.footnote).foregroundStyle(Color(uiColor: theme.accent))
     }
     @ToolbarContentBuilder private var closeButton: some ToolbarContent {
-        ToolbarItem(placement: .cancellationAction) { SystemToolbarButton("关闭", role: .close) { dismiss() }.toolbarGlyph().disabled(model.saving) }
+        ToolbarItem(placement: .cancellationAction) {
+            SystemToolbarButton("关闭", role: .close) { dismiss() }.toolbarGlyph()
+        }
     }
     @ToolbarContentBuilder private var previewToolbar: some ToolbarContent {
         closeButton
@@ -144,6 +152,7 @@ struct MetadataImportView: View {
                 Button { model.adopt(false) } label: { Text("全部保留现有值", tableName: "MetadataExchange") }
                 Button { model.adopt(true, replaceTags: true) } label: { Text("采用导入值并替换标签", tableName: "MetadataExchange") }
                 Text("批量操作不包含清空、改名或冲突字段。", tableName: "MetadataExchange")
+                Button(role: .destructive) { confirmEnd = true } label: { Text("结束本次导入", tableName: "MetadataExchange") }
             } label: { Image(systemName: "ellipsis") }
                 .toolbarGlyph().accessibilityLabel(Text("批量规则", tableName: "MetadataExchange"))
         }
@@ -165,106 +174,150 @@ struct MetadataImportView: View {
             .buttonStyle(MetadataActionButtonStyle(prominent: true)).disabled(model.pending.isEmpty || model.invalidSelection)
             .accessibilityIdentifier("confirmMetadataImport")
     }
-    private var statusTitle: Text {
-        if let result = model.result {
-            return Text(result.cancelled ? "导入已取消" : result.outcomes.contains(where: { !$0.saved }) ? "导入已停止" : "导入完成", tableName: "MetadataExchange")
-        }
-        return Text(model.loading ? "正在准备导入" : model.saving ? "正在导入" : model.preview != nil ? "导入预览" : "无法导入", tableName: "MetadataExchange")
-    }
+    private var statusTitle: Text { Text(model.phase.title, tableName: "MetadataExchange") }
+
     @ViewBuilder private var status: some View {
-        if model.loading {
-            VStack(spacing: 16) {
-                ProgressView()
-                Text("正在读取清单", tableName: "MetadataExchange").font(.title2.weight(.semibold))
-                Text("正在检查格式、匹配已有索引，尚未保存任何修改。", tableName: "MetadataExchange").font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary)).multilineTextAlignment(.center)
-            }.padding(24).frame(maxWidth: 430).frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if model.saving {
-            VStack(spacing: 16) {
-                ProgressView()
-                Text("已保存 \(model.completed) / \(model.total) 本", tableName: "MetadataExchange").font(.title2.weight(.semibold)).multilineTextAlignment(.center)
-                Text(verbatim: model.pending.dropFirst(model.completed).first?.title ?? String(localized: "正在完成", table: "MetadataExchange")).font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary)).multilineTextAlignment(.center)
-                ProgressView(value: Double(model.completed), total: Double(max(1, model.total))) { Text("导入进度", tableName: "MetadataExchange") }
-                Text(model.cancellationRequested ? "正在完成当前这本，之后停止。" : "取消会保留已经保存的信息。", tableName: "MetadataExchange").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)).multilineTextAlignment(.center)
-            }.padding(24).frame(maxWidth: 430).frame(maxWidth: .infinity, maxHeight: .infinity)
-                .modifier(MetadataTaskBar {
-                    HStack {
-                        if wide { Spacer(minLength: 0) }
-                        Button { model.cancel() } label: { Text(model.cancellationRequested ? "正在停止…" : "取消导入", tableName: "MetadataExchange").frame(maxWidth: .infinity) }
-                            .buttonStyle(MetadataActionButtonStyle()).disabled(model.cancellationRequested).frame(maxWidth: wide ? 240 : .infinity)
-                    }.padding(.horizontal, 20).padding(.vertical, 12)
-                })
-        } else if let result = model.result {
-            resultContent(result)
-        } else if model.preview != nil {
+        switch model.phase {
+        case .receiving, .preparing, .saving, .renaming:
+            GeometryReader { viewport in
+              ScrollView {
+                VStack(spacing: 16) {
+                    if model.saving && model.total > 0 {
+                        ProgressView(value: Double(model.completed), total: Double(model.total)) {
+                            if model.phase == .renaming {
+                                Text("已处理 \(model.completed) / \(model.total) 个改名", tableName: "MetadataExchange")
+                            } else {
+                                Text("已保存 \(model.completed) / \(model.total) 本", tableName: "MetadataExchange")
+                            }
+                        }
+                    } else {
+                        ProgressView { Text(model.phase.title, tableName: "MetadataExchange") }
+                    }
+                    Text("可以关闭此页，稍后回来查看进度。", tableName: "MetadataExchange")
+                        .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                    if model.cancellationRequested {
+                        Text("正在停止；已完成的操作会保留。", tableName: "MetadataExchange")
+                            .font(.footnote)
+                    }
+                }.multilineTextAlignment(.center).padding(24).frame(maxWidth: 430)
+                    .frame(maxWidth: .infinity, minHeight: viewport.size.height)
+              }
+            }.safeAreaInset(edge: .bottom) {
+                HStack {
+                    if wide { Spacer(minLength: 0) }
+                    Button { model.cancel() } label: {
+                        Text("停止导入", tableName: "MetadataExchange").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(MetadataActionButtonStyle()).disabled(model.cancellationRequested)
+                    .frame(maxWidth: wide ? 240 : .infinity)
+                }.padding(.horizontal, 20).padding(.vertical, 12)
+            }
+        case .review:
             VStack {
-                MetadataStatusView(symbol: "tray", title: String(localized: "清单中没有小说", table: "MetadataExchange"), message: String(localized: "这份清单没有可预览的书目。没有保存任何信息。", table: "MetadataExchange"))
-                    .fixedSize(horizontal: false, vertical: true)
+                MetadataStatusView(symbol: "tray", title: String(localized: "清单中没有小说", table: "MetadataExchange"),
+                    message: String(localized: "这份清单没有可预览的书目。没有保存任何信息。", table: "MetadataExchange"))
                 if !model.issues.isEmpty { issues(model.preview?.diagnostics ?? []).padding(.horizontal, 20) }
-            }.frame(maxWidth: .infinity, maxHeight: .infinity).modifier(MetadataTaskBar { chooseOtherFile })
-        } else {
-            MetadataStatusView(symbol: "exclamationmark.triangle", title: String(localized: "清单无法读取", table: "MetadataExchange"), message: model.error)
-                .frame(maxWidth: .infinity, maxHeight: .infinity).modifier(MetadataTaskBar { chooseOtherFile })
+                Button(role: .destructive) { confirmEnd = true } label: { Text("结束本次导入", tableName: "MetadataExchange") }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        default:
+            resultContent
         }
     }
-    private var chooseOtherFile: some View {
-        HStack {
-            if wide { Spacer(minLength: 0) }
-            Button { selectingFile = true } label: { Text("选择其他文件", tableName: "MetadataExchange").frame(maxWidth: .infinity) }
-                .buttonStyle(MetadataActionButtonStyle(prominent: true)).frame(maxWidth: wide ? 240 : .infinity)
-        }.padding(.horizontal, 20).padding(.vertical, 12)
+
+    private var resultSymbol: String {
+        switch model.phase {
+        case .completed: model.renameIssueCount == 0 ? "checkmark.circle" : "exclamationmark.circle"
+        case .failed: "exclamationmark.triangle"
+        case .stopped: "stop.circle"
+        case .paused: "pause.circle"
+        case .interrupted: "arrow.clockwise"
+        default: "doc"
+        }
     }
-    private func resultDescription(_ result: MetadataBatchResult) -> String {
-        let failures = result.outcomes.filter { !$0.saved }.count
-        if failures > 0 { return String(localized: "\(failures) 本失败 · \(result.remaining.count) 本未处理", table: "MetadataExchange") }
-        if result.cancelled { return String(localized: "\(result.remaining.count) 本未处理", table: "MetadataExchange") }
-        if result.outcomes.contains(where: { $0.message != nil }) { return String(localized: "资料已保存，请查看下方说明。", table: "MetadataExchange") }
-        return String(localized: "已完成本次选择的改动", table: "MetadataExchange")
+
+    private var resultSummary: some View {
+        ContentUnavailableView {
+            Label { Text(model.phase.title, tableName: "MetadataExchange") } icon: { Image(systemName: resultSymbol) }
+        } description: {
+            VStack(spacing: 8) {
+                if model.phase == .interrupted {
+                    Text(model.hasCompleteInput ? "请重新预览并确认；不会自动执行上次的选择。" : "资料包尚未接收完整，请结束本次导入后重新选择文件。", tableName: "MetadataExchange")
+                } else {
+                    Text("已保存 \(model.savedCount) 本", tableName: "MetadataExchange")
+                    if model.remainingWrites > 0 { Text("尚有 \(model.remainingWrites) 本未保存", tableName: "MetadataExchange") }
+                    if model.renamedCount > 0 { Text("已改名 \(model.renamedCount) 个文件", tableName: "MetadataExchange") }
+                    if model.renameIssueCount > 0 { Text("\(model.renameIssueCount) 个改名需要查看", tableName: "MetadataExchange") }
+                    if model.remainingRenames > 0 { Text("尚有 \(model.remainingRenames) 个文件未改名", tableName: "MetadataExchange") }
+                    if model.phase != .completed { Text("已完成的操作会保留。", tableName: "MetadataExchange") }
+                }
+                if model.phase == .paused, let reason = model.pauseReason {
+                    Text(reason == .expired ? "系统后台执行时间已结束。" : "系统未提供后台执行资格，导入已暂停。", tableName: "MetadataExchange")
+                }
+                if (model.phase == .paused || model.phase == .stopped) && !model.hasCompleteInput {
+                    Text("资料包尚未接收完整，请结束本次导入后重新选择文件。", tableName: "MetadataExchange")
+                }
+                if model.onlyRenameIssueSummary {
+                    Text("请先在书架核对实际文件。重新预览会读取当前状态，不会执行先前的改名。", tableName: "MetadataExchange")
+                }
+                if model.sourceScopeChanged {
+                    Text("资料所属账户已变化，请结束本次导入后重新选择文件。", tableName: "MetadataExchange")
+                } else if model.requiresNewPreview && model.canRepreview {
+                    Text("原预览已失效，请重新预览并确认。", tableName: "MetadataExchange")
+                }
+                if let error = model.error { Text(verbatim: error).foregroundStyle(Color(uiColor: theme.destructive)) }
+            }.multilineTextAlignment(.center)
+        }
     }
-    private func resultContent(_ result: MetadataBatchResult) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                MetadataStatusView(symbol: result.outcomes.contains { !$0.saved || $0.message != nil } ? "exclamationmark.triangle" : result.cancelled ? "pause" : "checkmark", title: String(localized: "已保存 \(result.outcomes.filter(\.saved).count) 本", table: "MetadataExchange"), message: resultDescription(result))
-                    .fixedSize(horizontal: false, vertical: true)
-                if result.cancelled { Label { Text("已取消，已保存的资料保留", tableName: "MetadataExchange") } icon: { Image(systemName: "info.circle") }.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
-                ForEach(result.outcomes.filter { $0.message != nil }) { outcome in
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(verbatim: outcome.title).font(.subheadline.weight(.semibold))
-                        Label { Text(verbatim: outcome.message!) } icon: { Image(systemName: "exclamationmark.triangle") }.font(.footnote).foregroundStyle(Color(uiColor: theme.warning))
+
+    private var resultContent: some View {
+        GeometryReader { viewport in
+          ScrollView {
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                resultSummary
+                Spacer(minLength: 0)
+                if let result = model.result {
+                    let issues = result.outcomes.filter { $0.message != nil }
+                    if !issues.isEmpty || !result.remaining.isEmpty || !result.remainingRenames.isEmpty {
+                        DisclosureGroup {
+                            ForEach(issues) { item in
+                                Label { Text(verbatim: item.title + " · " + (item.message ?? "")) } icon: {
+                                    Image(systemName: "exclamationmark.triangle")
+                                }.padding(.vertical, 4)
+                            }
+                            ForEach(result.remaining) { item in resultRow(item) }
+                            ForEach(result.remainingRenames) { item in
+                                Label { Text(verbatim: item.title) } icon: { Image(systemName: "pencil") }
+                                    .accessibilityValue(Text("文件未改名", tableName: "MetadataExchange"))
+                            }
+                        } label: { Text("查看未完成的内容", tableName: "MetadataExchange") }
                     }
                 }
-                if !result.outcomes.filter(\.saved).isEmpty {
-                    Text("已保存", tableName: "MetadataExchange").font(.headline)
-                    VStack(spacing: 0) {
-                        ForEach(result.outcomes.filter(\.saved)) { item in
-                            resultRow(item)
-                            if item.id != result.outcomes.filter(\.saved).last?.id { ThemedDivider().padding(.leading, 16) }
-                        }
-                    }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 17))
-                } else {
-                    MetadataStatusView(symbol: "tray", title: String(localized: "尚未保存任何小说", table: "MetadataExchange"), message: String(localized: "本次没有完成写入。", table: "MetadataExchange"))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if !result.remaining.isEmpty {
-                    Text("未处理", tableName: "MetadataExchange").font(.headline)
-                    VStack(spacing: 0) {
-                        ForEach(result.remaining) { item in
-                            resultRow(item)
-                            if item.id != result.remaining.last?.id { ThemedDivider().padding(.leading, 16) }
-                        }
-                    }.background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 17))
-                }
-                VStack(alignment: .leading, spacing: 4) {
-                    if model.unmatchedCount > 0 { Text("另有 \(model.unmatchedCount) 本未匹配，已跳过。", tableName: "MetadataExchange") }
-                    Text("已保存且未再更改的信息，重新导入时会显示“无变化”。", tableName: "MetadataExchange")
-                }.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
-                Button { selected = nil; Task { await model.reviewAgain() } } label: { Text("重新预览", tableName: "MetadataExchange") }.foregroundStyle(Color(uiColor: theme.accent))
-            }.padding(20).frame(maxWidth: 690, alignment: .leading).frame(maxWidth: .infinity)
+            }.padding(.horizontal, 20).frame(maxWidth: 690)
+                .frame(maxWidth: .infinity, minHeight: viewport.size.height)
+          }
         }.modifier(MetadataTaskBar {
-            HStack {
-                if wide { Spacer(minLength: 0) }
-                Button { dismiss() } label: { Text("完成", tableName: "MetadataExchange").frame(maxWidth: .infinity) }
-                    .buttonStyle(MetadataActionButtonStyle(prominent: true)).frame(maxWidth: wide ? 200 : .infinity)
-            }.padding(.horizontal, 20).padding(.vertical, 12)
+            VStack(alignment: .trailing, spacing: 10) {
+                if model.canContinue {
+                    Button {
+                        if model.continueNeedsRenameConfirmation { confirmContinue = true }
+                        else { model.continueTask() }
+                    } label: { Text(model.continuingPreparation ? "继续准备" : "继续导入", tableName: "MetadataExchange").frame(maxWidth: .infinity) }
+                        .buttonStyle(MetadataActionButtonStyle(prominent: true))
+                } else if (model.phase == .failed || model.phase == .interrupted || model.onlyRenameIssueSummary) && model.canRepreview {
+                    Button { selected = nil; model.reviewAgain() } label: { Text("重新预览", tableName: "MetadataExchange").frame(maxWidth: .infinity) }
+                        .buttonStyle(MetadataActionButtonStyle(prominent: true))
+                }
+                if model.phase == .completed {
+                    Button { dismiss() } label: { Text("完成", tableName: "MetadataExchange").frame(maxWidth: .infinity) }
+                        .buttonStyle(MetadataActionButtonStyle(prominent: true))
+                } else {
+                    Button(role: .destructive) { confirmEnd = true } label: {
+                        Text("结束本次导入", tableName: "MetadataExchange").frame(maxWidth: .infinity)
+                    }.buttonStyle(MetadataActionButtonStyle())
+                }
+            }.frame(maxWidth: wide ? 300 : .infinity).frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.horizontal, 20).padding(.vertical, 12)
         }).accessibilityIdentifier("metadataImportResult")
     }
     private func resultRow(_ item: MetadataImportOutcome) -> some View {

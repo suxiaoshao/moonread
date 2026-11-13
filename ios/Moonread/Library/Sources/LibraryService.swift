@@ -677,11 +677,16 @@ extension AppDataService {
 
     /// Resolve the live file's decoding by raw bytes; the coordinated move then
     /// proves both those bytes and the preview's normalized reading identity.
-    func renameLibraryBook(_ entry: MetadataExchangeFile, name: String, expected key: ReadingKey) async throws {
-        guard case .formal = key else { throw ReaderError.SourceChanged }
+    func renameLibraryBook(_ entry: MetadataExchangeFile, name: String, expected key: ReadingKey,
+                           configuration: UUID, deletionToken: UUID?) async throws {
+        guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
+        guard case .formal(let sha) = key else { throw ReaderError.SourceChanged }
         let snapshot = try aiFileSnapshot(.init(shelfID: entry.shelfId, path: entry.relativePath))
         guard !snapshot.directory, let hash = snapshot.hash else { throw ReaderError.SourceChanged }
         let decoding = try await resolveSourceDecoding(rawSHA: hash)
+        try Task.checkCancellation()
+        guard configuration == userCloudConfigurationRevision,
+              deletionToken == localReadingWriteLeases[sha] else { throw ReadingDataError.changed }
         let current: SourceFileLocation
         do { current = try textCore().sourceFileLocation(fileId: entry.id) }
         catch ReaderError.NotFound { throw ReaderError.SourceChanged }

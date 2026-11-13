@@ -7,39 +7,147 @@ extension UTType {
 }
 struct MetadataTasksSection: View {
     let service: AppDataService
+    private var task: MetadataExchangeModel { .shared }
     @Environment(\.theme) private var theme
     @State private var exporting = false
     @State private var picker = false
     @State private var pickerError: String?
-    @State private var selectedFile: ImportFile?
-    private struct ImportFile: Identifiable { let id = UUID(); let url: URL }
+    @State private var showingImport = false
+    @State private var confirmingRemoval = false
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label { Text("小说信息", tableName: "MetadataExchange") } icon: { Image(systemName: "doc.text") }.font(.headline)
             Text("导入或导出小说信息；可编辑清单，也可从 TXT 生成。", tableName: "MetadataExchange")
                 .font(.subheadline).foregroundStyle(Color(uiColor: theme.secondary))
             ViewThatFits(in: .horizontal) { HStack(spacing: 10) { buttons }; VStack(spacing: 10) { buttons } }
+                .controlSize(.regular)
+                .tint(Color(uiColor: theme.accent))
+            if let pickerError { Text(verbatim: pickerError).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
+            if task.hasTask {
+                ThemedDivider()
+                if task.phase == .completed { completedTask }
+                else { activeTask }
+            }
             Link(destination: URL(string: "https://suxiaoshao.github.io/moonread/metadata-format/")!) {
                 HStack { Text("了解信息格式", tableName: "MetadataExchange"); Image(systemName: "chevron.right").font(.caption) }
             }.font(.subheadline).foregroundStyle(Color(uiColor: theme.accent))
-            if let pickerError { Text(verbatim: pickerError).font(.footnote).foregroundStyle(Color(uiColor: theme.destructive)) }
         }
         .fileImporter(isPresented: $picker, allowedContentTypes: UTType.metadataImportTypes) { result in
             switch result {
-            case .success(let url): selectedFile = .init(url: url)
+            case .success(let url): task.receive(url); showingImport = task.hasTask
             case .failure(let error): if (error as NSError).code != NSUserCancelledError { pickerError = ReaderMessages.error(error) }
             }
         }
         .sheet(isPresented: $exporting) { MetadataExportView(service: service).presentationSizing(.page) }
-        .sheet(item: $selectedFile) { file in MetadataImportView(service: service, file: file.url).presentationSizing(.page) }
+        .sheet(isPresented: $showingImport) { MetadataImportView(model: task).presentationSizing(.page) }
+        .alert(Text("移除导入记录？", tableName: "MetadataExchange"), isPresented: $confirmingRemoval) {
+            Button(role: .cancel) {} label: { Text("取消", tableName: "MetadataExchange") }
+            Button(role: .destructive) {
+                if task.phase == .completed { task.clear() }
+            } label: { Text("移除记录", tableName: "MetadataExchange") }
+        } message: {
+            Text("只移除任务记录和临时资料包，已导入的资料不会删除。", tableName: "MetadataExchange")
+        }
     }
     @ViewBuilder private var buttons: some View {
+        Button {
+            pickerError = nil
+            picker = true
+        } label: {
+            Label { Text("导入信息", tableName: "MetadataExchange") }
+                icon: { Image(systemName: "square.and.arrow.down") }.frame(maxWidth: .infinity)
+        }.buttonStyle(.borderedProminent).disabled(!task.canStartNew).accessibilityIdentifier("importMetadata")
         Button { exporting = true } label: {
-            Label { Text("导出信息", tableName: "MetadataExchange") } icon: { Image(systemName: "square.and.arrow.up") }.frame(maxWidth: .infinity)
-        }.buttonStyle(MetadataActionButtonStyle()).accessibilityIdentifier("exportMetadata")
-        Button { pickerError = nil; picker = true } label: {
-            Label { Text("导入信息", tableName: "MetadataExchange") } icon: { Image(systemName: "square.and.arrow.down") }.frame(maxWidth: .infinity)
-        }.buttonStyle(MetadataActionButtonStyle(prominent: true)).accessibilityIdentifier("importMetadata")
+            Label { Text("导出信息", tableName: "MetadataExchange") }
+                icon: { Image(systemName: "square.and.arrow.up") }.frame(maxWidth: .infinity)
+        }.buttonStyle(.bordered).accessibilityIdentifier("exportMetadata")
+    }
+
+    private var activeTask: some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                switch task.phase {
+                case .receiving, .preparing:
+                    ProgressView { phaseTitle }
+                    detail(Text("可关闭页面，稍后查看", tableName: "MetadataExchange"))
+                case .saving, .renaming:
+                    if task.total > 0 {
+                        ProgressView(value: Double(task.completed), total: Double(task.total)) { phaseTitle }
+                        if task.phase == .renaming {
+                            detail(Text("已处理 \(task.completed) / \(task.total) 个改名", tableName: "MetadataExchange"))
+                        } else {
+                            detail(Text("已保存 \(task.completed) / \(task.total) 本", tableName: "MetadataExchange"))
+                        }
+                    } else {
+                        ProgressView { phaseTitle }
+                    }
+                case .review:
+                    taskLabel("doc.text")
+                    detail(Text("预览已准备好", tableName: "MetadataExchange"))
+                case .stopped, .paused:
+                    taskLabel(task.phase == .stopped ? "stop.circle" : "pause.circle")
+                    if task.result != nil {
+                        detail(Text("已保存 \(task.savedCount) 本", tableName: "MetadataExchange"))
+                    }
+                case .failed:
+                    taskLabel("exclamationmark.circle")
+                    if let error = task.error { detail(Text(verbatim: error).lineLimit(2)) }
+                case .interrupted:
+                    taskLabel("arrow.clockwise")
+                    detail(Text(task.hasCompleteInput ? "请重新预览" : "资料包尚未接收完整", tableName: "MetadataExchange"))
+                case .idle, .completed:
+                    EmptyView()
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            taskAction(Text("查看", tableName: "MetadataExchange"))
+        }
+    }
+
+    private var completedTask: some View {
+        let issues = task.renameIssueCount
+        return HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 5) {
+                Label {
+                    if task.savedCount == 0 && (task.renamedCount > 0 || issues > 0) {
+                        Text("已改名 \(task.renamedCount) 个文件", tableName: "MetadataExchange")
+                    } else {
+                        Text("已导入 \(task.savedCount) 本", tableName: "MetadataExchange")
+                    }
+                } icon: {
+                    Image(systemName: issues > 0 ? "exclamationmark.circle" : "checkmark.circle")
+                        .foregroundStyle(Color(uiColor: issues > 0 ? theme.warning : theme.success))
+                }.font(.subheadline.weight(.medium))
+                if issues > 0 {
+                    detail(Text("\(issues) 个改名需要查看", tableName: "MetadataExchange"))
+                }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+            taskAction(Text("查看结果", tableName: "MetadataExchange"))
+            Menu {
+                Button(role: .destructive) { confirmingRemoval = true } label: {
+                    Text("移除记录", tableName: "MetadataExchange")
+                }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .accessibilityLabel(Text("更多操作", tableName: "MetadataExchange"))
+            }.tint(Color(uiColor: theme.accent))
+        }
+    }
+
+    private var phaseTitle: some View {
+        Text(task.phase.title, tableName: "MetadataExchange").font(.subheadline.weight(.medium))
+    }
+
+    private func taskLabel(_ symbol: String) -> some View {
+        Label { phaseTitle } icon: { Image(systemName: symbol) }
+    }
+
+    private func detail<Content: View>(_ content: Content) -> some View {
+        content.font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+    }
+
+    private func taskAction(_ title: Text) -> some View {
+        Button { showingImport = true } label: { title.font(.subheadline) }
+            .buttonStyle(.plain).foregroundStyle(Color(uiColor: theme.accent))
     }
 }
 

@@ -62,14 +62,25 @@ import CoreData
         }
         return try UserSyncJSON.decode(type, value, as: shape, envelope: envelope)
     }
-    func transaction<T>(_ body: () throws -> T) throws -> T {
+    func transaction<T>(metadataBatch: Bool = false, _ body: () throws -> T) throws -> T {
         modelContext.autosaveEnabled = false
         do {
             let value = try body()
             // Invalidate before save makes changes visible: a concurrent cache
             // lookup must then enter this actor, after commit or rollback.
             let dependencies = (modelContext.insertedModelsArray + modelContext.changedModelsArray + modelContext.deletedModelsArray).map(Self.dependency)
-            for (key, domain) in dependencies { changes.invalidate(keys: key.map { [$0] }, domains: domain) }
+            if metadataBatch {
+                try Task.checkCancellation()
+                var affected: [String: UserProjectionDomain] = [:]
+                for (key, domain) in dependencies where !domain.isEmpty {
+                    guard let key, domain.contains(.metadata) else { throw ReaderError.InvalidSettings }
+                    affected[key, default: []].formUnion(domain)
+                }
+                changes.invalidateMetadata(affected)
+                try Task.checkCancellation()
+            } else {
+                for (key, domain) in dependencies { changes.invalidate(keys: key.map { [$0] }, domains: domain) }
+            }
             try modelContext.save()
             return value
         }
@@ -174,6 +185,16 @@ final class UserInputRevision: @unchecked Sendable {
         for bit in UserProjectionDomain.revisionBits where domains.rawValue & bit != 0 {
             if let keys { for key in keys { books[key, default: [:]][bit] = value } }
             else { global[bit] = value }
+        }
+    }
+    func invalidateMetadata(_ affected: [String: UserProjectionDomain]) {
+        guard !affected.isEmpty else { return }
+        lock.lock(); defer { lock.unlock() }
+        value &+= 1
+        for (key, domain) in affected {
+            for bit in UserProjectionDomain.revisionBits where domain.rawValue & bit != 0 {
+                books[key, default: [:]][bit] = value
+            }
         }
     }
     func version(keys: [String]?, domains: UserProjectionDomain) -> UInt64 {

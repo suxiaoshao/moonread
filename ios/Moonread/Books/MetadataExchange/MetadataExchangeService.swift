@@ -1,6 +1,15 @@
 import Foundation
+import CryptoKit
 
 extension AppDataService {
+    func metadataImportScope() -> String {
+        switch userCloudMode {
+        case .local: return "local"
+        case .cloud(let account):
+            let digest = SHA256.hash(data: Data(account.recordName.utf8))
+            return "cloud:" + digest.map { String(format: "%02x", $0) }.joined()
+        }
+    }
     func exportMetadata(shelfID: String?, format: MetadataFormat, progress: @escaping @Sendable (Int, Int) async -> Void = { _, _ in }) async throws -> MetadataExportResult {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
@@ -77,22 +86,26 @@ extension AppDataService {
         return .init(file: file, count: count, skipped: skipped, warnings: Array(Set(warning)).sorted())
     }
 
-    func previewMetadata(_ url: URL) async throws -> MetadataImportPreview {
+    func previewMetadata(_ url: URL, expectedScope: String? = nil,
+                         progress: (@Sendable (MetadataPreparationProgress) -> Void)? = nil) async throws -> MetadataImportPreview {
+        if let expectedScope, expectedScope != metadataImportScope() { throw ReadingDataError.changed }
         let configuration = userCloudConfigurationRevision
         let source = ProtectedFileAccess.Source(selectedFile: url)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-MetadataImports", isDirectory: true)
+        progress?(.readingPackage)
         let document = try await ProtectedFileAccess().readAsync(at: source.url) { readable in
             defer { withExtendedLifetime(source) {} }
             return try inspectMetadataExchange(inputPath: readable.path, stagingRoot: root.path)
         }
         let session = MetadataImportSession(document: document, configuration: configuration)
-        return try await metadataPreview(session)
+        return try await metadataPreview(session, progress: progress)
     }
-    func metadataPreview(_ session: MetadataImportSession) async throws -> MetadataImportPreview {
-        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+    func metadataPreview(_ session: MetadataImportSession,
+                         progress: (@Sendable (MetadataPreparationProgress) -> Void)? = nil) async throws -> MetadataImportPreview {
         guard session.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         var diagnostics: [MetadataDiagnostic] = [], cursor: UInt64 = 0
         repeat {
+            try Task.checkCancellation()
             let page = try session.document.diagnostics(cursor: cursor, count: 100)
             diagnostics += page.diagnostics; cursor = page.nextCursor
             if page.done { break }
@@ -100,10 +113,12 @@ extension AppDataService {
         let messagesBySHA = Dictionary(grouping: diagnostics.filter { $0.contentSha256 != nil }, by: { $0.contentSha256! })
         var shas: [String] = [], after: String?
         repeat {
+            try Task.checkCancellation()
             let page = try session.document.bookKeys(after: after, count: 100)
             shas += page.keys; after = page.keys.last
             if page.done { break }
         } while true
+        progress?(.matchingBooks(shas.count))
         let inputs = try await metadataExchangeInputs(.import(shas: shas), configuration: session.configuration)
         let bases = Dictionary(uniqueKeysWithValues: inputs.read.books.map { ($0.metadata.sha, $0) })
         var books: [MetadataPreviewBook] = []
@@ -113,8 +128,14 @@ extension AppDataService {
         defer {
             if !keepDrafts { for url in newDrafts { try? FileManager.default.removeItem(at: url) } }
         }
+        progress?(.preparingBooks(completed: 0, total: shas.count))
         for sha in shas {
             try Task.checkCancellation()
+            defer {
+                if books.count.isMultiple(of: 8) || books.count == shas.count {
+                    progress?(.preparingBooks(completed: books.count, total: shas.count))
+                }
+            }
             guard let matched = bases[sha] else {
                 let message = String(localized: "找不到这本书", table: "MetadataExchange")
                 books.append(.init(id: sha, title: message, match: .unmatched, messages: [message]))
@@ -222,54 +243,207 @@ extension AppDataService {
         return .init(session: session, books: books, diagnostics: diagnostics)
     }
 
-    func applyMetadata(_ preview: MetadataImportPreview, progress: @escaping @Sendable (Int, Int) async -> Void) async -> MetadataBatchResult {
-        await acquireUserDataOperation()
-        defer {
-            releaseUserDataOperation()
-            finishMetadataCatalogBatch()
-        }
-        let selected = preview.books.filter { !$0.changedFields.isEmpty }
-        var result = MetadataBatchResult()
-        for (index, book) in selected.enumerated() {
-            if Task.isCancelled { result.cancelled = true; result.remaining = selected[index...].map { .init(id: $0.id, title: $0.title, saved: false, message: nil, cover: $0.base?.cover) }; break }
-            do {
-                guard preview.session.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-                guard let base = book.base, let edited = book.edited else { continue }
-                let plan = try metadataEditPlan(base: base, edited: edited, fields: Set(book.fields.filter { $0.chosen != nil }.map { $0.field.metadataKey }))
-                try await commitMetadata(plan, cover: edited.cover != base.cover ? edited.cover : nil, deferCatalogRefresh: true)
-            } catch {
-                result.outcomes.append(.init(id: book.id, title: book.title, saved: false, message: String(localized: "资料保存失败，已停止；此前保存的资料保留", table: "MetadataExchange"), cover: book.base?.cover))
-                result.remaining = selected.dropFirst(index + 1).map { .init(id: $0.id, title: $0.title, saved: false, message: nil, cover: $0.base?.cover) }; break
-            }
-            var message: String?
-            var renamed = false
-            if let name = book.renameName, let source = book.source {
-                // Only this explicit file-operation phase touches original bytes. Never download.
-                do {
-                    try await renameLibraryBook(source, name: name, expected: .formal(sha256: book.id))
-                    renamed = true
-                } catch let error as AIFileExecutionError {
-                    switch error.stage {
-                    case .movedButIndexFailed: renamed = true; message = String(localized: "资料已保存，文件已改名，但索引未更新；请刷新书架", table: "MetadataExchange")
-                    case .uncertain, .copiedSourceRemains: message = String(localized: "资料已保存，文件操作未完成；请检查书架中的文件", table: "MetadataExchange")
-                    default: message = Self.metadataRenameFailure(error.underlying)
-                    }
-                } catch { message = Self.metadataRenameFailure(error) }
-            }
-            result.outcomes.append(.init(id: book.id, title: book.title, saved: true, message: message, cover: book.edited?.cover, savedFieldCount: book.changedMetadataFields.count, renamed: renamed))
-            await progress(index + 1, selected.count)
-        }
-        return result
+    func confirmMetadata(_ preview: MetadataImportPreview) async throws -> MetadataConfirmedImport {
+        try Task.checkCancellation()
+        guard preview.session.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
+        let books = preview.books.filter { !$0.changedFields.isEmpty }
+        guard Set(books.map(\.id)).count == books.count,
+              books.allSatisfy({ $0.selectionError == nil }) else { throw ReaderError.InvalidSettings }
+        let deletionTokens = Dictionary(uniqueKeysWithValues: books.map { ($0.id, localReadingWriteLease($0.id)) })
+        let expectedStoreID = userStoreTask?.id
+        let store = try await userStore()
+        guard preview.session.configuration == userCloudConfigurationRevision, let storeID = userStoreTask?.id,
+              expectedStoreID == nil || expectedStoreID == storeID else { throw ReadingDataError.changed }
+        try Task.checkCancellation()
+        return .init(session: preview.session, books: books,
+                     writeIndices: books.indices.filter { !books[$0].changedMetadataFields.isEmpty },
+                     renameIndices: books.indices.filter { books[$0].renameName != nil },
+                     store: store, storeID: storeID, deletionTokens: deletionTokens)
     }
-    private nonisolated static func metadataRenameFailure(_ error: Error) -> String {
-        if let error = error as? AIToolError, error.code == "needs_preparation" {
-            return String(localized: "资料已保存，文件未改名：原文件尚未下载；本次不会下载", table: "MetadataExchange")
+
+    private struct PreparedMetadataBook: Sendable {
+        let index: Int
+        let plan: BookMetadataEditPlan
+        let asset: BookCoverAsset?
+        let url: URL?
+        let budget: MetadataBatchBudget
+    }
+
+    private func prepareMetadataBook(_ index: Int, _ book: MetadataPreviewBook) throws -> PreparedMetadataBook {
+        guard let base = book.base, let edited = book.edited else { throw ReaderError.InvalidSettings }
+        let plan = try metadataEditPlan(base: base, edited: edited,
+                                        fields: Set(book.fields.compactMap { $0.chosen == nil ? nil : $0.field.metadataKey }))
+        guard !plan.values.isEmpty else { throw ReaderError.InvalidSettings }
+        var text = 0
+        for (key, value) in plan.values {
+            let (subtotal, firstOverflow) = text.addingReportingOverflow(key.utf8.count)
+            let (next, secondOverflow) = subtotal.addingReportingOverflow(value.utf8.count)
+            guard !firstOverflow, !secondOverflow else { throw ReaderError.InvalidSettings }
+            text = next
         }
-        if case LibraryFileError.conflict = error { return String(localized: "资料已保存，文件未改名：目标名称已存在", table: "MetadataExchange") }
+        let asset = edited.cover == base.cover ? nil : edited.cover
+        let url = asset.map(coverDraftURL)
+        var size = 0
+        if let url {
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            guard values.isRegularFile == true, let length = values.fileSize, length > 0 else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            size = length
+        }
+        return .init(index: index, plan: plan, asset: asset, url: url,
+                     budget: .init(keys: plan.values.count, text: text, covers: size))
+    }
+
+    func applyMetadata(_ preview: MetadataImportPreview,
+                       progress: @Sendable (Int, Int) -> Void = { _, _ in }) async -> MetadataBatchResult {
+        do {
+            let confirmed = try await confirmMetadata(preview)
+            return await applyMetadata(confirmed) { update in
+                if update.phase == .saving { progress(update.completed, update.total) }
+            }.result
+        } catch {
+            var result = MetadataBatchResult()
+            result.cancelled = error is CancellationError
+            result.requiresNewPreview = error is ReadingDataError
+            if !result.cancelled { result.failure = ReaderMessages.error(error) }
+            let outstanding: (MetadataPreviewBook) -> MetadataImportOutcome = {
+                .init(id: $0.id, title: $0.title, saved: false, message: nil, cover: $0.base?.cover)
+            }
+            result.remaining = preview.books.filter { !$0.changedMetadataFields.isEmpty }.map(outstanding)
+            result.remainingRenames = preview.books.filter { $0.renameName != nil }.map(outstanding)
+            return result
+        }
+    }
+
+    func applyMetadata(_ confirmed: MetadataConfirmedImport,
+                       progress: @Sendable (MetadataApplyProgress) -> Void = { _ in }) async
+    -> (checkpoint: MetadataConfirmedImport, result: MetadataBatchResult) {
+        var checkpoint = confirmed
+        var result = MetadataBatchResult()
+        var wroteThisRun = false
+        defer {
+            if wroteThisRun, confirmed.session.configuration == userCloudConfigurationRevision {
+                scheduleSystemReadingCatalog(immediate: systemCatalog?.task == nil)
+            }
+        }
+        let bookAt = confirmed.books
+        let writes = confirmed.writeIndices
+        let renames = confirmed.renameIndices
+        var next: PreparedMetadataBook?
+        do {
+            try Task.checkCancellation()
+            let outstanding = Array(writes.dropFirst(checkpoint.committed)) + Array(renames.dropFirst(checkpoint.renamedThrough))
+            try validateMetadataScope(confirmed, indices: outstanding)
+            while checkpoint.committed < writes.count {
+                try Task.checkCancellation()
+                var prepared: [PreparedMetadataBook] = []
+                var budget = MetadataBatchBudget.zero
+                while checkpoint.committed + prepared.count < writes.count {
+                    try Task.checkCancellation()
+                    let index = writes[checkpoint.committed + prepared.count]
+                    let candidate = try next ?? prepareMetadataBook(index, bookAt[index])
+                    guard let combined = budget.adding(candidate.budget, within: .target) else {
+                        if prepared.isEmpty { prepared.append(candidate); next = nil }
+                        else { next = candidate }
+                        break
+                    }
+                    next = nil
+                    prepared.append(candidate)
+                    budget = combined
+                }
+                let entries = try prepared.map { item in
+                    try Task.checkCancellation()
+                    let cover: UserDataStore.CoverWrite?
+                    if let asset = item.asset, let url = item.url {
+                        cover = try Self.readCoverDraft(asset, url: url, length: item.budget.covers)
+                    } else { cover = nil }
+                    return UserDataStore.MetadataWrite(plan: item.plan, cover: cover)
+                }
+                try await acquireCancellableUserDataOperation()
+                do {
+                    defer { releaseUserDataOperation() }
+                    try Task.checkCancellation()
+                    try validateMetadataScope(confirmed, indices: prepared.map(\.index))
+                    try await confirmed.store.putMetadata(entries, device: userDevice)
+                    // A successful save is a fact even when a stop raced the return.
+                    checkpoint.committed += prepared.count
+                    wroteThisRun = true
+                    for item in prepared {
+                        let book = bookAt[item.index]
+                        checkpoint.outcomes[item.index] = .init(id: book.id, title: book.title, saved: true,
+                            message: nil, cover: book.edited?.cover, savedFieldCount: book.changedMetadataFields.count)
+                    }
+                    publishMetadataCommit(prepared.map(\.plan), deferCatalogRefresh: true)
+                }
+                progress(.init(phase: .saving, completed: checkpoint.committed, total: writes.count))
+            }
+            if checkpoint.renamedThrough < renames.count {
+                try Task.checkCancellation()
+                progress(.init(phase: .renaming, completed: checkpoint.renamedThrough, total: renames.count))
+            }
+            while checkpoint.renamedThrough < renames.count {
+                try Task.checkCancellation()
+                let index = renames[checkpoint.renamedThrough]
+                try validateMetadataScope(confirmed, indices: [index])
+                let book = bookAt[index]
+                guard let name = book.renameName, let source = book.source else { throw ReaderError.InvalidSettings }
+                var outcome = checkpoint.outcomes[index] ?? .init(id: book.id, title: book.title, saved: false, message: nil, cover: book.base?.cover)
+                do {
+                    try await renameLibraryBook(source, name: name, expected: .formal(sha256: book.id),
+                                                configuration: confirmed.session.configuration,
+                                                deletionToken: confirmed.deletionTokens[book.id])
+                    outcome.renamed = true
+                } catch is CancellationError { throw CancellationError() }
+                catch let error as ReadingDataError { throw error }
+                catch let error as AIFileExecutionError {
+                    switch error.stage {
+                    case .movedButIndexFailed:
+                        outcome.renamed = true
+                        outcome.message = String(localized: outcome.saved ? "资料已保存，文件已改名，但索引未更新；请刷新书架" : "文件已改名，但索引未更新；请刷新书架", table: "MetadataExchange")
+                    case .uncertain, .copiedSourceRemains:
+                        outcome.message = String(localized: outcome.saved ? "资料已保存，文件操作未完成；请检查书架中的文件" : "文件操作未完成；请检查书架中的文件", table: "MetadataExchange")
+                    default: outcome.message = Self.metadataRenameFailure(error.underlying, saved: outcome.saved)
+                    }
+                } catch { outcome.message = Self.metadataRenameFailure(error, saved: outcome.saved) }
+                outcome.renameAttempted = true
+                checkpoint.outcomes[index] = outcome
+                checkpoint.renamedThrough += 1
+                progress(.init(phase: .renaming, completed: checkpoint.renamedThrough, total: renames.count))
+            }
+        } catch is CancellationError { result.cancelled = true }
+        catch {
+            result.requiresNewPreview = error is ReadingDataError
+            result.failure = ReaderMessages.error(error)
+        }
+        result.outcomes = checkpoint.outcomes.keys.sorted().compactMap { checkpoint.outcomes[$0] }
+        result.remaining = writes.dropFirst(checkpoint.committed).map {
+            let book = bookAt[$0]
+            return .init(id: book.id, title: book.title, saved: false, message: nil, cover: book.base?.cover)
+        }
+        result.remainingRenames = renames.dropFirst(checkpoint.renamedThrough).map {
+            let book = bookAt[$0]
+            return checkpoint.outcomes[$0] ?? .init(id: book.id, title: book.title, saved: false, message: nil, cover: book.base?.cover)
+        }
+        return (checkpoint, result)
+    }
+
+    private func validateMetadataScope(_ confirmed: MetadataConfirmedImport, indices: [Int]) throws {
+        guard confirmed.session.configuration == userCloudConfigurationRevision, confirmed.storeID == userStoreTask?.id,
+              indices.allSatisfy({ index in
+                  let key = confirmed.books[index].id
+                  return confirmed.deletionTokens[key] == localReadingWriteLeases[key]
+              }) else { throw ReadingDataError.changed }
+    }
+    private nonisolated static func metadataRenameFailure(_ error: Error, saved: Bool) -> String {
+        if let error = error as? AIToolError, error.code == "needs_preparation" {
+            return String(localized: saved ? "资料已保存，文件未改名：原文件尚未下载；本次不会下载" : "文件未改名：原文件尚未下载；本次不会下载", table: "MetadataExchange")
+        }
+        if case LibraryFileError.conflict = error { return String(localized: saved ? "资料已保存，文件未改名：目标名称已存在" : "文件未改名：目标名称已存在", table: "MetadataExchange") }
         let changed: Bool
         if case ReaderError.SourceChanged = error { changed = true }
         else { changed = (error as? AIToolError)?.code == "stale_reference" }
-        if changed { return String(localized: "资料已保存，文件未改名：原文件已变化", table: "MetadataExchange") }
-        return String(localized: "资料已保存，文件未改名：原文件不可用、无权限或名称无效", table: "MetadataExchange")
+        if changed { return String(localized: saved ? "资料已保存，文件未改名：原文件已变化" : "文件未改名：原文件已变化", table: "MetadataExchange") }
+        return String(localized: saved ? "资料已保存，文件未改名：原文件不可用、无权限或名称无效" : "文件未改名：原文件不可用、无权限或名称无效", table: "MetadataExchange")
     }
 }

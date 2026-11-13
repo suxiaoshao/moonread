@@ -113,16 +113,30 @@ extension AppDataService {
         try await commitMetadata(plan, cover: final.cover != base.cover ? final.cover : nil)
         if let cover = edited.cover { discardCoverDraft(cover) }
     }
-    func commitMetadata(_ plan: BookMetadataEditPlan, cover: BookCoverAsset?, deferCatalogRefresh: Bool = false) async throws {
+    func commitMetadata(_ plan: BookMetadataEditPlan, cover: BookCoverAsset?) async throws {
         guard !plan.values.isEmpty else { return }
         let store = try await userStore()
-        let asset = try cover.map { UserDataStore.CoverWrite(id: $0.id, bytes: try Data(contentsOf: coverDraftURL($0))) }
-        try await store.putValues(plan.values, device: userDevice, cover: asset)
-        if deferCatalogRefresh { markMetadataCatalogBatchDirty() }
+        let asset = try cover.map { try Self.readCoverDraft($0, url: coverDraftURL($0), length: nil) }
+        try await store.putMetadata([.init(plan: plan, cover: asset)], device: userDevice)
+        publishMetadataCommit([plan], deferCatalogRefresh: false)
+    }
+    nonisolated static func readCoverDraft(_ cover: BookCoverAsset, url: URL, length: Int?) throws -> UserDataStore.CoverWrite {
+        let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        guard values.isRegularFile == true, let size = values.fileSize, size > 0, length == nil || size == length else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        let file = try FileHandle(forReadingFrom: url)
+        defer { try? file.close() }
+        let bytes = try file.read(upToCount: size) ?? Data()
+        guard bytes.count == size, try file.read(upToCount: 1)?.isEmpty != false,
+              coverDigestString(bytes) == cover.sha256 else { throw CocoaError(.fileReadCorruptFile) }
+        return .init(id: cover.id, bytes: bytes)
+    }
+    func publishMetadataCommit(_ plans: [BookMetadataEditPlan], deferCatalogRefresh: Bool) {
         dataChanged(refreshSystemCatalog: !deferCatalogRefresh)
         NotificationCenter.default.post(name: .bookMetadataChanged, object: nil, userInfo: [
-            "keys": [plan.sha], BookMetadataChange.catalogRefreshDeferredKey: deferCatalogRefresh,
-            BookMetadataChange.projectionFieldsKey: plan.values.keys.reduce(into: UserProjectionDomain()) { result, key in
+            "keys": plans.map(\.sha), BookMetadataChange.catalogRefreshDeferredKey: deferCatalogRefresh,
+            BookMetadataChange.projectionFieldsKey: plans.lazy.flatMap { $0.values.keys }.reduce(into: UserProjectionDomain()) { result, key in
                 if let field = key.split(separator: "/", maxSplits: 2).last {
                     result.formUnion(.metadataField(String(field)))
                 }

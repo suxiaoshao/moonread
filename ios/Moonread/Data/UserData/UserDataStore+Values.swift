@@ -94,8 +94,7 @@ extension UserDataStore {
         let rows = try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate { $0.key == key && $0.device == device }))
         for row in rows { _ = try UserSyncJSON.storedValue(row.payload, key: key) }
         let latest = try values(key: key)[key]?.updated ?? 0
-        guard latest < Int64.max else { throw UserSyncCompatibilityError() }
-        let stored = StoredValue(updated: max(Int64(Date().timeIntervalSince1970 * 1000), latest + 1), token: UUID().uuidString, value: value)
+        let stored = try valueWrite(value, latest: latest)
         let payload = try encode(stored)
         if key.hasPrefix("position/") {
             let contentKey = String(key.dropFirst(9))
@@ -103,15 +102,58 @@ extension UserDataStore {
             for row in old { _ = try UserSyncJSON.storedValue(row.payload, key: key) }
             modelContext.insert(UserPosition(contentKey: contentKey, payload: payload))
             for row in old { modelContext.delete(row) }
-        } else if let row = rows.first { row.payload = payload; for duplicate in rows.dropFirst() { modelContext.delete(duplicate) } }
-        else { modelContext.insert(UserValue(key: key, device: device, payload: payload)) }
+        } else { replaceValue(key, device: device, rows: rows, payload: payload) }
         return stored
     }
+    private func valueWrite(_ value: String, latest: Int64) throws -> StoredValue {
+        guard latest < Int64.max else { throw UserSyncCompatibilityError() }
+        return StoredValue(updated: max(Int64(Date().timeIntervalSince1970 * 1000), latest + 1), token: UUID().uuidString, value: value)
+    }
+    private func replaceValue(_ key: String, device: String, rows: [UserValue], payload: String) {
+        if let row = rows.first { row.payload = payload; for duplicate in rows.dropFirst() { modelContext.delete(duplicate) } }
+        else { modelContext.insert(UserValue(key: key, device: device, payload: payload)) }
+    }
     struct CoverWrite: Sendable { let id: String; let bytes: Data }
-    func putValues(_ values: [String: String], device: String, cover: CoverWrite? = nil) throws {
-        try transaction {
-            if let cover { try saveCoverWithoutSave(id: cover.id, bytes: cover.bytes) }
-            for (key, value) in values { try putWithoutSave(key, value: value, device: device) }
+    struct MetadataWrite: Sendable {
+        let plan: BookMetadataEditPlan
+        let cover: CoverWrite?
+    }
+    func putMetadata(_ writes: [MetadataWrite], device: String) throws {
+        guard !writes.isEmpty else { return }
+        // This context owns only this transaction; never roll back unrelated work.
+        guard !modelContext.hasChanges else { throw ReaderError.InvalidSettings }
+        let keys = writes.flatMap { $0.plan.values.keys }
+        guard !keys.isEmpty, Set(keys).count == keys.count, writes.allSatisfy({ !$0.plan.values.isEmpty }) else {
+            throw ReaderError.InvalidSettings
+        }
+        try transaction(metadataBatch: true) {
+            var local: [String: [UserValue]] = [:]
+            var winners = ValueSnapshot()
+            for start in stride(from: 0, to: keys.count, by: 128) {
+                try Task.checkCancellation()
+                let page = Array(keys[start..<min(start + 128, keys.count)])
+                for row in try modelContext.fetch(FetchDescriptor<UserValue>(predicate: #Predicate { page.contains($0.key) })) {
+                    winners.include(key: row.key, payload: row.payload)
+                    if row.device == device { local[row.key, default: []].append(row) }
+                }
+            }
+            guard winners.blocked.isEmpty else { throw UserSyncCompatibilityError() }
+            for write in writes {
+                try Task.checkCancellation()
+                let prefix = "metadata/\(write.plan.sha)/"
+                if let cover = write.cover {
+                    guard let value = write.plan.values[prefix + "cover"],
+                          let reference = try? JSONDecoder().decode(UserSyncJSON.CoverReference.self, from: Data(value.utf8)),
+                          reference.id == cover.id else { throw ReaderError.InvalidSettings }
+                    try saveCoverWithoutSave(id: cover.id, bytes: cover.bytes)
+                }
+                for (key, value) in write.plan.values {
+                    guard key.hasPrefix(prefix) else { throw ReaderError.InvalidSettings }
+                    try UserSyncJSON.validateValue(value, key: key)
+                    let stored = try valueWrite(value, latest: winners.values[key]?.updated ?? 0)
+                    replaceValue(key, device: device, rows: local[key] ?? [], payload: try encode(stored))
+                }
+            }
         }
     }
     func allValues(prefix: String) throws -> [String: String] {

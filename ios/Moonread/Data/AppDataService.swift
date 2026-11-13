@@ -211,7 +211,6 @@ actor AppDataService {
         return AppDataService()
     }()
     var systemCatalog: SystemReadingCatalog?
-    var metadataCatalogBatchDirty = false
     var systemReadingLastError: String?
     var systemExposureTask: Task<Void, Never>?
     var systemWidgetReloadSnapshot: SystemReadingSnapshot?
@@ -268,7 +267,11 @@ actor AppDataService {
     var inFlightBackupDirectories = Set<URL>()
     var backupShareCopies: [URL: Int] = [:]
     var userDataOperationBusy = false
-    var userDataOperationWaiters: [CheckedContinuation<Void, Never>] = []
+    struct UserDataOperationWaiter {
+        let id: UUID?
+        let resume: (Bool) -> Void
+    }
+    var userDataOperationWaiters: [UserDataOperationWaiter] = []
     var localReadingWriteLeases: [String: UUID] = [:]
     var promotedUserKeys = Set<String>()
     var shownCandidates: [String: [AnnotationCandidate]] = [:]

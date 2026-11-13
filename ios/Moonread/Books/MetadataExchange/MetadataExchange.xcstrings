@@ -1,6 +1,902 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
+    "可关闭页面，稍后查看": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can close this page and check back later."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以關閉頁面，稍後查看"
+          }
+        }
+      }
+    },
+    "预览已准备好": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview is ready"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "預覽已準備好"
+          }
+        }
+      }
+    },
+    "请重新预览": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview again"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請重新預覽"
+          }
+        }
+      }
+    },
+    "资料包尚未接收完整": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Package was not fully received"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "資料包尚未接收完整"
+          }
+        }
+      }
+    },
+    "已导入 %lld 本": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Books imported: %lld"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已匯入 %lld 本"
+          }
+        }
+      }
+    },
+    "查看结果": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View Result"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看結果"
+          }
+        }
+      }
+    },
+    "查看": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看"
+          }
+        }
+      }
+    },
+    "更多操作": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "More Actions"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "更多操作"
+          }
+        }
+      }
+    },
+    "移除记录": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove Record"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除記錄"
+          }
+        }
+      }
+    },
+    "移除导入记录？": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove import record?"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "移除匯入記錄？"
+          }
+        }
+      }
+    },
+    "只移除任务记录和临时资料包，已导入的资料不会删除。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Only the task record and temporary package will be removed. Imported metadata will be kept."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "只會移除任務記錄和暫存資料包，已匯入的資料不會刪除。"
+          }
+        }
+      }
+    },
+    "正在读取资料包": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reading the package"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在讀取資料包"
+          }
+        }
+      }
+    },
+    "正在匹配 %lld 本书": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Matching books: %lld"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在比對 %lld 本書"
+          }
+        }
+      }
+    },
+    "已准备 %lld / %lld 本": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Prepared %lld of %lld books"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已準備 %lld / %lld 本"
+          }
+        }
+      }
+    },
+    "系统后台执行时间已结束。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The system’s background time ended."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系統背景執行時間已結束。"
+          }
+        }
+      }
+    },
+    "系统未提供后台执行资格，导入已暂停。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The system did not grant background time. The import is paused."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系統未提供背景執行資格，匯入已暫停。"
+          }
+        }
+      }
+    },
+    "请先在书架核对实际文件。重新预览会读取当前状态，不会执行先前的改名。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check the actual files on the bookshelf first. Preview again to see their current state. Previous renames will not run."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請先在書架核對實際檔案。重新預覽會讀取目前狀態，不會執行先前的重新命名。"
+          }
+        }
+      }
+    },
+    "继续准备": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume Preparation"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "繼續準備"
+          }
+        }
+      }
+    },
+    "资料所属账户已变化，请结束本次导入后重新选择文件。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The account for this package has changed. End the import and select the file again."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "資料所屬帳戶已變更，請結束本次匯入後重新選取檔案。"
+          }
+        }
+      }
+    },
+    "接收资料包": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Receiving package"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "接收資料包"
+          }
+        }
+      }
+    },
+    "准备预览": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preparing preview"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "準備預覽"
+          }
+        }
+      }
+    },
+    "等待确认": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Awaiting confirmation"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待確認"
+          }
+        }
+      }
+    },
+    "保存资料": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Saving metadata"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "儲存資料"
+          }
+        }
+      }
+    },
+    "文件改名": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renaming files"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檔案重新命名"
+          }
+        }
+      }
+    },
+    "导入已暂停": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import paused"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯入已暫停"
+          }
+        }
+      }
+    },
+    "导入未完成": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import incomplete"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯入未完成"
+          }
+        }
+      }
+    },
+    "上次导入中断": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Previous import interrupted"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上次匯入中斷"
+          }
+        }
+      }
+    },
+    "正在处理已选择的资料": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Processing selected metadata"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在處理已選取的資料"
+          }
+        }
+      }
+    },
+    "已处理 %lld / %lld 个改名": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Processed %lld of %lld renames"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已處理 %lld / %lld 個重新命名"
+          }
+        }
+      }
+    },
+    "结束本次导入？": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "End this import?"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結束本次匯入？"
+          }
+        }
+      }
+    },
+    "结束本次导入": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "End Import"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "結束本次匯入"
+          }
+        }
+      }
+    },
+    "未保存的选择将丢弃，已保存的资料和已完成的改名会保留。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unsaved selections will be discarded. Saved metadata and completed renames will be kept."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未儲存的選擇將捨棄，已儲存的資料和已完成的重新命名會保留。"
+          }
+        }
+      }
+    },
+    "继续导入和改名？": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume import and renaming?"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "繼續匯入和重新命名？"
+          }
+        }
+      }
+    },
+    "继续导入": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume Import"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "繼續匯入"
+          }
+        }
+      }
+    },
+    "会继续保存未提交的资料，并处理尚未执行的改名。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This will save remaining metadata and process renames that have not started."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "會繼續儲存尚未提交的資料，並處理尚未執行的重新命名。"
+          }
+        }
+      }
+    },
+    "可以关闭此页，稍后回来查看进度。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You can close this page and return later to check progress."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "可以關閉此頁，稍後回來查看進度。"
+          }
+        }
+      }
+    },
+    "正在停止；已完成的操作会保留。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stopping. Completed changes will be kept."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "正在停止；已完成的操作會保留。"
+          }
+        }
+      }
+    },
+    "停止导入": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop Import"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止匯入"
+          }
+        }
+      }
+    },
+    "请重新预览并确认；不会自动执行上次的选择。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Preview and confirm again. Previous selections won’t be applied automatically."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請重新預覽並確認；不會自動執行上次的選擇。"
+          }
+        }
+      }
+    },
+    "资料包尚未接收完整，请结束本次导入后重新选择文件。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The package was not fully received. End this import and select the file again."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "資料包尚未接收完整，請結束本次匯入後重新選取檔案。"
+          }
+        }
+      }
+    },
+    "尚有 %lld 本未保存": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Books remaining to save: %lld"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚有 %lld 本未儲存"
+          }
+        }
+      }
+    },
+    "已改名 %lld 个文件": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Files renamed: %lld"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已重新命名 %lld 個檔案"
+          }
+        }
+      }
+    },
+    "%lld 个改名需要查看": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renames to review: %lld"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 個重新命名需要查看"
+          }
+        }
+      }
+    },
+    "尚有 %lld 个文件未改名": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Renames not started: %lld"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "尚有 %lld 個檔案未重新命名"
+          }
+        }
+      }
+    },
+    "已完成的操作会保留。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Completed changes will be kept."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已完成的操作會保留。"
+          }
+        }
+      }
+    },
+    "原预览已失效，请重新预览并确认。": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This preview is no longer valid. Preview and confirm again."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "原預覽已失效，請重新預覽並確認。"
+          }
+        }
+      }
+    },
+    "查看未完成的内容": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Review Incomplete Changes"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看未完成的內容"
+          }
+        }
+      }
+    },
+    "查看导入": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "View Import"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "查看匯入"
+          }
+        }
+      }
+    },
+    "导入另一份资料": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Import Another Package"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "匯入另一份資料"
+          }
+        }
+      }
+    },
+    "文件已改名，但索引未更新；请刷新书架": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File renamed, but the index was not updated. Refresh the bookshelf."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檔案已重新命名，但索引未更新；請重新整理書架"
+          }
+        }
+      }
+    },
+    "文件操作未完成；请检查书架中的文件": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The file operation did not finish. Check the files on the bookshelf."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檔案操作未完成；請檢查書架中的檔案"
+          }
+        }
+      }
+    },
+    "文件未改名：原文件尚未下载；本次不会下载": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File not renamed: the original is not downloaded. This import will not download it."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檔案未重新命名：原檔案尚未下載；本次不會下載"
+          }
+        }
+      }
+    },
+    "文件未改名：目标名称已存在": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File not renamed: the target name already exists."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檔案未重新命名：目標名稱已存在"
+          }
+        }
+      }
+    },
+    "文件未改名：原文件已变化": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File not renamed: the original file changed."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檔案未重新命名：原檔案已變更"
+          }
+        }
+      }
+    },
+    "文件未改名：原文件不可用、无权限或名称无效": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File not renamed: the original is unavailable, access was denied, or the name is invalid."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檔案未重新命名：原檔案無法使用、無權限或名稱無效"
+          }
+        }
+      }
+    },
+    "文件未改名": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "File not renamed"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檔案未重新命名"
+          }
+        }
+      }
+    },
     "导入小说信息？": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Import book metadata?"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"匯入小說資訊？"}}}},
     "%lld 本 · %lld 本无变化 · %lld 本未匹配 · %lld 本已跳过": {
       "extractionState": "manual",
