@@ -7,6 +7,17 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        270D00000000000000000043 = {isa = PBXBuildFile; productRef = 270D00000000000000000042;};
+        270D0000000000000000002A = {isa = PBXBuildFile; fileRef = 270D0000000000000000000A;};
+        270D00000000000000000029 = {isa = PBXBuildFile; fileRef = 270D00000000000000000009;};
+        270D00000000000000000028 = {isa = PBXBuildFile; fileRef = 270D00000000000000000008;};
+        270D00000000000000000027 = {isa = PBXBuildFile; fileRef = 270D00000000000000000007;};
+        270D00000000000000000026 = {isa = PBXBuildFile; fileRef = 270D00000000000000000006;};
+        270D00000000000000000025 = {isa = PBXBuildFile; fileRef = 270D00000000000000000005;};
+        270D00000000000000000024 = {isa = PBXBuildFile; fileRef = 270D00000000000000000004;};
+        270D00000000000000000023 = {isa = PBXBuildFile; fileRef = 270D00000000000000000003;};
+        270D00000000000000000022 = {isa = PBXBuildFile; fileRef = 270D00000000000000000002;};
+        270D00000000000000000021 = {isa = PBXBuildFile; fileRef = 270D00000000000000000001;};
 		148B00000000000000000001 /* AIUsageAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 148A00000000000000000001 /* AIUsageAdapter.swift */; };
 		148B00000000000000000002 /* AIUsageSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 148A00000000000000000002 /* AIUsageSnapshot.swift */; };
 		148B00000000000000000003 /* AIConnectionUsageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 148A00000000000000000003 /* AIConnectionUsageService.swift */; };
@@ -423,6 +434,16 @@ CA0FCD9B82134E7091B5CD9F /* ModelDirectoryDecoding.swift in Sources */ = {isa = 
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+        270D0000000000000000000A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Data/DataV2MigrationTests.swift"; sourceTree = SOURCE_ROOT;};
+        270D00000000000000000009 = {isa = PBXFileReference; lastKnownFileType = text; path = "../crates/moonread-core/src/storage/source_decoding_migration.sql"; sourceTree = SOURCE_ROOT;};
+        270D00000000000000000008 = {isa = PBXFileReference; lastKnownFileType = text; path = "../crates/moonread-core/src/library/bookshelf/full_index.sql"; sourceTree = SOURCE_ROOT;};
+        270D00000000000000000007 = {isa = PBXFileReference; lastKnownFileType = text; path = "../crates/moonread-core/src/storage/schema.sql"; sourceTree = SOURCE_ROOT;};
+        270D00000000000000000006 = {isa = PBXFileReference; lastKnownFileType = text; path = "UserSchemaV1.sql"; sourceTree = "<group>";};
+        270D00000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LocalScopeImport.swift"; sourceTree = "<group>";};
+        270D00000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LegacyUserImport.swift"; sourceTree = "<group>";};
+        270D00000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LegacyIndexImport.swift"; sourceTree = "<group>";};
+        270D00000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DataSession.swift"; sourceTree = "<group>";};
+        270D00000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "DataSchema.swift"; sourceTree = "<group>";};
 		148A00000000000000000001 /* AIUsageAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIUsageAdapter.swift"; sourceTree = "<group>"; };
 		148A00000000000000000002 /* AIUsageSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIUsageSnapshot.swift"; sourceTree = "<group>"; };
 		148A00000000000000000003 /* AIConnectionUsageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIConnectionUsageService.swift"; sourceTree = "<group>"; };
@@ -807,6 +828,8 @@ A8C3CE03D9A84285ACE6CC41 /* ModelDirectoryDecoding.swift */ = {isa = PBXFileRefe
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                270D00000000000000000043,
+
 D35000000000000000000006,D35000000000000000000007,D35000000000000000000008,FB1000000000000000000002,
 D35000000000000000000004,
 D35000000000000000000003,
@@ -834,6 +857,7 @@ D35000000000000000000001,
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+        270D00000000000000000040 /* Database */ = {isa = PBXGroup; children = (270D00000000000000000001,270D00000000000000000002,270D00000000000000000003,270D00000000000000000004,270D00000000000000000005,270D00000000000000000006,270D00000000000000000007,270D00000000000000000008,270D00000000000000000009); path = Database; sourceTree = "<group>";};
 		148C00000000000000000001 /* Usage */ = {
 			isa = PBXGroup;
 			children = (
@@ -1092,6 +1116,7 @@ D35000000000000000000001,
 		C60318128F8C4F59B3C2CFB2 /* Data */ = {
 			isa = PBXGroup;
 			children = (
+                270D00000000000000000040,
 				E237B1E2BAF2109F635ED408 /* UserData */,
 				A20000000000000000000002 /* AppDataService.swift */,
 				2AABE76052D0D231A8ACA8DF /* Cloud */,
@@ -1613,6 +1638,7 @@ D35000000000000000000001,
 		ACD9E1EDE4C5AD36E2D4E7AD /* Data */ = {
 			isa = PBXGroup;
 			children = (
+                270D0000000000000000000A,
 				D50620000000000000000007 /* CacheManagementTests.swift */,
 				8B7347C8B711202E4F6D8DF4 /* CloudAccountTests.swift */,
 				3E3F5C90A0A8FB0A54303016 /* CloudFileHandoffTests.swift */,
@@ -1857,7 +1883,7 @@ D35000000000000000000001,
                 F1C19004BB32432C8F23B23B,
                 24EC65B9F10B59B19FF49005,
 			);
-			packageProductDependencies = (D34000000000000000000001,D34000000000000000000002,D34000000000000000000003,D34000000000000000000004,D34000000000000000000006,D34000000000000000000007,D34000000000000000000008,FB4000000000000000000001);
+			packageProductDependencies = (D34000000000000000000001,270D00000000000000000042,D34000000000000000000002,D34000000000000000000003,D34000000000000000000004,D34000000000000000000006,D34000000000000000000007,D34000000000000000000008,FB4000000000000000000001);
 			name = Moonread;
 			productName = Moonread;
 			productReference = A2000000000000000000000A /* Moonread.app */;
@@ -1949,7 +1975,7 @@ D35000000000000000000001,
 			productRefGroup = A50000000000000000000005 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
-            packageReferences = (AP3000000000000000000001,D33000000000000000000001,FB3000000000000000000001);
+            packageReferences = (270D00000000000000000041,AP3000000000000000000001,D33000000000000000000001,FB3000000000000000000001);
 			targets = (
                 AF656EF2055C4EDC80ED01F9 /* MoonreadWidgets */,
                 04C2476D974D589BB2C7513F,
@@ -1965,6 +1991,11 @@ D35000000000000000000001,
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                270D00000000000000000026,
+                270D00000000000000000027,
+                270D00000000000000000028,
+                270D00000000000000000029,
+
                 2A49E75FB62D455EA40547D4 /* WidgetDefaultAppearance.json */,
                 FEBD0561E8064B4F9A34173E,
                 005AC664DBAF46D4BDDD504A /* AppShortcuts.xcstrings */,
@@ -2055,6 +2086,12 @@ E51000000000000000000009,D41000000000000000000001,
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+                270D00000000000000000021,
+                270D00000000000000000022,
+                270D00000000000000000023,
+                270D00000000000000000024,
+                270D00000000000000000025,
+
 				FBEC3350F1726A8D25FE408B /* AIChatView.swift in Sources */,
 				F7BB0BC883AAEB35058D210B /* AIComposer.swift in Sources */,
 				88852170375247A7A949C4CE /* AIReadingAttachmentPreview.swift in Sources */,
@@ -2297,6 +2334,8 @@ F01900000000000000000001,
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A60000000000000000000006 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (
+                270D0000000000000000002A,
+
 				64AA023FE349DA30C4CD3701 /* AIConnectionWriteTests.swift in Sources */,
 				3FD57CF7AF53ADCD54DAAC4F /* ShelfRecoveryTests.swift in Sources */,
 				57A2D772529695F1AE2064AC /* ReaderSessionApplicationStateTests.swift in Sources */,
@@ -2409,11 +2448,13 @@ F01900000000000000000001,
 
 
 /* Begin XCRemoteSwiftPackageReference section */
+        270D00000000000000000041 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/groue/GRDB.swift"; requirement = {kind = exactVersion; version = 7.12.0;};};
 AP3000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/Lakr233/Litext"; requirement = {kind = revision; revision = c1d74fe65557534e01301a58a8617fddc0e88992;};};
 FB3000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/Lakr233/MarkdownView"; requirement = {kind = exactVersion; version = 4.8.3;};};
 D33000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/suxiaoshao/swift-ai-sdk"; requirement = {kind = revision; revision = 9843cba7de6c2a0f1a042a4f3b1facc8af910a82;};};
 /* End XCRemoteSwiftPackageReference section */
 /* Begin XCSwiftPackageProductDependency section */
+        270D00000000000000000042 = {isa = XCSwiftPackageProductDependency; package = 270D00000000000000000041; productName = GRDB;};
 FB4000000000000000000001 = {isa = XCSwiftPackageProductDependency; package = FB3000000000000000000001; productName = MarkdownView;};
 D34000000000000000000001 = {isa = XCSwiftPackageProductDependency; package = D33000000000000000000001; productName = SwiftAISDK;};
 D34000000000000000000002 = {isa = XCSwiftPackageProductDependency; package = D33000000000000000000001; productName = AISDKProvider;};

@@ -185,6 +185,17 @@ fn decode(text: &str) -> std::result::Result<Arc<DecodedFact>, FactDecodeStatus>
     }))
 }
 
+/// Relational storage input. The original payload is parsed by the same serde
+/// boundary as the current reader, never reconstructed as another full JSON row.
+#[derive(uniffi::Record)]
+pub struct FactImportColumns {
+    pub payload_content_key: String,
+    pub title: String,
+    pub device: String,
+    pub slice: ReadingSlice,
+    pub duration_ms: Option<i64>,
+}
+
 #[derive(uniffi::Object)]
 pub struct DecodedFactBatch {
     id: u64,
@@ -214,21 +225,40 @@ pub fn decode_fact_batch(base: u64, payloads: Vec<String>) -> Result<Arc<Decoded
     }))
 }
 
-#[uniffi::export]
 impl DecodedFactBatch {
-    /// For portable backup only. Query routing uses the SwiftData row key.
-    pub fn payload_content_key(&self, ordinal: u64) -> Result<String> {
+    fn entry(&self, ordinal: u64) -> Result<&DecodedFact> {
         let index = ordinal
             .checked_sub(self.base)
             .and_then(|index| usize::try_from(index).ok())
             .ok_or(ReaderError::InvalidRange)?;
-        let fact = self
-            .entries
+        self.entries
             .get(index)
             .ok_or(ReaderError::InvalidRange)?
-            .as_ref()
-            .map_err(|_| ReaderError::InvalidSettings)?;
-        Ok(fact.payload_content_key.clone())
+            .as_deref()
+            .map_err(|_| ReaderError::InvalidSettings)
+    }
+}
+
+#[uniffi::export]
+impl DecodedFactBatch {
+    /// For portable backup only. Query routing uses the SwiftData row key.
+    pub fn payload_content_key(&self, ordinal: u64) -> Result<String> {
+        Ok(self.entry(ordinal)?.payload_content_key.clone())
+    }
+
+    /// Used only when migrating a bound and accepted fact to the relational store.
+    pub fn import_columns(&self, ordinal: u64) -> Result<FactImportColumns> {
+        let fact = self.entry(ordinal)?;
+        let mut slice = fact.data.slice.clone();
+        let duration_ms = slice.ended_ms.checked_sub(slice.started_ms);
+        slice.exposures = fact.data.exposures.to_vec();
+        Ok(FactImportColumns {
+            payload_content_key: fact.payload_content_key.clone(),
+            title: fact.data.title.clone(),
+            device: fact.data.device.clone(),
+            slice,
+            duration_ms,
+        })
     }
 
     pub fn cues(&self) -> Vec<FactCue> {
@@ -446,6 +476,28 @@ pub(super) mod tests {
         let fact = batch.entries[0].as_ref().unwrap();
         assert_eq!(fact.data.slice.utc_offset_seconds, i32::MIN);
         assert_eq!(fact.data.exposures[0].end_utf8, u64::MAX);
+        Ok(())
+    }
+
+    #[test]
+    fn import_columns_keep_fraction_free_exposures_and_checked_duration() -> Result<()> {
+        let normal = payload(
+            "one",
+            12,
+            r#"[{"start_utf8":9,"end_utf8":18446744073709551615,"duration_ms":7}]"#,
+        );
+        let overflow = normal.replace(
+            r#""started_ms":1200"#,
+            r#""started_ms":-9223372036854775808"#,
+        );
+        let batch = decode_fact_batch(40, vec![normal, overflow])?;
+        let columns = batch.import_columns(40)?;
+        assert_eq!(columns.payload_content_key, "embedded");
+        assert_eq!(columns.slice.visit_id, "v");
+        assert_eq!(columns.slice.exposures[0].end_utf8, u64::MAX);
+        assert_eq!(columns.duration_ms, Some(3000)); // not the exposure's 7 ms
+        assert_eq!(batch.import_columns(41)?.duration_ms, None);
+        assert!(batch.import_columns(39).is_err());
         Ok(())
     }
 

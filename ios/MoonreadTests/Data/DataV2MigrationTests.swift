@@ -1,0 +1,408 @@
+import Foundation
+import GRDB
+import SwiftData
+import Testing
+@testable import Moonread
+
+struct DataV2MigrationTests {
+    private func sandbox() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appending(path: "DataV2Tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+
+    private func scope(_ name: String, _ environment: DataScope.Environment = .production) throws -> DataScope {
+        try .confirmed(container: "test.invalid", environment: environment, recordName: name)
+    }
+
+    @Test func copiesReleasedIndexAndLeavesOriginalUntouched() async throws {
+        let root = try sandbox()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let layout = DataLayout(applicationSupport: root)
+        let oldURL = root.appending(path: "reader source.sqlite3")
+        let old = try DatabaseQueue(path: oldURL.path)
+        try await old.write { db in
+            try db.execute(sql: DataV2Schema.sql("schema"))
+            try db.execute(sql: """
+                INSERT INTO books(id,title,content_sha256,encoding,byte_count,chunk_count,projection_revision,projection_end)
+                VALUES ('reading','Offline','published-sha','UTF-8',4,1,8,4),('task','Pending','pending:task','UTF-8',0,0,0,0);
+                INSERT INTO chunks VALUES('reading',0,0,4,'a界',0,2);
+                INSERT INTO reading_blanks VALUES('reading',0,1);
+                INSERT INTO import_chapters VALUES('reading',0,'Start',1,0,2);
+                INSERT INTO source_imports VALUES('raw','UTF-8','reading');
+                INSERT INTO import_jobs(book_id,phase,generation,library_file_id) VALUES('task','paused',17,'file');
+                INSERT INTO library_shelves VALUES('external','Fixture',X'01020300','local',0,NULL);
+                INSERT INTO library_files(id,shelf_id,relative_path,parent_path,name,directory,size,modified,needs_download,book_id,decoding)
+                VALUES ('file','external','folder/a.txt','folder','a.txt',0,4,44,1,'reading','UTF-8');
+                """)
+        }
+        try old.close()
+
+        let owner = try DataSession(layout: layout)
+        let (lease, _) = try await owner.activate(.unknown)
+        try await owner.importLegacyIndex(oldURL, token: lease)
+        let result = try await owner.read(lease) { db in
+            let text = try String.fetchOne(db, sql: "SELECT text FROM main.chunks WHERE book_id='reading'")
+            let bookmark = try Data.fetchOne(db, sql: "SELECT bookmark FROM main.library_shelves")
+            let job = try Row.fetchOne(db, sql: "SELECT purpose,generation,pending_owner FROM main.import_jobs")
+            let raw = try Bool.fetchOne(db, sql: "SELECT raw_sha256 IS NULL FROM main.source_decoding_migration")
+            let work = try String.fetchOne(db, sql: "SELECT relative_path FROM main.source_decoding_migration")
+            return (text, bookmark, job?["purpose"] as String?, job?["generation"] as Int?, job?["pending_owner"] as String?, raw, work)
+        }
+        #expect(result.0 == "a界")
+        #expect(result.1 == Data([1,2,3,0]))
+        #expect(result.2 == "reading" && result.3 == 17 && result.4 == "local")
+        #expect(result.5 == true && result.6 == "folder/a.txt")
+        await #expect(throws: DataV2Error.migrationAlreadyComplete) { try await owner.importLegacyIndex(oldURL, token: lease) }
+        try await owner.close()
+        let check = try DatabaseQueue(path: oldURL.path)
+        let oldVersion = try await check.read { try DataV2Schema.version($0, in: "main") }
+        #expect(oldVersion == 20)
+        try check.close()
+    }
+
+    @Test func copiesVersion23WorkAsIsAndRejectsFutureTarget() async throws {
+        let root = try sandbox()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let layout = DataLayout(applicationSupport: root)
+        let oldURL = root.appending(path: "reader.sqlite3")
+        let old = try DatabaseQueue(path: oldURL.path)
+        try await old.write { db in
+            try db.execute(sql: DataV2Schema.sql("schema"))
+            try db.execute(sql: "ALTER TABLE import_jobs ADD COLUMN purpose TEXT NOT NULL DEFAULT 'reading'")
+            try db.execute(sql: DataV2Schema.sql("full_index"))
+            try db.execute(sql: DataV2Schema.sql("source_decoding_migration"))
+            try db.execute(sql: """
+                PRAGMA user_version=23;
+                INSERT INTO source_identities VALUES('raw','Big5','sha','Big5',99,77);
+                INSERT INTO library_identities VALUES('future-file','raw','Big5',99,17);
+                INSERT INTO source_decoding_migration VALUES('old-file','s','manual.txt',99,17,'Big5','raw');
+                INSERT INTO library_shelves VALUES('s','Fixture',X'AB','local',0,NULL);
+                INSERT INTO library_files(id,shelf_id,relative_path,parent_path,name,directory,size,modified,needs_download,decoding)
+                VALUES ('already-consumed','s','other.txt','','other.txt',0,7,18,1,'Big5');
+                """)
+        }
+        try old.close()
+        let owner = try DataSession(layout: layout)
+        let (lease, _) = try await owner.activate(.signedOut)
+        try await owner.importLegacyIndex(oldURL, token: lease)
+        let copied = try await owner.read(lease) { db in
+            (try String.fetchAll(db, sql: "SELECT file_id FROM main.source_decoding_migration ORDER BY file_id"),
+             try String.fetchOne(db, sql: "SELECT raw_sha256 FROM main.library_identities WHERE file_id='future-file'"))
+        }
+        #expect(copied.0 == ["old-file"] && copied.1 == "raw")
+        try await owner.close()
+        let future = try DatabaseQueue(path: layout.user(.local).path)
+        try await future.write { try $0.execute(sql: "PRAGMA user_version=7") }
+        try future.close()
+        await #expect(throws: DataV2Error.unsupportedSchema("usr", 7)) { _ = try await owner.activate(.unknown) }
+        let check = try DatabaseQueue(path: layout.user(.local).path)
+        let version = try await check.read { try DataV2Schema.version($0, in: "main") }
+        #expect(version == 7)
+        try check.close()
+    }
+
+    private func container() throws -> ModelContainer {
+        let schema = Schema([UserValue.self, UserPosition.self, AnnotationOperation.self, ReadingFact.self, StatisticsClear.self, UserCover.self])
+        return try ModelContainer(for: schema, configurations: [.init(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)])
+    }
+
+    private func stored<T: Encodable>(_ value: T, token: String = "t", updated: Int64 = 17) throws -> String {
+        try UserSyncJSON.encode(StoredValue(updated: updated, token: token, value: UserSyncJSON.encode(value)), envelope: true)
+    }
+
+    @Test func swiftDataRoutesAllModelFamiliesAndPreservesIsolation() async throws {
+        let root = try sandbox()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let layout = DataLayout(applicationSupport: root)
+        let formal = try container(), pending = try container()
+        let key = String(repeating: "a", count: 64), pendingKey = "pending:fixture"
+        let context = ModelContext(formal), draft = ModelContext(pending)
+        let bytes = Data([0, 1, 2, 12]), sha = DataIdentity.sha(bytes)
+        let cover = """
+        {"id":"image","sha256":"\(sha)","extension":"jpg","width":1,"height":2}
+        """
+        context.insert(UserCover(id: "image", bytes: bytes))
+        context.insert(UserValue(key: "metadata/\(key)/cover", device: "D", payload: try UserSyncJSON.encode(.init(updated: 17, token: "t", value: cover) as StoredValue)))
+        for (field, value) in [("author","author"),("synopsis","summary"),("status","Reading")] {
+            context.insert(UserValue(key: "metadata/\(key)/\(field)", device: "D", payload: try stored(value)))
+        }
+        context.insert(UserValue(key: "metadata/\(key)/tag-old", device: "D", payload: try stored(nil as String?)))
+        context.insert(UserValue(key: "chapter/\(key)/7", device: "D", payload: try stored(nil as String?)))
+        context.insert(UserValue(key: "opened/\(key)", device: "D", payload: try stored(Int64(123))))
+        context.insert(UserValue(key: "source-decoding/\(key)", device: "D", payload: try stored(SourceDecodingValue(decoding: "UTF-8"))))
+        context.insert(UserValue(key: "palette/p1", device: "D", payload: try stored(nil as String?)))
+        context.insert(UserValue(key: "shelf-reference/00000000-0000-0000-0000-000000000001", device: "D",
+            payload: try stored(ShelfReferenceValue(name: "Reference", locationDescription: "file-provider"))))
+        let future = #"{"v":7,"updated":1,"token":"t","value":"\"future\""}"#
+        context.insert(UserValue(key: "metadata/\(key)/author", device: "future", payload: future))
+        let hint = PositionSourceHint(source_kind: .managedLocal, relative_path: "folder/one.txt", file_name: "one.txt",
+                                      byte_size: 42, decoding: "UTF-8")
+        let samePosition = try stored(PositionValue(content_key: key, offset: .max, source_hint: hint))
+        context.insert(UserValue(key: "position/\(key)", device: "D", payload: samePosition))
+        context.insert(UserPosition(contentKey: key, payload: samePosition))
+        let conflictKey = String(repeating: "d", count: 64)
+        let original = try stored(PositionValue(content_key: conflictKey, offset: 1, source_hint: hint))
+        let conflict = try stored(PositionValue(content_key: conflictKey, offset: 2, source_hint: hint))
+        context.insert(UserValue(key: "position/\(conflictKey)", device: "D", payload: original))
+        context.insert(UserPosition(contentKey: conflictKey, payload: conflict))
+        let note = AnnotationCandidate(id: "note", ancestors: ["not-materialized"], content: .init(start: .max-1, end: .max, excerpt: "", note: "fixture"),
+            created: .max, bookmark: false, relatedMarks: ["remote-mark"])
+        context.insert(AnnotationOperation(id: note.id, contentKey: key, markID: "mark", payload: try UserSyncJSON.encode(note, envelope: true)))
+        let slice = ReadingSlice(id: "shared-fact", sessionId: "session", visitId: "visit", bookId: "old-book-id", startedMs: 12, endedMs: 42,
+            localDay: 20260101, utcOffsetSeconds: 3600, preview: true,
+            exposures: [.init(startUtf8: 9, endUtf8: .max, durationMs: .max)])
+        let payload = try encodeReadingFact(contentKey: pendingKey, title: "Title", device: "Device", slice: slice)
+        context.insert(ReadingFact(id: slice.id, contentKey: key, payload: payload))
+        draft.insert(ReadingFact(id: slice.id, contentKey: pendingKey, payload: payload))
+        context.insert(StatisticsClear(payload: try UserSyncJSON.encode(ClearValue(book: key, session: "session", through: 11,
+            ids: ["not-materialized"]), envelope: true)))
+        let unreadableClear = #"{"v":7,"book":"scope","session":null,"through":1,"ids":[]}"#
+        context.insert(StatisticsClear(payload: unreadableClear))
+        try context.save()
+        try draft.save()
+
+        let owner = try DataSession(layout: layout)
+        let (lease, _) = try await owner.activate(.signedOut)
+        var source = LegacyUserSnapshot(scope: nil, formal: formal, pending: pending)
+        await #expect(throws: DataV2Error.incompatibleSource("unconfirmed legacy user ownership")) {
+            try await owner.importLegacyUsers(source, token: lease)
+        }
+        source.scope = .local
+        source.deviceState.resume[key] = .init(offset: .max, lastLocalWriteToken: nil)
+        try await owner.importLegacyUsers(source, token: lease)
+        try await owner.read(lease) { db throws -> Void in
+            try #expect(Int.fetchOne(db, sql: "SELECT COUNT(*) FROM usr.metadata_text_candidate") == 3)
+            try #expect(Bool.fetchOne(db, sql: "SELECT is_deleted FROM usr.tag_candidate") == true)
+            try #expect(Bool.fetchOne(db, sql: "SELECT is_retracted FROM usr.chapter_override_candidate") == true)
+            try #expect(String.fetchOne(db, sql: "SELECT source_id FROM usr.legacy_import_state LIMIT 1") == "local")
+            try #expect(Int.fetchOne(db, sql: "SELECT count(*) FROM usr.legacy_import_state") == 12)
+            try #expect(Data.fetchOne(db, sql: "SELECT bytes FROM usr.cover_asset") == bytes)
+            try #expect(String.fetchOne(db, sql: "SELECT created FROM usr.annotation_candidate") == "18446744073709551615")
+            try #expect(String.fetchOne(db, sql: "SELECT ancestor_id FROM usr.annotation_ancestor") == "not-materialized")
+            try #expect(String.fetchOne(db, sql: "SELECT related_mark_id FROM usr.annotation_related_mark") == "remote-mark")
+            let position = try Row.fetchAll(db, sql: """
+                SELECT device_id,offset,relative_path FROM usr.position_candidate WHERE book_key=?
+                """, arguments: [key])
+            #expect(position.count == 1 && (position.first?["device_id"] as String?) == "D")
+            #expect((position.first?["offset"] as String?) == "18446744073709551615")
+            #expect((position.first?["relative_path"] as String?) == "folder/one.txt")
+            try #expect(Int.fetchOne(db, sql: "SELECT count(*) FROM usr.quarantined_record WHERE source_type='UserPosition'") == 1)
+            try #expect(Data.fetchOne(db, sql: """
+                SELECT raw_bytes FROM usr.quarantined_record
+                WHERE source_type='UserPosition' AND book_key=? AND reason='stable-id-conflict'
+                """, arguments: [conflictKey]) == Data(conflict.utf8))
+            try #expect(String.fetchOne(db, sql: "SELECT offset FROM usr.local_resume WHERE last_local_write_token IS NULL") == "18446744073709551615")
+            try #expect(Int.fetchOne(db, sql: "SELECT opened_ms FROM usr.opened_candidate") == 123)
+            try #expect(String.fetchOne(db, sql: "SELECT decoding FROM usr.source_decoding_candidate") == "UTF-8")
+            try #expect(Bool.fetchOne(db, sql: "SELECT is_deleted FROM usr.palette_candidate") == true)
+            try #expect(String.fetchOne(db, sql: "SELECT location_description FROM usr.shelf_reference_candidate") == "file-provider")
+            try #expect(Int.fetchAll(db, sql: "SELECT partition FROM usr.reading_fact ORDER BY partition") == [0,1])
+            try #expect(String.fetchOne(db, sql: "SELECT payload_content_key FROM usr.reading_fact WHERE partition=0") == pendingKey)
+            try #expect(Int.fetchOne(db, sql: "SELECT duration_ms FROM usr.reading_fact LIMIT 1") == 30)
+            try #expect(Int.fetchOne(db, sql: "SELECT utc_offset_seconds FROM usr.reading_fact LIMIT 1") == 3600)
+            try #expect(String.fetchOne(db, sql: "SELECT visit_id FROM usr.reading_fact LIMIT 1") == "visit")
+            try #expect(String.fetchOne(db, sql: "SELECT fact_id FROM usr.statistics_clear_id") == "not-materialized")
+            try #expect(String.fetchOne(db, sql: "SELECT book_key FROM usr.quarantined_record WHERE source_type='StatisticsClear'") == "scope")
+            try #expect(Data.fetchOne(db, sql: "SELECT raw_bytes FROM usr.quarantined_record WHERE source_type='UserValue'") == Data(future.utf8))
+        }
+        try await owner.close()
+    }
+
+    private func missingCover(_ id: String) -> UserCover {
+        let row = UserCover(id: id, bytes: Data())
+        row.bytes = nil
+        return row
+    }
+
+    private func coverReference(_ id: String, sha: String, book: String) throws -> UserValue {
+        let value = """
+        {"id":"\(id)","sha256":"\(sha)","extension":"jpg","width":1,"height":2}
+        """
+        return UserValue(key: "metadata/\(book)/cover", device: "D",
+                         payload: try UserSyncJSON.encode(StoredValue(updated: 17, token: "t", value: value)))
+    }
+
+    @Test func resolvedCoverAttachmentsPermitLocalClaim() async throws {
+        let root = try sandbox()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let owner = try DataSession(layout: DataLayout(applicationSupport: root))
+        let formal = try container(), pending = try container()
+        let source = ModelContext(formal), drafts = ModelContext(pending)
+        let duplicateID = "10000000-0000-0000-0000-000000000001"
+        let cacheID = "10000000-0000-0000-0000-000000000002"
+        let duplicateBytes = Data([1,2,3]), cacheBytes = Data([4,5,6])
+        let cacheSHA = DataIdentity.sha(cacheBytes)
+        source.insert(missingCover(duplicateID))
+        drafts.insert(UserCover(id: duplicateID, bytes: duplicateBytes))
+        source.insert(missingCover(cacheID))
+        source.insert(try coverReference(duplicateID, sha: DataIdentity.sha(duplicateBytes), book: String(repeating: "a", count: 64)))
+        source.insert(try coverReference(cacheID, sha: cacheSHA, book: String(repeating: "b", count: 64)))
+        try cacheBytes.write(to: root.appending(path: "\(cacheID)-\(cacheSHA).jpg"))
+        try source.save()
+        try drafts.save()
+
+        let (local, _) = try await owner.activate(.signedOut)
+        try await owner.importLegacyUsers(.init(scope: .local, formal: formal, pending: pending, coverDirectory: root), token: local)
+        try await owner.read(local) { db throws -> Void in
+            try #expect(Int.fetchOne(db, sql: "SELECT count(*) FROM usr.quarantined_record WHERE completeness='incomplete'") == 0)
+            try #expect(String.fetchAll(db, sql: """
+                SELECT completeness FROM usr.legacy_import_state WHERE source_model='UserCover' ORDER BY partition
+                """) == ["complete","complete"])
+        }
+        let account = try scope("cover-account")
+        _ = try await owner.activate(.confirmed(account, syncRequested: true))
+        try await owner.claimLocal(for: account)
+        let (claimed, _) = try await owner.activate(.confirmed(account, syncRequested: true))
+        let bytes = try await owner.read(claimed) { db in
+            try Data.fetchAll(db, sql: """
+                SELECT a.bytes FROM usr.cover_candidate c JOIN usr.cover_asset a ON a.asset_id=c.asset_id ORDER BY a.original_id
+                """)
+        }
+        #expect(bytes == [duplicateBytes,cacheBytes])
+        try await owner.close()
+    }
+
+    @Test func corruptCacheAndAmbiguousCoverKeepMissingEvidence() async throws {
+        let root = try sandbox()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let owner = try DataSession(layout: DataLayout(applicationSupport: root))
+        let formal = try container(), source = ModelContext(formal)
+        let wrongCacheID = "10000000-0000-0000-0000-000000000001"
+        let ambiguousID = "10000000-0000-0000-0000-000000000002"
+        let expectedSHA = DataIdentity.sha(Data([1,2,3]))
+        try Data([9]).write(to: root.appending(path: "\(wrongCacheID)-\(expectedSHA).jpg"))
+        source.insert(missingCover(wrongCacheID))
+        source.insert(try coverReference(wrongCacheID, sha: expectedSHA, book: String(repeating: "a", count: 64)))
+        source.insert(missingCover(ambiguousID))
+        source.insert(UserCover(id: ambiguousID, bytes: Data([1,2,3])))
+        source.insert(UserCover(id: ambiguousID, bytes: Data([4,5,6])))
+        try source.save()
+        let (local, _) = try await owner.activate(.signedOut)
+        try await owner.importLegacyUsers(.init(scope: .local, formal: formal, pending: nil, coverDirectory: root), token: local)
+        try await owner.read(local) { db throws -> Void in
+            try #expect(Data.fetchAll(db, sql: """
+                SELECT raw_bytes FROM usr.quarantined_record WHERE completeness='incomplete' ORDER BY raw_bytes
+                """) == [Data(wrongCacheID.utf8),Data(ambiguousID.utf8)])
+            try #expect(String.fetchAll(db, sql: "SELECT availability FROM usr.cover_asset ORDER BY availability") ==
+                        ["available","available","missing"])
+            try #expect(String.fetchAll(db, sql: """
+                SELECT completeness FROM usr.legacy_import_state
+                WHERE source_model IN ('UserCover','UserValue') ORDER BY source_model
+                """) == ["incomplete","incomplete"])
+        }
+        let account = try scope("cover-account")
+        _ = try await owner.activate(.confirmed(account, syncRequested: true))
+        await #expect(throws: DataV2Error.migrationNotVerified) { try await owner.claimLocal(for: account) }
+        let (reopened, selected) = try await owner.activate(.unknown)
+        #expect(selected.scope == .local)
+        let remaining = try await owner.read(reopened) { try Int.fetchOne($0, sql: "SELECT count(*) FROM usr.quarantined_record") }
+        #expect(remaining == 2)
+        try await owner.close()
+    }
+
+    @Test func claimsLocalOnlyOnConfirmationAndKeepsAccountsIsolated() async throws {
+        let root = try sandbox()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let layout = DataLayout(applicationSupport: root)
+        let a = try scope("A"), b = try scope("B"), dev = try scope("A", .development)
+        #expect(a != b && a != dev)
+        let owner = try DataSession(layout: layout)
+        let (local, _) = try await owner.activate(.unknown)
+        let formal = try container()
+        let key = "metadata/" + String(repeating: "b", count: 64) + "/author"
+        let context = ModelContext(formal)
+        context.insert(UserValue(key: key, device: "local-fixture", payload: try stored("unassigned")))
+        try context.save()
+        try await owner.importLegacyUsers(.init(scope: .local, formal: formal), token: local)
+        let (signedIn, unconfirmed) = try await owner.activate(.confirmed(a, syncRequested: true))
+        #expect(signedIn == local && unconfirmed.scope == .local && !unconfirmed.maySync)
+        try await owner.claimLocal(for: a)
+        await #expect(throws: DataV2Error.leaseExpired) { _ = try await owner.read(local) { _ in 0 } }
+
+        let (off, info) = try await owner.activate(.unknown)
+        #expect(info.scope == a && !info.maySync)
+        let readBack = try await owner.read(off) { try String.fetchOne($0, sql: "SELECT value_text FROM usr.metadata_text_candidate") }
+        #expect(readBack == "unassigned")
+        try await owner.close()
+        let restarted = try DataSession(layout: layout)
+        let (_, unknown) = try await restarted.activate(.unknown)
+        #expect(unknown == info)
+        let (out, signedOut) = try await restarted.activate(.signedOut)
+        #expect(signedOut.scope == .local && !signedOut.maySync)
+        let remaining = try await restarted.read(out) { try Int.fetchOne($0, sql: "SELECT count(*) FROM usr.metadata_text_candidate") }
+        #expect(remaining == 0)
+        let (_, stillLocal) = try await restarted.activate(.unknown)
+        #expect(stillLocal.scope == .local)
+        _ = try await restarted.activate(.confirmed(b, syncRequested: false))
+        try await restarted.claimLocal(for: b)
+        let (newAccount, _) = try await restarted.activate(.confirmed(b, syncRequested: true))
+        let leaked = try await restarted.read(newAccount) { try Int.fetchOne($0, sql: "SELECT count(*) FROM usr.metadata_text_candidate") }
+        #expect(leaked == 0)
+        try await restarted.close()
+    }
+
+    @Test func recoversCommittedLocalClaimBeforeSelectingAnotherAccount() async throws {
+        let root = try sandbox()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let layout = DataLayout(applicationSupport: root)
+        let a = try scope("A"), b = try scope("B")
+        let owner = try DataSession(layout: layout)
+        let (local, _) = try await owner.activate(.signedOut)
+        let formal = try container()
+        let book = String(repeating: "c", count: 64)
+        let key = "metadata/\(book)/author"
+        let context = ModelContext(formal)
+        context.insert(UserValue(key: key, device: "fixture", payload: try stored("frozen local")))
+        try context.save()
+        try await owner.importLegacyUsers(.init(scope: .local, formal: formal), token: local)
+        try await owner.close()
+
+        let intent = DataOwnerState.Move(id: UUID(), target: a)
+        var savedOwner = try DataOwnerState.load(at: layout.ownerState)
+        savedOwner.move = intent
+        try savedOwner.save(at: layout.ownerState)
+        // Reopen at the before-commit interruption point: the source must
+        // still be readable and the abandoned move must not be completed.
+        let before = try DataSession(layout: layout)
+        let (old, notClaimed) = try await before.activate(.unknown)
+        #expect(notClaimed.scope == .local)
+        let unassigned = try await before.read(old) { try String.fetchOne($0, sql: "SELECT value_text FROM usr.metadata_text_candidate") }
+        #expect(unassigned == "frozen local")
+        try await before.close()
+
+        // Freeze again, commit only the real target transaction, and leave
+        // the original intent file untouched as if the process terminated.
+        let marker = DataOwnerState.Move(id: UUID(), target: a)
+        savedOwner.move = marker
+        try savedOwner.save(at: layout.ownerState)
+        let aFile = try layout.user(a), localFile = try layout.user(.local)
+        try FileManager.default.createDirectory(at: aFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var config = Configuration()
+        config.prepareDatabase { db in try db.execute(sql: "ATTACH DATABASE ? AS usr", arguments: [aFile.path]) }
+        let writer = try DatabasePool(path: layout.index.path, configuration: config)
+        try DataV2Schema.prepare(writer, bundle: .main)
+        try await writer.writeWithoutTransaction { db in
+            try LocalScopeImport.withSource(db, url: localFile, readOnly: true) {
+                try LocalScopeImport.copy(db, move: marker.id)
+            }
+        }
+        try writer.close()
+
+        let after = try DataSession(layout: layout)
+        let (new, selection) = try await after.activate(.confirmed(b, syncRequested: false))
+        #expect(selection.scope == b && !selection.maySync)
+        let bRows = try await after.read(new) { try Int.fetchOne($0, sql: "SELECT count(*) FROM usr.metadata_text_candidate") }
+        #expect(bRows == 0)
+        let (previous, _) = try await after.activate(.confirmed(a, syncRequested: false))
+        let aValue = try await after.read(previous) { try String.fetchOne($0, sql: "SELECT value_text FROM usr.metadata_text_candidate") }
+        #expect(aValue == "frozen local")
+        let (out, _) = try await after.activate(.signedOut)
+        let localRows = try await after.read(out) { try Int.fetchOne($0, sql: "SELECT count(*) FROM usr.metadata_text_candidate") }
+        #expect(localRows == 0)
+        let recoveredOwner = try DataOwnerState.load(at: layout.ownerState)
+        #expect(recoveredOwner.move == nil)
+        try await after.close()
+    }
+
+}

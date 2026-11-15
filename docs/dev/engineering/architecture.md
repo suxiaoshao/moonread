@@ -11,6 +11,7 @@
 | Rust 文本核心 | `crates/moonread-core`：`encoding_rs` 解码、规范化、字素分块、SHA-256、章节扫描、`regex` 单书搜索 |
 | Rust 数据与任务 | `rusqlite` 保存正文、自动章节、来源索引与导入任务；位置换算、计时与覆盖计算从 Swift 输入取得用户数据 |
 | Swift 用户数据 | `UserDataStore` ModelActor：用户事实、完整批注候选、小说信息、配色及正式位置；自动 CloudKit，设备偏好独立 |
+| Swift 关系库迁入 | `Data/Database/DataSession.swift`：`Data/v2` 的版本化正文索引与独立本机/账户用户文件，由一个 GRDB 池挂载；仅提供迁入和归属边界，尚未接入应用启动、页面或生产同步 |
 | Swift 平台适配 | `Data/AppDataService.swift`、`Library/Sources/LibraryService.swift`：目录授权、bookmark、协调扫描与真实文件操作、目录变动通知、生命周期和异步工作调度 |
 | 页面状态 | `Library/LibraryModel/LibraryModel.swift` 与同类型领域扩展保存书架状态、来源路由及唯一设置会话 `SettingsNavigation`（任务路径、配色草稿/预览）；`Reader/Session/ReaderSession/ReaderSession.swift` 与同类型领域扩展保存现有阅读会话状态与任务 |
 | SwiftUI 页面 | `Library/Browsing/LibraryView.swift`、`Reader/UI/ReaderScreen/ReaderScreen.swift`、`Reader/UI/Presentation/ReaderLibrarySheet.swift` / `ReaderSearchContent.swift` / `NoteEditor.swift`：书架、阅读、工具面板与编辑器呈现 |
@@ -58,6 +59,8 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 书目、搜索与筛选按用途取数 | Swift `UserDataQuery.swift` / `UserDataStore+Projection.swift` / `LibraryQueryRules.swift`；Rust `library/bookshelf/catalogue_cards.rs` | 名称书目与最近返回窄卡片，标签按文件 ID 引用单份卡片，筛选只取作者/标签；普通搜索按规则字段匹配再批量补命中卡片。AI 保留简介与正式库兼容检查。正式库按字段取；pending 的窄用途仍校验命中范围完整资料前缀，保留整对象覆盖而不把无关内容跨语言传输 | 共用字段依赖、匹配与发布边界 |
 | AI 工具输入/schema/输出契约与执行 | Swift `AI/Tools/Reading/AIReadingToolContracts.swift` / `AIReadingTools.swift` | 只拆契约、执行和 `AppDataService+AIReading.swift` 平台适配的物理文件；引用、SHA、范围与搜索仍调用既有 owner | 单一执行 actor |
 | AI b: 引用协议 | Swift `AI/Tools/Reading/AIReadingReferences.swift` | 工具协议只在 Swift；调用 Rust SHA 校验。外部字符串解码为书或文件引用，准备权限独立；共享准备由 AppDataService 持有，最后一个等待者释放工作 | 共享引用解析 |
+| v2 文件归属、连接池与本机归户 | Swift `Data/Database/DataSession.swift`、`LocalScopeImport.swift` | 唯一会话 owner 决定 `index.sqlite` 和所挂 `usr`；失去账户确认时仍可本机读写、不同步；明确登出使用 local。首次确认启用时冻结后只向目标提交；目标完成标记与源清理分开，旧会话代次不得访问另一账户 | 迁入骨架，未接运行时同步 |
+| v2 发布库结构迁入 | Swift `LegacyIndexImport`、`LegacyUserImport`；Rust `user/reading_fact.rs` 暴露已解析事实列 | 只读复制已发布索引及通过 SwiftData API 读取发布模型；不直接读私有 SwiftData SQLite schema。解码继续用原 wire 校验，保留正式/pending、明确清除、完整候选和原始隔离；正文索引与用户数据以各自文件为提交边界 | 迁入骨架；应用仍由旧索引和 SwiftData 写入 |
 | SwiftData LWW、候选裁决与事务 | Swift `Data/UserData/UserData.swift` 的 UserDataStore 及其 Values、Annotations、Statistics、Projection、Transfer 扩展 | SwiftData 保留原始事实；Swift 绑定外部行 id，按同库坏副本、首份、session/clear、日期的顺序裁决。正式选择先于 pending；两库不传播坏 id，Rust TEMP 对选中行执行原有 id 唯一约束。原保存、回滚、清除范围与写入代次不变 | 单一事实权威 |
 | 阅读事实 wire 与查询计算 | Rust `user/reading_fact.rs`（serde）、`user/projection.rs`、`user/statistics/`；Swift `UserSyncJSON.swift` 的事实适配绑定行 id | 写入、准备、备份和 pending 共用 Rust 类型化 v1 校验；历史缺 v 可读，未知载荷原样保留。Swift 按输入版本共享准备并交有序索引；Rust 复用已解码事实和选中曝光，两条连接各有私有 TEMP。不查事实的请求不解码，Swift 不再搬运事实 JSON；清除载荷仍由 Swift 校验 | Rust wire 单源，Swift 候选单源 |
 | 相对路径语法、组件边界匹配、名称合法性 | Rust `storage/validation.rs`，bookshelf 委托 | 索引和真实操作都需要相同底线；具名 profile 保留入口差异 | 共享路径校验 |
@@ -197,6 +200,8 @@ SwiftData 是用户数据权威来源。Rust 用户存储和同步协议已删�
 从 1.0.0 发布基线开始，SQLite、SwiftData/CloudKit、UserDefaults、Keychain、同步 payload 与缓存的格式变更必须保持已有数据可读。持久化枚举只增加、不删除或更改已有 raw value；退役功能可停止展示，不能用未知值使整个集合读取失败。新增字段使用可选值或明确默认值；结构调整须带版本、升级路径与迁移测试（旧数据、重复打开、失败回滚、降级拒绝），不能以删除重装代替升级。内部非持久化接口仍可直接整理，不要求保留无用的重复实现。
 
 SQLite 以 `user_version=20` 为首次支持基线，`storage/migrations.rs` 按有序步骤升级。新库先事务创建 v20，再与已有库一样逐级升级；v21 为导入任务增加目的字段，既有任务默认 reading，恢复专用任务为 restoration；v22 增加全量索引数据；v23 一次登记旧手选编码待迁项，原件未就绪时保留，SwiftData epoch 候选保存后才确认完成。当前版本为23。每步成功后更新版本，失败回滚该步。高于当前版本明确提示更新应用；低于 20 的开发库无升级路径，保留原库并报不支持，不自动删除或重建。哪些是可重建派生数据、哪些必须保留，见[数据存储](../data/README.md#当前实际存储)。
+
+`Data/v2` 的 `index.sqlite` 和 `user.sqlite` 各有独立 v1 版本；遇到较新版本不覆盖。索引迁入器只读接入旧 v20–23 的文件、保留旧源，复用发布 SQL 形状并在目标事务内核对行键、关系及字节。用户数据迁入通过 SwiftData 发布模型读取，结构迁入完成标记不等于已满足云附件和切换门槛。账户 local 并入先提交目标用户文件，续做需要的索引任务归属更新，再清冻结源；三个文件写入各自提交，不依赖 ATTACH/WAL 跨库原子性。应用一版合并切换运行时权威前，不启动 v2 页面读取、双写或新同步。
 
 AI 连接、共享授权、用途默认值逐条解码，失败条目跳过并记录不含正文/凭据的日志；会话列表逐行容错，存储读取错误仍向上抛出。读取不修复、不回写。显式保存时按稳定 ID/用途键更新可识别项，保留不可识别的原始 JSON 元素与未知对象字段；用户可删除可识别项，不能顺带删掉未知项。JSON 整体损坏时拒绝覆盖并报告失败。用途字典既读取此前 Codable 的键值交替数组，也读取对象，显式保存统一为字符串键对象。授权撤销另更新连接 generation，保留的未知授权不能绕过该边界；日志只记录集合键和序号。同步 payload 采用独立的版本/隔离契约，见[同步专题](../data/sync.md#同步-payload-的-v1-边界与隔离)。
 
