@@ -82,6 +82,9 @@ enum LegacyUserImport {
         try reconcileCoverCompleteness(db, source: scope.key)
         try putDeviceState(snapshot.deviceState, db: db)
         try CurrentUserRows.settleImported(db)
+        var history = ReadingHistoryRows.Changed()
+        history.facts = try ReadingFactSettlement.affectedIDs(db)
+        try history.settle(db, scope: scope)
         guard try Row.fetchOne(db, sql: "PRAGMA usr.foreign_key_check") == nil else {
             throw DataV2Error.migrationNotVerified
         }
@@ -409,8 +412,9 @@ enum LegacyUserImport {
                 let value = try batch.importColumns(ordinal: cue.ordinal)
                 guard let duration = value.durationMs else { throw BadRow(reason: "duration-overflow") }
                 guard duration >= 0 else { throw BadRow(reason: "negative-fact-duration") }
-                try write("reading_fact", idColumn: "fact_id", identity: identity,
-                          body: ReadingFactRows.storageFields(value, book: row.contentKey))
+                guard (try? parseReadingKey(value: row.contentKey)) != nil else { throw BadRow(reason: "invalid-fact-book") }
+                try ReadingFactSettlement.ingest(db, value, book: row.contentKey, partition: partition, scope: source,
+                                                 origin: .init(source: "swiftdata", id: row.id))
             }
         }
 

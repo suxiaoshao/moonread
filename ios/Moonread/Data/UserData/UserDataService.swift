@@ -97,6 +97,27 @@ extension AppDataService {
         }
     }
     func configureUserCloud(_ configuration: CloudConfiguration) async throws {
+        let next: UserCloudStoreMode
+        switch configuration {
+        case .local: next = .local
+        case .cloud(let account, _): next = .cloud(account)
+        }
+        if userCloudMode != next {
+            let capture = try await ReadingActivityRecorder.pauseForMutation(service: self)
+            do {
+                if let batch = capture.batch { try await saveReadingSegments(batch) }
+                try await applyUserCloudConfiguration(configuration, afterCapture: capture)
+            } catch {
+                await ReadingActivityRecorder.finishMutation(capture.id, preferences: nil)
+                throw error
+            }
+        } else {
+            try await applyUserCloudConfiguration(configuration, afterCapture: nil)
+        }
+    }
+
+    private func applyUserCloudConfiguration(_ configuration: CloudConfiguration,
+                                             afterCapture: ReadingActivityRecorder.Mutation?) async throws {
         await acquireUserDataOperation()
         var holdsOperation = true
         defer { if holdsOperation { releaseUserDataOperation() } }
@@ -113,6 +134,7 @@ extension AppDataService {
             mode = .cloud(verified)
         }
         if userCloudMode != mode {
+            let prior = userCloudConfigurationRevision
             cancelRecentRestoration()
             userStoreTask = nil; userCloudMode = mode
             userCloudConfigurationRevision = UUID()
@@ -124,14 +146,26 @@ extension AppDataService {
             // The configuration switch is serialized with deletion, not store
             // bootstrap: a newer configuration must be able to replace a stuck
             // initialization (the existing revision guard rejects its late result).
+            var replacement: ReadingWriteAdmission?
+            if let capture = afterCapture, let admission = capture.admission, let book = capture.lease,
+               let index = try? relationalUserIndex(), let key = try? index.resolveBookIdentity(bookId: book.id).key,
+               readingWriteVersions.permits(admission, lease: index.lease, configuration: prior,
+                   keys: [ReadingKey.pending(bookId: book.id).storageKey,key.storageKey]) {
+                replacement = readingWriteAdmission(index.lease)
+            }
             releaseUserDataOperation(); holdsOperation = false
+            if let afterCapture {
+                await ReadingActivityRecorder.finishMutation(afterCapture.id, preferences: nil, changedService: self, replacement: replacement)
+            }
             do { _ = try await userStore() }
             catch {
                 if userCloudConfigurationRevision == revision { userCloudMode = .local }
                 throw error
             }
             guard userCloudConfigurationRevision == revision else { return }
-            scheduleRecentRestoration(); scheduleSystemReadingCatalog(immediate: true)
+            startUserRecovery(); scheduleRecentRestoration(); scheduleSystemReadingCatalog(immediate: true)
+        } else if let afterCapture {
+            await ReadingActivityRecorder.finishMutation(afterCapture.id, preferences: nil)
         }
     }
     func startUserRecovery() {
@@ -150,6 +184,7 @@ extension AppDataService {
             guard try admission.lease == indexStore().lease,
                   admission.configuration == userCloudConfigurationRevision else { return }
             let index = try relationalUserIndex()
+            try index.session.prepareReadingHistory(index.lease, owner: index.session.readingInstallationID())
             pendingPromotionIDs.formUnion(try index.pendingUserPromotionKeys().compactMap {
                 if case let .pending(id) = try parseReadingKey(value: $0) { return id }
                 return nil

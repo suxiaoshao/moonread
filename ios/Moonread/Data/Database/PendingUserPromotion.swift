@@ -3,7 +3,7 @@ import GRDB
 
 /// Process-local write admissions. A SHA may only become known after import,
 /// so an admission records an epoch rather than a list of known book keys.
-struct ReadingWriteAdmission: Sendable {
+struct ReadingWriteAdmission: Equatable, Sendable {
     let lease: DataSessionLease
     let configuration: UUID
     let epoch: UInt64
@@ -51,9 +51,10 @@ enum PendingUserPromotion {
         case retainedRevokedSource
     }
 
-    private static let pendingTables = ["position_candidate", "opened_candidate", "annotation_candidate", "reading_fact"]
+    private static let pendingTables = ["position_candidate", "opened_candidate", "annotation_candidate", "reading_fact", "reading_segment"]
     private static let markTypes = "'AnnotationOperation','annotation_candidate'"
     private static let factTypes = ReadingFactRows.quarantineFactTypes
+    private static let segmentTypes = ReadingSegmentRows.quarantineTypes
     private static let clearTypes = ReadingFactRows.quarantineClearTypes
 
     // The index may already be complete after a crash. A pending-only device
@@ -64,7 +65,7 @@ enum PendingUserPromotion {
             "SELECT book_key FROM usr.local_preferred_file",
             """
             SELECT book_key FROM usr.quarantined_record WHERE partition=1
-              AND (source_type IN (\(markTypes),\(factTypes),\(clearTypes),'position_candidate','opened_candidate')
+              AND (source_type IN (\(markTypes),\(factTypes),\(segmentTypes),\(clearTypes),'position_candidate','opened_candidate')
                    OR substr(logical_key,1,9)='position/' OR substr(logical_key,1,7)='opened/')
             """,
         ]
@@ -74,18 +75,25 @@ enum PendingUserPromotion {
             """)
     }
 
-    fileprivate static func merge(_ db: Database, from pending: String, to formal: String) throws {
+    fileprivate static func merge(_ db: Database, from pending: String, to formal: String, scope: DataScope) throws {
         for (book, part) in [(pending,1),(formal,0)] {
             try requireFactsAndMarksReadable(db, book: book, partition: part)
         }
         try ReadingPositionRows.promote(db, from: pending, to: formal)
         let movedMarks = try promoteMarks(db, from: pending, to: formal)
-        try promoteFacts(db, from: pending, to: formal)
+        var history = ReadingHistoryRows.Changed()
+        history.facts = try ReadingFactSettlement.affectedIDs(db, partition: 1, book: pending)
+        history.segments = try ReadingSegmentRows.affected(db, partition: 1, book: pending)
+        history.segments.formUnion(try ReadingSegmentRows.affectedIsolation(db, book: pending, partition: 1))
+        try promoteFacts(db, from: pending, to: formal, scope: scope)
+        try promoteSegments(db, from: pending, to: formal, scope: scope)
         try LocalReadingRows.promote(db, from: pending, to: formal)
         for table in pendingTables {
             try db.execute(sql: "DELETE FROM usr.\(table) WHERE partition=1 AND book_key=?",
                            arguments: [DataIdentity.canonical(pending)])
         }
+        try history.settle(db, scope: scope)
+        try ReadingSegmentRows.enqueueSealed(db, ids: history.segments, scope: scope)
         try ReadingPositionRows.settleCurrent(db, book: pending)
         try ReadingPositionRows.settleCurrent(db, book: formal)
         try AnnotationRows.removeHeads(db, key: pending, partition: 1)
@@ -110,6 +118,8 @@ enum PendingUserPromotion {
             SELECT EXISTS(
                 SELECT 1 FROM usr.quarantined_record WHERE partition=?1 AND book_key=?2
                     AND source_type IN (\(markTypes),\(factTypes))
+                UNION ALL SELECT 1 FROM usr.reading_segment WHERE partition=?1 AND partition=1 AND book_key=?2
+                    AND (schema_version<>1 OR exposure_version<>1)
                 UNION ALL SELECT 1 FROM usr.annotation_candidate WHERE partition=?1 AND book_key=?2 AND schema_version<>1
                 UNION ALL SELECT 1 FROM usr.reading_fact WHERE partition=?1 AND book_key=?2
                     AND (schema_version<>1 OR derivation_version<>1 OR exposure_version<>1)
@@ -202,29 +212,37 @@ enum PendingUserPromotion {
         )
         """
 
-    private static let factPayload = [
-        "schema_version", "title_at_reading", "device_id", "session_id", "visit_id", "started_ms", "ended_ms", "local_day",
-        "utc_offset_seconds", "preview", "duration_ms", "first_exposure_start", "derivation_version", "exposure_version", "exposures_text",
-    ]
+    private static func promoteFacts(_ db: Database, from pending: String, to formal: String, scope: DataScope) throws {
+        let rows = try Row.fetchCursor(db, sql: visiblePendingFacts + "SELECT * FROM visible",
+                                      arguments: [pending])
+        while let row = try rows.next() {
+            try ReadingFactSettlement.ingestStored(db, row, book: formal, partition: 0, scope: scope.key,
+                                                    origin: .init(source: "pending-promotion", id: pending))
+        }
+    }
 
-    private static func promoteFacts(_ db: Database, from pending: String, to formal: String) throws {
-        let pendingKey = DataIdentity.canonical(pending), formalKey = DataIdentity.canonical(formal)
-        let comparisons = factPayload.map { "dst.\($0) IS NOT src.\($0)" }.joined(separator: " OR ")
-        guard try Bool.fetchOne(db, sql: visiblePendingFacts + """
-            SELECT NOT EXISTS(
-                SELECT 1 FROM visible src JOIN usr.reading_fact dst ON dst.partition=0 AND dst.fact_id=src.fact_id
-                    WHERE dst.book_key IS NOT ?2 OR (\(comparisons))
-                UNION ALL SELECT 1 FROM visible src JOIN usr.quarantined_record q ON q.partition=0 AND q.record_id=src.fact_id
-                    WHERE q.source_type IN (\(factTypes))
-            )
-            """, arguments: [pendingKey,formalKey]) == true else { throw UserSyncCompatibilityError() }
-
-        let fields = factPayload.joined(separator: ",")
-        try db.execute(sql: visiblePendingFacts + """
-            INSERT INTO usr.reading_fact(partition,fact_id,book_key,\(fields))
-            SELECT 0,fact_id,?2,\(fields) FROM visible src
-            WHERE NOT EXISTS(SELECT 1 FROM usr.reading_fact dst WHERE dst.partition=0 AND dst.fact_id=src.fact_id)
-            """, arguments: [pendingKey,formalKey])
+    private static func promoteSegments(_ db: Database, from pending: String, to formal: String, scope: DataScope) throws {
+        let rows = try ReadingSegmentRows.sourceRows(db, book: pending, partition: 1)
+        while let row = try rows.next() {
+            let raw = try ReadingSegmentRows.Raw(row)
+            let id = raw.value.header.id
+            guard try !ReadingHistoryTransport.deletionPending(db, type: .segment, id: id) else { continue }
+            try ReadingClearRows.transferPrefixes(db, from: pending, to: formal, raw: raw, scope: scope)
+            try ReadingSegmentRows.ingest(db, value: raw.value, book: formal, partition: 0, scope: scope,
+                                          intake: .transfer(localOwner: raw.localOwner),
+                                          origin: .init(source: "pending-promotion", id: pending))
+        }
+        // A verified alias can move its trusted isolation metadata without
+        // interpreting the original bytes. An unrelated formal unknown ID
+        // does not prevent this book's well-formed segments from moving.
+        try db.execute(sql: """
+            UPDATE OR IGNORE usr.quarantined_record SET partition=0,book_key=?
+            WHERE partition=1 AND book_key=? AND source_type IN (\(segmentTypes)) AND reason<>'unresolved-segment-route'
+            """, arguments: [formal,pending])
+        try db.execute(sql: """
+            DELETE FROM usr.quarantined_record WHERE partition=1 AND book_key=?
+            AND source_type IN (\(segmentTypes)) AND reason<>'unresolved-segment-route'
+            """, arguments: [pending])
     }
 }
 
@@ -248,7 +266,7 @@ extension ReaderIndex {
                 """, arguments: [bookId,sha]) == true
             switch fenced ? .finishEmpty : admission {
             case .merge:
-                try PendingUserPromotion.merge(db, from: pending, to: sha)
+                try PendingUserPromotion.merge(db, from: pending, to: sha, scope: lease.scope)
                 try PendingUserPromotion.clearIdentityFence(db, bookID: bookId)
                 return .committed(sha256: sha)
             case .finishEmpty:
@@ -273,10 +291,15 @@ extension ReaderIndex {
           AND EXISTS(SELECT 1 FROM main.chunks c WHERE c.book_id=b.id AND c.chunk_index=0 AND c.end_utf8>c.start_utf8)
         """
 
-    static func verifiedReadingSHA(_ db: Database, pendingID: String, scope: String) throws -> String? {
+    static func verifiedReadingSHA(_ db: Database, pendingID: String, scope: String, transferringLocal: Bool = false) throws -> String? {
         guard let sha = try String.fetchOne(db, sql: "SELECT b.content_sha256 " + completedReadingIdentitySQL +
                                            " AND j.book_id=?", arguments: [scope,pendingID]),
-              (try? parseSha256(value: sha)) != nil else { return nil }
+              (try? parseSha256(value: sha)) != nil else {
+            if transferringLocal, scope != DataScope.local.key {
+                return try verifiedReadingSHA(db, pendingID: pendingID, scope: DataScope.local.key)
+            }
+            return nil
+        }
         return sha
     }
 
@@ -302,7 +325,7 @@ extension ReaderIndex {
 
     private static let bookOwnedUserTables = [
         "metadata_text_candidate", "tag_candidate", "cover_candidate", "position_candidate",
-        "opened_candidate", "chapter_override_candidate", "annotation_candidate", "reading_fact",
+        "opened_candidate", "chapter_override_candidate", "annotation_candidate", "reading_fact", "reading_segment",
         "statistics_clear", "quarantined_record", "local_hidden_book", "local_preferred_file", "local_resume",
     ]
 
@@ -317,7 +340,7 @@ extension ReaderIndex {
 
     /// The requested pending alias alone does not authorize deleting the
     /// formal book. A requested SHA also deletes its verified pending aliases.
-    /// No index or cloud state changes in this user transaction.
+    /// No index content changes. Cloud delete intents share the usr commit.
     func deleteUserBooks(_ requested: Set<String>, activeReadingIDs: Set<String>, busyError: () -> any Error) throws -> Set<String> {
         try session.writeUsers(lease) { db in
             var targets = Set(requested.map(DataIdentity.canonical))
@@ -373,7 +396,23 @@ extension ReaderIndex {
                       OR source_type IN ('cover_candidate','CoverCandidate','UserCover'))
                 AND NOT EXISTS(SELECT 1 FROM usr.cover_candidate WHERE schema_version<>1)
                 """) == true
+            var history = ReadingHistoryRows.Changed()
             for key in targets {
+                history.facts.formUnion(try ReadingFactSettlement.affectedIDs(db, book: key))
+                history.facts.formUnion(try ReadingFactSettlement.affectedIsolation(db, book: key))
+                history.segments.formUnion(try ReadingSegmentRows.affected(db, book: key))
+                history.segments.formUnion(try ReadingSegmentRows.affectedIsolation(db, book: key))
+                if case .formal = try parseReadingKey(value: key), lease.scope != .local {
+                    let segments = try String.fetchAll(db, sql: """
+                        SELECT segment_id FROM usr.reading_segment WHERE partition=0 AND book_key=? AND sealed=1
+                        """, arguments: [key])
+                    let clears = try String.fetchAll(db, sql: """
+                        SELECT record_id FROM usr.statistics_clear WHERE partition=0 AND book_key=?
+                        """, arguments: [key])
+                    for id in segments { try ReadingHistoryTransport.delete(db, type: .segment, id: id, scope: lease.scope) }
+                    for id in clears { try ReadingHistoryTransport.delete(db, type: .clear, id: id, scope: lease.scope) }
+                    try ReadingHistoryTransport.deleteIsolatedBookRecords(db, book: key, scope: lease.scope)
+                }
                 let assets = canReclaimCover ? try String.fetchAll(db, sql: """
                     SELECT DISTINCT asset_id FROM usr.cover_candidate WHERE book_key=? AND asset_id IS NOT NULL
                     """, arguments: [key]) : []
@@ -391,6 +430,7 @@ extension ReaderIndex {
                         """, arguments: [asset])
                 }
             }
+            try history.settle(db, scope: lease.scope)
             return targets
         }
     }

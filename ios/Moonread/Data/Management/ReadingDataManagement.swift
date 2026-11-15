@@ -220,7 +220,16 @@ extension AppDataService {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
         guard try await userStore(pending: true).pendingKeys().isEmpty else { throw ReadingDataError.pendingIdentity }
-        return try await userStore().snapshotForBackup(directory: directory, writerVersion: writerVersion)
+        var manifest = try await userStore().snapshotForBackup(directory: directory, writerVersion: writerVersion, includingHistory: false)
+        let index = try relationalUserIndex()
+        let history = try index.session.readUsers(index.lease) { try ReadingHistoryBackup.export($0, directory: directory) }
+        manifest.formatVersion = 2
+        manifest.requiredCapabilities.append("reading-segments-v1")
+        manifest.members += history
+        guard manifest.members.reduce(UInt64(0), { $0 + $1.size }) <= BackupRows.maxCommitBytes else {
+            throw ReadingDataError.tooLarge
+        }
+        return manifest
     }
     func readingBackupShareCopy(_ url: URL) async throws -> LibraryExport {
         let source = url.deletingLastPathComponent()
@@ -288,7 +297,7 @@ extension AppDataService {
     }
     func refreshReadingBackupPreview(_ staging: BackupStaging) async throws -> ReadingBackupPreview {
         guard staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-        let plan = try NonFactBackup(directory: staging.directory, manifest: staging.manifest)
+        let plan = try UserBackupRestore(directory: staging.directory, manifest: staging.manifest)
         let core = try relationalUserIndex()
         let preview = try core.session.readUsers(core.lease) { try plan.preview($0) }
         var linked = 0
@@ -300,14 +309,15 @@ extension AppDataService {
         guard preview.staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         try Task.checkCancellation()
         let lease = try indexStore().lease
-        let plan = try NonFactBackup(directory: preview.staging.directory, manifest: preview.staging.manifest)
+        let plan = try UserBackupRestore(directory: preview.staging.directory, manifest: preview.staging.manifest)
         try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
         guard preview.staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         let index = try relationalUserIndex()
         guard index.lease == lease else { throw ReadingDataError.changed }
-        try index.session.writeUsers(index.lease) { try plan.merge($0) }
-        queryCache.removeAll(); dataChanged(); scheduleSystemReadingCatalog(immediate: true, statisticsChanged: false)
+        try index.session.writeUsers(index.lease) { try plan.merge($0, scope: index.lease.scope) }
+        queryCache.removeAll(); dataChanged(); scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
+        NotificationCenter.default.post(name: .statisticsChanged, object: nil)
         // Reuse the existing received-data refresh (including ThemeStore.load).
         NotificationCenter.default.post(name: .cloudDataReceived, object: nil)
         // Reader metadata has one invalidation event, shared with CloudKit imports.

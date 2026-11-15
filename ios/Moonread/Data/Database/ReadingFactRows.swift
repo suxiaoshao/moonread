@@ -61,38 +61,16 @@ enum ReadingFactRows {
         }
     }
 
-    /// Preserve the old store-local first insert. An unknown same-ID record
-    /// blocks writes in that partition, even if routed to another book.
-    static func insertLocal(_ db: Database, value: FactImportColumns, book: String) throws -> Bool {
-        let part = try ReadingPositionRows.partition(for: book)
-        let id = identity(value.slice.id)
-        if try Bool.fetchOne(db, sql: """
-            SELECT EXISTS(SELECT 1 FROM usr.quarantined_record WHERE partition=?1 AND record_id=?2
-              AND source_type IN (\(quarantineFactTypes))
-            UNION ALL SELECT 1 FROM usr.reading_fact WHERE partition=?1 AND fact_id=?2 AND NOT (\(currentVersion)))
-            """, arguments: [part,id]) == true { throw UserSyncCompatibilityError() }
-
-        let fields: [Field] = [("partition",part),("fact_id",id),("schema_version",1)] +
-            (try storageFields(value, book: book))
-        let columns = fields.map(\.0).joined(separator: ",")
-        let parameters = Array(repeating: "?", count: fields.count).joined(separator: ",")
-        try db.execute(sql: """
-            INSERT INTO usr.reading_fact(\(columns)) VALUES(\(parameters))
-              ON CONFLICT(partition,fact_id) DO NOTHING
-            """, arguments: StatementArguments(fields.map { $0.1 }))
-        return db.changesCount != 0
-    }
-
     static func clearRecordID(book: String?, session: String?, through: Int64, ids: some Sequence<String>) -> String {
         DataIdentity.id("statistics-clear", [
             book == nil ? "0" : "1", book ?? "", session == nil ? "0" : "1", session.map(identity) ?? "", String(through)
         ] + Set(ids.map(identity)).sorted())
     }
 
-    static func clear(_ db: Database, partition: Int, book: String?, session: String?, through: Int64) throws {
+    static func visibleIDs(_ db: Database, partition: Int, book: String?, session: String?) throws -> [String] {
         try requireReadableClears(db, partition: partition, book: book, session: session)
         let bookKey = book.map(DataIdentity.canonical), sessionKey = session.map(identity)
-        let ids = try String.fetchAll(db, sql: """
+        return try String.fetchAll(db, sql: """
             SELECT f.fact_id FROM usr.reading_fact f WHERE f.partition=?1
               AND (?2 IS NULL OR f.book_key=?2) AND (?3 IS NULL OR f.session_id=?3)
               AND \(currentVersion)
@@ -102,23 +80,11 @@ enum ReadingFactRows {
                 AND q.source_type IN (\(quarantineFactTypes)))
               AND \(notCleared)
             """, arguments: [partition,bookKey,sessionKey])
-        // The explicit IDs cover currently visible future-dated records, not
-        // just rows within the cutoff clock's range. Unknown facts remain raw.
-        let id = clearRecordID(book: book, session: session, through: through, ids: ids)
-        try db.execute(sql: """
-            INSERT INTO usr.statistics_clear(partition,record_id,schema_version,book_key,session_id,through_ms) VALUES (?,?,1,?,?,?)
-            ON CONFLICT(partition,record_id) DO NOTHING
-            """, arguments: [partition,id,bookKey,sessionKey,through])
-        let insert = try db.makeStatement(sql: """
-            INSERT INTO usr.statistics_clear_id VALUES (?,?,?)
-            ON CONFLICT(partition,clear_id,fact_id) DO NOTHING
-            """)
-        for fact in ids {
-            try insert.execute(arguments: [partition,id,fact])
-        }
     }
+
 }
 
+#if DEBUG
 extension ReaderIndex {
     /// Index routing and authorizations are resolved inside the same writer
     /// access as fact insertion. A late import cannot recreate pending rows
@@ -127,6 +93,7 @@ extension ReaderIndex {
         try session.writeUsers(lease) { db in
             var routes: [String: (key: String, title: String)] = [:]
             var written = Set<String>()
+            var changes = ReadingHistoryRows.Changed()
             for slice in slices {
                 let route: (key: String, title: String)
                 if let cached = routes[slice.bookId] { route = cached }
@@ -145,23 +112,15 @@ extension ReaderIndex {
                     routes[slice.bookId] = route
                 }
                 let value = try localReadingFactColumns(contentKey: route.key, title: route.title, device: device, slice: slice)
-                if try ReadingFactRows.insertLocal(db, value: value, book: route.key) { written.insert(route.key) }
+                let part = try ReadingPositionRows.partition(for: route.key)
+                if try ReadingFactSettlement.ingest(db, value, book: route.key, partition: part, scope: lease.scope.key,
+                    origin: .init(source: "fixture", id: slice.id)) {
+                    written.insert(route.key); changes.facts.insert(ReadingFactRows.identity(slice.id))
+                }
             }
+            try changes.settle(db, scope: lease.scope)
             return written
         }
     }
-
-    func clearReadingFacts(book: String?, session sessionID: String?, through: Int64) throws {
-        let key = try book.map { try parseReadingKey(value: $0) }
-        try session.writeUsers(lease) { db in
-            try ReadingFactRows.clear(db, partition: 0, book: book, session: sessionID, through: through)
-            try ReadingFactRows.clear(db, partition: 1, book: book, session: sessionID, through: through)
-            if case let .formal(sha)? = key {
-                for id in try verifiedReadingAliasIDs(db, sha: sha) {
-                    try ReadingFactRows.clear(db, partition: 1, book: serializeReadingKey(key: .pending(bookId: id)),
-                                              session: sessionID, through: through)
-                }
-            }
-        }
-    }
 }
+#endif

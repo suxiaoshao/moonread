@@ -129,6 +129,7 @@ final class DataSession: @unchecked Sendable {
     private var closeFailed = false
     private var indexReady = false
     private var usersReady = false
+    private var historyReady = false
 
     /// The optional bootstrap owner is accepted only before any v2 owner
     /// decision exists. It comes from a positively attributed legacy store,
@@ -217,7 +218,7 @@ final class DataSession: @unchecked Sendable {
     }
 
     private func closeLocked() throws {
-        lease = nil; selection = nil; indexReady = false; usersReady = false
+        lease = nil; selection = nil; indexReady = false; usersReady = false; historyReady = false
         guard let pool else { return }
         do { try pool.close() }
         catch { closeFailed = true; throw error }
@@ -347,6 +348,37 @@ final class DataSession: @unchecked Sendable {
         }
     }
 
+    func readingInstallationID() throws -> String {
+        try lifecycle.withLock {
+            var url = layout.root.appending(path: "reading-installation-id")
+            do {
+                let bytes = try Data(contentsOf: url)
+                guard let id = UUID(uuidString: String(decoding: bytes, as: UTF8.self)) else {
+                    throw DataV2Error.invalidOwnerState
+                }
+                return id.uuidString.lowercased()
+            } catch let error as CocoaError where error.code == .fileReadNoSuchFile {}
+            let id = UUID().uuidString.lowercased()
+            try Data(id.utf8).write(to: url, options: .atomic)
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            try url.setResourceValues(values)
+            return id
+        }
+    }
+
+    /// Installation identity is device-local; a backup cannot grant tail ownership.
+    /// Run once per activation, before the first recorder can hold live state.
+    func prepareReadingHistory(_ token: DataSessionLease, owner: String) throws {
+        try lifecycle.withLock {
+            let writer = try active(token)
+            guard usersReady else { throw DataV2Error.migrationNotVerified }
+            guard !historyReady else { return }
+            try writer.write { try ReadingSegmentRows.sealOwned($0, owner: owner, scope: token.scope) }
+            historyReady = true
+        }
+    }
+
     func readUsers<T: Sendable>(_ token: DataSessionLease, _ body: @Sendable (Database) throws -> T) throws -> T {
         try lifecycle.withLock {
             let writer = try active(token)
@@ -413,7 +445,7 @@ final class DataSession: @unchecked Sendable {
             guard let pool else { throw DataV2Error.sessionClosed }
             try pool.writeWithoutTransaction { db in
                 try LocalScopeImport.withSource(db, url: source, readOnly: true) {
-                    try LocalScopeImport.copy(db, move: move.id)
+                    try LocalScopeImport.copy(db, move: move.id, scope: target)
                 }
             }
             try finishLocalMove(move)

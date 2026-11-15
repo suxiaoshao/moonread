@@ -25,9 +25,9 @@ enum ReadingFactSettlement {
 
         static let columns = "fact_id,book_key,session_id,visit_id,started_ms,ended_ms,local_day,utc_offset_seconds,preview,duration_ms,first_exposure_start"
 
-        init(_ row: Row) {
-            id = row["fact_id"]; partition = row["source_partition"]
-            book = row["book_key"]; session = row["session_id"]; visit = row["visit_id"]
+        init(_ row: Row, partition: Int? = nil, book: String? = nil) {
+            id = row["fact_id"]; self.partition = partition ?? row["source_partition"]
+            self.book = book ?? row["book_key"]; session = row["session_id"]; visit = row["visit_id"]
             start = row["started_ms"]; end = row["ended_ms"]; day = row["local_day"]; utcOffset = row["utc_offset_seconds"]
             preview = row["preview"]; duration = row["duration_ms"]; firstExposure = row["first_exposure_start"]
         }
@@ -63,8 +63,8 @@ enum ReadingFactSettlement {
             exposures = value.slice.exposures.map { .init(start_utf8: $0.startUtf8, end_utf8: $0.endUtf8, duration_ms: $0.durationMs) }
         }
 
-        init(_ row: Row) throws {
-            head = Head(row)
+        init(_ row: Row, partition: Int? = nil, book: String? = nil) throws {
+            head = Head(row, partition: partition, book: book)
             title = row["title_at_reading"]; device = row["device_id"]
             exposures = try JSONDecoder().decode([ReadingFactRows.Exposure].self, from: Data((row["exposures_text"] as String).utf8))
         }
@@ -83,14 +83,15 @@ enum ReadingFactSettlement {
     private static let conflict = "fact-content-conflict"
     private enum Match { case same, different, unresolved }
 
-    private static func match(_ lhs: Evidence, _ rhs: Evidence, db: Database, scope: String) throws -> Match {
+    private static func match(_ lhs: Evidence, _ rhs: Evidence, db: Database, scope: String, transferringLocal: Bool = false) throws -> Match {
         guard lhs.samePayload(as: rhs) else { return .different }
         let a = lhs.head.book, b = rhs.head.book
         if a == b { return .same }
         func formal(_ book: String) throws -> String? {
             switch try parseReadingKey(value: book) {
             case .formal(let sha): return sha
-            case .pending(let id): return try ReaderIndex.verifiedReadingSHA(db, pendingID: ReadingFactRows.identity(id), scope: scope)
+            case .pending(let id):
+                return try ReaderIndex.verifiedReadingSHA(db, pendingID: ReadingFactRows.identity(id), scope: scope, transferringLocal: transferringLocal)
             }
         }
         guard let left = try formal(a), let right = try formal(b) else { return .unresolved }
@@ -115,7 +116,7 @@ enum ReadingFactSettlement {
             SELECT partition AS source_partition,\(Head.columns),title_at_reading,device_id,exposures_text
             FROM usr.reading_fact f WHERE fact_id=?1 AND (?2 IS NULL OR partition=?2) AND \(valid)
             ORDER BY partition
-            """, arguments: [id,partitions]).map(Evidence.init)
+            """, arguments: [id,partitions]).map { try Evidence($0) }
     }
 
     /// Stage typed input and return whether evidence changed, for the caller
@@ -151,6 +152,31 @@ enum ReadingFactSettlement {
         return true
     }
 
+    /// D1 and verified pending promotion reuse the immutable semantic
+    /// comparison on already decoded columns. Don't reconstruct old JSON.
+    static func ingestStored(_ db: Database, _ row: Row, book: String, partition: Int, scope: String, origin: Origin) throws {
+        let id: String = row["fact_id"]
+        if try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM usr.reading_fact WHERE partition=? AND fact_id=?)",
+                             arguments: [partition,id]) == true {
+            let incoming = try Evidence(row, partition: partition, book: book)
+            guard let old = try evidence(db, id: id, partitions: partition).first else {
+                try archive(db, incoming, origin: origin, reason: "unreadable-fact-source")
+                return
+            }
+            let relation = try match(old, incoming, db: db, scope: scope)
+            guard relation != .same else { return }
+            let reason = relation == .unresolved ? unresolvedSamePartition : conflict
+            try archive(db, old, origin: .init(source: "relational", id: old.device), reason: reason)
+            try archive(db, incoming, origin: origin, reason: reason)
+            return
+        }
+        let fields = row.filter { $0.0 != "partition" && $0.0 != "book_key" }
+        try db.execute(sql: """
+            INSERT INTO usr.reading_fact(partition,book_key,\(fields.map(\.0).joined(separator: ",")))
+            VALUES(?,?,\(Array(repeating: "?", count: fields.count).joined(separator: ",")))
+            """, arguments: [partition,book] + StatementArguments(fields.map(\.1)))
+    }
+
     /// Entry for a regular bounded batch. Import/merge adapters that also
     /// write other evidence in the enclosing transaction use the same
     /// ingest/settleEvidence functions after capturing the full affected set.
@@ -165,7 +191,7 @@ enum ReadingFactSettlement {
         try settleEvidence(db, ids: updated, scope: scope)
     }
 
-    private static func verifyIdentity(_ db: Database, id: String, scope: String) throws {
+    private static func verifyIdentity(_ db: Database, id: String, scope: String, transferringLocal: Bool) throws {
         let count = try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.reading_fact f WHERE fact_id=? AND " + valid,
                                      arguments: [id]) ?? 0
         // Clearing this temporary marker is safe only for the cross-partition
@@ -175,7 +201,7 @@ enum ReadingFactSettlement {
         guard count > 1 else { return }
         let copies = try evidence(db, id: id)
         guard let lhs = copies.first, let rhs = copies.last else { return }
-        switch try match(lhs, rhs, db: db, scope: scope) {
+        switch try match(lhs, rhs, db: db, scope: scope, transferringLocal: transferringLocal) {
         case .same: return
         case .different:
             for item in copies { try archive(db, item, origin: .init(source: "relational", id: item.device), reason: conflict) }
@@ -187,18 +213,25 @@ enum ReadingFactSettlement {
     /// Evidence admitted/changed/rekeyed/rehydrated. Full ordered exposures
     /// are compared only for colliding IDs, never for normal single appends.
     static func settleEvidence(_ db: Database, ids: Set<String>, scope: String) throws {
-        let normalized = Set(ids.map(ReadingFactRows.identity))
-        for id in normalized.sorted() { try verifyIdentity(db, id: id, scope: scope) }
-        try settleVisibility(db, ids: normalized)
+        var changes = ReadingDayRows.Changes()
+        try stageSettlement(db, ids: ids, evidence: ids, scope: scope, changes: &changes)
+        try changes.apply(db)
     }
 
     /// Clear or scope barrier changed, not the underlying evidence. Do not
     /// change the classification of an ID and do not load exposure bytes.
     static func settleVisibility(_ db: Database, ids: Set<String>) throws {
         var changes = ReadingDayRows.Changes()
+        try stageSettlement(db, ids: ids, evidence: [], scope: "", changes: &changes)
+        try changes.apply(db)
+    }
+
+    static func stageSettlement(_ db: Database, ids: Set<String>, evidence: Set<String>, scope: String,
+                                changes: inout ReadingDayRows.Changes, transferringLocal: Bool = false) throws {
+        for id in Set(evidence.map(ReadingFactRows.identity)).sorted() { try verifyIdentity(db, id: id, scope: scope, transferringLocal: transferringLocal) }
         for id in Set(ids.map(ReadingFactRows.identity)).sorted() {
             let old = try Row.fetchOne(db, sql: "SELECT source_partition,\(Head.columns) FROM usr.reading_fact_current WHERE fact_id=?",
-                                       arguments: [id]).map(Head.init)
+                                       arguments: [id]).map { Head($0) }
             let selected = try selectHead(db, id: id)
             guard old != selected else { continue }
 
@@ -215,7 +248,6 @@ enum ReadingFactSettlement {
             }
             changes.replace(old?.contribution, with: selected?.contribution)
         }
-        try changes.apply(db)
     }
 
     private static func selectHead(_ db: Database, id: String) throws -> Head? {
@@ -235,7 +267,7 @@ enum ReadingFactSettlement {
                     AND (unknown.session_id IS NULL OR unknown.session_id=f.session_id))
                 AND \(ReadingFactRows.notCleared)
             ORDER BY partition LIMIT 1
-            """, arguments: [id]).map(Head.init)
+            """, arguments: [id]).map { Head($0) }
     }
 
     /// Capture candidate IDs prior to deleting/rekeying evidence. It also
@@ -249,6 +281,14 @@ enum ReadingFactSettlement {
         let filter = predicates.isEmpty ? "" : " WHERE " + predicates.joined(separator: " AND ")
         let rows = try String.fetchAll(db, sql: "SELECT DISTINCT fact_id FROM usr.reading_fact" + filter, arguments: arguments)
         return Set(rows)
+    }
+
+    /// An isolated copy can block the same fact ID in another book.
+    static func affectedIsolation(_ db: Database, book: String) throws -> Set<String> {
+        try Set(String.fetchAll(db, sql: """
+            SELECT DISTINCT record_id FROM usr.quarantined_record
+            WHERE book_key=? AND source_type IN (\(ReadingFactRows.quarantineFactTypes))
+            """, arguments: [DataIdentity.canonical(book)]))
     }
 
 }

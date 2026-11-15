@@ -131,7 +131,7 @@ struct ReadingWindow: Equatable, Sendable {
 final class ReadingLease: Sendable {
     let id: String
     let writeAdmission: ReadingWriteAdmission?
-    private let service: AppDataService
+    let service: AppDataService
     init(id: String, service: AppDataService, writeAdmission: ReadingWriteAdmission? = nil) {
         self.id = id; self.service = service; self.writeAdmission = writeAdmission
     }

@@ -18,8 +18,7 @@ enum LocalScopeImport {
         .init(name: "opened_candidate", mutable: true), .init(name: "chapter_override_candidate", mutable: true),
         .init(name: "annotation_candidate", children: [("annotation_ancestor", "candidate_id"),
                                                        ("annotation_related_mark", "candidate_id")]),
-        .init(name: "reading_fact", key: ["partition", "fact_id"]),
-        .init(name: "statistics_clear", children: [("statistics_clear_id", "clear_id")]),
+        .init(name: "statistics_clear", children: [("statistics_clear_id", "clear_id"), ("statistics_clear_segment", "clear_id")]),
         .init(name: "source_decoding_candidate", mutable: true),
         .init(name: "palette_candidate", children: [("palette_color", "candidate_id")], mutable: true),
         .init(name: "shelf_reference_candidate", mutable: true)
@@ -61,7 +60,7 @@ enum LocalScopeImport {
                           arguments: [stateKey,move.uuidString]) == true
     }
 
-    static func copy(_ db: Database, move: UUID) throws {
+    static func copy(_ db: Database, move: UUID, scope: DataScope = .local) throws {
         try db.inTransaction {
             guard try Bool.fetchOne(db, sql: """
                 SELECT EXISTS(SELECT 1 FROM move_source.cover_asset WHERE availability<>'available'
@@ -88,6 +87,33 @@ enum LocalScopeImport {
             for table in candidates + localTables { try copy(db, table: table) }
             try copyQuarantine(db)
             try CurrentUserRows.settleImported(db)
+            let facts = try Row.fetchCursor(db, sql: "SELECT * FROM move_source.reading_fact")
+            while let fact = try facts.next() {
+                try ReadingFactSettlement.ingestStored(db, fact, book: fact["book_key"], partition: fact["partition"], scope: scope.key,
+                                                       origin: .init(source: "local-transfer", id: fact["fact_id"]))
+            }
+            guard try Bool.fetchOne(db, sql: """
+                SELECT NOT EXISTS(SELECT 1 FROM move_source.reading_segment WHERE schema_version<>1 OR exposure_version<>1)
+                """) == true else { throw DataV2Error.migrationNotVerified }
+            let segments = try ReadingSegmentRows.sourceRows(db, from: "move_source")
+            var movedSegments = Set<String>()
+            while let row = try segments.next() {
+                let raw = try ReadingSegmentRows.Raw(row)
+                try ReadingSegmentRows.ingest(db, value: raw.value, book: raw.book, partition: raw.partition, scope: scope,
+                    intake: .transfer(localOwner: raw.localOwner), origin: .init(source: "local-transfer", id: raw.value.header.id))
+                movedSegments.insert(raw.value.header.id)
+            }
+            var history = ReadingHistoryRows.Changed()
+            history.facts = try ReadingFactSettlement.affectedIDs(db)
+            history.segments = try ReadingSegmentRows.affected(db)
+            try history.settle(db, scope: scope, transferringLocal: true)
+            try ReadingSegmentRows.enqueueSealed(db, ids: movedSegments, scope: scope)
+            let clearIDs = try String.fetchAll(db, sql: "SELECT record_id FROM move_source.statistics_clear WHERE partition=0")
+            for id in clearIDs {
+                if let clear = try ReadingClearRows.load(db, partition: 0, id: id) {
+                    try ReadingHistoryTransport.enqueueClear(db, id: id, value: clear, scope: scope)
+                }
+            }
             guard try Row.fetchOne(db, sql: "PRAGMA usr.foreign_key_check") == nil else {
                 throw DataV2Error.migrationNotVerified
             }
@@ -223,6 +249,9 @@ enum LocalScopeImport {
     static func clearSource(_ db: Database) throws {
         try db.inTransaction {
             for table in CurrentUserRows.tables { try db.execute(sql: "DELETE FROM move_source.\(table)") }
+            for table in ["reading_fact_current","reading_segment_current","reading_day","reading_fact","reading_segment"] {
+                try db.execute(sql: "DELETE FROM move_source.\(table)")
+            }
             // FK cascades delete contained relations, not semantic targets.
             for table in (candidates + localTables).map(\.name) + ["cover_asset","quarantined_record","legacy_import_state"] {
                 try db.execute(sql: "DELETE FROM move_source.\(table)")

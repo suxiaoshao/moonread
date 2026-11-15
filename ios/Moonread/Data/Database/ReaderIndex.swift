@@ -37,6 +37,14 @@ final class ReaderIndex: @unchecked Sendable {
         return Body(id: row["id"], sha: row["content_sha256"], bytes: bytes, count: count)
     }
 
+    func readingCaptureTitle(bookID: String) throws -> String {
+        try read { db in
+            guard let title = try String.fetchOne(db, sql: "SELECT title FROM main.books WHERE id=?",
+                                                  arguments: [bookID]) else { throw ReaderError.NotFound }
+            return title
+        }
+    }
+
     static func chunk(_ row: Row) throws -> TextChunk {
         guard let index = UInt32(exactly: row["chunk_index"] as Int64),
               let start = UInt64(exactly: row["start_utf8"] as Int64),

@@ -8,7 +8,7 @@ import XCTest
 @testable import Moonread
 
 final class ReadingActivityReadingReviewTests: ReadingReviewFixture {
-  // S274: 只测 recorder 把暂停/预览/停止事件正确传给 Rust 并只提交返回 slices；idle 时长算法仅 R048/R049，删 Swift 重算。
+  // S274: 只测 recorder 把暂停/预览/停止事件正确传给 Rust 并只提交返回段快照；idle 时长算法仅 R048/R049，删 Swift 重算。
   @MainActor func testEffectiveSessionDurationUsesReadingClockIdleAndPauseRules() async throws {
     func readable(_ body: Bool = true, _ preparation: Bool = false, _ share: Bool = false,
                   _ alert: Bool = false, _ chooser: Bool = false) -> Bool {
@@ -42,16 +42,20 @@ final class ReadingActivityReadingReviewTests: ReadingReviewFixture {
     let host = StatisticsPresentationController()
     host.addChild(controller); controller.didMove(toParent: host)
     viewport.controller = controller
-    var slices: [ReadingSlice] = []
+    var segments: [ReadingSegment] = []
+    var bookIDs: [String] = []
     var generations: [UInt64] = []
-    let writer = StatisticsWriter { values, generation in
-      slices += values
-      generations.append(generation)
+    let writer = StatisticsWriter { batch in
+      segments += batch.values
+      bookIDs.append(batch.bookID)
+      generations.append(batch.generation)
     }
     let recorder = ReadingActivityRecorder(
       writer: writer,
       time: {
         ReadingActivityTime(uptime: clock.elapsed, date: self.now.addingTimeInterval(clock.elapsed))
+      }, captureAuthor: { _ in
+        ReadingSegmentAuthor(ownerInstanceId: "test-install", sessionId: "test-session", title: "Fixture", device: "test-device")
       }
     ) { StatisticsPreferences(enabled: true, generation: 17) }
     controller.statisticsPresentationChanged = { [weak recorder] in recorder?.sample() }
@@ -99,16 +103,16 @@ final class ReadingActivityReadingReviewTests: ReadingReviewFixture {
     clock.elapsed = 310
     await recorder.flush()
     XCTAssertEqual(recorder.effectiveReadingMilliseconds, exhausted, "Task dismissal cannot grant new idle credit")
-    XCTAssertTrue(slices.contains { !$0.preview }, "formal reading is passed to the writer")
-    XCTAssertTrue(slices.contains { $0.preview }, "preview facts remain distinguishable")
-    XCTAssertTrue(slices.allSatisfy { $0.bookId == "activity-fixture" })
+    XCTAssertTrue(segments.contains { !$0.header.preview }, "formal reading is passed to the writer")
+    XCTAssertTrue(segments.contains { $0.header.preview }, "preview facts remain distinguishable")
+    XCTAssertTrue(bookIDs.allSatisfy { $0 == "activity-fixture" })
     XCTAssertTrue(generations.allSatisfy { $0 == 17 })
-    let ids = slices.map(\.id)
+    let ids = segments.map { $0.header.id }
     recorder.stop()
     host.modal = nil
     controller.statisticsPresentationChanged() // A late native callback cannot resume a stopped session.
     await writer.drain()
-    XCTAssertEqual(slices.map(\.id), ids, "stop must not resend already flushed facts")
+    XCTAssertEqual(segments.map { $0.header.id }, ids, "stop must not resend already flushed facts")
   }
 
   @MainActor func testNativePresentationExemptsOnlyTheCurrentReadingAccessory() {
@@ -223,19 +227,20 @@ final class ReadingActivityReaderIntegrationTests: ReaderIntegrationFixture {
     let service = AppDataService(core: try ReaderCore(dataDirectory: root.path))
     let entered = expectation(description: "pending writer")
     let gate = SourceReadinessGate(entered: entered)
-    let writer = StatisticsWriter { _, _ in await gate.wait() }
+    let writer = StatisticsWriter { _ in await gate.wait() }
     var lease: ReadingLease? = ReadingLease(id: "pending-write", service: service)
     weak var retained = lease
-    let clock = ReadingClock(bookId: "pending-write")
+    let state = try beginReadingSegment(author: .init(ownerInstanceId: "test-install", sessionId: "test-session",
+        title: "Fixture", device: "test-device"), visitId: "test-visit", limits: readingSegmentLimits())
     var moment = ReadingMoment(
       monotonicMs: 0, unixMs: 0, utcOffsetSeconds: 0, readable: true, interaction: true, automaticMoving: false, automaticMilliseconds: 0, preview: false, startUtf8: 0, endUtf8: 9)
-    _ = clock.update(moment: moment)
+    let first = try advanceReadingSegment(previous: state, moment: moment, segmentSeed: UUID().uuidString.lowercased(), nextVisitId: "next")
     moment.monotonicMs = 1000
     moment.unixMs = 1000
     moment.readable = false
-    let slices = clock.update(moment: moment)
-    XCTAssertFalse(slices.isEmpty)
-    writer.enqueue(slices, generation: 0, lease: lease!)
+    let stop = try advanceReadingSegment(previous: first.next, moment: moment, segmentSeed: UUID().uuidString.lowercased(), nextVisitId: "ended")
+    XCTAssertFalse(stop.segmentUpdates.isEmpty)
+    writer.enqueue(stop.segmentUpdates, generation: 0, lease: lease!)
     let recorder = ReadingActivityRecorder()
     recorder.stop()
     lease = nil

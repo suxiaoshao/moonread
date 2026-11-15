@@ -1,0 +1,462 @@
+import Foundation
+import GRDB
+
+enum ReadingClearRows {
+    enum Kind: String, Codable, Sendable { case range, captured }
+    struct Prefix: Codable, Equatable, Sendable {
+        let segmentId: String
+        let observedRevision: UInt64
+        let coveredThroughMs: Int64
+    }
+    struct Value: Codable, Equatable, Sendable {
+        let v: Int
+        let scopeKind: Kind
+        let book, session: String?
+        let throughMs: Int64
+        let factIds: [String]
+        let segments: [Prefix]
+
+        var stableID: String {
+            if v == 1 { return ReadingFactRows.clearRecordID(book: book, session: session, through: throughMs, ids: factIds) }
+            return DataIdentity.id("statistics-clear-v2", [
+                scopeKind.rawValue, book == nil ? "0" : "1", book ?? "", session == nil ? "0" : "1", session ?? "",
+                String(throughMs), String(factIds.count),
+            ] + factIds + segments.flatMap { [$0.segmentId, String($0.observedRevision), String($0.coveredThroughMs)] })
+        }
+    }
+
+    static func decode(_ payload: String) throws -> Value {
+        struct Version: Decodable { let v: Int? }
+        let version = try JSONDecoder().decode(Version.self, from: Data(payload.utf8)).v ?? 1
+        if version == 1 {
+            let old = try UserSyncJSON.decode(ClearValue.self, payload, as: UserSyncJSON.clear, envelope: true)
+            if let book = old.book { _ = try parseReadingKey(value: book) }
+            return .init(v: 1, scopeKind: .range, book: old.book.map(DataIdentity.canonical),
+                         session: old.session.map(ReadingFactRows.identity), throughMs: old.through,
+                         factIds: Array(Set(old.ids.map(ReadingFactRows.identity))).sorted(), segments: [])
+        }
+        guard version == 2 else { throw UserSyncCompatibilityError(statistics: true, reason: .newerFormat) }
+        let shape = UserSyncJSON.Shape.object([
+            "v": .uint, "scopeKind": .choice(["range","captured"]), "book": .nullable(.string), "session": .nullable(.string),
+            "throughMs": .int, "factIds": .array(.string), "segments": .array(.object([
+                "segmentId": .string, "observedRevision": .uint, "coveredThroughMs": .int,
+            ])),
+        ], optional: ["book","session"])
+        let value = try UserSyncJSON.decode(Value.self, payload, as: shape)
+        if let book = value.book { _ = try parseReadingKey(value: book) }
+        guard value.segments.allSatisfy({ !$0.segmentId.isEmpty && $0.observedRevision > 0 }),
+              Set(value.segments.map(\.segmentId)).count == value.segments.count,
+              value.factIds.allSatisfy({ !$0.isEmpty }) else { throw ReadingDataError.invalid }
+        return .init(v: 2, scopeKind: value.scopeKind, book: value.book.map(DataIdentity.canonical),
+                     session: value.session.map(ReadingFactRows.identity), throughMs: value.throughMs,
+                     factIds: Array(Set(value.factIds.map(ReadingFactRows.identity))).sorted(),
+                     segments: value.segments.sorted { $0.segmentId < $1.segmentId })
+    }
+
+    static func wire(_ value: Value) throws -> String {
+        if value.v == 1 {
+            return try UserSyncJSON.encode(ClearValue(book: value.book, session: value.session, through: value.throughMs, ids: Set(value.factIds)), envelope: true)
+        }
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        return String(decoding: try encoder.encode(value), as: UTF8.self)
+    }
+
+    static func load(_ db: Database, partition: Int, id: String) throws -> Value? {
+        guard let row = try Row.fetchOne(db, sql: """
+            SELECT * FROM usr.statistics_clear WHERE partition=? AND record_id=? AND schema_version IN \(ReadingFactRows.knownClearVersions)
+            """, arguments: [partition,id]), let kind = Kind(rawValue: row["scope_kind"]) else { return nil }
+        let segments = try Row.fetchAll(db, sql: """
+            SELECT * FROM usr.statistics_clear_segment WHERE partition=? AND clear_id=? ORDER BY segment_id
+            """, arguments: [partition,id]).map { row in
+                guard let revision = UInt64(row["observed_revision"] as String) else { throw DataV2Error.migrationNotVerified }
+                return Prefix(segmentId: row["segment_id"], observedRevision: revision, coveredThroughMs: row["covered_through_ms"])
+            }
+        return .init(v: row["schema_version"], scopeKind: kind, book: row["book_key"], session: row["session_id"], throughMs: row["through_ms"],
+            factIds: try String.fetchAll(db, sql: "SELECT fact_id FROM usr.statistics_clear_id WHERE partition=? AND clear_id=? ORDER BY fact_id",
+                                        arguments: [partition,id]), segments: segments)
+    }
+
+    @discardableResult
+    static func insert(_ db: Database, _ value: Value, partition: Int, id: String? = nil) throws -> Bool {
+        let id = id ?? value.stableID
+        if let old = try load(db, partition: partition, id: id) {
+            guard old == value else { throw ReadingDataError.invalid }
+            return false
+        }
+        try db.execute(sql: """
+            INSERT INTO usr.statistics_clear(partition,record_id,schema_version,book_key,session_id,through_ms,scope_kind)
+            VALUES(?,?,?,?,?,?,?)
+            """, arguments: [partition,id,value.v,value.book,value.session,value.throughMs,value.scopeKind.rawValue])
+        for fact in value.factIds {
+            try db.execute(sql: "INSERT INTO usr.statistics_clear_id VALUES(?,?,?)", arguments: [partition,id,fact])
+        }
+        for prefix in value.segments {
+            try db.execute(sql: "INSERT INTO usr.statistics_clear_segment VALUES(?,?,?,?,?)", arguments: [partition,id,prefix.segmentId,
+                           DataIdentity.unsigned(prefix.observedRevision),prefix.coveredThroughMs])
+        }
+        return true
+    }
+
+    private static let bounds = """
+        FROM usr.statistics_clear c LEFT JOIN usr.statistics_clear_segment p
+          ON p.partition=c.partition AND p.clear_id=c.record_id AND p.segment_id=?4
+        WHERE c.partition=?1 AND c.schema_version IN \(ReadingFactRows.knownClearVersions)
+          AND (c.book_key IS NULL OR c.book_key=?2) AND (c.session_id IS NULL OR c.session_id=?3)
+          AND (c.scope_kind='range' OR p.segment_id IS NOT NULL)
+        """
+    private static let bound = """
+        CASE WHEN c.scope_kind='captured' THEN p.covered_through_ms
+             WHEN p.covered_through_ms IS NULL THEN c.through_ms
+             ELSE max(c.through_ms,p.covered_through_ms) END
+        """
+
+    static func cut(_ db: Database, partition: Int, book: String, session: String, id: String) throws -> Int64? {
+        try Int64.fetchOne(db, sql: "SELECT max(\(bound)) " + bounds, arguments: [partition,book,session,id])
+    }
+
+    static func captureRange(_ db: Database, partition: Int, book: String?, session: String?, through: Int64) throws -> Value {
+        let book = book.map(DataIdentity.canonical), session = session.map(ReadingFactRows.identity)
+        try ReadingFactRows.requireReadableClears(db, partition: partition, book: book, session: session)
+        let facts = try ReadingFactRows.visibleIDs(db, partition: partition, book: book, session: session).sorted()
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT segment_id,book_key,session_id,ended_ms,revision FROM usr.reading_segment
+            WHERE partition=?1 AND (?2 IS NULL OR book_key=?2) AND (?3 IS NULL OR session_id=?3)
+              AND schema_version=1 AND exposure_version=1 ORDER BY segment_id
+            """, arguments: [partition,book,session])
+        let segments = try rows.compactMap { row -> Prefix? in
+            let id: String = row["segment_id"], end: Int64 = row["ended_ms"]
+            guard try !ReadingSegmentRows.blocked(db, id: id),
+                  let revision = UInt64(row["revision"] as String) else { return nil }
+            if let cut = try cut(db, partition: partition, book: row["book_key"], session: row["session_id"], id: id), cut >= end { return nil }
+            return .init(segmentId: id, observedRevision: revision, coveredThroughMs: end)
+        }
+        return .init(v: 2, scopeKind: .range, book: book, session: session, throughMs: through, factIds: facts, segments: segments)
+    }
+
+    static func recordAffected(_ db: Database, _ value: Value, partition: Int, changed: inout ReadingHistoryRows.Changed) throws {
+        if value.scopeKind == .range {
+            changed.clearFacts.formUnion(try ReadingFactSettlement.affectedIDs(db, partition: partition, book: value.book, session: value.session))
+            changed.clearSegments.formUnion(try ReadingSegmentRows.affected(db, partition: partition, book: value.book, session: value.session))
+        } else {
+            changed.clearFacts.formUnion(value.factIds)
+            changed.clearSegments.formUnion(value.segments.map(\.segmentId))
+        }
+    }
+
+    static func transferPrefixes(_ db: Database, from pending: String, to formal: String,
+                                 raw: ReadingSegmentRows.Raw, scope: DataScope) throws {
+        let h = raw.value.header
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT c.record_id,p.observed_revision,\(bound) AS boundary \(bounds)
+            """, arguments: [1,pending,h.author.sessionId,h.id])
+        for row in rows {
+            guard let boundary = row["boundary"] as Int64?, boundary > h.startedMs else { continue }
+            let id = DataIdentity.id("promoted-clear-segment", [row["record_id"] as String,pending,formal,h.id])
+            // Keep the source clear's actual boundary, even when later than
+            // this revision's end. Never rewrite the author's raw segment.
+            let revision = (row["observed_revision"] as String?).flatMap(UInt64.init) ?? h.revision
+            let value = Value(v: 2, scopeKind: .captured, book: formal, session: h.author.sessionId, throughMs: boundary,
+                              factIds: [], segments: [.init(segmentId: h.id, observedRevision: revision, coveredThroughMs: boundary)])
+            if try insert(db, value, partition: 0, id: id) {
+                try ReadingHistoryTransport.enqueueClear(db, id: id, value: value, scope: scope)
+            }
+        }
+    }
+}
+
+/// SQLite handoff for a later CKSyncEngine adapter. Names and ACK matching are
+/// stable across restarts; no network operation is performed here.
+enum ReadingHistoryTransport {
+    enum RecordType: String, Sendable { case segment = "ReadingSegment", clear = "StatisticsClear" }
+    static let zone = "MoonreadReadingV2"
+
+    static func name(_ type: RecordType, id: String) -> String {
+        type.rawValue + "-" + DataIdentity.id("reading-history", [type.rawValue,id])
+    }
+
+    static func segmentWire(_ row: ReadingSegmentRows.Raw) throws -> String? {
+        guard row.partition == 0, row.value.header.sealed, case .formal = try parseReadingKey(value: row.book) else { return nil }
+        return try encodeReadingSegment(bookKey: row.book, segment: row.value)
+    }
+
+    static func deletionPending(_ db: Database, type: RecordType, id: String) throws -> Bool {
+        try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(SELECT 1 FROM usr.cloud_outbox WHERE zone=? AND record_type=? AND record_name=? AND intent='delete')
+            """, arguments: [zone,type.rawValue,name(type,id: id)]) == true
+    }
+
+    static func enqueueClear(_ db: Database, id: String, value: ReadingClearRows.Value, scope: DataScope) throws {
+        guard scope != .local, let payload = try clearWire(db, id: id, value: value) else { return }
+        try save(db, type: .clear, id: id, payload: payload, scope: scope)
+    }
+
+    private static func clearWire(_ db: Database, id: String, value: ReadingClearRows.Value) throws -> String? {
+        if let book = value.book, case .pending = try parseReadingKey(value: book) { return nil }
+        guard try Bool.fetchOne(db, sql: """
+            SELECT NOT EXISTS(SELECT 1 FROM usr.quarantined_record
+               WHERE source_type IN (\(ReadingFactRows.quarantineClearTypes)) AND record_id=?)
+            """, arguments: [id]) == true else { return nil }
+        return try ReadingClearRows.wire(value)
+    }
+
+    static func enqueueSegment(_ db: Database, raw: ReadingSegmentRows.Raw, scope: DataScope) throws {
+        guard scope != .local, let payload = try segmentWire(raw) else { return }
+        try save(db, type: .segment, id: raw.value.header.id, payload: payload, scope: scope)
+    }
+
+    private static func save(_ db: Database, type: RecordType, id: String, payload: String, scope: DataScope) throws {
+        guard scope != .local else { return }
+        try db.execute(sql: """
+            INSERT INTO usr.cloud_outbox(zone,record_type,record_name,business_id,intent,content_digest,generation)
+            VALUES(?,?,?,?,'save',?,1)
+            ON CONFLICT(zone,record_type,record_name) DO UPDATE SET content_digest=excluded.content_digest,generation=generation+1
+              WHERE intent='save' AND content_digest IS NOT excluded.content_digest
+            """, arguments: [zone,type.rawValue,name(type,id: id),id,DataIdentity.sha(Data(payload.utf8))])
+    }
+
+    struct Fetched: Sendable {
+        let type: RecordType
+        let recordName: String
+        let id: String? // deletes only carry CloudKit type/name
+        // A separately validated outer route, not routing from unknown JSON.
+        let trustedBook: String?
+        let body: String? // nil: physical delete
+    }
+
+    /// Pure persistence ingress; the engine owner supplies only this zone,
+    /// checks the account lease and serializes this with its own metadata.
+    /// A bad payload quarantines one ID; it must not cancel the fetched batch.
+    static func applyFetched(_ db: Database, records: [Fetched], scope: DataScope) throws {
+        guard scope != .local else { throw DataV2Error.leaseExpired }
+        var changed = ReadingHistoryRows.Changed()
+        let deletions = Set(records.filter { $0.body == nil }.map(\.recordName))
+        for record in records {
+            let id = try record.id ?? businessID(db, type: record.type, recordName: record.recordName)
+            guard let id, !id.isEmpty, record.recordName == name(record.type, id: id) else {
+                if let payload = record.body {
+                    let unbound = "unbound:" + DataIdentity.id("malformed-history-envelope", [record.recordName])
+                    let book = formalScope(record.trustedBook)
+                    switch record.type {
+                    case .segment:
+                        try ReadingSegmentRows.quarantine(db, partition: 0, book: book, id: unbound,
+                            origin: .init(source: "cloud", id: record.recordName), reason: "invalid-segment-envelope",
+                            raw: Data(payload.utf8))
+                    case .clear:
+                        try blockClear(db, id: unbound, book: book, payload: payload, source: "cloud",
+                                       sourceID: record.recordName, changed: &changed)
+                    }
+                } else {
+                    // No lookup means no typed row is authorized for deletion.
+                    // Remove only raw evidence previously tied to this name.
+                    let orphan = "unbound:" + DataIdentity.id("malformed-history-envelope", [record.recordName])
+                    try db.execute(sql: "DELETE FROM usr.quarantined_record WHERE partition=0 AND source='cloud' AND source_id=? AND record_id=?",
+                                   arguments: [record.recordName,orphan])
+                    if db.changesCount != 0, record.type == .clear {
+                        changed.clearFacts.formUnion(try ReadingFactSettlement.affectedIDs(db, partition: 0))
+                        changed.clearSegments.formUnion(try ReadingSegmentRows.affected(db, partition: 0))
+                    }
+                }
+                continue
+            }
+            if let payload = record.body {
+                guard !deletions.contains(record.recordName),
+                      try !deletionPending(db, type: record.type, id: id) else { continue }
+                try db.execute(sql: """
+                    INSERT INTO usr.cloud_record_state(zone,record_type,record_name,business_id,server_state)
+                    VALUES(?,?,?,?,'present')
+                    ON CONFLICT(zone,record_type,record_name) DO NOTHING
+                    """, arguments: [zone,record.type.rawValue,record.recordName,id])
+                switch record.type {
+                case .segment:
+                    try stageSegment(db, id: id, book: record.trustedBook, payload: payload,
+                                     fetched: true, sourceID: record.recordName, scope: scope, changed: &changed)
+                case .clear:
+                    try stageClear(db, id: id, book: record.trustedBook, payload: payload,
+                                   source: "cloud", sourceID: record.recordName, changed: &changed)
+                }
+            } else {
+                switch record.type {
+                case .segment:
+                    try db.execute(sql: "DELETE FROM usr.reading_segment WHERE segment_id=?", arguments: [id])
+                    changed.segments.insert(id)
+                case .clear:
+                    if let old = try ReadingClearRows.load(db, partition: 0, id: id) {
+                        try ReadingClearRows.recordAffected(db, old, partition: 0, changed: &changed)
+                    }
+                    try db.execute(sql: "DELETE FROM usr.statistics_clear WHERE partition=0 AND record_id=?", arguments: [id])
+                    changed.clearFacts.formUnion(try ReadingFactSettlement.affectedIDs(db, partition: 0, book: record.trustedBook))
+                    changed.clearSegments.formUnion(try ReadingSegmentRows.affected(db, partition: 0, book: record.trustedBook))
+                }
+                // A physical delete has precedence over an unsent update.
+                // The engine owner handles opaque state and X2 before ingress.
+                try db.execute(sql: "DELETE FROM usr.cloud_record_state WHERE zone=? AND record_type=? AND record_name=?",
+                               arguments: [zone,record.type.rawValue,record.recordName])
+                try withdrawSave(db, type: record.type, id: id)
+                try db.execute(sql: "DELETE FROM usr.quarantined_record WHERE partition=0 AND source_type IN " +
+                    (record.type == .segment ? "(" + ReadingSegmentRows.quarantineTypes + ")" : "(" + ReadingFactRows.quarantineClearTypes + ")") +
+                    " AND record_id=?", arguments: [id])
+            }
+        }
+        try changed.settle(db, scope: scope)
+    }
+
+    private static func businessID(_ db: Database, type: RecordType, recordName: String) throws -> String? {
+        try String.fetchOne(db, sql: """
+            SELECT business_id FROM usr.cloud_record_state WHERE zone=?1 AND record_type=?2 AND record_name=?3
+            UNION ALL SELECT business_id FROM usr.cloud_outbox WHERE zone=?1 AND record_type=?2 AND record_name=?3
+            LIMIT 1
+            """, arguments: [zone,type.rawValue,recordName])
+    }
+
+    private static func formalScope(_ book: String?) -> String? {
+        guard let book, let key = try? parseReadingKey(value: book), case .formal = key else { return nil }
+        return serializeReadingKey(key: key)
+    }
+
+    static func stageSegment(_ db: Database, id: String, book: String?, payload: String, fetched: Bool, sourceID: String,
+                             scope: DataScope, changed: inout ReadingHistoryRows.Changed) throws {
+        let origin = ReadingFactSettlement.Origin(source: fetched ? "cloud" : "backup", id: sourceID)
+        let wire = decodeReadingSegment(payload: payload)
+        let route = formalScope(book)
+        guard let value = wire.segment, let key = wire.bookKey, let parsed = try? parseReadingKey(value: key),
+              case .formal = parsed, value.header.id == id, (!fetched || value.header.sealed),
+              (book == nil || route == key) else {
+            try ReadingSegmentRows.quarantine(db, partition: 0, book: route, id: id, origin: origin,
+                  reason: wire.status == .newerFormat ? "newer-segment" : "invalid-segment", raw: Data(payload.utf8))
+            changed.segments.insert(id)
+            return
+        }
+        if try ReadingSegmentRows.ingest(db, value: value, book: key, partition: 0, scope: scope,
+             intake: fetched ? .fetched : .backup, origin: origin, originalPayload: payload) {
+            changed.segments.insert(id)
+        }
+    }
+
+    static func stageClear(_ db: Database, id: String, book: String?, payload: String, source: String, sourceID: String,
+                           changed: inout ReadingHistoryRows.Changed) throws {
+        let clear = try? ReadingClearRows.decode(payload)
+        let allowed = clear?.book.map { key in
+            if case .formal? = try? parseReadingKey(value: key) { return true }
+            // 1.6's formal-store archive could contain an old alias clear.
+            // Preserve it in its original partition, with no ability to send.
+            return source == "backup" && clear?.v == 1 && (try? parseReadingKey(value: key)) != nil
+        } ?? true
+        if let clear, allowed, (book == nil || book == clear.book),
+           try ReadingClearRows.load(db, partition: 0, id: id).map({ $0 == clear }) != false,
+           try Bool.fetchOne(db, sql: """
+               SELECT EXISTS(SELECT 1 FROM usr.statistics_clear WHERE partition=0 AND record_id=?
+               AND schema_version NOT IN (1,2))
+               """, arguments: [id]) == false {
+            if try ReadingClearRows.insert(db, clear, partition: 0, id: id) {
+                try ReadingClearRows.recordAffected(db, clear, partition: 0, changed: &changed)
+            }
+            return
+        }
+        if let prior = try ReadingClearRows.load(db, partition: 0, id: id) {
+            // A same-ID conflict blocks both prior and incoming scope.
+            let priorBytes = try Data(ReadingClearRows.wire(prior).utf8)
+            try isolateClear(db, id: id, book: prior.book, session: prior.session, bytes: priorBytes,
+                             source: "relational", sourceID: id)
+            try ReadingClearRows.recordAffected(db, prior, partition: 0, changed: &changed)
+        }
+        try blockClear(db, id: id, book: formalScope(book), payload: payload, source: source, sourceID: sourceID, changed: &changed)
+    }
+
+    private static func blockClear(_ db: Database, id: String, book: String?, payload: String,
+                                   source: String, sourceID: String, changed: inout ReadingHistoryRows.Changed) throws {
+        try isolateClear(db, id: id, book: book, session: nil, bytes: Data(payload.utf8), source: source, sourceID: sourceID)
+        try didIsolateClear(db, id: id, book: book, session: nil, changed: &changed)
+    }
+
+    /// Both fetched and restored isolation revoke the old save, even if
+    /// that clear's readable raw row still exists. A DELETE stays pending.
+    static func didIsolateClear(_ db: Database, id: String, book: String?, session: String?,
+                                changed: inout ReadingHistoryRows.Changed) throws {
+        try withdrawSave(db, type: .clear, id: id)
+        changed.clearFacts.formUnion(try ReadingFactSettlement.affectedIDs(db, partition: 0, book: book, session: session))
+        changed.clearSegments.formUnion(try ReadingSegmentRows.affected(db, partition: 0, book: book, session: session))
+    }
+
+    private static func isolateClear(_ db: Database, id: String, book: String?, session: String?, bytes: Data,
+                                     source: String, sourceID: String) throws {
+        try db.execute(sql: """
+            INSERT INTO usr.quarantined_record(partition,source,source_id,source_type,record_id,book_key,session_id,
+                raw_format,raw_bytes,digest,reason,completeness)
+            VALUES(0,?,?,'statistics_clear',?,?,?,'clear-wire',?,?,'unreadable-clear','complete')
+            ON CONFLICT(partition,source,source_id,source_type,record_id,digest,reason) DO NOTHING
+            """, arguments: [source,sourceID,id,book,session,bytes,DataIdentity.sha(bytes)])
+    }
+
+    /// Resolve a save at send time from the actual row, checking its digest;
+    /// a stale engine intent cannot send an active or withdrawn snapshot.
+    static func payload(_ db: Database, type: RecordType, id: String, digest: String) throws -> String? {
+        guard try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(SELECT 1 FROM usr.cloud_outbox WHERE zone=? AND record_type=? AND record_name=?
+                          AND intent='save' AND content_digest=?)
+            """, arguments: [zone,type.rawValue,name(type,id: id),digest]) == true else { return nil }
+        let wire: String?
+        switch type {
+        case .segment:
+            guard try !ReadingSegmentRows.blocked(db, id: id), let raw = try ReadingSegmentRows.load(db, partition: 0, id: id) else { return nil }
+            wire = try segmentWire(raw)
+        case .clear:
+            guard let clear = try ReadingClearRows.load(db, partition: 0, id: id) else { return nil }
+            wire = try clearWire(db, id: id, value: clear)
+        }
+        return wire.flatMap { DataIdentity.sha(Data($0.utf8)) == digest ? $0 : nil }
+    }
+
+    /// Only a matching save acknowledgement may consume an outstanding save.
+    /// The engine owner still checks the lease, zone lifecycle and system fields.
+    static func acknowledgeSave(_ db: Database, type: RecordType, id: String, generation: Int64,
+                                digest: String, systemFields: Data?) throws {
+        try db.execute(sql: """
+            DELETE FROM usr.cloud_outbox
+            WHERE zone=? AND record_type=? AND record_name=? AND intent='save' AND generation=? AND content_digest=?
+            """, arguments: [zone,type.rawValue,name(type,id: id),generation,digest])
+        guard db.changesCount != 0 else { return }
+        try db.execute(sql: """
+            INSERT INTO usr.cloud_record_state(zone,record_type,record_name,business_id,server_state,system_fields)
+            VALUES(?,?,?,?,'present',?)
+            ON CONFLICT(zone,record_type,record_name) DO UPDATE
+                SET server_state=excluded.server_state,system_fields=excluded.system_fields
+            """, arguments: [zone,type.rawValue,name(type,id: id),id,systemFields])
+    }
+
+    static func withdrawSave(_ db: Database, type: RecordType, id: String) throws {
+        try db.execute(sql: "DELETE FROM usr.cloud_outbox WHERE zone=? AND record_type=? AND record_name=? AND intent='save'",
+                       arguments: [zone,type.rawValue,name(type,id: id)])
+    }
+
+    static func delete(_ db: Database, type: RecordType, id: String, scope: DataScope) throws {
+        guard scope != .local else { return }
+        try queueDelete(db, type: type, id: id, recordName: name(type, id: id))
+    }
+
+    /// The payload may be unreadable, but a trusted formal book route and
+    /// the matching account's persisted cloud identity suffice for deletion.
+    static func deleteIsolatedBookRecords(_ db: Database, book: String, scope: DataScope) throws {
+        guard scope != .local, let book = formalScope(book) else { return }
+        let records = try Row.fetchAll(db, sql: """
+            SELECT DISTINCT c.record_type,c.record_name,c.business_id
+            FROM usr.quarantined_record q JOIN usr.cloud_record_state c
+              ON c.record_name=q.source_id AND c.business_id=q.record_id
+            WHERE q.partition=0 AND q.book_key=? AND q.source='cloud' AND c.zone=?
+              AND ((c.record_type=? AND q.source_type IN (\(ReadingSegmentRows.quarantineTypes)))
+                OR (c.record_type=? AND q.source_type IN (\(ReadingFactRows.quarantineClearTypes))))
+            """, arguments: [book,zone,RecordType.segment.rawValue,RecordType.clear.rawValue])
+        for record in records {
+            guard let type = RecordType(rawValue: record["record_type"]) else { continue }
+            try queueDelete(db, type: type, id: record["business_id"], recordName: record["record_name"])
+        }
+    }
+
+    private static func queueDelete(_ db: Database, type: RecordType, id: String, recordName: String) throws {
+        try db.execute(sql: """
+            INSERT INTO usr.cloud_outbox(zone,record_type,record_name,business_id,intent,content_digest,generation)
+            VALUES(?,?,?,?,'delete',NULL,1)
+            ON CONFLICT(zone,record_type,record_name) DO UPDATE SET intent='delete',content_digest=NULL,generation=generation+1
+              WHERE intent<>'delete'
+            """, arguments: [zone,type.rawValue,recordName,id])
+    }
+}
