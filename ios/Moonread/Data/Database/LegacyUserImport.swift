@@ -84,12 +84,6 @@ enum LegacyUserImport {
         enum CodingKeys: String, CodingKey { case id, name, appearance, custom, colors, highContrast = "high_contrast" }
     }
     private struct Version: Decodable { var v: Int64? }
-    private struct Exposure: Encodable {
-        var start_utf8: UInt64
-        var end_utf8: UInt64
-        var duration_ms: UInt64
-    }
-
     static func run(_ db: Database, snapshot: LegacyUserSnapshot) throws {
         guard let scope = snapshot.scope else { throw DataV2Error.incompatibleSource("legacy users have no confirmed owner") }
         guard try !completed(db) else { throw DataV2Error.migrationAlreadyComplete }
@@ -473,22 +467,9 @@ enum LegacyUserImport {
                 guard let cue = batch.cues().first else { throw BadRow(reason: "missing-fact") }
                 _ = try UserSyncJSON.bindFact(cue, id: row.id)
                 let value = try batch.importColumns(ordinal: cue.ordinal)
-                let slice = value.slice
-                guard let duration = value.durationMs else { throw BadRow(reason: "duration-overflow") }
-                let encoder = JSONEncoder()
-                encoder.outputFormatting = [.sortedKeys]
-                let raw = try encoder.encode(slice.exposures.map {
-                    Exposure(start_utf8: $0.startUtf8, end_utf8: $0.endUtf8, duration_ms: $0.durationMs)
-                })
-                try write("reading_fact", idColumn: "fact_id", identity: identity, body: [
-                    ("original_id",row.id),("book_key",DataIdentity.canonical(row.contentKey)),("original_book_key",row.contentKey),
-                    ("payload_content_key",value.payloadContentKey),("legacy_slice_book_id",slice.bookId),("title_at_reading",value.title),
-                    ("device_id",value.device),("session_id",DataIdentity.canonical(slice.sessionId)),("original_session_id",slice.sessionId),
-                    ("visit_id",slice.visitId),("started_ms",slice.startedMs),("ended_ms",slice.endedMs),("local_day",slice.localDay),
-                    ("utc_offset_seconds",slice.utcOffsetSeconds),("preview",slice.preview),("duration_ms",duration),
-                    ("first_exposure_start",slice.exposures.first.map { DataIdentity.unsigned($0.startUtf8) }),
-                    ("derivation_version",1),("exposure_version",1),("exposures_text",String(decoding: raw, as: UTF8.self)),
-                ])
+                guard value.durationMs != nil else { throw BadRow(reason: "duration-overflow") }
+                try write("reading_fact", idColumn: "fact_id", identity: identity,
+                          body: [("original_id",row.id)] + ReadingFactRows.storageFields(value, book: row.contentKey))
             }
         }
 
@@ -498,10 +479,7 @@ enum LegacyUserImport {
             try decode(payload, model: "StatisticsClear", identity: identity) {
                 let value = try UserSyncJSON.decode(ClearValue.self, payload, as: UserSyncJSON.clear, envelope: true)
                 var semantic = identity
-                // Optional scope flags are separate components; nil is not "".
-                semantic.id = DataIdentity.id("statistics-clear", [
-                    value.book == nil ? "0" : "1", value.book ?? "", value.session == nil ? "0" : "1", value.session ?? "", String(value.through)
-                ] + value.ids.map(DataIdentity.canonical).sorted())
+                semantic.id = ReadingFactRows.clearRecordID(book: value.book, session: value.session, through: value.through, ids: value.ids)
                 try write("statistics_clear", identity: semantic, body: [
                     ("book_key",value.book.map(DataIdentity.canonical)),("original_book_key",value.book),
                     ("session_id",value.session.map(DataIdentity.canonical)),("original_session_id",value.session),("through_ms",value.through)

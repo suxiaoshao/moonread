@@ -53,8 +53,8 @@ enum PendingUserPromotion {
 
     private static let pendingTables = ["position_candidate", "opened_candidate", "annotation_candidate", "reading_fact"]
     private static let markTypes = "'AnnotationOperation','annotation_candidate'"
-    private static let factTypes = "'ReadingFact','reading_fact'"
-    private static let clearTypes = "'StatisticsClear','statistics_clear'"
+    private static let factTypes = ReadingFactRows.quarantineFactTypes
+    private static let clearTypes = ReadingFactRows.quarantineClearTypes
 
     // The index may already be complete after a crash. A pending-only device
     // state or quarantined value must also protect its alias from reclamation.
@@ -101,14 +101,7 @@ enum PendingUserPromotion {
 
     private static func requireFactsAndMarksReadable(_ db: Database, book: String, partition: Int) throws {
         let args: StatementArguments = [partition,DataIdentity.canonical(book)]
-        if try Bool.fetchOne(db, sql: """
-            SELECT EXISTS(
-                SELECT 1 FROM usr.quarantined_record WHERE partition=?1
-                    AND source_type IN (\(clearTypes)) AND (book_key IS NULL OR book_key=?2)
-                UNION ALL SELECT 1 FROM usr.statistics_clear WHERE partition=?1
-                    AND (book_key IS NULL OR book_key=?2) AND schema_version<>1
-            )
-            """, arguments: args) == true { throw UserSyncCompatibilityError(statistics: true) }
+        try ReadingFactRows.requireReadableClears(db, partition: partition, book: book)
         if try Bool.fetchOne(db, sql: """
             SELECT EXISTS(
                 SELECT 1 FROM usr.quarantined_record WHERE partition=?1 AND book_key=?2
@@ -199,15 +192,7 @@ enum PendingUserPromotion {
     private static let visiblePendingFacts = """
         WITH visible AS (
             SELECT f.* FROM usr.reading_fact f WHERE f.partition=1 AND f.book_key=?1
-            AND NOT EXISTS (
-                SELECT 1 FROM usr.statistics_clear c WHERE c.partition=f.partition
-                AND (c.book_key IS NULL OR c.book_key=f.book_key)
-                AND (c.session_id IS NULL OR c.session_id=f.session_id)
-                AND (f.started_ms<=c.through_ms OR EXISTS (
-                    SELECT 1 FROM usr.statistics_clear_id i WHERE i.partition=c.partition
-                    AND i.clear_id=c.record_id AND i.fact_id=f.fact_id
-                ))
-            )
+            AND \(ReadingFactRows.notCleared)
         )
         """
 
@@ -283,6 +268,11 @@ extension ReaderIndex {
           AND EXISTS(SELECT 1 FROM main.chunks c WHERE c.book_id=b.id AND c.chunk_index=0 AND c.end_utf8>c.start_utf8)
         """
 
+    func verifiedReadingAliasIDs(_ db: Database, sha: String) throws -> [String] {
+        try String.fetchAll(db, sql: "SELECT j.book_id " + Self.completedReadingIdentitySQL +
+                            " AND b.content_sha256=?", arguments: [lease.scope.key,sha])
+    }
+
     private static let bookOwnedUserTables = [
         "metadata_text_candidate", "tag_candidate", "cover_candidate", "position_candidate",
         "opened_candidate", "chapter_override_candidate", "annotation_candidate", "reading_fact",
@@ -310,8 +300,7 @@ extension ReaderIndex {
                 switch try parseReadingKey(value: key) {
                 case .formal(let sha):
                     formal.append(sha)
-                    let ids = try String.fetchAll(db, sql: "SELECT j.book_id " + Self.completedReadingIdentitySQL +
-                                                  " AND b.content_sha256=?", arguments: [lease.scope.key,sha])
+                    let ids = try verifiedReadingAliasIDs(db, sha: sha)
                     for id in ids { targets.insert(serializeReadingKey(key: .pending(bookId: id))) }
                 case .pending(let id):
                     if let sha = try String.fetchOne(db, sql: "SELECT b.content_sha256 " + Self.completedReadingIdentitySQL +

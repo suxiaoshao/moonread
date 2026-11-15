@@ -30,33 +30,33 @@ extension AppDataService {
         return StatisticsPreferences(enabled: sourceDefaults.object(forKey: "Moonread.statisticsEnabled") as? Bool ?? true, generation: UInt64(sourceDefaults.integer(forKey: "Moonread.statisticsGeneration")))
     }
     func setStatisticsEnabled(_ enabled: Bool) async throws {
+        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
         let generation = statisticsPreferences().generation + 1
-        try await userStore().setRecording(generation: generation, enabled: enabled)
-        try await userStore(pending: true).setRecording(generation: generation, enabled: enabled)
         sourceDefaults.set(enabled, forKey: "Moonread.statisticsEnabled")
         sourceDefaults.set(Int(generation), forKey: "Moonread.statisticsGeneration")
         scheduleSystemReadingCatalog(statisticsChanged: true)
         NotificationCenter.default.post(name: .statisticsPreferencesChanged, object: nil)
     }
-    func saveReading(_ slices: [ReadingSlice], generation: UInt64) async throws {
-        let preferences = statisticsPreferences()
-        var facts: [(String, String, String)] = [], pendingFacts: [(String, String, String)] = []
-        var leases: [String: UUID] = [:]
-        for slice in slices {
-            let identity = try userKey(slice.bookId)
-            let key = identity.storageKey
-            leases[key] = localReadingWriteLease(key)
-            let book = try await snapshot(slice.bookId).book
-            let fact = (slice.id, key, try encodeReadingFact(contentKey: key, title: book.title, device: userDevice, slice: slice))
-            switch identity { case .pending: pendingFacts.append(fact); case .formal: facts.append(fact) }
-        }
+
+    func saveReading(_ slices: [ReadingSlice], generation: UInt64, admission offered: ReadingWriteAdmission? = nil) async throws {
+        guard !slices.isEmpty else { return }
+        let admission = try offered ?? readingWriteAdmission(indexStore().lease)
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
-        facts = facts.filter { leases[$0.1] == localReadingWriteLease($0.1) }
-        pendingFacts = pendingFacts.filter { leases[$0.1] == localReadingWriteLease($0.1) }
-        try await userStore().saveFacts(facts, generation: generation, current: preferences.generation, enabled: preferences.enabled)
-        try await userStore(pending: true).saveFacts(pendingFacts, generation: generation, current: preferences.generation, enabled: preferences.enabled)
+        try Task.checkCancellation()
+        let preferences = statisticsPreferences()
+        let current = userCloudConfigurationRevision
+        guard preferences.enabled, generation == preferences.generation,
+              current == admission.configuration, try indexStore().lease == admission.lease else { return }
+
+        let index = try relationalUserIndex(), versions = readingWriteVersions
+        let keys = try index.writeReadingFacts(slices, device: userDevice) { id, key in
+            versions.permits(admission, lease: index.lease, configuration: current,
+                             keys: [ReadingKey.pending(bookId: id).storageKey,key])
+        }
+        guard !keys.isEmpty else { return }
         scheduleSystemReadingCatalog(statisticsChanged: true)
-        NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["keys": Array(leases.keys)])
+        NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["keys": Array(keys)])
     }
     struct StatisticsRead<Value: Sendable>: Sendable {
         let value: Value
@@ -133,14 +133,15 @@ extension AppDataService {
         try await statisticsQuery(first: 0, last: 0, book: book, fields: []).compatibilityNotice
     }
     func deleteStatistics(book: String? = nil, session: String? = nil) async throws {
-        _ = try await statisticsCompatibilityNotice(book: book)
+        let configuration = userCloudConfigurationRevision
+        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
         let generation = statisticsPreferences().generation + 1
-        try await userStore().clear(book: book, session: session, newGeneration: generation)
-        try await userStore(pending: true).clear(book: book, session: session, newGeneration: generation)
+        try relationalUserIndex().clearReadingFacts(book: book, session: session, through: Int64(Date().timeIntervalSince1970 * 1000))
         sourceDefaults.set(Int(generation), forKey: "Moonread.statisticsGeneration")
         scheduleSystemReadingCatalog(statisticsChanged: true)
         NotificationCenter.default.post(name: .statisticsPreferencesChanged, object: nil)
-        scheduleSystemReadingCatalog(statisticsChanged: true)
         NotificationCenter.default.post(name: .statisticsChanged, object: nil)
     }
 }
@@ -149,10 +150,18 @@ extension AppDataService {
 @MainActor @Observable
 final class StatisticsWriter {
     static let shared = StatisticsWriter()
-    private let save: @MainActor ([ReadingSlice], UInt64) async throws -> Void
-    init(save: @escaping @MainActor ([ReadingSlice], UInt64) async throws -> Void = { slices, generation in
-        try await AppDataService.shared.saveReading(slices, generation: generation)
-    }) { self.save = save }
+    private let save: @MainActor ([ReadingSlice], UInt64, ReadingWriteAdmission?) async throws -> Void
+
+    private init() {
+        save = { slices, generation, admission in
+            try await AppDataService.shared.saveReading(slices, generation: generation, admission: admission)
+        }
+    }
+
+    init(save: @escaping @MainActor ([ReadingSlice], UInt64) async throws -> Void) {
+        self.save = { slices, generation, _ in try await save(slices, generation) }
+    }
+
     private var task: Task<Void, Never>?
     private(set) var error: String?
     func report(_ error: Error) { self.error = ReaderMessages.error(error) }
@@ -162,7 +171,7 @@ final class StatisticsWriter {
         let previous = task
         task = Task { [self] in
             await previous?.value
-            do { try await save(slices, generation) }
+            do { try await save(slices, generation, lease.writeAdmission) }
             catch { report(error) }
             // Keep the identity alive only through this attempt. Task completion
             // releases its captures on both success and failure.

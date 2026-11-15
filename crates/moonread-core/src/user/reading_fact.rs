@@ -1,5 +1,5 @@
-//! Typed reading facts for prepared queries. Swift binds row IDs, owns candidate
-//! selection, and keeps the original payload in SwiftData.
+//! Typed reading facts for wire intake and local clock output. Swift owns
+//! persistent rows, scope and candidate selection.
 use crate::{ReaderError, ReadingExposure, ReadingSlice, Result};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::sync::{
@@ -196,6 +196,39 @@ pub struct FactImportColumns {
     pub duration_ms: Option<i64>,
 }
 
+impl FactImportColumns {
+    fn new(
+        payload_content_key: String,
+        title: String,
+        device: String,
+        slice: ReadingSlice,
+    ) -> Self {
+        let duration_ms = slice.ended_ms.checked_sub(slice.started_ms);
+        Self {
+            payload_content_key,
+            title,
+            device,
+            slice,
+            duration_ms,
+        }
+    }
+}
+
+/// Local clock output is already typed; never make it go through a wire
+/// payload to obtain the same columns as released JSON imports.
+#[uniffi::export]
+pub fn local_reading_fact_columns(
+    content_key: String,
+    title: String,
+    device: String,
+    slice: ReadingSlice,
+) -> Result<FactImportColumns> {
+    if slice.id.is_empty() {
+        return Err(ReaderError::InvalidSettings);
+    }
+    Ok(FactImportColumns::new(content_key, title, device, slice))
+}
+
 #[derive(uniffi::Object)]
 pub struct DecodedFactBatch {
     id: u64,
@@ -250,15 +283,13 @@ impl DecodedFactBatch {
     pub fn import_columns(&self, ordinal: u64) -> Result<FactImportColumns> {
         let fact = self.entry(ordinal)?;
         let mut slice = fact.data.slice.clone();
-        let duration_ms = slice.ended_ms.checked_sub(slice.started_ms);
         slice.exposures = fact.data.exposures.to_vec();
-        Ok(FactImportColumns {
-            payload_content_key: fact.payload_content_key.clone(),
-            title: fact.data.title.clone(),
-            device: fact.data.device.clone(),
+        Ok(FactImportColumns::new(
+            fact.payload_content_key.clone(),
+            fact.data.title.clone(),
+            fact.data.device.clone(),
             slice,
-            duration_ms,
-        })
+        ))
     }
 
     pub fn cues(&self) -> Vec<FactCue> {

@@ -66,7 +66,8 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | v2 打开、位置与本机续读基线 | Swift `ReadingPositionRows.swift`、`LocalReadingRows.swift`、`UserDataService.swift` | 阅读会话在开页时取得写票据；写者在 `usr` 提交前按索引当前书键复核。打开与位置是独立事实；位置沿用 UTF-8 边界，位置与本机基线同事务。隐藏和首选副本随相关动作更新；续读比较在同一读取周期取本机基线与正式胜出位置 | 位置/打开写入与续读依据已切换；阅读窗口及续读导航查询待接 |
 | v2 发布库结构迁入 | Swift `LegacyIndexImport`、`LegacyUserImport`；Rust `user/reading_fact.rs` 提供已解析事实列 | 用唯一 Swift pool 读旧索引 v20–23，校验后把完成标记写入副本；不读取私有 SwiftData SQLite schema。旧用户模型迁入保留版本及完整候选 | 2b 已接索引启动；用户库切换未执行 |
 | SwiftData LWW、候选裁决与事务 | Swift `Data/UserData/UserData.swift` 的 UserDataStore 及其 Values、Annotations、Statistics、Projection、Transfer 扩展 | SwiftData 保留原始事实；Swift 绑定外部行 id，按同库坏副本、首份、session/clear、日期的顺序裁决。正式选择先于 pending；两库不传播坏 id；原有合并及 ID 唯一规则是 2c 查询接入的兼容约束。原保存、回滚、清除范围与写入代次不变 | 单一事实权威 |
-| 阅读事实 wire 与查询计算 | Rust `user/reading_fact.rs`（serde）、`user/statistics/`；Swift `UserSyncJSON.swift` 绑定行 id | 写入、准备、备份和 pending 共用 Rust 类型化 v1 校验；历史缺 v 可读，未知载荷保留。清除与候选裁决仍归 Swift | 已删 ReaderQuery/TEMP；2c 接窄事实读取 |
+| 阅读事实 wire 与查询计算 | Rust `user/reading_fact.rs`（serde）、`user/statistics/`；Swift `UserSyncJSON.swift` 绑定行 id | 发布 wire 迁入和本机计时切片复用 Rust 的类型化列和时长派生；本机写入不构造整条 JSON，仅曝光数组随关系行保存。历史缺 v 可读，未知载荷保留；清除与候选裁决归 Swift | 已删 ReaderQuery/TEMP；窄事实读取待接 |
+| v2 阅读事实写入与统计清除 | Swift `ReadingFactRows.swift`、`Statistics/ReadingStatistics.swift` | 采集队列保留开页票据，在用户闸门内重验账户、当时的统计代次和写入时书键，按分区保留第一个可写稳定 ID，未知同 ID 阻断。清除在同一用户事务覆盖选定书键、已核实 pending 别名及会话，保留时间截止与现有可见 ID 两个条件；晋升共用清除判定，未知清除仍阻断相交范围。提交后才提高统计代次及发布 | 采集与清除已接关系库；统计读取、备份和同步待切换 |
 | 相对路径语法、组件边界匹配、名称合法性 | Rust `storage/validation.rs`，bookshelf 委托 | 索引和真实操作都需要相同底线；具名 profile 保留入口差异 | 共享路径校验 |
 | 表单 TXT 后缀补全、AI stem trim/保留扩展名 | Swift `LibraryActions.swift`、`AI/Data/Proposals/AIProposals.swift`，分别为两条不同规则 | 各自单源、不同输入契约，不为统一语言迁移 | 原位保留，只调用合法性 owner |
 | source hint 字节/字段限制；恢复候选优先级与下载限额 | Swift `Data/UserData/UserDataValues.swift::PositionSourceHint`、`RecentReadingRestoration.swift::RecentRestorationPolicy` | 同步载荷与恢复行为专用且已经单源；共享路径语法调用 Rust | 共享路径语法 |
