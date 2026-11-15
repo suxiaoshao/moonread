@@ -3,6 +3,52 @@ import GRDB
 /// Implements the existing Swift token comparison. The domain decides which
 /// candidates are eligible, and which domains can choose a winner at all.
 enum CurrentUserRows {
+    static let bookTables = ["reading_current", "metadata_current", "tag_current", "chapter_override_current", "annotation_current_head"]
+    static let tables = bookTables + ["source_decoding_current", "palette_current", "shelf_reference_current"]
+
+    /// Initial intake and D1 both merge evidence (including isolation) before
+    /// calling this in the target transaction. Never copy another file's refs.
+    static func settleImported(_ db: Database) throws {
+        func keys(_ column: String, in tables: [String]) throws -> [String] {
+            try String.fetchAll(db, sql: tables.map { "SELECT \(column) FROM usr.\($0)" }.joined(separator: " UNION "))
+        }
+        func formalKeys(_ column: String, in domain: String) throws -> [String] {
+            try String.fetchAll(db, sql: """
+                SELECT \(column) FROM usr.\(domain)_candidate WHERE partition=0
+                UNION SELECT \(column) FROM usr.\(domain)_current
+                """)
+        }
+        for book in try keys("book_key", in: ["position_candidate", "opened_candidate", "reading_current"]) {
+            try ReadingPositionRows.settleCurrent(db, book: book)
+        }
+        for book in try keys("book_key", in: ["metadata_text_candidate", "cover_candidate", "tag_candidate", "metadata_current", "tag_current"]) {
+            try settleMetadata(db, book: book)
+        }
+        for row in try Row.fetchAll(db, sql: """
+            SELECT book_key,offset FROM usr.chapter_override_candidate
+            UNION SELECT book_key,offset FROM usr.chapter_override_current
+            """) {
+            guard let offset = UInt64(row["offset"] as String) else { throw DataV2Error.migrationNotVerified }
+            try settleChapter(db, book: row["book_key"], offset: offset)
+        }
+        try AnnotationRows.settleImportedHeads(db)
+        for rawSHA in try formalKeys("raw_sha256", in: "source_decoding") {
+            try settleDecoding(db, rawSHA: rawSHA)
+        }
+        for id in try formalKeys("palette_id", in: "palette") {
+            try settlePalette(db, id: id)
+        }
+        for id in try formalKeys("shelf_id", in: "shelf_reference") {
+            try settleShelfReference(db, id: id)
+        }
+    }
+
+    static func removeBook(_ db: Database, key: String) throws {
+        for table in bookTables {
+            try db.execute(sql: "DELETE FROM usr.\(table) WHERE book_key=?", arguments: [DataIdentity.canonical(key)])
+        }
+    }
+
     static func winner(_ rows: [Row]) -> Row? {
         rows.max {
             ($0["updated_ms"] as Int64,$0["token"] as String) < ($1["updated_ms"] as Int64,$1["token"] as String)

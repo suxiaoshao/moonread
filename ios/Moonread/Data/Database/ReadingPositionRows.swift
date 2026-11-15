@@ -153,6 +153,7 @@ enum ReadingPositionRows {
         try replacePosition(db, with: saved, book: book, partition: part)
         try recordLocalOpen(db, book: book, file: file)
         if part == 0 { try LocalReadingRows.setResume(db, book: book, offset: offset, token: token) }
+        try settleCurrent(db, book: book)
         return saved
     }
 
@@ -181,6 +182,7 @@ enum ReadingPositionRows {
         let updated = try nextTime(now, after: latest)
         try putOpened(db, book: book, partition: part, device: device, openedAt: openedAt, updated: updated, token: token)
         try recordLocalOpen(db, book: book, file: file)
+        try settleCurrent(db, book: book)
     }
 
     private static func putOpened(_ db: Database, book: String, partition: Int, device: String,

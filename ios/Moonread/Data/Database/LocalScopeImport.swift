@@ -87,6 +87,7 @@ enum LocalScopeImport {
             }
             for table in candidates + localTables { try copy(db, table: table) }
             try copyQuarantine(db)
+            try CurrentUserRows.settleImported(db)
             guard try Row.fetchOne(db, sql: "PRAGMA usr.foreign_key_check") == nil else {
                 throw DataV2Error.migrationNotVerified
             }
@@ -221,6 +222,7 @@ enum LocalScopeImport {
 
     static func clearSource(_ db: Database) throws {
         try db.inTransaction {
+            for table in CurrentUserRows.tables { try db.execute(sql: "DELETE FROM move_source.\(table)") }
             // FK cascades delete contained relations, not semantic targets.
             for table in (candidates + localTables).map(\.name) + ["cover_asset","quarantined_record","legacy_import_state"] {
                 try db.execute(sql: "DELETE FROM move_source.\(table)")

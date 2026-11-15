@@ -80,6 +80,21 @@ enum AnnotationRows {
         }
     }
 
+    static func settleImportedHeads(_ db: Database) throws {
+        let keys = try Row.fetchAll(db, sql: """
+            SELECT partition,book_key,mark_id FROM usr.annotation_candidate
+            UNION SELECT partition,book_key,mark_id FROM usr.annotation_current_head
+            """)
+        for row in keys {
+            try settleHeads(db, key: row["book_key"], markID: row["mark_id"], partition: row["partition"])
+        }
+    }
+
+    static func removeHeads(_ db: Database, key: String, partition: Int) throws {
+        try db.execute(sql: "DELETE FROM usr.annotation_current_head WHERE partition=? AND book_key=?",
+                       arguments: [partition,DataIdentity.canonical(key)])
+    }
+
     // Formal candidates retain the old priority, even if the same mark is
     // also present in pending. A blocked formal mark is not a fallback cue.
     static func find(_ db: Database, markID: String) throws -> (key: String, heads: [AnnotationCandidate]) {
@@ -137,6 +152,7 @@ enum AnnotationRows {
             DELETE FROM usr.annotation_candidate WHERE partition=?1 AND book_key=?2 AND mark_id=?3
               AND record_id IN (SELECT ancestor_id FROM usr.annotation_ancestor WHERE partition=?1 AND candidate_id=?4)
             """, arguments: [partition,book,mark,record])
+        try settleHeads(db, key: book, markID: mark, partition: partition)
         return value
     }
 

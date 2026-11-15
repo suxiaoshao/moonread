@@ -95,6 +95,7 @@ enum LegacyUserImport {
         }
         try reconcileCoverCompleteness(db, source: scope.key)
         try putDeviceState(snapshot.deviceState, db: db)
+        try CurrentUserRows.settleImported(db)
         try db.execute(sql: """
             UPDATE usr.legacy_import_state SET completeness='incomplete'
             WHERE source_model='UserValue' AND EXISTS(SELECT 1 FROM usr.cover_candidate c

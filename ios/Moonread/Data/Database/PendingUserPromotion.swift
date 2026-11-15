@@ -79,13 +79,17 @@ enum PendingUserPromotion {
             try requireFactsAndMarksReadable(db, book: book, partition: part)
         }
         try ReadingPositionRows.promote(db, from: pending, to: formal)
-        try promoteMarks(db, from: pending, to: formal)
+        let movedMarks = try promoteMarks(db, from: pending, to: formal)
         try promoteFacts(db, from: pending, to: formal)
         try LocalReadingRows.promote(db, from: pending, to: formal)
         for table in pendingTables {
             try db.execute(sql: "DELETE FROM usr.\(table) WHERE partition=1 AND book_key=?",
                            arguments: [DataIdentity.canonical(pending)])
         }
+        try ReadingPositionRows.settleCurrent(db, book: pending)
+        try ReadingPositionRows.settleCurrent(db, book: formal)
+        try AnnotationRows.removeHeads(db, key: pending, partition: 1)
+        for mark in movedMarks { try AnnotationRows.settleHeads(db, key: formal, markID: mark, partition: 0) }
     }
 
     fileprivate static func requireEmptySourceReadable(_ db: Database, from pending: String, to formal: String) throws {
@@ -118,18 +122,19 @@ enum PendingUserPromotion {
         "note", "merged_into",
     ]
 
-    private static func promoteMarks(_ db: Database, from pending: String, to formal: String) throws {
+    private static func promoteMarks(_ db: Database, from pending: String, to formal: String) throws -> Set<String> {
         var after: String?
         let sourceKey = DataIdentity.canonical(pending)
         let formalKey = DataIdentity.canonical(formal)
         let prefix = "bookmark/" + pending + "/"
+        var marks = Set<String>()
         while true {
             let headers = try Row.fetchAll(db, sql: """
                 SELECT record_id,mark_id FROM usr.annotation_candidate
                 WHERE partition=1 AND book_key=? AND (? IS NULL OR record_id>?)
                 ORDER BY record_id LIMIT 128
                 """, arguments: [sourceKey,after,after])
-            guard !headers.isEmpty else { return }
+            guard !headers.isEmpty else { return marks }
             for row in headers {
                 let id: String = row["record_id"]
                 let original: String = row["mark_id"]
@@ -140,6 +145,7 @@ enum PendingUserPromotion {
                     mark = "bookmark/" + formal + "/" + suffix
                 } else { mark = original }
                 try mergeMark(db, id: id, formalKey: formalKey, mark: mark)
+                marks.insert(mark)
                 after = id
             }
         }
@@ -356,6 +362,7 @@ extension ReaderIndex {
                 let assets = canReclaimCover ? try String.fetchAll(db, sql: """
                     SELECT DISTINCT asset_id FROM usr.cover_candidate WHERE book_key=? AND asset_id IS NOT NULL
                     """, arguments: [key]) : []
+                try CurrentUserRows.removeBook(db, key: key)
                 for table in Self.bookOwnedUserTables {
                     try db.execute(sql: "DELETE FROM usr.\(table) WHERE book_key=?", arguments: [key])
                 }

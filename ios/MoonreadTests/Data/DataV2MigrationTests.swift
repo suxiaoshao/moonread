@@ -201,6 +201,11 @@ struct DataV2MigrationTests {
             try #expect(String.fetchOne(db, sql: "SELECT created FROM usr.annotation_candidate") == "18446744073709551615")
             try #expect(String.fetchOne(db, sql: "SELECT ancestor_id FROM usr.annotation_ancestor") == "not-materialized")
             try #expect(String.fetchOne(db, sql: "SELECT related_mark_id FROM usr.annotation_related_mark") == "remote-mark")
+            try #expect(String.fetchOne(db, sql: "SELECT candidate_id FROM usr.annotation_current_head") == note.id)
+            try #expect(Int.fetchOne(db, sql: "SELECT recent_ms FROM usr.reading_current WHERE book_key=?", arguments: [key]) == 123)
+            try #expect(Int.fetchOne(db, sql: "SELECT count(*) FROM usr.reading_current WHERE book_key=?", arguments: [conflictKey]) == 0)
+            try #expect(Int.fetchOne(db, sql: "SELECT count(*) FROM usr.metadata_current WHERE author_id IS NULL AND cover_id IS NOT NULL") == 1)
+            try #expect(Int.fetchOne(db, sql: "SELECT count(*) FROM usr.chapter_override_current") == 0)
             let position = try Row.fetchAll(db, sql: """
                 SELECT device_id,offset,relative_path FROM usr.position_candidate WHERE book_key=?
                 """, arguments: [key])
@@ -218,7 +223,7 @@ struct DataV2MigrationTests {
             try #expect(Bool.fetchOne(db, sql: "SELECT is_deleted FROM usr.palette_candidate") == true)
             try #expect(String.fetchOne(db, sql: "SELECT location_description FROM usr.shelf_reference_candidate") == "file-provider")
             try #expect(Int.fetchAll(db, sql: "SELECT partition FROM usr.reading_fact ORDER BY partition") == [0,1])
-            try #expect(String.fetchOne(db, sql: "SELECT payload_content_key FROM usr.reading_fact WHERE partition=0") == pendingKey)
+            try #expect(String.fetchAll(db, sql: "SELECT book_key FROM usr.reading_fact ORDER BY partition") == [key,pendingKey])
             try #expect(Int.fetchOne(db, sql: "SELECT duration_ms FROM usr.reading_fact LIMIT 1") == 30)
             try #expect(Int.fetchOne(db, sql: "SELECT utc_offset_seconds FROM usr.reading_fact LIMIT 1") == 3600)
             try #expect(String.fetchOne(db, sql: "SELECT visit_id FROM usr.reading_fact LIMIT 1") == "visit")
@@ -342,7 +347,12 @@ struct DataV2MigrationTests {
 
         let (off, info) = try await owner.activate(.unknown)
         #expect(info.scope == a && !info.maySync)
-        let readBack = try await owner.read(off) { try String.fetchOne($0, sql: "SELECT value_text FROM usr.metadata_text_candidate") }
+        let readBack = try await owner.read(off) { db in
+            try String.fetchOne(db, sql: """
+                SELECT c.value_text FROM usr.metadata_current m JOIN usr.metadata_text_candidate c
+                  ON c.partition=m.source_partition AND c.record_id=m.author_id
+                """)
+        }
         #expect(readBack == "unassigned")
         try await owner.close()
         let restarted = try DataSession(layout: layout)
@@ -463,12 +473,14 @@ struct DataV2MigrationTests {
         try #expect(index.pendingUserPromotionKeys() == [key])
         try #expect(index.importStatus(bookId: control.id).phase == .complete)
         try #expect(session.readUsers(lease) { try ReadingPositionRows.position($0, book: sha, partition: 0) } == nil)
+        try #expect(session.readUsers(lease) { try String.fetchAll($0, sql: "SELECT book_key FROM usr.reading_current") } == [key])
 
         try session.writeUsers(lease) { try $0.execute(sql: "DROP TRIGGER usr.reject_pending_removal") }
         try #expect(index.promotePendingUserData(bookId: control.id) == .committed(sha256: sha))
         try #expect(index.promotePendingUserData(bookId: control.id) == .committed(sha256: sha))
         try #expect(index.pendingUserPromotionKeys().isEmpty)
         try #expect(session.readUsers(lease) { try ReadingPositionRows.position($0, book: sha, partition: 0)?.token } == "pending")
+        try #expect(session.readUsers(lease) { try String.fetchAll($0, sql: "SELECT book_key FROM usr.reading_current") } == [sha])
         try #expect(!index.reclaimCompletedImport(bookId: control.id))
         try #expect(index.reclaimCompletedImport(bookId: control.id, userPromotionCommitted: true))
         try session.close()
