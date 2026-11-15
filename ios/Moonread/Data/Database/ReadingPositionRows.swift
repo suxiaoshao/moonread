@@ -172,6 +172,26 @@ enum ReadingPositionRows {
                        arguments: [partition,key,id])
     }
 
+    static func assessBackup(_ db: Database, book: String, incoming: Position) throws -> Bool {
+        let old = try position(db, book: book, partition: 0)
+        let sameToken = try Row.fetchAll(db, sql: """
+            SELECT \(positionColumns) FROM usr.position_candidate WHERE partition=0 AND book_key=? AND token=?
+            """, arguments: [book,incoming.token])
+        for row in sameToken {
+            let existing = try decodedPosition(row)
+            guard existing.updated == incoming.updated, existing.value.offset == incoming.value.offset,
+                  existing.value.source_hint == incoming.value.source_hint else { throw ReadingDataError.invalid }
+        }
+        return old.map { ($0.updated,$0.token) > (incoming.updated,incoming.token) } ?? false
+    }
+
+    static func mergeBackup(_ db: Database, book: String, incoming: Position) throws {
+        guard try !assessBackup(db, book: book, incoming: incoming) else { return }
+        if try position(db, book: book, partition: 0)?.token == incoming.token { return }
+        try replacePosition(db, with: incoming, book: book, partition: 0)
+        try settleCurrent(db, book: book)
+    }
+
     static func recordOpened(_ db: Database, book: String, openedAt: Int64, file: String?, device: String, now: Int64, token: String) throws {
         guard !token.isEmpty else { throw UserSyncCompatibilityError() }
         let part = try partition(for: book)

@@ -69,20 +69,6 @@ enum LegacyUserImport {
     private struct BadRow: Error {
         var reason: String
     }
-    private struct Cover: Decodable {
-        var id: String
-        var sha256: String
-        var format: String
-        var width: UInt32
-        var height: UInt32
-        enum CodingKeys: String, CodingKey { case id, sha256, format = "extension", width, height }
-    }
-    private struct Palette: Decodable {
-        let id, name, appearance: String
-        let custom: Bool
-        let colors, highContrast: [String: UInt32]
-        enum CodingKeys: String, CodingKey { case id, name, appearance, custom, colors, highContrast = "high_contrast" }
-    }
     private struct Version: Decodable { var v: Int64? }
     static func run(_ db: Database, snapshot: LegacyUserSnapshot) throws {
         guard let scope = snapshot.scope else { throw DataV2Error.incompatibleSource("legacy users have no confirmed owner") }
@@ -96,12 +82,6 @@ enum LegacyUserImport {
         try reconcileCoverCompleteness(db, source: scope.key)
         try putDeviceState(snapshot.deviceState, db: db)
         try CurrentUserRows.settleImported(db)
-        try db.execute(sql: """
-            UPDATE usr.legacy_import_state SET completeness='incomplete'
-            WHERE source_model='UserValue' AND EXISTS(SELECT 1 FROM usr.cover_candidate c
-              JOIN usr.cover_asset a ON a.asset_id=c.asset_id
-              WHERE c.partition=legacy_import_state.partition AND a.availability<>'available')
-            """)
         guard try Row.fetchOne(db, sql: "PRAGMA usr.foreign_key_check") == nil else {
             throw DataV2Error.migrationNotVerified
         }
@@ -110,13 +90,13 @@ enum LegacyUserImport {
         try db.execute(sql: "INSERT INTO usr.local_data_state VALUES ('legacy-user-import','structural-v1')")
     }
 
-    private static func reconcileCoverCompleteness(_ db: Database, source: String) throws {
+    static func reconcileCoverCompleteness(_ db: Database, source: String? = nil) throws {
         // A nil UserCover has no checksum of its own. It stops being missing
         // only if its logical ID has a single, complete byte variant after
         // both partitions and all checksum-verified cache fallbacks were read.
         let missing = try Row.fetchAll(db, sql: """
             SELECT quarantine_id,raw_bytes FROM usr.quarantined_record
-            WHERE source='swiftdata' AND source_id=? AND source_type='UserCover'
+            WHERE source='swiftdata' AND (?1 IS NULL OR source_id=?1) AND source_type='UserCover'
               AND reason='unavailable-attachment' AND raw_format='legacy-cover-id' AND completeness='incomplete'
             """, arguments: [source])
         var markers: [String: [Int64]] = [:]
@@ -149,7 +129,14 @@ enum LegacyUserImport {
               SELECT 1 FROM usr.quarantined_record q WHERE q.source='swiftdata' AND q.source_id=rows.source_id
                 AND q.partition=rows.partition AND q.source_type='UserCover' AND q.completeness='incomplete'
             ) THEN 'incomplete' ELSE 'complete' END
-            WHERE rows.source_id=? AND rows.source_model='UserCover'
+            WHERE (?1 IS NULL OR rows.source_id=?1) AND rows.source_model='UserCover'
+            """, arguments: [source])
+        try db.execute(sql: """
+            UPDATE usr.legacy_import_state AS rows SET completeness=CASE WHEN EXISTS(
+              SELECT 1 FROM usr.cover_candidate c JOIN usr.cover_asset a ON a.asset_id=c.asset_id
+              WHERE c.partition=rows.partition AND a.availability<>'available'
+            ) THEN 'incomplete' ELSE 'complete' END
+            WHERE (?1 IS NULL OR rows.source_id=?1) AND rows.source_model='UserValue'
             """, arguments: [source])
     }
 
@@ -325,7 +312,7 @@ enum LegacyUserImport {
         func asset(id: String, bytes: Data?) throws {
             if let bytes {
                 let digest = DataIdentity.sha(bytes)
-                let key = DataIdentity.id("cover-bytes", [id,digest])
+                let key = UserValueRows.assetID(id, sha: digest)
                 try db.execute(sql: """
                     INSERT INTO usr.cover_asset(asset_id,legacy_cover_id,bytes,expected_sha,availability)
                     VALUES(?,?,?,?,'available') ON CONFLICT(asset_id)
@@ -339,8 +326,8 @@ enum LegacyUserImport {
             }
         }
 
-        private func coverAsset(_ cover: Cover) throws -> String {
-            let key = DataIdentity.id("cover-bytes", [cover.id,cover.sha256])
+        private func coverAsset(_ cover: UserValueRows.Cover) throws -> String {
+            let key = UserValueRows.assetID(cover.id, sha: cover.sha256)
             let present = try Bool.fetchOne(db, sql: "SELECT availability='available' FROM usr.cover_asset WHERE asset_id=?",
                                             arguments: [key]) == true
             if !present, let coverDirectory, UUID(uuidString: cover.id) != nil,
@@ -370,7 +357,6 @@ enum LegacyUserImport {
                 let head = try UserSyncJSON.storedValue(payload, key: key)
                 guard let kind, parts.count >= 2 else { throw BadRow(reason: "unknown-key") }
                 let member = DataIdentity.canonical(parts[1])
-                let decoder = JSONDecoder(), data = Data(head.value.utf8)
                 if kind == .position {
                     let value = try PositionCandidate(head).value
                     let hint = value.source_hint
@@ -389,57 +375,10 @@ enum LegacyUserImport {
                 guard let device else { throw BadRow(reason: "missing-device") }
                 let shared: [Field] = [("logical_key",DataIdentity.canonical(logicalID)),("device_id",DataIdentity.canonical(device)),
                                        ("updated_ms",head.updated),("token",head.token)]
-                let bookFields = shared + [("book_key",member)]
-                switch kind {
-                case .author, .synopsis, .status:
-                    try write("metadata_text_candidate", identity: identity, body: bookFields + [
-                        ("field",parts[2]),("value_text",try decoder.decode(String.self, from: data))
-                    ], clock: head)
-                case .tag:
-                    let tag = try decoder.decode(String?.self, from: data)
-                    try write("tag_candidate", identity: identity, body: bookFields + [
-                        ("member_key",DataIdentity.canonical(String(parts[2].dropFirst(4)))),("tag_text",tag),("is_deleted",tag == nil)
-                    ], clock: head)
-                case .cover:
-                    let cover = try decoder.decode(Cover?.self, from: data)
-                    let asset = try cover.map(coverAsset)
-                    try write("cover_candidate", identity: identity, body: bookFields + [
-                        ("is_empty",cover == nil),("asset_id",asset),("sha256",cover?.sha256),("format",cover?.format),
-                        ("width",cover?.width),("height",cover?.height)
-                    ], clock: head)
-                case .opened:
-                    try write("opened_candidate", identity: identity, body: bookFields + [
-                        ("opened_ms",try decoder.decode(Int64.self, from: data))
-                    ], clock: head)
-                case .chapter:
-                    guard let offset = UInt64(parts[2]) else { throw BadRow(reason: "bad-chapter-key") }
-                    let value = try decoder.decode(ChapterValue?.self, from: data)
-                    try write("chapter_override_candidate", identity: identity, body: bookFields + [
-                        ("offset",DataIdentity.unsigned(offset)),("is_retracted",value == nil),("title",value?.title),("level",value?.level),
-                        ("excluded",value?.excluded)
-                    ], clock: head)
-                case .sourceDecoding:
-                    let value = try decoder.decode(SourceDecodingValue.self, from: data)
-                    try write("source_decoding_candidate", identity: identity, body: shared + [
-                        ("raw_sha256",member),("decoding",value.decoding)
-                    ], clock: head)
-                case .palette:
-                    let value = try decoder.decode(Palette?.self, from: data)
-                    let colors: [[Field]] = (value.map { [$0.colors,$0.highContrast] } ?? []).enumerated().flatMap { i, colors in
-                        colors.sorted { $0.key < $1.key }.map { [("contrast_kind",i),("color_role",$0.key),("rgb",$0.value)] }
-                    }
-                    try write("palette_candidate", identity: identity, body: shared + [
-                        ("palette_id",member),("payload_palette_id",value?.id),("name",value?.name),("appearance",value?.appearance),
-                        ("custom",value?.custom),("is_deleted",value == nil)
-                    ], relations: [.init(table: "palette_color", parentField: "candidate_id", rows: colors)], clock: head)
-                case .shelfReference:
-                    let value = try decoder.decode(ShelfReferenceValue.self, from: data)
-                    try write("shelf_reference_candidate", identity: identity, body: shared + [
-                        ("shelf_id",member),("name",value.name),("location_description",value.locationDescription),
-                        ("reference_version",value.schemaVersion)
-                    ], clock: head)
-                case .position: preconditionFailure("handled before mutable candidates")
-                }
+                let route = try UserValueRows.Key(key)
+                let body = try UserValueRows.body(route, value: head.value, coverAsset: coverAsset)
+                let relations: [Relation] = body.colors.isEmpty ? [] : [.init(table: "palette_color", parentField: "candidate_id", rows: body.colors)]
+                try write(route.table, identity: identity, body: shared + body.fields, relations: relations, clock: head)
             }
         }
 

@@ -12,6 +12,7 @@ extension ReadingKey {
 }
 
 extension AppDataService {
+    var userValueClock: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
     /// Attribute released stores using the owner's prior explicit consent;
     /// never infer ownership from the current system sign-in. The compatible
     /// source is the published Production store, with CloudKit disabled here.
@@ -270,7 +271,7 @@ extension AppDataService {
 
     private var readingClock: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
 
-    private func readingWriteAuthorization(_ id: String, admission: ReadingWriteAdmission, index: ReaderIndex) -> (String) throws -> Void {
+    func readingWriteAuthorization(_ id: String, admission: ReadingWriteAdmission, index: ReaderIndex) -> (String) throws -> Void {
         let versions = readingWriteVersions, lease = index.lease, configuration = userCloudConfigurationRevision
         let pending = ReadingKey.pending(bookId: id).storageKey
         return { key in

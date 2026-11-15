@@ -68,7 +68,12 @@ extension AppDataService {
         try ("第一話 星光来信\n" + String(repeating: "窗前的灯照着回家的路，这是原创的恢复验证正文。\n", count: 60)).write(to: file, atomically: true, encoding: .utf8)
         let identity = try SourceIdentityProbe().identify(filePath: file.path, decoding: "auto")
         let store = try await userStore()
-        try await store.put("shelf-reference/" + testSession, value: UserSyncJSON.encode(ShelfReferenceValue(name: "复原书架", locationDescription: "file-provider")), device: "recovery-fixture")
+        let index = try relationalUserIndex()
+        try index.session.writeUsers(index.lease) { db in
+            try UserValueRows.put(db, key: .init("shelf-reference/" + testSession),
+                value: UserSyncJSON.encode(ShelfReferenceValue(name: "复原书架", locationDescription: "file-provider")),
+                device: "recovery-fixture", now: userValueClock)
+        }
         let position = PositionValue(content_key: identity.contentSha256, offset: identity.utf8Bytes / 2, source_hint: nil)
         try await store.put("position/" + identity.contentSha256, value: UserSyncJSON.encode(position), device: "recovery-fixture")
         try await store.put("metadata/" + identity.contentSha256 + "/tag-restored", value: UserSyncJSON.encode("复原标签"), device: "recovery-fixture")

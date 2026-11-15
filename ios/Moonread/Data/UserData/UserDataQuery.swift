@@ -28,7 +28,6 @@ extension AppDataService {
         case catalogueRecord(String)
         case directoryActivity(CatalogueScope)
         case directoryDetails(direct: [ReadingKey], covers: [ReadingKey])
-        case metadataExchange([ReadingKey])
 
         var isDirectoryActivity: Bool {
             if case .directoryActivity = self { return true }
@@ -246,24 +245,12 @@ extension AppDataService {
         }
     }
 
-    struct MetadataExchangeInputs: Sendable {
-        let read: MetadataExchangeRead
-        let formalBlockedMetadata: Set<String>
-    }
-
-    func metadataExchangeInputs(_ request: MetadataExchangeRequest, configuration: UUID) async throws -> MetadataExchangeInputs {
-        try await withValidQueryInputs(scope: "metadata-exchange") {
-            guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-            let core = try indexStore()
-            let inventory = try core.metadataExchangeInventory(request: request)
-            let source = UserQuerySource.metadataExchange(inventory.recordKeys())
-            guard let read = try await queryAttempt(source, options: .init(scope: "metadata-exchange",
-                fields: [.position, .metadata]), diagnostic: nil) else { return nil }
-            guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-            // On the same Rust read transaction, compare the live source rows
-            // and counts before producing results. Retry reads only.
-            guard let result = try read.query.metadataExchangeRead(request: request, inventory: inventory) else { return nil }
-            return ([read], .init(read: result, formalBlockedMetadata: read.formalBlockedMetadata))
+    func metadataExchangeInputs(_ request: MetadataExchangeRequest, configuration: UUID) async throws -> MetadataExchangeRows.Result {
+        guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
+        try Task.checkCancellation()
+        let index = try relationalUserIndex()
+        return try index.session.readUsers(index.lease) { db in
+            try MetadataExchangeRows.read(db, request: request, scope: index.lease.scope.key)
         }
     }
 
@@ -333,9 +320,6 @@ extension AppDataService {
         case let .directoryDetails(direct, covers):
             return .init(records: .only(sorted(direct + covers)), facts: .none,
                          coverOnly: Set(covers.map(\.storageKey)).subtracting(direct.map(\.storageKey)))
-        case let .metadataExchange(keys):
-            // Inventory already selected the catalogue's participating aliases.
-            return .init(records: .only(sorted(keys)), facts: .none)
         }
     }
     private func querySignature(_ source: UserQuerySource, options: UserQueryOptions,

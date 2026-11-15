@@ -504,17 +504,33 @@ actor AppDataService {
     }
     func correctChapter(_ id: String, offset: UInt64, title: String, level: UInt32, excluded: Bool = false) async throws {
         guard level <= 1, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title.count <= 80,
-              !title.contains("\n"), !title.contains("\r"), offset < (try indexStore().importStatus(bookId: id).text.byteCount) else { throw ReaderError.InvalidRange }
-        guard try indexStore().importStatus(bookId: id).phase == .complete else { throw ReaderError.ImportBusy }
-        try indexStore().validateChapterOffset(bookId: id, offsetUtf8: offset)
-        let key = try userKey(id).storageKey
-        let value = ChapterValue(content_key: key, offset: offset, title: title.trimmingCharacters(in: .whitespaces), level: level, excluded: excluded)
-        try await userStore().put("chapter/\(key)/\(offset)", value: String(decoding: JSONEncoder().encode(value), as: UTF8.self), device: userDevice)
+              !title.contains("\n"), !title.contains("\r") else { throw ReaderError.InvalidRange }
+        let admission = try readingWriteAdmission(indexStore().lease)
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        let index = try relationalUserIndex()
+        let authorization = readingWriteAuthorization(id, admission: admission, index: index)
+        try index.session.writeUsers(index.lease) { db in
+            let body = try ReaderIndex.body(db, id: id, scope: index.lease.scope.key)
+            guard (try? parseSha256(value: body.sha)) != nil else { throw ReaderError.ImportBusy }
+            try authorization(body.sha)
+            try ReaderIndex.validateChapterCorrection(db, body: body, offset: offset)
+            let value = ChapterValue(content_key: body.sha, offset: offset, title: title.trimmingCharacters(in: .whitespaces), level: level, excluded: excluded)
+            try UserValueRows.put(db, key: .init("chapter/\(body.sha)/\(offset)"), value: UserSyncJSON.encode(value), device: userDevice, now: userValueClock)
+        }
         dataChanged()
     }
     func restoreChapterCorrections(_ id: String) async throws {
-        let store = try await userStore()
-        for key in try await store.allValues(prefix: "chapter/\(userKey(id).storageKey)/").keys { try await store.put(key, value: "null", device: userDevice) }
+        let admission = try readingWriteAdmission(indexStore().lease)
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        let index = try relationalUserIndex()
+        let authorization = readingWriteAuthorization(id, admission: admission, index: index)
+        try index.session.writeUsers(index.lease) { db in
+            let body = try ReaderIndex.body(db, id: id, scope: index.lease.scope.key)
+            try authorization(body.sha)
+            try UserValueRows.retractChapters(db, book: body.sha, device: userDevice, now: userValueClock)
+        }
         dataChanged()
     }
     func rebuildChapters(_ id: String) throws -> ChapterRebuild { try indexStore().rebuildChapters(bookId: id) }

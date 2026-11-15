@@ -250,15 +250,13 @@ extension AppDataService {
         guard Set(books.map(\.id)).count == books.count,
               books.allSatisfy({ $0.selectionError == nil }) else { throw ReaderError.InvalidSettings }
         let deletionTokens = Dictionary(uniqueKeysWithValues: books.map { ($0.id, localReadingWriteLease($0.id)) })
-        let expectedStoreID = userStoreTask?.id
-        let store = try await userStore()
-        guard preview.session.configuration == userCloudConfigurationRevision, let storeID = userStoreTask?.id,
-              expectedStoreID == nil || expectedStoreID == storeID else { throw ReadingDataError.changed }
+        let lease = try relationalUserIndex().lease
+        guard preview.session.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         try Task.checkCancellation()
         return .init(session: preview.session, books: books,
                      writeIndices: books.indices.filter { !books[$0].changedMetadataFields.isEmpty },
                      renameIndices: books.indices.filter { books[$0].renameName != nil },
-                     store: store, storeID: storeID, deletionTokens: deletionTokens)
+                     lease: lease, deletionTokens: deletionTokens)
     }
 
     private struct PreparedMetadataBook: Sendable {
@@ -354,18 +352,21 @@ extension AppDataService {
                 }
                 let entries = try prepared.map { item in
                     try Task.checkCancellation()
-                    let cover: UserDataStore.CoverWrite?
+                    let cover: UserValueRows.CoverWrite?
                     if let asset = item.asset, let url = item.url {
                         cover = try Self.readCoverDraft(asset, url: url, length: item.budget.covers)
                     } else { cover = nil }
-                    return UserDataStore.MetadataWrite(plan: item.plan, cover: cover)
+                    return UserValueRows.MetadataWrite(plan: item.plan, cover: cover)
                 }
                 try await acquireCancellableUserDataOperation()
                 do {
                     defer { releaseUserDataOperation() }
                     try Task.checkCancellation()
                     try validateMetadataScope(confirmed, indices: prepared.map(\.index))
-                    try await confirmed.store.putMetadata(entries, device: userDevice)
+                    let writer = try relationalUserIndex()
+                    try writer.session.writeUsers(confirmed.lease) {
+                        try UserValueRows.putMetadata($0, entries, device: userDevice, now: userValueClock)
+                    }
                     // A successful save is a fact even when a stop raced the return.
                     checkpoint.committed += prepared.count
                     wroteThisRun = true
@@ -429,7 +430,7 @@ extension AppDataService {
     }
 
     private func validateMetadataScope(_ confirmed: MetadataConfirmedImport, indices: [Int]) throws {
-        guard confirmed.session.configuration == userCloudConfigurationRevision, confirmed.storeID == userStoreTask?.id,
+        guard confirmed.session.configuration == userCloudConfigurationRevision, try confirmed.lease == indexStore().lease,
               indices.allSatisfy({ index in
                   let key = confirmed.books[index].id
                   return confirmed.deletionTokens[key] == localReadingWriteLeases[key]

@@ -102,6 +102,7 @@ extension AppDataService {
         return BookMetadataEditPlan(sha: base.sha, values: changes)
     }
     func saveMetadata(base: BookMetadata, edited: BookMetadata) async throws {
+        let admission = try readingWriteAdmission(indexStore().lease)
         var final = edited
         if let cover = edited.cover, cover != base.cover {
             let bytes = try Data(contentsOf: coverDraftURL(cover))
@@ -110,17 +111,23 @@ extension AppDataService {
             }
         }
         let plan = try metadataEditPlan(base: base, edited: final)
-        try await commitMetadata(plan, cover: final.cover != base.cover ? final.cover : nil)
+        try await commitMetadata(plan, cover: final.cover != base.cover ? final.cover : nil, admission: admission)
         if let cover = edited.cover { discardCoverDraft(cover) }
     }
-    func commitMetadata(_ plan: BookMetadataEditPlan, cover: BookCoverAsset?) async throws {
+    private func commitMetadata(_ plan: BookMetadataEditPlan, cover: BookCoverAsset?, admission: ReadingWriteAdmission) async throws {
         guard !plan.values.isEmpty else { return }
-        let store = try await userStore()
         let asset = try cover.map { try Self.readCoverDraft($0, url: coverDraftURL($0), length: nil) }
-        try await store.putMetadata([.init(plan: plan, cover: asset)], device: userDevice)
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        let index = try relationalUserIndex()
+        guard readingWriteVersions.permits(admission, lease: index.lease, configuration: userCloudConfigurationRevision, keys: [plan.sha])
+        else { throw ReadingDataError.changed }
+        try index.session.writeUsers(index.lease) {
+            try UserValueRows.putMetadata($0, [.init(plan: plan, cover: asset)], device: userDevice, now: userValueClock)
+        }
         publishMetadataCommit([plan], deferCatalogRefresh: false)
     }
-    nonisolated static func readCoverDraft(_ cover: BookCoverAsset, url: URL, length: Int?) throws -> UserDataStore.CoverWrite {
+    nonisolated static func readCoverDraft(_ cover: BookCoverAsset, url: URL, length: Int?) throws -> UserValueRows.CoverWrite {
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
         guard values.isRegularFile == true, let size = values.fileSize, size > 0, length == nil || size == length else {
             throw CocoaError(.fileReadCorruptFile)
@@ -406,7 +413,7 @@ extension AppDataService {
         let url = try coverURL(cover)
         let bytes: Data
         if FileManager.default.fileExists(atPath: url.path) { bytes = try Data(contentsOf: url) }
-        else if let value = try await userStore().cover(cover.id) { bytes = value }
+        else if let value = try storedCoverBytes(cover) { bytes = value }
         else { throw CocoaError(.fileNoSuchFile) }
         guard Self.coverDigestString(bytes) == cover.sha256 else { throw CocoaError(.fileReadCorruptFile) }
         return bytes
@@ -414,9 +421,14 @@ extension AppDataService {
     func coverImage(_ cover: BookCoverAsset, pixels: Int, exactSize: Bool = false) async throws -> UIImage? {
         let configuration = userCloudConfigurationRevision
         let image = try await coverResources.image(cover, pixels: exactSize ? pixels : CoverImageLoader.bucket(pixels), allowLarger: !exactSize, directory: dataDirectoryName,
-            scope: configuration, attachment: { [self] in try await userStore().cover(cover.id) })
+            scope: configuration, attachment: { [self] in try await storedCoverBytes(cover) })
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
         return image
+    }
+
+    private func storedCoverBytes(_ cover: BookCoverAsset) throws -> Data? {
+        let index = try relationalUserIndex()
+        return try index.session.readUsers(index.lease) { try UserValueRows.coverBytes($0, id: cover.id, sha: cover.sha256) }
     }
 
 }

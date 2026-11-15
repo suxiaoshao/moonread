@@ -223,7 +223,7 @@ extension AppDataService {
     private func restoreRecentReadingPass() async throws {
         let store = try await userStore()
         let hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
-        let decodings = try await store.sourceDecodingSnapshot()
+        let decodings = try currentSourceDecodings()
         let positions = try await store.recentRestorationPositions(limit: RecentRestorationPolicy.recentKeyLimit, excluding: hidden)
         let keys = Set(positions.map(\.contentKey))
         recentRestorationAttempts = recentRestorationAttempts.filter { keys.contains($0.key) }

@@ -288,19 +288,26 @@ extension AppDataService {
     }
     func refreshReadingBackupPreview(_ staging: BackupStaging) async throws -> ReadingBackupPreview {
         guard staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-        let preview = try await userStore().validateBackup(directory: staging.directory, manifest: staging.manifest)
-        let core = try indexStore(); var linked = 0
+        let plan = try NonFactBackup(directory: staging.directory, manifest: staging.manifest)
+        let core = try relationalUserIndex()
+        let preview = try core.session.readUsers(core.lease) { try plan.preview($0) }
+        var linked = 0
         for key in preview.keys { if try !core.sourceFilesForSha(sha: key).isEmpty { linked += 1 } }
         guard staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         return .init(staging: staging, preview: preview, linked: linked)
     }
     func importReadingBackup(_ preview: ReadingBackupPreview) async throws {
-        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         guard preview.staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         try Task.checkCancellation()
-        try await userStore().mergeBackup(directory: preview.staging.directory, manifest: preview.staging.manifest)
-        queryCache.removeAll(); dataChanged(); scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
-        NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
+        let lease = try indexStore().lease
+        let plan = try NonFactBackup(directory: preview.staging.directory, manifest: preview.staging.manifest)
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        guard preview.staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
+        let index = try relationalUserIndex()
+        guard index.lease == lease else { throw ReadingDataError.changed }
+        try index.session.writeUsers(index.lease) { try plan.merge($0) }
+        queryCache.removeAll(); dataChanged(); scheduleSystemReadingCatalog(immediate: true, statisticsChanged: false)
         // Reuse the existing received-data refresh (including ThemeStore.load).
         NotificationCenter.default.post(name: .cloudDataReceived, object: nil)
         // Reader metadata has one invalidation event, shared with CloudKit imports.

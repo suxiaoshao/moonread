@@ -1,5 +1,4 @@
 import Foundation
-import SwiftData
 import CryptoKit
 import os
 
@@ -71,7 +70,9 @@ extension AppDataService {
             else { result.retained += 1 }
         }
         // Only thumbnail copies and persisted, verified cover read-outs. Never drafts.
-        let copies = try await userStore().recoverableCoverCopies()
+        let writer = try relationalUserIndex()
+        guard writer.lease == core.lease else { throw CancellationError() }
+        let copies = try writer.session.readUsers(writer.lease) { try UserValueRows.verifiedCoverCopies($0) }
         let directory = try coverDirectory()
         for name in (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [] {
             let url = directory.appendingPathComponent(name)
@@ -102,14 +103,5 @@ extension AppDataService {
             if !removed { allRemoved = false }
         }
         return allRemoved
-    }
-}
-struct PersistedCoverCopy: Sendable { let id: String; let sha256: String }
-extension UserDataStore {
-    func recoverableCoverCopies() throws -> [PersistedCoverCopy] {
-        try modelContext.fetch(FetchDescriptor<UserCover>()).compactMap { cover in
-            guard let bytes = cover.bytes else { return nil }
-            return .init(id: cover.id, sha256: SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined())
-        }
     }
 }

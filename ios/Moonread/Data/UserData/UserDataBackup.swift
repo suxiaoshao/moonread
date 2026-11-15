@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import CryptoKit
+import GRDB
 
 struct BackupRecord: Codable, Sendable, Equatable {
     var key: String
@@ -180,6 +181,139 @@ enum BackupRows {
         default: throw ReadingDataError.updateRequired
         }
         return nil
+    }
+}
+
+/// Released backup input, unmodified on disk. Only the non-fact restore
+/// domains are staged here; fact/clear rows await the continuous-segment design.
+struct NonFactBackup: Sendable {
+    private enum Entry: Sendable {
+        case value(key: String, head: StoredValue, device: String)
+        case position(book: String, value: ReadingPositionRows.Position)
+        case annotation(book: String, mark: String, value: AnnotationCandidate)
+    }
+    private struct Attachment: Sendable { let id, sha: String; let bytes: Data }
+    private let entries: [Entry]
+    private let attachments: [Attachment]
+    private let keys: Set<String>
+
+    init(directory: URL, manifest: BackupManifest) throws {
+        guard manifest.format == "moonread-backup", manifest.formatVersion == 1,
+              manifest.identityVersion == "normalization-v1", manifest.scope == "all",
+              Set(manifest.requiredCapabilities).isSubset(of: ["user-facts-v1"]) else { throw ReadingDataError.updateRequired }
+        var total: UInt64 = 0, byPath: [String: BackupMemberValue] = [:]
+        for member in manifest.members {
+            try Task.checkCancellation()
+            let (next, overflow) = total.addingReportingOverflow(member.size)
+            guard !overflow, next <= BackupRows.maxCommitBytes else { throw ReadingDataError.tooLarge }
+            total = next
+            try validateRelativePath(path: member.path, allowRoot: false)
+            guard byPath.updateValue(member, forKey: member.path) == nil else { throw ReadingDataError.invalid }
+            let actual = try backupMember(path: member.path, filePath: directory.appendingPathComponent(member.path).path)
+            guard actual.sha256 == member.sha256, actual.size == member.size, actual.records == member.records else {
+                throw ReadingDataError.invalid
+            }
+        }
+        var assets: [String: Attachment] = [:], entry: [Entry] = [], books = Set<String>()
+        var operations = [String: (book: String, mark: String, candidate: AnnotationCandidate)]()
+        var values = [String: StoredValue]()
+        for asset in manifest.assets {
+            guard let member = byPath[asset.path], asset.path == "assets/" + member.sha256 + ".bin", assets[asset.id] == nil else {
+                throw ReadingDataError.invalid
+            }
+            let bytes = try Data(contentsOf: directory.appendingPathComponent(asset.path))
+            guard DataIdentity.sha(bytes) == member.sha256 else { throw ReadingDataError.invalid }
+            assets[asset.id] = .init(id: asset.id, sha: member.sha256, bytes: bytes)
+        }
+        for key in manifest.titles.keys { try BackupRows.formal(key) }
+        for kind in ["values", "positions", "annotations"] {
+            let path = "records/" + kind + ".jsonl"
+            guard byPath[path] != nil else { throw ReadingDataError.invalid }
+            try BackupRows.forEach(directory.appendingPathComponent(path)) { row in
+                try Task.checkCancellation()
+                try BackupRows.validate(row, kind: kind)
+                if kind == "annotations" {
+                    let value = try UserSyncJSON.annotation(row.payload, id: row.id)
+                    if let prior = operations[row.id] {
+                        guard prior.book == row.key, prior.mark == row.mark, prior.candidate == value else { throw ReadingDataError.invalid }
+                        return
+                    }
+                    operations[row.id] = (row.key,row.mark,value)
+                    books.insert(row.key)
+                    entry.append(.annotation(book: row.key, mark: row.mark, value: value))
+                    return
+                }
+                let key = kind == "positions" ? "position/" + row.key : row.key
+                let head = try UserSyncJSON.storedValue(row.payload, key: key)
+                let identity = key + "\0" + head.token
+                if let prior = values[identity] {
+                    let equivalent = if key.hasPrefix("position/") { try PositionCandidate.sameUpdate(prior, head) }
+                        else { prior.updated == head.updated && prior.value == head.value }
+                    guard equivalent else { throw ReadingDataError.invalid }
+                    return
+                }
+                values[identity] = head
+                if let book = try BackupRows.valueKey(key) { books.insert(book) }
+                if key.hasPrefix("position/") {
+                    let position = try PositionCandidate(head)
+                    entry.append(.position(book: position.value.content_key,
+                        value: .init(value: position.value, updated: head.updated, token: head.token, device: kind == "values" ? row.device : nil)))
+                } else {
+                    if key.hasSuffix("/cover"),
+                       let cover = try JSONDecoder().decode(UserValueRows.Cover?.self, from: Data(head.value.utf8)),
+                       assets[cover.id]?.sha != cover.sha256 { throw ReadingDataError.missingAsset }
+                    entry.append(.value(key: key, head: head, device: row.device))
+                }
+            }
+        }
+        self.entries = entry; self.keys = books; self.attachments = assets.values.sorted { $0.id < $1.id }
+    }
+
+    func preview(_ db: Database) throws -> BackupPreview {
+        var newer = 0
+        var annotations: [String: [AnnotationCandidate]] = [:]
+        for entry in entries {
+            switch entry {
+            case let .value(key, head, _):
+                if try UserValueRows.assessBackup(db, key: .init(key), head: head) { newer += 1 }
+            case let .position(book, value):
+                if try ReadingPositionRows.assessBackup(db, book: book, incoming: value) { newer += 1 }
+            case let .annotation(book, mark, value):
+                let duplicate = try AnnotationRows.assessBackup(db, book: book, mark: mark, value: value)
+                let key = book + "/" + mark
+                if annotations[key] == nil {
+                    annotations[key] = try AnnotationRows.snapshot(db, key: book, markID: mark, partition: 0).groups[mark] ?? []
+                }
+                if !duplicate { annotations[key, default: []].append(value) }
+            }
+        }
+        for attachment in attachments {
+            if try Bool.fetchOne(db, sql: """
+                SELECT EXISTS(SELECT 1 FROM usr.cover_asset WHERE legacy_cover_id=? AND availability='available' AND expected_sha IS NOT ?)
+                """, arguments: [attachment.id,attachment.sha]) == true { throw ReadingDataError.invalid }
+        }
+        let conflicts = annotations.values.filter { AnnotationReduction.heads($0).count > 1 }.count
+        return .init(keys: keys, existingNewer: newer, conflicts: conflicts)
+    }
+
+    func merge(_ db: Database) throws {
+        _ = try preview(db)
+        for asset in attachments {
+            try Task.checkCancellation()
+            try UserValueRows.attach(db, id: asset.id, sha: asset.sha, bytes: asset.bytes)
+        }
+        if !attachments.isEmpty { try LegacyUserImport.reconcileCoverCompleteness(db) }
+        for entry in entries {
+            try Task.checkCancellation()
+            switch entry {
+            case let .value(key, head, device):
+                try UserValueRows.merge(db, key: .init(key), head: head, device: device)
+            case let .position(book, value):
+                try ReadingPositionRows.mergeBackup(db, book: book, incoming: value)
+            case let .annotation(book, mark, value):
+                try AnnotationRows.mergeBackup(db, book: book, mark: mark, value: value)
+            }
+        }
     }
 }
 

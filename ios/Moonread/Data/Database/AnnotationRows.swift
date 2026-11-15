@@ -17,7 +17,7 @@ enum AnnotationRows {
             """, arguments: [ReadingPositionRows.partition(for: key),DataIdentity.canonical(key),nil]) == true
     }
 
-    static func snapshot(_ db: Database, key: String, markID: String? = nil, partition supplied: Int? = nil) throws -> NoteCandidates {
+    static func snapshot(_ db: Database, key: String, markID: String? = nil, partition supplied: Int? = nil, reducing: Bool = true) throws -> NoteCandidates {
         let partition = try supplied ?? ReadingPositionRows.partition(for: key)
         let args: StatementArguments = [partition,DataIdentity.canonical(key),markID.map(DataIdentity.canonical)]
         let scope = "WHERE c.partition=?1 AND c.book_key=?2 AND (?3 IS NULL OR c.mark_id=?3)"
@@ -60,7 +60,7 @@ enum AnnotationRows {
                                                   relatedMarks: related[id] ?? [], mergedInto: row["merged_into"]))
         }
         for mark in blocked { groups.removeValue(forKey: mark) }
-        return .init(key: key, groups: groups.mapValues(AnnotationReduction.heads), blocked: blocked, unknownMarks: unknownMarks)
+        return .init(key: key, groups: reducing ? groups.mapValues(AnnotationReduction.heads) : groups, blocked: blocked, unknownMarks: unknownMarks)
     }
 
     static func settleHeads(_ db: Database, key: String, markID: String, partition: Int) throws {
@@ -136,6 +136,20 @@ enum AnnotationRows {
                                                   related: related, mergedInto: mergedInto)
         let partition = try ReadingPositionRows.partition(for: key), record = DataIdentity.canonical(value.id)
         let book = DataIdentity.canonical(key), mark = DataIdentity.canonical(markID)
+        try insertCandidate(db, book: book, mark: mark, partition: partition, value: value)
+        // Keep siblings and causal IDs. Only superseded content is compacted.
+        try db.execute(sql: """
+            DELETE FROM usr.annotation_candidate WHERE partition=?1 AND book_key=?2 AND mark_id=?3
+              AND record_id IN (SELECT ancestor_id FROM usr.annotation_ancestor WHERE partition=?1 AND candidate_id=?4)
+            """, arguments: [partition,book,mark,record])
+        try settleHeads(db, key: book, markID: mark, partition: partition)
+        return value
+    }
+
+    private static func insertCandidate(_ db: Database, book: String, mark: String, partition: Int,
+                                        value: AnnotationCandidate) throws {
+        let record = DataIdentity.canonical(value.id), content = value.content
+        let mergedInto = value.mergedInto
         try db.execute(sql: """
             INSERT INTO usr.annotation_candidate VALUES (?,?,1,?,?,?,?,?,?,?,?,?,?)
             """, arguments: [partition,record,book,mark,DataIdentity.unsigned(value.created),value.bookmark,
@@ -147,13 +161,27 @@ enum AnnotationRows {
         }
         try writeRelations(value.ancestors, table: "annotation_ancestor")
         try writeRelations(value.relatedMarks, table: "annotation_related_mark")
-        // Keep siblings and causal IDs. Only superseded content is compacted.
-        try db.execute(sql: """
-            DELETE FROM usr.annotation_candidate WHERE partition=?1 AND book_key=?2 AND mark_id=?3
-              AND record_id IN (SELECT ancestor_id FROM usr.annotation_ancestor WHERE partition=?1 AND candidate_id=?4)
-            """, arguments: [partition,book,mark,record])
-        try settleHeads(db, key: book, markID: mark, partition: partition)
-        return value
+    }
+
+    static func assessBackup(_ db: Database, book: String, mark: String, value: AnnotationCandidate) throws -> Bool {
+        let record = DataIdentity.canonical(value.id)
+        if try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(SELECT 1 FROM usr.quarantined_record WHERE partition=0 AND record_id=?
+                AND source_type IN (\(quarantineTypes)))
+            """, arguments: [record]) == true { throw UserSyncCompatibilityError() }
+        let view = try snapshot(db, key: book, markID: mark, partition: 0, reducing: false)
+        try requireReadable(view, ids: [mark])
+        guard let route = try Row.fetchOne(db, sql: "SELECT book_key,mark_id FROM usr.annotation_candidate WHERE partition=0 AND record_id=?",
+                                           arguments: [record]) else { return false }
+        guard (route["book_key"] as String) == book, (route["mark_id"] as String) == mark,
+              view.groups[mark]?.first(where: { $0.id == record }) == value else { throw ReadingDataError.invalid }
+        return true
+    }
+
+    static func mergeBackup(_ db: Database, book: String, mark: String, value: AnnotationCandidate) throws {
+        guard try !assessBackup(db, book: book, mark: mark, value: value) else { return }
+        try insertCandidate(db, book: book, mark: mark, partition: 0, value: value)
+        try settleHeads(db, key: book, markID: mark, partition: 0)
     }
 
     static func edit(_ db: Database, key: String, edit: AnnotationEdit, content: AnnotationContent?,
