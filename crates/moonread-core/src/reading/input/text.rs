@@ -1,5 +1,6 @@
 use crate::{ReaderError, Result};
 use encoding_rs::{CoderResult, Decoder, DecoderResult, Encoding};
+#[cfg(test)]
 use std::io::Read;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -9,6 +10,7 @@ const MAX_GRAPHEME_BYTES: usize = 64 * 1024;
 /// Detection is shared by both import entry points. Decode/normalization stays in
 /// encoding_rs; never retry the whole book under a different encoding after publish.
 pub(crate) const ENCODING_PROBE_BYTES: usize = 64 * 1024;
+#[cfg(test)]
 pub(crate) fn detect_encoding(reader: &mut impl Read) -> Result<&'static Encoding> {
     let mut head = Vec::with_capacity(ENCODING_PROBE_BYTES + 1);
     // One lookahead byte distinguishes EOF from a truncated sample for chardetng.
@@ -183,6 +185,7 @@ impl TextDecoder {
 }
 
 /// Legacy input adapter; normalized output is shared with the explicit stream.
+#[cfg(test)]
 pub(crate) fn decode_chunks(
     reader: &mut impl Read,
     encoding: &'static Encoding,

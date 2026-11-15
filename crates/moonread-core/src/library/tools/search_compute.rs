@@ -52,10 +52,6 @@ enum AfterMatches {
 }
 
 impl SearchScan {
-    pub(super) fn offset(&self) -> u64 {
-        self.offset
-    }
-
     pub(super) fn new(
         query: String,
         regular_expression: bool,

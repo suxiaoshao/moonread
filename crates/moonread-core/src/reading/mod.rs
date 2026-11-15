@@ -9,8 +9,8 @@ pub(crate) mod progressive;
 pub use crate::reading::book_details::*;
 pub use crate::reading::navigation::*;
 pub use crate::reading::progressive::{
-    FailureDetail, ImportByteProgress, ImportControl, ImportPhase, ImportStatus, ImportText,
-    PauseDetail, PreparationState, ReadablePrefix, ReadingDirection, ReadingFrame, ReadingSnapshot,
+    FailureDetail, ImportByteProgress, ImportPhase, ImportStatus, ImportText, PauseDetail,
+    PreparationState, ReadablePrefix, ReadingDirection, ReadingFrame, ReadingSnapshot,
     ReadingWindowStatus, SourceSpan,
 };
 pub use chapters::ChapterInfo;

@@ -254,7 +254,7 @@ extension AppDataService {
     func metadataExchangeInputs(_ request: MetadataExchangeRequest, configuration: UUID) async throws -> MetadataExchangeInputs {
         try await withValidQueryInputs(scope: "metadata-exchange") {
             guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-            let core = try textCore()
+            let core = try indexStore()
             let inventory = try core.metadataExchangeInventory(request: request)
             let source = UserQuerySource.metadataExchange(inventory.recordKeys())
             guard let read = try await queryAttempt(source, options: .init(scope: "metadata-exchange",
@@ -299,7 +299,7 @@ extension AppDataService {
         }
     }
     private func querySelection(_ source: UserQuerySource) throws -> UserQuerySelection {
-        let core = try textCore()
+        let core = try indexStore()
         func sorted(_ keys: [ReadingKey]) -> [ReadingKey] {
             Set(keys).sorted { serializeReadingKey(key: $0) < serializeReadingKey(key: $1) }
         }
@@ -384,7 +384,7 @@ extension AppDataService {
         return valid
     }
     private func queryIdentities(_ keys: [String]) throws -> [String: String] {
-        let resolutions = try textCore().resolveReadingKeys(keys: keys.map { try parseReadingKey(value: $0) })
+        let resolutions = try indexStore().resolveReadingKeys(keys: keys.map { try parseReadingKey(value: $0) })
         return Dictionary(uniqueKeysWithValues: resolutions.map { (serializeReadingKey(key: $0.original), serializeReadingKey(key: $0.effective)) })
     }
     private func queryAttempt(_ source: UserQuerySource, options: UserQueryOptions, diagnostic: ReaderOpenTrace?,
@@ -434,7 +434,7 @@ extension AppDataService {
         try Task.checkCancellation()
         guard configuration == userCloudConfigurationRevision,
               signature.formalID == userStoreTask?.id, signature.pendingID == pendingUserStoreTask?.id else { return nil }
-        let core = try textCore(), hidden = signature.hidden, preferred = signature.preferred
+        let core = try indexStore(), hidden = signature.hidden, preferred = signature.preferred
         let activityOnly = source.isDirectoryActivity
         let includeFacts = selection.facts.included
         let geometry: FactGeometry = options.statisticsRange == nil ? .full : .firstExposure

@@ -1,6 +1,5 @@
 //! A committed, immutable prefix is readable while import continues.
 use crate::*;
-use std::sync::atomic::AtomicBool;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
 pub enum ImportPhase {
     Preparing,
@@ -44,28 +43,6 @@ pub enum ReadablePrefix {
 pub struct ImportByteProgress {
     pub read: u64,
     pub total: u64,
-}
-
-impl PreparationState {
-    pub(crate) fn is_complete(&self) -> bool {
-        matches!(self, Self::Complete)
-    }
-
-    fn is_active(&self) -> bool {
-        matches!(self, Self::Preparing | Self::Importing | Self::Finalizing)
-    }
-
-    /// The original flat status still serves the import management boundary.
-    fn legacy_phase(&self) -> ImportPhase {
-        match self {
-            Self::Preparing => ImportPhase::Preparing,
-            Self::Importing => ImportPhase::Importing,
-            Self::Finalizing => ImportPhase::Finalizing,
-            Self::Complete => ImportPhase::Complete,
-            Self::Paused { .. } => ImportPhase::Paused,
-            Self::Failed { .. } => ImportPhase::Failed,
-        }
-    }
 }
 
 #[derive(Clone, Debug, uniffi::Record)]
@@ -122,20 +99,6 @@ pub struct ReadingFrame {
     pub projection_revision: u64,
 }
 
-#[derive(uniffi::Object)]
-pub struct ImportControl {
-    id: String,
-    generation: u64,
-    cancelled: AtomicBool,
-    running: AtomicBool,
-}
-
-#[derive(Clone)]
-pub(crate) struct ImportFailure {
-    generation: u64,
-    preparation: PreparationState,
-}
-
 /// Import lifecycle metadata contains no user position or reading activity.
 #[derive(Clone, Debug, uniffi::Record)]
 pub struct ImportText {
@@ -163,12 +126,3 @@ impl From<BookInfo> for ImportText {
         }
     }
 }
-
-mod query;
-mod recovery;
-mod stream;
-mod tasks;
-pub(crate) use query::snapshot;
-pub(crate) use recovery::recover;
-#[cfg(test)]
-mod tests;

@@ -114,10 +114,11 @@ struct DataSessionLease: Equatable, Sendable {
     fileprivate let identity: UUID
 }
 
-/// One application owner, one pool. No writer reference escapes this actor.
+/// One application owner, one pool. Callers do bounded synchronized transactions.
 /// Networking, observers and background tasks must quiesce before handing the
 /// owner a new account decision. The lease also fences results from old work.
-actor DataSession {
+final class DataSession: @unchecked Sendable {
+    private let lifecycle = NSLock()
     let layout: DataLayout
     private let bundle: Bundle
     private var owner: DataOwnerState
@@ -126,6 +127,7 @@ actor DataSession {
     private var selection: DataScopeSelection?
     private var verifiedAccount: DataScope?
     private var closeFailed = false
+    private var indexReady = false
 
     /// The optional bootstrap owner is accepted only before any v2 owner
     /// decision exists. It comes from a positively attributed legacy store,
@@ -166,12 +168,13 @@ actor DataSession {
                 }
             }
         } catch {
-            try close()
+            try closeLocked()
             throw error
         }
     }
 
     func activate(_ status: DataIdentityStatus) throws -> (DataSessionLease, DataScopeSelection) {
+        lifecycle.lock(); defer { lifecycle.unlock() }
         try recoverLocalMove()
         let next: DataScopeSelection
         var state = owner
@@ -199,13 +202,13 @@ actor DataSession {
             if owner != state { try saveOwner(state) }
             return (lease, next)
         }
-        try close()
+        try closeLocked()
         try openPool(next.scope)
         do {
             state.current = next.scope
             try saveOwner(state)
         } catch {
-            try close()
+            try closeLocked()
             throw error
         }
         let token = DataSessionLease(scope: next.scope, identity: UUID())
@@ -214,7 +217,11 @@ actor DataSession {
     }
 
     func close() throws {
-        lease = nil; selection = nil
+        try lifecycle.withLock { try closeLocked() }
+    }
+
+    private func closeLocked() throws {
+        lease = nil; selection = nil; indexReady = false
         guard let pool else { return }
         do { try pool.close() }
         catch { closeFailed = true; throw error }
@@ -227,17 +234,23 @@ actor DataSession {
         return pool
     }
 
-    /// Short migration checks only. The future query layer must pin both file
-    /// snapshots up front without holding this actor through long calculations.
-    func read<T: Sendable>(_ token: DataSessionLease, _ body: @Sendable (Database) throws -> T) throws -> T {
-        try active(token).read { db in
-            return try body(db)
+    /// Used for bounded SQL only. File coordination and Rust steps finish
+    /// outside this lock; the closure must never re-enter the session.
+    func read<T: Sendable>(_ token: DataSessionLease, requireIndex: Bool = false,
+                           _ body: @Sendable (Database) throws -> T) throws -> T {
+        try lifecycle.withLock {
+            let reader = try active(token)
+            guard !requireIndex || indexReady else { throw DataV2Error.migrationNotVerified }
+            return try reader.read(body)
         }
     }
 
-    /// The application has not switched authority. These entry points are for
-    /// the exclusive cutover/migration owner and controlled fixture seeding.
     func importLegacyIndex(_ file: URL, token: DataSessionLease) throws {
+        lifecycle.lock(); defer { lifecycle.unlock() }
+        try importLegacyIndexLocked(file, token: token)
+    }
+
+    private func importLegacyIndexLocked(_ file: URL, token: DataSessionLease) throws {
         guard !owner.ownedIndex else { throw DataV2Error.migrationAlreadyComplete }
         let writer = try active(token), resourceBundle = bundle
         try writer.writeWithoutTransaction { db in
@@ -245,10 +258,53 @@ actor DataSession {
         }
     }
 
+    /// Runs before any Swift index task or read. The marker records a copy
+    /// (or absence of a source) and prevents re-import after Swift writes.
+    /// Activation of the complete user/query authority is still separate.
+    func prepareIndex(_ legacyFile: URL, token: DataSessionLease) throws {
+        lifecycle.lock(); defer { lifecycle.unlock() }
+        let writer = try active(token)
+        guard !indexReady else { return }
+        let imported = try writer.read {
+            try Int.fetchOne($0, sql: "SELECT legacy_version FROM main.index_import_state WHERE id=1")
+        }
+        if imported == nil {
+            guard !owner.ownedIndex else { throw DataV2Error.migrationNotVerified }
+            let sourceExists: Bool
+            do {
+                _ = try FileManager.default.attributesOfItem(atPath: legacyFile.path)
+                sourceExists = true
+            } catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {
+                // An access or metadata error is not evidence the source is absent.
+                sourceExists = false
+            }
+            if sourceExists {
+                try importLegacyIndexLocked(legacyFile, token: token)
+            } else {
+                try writer.write { db in
+                    try db.execute(sql: "INSERT INTO main.index_import_state VALUES(1,0)")
+                }
+            }
+        }
+        try writer.write { db in try IndexImport.recover(db) }
+        indexReady = true
+    }
+
+    /// The index path never supplies an additional pool to import, scanning,
+    /// restoration or chapter workers. Write closures only touch main.
+    func writeIndex<T: Sendable>(_ token: DataSessionLease, _ body: (Database) throws -> T) throws -> T {
+        try lifecycle.withLock {
+            let writer = try active(token)
+            guard indexReady else { throw DataV2Error.migrationNotVerified }
+            return try writer.write(body)
+        }
+    }
+
     /// Do not persist ownership at the end of a table copy. A later cutover
     /// will publish it only after the user import and all release gates pass.
 
     func importLegacyUsers(_ snapshot: LegacyUserSnapshot, token: DataSessionLease) throws {
+        lifecycle.lock(); defer { lifecycle.unlock() }
         guard let sourceScope = snapshot.scope, sourceScope == token.scope else {
             throw DataV2Error.incompatibleSource("unconfirmed legacy user ownership")
         }
@@ -258,19 +314,20 @@ actor DataSession {
     /// Called only from the confirmed enable flow. Merely learning the current
     /// iCloud account does not transfer local records.
     func claimLocal(for target: DataScope) throws {
+        lifecycle.lock(); defer { lifecycle.unlock() }
         guard target.valid, target != .local, verifiedAccount == target else {
             throw DataV2Error.invalidOwnerState
         }
         try recoverLocalMove()
         let source = try layout.user(.local)
         guard FileManager.default.fileExists(atPath: source.path) else {
-            try close()
+            try closeLocked()
             var state = owner
             state.current = target; state.lastConfirmed = target
             try saveOwner(state)
             return
         }
-        try close()
+        try closeLocked()
         try openPool(target)
         let move = DataOwnerState.Move(id: UUID(), target: target)
         var next = owner
@@ -284,25 +341,25 @@ actor DataSession {
                 }
             }
             try finishLocalMove(move)
-            try close()
+            try closeLocked()
         } catch {
             // Reopen reconciles the target completion marker before allowing
             // local writes again. Never erase the source after failed copy.
-            try close()
+            try closeLocked()
             throw error
         }
     }
 
     private func recoverLocalMove() throws {
         guard let move = owner.move else { return }
-        try close()
+        try closeLocked()
         try openPool(move.target)
         do { try finishLocalMove(move) }
         catch {
-            try close()
+            try closeLocked()
             throw error
         }
-        try close()
+        try closeLocked()
     }
 
     private func finishLocalMove(_ move: DataOwnerState.Move) throws {

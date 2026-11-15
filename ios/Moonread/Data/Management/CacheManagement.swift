@@ -11,7 +11,7 @@ private final class CacheSourceWork: @unchecked Sendable {
     private let probe = SourceIdentityProbe()
     private let access = ProtectedFileAccess()
     func cancel() { cancelled.withLock { $0 = true }; probe.cancel(); access.cancel() }
-    func run(body: CachedBody, file: SourceFileSnapshot, shelf: LibraryShelf, core: ReaderCore, protected: [String]) async throws -> Bool {
+    func run(body: CachedBody, file: SourceFileSnapshot, shelf: LibraryShelf, core: ReaderIndex, protected: [String]) async throws -> Bool {
         try await Task.detached(priority: .utility) { [self] in
             let source = try ProtectedFileAccess.Source(bookmark: Data(shelf.bookmark), relativePath: file.relativePath)
             defer { withExtendedLifetime(source) {} }
@@ -41,14 +41,14 @@ private final class CacheSourceWork: @unchecked Sendable {
 }
 extension AppDataService {
     func cacheSummary() async throws -> CacheSummary {
-        let core = try textCore(), protected = cacheProtectedBookIDs()
+        let core = try indexStore(), protected = cacheProtectedBookIDs()
         // Only the handle and active IDs belong to the service actor.
         return try await Task.detached(priority: .utility) {
             try core.cacheSummary(protectedBookIds: protected)
         }.value
     }
     func clearRebuildableCaches() async throws -> CacheCleanupResult {
-        let core = try textCore(), bodies = try core.cacheInventory(protectedBookIds: cacheProtectedBookIDs())
+        let core = try indexStore(), bodies = try core.cacheInventory(protectedBookIds: cacheProtectedBookIDs())
         var result = CacheCleanupResult()
         for body in bodies {
             try Task.checkCancellation()
@@ -88,7 +88,7 @@ extension AppDataService {
         return result
     }
     func clearDeletedReadingBodyCaches(_ keys: Set<String>) throws -> Bool {
-        let core = try textCore(); var allRemoved = true
+        let core = try indexStore(); var allRemoved = true
         for body in try core.cacheInventory(protectedBookIds: cacheProtectedBookIDs()) where keys.contains(body.contentSha256) {
             let removed = try core.evictCachedBody(bookId: body.bookId, contentSha256: body.contentSha256, verifiedFile: nil, protectedBookIds: cacheProtectedBookIDs(), discardOffline: true)
             if !removed { allRemoved = false }

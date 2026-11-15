@@ -60,7 +60,7 @@ final class RecentRestorationWork: @unchecked Sendable {
         let decoding: String
     }
     let fileID: String
-    private let core: ReaderCore
+    private let core: ReaderIndex
     private let candidate: RecentRestorationPolicy.Candidate
     private let contentKey: String
     private let mayDownload: Bool
@@ -70,7 +70,7 @@ final class RecentRestorationWork: @unchecked Sendable {
     private var cancelled = false
     private var control: ImportControl?
 
-    init(core: ReaderCore, candidate: RecentRestorationPolicy.Candidate, contentKey: String, mayDownload: Bool, service: AppDataService) {
+    init(core: ReaderIndex, candidate: RecentRestorationPolicy.Candidate, contentKey: String, mayDownload: Bool, service: AppDataService) {
         self.core = core; self.candidate = candidate; self.contentKey = contentKey; fileID = candidate.file.id
         self.mayDownload = mayDownload; self.service = service
     }
@@ -150,10 +150,10 @@ final class RecentRestorationWork: @unchecked Sendable {
 
 extension AppDataService {
     func positionSourceHint(_ id: String) -> PositionSourceHint? {
-        guard let fileID = readingSourceIDs[id], let file = try? textCore().sourceFileSnapshots(fileId: fileID).first,
+        guard let fileID = readingSourceIDs[id], let file = try? indexStore().sourceFileSnapshots(fileId: fileID).first,
               let shelf = try? libraryShelf(file.shelfId) else { return nil }
         let kind: PositionSourceHint.Kind = shelf.builtin ? (shelf.location == "icloud" ? .managedICloud : .managedLocal) : .external
-        let actual = (try? textCore().importSourceByteCount(bookId: id)) ?? 0
+        let actual = (try? indexStore().importSourceByteCount(bookId: id)) ?? 0
         let size = actual > 0 ? actual : file.size
         return PositionSourceHint(source_kind: kind, relative_path: file.relativePath, file_name: file.name, byte_size: size > 0 ? size : nil, decoding: file.decoding)
     }
@@ -188,7 +188,7 @@ extension AppDataService {
         } while recentRestorationRequested && recentRestorationActive && !Task.isCancelled
     }
     private func restorationCandidates() throws -> [RecentRestorationPolicy.Candidate] {
-        let core = try textCore()
+        let core = try indexStore()
         let roots = Dictionary(uniqueKeysWithValues: try shelves().filter { $0.error == nil }.map { ($0.id, $0) })
         return try core.sourceFileSnapshots(fileId: nil).compactMap { file in
             guard let shelf = roots[file.shelfId] else { return nil }
@@ -196,7 +196,7 @@ extension AppDataService {
         }
     }
     private func restorationCandidate(_ id: String) throws -> RecentRestorationPolicy.Candidate? {
-        guard let file = try textCore().sourceFileSnapshots(fileId: id).first,
+        guard let file = try indexStore().sourceFileSnapshots(fileId: id).first,
               let shelf = try shelves().first(where: { $0.id == file.shelfId && $0.error == nil }) else { return nil }
         return .init(file: file, shelf: shelf)
     }
@@ -231,7 +231,7 @@ extension AppDataService {
         for position in positions where !hidden.contains(position.contentKey) {
             try Task.checkCancellation()
             guard recentRestorationActive, let hint = position.hint else { continue }
-            let core = try textCore()
+            let core = try indexStore()
             if let id = try? core.textIdForSha(sha: position.contentKey), all.contains(where: { $0.file.bookId == id }) { continue }
             let candidates = RecentRestorationPolicy.candidates(hint: hint, files: all)
             let fingerprint = restorationFingerprint(candidates, position: position, decodings: decodings)

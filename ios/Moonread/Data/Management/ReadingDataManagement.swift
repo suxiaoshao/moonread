@@ -59,7 +59,7 @@ extension AppDataService {
         value.pending += pending.pending
         value.unsupported += pending.unsupported
         value.diagnostics += pending.diagnostics
-        let core = try textCore()
+        let core = try indexStore()
         for i in value.items.indices {
             let key = value.items[i].id
             do {
@@ -128,7 +128,7 @@ extension AppDataService {
         guard case let .pending(id) = try parseReadingKey(value: key) else { throw ReadingDataError.invalid }
         var result = PendingReadingData(id: key, bookID: id)
         do {
-            let status = try textCore().importStatus(bookId: id)
+            let status = try indexStore().importStatus(bookId: id)
             result.title = status.text.title; result.phase = status.phase
         } catch ReaderError.NotFound { return result }
         // A completed task can transfer its facts without the original file.
@@ -140,7 +140,7 @@ extension AppDataService {
         let rootBookmark: Data
         if let fileID = source.fileID {
             do {
-                let file = try textCore().sourceFileLocation(fileId: fileID)
+                let file = try indexStore().sourceFileLocation(fileId: fileID)
                 let shelf = try libraryShelf(file.shelfId)
                 result.shelfID = shelf.builtin ? nil : shelf.id; result.shelfName = shelf.name
                 result.source = file.relativePath; rootBookmark = Data(shelf.bookmark)
@@ -179,14 +179,14 @@ extension AppDataService {
         await managementStatisticsWriter().drain()
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-        let effective = try textCore().resolveReadingKeys(keys: keys.map { try parseReadingKey(value: $0) })
+        let effective = try indexStore().resolveReadingKeys(keys: keys.map { try parseReadingKey(value: $0) })
         let busyKeys = keys.union(effective.map { serializeReadingKey(key: $0.effective) })
         guard !readingDataIsBusy(busyKeys) else { throw ReadingDataError.busy }
         let pending = try await userStore(pending: true)
         let formal = try await userStore()
         let pendingKeys = try await pending.allReadingDataKeys()
         let owned = try await formal.allReadingDataKeys().union(pendingKeys)
-        let resolutions = try textCore().resolveReadingKeys(keys: owned.map { try parseReadingKey(value: $0) })
+        let resolutions = try indexStore().resolveReadingKeys(keys: owned.map { try parseReadingKey(value: $0) })
         let aliases = keys.union(resolutions.filter { keys.contains(serializeReadingKey(key: $0.effective)) }.map { serializeReadingKey(key: $0.original) })
         // A stop between these commits leaves formal data visible and retryable.
         // No durable receipt can later delete data that has arrived since then.
@@ -207,7 +207,7 @@ extension AppDataService {
                 return nil
             })
             guard identityMayRun() else { return false }
-            try reclaimImports(textCore())
+            try reclaimImports(indexStore())
             return try clearDeletedReadingBodyCaches(keys)
         } catch { return false }
     }
@@ -306,7 +306,7 @@ extension AppDataService {
     func refreshReadingBackupPreview(_ staging: BackupStaging) async throws -> ReadingBackupPreview {
         guard staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         let preview = try await userStore().validateBackup(directory: staging.directory, manifest: staging.manifest)
-        let core = try textCore(); var linked = 0
+        let core = try indexStore(); var linked = 0
         for key in preview.keys { if try !core.sourceFilesForSha(sha: key).isEmpty { linked += 1 } }
         guard staging.configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         return .init(staging: staging, preview: preview, linked: linked)

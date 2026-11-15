@@ -29,6 +29,17 @@ impl Drop for MetadataDocument {
     }
 }
 
+fn unsigned_column(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<u64> {
+    let value: i64 = row.get(index)?;
+    u64::try_from(value).map_err(|e| {
+        rusqlite::Error::FromSqlConversionFailure(
+            index,
+            rusqlite::types::Type::Integer,
+            Box::new(e),
+        )
+    })
+}
+
 fn save_diagnostic(
     db: &Connection,
     mut d: MetadataDiagnostic,
@@ -347,13 +358,13 @@ impl MetadataDocument {
         let db = self.db.lock().map_err(|_| invalid("小说信息暂存不可用"))?;
         Ok(MetadataDocumentSummary {
             books: db.query_row("SELECT count(DISTINCT sha) FROM records", [], |r| {
-                crate::unsigned_column(r, 0)
+                unsigned_column(r, 0)
             })?,
             variants: db.query_row("SELECT count(*) FROM records", [], |r| {
-                crate::unsigned_column(r, 0)
+                unsigned_column(r, 0)
             })?,
             diagnostics: db.query_row("SELECT count(*) FROM diagnostics", [], |r| {
-                crate::unsigned_column(r, 0)
+                unsigned_column(r, 0)
             })?,
         })
     }
@@ -411,12 +422,12 @@ impl MetadataDocument {
         let mut records = Vec::new();
         while let Some(row) = rows.next()? {
             records.push(MetadataRecord {
-                id: crate::unsigned_column(row, 0)?,
+                id: unsigned_column(row, 0)?,
                 book: serde_json::from_str(&row.get::<_, String>(1)?)
                     .map_err(|_| invalid("小说信息暂存无法读取"))?,
                 source_line: row.get::<_, Option<i64>>(2)?.map(|v| v as u64),
-                record_index: crate::unsigned_column(row, 3)?,
-                duplicates: crate::unsigned_column(row, 4)?,
+                record_index: unsigned_column(row, 3)?,
+                duplicates: unsigned_column(row, 4)?,
             });
         }
         let done = records.len() <= count as usize;
@@ -436,7 +447,7 @@ impl MetadataDocument {
             db.prepare("SELECT id,payload FROM diagnostics WHERE id>?1 ORDER BY id LIMIT ?2")?;
         let values = statement
             .query_map(params![cursor as i64, count as i64 + 1], |r| {
-                Ok((crate::unsigned_column(r, 0)?, r.get::<_, String>(1)?))
+                Ok((unsigned_column(r, 0)?, r.get::<_, String>(1)?))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         let done = values.len() <= count as usize;

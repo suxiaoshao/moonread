@@ -1,10 +1,5 @@
-mod catalogue;
-mod search;
 mod search_compute;
-mod text;
 
-pub(crate) use catalogue::{chapter, content_key};
-pub use search::SearchJob;
 pub use search_compute::{SearchScanState, SearchScanStep, advance_search_scan, begin_search_scan};
 
 #[derive(Clone, Debug, PartialEq, uniffi::Record)]

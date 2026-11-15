@@ -18,12 +18,12 @@ struct IdentityInventory: Sendable {
 extension AppDataService {
     func identityInventory(_ shelfID: String, scannedOnly: Bool = false) async throws -> IdentityInventory {
         try await refreshIndexedSourceDecodings(shelfID)
-        let core = try textCore()
+        let core = try indexStore()
         let value = try core.libraryIdentityInventory(shelfId: shelfID)
         return try IdentityInventory(shelf: libraryShelf(shelfID), total: Int(clamping: value.total), pending: value.pending,
                                      eligiblePaths: scannedOnly ? (indexScanIsCurrent(shelfID) ? (indexScanFiles[shelfID] ?? []) : []) : nil)
     }
-    func identityCore() throws -> ReaderCore { try textCore() }
+    func identityCore() throws -> ReaderIndex { try indexStore() }
 }
 
 /// Coordinated hash and decode surround the single synced policy resolution.
@@ -32,7 +32,7 @@ private final class IdentityFileWork: @unchecked Sendable {
     private let cancellation = OSAllocatedUnfairLock(initialState: false)
     var isCancelled: Bool { cancellation.withLock { $0 } }
     func cancel() { cancellation.withLock { $0 = true }; read.cancel() }
-    func run(file: SourceFileSnapshot, shelf: LibraryShelf, core: ReaderCore, includeCloud: Bool, service: AppDataService) async throws {
+    func run(file: SourceFileSnapshot, shelf: LibraryShelf, core: ReaderIndex, includeCloud: Bool, service: AppDataService) async throws {
         try await withTaskCancellationHandler {
             try await Task.detached(priority: .utility) { [self] in
                 try Task.checkCancellation()

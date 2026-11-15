@@ -402,7 +402,7 @@ extension AppDataService {
     /// Synthetic events live exclusively in the isolated UI-test store.
     func createStatisticsFixture(bookID: String? = nil) async throws {
         guard testSession != nil else { return }
-        let core = try textCore(), now = Date()
+        let core = try indexStore(), now = Date()
         guard try await statistics(first: 0, last: 100_000).books.isEmpty else { return }
         let entries = try core.sourceFiles(shelfId: "builtin").filter { $0.bookId != nil && (bookID == nil || $0.bookId == bookID) }.prefix(3)
         for (index, entry) in entries.enumerated() {

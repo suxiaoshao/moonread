@@ -38,7 +38,7 @@ extension AppDataService {
     }
   }
   func aiBookID(sha: String) throws -> String {
-    try textCore().textIdForSha(sha: sha)
+    try indexStore().textIdForSha(sha: sha)
   }
   func aiMarks(sha: String) async throws -> [String: [AnnotationCandidate]] {
     try await userStore().candidates(key: sha)

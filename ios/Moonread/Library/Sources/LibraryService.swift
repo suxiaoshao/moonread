@@ -124,11 +124,11 @@ extension AppDataService {
         // Normal cached startup is identical in Debug and Release; isolated
         // fixtures still need full preparation to seed their temporary library.
         if testSession == nil, libraryDirectoryOverride == nil,
-           try textCore().libraryShelves().contains(where: { $0.builtin }) { return }
+           try indexStore().libraryShelves().contains(where: { $0.builtin }) { return }
         try await prepareLibrary(localOnly: true)
     }
     func prepareLibrary(localOnly: Bool = false) async throws {
-        let core = try textCore()
+        let core = try indexStore()
         try await migrateKnownSourceDecodings()
         if !localOnly { restoreCloudLibraryRoot() }
         let url = try builtinLibraryURL()
@@ -198,7 +198,7 @@ extension AppDataService {
     /// switched account or overwrite an existing file.
     func welcomeStory(expectedRoot: URL?) async throws -> LibraryEntry? {
         guard expectedRoot == cloudLibraryRoot else { throw LibraryFileError.missingShelf }
-        let core = try textCore()
+        let core = try indexStore()
         let existing = try core.sourceFiles(shelfId: "builtin")
         if let id = sourceDefaults.string(forKey: "Moonread.seededExampleFileID"),
            existing.contains(where: { $0.id == id }) {
@@ -229,7 +229,7 @@ extension AppDataService {
 
     func hasUserImportedBooks() throws -> Bool {
         let example = sourceDefaults.string(forKey: "Moonread.seededExampleFileID")
-        return try textCore().sourceFiles(shelfId: "builtin").contains { !$0.directory && $0.id != example }
+        return try indexStore().sourceFiles(shelfId: "builtin").contains { !$0.directory && $0.id != example }
     }
     func builtinLibraryURL() throws -> URL {
         if let cloudLibraryRoot { return cloudLibraryRoot }
@@ -242,13 +242,13 @@ extension AppDataService {
 
     /// Structural index only: no user-data projection, reading position or transient import alias.
     func libraryStructure() throws -> [SourceFileLocation] {
-        let core = try textCore()
+        let core = try indexStore()
         return try core.libraryShelves().flatMap { try core.sourceFiles(shelfId: $0.id) }
             .map { SourceFileLocation(id: $0.id, directory: $0.directory, shelfId: $0.shelfId, relativePath: $0.relativePath, bookId: nil) }
             .sorted { $0.id < $1.id }
     }
 
-    func shelves() throws -> [LibraryShelf] { try textCore().libraryShelves() }
+    func shelves() throws -> [LibraryShelf] { try indexStore().libraryShelves() }
     func libraryShelf(_ id: String) throws -> LibraryShelf {
         guard let shelf = try shelves().first(where: { $0.id == id }) else { throw LibraryFileError.missingShelf }
         return shelf
@@ -269,7 +269,7 @@ extension AppDataService {
     /// AI previously read details before matching. Preserve its unknown-metadata
     /// barrier in one store call, without doing a details lookup for each file.
     func requireAIMetadataReadable(_ location: LibraryLocation?, recursive: Bool) async throws {
-        let keys = try textCore().catalogueContentKeys(scope: catalogueScope(location, recursive: recursive))
+        let keys = try indexStore().catalogueContentKeys(scope: catalogueScope(location, recursive: recursive))
         let formal = Set(keys.compactMap { key -> String? in
             if case .formal = key { return serializeReadingKey(key: key) }; return nil
         })
@@ -334,13 +334,13 @@ extension AppDataService {
         if shelfID == "builtin" { throw LibraryFileError.invalidDestination }
         let id = shelfID ?? UUID().uuidString
         let bookmark = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-        try textCore().saveLibraryShelf(id: id, name: url.lastPathComponent, bookmark: bookmark,
+        try indexStore().saveLibraryShelf(id: id, name: url.lastPathComponent, bookmark: bookmark,
                                      location: values.isUbiquitousItem == true ? "icloud" : "external", builtin: false)
         return id
     }
 
     func removeLibraryShelf(_ id: String) throws {
-        try textCore().removeLibraryShelf(shelfId: id)
+        try indexStore().removeLibraryShelf(shelfId: id)
         try? forgetShelfReference(id)
         indexScanFiles[id] = nil; indexScanRoots[id] = nil; indexScanRevisions[id] = nil
         libraryScans[id] = nil
@@ -393,7 +393,7 @@ extension AppDataService {
         catch {
             if libraryScans[id] == request {
                 indexScanFiles[id] = nil; indexScanRoots[id] = nil; indexScanRevisions[id] = nil
-                try textCore().setLibraryShelfError(shelfId: id, message: ReaderMessages.error(error))
+                try indexStore().setLibraryShelfError(shelfId: id, message: ReaderMessages.error(error))
             }
             throw error
         }
@@ -437,7 +437,7 @@ extension AppDataService {
                 let access = url.startAccessingSecurityScopedResource()
                 defer { if access { url.stopAccessingSecurityScopedResource() } }
                 let data = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
-                try textCore().saveLibraryShelf(id: shelf.id, name: url.lastPathComponent, bookmark: data, location: shelf.location, builtin: false)
+                try indexStore().saveLibraryShelf(id: shelf.id, name: url.lastPathComponent, bookmark: data, location: shelf.location, builtin: false)
             }
             return url
         }
@@ -520,15 +520,15 @@ extension AppDataService {
     }
 
     func applyLibraryScan(_ id: String, root: URL, scan: LibraryScanSnapshot) throws {
-        try textCore().scanLibraryShelfPartial(shelfId: id, items: scan.items, failedPaths: scan.failedPaths)
-        if !scan.failures.isEmpty { try textCore().setLibraryShelfError(shelfId: id, message: scan.failures.joined(separator: "\n")) }
+        try indexStore().scanLibraryShelfPartial(shelfId: id, items: scan.items, failedPaths: scan.failedPaths)
+        if !scan.failures.isEmpty { try indexStore().setLibraryShelfError(shelfId: id, message: scan.failures.joined(separator: "\n")) }
         observeLibraryRoot(id, root: root)
         scheduleRecentRestoration()
         publishIndexScan(id, root: root, items: scan.items)
     }
 
     func applyLibraryScan(_ id: String, root: URL, items: [ScannedLibraryItem], observe: Bool = true) throws {
-        try textCore().scanLibraryShelf(shelfId: id, items: items)
+        try indexStore().scanLibraryShelf(shelfId: id, items: items)
         if observe { observeLibraryRoot(id, root: root) }
         scheduleRecentRestoration()
         publishIndexScan(id, root: root, items: items)
@@ -688,7 +688,7 @@ extension AppDataService {
         guard configuration == userCloudConfigurationRevision,
               deletionToken == localReadingWriteLeases[sha] else { throw ReadingDataError.changed }
         let current: SourceFileLocation
-        do { current = try textCore().sourceFileLocation(fileId: entry.id) }
+        do { current = try indexStore().sourceFileLocation(fileId: entry.id) }
         catch ReaderError.NotFound { throw ReaderError.SourceChanged }
         guard !current.directory, current.shelfId == entry.shelfId, current.relativePath == entry.relativePath else {
             throw ReaderError.SourceChanged
@@ -742,7 +742,7 @@ extension AppDataService {
                 throw LibraryFileError.invalidDestination
             }
         }
-        let children = try textCore().sourceFiles(shelfId: entry.shelfId)
+        let children = try indexStore().sourceFiles(shelfId: entry.shelfId)
         pauseFileImports(Set(children.filter { $0.id == entry.id || $0.relativePath.hasPrefix(entry.relativePath + "/") }.map(\.id)))
         try withLibraryURL(entry.location) { source in
             if check != nil || renameValidation.required { try Self.requirePreparedFile(source) }
@@ -789,7 +789,7 @@ extension AppDataService {
                 try result.get()
             }
         }
-        try textCore().relocateLibraryEntry(fileId: entry.id, targetShelf: destination.shelfID, targetPath: target)
+        try indexStore().relocateLibraryEntry(fileId: entry.id, targetShelf: destination.shelfID, targetPath: target)
         try rebindFileImportSources(Set(children.filter { $0.id == entry.id || $0.relativePath.hasPrefix(entry.relativePath + "/") }.map(\.id)))
         try refreshLibraryShelf(entry.shelfId)
         if destination.shelfID != entry.shelfId { try refreshLibraryShelf(destination.shelfID) }
@@ -801,11 +801,11 @@ extension AppDataService {
 
     @discardableResult
     func deleteLibraryItem(_ entry: LibraryEntry, permanently: Bool = false) async throws -> LibraryDeletionResult {
-        let current = try textCore().sourceFileLocation(fileId: entry.id)
+        let current = try indexStore().sourceFileLocation(fileId: entry.id)
         guard current.shelfId == entry.shelfId, current.relativePath == entry.relativePath,
               !entry.relativePath.isEmpty else { throw LibraryFileError.invalidDestination }
         let root = try resolveShelf(libraryShelf(entry.shelfId))
-        let children = try textCore().sourceFiles(shelfId: entry.shelfId)
+        let children = try indexStore().sourceFiles(shelfId: entry.shelfId)
         pauseFileImports(Set(children.filter { $0.id == entry.id || $0.relativePath.hasPrefix(entry.relativePath + "/") }.map(\.id)))
         // Invalidate before suspending: a pre-delete scan must not publish while IO waits.
         libraryScans[entry.shelfId] = UUID()
@@ -860,7 +860,7 @@ extension AppDataService {
         }
         if cloudLibraryRoot == nil { cloudLibraryCheckNeeded = true; cloudLibraryRetryAfterImport = true }
         try refreshLibraryShelf("builtin")
-        guard let entry = try textCore().sourceFiles(shelfId: destination.shelfID).first(where: { $0.relativePath == relative }) else { throw ReaderError.NotFound }
+        guard let entry = try indexStore().sourceFiles(shelfId: destination.shelfID).first(where: { $0.relativePath == relative }) else { throw ReaderError.NotFound }
         return entry.id
     }
 

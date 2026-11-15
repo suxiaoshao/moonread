@@ -100,7 +100,7 @@ extension AppDataService {
         let configuration = userCloudConfigurationRevision
         let policies = try await userStore().sourceDecodingSnapshot()
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
-        let core = try textCore()
+        let core = try indexStore()
         for file in try core.indexedSourcePolicies(shelfId: shelfID) {
             // Unknown values cannot invalidate/rewrite an existing identity;
             // attempting this source still reports isolation at the resolver.
@@ -111,7 +111,7 @@ extension AppDataService {
     func prepareSourceDecoding(raw: RawSourceIdentity, fileID: String?, selection: String? = nil) async throws -> String {
         try Task.checkCancellation()
         let configuration = userCloudConfigurationRevision
-        let core = try textCore(), store = try await userStore()
+        let core = try indexStore(), store = try await userStore()
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
         try Task.checkCancellation()
@@ -134,7 +134,7 @@ extension AppDataService {
     /// and are reported when that source is prepared; other books remain usable.
     func migrateKnownSourceDecodings() async throws {
         let configuration = userCloudConfigurationRevision
-        let core = try textCore(), store = try await userStore()
+        let core = try indexStore(), store = try await userStore()
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
         for row in try core.sourceDecodingMigrations() {

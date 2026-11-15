@@ -8,6 +8,11 @@
 
 /* Begin PBXBuildFile section */
         270D00000000000000000043 = {isa = PBXBuildFile; productRef = 270D00000000000000000042;};
+        270D0000000000000000002B = {isa = PBXBuildFile; fileRef = 270D0000000000000000000B;};
+        270D0000000000000000002C = {isa = PBXBuildFile; fileRef = 270D0000000000000000000C;};
+        270D0000000000000000002D = {isa = PBXBuildFile; fileRef = 270D0000000000000000000D;};
+        270D0000000000000000002E = {isa = PBXBuildFile; fileRef = 270D0000000000000000000E;};
+        270D0000000000000000002F = {isa = PBXBuildFile; fileRef = 270D0000000000000000000F;};
         270D0000000000000000002A = {isa = PBXBuildFile; fileRef = 270D0000000000000000000A;};
         270D00000000000000000029 = {isa = PBXBuildFile; fileRef = 270D00000000000000000009;};
         270D00000000000000000028 = {isa = PBXBuildFile; fileRef = 270D00000000000000000008;};
@@ -434,10 +439,15 @@ CA0FCD9B82134E7091B5CD9F /* ModelDirectoryDecoding.swift in Sources */ = {isa = 
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+        270D0000000000000000000B = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderIndex.swift"; sourceTree = "<group>";};
+        270D0000000000000000000C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IndexInput.swift"; sourceTree = "<group>";};
+        270D0000000000000000000D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IndexImport.swift"; sourceTree = "<group>";};
+        270D0000000000000000000E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IndexSources.swift"; sourceTree = "<group>";};
+        270D0000000000000000000F = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IndexTasks.swift"; sourceTree = "<group>";};
         270D0000000000000000000A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Data/DataV2MigrationTests.swift"; sourceTree = SOURCE_ROOT;};
-        270D00000000000000000009 = {isa = PBXFileReference; lastKnownFileType = text; path = "../crates/moonread-core/src/storage/source_decoding_migration.sql"; sourceTree = SOURCE_ROOT;};
-        270D00000000000000000008 = {isa = PBXFileReference; lastKnownFileType = text; path = "../crates/moonread-core/src/library/bookshelf/full_index.sql"; sourceTree = SOURCE_ROOT;};
-        270D00000000000000000007 = {isa = PBXFileReference; lastKnownFileType = text; path = "../crates/moonread-core/src/storage/schema.sql"; sourceTree = SOURCE_ROOT;};
+        270D00000000000000000009 = {isa = PBXFileReference; lastKnownFileType = text; path = "Moonread/Data/Database/LegacySQL/source_decoding_migration.sql"; sourceTree = SOURCE_ROOT;};
+        270D00000000000000000008 = {isa = PBXFileReference; lastKnownFileType = text; path = "Moonread/Data/Database/LegacySQL/full_index.sql"; sourceTree = SOURCE_ROOT;};
+        270D00000000000000000007 = {isa = PBXFileReference; lastKnownFileType = text; path = "Moonread/Data/Database/LegacySQL/schema.sql"; sourceTree = SOURCE_ROOT;};
         270D00000000000000000006 = {isa = PBXFileReference; lastKnownFileType = text; path = "UserSchemaV1.sql"; sourceTree = "<group>";};
         270D00000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LocalScopeImport.swift"; sourceTree = "<group>";};
         270D00000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LegacyUserImport.swift"; sourceTree = "<group>";};
@@ -857,7 +867,7 @@ D35000000000000000000001,
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-        270D00000000000000000040 /* Database */ = {isa = PBXGroup; children = (270D00000000000000000001,270D00000000000000000002,270D00000000000000000003,270D00000000000000000004,270D00000000000000000005,270D00000000000000000006,270D00000000000000000007,270D00000000000000000008,270D00000000000000000009); path = Database; sourceTree = "<group>";};
+        270D00000000000000000040 /* Database */ = {isa = PBXGroup; children = (270D00000000000000000001,270D00000000000000000002,270D00000000000000000003,270D00000000000000000004,270D00000000000000000005,270D00000000000000000006,270D00000000000000000007,270D00000000000000000008,270D00000000000000000009,270D0000000000000000000B,270D0000000000000000000C,270D0000000000000000000D,270D0000000000000000000E,270D0000000000000000000F); path = Database; sourceTree = "<group>";};
 		148C00000000000000000001 /* Usage */ = {
 			isa = PBXGroup;
 			children = (
@@ -2090,6 +2100,11 @@ E51000000000000000000009,D41000000000000000000001,
                 270D00000000000000000022,
                 270D00000000000000000023,
                 270D00000000000000000024,
+                270D0000000000000000002B,
+                270D0000000000000000002C,
+                270D0000000000000000002D,
+                270D0000000000000000002E,
+                270D0000000000000000002F,
                 270D00000000000000000025,
 
 				FBEC3350F1726A8D25FE408B /* AIChatView.swift in Sources */,

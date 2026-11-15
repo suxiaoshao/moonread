@@ -25,7 +25,7 @@ extension AppDataService {
             try book.text.write(to: parent.appendingPathComponent(book.title + ".txt"), atomically: true, encoding: .utf8)
         }
         try refreshLibraryShelf("builtin")
-        let core = try textCore()
+        let core = try indexStore()
         let files = try core.sourceFileSnapshots(fileId: nil).filter { $0.shelfId == "builtin" }
         for file in files {
             let path = root.appendingPathComponent(file.relativePath)

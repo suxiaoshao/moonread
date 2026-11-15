@@ -222,7 +222,7 @@ actor AppDataService {
         let cache = NSCache<NSString, NSData>(); cache.totalCostLimit = 16 * 1024 * 1024; cache.countLimit = 128; return cache
     }()
     var systemSpotlightThumbnailFailures = Set<String>()
-    private var core: ReaderCore?
+    private var core: ReaderIndex?
     struct CachedQuery {
         let signature: UserQuerySignature
         let identities: [String: String]
@@ -293,7 +293,7 @@ actor AppDataService {
     let libraryDirectoryOverride: URL?
     let libraryDeletion: @Sendable (URL, Bool) throws -> Void
     let libraryScan: (@Sendable (URL, [CloudDocumentItem]) throws -> [ScannedLibraryItem])?
-    init(core: ReaderCore? = nil, libraryDirectory: URL? = nil, sourceDefaultsSuite: String? = nil, dataManagementWriter: StatisticsWriter? = nil, userStoreFactory: (@Sendable (String, Bool) async throws -> UserDataStore)? = nil,
+    init(core: ReaderIndex? = nil, libraryDirectory: URL? = nil, sourceDefaultsSuite: String? = nil, dataManagementWriter: StatisticsWriter? = nil, userStoreFactory: (@Sendable (String, Bool) async throws -> UserDataStore)? = nil,
          libraryDeletion: @escaping @Sendable (URL, Bool) throws -> Void = { url, permanently in
              if permanently { try FileManager.default.removeItem(at: url) }
              else { try FileManager.default.trashItem(at: url, resultingItemURL: nil) }
@@ -459,8 +459,8 @@ actor AppDataService {
     // The normal app remains Moonread; injected stores and UI sessions own their caches.
     var dataDirectoryName: String { userDirectoryName }
     // Internal text/file capability. UI-facing user data comes from domain
-    // queries below; this core never receives shared mutable user projections.
-    func textCore() throws -> ReaderCore {
+    // queries below; index tasks never build shared user projections.
+    func indexStore() throws -> ReaderIndex {
         if let core {
             return core
         }
@@ -469,14 +469,17 @@ actor AppDataService {
             appropriateFor: nil, create: true
         ).appendingPathComponent(dataDirectoryName, isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let value = try ReaderCore(dataDirectory: directory.path)
+        let session = try DataSession(layout: DataLayout(applicationSupport: directory))
+        let (lease, _) = try session.activate(.unknown)
+        try session.prepareIndex(directory.appending(path: "reader.sqlite3"), token: lease)
+        let value = ReaderIndex(session: session, lease: lease)
         core = value
         return value
     }
 
     func books() async throws -> [ReadingSnapshot] { try await effectiveQuery(positionsOnly: true, scope: "reading-index").recentReadings() }
     func sample() async throws -> BookInfo {
-        let text = try textCore().createSampleBook()
+        let text = try indexStore().createSampleBook()
         return try await book(text.id)
     }
     func book(_ id: String) async throws -> BookInfo { try await bookQuery(id).bookInfo(bookId: id) }
@@ -493,9 +496,9 @@ actor AppDataService {
     }
     func correctChapter(_ id: String, offset: UInt64, title: String, level: UInt32, excluded: Bool = false) async throws {
         guard level <= 1, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title.count <= 80,
-              !title.contains("\n"), !title.contains("\r"), offset < (try textCore().importStatus(bookId: id).text.byteCount) else { throw ReaderError.InvalidRange }
-        guard try textCore().importStatus(bookId: id).phase == .complete else { throw ReaderError.ImportBusy }
-        try textCore().validateChapterOffset(bookId: id, offsetUtf8: offset)
+              !title.contains("\n"), !title.contains("\r"), offset < (try indexStore().importStatus(bookId: id).text.byteCount) else { throw ReaderError.InvalidRange }
+        guard try indexStore().importStatus(bookId: id).phase == .complete else { throw ReaderError.ImportBusy }
+        try indexStore().validateChapterOffset(bookId: id, offsetUtf8: offset)
         let key = try userKey(id).storageKey
         let value = ChapterValue(content_key: key, offset: offset, title: title.trimmingCharacters(in: .whitespaces), level: level, excluded: excluded)
         try await userStore().put("chapter/\(key)/\(offset)", value: String(decoding: JSONEncoder().encode(value), as: UTF8.self), device: userDevice)
@@ -506,7 +509,7 @@ actor AppDataService {
         for key in try await store.allValues(prefix: "chapter/\(userKey(id).storageKey)/").keys { try await store.put(key, value: "null", device: userDevice) }
         dataChanged()
     }
-    func rebuildChapters(_ id: String) throws -> ChapterRebuild { try textCore().rebuildChapters(bookId: id) }
+    func rebuildChapters(_ id: String) throws -> ChapterRebuild { try indexStore().rebuildChapters(bookId: id) }
     func advanceRebuild(_ job: ChapterRebuild) throws -> ChapterRebuildProgress { try job.nextBatch() }
     func rebuildPreview(_ job: ChapterRebuild, from offset: UInt64 = 0) throws -> [ChapterInfo] { try job.preview(fromUtf8: offset, limit: 80) }
     func applyRebuild(_ job: ChapterRebuild) throws { try job.apply(); dataChanged() }
@@ -604,20 +607,20 @@ actor AppDataService {
     func annotations(_ id: String, start: UInt64, end: UInt64) async throws -> [ReaderMark] { try await userAnnotationRanges(id, start: start, end: end) }
     func bookmarkPositions(_ id: String, start: UInt64, end: UInt64) async throws -> [UInt64] { try await userMarks(id, kind: .bookmark).filter { $0.startUtf8 >= start && $0.startUtf8 < end }.map(\.startUtf8) }
     func toggleBookmark(_ id: String, at offset: UInt64) async throws -> Bool {
-        let key = try userKey(id).storageKey, quote = try textCore().paragraphRange(bookId: id, offsetUtf8: offset).text
+        let key = try userKey(id).storageKey, quote = try indexStore().paragraphRange(bookId: id, offsetUtf8: offset).text
         let result = try await userStore(for: key).bookmark(key: key, id: "bookmark/\(key)/\(offset)", content: AnnotationContent(start: offset, end: offset, excerpt: String(quote.prefix(160)), note: ""))
         dataChanged(); return result
     }
     func ensureBookmark(_ id: String, at offset: UInt64) async throws -> ReaderMark {
         try await promoteUserData(id)
-        let key = try userKey(id).storageKey, quote = try textCore().paragraphRange(bookId: id, offsetUtf8: offset).text
+        let key = try userKey(id).storageKey, quote = try indexStore().paragraphRange(bookId: id, offsetUtf8: offset).text
         let candidate = try await userStore(for: key).ensureBookmark(key: key, id: "bookmark/\(key)/\(offset)", content: .init(start: offset, end: offset, excerpt: String(quote.prefix(160)), note: ""))
         guard let content = candidate.content else { throw ReaderError.InvalidRange }
         dataChanged()
         return ReaderMark(id: "bookmark/\(key)/\(offset)", kind: .bookmark, startUtf8: content.start, endUtf8: content.end, excerpt: content.excerpt, note: content.note, created: candidate.created)
     }
     func hasBookmark(_ id: String, at offset: UInt64) async throws -> Bool { try await userMarks(id, kind: .bookmark).contains { $0.startUtf8 == offset } }
-    func textRange(_ id: String, start: UInt64, end: UInt64) throws -> TextRange { try textCore().textRange(bookId: id, startUtf8: start, endUtf8: end) }
+    func textRange(_ id: String, start: UInt64, end: UInt64) throws -> TextRange { try indexStore().textRange(bookId: id, startUtf8: start, endUtf8: end) }
     func displayTextRange(_ id: String, start: UInt64, end: UInt64, indent: ReadingIndent = .original) async throws -> TextRange {
         let core = try await bookQuery(id)
         let read = Task.detached {
@@ -633,9 +636,9 @@ actor AppDataService {
         } onCancel: { read.cancel() }
     }
     func textContext(_ id: String, at offset: UInt64, before: UInt32, after: UInt32) throws -> TextRange {
-        try textCore().textContext(bookId: id, offsetUtf8: offset, beforeParagraphs: before, afterParagraphs: after)
+        try indexStore().textContext(bookId: id, offsetUtf8: offset, beforeParagraphs: before, afterParagraphs: after)
     }
-    func paragraph(_ id: String, at offset: UInt64) throws -> TextRange { try textCore().paragraphRange(bookId: id, offsetUtf8: offset) }
+    func paragraph(_ id: String, at offset: UInt64) throws -> TextRange { try indexStore().paragraphRange(bookId: id, offsetUtf8: offset) }
     func annotate(_ id: String, start: UInt64, end: UInt64) async throws -> ReaderMark {
         let edit = try await prepareUserAnnotation(id, start: start, end: end)
         if edit.baselines.values.contains(where: AnnotationReduction.conflicts) { throw UserDataConflict(candidates: edit.baselines.values.flatMap { $0 }) }
@@ -655,7 +658,7 @@ actor AppDataService {
     }
     func deleteMarks(_ ids: [String], deleted: Bool) async throws { try await userDeleteMarks(ids, deleted: deleted) }
     func search(_ id: String, query: String, regex: Bool, caseSensitive: Bool, range: SearchRange? = nil) async throws -> SearchJob {
-        try await bookQuery(id).startSearch(bookId: id, query: query, regularExpression: regex, caseSensitive: caseSensitive, range: range)
+        try indexStore().startSearch(bookId: id, query: query, regularExpression: regex, caseSensitive: caseSensitive, range: range)
     }
 
     func importSourceKey(_ id: String) -> String {
@@ -669,7 +672,7 @@ actor AppDataService {
 
     private func prepareOriginalSourceFile(_ file: SourceFile, progress: @escaping @Sendable (Double?) -> Void) async throws {
         try await simulateSourceDownload(progress)
-        let core = try textCore()
+        let core = try indexStore()
         let entry = try core.sourceFileLocation(fileId: file.id)
         guard !entry.directory else { throw ReaderError.NotFound }
         let shelf = try libraryShelf(entry.shelfId)
@@ -689,7 +692,7 @@ actor AppDataService {
 
     // Provider I/O suspends this actor. Check the authority and location again
     // before publishing availability, starting an import or handing out a lease.
-    private func confirmSourceLocation(_ entry: SourceFileLocation, shelf: LibraryShelf, configuration: UUID, core: ReaderCore) throws {
+    private func confirmSourceLocation(_ entry: SourceFileLocation, shelf: LibraryShelf, configuration: UUID, core: ReaderIndex) throws {
         try Task.checkCancellation()
         let currentShelf = try libraryShelf(entry.shelfId)
         guard configuration == userCloudConfigurationRevision,
@@ -725,7 +728,7 @@ actor AppDataService {
                                       progress: (@Sendable (Double?) -> Void)?) async throws -> ReadingLease {
         if recentRestorationWork?.fileID == file.id { recentRestorationWork?.cancel() }
 
-        let core = try textCore()
+        let core = try indexStore()
         let entry = try core.sourceFileLocation(fileId: file.id)
         guard !entry.directory else { throw ReaderError.NotFound }
         let shelf = try libraryShelf(entry.shelfId)
@@ -741,7 +744,7 @@ actor AppDataService {
         if try core.setSourceFileAvailability(file: entry, needsDownload: false) { publishLibraryIndexChange() }
         let encoding = decoding == "auto" ? nil : decoding
         if let previous = sourceDefaults.string(forKey: key),
-           let state = try? textCore().importStatus(bookId: previous), state.phase != .complete, entry.bookId == state.text.id {
+           let state = try? indexStore().importStatus(bookId: previous), state.phase != .complete, entry.bookId == state.text.id {
             if let data = sourceDefaults.data(forKey: importSourceKey(previous)),
                let old = try? JSONDecoder().decode(ImportSource.self, from: data),
                try normalizeSourceDecoding(decoding: old.encoding ?? "auto") == decoding,
@@ -766,7 +769,7 @@ actor AppDataService {
         let opening = "opening:" + UUID().uuidString
         holdForeground(opening); defer { releaseForeground(opening) }
         diagnostic?.mark("lease.actor.begin"); defer { diagnostic?.mark("lease.actor.return") }
-        _ = try textCore().importStatus(bookId: id)
+        _ = try indexStore().importStatus(bookId: id)
         return retainReading(id)
     }
 
@@ -796,7 +799,7 @@ actor AppDataService {
         queryCache = queryCache.filter { !$0.key.hasPrefix("book-" + id + "-") }
         changeRevisions[id] = nil
     }
-    func reclaimImports(_ core: ReaderCore) throws {
+    func reclaimImports(_ core: ReaderIndex) throws {
         ReaderOpenDiagnostics.background("reclaim.begin"); defer { ReaderOpenDiagnostics.background("reclaim.return") }
         let remaining = Set(try core.reclaimCompletedImports(retainedBookIds: Array(Set(readers.keys).union(imports.keys).union(pendingPromotionIDs))))
         for id in Array(changeRevisions.keys) where !remaining.contains(id) && readers[id] == nil && imports[id] == nil && changeWaiters[id] == nil { changeRevisions[id] = nil }
@@ -812,7 +815,7 @@ actor AppDataService {
     }
 
     private func startImport(title: String, descriptor: ImportSource, encoding: String?) throws -> String {
-        let core = try textCore()
+        let core = try indexStore()
         if let fileID = descriptor.fileID { try core.setSourceDecoding(fileId: fileID, decoding: encoding ?? "auto") }
         let control = try core.createImport(title: title)
         let id = control.bookId()
@@ -827,7 +830,7 @@ actor AppDataService {
         return id
     }
 
-    private func launchImport(core: ReaderCore, control: ImportControl, descriptor: ImportSource, encoding: String?) {
+    private func launchImport(core: ReaderIndex, control: ImportControl, descriptor: ImportSource, encoding: String?) {
         let work = SourceImportWork(core: core, control: control, source: descriptor, encoding: encoding)
         let id = control.bookId()
         imports[id] = work
@@ -870,7 +873,7 @@ actor AppDataService {
 
     private func relocatedImportSource(_ source: ImportSource) throws -> ImportSource {
         guard let fileID = source.fileID else { return source }
-        let entry = try textCore().sourceFileLocation(fileId: fileID)
+        let entry = try indexStore().sourceFileLocation(fileId: fileID)
         let shelf = try libraryShelf(entry.shelfId)
         return ImportSource(rootBookmark: Data(shelf.bookmark), relativePath: entry.relativePath,
                             encoding: source.encoding, sourceKey: source.sourceKey, fileID: fileID, expectedRawSHA: source.expectedRawSHA)
@@ -886,7 +889,7 @@ actor AppDataService {
     }
 
     private func resumeSystemInterruptedImport(_ id: String) throws {
-        if try textCore().importStatus(bookId: id).phase == .paused { try resumeImport(id) }
+        if try indexStore().importStatus(bookId: id).phase == .paused { try resumeImport(id) }
     }
     func pauseImport(_ id: String) {
         requestedResumes.remove(id)
@@ -903,7 +906,7 @@ actor AppDataService {
         recentRestorationActive = false; cancelRecentRestoration()
         appActive = false
         for id in imports.keys {
-            let wasActive = (try? textCore().importStatus(bookId: id)).map { [.preparing, .importing, .finalizing].contains($0.phase) } ?? false
+            let wasActive = (try? indexStore().importStatus(bookId: id)).map { [.preparing, .importing, .finalizing].contains($0.phase) } ?? false
             pauseImport(id)
             if wasActive { automaticallyPaused.insert(id) }
         }
@@ -921,14 +924,14 @@ actor AppDataService {
         guard imports[id] == nil else {
             // File-provider cancellation can outlive a resume request. Keep the
             // request until that accessor releases its scope and worker exits.
-            if [.paused, .failed].contains(try textCore().importStatus(bookId: id).phase) { requestedResumes.insert(id) }
+            if [.paused, .failed].contains(try indexStore().importStatus(bookId: id).phase) { requestedResumes.insert(id) }
             return
         }
         guard let data = sourceDefaults.data(forKey: importSourceKey(id)) else {
             throw CocoaError(.fileReadNoPermission)
         }
         let descriptor = try relocatedImportSource(JSONDecoder().decode(ImportSource.self, from: data))
-        let core = try textCore()
+        let core = try indexStore()
         launchImport(core: core, control: try core.resumeImport(bookId: id), descriptor: descriptor, encoding: descriptor.encoding)
     }
 
@@ -964,7 +967,7 @@ actor AppDataService {
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
         descriptor.expectedRawSHA = raw.sha
         pauseImport(id)
-        let next = try startImport(title: textCore().importStatus(bookId: id).text.title, descriptor: descriptor, encoding: decoding == "auto" ? nil : decoding)
+        let next = try startImport(title: indexStore().importStatus(bookId: id).text.title, descriptor: descriptor, encoding: decoding == "auto" ? nil : decoding)
         if let fileID = descriptor.fileID { readingSourceIDs[next] = fileID }
         return retainReading(next)
     }
@@ -984,10 +987,10 @@ struct ImportSource: Codable, Sendable {
 private enum SourceImportEvent: String, Sendable { case ready, failed, finished }
 
 /// All properties are immutable; cancellation is a Rust atomic flag. The queue
-/// owns the coordinator and keeps authorized access until Rust has stopped I/O.
+/// owns the coordinator and keeps authorized access throughout Swift file reads.
 private final class SourceImportWork: @unchecked Sendable {
     let token = UUID()
-    let core: ReaderCore
+    let core: ReaderIndex
     let control: ImportControl
     let source: ImportSource
     let encoding: String?
@@ -1008,7 +1011,7 @@ private final class SourceImportWork: @unchecked Sendable {
         #endif
     }
 
-    init(core: ReaderCore, control: ImportControl, source: ImportSource, encoding: String?) {
+    init(core: ReaderIndex, control: ImportControl, source: ImportSource, encoding: String?) {
         self.core = core; self.control = control; self.source = source; self.encoding = encoding
     }
 
@@ -1042,7 +1045,7 @@ private final class SourceImportWork: @unchecked Sendable {
                 }
             } catch {
                 let state = try? core.importStatus(bookId: control.bookId())
-                // Rust records typed failures; presentation localizes them in the current language.
+                // The Swift index records typed failures; presentation localizes them in the current language.
                 if state?.phase != .failed && state?.phase != .paused && state?.phase != .complete {
                     let failure = error as? ReaderError ?? .Io(message: "\((error as NSError).domain):\((error as NSError).code)")
                     try? core.failImport(control: control, error: failure)

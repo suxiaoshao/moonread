@@ -53,6 +53,16 @@ enum DataV2Schema {
                 try db.execute(sql: """
                     ALTER TABLE import_jobs ADD COLUMN pending_owner TEXT;
                     CREATE TABLE index_import_state(id INTEGER PRIMARY KEY CHECK(id=1), legacy_version INTEGER NOT NULL);
+                    CREATE TABLE chapter_scan_stage(
+                        run_id TEXT NOT NULL,start_utf8 INTEGER NOT NULL,title TEXT NOT NULL,level INTEGER NOT NULL,
+                        start_char_count INTEGER NOT NULL,body_char_count INTEGER NOT NULL,PRIMARY KEY(run_id,start_utf8)
+                    );
+                    CREATE VIEW main.valid_indexed_identities AS
+                      SELECT f.id file_id,s.content_sha256,s.utf8_bytes,l.raw_sha256,l.decoding
+                      FROM library_files f JOIN library_identities l ON l.file_id=f.id
+                          AND l.decoding=f.decoding AND l.indexed_size=f.size AND l.indexed_modified=f.modified
+                      JOIN source_identities s ON s.raw_sha256=l.raw_sha256 AND s.decoding=l.decoding
+                      WHERE f.directory=0;
                     PRAGMA main.user_version=1;
                     """)
             }

@@ -83,7 +83,7 @@ extension AppDataService {
         guard let testSession else { return }
         let marker = "Moonread.smoke.seed.v1." + testSession
         guard !sourceDefaults.bool(forKey: marker) else { return }
-        let root = try builtinLibraryURL(), core = try textCore()
+        let root = try builtinLibraryURL(), core = try indexStore()
         try FileManager.default.createDirectory(at: root.appendingPathComponent("目标"), withIntermediateDirectories: true)
         try ReaderSmokeFixture.text.write(to: root.appendingPathComponent("月读 · 排版示例.txt"), atomically: true, encoding: .utf8)
         try ("第一章 同名\n" + String(repeating: "保留原来的目标内容。\n", count: 80)).write(to: root.appendingPathComponent("同名.txt"), atomically: true, encoding: .utf8)
@@ -120,7 +120,7 @@ extension AppDataService {
 
     func createReaderFixture() async throws {
         guard testSession != nil else { return }
-        let core = try textCore(), root = try builtinLibraryURL()
+        let core = try indexStore(), root = try builtinLibraryURL()
         let arguments = ProcessInfo.processInfo.arguments
         if arguments.contains("--ui-test-encoding") {
             let text = "Chapter 1\n" + String(repeating: "An original sample for manual encoding recovery.\n", count: 80)
@@ -191,7 +191,7 @@ extension AppDataService {
         // Seed the actual synthetic file's identity, never an unrelated sample.
         let prepared = try await aiPrepare(entry.source)
         let actual = try await snapshot(prepared.id).book
-        let query = try textCore().querySnapshot(json: "{}")
+        let query = try indexStore().querySnapshot(json: "{}")
         let local = try query.readingLocation(bookId: prepared.id, percentage: 10)
         try await savePosition(bookID: prepared.id, offset: local.offsetUtf8)
         let target = try query.readingLocation(bookId: prepared.id, percentage: 75)
@@ -244,8 +244,8 @@ extension AppDataService {
         try refreshLibraryShelf("builtin")
         for entry in try await libraryEntries(LibraryLocation(shelfID: "builtin"), recursive: true) where !entry.directory {
             let file = root.appendingPathComponent(entry.relativePath)
-            let book = try textCore().importBook(filePath: file.path, title: entry.title)
-            try textCore().linkLibraryFile(fileId: entry.id, bookId: book.id)
+            let book = try indexStore().importBook(filePath: file.path, title: entry.title)
+            try indexStore().linkLibraryFile(fileId: entry.id, bookId: book.id)
             try await writePosition(book.id, offset: min(160, book.byteCount))
         }
     }

@@ -118,8 +118,8 @@ extension AppDataService {
             let pending = try await userStore(pending: true)
             let keys = try await pending.pendingKeys()
             pendingPromotionIDs.formUnion(try keys.compactMap { if case let .pending(id) = try parseReadingKey(value: $0) { return id }; return nil })
-            for id in Array(pendingPromotionIDs) where (try? textCore().importStatus(bookId: id).phase) == .complete { try await promoteUserData(id) }
-            try reclaimImports(textCore()); recoveredImports = true
+            for id in Array(pendingPromotionIDs) where (try? indexStore().importStatus(bookId: id).phase) == .complete { try await promoteUserData(id) }
+            try reclaimImports(indexStore()); recoveredImports = true
         } catch { /* Startup can retry; reads continue to include pending data. */ }
     }
     func receivedUserImport() async {
@@ -133,7 +133,7 @@ extension AppDataService {
         let id = UUID().uuidString; sourceDefaults.set(id, forKey: "Moonread.userDevice"); return id
     }
     func userKey(_ id: String) throws -> ReadingKey {
-        try textCore().resolveBookIdentity(bookId: id).key
+        try indexStore().resolveBookIdentity(bookId: id).key
     }
     func promoteUserData(_ id: String, retry: Bool = false) async throws {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
@@ -185,7 +185,7 @@ extension AppDataService {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         if let expectedConfiguration, expectedConfiguration != userCloudConfigurationRevision { throw CancellationError() }
         try await promoteUserDataLocked(id)
-        let core = try textCore(), key = try userKey(id).storageKey
+        let core = try indexStore(), key = try userKey(id).storageKey
         let normalized = try core.normalizedPosition(bookId: id, offsetUtf8: offset)
         if let file = readingSourceIDs[id] { sourceDefaults.set(file, forKey: "Moonread.preferredFile." + key) }
         var hidden = sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []; hidden.removeAll { $0 == key }
@@ -257,7 +257,7 @@ extension AppDataService {
             if from == nextFrom && to == nextTo { marks = overlaps; break }
             from = nextFrom; to = nextTo
         }
-        let quote = try textCore().textRange(bookId: id, startUtf8: from, endUtf8: to).text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let quote = try indexStore().textRange(bookId: id, startUtf8: from, endUtf8: to).text.trimmingCharacters(in: .whitespacesAndNewlines)
         let markID = marks.first?.id ?? UUID().uuidString
         let note = marks.map { $0.note }.filter { !$0.isEmpty }.joined(separator: "\n\n")
         let baselines = Dictionary(uniqueKeysWithValues: marks.map { ($0.id, groups[$0.id] ?? []) })
