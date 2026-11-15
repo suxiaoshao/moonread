@@ -61,9 +61,13 @@ enum SystemReadingRouteError: LocalizedError, Equatable {
 final class SystemReadingRouter {
     private weak var library: LibraryModel?
     private let service: AppDataService
+    private enum Destination {
+        case system(SystemReadingRequest)
+        case displayed(entry: LibraryEntry, expectedSHA: String?, tap: TimeInterval)
+    }
     private struct RequestContext {
         let token = UUID()
-        let request: SystemReadingRequest
+        let destination: Destination
     }
     private enum Handoff {
         case idle(UUID)
@@ -86,7 +90,10 @@ final class SystemReadingRouter {
     }
 
     private var handoff: Handoff = .idle(UUID())
-    var pending: SystemReadingRequest? { handoff.context?.request }
+    var pending: SystemReadingRequest? {
+        if case .system(let request)? = handoff.context?.destination { return request }
+        return nil
+    }
     private var task: Task<Void, Never>?
     private var resumeAfterCurrent = false
     private weak var reader: ReaderSession?
@@ -142,32 +149,54 @@ final class SystemReadingRouter {
         // destination. A newer handoff's reader must not be popped by this task.
         if let navigationID { library.removeReaderDestination(navigationID) }
     }
-    private func openEntry(_ entry: LibraryEntry, expectedSHA: String?, in library: LibraryModel, context: RequestContext) async -> Bool {
-        guard sceneActive, requestID == context.token, !Task.isCancelled else { return false }
-        if expectedSHA == nil, let id = entry.bookId, reader?.isLeaving == false, reader?.readingID == id { return true }
+    private func beginOpening(_ entry: LibraryEntry, in library: LibraryModel, context: RequestContext) -> Bool {
         guard admit(title: entry.title, library: library) else { return false }
         handoff = .opening(context)
-        await finishReader(in: library)
-        guard sceneActive, requestID == context.token, !Task.isCancelled else { return false }
+        return true
+    }
+    private func publishEntry(_ entry: LibraryEntry, expectedSHA: String?, tap: TimeInterval? = nil, in library: LibraryModel) {
         library.selectedTab = .library
         library.libraryPath = Array(library.libraryPath.prefix { !$0.isReader })
-        library.open(entry, expectedContentSHA: expectedSHA)
+        library.open(entry, expectedContentSHA: expectedSHA, tap: tap ?? ProcessInfo.processInfo.systemUptime)
+    }
+    private func openEntry(_ entry: LibraryEntry, expectedSHA: String?, tap: TimeInterval? = nil,
+                           in library: LibraryModel, context: RequestContext) async -> Bool {
+        guard sceneActive, requestID == context.token, !Task.isCancelled else { return false }
+        if tap == nil, expectedSHA == nil, let id = entry.bookId, reader?.isLeaving == false, reader?.readingID == id { return true }
+        guard beginOpening(entry, in: library, context: context) else { return false }
+        await finishReader(in: library)
+        guard sceneActive, requestID == context.token, !Task.isCancelled else { return false }
+        publishEntry(entry, expectedSHA: expectedSHA, tap: tap, in: library)
         return true
+    }
+    private func replaceRequest(_ destination: Destination) {
+        requestError = nil
+        handoff = .resolving(.init(destination: destination))
+        task?.cancel(); task = nil; resumeAfterCurrent = false
+        resume()
     }
     func submit(_ request: SystemReadingRequest) {
         if pending == request { return }
-        requestError = nil
-        handoff = .resolving(.init(request: request))
-        task?.cancel(); task = nil; resumeAfterCurrent = false
-        resume()
+        replaceRequest(.system(request))
+    }
+    func openDisplayed(_ entry: LibraryEntry) {
+        replaceRequest(.displayed(entry: entry, expectedSHA: entry.readingIdentity?.formalSHA256,
+                                  tap: ProcessInfo.processInfo.systemUptime))
     }
     func resume() {
         guard task == nil else { resumeAfterCurrent = true; return }
         guard confirmationTitle == nil, let context = handoff.context, let library, library.initialized,
               sceneActive, Onboarding.shared.completed else { return }
         let current = context.token
-        let request = context.request
         handoff = .resolving(context)
+        // The visible card already names the target. In the usual case
+        // there is no reader to close; admission and navigation stay synchronous.
+        if case let .displayed(entry, expectedSHA, tap) = context.destination, reader == nil {
+            guard beginOpening(entry, in: library, context: context) else { return }
+            publishEntry(entry, expectedSHA: expectedSHA, tap: tap, in: library)
+            handoff = .idle(current)
+            return
+        }
         task = Task { [weak self] in
             guard let self else { return }
             defer {
@@ -177,7 +206,14 @@ final class SystemReadingRouter {
                 }
             }
             do {
-                guard sceneActive else { return }
+                guard sceneActive, requestID == current, !Task.isCancelled else { return }
+                if case let .displayed(entry, expectedSHA, tap) = context.destination {
+                    if await openEntry(entry, expectedSHA: expectedSHA, tap: tap, in: library, context: context) {
+                        handoff = .idle(current)
+                    }
+                    return
+                }
+                guard case .system(let request) = context.destination else { return }
                 let id: SystemReadingBookID
                 let automatic: Bool
                 switch request {

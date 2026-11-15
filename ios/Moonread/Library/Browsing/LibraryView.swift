@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 
 struct LibraryView: View {
     @Bindable var model: LibraryModel
-    @State private var metadataRevision: UInt64 = 0
+    @State private var recentUse: RecentReadingUse?
     @Environment(AIService.self) private var ai
     @Environment(ThemeStore.self) private var themes
     @Environment(\.theme) private var theme
@@ -47,12 +47,9 @@ struct LibraryView: View {
                     .accessibilityIdentifier("libraryImportTip")
             }
         }
-        .task { await model.load() }
-        .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { change in
-            if change.affectsLibraryMetadata(.card, keys: model.recents.displayedMetadataKeys) { metadataRevision &+= 1 }
-        }
-        .task(id: metadataRevision) {
-            if metadataRevision > 0 { await model.refreshRecentCards() }
+        .task {
+            if recentUse == nil { recentUse = model.recentReading.use(limit: RecentReadingStore.homeLimit) }
+            await model.load()
         }
         .modifier(PageLoadingOverlay(request: !themes.loaded || model.busy || model.nativeRefreshing ? nil : (!model.homeReady ? model.loading.request : (model.explicitRefresh ? model.refreshing.request : nil)),
                                      hasContent: !model.shelves.isEmpty, label: "正在加载书架", immediate: model.explicitRefresh))
@@ -66,6 +63,9 @@ struct LibraryView: View {
                             homeHeader("继续阅读", showsAll: following.isEmpty)
                             ContinueReadingRow(model: model, entry: current).contextMenu { recentMenu(current) }
                         }
+                    }
+                    if let error = model.recentReading.failure {
+                        RecentReadingRetry(message: error) { model.recentReading.retry() }
                     }
                     ShelfRecoverySummary(model: model)
                     if sizeClass == .regular && geometry.size.width >= 720 {
@@ -193,7 +193,7 @@ private struct ContinueReadingRow: View {
                     }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                 }
             }
-            Button { model.systemReading.submit(.continueReading) } label: {
+            Button { model.openRecent(entry) } label: {
                 Text("继续阅读").frame(maxWidth: .infinity)
             }.buttonStyle(ThemedProminentButtonStyle()).accessibilityIdentifier("library-file-\(entry.name)")
         }.padding(16).background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 20))

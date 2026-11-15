@@ -7,6 +7,21 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        270E40000000000000000003 = {isa = PBXBuildFile; productRef = 270E40000000000000000002;};
+        270E2000000000000000000E = {isa = PBXBuildFile; fileRef = 270E1000000000000000000E;};
+        270E2000000000000000000D = {isa = PBXBuildFile; fileRef = 270E1000000000000000000D;};
+        270E2000000000000000000C = {isa = PBXBuildFile; fileRef = 270E1000000000000000000C;};
+        270E2000000000000000000B = {isa = PBXBuildFile; fileRef = 270E1000000000000000000B;};
+        270E2000000000000000000A = {isa = PBXBuildFile; fileRef = 270E1000000000000000000A;};
+        270E20000000000000000009 = {isa = PBXBuildFile; fileRef = 270E10000000000000000009;};
+        270E20000000000000000008 = {isa = PBXBuildFile; fileRef = 270E10000000000000000008;};
+        270E20000000000000000007 = {isa = PBXBuildFile; fileRef = 270E10000000000000000007;};
+        270E20000000000000000006 = {isa = PBXBuildFile; fileRef = 270E10000000000000000006;};
+        270E20000000000000000005 = {isa = PBXBuildFile; fileRef = 270E10000000000000000005;};
+        270E20000000000000000004 = {isa = PBXBuildFile; fileRef = 270E10000000000000000004;};
+        270E20000000000000000003 = {isa = PBXBuildFile; fileRef = 270E10000000000000000003;};
+        270E20000000000000000002 = {isa = PBXBuildFile; fileRef = 270E10000000000000000002;};
+        270E20000000000000000001 = {isa = PBXBuildFile; fileRef = 270E10000000000000000001;};
         270D00000000000000000043 = {isa = PBXBuildFile; productRef = 270D00000000000000000042;};
         270D0000000000000000002B = {isa = PBXBuildFile; fileRef = 270D0000000000000000000B;};
         270D0000000000000000002C = {isa = PBXBuildFile; fileRef = 270D0000000000000000000C;};
@@ -450,6 +465,20 @@ CA0FCD9B82134E7091B5CD9F /* ModelDirectoryDecoding.swift in Sources */ = {isa = 
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+        270E1000000000000000000E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecentReadingStore.swift"; sourceTree = "<group>";};
+        270E1000000000000000000D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "RecentReadingQuery.swift"; sourceTree = "<group>";};
+        270E1000000000000000000C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/SchemaMetadata.graphql.swift"; sourceTree = "<group>";};
+        270E1000000000000000000B = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/SchemaConfiguration.swift"; sourceTree = "<group>";};
+        270E1000000000000000000A = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/RecentReadingMetadata.graphql.swift"; sourceTree = "<group>";};
+        270E10000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/RecentReadingFile.graphql.swift"; sourceTree = "<group>";};
+        270E10000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/RecentReadingCover.graphql.swift"; sourceTree = "<group>";};
+        270E10000000000000000007 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/RecentReadingCard.graphql.swift"; sourceTree = "<group>";};
+        270E10000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/Objects/Query.graphql.swift"; sourceTree = "<group>";};
+        270E10000000000000000005 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/CustomScalars/UInt64.swift"; sourceTree = "<group>";};
+        270E10000000000000000004 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/CustomScalars/Int64.swift"; sourceTree = "<group>";};
+        270E10000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Schema/CustomScalars/ID.swift"; sourceTree = "<group>";};
+        270E10000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/Operations/Queries/RecentReadingQuery.graphql.swift"; sourceTree = "<group>";};
+        270E10000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Generated/MoonreadQueries.graphql.swift"; sourceTree = "<group>";};
         270D0000000000000000000B = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReaderIndex.swift"; sourceTree = "<group>";};
         270D0000000000000000000C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IndexInput.swift"; sourceTree = "<group>";};
         270D0000000000000000000D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "IndexImport.swift"; sourceTree = "<group>";};
@@ -861,6 +890,7 @@ A8C3CE03D9A84285ACE6CC41 /* ModelDirectoryDecoding.swift */ = {isa = PBXFileRefe
 			buildActionMask = 2147483647;
 			files = (
                 270D00000000000000000043,
+                270E40000000000000000003,
 
 D35000000000000000000006,D35000000000000000000007,D35000000000000000000008,FB1000000000000000000002,
 D35000000000000000000004,
@@ -889,6 +919,7 @@ D35000000000000000000001,
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+        270E30000000000000000000 /* Queries */ = {isa = PBXGroup; children = (270E10000000000000000001,270E10000000000000000002,270E10000000000000000003,270E10000000000000000004,270E10000000000000000005,270E10000000000000000006,270E10000000000000000007,270E10000000000000000008,270E10000000000000000009,270E1000000000000000000A,270E1000000000000000000B,270E1000000000000000000C,270E1000000000000000000D,270E1000000000000000000E); path = Queries; sourceTree = "<group>";};
         270D00000000000000000040 /* Database */ = {isa = PBXGroup; children = (270D00000000000000000001,270D00000000000000000002,270D00000000000000000003,270D00000000000000000004,270D00000000000000000005,270D00000000000000000006,270D00000000000000000007,270D00000000000000000008,270D00000000000000000009,270D0000000000000000000B,270D0000000000000000000C,270D0000000000000000000D,270D0000000000000000000E,270D0000000000000000000F,270D00000000000000000010,270D00000000000000000011,270D00000000000000000012,270D00000000000000000013,270D00000000000000000014,270D00000000000000000015,270D00000000000000000016,270D00000000000000000017,270D00000000000000000019,270D0000000000000000001A,270D00000000000000000018); path = Database; sourceTree = "<group>";};
 		148C00000000000000000001 /* Usage */ = {
 			isa = PBXGroup;
@@ -1148,7 +1179,7 @@ D35000000000000000000001,
 		C60318128F8C4F59B3C2CFB2 /* Data */ = {
 			isa = PBXGroup;
 			children = (
-                270D00000000000000000040,
+                270D00000000000000000040, 270E30000000000000000000,
 				E237B1E2BAF2109F635ED408 /* UserData */,
 				A20000000000000000000002 /* AppDataService.swift */,
 				2AABE76052D0D231A8ACA8DF /* Cloud */,
@@ -1915,7 +1946,7 @@ D35000000000000000000001,
                 F1C19004BB32432C8F23B23B,
                 24EC65B9F10B59B19FF49005,
 			);
-			packageProductDependencies = (D34000000000000000000001,270D00000000000000000042,D34000000000000000000002,D34000000000000000000003,D34000000000000000000004,D34000000000000000000006,D34000000000000000000007,D34000000000000000000008,FB4000000000000000000001);
+			packageProductDependencies = (D34000000000000000000001,270D00000000000000000042,270E40000000000000000002,D34000000000000000000002,D34000000000000000000003,D34000000000000000000004,D34000000000000000000006,D34000000000000000000007,D34000000000000000000008,FB4000000000000000000001);
 			name = Moonread;
 			productName = Moonread;
 			productReference = A2000000000000000000000A /* Moonread.app */;
@@ -2007,7 +2038,7 @@ D35000000000000000000001,
 			productRefGroup = A50000000000000000000005 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
-            packageReferences = (270D00000000000000000041,AP3000000000000000000001,D33000000000000000000001,FB3000000000000000000001);
+            packageReferences = (270D00000000000000000041,270E40000000000000000001,AP3000000000000000000001,D33000000000000000000001,FB3000000000000000000001);
 			targets = (
                 AF656EF2055C4EDC80ED01F9 /* MoonreadWidgets */,
                 04C2476D974D589BB2C7513F,
@@ -2136,6 +2167,20 @@ E51000000000000000000009,D41000000000000000000001,
                 270D00000000000000000037,
                 270D00000000000000000039,
                 270D0000000000000000003A,
+                270E20000000000000000001,
+                270E20000000000000000002,
+                270E20000000000000000003,
+                270E20000000000000000004,
+                270E20000000000000000005,
+                270E20000000000000000006,
+                270E20000000000000000007,
+                270E20000000000000000008,
+                270E20000000000000000009,
+                270E2000000000000000000A,
+                270E2000000000000000000B,
+                270E2000000000000000000C,
+                270E2000000000000000000D,
+                270E2000000000000000000E,
                 270D00000000000000000038,
                 270D00000000000000000035,
                 270D00000000000000000025,
@@ -2496,12 +2541,14 @@ F01900000000000000000001,
 
 
 /* Begin XCRemoteSwiftPackageReference section */
+        270E40000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/apollographql/apollo-ios"; requirement = {kind = exactVersion; version = 2.5.0;};};
         270D00000000000000000041 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/groue/GRDB.swift"; requirement = {kind = exactVersion; version = 7.12.0;};};
 AP3000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/Lakr233/Litext"; requirement = {kind = revision; revision = c1d74fe65557534e01301a58a8617fddc0e88992;};};
 FB3000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/Lakr233/MarkdownView"; requirement = {kind = exactVersion; version = 4.8.3;};};
 D33000000000000000000001 = {isa = XCRemoteSwiftPackageReference; repositoryURL = "https://github.com/suxiaoshao/swift-ai-sdk"; requirement = {kind = revision; revision = 9843cba7de6c2a0f1a042a4f3b1facc8af910a82;};};
 /* End XCRemoteSwiftPackageReference section */
 /* Begin XCSwiftPackageProductDependency section */
+        270E40000000000000000002 = {isa = XCSwiftPackageProductDependency; package = 270E40000000000000000001; productName = ApolloAPI;};
         270D00000000000000000042 = {isa = XCSwiftPackageProductDependency; package = 270D00000000000000000041; productName = GRDB;};
 FB4000000000000000000001 = {isa = XCSwiftPackageProductDependency; package = FB3000000000000000000001; productName = MarkdownView;};
 D34000000000000000000001 = {isa = XCSwiftPackageProductDependency; package = D33000000000000000000001; productName = SwiftAISDK;};

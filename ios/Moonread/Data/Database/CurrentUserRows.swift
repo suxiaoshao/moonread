@@ -49,6 +49,13 @@ enum CurrentUserRows {
         }
     }
 
+    /// SQL comparing current refs across verified aliases uses the same Swift
+    /// ordering as the per-book winner, including canonical Unicode equality.
+    static let tokenCollation = DatabaseCollation("moonread_value_token") { lhs, rhs in
+        if lhs == rhs { return .orderedSame }
+        return lhs < rhs ? .orderedAscending : .orderedDescending
+    }
+
     static func winner(_ rows: [Row]) -> Row? {
         rows.max {
             ($0["updated_ms"] as Int64,$0["token"] as String) < ($1["updated_ms"] as Int64,$1["token"] as String)

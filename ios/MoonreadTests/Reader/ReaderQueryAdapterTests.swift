@@ -20,16 +20,15 @@ final class ReaderQueryAdapterRecentReadingRestorationTests: RecentReadingRestor
       filePath: f.directory.appendingPathComponent(file.relativePath).path, decoding: file.decoding)
     XCTAssertTrue(try f.core.publishSourceIdentity(file: file, identity: identity))
     try await position(f, key: identity.contentSha256, hint: nil, offset: identity.utf8Bytes / 2)
+    try await restorationPosition(f, key: identity.contentSha256, hint: nil, offset: identity.utf8Bytes / 2)
     let base = try await f.service.details(sha: identity.contentSha256).metadata
     var edited = base
     edited.author = "原创作者"
     edited.tags = ["星港"]
     try await f.service.saveMetadata(base: base, edited: edited)
-    let cold = try await f.service.recentLibrary(cold: true)
-    let warm = try await f.service.recentLibrary()
-    XCTAssertEqual(cold.map(\.readingKey), [identity.contentSha256])
-    XCTAssertEqual(warm.map(\.readingKey), [identity.contentSha256])
-    let entry = try XCTUnwrap(warm.first)
+    let recent = try await f.service.recentLibrary()
+    XCTAssertEqual(recent.map(\.readingKey), [identity.contentSha256])
+    let entry = try XCTUnwrap(recent.first)
     XCTAssertNil(entry.bookId)
     let model = BookInformationModel(service: f.service)
     await model.load(
@@ -480,74 +479,18 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     await service.queryFixture(nil)
   }
 
-  @MainActor func testRecentColdAndWarmMatchFullProjectionAndOnlyLoadSelectedDetails() async throws {
-    let (root, service, core, formal, pending, book, other, suite) = try singleBookFixture()
-    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
-    let first = book.fixtureSHA256, second = other.fixtureSHA256
-    let alias = "pending:" + book.id
-    let position = try UserSyncJSON.encode(StoredValue(updated: 50, token: "alias",
-      value: UserSyncJSON.encode(PositionValue(content_key: alias, offset: 12))))
-    try await pending.receiveSyncFixture("position", key: alias, payload: position)
-    try await formal.put("opened/\(second)", value: "30", device: "fixture")
-    try await formal.put("metadata/\(first)/author", value: "\"Selected\"", device: "fixture")
-    try await formal.put("metadata/\(second)/synopsis", value: "\"Do not read for one card\"", device: "fixture")
-
-    let items = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")
-    try core.scanLibraryShelf(shelfId: "builtin", items: items.map {
-      .init(relativePath: $0.relativePath, directory: false, size: $0.size, modified: $0.modified, needsDownload: $0.needsDownload)
-    } + [.init(relativePath: "copy.txt", directory: false, size: book.byteCount, modified: 1, needsDownload: true)])
-    let copy = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "copy.txt" })
-    try core.linkLibraryFile(fileId: copy.id, bookId: book.id)
-    UserDefaults(suiteName: suite)?.set(copy.id, forKey: "Moonread.preferredFile." + alias)
-
-    let cold = try await service.recentLibrary(1, cold: true)
-    let warm = try await service.recentLibrary(1)
-    let storeCache = await formal.projectionCache
-    let projections = try storeCache.values.map {
-      try XCTUnwrap(JSONSerialization.jsonObject(with: Data($0.1.json.utf8)) as? [String: Any])
-    }
-    XCTAssertEqual(projections.count, 2, "Cold and warm reuse the same two input shapes")
-    let details = try XCTUnwrap(projections.first { ($0["metadata"] as? [Any])?.count == 1 })
-    XCTAssertEqual((details["metadata"] as? [[String: Any]])?.first?["sha"] as? String, first)
-    XCTAssertEqual((details["opened"] as? [Any])?.count, 0)
-    XCTAssertEqual((details["positions"] as? [Any])?.count, 0)
-    let index = try XCTUnwrap(projections.first { ($0["opened"] as? [Any])?.count == 1 })
-    XCTAssertEqual((index["metadata"] as? [Any])?.count, 0)
-    XCTAssertEqual((index["corrections"] as? [Any])?.count, 0)
-    XCTAssertEqual((index["opened"] as? [[String: Any]])?.first?["content_key"] as? String, second)
-
-    let full = try await service.effectiveQuery().recentLibraryEntries(limit: 1)
-    XCTAssertEqual(cold.map(\.id), [copy.id])
-    for rows in [cold, warm, full] {
-      let entry = try XCTUnwrap(rows.first)
-      XCTAssertEqual(rows.count, 1)
-      XCTAssertEqual(entry.id, copy.id)
-      XCTAssertEqual(entry.readingIdentity, .formal(sha256: first))
-      XCTAssertEqual(entry.positionUtf8, 12)
-      XCTAssertEqual(entry.byteCount, book.byteCount)
-      XCTAssertNotNil(entry.chapterTitle)
-      XCTAssertEqual(entry.chapterTitle, full.first?.chapterTitle)
-      XCTAssertEqual(entry.displayMetadata?.author, "Selected")
-    }
-  }
-
-  @MainActor func testRecentRechecksLiveIdentityAfterHydrationInputs() async throws {
+  @MainActor func testRecentReadsCommittedFileIdentityOnNextRequest() async throws {
     let (root, service, core, _, _, first, second, suite) = try singleBookFixture()
     defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
     try await service.recordBookOpened(first.id, at: 200)
     try await service.recordBookOpened(second.id, at: 100)
     let file = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "a.txt" })
-    let attempts = QueryAttemptCounter()
-    await service.queryFixture { scope, phase in
-      if scope == "recent", phase == .built, await attempts.next() == 1 {
-        try core.linkLibraryFile(fileId: file.id, bookId: second.id)
-      }
-    }
-    let result = try await service.recentLibrary(1, cold: true)
-    XCTAssertEqual(result.map(\.readingIdentity), [.formal(sha256: second.fixtureSHA256)])
-    let rounds = await attempts.count
-    XCTAssertEqual(rounds, 2)
-    await service.queryFixture(nil)
+
+    let before = try await service.recentLibrary(1)
+    XCTAssertEqual(before.map(\.readingIdentity), [.formal(sha256: first.fixtureSHA256)])
+    try core.linkLibraryFile(fileId: file.id, bookId: second.id)
+    let after = try await service.recentLibrary(1)
+    XCTAssertEqual(after.map(\.readingIdentity), [.formal(sha256: second.fixtureSHA256)])
   }
 
   @MainActor func testInformationSourceUsesDirectoryOrderAndHonorsExplicitFile() async throws {

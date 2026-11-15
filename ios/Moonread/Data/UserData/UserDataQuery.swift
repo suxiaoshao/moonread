@@ -104,22 +104,6 @@ extension AppDataService {
         }
     }
 
-    func recentLibraryEntries(_ limit: UInt32, cold: Bool) async throws -> [LibraryEntry] {
-        try await withValidQueryInputs(scope: cold ? "home-cold" : "recent") {
-            guard let index = try await queryAttempt(.fixed(records: .all, facts: .none),
-                options: .init(positionsOnly: true, scope: "recent-index"), diagnostic: nil) else { return nil }
-            let ranking = try index.query.recentLibraryRanking(limit: limit)
-            let keys = try ranking.readingKeys()
-            guard let detail = try await queryAttempt(.fixed(records: .only(keys), facts: .none),
-                options: .init(scope: "recent", fields: [.card, .chapter]), diagnostic: nil) else { return nil }
-            // Hydration cannot reselect a copy. Recheck the live index too:
-            // unchanged user inputs can still admit a new source into the rank.
-            guard let entries = try detail.query.hydrateRecentLibraryCards(ranking: ranking),
-                  try index.query.recentLibraryRankingMatches(ranking: ranking) else { return nil }
-            return ([index, detail], entries)
-        }
-    }
-
     func bookInformation(_ target: BookTarget, fileID: String?, includeRecordSource: Bool) async throws
         -> (LibraryEntry?, BookDetailsResult) {
         let (entry, details, blocked, missingSource): (LibraryEntry?, BookDetailsResult, Bool, Bool) =

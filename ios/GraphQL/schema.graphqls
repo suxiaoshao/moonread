@@ -1,0 +1,43 @@
+scalar UInt64
+scalar Int64
+
+type Query {
+  recentReading(limit: Int!): [RecentReadingCard!]!
+}
+
+type RecentReadingCard {
+  readingKey: ID!
+  bodyID: ID
+  file: RecentReadingFile!
+  position: UInt64!
+  byteCount: UInt64!
+  lastRead: Int64!
+  preferred: Boolean!
+  chapterTitle: String
+  metadata: RecentReadingMetadata
+}
+
+type RecentReadingFile {
+  id: ID!
+  shelfID: ID!
+  shelfName: String!
+  relativePath: String!
+  parentPath: String!
+  name: String!
+  size: UInt64!
+  modified: Int64!
+  needsDownload: Boolean!
+}
+
+type RecentReadingMetadata {
+  author: String!
+  cover: RecentReadingCover
+}
+
+type RecentReadingCover {
+  id: ID!
+  sha256: String!
+  fileExtension: String!
+  width: Int!
+  height: Int!
+}

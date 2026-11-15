@@ -114,6 +114,16 @@ extension AppDataService {
     try await f.store.receiveSyncFixture(
       "position", key: key, payload: UserSyncJSON.encode(stored, envelope: true))
   }
+  func restorationPosition(
+    _ f: Fixture, key: String, hint: PositionSourceHint?, time: Int64 = 123456, offset: UInt64 = 12,
+    token: String = "original"
+  ) async throws {
+    let index = try await f.service.relationalUserIndex()
+    let value = PositionValue(content_key: key, offset: offset, source_hint: hint)
+    try index.session.writeUsers(index.lease) { db in
+      try ReadingPositionRows.mergeBackup(db, book: key, incoming: .init(value: value, updated: time, token: token, device: nil))
+    }
+  }
   func snapshot(_ store: UserDataStore) async throws -> [[String]] {
     var result: [[String]] = []
     for kind in ["position", "value", "mark", "fact", "clear"] {

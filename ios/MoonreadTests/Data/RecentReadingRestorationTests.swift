@@ -25,10 +25,11 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
     try await f.pending.receiveSyncFixture("position", key: "pending:sample", payload: encoded)
     let transfer = try await f.pending.exportPending(key: "pending:sample")
     try await f.store.importPending(transfer, from: "pending:sample", to: formalKey)
-    let rows = try await f.store.recentRestorationPositions(limit: 10)
-    XCTAssertEqual(rows.first?.hint, h)
-    XCTAssertEqual(rows.first?.updated, 123)
-    XCTAssertEqual(rows.first?.token, "keep-token")
+    let migrated = try await f.store.values(key: "position/" + formalKey)
+    let head = try XCTUnwrap(migrated["position/" + formalKey])
+    XCTAssertEqual(try PositionCandidate(head).value.source_hint, h)
+    XCTAssertEqual(head.updated, 123)
+    XCTAssertEqual(head.token, "keep-token")
     for mutation in [
       "missingSize", "unknown", "escape", "absolute", "name", "encoding", "kind",
       "type", "size",
@@ -64,9 +65,10 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
     await restore(f)
     let after = try await snapshot(f.store)
     XCTAssertEqual(before, after)
-    let compatible = try await f.store.recentRestorationPositions(limit: 10)
-    let restoredLegacy = try XCTUnwrap(compatible.first { $0.contentKey == formalKey })
-    XCTAssertNil(restoredLegacy.hint); XCTAssertEqual(restoredLegacy.updated, 999)
+    let compatible = try await f.store.values(key: "position/" + formalKey)
+    let restoredLegacy = try XCTUnwrap(compatible["position/" + formalKey])
+    XCTAssertNil(try PositionCandidate(restoredLegacy).value.source_hint)
+    XCTAssertEqual(restoredLegacy.updated, 999)
     XCTAssertEqual(restoredLegacy.token, "old")
     let saved = try await f.store.value("position/" + formalKey)
     XCTAssertEqual(saved, "{\"content_key\":\"\(formalKey)\",\"offset\":12}")
@@ -85,7 +87,7 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
         await restore(f)
         XCTAssertNil(try f.core.sourceFileSnapshots(fileId: nil).first?.bookId)
       }
-      try await position(f, key: key, hint: h)
+      try await restorationPosition(f, key: key, hint: h)
       let before = try await snapshot(f.store)
       let pendingBefore = try await snapshot(f.pending)
       let defaults = try XCTUnwrap(UserDefaults(suiteName: f.suite))
@@ -100,7 +102,7 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
       await f.service.waitForRecentRestoration()
       let files = try f.core.sourceFileSnapshots(fileId: nil)
       XCTAssertNotNil(files.first?.bookId)
-      let recent = try await f.service.recentLibrary(10, cold: true)
+      let recent = try await f.service.recentLibrary(10)
       XCTAssertEqual(recent.count, 1)
       XCTAssertEqual(recent.first?.lastRead, 123456)
       XCTAssertEqual(recent.first?.positionUtf8, 12)
@@ -130,7 +132,7 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
     let reads = RestorationReads()
     await f.service.restorationFixture(active: true, beforeRead: { await reads.record($0) })
     let key = sha(text)
-    try await position(f, key: key, hint: hint("moved/sample.txt", size: UInt64(text.utf8.count)))
+    try await restorationPosition(f, key: key, hint: hint("moved/sample.txt", size: UInt64(text.utf8.count)))
     await f.service.scheduleRecentRestoration()
     await f.service.waitForRecentRestoration()
     XCTAssertNil(try f.core.sourceFileSnapshots(fileId: nil).first?.bookId)
@@ -250,10 +252,10 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
         "builtin", root: f.directory, items: indexed, observe: false)
       var h = hint("small.txt", size: UInt64(text.utf8.count))
       h.source_kind = .managedICloud
-      try await position(f, key: sha(text), hint: h, time: 10)
+      try await restorationPosition(f, key: sha(text), hint: h, time: 10)
       var big = hint("large.txt", size: RecentRestorationPolicy.automaticDownloadByteLimit + 1)
       big.source_kind = .managedICloud
-      try await position(f, key: sha(text + "large"), hint: big, time: 9)
+      try await restorationPosition(f, key: sha(text + "large"), hint: big, time: 9)
       let entered = expectation(description: "one admitted source only")
       let gate = RestorationGate(entered)
       let reads = RestorationReads()
@@ -292,7 +294,7 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
       defer { f.clean() }
       try await scan(f)
       let key = sha(text)
-      try await position(f, key: key, hint: hint("sample.txt", size: UInt64(text.utf8.count)))
+      try await restorationPosition(f, key: key, hint: hint("sample.txt", size: UInt64(text.utf8.count)))
       let gate = RestorationGate()
       await f.service.restorationFixture(active: true, beforeCommit: { await gate.wait() })
       await f.service.scheduleRecentRestoration()
@@ -319,13 +321,20 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
       case "hide": try await f.service.hideRecent(f.core.textIdForSha(sha: key))
       case "encoding": try f.core.setSourceDecoding(fileId: file.id, decoding: "UTF-8")
       case "token":
-        try await position(
+        try await restorationPosition(
           f, key: key, hint: hint("sample.txt", size: UInt64(text.utf8.count)), time: 999999,
           token: "new-position")
       case "unsupported":
-        try await f.store.receiveSyncFixture(
-          "position", key: key,
-          payload: "{\"v\":2,\"updated\":999999,\"token\":\"future\",\"value\":\"future\"}")
+        let index = try await f.service.relationalUserIndex()
+        try index.session.writeUsers(index.lease) { db in
+          let bytes = Data("{\"v\":2}".utf8)
+          try db.execute(sql: """
+            INSERT INTO usr.quarantined_record(partition,source,source_id,source_type,record_id,book_key,logical_key,
+                raw_format,raw_bytes,digest,reason,completeness)
+            VALUES (0,'fixture','future','position_candidate','future',?,?,'fixture',?,?,'future','complete')
+            """, arguments: [key,"position/" + key,bytes,DataIdentity.sha(bytes)])
+          try ReadingPositionRows.settleCurrent(db, book: key)
+        }
       default: await f.service.pauseImports()
       }
       let before = try await snapshot(f.store)
@@ -348,7 +357,7 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
       defer { f.clean() }
       try await scan(f)
       let key = sha(text)
-      try await position(f, key: key, hint: hint("sample.txt", size: UInt64(text.utf8.count)))
+      try await restorationPosition(f, key: key, hint: hint("sample.txt", size: UInt64(text.utf8.count)))
       let gate = RestorationGate()
       await f.service.restorationFixture(active: true, beforeRead: { _ in await gate.wait() })
       await f.service.scheduleRecentRestoration()
@@ -392,7 +401,7 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
     defer { f.clean() }
     try await scan(f)
     let file = try XCTUnwrap(f.core.sourceFileSnapshots(fileId: nil).first)
-    try await position(
+    try await restorationPosition(
       f, key: sha(text), hint: hint("sample.txt", size: UInt64(bytes.count), decoding: "UTF-16LE"))
     await restore(f)
     XCTAssertEqual(try f.core.sourceDecoding(fileId: file.id), "auto", "A descriptive old hint is not a decoding preference")
@@ -400,9 +409,10 @@ final class RecentReadingRestorationTests: RecentReadingRestorationFixture {
       .init(id: file.id, shelfID: "builtin", relativePath: "sample.txt"))
     try await f.service.waitForImportFinish(lease.id)
     try await f.service.writePosition(lease.id, offset: 20)
-    let storedValue = try await f.store.value("position/" + sha(text))
-    let value = try XCTUnwrap(storedValue)
-    let saved = try UserSyncJSON.decode(PositionValue.self, value, as: UserSyncJSON.position)
+    let index = try await f.service.relationalUserIndex()
+    let key = sha(text)
+    let position = try index.session.readUsers(index.lease) { try ReadingPositionRows.position($0, book: key, partition: 0) }
+    let saved = try XCTUnwrap(position).value
     XCTAssertEqual(saved.source_hint?.decoding, "auto")
     XCTAssertEqual(saved.source_hint?.relative_path, "sample.txt")
     XCTAssertEqual(saved.source_hint?.byte_size, UInt64(bytes.count))

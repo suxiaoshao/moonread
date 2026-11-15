@@ -200,7 +200,7 @@ extension AppDataService {
               let shelf = try shelves().first(where: { $0.id == file.shelfId && $0.error == nil }) else { return nil }
         return .init(file: file, shelf: shelf)
     }
-    private func restorationFingerprint(_ files: [RecentRestorationPolicy.Candidate], position: UserDataStore.RecentPosition, decodings: SourceDecodingSnapshot) -> String {
+    private func restorationFingerprint(_ files: [RecentRestorationPolicy.Candidate], position: ReadingPositionRows.RestorationPosition, decodings: SourceDecodingSnapshot) -> String {
         var hash = SHA256()
         hash.update(data: Data(position.token.utf8))
         // A newly synced decoding can make an earlier failed candidate readable.
@@ -221,17 +221,20 @@ extension AppDataService {
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
     private func restoreRecentReadingPass() async throws {
-        let store = try await userStore()
-        let hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
+        let core = try relationalUserIndex()
+        let generation = recentRestorationGeneration
+        let limit = RecentRestorationPolicy.recentKeyLimit
         let decodings = try currentSourceDecodings()
-        let positions = try await store.recentRestorationPositions(limit: RecentRestorationPolicy.recentKeyLimit, excluding: hidden)
+        let positions = try core.recentRestorationPositions(limit: limit)
+        func stillSelected(_ position: ReadingPositionRows.RestorationPosition) throws -> Bool {
+            try core.recentRestorationPositions(limit: limit).contains(position)
+        }
         let keys = Set(positions.map(\.contentKey))
         recentRestorationAttempts = recentRestorationAttempts.filter { keys.contains($0.key) }
         let all = try restorationCandidates()
-        for position in positions where !hidden.contains(position.contentKey) {
+        for position in positions {
             try Task.checkCancellation()
             guard recentRestorationActive, let hint = position.hint else { continue }
-            let core = try indexStore()
             if let id = try? core.textIdForSha(sha: position.contentKey), all.contains(where: { $0.file.bookId == id }) { continue }
             let candidates = RecentRestorationPolicy.candidates(hint: hint, files: all)
             let fingerprint = restorationFingerprint(candidates, position: position, decodings: decodings)
@@ -240,7 +243,10 @@ extension AppDataService {
             for candidate in candidates {
                 try Task.checkCancellation()
                 try await waitForReadingIdle()
-                let generation = recentRestorationGeneration
+                try Task.checkCancellation()
+                guard recentRestorationActive, generation == recentRestorationGeneration, try stillSelected(position) else {
+                    interrupted = true; break
+                }
                 let work = RecentRestorationWork(core: core, candidate: candidate, contentKey: position.contentKey,
                     mayDownload: RecentRestorationPolicy.canAutomaticallyDownload(hint: hint, candidate: candidate, files: all), service: self)
                 recentRestorationWork = work
@@ -251,11 +257,8 @@ extension AppDataService {
                     if let recentRestorationBeforeCommit { await recentRestorationBeforeCommit() }
                     try Task.checkCancellation(); try work.checkCancellation()
                     try await work.validateResult(result)
-                    let currentHidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
-                    let current = try await store.recentRestorationPositions(limit: RecentRestorationPolicy.recentKeyLimit, excluding: currentHidden)
                     guard recentRestorationActive, !work.isCancelled, generation == recentRestorationGeneration,
-                          current.contains(where: { $0.contentKey == position.contentKey && $0.token == position.token }),
-                          !(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []).contains(position.contentKey),
+                          try stillSelected(position),
                           !readingSourceIDs.values.contains(candidate.file.id),
                           identityMayRun(),
                           let fresh = try restorationCandidate(candidate.file.id),

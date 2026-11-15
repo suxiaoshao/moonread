@@ -140,7 +140,7 @@ extension AppDataService {
             userCloudConfigurationRevision = UUID()
             promotedUserKeys.removeAll(); pendingPromotionIDs.removeAll(); recoveredImports = false
             resetSystemReadingCatalog()
-            NotificationCenter.default.post(name: .readingContinuationInvalidated, object: nil)
+            NotificationCenter.default.post(name: .readingContinuationInvalidated, object: self)
             NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
             let revision = userCloudConfigurationRevision
             // The configuration switch is serialized with deletion, not store

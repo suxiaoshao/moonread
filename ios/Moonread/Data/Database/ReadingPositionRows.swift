@@ -116,6 +116,34 @@ enum ReadingPositionRows {
         return try decodedPosition(row)
     }
 
+    struct RestorationPosition: Sendable, Equatable {
+        let contentKey: String
+        let token: String
+        let updated: Int64
+        let hint: PositionSourceHint?
+    }
+
+    /// Cache recovery still uses formal, readable positions, ranked by
+    /// their position clock (not opened). Hide before taking its fixed budget.
+    static func restorationPositions(_ db: Database, scope: DataScope, limit: Int) throws -> [RestorationPosition] {
+        try Row.fetchAll(db, sql: """
+            WITH aliases AS MATERIALIZED (\(ReaderIndex.verifiedReadingAliasPairsSQL)),
+                 hidden AS (\(ReaderIndex.hiddenReadingKeysSQL))
+            SELECT p.book_key,p.offset,p.updated_ms,p.token,p.device_id,p.source_kind,
+                   p.relative_path,p.file_name,p.byte_size,p.decoding
+            FROM usr.reading_current r JOIN usr.position_candidate p
+                ON p.partition=r.position_partition AND p.record_id=r.position_id
+            WHERE r.position_partition=0
+              AND length(r.book_key)=64 AND r.book_key NOT GLOB '*[^0-9a-f]*'
+              AND NOT EXISTS(SELECT 1 FROM hidden h WHERE h.book_key=r.book_key)
+            ORDER BY r.position_updated_ms DESC,r.book_key DESC LIMIT ?2
+            """, arguments: [scope.key,max(0,limit)]).map { row in
+                let position = try decodedPosition(row)
+                return .init(contentKey: position.value.content_key, token: position.token,
+                             updated: position.updated, hint: position.value.source_hint)
+            }
+    }
+
     private static func decodedPosition(_ row: Row) throws -> Position {
         guard let offset = UInt64(row["offset"] as String) else { throw UserSyncCompatibilityError() }
         let token: String = row["token"]
@@ -320,5 +348,12 @@ extension ReaderIndex {
             else { return nil }
             return (local, winner)
         }
+    }
+}
+
+
+extension ReaderIndex {
+    func recentRestorationPositions(limit: Int) throws -> [ReadingPositionRows.RestorationPosition] {
+        try session.readUsers(lease) { try ReadingPositionRows.restorationPositions($0, scope: self.lease.scope, limit: limit) }
     }
 }

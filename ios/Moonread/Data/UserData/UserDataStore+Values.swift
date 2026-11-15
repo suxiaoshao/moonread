@@ -121,20 +121,4 @@ extension UserDataStore {
             ShelfReference(id: String(key.dropFirst("shelf-reference/".count)), value: try JSONDecoder().decode(ShelfReferenceValue.self, from: Data(stored.value.utf8)))
         }
     }
-
-    struct RecentPosition: Sendable, Equatable {
-        let contentKey: String
-        let token: String
-        let updated: Int64
-        let hint: PositionSourceHint?
-    }
-    /// Unsupported records are retained and excluded individually; they cannot
-    /// suppress recovery for unrelated keys or become editable through recovery.
-    func recentRestorationPositions(limit: Int, excluding: Set<String> = []) throws -> [RecentPosition] {
-        try valueSnapshot(prefix: "position/").values.compactMap { key, stored in
-            let value = try decode(PositionValue.self, stored.value)
-            guard let key = try? parseReadingKey(value: value.content_key), case .formal = key, !excluding.contains(value.content_key) else { return nil }
-            return RecentPosition(contentKey: value.content_key, token: stored.token, updated: stored.updated, hint: value.source_hint)
-        }.sorted { ($0.updated, $0.contentKey) > ($1.updated, $1.contentKey) }.prefix(max(0, limit)).map { $0 }
-    }
 }

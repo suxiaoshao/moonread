@@ -14,17 +14,17 @@ final class LibraryModel {
     private let layoutKey: String
     @ObservationIgnored private let defaults: UserDefaults
     /// Recents kept on the home page: the resume card plus a scrollable cover row in the grid.
-    static let homeRecentLimit = 10
+    let recentReading: RecentReadingStore
     var home = HomeSnapshot()
-    @ObservationIgnored var homeIndex = HomeSnapshot()
     @ObservationIgnored var libraryStructure: [SourceFileLocation]?
     var shelves: [LibraryShelf] { home.shelves }
-    var recents: [LibraryEntry] { home.recents }
+    var recents: [LibraryEntry] {
+        recentReading.value?.recentReading.prefix(Int(RecentReadingStore.homeLimit)).compactMap { try? $0.libraryEntry() } ?? []
+    }
     var homeReady = false
     var hasUserImportedBooks = false
     var showsImportTip: Bool { Onboarding.shared.enabled && !Onboarding.shared.imported && !hasUserImportedBooks && homeReady && (builtinDiscovery == .notRequired || adoptedDiscoveryRevision == discoveryRevision) }
     var homeRequest = UUID()
-    @ObservationIgnored var homeCovers: [CoverSubscription] = []
     var automaticRefreshDeferred = false
     var error: String?
     /// A reader that closed with an error reports it here, after its position is saved.
@@ -201,6 +201,7 @@ final class LibraryModel {
             try await service.adoptCloudDiscovery(items)
         }
         self.service = service
+        recentReading = RecentReadingStore(service: service)
         self.fullIndex = fullIndex ?? .shared
         self.dataManagement = DataManagementModel(service: service)
         self.lookupDropEntry = lookupDropEntry ?? { try await service.libraryEntry($0) }

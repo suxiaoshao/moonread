@@ -309,16 +309,26 @@ extension AppDataService {
             .init(kind: group.kind, tag: group.tag, entries: group.fileIds.compactMap { cards[$0] })
         })
     }
-    func recentLibrary(_ limit: UInt32 = 1000, cold: Bool = false) async throws -> [LibraryEntry] {
-        try await recentLibraryEntries(limit, cold: cold)
+    /// One-shot consumers (Siri and the no-target system route) use the
+    /// identical fixed query, without acquiring a page observation.
+    func recentLibrary(_ limit: UInt32 = 1000) throws -> [LibraryEntry] {
+        let index = try relationalUserIndex()
+        let scope = index.lease.scope
+        return try index.session.readUsers(index.lease) { db in
+            try RecentReadingRead.fetch(db, scope: scope, limit: limit).recentReading.map { try $0.libraryEntry() }
+        }
     }
 
-    func hideRecent(_ value: String) throws {
-        let key: String
-        if let parsed = try? parseReadingKey(value: value) { key = serializeReadingKey(key: parsed) }
-        else { key = try userKey(value).storageKey }
-        var hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
-        hidden.insert(key); sourceDefaults.set(Array(hidden), forKey: "Moonread.hiddenRecent"); dataChanged(); scheduleSystemReadingCatalog(immediate: true)
+    func hideRecent(_ value: String) async throws {
+        let configuration = userCloudConfigurationRevision
+        try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
+        let index = try relationalUserIndex()
+        let key = if let parsed = try? parseReadingKey(value: value) { serializeReadingKey(key: parsed) }
+            else { try index.resolveBookIdentity(bookId: value).key.storageKey }
+        try index.session.writeUsers(index.lease) { try LocalReadingRows.setHidden($0, book: key, hidden: true) }
+        dataChanged(); scheduleSystemReadingCatalog(immediate: true)
     }
 
     func registerLibraryShelf(_ url: URL, replacing shelfID: String? = nil) throws -> String {

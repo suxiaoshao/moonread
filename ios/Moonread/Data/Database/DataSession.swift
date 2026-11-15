@@ -159,6 +159,7 @@ final class DataSession: @unchecked Sendable {
         configuration.foreignKeysEnabled = true
         configuration.prepareDatabase { db in
             try db.execute(sql: "ATTACH DATABASE ? AS usr", arguments: [file.path])
+            db.add(collation: CurrentUserRows.tokenCollation)
         }
         let writer = try DatabasePool(path: layout.index.path, configuration: configuration)
         pool = writer
