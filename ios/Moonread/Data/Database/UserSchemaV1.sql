@@ -174,6 +174,7 @@ CREATE TABLE usr.quarantined_record (
 );
 CREATE INDEX usr.quarantine_scope ON quarantined_record(source_type,book_key,mark_id,logical_key,session_id);
 CREATE INDEX usr.quarantine_id ON quarantined_record(source_type,record_id,partition);
+CREATE INDEX usr.quarantine_logical_key ON quarantined_record(logical_key);
 CREATE TABLE usr.quarantine_asset (
  quarantine_id INTEGER NOT NULL REFERENCES quarantined_record(quarantine_id) ON DELETE CASCADE, field TEXT NOT NULL,
  bytes BLOB, digest TEXT, missing_reason TEXT,
@@ -234,6 +235,14 @@ CREATE TABLE usr.reading_current (
  FOREIGN KEY(opened_partition,opened_id) REFERENCES opened_candidate(partition,record_id) DEFERRABLE INITIALLY DEFERRED
 );
 CREATE INDEX usr.reading_current_recent ON reading_current(recent_ms DESC,book_key);
+-- Resume compares the local baseline with the formal store's own winner.
+-- The shared reading row can be absent or point into the pending store.
+CREATE TABLE usr.formal_position_current (
+ book_key TEXT PRIMARY KEY NOT NULL,
+ position_partition INTEGER NOT NULL DEFAULT 0 CHECK (position_partition=0),
+ position_id TEXT NOT NULL,
+ FOREIGN KEY(position_partition,position_id) REFERENCES position_candidate(partition,record_id) DEFERRABLE INITIALLY DEFERRED
+);
 CREATE TABLE usr.metadata_current (
  book_key TEXT PRIMARY KEY NOT NULL,
  source_partition INTEGER NOT NULL CHECK(source_partition IN (0,1)),

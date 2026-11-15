@@ -115,31 +115,7 @@ extension ReaderIndex {
                 let row = try Row.fetchOne(db, sql: """
                     SELECT generation,phase,error FROM main.import_jobs WHERE book_id=? AND pending_owner=?
                     """, arguments: [bookId,self.lease.scope.key])
-                let storedPhase: String? = row?["phase"]
-                let generation: Int64? = row?["generation"]
-                let preparation: PreparationState
-                switch storedPhase {
-                case "preparing", "importing", "finalizing":
-                    let current = task.flatMap { $0.generation == generation ? $0 : nil }
-                    if let terminal = current?.terminal {
-                        preparation = terminal
-                    } else if current?.control == nil {
-                        preparation = .paused(detail: .noActiveWorker)
-                    } else {
-                        switch storedPhase {
-                        case "preparing": preparation = .preparing
-                        case "importing": preparation = .importing
-                        default: preparation = .finalizing
-                        }
-                    }
-                case "failed":
-                    let error = (row?["error"] as String?).flatMap { try? decodeImportError(json: $0) }
-                    preparation = .failed(detail: error.map { .reported(error: $0) } ?? .unavailable)
-                case "paused":
-                    preparation = .paused(detail: (row?["error"] as String?) == nil ? .unknown : .interrupted)
-                case nil, "complete": preparation = .complete
-                default: throw ReaderError.InvalidSettings
-                }
+                let preparation = try Self.preparation(row, task: task)
                 let phase: ImportPhase
                 switch preparation {
                 case .preparing: phase = .preparing
@@ -153,6 +129,35 @@ extension ReaderIndex {
                 return (ImportStatus(text: text, phase: phase), preparation)
             }
         }
+    }
+
+    static func preparation(_ row: Row?, task: ImportTask?) throws -> PreparationState {
+        let storedPhase: String? = row?["phase"]
+        let generation: Int64? = row?["generation"]
+        let preparation: PreparationState
+        switch storedPhase {
+        case "preparing", "importing", "finalizing":
+            let current = task.flatMap { $0.generation == generation ? $0 : nil }
+            if let terminal = current?.terminal {
+                preparation = terminal
+            } else if current?.control == nil {
+                preparation = .paused(detail: .noActiveWorker)
+            } else {
+                switch storedPhase {
+                case "preparing": preparation = .preparing
+                case "importing": preparation = .importing
+                default: preparation = .finalizing
+                }
+            }
+        case "failed":
+            let error = (row?["error"] as String?).flatMap { try? decodeImportError(json: $0) }
+            preparation = .failed(detail: error.map { .reported(error: $0) } ?? .unavailable)
+        case "paused":
+            preparation = .paused(detail: (row?["error"] as String?) == nil ? .unknown : .interrupted)
+        case nil, "complete": preparation = .complete
+        default: throw ReaderError.InvalidSettings
+        }
+        return preparation
     }
 
     func importSourceByteCount(bookId: String) throws -> UInt64 {

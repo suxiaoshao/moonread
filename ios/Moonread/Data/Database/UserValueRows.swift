@@ -403,6 +403,10 @@ extension ReaderIndex {
     /// Check the released chapter-correction line constraints from the
     /// published body, using at most the preceding/current/next chunks.
     static func validateChapterCorrection(_ db: Database, body: Body, offset: UInt64) throws {
+        _ = try chapterCorrectionLine(db, body: body, offset: offset)
+    }
+
+    private static func chapterCorrectionLine(_ db: Database, body: Body, offset: UInt64) throws -> (chunk: TextChunk, bytes: Data) {
         guard offset < body.bytes else { throw ReaderError.InvalidRange }
         let text = try chunk(db, id: body.id, at: offset)
         let bytes = text.text.utf8, relative = Int(offset - text.startUtf8)
@@ -428,5 +432,20 @@ extension ReaderIndex {
         let scalars = String(decoding: line, as: UTF8.self).unicodeScalars
         let title = scalars.drop(while: { $0.properties.isWhitespace }).reversed().drop(while: { $0.properties.isWhitespace })
         guard !title.isEmpty, title.count <= 80 else { throw ReaderError.InvalidRange }
+        return (text, line)
+    }
+
+    static func chapterCorrectionCounts(_ db: Database, body: Body, offset: UInt64) throws -> (start: UInt64, body: UInt64) {
+        let (text, line) = try chapterCorrectionLine(db, body: body, offset: offset)
+        let bytes = text.text.utf8
+        let start = bytes.index(bytes.startIndex, offsetBy: Int(offset - text.startUtf8))
+        guard let prefix = try UInt64.fetchOne(db, sql: """
+            SELECT start_char_count FROM main.chunks WHERE book_id=? AND chunk_index=?
+            """, arguments: [body.id, text.index]) else { throw ReaderError.SourceChanged }
+        let count = UInt64(String(decoding: bytes[..<start], as: UTF8.self).unicodeScalars.lazy
+            .filter { !$0.properties.isWhitespace }.count)
+        let startCount = prefix + count
+        let titleCount = String(decoding: line, as: UTF8.self).unicodeScalars.lazy.filter { !$0.properties.isWhitespace }.count
+        return (startCount, startCount + UInt64(titleCount))
     }
 }

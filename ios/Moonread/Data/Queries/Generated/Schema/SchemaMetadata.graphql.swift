@@ -28,7 +28,11 @@ extension MoonreadQueries {
     static let configuration: any ApolloAPI.SchemaConfiguration.Type = SchemaConfiguration.self
 
     private static let objectTypeMap: [String: ApolloAPI.Object] = [
+      "ChapterHeading": MoonreadQueries.Objects.ChapterHeading,
+      "ChapterStructure": MoonreadQueries.Objects.ChapterStructure,
+      "ChapterStructureEntry": MoonreadQueries.Objects.ChapterStructureEntry,
       "Query": MoonreadQueries.Objects.Query,
+      "ReaderOpening": MoonreadQueries.Objects.ReaderOpening,
       "RecentReadingCard": MoonreadQueries.Objects.RecentReadingCard,
       "RecentReadingCover": MoonreadQueries.Objects.RecentReadingCover,
       "RecentReadingFile": MoonreadQueries.Objects.RecentReadingFile,

@@ -111,27 +111,8 @@ enum RecentReadingRead {
                CASE WHEN m.source_partition=1 OR a.record_id IS NOT NULL OR c.record_id IS NOT NULL THEN m.book_key END AS metadata_key,
                a.value_text AS author,asset.legacy_cover_id AS cover_id,
                c.sha256 AS cover_sha,c.format AS cover_format,c.width AS cover_width,c.height AS cover_height,
-               (SELECT title FROM (
-                   SELECT * FROM (
-                   SELECT coalesce(co.title,ch.title) AS title,ch.start_utf8 AS start
-                   FROM main.import_chapters ch
-                   LEFT JOIN usr.chapter_override_current ov ON ov.book_key=f.book_key AND ov.offset=printf('%020lld',ch.start_utf8)
-                   LEFT JOIN usr.chapter_override_candidate co ON co.partition=ov.source_partition AND co.record_id=ov.candidate_id
-                   WHERE ch.book_id=f.body_id AND ch.start_utf8<=CAST(f.position AS INTEGER) AND coalesce(co.excluded,0)=0
-                   ORDER BY ch.start_utf8 DESC LIMIT 1
-                   )
-                   UNION ALL
-                   SELECT * FROM (
-                   SELECT co.title,CAST(ov.offset AS INTEGER) AS start
-                   FROM usr.chapter_override_current ov JOIN usr.chapter_override_candidate co
-                       ON co.partition=ov.source_partition AND co.record_id=ov.candidate_id
-                   WHERE f.body_id IS NOT NULL AND ov.book_key=f.book_key AND co.excluded=0
-                       AND ov.offset<=printf('%020lld',CAST(f.position AS INTEGER))
-                       AND NOT EXISTS(SELECT 1 FROM main.import_chapters ch
-                           WHERE ch.book_id=f.body_id AND ch.start_utf8=CAST(ov.offset AS INTEGER))
-                   ORDER BY ov.offset DESC LIMIT 1
-                   )
-               ) ORDER BY start DESC LIMIT 1) AS chapter_title
+               (SELECT title FROM (\(ReaderChapterRead.headingSQL(
+                   body: "f.body_id", key: "f.book_key", offset: "CAST(f.position AS INTEGER)")))) AS chapter_title
         FROM selected f
         LEFT JOIN main.books b ON b.id=f.body_id
         LEFT JOIN lengths l ON l.content_sha256=f.book_key

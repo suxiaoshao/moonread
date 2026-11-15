@@ -30,7 +30,6 @@ final class ReaderToolsModel {
     var chapters: [ChapterEntry] = []
     private struct ChapterStructure {
         let version = UUID()
-        let query: ReaderQuery
         let outline: ChapterOutline
     }
     private enum StructureLoad {
@@ -51,47 +50,16 @@ final class ReaderToolsModel {
             self = previous.map(Self.ready) ?? .idle
         }
     }
-    private struct ChapterCoverage {
-        let query: ReaderQuery
-        let outline: ChapterOutline
-    }
-    private enum CoverageLoad {
-        case notRequested
-        case loading(UUID, previous: ChapterCoverage?)
-        case ready(UUID, ChapterCoverage)
-        case failed(UUID, String, previous: ChapterCoverage?)
-
-        func snapshot(for version: UUID) -> ChapterCoverage? {
-            switch self {
-            case .loading(let id, let snapshot) where id == version: snapshot
-            case .failed(let id, _, let snapshot) where id == version: snapshot
-            case .ready(let id, let snapshot) where id == version: snapshot
-            default: nil
-            }
-        }
-        mutating func cancel() {
-            guard case .loading(let version, let previous) = self else { return }
-            self = previous.map { .ready(version, $0) } ?? .notRequested
-        }
-    }
-    private struct DirectoryState {
-        var structure = StructureLoad.idle
-        var coverage = CoverageLoad.notRequested
-        var currentCoverage: ChapterCoverage? {
-            structure.snapshot.flatMap { coverage.snapshot(for: $0.version) }
-        }
-    }
-    private var directory = DirectoryState()
-    private var allChapters: [ChapterEntry] {
-        directory.currentCoverage?.outline.items ?? directory.structure.snapshot?.outline.items ?? []
-    }
-    var chapterCoverageReady: Bool { directory.currentCoverage != nil }
+    private var chapterStructure = StructureLoad.idle
+    private var allChapters: [ChapterEntry] { chapterStructure.snapshot?.outline.items ?? [] }
+    // Structure has no coverage. Step 5 supplies it as a separate request.
+    var chapterCoverageReady: Bool { allChapters.contains { $0.coveredCharacters != nil } }
     var collapsedVolumes: Set<UInt64> = []
-    var chapterComplete: Bool { directory.structure.snapshot?.outline.isComplete ?? false }
+    var chapterComplete: Bool { chapterStructure.snapshot?.outline.isComplete ?? false }
     var chapterTarget: UInt64?
     var chapterTargetCentered = true
     var chapterJumpRevision = 0
-    var loadingChapters: Bool { if case .loading = directory.structure { true } else { false } }
+    var loadingChapters: Bool { if case .loading = chapterStructure { true } else { false } }
     private struct SearchDraft {
         var query = ""
         var regex = false
@@ -305,8 +273,7 @@ final class ReaderToolsModel {
     private var bookID: String?
     private var currentChapter: UInt64 = 0
     private var chapterGeneration = 0
-    private var chapterTask: Task<QueryRefresh<ChapterOutline>, Error>?
-    private var coverageTask: Task<Void, Never>?
+    private var chapterTask: Task<ChapterOutline, Error>?
     private var notesGeneration = 0
     private var job: SearchJob?
     private var searchTask: Task<Void, Never>?
@@ -361,7 +328,7 @@ final class ReaderToolsModel {
         let changed = self.bookID != bookID
         if changed {
             cancelSearchJob(); cancelChapterLoads(); self.bookID = bookID
-            chapters = []; directory = DirectoryState(); collapsedVolumes = []; chapterFilter = ""
+            chapters = []; chapterStructure = .idle; collapsedVolumes = []; chapterFilter = ""
             finishNoteSelection()
             notesGeneration += 1
             notesLoad = .idle
@@ -442,108 +409,41 @@ final class ReaderToolsModel {
     func cancelChapterLoads() {
         chapterGeneration += 1
         chapterTask?.cancel(); chapterTask = nil
-        coverageTask?.cancel(); coverageTask = nil
-        directory.structure.cancel()
-        directory.coverage.cancel()
-    }
-
-    func invalidateChapterCoverage() {
-        cancelChapterLoads()
-        directory.coverage = .notRequested
-        updateChapterRows()
-    }
-
-    func refreshChapterStatistics(reset: Bool, presented: Bool) async {
-        if reset { invalidateChapterCoverage() }
-        guard presented, tab == .chapters else { return }
-        await refreshChapters()
+        chapterStructure.cancel()
     }
 
     func refreshChapters(jumpTo offset: UInt64? = nil) async {
         guard !isLeaving, !Task.isCancelled, let id = bookID else { return }
         cancelChapterLoads()
         let generation = chapterGeneration
-        let previous = directory.structure.snapshot
-        directory.structure = .loading(previous: previous)
+        let previous = chapterStructure.snapshot
+        chapterStructure = .loading(previous: previous)
         // Native list layout must not delay the independent structure read.
         let task = Task.detached(priority: Task.currentPriority) { [service] in
-            try await service.chapterStructure(id, reusing: previous?.query)
+            try await service.chapterStructure(id)
         }
         chapterTask = task
         defer {
             if generation == chapterGeneration {
-                directory.structure.cancel()
+                chapterStructure.cancel()
                 chapterTask = nil
             }
         }
         do {
             let result = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
             guard !isLeaving, !Task.isCancelled, id == bookID, generation == chapterGeneration else { return }
-            let current: ChapterStructure
-            switch result {
-            case .unchanged:
-                guard let previous else { return }
-                current = previous
-            case .replaced(let query, let outline):
-                current = ChapterStructure(query: query, outline: outline)
-                directory.coverage = .notRequested
-            }
-            directory.structure = .ready(current)
+            let current = if let previous, previous.outline == result { previous }
+                          else { ChapterStructure(outline: result) }
+            chapterStructure = .ready(current)
             if let offset { showChapter(offset) }
             else if current.version != previous?.version { updateChapterRows() }
-            if tab == .chapters { loadChapterCoverage(id, generation: generation, structureVersion: current.version) }
         } catch is CancellationError { }
         catch {
             guard !isLeaving, !Task.isCancelled, generation == chapterGeneration else { return }
             let message = ReaderMessages.error(error)
-            directory.structure = .failed(message, previous: previous)
+            chapterStructure = .failed(message, previous: previous)
             self.error = message
         }
-    }
-
-    private func loadChapterCoverage(_ id: String, generation: Int, structureVersion: UUID) {
-        let previous = directory.coverage.snapshot(for: structureVersion)
-        directory.coverage = .loading(structureVersion, previous: previous)
-        coverageTask = Task.detached(priority: Task.currentPriority) { [weak self, service] in
-            do {
-                let result = try await service.chapters(id, reusing: previous?.query)
-                try Task.checkCancellation()
-                await self?.publishChapterCoverage(result, id: id, generation: generation, structureVersion: structureVersion)
-            } catch is CancellationError { }
-            catch { await self?.chapterCoverageFailed(error, generation: generation, structureVersion: structureVersion) }
-        }
-    }
-
-    private func publishChapterCoverage(_ result: QueryRefresh<ChapterOutline>, id: String, generation: Int, structureVersion: UUID) {
-        guard !isLeaving, id == bookID, generation == chapterGeneration,
-              let structure = directory.structure.snapshot, structure.version == structureVersion,
-              case .loading(let version, let previous) = directory.coverage, version == structureVersion else { return }
-        coverageTask = nil
-        switch result {
-        case .unchanged:
-            directory.coverage = previous.map { .ready(version, $0) } ?? .notRequested
-        case .replaced(let query, let outline):
-            // A structure change between requests must go through the structure owner.
-            guard structure.outline.isComplete == outline.isComplete,
-                  structure.outline.items.count == outline.items.count,
-                  zip(structure.outline.items, outline.items).allSatisfy({ a, b in
-                      a.startUtf8 == b.startUtf8 && a.title == b.title && a.level == b.level && a.parentUtf8 == b.parentUtf8
-                  }) else {
-                directory.coverage = .notRequested
-                updateChapterRows()
-                return
-            }
-            directory.coverage = .ready(version, ChapterCoverage(query: query, outline: outline))
-            updateChapterRows() // Keep filter, folding, target and scroll revision.
-        }
-    }
-
-    private func chapterCoverageFailed(_ error: Error, generation: Int, structureVersion: UUID) {
-        guard !isLeaving, generation == chapterGeneration,
-              directory.structure.snapshot?.version == structureVersion else { return }
-        let message = ReaderMessages.error(error)
-        directory.coverage = .failed(structureVersion, message, previous: directory.coverage.snapshot(for: structureVersion))
-        coverageTask = nil; self.error = message
     }
 
     func loadNotes(reset: Bool, preservingCount: Int = 0) async {

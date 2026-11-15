@@ -285,11 +285,20 @@ pub fn classify_reading_paragraphs(
     blank_runs: Vec<SourceSpan>,
     continues: bool,
 ) -> Vec<ReadingParagraph> {
+    classify_paragraphs(&chunks, &chapters, &blank_runs, continues)
+}
+
+pub(crate) fn classify_paragraphs(
+    chunks: &[TextChunk],
+    chapters: &[ChapterInfo],
+    blank_runs: &[SourceSpan],
+    continues: bool,
+) -> Vec<ReadingParagraph> {
     let Some(first) = chunks.first() else {
         return Vec::new();
     };
     let headings: HashMap<_, _> = chapters
-        .into_iter()
+        .iter()
         .map(|chapter| (chapter.start_utf8, chapter.level))
         .collect();
     let is_blank = |start, end| {

@@ -2,6 +2,9 @@ scalar UInt64
 scalar Int64
 
 type Query {
+  readerOpening(bookID: ID!): ReaderOpening!
+  chapterAt(bookID: ID!, offset: UInt64!): ChapterHeading
+  chapterStructure(bookID: ID!): ChapterStructure!
   recentReading(limit: Int!): [RecentReadingCard!]!
 }
 
@@ -40,4 +43,38 @@ type RecentReadingCover {
   fileExtension: String!
   width: Int!
   height: Int!
+}
+
+type ChapterHeading {
+  start: UInt64!
+  title: String!
+  level: Int!
+}
+
+type ChapterStructure {
+  complete: Boolean!
+  entries: [ChapterStructureEntry!]!
+}
+
+type ChapterStructureEntry {
+  heading: ChapterHeading!
+  wordCount: UInt64!
+  countComplete: Boolean!
+  parentStart: UInt64
+  parentTitle: String
+}
+
+type ReaderOpening {
+  sessionID: ID!
+  title: String!
+  readingKey: ID!
+  encoding: String!
+  bytes: UInt64!
+  chunks: Int!
+  position: UInt64!
+  started: Boolean!
+  readable: Boolean!
+  generation: UInt64!
+  bytesRead: UInt64!
+  sourceBytes: UInt64!
 }

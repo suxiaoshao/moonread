@@ -3,7 +3,7 @@ import GRDB
 /// Implements the existing Swift token comparison. The domain decides which
 /// candidates are eligible, and which domains can choose a winner at all.
 enum CurrentUserRows {
-    static let bookTables = ["reading_current", "metadata_current", "tag_current", "chapter_override_current", "annotation_current_head"]
+    static let bookTables = ["reading_current", "formal_position_current", "metadata_current", "tag_current", "chapter_override_current", "annotation_current_head"]
     static let tables = bookTables + ["source_decoding_current", "palette_current", "shelf_reference_current"]
 
     /// Initial intake and D1 both merge evidence (including isolation) before
@@ -18,7 +18,7 @@ enum CurrentUserRows {
                 UNION SELECT \(column) FROM usr.\(domain)_current
                 """)
         }
-        for book in try keys("book_key", in: ["position_candidate", "opened_candidate", "reading_current"]) {
+        for book in try keys("book_key", in: ["position_candidate", "opened_candidate", "reading_current", "formal_position_current"]) {
             try ReadingPositionRows.settleCurrent(db, book: book)
         }
         for book in try keys("book_key", in: ["metadata_text_candidate", "cover_candidate", "tag_candidate", "metadata_current", "tag_current"]) {

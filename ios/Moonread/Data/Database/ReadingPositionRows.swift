@@ -53,17 +53,36 @@ enum ReadingPositionRows {
     /// not provide a winner, but cannot erase the other independent domain.
     static func settleCurrent(_ db: Database, book: String) throws {
         let key = DataIdentity.canonical(book)
-        func positionWinner() throws -> Row? {
+        func positionReadable(_ partition: Int) throws -> Bool {
             do {
-                for partition in [0,1] { try requireReadable(db, domain: .position, book: key, partition: partition) }
-            } catch is UserSyncCompatibilityError { return nil }
-            let rows = try Row.fetchAll(db, sql: """
-                SELECT partition,record_id,\(positionColumns) FROM usr.position_candidate
-                WHERE book_key=?1 AND updated_ms=(SELECT max(updated_ms) FROM usr.position_candidate WHERE book_key=?1)
-                ORDER BY partition,record_id
-                """, arguments: [key])
-            guard let winner = CurrentUserRows.winner(rows), (try? decodedPosition(winner)) != nil else { return nil }
-            return winner
+                try requireReadable(db, domain: .position, book: key, partition: partition)
+                return true
+            } catch is UserSyncCompatibilityError { return false }
+        }
+        func readableWinner(_ row: Row?) -> Row? {
+            guard let row, (try? decodedPosition(row)) != nil else { return nil }
+            return row
+        }
+        let formalReadable = try positionReadable(0)
+        let formal = try formalReadable ? latestPositionRow(db, key: key, partition: 0) : nil
+        if let winner = readableWinner(formal) {
+            try db.execute(sql: """
+                INSERT INTO usr.formal_position_current(book_key,position_id) VALUES(?,?)
+                ON CONFLICT(book_key) DO UPDATE SET position_id=excluded.position_id
+                WHERE position_id IS NOT excluded.position_id
+                """, arguments: [key,winner["record_id"] as String])
+        } else {
+            try db.execute(sql: "DELETE FROM usr.formal_position_current WHERE book_key=?", arguments: [key])
+        }
+
+        let position: Row?
+        if formalReadable, try positionReadable(1) {
+            let pending = try latestPositionRow(db, key: key, partition: 1)
+            // Validate only after choosing the shared winner, as before. An
+            // undecodable leading row must not promote an older candidate.
+            position = readableWinner(CurrentUserRows.winner([formal,pending].compactMap { $0 }))
+        } else {
+            position = nil
         }
         // Unlike position, an unreadable opened key only suppresses that
         // store's opened value. The other store's value still participates.
@@ -82,7 +101,7 @@ enum ReadingPositionRows {
             }
             return CurrentUserRows.winner(candidates)
         }
-        let position = try positionWinner(), opened = try openedWinner()
+        let opened = try openedWinner()
         let updated: Int64? = position?["updated_ms"], openedAt: Int64? = opened?["opened_ms"]
         guard let recent = openedAt ?? updated else {
             try db.execute(sql: "DELETE FROM usr.reading_current WHERE book_key=?", arguments: [key])
@@ -102,18 +121,21 @@ enum ReadingPositionRows {
 
     static func position(_ db: Database, book: String, partition: Int) throws -> Position? {
         try requireReadable(db, domain: .position, book: book, partition: partition)
+        return try latestPositionRow(db, key: DataIdentity.canonical(book), partition: partition).map(decodedPosition)
+    }
+
+    private static func latestPositionRow(_ db: Database, key: String, partition: Int) throws -> Row? {
         // Only the latest time can win. Compare equal-time tokens with the
         // published Swift ordering, not a locale or SQL collation.
         let rows = try Row.fetchAll(db, sql: """
-            SELECT \(positionColumns)
+            SELECT partition,record_id,\(positionColumns)
             FROM usr.position_candidate
             WHERE partition=?1 AND book_key=?2 AND updated_ms=(
                 SELECT MAX(updated_ms) FROM usr.position_candidate WHERE partition=?1 AND book_key=?2
             )
             ORDER BY record_id
-            """, arguments: [partition,DataIdentity.canonical(book)])
-        guard let row = rows.max(by: { ($0["token"] as String) < ($1["token"] as String) }) else { return nil }
-        return try decodedPosition(row)
+            """, arguments: [partition,key])
+        return CurrentUserRows.winner(rows)
     }
 
     struct RestorationPosition: Sendable, Equatable {
@@ -328,27 +350,24 @@ extension ReaderIndex {
             if body.bytes == 0 { normalized = 0 }
             else {
                 let chunk = try Self.chunk(db, id: body.id, at: offset)
-                let bytes = chunk.text.utf8
-                var cursor = bytes.index(bytes.startIndex, offsetBy: Int(offset - chunk.startUtf8))
-                // Match the released UTF-8 byte-boundary rule, including EOF.
-                while cursor != bytes.endIndex && bytes[cursor] & 0xc0 == 0x80 {
-                    bytes.formIndex(before: &cursor)
-                }
-                normalized = chunk.startUtf8 + UInt64(bytes.distance(from: bytes.startIndex, to: cursor))
+                normalized = try Self.scalarOffset(chunk, at: offset, forward: false)
             }
             _ = try ReadingPositionRows.recordPosition(db, book: body.sha, offset: normalized, hint: hint, file: file,
                                                         device: device, now: now, token: token)
         }
     }
 
-    func readingResumeBasis(sha: String) throws -> (local: LocalReadingRows.Resume, winner: ReadingPositionRows.Position)? {
-        try session.readUsers(lease) { db in
-            guard let local = try LocalReadingRows.resume(db, book: sha), let token = local.token,
-                  let winner = try ReadingPositionRows.position(db, book: sha, partition: 0), winner.token != token
-            else { return nil }
-            return (local, winner)
+    static func scalarOffset(_ chunk: TextChunk, at offset: UInt64, forward: Bool) throws -> UInt64 {
+        guard chunk.startUtf8 <= offset, offset <= chunk.endUtf8 else { throw ReaderError.InvalidRange }
+        let bytes = chunk.text.utf8
+        var cursor = bytes.index(bytes.startIndex, offsetBy: Int(offset - chunk.startUtf8))
+        while cursor != bytes.endIndex && bytes[cursor] & 0xc0 == 0x80 {
+            if forward { bytes.formIndex(after: &cursor) } else { bytes.formIndex(before: &cursor) }
         }
+        return chunk.startUtf8 + UInt64(bytes.distance(from: bytes.startIndex, to: cursor))
     }
+
+
 }
 
 

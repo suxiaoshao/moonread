@@ -34,21 +34,14 @@ extension Notification.Name {
 }
 
 extension AppDataService {
-    /// Promotion uses the existing unique position winner; no second reduction
-    /// or max-offset policy is introduced for a continuation suggestion.
+    /// A suggestion reads only the selected position, its device baseline
+    /// and, if distant enough, the heading at the target.
     func readingResumeContext(_ id: String, currentOffset: UInt64? = nil) async throws -> ReadingResumeContext {
         let configuration = userCloudConfigurationRevision
-        try await promoteUserData(id)
-        guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
-        guard case .formal(let key) = try userKey(id) else { return .init(localOffset: nil, candidate: nil) }
-        guard let basis = try relationalUserIndex().readingResumeBasis(sha: key) else {
+        guard let resume = try await fixedReaderRead({ try $0.readerResume(id, currentOffset: currentOffset) }) else {
             return .init(localOffset: nil, candidate: nil)
         }
-        let localOffset = currentOffset ?? basis.local.offset
-        let query = try await bookQuery(id)
-        let location = try query.readingContinuation(bookId: id, localOffset: localOffset, winningOffset: basis.winner.value.offset)
-        guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
-        return ReadingResumeContext(localOffset: location == nil ? nil : localOffset,
-            candidate: location.map { .init(contentSHA: key, token: basis.winner.token, configuration: configuration, location: $0) })
+        return .init(localOffset: resume.localOffset,
+                     candidate: .init(contentSHA: resume.key, token: resume.token, configuration: configuration, location: resume.location))
     }
 }

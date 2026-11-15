@@ -24,11 +24,6 @@ extension PreparationState {
     }
 }
 
-enum QueryRefresh<Value: Sendable>: Sendable {
-    case unchanged(ReaderQuery)
-    case replaced(ReaderQuery, Value)
-}
-
 struct ReadingWindow: Equatable, Sendable {
     struct FrameIdentity: Equatable, Sendable {
         let bookID: String
@@ -490,17 +485,17 @@ actor AppDataService {
         let text = try indexStore().createSampleBook()
         return try await book(text.id)
     }
-    func book(_ id: String) async throws -> BookInfo { try await bookQuery(id).bookInfo(bookId: id) }
+    func book(_ id: String) async throws -> BookInfo { try await snapshot(id).book }
     func chapter(bookID: String, offset: UInt64) async throws -> ChapterInfo? {
-        try await bookQuery(bookID).chapterAt(bookId: bookID, offsetUtf8: offset)
+        try await fixedReaderRead { try $0.readerChapter(bookID, offset: offset) }
     }
     nonisolated func settings() throws -> ReaderSettings { try settingsCache.get() }
     func saveSettings(_ value: ReaderSettings) throws { let json = try encodeReaderSettings(value: value); _ = try decodeReaderSettings(json: json); sourceDefaults.set(json, forKey: "Moonread.readerSettings"); settingsCache.set(value); dataChanged() }
     func location(_ id: String, percentage: Double) async throws -> ReadingLocation {
-        try await bookQuery(id).readingLocation(bookId: id, percentage: percentage)
+        try await fixedReaderRead { try $0.readerLocation(id, percentage: percentage) }
     }
     func adjacentChapter(_ id: String, offset: UInt64, forward: Bool) async throws -> ChapterInfo? {
-        try await bookQuery(id).adjacentChapter(bookId: id, offsetUtf8: offset, forward: forward)
+        try await fixedReaderRead { try $0.readerChapter(id, offset: offset, adjacent: forward) }
     }
     func correctChapter(_ id: String, offset: UInt64, title: String, level: UInt32, excluded: Bool = false) async throws {
         guard level <= 1, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title.count <= 80,
@@ -542,7 +537,7 @@ actor AppDataService {
     }
 
     func window(book: BookInfo, offset: UInt64) async throws -> ReadingWindow {
-        let frame = try await bookQuery(book.id).readingFrame(bookId: book.id, offsetUtf8: offset)
+        let frame = try await frame(book.id, offset: offset)
         return ReadingWindow(frame: frame)
     }
 
@@ -569,62 +564,60 @@ actor AppDataService {
     }
     #endif
 
-    func snapshot(_ id: String) async throws -> ReadingSnapshot { try await bookQuery(id).readingSnapshot(bookId: id) }
+    /// The DataSession capability selects the account; any CPU work runs
+    /// outside the service actor, and a late result cannot survive a rebind.
+    func fixedReaderRead<Value: Sendable>(_ read: @escaping @Sendable (ReaderIndex) throws -> Value) async throws -> Value {
+        let configuration = userCloudConfigurationRevision
+        let index = try relationalUserIndex()
+        let work = Task.detached(priority: Task.currentPriority) {
+            try Task.checkCancellation()
+            return try read(index)
+        }
+        let result = await withTaskCancellationHandler { await work.result } onCancel: { work.cancel() }
+        try Task.checkCancellation()
+        guard configuration == userCloudConfigurationRevision, core === index else { throw CancellationError() }
+        return try result.get()
+    }
+
+    func snapshot(_ id: String) async throws -> ReadingSnapshot {
+        try await fixedReaderRead { try $0.readerSnapshot(id) }
+    }
 
     func frame(_ id: String, offset: UInt64) async throws -> ReadingFrame {
-        try await bookQuery(id).readingFrame(bookId:id,offsetUtf8:offset)
+        try await fixedReaderRead { try $0.readerFrame(id, offset: offset) }
     }
-    func extensionFrame(_ id:String, cursor:UInt64, direction:ReadingDirection, retaining:SourceSpan? = nil) async throws -> ReadingFrame {
-        try await bookQuery(id).readingFrameExtension(bookId:id,cursor:cursor,direction:direction,keep:retaining)
+    func extensionFrame(_ id: String, cursor: UInt64, direction: ReadingDirection, retaining: SourceSpan? = nil) async throws -> ReadingFrame {
+        try await fixedReaderRead { try $0.readerFrame(id, offset: cursor, direction: direction, locate: false, keep: retaining) }
     }
 
-
-    /// Snapshot and its first frame share one immutable user input and one actor call.
+    /// Header, current position and bounded payload use one read snapshot.
     func openingFrame(_ id: String, offset: UInt64?, attempt: UUID? = nil, diagnostic: ReaderOpenTrace? = nil) async throws -> (ReadingSnapshot, ReadingFrame?) {
         diagnostic?.mark("openingFrame.actor.begin"); defer { diagnostic?.mark("openingFrame.actor.return") }
         ReaderOpenDiagnostics.mark(attempt, "actorOpeningBegin")
-        diagnostic?.mark("bookQuery.queued")
-        let query = try await bookQuery(id, diagnostic: diagnostic)
-        diagnostic?.mark("bookQuery.resumed")
-        ReaderOpenDiagnostics.mark(attempt, "actorProjectionReady")
-        diagnostic?.mark("snapshot.sync.begin")
-        let snapshot = try query.readingSnapshot(bookId: id)
-        diagnostic?.mark("snapshot.sync.return")
-        guard snapshot.readablePrefix == .readable else { return (snapshot, nil) }
+        diagnostic?.mark("fixedReaderOpening.queued")
         ReaderOpenDiagnostics.mark(attempt, "actorFrameBegin")
-        diagnostic?.mark("frame.sync.begin")
-        let frame = try query.readingFrame(bookId: id, offsetUtf8: offset ?? snapshot.book.positionUtf8)
-        diagnostic?.mark("frame.sync.return")
+        let result = try await fixedReaderRead { try $0.readerOpening(id, offset: offset) }
         ReaderOpenDiagnostics.mark(attempt, "actorFrameEnd")
-        return (frame.snapshot, frame)
+        diagnostic?.mark("fixedReaderOpening.resumed")
+        return result
     }
 
-    func chapterQuery(_ id: String) async throws -> ReaderQuery {
-        try await readingQuery(.book(.cached(bookId: id), facts: true), options: .init(scope: "chapters-" + id, fields: .chapter))
+    func chapterStructure(_ id: String) async throws -> ChapterOutline {
+        try await fixedReaderRead { try $0.readerChapterStructure(id) }
     }
-    func chapterStructure(_ id: String, reusing previous: ReaderQuery?) async throws -> QueryRefresh<ChapterOutline> {
-        try await chapterOutline(id, reusing: previous, coverage: false)
-    }
-    func chapters(_ id: String, reusing previous: ReaderQuery?) async throws -> QueryRefresh<ChapterOutline> {
-        try await chapterOutline(id, reusing: previous, coverage: true)
-    }
-    private func chapterOutline(_ id: String, reusing previous: ReaderQuery?, coverage: Bool) async throws -> QueryRefresh<ChapterOutline> {
-        let query = try await readingQuery(.book(.cached(bookId: id), facts: coverage), options: .init(
-            scope: (coverage ? "chapters-" : "chapter-structure-") + id, fields: .chapter))
-        if query === previous { return .unchanged(query) }
+
+    // The AI tool still asks for the full outline with coverage. That
+    // consumer is separate from the reader's structure and moves in §13.5.
+    func chapters(_ id: String) async throws -> ChapterOutline {
+        let query = try await readingQuery(.book(.cached(bookId: id), facts: true),
+                                           options: .init(scope: "chapters-" + id, fields: .chapter))
         let work = Task.detached(priority: Task.currentPriority) {
             try Task.checkCancellation()
-            return try coverage ? query.chapterOutline(bookId: id) : query.chapterStructure(bookId: id)
+            return try query.chapterOutline(bookId: id)
         }
         let outline = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
         try Task.checkCancellation()
-        return .replaced(query, outline)
-    }
-    func chapters(_ id: String) async throws -> ChapterOutline {
-        switch try await chapters(id, reusing: nil) {
-        case .replaced(_, let value): return value
-        case .unchanged: throw ReaderError.NotFound
-        }
+        return outline
     }
     func marks(_ id: String, kind: MarkKind, offset: UInt32, snapshot: NoteCandidates? = nil) async throws -> MarkPage {
         let values = try await userMarks(id, kind: kind, snapshot: snapshot), start = min(Int(offset), values.count), end = min(start + 60, values.count)
