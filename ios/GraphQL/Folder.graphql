@@ -1,0 +1,26 @@
+query FolderPage($shelfID: ID!, $path: String!) {
+  folderPage(shelfID: $shelfID, path: $path) {
+    file { id shelfID shelfName relativePath parentPath name size modified needsDownload }
+    lastRead
+    folder {
+      descendantCount
+      previews {
+        fileID name readingKey author
+        cover { id sha256 fileExtension width height }
+      }
+    }
+    book {
+      readingKey bodyID position byteCount preferred chapterTitle
+      metadata {
+        author
+        cover { id sha256 fileExtension width height }
+      }
+    }
+  }
+}
+
+query FolderDestinations($shelfID: ID!, $path: String!) {
+  folderDestinations(shelfID: $shelfID, path: $path) {
+    id shelfID shelfName relativePath parentPath name size modified lastRead descendantCount
+  }
+}

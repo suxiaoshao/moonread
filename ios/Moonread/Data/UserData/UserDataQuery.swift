@@ -150,41 +150,6 @@ extension AppDataService {
         return (entry, details)
     }
 
-    func directoryEntries(_ location: LibraryLocation, sort: LibrarySort) async throws -> [LibraryEntry] {
-        try await withValidQueryInputs(scope: "directory") {
-            let source = UserQuerySource.directoryActivity(catalogueScope(location, recursive: true))
-            guard let index = try await queryAttempt(source,
-                options: .init(scope: "directory-activity", fields: [.position, .opened]), diagnostic: nil) else { return nil }
-            let keys = try index.query.libraryDirectoryDetailKeys(shelfId: location.shelfID, parentPath: location.path)
-            let direct = Set(keys.direct)
-            let covers = Set(keys.covers)
-            func includingAliases(_ keys: Set<ReadingKey>) throws -> [ReadingKey] {
-                let selected = Set(keys.map(\.storageKey))
-                let aliases = try index.identities.compactMap { raw, effective in
-                    raw != effective && selected.contains(effective) ? try parseReadingKey(value: raw) : nil
-                }
-                return (Array(keys) + aliases).sorted { $0.storageKey < $1.storageKey }
-            }
-            guard let detail = try await queryAttempt(.directoryDetails(direct: includingAliases(direct), covers: includingAliases(covers)),
-                options: .init(scope: "directory-details", fields: [.position, .chapter, .card]), diagnostic: nil,
-                directoryActivity: index.query) else { return nil }
-            let entries = try detail.query.libraryDirectoryCards(shelfId: location.shelfID, parentPath: location.path, sort: sort)
-            let loaded = direct.union(covers)
-            guard entries.allSatisfy({ entry in
-                (entry.readingIdentity.map(direct.contains) ?? true)
-                    && (entry.folderRow?.coverPreviews.allSatisfy { preview in
-                        preview.readingKey.map(loaded.contains) ?? true
-                    } ?? true)
-            }) else {
-                // Evict a cached activity snapshot if a changed alias caused
-                // the mismatch, so the next attempt can choose a new scope.
-                _ = try validateQueryInputs([index, detail])
-                return nil
-            }
-            return ([index, detail], entries)
-        }
-    }
-
     func libraryCatalogueSearch(_ scope: CatalogueScope, spec: LibraryQueryRules.SearchSpec) async throws -> LibraryQueryRules.SearchOutcome {
         try await withValidQueryInputs(scope: "library-search") {
             guard let match = try await queryAttempt(.catalogue(scope),

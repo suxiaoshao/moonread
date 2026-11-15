@@ -57,17 +57,35 @@ pub(crate) fn file_order_fields(
         .then_with(|| a.2.cmp(b.2))
 }
 
-pub(crate) fn directory_order(
-    a: &crate::LibraryEntry,
-    b: &crate::LibraryEntry,
+#[derive(Debug, uniffi::Record)]
+pub struct DirectorySortEntry {
+    pub id: String,
+    pub name: String,
+    pub relative_path: String,
+    pub folder_descendants: Option<u64>,
+    pub last_read: i64,
+    pub modified: i64,
+}
+
+/// Preserve the published row order, using only the already selected rows.
+#[uniffi::export]
+pub fn library_directory_order(
+    mut rows: Vec<DirectorySortEntry>,
+    sort: crate::LibrarySort,
+) -> Vec<String> {
+    rows.sort_by(|a, b| directory_order(a, b, sort));
+    rows.into_iter().map(|v| v.id).collect()
+}
+
+fn directory_order(
+    a: &DirectorySortEntry,
+    b: &DirectorySortEntry,
     sort: crate::LibrarySort,
 ) -> std::cmp::Ordering {
     use crate::LibrarySort;
     match sort {
-        LibrarySort::Reading => a
-            .folder()
-            .is_some_and(|f| f.child_book_count == 0)
-            .cmp(&b.folder().is_some_and(|f| f.child_book_count == 0))
+        LibrarySort::Reading => (a.folder_descendants == Some(0))
+            .cmp(&(b.folder_descendants == Some(0)))
             .then_with(|| b.last_read.cmp(&a.last_read))
             .then_with(|| {
                 if a.last_read == 0 && b.last_read == 0 {
@@ -78,9 +96,9 @@ pub(crate) fn directory_order(
             })
             .then_with(|| natural_cmp(&a.name, &b.name)),
         LibrarySort::Name => b
-            .folder()
+            .folder_descendants
             .is_some()
-            .cmp(&a.folder().is_some())
+            .cmp(&a.folder_descendants.is_some())
             .then_with(|| natural_cmp(&a.name, &b.name)),
     }
     .then_with(|| a.relative_path.cmp(&b.relative_path))

@@ -57,7 +57,7 @@ TextKit 1 的显式字形范围和文本容器用于两种阅读模式。Swift �
 | 最近打开与后台恢复 | Swift `ReaderSession.bodyDidDisplay`、`ReadingPositionRows`、`RecentReadingRestoration` | 正文真正显示后记录 opened，和位置独立；最近排序与副本归 `RecentReadingRead`。后台只按同一用户库里已提交的正式位置取恢复限额，隐藏在排名前排除，文件准备后复核旧票据；恢复不写 opened/位置或计时 | 同一用户数据权威 |
 | 封面资源与静默替换 | Swift `Books/BookMetadata.swift` 的 `CoverResourceLoader`、`CoverImageLoader`、`BookCoverDisplay` | 独立资源 actor 统一 UI/Widget/Spotlight I/O 与派生；按作用域/资源/尺寸合并并有界缓存，ready 不随订阅销毁。同书旧图等新图成功，删除/换书/换账号立即清；系统文字更新复用图像输入版本 | 单一资源 owner |
 | 默认阅读中状态 | 2c 固定查询待接 | 保留按正式 SHA 的位置事实（含无本机正文的已索引书）及显式状态优先规则 | 旧 Rust 查询已移除 |
-| 文件夹列表的排序、计数与封面候选 | Rust `library/bookshelf`；Swift `UserDataQuery.swift` 组织输入 | 后代阅读活动只投影时间，由原封面规则选至多四个候选；opened 仅为保留参与的 pending 别名读取。直接书卡补位置、章节、作者与封面；封面专用键只补作者与封面。两步共用候选裁决与失效边界 | 单一目录规则 |
+| 文件夹列表、计数与封面候选 | Swift `Data/Queries/FolderQuery.swift` / `FolderStore.swift`；Rust `library/order.rs` 保留原自然行序 | 直系成员和子树在单个读快照中计算；活动和最多四张预览按有效位置时间，不读 opened 时间。经已核实别名合并位置，直接书卡定点补位置/章/作者/封面，只补入选预览的作者/封面。移动选择器按原顺序单次读取文件夹，不补书卡或封面 | 页面各自观察；单次查询不建观察 |
 | 书目、搜索与筛选按用途取数 | Swift `UserDataQuery.swift` / `UserDataStore+Projection.swift` / `LibraryQueryRules.swift`；Rust `library/bookshelf/catalogue_cards.rs` | 名称书目返回窄卡片，标签按文件 ID 引用单份卡片，筛选只取作者/标签；普通搜索按规则字段匹配再批量补命中卡片。AI 保留简介与正式库兼容检查。正式库按字段取；pending 的窄用途仍校验命中范围完整资料前缀，保留整对象覆盖而不把无关内容跨语言传输 | 共用字段依赖、匹配与发布边界 |
 | AI 工具输入/schema/输出契约与执行 | Swift `AI/Tools/Reading/AIReadingToolContracts.swift` / `AIReadingTools.swift` | 只拆契约、执行和 `AppDataService+AIReading.swift` 平台适配的物理文件；引用、SHA、范围与搜索仍调用既有 owner | 单一执行 actor |
 | AI b: 引用协议 | Swift `AI/Tools/Reading/AIReadingReferences.swift` | 工具协议只在 Swift；调用 Rust SHA 校验。外部字符串解码为书或文件引用，准备权限独立；共享准备由 AppDataService 持有，最后一个等待者释放工作 | 共享引用解析 |

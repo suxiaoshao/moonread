@@ -60,6 +60,7 @@ enum DataV2Schema {
                 try db.execute(sql: """
                     ALTER TABLE import_jobs ADD COLUMN pending_owner TEXT;
                     CREATE INDEX reading_import_canonical ON import_jobs(canonical_id);
+                    CREATE INDEX source_identity_by_content ON source_identities(content_sha256,utf8_bytes);
                     CREATE TABLE index_import_state(id INTEGER PRIMARY KEY CHECK(id=1), legacy_version INTEGER NOT NULL);
                     CREATE TABLE chapter_scan_stage(
                         run_id TEXT NOT NULL,start_utf8 INTEGER NOT NULL,title TEXT NOT NULL,level INTEGER NOT NULL,

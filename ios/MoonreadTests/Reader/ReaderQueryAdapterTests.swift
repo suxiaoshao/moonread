@@ -1,4 +1,5 @@
 import CryptoKit
+import GRDB
 import Observation
 import SQLite3
 import SwiftData
@@ -45,6 +46,168 @@ final class ReaderQueryAdapterRecentReadingRestorationTests: RecentReadingRestor
   }
 }
 
+final class FolderQueryAdapterTests: XCTestCase {
+  private static let location = LibraryLocation(shelfID: "builtin")
+
+  private func withFolder(_ exercise: (ReaderIndex) throws -> Void) throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "FolderTests-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fixtureBundle = Bundle(for: Self.self)
+    let resources: Bundle = fixtureBundle.url(forResource: "schema", withExtension: "sql") == nil ? .main : fixtureBundle
+    let session = try DataSession(layout: .init(applicationSupport: root), bundle: resources)
+    let lease = try session.activate(.unknown).0
+    defer { try? session.close() }
+    try session.prepareIndex(root.appending(path: "reader.sqlite3"), token: lease)
+    try session.prepareUsers(lease) { nil }
+    let index = ReaderIndex(session: session, lease: lease)
+    try session.writeIndex(lease) { db in
+      try db.execute(sql: "INSERT INTO main.library_shelves VALUES('builtin','Fixture',X'','local',1,NULL)")
+    }
+    try exercise(index)
+  }
+
+  private static func addFile(_ db: Database, id: String, path: String, parent: String = "", key: String? = nil) throws {
+    // A key gives the file a small, valid completed body but no automatic
+    // chapter. The domain writer supplies a manual heading where needed.
+    let text = "Chapter\nBody\n"
+    let bodyID = key.map { _ in "body-" + id }
+    if let key, let bodyID {
+      try db.execute(sql: """
+        INSERT INTO main.books(id,title,content_sha256,encoding,byte_count,chunk_count,projection_end)
+        VALUES(?, ?, ?, 'utf-8', ?, 1, ?)
+        """, arguments: [bodyID,id,key,text.utf8.count,text.utf8.count])
+      try db.execute(sql: "INSERT INTO main.chunks VALUES(?,0,0,?,?,0,11)",
+                     arguments: [bodyID,text.utf8.count,text])
+    }
+    try db.execute(sql: """
+      INSERT INTO main.library_files(id,shelf_id,relative_path,parent_path,name,directory,size,modified,needs_download,book_id)
+      VALUES(?,'builtin',?,?,?,?,?,0,0,?)
+      """, arguments: [id,path,parent,id,key == nil,key == nil ? 0 : text.utf8.count,bodyID])
+  }
+
+  private static func chapterZero(_ db: Database, key: String, title: String) throws {
+    let value = ChapterValue(content_key: key, offset: 0, title: title, level: 0, excluded: false)
+    try UserValueRows.put(db, key: .init("chapter/\(key)/0"), value: UserSyncJSON.encode(value), device: "fixture", now: 1)
+  }
+
+  private static func metadata(_ db: Database, book: String, field: String, value: String, now: Int64 = 1) throws {
+    try UserValueRows.put(db, key: .init("metadata/\(book)/\(field)"), value: value, device: "fixture", now: now)
+  }
+
+  func testFixedDirectoryFollowsPublishedCoverSelection() throws {
+    try withFolder { index in
+      let direct = String(repeating: "a", count: 64)
+      try index.session.writeUsers(index.lease) { db in
+        try Self.addFile(db, id: "folder", path: "nested")
+        try Self.addFile(db, id: "deeper", path: "nested/deeper", parent: "nested")
+        try Self.addFile(db, id: "direct", path: "a.txt", key: direct)
+        try Self.metadata(db, book: direct, field: "author", value: "\"Direct author\"")
+        _ = try ReadingPositionRows.recordPosition(db, book: direct, offset: 3, hint: nil,
+          file: nil, device: "fixture", now: 10, token: "direct")
+        try Self.chapterZero(db, key: direct, title: "Synthetic correction")
+        for (n, digit) in Array("bcdef").enumerated() {
+          let ordinal = n + 1
+          let key = String(repeating: String(digit), count: 64)
+          let path = "nested/deeper/\(ordinal).txt"
+          try Self.addFile(db, id: "child-\(ordinal)", path: path, parent: "nested/deeper", key: key)
+          let author = ordinal == 2 ? "Unselected" : path
+          try Self.metadata(db, book: key, field: "author", value: UserSyncJSON.encode(author))
+          // These clocks define the frozen published order: 20,5,4,3; 2 loses.
+          _ = try ReadingPositionRows.recordPosition(db, book: key, offset: 3, hint: nil,
+            file: nil, device: "fixture", now: ordinal == 1 ? 20 : Int64(ordinal), token: "child-\(ordinal)")
+        }
+      }
+      let entries = try index.folderEntries(Self.location, sort: .reading)
+      XCTAssertEqual(entries.map(\.id), ["folder", "direct"])
+      XCTAssertEqual(entries.map(\.lastRead), [20, 10])
+      let folder = try XCTUnwrap(entries.first?.folderRow)
+      XCTAssertEqual(folder.childBookCount, 5)
+      XCTAssertEqual(folder.coverPreviews.map(\.fileId), ["child-1", "child-5", "child-4", "child-3"])
+      XCTAssertEqual(folder.coverPreviews.compactMap(\.author), [1, 5, 4, 3].map { "nested/deeper/\($0).txt" })
+      XCTAssertEqual(entries.last?.displayMetadata?.author, "Direct author")
+      XCTAssertNil(entries.last?.metadata)
+      XCTAssertEqual(entries.last?.positionUtf8, 3)
+      XCTAssertEqual(entries.last?.chapterTitle, "Synthetic correction")
+    }
+  }
+
+  func testFixedDirectoryKeepsWholeMetadataWinnerAcrossStores() throws {
+    try withFolder { index in
+      let masked = String(repeating: "a", count: 64), isolated = String(repeating: "b", count: 64)
+      let digest = String(repeating: "c", count: 64)
+      let cover = BookCoverAsset(id: "formal-cover", sha256: digest, extension: "jpg", width: 10, height: 12)
+      try index.session.writeUsers(index.lease) { db in
+        try db.execute(sql: "INSERT INTO usr.cover_asset VALUES('asset',?,X'1234',?,'available')", arguments: [cover.id,digest])
+        for (id,key) in [("masked",masked),("isolated",isolated)] {
+          try Self.addFile(db, id: id, path: id + ".txt", key: key)
+          try Self.metadata(db, book: key, field: "author", value: "\"Formal\"")
+          try db.execute(sql: """
+            INSERT INTO usr.cover_candidate VALUES(0,?,1,?,?,'fixture',6,'cover',0,'asset',?,'jpg',10,12)
+            """, arguments: ["cover-"+id,key,"metadata/"+key+"/cover",digest])
+        }
+        try db.execute(sql: """
+          INSERT INTO usr.metadata_text_candidate VALUES(1,'pending-synopsis',1,?,?,'synopsis','fixture',7,'pending','Pending synopsis only')
+          """, arguments: [masked,"metadata/"+masked+"/synopsis"])
+        try db.execute(sql: """
+          INSERT INTO usr.quarantined_record(partition,source,source_id,source_type,record_id,book_key,logical_key,
+              raw_format,raw_bytes,digest,reason,completeness)
+          VALUES(1,'fixture','pending','metadata_text_candidate','future',?,?,'fixture',X'00','opaque','future','complete')
+          """, arguments: [isolated,"metadata/"+isolated+"/synopsis"])
+        for key in [masked,isolated] { try CurrentUserRows.settleMetadata(db, book: key) }
+      }
+      let before = try index.folderEntries(Self.location, sort: .reading)
+      XCTAssertEqual(before.first { $0.id == "masked" }?.displayMetadata?.author, "")
+      XCTAssertNil(before.first { $0.id == "masked" }?.displayMetadata?.cover)
+      XCTAssertEqual(before.first { $0.id == "isolated" }?.displayMetadata?.cover, cover,
+                     "An isolated field does not create a pending object")
+      XCTAssertTrue(before.allSatisfy { $0.metadata == nil })
+      try index.session.writeUsers(index.lease) { db in
+        try Self.metadata(db, book: isolated, field: "synopsis", value: "\"Unrelated synopsis\"", now: 8)
+      }
+      XCTAssertEqual(try index.folderEntries(Self.location, sort: .reading), before)
+      try index.session.writeUsers(index.lease) { db in
+        try Self.metadata(db, book: isolated, field: "author", value: "\"New author\"", now: 9)
+      }
+      let refreshed = try index.folderEntries(Self.location, sort: .reading)
+      XCTAssertEqual(refreshed.first { $0.id == "isolated" }?.displayMetadata?.author, "New author")
+    }
+  }
+
+  func testFixedDirectoryUsesManualChapterZeroOnlyWithEffectivePosition() throws {
+    try withFolder { index in
+      let key = String(repeating: "a", count: 64)
+      try index.session.writeUsers(index.lease) { db in
+        try Self.addFile(db, id: "direct", path: "a.txt", key: key)
+        try ReadingPositionRows.recordOpened(db, book: key, openedAt: 450, file: nil, device: "fixture", now: 450, token: "opened")
+        try Self.chapterZero(db, key: key, title: "Manual zero")
+      }
+      func card() throws -> LibraryEntry {
+        try XCTUnwrap(index.folderEntries(Self.location, sort: .reading).first)
+      }
+      let unread = try card()
+      XCTAssertEqual(unread.lastRead, 0, "Opened does not rank a directory")
+      XCTAssertNil(unread.chapterTitle, "Absent position does not match a manual chapter at 0")
+      try index.session.writeUsers(index.lease) { db in
+        _ = try ReadingPositionRows.recordPosition(db, book: key, offset: 0, hint: nil,
+          file: nil, device: "fixture", now: 451, token: "at-zero")
+      }
+      let atZero = try card()
+      XCTAssertEqual(atZero.positionUtf8, 0)
+      XCTAssertEqual(atZero.lastRead, 451)
+      XCTAssertEqual(atZero.chapterTitle, "Manual zero", "An explicit zero position is valid")
+      try index.session.writeUsers(index.lease) { db in
+        try db.execute(sql: """
+          INSERT INTO usr.quarantined_record(partition,source,source_id,source_type,record_id,book_key,logical_key,
+              raw_format,raw_bytes,digest,reason,completeness)
+          VALUES(0,'fixture','formal','position_candidate','future',?,?,'fixture',X'00','opaque','future','complete')
+          """, arguments: [key,"position/"+key])
+        try ReadingPositionRows.settleCurrent(db, book: key)
+      }
+      XCTAssertNil(try card().chapterTitle, "An isolated position also supplies no chapter anchor")
+    }
+  }
+}
+
 final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
   @MainActor func testDirectoryCompletesWithPendingImportInFolderCover() async throws {
     let (root, service, core, _, _, _, _, suite) = try singleBookFixture()
@@ -67,132 +230,6 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     let nested = try await service.libraryEntries(.init(shelfID: "builtin", path: "folder"))
     XCTAssertEqual(nested.first?.readingIdentity, key)
     XCTAssertEqual(try core.importStatus(bookId: job.bookId()).text.readingKey, key)
-  }
-
-  @MainActor func testDirectoryDetailsFollowCoverSelectionAndRevalidateActivity() async throws {
-    let (root, service, core, formal, pending, direct, _, suite) = try singleBookFixture()
-    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
-    var contents = ["a.txt": direct]
-    let nested = (1...5).map { "nested/deeper/\($0).txt" }
-    for (index, path) in nested.enumerated() {
-      let input = root.appendingPathComponent("input-\(index).txt")
-      try "第一章\n合成测试内容 \(index)\n".write(to: input, atomically: true, encoding: .utf8)
-      contents[path] = try core.importBook(filePath: input.path, title: "Synthetic")
-    }
-    var items: [ScannedLibraryItem] = ["nested", "nested/deeper"].map {
-      .init(relativePath: $0, directory: true, size: 0, modified: 0, needsDownload: false)
-    }
-    items += contents.map { path, book in
-      .init(relativePath: path, directory: false, size: book.byteCount, modified: 0, needsDownload: false)
-    }
-    try core.scanLibraryShelf(shelfId: "builtin", items: items)
-    for file in try core.sourceFiles(shelfId: "builtin") where !file.directory {
-      let book = try XCTUnwrap(contents[file.relativePath])
-      try core.linkLibraryFile(fileId: file.id, bookId: book.id)
-      try await formal.put("metadata/\(book.fixtureSHA256)/author", value: "\"\(file.relativePath)\"", device: "fixture")
-    }
-    func positionPayload(key: String, updated: Int64) throws -> String {
-      try UserSyncJSON.encode(StoredValue(updated: updated, token: "fixture-\(updated)",
-        value: UserSyncJSON.encode(PositionValue(content_key: key, offset: 3))))
-    }
-    for (index, path) in nested.enumerated() {
-      let key = try XCTUnwrap(contents[path]).fixtureSHA256
-      try await formal.receiveSyncFixture("position", key: key, payload: positionPayload(key: key, updated: Int64(index + 1)))
-    }
-    try await formal.receiveSyncFixture("position", key: direct.fixtureSHA256,
-      payload: positionPayload(key: direct.fixtureSHA256, updated: 10))
-    try await service.correctChapter(direct.id, offset: 0, title: "Synthetic correction", level: 0)
-    let promoted = try XCTUnwrap(contents[nested[0]]), omitted = try XCTUnwrap(contents[nested[1]])
-    let alias = "pending:" + promoted.id
-    let payload = try positionPayload(key: alias, updated: 20)
-    let details = QueryAttemptCounter()
-    await service.queryFixture { scope, phase in
-      guard scope == "directory-details", phase == .built else { return }
-      switch await details.next() {
-      case 1: try await pending.receiveSyncFixture("value", key: "position/" + alias, payload: payload)
-      case 2: try await formal.put("metadata/\(omitted.fixtureSHA256)/author", value: "\"Unselected\"", device: "fixture")
-      default: break
-      }
-    }
-    let location = LibraryLocation(shelfID: "builtin")
-    let staged = try await service.libraryEntries(location)
-    await service.queryFixture(nil)
-    let full = try await service.catalogueQuery(location, recursive: true)
-      .libraryEntries(shelfId: "builtin", parentPath: "", sort: .reading)
-    XCTAssertEqual(staged.map(\.id), full.map(\.id))
-    XCTAssertEqual(staged.map(\.lastRead), full.map(\.lastRead))
-    let folder = try XCTUnwrap(staged.first?.folderRow)
-    XCTAssertEqual(folder.childBookCount, 5)
-    XCTAssertEqual(folder.coverPreviews.compactMap(\.author), [nested[0], nested[4], nested[3], nested[2]])
-    XCTAssertEqual(folder.coverPreviews, full.first?.folderRow?.coverPreviews)
-    XCTAssertEqual(staged.last?.displayMetadata, full.last?.displayMetadata)
-    XCTAssertNil(staged.last?.metadata)
-    XCTAssertEqual(staged.last?.positionUtf8, 3)
-    XCTAssertEqual(staged.last?.chapterTitle, "Synthetic correction")
-    let rounds = await details.count
-    XCTAssertEqual(rounds, 2, "Activity selects a different cover; unselected metadata cannot invalidate this directory")
-  }
-
-  @MainActor func testCatalogueKeepsWholeMetadataWinnerAcrossStores() async throws {
-    let (root, service, _, formal, pending, first, second, suite) = try singleBookFixture()
-    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
-    let cover = BookCoverAsset(id: UUID().uuidString, sha256: String(repeating: "a", count: 64), extension: "jpg", width: 10, height: 12)
-    let coverJSON = try String(decoding: JSONSerialization.data(withJSONObject: [
-      "id": cover.id, "sha256": cover.sha256, "extension": "jpg", "width": 10, "height": 12
-    ]), as: UTF8.self)
-    for sha in [first.fixtureSHA256, second.fixtureSHA256] {
-      try await formal.put("metadata/\(sha)/author", value: "\"Formal\"", device: "fixture")
-      try await formal.put("metadata/\(sha)/cover", value: coverJSON, device: "fixture")
-    }
-    try await pending.put("metadata/\(first.fixtureSHA256)/synopsis", value: "\"Pending synopsis only\"", device: "fixture")
-    try await pending.receiveSyncFixture("value", key: "metadata/\(second.fixtureSHA256)/synopsis", payload: "{\"v\":2}")
-
-    let full = try await service.catalogueQuery(.init(shelfID: "builtin"), recursive: true).allLibraryBooks(shelfId: "builtin")
-    let masked = try XCTUnwrap(full.first { $0.readingKey == first.fixtureSHA256 }?.metadata)
-    let isolated = try XCTUnwrap(full.first { $0.readingKey == second.fixtureSHA256 }?.metadata)
-    XCTAssertEqual(masked.synopsis, "Pending synopsis only")
-    XCTAssertEqual(masked.author, "")
-    XCTAssertNil(masked.cover, "The readable pending object replaces the entire formal object")
-    XCTAssertEqual(isolated.author, "Formal")
-    XCTAssertEqual(isolated.cover, cover, "An isolated field does not create a pending object")
-    let attempts = QueryAttemptCounter()
-    await service.queryFixture { scope, phase in
-      if scope == "directory-details", phase == .built { _ = await attempts.next() }
-    }
-    let location = LibraryLocation(shelfID: "builtin")
-    let narrow = try await service.libraryEntries(location)
-    XCTAssertEqual(narrow.first { $0.readingKey == first.fixtureSHA256 }?.displayMetadata?.author, "")
-    XCTAssertNil(narrow.first { $0.readingKey == first.fixtureSHA256 }?.displayMetadata?.cover)
-    XCTAssertEqual(narrow.first { $0.readingKey == second.fixtureSHA256 }?.displayMetadata?.cover, cover)
-    XCTAssertTrue(narrow.allSatisfy { $0.metadata == nil })
-    try await formal.put("metadata/\(second.fixtureSHA256)/synopsis", value: "\"Unrelated synopsis\"", device: "fixture")
-    _ = try await service.libraryEntries(location)
-    let afterSynopsis = await attempts.count
-    XCTAssertEqual(afterSynopsis, 1)
-    try await formal.put("metadata/\(second.fixtureSHA256)/author", value: "\"New author\"", device: "fixture")
-    let refreshed = try await service.libraryEntries(location)
-    XCTAssertEqual(refreshed.first { $0.readingKey == second.fixtureSHA256 }?.displayMetadata?.author, "New author")
-    let afterAuthor = await attempts.count
-    XCTAssertEqual(afterAuthor, 2)
-    await service.queryFixture(nil)
-
-  }
-
-  @MainActor func testDirectoryRetainsOpenedOnlyAliasWithoutFormalOpenedInput() async throws {
-    let (root, service, _, formal, pending, first, _, suite) = try singleBookFixture()
-    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
-    let alias = "pending:" + first.id
-    try await pending.put("opened/" + alias, value: "350", device: "fixture")
-    try await formal.put("opened/" + first.fixtureSHA256, value: "450", device: "fixture")
-    let value = ChapterValue(content_key: alias, offset: 0, title: "Alias chapter", level: 0, excluded: false)
-    try await pending.put("chapter/" + alias + "/0", value: UserSyncJSON.encode(value), device: "fixture")
-    let cards = try await service.libraryEntries(.init(shelfID: "builtin"))
-    XCTAssertEqual(cards.first { $0.readingKey == first.fixtureSHA256 }?.lastRead, 0)
-    let formalInputs = await formal.projectionCache.values.map { $0.1.json }
-    XCTAssertTrue(formalInputs.allSatisfy { !$0.contains("\"opened_ms\"") })
-    let pendingInputs = await pending.projectionCache.values.map { $0.1.json }
-    XCTAssertTrue(pendingInputs.contains { $0.contains("Alias chapter") },
-                  "The only-opened alias still contributes to detail keys")
   }
 
   @MainActor func testCatalogueCardsFilterOptionsAndSearchMatchTheWideBaseline() async throws {
