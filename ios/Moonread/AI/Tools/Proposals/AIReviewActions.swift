@@ -111,9 +111,13 @@ extension AIProposalRegistry {
         inFlight.insert(id); lastErrors[id] = nil
         defer { inFlight.remove(id); endApplication(value.sessionID, token) }
         do {
+            let admission = try await reader.annotationActionAdmission()
             let reading = try await AIReadingReferences(reader: reader).available(proposal.bookRef)
-            if proposal.kind == .bookmark { _ = try await reader.ensureBookmark(reading, at: proposal.startUtf8); feedback[id] = String(localized: "书签已保存"); return nil }
-            var edit = try await reader.prepareUserAnnotation(reading, start: proposal.startUtf8, end: proposal.endUtf8)
+            if proposal.kind == .bookmark {
+                _ = try await reader.ensureBookmark(reading, at: proposal.startUtf8, admission: admission)
+                feedback[id] = String(localized: "书签已保存"); return nil
+            }
+            var edit = try await reader.prepareUserAnnotation(reading, start: proposal.startUtf8, end: proposal.endUtf8, admission: admission)
             if !edit.marks.isEmpty || edit.baselines.values.contains(where: { !$0.isEmpty }) {
                 edit.note = [edit.note, note.draft].filter { !$0.isEmpty }.joined(separator: "\n\n")
                 return .init(id: id, sessionID: value.sessionID, edit: edit)

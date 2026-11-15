@@ -7,9 +7,12 @@ struct NoteCandidates: Sendable {
     let key: String
     let groups: [String: [AnnotationCandidate]]
     let blocked: Set<String>
+    var unknownMarks = false
+    var admission: ReadingWriteAdmission? = nil
+    var sourceBookID: String? = nil
     func checked(_ ids: Set<String>?) throws -> [String: [AnnotationCandidate]] {
         let unreadable = ids.map { blocked.intersection($0) } ?? blocked
-        guard unreadable.isEmpty else { throw NoteReadError(count: unreadable.count) }
+        guard unreadable.isEmpty, !unknownMarks else { throw NoteReadError(count: unreadable.count + (unknownMarks ? 1 : 0)) }
         return groups.filter { ids?.contains($0.key) ?? true }
     }
 }
@@ -65,14 +68,7 @@ struct NoteDocument: Sendable {
     }
 }
 extension AppDataService {
-    func noteCandidates(_ id: String) async throws -> NoteCandidates {
-        try await promoteUserData(id)
-        let revision = userCloudConfigurationRevision
-        let key = try userKey(id).storageKey
-        let snapshot = try await userStore(for: key).noteCandidates(key: key)
-        guard revision == userCloudConfigurationRevision, key == (try userKey(id).storageKey) else { throw UserDataConflict(candidates: []) }
-        return snapshot
-    }
+    func noteCandidates(_ id: String) async throws -> NoteCandidates { try await annotationSnapshot(id) }
     func noteDocument(_ id: String, ids: Set<String>? = nil) async throws -> NoteDocument {
         let snapshot = try await noteCandidates(id)
         let groups = try snapshot.checked(ids)
@@ -116,19 +112,9 @@ extension AppDataService {
         return values
     }
     func deleteNoteSelection(_ id: String, expected: NoteCandidates, ids: Set<String>) async throws {
-        try await promoteUserData(id)
-        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
-        let key = try userKey(id).storageKey
-        guard key == expected.key else { throw UserDataConflict(candidates: []) }
-        let groups = try expected.checked(ids)
-        guard ids == Set(groups.keys) else { throw UserDataConflict(candidates: []) }
-        let commands = ids.sorted().map { markID in
-            MarkDeletion(id: markID, key: key, baseline: groups[markID]!, content: groups[markID]!.first(where: { $0.content != nil })?.content, deleted: true)
-        }
-        let result = try await userStore(for: key).applyDeletions(commands, checkingBaseline: true)
-        for c in commands { if let tombstone = result[c.id] { undoCandidates[c.id] = ([tombstone], c.content) } }
-        dataChanged()
+        try await deleteSelectedAnnotations(id, expected: expected, ids: ids)
     }
+
 }
 
 struct NoteSharePayload: Identifiable {

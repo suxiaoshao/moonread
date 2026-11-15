@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import CryptoKit
+import GRDB
 
 extension ReadingKey {
     var storageKey: String { serializeReadingKey(key: self) }
@@ -93,15 +94,6 @@ extension AppDataService {
         case .pending: try await userStore(pending: true)
         case .formal: try await userStore()
         }
-    }
-    func markStore(_ id: String) async throws -> UserDataStore {
-        let formal = try await userStore()
-        do { _ = try await formal.markCandidates(id); return formal }
-        catch ReaderError.NotFound { }
-        let pending = try await userStore(pending: true)
-        do { _ = try await pending.markCandidates(id); return pending }
-        catch ReaderError.NotFound { }
-        throw ReaderError.NotFound
     }
     func configureUserCloud(_ configuration: CloudConfiguration) async throws {
         await acquireUserDataOperation()
@@ -234,6 +226,15 @@ extension AppDataService {
     }
     func readingCompatibilityNotice(_ id: String) async throws -> String? {
         let identity = try userKey(id)
+        let index = try relationalUserIndex()
+        let isolatedAnnotation = try index.session.readUsers(index.lease) { db in
+            if try AnnotationRows.hasUnreadable(db, key: identity.storageKey) { return true }
+            if case .formal = identity {
+                return try AnnotationRows.hasUnreadable(db, key: ReadingKey.pending(bookId: id).storageKey)
+            }
+            return false
+        }
+        if isolatedAnnotation { return UserSyncCompatibilityError().localizedDescription }
         if let notice = try await userStore(for: identity).compatibilityNotice(key: identity.storageKey) { return notice }
         if case .formal = identity { return try await userStore(pending: true).compatibilityNotice(key: serializeReadingKey(key: .pending(bookId: id))) }
         return nil
@@ -278,48 +279,94 @@ extension AppDataService {
         }
     }
 
-    func userMarks(_ id: String, kind: MarkKind? = nil, snapshot: NoteCandidates? = nil) async throws -> [ReaderMark] {
-        try await promoteUserData(id)
-        let key = try userKey(id).storageKey
-        let groups: [String: [AnnotationCandidate]]
-        if let snapshot {
-            guard snapshot.key == key else { throw UserDataConflict(candidates: []) }
-            groups = snapshot.groups
-        } else { groups = try await userStore(for: key).candidates(key: key) }
-        var values: [ReaderMark] = []
-        for (markID, heads) in groups {
-            guard let candidate = heads.first(where: { $0.content != nil }), let content = candidate.content else { continue }
-            let candidateKind: MarkKind = candidate.bookmark ? .bookmark : .annotation
-            guard kind == nil || kind == candidateKind else { continue }
-            shownCandidates[markID] = heads
-            values.append(ReaderMark(id: markID, kind: candidateKind, startUtf8: content.start, endUtf8: content.end,
-                excerpt: content.excerpt, note: content.note, created: candidate.created))
+    func annotationActionAdmission() throws -> ReadingWriteAdmission { try readingWriteAdmission(indexStore().lease) }
+
+    // All book-scoped mutations share the operation gate and re-resolve
+    // the route within the writer. Admission never comes from the commit.
+    private func editAnnotationRows<T: Sendable>(_ id: String, offered: ReadingWriteAdmission?,
+                                                 _ operation: (Database, String, ReadingWriteAdmission) throws -> T) async throws -> T {
+        let admission = try offered ?? readingWriteAdmission(indexStore().lease)
+        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        let index = try relationalUserIndex()
+        let authorize = readingWriteAuthorization(id, admission: admission, index: index)
+        try authorize(index.resolveBookIdentity(bookId: id).key.storageKey)
+        try promoteUserDataLocked(id, admission: admission, index: index)
+        return try index.session.writeUsers(index.lease) { db in
+            let key = try ReaderIndex.body(db, id: id, scope: index.lease.scope.key).sha
+            try authorize(key)
+            return try operation(db, key, admission)
         }
-        return values.sorted { ($0.startUtf8, $0.endUtf8, $0.id) < ($1.startUtf8, $1.endUtf8, $1.id) }
     }
-    func userAnnotationRanges(_ id: String, start: UInt64, end: UInt64) async throws -> [ReaderMark] {
-        try await promoteUserData(id)
-        let key = try userKey(id).storageKey, store = try await userStore(for: key)
-        let groups = try await store.candidates(key: key)
+
+    func annotationSnapshot(_ id: String, offered: ReadingWriteAdmission? = nil) async throws -> NoteCandidates {
+        let admission = try offered ?? readingWriteAdmission(indexStore().lease)
+        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        let index = try relationalUserIndex()
+        let authorize = readingWriteAuthorization(id, admission: admission, index: index)
+        try authorize(index.resolveBookIdentity(bookId: id).key.storageKey)
+        try promoteUserDataLocked(id, admission: admission, index: index)
+        let result = try index.session.readUsers(index.lease) { db in
+            let key = try ReaderIndex.body(db, id: id, scope: index.lease.scope.key).sha
+            return try AnnotationRows.snapshot(db, key: key)
+        }
+        try authorize(result.key)
+        var stamped = result
+        stamped.admission = admission
+        stamped.sourceBookID = id
+        return stamped
+    }
+
+    private func marks(_ view: NoteCandidates, kind: MarkKind?, range: Range<UInt64>? = nil) -> [ReaderMark] {
         var result: [ReaderMark] = []
-        for (markID, heads) in groups {
-            shownCandidates[markID] = heads
-            for candidate in heads where !candidate.bookmark {
-                guard let content = candidate.content, content.start < end, content.end > start else { continue }
-                result.append(ReaderMark(id: markID, kind: .annotation, startUtf8: content.start, endUtf8: content.end,
-                    excerpt: content.excerpt, note: content.note, created: candidate.created))
+        for (id, heads) in view.groups {
+            let values = range == nil ? heads.first(where: { $0.content != nil }).map { [$0] } ?? [] : heads
+            for value in values {
+                guard let content = value.content else { continue }
+                let candidateKind: MarkKind = value.bookmark ? .bookmark : .annotation
+                guard kind == nil || kind == candidateKind else { continue }
+                if let range, !(content.start < range.upperBound && content.end > range.lowerBound) { continue }
+                if let admission = view.admission {
+                    shownCandidates[id] = .init(heads: heads, key: view.key, admission: admission, sourceBookID: view.sourceBookID)
+                }
+                result.append(.init(id: id, kind: candidateKind, startUtf8: content.start, endUtf8: content.end,
+                                    excerpt: content.excerpt, note: content.note, created: value.created))
             }
         }
         return result.sorted { ($0.startUtf8, $0.endUtf8, $0.id) < ($1.startUtf8, $1.endUtf8, $1.id) }
     }
-    func prepareUserAnnotation(_ id: String, start: UInt64, end: UInt64) async throws -> AnnotationEdit {
+
+    func userMarks(_ id: String, kind: MarkKind? = nil, snapshot: NoteCandidates? = nil) async throws -> [ReaderMark] {
+        if let snapshot {
+            let index = try indexStore()
+            guard snapshot.key == (try index.resolveBookIdentity(bookId: id).key.storageKey) else { throw UserDataConflict(candidates: []) }
+            if let admission = snapshot.admission { try readingWriteAuthorization(id, admission: admission, index: index)(snapshot.key) }
+            return marks(snapshot, kind: kind)
+        }
+        return try await marks(annotationSnapshot(id), kind: kind)
+    }
+
+    func userAnnotationRanges(_ id: String, start: UInt64, end: UInt64) async throws -> [ReaderMark] {
+        guard start <= end else { throw ReaderError.InvalidRange }
+        return try await marks(annotationSnapshot(id), kind: .annotation, range: start..<end)
+    }
+
+    func removeAnnotationRange(_ id: String, start: UInt64, end: UInt64, offered: ReadingWriteAdmission?) async throws -> [String] {
+        guard start <= end else { throw ReaderError.InvalidRange }
+        let view = try await annotationSnapshot(id, offered: offered)
+        let ids = marks(view, kind: .annotation, range: start..<end).map(\.id)
+        try await userDeleteMarks(ids, deleted: true, expected: view)
+        return ids
+    }
+
+    func prepareUserAnnotation(_ id: String, start: UInt64, end: UInt64,
+                               admission: ReadingWriteAdmission? = nil) async throws -> AnnotationEdit {
         guard start < end else { throw ReaderError.InvalidRange }
-        try await promoteUserData(id)
-        let key = try userKey(id).storageKey
-        let groups = try await userStore(for: key).candidates(key: key)
-        var marks = try await userMarks(id, kind: .annotation)
+        let view = try await annotationSnapshot(id, offered: admission)
+        var marks = marks(view, kind: .annotation)
         for index in marks.indices {
-            let contents = groups[marks[index].id, default: []].compactMap(\.content)
+            let contents = view.groups[marks[index].id, default: []].compactMap(\.content)
             marks[index].startUtf8 = contents.map(\.start).min() ?? marks[index].startUtf8
             marks[index].endUtf8 = contents.map(\.end).max() ?? marks[index].endUtf8
         }
@@ -328,67 +375,129 @@ extension AppDataService {
             let overlaps = marks.filter { $0.startUtf8 < to && $0.endUtf8 > from }
             let nextFrom = overlaps.map(\.startUtf8).min().map { min(from, $0) } ?? from
             let nextTo = overlaps.map(\.endUtf8).max().map { max(to, $0) } ?? to
-            if from == nextFrom && to == nextTo { marks = overlaps; break }
+            if nextFrom == from && nextTo == to { marks = overlaps; break }
             from = nextFrom; to = nextTo
         }
         let quote = try indexStore().textRange(bookId: id, startUtf8: from, endUtf8: to).text.trimmingCharacters(in: .whitespacesAndNewlines)
         let markID = marks.first?.id ?? UUID().uuidString
-        let note = marks.map { $0.note }.filter { !$0.isEmpty }.joined(separator: "\n\n")
-        let baselines = Dictionary(uniqueKeysWithValues: marks.map { ($0.id, groups[$0.id] ?? []) })
-        var edit = AnnotationEdit(id: markID, bookId: id, startUtf8: from, endUtf8: to, excerpt: String(quote.prefix(160)), note: note, marks: marks, baselines: baselines)
-        let bundle = try await userStore(for: key).editingBundle(key: key, edit: edit)
-        for (mark, heads) in bundle where edit.baselines[mark] == nil { edit.baselines[mark] = heads }
+        let note = marks.map(\.note).filter { !$0.isEmpty }.joined(separator: "\n\n")
+        let baselines = Dictionary(uniqueKeysWithValues: marks.map { ($0.id, view.groups[$0.id] ?? []) })
+        var edit = AnnotationEdit(id: markID, bookId: id, startUtf8: from, endUtf8: to, excerpt: String(quote.prefix(160)), note: note,
+                                  marks: marks, baselines: baselines, writeAdmission: view.admission)
+        for (mark, heads) in try AnnotationRows.editingBundle(view, edit: edit) where edit.baselines[mark] == nil { edit.baselines[mark] = heads }
         return edit
     }
+
     func saveUserNote(_ edit: AnnotationEdit, text: String) async throws -> ReaderMark {
         guard text.utf8.count <= 64 * 1024, edit.startUtf8 < edit.endUtf8 else { throw ReaderError.InvalidRange }
         let content = AnnotationContent(start: edit.startUtf8, end: edit.endUtf8, excerpt: edit.excerpt, note: text)
-        let key = try userKey(edit.bookId).storageKey
-        let created = edit.marks.map(\.created).min() ?? UInt64(Date().timeIntervalSince1970 * 1000)
-        _ = try await userStore(for: key).saveAnnotation(key: key, edit: edit, content: content)
+        let candidate = try await editAnnotationRows(edit.bookId, offered: edit.writeAdmission) { db, key, _ in
+            try AnnotationRows.edit(db, key: key, edit: edit, content: content)
+        }
         dataChanged()
         return ReaderMark(id: edit.id, kind: .annotation, startUtf8: content.start, endUtf8: content.end,
-            excerpt: content.excerpt, note: text, created: created)
+                          excerpt: content.excerpt, note: text, created: candidate.created)
     }
     func annotationEditingBundle(_ edit: AnnotationEdit) async throws -> [String: [AnnotationCandidate]] {
-        let key = try userKey(edit.bookId).storageKey
-        return try await userStore(for: key).editingBundle(key: key, edit: edit)
+        try await AnnotationRows.editingBundle(annotationSnapshot(edit.bookId, offered: edit.writeAdmission), edit: edit)
     }
     func resolveAnnotation(_ edit: AnnotationEdit, expected: [String: [AnnotationCandidate]], content: AnnotationContent?) async throws {
-        let key = try userKey(edit.bookId).storageKey
         if let content {
             guard content.note.utf8.count <= 64 * 1024, content.start < content.end else { throw ReaderError.InvalidRange }
         }
-        try await userStore(for: key).resolveBundle(key: key, id: edit.id, expected: expected, content: content, edit: edit)
+        _ = try await editAnnotationRows(edit.bookId, offered: edit.writeAdmission) { db, key, _ in
+            try AnnotationRows.edit(db, key: key, edit: edit, content: content, resolving: expected)
+        }
         dataChanged()
     }
-    func userDeleteMarks(_ ids: [String], deleted: Bool) async throws {
-        var grouped: [ObjectIdentifier: (UserDataStore, [MarkDeletion])] = [:]
-        var restoration: [String: AnnotationContent] = [:]
-        for id in Set(ids) {
-            let store = try await markStore(id)
-            let command: MarkDeletion
-            if deleted {
-                let (key, heads) = try await store.markCandidates(id)
-                let baseline = shownCandidates[id] ?? heads, content = baseline.first(where: { $0.content != nil })?.content
-                command = MarkDeletion(id: id, key: key, baseline: baseline, content: content, deleted: true)
-                restoration[id] = content
-            } else {
-                guard let (baseline, content) = undoCandidates[id] else { continue }
-                let (key, _) = try await store.markCandidates(id)
-                command = MarkDeletion(id: id, key: key, baseline: baseline, content: content, deleted: false)
-            }
-            let identity = ObjectIdentifier(store)
-            if grouped[identity] == nil { grouped[identity] = (store, []) }
-            grouped[identity]!.1.append(command)
-        }
-        for (_, (store, commands)) in grouped {
-            let result = try await store.applyDeletions(commands)
-            for command in commands {
-                if deleted, let tombstone = result[command.id] { undoCandidates[command.id] = ([tombstone], restoration[command.id]) }
-                else { undoCandidates[command.id] = nil }
-            }
+
+    func changeBookmark(_ id: String, offset: UInt64, ensure: Bool, admission offered: ReadingWriteAdmission?) async throws -> ReaderMark? {
+        let admission = try offered ?? readingWriteAdmission(indexStore().lease)
+        let excerpt = try indexStore().paragraphRange(bookId: id, offsetUtf8: offset).text
+        let (mark, candidate) = try await editAnnotationRows(id, offered: admission) { db, key, _ in
+            try AnnotationRows.bookmark(db, key: key, offset: offset, excerpt: String(excerpt.prefix(160)), ensure: ensure)
         }
         dataChanged()
+        guard let content = candidate.content else { return nil }
+        return ReaderMark(id: mark, kind: .bookmark, startUtf8: content.start, endUtf8: content.end,
+                          excerpt: content.excerpt, note: content.note, created: candidate.created)
+    }
+
+    func readAnnotationMark(_ id: String) throws -> ReaderMark {
+        let index = try relationalUserIndex(), admission = readingWriteAdmission(index.lease)
+        let (key, heads) = try index.session.readUsers(index.lease) { try AnnotationRows.find($0, markID: id) }
+        guard let value = heads.first(where: { $0.content != nil }), let content = value.content else { throw ReaderError.NotFound }
+        shownCandidates[id] = .init(heads: heads, key: key, admission: admission)
+        return ReaderMark(id: id, kind: value.bookmark ? .bookmark : .annotation, startUtf8: content.start, endUtf8: content.end,
+                          excerpt: content.excerpt, note: content.note, created: value.created)
+    }
+
+    func deleteSelectedAnnotations(_ id: String, expected: NoteCandidates, ids: Set<String>) async throws {
+        let groups = try expected.checked(ids)
+        guard ids == Set(groups.keys) else { throw UserDataConflict(candidates: []) }
+        let receipts: [String: MarkUndo] = try await editAnnotationRows(id, offered: expected.admission) { db, key, admission in
+            guard key == expected.key else { throw UserDataConflict(candidates: []) }
+            let commands = ids.sorted().map { id in
+                let heads = groups[id] ?? []
+                return MarkDeletion(id: id, key: key, baseline: heads, content: heads.first(where: { $0.content != nil })?.content, deleted: true)
+            }
+            let committed = try AnnotationRows.deletions(db, commands: commands, checkingBaseline: true)
+            return deletionReceipts(commands, committed: committed, admission: admission, origins: commands.reduce(into: [:]) { $0[$1.id] = id })
+        }
+        undoCandidates.merge(receipts) { _, new in new }
+        dataChanged()
+    }
+
+    private func deletionReceipts(_ commands: [MarkDeletion], committed: [String: AnnotationCandidate],
+                                  admission: ReadingWriteAdmission, origins: [String: String]) -> [String: MarkUndo] {
+        Dictionary(uniqueKeysWithValues: commands.compactMap { cmd in
+            committed[cmd.id].map {
+                (cmd.id, MarkUndo(baseline: .init(heads: [$0], key: cmd.key, admission: admission, sourceBookID: origins[cmd.id]), content: cmd.content))
+            }
+        })
+    }
+
+    func userDeleteMarks(_ ids: [String], deleted: Bool, expected: NoteCandidates? = nil,
+                         offered: ReadingWriteAdmission? = nil) async throws {
+        let admission = try offered ?? expected?.admission ?? readingWriteAdmission(indexStore().lease)
+        // Capture what was shown / the original undo before waiting for the gate.
+        var shown = shownCandidates
+        let undo = undoCandidates
+        if deleted, let expected, let receipt = expected.admission {
+            for (id, heads) in try expected.checked(Set(ids)) {
+                shown[id] = .init(heads: heads, key: expected.key, admission: receipt, sourceBookID: expected.sourceBookID)
+            }
+        }
+        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        let index = try relationalUserIndex(), configuration = userCloudConfigurationRevision, versions = readingWriteVersions
+        let receipts: [String: MarkUndo] = try index.session.writeUsers(index.lease) { db in
+            var commands: [MarkDeletion] = []
+            var origins: [String: String] = [:]
+            for id in Set(ids).sorted() {
+                let prior = deleted ? shown[id] : undo[id]?.baseline
+                if !deleted && prior == nil { continue }
+                let (key, heads) = try AnnotationRows.find(db, markID: id)
+                let alias = prior?.sourceBookID.map { ReadingKey.pending(bookId: $0).storageKey }
+                let keys = [key] + (prior.map { [$0.key] } ?? []) + (alias.map { [$0] } ?? [])
+                guard versions.permits(admission, lease: index.lease, configuration: configuration, keys: keys),
+                      prior.map({ versions.permits($0.admission, lease: index.lease, configuration: configuration, keys: keys) }) ?? true
+                else { throw CancellationError() }
+                if let prior, prior.key != key {
+                    guard case let .pending(source) = try parseReadingKey(value: prior.key),
+                          try ReaderIndex.body(db, id: source, scope: index.lease.scope.key).sha == key
+                    else { throw UserDataConflict(candidates: heads) }
+                }
+                origins[id] = prior?.sourceBookID
+                let baseline = prior?.heads ?? heads
+                let content = deleted ? baseline.first(where: { $0.content != nil })?.content : undo[id]?.content
+                commands.append(.init(id: id, key: key, baseline: baseline, content: content, deleted: deleted))
+            }
+            let committed = try AnnotationRows.deletions(db, commands: commands, checkingBaseline: false)
+            return deletionReceipts(commands, committed: committed, admission: admission, origins: origins)
+        }
+        if deleted { undoCandidates.merge(receipts) { _, new in new } }
+        else { for id in receipts.keys { undoCandidates[id] = nil } }
+        if !receipts.isEmpty { dataChanged() }
     }
 }

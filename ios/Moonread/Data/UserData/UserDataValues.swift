@@ -33,6 +33,7 @@ struct AnnotationEdit: Sendable {
     var note: String
     var marks: [ReaderMark]
     var baselines: [String: [AnnotationCandidate]]
+    var writeAdmission: ReadingWriteAdmission? = nil
 }
 struct StoredValue: Codable, Sendable {
     var updated: Int64
@@ -147,9 +148,29 @@ struct MarkDeletion: Sendable {
     let deleted: Bool
 }
 
+struct MarkBaseline: Sendable {
+    let heads: [AnnotationCandidate]
+    let key: String
+    let admission: ReadingWriteAdmission
+    var sourceBookID: String? = nil
+}
+
+struct MarkUndo: Sendable {
+    let baseline: MarkBaseline
+    let content: AnnotationContent?
+}
+
 /// Whole edit candidates use separate CloudKit objects. Automatic property merging
 /// cannot destroy a sibling edit or mix its range with another edit's comment.
 enum AnnotationReduction {
+    struct Change {
+        let markID: String
+        let baseline: [AnnotationCandidate]
+        let content: AnnotationContent?
+        var related: Set<String> = []
+        var mergedInto: String? = nil
+    }
+
     static func heads(_ values: [AnnotationCandidate]) -> [AnnotationCandidate] {
         let superseded = values.reduce(into: Set<String>()) { $0.formUnion($1.ancestors) }
         var seen = Set<String>()
@@ -159,5 +180,58 @@ enum AnnotationReduction {
     static func conflicts(_ values: [AnnotationCandidate]) -> Bool {
         guard let first = values.first else { return false }
         return values.dropFirst().contains { $0.content != first.content || $0.bookmark != first.bookmark }
+    }
+
+    static func successor(baseline: [AnnotationCandidate], content: AnnotationContent?, bookmark: Bool,
+                          related: Set<String>, mergedInto: String?) -> AnnotationCandidate {
+        let ancestors = baseline.reduce(into: Set<String>()) { $0.insert($1.id); $0.formUnion($1.ancestors) }
+        return AnnotationCandidate(id: UUID().uuidString, ancestors: ancestors, content: content,
+            created: baseline.map(\.created).min() ?? UInt64(Date().timeIntervalSince1970 * 1000), bookmark: bookmark,
+            relatedMarks: baseline.reduce(into: related) { $0.formUnion($1.relatedMarks) }, mergedInto: mergedInto)
+    }
+
+    static func editingBundle(_ edit: AnnotationEdit, groups: [String: [AnnotationCandidate]]) -> [String: [AnnotationCandidate]] {
+        var ids = Set(edit.baselines.keys).union([edit.id])
+        var from = edit.startUtf8, to = edit.endUtf8
+        while true {
+            let previous = ids, previousFrom = from, previousTo = to
+            for (mark, heads) in groups {
+                let contents = heads.filter { !$0.bookmark }.compactMap(\.content)
+                if ids.contains(mark) || heads.contains(where: { !$0.relatedMarks.isDisjoint(with: ids) }) ||
+                    contents.contains(where: { $0.start < to && $0.end > from }) {
+                    ids.insert(mark)
+                    for head in heads { ids.formUnion(head.relatedMarks) }
+                    for content in contents { from = min(from, content.start); to = max(to, content.end) }
+                }
+            }
+            if previous == ids && previousFrom == from && previousTo == to { break }
+        }
+        return Dictionary(uniqueKeysWithValues: ids.map { ($0, groups[$0] ?? []) })
+    }
+
+    static func checkBaseline(_ current: [AnnotationCandidate], expected: [AnnotationCandidate]) throws {
+        guard Set(current.map(\.id)) == Set(expected.map(\.id)) else { throw UserDataConflict(candidates: current) }
+    }
+
+    static func changes(_ edit: AnnotationEdit, current: [String: [AnnotationCandidate]],
+                        resolving expected: [String: [AnnotationCandidate]]? = nil,
+                        content: AnnotationContent?) throws -> [Change] {
+        let baseline: [String: [AnnotationCandidate]]
+        if let expected {
+            guard Set(current.keys) == Set(expected.keys) else { throw UserDataConflict(candidates: current.values.flatMap { $0 }) }
+            for (mark, heads) in expected { try checkBaseline(current[mark, default: []], expected: heads) }
+            baseline = expected
+        } else {
+            guard !edit.baselines.values.contains(where: conflicts), !current.values.contains(where: conflicts),
+                  Set(current.keys) == Set(edit.baselines.keys).union([edit.id]) else {
+                throw UserDataConflict(candidates: current.values.flatMap { $0 })
+            }
+            // Ordinary edit deliberately uses the shown heads, not siblings
+            // that arrived after opening the editor.
+            baseline = edit.baselines
+        }
+        let related = Set(baseline.keys).subtracting([edit.id])
+        return [.init(markID: edit.id, baseline: baseline[edit.id] ?? [], content: content, related: related)] +
+            related.sorted().map { .init(markID: $0, baseline: baseline[$0] ?? [], content: nil, related: [edit.id], mergedInto: edit.id) }
     }
 }

@@ -66,6 +66,7 @@ CREATE TABLE usr.annotation_candidate (
  PRIMARY KEY(partition,record_id)
 );
 CREATE INDEX usr.annotation_mark ON annotation_candidate(book_key,mark_id);
+CREATE INDEX usr.annotation_mark_lookup ON annotation_candidate(partition,mark_id,book_key);
 CREATE INDEX usr.annotation_range ON annotation_candidate(book_key,start,end);
 CREATE TABLE usr.annotation_ancestor (
  partition INTEGER NOT NULL, candidate_id TEXT NOT NULL, ancestor_id TEXT NOT NULL, original_id TEXT NOT NULL,

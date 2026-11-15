@@ -761,8 +761,9 @@ struct ReaderScreen: View {
         if action != .shareExcerpt { session.beganReadingInteraction() }
         if action == .removeAnnotations {
             guard !session.isLeaving, let bookID = session.readingID else { return }
+            let admission = session.readingLease?.writeAdmission
             Task {
-                await tools.removeAnnotations(bookID: bookID, start: start, end: end)
+                await tools.removeAnnotations(bookID: bookID, start: start, end: end, admission: admission)
                 guard !session.isLeaving else { return }
                 if let error = tools.error { session.error = error; tools.error = nil }
                 session.notesChanged()

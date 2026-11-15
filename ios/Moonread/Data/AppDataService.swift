@@ -278,8 +278,8 @@ actor AppDataService {
     var readingWriteVersions = ReadingWriteVersions()
     var importWriteAdmissions: [String: ReadingWriteAdmission] = [:]
     var promotedUserKeys = Set<String>()
-    var shownCandidates: [String: [AnnotationCandidate]] = [:]
-    var undoCandidates: [String: ([AnnotationCandidate], AnnotationContent?)] = [:]
+    var shownCandidates: [String: MarkBaseline] = [:]
+    var undoCandidates: [String: MarkUndo] = [:]
     let sourceDefaults: UserDefaults
     nonisolated let cloudSyncIntent: CloudSyncIntent
     var cloudLibraryRoot: URL?
@@ -616,18 +616,13 @@ actor AppDataService {
     }
     func annotations(_ id: String, start: UInt64, end: UInt64) async throws -> [ReaderMark] { try await userAnnotationRanges(id, start: start, end: end) }
     func bookmarkPositions(_ id: String, start: UInt64, end: UInt64) async throws -> [UInt64] { try await userMarks(id, kind: .bookmark).filter { $0.startUtf8 >= start && $0.startUtf8 < end }.map(\.startUtf8) }
-    func toggleBookmark(_ id: String, at offset: UInt64) async throws -> Bool {
-        let key = try userKey(id).storageKey, quote = try indexStore().paragraphRange(bookId: id, offsetUtf8: offset).text
-        let result = try await userStore(for: key).bookmark(key: key, id: "bookmark/\(key)/\(offset)", content: AnnotationContent(start: offset, end: offset, excerpt: String(quote.prefix(160)), note: ""))
-        dataChanged(); return result
+    func toggleBookmark(_ id: String, at offset: UInt64, admission: ReadingWriteAdmission? = nil) async throws -> Bool {
+        try await changeBookmark(id, offset: offset, ensure: false, admission: admission) != nil
     }
-    func ensureBookmark(_ id: String, at offset: UInt64) async throws -> ReaderMark {
-        try await promoteUserData(id)
-        let key = try userKey(id).storageKey, quote = try indexStore().paragraphRange(bookId: id, offsetUtf8: offset).text
-        let candidate = try await userStore(for: key).ensureBookmark(key: key, id: "bookmark/\(key)/\(offset)", content: .init(start: offset, end: offset, excerpt: String(quote.prefix(160)), note: ""))
-        guard let content = candidate.content else { throw ReaderError.InvalidRange }
-        dataChanged()
-        return ReaderMark(id: "bookmark/\(key)/\(offset)", kind: .bookmark, startUtf8: content.start, endUtf8: content.end, excerpt: content.excerpt, note: content.note, created: candidate.created)
+    func ensureBookmark(_ id: String, at offset: UInt64, admission: ReadingWriteAdmission? = nil) async throws -> ReaderMark {
+        guard let mark = try await changeBookmark(id, offset: offset, ensure: true, admission: admission)
+        else { throw ReaderError.InvalidRange }
+        return mark
     }
     func hasBookmark(_ id: String, at offset: UInt64) async throws -> Bool { try await userMarks(id, kind: .bookmark).contains { $0.startUtf8 == offset } }
     func textRange(_ id: String, start: UInt64, end: UInt64) throws -> TextRange { try indexStore().textRange(bookId: id, startUtf8: start, endUtf8: end) }
@@ -649,24 +644,22 @@ actor AppDataService {
         try indexStore().textContext(bookId: id, offsetUtf8: offset, beforeParagraphs: before, afterParagraphs: after)
     }
     func paragraph(_ id: String, at offset: UInt64) throws -> TextRange { try indexStore().paragraphRange(bookId: id, offsetUtf8: offset) }
-    func annotate(_ id: String, start: UInt64, end: UInt64) async throws -> ReaderMark {
-        let edit = try await prepareUserAnnotation(id, start: start, end: end)
+    func annotate(_ id: String, start: UInt64, end: UInt64, admission: ReadingWriteAdmission? = nil) async throws -> ReaderMark {
+        let edit = try await prepareUserAnnotation(id, start: start, end: end, admission: admission)
         if edit.baselines.values.contains(where: AnnotationReduction.conflicts) { throw UserDataConflict(candidates: edit.baselines.values.flatMap { $0 }) }
         return try await saveUserNote(edit, text: edit.note)
     }
-    func mark(_ id: String) async throws -> ReaderMark {
-        let (_, heads) = try await markStore(id).markCandidates(id)
-        shownCandidates[id] = heads
-        guard let value = heads.first(where: { $0.content != nil }), let content = value.content else { throw ReaderError.NotFound }
-        return ReaderMark(id: id, kind: value.bookmark ? .bookmark : .annotation, startUtf8: content.start, endUtf8: content.end, excerpt: content.excerpt, note: content.note, created: value.created)
+    func mark(_ id: String) async throws -> ReaderMark { try readAnnotationMark(id) }
+    func prepareAnnotation(_ id: String, start: UInt64, end: UInt64, admission: ReadingWriteAdmission? = nil) async throws -> AnnotationEdit {
+        try await prepareUserAnnotation(id, start: start, end: end, admission: admission)
     }
-    func prepareAnnotation(_ id: String, start: UInt64, end: UInt64) async throws -> AnnotationEdit { try await prepareUserAnnotation(id, start: start, end: end) }
     func saveNote(_ edit: AnnotationEdit, text: String) async throws -> ReaderMark { try await saveUserNote(edit, text: text) }
-    func removeAnnotations(_ id: String, start: UInt64, end: UInt64) async throws -> [String] {
-        let ids = try await annotations(id, start: start, end: end).map(\.id)
-        try await userDeleteMarks(ids, deleted: true); return ids
+    func removeAnnotations(_ id: String, start: UInt64, end: UInt64, admission: ReadingWriteAdmission? = nil) async throws -> [String] {
+        try await removeAnnotationRange(id, start: start, end: end, offered: admission)
     }
-    func deleteMarks(_ ids: [String], deleted: Bool) async throws { try await userDeleteMarks(ids, deleted: deleted) }
+    func deleteMarks(_ ids: [String], deleted: Bool, expected: NoteCandidates? = nil) async throws {
+        try await userDeleteMarks(ids, deleted: deleted, expected: expected)
+    }
     func search(_ id: String, query: String, regex: Bool, caseSensitive: Bool, range: SearchRange? = nil) async throws -> SearchJob {
         try indexStore().startSearch(bookId: id, query: query, regularExpression: regex, caseSensitive: caseSensitive, range: range)
     }
