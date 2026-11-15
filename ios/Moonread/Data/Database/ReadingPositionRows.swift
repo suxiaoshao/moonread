@@ -36,26 +36,39 @@ enum ReadingPositionRows {
             """, arguments: [partition,logicalKey,domain.candidateType,DataIdentity.canonical(book)]) == true else {
             throw UserSyncCompatibilityError()
         }
+        // candidateType is a fixed domain table, never a caller-supplied name.
+        guard try Bool.fetchOne(db, sql: """
+            SELECT NOT EXISTS(SELECT 1 FROM usr.\(domain.candidateType)
+                WHERE partition=? AND book_key=? AND schema_version<>1)
+            """, arguments: [partition,DataIdentity.canonical(book)]) == true else {
+            throw UserSyncCompatibilityError(reason: .newerFormat)
+        }
     }
+
+    private static let positionColumns = """
+        original_book_key,offset,updated_ms,token,device_id,source_kind,relative_path,file_name,byte_size,decoding
+        """
 
     static func position(_ db: Database, book: String, partition: Int) throws -> Position? {
         try requireReadable(db, domain: .position, book: book, partition: partition)
-        let key = DataIdentity.canonical(book)
-        guard try Bool.fetchOne(db, sql: """
-            SELECT NOT EXISTS(SELECT 1 FROM usr.position_candidate WHERE partition=? AND book_key=? AND schema_version<>1)
-            """, arguments: [partition,key]) == true else { throw UserSyncCompatibilityError(reason: .newerFormat) }
         // Only the latest time can win. Compare equal-time tokens with the
         // published Swift ordering, not a locale or SQL collation.
         let rows = try Row.fetchAll(db, sql: """
-            SELECT original_book_key,offset,updated_ms,token,device_id,source_kind,relative_path,file_name,byte_size,decoding
+            SELECT \(positionColumns)
             FROM usr.position_candidate
             WHERE partition=?1 AND book_key=?2 AND updated_ms=(
                 SELECT MAX(updated_ms) FROM usr.position_candidate WHERE partition=?1 AND book_key=?2
             )
             ORDER BY record_id
-            """, arguments: [partition,key])
+            """, arguments: [partition,DataIdentity.canonical(book)])
         guard let row = rows.max(by: { ($0["token"] as String) < ($1["token"] as String) }) else { return nil }
+        return try decodedPosition(row)
+    }
+
+    private static func decodedPosition(_ row: Row) throws -> Position {
         guard let offset = UInt64(row["offset"] as String) else { throw UserSyncCompatibilityError() }
+        let token: String = row["token"]
+        guard !token.isEmpty else { throw UserSyncCompatibilityError() }
         let source: PositionSourceHint?
         if let kind = row["source_kind"] as String? {
             guard let kind = PositionSourceHint.Kind(rawValue: kind), let path = row["relative_path"] as String?,
@@ -66,8 +79,9 @@ enum ReadingPositionRows {
         } else {
             source = nil
         }
+        guard source?.isValid ?? true else { throw UserSyncCompatibilityError() }
         return .init(value: .init(content_key: row["original_book_key"], offset: offset, source_hint: source),
-                     updated: row["updated_ms"], token: row["token"], device: row["device_id"])
+                     updated: row["updated_ms"], token: token, device: row["device_id"])
     }
 
     private static func nextTime(_ now: Int64, after previous: Int64?) throws -> Int64 {
@@ -83,37 +97,44 @@ enum ReadingPositionRows {
         let previous = try position(db, book: book, partition: part)
         let source = hint ?? previous?.value.source_hint
         guard source?.isValid ?? true else { throw UserSyncCompatibilityError() }
-        let updated = try nextTime(now, after: previous?.updated)
-        let id = DataIdentity.id("position", [book,token])
-        let key = DataIdentity.canonical(book)
-        let byteSize = source?.byte_size.flatMap { Int64(exactly: $0) }
+        let saved = Position(value: .init(content_key: book, offset: offset, source_hint: source),
+                             updated: try nextTime(now, after: previous?.updated), token: token, device: device)
+        try replacePosition(db, with: saved, book: book, partition: part)
+        try recordLocalOpen(db, book: book, file: file)
+        if part == 0 { try LocalReadingRows.setResume(db, book: book, offset: offset, token: token) }
+        return saved
+    }
+
+    private static func replacePosition(_ db: Database, with position: Position, book: String, partition: Int) throws {
+        let id = DataIdentity.id("position", [book,position.token])
+        let key = DataIdentity.canonical(book), hint = position.value.source_hint
+        let byteSize = hint?.byte_size.flatMap { Int64(exactly: $0) }
         try db.execute(sql: """
             INSERT INTO usr.position_candidate
                 (partition,record_id,schema_version,book_key,original_book_key,updated_ms,token,offset,device_id,
                  source_kind,relative_path,file_name,byte_size,decoding)
             VALUES (?,?,1,?,?,?,?,?,?,?,?,?,?,?)
-            """, arguments: [part,id,key,book,updated,token,DataIdentity.unsigned(offset),device,
-                             source?.source_kind.rawValue,source?.relative_path,source?.file_name,byteSize,source?.decoding])
+            """, arguments: [partition,id,key,book,position.updated,position.token,DataIdentity.unsigned(position.value.offset),position.device,
+                             hint?.source_kind.rawValue,hint?.relative_path,hint?.file_name,byteSize,hint?.decoding])
         try db.execute(sql: "DELETE FROM usr.position_candidate WHERE partition=? AND book_key=? AND record_id<>?",
-                       arguments: [part,key,id])
-        try recordLocalOpen(db, book: book, file: file)
-        if part == 0 { try LocalReadingRows.setResume(db, book: book, offset: offset, token: token) }
-        return .init(value: .init(content_key: book, offset: offset, source_hint: source),
-                     updated: updated, token: token, device: device)
+                       arguments: [partition,key,id])
     }
 
     static func recordOpened(_ db: Database, book: String, openedAt: Int64, file: String?, device: String, now: Int64, token: String) throws {
         guard !token.isEmpty else { throw UserSyncCompatibilityError() }
         let part = try partition(for: book)
-        let logicalKey = "opened/" + book
         let key = DataIdentity.canonical(book)
         try requireReadable(db, domain: .opened, book: book, partition: part)
-        guard try Bool.fetchOne(db, sql: """
-            SELECT NOT EXISTS(SELECT 1 FROM usr.opened_candidate WHERE partition=? AND book_key=? AND schema_version<>1)
-            """, arguments: [part,key]) == true else { throw UserSyncCompatibilityError(reason: .newerFormat) }
         let latest = try Int64.fetchOne(db, sql: "SELECT MAX(updated_ms) FROM usr.opened_candidate WHERE partition=? AND book_key=?",
                                         arguments: [part,key])
         let updated = try nextTime(now, after: latest)
+        try putOpened(db, book: book, partition: part, device: device, openedAt: openedAt, updated: updated, token: token)
+        try recordLocalOpen(db, book: book, file: file)
+    }
+
+    private static func putOpened(_ db: Database, book: String, partition: Int, device: String,
+                                  openedAt: Int64, updated: Int64, token: String) throws {
+        let logicalKey = "opened/" + book, key = DataIdentity.canonical(book)
         let id = DataIdentity.id("value", [logicalKey,device])
         try db.execute(sql: """
             INSERT INTO usr.opened_candidate
@@ -121,8 +142,60 @@ enum ReadingPositionRows {
             VALUES (?,?,1,?,?,?,?,?,?,?)
             ON CONFLICT(partition,book_key,device_id) DO UPDATE SET
                 updated_ms=excluded.updated_ms,token=excluded.token,opened_ms=excluded.opened_ms
-            """, arguments: [part,id,key,logicalKey,DataIdentity.canonical(device),device,updated,token,openedAt])
-        try recordLocalOpen(db, book: book, file: file)
+            """, arguments: [partition,id,key,logicalKey,DataIdentity.canonical(device),device,updated,token,openedAt])
+    }
+
+    static func promote(_ db: Database, from pending: String, to formal: String) throws {
+        for (book, part) in [(pending,1),(formal,0)] {
+            try requireReadable(db, domain: .position, book: book, partition: part)
+            try requireReadable(db, domain: .opened, book: book, partition: part)
+        }
+        func positions(_ book: String, _ part: Int) throws -> [Position] {
+            try Row.fetchAll(db, sql: """
+                SELECT \(positionColumns) FROM usr.position_candidate WHERE partition=? AND book_key=? ORDER BY record_id
+                """, arguments: [part,DataIdentity.canonical(book)]).map(decodedPosition)
+        }
+        let source = try positions(pending, 1), target = try positions(formal, 0)
+        var sameToken: [String: Position] = [:]
+        for value in target + source {
+            if let prior = sameToken[value.token] {
+                guard prior.updated == value.updated, prior.value.offset == value.value.offset,
+                      prior.value.source_hint == value.value.source_hint else { throw UserSyncCompatibilityError() }
+            } else { sameToken[value.token] = value }
+        }
+        func older(_ a: Position, _ b: Position) -> Bool { (a.updated,a.token) < (b.updated,b.token) }
+        if let candidate = source.max(by: older), target.max(by: older).map({ older($0,candidate) }) ?? true {
+            try replacePosition(db, with: candidate, book: formal, partition: 0)
+        }
+
+        struct Opened {
+            let device: String
+            let updated: Int64
+            let token: String
+            let time: Int64
+        }
+        func opened(_ book: String, _ part: Int) throws -> [Opened] {
+            try Row.fetchAll(db, sql: """
+                SELECT device_id,updated_ms,token,opened_ms FROM usr.opened_candidate
+                WHERE partition=? AND book_key=? ORDER BY record_id
+                """, arguments: [part,DataIdentity.canonical(book)]).map { row in
+                    let token: String = row["token"]
+                    guard !token.isEmpty else { throw UserSyncCompatibilityError() }
+                    return .init(device: row["device_id"], updated: row["updated_ms"], token: token, time: row["opened_ms"])
+                }
+        }
+        if let winner = try opened(pending, 1).max(by: { ($0.updated,$0.token) < ($1.updated,$1.token) }) {
+            let existing = try opened(formal, 0)
+            let matching = existing.filter { $0.token == winner.token }
+            guard matching.allSatisfy({ $0.updated == winner.updated && $0.time == winner.time })
+            else { throw UserSyncCompatibilityError() }
+            let slot = "pending-promotion" // The published pending-opened merge slot.
+            let previous = existing.first { $0.device == slot }
+            if matching.isEmpty, previous.map({ ($0.updated,$0.token) < (winner.updated,winner.token) }) ?? true {
+                try putOpened(db, book: formal, partition: 0, device: slot,
+                              openedAt: winner.time, updated: winner.updated, token: winner.token)
+            }
+        }
     }
 
     private static func recordLocalOpen(_ db: Database, book: String, file: String?) throws {

@@ -431,6 +431,48 @@ struct DataV2MigrationTests {
         try session.close()
     }
 
+    @Test func pendingPromotionRollsBackBeforeReclaimingItsIndexAlias() throws {
+        let root = try sandbox()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let session = try DataSession(layout: .init(applicationSupport: root))
+        let (lease, _) = try session.activate(.unknown)
+        try session.prepareIndex(root.appending(path: "reader.sqlite3"), token: lease)
+        try session.prepareUsers(lease) { nil }
+        let index = ReaderIndex(session: session, lease: lease)
+        let control = try index.createImport(title: "Synthetic")
+        let key = serializeReadingKey(key: .pending(bookId: control.id))
+        let bytes = Data("第一章\n合成正文\n".utf8)
+        let source = root.appending(path: "fixture.txt")
+        try bytes.write(to: source)
+        let sha = DataIdentity.sha(bytes)
+        _ = try session.writeUsers(lease) {
+            try ReadingPositionRows.recordPosition($0, book: key, offset: 3, hint: nil, file: "fixture",
+                                                   device: "device", now: 12, token: "pending")
+        }
+        try #expect(index.promotePendingUserData(bookId: control.id) == .notReady)
+        try index.streamImport(control: control, filePath: source.path, expectedRawSha256: sha, encodingOverride: nil)
+        _ = try index.finishImport(control: control)
+
+        try session.writeUsers(lease) {
+            try $0.execute(sql: """
+                CREATE TRIGGER usr.reject_pending_removal BEFORE DELETE ON position_candidate
+                WHEN OLD.partition=1 BEGIN SELECT RAISE(ABORT,'fixture'); END
+                """)
+        }
+        #expect(throws: DatabaseError.self) { _ = try index.promotePendingUserData(bookId: control.id) }
+        try #expect(index.pendingUserPromotionKeys() == [key])
+        try #expect(index.importStatus(bookId: control.id).phase == .complete)
+        try #expect(session.readUsers(lease) { try ReadingPositionRows.position($0, book: sha, partition: 0) } == nil)
+
+        try session.writeUsers(lease) { try $0.execute(sql: "DROP TRIGGER usr.reject_pending_removal") }
+        try #expect(index.promotePendingUserData(bookId: control.id) == .committed(sha256: sha))
+        try #expect(index.promotePendingUserData(bookId: control.id) == .committed(sha256: sha))
+        try #expect(index.pendingUserPromotionKeys().isEmpty)
+        try #expect(session.readUsers(lease) { try ReadingPositionRows.position($0, book: sha, partition: 0)?.token } == "pending")
+        try #expect(index.reclaimCompletedImport(bookId: control.id))
+        try session.close()
+    }
+
     @Test func recoversCommittedLocalClaimBeforeSelectingAnotherAccount() async throws {
         let root = try sandbox()
         defer { try? FileManager.default.removeItem(at: root) }
