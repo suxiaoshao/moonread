@@ -28,6 +28,11 @@ extension AppDataService {
     /// The relational writer and fixed reads must use this prepared capability.
     func relationalUserIndex() throws -> ReaderIndex {
         let index = try indexStore()
+        if case .cloud(let account) = userCloudMode {
+            let confirmed = try DataScope.confirmed(container: CloudConfiguration.containerID, environment: .production,
+                                                    recordName: account.recordName)
+            guard index.lease.scope == confirmed else { throw DataV2Error.leaseExpired }
+        }
         try index.session.prepareUsers(index.lease) {
             let source = try publishedUserSource()
             guard source.scope == index.lease.scope else { return nil }
@@ -118,6 +123,7 @@ extension AppDataService {
             cancelRecentRestoration()
             userStoreTask = nil; userCloudMode = mode
             userCloudConfigurationRevision = UUID()
+            promotedUserKeys.removeAll(); pendingPromotionIDs.removeAll(); recoveredImports = false
             resetSystemReadingCatalog()
             NotificationCenter.default.post(name: .readingContinuationInvalidated, object: nil)
             NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
@@ -146,12 +152,23 @@ extension AppDataService {
         defer { recoveryTask = nil; scheduleRecentRestoration() }
         do {
             try cleanupOldBackupExports()
-            let pending = try await userStore(pending: true)
-            let keys = try await pending.pendingKeys()
-            pendingPromotionIDs.formUnion(try keys.compactMap { if case let .pending(id) = try parseReadingKey(value: $0) { return id }; return nil })
-            for id in Array(pendingPromotionIDs) where (try? indexStore().importStatus(bookId: id).phase) == .complete { try await promoteUserData(id) }
-            try reclaimImports(indexStore()); recoveredImports = true
-        } catch { /* Startup can retry; reads continue to include pending data. */ }
+            let admission = try readingWriteAdmission(indexStore().lease)
+            await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+            guard try admission.lease == indexStore().lease,
+                  admission.configuration == userCloudConfigurationRevision else { return }
+            let index = try relationalUserIndex()
+            pendingPromotionIDs.formUnion(try index.pendingUserPromotionKeys().compactMap {
+                if case let .pending(id) = try parseReadingKey(value: $0) { return id }
+                return nil
+            })
+            // A prior usr commit can have consumed every pending row before
+            // the process exited. There is still a completed index job to prove.
+            for id in try index.completedReadingImportIDs() {
+                // A blocked book cannot prevent another alias from recovering.
+                try? promoteUserDataLocked(id, admission: admission, index: index)
+            }
+            try reclaimImports(index); recoveredImports = true
+        } catch { /* No unverified completed reading alias is reclaimed. */ }
     }
     func receivedUserImport() async {
         defer { scheduleRecentRestoration() }
@@ -166,30 +183,49 @@ extension AppDataService {
     func userKey(_ id: String) throws -> ReadingKey {
         try indexStore().resolveBookIdentity(bookId: id).key
     }
-    func promoteUserData(_ id: String, retry: Bool = false) async throws {
-        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
-        if retry { promotedUserKeys.remove(id) }
-        try await promoteUserDataLocked(id)
+    func readingWriteAdmission(_ lease: DataSessionLease) -> ReadingWriteAdmission {
+        .init(lease: lease, configuration: userCloudConfigurationRevision, epoch: readingWriteVersions.epoch)
     }
-    func promoteUserDataLocked(_ id: String) async throws {
-        guard case .formal(let key) = try userKey(id) else { return }
-        let pending = try await userStore(pending: true)
+
+    func promoteUserData(_ id: String, retry: Bool = false) async throws {
+        let admission = try readingWriteAdmission(indexStore().lease)
+        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        guard try admission.lease == indexStore().lease,
+              admission.configuration == userCloudConfigurationRevision else { throw CancellationError() }
+        if retry { promotedUserKeys.remove(id) }
+        try promoteUserDataLocked(id, admission: admission)
+    }
+
+    func promoteUserDataLocked(_ id: String, admission: ReadingWriteAdmission, index prepared: ReaderIndex? = nil) throws {
+        let index = try prepared ?? indexStore()
+        guard !promotedUserKeys.contains(id), try !index.completedReadingImportIDs(bookId: id).isEmpty else { return }
+        let original = importWriteAdmissions[id] ?? admission
+        let pending = ReadingKey.pending(bookId: id).storageKey
+        let configuration = userCloudConfigurationRevision
+        guard original.lease == index.lease, original.configuration == configuration else { throw CancellationError() }
         do {
-            // A late CloudKit/import arrival must not be bypassed by the promotion fast path.
-            try await pending.requirePendingReadable(key: serializeReadingKey(key: .pending(bookId: id)))
-            guard !promotedUserKeys.contains(id) else { return }
-            let transfer = try await pending.exportPending(key: serializeReadingKey(key: .pending(bookId: id)))
-            try await userStore().importPending(transfer, from: serializeReadingKey(key: .pending(bookId: id)), to: key)
-            try await pending.removePending(key: serializeReadingKey(key: .pending(bookId: id)))
-            let sourceKey = "Moonread.preferredFile." + serializeReadingKey(key: .pending(bookId: id))
-            if let file = sourceDefaults.string(forKey: sourceKey) {
-                sourceDefaults.set(file, forKey: "Moonread.preferredFile." + key); sourceDefaults.removeObject(forKey: sourceKey)
+            let versions = readingWriteVersions
+            let writer = try prepared ?? relationalUserIndex()
+            switch try writer.promotePendingUserData(bookId: id, authorize: { sha in
+                let keys = [pending,sha]
+                // A caller queued before deletion may not proceed. A current
+                // caller may only finish an empty source, not renew the old
+                // import's permission to move any of its records.
+                guard versions.permits(admission, lease: writer.lease, configuration: configuration, keys: keys)
+                else { throw CancellationError() }
+                return versions.permits(original, lease: writer.lease, configuration: configuration, keys: keys)
+                    ? .merge : .finishEmpty
+            }) {
+            case .notReady:
+                pendingPromotionIDs.insert(id)
+                // Without verified identity there is no empty-source proof.
+                guard versions.permits(original, lease: writer.lease, configuration: configuration, keys: [pending])
+                else { throw CancellationError() }
+            case .committed, .emptySource:
+                pendingPromotionIDs.remove(id)
+                promotedUserKeys.insert(id)
+            case .retainedRevokedSource: throw ReadingDataError.changed
             }
-            var hidden = Set(sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? [])
-            if hidden.remove(serializeReadingKey(key: .pending(bookId: id))) != nil { hidden.insert(key); sourceDefaults.set(Array(hidden), forKey: "Moonread.hiddenRecent") }
-            pendingPromotionIDs.remove(id)
-            promotedUserKeys.insert(id)
-            if !transfer.facts.isEmpty { NotificationCenter.default.post(name: .statisticsChanged, object: nil) }
         } catch {
             // Keep the source identity/lease recovery path alive while raw pending data is protected.
             pendingPromotionIDs.insert(id); promotedUserKeys.remove(id)
@@ -204,8 +240,9 @@ extension AppDataService {
     }
     /// Separate LWW fact: never manufactures a reading position or activity.
     func recordBookOpened(_ id: String, at milliseconds: Int64) async throws {
+        let admission = try readingWriteAdmission(indexStore().lease)
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
-        let key = try userKey(id).storageKey
+        let key = try admittedReadingKey(id, admission: admission)
         if let file = readingSourceIDs[id] { sourceDefaults.set(file, forKey: "Moonread.preferredFile." + key) }
         var hidden = sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []
         hidden.removeAll { $0 == key }; sourceDefaults.set(hidden, forKey: "Moonread.hiddenRecent")
@@ -213,10 +250,12 @@ extension AppDataService {
         dataChanged()
     }
     func writePosition(_ id: String, offset: UInt64, expectedConfiguration: UUID? = nil) async throws {
+        let admission = try readingWriteAdmission(indexStore().lease)
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         if let expectedConfiguration, expectedConfiguration != userCloudConfigurationRevision { throw CancellationError() }
-        try await promoteUserDataLocked(id)
-        let core = try indexStore(), key = try userKey(id).storageKey
+        _ = try admittedReadingKey(id, admission: admission)
+        try promoteUserDataLocked(id, admission: admission)
+        let core = try indexStore(), key = try admittedReadingKey(id, admission: admission)
         let normalized = try core.normalizedPosition(bookId: id, offsetUtf8: offset)
         if let file = readingSourceIDs[id] { sourceDefaults.set(file, forKey: "Moonread.preferredFile." + key) }
         var hidden = sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []; hidden.removeAll { $0 == key }
@@ -234,6 +273,15 @@ extension AppDataService {
         do { try rememberLocalReadingPosition(key: key, offset: normalized, token: stored.token) }
         catch { UserSyncJSON.quarantined("local reading baseline") }
         dataChanged()
+    }
+
+    private func admittedReadingKey(_ id: String, admission: ReadingWriteAdmission) throws -> String {
+        let index = try indexStore()
+        let key = try index.resolveBookIdentity(bookId: id).key.storageKey
+        guard readingWriteVersions.permits(admission, lease: index.lease, configuration: userCloudConfigurationRevision,
+                                          keys: [ReadingKey.pending(bookId: id).storageKey, key])
+        else { throw CancellationError() }
+        return key
     }
     func userMarks(_ id: String, kind: MarkKind? = nil, snapshot: NoteCandidates? = nil) async throws -> [ReaderMark] {
         try await promoteUserData(id)

@@ -145,11 +145,14 @@ enum ReadingPositionRows {
             """, arguments: [partition,id,key,logicalKey,DataIdentity.canonical(device),device,updated,token,openedAt])
     }
 
+    static func requirePromotionReadable(_ db: Database, book: String, partition: Int) throws {
+        try requireReadable(db, domain: .position, book: book, partition: partition)
+        try requireReadable(db, domain: .opened, book: book, partition: partition)
+    }
+
     static func promote(_ db: Database, from pending: String, to formal: String) throws {
-        for (book, part) in [(pending,1),(formal,0)] {
-            try requireReadable(db, domain: .position, book: book, partition: part)
-            try requireReadable(db, domain: .opened, book: book, partition: part)
-        }
+        try requirePromotionReadable(db, book: pending, partition: 1)
+        try requirePromotionReadable(db, book: formal, partition: 0)
         func positions(_ book: String, _ part: Int) throws -> [Position] {
             try Row.fetchAll(db, sql: """
                 SELECT \(positionColumns) FROM usr.position_candidate WHERE partition=? AND book_key=? ORDER BY record_id

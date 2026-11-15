@@ -469,7 +469,8 @@ struct DataV2MigrationTests {
         try #expect(index.promotePendingUserData(bookId: control.id) == .committed(sha256: sha))
         try #expect(index.pendingUserPromotionKeys().isEmpty)
         try #expect(session.readUsers(lease) { try ReadingPositionRows.position($0, book: sha, partition: 0)?.token } == "pending")
-        try #expect(index.reclaimCompletedImport(bookId: control.id))
+        try #expect(!index.reclaimCompletedImport(bookId: control.id))
+        try #expect(index.reclaimCompletedImport(bookId: control.id, userPromotionCommitted: true))
         try session.close()
     }
 

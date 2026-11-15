@@ -1,11 +1,54 @@
+import Foundation
 import GRDB
+
+/// Process-local write admissions. A SHA may only become known after import,
+/// so an admission records an epoch rather than a list of known book keys.
+struct ReadingWriteAdmission: Sendable {
+    let lease: DataSessionLease
+    let configuration: UUID
+    let epoch: UInt64
+}
+
+struct ReadingWriteVersions {
+    private(set) var epoch: UInt64 = 0
+    private var deletions: [String: UInt64] = [:]
+    private var tokens: [String: UUID] = [:]
+
+    mutating func token(for key: String) -> UUID {
+        let key = DataIdentity.canonical(key)
+        if let old = tokens[key] { return old }
+        let token = UUID(); tokens[key] = token; return token
+    }
+
+    mutating func didDelete(_ keys: Set<String>) {
+        guard !keys.isEmpty else { return }
+        epoch += 1
+        for key in keys {
+            let key = DataIdentity.canonical(key)
+            deletions[key] = epoch
+            tokens[key] = nil
+        }
+    }
+
+    func permits(_ admission: ReadingWriteAdmission, lease: DataSessionLease, configuration: UUID, keys: [String]) -> Bool {
+        admission.lease == lease && admission.configuration == configuration &&
+            keys.allSatisfy { deletions[DataIdentity.canonical($0), default: 0] <= admission.epoch }
+    }
+}
 
 /// Pending aliases become formal only after the index has verified the body.
 /// All candidate merges, clear effects and source removals are one usr commit.
 enum PendingUserPromotion {
+    enum Admission {
+        case merge
+        case finishEmpty
+    }
+
     enum Outcome: Equatable, Sendable {
         case notReady
         case committed(sha256: String)
+        case emptySource
+        case retainedRevokedSource
     }
 
     private static let pendingTables = ["position_candidate", "opened_candidate", "annotation_candidate", "reading_fact"]
@@ -42,6 +85,13 @@ enum PendingUserPromotion {
         for table in pendingTables {
             try db.execute(sql: "DELETE FROM usr.\(table) WHERE partition=1 AND book_key=?",
                            arguments: [DataIdentity.canonical(pending)])
+        }
+    }
+
+    fileprivate static func requireEmptySourceReadable(_ db: Database, from pending: String, to formal: String) throws {
+        for (book, part) in [(pending,1),(formal,0)] {
+            try requireFactsAndMarksReadable(db, book: book, partition: part)
+            try ReadingPositionRows.requirePromotionReadable(db, book: book, partition: part)
         }
     }
 
@@ -190,21 +240,103 @@ extension ReaderIndex {
     }
 
     /// Read the completed, scope-bound alias from main inside the same
-    /// writer access; only usr is mutated. The caller may release the index
-    /// alias after this returns committed, never on a throw.
-    func promotePendingUserData(bookId: String) throws -> PendingUserPromotion.Outcome {
+    /// writer access. Reclamation requires a successful merge or an empty
+    /// source proved in that writer, never a denied or retained source.
+    func promotePendingUserData(bookId: String, authorize: (String) throws -> PendingUserPromotion.Admission = { _ in .merge }) throws -> PendingUserPromotion.Outcome {
         try session.writeUsers(lease) { db in
-            guard let sha = try String.fetchOne(db, sql: """
-                SELECT b.content_sha256 FROM main.import_jobs j JOIN main.books b
-                  ON b.id=COALESCE(j.canonical_id,j.book_id)
-                WHERE j.book_id=? AND j.pending_owner=? AND j.phase='complete' AND j.purpose='reading'
-                  AND b.byte_count>0 AND b.chunk_count>0
-                  AND (j.final_sha IS NULL OR j.final_sha=b.content_sha256)
-                  AND EXISTS(SELECT 1 FROM main.chunks c WHERE c.book_id=b.id AND c.chunk_index=0 AND c.end_utf8>c.start_utf8)
-                """, arguments: [bookId,lease.scope.key]),
+            guard let sha = try String.fetchOne(db, sql: "SELECT b.content_sha256 " + Self.completedReadingIdentitySQL +
+                                               " AND j.book_id=?", arguments: [lease.scope.key,bookId]),
                 (try? parseSha256(value: sha)) != nil else { return .notReady }
-            try PendingUserPromotion.merge(db, from: serializeReadingKey(key: .pending(bookId: bookId)), to: sha)
-            return .committed(sha256: sha)
+            let pending = serializeReadingKey(key: .pending(bookId: bookId))
+            switch try authorize(sha) {
+            case .merge:
+                try PendingUserPromotion.merge(db, from: pending, to: sha)
+                return .committed(sha256: sha)
+            case .finishEmpty:
+                // A revoked import cannot write, even on explicit retry.
+                // Known, local, and quarantined rows all retain this alias.
+                try PendingUserPromotion.requireEmptySourceReadable(db, from: pending, to: sha)
+                let owned = Self.bookOwnedUserTables.map { "SELECT 1 FROM usr.\($0) WHERE book_key=?1" }
+                let empty = try Bool.fetchOne(db, sql: "SELECT NOT EXISTS(" + owned.joined(separator: " UNION ALL ") + ")",
+                                              arguments: [DataIdentity.canonical(pending)]) == true
+                return empty ? .emptySource : .retainedRevokedSource
+            }
+        }
+    }
+
+    private static let completedReadingIdentitySQL = """
+        FROM main.import_jobs j JOIN main.books b ON b.id=COALESCE(j.canonical_id,j.book_id)
+        WHERE j.pending_owner=? AND j.phase='complete' AND j.purpose='reading'
+          AND b.byte_count>0 AND b.chunk_count>0
+          AND (j.final_sha IS NULL OR j.final_sha=b.content_sha256)
+          AND EXISTS(SELECT 1 FROM main.chunks c WHERE c.book_id=b.id AND c.chunk_index=0 AND c.end_utf8>c.start_utf8)
+        """
+
+    private static let bookOwnedUserTables = [
+        "metadata_text_candidate", "tag_candidate", "cover_candidate", "position_candidate",
+        "opened_candidate", "chapter_override_candidate", "annotation_candidate", "reading_fact",
+        "statistics_clear", "quarantined_record", "local_hidden_book", "local_preferred_file", "local_resume",
+    ]
+
+    func bookKeysForUserDeletion() throws -> Set<String> {
+        try session.readUsers(lease) { db in
+            let selects = Self.bookOwnedUserTables.map { "SELECT book_key FROM usr.\($0) WHERE book_key IS NOT NULL" }
+            return Set(try String.fetchAll(db, sql: selects.joined(separator: " UNION ")).filter {
+                (try? parseReadingKey(value: $0)) != nil
+            })
+        }
+    }
+
+    /// The requested pending alias alone does not authorize deleting the
+    /// formal book. A requested SHA also deletes its verified pending aliases.
+    /// No index or cloud state changes in this user transaction.
+    func deleteUserBooks(_ requested: Set<String>, activeReadingIDs: Set<String>, busyError: () -> any Error) throws -> Set<String> {
+        try session.writeUsers(lease) { db in
+            var targets = Set(requested.map(DataIdentity.canonical))
+            var busyKeys = targets
+            for key in targets {
+                switch try parseReadingKey(value: key) {
+                case .formal(let sha):
+                    let ids = try String.fetchAll(db, sql: "SELECT j.book_id " + Self.completedReadingIdentitySQL +
+                                                  " AND b.content_sha256=?", arguments: [lease.scope.key,sha])
+                    for id in ids { targets.insert(serializeReadingKey(key: .pending(bookId: id))) }
+                case .pending(let id):
+                    if let sha = try String.fetchOne(db, sql: "SELECT b.content_sha256 " + Self.completedReadingIdentitySQL +
+                                                     " AND j.book_id=?", arguments: [lease.scope.key,id]) {
+                        busyKeys.insert(sha)
+                    }
+                }
+            }
+            busyKeys.formUnion(targets)
+            for id in activeReadingIDs {
+                guard let body = try? Self.body(db, id: id, scope: lease.scope.key),
+                      !busyKeys.contains(body.sha), !busyKeys.contains(serializeReadingKey(key: .pending(bookId: id)))
+                else { throw busyError() }
+            }
+
+            // An unknown cover payload can still refer to an existing asset.
+            // When in doubt retain the bytes, while deleting the owned facts.
+            let canReclaimCover = try Bool.fetchOne(db, sql: """
+                SELECT NOT EXISTS(SELECT 1 FROM usr.quarantined_record
+                    WHERE (source_type='UserValue' AND (logical_key IS NULL OR logical_key LIKE '%/cover'))
+                      OR source_type IN ('cover_candidate','CoverCandidate','UserCover'))
+                AND NOT EXISTS(SELECT 1 FROM usr.cover_candidate WHERE schema_version<>1)
+                """) == true
+            for key in targets {
+                let assets = canReclaimCover ? try String.fetchAll(db, sql: """
+                    SELECT DISTINCT asset_id FROM usr.cover_candidate WHERE book_key=? AND asset_id IS NOT NULL
+                    """, arguments: [key]) : []
+                for table in Self.bookOwnedUserTables {
+                    try db.execute(sql: "DELETE FROM usr.\(table) WHERE book_key=?", arguments: [key])
+                }
+                for asset in assets {
+                    try db.execute(sql: """
+                        DELETE FROM usr.cover_asset WHERE asset_id=? AND NOT EXISTS(
+                            SELECT 1 FROM usr.cover_candidate c WHERE c.asset_id=cover_asset.asset_id)
+                        """, arguments: [asset])
+                }
+            }
+            return targets
         }
     }
 }

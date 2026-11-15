@@ -410,25 +410,35 @@ extension ReaderIndex {
         _ = try reclaimCompletedImport(bookId: control.id)
     }
 
-    func reclaimCompletedImports(retainedBookIds: [String]) throws -> [String] {
-        try reclaim(retained: Set(retainedBookIds), only: nil)
+    func completedReadingImportIDs(bookId: String? = nil) throws -> [String] {
+        try read { db in
+            try String.fetchAll(db, sql: """
+                SELECT book_id FROM main.import_jobs WHERE phase='complete' AND purpose='reading'
+                AND pending_owner=? AND (? IS NULL OR book_id=?) ORDER BY book_id
+                """, arguments: [self.lease.scope.key,bookId,bookId])
+        }
     }
 
-    func reclaimCompletedImport(bookId: String) throws -> Bool {
-        try reclaim(retained: [], only: bookId).isEmpty
+    func reclaimCompletedImports(retainedBookIds: [String], promotedReadingBookIDs: Set<String> = []) throws -> [String] {
+        try reclaim(retained: Set(retainedBookIds), promoted: promotedReadingBookIDs, only: nil)
     }
 
-    private func reclaim(retained: Set<String>, only: String?) throws -> [String] {
+    func reclaimCompletedImport(bookId: String, userPromotionCommitted: Bool = false) throws -> Bool {
+        try reclaim(retained: [], promoted: userPromotionCommitted ? [bookId] : [], only: bookId).isEmpty
+    }
+
+    private func reclaim(retained: Set<String>, promoted: Set<String>, only: String?) throws -> [String] {
         try withTaskMap { active in
             let byWorker = Set(active.filter { $0.value.control?.isRunning == true }.keys)
             let remaining = try write { db in
                 let done = try Row.fetchAll(db, sql: """
-                    SELECT book_id,canonical_id FROM main.import_jobs
+                    SELECT book_id,canonical_id,purpose FROM main.import_jobs
                     WHERE phase='complete' AND pending_owner=? AND (? IS NULL OR book_id=?)
                     """, arguments: [lease.scope.key,only,only])
                 for row in done {
                     let id: String = row["book_id"]
                     guard !retained.contains(id), !byWorker.contains(id) else { continue }
+                    guard row["purpose"] as String == "restoration" || promoted.contains(id) else { continue }
                     if let canonical = row["canonical_id"] as String? {
                         try db.execute(sql: "UPDATE main.library_files SET book_id=? WHERE book_id=?", arguments: [canonical,id])
                         try db.execute(sql: "UPDATE main.source_imports SET book_id=? WHERE book_id=?", arguments: [canonical,id])

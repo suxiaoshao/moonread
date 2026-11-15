@@ -48,8 +48,7 @@ extension AppDataService {
         else { userDataOperationBusy = false }
     }
     func localReadingWriteLease(_ key: String) -> UUID {
-        if let token = localReadingWriteLeases[key] { return token }
-        let token = UUID(); localReadingWriteLeases[key] = token; return token
+        readingWriteVersions.token(for: key)
     }
     func readingDataInventory() async throws -> ReadingDataInventory {
         let configuration = userCloudConfigurationRevision
@@ -118,10 +117,7 @@ extension AppDataService {
     }
     func allReadingDataKeysForDeletion() async throws -> (keys: Set<String>, configuration: UUID) {
         let configuration = userCloudConfigurationRevision
-        let formal = try await userStore().allReadingDataKeys()
-        let keys = try await userStore(pending: true).allReadingDataKeys().union(formal)
-        guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-        return (keys, configuration)
+        return (try relationalUserIndex().bookKeysForUserDeletion(), configuration)
     }
     /// Inspect only task/source metadata; never materialize or open the original.
     func pendingReadingData(_ key: String) throws -> PendingReadingData {
@@ -171,45 +167,32 @@ extension AppDataService {
         try resumeImport(item.bookID)
     }
     func deleteReadingData(_ keys: Set<String>, configuration expected: UUID? = nil) async throws -> Bool {
+        guard !keys.isEmpty else { return true }
         let configuration = expected ?? userCloudConfigurationRevision
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-        for key in keys { _ = try parseReadingKey(value: key) }
+        let selectedSHAs = Set<String>(try keys.compactMap {
+            if case let .formal(sha) = try parseReadingKey(value: $0) { return sha }
+            return nil
+        })
         // Finish writes before checking live readers; completed/failed batches
         // no longer own reading leases or need a separate discard operation.
         await managementStatisticsWriter().drain()
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
-        let effective = try indexStore().resolveReadingKeys(keys: keys.map { try parseReadingKey(value: $0) })
-        let busyKeys = keys.union(effective.map { serializeReadingKey(key: $0.effective) })
-        guard !readingDataIsBusy(busyKeys) else { throw ReadingDataError.busy }
-        let pending = try await userStore(pending: true)
-        let formal = try await userStore()
-        let pendingKeys = try await pending.allReadingDataKeys()
-        let owned = try await formal.allReadingDataKeys().union(pendingKeys)
-        let resolutions = try indexStore().resolveReadingKeys(keys: owned.map { try parseReadingKey(value: $0) })
-        let aliases = keys.union(resolutions.filter { keys.contains(serializeReadingKey(key: $0.effective)) }.map { serializeReadingKey(key: $0.original) })
-        // A stop between these commits leaves formal data visible and retryable.
-        // No durable receipt can later delete data that has arrived since then.
-        try await pending.deleteReadingData(keys: aliases)
-        try await formal.deleteReadingData(keys: keys.union(aliases))
-        for key in busyKeys.union(aliases) { localReadingWriteLeases[key] = UUID() }
-        for alias in aliases {
-            if case let .pending(id) = try parseReadingKey(value: alias) { promotedUserKeys.remove(id); pendingPromotionIDs.remove(id) }
-        }
+        let index = try relationalUserIndex()
+        let deleted = try index.deleteUserBooks(keys, activeReadingIDs: activeReadingIDsForDeletion()) { ReadingDataError.busy }
+        // Stamp only successful, owned deletions, before any suspended work
+        // can enter this gate and before publishing notifications.
+        readingWriteVersions.didDelete(deleted)
         queryCache.removeAll(); cancelRecentRestoration(); dataChanged(); scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
         NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
+        // User data is already committed. Only the original formal selection
+        // authorizes offline cache eviction, never an expanded alias or SHA.
+        guard identityMayRun() else { return selectedSHAs.isEmpty }
         do {
-            // Retain every other book's untransferred pending data before the
-            // existing completed-job reclaim, including jobs not yet recovered.
-            let remaining = try await pending.allReadingDataKeys()
-            pendingPromotionIDs.formUnion(try remaining.compactMap {
-                if case let .pending(id) = try parseReadingKey(value: $0) { return id }
-                return nil
-            })
-            guard identityMayRun() else { return false }
-            try reclaimImports(indexStore())
-            return try clearDeletedReadingBodyCaches(keys)
-        } catch { return false }
+            try reclaimImports(index)
+            return try clearDeletedReadingBodyCaches(selectedSHAs, index: index)
+        } catch { return selectedSHAs.isEmpty }
     }
     private func managementStatisticsWriter() async -> StatisticsWriter {
         if let dataManagementWriter { return dataManagementWriter }

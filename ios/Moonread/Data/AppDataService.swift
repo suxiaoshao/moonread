@@ -272,7 +272,8 @@ actor AppDataService {
         let resume: (Bool) -> Void
     }
     var userDataOperationWaiters: [UserDataOperationWaiter] = []
-    var localReadingWriteLeases: [String: UUID] = [:]
+    var readingWriteVersions = ReadingWriteVersions()
+    var importWriteAdmissions: [String: ReadingWriteAdmission] = [:]
     var promotedUserKeys = Set<String>()
     var shownCandidates: [String: [AnnotationCandidate]] = [:]
     var undoCandidates: [String: ([AnnotationCandidate], AnnotationContent?)] = [:]
@@ -392,9 +393,9 @@ actor AppDataService {
     }
     func identityMayRun() -> Bool { foregroundHolds.isEmpty }
     func cacheProtectedBookIDs() -> [String] { Array(Set(readers.keys).union(imports.keys).union(pendingPromotionIDs)) }
-    func readingDataIsBusy(_ keys: Set<String>) -> Bool {
-        if foregroundHolds.keys.contains(where: { !$0.hasPrefix("book:") }) { return true }
-        return readers.keys.contains { id in (try? userKey(id).storageKey).map(keys.contains) ?? true }
+    func activeReadingIDsForDeletion() throws -> Set<String> {
+        guard foregroundHolds.keys.allSatisfy({ $0.hasPrefix("book:") }) else { throw ReadingDataError.busy }
+        return Set(readers.keys)
     }
     private func holdForeground(_ key: String) {
         foregroundHolds[key, default: 0] += 1
@@ -795,8 +796,10 @@ actor AppDataService {
         if pendingPromotionIDs.contains(id) { ReaderOpenDiagnostics.worker(id, "reclaim.skip.pendingPromotion"); return }
         if !promotedUserKeys.contains(id) { ReaderOpenDiagnostics.worker(id, "reclaim.skip.notPromoted"); return }
         guard let core else { ReaderOpenDiagnostics.worker(id, "reclaim.skip.noCore"); return }
-        guard (try? core.reclaimCompletedImport(bookId: id)) == true else { ReaderOpenDiagnostics.worker(id, "reclaim.skip.coreRetainedOrError"); return }
+        guard (try? core.reclaimCompletedImport(bookId: id, userPromotionCommitted: true)) == true else { ReaderOpenDiagnostics.worker(id, "reclaim.skip.coreRetainedOrError"); return }
         ReaderOpenDiagnostics.worker(id, "reclaim.success")
+        promotedUserKeys.remove(id)
+        importWriteAdmissions[id] = nil
         if let bytes = sourceDefaults.data(forKey: importSourceKey(id)), let source = try? JSONDecoder().decode(ImportSource.self, from: bytes),
            let key = source.sourceKey, sourceDefaults.string(forKey: key) == id { sourceDefaults.removeObject(forKey: key) }
         sourceDefaults.removeObject(forKey: importSourceKey(id))
@@ -805,7 +808,11 @@ actor AppDataService {
     }
     func reclaimImports(_ core: ReaderIndex) throws {
         ReaderOpenDiagnostics.background("reclaim.begin"); defer { ReaderOpenDiagnostics.background("reclaim.return") }
-        let remaining = Set(try core.reclaimCompletedImports(retainedBookIds: Array(Set(readers.keys).union(imports.keys).union(pendingPromotionIDs))))
+        let remaining = Set(try core.reclaimCompletedImports(
+            retainedBookIds: Array(Set(readers.keys).union(imports.keys).union(pendingPromotionIDs)),
+            promotedReadingBookIDs: promotedUserKeys))
+        promotedUserKeys.formIntersection(remaining)
+        importWriteAdmissions = importWriteAdmissions.filter { remaining.contains($0.key) }
         for id in Array(changeRevisions.keys) where !remaining.contains(id) && readers[id] == nil && imports[id] == nil && changeWaiters[id] == nil { changeRevisions[id] = nil }
         let sourcePrefix = importSourceKey("")
         let draftPrefix = "Moonread.sourceDraft.\(testSession ?? "library")."
@@ -837,6 +844,7 @@ actor AppDataService {
     private func launchImport(core: ReaderIndex, control: ImportControl, descriptor: ImportSource, encoding: String?) {
         let work = SourceImportWork(core: core, control: control, source: descriptor, encoding: encoding)
         let id = control.bookId()
+        if importWriteAdmissions[id] == nil { importWriteAdmissions[id] = readingWriteAdmission(core.lease) }
         imports[id] = work
         work.start { [weak self] event in
             Task(priority: .userInitiated) { await self?.receiveImportEvent(id, token: work.token, event: event) }
@@ -853,17 +861,21 @@ actor AppDataService {
 
     private func importFinished(_ id: String) async {
         defer { dataChanged(); if cloudLibraryRetryAfterImport { scheduleCloudLibraryUpdate() } }
-        let sourceFileID = imports.removeValue(forKey: id)?.source.fileID
+        guard let work = imports.removeValue(forKey: id) else { return }
+        let sourceFileID = work.source.fileID
         let requested = requestedResumes.remove(id) != nil
         let automatic = automaticallyPaused.remove(id) != nil
         if requested || automatic {
             if appActive { try? resumeImport(id) }
             else { automaticallyPaused.insert(id) }
         }
-        if let core {
+        if let core, core === work.core {
             if (try? core.importStatus(bookId: id).phase) == .complete {
-                do { try await promoteUserData(id) }
-                catch { pendingPromotionIDs.insert(id) }
+                // Admission spans the worker, not just its finish callback.
+                // A later manual/read-triggered check uses that same admission.
+                let configuration = userCloudConfigurationRevision
+                try? await promoteUserData(id)
+                guard self.core === core, userCloudConfigurationRevision == configuration else { return }
                 if let key = try? userKey(id), case .formal = key {
                     NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil, userInfo: [
                         "keys": [key.storageKey, ReadingKey.pending(bookId: id).storageKey],

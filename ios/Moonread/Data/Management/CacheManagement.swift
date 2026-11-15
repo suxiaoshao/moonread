@@ -87,13 +87,20 @@ extension AppDataService {
         NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
         return result
     }
-    func clearDeletedReadingBodyCaches(_ keys: Set<String>) throws -> Bool {
-        let core = try indexStore(); var allRemoved = true
-        for body in try core.cacheInventory(protectedBookIds: cacheProtectedBookIDs()) where keys.contains(body.contentSha256) {
-            let removed = try core.evictCachedBody(bookId: body.bookId, contentSha256: body.contentSha256, verifiedFile: nil, protectedBookIds: cacheProtectedBookIDs(), discardOffline: true)
+
+    func clearDeletedReadingBodyCaches(_ selectedSHAs: Set<String>, index: ReaderIndex) throws -> Bool {
+        guard !selectedSHAs.isEmpty else { return true }
+        defer {
+            queryCache.removeAll()
+            NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
+        }
+        let protected = cacheProtectedBookIDs()
+        var allRemoved = true
+        for body in try index.cacheInventory(protectedBookIds: protected) where selectedSHAs.contains(body.contentSha256) {
+            let removed = try index.evictCachedBody(bookId: body.bookId, contentSha256: body.contentSha256,
+                                                    verifiedFile: nil, protectedBookIds: protected, discardOffline: true)
             if !removed { allRemoved = false }
         }
-        queryCache.removeAll(); NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
         return allRemoved
     }
 }
