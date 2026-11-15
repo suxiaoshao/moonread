@@ -23,7 +23,8 @@ pub(crate) use error::Result;
 pub(crate) use identity::content::valid_sha;
 pub(crate) use identity::sha::sha256_hex;
 pub(crate) use identity::source::{decoding_policy, valid_source_key};
-pub(crate) use reading::chapters::{ChapterScanner, IndexedChapter};
+pub(crate) use reading::chapters::ChapterScanner;
+pub use reading::chapters::IndexedChapter;
 pub(crate) use storage::rows::{book, book_row, chunk, chunk_index, unsigned_column};
 
 uniffi::setup_scaffolding!();

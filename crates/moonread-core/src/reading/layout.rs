@@ -377,11 +377,16 @@ impl BlankScanner {
     pub fn discard_published_prefix(&mut self) {
         self.updates.clear();
     }
-    pub fn publish(&mut self, db: &Connection, id: &str) -> Result<()> {
+    pub(crate) fn drain(&mut self) -> (u64, Vec<(u64, u64)>) {
         let frontier = if self.visible { self.end } else { self.start };
+        (frontier, std::mem::take(&mut self.updates))
+    }
+
+    pub fn publish(&mut self, db: &Connection, id: &str) -> Result<()> {
+        let (frontier, updates) = self.drain();
         // Replay may visit an already published prefix. Never regress a generation.
         db.execute("UPDATE books SET projection_end=?2,projection_revision=projection_revision+1 WHERE id=?1 AND projection_end<?2 AND byte_count>=?2", params![id, frontier as i64])?;
-        for (start, end) in self.updates.drain(..) {
+        for (start, end) in updates {
             let changed = db.execute("INSERT INTO reading_blanks VALUES(?1,?2,?3) ON CONFLICT(book_id,start_utf8) DO UPDATE SET end_utf8=excluded.end_utf8 WHERE end_utf8<>excluded.end_utf8", params![id, start as i64, end as i64])?;
             if changed > 0 {
                 db.execute(

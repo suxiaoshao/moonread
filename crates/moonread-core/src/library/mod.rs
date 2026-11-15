@@ -6,5 +6,6 @@ pub use crate::library::bookshelf::*;
 pub use order::{ReadingDataSortEntry, reading_data_order};
 pub use tools::{
     ChapterEntry, ChapterOutline, MarkKind, MarkPage, ReaderMark, SearchBatch, SearchHit,
-    SearchJob, SearchRange, TextRange,
+    SearchJob, SearchRange, SearchScanState, SearchScanStep, TextRange, advance_search_scan,
+    begin_search_scan,
 };

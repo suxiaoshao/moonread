@@ -1,5 +1,6 @@
 pub(crate) mod book_details;
 pub(crate) mod chapters;
+pub(crate) mod compute;
 mod cover_page;
 pub(crate) mod input;
 pub(crate) mod layout;
@@ -13,5 +14,6 @@ pub use crate::reading::progressive::{
     ReadingWindowStatus, SourceSpan,
 };
 pub use chapters::ChapterInfo;
+pub use compute::*;
 pub use cover_page::extract_page_images;
 pub use layout::*;

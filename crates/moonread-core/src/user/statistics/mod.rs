@@ -2,6 +2,7 @@
 //! The platform supplies scene visibility, actual text interaction and a monotonic clock.
 pub(crate) mod coverage;
 
+use crate::reading::compute::StepState;
 use crate::*;
 use rusqlite::Connection;
 use rusqlite::params;
@@ -72,87 +73,204 @@ pub struct ReadingClock(Mutex<ClockState>);
 impl ReadingClock {
     #[uniffi::constructor]
     pub fn new(book_id: String) -> Arc<Self> {
-        Arc::new(Self(Mutex::new(ClockState {
+        Arc::new(Self(Mutex::new(ClockState::new(
             book_id,
-            session_id: Uuid::new_v4().to_string(),
-            visit_id: Uuid::new_v4().to_string(),
+            Uuid::new_v4().to_string(),
+            Uuid::new_v4().to_string(),
+        ))))
+    }
+
+    pub fn update(&self, moment: ReadingMoment) -> Vec<ReadingSlice> {
+        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        state.advance(
+            moment,
+            || Uuid::new_v4().to_string(),
+            || Uuid::new_v4().to_string(),
+        )
+    }
+
+    pub fn break_visit(&self) -> Vec<ReadingSlice> {
+        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        state.relocate(Uuid::new_v4().to_string())
+    }
+}
+
+#[derive(uniffi::Object)]
+pub struct ReadingClockState(StepState<ClockState>);
+
+#[derive(uniffi::Record)]
+pub struct ReadingClockStep {
+    pub next: Arc<ReadingClockState>,
+    pub slices: Vec<ReadingSlice>,
+}
+
+#[uniffi::export]
+pub fn begin_reading_clock(
+    book_id: String,
+    session_id: String,
+    visit_id: String,
+) -> Result<Arc<ReadingClockState>> {
+    if book_id.is_empty() || session_id.is_empty() || visit_id.is_empty() {
+        return Err(ReaderError::InvalidSettings);
+    }
+    Ok(Arc::new(ReadingClockState(StepState::new(
+        ClockState::new(book_id, session_id, visit_id),
+    ))))
+}
+
+/// The host gives each step its own UUID seed; with more than one new slice
+/// the later IDs are deterministic suffixes of that seed. Pending slices keep
+/// the IDs assigned when they were opened, even if emitted on another step.
+#[uniffi::export]
+pub fn advance_reading_clock(
+    previous: Arc<ReadingClockState>,
+    moment: ReadingMoment,
+    fact_seed: String,
+    next_visit_id: String,
+) -> Result<ReadingClockStep> {
+    let mut state = previous.0.take()?;
+    let seed = Uuid::parse_str(&fact_seed)
+        .map_err(|_| ReaderError::InvalidSettings)?
+        .to_string();
+    if next_visit_id.is_empty()
+        || moment.unix_ms.unsigned_abs()
+            > (i64::MAX - i64::from(i32::MAX) * 1000 - 2 * DAY_MS) as u64
+        || state.charged_for(&moment) > DAY_MS as u64
+    {
+        return Err(ReaderError::InvalidRange);
+    }
+    let mut ordinal = 0;
+    let slices = state.advance(
+        moment,
+        || {
+            let id = if ordinal == 0 {
+                seed.clone()
+            } else {
+                format!("{seed}:{ordinal}")
+            };
+            ordinal += 1;
+            id
+        },
+        || next_visit_id,
+    );
+    Ok(ReadingClockStep {
+        next: Arc::new(ReadingClockState(StepState::new(state))),
+        slices,
+    })
+}
+
+/// The host has already settled the last moment before a relocation.
+#[uniffi::export]
+pub fn break_reading_clock_visit(
+    previous: Arc<ReadingClockState>,
+    next_visit_id: String,
+) -> Result<ReadingClockStep> {
+    let mut state = previous.0.take()?;
+    if next_visit_id.is_empty() {
+        return Err(ReaderError::InvalidSettings);
+    }
+    let slices = state.relocate(next_visit_id);
+    Ok(ReadingClockStep {
+        next: Arc::new(ReadingClockState(StepState::new(state))),
+        slices,
+    })
+}
+
+impl ClockState {
+    fn new(book_id: String, session_id: String, visit_id: String) -> Self {
+        Self {
+            book_id,
+            session_id,
+            visit_id,
             previous: None,
             remaining: IDLE_MS,
             pending: None,
-        })))
+        }
     }
 
-    /// Returning to the foreground does not refresh idle credit. Only explicit interaction does.
-    /// Emits immutable, retryable facts at checkpoints, pauses, midnight and kind changes.
-    pub fn update(&self, moment: ReadingMoment) -> Vec<ReadingSlice> {
-        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+    fn charged_for(&self, moment: &ReadingMoment) -> u64 {
+        let Some(previous) = &self.previous else {
+            return 0;
+        };
+        if !previous.readable {
+            return 0;
+        }
+        let elapsed = moment.monotonic_ms.saturating_sub(previous.monotonic_ms);
+        if previous.automatic_moving {
+            moment
+                .automatic_milliseconds
+                .saturating_sub(previous.automatic_milliseconds)
+                .min(elapsed)
+        } else {
+            elapsed.min(self.remaining)
+        }
+    }
+
+    /// Only explicit interaction refreshes idle credit. Emits checkpoints at
+    /// the same column/visit/midnight boundaries for both adapters.
+    fn advance(
+        &mut self,
+        moment: ReadingMoment,
+        mut next_id: impl FnMut() -> String,
+        next_visit: impl FnOnce() -> String,
+    ) -> Vec<ReadingSlice> {
         let mut output = Vec::new();
-        if let Some(previous) = state.previous.clone() {
+        if let Some(previous) = self.previous.clone() {
             let elapsed = moment.monotonic_ms.saturating_sub(previous.monotonic_ms);
-            let charged = if previous.readable {
-                if previous.automatic_moving {
-                    moment
-                        .automatic_milliseconds
-                        .saturating_sub(previous.automatic_milliseconds)
-                        .min(elapsed)
-                } else {
-                    elapsed.min(state.remaining)
-                }
-            } else {
-                0
-            };
+            let charged = self.charged_for(&moment);
             if charged > 0 {
-                state.append(&previous, charged, &mut output);
+                self.append(&previous, charged, &mut output, &mut next_id);
                 if !previous.automatic_moving {
-                    state.remaining -= charged;
+                    self.remaining -= charged;
                 }
             }
-            // append assumes contiguous wall time. Automatic motion can cover
-            // only part (or none) of this interval; do not join the next motion
-            // to the pending slice across the uncharged gap.
             if previous.automatic_moving && charged < elapsed {
-                state.finish(&mut output);
+                self.finish(&mut output);
             }
-            let clock_changed = (moment.unix_ms.saturating_sub(previous.unix_ms)
-                - i64::try_from(elapsed).unwrap_or(i64::MAX))
-            .unsigned_abs()
-                > 2_000;
+            let clock_changed = moment
+                .unix_ms
+                .saturating_sub(previous.unix_ms)
+                .saturating_sub(i64::try_from(elapsed).unwrap_or(i64::MAX))
+                .unsigned_abs()
+                > 2000;
             if !moment.readable
                 || moment.preview != previous.preview
                 || moment.utc_offset_seconds != previous.utc_offset_seconds
                 || clock_changed
-                || (state.remaining == 0 && !moment.automatic_moving)
+                || (self.remaining == 0 && !moment.automatic_moving)
             {
-                state.finish(&mut output);
-                state.visit_id = Uuid::new_v4().to_string();
+                self.finish(&mut output);
+                self.visit_id = next_visit();
             }
         }
         if moment.interaction {
-            state.remaining = IDLE_MS;
+            self.remaining = IDLE_MS;
         }
-        state.previous = Some(moment);
+        self.previous = Some(moment);
         output
     }
 
-    /// Called after settling the current moment, before an intentional relocation.
-    pub fn break_visit(&self) -> Vec<ReadingSlice> {
-        let mut state = self.0.lock().unwrap_or_else(|e| e.into_inner());
+    fn relocate(&mut self, visit_id: String) -> Vec<ReadingSlice> {
         let mut output = Vec::new();
-        state.finish(&mut output);
-        state.visit_id = Uuid::new_v4().to_string();
-        state.previous = None;
+        self.finish(&mut output);
+        self.visit_id = visit_id;
+        self.previous = None;
         output
     }
-}
 
-impl ClockState {
     fn finish(&mut self, output: &mut Vec<ReadingSlice>) {
         if let Some(value) = self.pending.take() {
             output.push(value);
         }
     }
 
-    fn append(&mut self, moment: &ReadingMoment, duration: u64, output: &mut Vec<ReadingSlice>) {
+    fn append(
+        &mut self,
+        moment: &ReadingMoment,
+        duration: u64,
+        output: &mut Vec<ReadingSlice>,
+        next_id: &mut impl FnMut() -> String,
+    ) {
         let mut at = moment.unix_ms;
         let mut left = duration as i64;
         while left > 0 {
@@ -160,7 +278,7 @@ impl ClockState {
             let day = (at + offset).div_euclid(DAY_MS);
             let boundary = (day + 1) * DAY_MS - offset;
             let slice = self.pending.get_or_insert_with(|| ReadingSlice {
-                id: Uuid::new_v4().to_string(),
+                id: next_id(),
                 session_id: self.session_id.clone(),
                 visit_id: self.visit_id.clone(),
                 book_id: self.book_id.clone(),
@@ -581,6 +699,49 @@ mod tests {
         assert_eq!(duration(&slices), 50_000);
         assert!(slices.iter().all(|s| s.preview));
     }
+    #[test]
+    fn explicit_clock_preserves_pending_id_and_midnight_with_host_inputs() -> Result<()> {
+        let day_start = DAY_MS - 28_800_000 - 5_000;
+        let mut start = moment(0, true, true);
+        start.unix_ms = day_start;
+        let a = begin_reading_clock("book".into(), "session".into(), "visit-1".into())?;
+        let seed_a = "00000000-0000-4000-8000-000000000001";
+        let seed_b = "00000000-0000-4000-8000-000000000002";
+        let seed_c = "00000000-0000-4000-8000-000000000003";
+        let b = advance_reading_clock(a.clone(), start, seed_a.into(), "unused-a".into())?.next;
+        assert!(
+            advance_reading_clock(a, moment(0, true, true), seed_a.into(), "unused-a".into())
+                .is_err()
+        );
+        let mut mid = moment(2_000, true, false);
+        mid.unix_ms = day_start + 2_000;
+        let waiting = advance_reading_clock(b, mid, seed_b.into(), "unused-b".into())?;
+        assert!(waiting.slices.is_empty());
+        let mut stop = moment(10_000, false, false);
+        stop.unix_ms = day_start + 10_000;
+        let ended = advance_reading_clock(waiting.next, stop, seed_c.into(), "visit-2".into())?;
+        assert_eq!(duration(&ended.slices), 10_000);
+        assert_eq!(
+            ended
+                .slices
+                .iter()
+                .map(|s| s.id.as_str())
+                .collect::<Vec<_>>(),
+            [seed_b, seed_c]
+        );
+        assert!(
+            ended
+                .slices
+                .iter()
+                .all(|s| s.session_id == "session" && s.visit_id == "visit-1")
+        );
+        assert_eq!(ended.slices[0].local_day + 1, ended.slices[1].local_day);
+        let broken = break_reading_clock_visit(ended.next.clone(), "visit-3".into())?;
+        assert!(broken.slices.is_empty());
+        assert!(break_reading_clock_visit(ended.next, "visit-4".into()).is_err());
+        Ok(())
+    }
+
     #[test]
     fn midnight_and_clock_changes_do_not_change_elapsed_time() {
         let clock = ReadingClock::new("book".into());

@@ -15,6 +15,26 @@ struct DataV2MigrationTests {
         try .confirmed(container: "test.invalid", environment: environment, recordName: name)
     }
 
+    @Test func rustImportStateIsConsumedAcrossUniFFI() throws {
+        let state = try beginTextImport(encoding: "UTF-8", mode: .index, publishedChunkCount: 0)
+        let alias = state
+        let first = try advanceTextImport(previous: state, bytes: Data("Chapter 1\r".utf8), eof: false, replay: [])
+        #expect(first.identity == nil)
+        #expect(throws: ReaderError.InvalidSettings) {
+            try advanceTextImport(previous: alias, bytes: Data(), eof: false, replay: [])
+        }
+        let next = try #require(first.next)
+        let end = try advanceTextImport(previous: next, bytes: Data("\n\r\n正文。".utf8), eof: true, replay: [])
+        #expect(end.next == nil)
+        #expect(end.chunks.map { $0.chunk.text }.joined() == "Chapter 1\n\n正文。")
+        #expect(end.chapters.map(\.title) == ["Chapter 1"])
+        #expect(end.blankUpdates.first?.startUtf8 == 10 && end.blankUpdates.first?.endUtf8 == 11)
+        #expect(end.identity?.utf8Bytes == UInt64("Chapter 1\n\n正文。".utf8.count))
+        #expect(throws: ReaderError.InvalidSettings) {
+            try advanceTextImport(previous: next, bytes: Data(), eof: true, replay: [])
+        }
+    }
+
     @Test func copiesReleasedIndexAndLeavesOriginalUntouched() async throws {
         let root = try sandbox()
         defer { try? FileManager.default.removeItem(at: root) }
