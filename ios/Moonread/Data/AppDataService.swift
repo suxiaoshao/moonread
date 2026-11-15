@@ -130,8 +130,11 @@ struct ReadingWindow: Equatable, Sendable {
 /// Merely hiding the view (for settings, for example) does not end this lease.
 final class ReadingLease: Sendable {
     let id: String
+    let writeAdmission: ReadingWriteAdmission?
     private let service: AppDataService
-    init(id: String, service: AppDataService) { self.id = id; self.service = service }
+    init(id: String, service: AppDataService, writeAdmission: ReadingWriteAdmission? = nil) {
+        self.id = id; self.service = service; self.writeAdmission = writeAdmission
+    }
     deinit {
         let id = id, service = service
         Task { await service.releaseReading(id) }
@@ -518,7 +521,9 @@ actor AppDataService {
     func advanceRebuild(_ job: ChapterRebuild) throws -> ChapterRebuildProgress { try job.nextBatch() }
     func rebuildPreview(_ job: ChapterRebuild, from offset: UInt64 = 0) throws -> [ChapterInfo] { try job.preview(fromUtf8: offset, limit: 80) }
     func applyRebuild(_ job: ChapterRebuild) throws { try job.apply(); dataChanged() }
-    func savePosition(bookID: String, offset: UInt64) async throws { try await writePosition(bookID, offset: offset) }
+    func savePosition(bookID: String, offset: UInt64, admission: ReadingWriteAdmission? = nil) async throws {
+        try await writePosition(bookID, offset: offset, admission: admission)
+    }
 
     func window(book: BookInfo, offset: UInt64) async throws -> ReadingWindow {
         let frame = try await bookQuery(book.id).readingFrame(bookId: book.id, offsetUtf8: offset)
@@ -759,7 +764,7 @@ actor AppDataService {
                 sourceDefaults.set(try JSONEncoder().encode(moved), forKey: importSourceKey(previous))
                 try resumeSystemInterruptedImport(previous)
                 if trackReadingSource { readingSourceIDs[previous] = file.id }
-                return retainReading(previous)
+                return retainReading(previous, index: core)
             }
             pauseImport(previous)
         }
@@ -767,20 +772,21 @@ actor AppDataService {
                                       sourceKey: key, fileID: file.id, expectedRawSHA: raw.sha)
         let id = try startImport(title: file.title, descriptor: descriptor, encoding: encoding)
         if trackReadingSource { readingSourceIDs[id] = file.id }
-        return retainReading(id)
+        return retainReading(id, index: core)
     }
 
     func openReading(_ id: String, diagnostic: ReaderOpenTrace? = nil) throws -> ReadingLease {
         let opening = "opening:" + UUID().uuidString
         holdForeground(opening); defer { releaseForeground(opening) }
         diagnostic?.mark("lease.actor.begin"); defer { diagnostic?.mark("lease.actor.return") }
-        _ = try indexStore().importStatus(bookId: id)
-        return retainReading(id)
+        let index = try indexStore()
+        _ = try index.importStatus(bookId: id)
+        return retainReading(id, index: index)
     }
 
-    private func retainReading(_ id: String) -> ReadingLease {
+    private func retainReading(_ id: String, index: ReaderIndex) -> ReadingLease {
         holdForeground("book:" + id)
-        return ReadingLease(id: id, service: self)
+        return ReadingLease(id: id, service: self, writeAdmission: readingWriteAdmission(index.lease))
     }
 
     fileprivate func releaseReading(_ id: String) {
@@ -985,7 +991,7 @@ actor AppDataService {
         pauseImport(id)
         let next = try startImport(title: indexStore().importStatus(bookId: id).text.title, descriptor: descriptor, encoding: decoding == "auto" ? nil : decoding)
         if let fileID = descriptor.fileID { readingSourceIDs[next] = fileID }
-        return retainReading(next)
+        return retainReading(next, index: try indexStore())
     }
 
 

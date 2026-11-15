@@ -7,8 +7,9 @@ extension ReaderSession {
         guard !isLeaving, let id = readingID else { return }
         hasEnteredBody = true; hasLocalReadingInteraction = true
         saveTask?.cancel()
+        let admission = readingLease?.writeAdmission
         saveTask = Task { [weak self, service] in
-            do { try Task.checkCancellation(); try await service.savePosition(bookID: id, offset: offset) }
+            do { try Task.checkCancellation(); try await service.savePosition(bookID: id, offset: offset, admission: admission) }
             catch is CancellationError { }
             catch { self?.reportAutomaticReadingError(error) }
         }

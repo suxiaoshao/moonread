@@ -239,50 +239,45 @@ extension AppDataService {
         return nil
     }
     /// Separate LWW fact: never manufactures a reading position or activity.
-    func recordBookOpened(_ id: String, at milliseconds: Int64) async throws {
-        let admission = try readingWriteAdmission(indexStore().lease)
+    func recordBookOpened(_ id: String, at milliseconds: Int64, admission offered: ReadingWriteAdmission? = nil) async throws {
+        let admission = try offered ?? readingWriteAdmission(indexStore().lease)
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
-        let key = try admittedReadingKey(id, admission: admission)
-        if let file = readingSourceIDs[id] { sourceDefaults.set(file, forKey: "Moonread.preferredFile." + key) }
-        var hidden = sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []
-        hidden.removeAll { $0 == key }; sourceDefaults.set(hidden, forKey: "Moonread.hiddenRecent")
-        _ = try await userStore(for: key).put("opened/" + key, value: String(milliseconds), device: userDevice)
-        dataChanged()
-    }
-    func writePosition(_ id: String, offset: UInt64, expectedConfiguration: UUID? = nil) async throws {
-        let admission = try readingWriteAdmission(indexStore().lease)
-        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
-        if let expectedConfiguration, expectedConfiguration != userCloudConfigurationRevision { throw CancellationError() }
-        _ = try admittedReadingKey(id, admission: admission)
-        try promoteUserDataLocked(id, admission: admission)
-        let core = try indexStore(), key = try admittedReadingKey(id, admission: admission)
-        let normalized = try core.normalizedPosition(bookId: id, offsetUtf8: offset)
-        if let file = readingSourceIDs[id] { sourceDefaults.set(file, forKey: "Moonread.preferredFile." + key) }
-        var hidden = sourceDefaults.stringArray(forKey: "Moonread.hiddenRecent") ?? []; hidden.removeAll { $0 == key }
-        sourceDefaults.set(hidden, forKey: "Moonread.hiddenRecent")
-        let store = try await userStore(for: key)
-        var hint = positionSourceHint(id)
-        if hint == nil, let old = try await store.value("position/" + key) {
-            hint = try UserSyncJSON.decode(PositionValue.self, old, as: UserSyncJSON.position).source_hint
-        }
-        let value = PositionValue(content_key: key, offset: normalized, source_hint: hint)
-        let json = String(decoding: try JSONEncoder().encode(value), as: UTF8.self)
-        let stored = try await store.put("position/\(key)", value: json, device: userDevice)
-        // A missing device receipt may suppress a hint, but cannot turn a
-        // committed position into a failed write or rewrite that sync fact.
-        do { try rememberLocalReadingPosition(key: key, offset: normalized, token: stored.token) }
-        catch { UserSyncJSON.quarantined("local reading baseline") }
+        try Task.checkCancellation()
+        let index = try relationalUserIndex()
+        try index.writeReadingOpened(bookID: id, openedAt: milliseconds, file: readingSourceIDs[id], device: userDevice,
+                                     now: readingClock, token: UUID().uuidString,
+                                     authorize: readingWriteAuthorization(id, admission: admission, index: index))
         dataChanged()
     }
 
-    private func admittedReadingKey(_ id: String, admission: ReadingWriteAdmission) throws -> String {
-        let index = try indexStore()
-        let key = try index.resolveBookIdentity(bookId: id).key.storageKey
-        guard readingWriteVersions.permits(admission, lease: index.lease, configuration: userCloudConfigurationRevision,
-                                          keys: [ReadingKey.pending(bookId: id).storageKey, key])
-        else { throw CancellationError() }
-        return key
+    func writePosition(_ id: String, offset: UInt64, expectedConfiguration: UUID? = nil,
+                       admission offered: ReadingWriteAdmission? = nil) async throws {
+        let admission = try offered ?? readingWriteAdmission(indexStore().lease)
+        await acquireUserDataOperation(); defer { releaseUserDataOperation() }
+        try Task.checkCancellation()
+        if let expectedConfiguration, expectedConfiguration != userCloudConfigurationRevision { throw CancellationError() }
+        let index = try relationalUserIndex()
+        let authorize = readingWriteAuthorization(id, admission: admission, index: index)
+        // Do not run promotion on behalf of a stale request. The writer
+        // repeats authorization against the actual commit-time key.
+        try authorize(index.resolveBookIdentity(bookId: id).key.storageKey)
+        try promoteUserDataLocked(id, admission: admission, index: index)
+        try index.writeReadingPosition(bookID: id, offset: offset, hint: positionSourceHint(id), file: readingSourceIDs[id],
+                                       device: userDevice, now: readingClock, token: UUID().uuidString, authorize: authorize)
+        dataChanged()
     }
+
+    private var readingClock: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
+
+    private func readingWriteAuthorization(_ id: String, admission: ReadingWriteAdmission, index: ReaderIndex) -> (String) throws -> Void {
+        let versions = readingWriteVersions, lease = index.lease, configuration = userCloudConfigurationRevision
+        let pending = ReadingKey.pending(bookId: id).storageKey
+        return { key in
+            guard versions.permits(admission, lease: lease, configuration: configuration, keys: [pending,key])
+            else { throw CancellationError() }
+        }
+    }
+
     func userMarks(_ id: String, kind: MarkKind? = nil, snapshot: NoteCandidates? = nil) async throws -> [ReaderMark] {
         try await promoteUserData(id)
         let key = try userKey(id).storageKey

@@ -95,6 +95,10 @@ enum PendingUserPromotion {
         }
     }
 
+    fileprivate static func clearIdentityFence(_ db: Database, bookID: String) throws {
+        try db.execute(sql: "DELETE FROM usr.pending_identity_fence WHERE book_id=?", arguments: [bookID])
+    }
+
     private static func requireFactsAndMarksReadable(_ db: Database, book: String, partition: Int) throws {
         let args: StatementArguments = [partition,DataIdentity.canonical(book)]
         if try Bool.fetchOne(db, sql: """
@@ -248,9 +252,14 @@ extension ReaderIndex {
                                                " AND j.book_id=?", arguments: [lease.scope.key,bookId]),
                 (try? parseSha256(value: sha)) != nil else { return .notReady }
             let pending = serializeReadingKey(key: .pending(bookId: bookId))
-            switch try authorize(sha) {
+            let admission = try authorize(sha)
+            let fenced = try Bool.fetchOne(db, sql: """
+                SELECT EXISTS(SELECT 1 FROM usr.pending_identity_fence WHERE book_id=? AND deleted_sha256=?)
+                """, arguments: [bookId,sha]) == true
+            switch fenced ? .finishEmpty : admission {
             case .merge:
                 try PendingUserPromotion.merge(db, from: pending, to: sha)
+                try PendingUserPromotion.clearIdentityFence(db, bookID: bookId)
                 return .committed(sha256: sha)
             case .finishEmpty:
                 // A revoked import cannot write, even on explicit retry.
@@ -259,7 +268,9 @@ extension ReaderIndex {
                 let owned = Self.bookOwnedUserTables.map { "SELECT 1 FROM usr.\($0) WHERE book_key=?1" }
                 let empty = try Bool.fetchOne(db, sql: "SELECT NOT EXISTS(" + owned.joined(separator: " UNION ALL ") + ")",
                                               arguments: [DataIdentity.canonical(pending)]) == true
-                return empty ? .emptySource : .retainedRevokedSource
+                guard empty else { return .retainedRevokedSource }
+                try PendingUserPromotion.clearIdentityFence(db, bookID: bookId)
+                return .emptySource
             }
         }
     }
@@ -294,9 +305,11 @@ extension ReaderIndex {
         try session.writeUsers(lease) { db in
             var targets = Set(requested.map(DataIdentity.canonical))
             var busyKeys = targets
+            var formal = [String]()
             for key in targets {
                 switch try parseReadingKey(value: key) {
                 case .formal(let sha):
+                    formal.append(sha)
                     let ids = try String.fetchAll(db, sql: "SELECT j.book_id " + Self.completedReadingIdentitySQL +
                                                   " AND b.content_sha256=?", arguments: [lease.scope.key,sha])
                     for id in ids { targets.insert(serializeReadingKey(key: .pending(bookId: id))) }
@@ -314,6 +327,28 @@ extension ReaderIndex {
                 else { throw busyError() }
             }
 
+            if !formal.isEmpty {
+                // A task whose body is still unproven may produce pending
+                // rows before the process exits. Fence precisely these jobs,
+                // never future imports or the whole SHA namespace.
+                let unresolved = try String.fetchAll(db, sql: """
+                    SELECT book_id FROM main.import_jobs
+                    WHERE pending_owner=? AND purpose='reading' AND book_id NOT IN (
+                      SELECT j.book_id \(Self.completedReadingIdentitySQL)
+                      AND length(b.content_sha256)=64 AND b.content_sha256 NOT GLOB '*[^0-9a-f]*'
+                    )
+                    """, arguments: [lease.scope.key,lease.scope.key])
+                if !unresolved.isEmpty {
+                    let insert = try db.makeStatement(sql: """
+                        INSERT INTO usr.pending_identity_fence(book_id,deleted_sha256) VALUES(?,?)
+                        ON CONFLICT(book_id,deleted_sha256) DO NOTHING
+                        """)
+                    for id in unresolved {
+                        for sha in formal { try insert.execute(arguments: [id,sha]) }
+                    }
+                }
+            }
+
             // An unknown cover payload can still refer to an existing asset.
             // When in doubt retain the bytes, while deleting the owned facts.
             let canReclaimCover = try Bool.fetchOne(db, sql: """
@@ -328,6 +363,9 @@ extension ReaderIndex {
                     """, arguments: [key]) : []
                 for table in Self.bookOwnedUserTables {
                     try db.execute(sql: "DELETE FROM usr.\(table) WHERE book_key=?", arguments: [key])
+                }
+                if case .pending(let id) = try parseReadingKey(value: key) {
+                    try PendingUserPromotion.clearIdentityFence(db, bookID: id)
                 }
                 for asset in assets {
                     try db.execute(sql: """

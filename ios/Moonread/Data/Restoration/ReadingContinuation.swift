@@ -34,36 +34,21 @@ extension Notification.Name {
 }
 
 extension AppDataService {
-    private var localResumeScope: String { userDirectoryName + "/" + (userCloudOwner() ?? "local") }
-
-    func rememberLocalReadingPosition(key: String, offset: UInt64, token: String) throws {
-        guard case .formal = try parseReadingKey(value: key) else { return }
-        var state = try LocalReadingResumeState(data: sourceDefaults.data(forKey: LocalReadingResumeState.key))
-        var entries = state.scopes[localResumeScope] ?? [:]
-        entries[key] = .init(offset: offset, lastLocalWriteToken: token)
-        state.scopes[localResumeScope] = entries
-        sourceDefaults.set(try JSONEncoder().encode(state), forKey: LocalReadingResumeState.key)
-    }
-
     /// Promotion uses the existing unique position winner; no second reduction
     /// or max-offset policy is introduced for a continuation suggestion.
     func readingResumeContext(_ id: String, currentOffset: UInt64? = nil) async throws -> ReadingResumeContext {
         let configuration = userCloudConfigurationRevision
         try await promoteUserData(id)
+        guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
         guard case .formal(let key) = try userKey(id) else { return .init(localOffset: nil, candidate: nil) }
-        let state = try LocalReadingResumeState(data: sourceDefaults.data(forKey: LocalReadingResumeState.key))
-        guard let local = state.scopes[localResumeScope]?[key], let localToken = local.lastLocalWriteToken else {
+        guard let basis = try relationalUserIndex().readingResumeBasis(sha: key) else {
             return .init(localOffset: nil, candidate: nil)
         }
-        let stored = try await userStore().storedValue("position/" + key)
-        guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
-        guard let stored, stored.token != localToken else { return .init(localOffset: nil, candidate: nil) }
-        let winner = try PositionCandidate(stored)
-        let localOffset = currentOffset ?? local.offset
+        let localOffset = currentOffset ?? basis.local.offset
         let query = try await bookQuery(id)
-        let location = try query.readingContinuation(bookId: id, localOffset: localOffset, winningOffset: winner.value.offset)
+        let location = try query.readingContinuation(bookId: id, localOffset: localOffset, winningOffset: basis.winner.value.offset)
         guard configuration == userCloudConfigurationRevision else { throw CancellationError() }
         return ReadingResumeContext(localOffset: location == nil ? nil : localOffset,
-            candidate: location.map { .init(contentSHA: key, token: stored.token, configuration: configuration, location: $0) })
+            candidate: location.map { .init(contentSHA: key, token: basis.winner.token, configuration: configuration, location: $0) })
     }
 }

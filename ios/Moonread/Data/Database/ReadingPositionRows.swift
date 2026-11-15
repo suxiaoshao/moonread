@@ -206,3 +206,46 @@ enum ReadingPositionRows {
         try LocalReadingRows.setHidden(db, book: book, hidden: false)
     }
 }
+
+extension ReaderIndex {
+    func writeReadingOpened(bookID: String, openedAt: Int64, file: String?, device: String, now: Int64, token: String,
+                            authorize: (String) throws -> Void) throws {
+        try session.writeUsers(lease) { db in
+            let body = try Self.body(db, id: bookID, scope: lease.scope.key)
+            try authorize(body.sha)
+            try ReadingPositionRows.recordOpened(db, book: body.sha, openedAt: openedAt, file: file, device: device, now: now, token: token)
+        }
+    }
+
+    func writeReadingPosition(bookID: String, offset: UInt64, hint: PositionSourceHint?, file: String?, device: String,
+                              now: Int64, token: String, authorize: (String) throws -> Void) throws {
+        try session.writeUsers(lease) { db in
+            let body = try Self.body(db, id: bookID, scope: lease.scope.key)
+            try authorize(body.sha)
+            let offset = min(offset, body.bytes)
+            let normalized: UInt64
+            if body.bytes == 0 { normalized = 0 }
+            else {
+                let chunk = try Self.chunk(db, id: body.id, at: offset)
+                let bytes = chunk.text.utf8
+                var cursor = bytes.index(bytes.startIndex, offsetBy: Int(offset - chunk.startUtf8))
+                // Match the released UTF-8 byte-boundary rule, including EOF.
+                while cursor != bytes.endIndex && bytes[cursor] & 0xc0 == 0x80 {
+                    bytes.formIndex(before: &cursor)
+                }
+                normalized = chunk.startUtf8 + UInt64(bytes.distance(from: bytes.startIndex, to: cursor))
+            }
+            _ = try ReadingPositionRows.recordPosition(db, book: body.sha, offset: normalized, hint: hint, file: file,
+                                                        device: device, now: now, token: token)
+        }
+    }
+
+    func readingResumeBasis(sha: String) throws -> (local: LocalReadingRows.Resume, winner: ReadingPositionRows.Position)? {
+        try session.readUsers(lease) { db in
+            guard let local = try LocalReadingRows.resume(db, book: sha), let token = local.token,
+                  let winner = try ReadingPositionRows.position(db, book: sha, partition: 0), winner.token != token
+            else { return nil }
+            return (local, winner)
+        }
+    }
+}

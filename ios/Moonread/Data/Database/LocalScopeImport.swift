@@ -28,6 +28,7 @@ enum LocalScopeImport {
         .init(name: "local_hidden_book", key: ["book_key"]),
         .init(name: "local_preferred_file", key: ["book_key"]),
         .init(name: "local_resume", key: ["book_key"]),
+        .init(name: "pending_identity_fence", key: ["book_id", "deleted_sha256"]),
     ]
 
     static func withSource(_ db: Database, url: URL, readOnly: Bool, _ body: () throws -> Void) throws {
