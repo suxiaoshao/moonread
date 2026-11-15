@@ -93,9 +93,32 @@ CREATE TABLE usr.reading_fact (
 CREATE INDEX usr.fact_day_book ON reading_fact(local_day,book_key,fact_id);
 CREATE INDEX usr.fact_book_session ON reading_fact(book_key,session_id,started_ms);
 CREATE INDEX usr.fact_identity ON reading_fact(fact_id,partition);
+CREATE TABLE usr.reading_segment (
+ partition INTEGER NOT NULL CHECK(partition IN (0,1)), segment_id TEXT NOT NULL, schema_version INTEGER NOT NULL,
+ owner_instance_id TEXT NOT NULL CHECK(length(owner_instance_id)>0), book_key TEXT NOT NULL,
+ title_at_reading TEXT NOT NULL, device_id TEXT NOT NULL, session_id TEXT NOT NULL, visit_id TEXT NOT NULL,
+ started_ms INTEGER NOT NULL, ended_ms INTEGER NOT NULL CHECK(ended_ms>started_ms),
+ local_day INTEGER NOT NULL, utc_offset_seconds INTEGER NOT NULL, preview INTEGER NOT NULL CHECK(preview IN (0,1)),
+ revision TEXT NOT NULL CHECK(length(revision)=20 AND revision NOT GLOB '*[^0-9]*'
+   AND revision BETWEEN '00000000000000000001' AND '18446744073709551615'),
+ duration_ms INTEGER NOT NULL CHECK(duration_ms BETWEEN 1 AND 86400000),
+ sealed INTEGER NOT NULL CHECK(sealed IN (0,1)),
+ first_exposure_start TEXT NOT NULL CHECK(length(first_exposure_start)=20 AND first_exposure_start NOT GLOB '*[^0-9]*'
+   AND first_exposure_start<='18446744073709551615'),
+ exposure_version INTEGER NOT NULL,
+ exposures_text TEXT NOT NULL CHECK(length(CAST(exposures_text AS BLOB)) BETWEEN 2 AND 262144),
+ local_unsealed_owner TEXT CHECK(local_unsealed_owner IS NULL OR (sealed=0 AND local_unsealed_owner=owner_instance_id)),
+ PRIMARY KEY(partition,segment_id)
+);
+CREATE INDEX usr.segment_identity ON reading_segment(segment_id,partition);
+CREATE INDEX usr.segment_book_session ON reading_segment(book_key,session_id,started_ms);
+CREATE INDEX usr.segment_local_unsealed ON reading_segment(local_unsealed_owner,partition,segment_id)
+ WHERE local_unsealed_owner IS NOT NULL AND sealed=0;
 CREATE TABLE usr.statistics_clear (
  partition INTEGER NOT NULL CHECK (partition IN (0,1)), record_id TEXT NOT NULL, schema_version INTEGER NOT NULL,
  book_key TEXT, session_id TEXT, through_ms INTEGER NOT NULL,
+ scope_kind TEXT NOT NULL DEFAULT 'range' CHECK(scope_kind IN ('range','captured')),
+ CHECK(schema_version<>1 OR scope_kind='range'),
  PRIMARY KEY(partition,record_id)
 );
 CREATE INDEX usr.clear_scope ON statistics_clear(book_key,session_id,through_ms);
@@ -105,6 +128,15 @@ CREATE TABLE usr.statistics_clear_id (
  FOREIGN KEY(partition,clear_id) REFERENCES statistics_clear(partition,record_id) ON DELETE CASCADE
 );
 CREATE INDEX usr.clear_id_reverse ON statistics_clear_id(partition,fact_id);
+CREATE TABLE usr.statistics_clear_segment (
+ partition INTEGER NOT NULL, clear_id TEXT NOT NULL, segment_id TEXT NOT NULL,
+ observed_revision TEXT NOT NULL CHECK(length(observed_revision)=20 AND observed_revision NOT GLOB '*[^0-9]*'
+   AND observed_revision BETWEEN '00000000000000000001' AND '18446744073709551615'),
+ covered_through_ms INTEGER NOT NULL,
+ PRIMARY KEY(partition,clear_id,segment_id),
+ FOREIGN KEY(partition,clear_id) REFERENCES statistics_clear(partition,record_id) ON DELETE CASCADE
+);
+CREATE INDEX usr.clear_segment_reverse ON statistics_clear_segment(partition,segment_id,covered_through_ms);
 CREATE TABLE usr.source_decoding_candidate (
  partition INTEGER NOT NULL CHECK(partition IN (0,1)), record_id TEXT NOT NULL, schema_version INTEGER NOT NULL,
  raw_sha256 TEXT NOT NULL, logical_key TEXT NOT NULL, device_id TEXT NOT NULL, updated_ms INTEGER NOT NULL, token TEXT NOT NULL,
@@ -251,10 +283,34 @@ CREATE TABLE usr.reading_fact_current (
 CREATE INDEX usr.reading_fact_current_by_day ON reading_fact_current(local_day,book_key,fact_id);
 CREATE INDEX usr.reading_fact_current_by_book_day ON reading_fact_current(book_key,local_day);
 CREATE INDEX usr.reading_fact_current_by_visit ON reading_fact_current(book_key,session_id,visit_id,started_ms,fact_id);
+CREATE TABLE usr.reading_segment_current (
+ segment_id TEXT PRIMARY KEY NOT NULL, source_partition INTEGER NOT NULL, book_key TEXT NOT NULL,
+ session_id TEXT NOT NULL, visit_id TEXT NOT NULL,
+ started_ms INTEGER NOT NULL, ended_ms INTEGER NOT NULL CHECK(ended_ms>started_ms),
+ local_day INTEGER NOT NULL, utc_offset_seconds INTEGER NOT NULL, preview INTEGER NOT NULL CHECK(preview IN (0,1)),
+ revision TEXT NOT NULL CHECK(length(revision)=20 AND revision NOT GLOB '*[^0-9]*'
+   AND revision BETWEEN '00000000000000000001' AND '18446744073709551615'),
+ duration_ms INTEGER NOT NULL CHECK(duration_ms BETWEEN 1 AND 86400000),
+ trim_prefix_ms INTEGER NOT NULL CHECK(trim_prefix_ms BETWEEN 0 AND 86399999),
+ first_exposure_start TEXT NOT NULL CHECK(length(first_exposure_start)=20 AND first_exposure_start NOT GLOB '*[^0-9]*'
+   AND first_exposure_start<='18446744073709551615'),
+ FOREIGN KEY(source_partition,segment_id) REFERENCES reading_segment(partition,segment_id) DEFERRABLE INITIALLY DEFERRED
+);
+CREATE INDEX usr.reading_segment_current_by_day ON reading_segment_current(local_day,book_key,segment_id);
+CREATE INDEX usr.reading_segment_current_by_book_day ON reading_segment_current(book_key,local_day);
+CREATE INDEX usr.reading_segment_current_by_visit ON reading_segment_current(book_key,session_id,visit_id,started_ms,segment_id);
+CREATE VIEW usr.reading_contribution_head AS
+ SELECT 'fact' AS kind,fact_id AS id,source_partition,book_key,session_id,visit_id,started_ms,ended_ms,
+   local_day,utc_offset_seconds,preview,duration_ms,first_exposure_start
+ FROM reading_fact_current
+ UNION ALL
+ SELECT 'segment',segment_id,source_partition,book_key,session_id,visit_id,started_ms,ended_ms,
+   local_day,utc_offset_seconds,preview,duration_ms,first_exposure_start
+ FROM reading_segment_current;
 CREATE TABLE usr.reading_day (
  book_key TEXT NOT NULL, local_day INTEGER NOT NULL,
  duration_ms TEXT NOT NULL CHECK(length(duration_ms)=20 AND duration_ms NOT GLOB '*[^0-9]*' AND duration_ms<='18446744073709551615'),
- fact_count INTEGER NOT NULL CHECK(fact_count>0),
+ fact_count INTEGER NOT NULL CHECK(fact_count>0), -- effective fact or segment contributions
  first_started_ms INTEGER NOT NULL, last_ended_ms INTEGER NOT NULL, last_normal_ended_ms INTEGER,
  PRIMARY KEY(book_key,local_day)
 );

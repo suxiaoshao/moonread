@@ -32,13 +32,14 @@ enum ReadingFactRows {
 
     static let quarantineFactTypes = "'ReadingFact','reading_fact'"
     static let quarantineClearTypes = "'StatisticsClear','statistics_clear'"
+    static let knownClearVersions = "(1,2)"
     private static let currentVersion = "schema_version=1 AND derivation_version=1 AND exposure_version=1"
     static let notCleared = """
         NOT EXISTS (
-            SELECT 1 FROM usr.statistics_clear c WHERE c.partition=f.partition AND c.schema_version=1
+            SELECT 1 FROM usr.statistics_clear c WHERE c.partition=f.partition AND c.schema_version IN \(knownClearVersions)
               AND (c.book_key IS NULL OR c.book_key=f.book_key)
               AND (c.session_id IS NULL OR c.session_id=f.session_id)
-              AND (f.started_ms<=c.through_ms OR EXISTS(
+              AND ((c.scope_kind='range' AND f.started_ms<=c.through_ms) OR EXISTS(
                 SELECT 1 FROM usr.statistics_clear_id i WHERE i.partition=c.partition
                   AND i.clear_id=c.record_id AND i.fact_id=f.fact_id
               ))
@@ -52,7 +53,7 @@ enum ReadingFactRows {
               AND source_type IN (\(quarantineClearTypes))
               AND (?2 IS NULL OR book_key IS NULL OR book_key=?2)
               AND (?3 IS NULL OR session_id IS NULL OR session_id=?3)
-            UNION ALL SELECT 1 FROM usr.statistics_clear WHERE partition=?1 AND schema_version<>1
+            UNION ALL SELECT 1 FROM usr.statistics_clear WHERE partition=?1 AND schema_version NOT IN \(knownClearVersions)
               AND (?2 IS NULL OR book_key IS NULL OR book_key=?2)
               AND (?3 IS NULL OR session_id IS NULL OR session_id=?3))
             """, arguments: [partition,book.map(DataIdentity.canonical),session.map(identity)]) == true {
@@ -105,7 +106,7 @@ enum ReadingFactRows {
         // just rows within the cutoff clock's range. Unknown facts remain raw.
         let id = clearRecordID(book: book, session: session, through: through, ids: ids)
         try db.execute(sql: """
-            INSERT INTO usr.statistics_clear VALUES (?,?,1,?,?,?)
+            INSERT INTO usr.statistics_clear(partition,record_id,schema_version,book_key,session_id,through_ms) VALUES (?,?,1,?,?,?)
             ON CONFLICT(partition,record_id) DO NOTHING
             """, arguments: [partition,id,bookKey,sessionKey,through])
         let insert = try db.makeStatement(sql: """

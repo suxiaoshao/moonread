@@ -280,6 +280,21 @@ extension ReaderIndex {
         return sha
     }
 
+    /// Exchange already knows the affected catalogue aliases. Use the same
+    /// admission predicate for that bounded set, including failed lookups,
+    /// without a separate SQL execution for each original book ID.
+    static func verifiedReadingSHAs(_ db: Database, pendingIDs: Set<String>, scope: String) throws -> [String: String] {
+        guard !pendingIDs.isEmpty else { return [:] }
+        let ids = try UserSyncJSON.encode(pendingIDs.sorted())
+        let rows = try Row.fetchAll(db, sql: "SELECT j.book_id,b.content_sha256 " + completedReadingIdentitySQL + """
+            AND j.book_id IN (SELECT value FROM json_each(?))
+            """, arguments: [scope,ids])
+        return Dictionary(uniqueKeysWithValues: rows.compactMap { row in
+            let sha: String = row["content_sha256"]
+            return (try? parseSha256(value: sha)).map { (row["book_id"] as String,$0) }
+        })
+    }
+
     func verifiedReadingAliasIDs(_ db: Database, sha: String) throws -> [String] {
         try String.fetchAll(db, sql: "SELECT j.book_id " + Self.completedReadingIdentitySQL +
                             " AND b.content_sha256=?", arguments: [lease.scope.key,sha])

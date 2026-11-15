@@ -58,11 +58,13 @@ enum MetadataExchangeRows {
         }
 
         var aliases = [String: Set<String>]()
-        var verified = [String: String]()
-        for file in files {
-            guard let id = file.original, let catalogue = file.catalogueSHA, counts[catalogue] != nil else { continue }
-            if let sha = try verified[id] ?? ReaderIndex.verifiedReadingSHA(db, pendingID: id, scope: scope), sha == catalogue {
-                verified[id] = sha
+        let candidates = files.compactMap { file -> (id: String, catalogue: String)? in
+            guard let id = file.original, let catalogue = file.catalogueSHA, counts[catalogue] != nil else { return nil }
+            return (id,catalogue)
+        }
+        let verified = try ReaderIndex.verifiedReadingSHAs(db, pendingIDs: Set(candidates.map(\.id)), scope: scope)
+        for (id,catalogue) in candidates {
+            if let sha = verified[id], sha == catalogue {
                 aliases[sha, default: []].insert(serializeReadingKey(key: .pending(bookId: id)))
             }
         }

@@ -1,7 +1,9 @@
 //! Reading facts, not wall-clock time between opening and closing a book.
 //! The platform supplies scene visibility, actual text interaction and a monotonic clock.
 mod coverage;
+mod segments;
 pub use coverage::{CoverageFact, visible_dwell_ranges};
+pub use segments::*;
 
 use crate::reading::compute::StepState;
 use crate::*;
@@ -31,7 +33,7 @@ pub struct ReadingMoment {
 }
 
 /// A bounded observation of visible text. It is evidence, not a claim of read coverage.
-#[derive(Clone, Debug, Serialize, Deserialize, uniffi::Record)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, uniffi::Record)]
 #[serde(deny_unknown_fields)]
 pub struct ReadingExposure {
     pub start_utf8: u64,
@@ -60,9 +62,81 @@ struct ClockState {
     book_id: String,
     session_id: String,
     visit_id: String,
+    timing: ReadingTiming,
+    pending: Option<ReadingSlice>,
+}
+
+struct ReadingTiming {
     previous: Option<ReadingMoment>,
     remaining: u64,
-    pending: Option<ReadingSlice>,
+}
+
+struct ReadingCharge {
+    previous: ReadingMoment,
+    elapsed: u64,
+    duration: u64,
+    ends_visit: bool,
+}
+
+impl ReadingTiming {
+    fn new() -> Self {
+        Self {
+            previous: None,
+            remaining: IDLE_MS,
+        }
+    }
+
+    fn charged_for(&self, moment: &ReadingMoment) -> u64 {
+        let Some(previous) = &self.previous else {
+            return 0;
+        };
+        if !previous.readable {
+            return 0;
+        }
+        let elapsed = moment.monotonic_ms.saturating_sub(previous.monotonic_ms);
+        if previous.automatic_moving {
+            moment
+                .automatic_milliseconds
+                .saturating_sub(previous.automatic_milliseconds)
+                .min(elapsed)
+        } else {
+            elapsed.min(self.remaining)
+        }
+    }
+
+    /// Both collectors share the released idle, motion and clock-jump rules.
+    /// Storage-specific checkpoint and boundary handling is in the caller.
+    fn advance(&mut self, moment: ReadingMoment) -> Option<ReadingCharge> {
+        let duration = self.charged_for(&moment);
+        let charge = self.previous.take().map(|previous| {
+            let elapsed = moment.monotonic_ms.saturating_sub(previous.monotonic_ms);
+            if !previous.automatic_moving {
+                self.remaining -= duration;
+            }
+            let clock_changed = moment
+                .unix_ms
+                .saturating_sub(previous.unix_ms)
+                .saturating_sub(i64::try_from(elapsed).unwrap_or(i64::MAX))
+                .unsigned_abs()
+                > 2000;
+            let ends_visit = !moment.readable
+                || moment.preview != previous.preview
+                || moment.utc_offset_seconds != previous.utc_offset_seconds
+                || clock_changed
+                || (self.remaining == 0 && !moment.automatic_moving);
+            ReadingCharge {
+                previous,
+                elapsed,
+                duration,
+                ends_visit,
+            }
+        });
+        if moment.interaction {
+            self.remaining = IDLE_MS;
+        }
+        self.previous = Some(moment);
+        charge
+    }
 }
 
 #[derive(uniffi::Object)]
@@ -134,7 +208,7 @@ pub fn advance_reading_clock(
     if next_visit_id.is_empty()
         || moment.unix_ms.unsigned_abs()
             > (i64::MAX - i64::from(i32::MAX) * 1000 - 2 * DAY_MS) as u64
-        || state.charged_for(&moment) > DAY_MS as u64
+        || state.timing.charged_for(&moment) > DAY_MS as u64
     {
         return Err(ReaderError::InvalidRange);
     }
@@ -181,27 +255,8 @@ impl ClockState {
             book_id,
             session_id,
             visit_id,
-            previous: None,
-            remaining: IDLE_MS,
+            timing: ReadingTiming::new(),
             pending: None,
-        }
-    }
-
-    fn charged_for(&self, moment: &ReadingMoment) -> u64 {
-        let Some(previous) = &self.previous else {
-            return 0;
-        };
-        if !previous.readable {
-            return 0;
-        }
-        let elapsed = moment.monotonic_ms.saturating_sub(previous.monotonic_ms);
-        if previous.automatic_moving {
-            moment
-                .automatic_milliseconds
-                .saturating_sub(previous.automatic_milliseconds)
-                .min(elapsed)
-        } else {
-            elapsed.min(self.remaining)
         }
     }
 
@@ -214,38 +269,18 @@ impl ClockState {
         next_visit: impl FnOnce() -> String,
     ) -> Vec<ReadingSlice> {
         let mut output = Vec::new();
-        if let Some(previous) = self.previous.clone() {
-            let elapsed = moment.monotonic_ms.saturating_sub(previous.monotonic_ms);
-            let charged = self.charged_for(&moment);
-            if charged > 0 {
-                self.append(&previous, charged, &mut output, &mut next_id);
-                if !previous.automatic_moving {
-                    self.remaining -= charged;
-                }
+        if let Some(charge) = self.timing.advance(moment) {
+            if charge.duration > 0 {
+                self.append(&charge.previous, charge.duration, &mut output, &mut next_id);
             }
-            if previous.automatic_moving && charged < elapsed {
+            if charge.previous.automatic_moving && charge.duration < charge.elapsed {
                 self.finish(&mut output);
             }
-            let clock_changed = moment
-                .unix_ms
-                .saturating_sub(previous.unix_ms)
-                .saturating_sub(i64::try_from(elapsed).unwrap_or(i64::MAX))
-                .unsigned_abs()
-                > 2000;
-            if !moment.readable
-                || moment.preview != previous.preview
-                || moment.utc_offset_seconds != previous.utc_offset_seconds
-                || clock_changed
-                || (self.remaining == 0 && !moment.automatic_moving)
-            {
+            if charge.ends_visit {
                 self.finish(&mut output);
                 self.visit_id = next_visit();
             }
         }
-        if moment.interaction {
-            self.remaining = IDLE_MS;
-        }
-        self.previous = Some(moment);
         output
     }
 
@@ -253,7 +288,7 @@ impl ClockState {
         let mut output = Vec::new();
         self.finish(&mut output);
         self.visit_id = visit_id;
-        self.previous = None;
+        self.timing.previous = None;
         output
     }
 

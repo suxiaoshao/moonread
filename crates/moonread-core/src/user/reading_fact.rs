@@ -38,9 +38,9 @@ impl<'de, D: Deserializer<'de>> Deserializer<'de> for ObjectDeserializer<D> {
 #[repr(transparent)]
 #[derive(Deserialize)]
 #[serde(transparent, bound(deserialize = "T: Deserialize<'de>"))]
-struct JsonObject<T>(#[serde(deserialize_with = "deserialize_object")] T);
+pub(super) struct JsonObject<T>(#[serde(deserialize_with = "deserialize_object")] pub(super) T);
 
-fn deserialize_object<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
+pub(super) fn deserialize_object<'de, T: Deserialize<'de>, D: Deserializer<'de>>(
     deserializer: D,
 ) -> std::result::Result<T, D::Error> {
     T::deserialize(ObjectDeserializer(deserializer))

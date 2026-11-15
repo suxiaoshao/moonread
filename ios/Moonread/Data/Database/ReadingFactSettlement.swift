@@ -46,12 +46,8 @@ enum ReadingFactSettlement {
             [id,partition,book,session,visit,start,end,day,utcOffset,preview,duration,firstExposure]
         }
 
-        var bucket: Bucket { .init(book: book, day: day) }
-        // Location, timing and reading kind affect day quantities. Changing a
-        // selected reference without changing contribution leaves day untouched.
-        func contributesLike(_ other: Head) -> Bool {
-            bucket == other.bucket && start == other.start && end == other.end &&
-                duration == other.duration && preview == other.preview
+        var contribution: ReadingDayRows.Contribution {
+            .init(book: book, day: day, start: start, end: end, duration: duration, preview: preview)
         }
     }
 
@@ -199,7 +195,7 @@ enum ReadingFactSettlement {
     /// Clear or scope barrier changed, not the underlying evidence. Do not
     /// change the classification of an ID and do not load exposure bytes.
     static func settleVisibility(_ db: Database, ids: Set<String>) throws {
-        var changes: [Bucket: Delta] = [:]
+        var changes = ReadingDayRows.Changes()
         for id in Set(ids.map(ReadingFactRows.identity)).sorted() {
             let old = try Row.fetchOne(db, sql: "SELECT source_partition,\(Head.columns) FROM usr.reading_fact_current WHERE fact_id=?",
                                        arguments: [id]).map(Head.init)
@@ -217,11 +213,9 @@ enum ReadingFactSettlement {
             } else {
                 try db.execute(sql: "DELETE FROM usr.reading_fact_current WHERE fact_id=?", arguments: [id])
             }
-            if let old, let selected, old.contributesLike(selected) { continue }
-            if let old { changes[old.bucket, default: .init()].removed.append(old) }
-            if let selected { changes[selected.bucket, default: .init()].added.append(selected) }
+            changes.replace(old?.contribution, with: selected?.contribution)
         }
-        for (bucket,delta) in changes { try updateDay(db, bucket: bucket, delta: delta) }
+        try changes.apply(db)
     }
 
     private static func selectHead(_ db: Database, id: String) throws -> Head? {
@@ -235,7 +229,8 @@ enum ReadingFactSettlement {
                 AND NOT EXISTS(SELECT 1 FROM usr.quarantined_record q WHERE q.partition=f.partition
                     AND source_type IN (\(ReadingFactRows.quarantineClearTypes))
                     AND (q.book_key IS NULL OR q.book_key=f.book_key) AND (q.session_id IS NULL OR q.session_id=f.session_id))
-                AND NOT EXISTS(SELECT 1 FROM usr.statistics_clear unknown WHERE unknown.partition=f.partition AND unknown.schema_version<>1
+                AND NOT EXISTS(SELECT 1 FROM usr.statistics_clear unknown WHERE unknown.partition=f.partition
+                    AND unknown.schema_version NOT IN \(ReadingFactRows.knownClearVersions)
                     AND (unknown.book_key IS NULL OR unknown.book_key=f.book_key)
                     AND (unknown.session_id IS NULL OR unknown.session_id=f.session_id))
                 AND \(ReadingFactRows.notCleared)
@@ -256,14 +251,43 @@ enum ReadingFactSettlement {
         return Set(rows)
     }
 
-    struct Bucket: Hashable {
+}
+
+/// The same checked contribution replacement for immutable facts and mutable
+/// segments. Call after changing the affected current heads, before commit.
+enum ReadingDayRows {
+    struct Contribution: Equatable {
+        let book: String
+        let day, start, end, duration: Int64
+        let preview: Bool
+
+        fileprivate var bucket: Bucket { .init(book: book, day: day) }
+    }
+
+    struct Changes {
+        private var buckets: [Bucket: Delta] = [:]
+
+        mutating func replace(_ old: Contribution?, with new: Contribution?) {
+            // Revision, seal and an equivalent source-ref change are not
+            // new contributions.
+            guard old != new else { return }
+            if let old { buckets[old.bucket, default: .init()].removed.append(old) }
+            if let new { buckets[new.bucket, default: .init()].added.append(new) }
+        }
+
+        func apply(_ db: Database) throws {
+            for (bucket, delta) in buckets { try ReadingDayRows.updateDay(db, bucket: bucket, delta: delta) }
+        }
+    }
+
+    fileprivate struct Bucket: Hashable {
         let book: String
         let day: Int64
     }
 
     private struct Delta {
-        var removed: [Head] = []
-        var added: [Head] = []
+        var removed: [Contribution] = []
+        var added: [Contribution] = []
     }
 
     static func sumMilliseconds(_ values: some Sequence<UInt64>) throws -> UInt64 {
@@ -299,7 +323,7 @@ enum ReadingFactSettlement {
             let extremes = try Row.fetchOne(db, sql: """
                 SELECT MIN(started_ms) AS first,MAX(ended_ms) AS last,
                     MAX(CASE WHEN preview=0 THEN ended_ms END) AS normal
-                FROM usr.reading_fact_current WHERE book_key=? AND local_day=?
+                FROM usr.reading_contribution_head WHERE book_key=? AND local_day=?
                 """, arguments: args)
             first = extremes?["first"]; last = extremes?["last"]; normal = extremes?["normal"]
         } else {
