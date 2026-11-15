@@ -296,18 +296,7 @@ extension AppDataService {
     }
 
     func allLibraryBooks(_ shelfID: String) async throws -> [LibraryEntry] {
-        try await readingQuery(.catalogue(catalogueScope(.init(shelfID: shelfID), recursive: true)),
-                               options: .init(scope: "library-name-cards", fields: [.position, .chapter, .card]))
-            .allLibraryBookCards(shelfId: shelfID)
-    }
-    func libraryTagGroups(_ shelfID: String) async throws -> LibraryTagCatalogue {
-        let tagged = try await readingQuery(.catalogue(catalogueScope(.init(shelfID: shelfID), recursive: true)),
-                               options: .init(scope: "library-tag-cards", fields: [.position, .chapter, .card, .tags]))
-            .allLibraryTagCards(shelfId: shelfID)
-        let cards = Dictionary(uniqueKeysWithValues: tagged.cards.map { ($0.id, $0) })
-        return .init(bookCount: UInt64(tagged.cards.count), groups: tagged.groups.map { group in
-            .init(kind: group.kind, tag: group.tag, entries: group.fileIds.compactMap { cards[$0] })
-        })
+        try await fixedReaderRead { try $0.catalogue(shelfID, grouping: .name).entries }
     }
     /// One-shot consumers (Siri and the no-target system route) use the
     /// identical fixed query, without acquiring a page observation.

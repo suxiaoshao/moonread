@@ -180,16 +180,4 @@ final class LibraryQueryRulesTests: XCTestCase {
         XCTAssertEqual(ordered.map(\.id), [sameName.entry.id, prefix.entry.id], "Equal natural names defer to the next explicit key")
         XCTAssertEqual(LibraryQueryRules.filterAndRank([prefix, missing], spec: .init(profile: .library, configuration: .init(sorts: [.init(field: .rank)]))).count, 2)
     }
-    @MainActor func testSupersededDirectoryResponseCannotReplaceNewScope() async throws {
-        let request = LibraryCatalogueRequest()
-        let entered = expectation(description: "old scope query started")
-        let gate = RestorationGate(entered)
-        let old = Task { try await request.read { await gate.wait(); return [self.candidate("old.txt", ordinal: 0).entry] } }
-        await fulfillment(of: [entered], timeout: 2)
-        let current = try await request.read { [self.candidate("new.txt", ordinal: 0).entry] }
-        XCTAssertEqual(current?.map(\.id), ["new.txt"])
-        await gate.release()
-        let superseded = try await old.value
-        XCTAssertNil(superseded)
-    }
 }

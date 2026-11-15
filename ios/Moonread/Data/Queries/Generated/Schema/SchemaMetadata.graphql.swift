@@ -41,7 +41,9 @@ extension MoonreadQueries {
       "RecentReadingCard": MoonreadQueries.Objects.RecentReadingCard,
       "RecentReadingCover": MoonreadQueries.Objects.RecentReadingCover,
       "RecentReadingFile": MoonreadQueries.Objects.RecentReadingFile,
-      "RecentReadingMetadata": MoonreadQueries.Objects.RecentReadingMetadata
+      "RecentReadingMetadata": MoonreadQueries.Objects.RecentReadingMetadata,
+      "ShelfBookCard": MoonreadQueries.Objects.ShelfBookCard,
+      "ShelfTagGroup": MoonreadQueries.Objects.ShelfTagGroup
     ]
 
     static func objectType(forTypename typename: String) -> ApolloAPI.Object? {

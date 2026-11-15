@@ -12,12 +12,28 @@ struct LibraryAllBooksView: View {
     }
     @Bindable var model: LibraryModel
     let shelfID: String
-    @State private var groups: [LibraryNameGroup] = []
-    @State private var tagGroups: [LibraryTagGroup] = []
-    @State private var bookCount: UInt64 = 0
-    @State private var loaded = false
-    @State private var metadataRevision: UInt64 = 0
-    @State private var loading = LoadingState()
+    @State private var catalogue = CatalogueStore(service: .shared)
+
+    private struct CatalogueRequest: Hashable {
+        let shelfID: String
+        let grouping: LibraryGrouping
+        let requestRevision: Int
+    }
+    private var request: CatalogueRequest {
+        .init(shelfID: shelfID, grouping: model.grouping, requestRevision: catalogue.requestRevision)
+    }
+    private var shownGrouping: LibraryGrouping { catalogue.snapshot?.grouping ?? model.grouping }
+    private var shownShelfID: String { catalogue.snapshot?.shelfID ?? shelfID }
+    private var bookCount: UInt64 { catalogue.snapshot?.bookCount ?? 0 }
+    private var groups: [LibraryNameGroup] {
+        if case .names(let groups) = catalogue.snapshot?.content { groups } else { [] }
+    }
+    private var tagGroups: [CatalogueTagSection] {
+        if case .tags(let groups, _) = catalogue.snapshot?.content { groups } else { [] }
+    }
+    private func card(_ fileID: String) -> LibraryEntry? {
+        if case .tags(_, let cards) = catalogue.snapshot?.content { cards[fileID] } else { nil }
+    }
     @Environment(\.theme) private var theme
     @Environment(\.moonreadReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .body) private var minimumBookWidth = 96.0
@@ -25,7 +41,7 @@ struct LibraryAllBooksView: View {
     var body: some View {
         ScrollViewReader { proxy in
             Group {
-                if model.grouping == .tags {
+                if shownGrouping == .tags {
                     tagBrowser
                 } else if model.layout == .list {
                     List {
@@ -90,7 +106,7 @@ struct LibraryAllBooksView: View {
                 }
             }
             .overlay(alignment: .trailing) {
-                if model.grouping == .name && model.layout == .list && !LibraryNativeIndexVisibility.available {
+                if shownGrouping == .name && model.layout == .list && !LibraryNativeIndexVisibility.available {
                     LibraryAlphabetIndex(letters: groups.map(\.id)) { letter in
                         proxy.scrollTo(ScrollTarget.nameGroup(letter), anchor: .top)
                     }
@@ -114,33 +130,19 @@ struct LibraryAllBooksView: View {
                 } label: { Label("显示方式", systemImage: "ellipsis") }.toolbarGlyph().accessibilityIdentifier("folderActions")
             }
         }
-        .refreshable { await model.refresh(showIndicator: false, userInitiated: true) }
-        .overlay { if loaded && !loading.active && !model.refreshing.active && model.shelfScans[shelfID] == nil && bookCount == 0 { ContentUnavailableView("暂无小说", systemImage: "books.vertical") } }
-        .modifier(PageLoadingOverlay(request: model.processingFiles || model.nativeRefreshing ? nil : model.shelfScans[shelfID] ?? loading.request ?? model.refreshing.request,
-                                     hasContent: bookCount > 0, label: "正在加载书架", immediate: model.explicitRefresh || model.shelfScans[shelfID] != nil))
-        .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { change in
-            let domains: UserProjectionDomain = model.grouping == .tags ? [.card, .tags] : .card
-            if change.affectsLibraryMetadata(domains, keys: loaded ?
-                (model.grouping == .tags ? tagGroups.flatMap(\.entries) : groups.flatMap(\.entries)).displayedMetadataKeys : nil) {
-                metadataRevision &+= 1
-            }
+        .refreshable {
+            catalogue.retryIfFailed()
+            await model.refresh(showIndicator: false, userInitiated: true)
         }
-        .task(id: "\(model.revision):\(model.readingInputRevision):\(metadataRevision):\(model.grouping.rawValue)") {
-            let request = loading.begin(); defer { loading.finish(request) }
-            do {
-                try await AppDataService.libraryTestLatency()
-                if model.grouping == .tags {
-                    let catalogue = try await AppDataService.shared.libraryTagGroups(shelfID)
-                    try Task.checkCancellation()
-                    tagGroups = catalogue.groups; bookCount = catalogue.bookCount
-                } else {
-                    let values = try await AppDataService.shared.allLibraryBooks(shelfID)
-                    let grouped = await Task.detached(priority: .userInitiated) { LibraryNameGroup.group(values) }.value
-                    try Task.checkCancellation()
-                    groups = grouped; bookCount = UInt64(values.count)
-                }
-                loaded = true
-            } catch is CancellationError { } catch { model.error = ReaderMessages.error(error) }
+        .overlay { if catalogue.snapshot != nil && !catalogue.loading.active && !model.refreshing.active && model.shelfScans[shelfID] == nil && bookCount == 0 { ContentUnavailableView("暂无小说", systemImage: "books.vertical") } }
+        .modifier(PageLoadingOverlay(request: model.processingFiles || model.nativeRefreshing ? nil : model.shelfScans[shelfID] ?? catalogue.loading.request ?? model.refreshing.request,
+                                     hasContent: bookCount > 0, label: "正在加载书架", immediate: model.explicitRefresh || model.shelfScans[shelfID] != nil))
+        .onChange(of: model.revision) { catalogue.retryIfFailed() }
+        .task(id: request) {
+            let input = request
+            await catalogue.observe(shelfID: input.shelfID, grouping: input.grouping) { error in
+                if input == request { model.error = ReaderMessages.error(error) }
+            }
         }
 
         .animation(MotionTokens.controls(reduced: reduceMotion), value: model.layout)
@@ -163,12 +165,14 @@ struct LibraryAllBooksView: View {
                 summary.modifier(LibraryListHeading())
                 ForEach(tagGroups) { group in
                     Section {
-                        ForEach(group.entries, id: \.id) { entry in
-                            LibraryFileRow(model: model, entry: entry, showPath: true)
-                                .contextMenu { LibraryItemMenu(model: model, entry: entry); LibraryLocationAction(model: model, entry: entry) }
-                                .listRowInsets(EdgeInsets(top: 0, leading: LayoutTokens.page, bottom: 0, trailing: LayoutTokens.page))
-                                .alignmentGuide(.listRowSeparatorLeading) { _ in LibraryFileRow.textLeading }
-                                .listRowBackground(Color.clear)
+                        ForEach(group.fileIDs, id: \.self) { fileID in
+                            if let entry = card(fileID) {
+                                LibraryFileRow(model: model, entry: entry, showPath: true)
+                                    .contextMenu { LibraryItemMenu(model: model, entry: entry); LibraryLocationAction(model: model, entry: entry) }
+                                    .listRowInsets(EdgeInsets(top: 0, leading: LayoutTokens.page, bottom: 0, trailing: LayoutTokens.page))
+                                    .alignmentGuide(.listRowSeparatorLeading) { _ in LibraryFileRow.textLeading }
+                                    .listRowBackground(Color.clear)
+                            }
                         }
                     } header: { tagHeading(group) }
                 }
@@ -183,9 +187,11 @@ struct LibraryAllBooksView: View {
                         VStack(alignment: .leading, spacing: LayoutTokens.content) {
                             tagHeading(group)
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: minimumBookWidth), spacing: LayoutTokens.content)], alignment: .leading, spacing: LayoutTokens.section) {
-                                ForEach(group.entries, id: \.id) { entry in
-                                    LibraryBookTile(model: model, entry: entry, showPath: true)
-                                        .contextMenu { LibraryItemMenu(model: model, entry: entry); LibraryLocationAction(model: model, entry: entry) }
+                                ForEach(group.fileIDs, id: \.self) { fileID in
+                                    if let entry = card(fileID) {
+                                        LibraryBookTile(model: model, entry: entry, showPath: true)
+                                            .contextMenu { LibraryItemMenu(model: model, entry: entry); LibraryLocationAction(model: model, entry: entry) }
+                                    }
                                 }
                             }
                         }
@@ -195,10 +201,10 @@ struct LibraryAllBooksView: View {
         }
     }
 
-    @ViewBuilder private func tagHeading(_ group: LibraryTagGroup) -> some View {
+    @ViewBuilder private func tagHeading(_ group: CatalogueTagSection) -> some View {
         if group.kind == .tag {
             Button {
-                model.path.append(.search(AppSearchScope(seeds: [.shelf(shelfID), .tag(group.tag)])))
+                model.path.append(.search(AppSearchScope(seeds: [.shelf(shownShelfID), .tag(group.tag)])))
             } label: {
                 tagHeadingLabel(group)
             }.buttonStyle(.plain).accessibilityIdentifier("library-tag-\(group.tag)")
@@ -207,10 +213,10 @@ struct LibraryAllBooksView: View {
         }
     }
 
-    private func tagHeadingLabel(_ group: LibraryTagGroup) -> some View {
+    private func tagHeadingLabel(_ group: CatalogueTagSection) -> some View {
         HStack {
             Text(verbatim: group.title).font(.subheadline.weight(.semibold))
-            Text("\(UInt64(group.entries.count)) 本小说").font(.caption)
+            Text("\(UInt64(group.fileIDs.count)) 本小说").font(.caption)
             if group.kind == .tag { Image(systemName: "chevron.right").font(.caption2) }
         }.foregroundStyle(Color(uiColor: group.kind == .tag ? theme.accent : theme.secondary))
             .textCase(nil).accessibilityElement(children: .combine)
@@ -218,7 +224,7 @@ struct LibraryAllBooksView: View {
 
     private var summary: some View {
         HStack {
-            Text(verbatim: model.shelfTitle(shelfID)).lineLimit(1)
+            Text(verbatim: model.shelfTitle(shownShelfID)).lineLimit(1)
             Spacer()
             Text("\(bookCount) 本小说")
         }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))

@@ -198,28 +198,3 @@ extension LibrarySearchCandidate {
         return resolvedMetadata.map(LibraryQueryRules.SearchMetadata.init)
     }
 }
-
-/// A superseded directory response cannot publish into a new input scope.
-/// SwiftUI cancels its task; the token also guards services which finish after cancellation.
-@MainActor
-final class LibraryCatalogueRequest {
-    struct Input: Hashable {
-        let location: LibraryLocation
-        let libraryRevision: Int
-        let readingRevision: UInt64
-        var metadataRevision: UInt64 = 0
-    }
-    private var generation = UUID()
-    func read(_ fetch: () async throws -> [LibraryEntry]) async throws -> [LibraryEntry]? {
-        let request = UUID(); generation = request
-        do {
-            let result = try await fetch()
-            guard generation == request else { return nil }
-            try Task.checkCancellation()
-            return result
-        } catch {
-            guard generation == request else { return nil }
-            throw error
-        }
-    }
-}

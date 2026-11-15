@@ -46,7 +46,7 @@ final class ReaderQueryAdapterRecentReadingRestorationTests: RecentReadingRestor
   }
 }
 
-final class FolderQueryAdapterTests: XCTestCase {
+final class LibraryFixedQueryAdapterTests: XCTestCase {
   private static let location = LibraryLocation(shelfID: "builtin")
 
   private func withFolder(_ exercise: (ReaderIndex) throws -> Void) throws {
@@ -66,7 +66,8 @@ final class FolderQueryAdapterTests: XCTestCase {
     try exercise(index)
   }
 
-  private static func addFile(_ db: Database, id: String, path: String, parent: String = "", key: String? = nil) throws {
+  private static func addFile(_ db: Database, id: String, path: String, parent: String = "", key: String? = nil,
+                              name: String? = nil) throws {
     // A key gives the file a small, valid completed body but no automatic
     // chapter. The domain writer supplies a manual heading where needed.
     let text = "Chapter\nBody\n"
@@ -82,7 +83,7 @@ final class FolderQueryAdapterTests: XCTestCase {
     try db.execute(sql: """
       INSERT INTO main.library_files(id,shelf_id,relative_path,parent_path,name,directory,size,modified,needs_download,book_id)
       VALUES(?,'builtin',?,?,?,?,?,0,0,?)
-      """, arguments: [id,path,parent,id,key == nil,key == nil ? 0 : text.utf8.count,bodyID])
+      """, arguments: [id,path,parent,name ?? id,key == nil,key == nil ? 0 : text.utf8.count,bodyID])
   }
 
   private static func chapterZero(_ db: Database, key: String, title: String) throws {
@@ -206,6 +207,92 @@ final class FolderQueryAdapterTests: XCTestCase {
       XCTAssertNil(try card().chapterTitle, "An isolated position also supplies no chapter anchor")
     }
   }
+  func testFixedCatalogueKeepsPhysicalCopiesAndPublishedTagGroups() throws {
+    try withFolder { index in
+      let tagged = String(repeating: "a", count: 64), masked = String(repeating: "b", count: 64)
+      try index.session.writeUsers(index.lease) { db in
+        try Self.addFile(db, id: "file-2", path: "Novel 2.txt", key: tagged, name: "Novel 2.txt")
+        try Self.addFile(db, id: "file-3", path: "Novel 3.txt", key: masked, name: "Novel 3.txt")
+        try Self.addFile(db, id: "sub", path: "sub")
+        try db.execute(sql: """
+          INSERT INTO main.library_files(id,shelf_id,relative_path,parent_path,name,directory,size,modified,needs_download,book_id)
+          VALUES('file-10','builtin','sub/Novel 10.txt','sub','Novel 10.txt',0,13,0,0,'body-file-2'),
+                ('unindexed','builtin','Unknown.txt','','Unknown.txt',0,10,0,0,NULL)
+          """)
+        try Self.metadata(db, book: tagged, field: "tag-1", value: "\"Group 10\"")
+        try Self.metadata(db, book: tagged, field: "tag-2", value: "\"Group 2\"")
+        try Self.metadata(db, book: masked, field: "tag-1", value: "\"Masked group\"")
+        try Self.metadata(db, book: masked, field: "author", value: "\"Formal author\"")
+        try db.execute(sql: """
+          INSERT INTO usr.metadata_text_candidate
+          VALUES(1,'pending-catalogue-synopsis',1,?,?,'synopsis','fixture',7,'pending','Pending synopsis only')
+          """, arguments: [masked,"metadata/"+masked+"/synopsis"])
+        try CurrentUserRows.settleMetadata(db, book: masked)
+      }
+      let named = try index.catalogue(Self.location.shelfID, grouping: .name)
+      XCTAssertEqual(named.entries.map(\.id), ["file-2","file-3","file-10","unindexed"])
+      XCTAssertNil(named.entries.first?.displayMetadata, "Only tag fields exist; name grouping has no tag read")
+      XCTAssertNil(named.groups)
+      let traces = try index.session.readUsers(index.lease) { db -> [String] in
+        var statements: [String] = []
+        db.trace { statements.append($0.description) }
+        defer { db.trace() }
+        _ = try CatalogueRead.fetch(db, scope: index.lease.scope, shelfID: Self.location.shelfID, grouping: .name)
+        return statements
+      }
+      XCTAssertTrue(traces.contains { $0.contains("library_files") })
+      XCTAssertFalse(traces.contains { $0.contains("tag_candidate") || $0.contains("tag_current") })
+      let grouped = try index.catalogue(Self.location.shelfID, grouping: .tags)
+      let groups = try XCTUnwrap(grouped.groups).shelfTagGroups
+      XCTAssertEqual(try groups.map(CatalogueRead.sectionKind), [.tag,.tag,.untagged,.unindexed])
+      XCTAssertEqual(groups.map(\.tag), ["Group 2","Group 10","",""])
+      XCTAssertEqual(groups.map(\.fileIDs), [["file-2","file-10"],["file-2","file-10"],["file-3"],["unindexed"]])
+      XCTAssertEqual(grouped.entries.map(\.id), named.entries.map(\.id))
+      XCTAssertEqual(grouped.entries.count, 4, "Physical files are counted once, even in two tag sections")
+      XCTAssertEqual(grouped.entries.first?.displayMetadata?.author, "", "Readable tag-only metadata has published defaults")
+      XCTAssertEqual(grouped.entries.first { $0.id == "file-3" }?.displayMetadata?.author, "",
+                     "Pending synopsis suppresses both the formal author and formal tag")
+      XCTAssertTrue(grouped.entries.allSatisfy { $0.metadata == nil })
+    }
+  }
+
+  @MainActor func testCatalogueKeepsPublishedGroupingUntilReplacementAndRejectsLateRows() async throws {
+    let (names, nameUpdates) = AsyncThrowingStream.makeStream(of: CatalogueSnapshot.self)
+    let (tags, tagUpdates) = AsyncThrowingStream.makeStream(of: CatalogueSnapshot.self)
+    let entered = expectation(description: "replacement is requested")
+    let replacementGate = RestorationGate(entered)
+    let store = CatalogueStore(updates: { _, grouping in
+      if grouping == .name { return names }
+      await replacementGate.wait()
+      return tags
+    })
+    let initial = expectation(description: "initial grouping is visible")
+    withObservationTracking { _ = store.snapshot } onChange: { initial.fulfill() }
+    let old = Task { await store.observe(shelfID: "first", grouping: .name) { XCTFail(String(describing: $0)) } }
+    defer { nameUpdates.finish(); tagUpdates.finish(); old.cancel() }
+    let named = try CatalogueSnapshot(.init(entries: [], groups: nil), shelfID: "first")
+    nameUpdates.yield(named)
+    await fulfillment(of: [initial], timeout: 2)
+    XCTAssertEqual(store.snapshot?.shelfID, "first")
+    let replacement = Task { await store.observe(shelfID: "second", grouping: .tags) { XCTFail(String(describing: $0)) } }
+    defer { replacement.cancel() }
+    await fulfillment(of: [entered], timeout: 2)
+    XCTAssertEqual(store.snapshot?.grouping, .name)
+    XCTAssertEqual(store.snapshot?.shelfID, "first", "A pending parameter change keeps its last valid snapshot")
+
+    let installed = expectation(description: "new grouping is visible")
+    withObservationTracking { _ = store.snapshot } onChange: { installed.fulfill() }
+    let tagged = try CatalogueSnapshot(.init(entries: [], groups: .init(shelfTagGroups: [])), shelfID: "second")
+    tagUpdates.yield(tagged)
+    await replacementGate.release()
+    await fulfillment(of: [installed], timeout: 2)
+    nameUpdates.yield(named)
+    nameUpdates.finish()
+    await old.value
+    XCTAssertEqual(store.snapshot?.grouping, .tags)
+    XCTAssertEqual(store.snapshot?.shelfID, "second", "A superseded read cannot publish over the new shelf")
+  }
+
 }
 
 final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
@@ -232,7 +319,7 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(try core.importStatus(bookId: job.bookId()).text.readingKey, key)
   }
 
-  @MainActor func testCatalogueCardsFilterOptionsAndSearchMatchTheWideBaseline() async throws {
+  @MainActor func testFilterOptionsAndSearchMatchTheWideBaseline() async throws {
     let (root, service, core, formal, _, first, second, suite) = try singleBookFixture()
     defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
     let a = first.fixtureSHA256, b = second.fixtureSHA256
@@ -253,16 +340,6 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
 
     let location = LibraryLocation(shelfID: "builtin")
     let old = try await service.catalogueQuery(location, recursive: true)
-    let names = try await service.allLibraryBooks(location.shelfID)
-    XCTAssertEqual(names.map(\.id), try old.allLibraryBooks(shelfId: location.shelfID).map(\.id))
-    XCTAssertEqual(names.count, 3, "Copies stay separate physical files")
-    XCTAssertTrue(names.allSatisfy { $0.metadata == nil })
-    let groups = try await service.libraryTagGroups(location.shelfID)
-    let oldGroups = try old.allLibraryTagGroups(shelfId: location.shelfID)
-    XCTAssertEqual(groups.bookCount, oldGroups.bookCount)
-    XCTAssertEqual(groups.groups.map(\.tag), oldGroups.groups.map(\.tag))
-    XCTAssertEqual(groups.groups.map { $0.entries.map(\.id) }, oldGroups.groups.map { $0.entries.map(\.id) })
-    XCTAssertTrue(groups.groups.prefix(2).allSatisfy { $0.entries.count == 2 && $0.entries.allSatisfy { $0.metadata == nil } })
     let options = try await service.metadataOptions(shelfID: location.shelfID)
     XCTAssertEqual(options, try old.bookFilterOptions(shelfId: location.shelfID))
     let configuration = BookSearchConfiguration(root: .init(kind: .group(.all, [

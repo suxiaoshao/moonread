@@ -1,11 +1,11 @@
 import SwiftUI
 
-enum LibraryGrouping: String {
+enum LibraryGrouping: String, Sendable {
     case name, tags
 }
 
-extension LibraryTagGroup: Identifiable {
-    public var id: String {
+extension CatalogueTagSection: Identifiable {
+    var id: String {
         switch kind {
         case .tag: "tag:" + tag
         case .untagged: "untagged"

@@ -1,7 +1,10 @@
 //! File metadata is an index of the platform's real directories. Content and
 //! reading records remain independently keyed by the normalized text hash.
 mod catalogue_cards;
-pub use catalogue_cards::{LibrarySearchFields, LibraryTagMembership, LibraryTaggedCards};
+pub use catalogue_cards::{
+    LibrarySearchFields, LibraryTagInput, LibraryTagMembership, LibraryTaggedCards,
+    catalogue_tag_memberships,
+};
 pub(crate) mod full_index;
 mod metadata_exchange;
 use crate::SourceContentKey;

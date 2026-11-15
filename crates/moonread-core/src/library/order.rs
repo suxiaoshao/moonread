@@ -41,13 +41,6 @@ pub(crate) fn natural_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     }
 }
 
-pub(crate) fn file_order(a: &crate::LibraryEntry, b: &crate::LibraryEntry) -> std::cmp::Ordering {
-    file_order_fields(
-        (&a.name, &a.relative_path, &a.id),
-        (&b.name, &b.relative_path, &b.id),
-    )
-}
-
 pub(crate) fn file_order_fields(
     a: (&str, &str, &str),
     b: (&str, &str, &str),
@@ -93,16 +86,18 @@ fn directory_order(
                 } else {
                     std::cmp::Ordering::Equal
                 }
-            })
-            .then_with(|| natural_cmp(&a.name, &b.name)),
+            }),
         LibrarySort::Name => b
             .folder_descendants
             .is_some()
-            .cmp(&a.folder_descendants.is_some())
-            .then_with(|| natural_cmp(&a.name, &b.name)),
+            .cmp(&a.folder_descendants.is_some()),
     }
-    .then_with(|| a.relative_path.cmp(&b.relative_path))
-    .then_with(|| a.id.cmp(&b.id))
+    .then_with(|| {
+        file_order_fields(
+            (&a.name, &a.relative_path, &a.id),
+            (&b.name, &b.relative_path, &b.id),
+        )
+    })
 }
 
 #[derive(Debug, uniffi::Record)]

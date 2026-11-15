@@ -2,6 +2,8 @@ scalar UInt64
 scalar Int64
 
 type Query {
+  shelfBookCards(shelfID: ID!): [ShelfBookCard!]!
+  shelfTagGroups(shelfID: ID!): [ShelfTagGroup!]!
   folderPage(shelfID: ID!, path: String!): [FolderEntry!]!
   folderDestinations(shelfID: ID!, path: String!): [FolderDestination!]!
   readerOpening(bookID: ID!): ReaderOpening!
@@ -122,4 +124,22 @@ type FolderDestination {
   modified: Int64!
   lastRead: Int64!
   descendantCount: UInt64!
+}
+
+type ShelfBookCard {
+  file: RecentReadingFile!
+  lastRead: Int64!
+  book: FolderBookCard!
+}
+
+enum ShelfTagKind {
+  TAG
+  UNTAGGED
+  UNINDEXED
+}
+
+type ShelfTagGroup {
+  kind: ShelfTagKind!
+  tag: String!
+  fileIDs: [ID!]!
 }
