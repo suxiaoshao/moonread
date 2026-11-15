@@ -4,7 +4,7 @@ import GRDB
 enum ReadingFactRows {
     typealias Field = (String, (any DatabaseValueConvertible)?)
 
-    private struct Exposure: Encodable {
+    struct Exposure: Codable, Equatable {
         let start_utf8, end_utf8, duration_ms: UInt64
     }
 
@@ -17,14 +17,17 @@ enum ReadingFactRows {
             Exposure(start_utf8: $0.startUtf8, end_utf8: $0.endUtf8, duration_ms: $0.durationMs)
         })
         return [
-            ("book_key",DataIdentity.canonical(book)),("original_book_key",book),
-            ("payload_content_key",value.payloadContentKey),("legacy_slice_book_id",slice.bookId),("title_at_reading",value.title),
-            ("device_id",value.device),("session_id",DataIdentity.canonical(slice.sessionId)),("original_session_id",slice.sessionId),
-            ("visit_id",slice.visitId),("started_ms",slice.startedMs),("ended_ms",slice.endedMs),("local_day",slice.localDay),
+            ("book_key",DataIdentity.canonical(book)),("title_at_reading",value.title),
+            ("device_id",identity(value.device)),("session_id",identity(slice.sessionId)),("visit_id",identity(slice.visitId)),
+            ("started_ms",slice.startedMs),("ended_ms",slice.endedMs),("local_day",slice.localDay),
             ("utc_offset_seconds",slice.utcOffsetSeconds),("preview",slice.preview),("duration_ms",duration),
             ("first_exposure_start",slice.exposures.first.map { DataIdentity.unsigned($0.startUtf8) }),
             ("derivation_version",1),("exposure_version",1),("exposures_text",String(decoding: raw, as: UTF8.self)),
         ]
+    }
+
+    static func identity(_ value: String) -> String {
+        UUID(uuidString: value)?.uuidString.lowercased() ?? DataIdentity.canonical(value)
     }
 
     static let quarantineFactTypes = "'ReadingFact','reading_fact'"
@@ -52,7 +55,7 @@ enum ReadingFactRows {
             UNION ALL SELECT 1 FROM usr.statistics_clear WHERE partition=?1 AND schema_version<>1
               AND (?2 IS NULL OR book_key IS NULL OR book_key=?2)
               AND (?3 IS NULL OR session_id IS NULL OR session_id=?3))
-            """, arguments: [partition,book.map(DataIdentity.canonical),session.map(DataIdentity.canonical)]) == true {
+            """, arguments: [partition,book.map(DataIdentity.canonical),session.map(identity)]) == true {
             throw UserSyncCompatibilityError(statistics: true)
         }
     }
@@ -61,14 +64,14 @@ enum ReadingFactRows {
     /// blocks writes in that partition, even if routed to another book.
     static func insertLocal(_ db: Database, value: FactImportColumns, book: String) throws -> Bool {
         let part = try ReadingPositionRows.partition(for: book)
-        let id = DataIdentity.canonical(value.slice.id)
+        let id = identity(value.slice.id)
         if try Bool.fetchOne(db, sql: """
             SELECT EXISTS(SELECT 1 FROM usr.quarantined_record WHERE partition=?1 AND record_id=?2
               AND source_type IN (\(quarantineFactTypes))
             UNION ALL SELECT 1 FROM usr.reading_fact WHERE partition=?1 AND fact_id=?2 AND NOT (\(currentVersion)))
             """, arguments: [part,id]) == true { throw UserSyncCompatibilityError() }
 
-        let fields: [Field] = [("partition",part),("fact_id",id),("schema_version",1),("original_id",value.slice.id)] +
+        let fields: [Field] = [("partition",part),("fact_id",id),("schema_version",1)] +
             (try storageFields(value, book: book))
         let columns = fields.map(\.0).joined(separator: ",")
         let parameters = Array(repeating: "?", count: fields.count).joined(separator: ",")
@@ -81,34 +84,36 @@ enum ReadingFactRows {
 
     static func clearRecordID(book: String?, session: String?, through: Int64, ids: some Sequence<String>) -> String {
         DataIdentity.id("statistics-clear", [
-            book == nil ? "0" : "1", book ?? "", session == nil ? "0" : "1", session ?? "", String(through)
-        ] + Set(ids.map(DataIdentity.canonical)).sorted())
+            book == nil ? "0" : "1", book ?? "", session == nil ? "0" : "1", session.map(identity) ?? "", String(through)
+        ] + Set(ids.map(identity)).sorted())
     }
 
     static func clear(_ db: Database, partition: Int, book: String?, session: String?, through: Int64) throws {
         try requireReadableClears(db, partition: partition, book: book, session: session)
-        let bookKey = book.map(DataIdentity.canonical), sessionKey = session.map(DataIdentity.canonical)
-        let ids = try Row.fetchAll(db, sql: """
-            SELECT f.fact_id,f.original_id FROM usr.reading_fact f WHERE f.partition=?1
+        let bookKey = book.map(DataIdentity.canonical), sessionKey = session.map(identity)
+        let ids = try String.fetchAll(db, sql: """
+            SELECT f.fact_id FROM usr.reading_fact f WHERE f.partition=?1
               AND (?2 IS NULL OR f.book_key=?2) AND (?3 IS NULL OR f.session_id=?3)
               AND \(currentVersion)
-              AND NOT EXISTS(SELECT 1 FROM usr.quarantined_record q WHERE q.partition=f.partition
-                AND q.record_id=f.fact_id AND q.source_type IN (\(quarantineFactTypes)))
+              AND NOT EXISTS(SELECT 1 FROM usr.reading_fact invalid WHERE invalid.fact_id=f.fact_id
+                AND (invalid.schema_version<>1 OR invalid.derivation_version<>1 OR invalid.exposure_version<>1 OR invalid.duration_ms<0))
+              AND NOT EXISTS(SELECT 1 FROM usr.quarantined_record q WHERE q.record_id=f.fact_id
+                AND q.source_type IN (\(quarantineFactTypes)))
               AND \(notCleared)
             """, arguments: [partition,bookKey,sessionKey])
         // The explicit IDs cover currently visible future-dated records, not
         // just rows within the cutoff clock's range. Unknown facts remain raw.
-        let id = clearRecordID(book: book, session: session, through: through, ids: ids.map { $0["original_id"] as String })
+        let id = clearRecordID(book: book, session: session, through: through, ids: ids)
         try db.execute(sql: """
-            INSERT INTO usr.statistics_clear VALUES (?,?,1,?,?,?,?,?)
+            INSERT INTO usr.statistics_clear VALUES (?,?,1,?,?,?)
             ON CONFLICT(partition,record_id) DO NOTHING
-            """, arguments: [partition,id,bookKey,book,sessionKey,session,through])
+            """, arguments: [partition,id,bookKey,sessionKey,through])
         let insert = try db.makeStatement(sql: """
-            INSERT INTO usr.statistics_clear_id VALUES (?,?,?,?)
+            INSERT INTO usr.statistics_clear_id VALUES (?,?,?)
             ON CONFLICT(partition,clear_id,fact_id) DO NOTHING
             """)
-        for row in ids {
-            try insert.execute(arguments: [partition,id,row["fact_id"] as String,row["original_id"] as String])
+        for fact in ids {
+            try insert.execute(arguments: [partition,id,fact])
         }
     }
 }

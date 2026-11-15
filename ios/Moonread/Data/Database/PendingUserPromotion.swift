@@ -114,8 +114,8 @@ enum PendingUserPromotion {
     }
 
     private static let markPayload = [
-        "schema_version", "original_id", "created", "bookmark", "is_deleted", "start", "end", "excerpt",
-        "note", "merged_into", "original_merged_into",
+        "schema_version", "created", "bookmark", "is_deleted", "start", "end", "excerpt",
+        "note", "merged_into",
     ]
 
     private static func promoteMarks(_ db: Database, from pending: String, to formal: String) throws {
@@ -125,27 +125,27 @@ enum PendingUserPromotion {
         let prefix = "bookmark/" + pending + "/"
         while true {
             let headers = try Row.fetchAll(db, sql: """
-                SELECT record_id,original_mark_id FROM usr.annotation_candidate
+                SELECT record_id,mark_id FROM usr.annotation_candidate
                 WHERE partition=1 AND book_key=? AND (? IS NULL OR record_id>?)
                 ORDER BY record_id LIMIT 128
                 """, arguments: [sourceKey,after,after])
             guard !headers.isEmpty else { return }
             for row in headers {
                 let id: String = row["record_id"]
-                let original: String = row["original_mark_id"]
+                let original: String = row["mark_id"]
                 // Keep the original operation ID and all causal IDs; only the
                 // outer mark routing for deterministic bookmarks changes.
                 let mark: String
                 if original.hasPrefix(prefix), let suffix = original.split(separator: "/").last {
                     mark = "bookmark/" + formal + "/" + suffix
                 } else { mark = original }
-                try mergeMark(db, id: id, formal: formal, formalKey: formalKey, mark: mark)
+                try mergeMark(db, id: id, formalKey: formalKey, mark: mark)
                 after = id
             }
         }
     }
 
-    private static func mergeMark(_ db: Database, id: String, formal: String, formalKey: String, mark: String) throws {
+    private static func mergeMark(_ db: Database, id: String, formalKey: String, mark: String) throws {
         let markKey = DataIdentity.canonical(mark)
         if try Bool.fetchOne(db, sql: """
             SELECT EXISTS(SELECT 1 FROM usr.quarantined_record
@@ -162,9 +162,9 @@ enum PendingUserPromotion {
         if conflicting == nil {
             let fields = markPayload.joined(separator: ",")
             try db.execute(sql: """
-                INSERT INTO usr.annotation_candidate(partition,record_id,book_key,original_book_key,mark_id,original_mark_id,\(fields))
-                SELECT 0,record_id,?,?,?,?,\(fields) FROM usr.annotation_candidate WHERE partition=1 AND record_id=?
-                """, arguments: [formalKey,formal,markKey,mark,id])
+                INSERT INTO usr.annotation_candidate(partition,record_id,book_key,mark_id,\(fields))
+                SELECT 0,record_id,?,?,\(fields) FROM usr.annotation_candidate WHERE partition=1 AND record_id=?
+                """, arguments: [formalKey,markKey,id])
         }
         try mergeMarkRelation(db, table: "annotation_ancestor", field: "ancestor_id", id: id, exists: conflicting != nil)
         try mergeMarkRelation(db, table: "annotation_related_mark", field: "related_mark_id", id: id, exists: conflicting != nil)
@@ -172,7 +172,7 @@ enum PendingUserPromotion {
 
     private static func mergeMarkRelation(_ db: Database, table: String, field: String, id: String, exists: Bool) throws {
         if exists {
-            let columns = "\(field),original_id"
+            let columns = field
             let pending = "SELECT \(columns) FROM usr.\(table) WHERE partition=1 AND candidate_id=?1"
             let formal = "SELECT \(columns) FROM usr.\(table) WHERE partition=0 AND candidate_id=?1"
             guard try Bool.fetchOne(db, sql: """
@@ -180,8 +180,8 @@ enum PendingUserPromotion {
                 """, arguments: [id]) == false else { throw UserSyncCompatibilityError() }
         } else {
             try db.execute(sql: """
-                INSERT INTO usr.\(table)(partition,candidate_id,\(field),original_id)
-                SELECT 0,candidate_id,\(field),original_id FROM usr.\(table) WHERE partition=1 AND candidate_id=?
+                INSERT INTO usr.\(table)(partition,candidate_id,\(field))
+                SELECT 0,candidate_id,\(field) FROM usr.\(table) WHERE partition=1 AND candidate_id=?
                 """, arguments: [id])
         }
     }
@@ -197,8 +197,7 @@ enum PendingUserPromotion {
         """
 
     private static let factPayload = [
-        "schema_version", "original_id", "payload_content_key", "legacy_slice_book_id", "title_at_reading",
-        "device_id", "session_id", "original_session_id", "visit_id", "started_ms", "ended_ms", "local_day",
+        "schema_version", "title_at_reading", "device_id", "session_id", "visit_id", "started_ms", "ended_ms", "local_day",
         "utc_offset_seconds", "preview", "duration_ms", "first_exposure_start", "derivation_version", "exposure_version", "exposures_text",
     ]
 
@@ -216,10 +215,10 @@ enum PendingUserPromotion {
 
         let fields = factPayload.joined(separator: ",")
         try db.execute(sql: visiblePendingFacts + """
-            INSERT INTO usr.reading_fact(partition,fact_id,book_key,original_book_key,\(fields))
-            SELECT 0,fact_id,?2,?3,\(fields) FROM visible src
+            INSERT INTO usr.reading_fact(partition,fact_id,book_key,\(fields))
+            SELECT 0,fact_id,?2,\(fields) FROM visible src
             WHERE NOT EXISTS(SELECT 1 FROM usr.reading_fact dst WHERE dst.partition=0 AND dst.fact_id=src.fact_id)
-            """, arguments: [pendingKey,formalKey,formal])
+            """, arguments: [pendingKey,formalKey])
     }
 }
 
@@ -267,6 +266,13 @@ extension ReaderIndex {
           AND (j.final_sha IS NULL OR j.final_sha=b.content_sha256)
           AND EXISTS(SELECT 1 FROM main.chunks c WHERE c.book_id=b.id AND c.chunk_index=0 AND c.end_utf8>c.start_utf8)
         """
+
+    static func verifiedReadingSHA(_ db: Database, pendingID: String, scope: String) throws -> String? {
+        guard let sha = try String.fetchOne(db, sql: "SELECT b.content_sha256 " + completedReadingIdentitySQL +
+                                           " AND j.book_id=?", arguments: [scope,pendingID]),
+              (try? parseSha256(value: sha)) != nil else { return nil }
+        return sha
+    }
 
     func verifiedReadingAliasIDs(_ db: Database, sha: String) throws -> [String] {
         try String.fetchAll(db, sql: "SELECT j.book_id " + Self.completedReadingIdentitySQL +

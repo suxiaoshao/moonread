@@ -16,7 +16,7 @@ enum LocalReadingRows {
     static func setHidden(_ db: Database, book: String, hidden: Bool) throws {
         let key = DataIdentity.canonical(book)
         if hidden {
-            try db.execute(sql: "INSERT OR IGNORE INTO usr.local_hidden_book VALUES(?,?)", arguments: [key,book])
+            try db.execute(sql: "INSERT OR IGNORE INTO usr.local_hidden_book VALUES(?)", arguments: [key])
         } else {
             try db.execute(sql: "DELETE FROM usr.local_hidden_book WHERE book_key=?", arguments: [key])
         }
@@ -29,9 +29,9 @@ enum LocalReadingRows {
 
     static func setPreferredFile(_ db: Database, book: String, file: String) throws {
         try db.execute(sql: """
-            INSERT INTO usr.local_preferred_file(book_key,original_book_key,file_id) VALUES(?,?,?)
+            INSERT INTO usr.local_preferred_file(book_key,file_id) VALUES(?,?)
             ON CONFLICT(book_key) DO UPDATE SET file_id=excluded.file_id
-            """, arguments: [DataIdentity.canonical(book),book,file])
+            """, arguments: [DataIdentity.canonical(book),file])
     }
 
     static func resume(_ db: Database, book: String) throws -> Resume? {
@@ -43,9 +43,9 @@ enum LocalReadingRows {
 
     static func setResume(_ db: Database, book: String, offset: UInt64, token: String?) throws {
         try db.execute(sql: """
-            INSERT INTO usr.local_resume(book_key,original_book_key,last_local_write_token,offset) VALUES(?,?,?,?)
+            INSERT INTO usr.local_resume(book_key,last_local_write_token,offset) VALUES(?,?,?)
             ON CONFLICT(book_key) DO UPDATE SET last_local_write_token=excluded.last_local_write_token,offset=excluded.offset
-            """, arguments: [DataIdentity.canonical(book),book,token,DataIdentity.unsigned(offset)])
+            """, arguments: [DataIdentity.canonical(book),token,DataIdentity.unsigned(offset)])
     }
 
     static func promote(_ db: Database, from pending: String, to formal: String) throws {

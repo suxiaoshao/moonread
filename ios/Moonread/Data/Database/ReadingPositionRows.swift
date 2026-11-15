@@ -46,8 +46,59 @@ enum ReadingPositionRows {
     }
 
     private static let positionColumns = """
-        original_book_key,offset,updated_ms,token,device_id,source_kind,relative_path,file_name,byte_size,decoding
+        book_key,offset,updated_ms,token,device_id,source_kind,relative_path,file_name,byte_size,decoding
         """
+
+    /// Reconcile exactly one confirmed business key. A blocked domain may
+    /// not provide a winner, but cannot erase the other independent domain.
+    static func settleCurrent(_ db: Database, book: String) throws {
+        let key = DataIdentity.canonical(book)
+        func positionWinner() throws -> Row? {
+            do {
+                for partition in [0,1] { try requireReadable(db, domain: .position, book: key, partition: partition) }
+            } catch is UserSyncCompatibilityError { return nil }
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT partition,record_id,\(positionColumns) FROM usr.position_candidate
+                WHERE book_key=?1 AND updated_ms=(SELECT max(updated_ms) FROM usr.position_candidate WHERE book_key=?1)
+                ORDER BY partition,record_id
+                """, arguments: [key])
+            guard let winner = CurrentUserRows.winner(rows), (try? decodedPosition(winner)) != nil else { return nil }
+            return winner
+        }
+        // Unlike position, an unreadable opened key only suppresses that
+        // store's opened value. The other store's value still participates.
+        func openedWinner() throws -> Row? {
+            var candidates: [Row] = []
+            for partition in [0,1] {
+                do { try requireReadable(db, domain: .opened, book: key, partition: partition) }
+                catch is UserSyncCompatibilityError { continue }
+                let rows = try Row.fetchAll(db, sql: """
+                    SELECT partition,record_id,updated_ms,token,opened_ms FROM usr.opened_candidate
+                    WHERE partition=?1 AND book_key=?2 AND updated_ms=(SELECT max(updated_ms) FROM usr.opened_candidate
+                        WHERE partition=?1 AND book_key=?2)
+                    ORDER BY record_id
+                    """, arguments: [partition,key])
+                if let row = CurrentUserRows.winner(rows), !(row["token"] as String).isEmpty { candidates.append(row) }
+            }
+            return CurrentUserRows.winner(candidates)
+        }
+        let position = try positionWinner(), opened = try openedWinner()
+        let updated: Int64? = position?["updated_ms"], openedAt: Int64? = opened?["opened_ms"]
+        guard let recent = openedAt ?? updated else {
+            try db.execute(sql: "DELETE FROM usr.reading_current WHERE book_key=?", arguments: [key])
+            return
+        }
+        try db.execute(sql: """
+            INSERT INTO usr.reading_current VALUES (?,?,?,?,?,?,?,?)
+            ON CONFLICT(book_key) DO UPDATE SET position_partition=excluded.position_partition,position_id=excluded.position_id,
+                position_updated_ms=excluded.position_updated_ms,opened_partition=excluded.opened_partition,
+                opened_id=excluded.opened_id,opened_ms=excluded.opened_ms,recent_ms=excluded.recent_ms
+            WHERE position_partition IS NOT excluded.position_partition OR position_id IS NOT excluded.position_id
+                OR position_updated_ms IS NOT excluded.position_updated_ms OR opened_partition IS NOT excluded.opened_partition
+                OR opened_id IS NOT excluded.opened_id OR opened_ms IS NOT excluded.opened_ms
+            """, arguments: [key,position?["partition"] as Int?,position?["record_id"] as String?,updated,
+                             opened?["partition"] as Int?,opened?["record_id"] as String?,openedAt,recent])
+    }
 
     static func position(_ db: Database, book: String, partition: Int) throws -> Position? {
         try requireReadable(db, domain: .position, book: book, partition: partition)
@@ -80,7 +131,7 @@ enum ReadingPositionRows {
             source = nil
         }
         guard source?.isValid ?? true else { throw UserSyncCompatibilityError() }
-        return .init(value: .init(content_key: row["original_book_key"], offset: offset, source_hint: source),
+        return .init(value: .init(content_key: row["book_key"], offset: offset, source_hint: source),
                      updated: row["updated_ms"], token: token, device: row["device_id"])
     }
 
@@ -111,10 +162,10 @@ enum ReadingPositionRows {
         let byteSize = hint?.byte_size.flatMap { Int64(exactly: $0) }
         try db.execute(sql: """
             INSERT INTO usr.position_candidate
-                (partition,record_id,schema_version,book_key,original_book_key,updated_ms,token,offset,device_id,
+                (partition,record_id,schema_version,book_key,updated_ms,token,offset,device_id,
                  source_kind,relative_path,file_name,byte_size,decoding)
-            VALUES (?,?,1,?,?,?,?,?,?,?,?,?,?,?)
-            """, arguments: [partition,id,key,book,position.updated,position.token,DataIdentity.unsigned(position.value.offset),position.device,
+            VALUES (?,?,1,?,?,?,?,?,?,?,?,?,?)
+            """, arguments: [partition,id,key,position.updated,position.token,DataIdentity.unsigned(position.value.offset),position.device,
                              hint?.source_kind.rawValue,hint?.relative_path,hint?.file_name,byteSize,hint?.decoding])
         try db.execute(sql: "DELETE FROM usr.position_candidate WHERE partition=? AND book_key=? AND record_id<>?",
                        arguments: [partition,key,id])
@@ -138,11 +189,11 @@ enum ReadingPositionRows {
         let id = DataIdentity.id("value", [logicalKey,device])
         try db.execute(sql: """
             INSERT INTO usr.opened_candidate
-                (partition,record_id,schema_version,book_key,logical_key,device_id,original_device_id,updated_ms,token,opened_ms)
-            VALUES (?,?,1,?,?,?,?,?,?,?)
+                (partition,record_id,schema_version,book_key,logical_key,device_id,updated_ms,token,opened_ms)
+            VALUES (?,?,1,?,?,?,?,?,?)
             ON CONFLICT(partition,book_key,device_id) DO UPDATE SET
                 updated_ms=excluded.updated_ms,token=excluded.token,opened_ms=excluded.opened_ms
-            """, arguments: [partition,id,key,logicalKey,DataIdentity.canonical(device),device,updated,token,openedAt])
+            """, arguments: [partition,id,key,logicalKey,DataIdentity.canonical(device),updated,token,openedAt])
     }
 
     static func requirePromotionReadable(_ db: Database, book: String, partition: Int) throws {

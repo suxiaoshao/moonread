@@ -127,9 +127,9 @@ enum LegacyUserImport {
             var resolved = Set<String>(), ambiguous = Set<String>()
             do {
                 // Read only identity headers, never all the cover bytes.
-                let assets = try Row.fetchCursor(db, sql: "SELECT original_id,availability,expected_sha FROM usr.cover_asset")
+                let assets = try Row.fetchCursor(db, sql: "SELECT legacy_cover_id,availability,expected_sha FROM usr.cover_asset WHERE legacy_cover_id IS NOT NULL")
                 while let row = try assets.next() {
-                    let id = DataIdentity.canonical(row["original_id"])
+                    let id = DataIdentity.canonical(row["legacy_cover_id"])
                     guard markers[id] != nil else { continue }
                     if (row["availability"] as String) != "available" || (row["expected_sha"] as String?) == nil ||
                         !resolved.insert(id).inserted {
@@ -205,16 +205,16 @@ enum LegacyUserImport {
 
     private static func putDeviceState(_ state: LegacyUserSnapshot.DeviceState, db: Database) throws {
         for book in state.hidden {
-            try db.execute(sql: "INSERT OR IGNORE INTO usr.local_hidden_book VALUES (?,?)",
-                           arguments: [DataIdentity.canonical(book),book])
+            try db.execute(sql: "INSERT OR IGNORE INTO usr.local_hidden_book VALUES (?)",
+                           arguments: [DataIdentity.canonical(book)])
         }
         for (book, file) in state.preferred {
-            try db.execute(sql: "INSERT INTO usr.local_preferred_file VALUES (?,?,?)",
-                           arguments: [DataIdentity.canonical(book),book,file])
+            try db.execute(sql: "INSERT INTO usr.local_preferred_file VALUES (?,?)",
+                           arguments: [DataIdentity.canonical(book),file])
         }
         for (book, item) in state.resume {
-            try db.execute(sql: "INSERT INTO usr.local_resume VALUES (?,?,?,?)",
-                           arguments: [DataIdentity.canonical(book),book,item.lastLocalWriteToken,DataIdentity.unsigned(item.offset)])
+            try db.execute(sql: "INSERT INTO usr.local_resume VALUES (?,?,?)",
+                           arguments: [DataIdentity.canonical(book),item.lastLocalWriteToken,DataIdentity.unsigned(item.offset)])
         }
     }
 
@@ -233,7 +233,7 @@ enum LegacyUserImport {
                 VALUES (?,'swiftdata',?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """, arguments: [partition,source,model,identity.id,version,identity.book.map(DataIdentity.canonical),
                     identity.mark.map(DataIdentity.canonical),identity.key.map(DataIdentity.canonical),
-                    identity.session.map(DataIdentity.canonical),identity.device.map(DataIdentity.canonical),
+                    identity.session.map(ReadingFactRows.identity),identity.device.map(DataIdentity.canonical),
                     format,data,DataIdentity.sha(data),reason,incomplete ? "incomplete" : "complete"])
         }
 
@@ -317,7 +317,7 @@ enum LegacyUserImport {
 
         func relation(_ table: String, parent: String = "candidate_id", field: String, values: Set<String>) -> Relation {
             .init(table: table, parentField: parent, rows: values.sorted().map { [
-                (field,DataIdentity.canonical($0)),("original_id",$0)
+                (field,DataIdentity.canonical($0))
             ] })
         }
 
@@ -326,7 +326,7 @@ enum LegacyUserImport {
                 let digest = DataIdentity.sha(bytes)
                 let key = DataIdentity.id("cover-bytes", [id,digest])
                 try db.execute(sql: """
-                    INSERT INTO usr.cover_asset(asset_id,original_id,bytes,expected_sha,availability)
+                    INSERT INTO usr.cover_asset(asset_id,legacy_cover_id,bytes,expected_sha,availability)
                     VALUES(?,?,?,?,'available') ON CONFLICT(asset_id)
                     DO UPDATE SET bytes=excluded.bytes,availability='available' WHERE cover_asset.bytes IS NULL
                     """, arguments: [key,id,bytes,digest])
@@ -364,7 +364,7 @@ enum LegacyUserImport {
             let logicalID = kind == .chapter && parts.count == 3
                 ? (UInt64(parts[2]).map { "chapter/\(parts[1])/\($0)" } ?? key) : key
             let identity = Identity(id: DataIdentity.id("value", [logicalID, device ?? ""]), book: book,
-                                    key: key, device: device)
+                                    key: logicalID, device: device)
             try decode(payload, model: model, identity: identity) {
                 let head = try UserSyncJSON.storedValue(payload, key: key)
                 guard let kind, parts.count >= 2 else { throw BadRow(reason: "unknown-key") }
@@ -377,7 +377,7 @@ enum LegacyUserImport {
                     var position = identity
                     position.id = DataIdentity.id("position", [value.content_key, head.token])
                     try write("position_candidate", identity: position, body: [
-                        ("book_key",member),("original_book_key",value.content_key),
+                        ("book_key",member),
                         ("updated_ms",head.updated),("token",head.token),("device_id",device),
                         ("offset",DataIdentity.unsigned(value.offset)),("source_kind",hint?.source_kind.rawValue),
                         ("relative_path",hint?.relative_path),("file_name",hint?.file_name),
@@ -386,7 +386,7 @@ enum LegacyUserImport {
                     return
                 }
                 guard let device else { throw BadRow(reason: "missing-device") }
-                let shared: [Field] = [("logical_key",key),("device_id",DataIdentity.canonical(device)),("original_device_id",device),
+                let shared: [Field] = [("logical_key",DataIdentity.canonical(logicalID)),("device_id",DataIdentity.canonical(device)),
                                        ("updated_ms",head.updated),("token",head.token)]
                 let bookFields = shared + [("book_key",member)]
                 switch kind {
@@ -448,11 +448,11 @@ enum LegacyUserImport {
                 let value = try UserSyncJSON.annotation(row.payload, id: row.id)
                 let content = value.content
                 try write("annotation_candidate", identity: identity, body: [
-                    ("original_id",row.id),("book_key",DataIdentity.canonical(row.contentKey)),("original_book_key",row.contentKey),
-                    ("mark_id",DataIdentity.canonical(row.markID)),("original_mark_id",row.markID),("created",DataIdentity.unsigned(value.created)),
+                    ("book_key",DataIdentity.canonical(row.contentKey)),
+                    ("mark_id",DataIdentity.canonical(row.markID)),("created",DataIdentity.unsigned(value.created)),
                     ("bookmark",value.bookmark),("is_deleted",content == nil),("start",content.map { DataIdentity.unsigned($0.start) }),
                     ("end",content.map { DataIdentity.unsigned($0.end) }),("excerpt",content?.excerpt),("note",content?.note),
-                    ("merged_into",value.mergedInto.map(DataIdentity.canonical)),("original_merged_into",value.mergedInto),
+                    ("merged_into",value.mergedInto.map(DataIdentity.canonical)),
                 ], relations: [
                     relation("annotation_ancestor", field: "ancestor_id", values: value.ancestors),
                     relation("annotation_related_mark", field: "related_mark_id", values: value.relatedMarks),
@@ -461,15 +461,16 @@ enum LegacyUserImport {
         }
 
         func fact(_ row: ReadingFact) throws {
-            let identity = Identity(id: DataIdentity.canonical(row.id), book: row.contentKey)
+            let identity = Identity(id: ReadingFactRows.identity(row.id), book: row.contentKey)
             try decode(row.payload, model: "ReadingFact", identity: identity) {
                 let batch = try decodeFactBatch(base: 0, payloads: [row.payload])
                 guard let cue = batch.cues().first else { throw BadRow(reason: "missing-fact") }
                 _ = try UserSyncJSON.bindFact(cue, id: row.id)
                 let value = try batch.importColumns(ordinal: cue.ordinal)
-                guard value.durationMs != nil else { throw BadRow(reason: "duration-overflow") }
+                guard let duration = value.durationMs else { throw BadRow(reason: "duration-overflow") }
+                guard duration >= 0 else { throw BadRow(reason: "negative-fact-duration") }
                 try write("reading_fact", idColumn: "fact_id", identity: identity,
-                          body: [("original_id",row.id)] + ReadingFactRows.storageFields(value, book: row.contentKey))
+                          body: ReadingFactRows.storageFields(value, book: row.contentKey))
             }
         }
 
@@ -481,9 +482,9 @@ enum LegacyUserImport {
                 var semantic = identity
                 semantic.id = ReadingFactRows.clearRecordID(book: value.book, session: value.session, through: value.through, ids: value.ids)
                 try write("statistics_clear", identity: semantic, body: [
-                    ("book_key",value.book.map(DataIdentity.canonical)),("original_book_key",value.book),
-                    ("session_id",value.session.map(DataIdentity.canonical)),("original_session_id",value.session),("through_ms",value.through)
-                ], relations: [relation("statistics_clear_id", parent: "clear_id", field: "fact_id", values: value.ids)])
+                    ("book_key",value.book.map(DataIdentity.canonical)),
+                    ("session_id",value.session.map(ReadingFactRows.identity)),("through_ms",value.through)
+                ], relations: [Relation(table: "statistics_clear_id", parentField: "clear_id", rows: Set(value.ids.map(ReadingFactRows.identity)).sorted().map { [("fact_id",$0)] })])
             }
         }
     }

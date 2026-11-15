@@ -17,21 +17,21 @@ enum AnnotationRows {
             """, arguments: [ReadingPositionRows.partition(for: key),DataIdentity.canonical(key),nil]) == true
     }
 
-    static func snapshot(_ db: Database, key: String, markID: String? = nil) throws -> NoteCandidates {
-        let partition = try ReadingPositionRows.partition(for: key)
+    static func snapshot(_ db: Database, key: String, markID: String? = nil, partition supplied: Int? = nil) throws -> NoteCandidates {
+        let partition = try supplied ?? ReadingPositionRows.partition(for: key)
         let args: StatementArguments = [partition,DataIdentity.canonical(key),markID.map(DataIdentity.canonical)]
         let scope = "WHERE c.partition=?1 AND c.book_key=?2 AND (?3 IS NULL OR c.mark_id=?3)"
         let rows = try Row.fetchAll(db, sql: "SELECT c.* FROM usr.annotation_candidate c " + scope, arguments: args)
-        func relations(table: String) throws -> [String: Set<String>] {
+        func relations(table: String, field: String) throws -> [String: Set<String>] {
             let rows = try Row.fetchAll(db, sql: """
-                SELECT r.candidate_id,r.original_id FROM usr.\(table) r JOIN usr.annotation_candidate c
+                SELECT r.candidate_id,r.\(field) AS related_id FROM usr.\(table) r JOIN usr.annotation_candidate c
                   ON r.partition=c.partition AND r.candidate_id=c.record_id
                 \(scope)
                 """, arguments: args)
-            return rows.reduce(into: [:]) { $0[$1["candidate_id"] as String, default: []].insert($1["original_id"]) }
+            return rows.reduce(into: [:]) { $0[$1["candidate_id"] as String, default: []].insert($1["related_id"]) }
         }
-        let ancestors = try relations(table: "annotation_ancestor")
-        let related = try relations(table: "annotation_related_mark")
+        let ancestors = try relations(table: "annotation_ancestor", field: "ancestor_id")
+        let related = try relations(table: "annotation_related_mark", field: "related_mark_id")
         let isolated = try Row.fetchAll(db, sql: """
             SELECT mark_id FROM usr.quarantined_record WHERE partition=?1 AND source_type IN (\(quarantineTypes))
               AND \(quarantineScope)
@@ -41,7 +41,7 @@ enum AnnotationRows {
         let unknownMarks = isolated.contains { ($0["mark_id"] as String?) == nil }
         var groups: [String: [AnnotationCandidate]] = [:]
         for row in rows {
-            let mark: String = row["original_mark_id"], id: String = row["record_id"]
+            let mark: String = row["mark_id"], id: String = row["record_id"]
             guard row["schema_version"] as Int == 1, let created = UInt64(row["created"] as String) else {
                 blocked.insert(mark); continue
             }
@@ -55,12 +55,29 @@ enum AnnotationRows {
                 }
                 content = .init(start: start, end: end, excerpt: excerpt, note: note)
             }
-            groups[mark, default: []].append(.init(id: row["original_id"], ancestors: ancestors[id] ?? [],
+            groups[mark, default: []].append(.init(id: id, ancestors: ancestors[id] ?? [],
                                                   content: content, created: created, bookmark: row["bookmark"],
-                                                  relatedMarks: related[id] ?? [], mergedInto: row["original_merged_into"]))
+                                                  relatedMarks: related[id] ?? [], mergedInto: row["merged_into"]))
         }
         for mark in blocked { groups.removeValue(forKey: mark) }
         return .init(key: key, groups: groups.mapValues(AnnotationReduction.heads), blocked: blocked, unknownMarks: unknownMarks)
+    }
+
+    static func settleHeads(_ db: Database, key: String, markID: String, partition: Int) throws {
+        let book = DataIdentity.canonical(key), mark = DataIdentity.canonical(markID)
+        let view = try snapshot(db, key: key, markID: markID, partition: partition)
+        let selected = view.unknownMarks ? [] : Set((view.groups[markID] ?? []).map { DataIdentity.canonical($0.id) })
+        let args: StatementArguments = [partition,book,mark]
+        let prior = Set(try String.fetchAll(db, sql: """
+            SELECT candidate_id FROM usr.annotation_current_head WHERE partition=? AND book_key=? AND mark_id=?
+            """, arguments: args))
+        for id in prior.subtracting(selected) {
+            try db.execute(sql: "DELETE FROM usr.annotation_current_head WHERE partition=? AND book_key=? AND mark_id=? AND candidate_id=?",
+                           arguments: args + [id])
+        }
+        for id in selected.subtracting(prior) {
+            try db.execute(sql: "INSERT INTO usr.annotation_current_head VALUES (?,?,?,?)", arguments: args + [id])
+        }
     }
 
     // Formal candidates retain the old priority, even if the same mark is
@@ -74,7 +91,7 @@ enum AnnotationRows {
                   WHERE partition=? AND mark_id=? AND source_type IN (\(quarantineTypes)))
                 """, arguments: args) == true { throw UserSyncCompatibilityError() }
             let keys = try String.fetchAll(db, sql: """
-                SELECT DISTINCT original_book_key FROM usr.annotation_candidate WHERE partition=? AND mark_id=?
+                SELECT DISTINCT book_key FROM usr.annotation_candidate WHERE partition=? AND mark_id=?
                 """, arguments: args)
             guard let key = keys.first else { continue }
             guard keys.allSatisfy({ $0 == key }), try ReadingPositionRows.partition(for: key) == partition
@@ -105,13 +122,13 @@ enum AnnotationRows {
         let partition = try ReadingPositionRows.partition(for: key), record = DataIdentity.canonical(value.id)
         let book = DataIdentity.canonical(key), mark = DataIdentity.canonical(markID)
         try db.execute(sql: """
-            INSERT INTO usr.annotation_candidate VALUES (?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, arguments: [partition,record,value.id,book,key,mark,markID,DataIdentity.unsigned(value.created),value.bookmark,
+            INSERT INTO usr.annotation_candidate VALUES (?,?,1,?,?,?,?,?,?,?,?,?,?)
+            """, arguments: [partition,record,book,mark,DataIdentity.unsigned(value.created),value.bookmark,
                              content == nil,content.map { DataIdentity.unsigned($0.start) },content.map { DataIdentity.unsigned($0.end) },
-                             content?.excerpt,content?.note,mergedInto.map(DataIdentity.canonical),mergedInto])
+                             content?.excerpt,content?.note,mergedInto.map(DataIdentity.canonical)])
         func writeRelations(_ ids: Set<String>, table: String) throws {
-            let insert = try db.makeStatement(sql: "INSERT INTO usr.\(table) VALUES (?,?,?,?)")
-            for id in ids { try insert.execute(arguments: [partition,record,DataIdentity.canonical(id),id]) }
+            let insert = try db.makeStatement(sql: "INSERT INTO usr.\(table) VALUES (?,?,?)")
+            for id in ids { try insert.execute(arguments: [partition,record,DataIdentity.canonical(id)]) }
         }
         try writeRelations(value.ancestors, table: "annotation_ancestor")
         try writeRelations(value.relatedMarks, table: "annotation_related_mark")

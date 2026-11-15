@@ -176,7 +176,7 @@ enum LocalScopeImport {
         var object: [String: Any] = ["row": fields(row)]
         for child in table.children {
             let rows = try Row.fetchAll(db, sql: """
-                SELECT * FROM move_source.\(child.table) WHERE partition=? AND \(child.id)=? ORDER BY 1,2,3,4
+                SELECT * FROM move_source.\(child.table) WHERE partition=? AND \(child.id)=? ORDER BY \(child.table == "palette_color" ? "3,4" : "3")
                 """, arguments: args)
             object[child.table] = rows.map(fields)
         }

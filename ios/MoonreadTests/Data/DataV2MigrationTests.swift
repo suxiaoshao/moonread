@@ -276,7 +276,7 @@ struct DataV2MigrationTests {
         let (claimed, _) = try await owner.activate(.confirmed(account, syncRequested: true))
         let bytes = try await owner.read(claimed) { db in
             try Data.fetchAll(db, sql: """
-                SELECT a.bytes FROM usr.cover_candidate c JOIN usr.cover_asset a ON a.asset_id=c.asset_id ORDER BY a.original_id
+                SELECT a.bytes FROM usr.cover_candidate c JOIN usr.cover_asset a ON a.asset_id=c.asset_id ORDER BY a.legacy_cover_id
                 """)
         }
         #expect(bytes == [duplicateBytes,cacheBytes])
