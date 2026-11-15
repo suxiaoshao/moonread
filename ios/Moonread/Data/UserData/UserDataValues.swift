@@ -50,7 +50,8 @@ struct PositionSourceHint: Codable, Equatable, Sendable {
         return (try? validateRelativePath(path: relative_path, allowRoot: false)) != nil && relative_path.utf8.count <= 4096 &&
             relative_path.split(separator: "/").last.map(String.init) == file_name &&
             file_name.utf8.count <= 1024 && decoding.utf8.count <= 64 && file_name.lowercased().hasSuffix(".txt") &&
-            (byte_size.map { $0 <= UInt64(Int64.max) } ?? true)
+            (byte_size.map { $0 <= UInt64(Int64.max) } ?? true) &&
+            (try? normalizeSourceDecoding(decoding: decoding)) == decoding
     }
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: UserSyncJSON.Key.self)

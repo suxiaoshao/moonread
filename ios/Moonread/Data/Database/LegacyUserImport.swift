@@ -6,12 +6,34 @@ import SwiftData
 /// source remains intact. A nil/uncertain scope must never be guessed as local.
 struct LegacyUserSnapshot: Sendable {
     var scope: DataScope?
-    var formal: ModelContainer
+    var formal: ModelContainer?
     var pending: ModelContainer?
     /// The existing app-private full-size cover directory, when available.
     /// No external shelf paths or thumbnail cache is a migration source.
     var coverDirectory: URL? = nil
     var deviceState: DeviceState = .init()
+
+    /// The identity decision belongs to startup. This only opens the
+    /// published files, with saves and CloudKit disabled. An unreadable file
+    /// throws; only a confirmed missing file is represented by nil.
+    static func open(directory: URL, scope: DataScope, deviceState: DeviceState) throws -> Self {
+        let schema = Schema([UserPosition.self, UserValue.self, AnnotationOperation.self,
+                             ReadingFact.self, StatisticsClear.self, UserCover.self])
+        func openStore(_ filename: String) throws -> ModelContainer? {
+            let file = directory.appending(path: filename)
+            do { _ = try FileManager.default.attributesOfItem(atPath: file.path) }
+            catch let error as CocoaError where error.code == .fileNoSuchFile || error.code == .fileReadNoSuchFile {
+                return nil
+            }
+            let configuration = ModelConfiguration("UserData", schema: schema, url: file,
+                                                   allowsSave: false, cloudKitDatabase: .none)
+            return try ModelContainer(for: schema, configurations: [configuration])
+        }
+        return try .init(scope: scope, formal: openStore("user-data.store"),
+                         pending: openStore("pending-users.store"),
+                         coverDirectory: directory.appending(path: "Assets/Covers", directoryHint: .isDirectory),
+                         deviceState: deviceState)
+    }
 
     struct DeviceState: Sendable {
         var hidden: [String] = []
@@ -70,11 +92,13 @@ enum LegacyUserImport {
 
     static func run(_ db: Database, snapshot: LegacyUserSnapshot) throws {
         guard let scope = snapshot.scope else { throw DataV2Error.incompatibleSource("legacy users have no confirmed owner") }
-        guard try State.completed(db) == false else { throw DataV2Error.migrationAlreadyComplete }
-        let formal = ModelContext(snapshot.formal)
-        let pending = snapshot.pending.map { ModelContext($0) }
-        try read(formal, db: db, partition: 0, source: scope.key, coverDirectory: snapshot.coverDirectory)
-        if let pending { try read(pending, db: db, partition: 1, source: scope.key, coverDirectory: snapshot.coverDirectory) }
+        guard try !completed(db) else { throw DataV2Error.migrationAlreadyComplete }
+        if let formal = snapshot.formal {
+            try read(ModelContext(formal), db: db, partition: 0, source: scope.key, coverDirectory: snapshot.coverDirectory)
+        }
+        if let pending = snapshot.pending {
+            try read(ModelContext(pending), db: db, partition: 1, source: scope.key, coverDirectory: snapshot.coverDirectory)
+        }
         try reconcileCoverCompleteness(db, source: scope.key)
         try putDeviceState(snapshot.deviceState, db: db)
         try db.execute(sql: """
@@ -134,12 +158,16 @@ enum LegacyUserImport {
             """, arguments: [source])
     }
 
-    private enum State {
-        static func completed(_ db: Database) throws -> Bool {
-            try Bool.fetchOne(db, sql: """
-                SELECT EXISTS(SELECT 1 FROM usr.local_data_state WHERE state_key='legacy-user-import')
-                """) == true
+    static func completed(_ db: Database) throws -> Bool {
+        switch try String.fetchOne(db, sql: "SELECT value FROM usr.local_data_state WHERE state_key='legacy-user-import'") {
+        case nil: return false
+        case "structural-v1", "absent-v1": return true
+        default: throw DataV2Error.incompatibleSource("legacy user import marker")
         }
+    }
+
+    static func recordAbsentSource(_ db: Database) throws {
+        try db.execute(sql: "INSERT INTO usr.local_data_state VALUES ('legacy-user-import','absent-v1')")
     }
 
     private static func read(_ context: ModelContext, db: Database, partition: Int, source: String, coverDirectory: URL?) throws {

@@ -36,16 +36,23 @@ enum DataV2Schema {
     }
 
     static func prepare(_ writer: DatabasePool, bundle: Bundle) throws {
-        // Check both versions before writing either file. Each upgrade commits
-        // changes to just one file, regardless of ATTACH/WAL behavior.
-        let (index, user) = try writer.read {
-            (try version($0, in: "main"), try version($0, in: "usr"))
+        // New attachments must be ready before the pool opens a read-only
+        // connection. Reopening a WAL index does not prepare a new usr file.
+        let (index, user) = try writer.writeWithoutTransaction { db in
+            let index = try version(db, in: "main")
+            let user = try version(db, in: "usr")
+            guard [0, indexVersion].contains(index) else { throw DataV2Error.unsupportedSchema("main", index) }
+            guard [0, userVersion].contains(user) else { throw DataV2Error.unsupportedSchema("usr", user) }
+            if index == 0 { try checkFresh(db, in: "main") }
+            if user == 0 { try checkFresh(db, in: "usr") }
+            guard try String.fetchOne(db, sql: "PRAGMA usr.journal_mode=WAL")?.lowercased() == "wal" else {
+                throw DataV2Error.incompatibleSource("user WAL")
+            }
+            return (index, user)
         }
-        guard [0, indexVersion].contains(index) else { throw DataV2Error.unsupportedSchema("main", index) }
-        guard [0, userVersion].contains(user) else { throw DataV2Error.unsupportedSchema("usr", user) }
+        // Schema writes commit separately for each file.
         if index == 0 {
             try writer.write { db in
-                try checkFresh(db, in: "main")
                 try db.execute(sql: sql("schema", in: bundle))
                 try db.execute(sql: "ALTER TABLE import_jobs ADD COLUMN purpose TEXT NOT NULL DEFAULT 'reading'")
                 try db.execute(sql: sql("full_index", in: bundle))
@@ -69,7 +76,6 @@ enum DataV2Schema {
         }
         if user == 0 {
             try writer.write { db in
-                try checkFresh(db, in: "usr")
                 try db.execute(sql: sql("UserSchemaV1", in: bundle))
                 try db.execute(sql: "PRAGMA usr.user_version=1")
             }

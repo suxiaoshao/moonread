@@ -128,6 +128,7 @@ final class DataSession: @unchecked Sendable {
     private var verifiedAccount: DataScope?
     private var closeFailed = false
     private var indexReady = false
+    private var usersReady = false
 
     /// The optional bootstrap owner is accepted only before any v2 owner
     /// decision exists. It comes from a positively attributed legacy store,
@@ -162,11 +163,6 @@ final class DataSession: @unchecked Sendable {
         pool = writer
         do {
             try DataV2Schema.prepare(writer, bundle: bundle)
-            try writer.writeWithoutTransaction { db in
-                guard try String.fetchOne(db, sql: "PRAGMA usr.journal_mode=WAL")?.lowercased() == "wal" else {
-                    throw DataV2Error.incompatibleSource("user WAL")
-                }
-            }
         } catch {
             try closeLocked()
             throw error
@@ -221,7 +217,7 @@ final class DataSession: @unchecked Sendable {
     }
 
     private func closeLocked() throws {
-        lease = nil; selection = nil; indexReady = false
+        lease = nil; selection = nil; indexReady = false; usersReady = false
         guard let pool else { return }
         do { try pool.close() }
         catch { closeFailed = true; throw error }
@@ -309,6 +305,86 @@ final class DataSession: @unchecked Sendable {
             throw DataV2Error.incompatibleSource("unconfirmed legacy user ownership")
         }
         try active(token).write { db in try LegacyUserImport.run(db, snapshot: snapshot) }
+    }
+
+    /// Prepare one local user authority. The caller resolves the old store's
+    /// provenance; nil means this scope has no legacy source, not that opening
+    /// or attributing a source failed.
+    func prepareUsers(_ token: DataSessionLease, legacy: () throws -> LegacyUserSnapshot?) throws {
+        let needsSource = try lifecycle.withLock {
+            let writer = try active(token)
+            guard indexReady else { throw DataV2Error.migrationNotVerified }
+            if usersReady { return false }
+            return try writer.read { try !LegacyUserImport.completed($0) }
+        }
+        // Opening a SwiftData source never holds the index writer or lease lock.
+        let snapshot = needsSource ? try legacy() : nil
+        try lifecycle.withLock {
+            let writer = try active(token)
+            guard indexReady else { throw DataV2Error.migrationNotVerified }
+            if usersReady { return }
+            if needsSource {
+                try writer.write { db in
+                    guard try !LegacyUserImport.completed(db) else { return }
+                    if let snapshot {
+                        guard snapshot.scope == token.scope else {
+                            throw DataV2Error.incompatibleSource("unconfirmed legacy user ownership")
+                        }
+                        try LegacyUserImport.run(db, snapshot: snapshot)
+                    } else {
+                        try LegacyUserImport.recordAbsentSource(db)
+                    }
+                }
+            }
+            // Copy/absence is already durable in usr. If this publication
+            // fails, a later startup can retry it without recopied user rows.
+            if !owner.ownedIndex {
+                var state = owner
+                state.ownedIndex = true
+                try saveOwner(state)
+            }
+            usersReady = true
+        }
+    }
+
+    func readUsers<T: Sendable>(_ token: DataSessionLease, _ body: @Sendable (Database) throws -> T) throws -> T {
+        try lifecycle.withLock {
+            let writer = try active(token)
+            guard usersReady else { throw DataV2Error.migrationNotVerified }
+            return try writer.read(body)
+        }
+    }
+
+    func writeUsers<T: Sendable>(_ token: DataSessionLease, _ body: (Database) throws -> T) throws -> T {
+        try lifecycle.withLock {
+            let writer = try active(token)
+            guard usersReady else { throw DataV2Error.migrationNotVerified }
+            return try writer.write(body)
+        }
+    }
+
+    /// Fixed queries choose their own read region. For usr, the initial read
+    /// and registration must share one writer access: the pool's concurrent
+    /// observer only compares main WAL snapshots. Refetches also use the
+    /// writer, so keep expensive computation outside the fetch closure.
+    /// The store owns cancellation and checks its parameter generation again
+    /// on delivery, since a scope may change after a callback is queued.
+    func observeUsers<R: ValueReducer>(_ token: DataSessionLease, _ observation: ValueObservation<R>,
+                                      receive: @escaping @Sendable (Result<R.Value, Error>) -> Void) throws -> AnyDatabaseCancellable
+    where R.Value: Sendable {
+        try lifecycle.withLock {
+            let writer = try active(token)
+            guard usersReady else { throw DataV2Error.migrationNotVerified }
+            var observation = observation
+            observation.requiresWriteAccess = true
+            let scheduler = AsyncValueObservationScheduler(queue: DispatchQueue(label: "moonread.data-observation"))
+            let callback: @Sendable (Result<R.Value, Error>) -> Void = { [weak self] result in
+                guard let self, lifecycle.withLock({ lease == token }) else { return }
+                receive(result)
+            }
+            return observation.start(in: writer, scheduling: scheduler, onError: { callback(.failure($0)) },
+                                     onChange: { callback(.success($0)) })
+        }
     }
 
     /// Called only from the confirmed enable flow. Merely learning the current

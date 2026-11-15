@@ -11,6 +11,37 @@ extension ReadingKey {
 }
 
 extension AppDataService {
+    /// Attribute released stores using the owner's prior explicit consent;
+    /// never infer ownership from the current system sign-in. The compatible
+    /// source is the published Production store, with CloudKit disabled here.
+    func publishedUserSource() throws -> (scope: DataScope, resumeNamespace: String) {
+        guard let value = sourceDefaults.object(forKey: "Moonread.userOwner") else {
+            return (.local, userDirectoryName + "/local")
+        }
+        guard let recordName = value as? String, !recordName.isEmpty else {
+            throw DataV2Error.invalidOwnerState
+        }
+        return (try .confirmed(container: CloudConfiguration.containerID, environment: .production, recordName: recordName),
+                userDirectoryName + "/" + recordName)
+    }
+
+    /// The relational writer and fixed reads must use this prepared capability.
+    func relationalUserIndex() throws -> ReaderIndex {
+        let index = try indexStore()
+        try index.session.prepareUsers(index.lease) {
+            let source = try publishedUserSource()
+            guard source.scope == index.lease.scope else { return nil }
+            let deviceState = try LegacyUserSnapshot.DeviceState(defaults: sourceDefaults,
+                                                                confirmedLegacyResumeScope: source.resumeNamespace)
+            let snapshot = try LegacyUserSnapshot.open(directory: dataDirectoryURL(), scope: source.scope,
+                                                       deviceState: deviceState)
+            if snapshot.formal == nil, snapshot.pending == nil,
+               deviceState.hidden.isEmpty, deviceState.preferred.isEmpty, deviceState.resume.isEmpty { return nil }
+            return snapshot
+        }
+        return index
+    }
+
     func userStore(pending: Bool = false, diagnostic: ReaderOpenTrace? = nil) async throws -> UserDataStore {
         let label = pending ? "pendingStore" : "formalStore"
         diagnostic?.mark(label + ".service.begin")

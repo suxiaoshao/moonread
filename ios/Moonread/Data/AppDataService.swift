@@ -458,18 +458,22 @@ actor AppDataService {
     }
     // The normal app remains Moonread; injected stores and UI sessions own their caches.
     var dataDirectoryName: String { userDirectoryName }
+    func dataDirectoryURL() throws -> URL {
+        try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
+                                    appropriateFor: nil, create: true)
+            .appending(path: dataDirectoryName, directoryHint: .isDirectory)
+    }
     // Internal text/file capability. UI-facing user data comes from domain
     // queries below; index tasks never build shared user projections.
     func indexStore() throws -> ReaderIndex {
         if let core {
             return core
         }
-        let directory = try FileManager.default.url(
-            for: .applicationSupportDirectory, in: .userDomainMask,
-            appropriateFor: nil, create: true
-        ).appendingPathComponent(dataDirectoryName, isDirectory: true)
+        let directory = try dataDirectoryURL()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let session = try DataSession(layout: DataLayout(applicationSupport: directory))
+        let legacy = try publishedUserSource()
+        let session = try DataSession(layout: DataLayout(applicationSupport: directory),
+                                      confirmedLegacyOwner: legacy.scope == .local ? nil : legacy.scope)
         let (lease, _) = try session.activate(.unknown)
         try session.prepareIndex(directory.appending(path: "reader.sqlite3"), token: lease)
         let value = ReaderIndex(session: session, lease: lease)

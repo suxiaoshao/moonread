@@ -115,7 +115,7 @@ enum UserSyncJSON {
         try validate(text, as: shape, envelope: envelope)
         let value = try JSONDecoder().decode(type, from: Data(text.utf8))
         if let position = value as? PositionValue, let hint = position.source_hint {
-            guard hint.isValid, (try? normalizeSourceDecoding(decoding: hint.decoding)) == hint.decoding else { throw UserSyncCompatibilityError() }
+            guard hint.isValid else { throw UserSyncCompatibilityError() }
         }
         return value
     }

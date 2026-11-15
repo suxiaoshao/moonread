@@ -362,6 +362,75 @@ struct DataV2MigrationTests {
         try await restarted.close()
     }
 
+    @Test func rebindsWALIndexToFreshAccountBeforeOpeningReaders() throws {
+        let root = try sandbox()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let layout = DataLayout(applicationSupport: root)
+        let a = try scope("A"), b = try scope("B")
+        let session = try DataSession(layout: layout, confirmedLegacyOwner: a)
+        let (leaseA, _) = try session.activate(.unknown)
+        let keyA = String(repeating: "a", count: 64), keyB = String(repeating: "b", count: 64)
+        func snapshot(_ scope: DataScope, hidden key: String) throws -> LegacyUserSnapshot {
+            var source = LegacyUserSnapshot(scope: scope, formal: try container(), pending: nil)
+            source.deviceState.hidden = [key]
+            return source
+        }
+        func hidden(_ token: DataSessionLease) throws -> [String] {
+            try session.read(token) { try String.fetchAll($0, sql: "SELECT book_key FROM usr.local_hidden_book") }
+        }
+        try session.importLegacyUsers(snapshot(a, hidden: keyA), token: leaseA)
+        let (leaseB, selection) = try session.activate(.confirmed(b, syncRequested: false))
+        #expect(selection.scope == b && !selection.maySync)
+        try #expect(hidden(leaseB).isEmpty)
+        #expect(throws: DataV2Error.leaseExpired) { _ = try hidden(leaseA) }
+        #expect(throws: DataV2Error.leaseExpired) {
+            try session.importLegacyUsers(snapshot(a, hidden: keyB), token: leaseA)
+        }
+        try session.importLegacyUsers(snapshot(b, hidden: keyB), token: leaseB)
+        let (newA, _) = try session.activate(.confirmed(a, syncRequested: false))
+        try #expect(hidden(newA) == [keyA])
+        let (newB, _) = try session.activate(.confirmed(b, syncRequested: false))
+        try #expect(hidden(newB) == [keyB])
+        try session.close()
+    }
+
+    @Test func requiresVerifiedUserIntakeAndCommitsPositionWithDeviceBaseline() throws {
+        let root = try sandbox()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let layout = DataLayout(applicationSupport: root)
+        let session = try DataSession(layout: layout)
+        let (lease, _) = try session.activate(.unknown)
+        let oldIndex = root.appending(path: "reader.sqlite3")
+        try session.prepareIndex(oldIndex, token: lease)
+        #expect(throws: DataV2Error.migrationNotVerified) { _ = try session.readUsers(lease) { _ in 0 } }
+
+        let book = String(repeating: "a", count: 64)
+        var source = LegacyUserSnapshot(scope: .local, formal: try container(), pending: nil)
+        source.deviceState.hidden = [book]
+        try session.prepareUsers(lease) { source }
+        try session.writeUsers(lease) { db in
+            try ReadingPositionRows.recordOpened(db, book: book, openedAt: 12, file: "file", device: "sample",
+                                                now: 12, token: "opened")
+        }
+        try #expect(session.readUsers(lease) { try ReadingPositionRows.position($0, book: book, partition: 0) } == nil)
+        _ = try session.writeUsers(lease) { db in
+            try ReadingPositionRows.recordPosition(db, book: book, offset: UInt64.max, hint: nil, file: nil,
+                                                  device: "sample", now: 13, token: "position")
+        }
+        try session.close()
+
+        let (newLease, _) = try session.activate(.unknown)
+        try session.prepareIndex(oldIndex, token: newLease)
+        try session.prepareUsers(newLease) { throw DataV2Error.migrationAlreadyComplete }
+        let state = try session.readUsers(newLease) { db in
+            (try LocalReadingRows.resume(db, book: book), try LocalReadingRows.hidden(db, book: book),
+             try LocalReadingRows.preferredFile(db, book: book), try ReadingPositionRows.position(db, book: book, partition: 0))
+        }
+        #expect(state.0 == .init(offset: UInt64.max, token: "position") && !state.1 && state.2 == "file")
+        #expect(state.3?.value.offset == UInt64.max && state.3?.token == "position")
+        try session.close()
+    }
+
     @Test func recoversCommittedLocalClaimBeforeSelectingAnotherAccount() async throws {
         let root = try sandbox()
         defer { try? FileManager.default.removeItem(at: root) }
