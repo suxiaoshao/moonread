@@ -138,6 +138,7 @@ enum ReadingFactSettlement {
             """, arguments: [h.partition,origin.source,origin.id,h.id,h.book,h.session,evidence.device,bytes,DataIdentity.sha(bytes),reason])
         let original = UpgradeOrigins.Key(partition: h.partition, domain: .fact, id: h.id)
         try origin.recordIsolation(db, partition: h.partition, inheriting: origin.source == "relational" ? original : nil)
+        try CloudTransportRows.isolateInitialMember(db, ReadingHistoryTransport.key(.fact, id: h.id), reason: .unrepresented)
     }
 
     private static func evidence(_ db: Database, id: String, partitions: Int? = nil) throws -> [Evidence] {

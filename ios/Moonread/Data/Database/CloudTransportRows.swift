@@ -91,16 +91,41 @@ enum CloudTransportRows {
             UPDATE usr.cloud_outbox SET after_type=?,after_name=?,after_digest=?
              WHERE \(keyFilter) AND intent='delete'
             """, arguments: replacement + predecessor.arguments)
+        // A new causal ID may be required to finish a selected predecessor.
+        // Do not adopt unrelated later work into the first upload.
+        if predecessor.zone == ReadingHistoryTransport.zone {
+            try db.execute(sql: """
+                INSERT INTO usr.cloud_initial_member(record_type,record_name,business_id)
+                SELECT ?1,?2,?3 FROM usr.cloud_initial_member WHERE (record_type,record_name)=(?4,?5)
+                ON CONFLICT(record_type,record_name) DO UPDATE SET confirmed=0,blocked_reason=NULL
+                """, arguments: [successor.key.type,successor.key.name,successor.businessID,predecessor.type,predecessor.name])
+        }
     }
 
     /// A whole-book action explicitly authorizes the compaction chain's
     /// removals too; it no longer waits for a replacement that is being erased.
     static func enqueueBookDelete(_ db: Database, _ key: Key, businessID: String) throws {
-        try enqueueDelete(db, key, businessID: businessID)
+        if try !retireUnsentInitialMember(db, key) { try enqueueDelete(db, key, businessID: businessID) }
         try db.execute(sql: """
             UPDATE usr.cloud_outbox SET after_type=NULL,after_name=NULL,after_digest=NULL
             WHERE zone=?1 AND intent='delete' AND ((record_type=?2 AND record_name=?3) OR (after_type=?2 AND after_name=?3))
             """, arguments: key.arguments)
+    }
+
+    /// A confirmed local book deletion can close a never-offered member.
+    /// After prepare (even across a lost reply) require the ordinary DELETE
+    /// and its exact ACK instead of inferring that the server never saw it.
+    private static func retireUnsentInitialMember(_ db: Database, _ key: Key) throws -> Bool {
+        guard key.zone == ReadingHistoryTransport.zone else { return false }
+        try db.execute(sql: """
+            UPDATE usr.cloud_initial_member SET confirmed=1,blocked_reason=NULL
+            WHERE (record_type,record_name)=(?2,?3) AND offered=0
+              AND NOT EXISTS(SELECT 1 FROM usr.cloud_record_state
+                WHERE (zone,record_type,record_name)=(?1,?2,?3))
+            """, arguments: key.arguments)
+        guard db.changesCount > 0 else { return false }
+        try db.execute(sql: "DELETE FROM usr.cloud_outbox WHERE \(keyFilter)", arguments: key.arguments)
+        return true
     }
 
     private static func enqueue(_ db: Database, _ key: Key, businessID: String, intent: String, digest: String?) throws {
@@ -111,6 +136,12 @@ enum CloudTransportRows {
             ON CONFLICT(zone,record_type,record_name) DO UPDATE SET intent=excluded.intent,content_digest=excluded.content_digest,
               generation=excluded.generation
             """, arguments: key.arguments + [businessID, intent, digest, next])
+        if key.zone == ReadingHistoryTransport.zone {
+            try db.execute(sql: """
+                UPDATE usr.cloud_initial_member SET confirmed=0,blocked_reason=NULL
+                WHERE (record_type,record_name)=(?,?) AND (confirmed=1 OR blocked_reason IS NOT NULL)
+                """, arguments: [key.type,key.name])
+        }
     }
 
     static func allocateGeneration(_ db: Database) throws -> Int64 {
@@ -203,15 +234,41 @@ enum CloudTransportRows {
         try Data.fetchOne(db, sql: "SELECT system_fields FROM usr.cloud_record_state WHERE \(keyFilter)", arguments: key.arguments)
     }
 
-    static func withdrawSave(_ db: Database, _ key: Key) throws {
+    private static func removeSave(_ db: Database, _ key: Key) throws {
         try db.execute(sql: "DELETE FROM usr.cloud_outbox WHERE \(keyFilter) AND intent='save'", arguments: key.arguments)
+    }
+
+    static func withdrawSave(_ db: Database, _ key: Key,
+                             initialBlock: ReadingCloudInitialization.Blocked = .unrepresented) throws {
+        try removeSave(db, key)
+        guard key.zone == ReadingHistoryTransport.zone else { return }
+        // This is not confirmation. Invalidate even a previously ACKed
+        // member (which no longer has a SAVE to remove).
+        try db.execute(sql: """
+            UPDATE usr.cloud_initial_member SET confirmed=0,blocked_reason=?4
+            WHERE (record_type,record_name)=(?2,?3) AND NOT EXISTS(
+              SELECT 1 FROM usr.cloud_outbox WHERE (zone,record_type,record_name)=(?1,?2,?3) AND intent='delete')
+            """, arguments: key.arguments + [initialBlock.rawValue])
+    }
+
+    static func isolateInitialMember(_ db: Database, _ key: Key, reason: ReadingCloudInitialization.Blocked) throws {
+        guard try ReadingCloudInitialization.Traffic.initial.allows(db, key: key) else { return }
+        try withdrawSave(db, key, initialBlock: reason)
+    }
+
+    static func noteInitialOffer(_ db: Database, _ attempt: Attempt) throws {
+        guard attempt.key.zone == ReadingHistoryTransport.zone, case .save = attempt.intent else { return }
+        try db.execute(sql: """
+            UPDATE usr.cloud_initial_member SET offered=1 WHERE (record_type,record_name)=(?,?) AND offered=0
+            """, arguments: [attempt.key.type,attempt.key.name])
     }
 
     /// A known peer deletion wins over older unsent saves. An X2 decision
     /// based on local state must be made in this same writer transaction.
     static func applyPeerDeletion(_ db: Database, _ key: Key) throws {
         try forgetServerRecord(db, key)
-        try withdrawSave(db, key)
+        try removeSave(db, key)
+        try confirmInitialMember(db, key)
         // A peer removed our not-yet-confirmed replacement. That deletion
         // cannot authorize removal of distinct predecessor records. Their
         // book routing remains in cloud_record_state for an explicit delete.
@@ -232,7 +289,7 @@ enum CloudTransportRows {
             guard try !awaitingVerification(db, sent.key) else { return false }
             if FixedValueCloudRows.Family(rawValue: sent.key.type) != nil, try FixedValueCloudRows.blocksSave(db, key: sent.key) { return false }
             try recordPresent(db, sent.key, businessID: sent.businessID, systemFields: systemFields)
-            try withdrawSave(db, sent.key)
+            try removeSave(db, sent.key)
             if case .save(let digest) = sent.intent {
                 try db.execute(sql: """
                     UPDATE usr.cloud_outbox SET after_type=NULL,after_name=NULL,after_digest=NULL
@@ -248,9 +305,20 @@ enum CloudTransportRows {
                 try forgetServerRecord(db, sent.key)
             }
         }
+        // The exact ACK above is not sufficient if it caused X2 to stage
+        // a new SAVE for the same member. Keep that member open.
+        try confirmInitialMember(db, sent.key)
         return true
     }
 
+    private static func confirmInitialMember(_ db: Database, _ key: Key) throws {
+        guard key.zone == ReadingHistoryTransport.zone else { return }
+        try db.execute(sql: """
+            UPDATE usr.cloud_initial_member SET confirmed=1,blocked_reason=NULL
+            WHERE (record_type,record_name)=(?2,?3) AND NOT EXISTS(
+              SELECT 1 FROM usr.cloud_outbox WHERE (zone,record_type,record_name)=(?1,?2,?3))
+            """, arguments: key.arguments)
+    }
     static func checkpoint(_ db: Database, zone: String) throws -> Data? {
         try Data.fetchOne(db, sql: "SELECT checkpoint FROM usr.cloud_engine_state WHERE zone=?", arguments: [zone])
     }
@@ -526,6 +594,9 @@ enum CloudInboxRows {
                 """, arguments: [quarantine,asset.field,asset.bytes,asset.bytes.map(DataIdentity.sha),
                                 asset.bytes == nil ? "unavailable-attachment" : nil])
         }
+        try CloudTransportRows.isolateInitialMember(db,
+            .init(zone: ReadingHistoryTransport.zone, type: record.type, name: record.name),
+            reason: reason == "unavailable-attachment" ? .missingAttachment : .unrepresented)
         if let trusted { try trusted.settle(db) }
         if let causal { try CausalCloudRows.settle(db, causal.family, book: causal.book, mark: causal.mark) }
     }
@@ -537,7 +608,7 @@ enum CloudSaveVerification {
         let digest: String?
     }
 
-    static func requests(_ db: Database, after: CloudTransportRows.Key?, limit: Int) throws -> [Ticket] {
+    static func requests(_ db: Database, after: CloudTransportRows.Key?, limit: Int, initialOnly: Bool = false) throws -> [Ticket] {
         let zone = ReadingHistoryTransport.zone
         let types = CloudTransportRows.supportedTypes
         let slots = types.map { _ in "?" }.joined(separator: ",")
@@ -547,9 +618,11 @@ enum CloudSaveVerification {
             SELECT s.record_type,s.record_name FROM usr.cloud_record_state s JOIN usr.cloud_outbox o
               ON o.zone=s.zone AND o.record_type=s.record_type AND o.record_name=s.record_name AND o.intent='save'
             WHERE s.zone=? AND s.server_state=? AND s.record_type IN (\(slots))
+              AND (NOT ? OR EXISTS(SELECT 1 FROM usr.cloud_initial_member m
+                WHERE (m.record_type,m.record_name)=(s.record_type,s.record_name)))
               AND (s.record_type,s.record_name)>(?,?)
             ORDER BY s.record_type,s.record_name LIMIT ?
-            """, arguments: arguments + StatementArguments(types) + [afterType,afterName,limit])
+            """, arguments: arguments + StatementArguments(types) + [initialOnly,afterType,afterName,limit])
         return try rows.map { row in
             let key = CloudTransportRows.Key(zone: zone, type: row["record_type"], name: row["record_name"])
             guard let attempt = try CloudTransportRows.pending(db, key) else { throw DataV2Error.migrationNotVerified }
@@ -727,7 +800,7 @@ actor CloudCallbackJournal {
     /// checkpoint covering a completed own-zone fetch begun at that floor.
     func persistCheckpoint(_ bytes: Data, confirmedOwnZoneThrough generation: Int64? = nil) throws {
         try recordCallback(whileCreating: { () }) { db in
-            guard try UpgradeOrigins.phase(db) == nil else { return }
+            guard try ReadingCloudInitialization.traffic(db) != .blocked else { return }
             try CloudTransportRows.storeCheckpoint(db, zone: ReadingHistoryTransport.zone, bytes: bytes)
             if let generation { try FixedValueCloudRows.expireReceipts(db, through: generation) }
         }
@@ -758,12 +831,15 @@ actor CloudCallbackJournal {
         guard !failed else { throw Failure.restartRequired }
         let zone = ReadingHistoryTransport.zone
         return try session.readCloudChanges(binding) { db in
-            guard try UpgradeOrigins.phase(db) == nil,
-                  try CloudTransportRows.zoneStage(db, zone: zone) == .ready else { return [] }
+            let traffic = try ReadingCloudInitialization.traffic(db)
+            guard traffic != .blocked, try CloudTransportRows.zoneStage(db, zone: zone) == .ready else { return [] }
             return try Row.fetchAll(db, sql: """
-                SELECT record_type,record_name,business_id,intent FROM usr.cloud_outbox WHERE zone=? AND after_name IS NULL
-                ORDER BY intent='save',generation
-                """, arguments: [zone]).compactMap { row in
+                SELECT o.record_type,o.record_name,o.business_id,o.intent FROM usr.cloud_outbox o
+                WHERE o.zone=? AND o.after_name IS NULL
+                  AND (NOT ? OR EXISTS(SELECT 1 FROM usr.cloud_initial_member m
+                    WHERE (m.record_type,m.record_name)=(o.record_type,o.record_name)))
+                ORDER BY o.intent='save',o.generation
+                """, arguments: [zone,traffic == .initial]).compactMap { row in
                 let type: String = row["record_type"]
                 guard FixedValueCloudRows.Family(rawValue: type) != nil || ReadingHistoryTransport.RecordType(rawValue: type) != nil ||
                     CausalCloudRows.Family(rawValue: type) != nil
@@ -780,9 +856,10 @@ actor CloudCallbackJournal {
             if !records.isEmpty || !deletions.isEmpty { throw Failure.restartRequired }
         }) { db in
             if !records.isEmpty || !deletions.isEmpty {
-                // Must not advance the ordinary checkpoint over unclassified
-                // input. The bootstrap inbox will own it in the next batch.
-                guard try UpgradeOrigins.phase(db) == nil else { throw Failure.restartRequired }
+                // Only the elected creator can apply its own-zone echoes
+                // here before resolving local origins. A joining device
+                // must keep its complete baseline separate.
+                guard try ReadingCloudInitialization.traffic(db) != .blocked else { throw Failure.restartRequired }
             }
             try CloudInboxRows.apply(db, records: records, deletions: deletions, scope: scope)
         }
@@ -791,19 +868,26 @@ actor CloudCallbackJournal {
     func verificationRequests(after: CloudTransportRows.Key? = nil, limit: Int) throws -> [CloudSaveVerification.Ticket] {
         guard !failed else { throw Failure.restartRequired }
         return try session.readCloudChanges(binding) { db in
-            guard try UpgradeOrigins.phase(db) == nil else { return [] }
-            return try CloudSaveVerification.requests(db, after: after, limit: limit)
+            let traffic = try ReadingCloudInitialization.traffic(db)
+            guard traffic != .blocked else { return [] }
+            return try CloudSaveVerification.requests(db, after: after, limit: limit, initialOnly: traffic == .initial)
         }
     }
 
     func requireMissingSaveVerification(_ attempt: CloudTransportRows.Attempt) throws {
-        try recordCallback(whileCreating: { () }) { try CloudSaveVerification.hold($0, attempt) }
+        try recordCallback(whileCreating: { () }) { db in
+            guard try ReadingCloudInitialization.traffic(db).allows(db, key: attempt.key) else { return }
+            try CloudSaveVerification.hold(db, attempt)
+        }
     }
 
     /// nil means a definite record-level unknownItem, never a zone error.
     func resolve(_ ticket: CloudSaveVerification.Ticket, record: CloudInboxRows.Record?) throws -> Bool {
         let scope = lease.scope
-        return try recordCallback(whileCreating: { false }) { try CloudSaveVerification.resolve($0, ticket, record: record, scope: scope) }
+        return try recordCallback(whileCreating: { false }) { db in
+            guard try ReadingCloudInitialization.traffic(db).allows(db, key: ticket.attempt.key) else { return false }
+            return try CloudSaveVerification.resolve(db, ticket, record: record, scope: scope)
+        }
     }
 
     func initializeZone(exists: Bool) throws {
@@ -834,17 +918,34 @@ actor CloudCallbackJournal {
         }
     }
 
+    func beginFirstUpload(_ control: ReadingCloudInitialization.Control) throws {
+        let scope = lease.scope
+        try commit { try ReadingCloudInitialization.beginFirstUpload($0, control: control, scope: scope) }
+    }
+
+    func sealFirstUpload(_ control: ReadingCloudInitialization.Control) throws -> ReadingCloudInitialization.Completion {
+        try commit { try ReadingCloudInitialization.sealFirstUpload($0, control: control) }
+    }
+
+    func finishFirstUpload(_ ready: ReadingCloudInitialization.Control) throws {
+        try commit { try ReadingCloudInitialization.finishFirstUpload($0, ready: ready) }
+    }
+
     func prepareFixedValueChange(_ family: FixedValueCloudRows.Family, id: String) throws -> FixedValueCloudRows.Prepared? {
         try recordCallback(whileCreating: { nil }) { db in
-            guard try UpgradeOrigins.phase(db) == nil else { return nil }
-            return try FixedValueCloudRows.prepare(db, family, id: id)
+            guard try ReadingCloudInitialization.traffic(db).allows(db, key: FixedValueCloudRows.key(family, id: id)) else { return nil }
+            let prepared = try FixedValueCloudRows.prepare(db, family, id: id)
+            if let prepared { try CloudTransportRows.noteInitialOffer(db, prepared.attempt) }
+            return prepared
         }
     }
 
     func prepareCausalChange(_ family: CausalCloudRows.Family, id: String) throws -> CausalCloudRows.Prepared? {
         try recordCallback(whileCreating: { nil }) { db in
-            guard try UpgradeOrigins.phase(db) == nil else { return nil }
-            return try CausalCloudRows.prepare(db, family, id: id)
+            guard try ReadingCloudInitialization.traffic(db).allows(db, key: CausalCloudRows.key(family, id: id)) else { return nil }
+            let prepared = try CausalCloudRows.prepare(db, family, id: id)
+            if let prepared { try CloudTransportRows.noteInitialOffer(db, prepared.attempt) }
+            return prepared
         }
     }
 
@@ -864,7 +965,7 @@ actor CloudCallbackJournal {
     func prepareHistoryChange(type: ReadingHistoryTransport.RecordType, id: String) throws -> PreparedHistoryChange? {
         let key = ReadingHistoryTransport.key(type, id: id)
         return try recordCallback(whileCreating: { nil }) { db in
-            guard try UpgradeOrigins.phase(db) == nil, let attempt = try CloudTransportRows.pending(db, key),
+            guard try ReadingCloudInitialization.traffic(db).allows(db, key: key), let attempt = try CloudTransportRows.pending(db, key),
                   attempt.businessID == id else { return nil }
             let prepared: PreparedHistoryChange
             switch attempt.intent {
@@ -878,6 +979,7 @@ actor CloudCallbackJournal {
                 prepared = .init(attempt: attempt, payload: nil, logical: nil, systemFields: nil)
             }
             try CloudTransportRows.reserveGenerationFloor(db, covering: attempt.generation)
+            try CloudTransportRows.noteInitialOffer(db, attempt)
             return prepared
         }
     }
@@ -900,8 +1002,10 @@ actor CloudCallbackJournal {
     func acknowledge(_ results: [Sent]) throws -> Int {
         try recordCallback(whileCreating: { 0 }) { db in
             var accepted = 0
+            let traffic = try ReadingCloudInitialization.traffic(db)
             for sent in results where sent.attempt.key.zone == ReadingHistoryTransport.zone {
-                if try CloudTransportRows.acknowledge(db, sent.attempt, systemFields: sent.systemFields) { accepted += 1 }
+                if try traffic.allows(db, key: sent.attempt.key),
+                   try CloudTransportRows.acknowledge(db, sent.attempt, systemFields: sent.systemFields) { accepted += 1 }
             }
             return accepted
         }

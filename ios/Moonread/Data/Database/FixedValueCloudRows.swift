@@ -149,6 +149,21 @@ enum FixedValueCloudRows {
         try material(db, family, id: id)?.digest
     }
 
+    static func initialCoverage(_ db: Database, _ family: Family, id: String) throws -> ReadingCloudInitialization.Coverage {
+        if family == .cover, try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(SELECT 1 FROM usr.cover_candidate c LEFT JOIN usr.cover_asset a ON a.asset_id=c.asset_id
+              WHERE c.partition=0 AND c.record_id=? AND c.schema_version=1 AND NOT c.is_empty
+                AND (a.legacy_cover_id IS NULL OR a.availability<>'available'))
+            """, arguments: [id]) == true { return .blocked(.missingAttachment) }
+        guard let value = try material(db, family, id: id), try readable(db, value)
+        else { return .blocked(.unrepresented) }
+        if let cover = value.cover {
+            guard let bytes = try matchingCoverBytes(db, cover) else { return .blocked(.missingAttachment) }
+            guard bytes.count <= ReadingSyncEngineAdapter.attachmentLimit else { return .blocked(.unrepresented) }
+        }
+        return .save(value.digest)
+    }
+
     private static func matchingCoverBytes(_ db: Database, _ cover: UserValueRows.Cover) throws -> Data? {
         guard let bytes = try UserValueRows.coverBytes(db, id: cover.id, sha: cover.sha256),
               DataIdentity.sha(bytes) == cover.sha256 else { return nil }
@@ -184,7 +199,7 @@ enum FixedValueCloudRows {
             let ids = try String.fetchAll(db, sql: """
                 SELECT record_id FROM usr.\(family.table) WHERE partition=0 AND book_key=?\(family.predicate)
                 """, arguments: [book])
-            for id in ids { try CloudTransportRows.enqueueDelete(db, key(family, id: id), businessID: id) }
+            for id in ids { try CloudTransportRows.enqueueBookDelete(db, key(family, id: id), businessID: id) }
         }
     }
 

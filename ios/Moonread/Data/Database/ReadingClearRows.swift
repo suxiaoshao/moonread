@@ -542,6 +542,6 @@ enum ReadingHistoryTransport {
     }
 
     private static func queueDelete(_ db: Database, type: RecordType, id: String, recordName: String) throws {
-        try CloudTransportRows.enqueueDelete(db, .init(zone: zone, type: type.rawValue, name: recordName), businessID: id)
+        try CloudTransportRows.enqueueBookDelete(db, .init(zone: zone, type: type.rawValue, name: recordName), businessID: id)
     }
 }

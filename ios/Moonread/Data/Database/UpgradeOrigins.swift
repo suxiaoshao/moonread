@@ -88,6 +88,16 @@ enum UpgradeOrigins {
                        arguments: [phaseKey, Phase.unresolved.rawValue])
     }
 
+    static func finish(_ db: Database) throws {
+        try db.execute(sql: """
+            DELETE FROM usr.upgrade_local_version;
+            DELETE FROM usr.upgrade_seed;
+            DELETE FROM usr.upgrade_book_deletion;
+            DELETE FROM usr.upgrade_pending_book;
+            DELETE FROM usr.local_data_state WHERE state_key=?;
+            """, arguments: [phaseKey])
+    }
+
     /// Earlier trial versions sometimes already imported and then edited the
     /// same ID. Preserve the current authority, but give it no claim about
     /// what part originated in the released store.

@@ -257,11 +257,13 @@ enum UserValueRows {
 
     static func attach(_ db: Database, id: String, sha: String, bytes: Data) throws {
         guard DataIdentity.sha(bytes) == sha else { throw ReadingDataError.invalid }
+        let asset = assetID(id, sha: sha)
         try db.execute(sql: """
             INSERT INTO usr.cover_asset(asset_id,legacy_cover_id,bytes,expected_sha,availability)
             VALUES (?,?,?,?,'available') ON CONFLICT(asset_id)
             DO UPDATE SET bytes=excluded.bytes,availability='available' WHERE cover_asset.bytes IS NULL
-            """, arguments: [assetID(id,sha: sha),id,bytes,sha])
+            """, arguments: [asset,id,bytes,sha])
+        if db.changesCount > 0 { try ReadingCloudInitialization.attachedCover(db, asset: asset) }
     }
 
     static func coverBytes(_ db: Database, id: String, sha: String) throws -> Data? {

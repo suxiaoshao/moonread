@@ -17,7 +17,7 @@ enum DataV2Error: Error, Equatable {
 enum DataV2Schema {
     static let indexVersion = 1
     // Version 3 belonged only to the removed, unpublished live bridge.
-    static let userVersion = 4
+    static let userVersion = 5
 
     static func sql(_ name: String, in bundle: Bundle = .main) throws -> String {
         guard let path = bundle.url(forResource: name, withExtension: "sql") else {
@@ -43,7 +43,7 @@ enum DataV2Schema {
             let index = try version(db, in: "main")
             let user = try version(db, in: "usr")
             guard [0, indexVersion].contains(index) else { throw DataV2Error.unsupportedSchema("main", index) }
-            guard [0, 1, 2, userVersion].contains(user) else { throw DataV2Error.unsupportedSchema("usr", user) }
+            guard [0, 1, 2, 4, userVersion].contains(user) else { throw DataV2Error.unsupportedSchema("usr", user) }
             if index == 0 { try checkFresh(db, in: "main") }
             if user == 0 { try checkFresh(db, in: "usr") }
             guard try String.fetchOne(db, sql: "PRAGMA usr.journal_mode=WAL")?.lowercased() == "wal" else {
@@ -91,7 +91,7 @@ enum DataV2Schema {
                     """)
             }
         }
-        if user < userVersion {
+        if user < 4 {
             try writer.write { db in
                 try db.execute(sql: """
                     CREATE TABLE usr.upgrade_seed (
@@ -128,6 +128,22 @@ enum DataV2Schema {
                     PRAGMA usr.user_version=4;
                     """)
                 try UpgradeOrigins.retainUnverifiedTrial(db)
+            }
+        }
+        if user < 5 {
+            try writer.write { db in
+                try db.execute(sql: """
+                    CREATE TABLE usr.cloud_initial_member(
+                        record_type TEXT NOT NULL, record_name TEXT NOT NULL,
+                        business_id TEXT NOT NULL,
+                        confirmed INTEGER NOT NULL DEFAULT 0 CHECK(confirmed IN (0,1)),
+                        offered INTEGER NOT NULL DEFAULT 0 CHECK(offered IN (0,1)),
+                        blocked_reason TEXT,
+                        quarantine_id INTEGER REFERENCES quarantined_record(quarantine_id) ON DELETE CASCADE,
+                        PRIMARY KEY(record_type,record_name)
+                    );
+                    PRAGMA usr.user_version=5;
+                    """)
             }
         }
     }
