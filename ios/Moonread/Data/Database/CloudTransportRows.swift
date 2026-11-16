@@ -347,6 +347,7 @@ enum CloudTransportRows {
     }
 
     static func changeZoneAfterLoss(_ db: Database, zone: String, to stage: ZoneStage) throws {
+        if zone == ReadingHistoryTransport.zone { try ReadingCloudInitialization.notePriorZone(db) }
         try db.execute(sql: "DELETE FROM usr.cloud_record_state WHERE zone=?", arguments: [zone])
         try db.execute(sql: "DELETE FROM usr.cloud_outbox WHERE zone=?", arguments: [zone])
         // Keep the account-level attempt sequence: old results must not
@@ -806,6 +807,30 @@ actor CloudCallbackJournal {
 
     func initializeZone(exists: Bool) throws {
         try commit { try CloudTransportRows.initializeZone($0, zone: ReadingHistoryTransport.zone, exists: exists) }
+    }
+
+    func needsInitializationDecision() throws -> Bool {
+        guard !failed else { throw Failure.restartRequired }
+        return try session.readCloudChanges(binding) { try ReadingCloudInitialization.requiresDecision($0) }
+    }
+
+    func proposeInitialization(installation: UUID) throws -> ReadingCloudInitialization.Control {
+        try commit { db in
+            guard try CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone) == .ready else {
+                throw Failure.restartRequired
+            }
+            return try ReadingCloudInitialization.propose(db, installation: installation)
+        }
+    }
+
+    func observeInitialization(_ control: ReadingCloudInitialization.Control,
+                               installation: UUID) throws -> ReadingCloudInitialization.Decision {
+        try commit { db in
+            guard try CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone) == .ready else {
+                throw Failure.restartRequired
+            }
+            return try ReadingCloudInitialization.observe(db, control, installation: installation)
+        }
     }
 
     func prepareFixedValueChange(_ family: FixedValueCloudRows.Family, id: String) throws -> FixedValueCloudRows.Prepared? {

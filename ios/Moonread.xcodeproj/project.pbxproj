@@ -87,6 +87,7 @@
         270D0000000000000000003A = {isa = PBXBuildFile; fileRef = 270D0000000000000000001A;};
         270D0000000000000000003B = {isa = PBXBuildFile; fileRef = 270D0000000000000000001B;};
         270D0000000000000000003C = {isa = PBXBuildFile; fileRef = 270D0000000000000000001C;};
+        271A00000000000000000002 = {isa = PBXBuildFile; fileRef = 271A00000000000000000001;};
         270D0000000000000000003E = {isa = PBXBuildFile; fileRef = 270D0000000000000000001E;};
         270D0000000000000000003D = {isa = PBXBuildFile; fileRef = 270D0000000000000000001D;};
         270D00000000000000000038 = {isa = PBXBuildFile; fileRef = 270D00000000000000000018;};
@@ -745,6 +746,7 @@ C22000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourceco
         B12000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingStatistics.swift; sourceTree = "<group>"; };
         B12000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatisticsView.swift; sourceTree = "<group>"; };
         B02000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CloudSync.swift"; sourceTree = "<group>"; };
+        271A00000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingCloudInitialization.swift"; sourceTree = "<group>";};
         270D0000000000000000001D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "ReadingSyncEngineAdapter.swift"; sourceTree = "<group>";};
         B02000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CloudLibrary.swift"; sourceTree = "<group>"; };
         AF2000000000000000000003 /* LibraryCollection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "LibraryCollection.swift"; sourceTree = "<group>"; };
@@ -1577,6 +1579,7 @@ D35000000000000000000001,
 			children = (
 				B02000000000000000000001 /* CloudSync.swift */,
 				270D0000000000000000001D,
+				271A00000000000000000001,
 			);
 			path = "Cloud";
 			sourceTree = "<group>";
@@ -2282,6 +2285,7 @@ E51000000000000000000009,D41000000000000000000001,
                 270D0000000000000000003B,
                 270D0000000000000000003C,
                 270D0000000000000000003E,
+                271A00000000000000000002,
                 270D0000000000000000003D,
                 270E20000000000000000001,
                 270E20000000000000000002,

@@ -138,6 +138,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     private let journal: CloudCallbackJournal
     private let database: CKDatabase
     private let account: CKRecord.ID
+    private let installation: UUID
     private let staging: URL
     private let zone: CKRecordZone.ID
     private var engine: CKSyncEngine?
@@ -151,9 +152,9 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     private var offered: [CKRecord.ID: Offered] = [:]
 
     private init(journal: CloudCallbackJournal, database: CKDatabase, account: CKRecord.ID, staging: URL,
-                 zone: CKRecordZone.ID, initialSignInAllowed: Bool) {
+                 zone: CKRecordZone.ID, installation: UUID, initialSignInAllowed: Bool) {
         self.journal = journal; self.database = database; self.account = account; self.staging = staging
-        self.zone = zone; self.initialSignInAllowed = initialSignInAllowed
+        self.zone = zone; self.installation = installation; self.initialSignInAllowed = initialSignInAllowed
     }
 
     /// Bind to a library prepared by the test host. The scope key includes
@@ -167,9 +168,10 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
             let bytes = try await journal.checkpoint()
             try Task.checkCancellation()
             let state = try bytes.map { try JSONDecoder().decode(CKSyncEngine.State.Serialization.self, from: $0) }
+            guard let installation = UUID(uuidString: try session.readingInstallationID()) else { throw Failure.wrongIdentity }
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             let adapter = ReadingSyncEngineAdapter(journal: journal, database: database, account: account, staging: root,
-                                                   zone: ownZone, initialSignInAllowed: bytes == nil)
+                                                   zone: ownZone, installation: installation, initialSignInAllowed: bytes == nil)
             var configuration = CKSyncEngine.Configuration(database: database, stateSerialization: state, delegate: adapter)
             configuration.automaticallySync = false
             configuration.subscriptionID = "Moonread-SyncProbe-v2"
@@ -242,6 +244,15 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         defer { proof = nil }
         do {
             try await ready(engine)
+            if try await journal.needsInitializationDecision() {
+                let decision = try await decideInitialization(engine)
+                switch decision.role {
+                case .selectedFirst: throw ReadingCloudInitialization.Failure.awaitingFirstUpload
+                case .waitingExisting: throw ReadingCloudInitialization.Failure.awaitingExistingUpload
+                case .joiningExisting: throw ReadingCloudInitialization.Failure.awaitingExistingBaseline
+                case .claiming: throw ReadingCloudInitialization.Failure.inconsistentDecision
+                }
+            }
             try await ReadingSyncTurn.run(fetch: { try await self.fetchOwnZone(engine) },
                                           verify: { try await self.verifyRecords(engine) },
                                           send: { try await self.sendDurable(engine) },
@@ -381,6 +392,81 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         }, submit: { database.add(operation) })
     }
 
+    private func decideInitialization(_ engine: CKSyncEngine) async throws -> ReadingCloudInitialization.Decision {
+        let id = CKRecord.ID(recordName: ReadingCloudInitialization.recordName, zoneID: zone)
+        return try await ReadingCloudInitialization.decide(journal: journal, installation: installation, lookup: {
+            try self.checkActive(engine)
+            do {
+                let record = try await self.fetchRecord(id)
+                try self.checkActive(engine)
+                return try ReadingCloudInitialization.Control.decode(record, in: self.zone)
+            } catch let error as CKError where error.code == .unknownItem {
+                try self.checkActive(engine)
+                return nil
+            }
+        }, emptyZone: {
+            try self.checkActive(engine)
+            let result = try await self.confirmEmptyInitializationZone()
+            try self.checkActive(engine)
+            return result
+        }, create: { proposal in
+            try self.checkActive(engine)
+            let result = try await self.conditionallyCreateInitialization(proposal)
+            try self.checkActive(engine)
+            return result
+        })
+    }
+
+    /// Any record (including an unknown type), deletion, or unfinished page
+    /// invalidates emptiness. No business payloads/assets or cursor are saved.
+    private func confirmEmptyInitializationZone() async throws -> Bool {
+        let expectedZone = zone
+        let configuration = CKFetchRecordZoneChangesOperation.ZoneConfiguration()
+        configuration.resultsLimit = 1
+        configuration.desiredKeys = []
+        let operation = CKFetchRecordZoneChangesOperation(recordZoneIDs: [expectedZone],
+                                                         configurationsByRecordZoneID: [expectedZone: configuration])
+        operation.fetchAllChanges = false
+        let occupied = Mutex(false)
+        return try await ReadingCloudLookup.run(operation, bind: { complete in
+            operation.recordWasChangedBlock = { @Sendable _, _ in occupied.withLock { $0 = true } }
+            operation.recordWithIDWasDeletedBlock = { @Sendable _, _ in occupied.withLock { $0 = true } }
+            operation.recordZoneFetchResultBlock = { @Sendable found, result in
+                guard found == expectedZone else { return }
+                complete(result.map { !occupied.withLock { $0 } && !$0.moreComing })
+            }
+            operation.fetchRecordZoneChangesResultBlock = { @Sendable result in
+                if case .failure(let error) = result, (error as? CKError)?.code != .partialFailure {
+                    complete(.failure(error))
+                }
+            }
+        }, submit: { database.add(operation) })
+    }
+
+    private func conditionallyCreateInitialization(_ proposal: ReadingCloudInitialization.Control) async throws
+        -> ReadingCloudInitialization.Creation {
+        let record = proposal.ckRecord(in: zone)
+        let id = record.recordID
+        let operation = CKModifyRecordsOperation(recordsToSave: [record], recordIDsToDelete: nil)
+        operation.savePolicy = .ifServerRecordUnchanged
+        operation.isAtomic = true
+        do {
+            let saved: CKRecord = try await ReadingCloudLookup.run(operation, bind: { complete in
+                operation.perRecordSaveBlock = { @Sendable found, result in
+                    if found == id { complete(result) }
+                }
+                operation.modifyRecordsResultBlock = { @Sendable result in
+                    if case .failure(let error) = result, (error as? CKError)?.code != .partialFailure {
+                        complete(.failure(error))
+                    }
+                }
+            }, submit: { database.add(operation) })
+            return .saved(try ReadingCloudInitialization.Control.decode(saved, in: zone))
+        } catch let error as CKError where error.code == .serverRecordChanged {
+            return .alreadyExists
+        }
+    }
+
     func nextFetchChangesOptions(_ context: CKSyncEngine.FetchChangesContext, syncEngine: CKSyncEngine) async -> CKSyncEngine.FetchChangesOptions {
         Self.scopeFetch(context.options, zone: zone, allowed: applies(syncEngine))
     }
@@ -431,10 +517,19 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
                 else { try await journal.persistCheckpoint(bytes) }
             case .fetchedRecordZoneChanges(let event):
                 let ownRecords = event.modifications.map(\.record).filter { $0.recordID.zoneID == zone }
-                let ownDeletes = event.deletions.filter { $0.recordID.zoneID == zone }
+                let ownDeletions = event.deletions.filter { $0.recordID.zoneID == zone }
+                if ownDeletions.contains(where: { $0.recordID.recordName == ReadingCloudInitialization.recordName }) {
+                    throw ReadingCloudInitialization.Failure.accountAlreadyHadZone
+                }
+                let businessRecords = try ownRecords.filter { record in
+                    guard record.recordID.recordName == ReadingCloudInitialization.recordName else { return true }
+                    _ = try ReadingCloudInitialization.Control.decode(record, in: zone)
+                    return false
+                }
+                let ownDeletes = ownDeletions
                     .map { CloudInboxRows.Deletion(type: $0.recordType, name: $0.recordID.recordName) }
-                if !ownRecords.isEmpty || !ownDeletes.isEmpty {
-                    let captured = try await Self.captureOffMain(ownRecords)
+                if !businessRecords.isEmpty || !ownDeletes.isEmpty {
+                    let captured = try await Self.captureOffMain(businessRecords)
                     try checkActive(syncEngine)
                     try await journal.applyOwnInbox(records: captured, deletions: ownDeletes)
                     proof?.committedPage()
