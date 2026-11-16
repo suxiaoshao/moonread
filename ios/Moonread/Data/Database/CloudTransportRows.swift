@@ -646,16 +646,23 @@ actor CloudCallbackJournal {
 
     private let session: DataSession
     private let lease: DataSessionLease
+    private let binding: DataCloudLease
     private var failed = false
 
-    init(session: DataSession, lease: DataSessionLease) {
+    init(session: DataSession, lease: DataSessionLease) throws {
         self.session = session
         self.lease = lease
+        binding = try session.issueCloudLease(lease)
     }
+
+    /// Revoke before waiting for SDK cancellation. Callbacks already queued
+    /// on this actor must also fail at the writer, even after a same-account
+    /// replacement engine or a pause/resume.
+    nonisolated func retire() { session.retireCloudLease(binding) }
 
     func checkpoint() throws -> Data? {
         guard !failed else { throw Failure.restartRequired }
-        return try session.readCloudChanges(lease) { try CloudTransportRows.checkpoint($0, zone: ReadingHistoryTransport.zone) }
+        return try session.readCloudChanges(binding) { try CloudTransportRows.checkpoint($0, zone: ReadingHistoryTransport.zone) }
     }
 
     /// The future engine owner may supply a watermark only for a durable
@@ -669,12 +676,12 @@ actor CloudCallbackJournal {
 
     func ownZoneFetchFloor() throws -> Int64 {
         guard !failed else { throw Failure.restartRequired }
-        return try session.readCloudChanges(lease) { try CloudTransportRows.storedGeneration($0) ?? 0 }
+        return try session.readCloudChanges(binding) { try CloudTransportRows.storedGeneration($0) ?? 0 }
     }
 
     func requiresOwnZoneCatchUp() throws -> Bool {
         guard !failed else { throw Failure.restartRequired }
-        return try session.readCloudChanges(lease) { db in
+        return try session.readCloudChanges(binding) { db in
             try Bool.fetchOne(db, sql: """
                 SELECT EXISTS(SELECT 1 FROM usr.cloud_record_state WHERE zone=?
                   AND (server_state LIKE 'x2-delete-acked:%' OR server_state LIKE 'x2-unpublished:%'))
@@ -691,7 +698,7 @@ actor CloudCallbackJournal {
     func pendingInOwnZone() throws -> [Pending] {
         guard !failed else { throw Failure.restartRequired }
         let zone = ReadingHistoryTransport.zone
-        return try session.readCloudChanges(lease) { db in
+        return try session.readCloudChanges(binding) { db in
             guard try CloudTransportRows.zoneStage(db, zone: zone) == .ready else { return [] }
             return try Row.fetchAll(db, sql: """
                 SELECT record_type,record_name,business_id,intent FROM usr.cloud_outbox WHERE zone=? AND after_name IS NULL
@@ -716,7 +723,7 @@ actor CloudCallbackJournal {
 
     func verificationRequests(after: CloudTransportRows.Key? = nil, limit: Int) throws -> [CloudSaveVerification.Ticket] {
         guard !failed else { throw Failure.restartRequired }
-        return try session.readCloudChanges(lease) { try CloudSaveVerification.requests($0, after: after, limit: limit) }
+        return try session.readCloudChanges(binding) { try CloudSaveVerification.requests($0, after: after, limit: limit) }
     }
 
     func requireMissingSaveVerification(_ attempt: CloudTransportRows.Attempt) throws {
@@ -795,7 +802,7 @@ actor CloudCallbackJournal {
 
     func zoneStage() throws -> CloudTransportRows.ZoneStage {
         guard !failed else { throw Failure.restartRequired }
-        return try session.readCloudChanges(lease) { try CloudTransportRows.zoneStage($0, zone: ReadingHistoryTransport.zone) }
+        return try session.readCloudChanges(binding) { try CloudTransportRows.zoneStage($0, zone: ReadingHistoryTransport.zone) }
     }
 
     /// The caller coordinates active App writers and passes only own-zone,
@@ -804,6 +811,7 @@ actor CloudCallbackJournal {
         let scope = lease.scope
         let stage = try commit { try CloudAccountZoneRecovery.apply($0, loss: loss, scope: scope) }
         failed = true
+        retire()
         return stage
     }
 
@@ -823,7 +831,7 @@ actor CloudCallbackJournal {
 
     private func commit<T: Sendable>(_ body: (Database) throws -> T) throws -> T {
         guard !failed else { throw Failure.restartRequired }
-        do { return try session.writeCloudChanges(lease, body) }
-        catch { failed = true; throw error }
+        do { return try session.writeCloudChanges(binding, body) }
+        catch { failed = true; retire(); throw error }
     }
 }

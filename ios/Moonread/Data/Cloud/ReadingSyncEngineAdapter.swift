@@ -132,21 +132,23 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate {
         let account = try await container.userRecordID()
         let expected = try DataScope.confirmed(container: testContainer, environment: .development, recordName: account.recordName)
         guard lease.scope == expected else { throw Failure.wrongIdentity }
-        let journal = CloudCallbackJournal(session: session, lease: lease)
-        let bytes = try await journal.checkpoint()
         let database = container.privateCloudDatabase
         let root = try session.layout.staging(lease.scope).appending(path: "ck-sandbox-" + UUID().uuidString, directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        let adapter = ReadingSyncEngineAdapter(journal: journal, database: database, account: account, staging: root,
-                                               zone: ownZone, initialSignInAllowed: bytes == nil)
+        let journal = try CloudCallbackJournal(session: session, lease: lease)
         do {
+            let bytes = try await journal.checkpoint()
+            try Task.checkCancellation()
             let state = try bytes.map { try JSONDecoder().decode(CKSyncEngine.State.Serialization.self, from: $0) }
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            let adapter = ReadingSyncEngineAdapter(journal: journal, database: database, account: account, staging: root,
+                                                   zone: ownZone, initialSignInAllowed: bytes == nil)
             var configuration = CKSyncEngine.Configuration(database: database, stateSerialization: state, delegate: adapter)
             configuration.automaticallySync = false
             configuration.subscriptionID = "Moonread-SyncProbe-v2"
             adapter.engine = CKSyncEngine(configuration)
             return adapter
         } catch {
+            journal.retire()
             try? FileManager.default.removeItem(at: root)
             throw error
         }
@@ -156,6 +158,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate {
 
     func close() async {
         active = false
+        journal.retire()
         let old = engine
         engine = nil
         await old?.cancelOperations()
@@ -174,6 +177,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate {
                                       verify: { try await self.verifyRecords(engine) },
                                       send: { try await self.sendDurable(engine) },
                                       needsCatchUp: { try await self.journal.requiresOwnZoneCatchUp() })
+        try checkActive(engine)
     }
 
     private func ready(_ engine: CKSyncEngine) async throws {
@@ -292,6 +296,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate {
                     initialSignInAllowed = false
                 } else {
                     fatal = Failure.accountChanged
+                    journal.retire()
                 }
             case .willFetchRecordZoneChanges(let event) where event.zoneID == zone:
                 proof?.beganZone()

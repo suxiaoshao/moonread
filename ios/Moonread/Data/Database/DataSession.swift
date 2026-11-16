@@ -114,6 +114,13 @@ struct DataSessionLease: Equatable, Sendable {
     fileprivate let identity: UUID
 }
 
+/// Network permission for one engine instance. Re-enabling an account must
+/// never make an older engine's callbacks valid again.
+struct DataCloudLease: Equatable, Sendable {
+    fileprivate let user: DataSessionLease
+    fileprivate let identity: UUID
+}
+
 /// One application owner, one pool. Callers do bounded synchronized transactions.
 /// Networking, observers and background tasks must quiesce before handing the
 /// owner a new account decision. The lease also fences results from old work.
@@ -124,6 +131,7 @@ final class DataSession: @unchecked Sendable {
     private var owner: DataOwnerState
     private var pool: DatabasePool?
     private var lease: DataSessionLease?
+    private var cloudLease: DataCloudLease?
     private var selection: DataScopeSelection?
     private var verifiedAccount: DataScope?
     private var closeFailed = false
@@ -175,18 +183,19 @@ final class DataSession: @unchecked Sendable {
         lifecycle.lock(); defer { lifecycle.unlock() }
         try recoverLocalMove()
         let next: DataScopeSelection
+        let verified: DataScope?
         var state = owner
         switch status {
         case .unknown:
-            verifiedAccount = nil
+            verified = nil
             next = .init(scope: owner.lastConfirmed ?? .local, maySync: false)
         case .signedOut:
-            verifiedAccount = nil
+            verified = nil
             state.lastConfirmed = nil
             next = .init(scope: .local, maySync: false)
         case .confirmed(let scope, let requested):
             guard scope.valid, scope != .local else { throw DataV2Error.invalidOwnerState }
-            verifiedAccount = scope
+            verified = scope
             if owner.lastConfirmed == nil {
                 // Discovering the system account does not claim unassigned
                 // data or authorize sync. The enable/consent path calls claimLocal.
@@ -196,8 +205,13 @@ final class DataSession: @unchecked Sendable {
                 next = .init(scope: scope, maySync: requested)
             }
         }
-        if let lease, selection == next {
+        if let lease, lease.scope == next.scope {
+            // An offline pause or a toggle must not tear down the reader,
+            // outstanding local writes, or observations for this same file.
+            if !next.maySync || verifiedAccount != verified { cloudLease = nil }
             if owner != state { try saveOwner(state) }
+            verifiedAccount = verified
+            selection = next
             return (lease, next)
         }
         try closeLocked()
@@ -210,7 +224,7 @@ final class DataSession: @unchecked Sendable {
             throw error
         }
         let token = DataSessionLease(scope: next.scope, identity: UUID())
-        selection = next; lease = token
+        verifiedAccount = verified; selection = next; lease = token
         return (token, next)
     }
 
@@ -219,7 +233,7 @@ final class DataSession: @unchecked Sendable {
     }
 
     private func closeLocked() throws {
-        lease = nil; selection = nil; indexReady = false; usersReady = false; historyReady = false
+        lease = nil; cloudLease = nil; selection = nil; indexReady = false; usersReady = false; historyReady = false
         guard let pool else { return }
         do { try pool.close() }
         catch { closeFailed = true; throw error }
@@ -418,20 +432,38 @@ final class DataSession: @unchecked Sendable {
         }
     }
 
-    // A valid local reading lease alone cannot authorize a cloud callback.
-    // Identity-unknown and explicitly paused accounts still use read/writeUsers.
-    private func activeCloud(_ token: DataSessionLease) throws -> DatabasePool {
+    private func permittedCloud(_ token: DataSessionLease) throws -> DatabasePool {
         let pool = try active(token)
         guard selection?.maySync == true, verifiedAccount == token.scope else { throw DataV2Error.leaseExpired }
         guard usersReady else { throw DataV2Error.migrationNotVerified }
         return pool
     }
 
-    func readCloudChanges<T: Sendable>(_ token: DataSessionLease, _ body: @Sendable (Database) throws -> T) throws -> T {
+    func issueCloudLease(_ token: DataSessionLease) throws -> DataCloudLease {
+        try lifecycle.withLock {
+            _ = try permittedCloud(token)
+            let binding = DataCloudLease(user: token, identity: UUID())
+            cloudLease = binding
+            return binding
+        }
+    }
+
+    func retireCloudLease(_ binding: DataCloudLease) {
+        lifecycle.withLock {
+            if cloudLease == binding { cloudLease = nil }
+        }
+    }
+
+    private func activeCloud(_ binding: DataCloudLease) throws -> DatabasePool {
+        guard cloudLease == binding else { throw DataV2Error.leaseExpired }
+        return try permittedCloud(binding.user)
+    }
+
+    func readCloudChanges<T: Sendable>(_ token: DataCloudLease, _ body: @Sendable (Database) throws -> T) throws -> T {
         try lifecycle.withLock { try activeCloud(token).read(body) }
     }
 
-    func writeCloudChanges<T: Sendable>(_ token: DataSessionLease, _ body: (Database) throws -> T) throws -> T {
+    func writeCloudChanges<T: Sendable>(_ token: DataCloudLease, _ body: (Database) throws -> T) throws -> T {
         try lifecycle.withLock { try activeCloud(token).write(body) }
     }
 

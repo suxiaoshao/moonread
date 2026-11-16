@@ -372,6 +372,51 @@ struct DataV2MigrationTests {
         try await restarted.close()
     }
 
+    @Test func retiresCloudCallbacksWithoutClosingSameAccountReaders() async throws {
+        let root = try sandbox()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let a = try scope("A"), b = try scope("B")
+        let owner = try DataSession(layout: .init(applicationSupport: root), confirmedLegacyOwner: a)
+        let legacyIndex = root.appending(path: "unused")
+        let (localA, _) = try owner.activate(.confirmed(a, syncRequested: true))
+        try owner.prepareIndex(legacyIndex, token: localA)
+        #expect(throws: DataV2Error.migrationNotVerified) { _ = try CloudCallbackJournal(session: owner, lease: localA) }
+        try owner.prepareUsers(localA) { nil }
+        let old = try CloudCallbackJournal(session: owner, lease: localA)
+        try await old.persistCheckpoint(Data([1]))
+
+        let (offline, selection) = try owner.activate(.unknown)
+        #expect(offline == localA && !selection.maySync)
+        #expect(throws: DataV2Error.leaseExpired) { _ = try CloudCallbackJournal(session: owner, lease: offline) }
+        try owner.writeUsers(localA) { try $0.execute(sql: "INSERT INTO usr.local_hidden_book VALUES ('fixture')") }
+
+        let (resumed, _) = try owner.activate(.confirmed(a, syncRequested: true))
+        #expect(resumed == localA)
+        let current = try CloudCallbackJournal(session: owner, lease: resumed)
+        await #expect(throws: DataV2Error.leaseExpired) { try await old.persistCheckpoint(Data([2])) }
+        old.retire()  // Finishing old SDK cancellation cannot revoke its replacement.
+        #expect(try await current.checkpoint() == Data([1]))
+
+        let (paused, _) = try owner.activate(.confirmed(a, syncRequested: false))
+        #expect(paused == localA)
+        #expect(try owner.readUsers(paused) { try String.fetchOne($0, sql: "SELECT book_key FROM usr.local_hidden_book") } == "fixture")
+        await #expect(throws: DataV2Error.leaseExpired) { _ = try await current.checkpoint() }
+
+        let (localB, _) = try owner.activate(.confirmed(b, syncRequested: true))
+        try owner.prepareIndex(legacyIndex, token: localB)
+        try owner.prepareUsers(localB) { nil }
+        let other = try CloudCallbackJournal(session: owner, lease: localB)
+        #expect(try await other.checkpoint() == nil)
+        #expect(throws: DataV2Error.leaseExpired) { _ = try owner.readUsers(localA) { _ in 0 } }
+        let (returned, _) = try owner.activate(.confirmed(a, syncRequested: true))
+        try owner.prepareIndex(legacyIndex, token: returned)
+        try owner.prepareUsers(returned) { nil }
+        #expect(returned != localA)
+        #expect(try await CloudCallbackJournal(session: owner, lease: returned).checkpoint() == Data([1]))
+        await #expect(throws: DataV2Error.leaseExpired) { try await other.persistCheckpoint(Data([3])) }
+        try owner.close()
+    }
+
     @Test func rebindsWALIndexToFreshAccountBeforeOpeningReaders() throws {
         let root = try sandbox()
         defer { try? FileManager.default.removeItem(at: root) }
