@@ -159,6 +159,13 @@ enum MetadataExchangeRows {
             """, arguments: [keys]))
     }
 
+    static func hasFormalMetadataBarrier(_ db: Database, keysSQL: String, arguments: StatementArguments) throws -> Bool {
+        try Bool.fetchOne(db, sql: """
+            WITH wanted(value) AS (\(keysSQL))
+            SELECT EXISTS(\(formalMetadataBarrierSQL))
+            """, arguments: arguments) == true
+    }
+
     static func hasFormalMetadataBarrier(_ db: Database, key: String) throws -> Bool {
         try Bool.fetchOne(db, sql: """
             WITH wanted(value) AS (SELECT ?)

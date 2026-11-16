@@ -10,6 +10,17 @@ enum FolderRead {
 
     static func page(_ db: Database, scope: DataScope, location: LibraryLocation) throws -> Page {
         let rows = try Row.fetchAll(db, sql: pageSQL, arguments: [location.shelfID,location.path,scope.key])
+        return page(rows)
+    }
+
+    static func hitCards(_ db: Database, scope: DataScope, ids: [String]) throws -> Page {
+        guard !ids.isEmpty else { return .init(folderPage: []) }
+        // Only IDs are bound here, never a serialized result or user record.
+        let keys = try UserSyncJSON.encode(ids)
+        return try page(Row.fetchAll(db, sql: hitSQL, arguments: [keys,scope.key]))
+    }
+
+    private static func page(_ rows: [Row]) -> Page {
         let covers = rows.reduce(into: [String:[Preview]]()) { groups, row in
             guard let owner: String = row["owner"] else { return }
             let asset = cover(row)
@@ -64,19 +75,16 @@ enum FolderRead {
         })
     }
 
-    private static func scopeSQL(page: Bool) -> String {
+    private static func scopeSQL(page: Bool, direct: String, scopeParameter: String) -> String {
         """
-        WITH direct AS MATERIALIZED (
-            SELECT id,shelf_id,relative_path,parent_path,name,directory,size,modified,needs_download,book_id
-            FROM main.library_files WHERE shelf_id=?1 AND parent_path=?2 \(page ? "" : "AND directory=1")
-        ), members AS MATERIALIZED (
+        WITH direct AS MATERIALIZED (\(direct)), members AS MATERIALIZED (
             SELECT f.id,d.id AS owner
             FROM direct d JOIN main.library_files f
-              ON f.shelf_id=?1 AND f.relative_path>=d.relative_path||'/' AND f.relative_path<d.relative_path||'0'
+              ON f.shelf_id=d.shelf_id AND f.relative_path>=d.relative_path||'/' AND f.relative_path<d.relative_path||'0'
             WHERE d.directory=1 AND f.directory=0
         ), display_books AS (
-            SELECT id FROM members \(page ? "UNION ALL SELECT id FROM direct WHERE directory=0" : "")
-        ), \(LibraryCardSQL.currentFiles(scopeParameter: "?3", includeCardPosition: page)), activity AS (
+            SELECT DISTINCT id FROM members \(page ? "UNION SELECT id FROM direct WHERE directory=0" : "")
+        ), \(LibraryCardSQL.currentFiles(scopeParameter: scopeParameter, includeCardPosition: page)), activity AS (
             SELECT m.owner,count(*) AS child_count,coalesce(max(p.position_updated_ms),0) AS last_read
             FROM members m JOIN files f ON f.id=m.id LEFT JOIN positions p ON p.book_key=f.book_key
             GROUP BY m.owner
@@ -84,7 +92,15 @@ enum FolderRead {
         """
     }
 
-    private static let pageSQL = scopeSQL(page: true) + """
+    private static let direct = """
+        SELECT id,shelf_id,relative_path,directory FROM main.library_files WHERE shelf_id=?1 AND parent_path=?2
+        """
+    private static let pageSQL = scopeSQL(page: true, direct: direct, scopeParameter: "?3") + hydratedSQL
+    private static let hitSQL = scopeSQL(page: true, direct: """
+        SELECT id,shelf_id,relative_path,directory FROM main.library_files WHERE id IN (SELECT value FROM json_each(?1))
+        """, scopeParameter: "?2") + hydratedSQL
+
+    private static let hydratedSQL = """
         , cover_ranks AS (
             SELECT m.owner,m.id,row_number() OVER (PARTITION BY m.owner
                 ORDER BY coalesce(p.position_updated_ms,0) DESC,f.modified DESC,f.name,f.id) AS ord
@@ -110,7 +126,10 @@ enum FolderRead {
         ORDER BY d.owner,d.ord,c.id
         """
 
-    private static let destinationsSQL = scopeSQL(page: false) + """
+    private static let destinationsSQL = scopeSQL(page: false, direct: """
+        SELECT id,shelf_id,relative_path,parent_path,name,directory,size,modified
+        FROM main.library_files WHERE shelf_id=?1 AND parent_path=?2 AND directory=1
+        """, scopeParameter: "?3") + """
         SELECT d.id,d.shelf_id,s.name AS shelf_name,d.relative_path,d.parent_path,d.name,d.size,d.modified,
                coalesce(a.last_read,0) AS last_read,coalesce(a.child_count,0) AS child_count
         FROM direct d JOIN main.library_shelves s ON s.id=d.shelf_id
@@ -120,7 +139,7 @@ enum FolderRead {
 }
 
 extension FolderRead {
-    static func entries(_ page: Page, sort: LibrarySort) throws -> [LibraryEntry] {
+    static func entries(_ page: Page, sort: LibrarySort? = nil) throws -> [LibraryEntry] {
         let entries = try page.folderPage.map { entry -> LibraryEntry in
             guard let size = UInt64(entry.file.size), let modified = Int64(entry.file.modified),
                   let lastRead = Int64(entry.lastRead) else { throw ReaderError.InvalidRange }
@@ -154,7 +173,7 @@ extension FolderRead {
             return .init(id: file.id, shelfId: file.shelfID, shelfName: file.shelfName, relativePath: file.relativePath,
                 parentPath: file.parentPath, name: file.name, size: size, modified: modified, lastRead: lastRead, item: item)
         }
-        return ordered(entries, sort: sort)
+        return sort.map { ordered(entries, sort: $0) } ?? entries
     }
 
     static func entries(_ destinations: Destinations) throws -> [LibraryEntry] {

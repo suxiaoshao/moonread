@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import UIKit
 
@@ -291,15 +292,24 @@ private struct BookSearchRulePage: View {
             }.disabled(node.validation() != nil)
                 .accessibilityIdentifier("saveSearchCondition")
         } }
-        .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { change in
-            if change.affectsLibraryMetadata([.author, .tags]) { retry += 1 }
+        .onReceive(NotificationCenter.default.publisher(for: .readingContinuationInvalidated, object: AppDataService.shared)
+            .receive(on: DispatchQueue.main)) { _ in
+            options = nil; retry += 1
         }
         .task(id: retry) {
             guard field == .tag || field == .author else { return }
+            let request = retry
             loading = true; error = nil
-            defer { loading = false }
-            do { options = try await AppDataService.shared.metadataOptions(shelfID: nil) }
-            catch is CancellationError {} catch { self.error = ReaderMessages.error(error) }
+            defer { if request == retry { loading = false } }
+            do {
+                let updates = try await AppDataService.shared.metadataOptionsUpdates(shelfID: nil)
+                for try await value in updates {
+                    guard request == retry, !Task.isCancelled else { return }
+                    options = value
+                    loading = false
+                }
+            } catch is CancellationError { }
+            catch { if request == retry, !Task.isCancelled { self.error = ReaderMessages.error(error) } }
         }
     }
 }

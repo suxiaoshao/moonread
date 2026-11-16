@@ -347,19 +347,24 @@ final class LibraryModelApplicationStateTests: ApplicationStateFixture {
     let state = AppSearchResults()
     let old = SearchKey(term: "old", revision: 0, retry: 0, aiAvailable: false)
     let new = SearchKey(term: "new", revision: 0, retry: 0, aiAvailable: false)
+    let oneRead = {
+      AsyncThrowingStream<Void, Error> { sink in sink.yield(()); sink.finish() }
+    }
     let started = expectation(description: "Old search suspended")
     var release: CheckedContinuation<Void, Never>?
     let pending = Task {
-      await state.run(old, hasCriteria: true) {
+      await state.observe(old, hasCriteria: true, invalidations: oneRead) {
         await withCheckedContinuation {
           release = $0
           started.fulfill()
         }
         throw CocoaError(.fileReadUnknown)
-      }
+      } conversations: { [] }
     }
     await fulfillment(of: [started], timeout: 3)
-    await state.run(new, hasCriteria: true) { ([], [], 0) }
+    await state.observe(new, hasCriteria: true, invalidations: oneRead) {
+      .init(entries: [], unknownCount: 0)
+    } conversations: { [] }
     release?.resume()
     await pending.value
     XCTAssertEqual(state.completedKey, new)
@@ -375,10 +380,10 @@ final class LibraryModelApplicationStateTests: ApplicationStateFixture {
     XCTAssertEqual(search.configuration.root.children[0].values, [.text("builtin")])
     search.configuration = BookSearchConfiguration()
     XCTAssertEqual(search.term, "Moonread", "Resetting filters preserves text")
-    await state.run(new, hasCriteria: false) {
+    await state.observe(new, hasCriteria: false, invalidations: oneRead) {
       XCTFail("Empty search must not load")
-      return ([], [], 0)
-    }
+      return .init(entries: [], unknownCount: 0)
+    } conversations: { [] }
     XCTAssertNil(state.completedKey)
     XCTAssertTrue(state.entries.isEmpty)
   }

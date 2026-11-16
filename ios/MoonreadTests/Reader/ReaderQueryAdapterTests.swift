@@ -449,6 +449,124 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
     await fulfillment(of: [restored], timeout: 2)
   }
 
+
+  func testFixedSearchPreservesCopyRankingUnknownsAndAIBarrier() throws {
+    try withFolder { index in
+      let a = String(repeating: "a", count: 64), b = String(repeating: "b", count: 64)
+      try index.session.writeUsers(index.lease) { db in
+        try Self.addFile(db, id: "root", path: "fixture", name: "Fixture")
+        try Self.addFile(db, id: "nested", path: "fixture/sub", parent: "fixture", name: "Fixture Sub")
+        try Self.addFile(db, id: "a", path: "fiction.txt", key: a, name: "Fixture 2.txt")
+        try Self.addFile(db, id: "b", path: "fixture/sub/b.txt", parent: "fixture/sub", key: b, name: "远航.txt")
+        try Self.addFile(db, id: "a-copy", path: "fixture/sub/a.txt", parent: "fixture/sub", name: "Fixture 10.txt")
+        try Self.addFile(db, id: "unidentified", path: "unidentified.txt", name: "Fixture 1.txt")
+        try db.execute(sql: """
+          UPDATE main.library_files SET directory=0,book_id='body-a' WHERE id='a-copy';
+          UPDATE main.library_files SET directory=0 WHERE id='unidentified'
+          """)
+        try Self.metadata(db, book: a, field: "author", value: "\"Synthetic Writer\"")
+        try Self.metadata(db, book: a, field: "tag-1", value: "\"Group 2\"")
+        try Self.metadata(db, book: a, field: "tag-2", value: "\"Group 10\"")
+        try Self.metadata(db, book: b, field: "synopsis", value: "\"Unique synopsis token\"")
+        _ = try ReadingPositionRows.recordPosition(db, book: a, offset: 3, hint: nil,
+          file: nil, device: "fixture", now: 10, token: "read")
+        // A restored legacy position can have a nonzero offset and a zero clock.
+        try ReadingPositionRows.mergeBackup(db, book: b, incoming: .init(
+          value: .init(content_key: b, offset: 4, source_hint: nil), updated: 0, token: "legacy", device: "fixture"))
+      }
+      let filtered = BookSearchConfiguration(root: .init(kind: .group(.all, [
+        .init(kind: .rule(.status([.reading]))),
+        .init(kind: .rule(.tag(.all, [.text("Group 10")]))),
+        .init(kind: .rule(.author(["Synthetic Writer"])))
+      ])), sorts: [.init(field: .author)])
+      let results = try index.searchCatalogue(.all, spec: .init(profile: .library, query: "fixture", configuration: filtered))
+      XCTAssertEqual(results.entries.map(\.id), ["a", "a-copy"])
+      XCTAssertEqual(results.unknownCount, 1)
+      XCTAssertTrue(results.entries.allSatisfy { $0.metadata == nil && $0.displayMetadata?.author == "Synthetic Writer" })
+      let folders = try index.searchCatalogue(.all, spec: .init(profile: .library, query: "fixture")).entries.filter(\.directory)
+      XCTAssertEqual(folders.map(\.id), ["root", "nested"])
+      XCTAssertEqual(folders.compactMap { $0.folderRow?.childBookCount }, [2, 2])
+      XCTAssertEqual(folders.map { $0.folderRow?.coverPreviews.count }, [2, 2])
+      XCTAssertEqual(try index.searchCatalogue(.all, spec: .init(profile: .library, query: "yuanhang")).entries.map(\.id), ["b"])
+      let unread = try index.searchCatalogue(.all, spec: .init(profile: .library, query: "yuanhang", status: "unread"))
+      XCTAssertEqual(unread.entries.map(\.id), ["b"])
+      XCTAssertTrue(try index.searchCatalogue(.all, spec: .init(profile: .library, query: "yuanhang", status: "reading")).entries.isEmpty)
+      XCTAssertTrue(try index.searchCatalogue(.all, spec: .init(profile: .library, query: "synopsis token")).entries.isEmpty)
+      let ai = LibraryQueryRules.SearchSpec(profile: .ai, query: "synopsis token")
+      let hits = try index.searchCatalogue(.all, spec: ai).entries
+      XCTAssertEqual(hits.map(\.id), ["b"])
+      XCTAssertEqual(hits.first?.metadata?.synopsis, "Unique synopsis token")
+      XCTAssertEqual(hits.first?.positionUtf8, 4, "The position itself remains usable")
+      XCTAssertEqual(hits.first?.metadata?.status, .unread)
+      let root = try index.aiCatalogue(.shelf(shelfId: "builtin", parentPath: "", recursive: false),
+        folder: .init(shelfID: "builtin"), sort: .name)
+      XCTAssertEqual(root.map(\.id), ["root", "unidentified", "a"])
+      XCTAssertEqual(root.last?.metadata?.author, "Synthetic Writer")
+      let picker = try index.aiCatalogue(.shelf(shelfId: "builtin", parentPath: "", recursive: true), folder: nil, sort: .name)
+      XCTAssertEqual(picker.map(\.id), ["unidentified", "a", "a-copy", "b"])
+      let options = try index.session.readUsers(index.lease) { db in
+        try LibrarySearchRead.options(db, scope: index.lease.scope, shelfID: "builtin").bookFilterOptions
+      }
+      XCTAssertEqual(options.authors, ["Synthetic Writer"])
+      XCTAssertEqual(options.tags, ["Group 10", "Group 2"])
+
+      try index.session.writeUsers(index.lease) { db in
+        try db.execute(sql: """
+          INSERT INTO usr.quarantined_record(partition,source,source_id,source_type,record_id,book_key,logical_key,
+            raw_format,raw_bytes,digest,reason,completeness)
+          VALUES(0,'fixture','formal','metadata_text_candidate','future',?,?,'fixture',X'00','opaque','future','complete')
+          """, arguments: [b,"metadata/\(b)/synopsis"])
+        try CurrentUserRows.settleMetadata(db, book: b)
+      }
+      XCTAssertThrowsError(try index.searchCatalogue(.all, spec: ai)) { XCTAssertTrue($0 is UserSyncCompatibilityError) }
+      XCTAssertEqual(try index.searchCatalogue(.all, spec: .init(profile: .library, query: "yuanhang")).entries.map(\.id), ["b"])
+      try index.session.readUsers(index.lease) { db in
+        try LibrarySearchRead.requireAIReadable(db, scope: index.lease.scope,
+          catalogue: .shelf(shelfId: "builtin", parentPath: "", recursive: false))
+      }
+    }
+  }
+
+  @MainActor func testSearchAndOptionsObserveAnAttachedMetadataCommit() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "SearchTests-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let index = try prepareFolder(at: root)
+    defer { try? index.session.close() }
+    // Observe through the production data session. No main table commit
+    // accompanies the author edit, and no manual invalidation is sent.
+    let book = String(repeating: "a", count: 64)
+    try index.session.writeUsers(index.lease) { try Self.addFile($0, id: "a", path: "a.txt", key: book) }
+    let spec = LibraryQueryRules.SearchSpec(profile: .library, query: "Fresh Writer")
+    let searchReady = expectation(description: "Search observation registered")
+    let optionsReady = expectation(description: "Initial filter options")
+    let searchChanged = expectation(description: "Attached write refreshes search")
+    let optionsChanged = expectation(description: "Attached write refreshes filter options")
+    let invalidations = try index.searchInvalidations(spec)
+    let options = try index.metadataOptionsUpdates(shelfID: "builtin")
+    let searchTask = Task {
+      var changes = invalidations.makeAsyncIterator()
+      guard try await changes.next() != nil else { return }
+      XCTAssertTrue(try index.searchCatalogue(.all, spec: spec).entries.isEmpty)
+      searchReady.fulfill()
+      guard try await changes.next() != nil else { return }
+      XCTAssertEqual(try index.searchCatalogue(.all, spec: spec).entries.map(\.id), ["a"])
+      searchChanged.fulfill()
+    }
+    let optionsTask = Task {
+      var changes = options.makeAsyncIterator()
+      guard let first = try await changes.next() else { return }
+      XCTAssertTrue(first.authors.isEmpty)
+      optionsReady.fulfill()
+      guard let updated = try await changes.next() else { return }
+      XCTAssertEqual(updated.authors, ["Fresh Writer"])
+      optionsChanged.fulfill()
+    }
+    defer { searchTask.cancel(); optionsTask.cancel() }
+    await fulfillment(of: [searchReady,optionsReady], timeout: 2)
+    try index.session.writeUsers(index.lease) { try Self.metadata($0, book: book, field: "author", value: "\"Fresh Writer\"") }
+    await fulfillment(of: [searchChanged,optionsChanged], timeout: 2)
+  }
+
 }
 
 final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
@@ -473,60 +591,6 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     let nested = try await service.libraryEntries(.init(shelfID: "builtin", path: "folder"))
     XCTAssertEqual(nested.first?.readingIdentity, key)
     XCTAssertEqual(try core.importStatus(bookId: job.bookId()).text.readingKey, key)
-  }
-
-  @MainActor func testFilterOptionsAndSearchMatchTheWideBaseline() async throws {
-    let (root, service, core, formal, _, first, second, suite) = try singleBookFixture()
-    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
-    let a = first.fixtureSHA256, b = second.fixtureSHA256
-    try await formal.put("metadata/\(a)/author", value: "\"Synthetic Writer\"", device: "fixture")
-    try await formal.put("metadata/\(a)/tag-1", value: "\"Group 2\"", device: "fixture")
-    try await formal.put("metadata/\(a)/tag-2", value: "\"Group 10\"", device: "fixture")
-    try await formal.put("metadata/\(b)/synopsis", value: "\"Unique synopsis token\"", device: "fixture")
-    try await service.savePosition(bookID: first.id, offset: 12)
-    let originals = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")
-    try core.scanLibraryShelf(shelfId: "builtin", items: originals.map {
-      .init(relativePath: $0.relativePath, directory: false, size: $0.size, modified: $0.modified, needsDownload: $0.needsDownload)
-    } + [
-      .init(relativePath: "sub", directory: true, size: 0, modified: 1, needsDownload: false),
-      .init(relativePath: "sub/a2.txt", directory: false, size: first.byteCount, modified: 1, needsDownload: false)
-    ])
-    let copy = try XCTUnwrap(core.sourceFiles(shelfId: "builtin").first { $0.relativePath == "sub/a2.txt" })
-    try core.linkLibraryFile(fileId: copy.id, bookId: first.id)
-
-    let location = LibraryLocation(shelfID: "builtin")
-    let old = try await service.catalogueQuery(location, recursive: true)
-    let options = try await service.metadataOptions(shelfID: location.shelfID)
-    XCTAssertEqual(options, try old.bookFilterOptions(shelfId: location.shelfID))
-    let configuration = BookSearchConfiguration(root: .init(kind: .group(.all, [
-      .init(kind: .rule(.status([.reading]))),
-      .init(kind: .rule(.tag(.all, [.text("Group 10")]))),
-      .init(kind: .rule(.author(["Synthetic Writer"])))
-    ])), sorts: [.init(field: .author)])
-    let scope = CatalogueScope.shelf(shelfId: location.shelfID, parentPath: "", recursive: true)
-    for spec: LibraryQueryRules.SearchSpec in [
-      .init(profile: .library, query: "synthetic", configuration: configuration),
-      .init(profile: .library, query: "sub"),
-      .init(profile: .library, author: ""),
-    ] {
-      let expected = LibraryQueryRules.searchOutcome(
-        try old.librarySearchCandidates(scope: scope, booksOnly: spec.configuration.booksOnly), spec: spec)
-      let narrow = try await service.libraryCatalogueSearch(scope, spec: spec)
-      XCTAssertEqual(narrow.entries.map(\.id), expected.entries.map(\.id))
-      XCTAssertEqual(narrow.unknownCount, expected.unknownCount)
-      XCTAssertTrue(narrow.entries.allSatisfy { $0.metadata == nil })
-      if spec.query == "sub" {
-        XCTAssertEqual(narrow.entries.first?.folderRow?.coverPreviews.first?.author, "Synthetic Writer")
-      }
-    }
-    let aiSpec = LibraryQueryRules.SearchSpec(profile: .ai, query: "synopsis token")
-    let ai = try await service.searchCatalogue(nil, spec: aiSpec)
-    XCTAssertEqual(ai.map(\.readingKey), [b])
-    try await formal.receiveSyncFixture("value", key: "metadata/\(b)/synopsis", payload: "{\"v\":2}")
-    do {
-      _ = try await service.searchCatalogue(nil, spec: aiSpec)
-      XCTFail("AI synopsis search keeps the formal compatibility barrier")
-    } catch is UserSyncCompatibilityError {}
   }
 
   @MainActor func testMetadataEditNotificationRoutesOnlyRelevantVisibleInputs() async throws {

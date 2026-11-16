@@ -98,16 +98,26 @@ extension Collection where Element == LibraryEntry {
 
 extension AppDataService {
     func libraryEntry(_ id: String) async throws -> LibraryEntry {
-        try await readingQuery(.book(.file(fileId: id)), options: .init(scope: "file-" + id)).libraryEntry(fileId: id)
+        try await fixedReaderRead { index in
+            let page = try index.session.readUsers(index.lease) {
+                try FolderRead.hitCards($0, scope: index.lease.scope, ids: [id])
+            }
+            guard let item = try FolderRead.entries(page).first else { throw ReaderError.NotFound }
+            return item
+        }
     }
 
     func catalogueScope(_ location: LibraryLocation?, recursive: Bool) -> CatalogueScope {
         location.map { .shelf(shelfId: $0.shelfID, parentPath: $0.path, recursive: recursive) } ?? .all
     }
+    #if DEBUG
+    // Historical baseline fixtures only; no live browsing fallback.
     func catalogueQuery(_ location: LibraryLocation?, recursive: Bool) async throws -> ReaderQuery {
         // Folder aggregates include descendants even when displaying only children.
         try await readingQuery(.catalogue(catalogueScope(location, recursive: true)), options: .init(scope: "catalogue"))
     }
+
+    #endif
 
     /// Deterministic latency for UI checks; release builds never delay queries.
     nonisolated static func libraryTestLatency() async throws {
@@ -253,48 +263,15 @@ extension AppDataService {
         guard let shelf = try shelves().first(where: { $0.id == id }) else { throw LibraryFileError.missingShelf }
         return shelf
     }
-    /// One folder's children, or with `recursive` every entry in the location's shelf (all shelves for nil).
-    func libraryEntries(_ location: LibraryLocation?, recursive: Bool = false, sort: LibrarySort = .reading) async throws -> [LibraryEntry] {
+    /// One folder's children for consumers that only need a snapshot.
+    func libraryEntries(_ location: LibraryLocation, sort: LibrarySort = .reading) async throws -> [LibraryEntry] {
         #if DEBUG
         if testSession != nil, ProcessInfo.processInfo.arguments.contains("--ui-test-introduction-directory-failure") {
             throw CocoaError(.fileReadNoPermission)
         }
         #endif
-        if let location, !recursive { return try await fixedFolderEntries(location, sort: sort) }
-        return try await catalogueQuery(location, recursive: recursive).libraryEntries(shelfId: location?.shelfID, parentPath: recursive ? nil : location?.path, sort: sort)
+        return try await fixedFolderEntries(location, sort: sort)
     }
-    func searchLibrary(query: String, configuration: BookSearchConfiguration) async throws -> LibraryQueryRules.SearchOutcome {
-        try await searchCatalogueOutcome(nil, spec: .init(profile: .library, query: query, configuration: configuration))
-    }
-    /// AI previously read details before matching. Preserve its unknown-metadata
-    /// barrier in one store call, without doing a details lookup for each file.
-    func requireAIMetadataReadable(_ location: LibraryLocation?, recursive: Bool) async throws {
-        let keys = try indexStore().catalogueContentKeys(scope: catalogueScope(location, recursive: recursive))
-        let formal = Set(keys.compactMap { key -> String? in
-            if case .formal = key { return serializeReadingKey(key: key) }; return nil
-        })
-        try await userStore().requireMetadataReadable(keys: formal)
-    }
-    func searchCatalogue(_ location: LibraryLocation?, spec: LibraryQueryRules.SearchSpec) async throws -> [LibraryEntry] {
-        try await searchCatalogueOutcome(location, spec: spec).entries
-    }
-    private func searchCatalogueOutcome(_ location: LibraryLocation?, spec: LibraryQueryRules.SearchSpec) async throws -> LibraryQueryRules.SearchOutcome {
-        if spec.profile == .library {
-            return try await libraryCatalogueSearch(catalogueScope(location, recursive: true), spec: spec)
-        }
-        let query = try await catalogueQuery(location, recursive: true)
-        let candidates = try query.librarySearchCandidates(scope: catalogueScope(location, recursive: true), booksOnly: spec.profile == .ai || spec.configuration.booksOnly)
-        if spec.profile == .ai { try await requireAIMetadataReadable(nil, recursive: true) }
-        var found = LibraryQueryRules.searchOutcome(candidates, spec: spec)
-        for index in found.entries.indices {
-            let entry = found.entries[index]
-            guard var folder = entry.folderRow else { continue }
-            folder.coverPreviews = try query.libraryFolderCoverPreviews(shelfId: entry.shelfId, relativePath: entry.relativePath)
-            found.entries[index].item = .folder(row: folder)
-        }
-        return found
-    }
-
     func allLibraryBooks(_ shelfID: String) async throws -> [LibraryEntry] {
         try await fixedReaderRead { try $0.catalogue(shelfID, grouping: .name).entries }
     }

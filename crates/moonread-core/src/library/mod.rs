@@ -4,7 +4,8 @@ pub(crate) mod tools;
 pub use crate::library::bookshelf::full_index::LibraryIdentityInventory;
 pub use crate::library::bookshelf::*;
 pub use order::{
-    DirectorySortEntry, ReadingDataSortEntry, library_directory_order, reading_data_order,
+    DirectorySortEntry, ReadingDataSortEntry, SearchFileOrdinal, library_directory_order,
+    reading_data_order, search_file_ordinals,
 };
 pub use tools::{
     ChapterEntry, ChapterOutline, MarkKind, MarkPage, ReaderMark, SearchBatch, SearchHit,

@@ -226,7 +226,6 @@ actor AppDataService {
         let identities: [String: String]
         let query: ReaderQuery
         let statisticsIncomplete: Bool
-        let directoryActivity: ReaderQuery?
         let formalBlockedMetadata: Set<String>
     }
     #if DEBUG
@@ -480,7 +479,6 @@ actor AppDataService {
         return value
     }
 
-    func books() async throws -> [ReadingSnapshot] { try await effectiveQuery(positionsOnly: true, scope: "reading-index").recentReadings() }
     func sample() async throws -> BookInfo {
         let text = try indexStore().createSampleBook()
         return try await book(text.id)

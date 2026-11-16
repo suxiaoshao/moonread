@@ -16,7 +16,7 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     let file = root.appendingPathComponent("library/synthetic.txt")
     try Data("第一章 合成章节\n用于统计身份回归的原创正文。\n".utf8).write(to: file)
     _ = try await service.scanLibraryShelf("builtin")
-    let entries = try await service.libraryEntries(nil)
+    let entries = try await service.libraryEntries(.init(shelfID: "builtin"))
     let entry = try XCTUnwrap(entries.first { !$0.directory })
     let route = StatisticsRoute(target: .file(fileId: entry.id), title: "Synthetic")
     XCTAssertNil(entry.readingKey)

@@ -46,6 +46,8 @@ extension MoonreadQueries {
       "RecentReadingCover": MoonreadQueries.Objects.RecentReadingCover,
       "RecentReadingFile": MoonreadQueries.Objects.RecentReadingFile,
       "RecentReadingMetadata": MoonreadQueries.Objects.RecentReadingMetadata,
+      "SearchFile": MoonreadQueries.Objects.SearchFile,
+      "SearchOptions": MoonreadQueries.Objects.SearchOptions,
       "ShelfBookCard": MoonreadQueries.Objects.ShelfBookCard,
       "ShelfTagGroup": MoonreadQueries.Objects.ShelfTagGroup
     ]

@@ -2,6 +2,8 @@ scalar UInt64
 scalar Int64
 
 type Query {
+  searchCandidates(shelfID: ID, path: String): [SearchFile!]!
+  bookFilterOptions(shelfID: ID): SearchOptions!
   bookInformation(target: InformationTarget!, sourceFileID: ID, includeRecordSource: Boolean!): BookInformation!
   shelfBookCards(shelfID: ID!): [ShelfBookCard!]!
   shelfTagGroups(shelfID: ID!): [ShelfTagGroup!]!
@@ -197,4 +199,23 @@ type InformationSource {
   lastRead: Int64!
   byteCount: UInt64!
   preferred: Boolean!
+}
+
+type SearchFile {
+  file: RecentReadingFile!
+  directory: Boolean!
+  readingKey: ID
+  bodyID: ID
+  lastRead: Int64!
+  hasPosition: Boolean!
+  author: String
+  synopsis: String
+  tags: [String!]!
+  status: String
+  stored: Boolean!
+}
+
+type SearchOptions {
+  authors: [String!]!
+  tags: [String!]!
 }

@@ -72,11 +72,6 @@ extension AppDataService {
     func details(sha: String) async throws -> BookDetails {
         try await bookDetails(.record(key: .formal(sha256: sha))).requireIdentified()
     }
-    func metadataOptions(shelfID: String?) async throws -> BookFilterOptions {
-        try await readingQuery(.catalogue(catalogueScope(shelfID.map { .init(shelfID: $0) }, recursive: true)),
-                               options: .init(scope: "library-filter-options", fields: [.author, .tags]))
-            .bookFilterOptions(shelfId: shelfID)
-    }
     nonisolated func metadataEditPlan(base: BookMetadata, edited: BookMetadata, fields: Set<String>? = nil) throws -> BookMetadataEditPlan {
         guard base.sha == edited.sha, (try? parseSha256(value: base.sha)) != nil, edited.author.utf8.count <= 1024,
               edited.synopsis.utf8.count <= 64 * 1024, edited.tags.count <= 100 else { throw ReaderError.InvalidSettings }

@@ -247,7 +247,7 @@ extension AppDataService {
         let externalID = try registerLibraryShelf(external)
         try refreshLibraryShelf(externalID)
         try refreshLibraryShelf("builtin")
-        for entry in try await libraryEntries(LibraryLocation(shelfID: "builtin"), recursive: true) where !entry.directory {
+        for entry in try await allLibraryBooks("builtin") {
             let file = root.appendingPathComponent(entry.relativePath)
             let book = try indexStore().importBook(filePath: file.path, title: entry.title)
             try indexStore().linkLibraryFile(fileId: entry.id, bookId: book.id)

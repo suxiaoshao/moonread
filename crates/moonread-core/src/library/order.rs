@@ -70,6 +70,44 @@ pub fn library_directory_order(
     rows.into_iter().map(|v| v.id).collect()
 }
 
+#[derive(Debug, uniffi::Record)]
+pub struct SearchFileOrdinal {
+    pub id: String,
+    pub order: u64,
+    pub name: u64,
+}
+
+/// The published search tie-break; equal natural names let the next explicit
+/// sort key participate. The ID, not content identity, names a candidate.
+#[uniffi::export]
+pub fn search_file_ordinals(mut rows: Vec<DirectorySortEntry>) -> Vec<SearchFileOrdinal> {
+    rows.sort_by(|a, b| {
+        file_order_fields(
+            (&a.name, &a.relative_path, &a.id),
+            (&b.name, &b.relative_path, &b.id),
+        )
+    });
+    let mut previous = None::<String>;
+    let mut ordinal = 0;
+    rows.into_iter()
+        .enumerate()
+        .map(|(order, row)| {
+            if previous
+                .as_ref()
+                .is_some_and(|name| !natural_cmp(name, &row.name).is_eq())
+            {
+                ordinal += 1;
+            }
+            previous = Some(row.name);
+            SearchFileOrdinal {
+                id: row.id,
+                order: order as u64,
+                name: ordinal,
+            }
+        })
+        .collect()
+}
+
 fn directory_order(
     a: &DirectorySortEntry,
     b: &DirectorySortEntry,
