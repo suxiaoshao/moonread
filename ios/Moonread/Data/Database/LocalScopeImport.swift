@@ -115,6 +115,14 @@ enum LocalScopeImport {
             history.facts = try ReadingFactSettlement.affectedIDs(db)
             history.segments = try ReadingSegmentRows.affected(db)
             try history.settle(db, scope: scope, transferringLocal: true)
+            // Pending and isolated evidence can block a target SAVE for
+            // the same ID, even if the source has no formal fact.
+            let movedFacts = try String.fetchCursor(db, sql: """
+                SELECT fact_id FROM move_source.reading_fact
+                UNION
+                SELECT record_id FROM move_source.quarantined_record WHERE source_type IN (\(ReadingFactRows.quarantineFactTypes))
+                """)
+            while let id = try movedFacts.next() { try ReadingHistoryTransport.enqueueFact(db, id: id, scope: scope) }
             try ReadingSegmentRows.enqueueSealed(db, ids: movedSegments, scope: scope)
             let clearIDs = try String.fetchAll(db, sql: "SELECT record_id FROM move_source.statistics_clear WHERE partition=0")
             for id in clearIDs {

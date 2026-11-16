@@ -29,7 +29,7 @@ enum CloudTransportRows {
     static let missingSaveStatus = "x2-verify-delete"
 
     static var supportedTypes: [String] {
-        [ReadingHistoryTransport.RecordType.segment.rawValue, ReadingHistoryTransport.RecordType.clear.rawValue] +
+        ReadingHistoryTransport.RecordType.allCases.map(\.rawValue) +
             FixedValueCloudRows.Family.allCases.map(\.rawValue) + CausalCloudRows.Family.allCases.map(\.rawValue)
     }
 
@@ -698,6 +698,7 @@ actor CloudCallbackJournal {
     struct PreparedHistoryChange: Sendable {
         let attempt: CloudTransportRows.Attempt
         let payload: String?
+        let logical: String?
         let systemFields: Data?
     }
 
@@ -870,9 +871,11 @@ actor CloudCallbackJournal {
             case .save(let digest):
                 guard try !CloudTransportRows.awaitingVerification(db, key),
                       let payload = try ReadingHistoryTransport.payload(db, type: type, id: id, digest: digest) else { return nil }
-                prepared = .init(attempt: attempt, payload: payload, systemFields: try CloudTransportRows.systemFields(db, key))
+                prepared = .init(attempt: attempt, payload: payload,
+                                 logical: try ReadingHistoryTransport.outboundLogical(db, type: type, id: id),
+                                 systemFields: try CloudTransportRows.systemFields(db, key))
             case .delete:
-                prepared = .init(attempt: attempt, payload: nil, systemFields: nil)
+                prepared = .init(attempt: attempt, payload: nil, logical: nil, systemFields: nil)
             }
             try CloudTransportRows.reserveGenerationFloor(db, covering: attempt.generation)
             return prepared

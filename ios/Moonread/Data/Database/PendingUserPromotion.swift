@@ -94,6 +94,7 @@ enum PendingUserPromotion {
                            arguments: [DataIdentity.canonical(pending)])
         }
         try history.settle(db, scope: scope)
+        for id in history.facts { try ReadingHistoryTransport.enqueueFact(db, id: id, scope: scope) }
         try ReadingSegmentRows.enqueueSealed(db, ids: history.segments, scope: scope)
         try ReadingPositionRows.settleCurrent(db, book: pending)
         try ReadingPositionRows.settleCurrent(db, book: formal)
@@ -446,6 +447,10 @@ extension ReaderIndex {
                 history.segments.formUnion(try ReadingSegmentRows.affected(db, book: key))
                 history.segments.formUnion(try ReadingSegmentRows.affectedIsolation(db, book: key))
                 if case .formal = try parseReadingKey(value: key), lease.scope != .local {
+                    let facts = try String.fetchCursor(db, sql: """
+                        SELECT fact_id FROM usr.reading_fact WHERE partition=0 AND book_key=?
+                        """, arguments: [key])
+                    while let id = try facts.next() { try ReadingHistoryTransport.delete(db, type: .fact, id: id, scope: lease.scope) }
                     let segments = try String.fetchAll(db, sql: """
                         SELECT segment_id FROM usr.reading_segment WHERE partition=0 AND book_key=? AND sealed=1
                         """, arguments: [key])

@@ -385,6 +385,9 @@ struct UserBackupRestore: Sendable {
             }
         }
         try history.settle(db, scope: scope)
+        for id in history.facts {
+            try ReadingHistoryTransport.enqueueFact(db, id: id, scope: scope)
+        }
         try ReadingSegmentRows.enqueueSealed(db, ids: exportSegments, scope: scope)
         for id in exportClears {
             if let value = try ReadingClearRows.load(db, partition: 0, id: id) {
@@ -425,7 +428,9 @@ enum ReadingHistoryBackup {
                 """, arguments: [source,sourceID,type,id,version,book,session,device,logicalKey,format,bytes,digest,reason,completeness])
             try UpgradeOrigins.recordInsertedIsolation(db, partition: 0, as: .local)
             switch type {
-            case "ReadingFact", "reading_fact": changed.clearFacts.insert(id)
+            case "ReadingFact", "reading_fact":
+                try ReadingHistoryTransport.withdrawSave(db, type: .fact, id: ReadingFactRows.identity(id))
+                changed.clearFacts.insert(id)
             case "ReadingSegment", "reading_segment": changed.segments.insert(id)
             default:
                 try ReadingHistoryTransport.didIsolateClear(db, id: id, book: book, session: session, changed: &changed)
@@ -463,12 +468,8 @@ enum ReadingHistoryBackup {
                 while let row = try rows.next() {
                     guard (row["schema_version"] as Int) == 1, (row["derivation_version"] as Int) == 1,
                           (row["exposure_version"] as Int) == 1 else { throw ReadingDataError.updateRequired }
-                    let raw = try ReadingFactSettlement.Evidence(row), head = raw.head
-                    let slice = ReadingSlice(id: head.id, sessionId: head.session, visitId: head.visit, bookId: head.book,
-                        startedMs: head.start, endedMs: head.end, localDay: head.day, utcOffsetSeconds: Int32(head.utcOffset), preview: head.preview,
-                        exposures: raw.exposures.map { .init(startUtf8: $0.start_utf8, endUtf8: $0.end_utf8, durationMs: $0.duration_ms) })
-                    let payload = try encodeReadingFact(contentKey: head.book, title: raw.title, device: raw.device, slice: slice)
-                    try emit(.init(key: head.book, id: head.id, device: raw.device, payload: payload))
+                    let raw = try ReadingFactSettlement.Evidence(row)
+                    try emit(.init(key: raw.head.book, id: raw.head.id, device: raw.device, payload: raw.wire()))
                 }
             case "segments":
                 let rows = try Row.fetchCursor(db, sql: "SELECT * FROM usr.reading_segment WHERE partition=0 ORDER BY segment_id")

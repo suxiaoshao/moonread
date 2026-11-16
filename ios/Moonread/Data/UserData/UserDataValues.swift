@@ -133,7 +133,7 @@ struct ClearValue: Codable, Sendable {
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: UserSyncJSON.Key.self)
         try c.encode(book, forKey: .init("book")); try c.encode(session, forKey: .init("session"))
-        try c.encode(through, forKey: .init("through")); try c.encode(ids, forKey: .init("ids"))
+        try c.encode(through, forKey: .init("through")); try c.encode(ids.sorted(), forKey: .init("ids"))
     }
 }
 struct UserDataConflict: LocalizedError {

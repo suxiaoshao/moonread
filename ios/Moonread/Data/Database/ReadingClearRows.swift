@@ -54,10 +54,11 @@ enum ReadingClearRows {
     }
 
     static func wire(_ value: Value) throws -> String {
-        if value.v == 1 {
-            return try UserSyncJSON.encode(ClearValue(book: value.book, session: value.session, through: value.throughMs, ids: Set(value.factIds)), envelope: true)
-        }
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        if value.v == 1 {
+            let old = ClearValue(book: value.book, session: value.session, through: value.throughMs, ids: Set(value.factIds))
+            return try UserSyncJSON.envelope(String(decoding: encoder.encode(old), as: UTF8.self))
+        }
         return String(decoding: try encoder.encode(value), as: UTF8.self)
     }
 
@@ -173,7 +174,17 @@ enum ReadingClearRows {
 
 /// History's wire and settlement rules. The shared outbox owns attempt identity.
 enum ReadingHistoryTransport {
-    enum RecordType: String, Sendable { case segment = "ReadingSegment", clear = "StatisticsClear" }
+    enum RecordType: String, CaseIterable, Sendable {
+        case fact = "ReadingFact", segment = "ReadingSegment", clear = "StatisticsClear"
+
+        var isolationTypes: String {
+            switch self {
+            case .fact: ReadingFactRows.quarantineFactTypes
+            case .segment: ReadingSegmentRows.quarantineTypes
+            case .clear: ReadingFactRows.quarantineClearTypes
+            }
+        }
+    }
     static let zone = "MoonreadReadingV2"
 
     static func name(_ type: RecordType, id: String) -> String {
@@ -199,6 +210,8 @@ enum ReadingHistoryTransport {
     }
 
     static func rebuildOutbox(_ db: Database, scope: DataScope) throws {
+        let facts = try String.fetchCursor(db, sql: "SELECT fact_id FROM usr.reading_fact WHERE partition=0 ORDER BY fact_id")
+        while let id = try facts.next() { try enqueueFact(db, id: id, scope: scope) }
         let clears = try String.fetchAll(db, sql: """
             SELECT record_id FROM usr.statistics_clear WHERE partition=0 AND schema_version IN \(ReadingFactRows.knownClearVersions)
             ORDER BY record_id
@@ -209,6 +222,24 @@ enum ReadingHistoryTransport {
             }
         }
         try ReadingSegmentRows.enqueueSurvivingSealedForRebuild(db, scope: scope)
+    }
+
+    static func enqueueFact(_ db: Database, id: String, scope: DataScope) throws {
+        guard scope != .local else { return }
+        let key = key(.fact, id: id)
+        guard let payload = try ReadingFactSettlement.cloudWire(db, id: id) else {
+            try CloudTransportRows.withdrawSave(db, key)
+            return
+        }
+        // These IDs are immutable; a readable fact already accepted by the
+        // current zone need not be uploaded when a duplicate is promoted.
+        guard try CloudTransportRows.recordStatus(db, key) != "present" else { return }
+        try save(db, type: .fact, id: id, payload: payload, scope: scope)
+    }
+
+    static func outboundLogical(_ db: Database, type: RecordType, id: String) throws -> String? {
+        guard type == .fact else { return nil }
+        return try String.fetchOne(db, sql: "SELECT book_key FROM usr.reading_fact WHERE partition=0 AND fact_id=?", arguments: [id])
     }
 
     private static func clearWire(_ db: Database, id: String, value: ReadingClearRows.Value) throws -> String? {
@@ -263,6 +294,9 @@ enum ReadingHistoryTransport {
                     let unbound = "unbound:" + DataIdentity.id("malformed-history-envelope", [record.recordName])
                     let book = formalScope(record.trustedBook)
                     switch record.type {
+                    case .fact:
+                        try isolateFact(db, id: unbound, book: book, payload: payload, sourceID: record.recordName,
+                                        reason: "invalid-fact-envelope")
                     case .segment:
                         try ReadingSegmentRows.quarantine(db, partition: 0, book: book, id: unbound,
                             origin: .init(source: "cloud", id: record.recordName), reason: "invalid-segment-envelope",
@@ -288,6 +322,9 @@ enum ReadingHistoryTransport {
                 guard try !CloudTransportRows.deletionPending(db, key) else { continue }
                 try CloudTransportRows.recordPresent(db, key, businessID: id, systemFields: record.systemFields)
                 switch record.type {
+                case .fact:
+                    try stageFact(db, id: id, book: record.trustedBook, payload: payload, sourceID: record.recordName,
+                                  scope: scope, changed: &changed)
                 case .segment:
                     try stageSegment(db, id: id, book: record.trustedBook, payload: payload,
                                      fetched: true, sourceID: record.recordName, scope: scope, changed: &changed)
@@ -297,6 +334,9 @@ enum ReadingHistoryTransport {
                 }
             } else {
                 switch record.type {
+                case .fact:
+                    try ReadingFactSettlement.removeCloudFact(db, id: id, scope: scope)
+                    changed.facts.insert(id)
                 case .segment:
                     try db.execute(sql: "DELETE FROM usr.reading_segment WHERE segment_id=?", arguments: [id])
                     changed.segments.insert(id)
@@ -309,17 +349,68 @@ enum ReadingHistoryTransport {
                     changed.clearSegments.formUnion(try ReadingSegmentRows.affected(db, partition: 0, book: record.trustedBook))
                 }
                 try CloudTransportRows.applyPeerDeletion(db, key)
-                try db.execute(sql: "DELETE FROM usr.quarantined_record WHERE partition=0 AND source_type IN " +
-                    (record.type == .segment ? "(" + ReadingSegmentRows.quarantineTypes + ")" : "(" + ReadingFactRows.quarantineClearTypes + ")") +
-                    " AND record_id=?", arguments: [id])
+                try db.execute(sql: """
+                    DELETE FROM usr.quarantined_record WHERE partition=0 AND source_type IN (\(record.type.isolationTypes)) AND record_id=?
+                    """, arguments: [id])
             }
         }
         try changed.settle(db, scope: scope)
+        for id in changed.facts where try ReadingFactSettlement.hasBlockingIsolation(db, id: id) {
+            try withdrawSave(db, type: .fact, id: id)
+        }
     }
 
     private static func formalScope(_ book: String?) -> String? {
         guard let book, let key = try? parseReadingKey(value: book), case .formal = key else { return nil }
         return serializeReadingKey(key: key)
+    }
+
+    private static func stageFact(_ db: Database, id: String, book: String?, payload: String, sourceID: String,
+                                  scope: DataScope, changed: inout ReadingHistoryRows.Changed) throws {
+        let route = formalScope(book)
+        func isolate(_ reason: String) throws {
+            try isolateFact(db, id: id, book: route, payload: payload, sourceID: sourceID, reason: reason)
+            try withdrawSave(db, type: .fact, id: id)
+            changed.facts.insert(id)
+        }
+        guard let route, book == route, ReadingFactRows.identity(id) == id else {
+            try isolate("invalid-fact-route")
+            return
+        }
+        let value: FactImportColumns
+        do {
+            let decoded = try decodeFactBatch(base: 0, payloads: [payload])
+            guard let cue = decoded.cues().first else { throw UserSyncCompatibilityError() }
+            _ = try UserSyncJSON.bindFact(cue, id: id)
+            value = try decoded.importColumns(ordinal: cue.ordinal)
+            guard value.payloadContentKey == route, let duration = value.durationMs, duration >= 0
+            else { throw UserSyncCompatibilityError() }
+        } catch let error as UserSyncCompatibilityError {
+            try isolate(error.reason == .newerFormat ? "newer-fact" : "unreadable-fact")
+            return
+        } catch is ReaderError {
+            try isolate("unreadable-fact")
+            return
+        }
+        try db.execute(sql: """
+            DELETE FROM usr.quarantined_record WHERE partition=0 AND source='cloud'
+              AND source_id=? AND source_type IN (\(ReadingFactRows.quarantineFactTypes))
+            """, arguments: [sourceID])
+        let removedIsolation = db.changesCount > 0
+        if try ReadingFactSettlement.ingest(db, value, book: route, partition: 0, scope: scope.key,
+                                            origin: .init(source: "cloud", id: sourceID)) || removedIsolation {
+            changed.facts.insert(id)
+        }
+    }
+
+    private static func isolateFact(_ db: Database, id: String, book: String?, payload: String, sourceID: String, reason: String) throws {
+        let bytes = Data(payload.utf8)
+        try db.execute(sql: """
+            INSERT INTO usr.quarantined_record(partition,source,source_id,source_type,record_id,book_key,
+              raw_format,raw_bytes,digest,reason,completeness)
+            VALUES(0,'cloud',?,'reading_fact',?,?,'legacy-json',?,?,?,'complete')
+            ON CONFLICT(partition,source,source_id,source_type,record_id,digest,reason) DO NOTHING
+            """, arguments: [sourceID,id,book,bytes,DataIdentity.sha(bytes),reason])
     }
 
     static func stageSegment(_ db: Database, id: String, book: String?, payload: String, fetched: Bool, sourceID: String,
@@ -411,6 +502,8 @@ enum ReadingHistoryTransport {
     // matches the queued digest, rather than conflating replacements as nil.
     static func currentWire(_ db: Database, type: RecordType, id: String) throws -> String? {
         switch type {
+        case .fact:
+            return try ReadingFactSettlement.cloudWire(db, id: id)
         case .segment:
             guard try !ReadingSegmentRows.blocked(db, id: id), let raw = try ReadingSegmentRows.load(db, partition: 0, id: id) else { return nil }
             return try segmentWire(raw)
@@ -439,8 +532,9 @@ enum ReadingHistoryTransport {
               ON c.record_name=q.source_id AND c.business_id=q.record_id
             WHERE q.partition=0 AND q.book_key=? AND q.source='cloud' AND c.zone=?
               AND ((c.record_type=? AND q.source_type IN (\(ReadingSegmentRows.quarantineTypes)))
-                OR (c.record_type=? AND q.source_type IN (\(ReadingFactRows.quarantineClearTypes))))
-            """, arguments: [book,zone,RecordType.segment.rawValue,RecordType.clear.rawValue])
+                OR (c.record_type=? AND q.source_type IN (\(ReadingFactRows.quarantineClearTypes)))
+                OR (c.record_type=? AND q.source_type IN (\(ReadingFactRows.quarantineFactTypes))))
+            """, arguments: [book,zone,RecordType.segment.rawValue,RecordType.clear.rawValue,RecordType.fact.rawValue])
         for record in records {
             guard let type = RecordType(rawValue: record["record_type"]) else { continue }
             try queueDelete(db, type: type, id: record["business_id"], recordName: record["record_name"])

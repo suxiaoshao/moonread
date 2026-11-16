@@ -86,6 +86,16 @@ enum ReadingFactSettlement {
             exposures = try JSONDecoder().decode([ReadingFactRows.Exposure].self, from: Data((row["exposures_text"] as String).utf8))
         }
 
+        /// Backup and sync carry the released fact, not its current (possibly
+        /// cleared) contribution and not a reconstructed continuous segment.
+        func wire() throws -> String {
+            guard let offset = Int32(exactly: head.utcOffset) else { throw ReaderError.InvalidRange }
+            let slice = ReadingSlice(id: head.id, sessionId: head.session, visitId: head.visit, bookId: head.book,
+                startedMs: head.start, endedMs: head.end, localDay: head.day, utcOffsetSeconds: offset, preview: head.preview,
+                exposures: exposures.map { .init(startUtf8: $0.start_utf8, endUtf8: $0.end_utf8, durationMs: $0.duration_ms) })
+            return try encodeReadingFact(contentKey: head.book, title: title, device: device, slice: slice)
+        }
+
         func samePayload(as other: Evidence) -> Bool {
             let a = head, b = other.head
             return a.id == b.id && a.session == b.session && a.visit == b.visit &&
@@ -136,6 +146,48 @@ enum ReadingFactSettlement {
             FROM usr.reading_fact f WHERE fact_id=?1 AND (?2 IS NULL OR partition=?2) AND \(valid)
             ORDER BY partition
             """, arguments: [id,partitions]).map { try Evidence($0) }
+    }
+
+    private static let factBlockers = """
+        SELECT 1 FROM usr.quarantined_record WHERE record_id=?1 AND source_type IN (\(ReadingFactRows.quarantineFactTypes))
+        UNION ALL SELECT 1 FROM usr.reading_fact f WHERE fact_id=?1 AND NOT (\(valid))
+        """
+
+    static func hasBlockingIsolation(_ db: Database, id: String) throws -> Bool {
+        try Bool.fetchOne(db, sql: "SELECT EXISTS(\(factBlockers))", arguments: [id]) == true
+    }
+
+    static func cloudWire(_ db: Database, id: String) throws -> String? {
+        guard try !hasBlockingIsolation(db, id: id) else { return nil }
+        guard let row = try Row.fetchOne(db, sql: """
+            SELECT partition AS source_partition,\(Head.columns),title_at_reading,device_id,exposures_text
+            FROM usr.reading_fact f WHERE fact_id=? AND partition=0 AND \(valid)
+            """, arguments: [id]),
+              let book = row["book_key"] as String?, (try? parseSha256(value: book)) == book
+        else { return nil }
+        do {
+            return try Evidence(row).wire()
+        } catch is DecodingError { return nil }
+        catch is ReaderError { return nil }
+    }
+
+    /// A cloud DELETE authorizes the formal fact. An identical, verified
+    /// pending copy is the same evidence and must not reappear at promotion.
+    /// An unrelated or unverified pending row is not owned by that DELETE.
+    static func removeCloudFact(_ db: Database, id: String, scope: DataScope) throws {
+        let removePending: Bool
+        do {
+            let copies = try evidence(db, id: id)
+            if let formal = copies.first(where: { $0.head.partition == 0 }),
+               let pending = copies.first(where: { $0.head.partition == 1 }) {
+                removePending = try match(formal, pending, db: db, scope: scope.key) == .same
+            } else { removePending = false }
+        } catch is DecodingError { removePending = false }
+        catch is ReaderError { removePending = false }
+        if removePending {
+            try db.execute(sql: "DELETE FROM usr.reading_fact WHERE partition=1 AND fact_id=?", arguments: [id])
+        }
+        try db.execute(sql: "DELETE FROM usr.reading_fact WHERE partition=0 AND fact_id=?", arguments: [id])
     }
 
     /// Stage typed input and return whether evidence changed, for the caller
@@ -280,10 +332,7 @@ enum ReadingFactSettlement {
         try Row.fetchOne(db, sql: """
             SELECT partition AS source_partition,\(Head.columns)
               FROM usr.reading_fact f WHERE fact_id=?1 AND \(valid)
-                AND NOT EXISTS(SELECT 1 FROM usr.reading_fact invalid WHERE invalid.fact_id=?1
-                    AND (invalid.schema_version<>1 OR invalid.derivation_version<>1 OR invalid.exposure_version<>1 OR invalid.duration_ms<0))
-                AND NOT EXISTS(SELECT 1 FROM usr.quarantined_record q WHERE q.record_id=?1
-                    AND source_type IN (\(ReadingFactRows.quarantineFactTypes)))
+                AND NOT EXISTS(\(factBlockers))
                 AND NOT EXISTS(SELECT 1 FROM usr.quarantined_record q WHERE q.partition=f.partition
                     AND source_type IN (\(ReadingFactRows.quarantineClearTypes))
                     AND (q.book_key IS NULL OR q.book_key=f.book_key) AND (q.session_id IS NULL OR q.session_id=f.session_id))

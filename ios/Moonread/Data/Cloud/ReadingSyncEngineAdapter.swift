@@ -597,7 +597,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         } else if let type = ReadingHistoryTransport.RecordType(rawValue: item.key.type),
                   let value = try await journal.prepareHistoryChange(type: type, id: item.businessID) {
             attempt = value.attempt; payload = value.payload; fields = value.systemFields
-            logical = nil; device = nil; mark = nil; attachment = nil
+            logical = value.logical; device = nil; mark = nil; attachment = nil
         } else if let family = CausalCloudRows.Family(rawValue: item.key.type),
                   let value = try await journal.prepareCausalChange(family, id: item.businessID) {
             attempt = value.attempt; payload = value.material?.payload; fields = value.systemFields
