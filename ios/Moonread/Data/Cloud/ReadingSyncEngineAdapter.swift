@@ -585,9 +585,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
                 let ownDeletes = ownDeletions
                     .map { CloudInboxRows.Deletion(type: $0.recordType, name: $0.recordID.recordName) }
                 if !businessRecords.isEmpty || !ownDeletes.isEmpty {
-                    let captured = try await Self.captureOffMain(businessRecords)
-                    try checkActive(syncEngine)
-                    try await journal.applyOwnInbox(records: captured, deletions: ownDeletes)
+                    try await capturePage(businessRecords, deletions: ownDeletes, engine: syncEngine)
                     proof?.committedPage()
                 }
             case .sentDatabaseChanges(let event):
@@ -614,6 +612,30 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
             }
         } catch {
             fatal = error
+        }
+    }
+
+    private func capturePage(_ records: [CKRecord], deletions: [CloudInboxRows.Deletion], engine: CKSyncEngine) async throws {
+        // Preserve SDK order; each quarantine packet can consume a full
+        // attachment allowance. Only ordinary runs share the prior page cap.
+        let removed = Set(deletions)
+        var ordinary = [CKRecord]()
+        for record in records where !removed.contains(.init(type: record.recordType, name: record.recordID.recordName)) {
+            if record.recordType != CloudIsolationRows.type { ordinary.append(record); continue }
+            if !ordinary.isEmpty {
+                let captured = try await Self.captureOffMain(ordinary)
+                try checkActive(engine)
+                try await journal.applyOwnInbox(records: captured, deletions: [])
+                ordinary.removeAll(keepingCapacity: true)
+            }
+            let captured = try await Self.captureOffMain([record])
+            try checkActive(engine)
+            try await journal.applyOwnInbox(records: captured, deletions: [])
+        }
+        if !ordinary.isEmpty || !deletions.isEmpty {
+            let captured = try await Self.captureOffMain(ordinary)
+            try checkActive(engine)
+            try await journal.applyOwnInbox(records: captured, deletions: deletions)
         }
     }
 
@@ -658,6 +680,10 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
                   let value = try await journal.prepareCausalChange(family, id: item.businessID) {
             attempt = value.attempt; payload = value.material?.payload; fields = value.systemFields
             logical = value.material?.book; device = value.material?.device; mark = value.material?.mark; attachment = nil
+        } else if item.key.type == CloudIsolationRows.type,
+                  let value = try await journal.prepareIsolationChange(name: item.businessID) {
+            attempt = value.attempt; payload = value.material?.payload; fields = value.systemFields
+            logical = value.material?.book; device = nil; mark = nil; attachment = value.material?.attachment
         } else { return nil }
         guard attempt.key == item.key, item.isSave == (payload != nil) else { return nil }
         if let previous = offered[id] {

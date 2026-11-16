@@ -44,7 +44,7 @@ enum LocalScopeImport {
             let version = try DataV2Schema.version(db, in: "move_source")
             // A frozen trial source can still have an earlier user schema.
             // Version 3 was the discarded bridge and is not accepted.
-            guard [1, 2, 4, DataV2Schema.userVersion].contains(version) else {
+            guard [1, 2, 4, 5, DataV2Schema.userVersion].contains(version) else {
                 throw DataV2Error.unsupportedSchema("move_source", version)
             }
             try body()
@@ -252,7 +252,7 @@ enum LocalScopeImport {
             let args = StatementArguments(keys.map { field -> DatabaseValue in row[field] })
             if try Int64.fetchOne(db, sql: "SELECT quarantine_id FROM usr.quarantined_record WHERE " + predicate(keys),
                                   arguments: args) == nil {
-                try insert(db, into: "quarantined_record", row: row, ignoring: ["quarantine_id"])
+                try insert(db, into: "quarantined_record", row: row, ignoring: ["quarantine_id","cloud_isolation_name"])
             }
             guard let id = try Int64.fetchOne(db, sql: "SELECT quarantine_id FROM usr.quarantined_record WHERE " + predicate(keys),
                                              arguments: args) else { throw DataV2Error.migrationNotVerified }

@@ -30,7 +30,8 @@ enum CloudTransportRows {
 
     static var supportedTypes: [String] {
         ReadingHistoryTransport.RecordType.allCases.map(\.rawValue) +
-            FixedValueCloudRows.Family.allCases.map(\.rawValue) + CausalCloudRows.Family.allCases.map(\.rawValue)
+            FixedValueCloudRows.Family.allCases.map(\.rawValue) + CausalCloudRows.Family.allCases.map(\.rawValue) +
+            [CloudIsolationRows.type]
     }
 
     static func pending(_ db: Database, _ key: Key) throws -> Attempt? {
@@ -461,8 +462,15 @@ enum CloudInboxRows {
     static func apply(_ db: Database, records: [Record], deletions: [Deletion], scope: DataScope) throws {
         let removed = Set(deletions)
         var history = [ReadingHistoryTransport.Fetched]()
+        var changed = ReadingHistoryRows.Changed()
         for record in records where !removed.contains(.init(type: record.type, name: record.name)) {
-            if let type = ReadingHistoryTransport.RecordType(rawValue: record.type) {
+            if record.type == CloudIsolationRows.type {
+                do {
+                    try CloudIsolationRows.receive(db, record, changed: &changed)
+                } catch is UserSyncCompatibilityError {
+                    try isolate(db, record, trusted: nil, reason: "cloud-incompatible-isolation-evidence")
+                }
+            } else if let type = ReadingHistoryTransport.RecordType(rawValue: record.type) {
                 if record.payload == nil { try isolate(db, record, trusted: nil, reason: "cloud-missing-history-payload") }
                 history.append(.init(type: type, recordName: record.name, id: record.id, trustedBook: record.logical,
                                      body: record.payload ?? "{\"v\":0}", systemFields: record.systemFields))
@@ -473,7 +481,10 @@ enum CloudInboxRows {
             }
         }
         for deletion in deletions {
-            if let family = FixedValueCloudRows.Family(rawValue: deletion.type) {
+            if deletion.type == CloudIsolationRows.type {
+                try CloudIsolationRows.delete(db, name: deletion.name, changed: &changed)
+                try deleteOpaque(db, deletion)
+            } else if let family = FixedValueCloudRows.Family(rawValue: deletion.type) {
                 _ = try FixedValueCloudRows.applyDeletion(db, family, name: deletion.name)
             } else if let family = CausalCloudRows.Family(rawValue: deletion.type) {
                 try CausalCloudRows.delete(db, family, name: deletion.name)
@@ -485,6 +496,7 @@ enum CloudInboxRows {
             }
         }
         try ReadingHistoryTransport.applyFetched(db, records: history, scope: scope)
+        try changed.settle(db, scope: scope)
     }
 
     private struct CausalRoute {
@@ -540,6 +552,7 @@ enum CloudInboxRows {
         let asset = record.assets.first(where: { $0.field == "attachment" })?.bytes
         do {
             try db.inSavepoint {
+                if try FixedValueCloudRows.receiveMissingCover(db, record, verifying: verifying) { return .commit }
                 try FixedValueCloudRows.applyRemote(db, .init(family: family, name: record.name, id: id, logical: logical,
                     device: device, payload: payload, attachment: asset, systemFields: record.systemFields), verifying: verifying)
                 return .commit
@@ -646,6 +659,9 @@ enum CloudSaveVerification {
         }
         if let family = CausalCloudRows.Family(rawValue: attempt.key.type) {
             return try CausalCloudRows.material(db, family, id: attempt.businessID)?.digest
+        }
+        if attempt.key.type == CloudIsolationRows.type {
+            return try CloudIsolationRows.current(db, name: attempt.key.name).map { DataIdentity.sha(Data($0.payload.utf8)) }
         }
         return nil
     }
@@ -841,8 +857,7 @@ actor CloudCallbackJournal {
                 ORDER BY o.intent='save',o.generation
                 """, arguments: [zone,traffic == .initial]).compactMap { row in
                 let type: String = row["record_type"]
-                guard FixedValueCloudRows.Family(rawValue: type) != nil || ReadingHistoryTransport.RecordType(rawValue: type) != nil ||
-                    CausalCloudRows.Family(rawValue: type) != nil
+                guard CloudTransportRows.supportedTypes.contains(type)
                 else { return nil }
                 return Pending(key: .init(zone: zone, type: type, name: row["record_name"]),
                                businessID: row["business_id"], isSave: row["intent"] == "save")
@@ -937,6 +952,34 @@ actor CloudCallbackJournal {
             let prepared = try FixedValueCloudRows.prepare(db, family, id: id)
             if let prepared { try CloudTransportRows.noteInitialOffer(db, prepared.attempt) }
             return prepared
+        }
+    }
+
+    struct PreparedIsolationChange: Sendable {
+        let attempt: CloudTransportRows.Attempt
+        let material: CloudIsolationRows.Material?
+        let systemFields: Data?
+    }
+
+    func prepareIsolationChange(name: String) throws -> PreparedIsolationChange? {
+        let key = CloudIsolationRows.key(name)
+        return try recordCallback(whileCreating: { nil }) { db in
+            guard try ReadingCloudInitialization.traffic(db).allows(db, key: key),
+                  let attempt = try CloudTransportRows.pending(db, key), attempt.businessID == name
+            else { return nil }
+            switch attempt.intent {
+            case .delete:
+                try CloudTransportRows.reserveGenerationFloor(db, covering: attempt.generation)
+                return .init(attempt: attempt, material: nil, systemFields: nil)
+            case .save(let digest):
+                guard try !CloudTransportRows.awaitingVerification(db, key),
+                      let material = try CloudIsolationRows.current(db, name: name),
+                      DataIdentity.sha(Data(material.payload.utf8)) == digest
+                else { return nil }
+                try CloudTransportRows.reserveGenerationFloor(db, covering: attempt.generation)
+                try CloudTransportRows.noteInitialOffer(db, attempt)
+                return .init(attempt: attempt, material: material, systemFields: try CloudTransportRows.systemFields(db, key))
+            }
         }
     }
 

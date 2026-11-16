@@ -255,7 +255,7 @@ enum UserValueRows {
         return id
     }
 
-    static func attach(_ db: Database, id: String, sha: String, bytes: Data) throws {
+    static func attach(_ db: Database, id: String, sha: String, bytes: Data, publishRepair: Bool = true) throws {
         guard DataIdentity.sha(bytes) == sha else { throw ReadingDataError.invalid }
         let asset = assetID(id, sha: sha)
         try db.execute(sql: """
@@ -263,7 +263,7 @@ enum UserValueRows {
             VALUES (?,?,?,?,'available') ON CONFLICT(asset_id)
             DO UPDATE SET bytes=excluded.bytes,availability='available' WHERE cover_asset.bytes IS NULL
             """, arguments: [asset,id,bytes,sha])
-        if db.changesCount > 0 { try ReadingCloudInitialization.attachedCover(db, asset: asset) }
+        if publishRepair, db.changesCount > 0 { try ReadingCloudInitialization.attachedCover(db, asset: asset) }
     }
 
     static func coverBytes(_ db: Database, id: String, sha: String) throws -> Data? {

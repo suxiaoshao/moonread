@@ -259,13 +259,14 @@ extension ReadingCloudInitialization {
 
     static func attachedCover(_ db: Database, asset: String) throws {
         let rows = try Row.fetchAll(db, sql: """
-            SELECT m.record_name,m.business_id FROM usr.cloud_initial_member m JOIN usr.cover_candidate c
-              ON c.record_id=m.business_id AND c.partition=0
-            WHERE m.record_type=? AND m.blocked_reason IS NOT NULL AND c.asset_id=?
-            """, arguments: [FixedValueCloudRows.Family.cover.rawValue,asset])
+            SELECT c.record_id FROM usr.cover_candidate c WHERE c.partition=0 AND c.asset_id=?1
+              AND (EXISTS(SELECT 1 FROM usr.cloud_initial_member m WHERE m.record_type=?2 AND m.business_id=c.record_id)
+                OR EXISTS(SELECT 1 FROM usr.cloud_record_state s WHERE s.zone=?3 AND s.record_type=?2
+                    AND s.business_id=c.record_id AND s.server_state='present'))
+            """, arguments: [asset,FixedValueCloudRows.Family.cover.rawValue,ReadingHistoryTransport.zone])
         for row in rows {
-            try refresh(db, .init(zone: ReadingHistoryTransport.zone, type: FixedValueCloudRows.Family.cover.rawValue,
-                                  name: row["record_name"]), id: row["business_id"])
+            let id: String = row["record_id"]
+            try refresh(db, FixedValueCloudRows.key(.cover, id: id), id: id)
         }
     }
 
@@ -277,17 +278,34 @@ extension ReadingCloudInitialization {
             WHERE quarantine_id IS NULL AND confirmed=0 AND blocked_reason IS NOT NULL
             """)
         for row in rows {
-            try refresh(db, .init(zone: ReadingHistoryTransport.zone, type: row["record_type"], name: row["record_name"]),
-                        id: row["business_id"])
+            let type: String = row["record_type"], id: String = row["business_id"]
+            try refresh(db, .init(zone: ReadingHistoryTransport.zone, type: type, name: row["record_name"]), id: id)
+            if type == ReadingHistoryTransport.RecordType.fact.rawValue {
+                let key = ReadingHistoryTransport.key(.fact, id: id)
+                if try CloudTransportRows.pending(db, key) == nil {
+                    try CloudIsolationRows.gatherBlockedFact(db, id: id)
+                }
+            }
         }
+        let isolated = try Int64.fetchAll(db, sql: """
+            SELECT quarantine_id FROM usr.cloud_initial_member WHERE record_type IN ('',?)
+              AND quarantine_id IS NOT NULL AND blocked_reason IS NOT NULL
+            """, arguments: [CloudIsolationRows.type])
+        for id in isolated { try CloudIsolationRows.stageInitial(db, quarantineID: id, refreshing: true) }
     }
 
     private static func hasUncovered(_ db: Database) throws -> Bool {
-        // Policy seam: missing attachments are blocking for now. A future
-        // policy must require acknowledged evidence, not ignore this reason.
-        try Bool.fetchOne(db, sql: """
-            SELECT EXISTS(SELECT 1 FROM usr.cloud_initial_member WHERE confirmed=0 AND blocked_reason IS NOT NULL)
-            """) == true
+        // Do not waive a reason bit. A genuine missing reference gets a
+        // concrete SAVE (fixed cover or original isolation), and must ACK
+        // through the same membership check as the complete alternatives.
+        let rows = try Row.fetchCursor(db, sql: """
+            SELECT record_type,business_id FROM usr.cloud_initial_member WHERE confirmed=0 AND blocked_reason IS NOT NULL
+            """)
+        while let row = try rows.next() {
+            guard (row["record_type"] as String) == ReadingHistoryTransport.RecordType.fact.rawValue,
+                  try CloudIsolationRows.coveredBlockedFact(db, id: row["business_id"]) else { return true }
+        }
+        return false
     }
 
     enum Traffic: Equatable {

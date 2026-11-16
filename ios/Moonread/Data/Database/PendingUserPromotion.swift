@@ -462,6 +462,7 @@ extension ReaderIndex {
                     try ReadingHistoryTransport.deleteIsolatedBookRecords(db, book: key, scope: lease.scope)
                     try FixedValueCloudRows.queueBookDeletion(db, book: key)
                     try CausalCloudRows.queueBookDeletion(db, book: key)
+                    try CloudIsolationRows.queueBookDelete(db, book: key)
                 }
                 let assets = canReclaimCover ? try String.fetchAll(db, sql: """
                     SELECT DISTINCT asset_id FROM usr.cover_candidate WHERE book_key=? AND asset_id IS NOT NULL

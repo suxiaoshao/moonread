@@ -172,6 +172,15 @@ enum ReadingFactSettlement {
         catch is ReaderError { return nil }
     }
 
+    /// Preserve the otherwise blocked original as opaque evidence, not as
+    /// an active ReadingFact. This is the same typed archive as conflicts.
+    static func initialIsolationWitness(_ db: Database, id: String) throws -> Data? {
+        guard let original = try evidence(db, id: id, partitions: 0).first else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(original)
+    }
+
     /// A cloud DELETE authorizes the formal fact. An identical, verified
     /// pending copy is the same evidence and must not reappear at promotion.
     /// An unrelated or unverified pending row is not owned by that DELETE.

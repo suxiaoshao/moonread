@@ -17,7 +17,7 @@ enum DataV2Error: Error, Equatable {
 enum DataV2Schema {
     static let indexVersion = 1
     // Version 3 belonged only to the removed, unpublished live bridge.
-    static let userVersion = 5
+    static let userVersion = 6
 
     static func sql(_ name: String, in bundle: Bundle = .main) throws -> String {
         guard let path = bundle.url(forResource: name, withExtension: "sql") else {
@@ -43,7 +43,7 @@ enum DataV2Schema {
             let index = try version(db, in: "main")
             let user = try version(db, in: "usr")
             guard [0, indexVersion].contains(index) else { throw DataV2Error.unsupportedSchema("main", index) }
-            guard [0, 1, 2, 4, userVersion].contains(user) else { throw DataV2Error.unsupportedSchema("usr", user) }
+            guard [0, 1, 2, 4, 5, userVersion].contains(user) else { throw DataV2Error.unsupportedSchema("usr", user) }
             if index == 0 { try checkFresh(db, in: "main") }
             if user == 0 { try checkFresh(db, in: "usr") }
             guard try String.fetchOne(db, sql: "PRAGMA usr.journal_mode=WAL")?.lowercased() == "wal" else {
@@ -143,6 +143,16 @@ enum DataV2Schema {
                         PRIMARY KEY(record_type,record_name)
                     );
                     PRAGMA usr.user_version=5;
+                    """)
+            }
+        }
+        if user < 6 {
+            try writer.write { db in
+                try db.execute(sql: """
+                    ALTER TABLE usr.quarantined_record ADD COLUMN cloud_isolation_name TEXT;
+                    CREATE UNIQUE INDEX usr.quarantine_cloud_isolation ON quarantined_record(cloud_isolation_name)
+                        WHERE cloud_isolation_name IS NOT NULL;
+                    PRAGMA usr.user_version=6;
                     """)
             }
         }
