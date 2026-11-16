@@ -136,8 +136,7 @@ final class DataSession: @unchecked Sendable {
     private var pool: DatabasePool?
     private var lease: DataSessionLease?
     private var cloudLease: DataCloudLease?
-    private var legacyDeletionScope: DataScope?
-    private var legacyDeletionMirror: (binding: DataCloudLease, container: ModelContainer)?
+    private var legacyDeletionMirror: (binding: DataCloudLease, store: LegacyMirrorStore)?
     private var selection: DataScopeSelection?
     private var verifiedAccount: DataScope?
     private var closeFailed = false
@@ -476,16 +475,47 @@ final class DataSession: @unchecked Sendable {
         legacyDeletionMirror = nil
     }
 
-    /// The old mirror belongs to one confirmed account and engine instance.
-    /// Keep the requirement (but no writable container) when it retires.
-    func bindLegacyDeletionMirror(_ container: ModelContainer, to binding: DataCloudLease) throws {
+    func openLegacyProbe(_ account: ReadingSyncEngineAdapter.VerifiedProbeAccount, binding: DataCloudLease) throws {
         try lifecycle.withLock {
-            _ = try activeCloud(binding)
-            guard legacyDeletionScope == nil || legacyDeletionScope == binding.user.scope else {
+            let writer = try activeCloud(binding)
+            guard account.scope == binding.user.scope, account.root == layout.root.resolvingSymlinksInPath() else {
                 throw DataV2Error.leaseExpired
             }
-            legacyDeletionScope = binding.user.scope
-            legacyDeletionMirror = (binding, container)
+            // Commit the obligation BEFORE opening the writable mirror.
+            try writer.write { try LegacyBridgePolicy.require($0) }
+            try writer.read { try LegacyBridgePolicy.checkIntake($0) }
+            let store = try LegacyMirrorStore.openProbe(layout: layout, account: account)
+            legacyDeletionMirror = (binding, store)
+        }
+    }
+
+    #if DEBUG
+    func requireLegacyBridge(_ binding: DataCloudLease) throws {
+        try lifecycle.withLock {
+            try activeCloud(binding).write { try LegacyBridgePolicy.require($0) }
+        }
+    }
+
+    /// An account lease alone cannot vouch for an arbitrary ModelContainer.
+    func bindLegacyDeletionMirror(_ store: LegacyMirrorStore, to binding: DataCloudLease) throws {
+        try lifecycle.withLock {
+            let writer = try activeCloud(binding)
+            guard store.scope == binding.user.scope,
+                  try LegacyMirrorStore.location(in: layout, scope: store.scope) == store.file else {
+                throw DataV2Error.leaseExpired
+            }
+            try writer.read { try LegacyBridgePolicy.checkIntake($0) }
+            legacyDeletionMirror = (binding, store)
+        }
+    }
+    #endif
+
+    /// Called only after the user confirms all devices have upgraded. Old
+    /// mirrors/data remain on disk; the obsolete container loses write access.
+    func finishLegacyBridgeAfterUpgrade(_ binding: DataCloudLease) throws {
+        try lifecycle.withLock {
+            try activeCloud(binding).write { try LegacyBridgePolicy.finish($0) }
+            legacyDeletionMirror = nil
         }
     }
 
@@ -499,13 +529,14 @@ final class DataSession: @unchecked Sendable {
             do {
                 return try writer.write { db in
                     try body(db) { keys in
-                        guard !keys.isEmpty, self.legacyDeletionScope == token.scope else { return }
+                        guard !keys.isEmpty, try LegacyBridgePolicy.phase(db) == .required else { return }
                         guard let mirror = self.legacyDeletionMirror else { throw ReadingDataError.legacyDeletionUnavailable }
                         _ = try self.activeCloud(mirror.binding)
-                        guard try CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone) == .ready else {
+                        do { try LegacyBridgePolicy.checkIntake(db) }
+                        catch LegacyBridgePolicy.Failure.notReady {
                             throw ReadingDataError.legacyDeletionUnavailable
                         }
-                        oldCommitted = try LegacyReadingDeletion.apply(ModelContext(mirror.container), keys: keys)
+                        oldCommitted = try LegacyReadingDeletion.apply(ModelContext(mirror.store.container), keys: keys)
                     }
                 }
             } catch {

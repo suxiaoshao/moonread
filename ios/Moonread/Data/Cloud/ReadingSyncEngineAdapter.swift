@@ -121,7 +121,12 @@ enum CloudVerificationScan {
 /// production lifecycle constructs this adapter yet.
 @MainActor
 final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTransport {
-    static let testContainer = "iCloud.dev.moonread.SyncProbe"
+    nonisolated static let testContainer = "iCloud.dev.moonread.SyncProbe"
+    struct VerifiedProbeAccount: Sendable {
+        let scope: DataScope
+        let root: URL
+        fileprivate init(scope: DataScope, root: URL) { self.scope = scope; self.root = root }
+    }
     static let ownZone = CKRecordZone.ID(zoneName: ReadingHistoryTransport.zone, ownerName: CKCurrentUserDefaultName)
     nonisolated private static let attachmentLimit = 16 * 1024 * 1024
 
@@ -191,6 +196,15 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         } catch let error as CKError where error.code == .zoneNotFound || error.code == .unknownItem {
             return .absent
         }
+    }
+
+    /// Probe-only. The caller holds the coordinator turn and must let it
+    /// retire the journal on failure; no App production lifecycle calls this.
+    static func openTestLegacyMirror(session: DataSession, lease: DataSessionLease,
+                                     journal: CloudCallbackJournal) async throws {
+        _ = try await verifiedTestContainer(session: session, lease: lease)
+        try Task.checkCancellation()
+        try await journal.openLegacyProbe(.init(scope: lease.scope, root: session.layout.root.resolvingSymlinksInPath()))
     }
 
     private static func verifiedTestContainer(session: DataSession, lease: DataSessionLease) async throws -> (CKContainer, CKRecord.ID) {

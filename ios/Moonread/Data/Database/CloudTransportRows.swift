@@ -1,6 +1,5 @@
 import Foundation
 import GRDB
-import SwiftData
 
 /// The account's durable record intents and CloudKit concurrency metadata.
 /// Callers stage edits on the same `usr` transaction as their domain changes.
@@ -649,6 +648,7 @@ enum CloudAccountZoneRecovery {
         switch loss {
         case .purged, .encryptedDataReset:
             try removeSyncedEvidence(db, scope: scope)
+            try LegacyBridgePolicy.finish(db)
             try CloudTransportRows.changeZoneAfterLoss(db, zone: zone, to: .reset)
             return .reset
         case .confirmedUnexpectedAbsence:
@@ -717,9 +717,26 @@ actor CloudCallbackJournal {
     /// replacement engine or a pause/resume.
     nonisolated func retire() { session.retireCloudLease(binding) }
 
-    func bindLegacyDeletionMirror(_ container: ModelContainer) throws {
+    func openLegacyProbe(_ account: ReadingSyncEngineAdapter.VerifiedProbeAccount) throws {
         guard !failed else { throw Failure.restartRequired }
-        try session.bindLegacyDeletionMirror(container, to: binding)
+        try session.openLegacyProbe(account, binding: binding)
+    }
+
+    #if DEBUG
+    func requireLegacyBridge() throws {
+        guard !failed else { throw Failure.restartRequired }
+        try session.requireLegacyBridge(binding)
+    }
+
+    func bindLegacyDeletionMirror(_ store: LegacyMirrorStore) throws {
+        guard !failed else { throw Failure.restartRequired }
+        try session.bindLegacyDeletionMirror(store, to: binding)
+    }
+    #endif
+
+    func finishLegacyBridgeAfterUpgrade() throws {
+        guard !failed else { throw Failure.restartRequired }
+        try session.finishLegacyBridgeAfterUpgrade(binding)
     }
 
     func checkpoint() throws -> Data? {

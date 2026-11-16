@@ -2,6 +2,93 @@ import Foundation
 import GRDB
 import SwiftData
 
+/// A writable mirror is a new, isolated store for one verified account.
+/// Never open the shared v1.6 file for network writes: the released owner
+/// preference is evidence for local migration, not attestation of that file.
+struct LegacyMirrorStore: Sendable {
+    let scope: DataScope
+    let file: URL
+    let container: ModelContainer
+
+    static func location(in layout: DataLayout, scope: DataScope) throws -> URL {
+        guard scope != .local else { throw DataV2Error.invalidOwnerState }
+        let path = try layout.directory(scope).appending(path: "legacy-mirror/user-data.store")
+        let root = layout.root.standardizedFileURL
+        let relative = String(path.standardizedFileURL.path.dropFirst(root.path.count))
+        let expected = root.resolvingSymlinksInPath().path + relative
+        guard path.resolvingSymlinksInPath().path == expected else {
+            throw DataV2Error.incompatibleSource("redirected legacy mirror")
+        }
+        return path
+    }
+
+    private init(layout: DataLayout, scope: DataScope, cloud: ModelConfiguration.CloudKitDatabase) throws {
+        let file = try Self.location(in: layout, scope: scope)
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let schema = UserDataStore.schema
+        let config = ModelConfiguration("UserData", schema: schema, url: file, cloudKitDatabase: cloud)
+        let container = try ModelContainer(for: schema, configurations: [config])
+        self.scope = scope
+        self.file = file
+        self.container = container
+    }
+
+    /// Only the signed Probe factory can produce an account proof.
+    static func openProbe(layout: DataLayout, account: ReadingSyncEngineAdapter.VerifiedProbeAccount) throws -> Self {
+        try .init(layout: layout, scope: account.scope, cloud: .private(ReadingSyncEngineAdapter.testContainer))
+    }
+
+    #if DEBUG
+    /// Synthetic disk store only: there is no arbitrary container/setter and
+    /// this entry never enables mirroring or reads the released source.
+    static func localFixture(layout: DataLayout, scope: DataScope) throws -> Self {
+        try .init(layout: layout, scope: scope, cloud: .none)
+    }
+    #endif
+}
+
+/// This status is device-local and stored in the account writer. Retiring
+/// the engine does not retire the bridge, and an old SDK result cannot undo
+/// an explicit finish. No state here is published to CloudKit.
+enum LegacyBridgePolicy {
+    enum Phase: String { case required = "required-v1", finished = "finished-v1" }
+    enum Failure: Error { case finished, notReady }
+    private static let key = "legacy-mirror-phase"
+
+    static func phase(_ db: Database) throws -> Phase? {
+        guard let value = try String.fetchOne(db, sql: "SELECT value FROM usr.local_data_state WHERE state_key=?",
+                                             arguments: [key]) else { return nil }
+        guard let phase = Phase(rawValue: value) else {
+            throw DataV2Error.incompatibleSource("legacy bridge phase")
+        }
+        return phase
+    }
+
+    static func require(_ db: Database) throws {
+        guard try phase(db) != .finished else { throw Failure.finished }
+        switch try CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone) {
+        case .ready, .unverified, .needsCreation: break
+        default: throw Failure.notReady
+        }
+        try db.execute(sql: "INSERT OR IGNORE INTO usr.local_data_state VALUES (?,?)",
+                       arguments: [key, Phase.required.rawValue])
+    }
+
+    static func checkIntake(_ db: Database) throws {
+        guard try phase(db) == .required,
+              try CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone) == .ready else {
+            throw Failure.notReady
+        }
+    }
+
+    /// Only an explicit bridge finish or a confirmed W2 privacy reset may
+    /// close intake permanently for this existing account database.
+    static func finish(_ db: Database) throws {
+        try db.execute(sql: "INSERT OR REPLACE INTO usr.local_data_state VALUES (?,?)",
+                       arguments: [key, Phase.finished.rawValue])
+    }
+}
+
 /// Existing released containers, opened and frozen by the handoff owner. The
 /// source remains intact. A nil/uncertain scope must never be guessed as local.
 struct LegacyUserSnapshot: Sendable {

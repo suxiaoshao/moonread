@@ -285,6 +285,7 @@ final class CloudAccountCloudAccountTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: coverFile.path))
     }
 
+    #if DEBUG
     @MainActor func testWholeBookDeletesPresentLegacyMirrorBeforeNewUserCommit() async throws {
         let fixture = try ZoneRecoveryFixture()
         defer { fixture.remove() }
@@ -293,11 +294,8 @@ final class CloudAccountCloudAccountTests: XCTestCase {
         let account = try CloudCallbackJournal(session: index.session, lease: index.lease)
         try await account.initializeZone(exists: true)
         let book = ZoneRecoveryFixture.book, other = String(repeating: "b", count: 64)
-        let schema = UserDataStore.schema
-        let location = fixture.root.appending(path: "synthetic-old.store")
-        let mirror = try ModelContainer(for: schema, configurations: [
-            ModelConfiguration("UserData", schema: schema, url: location, cloudKitDatabase: .none)
-        ])
+        let store = try LegacyMirrorStore.localFixture(layout: index.session.layout, scope: index.lease.scope)
+        let mirror = store.container
         let context = ModelContext(mirror)
         let shared = Data("shared".utf8), exclusive = Data("exclusive".utf8)
         func cover(_ key: String, device: String, id: String, bytes: Data) throws {
@@ -320,7 +318,8 @@ final class CloudAccountCloudAccountTests: XCTestCase {
         context.insert(StatisticsClear(payload: "{\"v\":999,\"book\":42}"))
         try context.save()
 
-        try await account.bindLegacyDeletionMirror(mirror)
+        try await account.requireLegacyBridge()
+        try await account.bindLegacyDeletionMirror(store)
         do {
             _ = try index.deleteUserBooks([book], activeReadingIDs: ["unavailable-active-book"]) { ReadingDataError.busy }
             XCTFail("old mirror must never commit before the reading check")
@@ -338,7 +337,7 @@ final class CloudAccountCloudAccountTests: XCTestCase {
 
         let replacement = try CloudCallbackJournal(session: index.session, lease: index.lease)
         defer { replacement.retire() }
-        try await replacement.bindLegacyDeletionMirror(mirror)
+        try await replacement.bindLegacyDeletionMirror(store)
         _ = try await service.deleteReadingData([book])
         let read = ModelContext(mirror)
         XCTAssertEqual(Set(try read.fetch(FetchDescriptor<UserCover>()).map(\.id)), ["shared"])
@@ -361,11 +360,8 @@ final class CloudAccountCloudAccountTests: XCTestCase {
         let (index, _) = try fixture.open()
         try fixture.seed(index)
         let book = ZoneRecoveryFixture.book
-        let schema = UserDataStore.schema
-        let file = fixture.root.appending(path: "synthetic-old.store")
-        let mirror = try ModelContainer(for: schema, configurations: [
-            ModelConfiguration("UserData", schema: schema, url: file, cloudKitDatabase: .none)
-        ])
+        let store = try LegacyMirrorStore.localFixture(layout: index.session.layout, scope: index.lease.scope)
+        let mirror = store.container
         do {
             let context = ModelContext(mirror)
             context.insert(UserPosition(contentKey: book, payload: "{}"))
@@ -374,7 +370,8 @@ final class CloudAccountCloudAccountTests: XCTestCase {
         let journal = try CloudCallbackJournal(session: index.session, lease: index.lease)
         defer { journal.retire() }
         try await journal.initializeZone(exists: true)
-        try await journal.bindLegacyDeletionMirror(mirror)
+        try await journal.requireLegacyBridge()
+        try await journal.bindLegacyDeletionMirror(store)
         let before = try fixture.state(index)
         try index.session.writeUsers(index.lease) { db in
             try db.execute(sql: """
@@ -394,6 +391,97 @@ final class CloudAccountCloudAccountTests: XCTestCase {
         XCTAssertEqual(try fixture.state(index).formal, 0)
         XCTAssertEqual(try fixture.state(index).pending, 1)
     }
+
+    @MainActor func testLegacyMirrorObligationSurvivesReopenAndResetClosesIt() async throws {
+        for reason in [CloudTransportRows.ZoneDeletion.purged, .encryptedDataReset] {
+            let fixture = try ZoneRecoveryFixture()
+            defer { fixture.remove() }
+            let (first, _) = try fixture.open()
+            let owner = try CloudCallbackJournal(session: first.session, lease: first.lease)
+            try await owner.initializeZone(exists: true)
+            try fixture.seed(first)
+            try await owner.requireLegacyBridge() // Process exits before the container opens.
+            owner.retire()
+            try first.session.close()
+
+            let (index, service) = try fixture.open()
+            let book = ZoneRecoveryFixture.book
+            do {
+                _ = try await service.deleteReadingData([book])
+                XCTFail("an empty binding after restart must not authorize a one-sided deletion")
+            } catch ReadingDataError.legacyDeletionUnavailable { }
+            XCTAssertEqual(try fixture.state(index).formal, 1)
+            let journal = try CloudCallbackJournal(session: index.session, lease: index.lease)
+            let foreign = try DataScope.confirmed(container: "fixture.invalid", environment: .development, recordName: "fixture-B")
+            let wrongAccount = try LegacyMirrorStore.localFixture(layout: index.session.layout, scope: foreign)
+            let otherRoot = DataLayout(applicationSupport: fixture.root.appending(path: "different-data-root"))
+            let wrongFile = try LegacyMirrorStore.localFixture(layout: otherRoot, scope: index.lease.scope)
+            for store in [wrongAccount, wrongFile] {
+                do {
+                    try await journal.bindLegacyDeletionMirror(store)
+                    XCTFail("journal scope alone cannot authorize a foreign mirror")
+                } catch DataV2Error.leaseExpired { }
+            }
+            let store = try LegacyMirrorStore.localFixture(layout: index.session.layout, scope: index.lease.scope)
+            try await journal.bindLegacyDeletionMirror(store)
+            let context = ModelContext(store.container)
+            context.insert(UserPosition(contentKey: book, payload: "old bytes"))
+            try context.save()
+            let signal = try await journal.holdZoneDeletion(reason)
+            XCTAssertEqual(signal, .resetPending)
+            do {
+                try await journal.bindLegacyDeletionMirror(store)
+                XCTFail("a reset notice already closes old intake")
+            } catch LegacyBridgePolicy.Failure.notReady { }
+            do {
+                _ = try await service.deleteReadingData([book])
+                XCTFail("a reset notice must not mutate the old mirror")
+            } catch ReadingDataError.legacyDeletionUnavailable { }
+            journal.retire()
+            let recovered = try await service.recoverReadingCloudZone(fixture.account, presence: nil, lookup: { .confirmed(fixture.account) })
+            XCTAssertEqual(recovered, .reset)
+            XCTAssertEqual(try fixture.state(index).formal, 0)
+            XCTAssertEqual(try fixture.state(index).pending, 1)
+            XCTAssertEqual(try ModelContext(store.container).fetchCount(FetchDescriptor<UserPosition>()), 1)
+            try index.session.close()
+
+            let (after, _) = try fixture.open()
+            let stranded = try CloudCallbackJournal(session: after.session, lease: after.lease)
+            defer { stranded.retire() }
+            do {
+                try await stranded.requireLegacyBridge()
+                XCTFail("old bytes must not reactivate the account's finished bridge")
+            } catch LegacyBridgePolicy.Failure.finished { }
+            XCTAssertEqual(try after.session.readUsers(after.lease) { try LegacyBridgePolicy.phase($0) }, .finished)
+            XCTAssertEqual(try fixture.state(after).outbox, 0)
+        }
+    }
+
+    @MainActor func testExplicitLegacyBridgeFinishDisablesOldMutationsWithoutDeletingMirror() async throws {
+        let fixture = try ZoneRecoveryFixture()
+        defer { fixture.remove() }
+        let (index, service) = try fixture.open()
+        let journal = try CloudCallbackJournal(session: index.session, lease: index.lease)
+        defer { journal.retire() }
+        try await journal.initializeZone(exists: true)
+        try fixture.seed(index)
+        try await journal.requireLegacyBridge()
+        let store = try LegacyMirrorStore.localFixture(layout: index.session.layout, scope: index.lease.scope)
+        try await journal.bindLegacyDeletionMirror(store)
+        let book = ZoneRecoveryFixture.book
+        let context = ModelContext(store.container)
+        context.insert(UserPosition(contentKey: book, payload: "legacy evidence"))
+        try context.save()
+        try await journal.finishLegacyBridgeAfterUpgrade()
+        do {
+            try await journal.requireLegacyBridge()
+            XCTFail("reopening the engine does not undo explicit bridge retirement")
+        } catch LegacyBridgePolicy.Failure.finished { }
+        _ = try await service.deleteReadingData([book])
+        XCTAssertEqual(try ModelContext(store.container).fetchCount(FetchDescriptor<UserPosition>()), 1)
+        XCTAssertEqual(try fixture.state(index).formal, 0)
+    }
+    #endif
 
     func testZoneRecoveryRequiresDurableDeletionAndExactAbsence() async throws {
         let fixture = try ZoneRecoveryFixture()
