@@ -31,7 +31,6 @@ struct CloudSyncStatus: Sendable {
     var lastSync: Date?
     var transportMessage: String?
     var canRetry = false
-    var legacyUpgradeRevision: UUID?
 
     var enabled: Bool { if case .enabled = activation { true } else { false } }
     var accountToConfirm: String? {
@@ -70,16 +69,8 @@ final class CloudScopeCancellation: Sendable {
 
 protocol ReadingCloudTransport: Sendable {
     func syncNow() async throws
-    func isLegacyBridgeActive() async throws -> Bool
-    func finishLegacyBridgeAfterUpgrade(check: @Sendable () throws -> Void) async throws
     /// Must cancel and drain the transport, including any out-of-engine work.
     func close() async
-}
-extension ReadingCloudTransport {
-    func isLegacyBridgeActive() async throws -> Bool { false }
-    func finishLegacyBridgeAfterUpgrade(check: @Sendable () throws -> Void) async throws {
-        throw LegacyBridgePolicy.Failure.notReady
-    }
 }
 
 enum CloudScopePresentationError: Error { case editing }
@@ -166,8 +157,6 @@ actor CloudSyncCoordinator {
     private var restartPending = false
     private var identityNeedsVerification = false
     private var confirmationCandidate: Account?
-    private var legacyUpgradeCancellation: CloudScopeCancellation?
-    private var legacyUpgradeObservation = UUID()
     private struct RecoveryRequest: Sendable {
         let account: Account
         let signal: CloudZoneRecoverySignal
@@ -214,35 +203,10 @@ actor CloudSyncCoordinator {
         await enqueue(restart: true, approval: candidate)
     }
 
-    func confirmLegacyUpgrade(revision displayed: UUID) async throws {
-        guard let runtime, let transport, foreground, service.cloudSyncIntent.requested,
-              current(displayed), status.enabled, status.legacyUpgradeRevision == displayed,
-              legacyUpgradeCancellation == nil else { return }
-        let cancellation = CloudScopeCancellation()
-        legacyUpgradeCancellation = cancellation
-        legacyUpgradeObservation = UUID()
-        defer { if legacyUpgradeCancellation === cancellation { legacyUpgradeCancellation = nil } }
-        let intent = service.cloudSyncIntent
-        try await withTaskCancellationHandler {
-            guard case .confirmed(let account) = await runtime.lookup(), account == transport.account,
-                  current(displayed), foreground, status.legacyUpgradeRevision == displayed else { return }
-            try await transport.handle.finishLegacyBridgeAfterUpgrade {
-                try cancellation.check()
-                guard intent.requested else { throw CancellationError() }
-            }
-            guard current(displayed) else { return }
-            status.legacyUpgradeRevision = nil
-            publish()
-        } onCancel: { cancellation.cancel() }
-    }
-
     private func enqueue(restart: Bool, approval: Account? = nil, recovery: RecoveryRequest? = nil) async {
         let token = UUID()
         revision = token
         confirmationCandidate = nil
-        legacyUpgradeCancellation?.cancel()
-        legacyUpgradeCancellation = nil
-        status.legacyUpgradeRevision = nil
         let previous = transition
         previous?.cancel()
         if restart {
@@ -337,8 +301,6 @@ actor CloudSyncCoordinator {
                 }
                 status.activation = .enabled(account.identity, revision: token)
                 status.transportMessage = nil
-                if let handle = transport?.handle { await refreshLegacyUpgrade(handle, revision: token) }
-                guard current(token) else { return }
                 startTurn(allowRecovery: repair == nil)
             }
             publish()
@@ -378,7 +340,6 @@ actor CloudSyncCoordinator {
                 guard !Task.isCancelled else { return }
                 status.lastSync = .now
                 status.transportMessage = nil
-                await refreshLegacyUpgrade(handle, revision: revision)
             } catch {
                 guard !Task.isCancelled else { return }
                 if case .accountChanged? = error as? ReadingSyncEngineAdapter.Failure {
@@ -400,16 +361,6 @@ actor CloudSyncCoordinator {
         if !Task.isCancelled {
             turn = nil; status.syncing = false; publish()
         }
-    }
-
-    private func refreshLegacyUpgrade(_ handle: any ReadingCloudTransport, revision token: UUID) async {
-        guard current(token), status.enabled, service.cloudSyncIntent.requested,
-              legacyUpgradeCancellation == nil else { return }
-        let observation = legacyUpgradeObservation
-        let active = (try? await handle.isLegacyBridgeActive()) == true
-        guard current(token), status.enabled, service.cloudSyncIntent.requested,
-              legacyUpgradeObservation == observation else { return }
-        status.legacyUpgradeRevision = active ? token : nil
     }
 
     private func pauseForZone() {

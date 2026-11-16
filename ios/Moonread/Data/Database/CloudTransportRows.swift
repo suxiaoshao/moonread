@@ -648,7 +648,6 @@ enum CloudAccountZoneRecovery {
         switch loss {
         case .purged, .encryptedDataReset:
             try removeSyncedEvidence(db, scope: scope)
-            try LegacyBridgePolicy.finish(db)
             try CloudTransportRows.changeZoneAfterLoss(db, zone: zone, to: .reset)
             return .reset
         case .confirmedUnexpectedAbsence:
@@ -716,46 +715,6 @@ actor CloudCallbackJournal {
     /// on this actor must also fail at the writer, even after a same-account
     /// replacement engine or a pause/resume.
     nonisolated func retire() { session.retireCloudLease(binding) }
-
-    func openLegacyProbe(_ account: ReadingSyncEngineAdapter.VerifiedProbeAccount) throws {
-        guard !failed else { throw Failure.restartRequired }
-        try session.openLegacyProbe(account, binding: binding)
-    }
-
-    #if DEBUG
-    func requireLegacyBridge() throws {
-        guard !failed else { throw Failure.restartRequired }
-        try session.requireLegacyBridge(binding)
-    }
-
-    func bindLegacyDeletionMirror(_ store: LegacyMirrorStore) throws {
-        guard !failed else { throw Failure.restartRequired }
-        try session.bindLegacyDeletionMirror(store, to: binding)
-    }
-    #endif
-
-    func finishLegacyBridgeAfterUpgrade(check: @Sendable () throws -> Void = { try Task.checkCancellation() }) throws {
-        guard !failed else { throw Failure.restartRequired }
-        try session.finishLegacyBridgeAfterUpgrade(binding, check: check)
-    }
-
-    func consumeLegacyMirrorPage() throws -> Bool {
-        guard !failed else { throw Failure.restartRequired }
-        return try session.consumeLegacyMirrorPage(binding)
-    }
-
-    func legacyBridgePhase() throws -> LegacyBridgePolicy.Phase? {
-        guard !failed else { throw Failure.restartRequired }
-        return try session.readCloudChanges(binding) { try LegacyBridgePolicy.phase($0) }
-    }
-
-    func isLegacyBridgeActive() throws -> Bool {
-        guard !failed else { throw Failure.restartRequired }
-        return try session.readCloudChanges(binding) { db in
-            try LegacyBridgePolicy.phase(db) == .required &&
-                CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone) == .ready
-        }
-    }
 
     func checkpoint() throws -> Data? {
         guard !failed else { throw Failure.restartRequired }

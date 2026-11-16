@@ -1,7 +1,6 @@
 import CryptoKit
 import Foundation
 import GRDB
-import SwiftData
 
 enum DataScope: Codable, Equatable, Sendable {
     case local
@@ -132,12 +131,10 @@ final class DataSession: @unchecked Sendable {
     private let lifecycle = NSLock()
     let layout: DataLayout
     private let bundle: Bundle
-    private let legacyBridgeScope: DataScope?
     private var owner: DataOwnerState
     private var pool: DatabasePool?
     private var lease: DataSessionLease?
     private var cloudLease: DataCloudLease?
-    private var legacyDeletionMirror: (binding: DataCloudLease, store: LegacyMirrorStore)?
     private var selection: DataScopeSelection?
     private var verifiedAccount: DataScope?
     private var closeFailed = false
@@ -148,13 +145,8 @@ final class DataSession: @unchecked Sendable {
     /// The optional bootstrap owner is accepted only before any v2 owner
     /// decision exists. It comes from a positively attributed legacy store,
     /// not simply from the system's current login.
-    init(layout: DataLayout, bundle: Bundle = .main, confirmedLegacyOwner: DataScope? = nil,
-         legacyBridgeScope: DataScope? = nil) throws {
+    init(layout: DataLayout, bundle: Bundle = .main, confirmedLegacyOwner: DataScope? = nil) throws {
         self.layout = layout; self.bundle = bundle
-        if let legacyBridgeScope {
-            guard legacyBridgeScope != .local, legacyBridgeScope.valid else { throw DataV2Error.invalidOwnerState }
-        }
-        self.legacyBridgeScope = legacyBridgeScope
         var state = try DataOwnerState.load(at: layout.ownerState)
         if let confirmedLegacyOwner, !FileManager.default.fileExists(atPath: layout.ownerState.path) {
             guard confirmedLegacyOwner.valid, confirmedLegacyOwner != .local else { throw DataV2Error.invalidOwnerState }
@@ -229,7 +221,7 @@ final class DataSession: @unchecked Sendable {
         if let lease, lease.scope == next.scope {
             // An offline pause or a toggle must not tear down the reader,
             // outstanding local writes, or observations for this same file.
-            if !next.maySync || verifiedAccount != verified { invalidateCloudBinding() }
+            if !next.maySync || verifiedAccount != verified { cloudLease = nil }
             if owner != state { try saveOwner(state) }
             verifiedAccount = verified
             selection = next
@@ -254,7 +246,7 @@ final class DataSession: @unchecked Sendable {
     }
 
     private func closeLocked() throws {
-        lease = nil; invalidateCloudBinding(); selection = nil; indexReady = false; usersReady = false; historyReady = false
+        lease = nil; cloudLease = nil; selection = nil; indexReady = false; usersReady = false; historyReady = false
         guard let pool else { return }
         do { try pool.close() }
         catch { closeFailed = true; throw error }
@@ -373,14 +365,6 @@ final class DataSession: @unchecked Sendable {
                     }
                 }
             }
-            // The cutover caller supplies the eligible scope when creating
-            // the session. Do not open the management writer before its
-            // first W1 obligation is durable, even in the offline account.
-            if token.scope == legacyBridgeScope {
-                try writer.write { db in
-                    if try LegacyBridgePolicy.phase(db) == nil { try LegacyBridgePolicy.require(db) }
-                }
-            }
             // Copy/absence is already durable in usr. If this publication
             // fails, a later startup can retry it without recopied user rows.
             if !owner.ownedIndex {
@@ -471,7 +455,6 @@ final class DataSession: @unchecked Sendable {
     func issueCloudLease(_ token: DataSessionLease) throws -> DataCloudLease {
         try lifecycle.withLock {
             _ = try permittedCloud(token)
-            invalidateCloudBinding()
             let binding = DataCloudLease(user: token, identity: UUID())
             cloudLease = binding
             return binding
@@ -480,102 +463,7 @@ final class DataSession: @unchecked Sendable {
 
     func retireCloudLease(_ binding: DataCloudLease) {
         lifecycle.withLock {
-            if cloudLease == binding { invalidateCloudBinding() }
-        }
-    }
-
-    private func invalidateCloudBinding() {
-        cloudLease = nil
-        legacyDeletionMirror = nil
-    }
-
-    func openLegacyProbe(_ account: ReadingSyncEngineAdapter.VerifiedProbeAccount, binding: DataCloudLease) throws {
-        try lifecycle.withLock {
-            let writer = try activeCloud(binding)
-            guard account.scope == binding.user.scope, account.root == layout.root.resolvingSymlinksInPath() else {
-                throw DataV2Error.leaseExpired
-            }
-            // This is not the first enrollment. The eligible scope must
-            // already have committed it before its app writer opened.
-            try writer.read { try LegacyBridgePolicy.checkIntake($0) }
-            let store = try LegacyMirrorStore.openProbe(layout: layout, account: account)
-            legacyDeletionMirror = (binding, store)
-        }
-    }
-
-    #if DEBUG
-    func requireLegacyBridge(_ binding: DataCloudLease) throws {
-        try lifecycle.withLock {
-            try activeCloud(binding).write { try LegacyBridgePolicy.require($0) }
-        }
-    }
-
-    /// An account lease alone cannot vouch for an arbitrary ModelContainer.
-    func bindLegacyDeletionMirror(_ store: LegacyMirrorStore, to binding: DataCloudLease) throws {
-        try lifecycle.withLock {
-            let writer = try activeCloud(binding)
-            guard store.scope == binding.user.scope,
-                  try LegacyMirrorStore.location(in: layout, scope: store.scope) == store.file else {
-                throw DataV2Error.leaseExpired
-            }
-            try writer.read { try LegacyBridgePolicy.checkIntake($0) }
-            legacyDeletionMirror = (binding, store)
-        }
-    }
-    #endif
-
-    /// Called only after the user confirms all devices have upgraded. Old
-    /// mirrors/data remain on disk; the obsolete container loses write access.
-    func finishLegacyBridgeAfterUpgrade(_ binding: DataCloudLease, check: @Sendable () throws -> Void) throws {
-        try lifecycle.withLock {
-            try activeCloud(binding).write {
-                try check()
-                try LegacyBridgePolicy.checkIntake($0)
-                try LegacyBridgePolicy.finish($0)
-                try check()
-            }
-            legacyDeletionMirror = nil
-        }
-    }
-
-    func consumeLegacyMirrorPage(_ binding: DataCloudLease) throws -> Bool {
-        try lifecycle.withLock {
-            let writer = try activeCloud(binding)
-            return try writer.write { db in
-                guard try LegacyBridgePolicy.phase(db) == .required else { return false }
-                try LegacyBridgePolicy.checkIntake(db)
-                guard let mirror = self.legacyDeletionMirror, mirror.binding == binding else {
-                    throw LegacyBridgePolicy.Failure.notReady
-                }
-                return try LegacyUserImport.consumeMirrorPage(db, store: mirror.store)
-            }
-        }
-    }
-
-    func writeUserBookDeletion<T: Sendable>(_ token: DataSessionLease,
-        _ body: (Database, (Set<String>) throws -> Void) throws -> T
-    ) throws -> T {
-        try lifecycle.withLock {
-            let writer = try active(token)
-            guard usersReady else { throw DataV2Error.migrationNotVerified }
-            var oldCommitted = false
-            do {
-                return try writer.write { db in
-                    try body(db) { keys in
-                        guard !keys.isEmpty, try LegacyBridgePolicy.phase(db) == .required else { return }
-                        guard let mirror = self.legacyDeletionMirror else { throw ReadingDataError.legacyDeletionUnavailable }
-                        _ = try self.activeCloud(mirror.binding)
-                        do { try LegacyBridgePolicy.checkIntake(db) }
-                        catch LegacyBridgePolicy.Failure.notReady {
-                            throw ReadingDataError.legacyDeletionUnavailable
-                        }
-                        oldCommitted = try LegacyReadingDeletion.apply(ModelContext(mirror.store.container), keys: keys)
-                    }
-                }
-            } catch {
-                if oldCommitted { throw ReadingDataError.legacyDeletedTryAgain }
-                throw error
-            }
+            if cloudLease == binding { cloudLease = nil }
         }
     }
 

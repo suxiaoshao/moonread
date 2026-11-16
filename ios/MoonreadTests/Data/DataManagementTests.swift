@@ -334,20 +334,6 @@ import XCTest
         try await f.formal.mergeBackup(directory: directory, manifest: manifest)
         let restored = try await f.formal.value("position/" + key)
         XCTAssertNotNil(restored)
-        // Unknown remaining references prevent reclaiming an otherwise eligible asset.
-        try await f.formal.deleteReadingData(keys: [other])
-        try await f.formal.receiveSyncFixture("value", key: "metadata/" + other + "/cover", id: "future", payload: future)
-        try await f.formal.deleteReadingData(keys: [key])
-        let protected = try await f.formal.cover(id); XCTAssertEqual(protected, bytes)
-        // Even a deleted unreadable reference prevents guessing which assets it used.
-        try await f.formal.deleteReadingData(keys: [other])
-        try await value(f.formal, "metadata/" + key + "/cover", reference, token: "known-cover")
-        try await f.formal.receiveSyncFixture("value", key: "metadata/" + key + "/cover", id: "future", payload: future)
-        try await f.formal.deleteReadingData(keys: [key])
-        let protectedByDeleted = try await f.formal.cover(id); XCTAssertEqual(protectedByDeleted, bytes)
-        try await value(f.formal, "metadata/" + key + "/cover", reference, token: "last-known-cover")
-        try await f.formal.deleteReadingData(keys: [key])
-        let reclaimed = try await f.formal.cover(id); XCTAssertNil(reclaimed)
     }
     func testDeletionWaitsForPositionFlushAndPendingTransferThenAllowsNewReading() async throws {
         let f = try positionWinnerFixture(); defer { f.clean() }

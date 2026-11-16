@@ -1,10 +1,8 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
-    "请把其他设备上的月读更新到最新版。更新前，那些设备看不到这台设备的新进度和批注。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Update Moonread on your other devices. Until then, those devices won’t show new reading progress or annotations from this device."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"請將其他裝置上的月讀更新至最新版本。更新前，那些裝置看不到這部裝置的新進度和批註。"}}}},
-    "其他设备都已更新": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"All Other Devices Are Updated"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"其他裝置都已更新"}}}},
-    "其他设备都已更新？": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Are all other devices updated?"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"其他裝置都已更新？"}}}},
-    "确认更新完成": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Confirm Updates"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"確認更新完成"}}}},
+    "阅读数据已更新": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Reading Data Updated"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"閱讀資料已更新"}}}},
+    "月读改进了阅读数据的保存和同步方式。请把其他设备上的月读也更新到这个版本，旧版本上新记的进度、批注和统计不会同步过来。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Moonread has improved how reading data is saved and synced. Please update Moonread to this version on your other devices too. New progress, annotations, and statistics from older versions won’t sync to this version."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"月讀改進了閱讀資料的儲存和同步方式。請將其他裝置上的月讀也更新到這個版本，舊版本上新記錄的進度、批註和統計不會同步過來。"}}}},
     "正在准备阅读数据…": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Preparing reading data…"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"正在準備閱讀資料…"}}}},
     "暂时无法准备阅读数据": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Couldn’t prepare reading data"}},"zh-Hant":{"stringUnit":{"state":"translated","value":"暫時無法準備閱讀資料"}}}},
     "原有数据已保留。": {"localizations":{"en":{"stringUnit":{"state":"translated","value":"Your existing data has been kept."}},"zh-Hant":{"stringUnit":{"state":"translated","value":"原有資料已保留。"}}}},

@@ -1,52 +1,6 @@
 {
   "sourceLanguage": "zh-Hans",
   "strings": {
-    "旧版同步暂不可用，暂未清除阅读数据。请恢复原账户同步后重试。": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "旧版同步暂不可用，暂未清除阅读数据。请恢复原账户同步后重试。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "舊版同步暫時無法使用，尚未清除閱讀資料。請恢復原帳號的同步後再試。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Legacy sync is unavailable, so reading data has not been cleared. Restore sync for the original account and try again."
-          }
-        }
-      }
-    },
-    "旧版阅读记录已从本机移除，但新版数据未能清除。请对同一本书重试。": {
-      "extractionState": "manual",
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "旧版阅读记录已从本机移除，但新版数据未能清除。请对同一本书重试。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "舊版閱讀記錄已從此裝置移除，但新版資料未能清除。請針對同一本書再試。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Legacy reading records were removed from this device, but the current data could not be cleared. Try again for the same book."
-          }
-        }
-      }
-    },
     "数据管理": {
       "extractionState": "manual",
       "localizations": {

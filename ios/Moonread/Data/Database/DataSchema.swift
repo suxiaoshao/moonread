@@ -16,7 +16,7 @@ enum DataV2Error: Error, Equatable {
 
 enum DataV2Schema {
     static let indexVersion = 1
-    static let userVersion = 3
+    static let userVersion = 2
 
     static func sql(_ name: String, in bundle: Bundle = .main) throws -> String {
         guard let path = bundle.url(forResource: name, withExtension: "sql") else {
@@ -77,7 +77,7 @@ enum DataV2Schema {
                     """)
             }
         }
-        if user < 2 {
+        if user < userVersion {
             try writer.write { db in
                 if user == 0 { try db.execute(sql: sql("UserSchemaV1", in: bundle)) }
                 // Compacting a candidate may remove its last business row
@@ -87,19 +87,6 @@ enum DataV2Schema {
                     CREATE INDEX usr.cloud_record_book ON cloud_record_state(zone,book_key,record_type)
                       WHERE book_key IS NOT NULL;
                     PRAGMA usr.user_version=2;
-                    """)
-            }
-        }
-        if user < 3 {
-            try writer.write { db in
-                try db.execute(sql: """
-                    CREATE TABLE usr.legacy_mirror_link (
-                        object_id TEXT NOT NULL, domain TEXT NOT NULL, record_id TEXT NOT NULL,
-                        fingerprint TEXT, source_identifier BLOB NOT NULL,
-                        PRIMARY KEY(object_id,domain,record_id)
-                    );
-                    CREATE INDEX usr.legacy_mirror_candidate ON legacy_mirror_link(domain,record_id,fingerprint);
-                    PRAGMA usr.user_version=3;
                     """)
             }
         }

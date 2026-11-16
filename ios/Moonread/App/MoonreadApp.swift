@@ -19,13 +19,39 @@ struct MoonreadApp: App {
     @State private var startupAttempt = 0
     @State private var startupFiles: [LibraryImportFile] = []
     @State private var startupSystemRequest: SystemReadingRequest?
+    private enum UpgradeNotice { case visible, dismissing }
+    private static let upgradeNoticeKey = "Moonread.readingDataUpgradeNotice.v1"
+    @State private var upgradeNotice: UpgradeNotice?
     @Environment(\.scenePhase) private var scenePhase
 
-    init() { _ = Onboarding.shared }
+    init() {
+        let onboarding = Onboarding.shared
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: Self.upgradeNoticeKey) else { return }
+        let directory = URL.applicationSupportDirectory
+            .appending(path: AppDataService.shared.userDirectoryName, directoryHint: .isDirectory)
+        let hasReleasedStore = ["user-data.store", "pending-users.store", "reader.sqlite3"].contains {
+            FileManager.default.fileExists(atPath: directory.appending(path: $0).path)
+        }
+        if onboarding.hasCompletedIntroduction || hasReleasedStore {
+            _upgradeNotice = State(initialValue: .visible)
+        } else {
+            // A new install won't become eligible after it completes the introduction.
+            defaults.set(true, forKey: Self.upgradeNoticeKey)
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
-            configuredAppContent
+            ZStack { configuredAppContent }
+                .sheet(isPresented: Binding(get: { upgradeNotice == .visible }, set: { _ in }),
+                       onDismiss: { upgradeNotice = nil }) {
+                    ReadingDataUpgradeNotice {
+                        UserDefaults.standard.set(true, forKey: Self.upgradeNoticeKey)
+                        upgradeNotice = .dismissing
+                    }
+                    .interactiveDismissDisabled()
+                }
         }
     }
     @ViewBuilder private var configuredAppContent: some View {
@@ -103,7 +129,7 @@ struct MoonreadApp: App {
         else { startupSystemRequest = request }
     }
     private var indexedAppContent: some View {
-        MoonreadRoot(library: library, themes: themes)
+        MoonreadRoot(library: library, themes: themes, defersIntroduction: upgradeNotice != nil)
             .environment(cloud).environment(ai).environment(tipJar).environment(readerSettings)
             .task { await tipJar.listenForTransactions() }
             .task { await ai.load() }
@@ -287,11 +313,37 @@ struct MoonreadApp: App {
 
 }
 
+private struct ReadingDataUpgradeNotice: View {
+    let onContinue: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("阅读数据已更新")
+                    .font(.title.bold())
+                    .accessibilityAddTraits(.isHeader)
+                Text("月读改进了阅读数据的保存和同步方式。请把其他设备上的月读也更新到这个版本，旧版本上新记的进度、批注和统计不会同步过来。")
+            }
+            .padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .safeAreaInset(edge: .bottom) {
+            Button(action: onContinue) {
+                Text("onboarding.continue").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .padding()
+        }
+    }
+}
+
 private struct MoonreadRoot: View {
     @Environment(ReaderSettingsStore.self) private var readerSettings
     @Environment(AIService.self) private var ai
     @Bindable var library: LibraryModel
     let themes: ThemeStore
+    let defersIntroduction: Bool
     @Environment(\.colorScheme) private var systemScheme
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
@@ -317,7 +369,7 @@ private struct MoonreadRoot: View {
             tabs
             .disabled(library.changingUserScope)
             .modifier(ReadingReviewAfterReading(library: library))
-            .fullScreenCover(isPresented: Binding(get: { !introductionCompleted }, set: { _ in }), onDismiss: finishIntroduction) {
+            .fullScreenCover(isPresented: Binding(get: { !introductionCompleted && !defersIntroduction }, set: { _ in }), onDismiss: finishIntroduction) {
                 FirstRunOnboarding().interactiveDismissDisabled()
             }
             // Library sheets read the app theme, so they are presented inside its scope.

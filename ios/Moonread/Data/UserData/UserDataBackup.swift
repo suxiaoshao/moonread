@@ -87,7 +87,6 @@ struct ReadingDataInventory: Sendable {
 }
 enum ReadingDataError: LocalizedError {
     case invalid, updateRequired, missingAsset, pendingIdentity, busy, changed, tooLarge
-    case legacyDeletionUnavailable, legacyDeletedTryAgain
     var errorDescription: String? {
         switch self {
         case .invalid: String(localized: "备份数据无效或包含冲突的记录", table: "DataManagement")
@@ -96,8 +95,6 @@ enum ReadingDataError: LocalizedError {
         case .missingAsset: String(localized: "封面附件尚未到达，暂时无法完整导出", table: "DataManagement")
         case .busy: String(localized: "请先关闭相关阅读和未保存的编辑，再清除数据", table: "DataManagement")
         case .changed: String(localized: "数据或账户已变化，请重新预览", table: "DataManagement")
-        case .legacyDeletionUnavailable: String(localized: "旧版同步暂不可用，暂未清除阅读数据。请恢复原账户同步后重试。", table: "DataManagement")
-        case .legacyDeletedTryAgain: String(localized: "旧版阅读记录已从本机移除，但新版数据未能清除。请对同一本书重试。", table: "DataManagement")
         case .tooLarge: String(localized: "备份超过一次事务可处理的范围", table: "DataManagement")
         }
     }
@@ -798,68 +795,6 @@ extension UserDataStore {
             }
             for key in preview.keys { try compactPositionsWithoutSave(key: key) }
             try beforeSave()
-        }
-    }
-    func deleteReadingData(keys: Set<String>) throws {
-        guard !keys.isEmpty else { return }
-        try transaction { try LegacyReadingDeletion.remove(modelContext, keys: keys) }
-    }
-}
-
-/// W1 is the sole reason the new authority may save this released schema.
-/// The old owner still uses these same ownership and attachment rules.
-enum LegacyReadingDeletion {
-    static let author = "Moonread.whole-book-delete"
-
-    static func apply(_ context: ModelContext, keys: Set<String>) throws -> Bool {
-        guard !keys.isEmpty else { return false }
-        context.author = author
-        context.autosaveEnabled = false
-        do {
-            try remove(context, keys: keys)
-            guard context.hasChanges else { return false }
-            try context.save()
-            return true
-        } catch {
-            context.rollback()
-            throw error
-        }
-    }
-
-    /// Ownership does not depend on the payload being readable as v1.
-    fileprivate static func remove(_ context: ModelContext, keys: Set<String>) throws {
-        for key in keys { _ = try parseReadingKey(value: key) }
-        var coverIDs = Set<String>(), assetsSafe = true
-        let values = try context.fetch(FetchDescriptor<UserValue>())
-        for row in values {
-            guard let key = try? BackupRows.valueKey(row.key), keys.contains(key) else { continue }
-            if row.key.hasSuffix("/cover") {
-                if let value = try? UserSyncJSON.storedValue(row.payload, key: row.key) {
-                    if value.value != "null" {
-                        if let asset = try? JSONDecoder().decode(UserSyncJSON.CoverReference.self, from: Data(value.value.utf8)) { coverIDs.insert(asset.id) }
-                        else { assetsSafe = false }
-                    }
-                } else { assetsSafe = false }
-            }
-            context.delete(row)
-        }
-        for row in try context.fetch(FetchDescriptor<UserPosition>()) where keys.contains(row.contentKey) { context.delete(row) }
-        for row in try context.fetch(FetchDescriptor<AnnotationOperation>()) where keys.contains(row.contentKey) { context.delete(row) }
-        for row in try context.fetch(FetchDescriptor<ReadingFact>()) where keys.contains(row.contentKey) { context.delete(row) }
-        for row in try context.fetch(FetchDescriptor<StatisticsClear>()) {
-            if let key = BackupRows.deletionKey(.init(key: "", payload: row.payload), kind: "statistics-clears"), keys.contains(key) { context.delete(row) }
-        }
-        // Unknown references, including deleted ones, cannot prove an asset
-        // is unreferenced. Keep assets rather than guess at their ownership.
-        for row in values where !row.isDeleted && row.key.hasSuffix("/cover") {
-            guard let stored = try? UserSyncJSON.storedValue(row.payload, key: row.key) else { assetsSafe = false; break }
-            if stored.value != "null" {
-                guard let asset = try? JSONDecoder().decode(UserSyncJSON.CoverReference.self, from: Data(stored.value.utf8)) else { assetsSafe = false; break }
-                coverIDs.remove(asset.id)
-            }
-        }
-        if assetsSafe {
-            for cover in try context.fetch(FetchDescriptor<UserCover>()) where coverIDs.contains(cover.id) { context.delete(cover) }
         }
     }
 }

@@ -365,21 +365,16 @@ extension ReaderIndex {
     /// formal book. A requested SHA also deletes its verified pending aliases.
     /// No index content changes. Cloud delete intents share the usr commit.
     func deleteUserBooks(_ requested: Set<String>, activeReadingIDs: Set<String>, busyError: () -> any Error) throws -> Set<String> {
-        try session.writeUserBookDeletion(lease) { db, eraseLegacy in
+        try session.writeUsers(lease) { db in
             var targets = Set(requested.map(DataIdentity.canonical))
             var busyKeys = targets
-            var legacyTargets = Set<String>()
             var formal = [String]()
             for key in targets {
                 switch try parseReadingKey(value: key) {
                 case .formal(let sha):
                     formal.append(sha)
-                    legacyTargets.insert(key)
-                    for id in try verifiedReadingAliasIDs(db, sha: sha) {
-                        let alias = serializeReadingKey(key: .pending(bookId: id))
-                        targets.insert(alias)
-                        legacyTargets.insert(alias)
-                    }
+                    let ids = try verifiedReadingAliasIDs(db, sha: sha)
+                    for id in ids { targets.insert(serializeReadingKey(key: .pending(bookId: id))) }
                 case .pending(let id):
                     if let sha = try String.fetchOne(db, sql: "SELECT b.content_sha256 " + Self.completedReadingIdentitySQL +
                                                      " AND j.book_id=?", arguments: [lease.scope.key,id]) {
@@ -393,12 +388,6 @@ extension ReaderIndex {
                       !busyKeys.contains(body.sha), !busyKeys.contains(serializeReadingKey(key: .pending(bookId: id)))
                 else { throw busyError() }
             }
-
-            // The only released-model mutation permitted from the new owner.
-            // Validate scope and live readers before committing the old side.
-            // Old failure aborts this transaction. If a later usr write fails,
-            // retry the same targets; an old delete is never undone as rollback.
-            try eraseLegacy(legacyTargets)
 
             if !formal.isEmpty {
                 // A task whose body is still unproven may produce pending
