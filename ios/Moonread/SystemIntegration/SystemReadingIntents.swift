@@ -64,10 +64,9 @@ struct ReadingStatisticsIntent: AppIntent {
         let service = AppDataService.shared
         // A partially understood projection must never be reported as zero reading.
         let bounds = period.bounds()
-        let read = try await service.statisticsRead(first: bounds.lowerBound, last: bounds.upperBound)
+        let read = try await service.statisticsDayRead(first: bounds.lowerBound, last: bounds.upperBound)
         if let message = read.compatibilityNotice { throw SystemStatisticsError(message: message) }
-        let overview = read.value
-        let duration = StatisticsDates.duration(overview.totalDurationMs)
+        let duration = StatisticsDates.duration(try ReadingDayRows.sumMilliseconds(read.value.lazy.map(\.durationMs)))
         let answer = period == .today
             ? String(localized: "今天读了 \(duration)。", table: "SystemReading")
             : String(localized: "本周读了 \(duration)。", table: "SystemReading")

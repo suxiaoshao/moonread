@@ -671,7 +671,7 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     }
   }
 
-  @MainActor func testPreparedStatisticsDatesMatchFullProjectionAndInvalidateByInput() async throws {
+  @MainActor func testLegacyPreparedFactsSeparateDatesAndRecordSelection() async throws {
     let (root, service, _, formal, pending, book, other, suite) = try singleBookFixture()
     defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
     func fact(_ id: String, key: String, day: Int, preview: Bool = false) throws -> (String, String, String) {
@@ -687,39 +687,6 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     XCTAssertEqual(early.facts?.preparedId, later.facts?.preparedId, "Different dates reuse the decoded handle")
     XCTAssertNotEqual(early.facts?.indices, later.facts?.indices)
     XCTAssertFalse(early.json.contains("\"facts\""), "Facts must not enter non-fact JSON")
-    let full = try await service.effectiveQuery(facts: .all, fields: .metadata)
-    for bounds in [19000...20001, 20000...20001, 20000...20000] {
-      let first = Int64(bounds.lowerBound), last = Int64(bounds.upperBound)
-      let read = try await service.statisticsRead(first: first, last: last)
-      XCTAssertEqual(read.value, try full.statisticsOverview(firstDay: first, lastDay: last, contentKey: nil))
-      let activities = try await service.activitiesRead(first: first, last: last)
-      XCTAssertEqual(activities.value, try full.readingActivities(firstDay: first, lastDay: last, contentKey: nil))
-      XCTAssertEqual(read.version, activities.version)
-      XCTAssertNil(read.compatibilityNotice)
-    }
-    let before = try await service.statisticsRead(first: 20000, last: 20001, book: key)
-    try await formal.put("metadata/" + other.fixtureSHA256 + "/author", value: "\"Other\"", device: "fixture")
-    let unchanged = try await service.statisticsRead(first: 20000, last: 20001, book: key)
-    XCTAssertEqual(before.version, unchanged.version)
-    try await formal.saveFacts([fact("later", key: key, day: 20000)], generation: 0, current: 0, enabled: true)
-    let changed = try await service.statisticsRead(first: 20000, last: 20001, book: key)
-    XCTAssertNotEqual(before.version, changed.version)
-    XCTAssertEqual(changed.value.totalDurationMs, before.value.totalDurationMs + 1000)
-    try await formal.clear(book: key, session: "new")
-    let cleared = try await service.statisticsRead(first: 20000, last: 20001, book: key)
-    XCTAssertEqual(cleared.value.totalDurationMs, before.value.totalDurationMs)
-    let scopedFull = try await service.effectiveQuery(records: .only([.formal(sha256: key)]), facts: .only([.formal(sha256: key)]), fields: .metadata)
-    XCTAssertEqual(cleared.value, try scopedFull.statisticsOverview(firstDay: 20000, lastDay: 20001, contentKey: .formal(sha256: key)))
-    let model = StatisticsModel(service: service)
-    let window = StatisticsWindow(period: .month, date: StatisticsDates.date(20000))
-    let target = StatisticsRoute(target: .record(key: .formal(sha256: key)), title: "Synthetic")
-    await model.load(window, target: target)
-    let state = model.state(window, target: target)
-    XCTAssertNil(state.error)
-    XCTAssertTrue(state.content?.detailsLoaded == true)
-    XCTAssertEqual(state.cumulative?.durationMs, 2000)
-    XCTAssertEqual(state.overview?.totalDurationMs, 1000)
-    XCTAssertEqual(state.spans.count, 1)
     try await service.savePosition(bookID: book.id, offset: 3)
     let withoutRecords = try await service.effectiveQuery(records: .only([]), facts: .all)
     let withRecords = try await service.effectiveQuery(facts: .all)

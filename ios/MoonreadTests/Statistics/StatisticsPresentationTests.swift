@@ -30,12 +30,13 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     let scope = model.scope(month, target: route)
     let other = StatisticsRoute(target: .file(fileId: "other-file"), title: route.title)
     XCTAssertNotEqual(scope, model.scope(month, target: other))
-    await model.load(month, target: route)
-    XCTAssertTrue(model.state(month, target: route).content?.waitingForIdentity == true)
+    let observation = Task { await model.observe(scope) }
+    defer { observation.cancel() }
+    await awaitState { model.state(scope).content?.waitingForIdentity == true }
+    XCTAssertTrue(model.state(scope).content?.waitingForIdentity == true)
 
-    let revision = model.dataRevision
     information.prepareEditing(route)
-    await awaitState { (information.draft != nil && model.dataRevision > revision) || information.error != nil }
+    await awaitState { (information.draft != nil && model.state(scope).key != nil) || information.error != nil }
     XCTAssertNil(information.error)
     XCTAssertNotNil(information.draft)
     let sha = try XCTUnwrap(information.contentSHA(for: route))
@@ -55,119 +56,6 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
   @MainActor
   private func rangeContent(_ total: UInt64) -> StatisticsModel.Content {
     .init(payload: .overview(.init(totalDurationMs: total, books: [], days: [], preferences: .init(enabled: true, generation: 0)), .notRequested))
-  }
-
-  @MainActor
-  func testStatisticsNotificationsFromBackgroundReachMainActor() async {
-    let notifications = NotificationCenter()
-    let model = StatisticsModel(notifications: notifications, fetch: { _ in
-      MainActor.assertIsolated()
-      return self.rangeContent(100)
-    })
-    let window = StatisticsWindow(period: .month, date: Date(timeIntervalSince1970: 1_800_000_000))
-    await model.load(window, target: nil)
-    for name in [Notification.Name.statisticsChanged, .statisticsPreferencesChanged, .bookMetadataChanged, .libraryIdentityChanged] {
-      let invalidated = expectation(description: "statistics invalidated on main actor")
-      let delivered = expectation(description: "callback delivered on main actor")
-      let posted = expectation(description: "background post returned")
-      let revision = model.dataRevision
-      withObservationTracking { _ = model.dataRevision } onChange: { invalidated.fulfill() }
-      let token = MainActorNotifications.observe(name, center: notifications) {
-        MainActor.assertIsolated()
-        delivered.fulfill()
-      }
-      DispatchQueue.global().async {
-        dispatchPrecondition(condition: .notOnQueue(.main))
-        notifications.post(name: name, object: nil, userInfo: ["sequence": 1])
-        posted.fulfill()
-      }
-      await fulfillment(of: [invalidated, delivered, posted], timeout: 3)
-      XCTAssertEqual(model.dataRevision, revision + 1)
-      if name == .statisticsPreferencesChanged { XCTAssertNil(model.state(window, target: nil).overview) }
-      else {
-        XCTAssertEqual(model.state(window, target: nil).overview?.totalDurationMs, 100)
-        XCTAssertTrue(model.state(window, target: nil).stale, "1.6 keeps same-scope content during refresh")
-      }
-      await model.load(window, target: nil)
-      XCTAssertEqual(model.state(window, target: nil).overview?.totalDurationMs, 100)
-      token.cancel()
-    }
-    let key = String(repeating: "a", count: 64)
-    let affected = StatisticsRoute(target: .record(key: .formal(sha256: key)), title: "Synthetic A")
-    let unaffected = StatisticsRoute(target: .record(key: .formal(sha256: String(repeating: "b", count: 64))), title: "Synthetic B")
-    await model.load(window, target: affected)
-    await model.load(window, target: unaffected)
-    for reset in [false, true] {
-      let invalidated = expectation(description: "scoped background payload applied")
-      withObservationTracking { _ = model.dataRevision } onChange: { invalidated.fulfill() }
-      DispatchQueue.global().async {
-        notifications.post(name: .statisticsChanged, object: nil, userInfo: ["keys": [key], "reset": reset])
-      }
-      await fulfillment(of: [invalidated], timeout: 3)
-      if reset { XCTAssertNil(model.state(window, target: affected).overview) }
-      else { XCTAssertEqual(model.state(window, target: affected).overview?.totalDurationMs, 100) }
-      XCTAssertTrue(model.state(window, target: affected).stale)
-      XCTAssertFalse(model.state(window, target: unaffected).stale)
-      XCTAssertEqual(model.state(window, target: unaffected).overview?.totalDurationMs, 100)
-      await model.load(window, target: affected)
-    }
-  }
-
-  @MainActor
-  func testStatisticsRangeResultsAreReusedUntilDataChanges() async {
-    let notifications = NotificationCenter()
-    var reads = 0
-    var fail = false
-    let model = StatisticsModel(notifications: notifications, fetch: { _ in
-      reads += 1
-      if fail { throw CocoaError(.fileReadCorruptFile) }
-      return self.rangeContent(UInt64(reads) * 100)
-    })
-    let date = ISO8601DateFormatter().date(from: "2026-10-05T12:00:00Z")!
-    let month = StatisticsWindow(period: .month, date: date)
-    let year = StatisticsWindow(period: .year, date: date)
-    var sameMonth = month
-    sameMonth.date = date.addingTimeInterval(7 * 86400)
-    await model.load(month, target: nil)
-    await model.load(year, target: nil)
-    await model.load(sameMonth, target: nil)
-    XCTAssertEqual(reads, 2)
-    XCTAssertEqual(model.state(month, target: nil).overview?.totalDurationMs, 100)
-    XCTAssertFalse(model.state(month, target: nil).loading)
-    // Positions and generic saves do not invalidate statistics results.
-    notifications.post(name: .readingDataChanged, object: nil)
-    await model.load(month, target: nil)
-    XCTAssertEqual(reads, 2)
-    let otherBook = StatisticsRoute(target: .record(key: .formal(sha256: String(repeating: "a", count: 64))), title: "Synthetic")
-    await model.load(month, target: otherBook)
-    XCTAssertEqual(reads, 3)
-    notifications.post(name: .statisticsChanged, object: nil)
-    XCTAssertEqual(model.state(month, target: nil).overview?.totalDurationMs, 100, "Keep same-scope content until its replacement is ready")
-    XCTAssertTrue(model.state(month, target: nil).stale)
-    XCTAssertFalse(model.state(month, target: nil).loading, "Invalidation alone is not a running read")
-    await model.load(month, target: nil)
-    XCTAssertEqual(reads, 4)
-    XCTAssertEqual(model.state(month, target: nil).overview?.totalDurationMs, 400)
-    notifications.post(name: .statisticsPreferencesChanged, object: nil)
-    await model.load(month, target: nil)
-    XCTAssertEqual(reads, 5)
-    fail = true
-    notifications.post(name: .statisticsChanged, object: nil)
-    await model.load(month, target: nil)
-    XCTAssertEqual(model.state(month, target: nil).overview?.totalDurationMs, 500, "A real refresh error preserves the last result and remains visible")
-    XCTAssertNotNil(model.state(month, target: nil).error)
-    XCTAssertFalse(model.state(month, target: nil).loading)
-    fail = false
-    await model.load(month, target: nil)
-    XCTAssertEqual(reads, 7, "A failed range can be explicitly retried")
-    XCTAssertNotNil(model.state(month, target: nil).overview)
-    await model.load(month, target: otherBook)
-    let before = reads
-    notifications.post(name: .statisticsChanged, object: nil, userInfo: ["keys": [String(repeating: "b", count: 64)]])
-    await model.load(month, target: otherBook)
-    XCTAssertEqual(reads, before, "An unrelated book does not invalidate a loaded single-book scope")
-    notifications.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
-    XCTAssertNil(model.state(month, target: nil).overview, "Destructive/unknown imports cannot keep old totals visible")
   }
 
   @MainActor
@@ -200,7 +88,7 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     XCTAssertEqual(model.state(month, target: nil).overview?.totalDurationMs, 100)
     XCTAssertTrue(model.state(year, target: nil).loading)
     XCTAssertNil(model.state(year, target: nil).overview, "No month numbers under the year range")
-    model.invalidate()
+    model.restartObservation()
     let newB = model.request(year, target: nil)!
     await fulfillment(of: [restarted], timeout: 2)
     // A backend which finishes despite cancellation cannot restore invalid data.
@@ -214,7 +102,7 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
     XCTAssertFalse(model.state(year, target: nil).loading)
     await model.load(year, target: nil)
     XCTAssertEqual(reads, 3)
-    model.invalidate()
+    model.restartObservation()
     let cancelled = model.request(year, target: nil)!
     for _ in 0..<200 where gates[yearScope]!.count < 3 { await Task.yield() }
     guard gates[yearScope]!.count == 3 else { return XCTFail("Cancellation read did not start") }
@@ -310,17 +198,81 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
 }
 
 final class StatisticsFixedReadTests: XCTestCase {
-  private func withHistory(_ run: (ReaderIndex) throws -> Void) throws {
+  private func openHistory() throws -> (URL, ReaderIndex) {
     let root = FileManager.default.temporaryDirectory.appending(path: "StatisticsReads-\(UUID())")
-    defer { try? FileManager.default.removeItem(at: root) }
     let ownBundle = Bundle(for: Self.self)
     let resources: Bundle = ownBundle.url(forResource: "schema", withExtension: "sql") == nil ? .main : ownBundle
     let session = try DataSession(layout: .init(applicationSupport: root), bundle: resources)
-    defer { try? session.close() }
     let lease = try session.activate(.unknown).0
     try session.prepareIndex(root.appending(path: "reader.sqlite3"), token: lease)
     try session.prepareUsers(lease) { nil }
-    try run(.init(session: session, lease: lease))
+    return (root, .init(session: session, lease: lease))
+  }
+
+  private func withHistory(_ run: (ReaderIndex) throws -> Void) throws {
+    let (root,index) = try openHistory()
+    defer { try? index.session.close(); try? FileManager.default.removeItem(at: root) }
+    try run(index)
+  }
+
+  func testTimelineUsesSettledDurationAndOriginalAdjacencyAcrossTypes() throws {
+    let key = String(repeating: "a", count: 64)
+    func row(kind: String, start: Int, end: Int, duration: String, offset: Int = 0) throws -> StatisticsTimelineRow {
+      try .init(.init(kind: kind, recordID: "same", readingKey: key, sessionID: "shared", title: "Synthetic",
+        localDay: "1", utcOffsetSeconds: offset, preview: false, startedMs: String(start), endedMs: String(end),
+        durationMs: duration, firstExposureStart: "0"))
+    }
+    let legacy = try row(kind: "fact", start: 100, end: 200, duration: "80")
+    let adjacent = try row(kind: "segment", start: 202, end: 240, duration: "23")
+    let joined = try StatisticsSpan.merge([legacy,adjacent])
+    XCTAssertEqual(joined.spans.map(\.milliseconds), [103])
+    XCTAssertEqual(joined.spans.first?.id.kind, .fact)
+    XCTAssertEqual(joined.durationMs, 103)
+    let differentZone = try row(kind: "segment", start: 202, end: 240, duration: "23", offset: 3600)
+    let separated = try StatisticsSpan.merge([legacy,differentZone])
+    XCTAssertEqual(Set(separated.spans.map(\.id)).count, 2, "The same string ID in two families is not a UI collision")
+    XCTAssertEqual(try StatisticsSpan.merge([legacy, row(kind: "segment", start: 203, end: 240, duration: "23")]).spans.count, 2)
+    XCTAssertThrowsError(try StatisticsSpan.merge([legacy, row(kind: "segment", start: 202, end: 240, duration: String(UInt64.max))]))
+  }
+
+  @MainActor
+  func testStatisticsObservationSeesAnAttachedOnlyCommitAndARecentDetailWindow() async throws {
+    let (root,index) = try openHistory()
+    defer { try? index.session.close(); try? FileManager.default.removeItem(at: root) }
+    let key = String(repeating: "a", count: 64), scope = index.lease.scope
+    let registered = expectation(description: "Initial observation")
+    let changed = expectation(description: "Attached-only statistics commit")
+    let changes = try index.statisticsChanges(overview: true)
+    let task = Task {
+      var iterator = changes.events.makeAsyncIterator()
+      guard let before = try await iterator.next() else { return }
+      registered.fulfill()
+      guard let after = try await iterator.next() else { return }
+      XCTAssertNotEqual(after,before)
+      XCTAssertFalse(changes.isCurrent(before))
+      let read = try index.session.readUsers(index.lease) {
+        try StatisticsHistoryRead.details($0, scope: scope, window: .init(101,109),
+          cumulative: .init(0,110), target: .book(.record(key: .formal(sha256: key))))
+      }
+      guard case .value(let result, _, false) = read else { return XCTFail("Expected a reconciled snapshot") }
+      XCTAssertEqual(try StatisticsHistoryRead.summarize(result.period).totalDurationMs, "9")
+      XCTAssertEqual(try StatisticsHistoryRead.summarize(XCTUnwrap(result.cumulative)).totalDurationMs, "10")
+      XCTAssertEqual(result.activities.map(\.localDay), (103...109).map(String.init))
+      changed.fulfill()
+    }
+    defer { task.cancel() }
+    await fulfillment(of: [registered], timeout: 2)
+    try index.session.writeUsers(index.lease) { db in
+      let values = (Int64(100)...109).map { day in
+        let id = "fixture-\(day)", at = day * 86_400_000
+        let slice = ReadingSlice(id: id, sessionId: id, visitId: id, bookId: "missing", startedMs: at, endedMs: at + 1,
+          localDay: day, utcOffsetSeconds: 0, preview: false, exposures: [])
+        return (value: FactImportColumns(payloadContentKey: key, title: "Synthetic", device: "fixture", slice: slice, durationMs: 1),
+                book: key, partition: 0, origin: ReadingFactSettlement.Origin(source: "fixture", id: id))
+      }
+      try ReadingFactSettlement.apply(db, values: values, scope: scope.key)
+    }
+    await fulfillment(of: [changed], timeout: 2)
   }
 
   func testSettledDayCurrentHeadsAndWidgetUseTheirOwnRanges() throws {

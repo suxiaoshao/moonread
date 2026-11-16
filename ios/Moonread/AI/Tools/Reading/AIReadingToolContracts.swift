@@ -426,6 +426,7 @@ struct AIStatisticsResult: Codable, Sendable {
   var recordingEnabledOnDevice: Bool?
   var dateBasis: String?
   var chapters: AIChaptersResult?
+  var incomplete: Bool?
 }
 struct AIEnvironmentResult: Codable, Sendable {
   var now: String?

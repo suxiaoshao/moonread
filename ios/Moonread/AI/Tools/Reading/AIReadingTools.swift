@@ -568,19 +568,21 @@ actor AIReadingTools {
     let firstDay = Int64(first.timeIntervalSince1970 / 86400)
     let lastDay = Int64(last.timeIntervalSince1970 / 86400)
     let key = try input.bookRef.map(sha)
-    let overview = try await reader.statistics(first: firstDay, last: lastDay, book: key)
     let view = input.view ?? .summary
+    let overview = view == .sessions ? nil : try await reader.statisticsRead(first: firstDay, last: lastDay, book: key)
+    var incomplete = overview?.compatibilityNotice == nil ? nil : true
     if view == .summary {
       guard input.cursor == nil else {
         throw AIToolError(
           "invalid_argument", field: "cursor", message: "Summary has no pages. Omit cursor.")
       }
+      guard let summary = overview?.value else { throw ReaderError.InvalidRange }
       return .init(
         data: .init(
-          durationMs: overview.books.reduce(0) { $0 + $1.durationMs },
-          bookCount: overview.books.count,
-          readingDays: overview.days.filter { $0.durationMs > 0 }.count,
-          recordingEnabledOnDevice: overview.preferences.enabled, dateBasis: "recorded_local_day"))
+          durationMs: summary.totalDurationMs, bookCount: summary.books.count,
+          readingDays: summary.days.filter { $0.durationMs > 0 }.count,
+          recordingEnabledOnDevice: summary.preferences.enabled, dateBasis: "recorded_local_day",
+          incomplete: incomplete))
     }
     func date(_ day: Int64) -> String {
       formatter.string(from: Date(timeIntervalSince1970: Double(day) * 86400))
@@ -588,11 +590,13 @@ actor AIReadingTools {
     let items: [AIStatisticsRow]
     switch view {
     case .days:
-      items = overview.days.map {
+      guard let days = overview?.value.days else { throw ReaderError.InvalidRange }
+      items = days.map {
         .init(date: date($0.day), durationMs: $0.durationMs, bookCount: $0.bookCount)
       }
     case .books:
-      items = overview.books.map {
+      guard let books = overview?.value.books else { throw ReaderError.InvalidRange }
+      items = books.map {
         .init(
           durationMs: $0.durationMs,
           bookRef: $0.contentKey.formalSHA256.map(Self.bookRef), title: $0.title,
@@ -600,11 +604,13 @@ actor AIReadingTools {
           readingDays: $0.readingDays)
       }
     case .sessions:
-      items = try await reader.activities(first: firstDay, last: lastDay, book: key).map {
+      let read = try await reader.activitiesRead(first: firstDay, last: lastDay, book: key)
+      incomplete = read.compatibilityNotice == nil ? nil : true
+      items = read.value.map {
         .init(
-          durationMs: UInt64(max(0, $0.endedMs - $0.startedMs)),
+          durationMs: $0.durationMs,
           bookRef: $0.contentKey.formalSHA256.map(Self.bookRef), title: $0.title,
-          sessionRef: Self.ref("session", $0.id), startedAt: timestamp($0.startedMs),
+          sessionRef: Self.ref("session", $0.id.reference), startedAt: timestamp($0.startedMs),
           endedAt: timestamp($0.endedMs), recordedDate: date($0.localDay),
           utcOffsetSeconds: $0.utcOffsetSeconds, preview: $0.preview)
       }
@@ -617,7 +623,7 @@ actor AIReadingTools {
     let (rows, page) = try page(
       items, signature: signature("statistics", query), cursor: input.cursor,
       limit: input.limit ?? 100)
-    return .init(data: .init(items: rows), page: page)
+    return .init(data: .init(items: rows, incomplete: incomplete), page: page)
   }
   private func environment(_ input: AIEnvironmentInput) -> AIToolResponse<AIEnvironmentResult> {
     let fields = input.fields ?? [.time, .locale]
