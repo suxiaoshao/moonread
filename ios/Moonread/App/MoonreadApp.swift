@@ -1,6 +1,7 @@
 import SwiftUI
 import CoreSpotlight
 import UIKit
+import CloudKit
 
 @main
 struct MoonreadApp: App {
@@ -175,6 +176,15 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .cloudStatusChanged).receive(on: DispatchQueue.main)) { _ in
                 Task { await cloud.updateStatus(); await library.refreshShelfRecovery() }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .readingCloudStatusChanged).receive(on: DispatchQueue.main)) { _ in
+                Task { await cloud.updateReadingStatus() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .CKAccountChanged).receive(on: DispatchQueue.main)) { _ in
+                Task { await cloud.identityChanged() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in
+                if cloud.status.enabled { Task { await cloud.localDataChanged() } }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .recentReadingRestored).receive(on: DispatchQueue.main)) { _ in
                 Task { try? await library.reload() }
             }
@@ -182,7 +192,7 @@ struct MoonreadApp: App {
                 Task { await themes.load(); try? await library.reload() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .NSUbiquityIdentityDidChange).receive(on: DispatchQueue.main)) { _ in
-                Task { library.startCloudDiscovery(reset: true); await cloud.identityChanged(); await library.refresh(); await cloud.refresh() }
+                Task { library.startCloudDiscovery(reset: true); await library.refresh(); await cloud.updateStatus() }
             }
             .onReceive(NotificationCenter.default.publisher(for: ReaderBuiltinFonts.changed).receive(on: DispatchQueue.main)) { _ in
                 readerSettings.refreshBuiltinFonts()
@@ -191,11 +201,13 @@ struct MoonreadApp: App {
                 library.systemReading.sceneActive = phase == .active
                 library.fullIndex.scene(active: phase == .active)
                 if phase == .background {
+                    Task { await cloud.scene(active: false) }
                     MetadataExchangeModel.shared.sceneDidEnterBackground()
                     BackgroundSave.perform(name: "保存显示偏好") { await themes.flushPreferences(); await readerSettings.flush() }
                     Task { await AppDataService.shared.pauseImports() }
                 }
                 if phase == .active {
+                    Task { await cloud.scene(active: true) }
                     readerSettings.refreshBuiltinFonts()
                     Task { await library.service.refreshSystemWidgetConfigurations() }
                     Task { if ai.providers.catalogActivated { await ai.providers.refreshCatalogsIfNeeded() } }

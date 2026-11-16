@@ -4,6 +4,8 @@ import SwiftUI
 final class CloudStore {
     private let coordinator: CloudSyncCoordinator
     var status = CloudSyncStatus()
+    var confirmationAccount: String?
+    private var confirmationRevision: UUID?
     init(coordinator: CloudSyncCoordinator = .shared) { self.coordinator = coordinator }
     var busy = false
     var error: String?
@@ -27,9 +29,16 @@ final class CloudStore {
     }
     func refresh() async { await coordinator.resume(); await updateStatus() }
     func updateStatus() async {
-        status = await coordinator.currentStatus()
+        await updateReadingStatus()
         libraryStatus = await AppDataService.shared.cloudLibraryStatus()
         conflictPath = await AppDataService.shared.cloudConflictPath()
+    }
+    func updateReadingStatus() async {
+        status = await coordinator.currentStatus()
+        guard confirmationAccount != nil else { return }
+        if case .awaitingAccountConfirmation(let account, let revision, _) = status.activation,
+           revision == confirmationRevision, account.recordName == confirmationAccount { return }
+        confirmationAccount = nil; confirmationRevision = nil
     }
     func replaceCloudFile(_ path: String) {
         guard !busy else { return }; busy = true
@@ -60,4 +69,24 @@ final class CloudStore {
         }
     }
     func identityChanged() async { await coordinator.identityChanged(); await updateStatus() }
+    func scene(active: Bool) async { await coordinator.scene(active: active); await updateStatus() }
+    func localDataChanged() async { await coordinator.localDataChanged() }
+    func requestConfirmation() {
+        guard case .awaitingAccountConfirmation(let account, let revision, _) = status.activation else { return }
+        confirmationAccount = account.recordName; confirmationRevision = revision
+    }
+    func confirmAccount(_ account: String) {
+        guard !busy, let revision = confirmationRevision else { return }
+        busy = true; confirmationAccount = nil; confirmationRevision = nil
+        Task {
+            defer { busy = false }
+            await coordinator.confirmAccount(account, revision: revision)
+            await updateStatus()
+        }
+    }
+    func retry() {
+        guard !busy else { return }
+        busy = true
+        Task { defer { busy = false }; await refresh() }
+    }
 }

@@ -1,5 +1,38 @@
 import CloudKit
 import Foundation
+import Synchronization
+
+/// A direct lookup is outside CKSyncEngine.cancelOperations(). Cancel its
+/// operation explicitly and only let its caller proceed after completion.
+enum ReadingCloudLookup {
+    static func run<Value: Sendable>(
+        _ operation: Operation,
+        bind: (@escaping @Sendable (Result<Value, any Error>) -> Void) -> Void,
+        submit: () -> Void,
+        isolation: isolated (any Actor)? = #isolation
+    ) async throws -> Value {
+        let outcome = Mutex<Result<Value, any Error>?>(nil)
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            let value: Value = try await withCheckedThrowingContinuation { continuation in
+                bind { result in outcome.withLock { $0 = result } }
+                operation.completionBlock = { [weak operation] in
+                    if operation?.isCancelled == true {
+                        continuation.resume(throwing: CancellationError())
+                    } else {
+                        let result = outcome.withLock { $0 }
+                        continuation.resume(with: result ?? .failure(CKError(.internalError)))
+                    }
+                }
+                submit()
+            }
+            try Task.checkCancellation()
+            return value
+        } onCancel: {
+            operation.cancel()
+        }
+    }
+}
 
 /// Proof carried by one explicit, scoped fetch. An opaque state event alone
 /// is never a fetch watermark. Each new inbox page invalidates an older state.
@@ -87,7 +120,7 @@ enum CloudVerificationScan {
 /// and the dedicated Development test container. No caller in the App's
 /// production lifecycle constructs this adapter yet.
 @MainActor
-final class ReadingSyncEngineAdapter: CKSyncEngineDelegate {
+final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTransport {
     static let testContainer = "iCloud.dev.moonread.SyncProbe"
     static let ownZone = CKRecordZone.ID(zoneName: ReadingHistoryTransport.zone, ownerName: CKCurrentUserDefaultName)
     nonisolated private static let attachmentLimit = 16 * 1024 * 1024
@@ -109,7 +142,8 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate {
     private let zone: CKRecordZone.ID
     private var engine: CKSyncEngine?
     private var active = true
-    private var running = false
+    private var turn: Task<Void, any Error>?
+    private var shutdown: Task<Void, Never>?
     private var initialSignInAllowed: Bool
     private var fatal: (any Error)?
     private var deferredZoneLoss: CloudAccountZoneRecovery.Loss?
@@ -157,21 +191,39 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate {
     var requestedZoneLoss: CloudAccountZoneRecovery.Loss? { deferredZoneLoss }
 
     func close() async {
+        if let shutdown { await shutdown.value; return }
         active = false
         journal.retire()
+        let work = turn
+        work?.cancel()
         let old = engine
         engine = nil
-        await old?.cancelOperations()
-        clearOffered()
-        try? FileManager.default.removeItem(at: staging)
+        let shutdown = Task {
+            await old?.cancelOperations()
+            _ = await work?.result
+            clearOffered()
+            try? FileManager.default.removeItem(at: staging)
+        }
+        self.shutdown = shutdown
+        await shutdown.value
     }
 
     func syncNow() async throws {
         guard let engine else { throw Failure.inactive }
         try checkActive(engine)
-        guard !running else { throw Failure.busy }
-        running = true
-        defer { running = false; proof = nil }
+        guard turn == nil else { throw Failure.busy }
+        let work = Task { try await self.runTurn(engine) }
+        turn = work
+        defer { turn = nil }
+        try await withTaskCancellationHandler {
+            try await work.value
+        } onCancel: {
+            work.cancel()
+        }
+    }
+
+    private func runTurn(_ engine: CKSyncEngine) async throws {
+        defer { proof = nil }
         try await ready(engine)
         try await ReadingSyncTurn.run(fetch: { try await self.fetchOwnZone(engine) },
                                       verify: { try await self.verifyRecords(engine) },
@@ -185,7 +237,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate {
         try checkActive(engine)
         if stage == .unverified {
             do {
-                let found = try await database.recordZone(for: zone)
+                let found = try await fetchZone()
                 try checkActive(engine)
                 guard found.zoneID == zone else { throw Failure.wrongIdentity }
                 try await journal.initializeZone(exists: true)
@@ -252,7 +304,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate {
             try checkActive(engine)
             let id = CKRecord.ID(recordName: ticket.attempt.key.name, zoneID: zone)
             let record: CKRecord
-            do { record = try await database.record(for: id) }
+            do { record = try await self.fetchRecord(id) }
             catch let error as CKError {
                 try checkActive(engine)
                 switch error.code {
@@ -272,6 +324,37 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate {
             try checkActive(engine)
             return try await journal.resolve(ticket, record: captured[0])
         }
+    }
+
+    private func fetchZone() async throws -> CKRecordZone {
+        let operation = CKFetchRecordZonesOperation(recordZoneIDs: [zone])
+        let id = zone
+        return try await ReadingCloudLookup.run(operation, bind: { complete in
+            operation.perRecordZoneResultBlock = { @Sendable found, result in
+                if found == id { complete(result) }
+            }
+            operation.fetchRecordZonesResultBlock = { @Sendable result in
+                // An item-specific result (including absence) is more precise
+                // than the operation's aggregate partialFailure.
+                if case .failure(let error) = result, (error as? CKError)?.code != .partialFailure {
+                    complete(.failure(error))
+                }
+            }
+        }, submit: { database.add(operation) })
+    }
+
+    private func fetchRecord(_ id: CKRecord.ID) async throws -> CKRecord {
+        let operation = CKFetchRecordsOperation(recordIDs: [id])
+        return try await ReadingCloudLookup.run(operation, bind: { complete in
+            operation.perRecordResultBlock = { @Sendable found, result in
+                if found == id { complete(result) }
+            }
+            operation.fetchRecordsResultBlock = { @Sendable result in
+                if case .failure(let error) = result, (error as? CKError)?.code != .partialFailure {
+                    complete(.failure(error))
+                }
+            }
+        }, submit: { database.add(operation) })
     }
 
     func nextFetchChangesOptions(_ context: CKSyncEngine.FetchChangesContext, syncEngine: CKSyncEngine) async -> CKSyncEngine.FetchChangesOptions {

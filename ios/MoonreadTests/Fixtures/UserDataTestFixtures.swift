@@ -197,43 +197,6 @@ actor CoverLoadProbe {
 
 // Policy tests with an injected identity and local in-memory store, not a CloudKit
 // account-switch or two-device test. No network requests are made by this fixture.
-actor SyncAccountProbe {
-  var accounts: [String?] = ["A"]
-  var configurations: [Bool] = []
-  var failNextCloud = false
-  let store: UserDataStore
-  init(_ store: UserDataStore) { self.store = store }
-  func set(_ values: [String?]) { accounts = values }
-  func identity() -> String? { accounts.count > 1 ? accounts.removeFirst() : accounts.first ?? nil }
-  func fail() { failNextCloud = true }
-  func make(_ cloud: Bool) throws -> UserDataStore {
-    configurations.append(cloud)
-    if cloud && failNextCloud {
-      failNextCloud = false
-      throw CocoaError(.fileWriteUnknown)
-    }
-    return store
-  }
-}
-class CloudAccountFixture: XCTestCase {
-  func fixture(available: Bool = true) throws -> (
-    AppDataService, CloudSyncCoordinator, SyncAccountProbe, String
-  ) {
-    let suite = "CloudAccount-\(UUID().uuidString)"
-    let config = ModelConfiguration(
-      schema: UserDataStore.schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
-    let probe = SyncAccountProbe(
-      UserDataStore(
-        modelContainer: try ModelContainer(for: UserDataStore.schema, configurations: [config])))
-    let service = AppDataService(
-      sourceDefaultsSuite: suite, userStoreFactory: { _, cloud in try await probe.make(cloud) })
-    let coordinator = CloudSyncCoordinator(
-      service: service, available: available, observeEvents: false,
-      account: { await probe.identity() })
-    return (service, coordinator, probe, suite)
-  }
-}
-
 extension UserDataFixture {
   func syncJSON(_ text: String, _ change: (inout [String: Any]) -> Void) throws -> String {
     var value = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
