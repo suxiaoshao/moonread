@@ -155,6 +155,7 @@ enum UserValueRows {
         let id = recordID(logical: key.logical, device: device)
         let previous = try family.flatMap { try FixedValueCloudRows.currentDigest(db, $0, id: id) }
         try persist(db, key: key, body: fields, head: head, device: device)
+        try recordUpgradeEdit(db, key: key, device: device)
         if let family { try FixedValueCloudRows.enqueueLocalEdit(db, family, id: id, previousDigest: previous) }
         return head
     }
@@ -194,7 +195,7 @@ enum UserValueRows {
 
     @discardableResult
     static func merge(_ db: Database, key: Key, head: StoredValue, device: String,
-                      preserveSiblingIdentity: Bool = false) throws -> Bool {
+                      preserveSiblingIdentity: Bool = false, restoringBackup: Bool = false) throws -> Bool {
         let state = try assess(db, key: key, head: head, requireAsset: true)
         let canonical = DataIdentity.canonical(device)
         if state.duplicate && (!preserveSiblingIdentity || state.known.contains(where: {
@@ -204,8 +205,15 @@ enum UserValueRows {
         if let row = known.first(where: { ($0["device_id"] as String) == canonical }),
            (row["updated_ms"] as Int64,row["token"] as String) > (head.updated,head.token) { return false }
         try persist(db, key: key, body: state.body, head: head, device: device)
+        if restoringBackup { try recordUpgradeEdit(db, key: key, device: device) }
         try key.settle(db)
         return true
+    }
+
+    private static func recordUpgradeEdit(_ db: Database, key: Key, device: String) throws {
+        guard let domain = UpgradeOrigins.Domain(rawValue: key.table) else { throw DataV2Error.migrationNotVerified }
+        let id = recordID(logical: key.logical, device: device)
+        try UpgradeOrigins.record(db, .init(partition: 0, domain: domain, id: id), as: .local)
     }
 
     private static func persist(_ db: Database, key: Key, body: Body, head: StoredValue, device: String) throws {

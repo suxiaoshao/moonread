@@ -16,7 +16,8 @@ enum DataV2Error: Error, Equatable {
 
 enum DataV2Schema {
     static let indexVersion = 1
-    static let userVersion = 2
+    // Version 3 belonged only to the removed, unpublished live bridge.
+    static let userVersion = 4
 
     static func sql(_ name: String, in bundle: Bundle = .main) throws -> String {
         guard let path = bundle.url(forResource: name, withExtension: "sql") else {
@@ -42,7 +43,7 @@ enum DataV2Schema {
             let index = try version(db, in: "main")
             let user = try version(db, in: "usr")
             guard [0, indexVersion].contains(index) else { throw DataV2Error.unsupportedSchema("main", index) }
-            guard (0...userVersion).contains(user) else { throw DataV2Error.unsupportedSchema("usr", user) }
+            guard [0, 1, 2, userVersion].contains(user) else { throw DataV2Error.unsupportedSchema("usr", user) }
             if index == 0 { try checkFresh(db, in: "main") }
             if user == 0 { try checkFresh(db, in: "usr") }
             guard try String.fetchOne(db, sql: "PRAGMA usr.journal_mode=WAL")?.lowercased() == "wal" else {
@@ -77,7 +78,7 @@ enum DataV2Schema {
                     """)
             }
         }
-        if user < userVersion {
+        if user < 2 {
             try writer.write { db in
                 if user == 0 { try db.execute(sql: sql("UserSchemaV1", in: bundle)) }
                 // Compacting a candidate may remove its last business row
@@ -88,6 +89,36 @@ enum DataV2Schema {
                       WHERE book_key IS NOT NULL;
                     PRAGMA usr.user_version=2;
                     """)
+            }
+        }
+        if user < userVersion {
+            try writer.write { db in
+                try db.execute(sql: """
+                    CREATE TABLE usr.upgrade_seed (
+                        batch_id TEXT NOT NULL, partition INTEGER NOT NULL CHECK(partition IN (0,1)),
+                        domain TEXT NOT NULL, record_id TEXT NOT NULL, digest TEXT NOT NULL,
+                        book_key TEXT, mark_id TEXT, PRIMARY KEY(batch_id,partition,domain,record_id)
+                    );
+                    CREATE INDEX usr.upgrade_seed_version ON upgrade_seed(partition,domain,record_id,digest);
+                    CREATE INDEX usr.upgrade_seed_book ON upgrade_seed(book_key,mark_id);
+                    CREATE TABLE usr.upgrade_local_version (
+                        partition INTEGER NOT NULL CHECK(partition IN (0,1)),
+                        domain TEXT NOT NULL, record_id TEXT NOT NULL, digest TEXT NOT NULL,
+                        book_key TEXT, mark_id TEXT, PRIMARY KEY(partition,domain,record_id)
+                    );
+                    CREATE INDEX usr.upgrade_local_book ON upgrade_local_version(partition,domain,book_key);
+                    CREATE TABLE usr.upgrade_local_seed (
+                        partition INTEGER NOT NULL, domain TEXT NOT NULL, record_id TEXT NOT NULL,
+                        seed_batch TEXT NOT NULL, seed_partition INTEGER NOT NULL, seed_domain TEXT NOT NULL, seed_record TEXT NOT NULL,
+                        PRIMARY KEY(partition,domain,record_id,seed_batch,seed_partition,seed_domain,seed_record),
+                        FOREIGN KEY(partition,domain,record_id)
+                            REFERENCES upgrade_local_version(partition,domain,record_id) ON DELETE CASCADE,
+                        FOREIGN KEY(seed_batch,seed_partition,seed_domain,seed_record)
+                            REFERENCES upgrade_seed(batch_id,partition,domain,record_id) ON DELETE CASCADE
+                    );
+                    PRAGMA usr.user_version=4;
+                    """)
+                try UpgradeOrigins.retainUnverifiedTrial(db)
             }
         }
     }

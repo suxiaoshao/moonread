@@ -73,11 +73,13 @@ enum LegacyUserImport {
     static func run(_ db: Database, snapshot: LegacyUserSnapshot) throws {
         guard let scope = snapshot.scope else { throw DataV2Error.incompatibleSource("legacy users have no confirmed owner") }
         guard try !completed(db) else { throw DataV2Error.migrationAlreadyComplete }
+        try UpgradeOrigins.begin(db)
+        let batch = UUID().uuidString
         if let formal = snapshot.formal {
-            try read(ModelContext(formal), db: db, partition: 0, source: scope.key, coverDirectory: snapshot.coverDirectory)
+            try read(ModelContext(formal), db: db, partition: 0, source: scope.key, coverDirectory: snapshot.coverDirectory, batch: batch)
         }
         if let pending = snapshot.pending {
-            try read(ModelContext(pending), db: db, partition: 1, source: scope.key, coverDirectory: snapshot.coverDirectory)
+            try read(ModelContext(pending), db: db, partition: 1, source: scope.key, coverDirectory: snapshot.coverDirectory, batch: batch)
         }
         try reconcileCoverCompleteness(db, source: scope.key)
         try putDeviceState(snapshot.deviceState, db: db)
@@ -152,11 +154,13 @@ enum LegacyUserImport {
     }
 
     static func recordAbsentSource(_ db: Database) throws {
+        try UpgradeOrigins.begin(db)
         try db.execute(sql: "INSERT INTO usr.local_data_state VALUES ('legacy-user-import','absent-v1')")
     }
 
-    private static func read(_ context: ModelContext, db: Database, partition: Int, source: String, coverDirectory: URL?) throws {
-        let importer = Importer(db: db, partition: partition, source: source, coverDirectory: coverDirectory)
+    private static func read(_ context: ModelContext, db: Database, partition: Int, source: String,
+                             coverDirectory: URL?, batch: String) throws {
+        let importer = Importer(db: db, partition: partition, source: source, coverDirectory: coverDirectory, batch: batch)
         // Each pass uses the already-frozen SwiftData store; one batch of model
         // references is live at a time. Covers may be individually large.
         func each<T: PersistentModel>(_ model: T.Type, _ name: String, size: Int = 128,
@@ -214,6 +218,7 @@ enum LegacyUserImport {
         let partition: Int
         let source: String
         let coverDirectory: URL?
+        let batch: String
 
         func archive(_ data: Data, model: String, identity: Identity, reason: String, version: Int64? = nil,
                      format: String = "legacy-json", incomplete: Bool = false) throws {
@@ -226,6 +231,10 @@ enum LegacyUserImport {
                     identity.mark.map(DataIdentity.canonical),identity.key.map(DataIdentity.canonical),
                     identity.session.map(ReadingFactRows.identity),identity.device.map(DataIdentity.canonical),
                     format,data,DataIdentity.sha(data),reason,incomplete ? "incomplete" : "complete"])
+            if db.changesCount > 0 {
+                let key = UpgradeOrigins.Key(partition: partition, domain: .isolation, id: String(db.lastInsertedRowID))
+                try UpgradeOrigins.record(db, key, as: .seed(batch: batch))
+            }
         }
 
         func decode(_ payload: String, model: String, identity: Identity, _ body: () throws -> Void) throws {
@@ -241,10 +250,12 @@ enum LegacyUserImport {
 
         func write(_ table: String, idColumn: String = "record_id", identity: Identity, body: [Field],
                    relations: [Relation] = [], clock: StoredValue? = nil) throws {
+            guard let domain = UpgradeOrigins.Domain(rawValue: table) else { throw DataV2Error.migrationNotVerified }
             let base: [Field] = [("partition",partition),(idColumn,identity.id),("schema_version",1)]
             let fields = base + body
             let args: StatementArguments = [partition,identity.id]
             let lookup = "WHERE partition=? AND \(idColumn)=?"
+            let key = UpgradeOrigins.Key(partition: partition, domain: domain, id: identity.id)
             if let old = try Row.fetchOne(db, sql: "SELECT * FROM usr.\(table) " + lookup, arguments: args) {
                 let isPosition = table == "position_candidate"
                 let sameFields = fields.allSatisfy { key, value in
@@ -260,8 +271,10 @@ enum LegacyUserImport {
                     // device when the other model has no attribution. If two
                     // explicit attributions disagree, do not choose one.
                     if isPosition, let previous = old["device_id"] as String?,
-                       let incoming = identity.device, previous != incoming {
+                       let incoming = identity.device, previous != incoming,
+                       try UpgradeOrigins.baseline(db, of: key).contains(.init(batch: batch, key: key)) {
                         try db.execute(sql: "UPDATE usr.position_candidate SET device_id=NULL " + lookup, arguments: args)
+                        try UpgradeOrigins.record(db, key, as: .seed(batch: batch))
                     }
                     return
                 }
@@ -276,6 +289,7 @@ enum LegacyUserImport {
             }
             try insert(table, fields: fields)
             for relation in relations { try relation.insert(self, parent: identity.id) }
+            try UpgradeOrigins.record(db, key, as: .seed(batch: batch))
         }
 
         private func insert(_ table: String, fields: [Field]) throws {
@@ -406,15 +420,15 @@ enum LegacyUserImport {
         func fact(_ row: ReadingFact) throws {
             let identity = Identity(id: ReadingFactRows.identity(row.id), book: row.contentKey)
             try decode(row.payload, model: "ReadingFact", identity: identity) {
-                let batch = try decodeFactBatch(base: 0, payloads: [row.payload])
-                guard let cue = batch.cues().first else { throw BadRow(reason: "missing-fact") }
+                let decoded = try decodeFactBatch(base: 0, payloads: [row.payload])
+                guard let cue = decoded.cues().first else { throw BadRow(reason: "missing-fact") }
                 _ = try UserSyncJSON.bindFact(cue, id: row.id)
-                let value = try batch.importColumns(ordinal: cue.ordinal)
+                let value = try decoded.importColumns(ordinal: cue.ordinal)
                 guard let duration = value.durationMs else { throw BadRow(reason: "duration-overflow") }
                 guard duration >= 0 else { throw BadRow(reason: "negative-fact-duration") }
                 guard (try? parseReadingKey(value: row.contentKey)) != nil else { throw BadRow(reason: "invalid-fact-book") }
                 try ReadingFactSettlement.ingest(db, value, book: row.contentKey, partition: partition, scope: source,
-                                                 origin: .init(source: "swiftdata", id: row.id))
+                                                 origin: .init(source: "swiftdata", id: row.id, upgrade: .seed(batch: batch)))
             }
         }
 

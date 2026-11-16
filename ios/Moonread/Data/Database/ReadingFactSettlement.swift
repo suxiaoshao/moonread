@@ -7,6 +7,7 @@ enum ReadingFactSettlement {
     struct Origin {
         let source: String
         let id: String
+        var upgrade: UpgradeOrigins.Write? = nil
     }
 
     struct Head: Codable, Equatable {
@@ -109,6 +110,15 @@ enum ReadingFactSettlement {
             VALUES (?,?,?,'reading_fact',?,1,?,?,?,'typed-reading-fact-v1',?,?,?,'complete')
             ON CONFLICT(partition,source,source_id,source_type,record_id,digest,reason) DO NOTHING
             """, arguments: [h.partition,origin.source,origin.id,h.id,h.book,h.session,evidence.device,bytes,DataIdentity.sha(bytes),reason])
+        if db.changesCount > 0 {
+            let provenance = origin.upgrade ?? (origin.source == "relational" ? .inherited(
+                .init(partition: h.partition, domain: .fact, id: h.id)
+            ) : nil)
+            if let provenance {
+                try UpgradeOrigins.record(db, .init(partition: h.partition, domain: .isolation, id: String(db.lastInsertedRowID)),
+                                          as: provenance)
+            }
+        }
     }
 
     private static func evidence(_ db: Database, id: String, partitions: Int? = nil) throws -> [Evidence] {
@@ -149,6 +159,9 @@ enum ReadingFactSettlement {
         let params = Array(repeating: "?", count: fields.count).joined(separator: ",")
         try db.execute(sql: "INSERT INTO usr.reading_fact(\(columns)) VALUES(\(params))",
                        arguments: StatementArguments(fields.map { $0.1 }))
+        if let provenance = origin.upgrade {
+            try UpgradeOrigins.record(db, .init(partition: partition, domain: .fact, id: id), as: provenance)
+        }
         return true
     }
 

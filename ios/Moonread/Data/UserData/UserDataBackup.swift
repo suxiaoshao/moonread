@@ -362,14 +362,14 @@ struct UserBackupRestore: Sendable {
             try Task.checkCancellation()
             switch entry {
             case let .value(key, head, device):
-                try UserValueRows.merge(db, key: .init(key), head: head, device: device)
+                try UserValueRows.merge(db, key: .init(key), head: head, device: device, restoringBackup: true)
             case let .position(book, value):
                 try ReadingPositionRows.mergeBackup(db, book: book, incoming: value)
             case let .annotation(book, mark, value):
                 try AnnotationRows.mergeBackup(db, book: book, mark: mark, value: value)
             case let .fact(book, value):
                 if try ReadingFactSettlement.ingest(db, value, book: book, partition: 0, scope: scope.key,
-                    origin: .init(source: "backup", id: value.slice.id)) {
+                    origin: .init(source: "backup", id: value.slice.id, upgrade: .local)) {
                     history.facts.insert(ReadingFactRows.identity(value.slice.id))
                 }
             case let .segment(record):

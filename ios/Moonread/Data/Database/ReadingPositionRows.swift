@@ -200,10 +200,15 @@ enum ReadingPositionRows {
         guard source?.isValid ?? true else { throw UserSyncCompatibilityError() }
         let saved = Position(value: .init(content_key: book, offset: offset, source_hint: source),
                              updated: try nextTime(now, after: previous?.updated), token: token, device: device)
+        let bases = try previous.map { position in
+            try UpgradeOrigins.baseline(db, of: .init(partition: part, domain: .position,
+                                                       id: recordID(book: book, token: position.token)))
+        } ?? []
         let predecessors = part == 0 && scope != .local ? try String.fetchAll(db, sql: """
             SELECT record_id FROM usr.position_candidate WHERE partition=0 AND book_key=?
             """, arguments: [book]) : []
         try replacePosition(db, with: saved, book: book, partition: part)
+        try recordUpgradePosition(db, saved, book: book, partition: part, bases: bases)
         if part == 0 && scope != .local {
             let id = recordID(book: book, token: saved.token)
             try CausalCloudRows.enqueueReplacement(db, .position, id: id, predecessors: predecessors)
@@ -271,7 +276,20 @@ enum ReadingPositionRows {
         guard try !assessBackup(db, book: book, incoming: incoming) else { return }
         if try position(db, book: book, partition: 0)?.token == incoming.token { return }
         try replacePosition(db, with: incoming, book: book, partition: 0)
+        try recordUpgradePosition(db, incoming, book: book, partition: 0, bases: [])
         try settleCurrent(db, book: book)
+    }
+
+    private static func recordUpgradePosition(_ db: Database, _ position: Position, book: String, partition: Int,
+                                              bases: Set<UpgradeOrigins.Seed>) throws {
+        guard try UpgradeOrigins.phase(db) != nil else { return }
+        let id = recordID(book: book, token: position.token)
+        try UpgradeOrigins.record(db, .init(partition: partition, domain: .position, id: id), as: .local, bases: bases)
+        // The dependency points to the durable seed, not to an intermediate
+        // local token whose raw data was just compacted.
+        try db.execute(sql: """
+            DELETE FROM usr.upgrade_local_version WHERE partition=? AND domain=? AND book_key=? AND record_id<>?
+            """, arguments: [partition, UpgradeOrigins.Domain.position.rawValue, DataIdentity.canonical(book), id])
     }
 
     static func recordOpened(_ db: Database, book: String, openedAt: Int64, file: String?, device: String, now: Int64, token: String,
@@ -289,23 +307,29 @@ enum ReadingPositionRows {
                 UserValueRows.recordID(logical: "opened/" + key, device: device)
         } else { nil }
         let prior = try syncID.flatMap { try FixedValueCloudRows.currentDigest(db, .opened, id: $0) }
-        try putOpened(db, book: book, partition: part, device: device, openedAt: openedAt, updated: updated, token: token)
+        let id = try putOpened(db, book: book, partition: part, device: device,
+                               openedAt: openedAt, updated: updated, token: token)
+        try UpgradeOrigins.record(db, .init(partition: part, domain: .opened, id: id), as: .local)
         if let syncID { try FixedValueCloudRows.enqueueLocalEdit(db, .opened, id: syncID, previousDigest: prior) }
         try recordLocalOpen(db, book: book, file: file)
         try settleCurrent(db, book: book)
     }
 
     private static func putOpened(_ db: Database, book: String, partition: Int, device: String,
-                                  openedAt: Int64, updated: Int64, token: String) throws {
+                                  openedAt: Int64, updated: Int64, token: String) throws -> String {
         let logicalKey = "opened/" + book, key = DataIdentity.canonical(book)
         let id = DataIdentity.id("value", [logicalKey,device])
-        try db.execute(sql: """
+        guard let savedID = try String.fetchOne(db, sql: """
             INSERT INTO usr.opened_candidate
                 (partition,record_id,schema_version,book_key,logical_key,device_id,updated_ms,token,opened_ms)
             VALUES (?,?,1,?,?,?,?,?,?)
             ON CONFLICT(partition,book_key,device_id) DO UPDATE SET
                 updated_ms=excluded.updated_ms,token=excluded.token,opened_ms=excluded.opened_ms
-            """, arguments: [partition,id,key,logicalKey,DataIdentity.canonical(device),updated,token,openedAt])
+            RETURNING record_id
+            """, arguments: [partition,id,key,logicalKey,DataIdentity.canonical(device),updated,token,openedAt]) else {
+            throw DataV2Error.migrationNotVerified
+        }
+        return savedID
     }
 
     static func requirePromotionReadable(_ db: Database, book: String, partition: Int) throws {
