@@ -16,7 +16,7 @@ struct StatisticsView: View {
     @State private var showAllBooks = false
     @State private var openedDay: StatisticsDayRoute?
     @State private var deleteBook = false
-    @State private var information = BookInformationModel()
+    @State private var information: BookInformationModel
     @State private var positionedAtReading = false
     @State private var aiRequest: AIQuickTaskRequest?
     @State private var removingTask: AISessionSummary?
@@ -24,6 +24,7 @@ struct StatisticsView: View {
 
     init(library: LibraryModel, target: StatisticsRoute? = nil) {
         self.library = library
+        _information = State(initialValue: BookInformationModel(service: library.service))
         destination = target.map(Destination.book) ?? .all
         let initial = target?.window ?? StatisticsWindow()
         _window = State(initialValue: initial)
@@ -93,6 +94,7 @@ struct StatisticsView: View {
         .task(id: InformationRequest(identity: target.map(BookInformationModel.Identity.init), revision: information.requestRevision)) {
             if let target { await information.observe(target) }
         }
+        .onAppear { library.systemReading.scopeEditors.track(information) { $0.blocksUserScopeChange } }
         .sheet(item: $information.draft) { draft in
             BookMetadataEditor(draft: draft, title: information.entry?.title ?? target?.title ?? "").themeScope(theme)
                 .readerToolPresentation()

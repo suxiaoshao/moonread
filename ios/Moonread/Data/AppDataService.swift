@@ -222,6 +222,11 @@ actor AppDataService {
     }()
     var systemSpotlightThumbnailFailures = Set<String>()
     private var core: ReaderIndex?
+    private var dataSession: DataSession?
+    private(set) var changingUserScope = false
+    var verifiedScopePublicationPending: Bool?
+    private var prepareUserScopePresentation: (@MainActor @Sendable () async throws -> Void)?
+    private var finishUserScopePresentation: (@MainActor @Sendable (Bool) -> Void)?
     var recoveryTask: Task<Void, Never>?
     var recentRestorationTask: Task<Void, Never>?
     var recentRestorationWork: RecentRestorationWork?
@@ -233,7 +238,7 @@ actor AppDataService {
     var recentRestorationBeforeCommit: (@Sendable () async -> Void)?
 
     nonisolated let settingsCache: ReaderSettingsCache
-    let userCloudConfigurationRevision = UUID()
+    private(set) var userCloudConfigurationRevision = UUID()
     #if DEBUG
     var injectedLegacyReadFailure = false
     #endif
@@ -278,7 +283,7 @@ actor AppDataService {
              else { try FileManager.default.trashItem(at: url, resultingItemURL: nil) }
          },
          libraryScan: (@Sendable (URL, [CloudDocumentItem]) throws -> [ScannedLibraryItem])? = nil) {
-        self.core = core; libraryDirectoryOverride = libraryDirectory
+        self.core = core; dataSession = core?.session; libraryDirectoryOverride = libraryDirectory
         self.libraryDeletion = libraryDeletion; self.libraryScan = libraryScan
         self.dataManagementWriter = dataManagementWriter
         #if DEBUG
@@ -388,6 +393,184 @@ actor AppDataService {
         let waiters = idleWaiters; idleWaiters.removeAll()
         for waiter in waiters.values { waiter.resume() }
     }
+
+    func installUserScopePresentation(
+        prepare: @escaping @MainActor @Sendable () async throws -> Void,
+        finish: @escaping @MainActor @Sendable (Bool) -> Void
+    ) {
+        prepareUserScopePresentation = prepare; finishUserScopePresentation = finish
+    }
+
+    /// Rebind the App's existing authority, never create a parallel GRDB
+    /// pool. The cloud owner has already drained the old transport.
+    func selectReadingCloudScope(
+        _ status: DataIdentityStatus,
+        approval: CloudSyncCoordinator.Account?,
+        lookup: @Sendable () async -> CloudSyncCoordinator.Identity,
+        beforeRebind: (@MainActor @Sendable () async throws -> Void)? = nil,
+        afterRebind: (@MainActor @Sendable (Bool) -> Void)? = nil
+    ) async throws -> DataScopeSelection {
+        let cancellation = CloudScopeCancellation()
+        return try await withTaskCancellationHandler {
+            try cancellation.check()
+            guard !changingUserScope else { throw ReadingDataError.busy }
+            let old = try relationalUserIndex()
+            let session = old.session
+            let destination = try session.destination(status)
+            if let approval {
+                guard case .confirmed(let scope, true) = status, approval.scope == scope, scope != .local else {
+                    throw ReaderError.CloudAccountChanged
+                }
+            }
+            let claim = old.lease.scope == .local ? approval?.scope : nil
+            let rebind = claim != nil || old.lease.scope != destination.scope
+            let preparePresentation = beforeRebind ?? prepareUserScopePresentation
+            let finishPresentation = afterRebind ?? finishUserScopePresentation
+            if !rebind, approval == nil {
+                try cancellation.check()
+                let (_, selected) = try session.activate(status)
+                updateReadingScopePublication(status, selected)
+                return selected
+            }
+
+            var handoffStarted = false
+            var installed = false
+            var ownsWriteGate = false
+            do {
+                if rebind {
+                    verifiedScopePublicationPending = true
+                    setSystemReadingAccountPending(true)
+                    handoffStarted = true
+                    // Existing readers finish their own accepted position and
+                    // statistics writes while they still have their old lease.
+                    try await preparePresentation?()
+                    try cancellation.check()
+                    changingUserScope = true
+                    recentRestorationActive = false
+                    cancelRecentRestoration()
+                    backgroundReadCancellation?()
+                    recoveryTask?.cancel()
+                    for id in Array(imports.keys) { pauseImport(id) }
+                    try await waitForImportsIdle()
+                    await waitForRecentRestoration()
+                    await waitForUserRecovery()
+                    while !foregroundHolds.isEmpty || backgroundReadCancellation != nil {
+                        try await waitForGateChange()
+                    }
+                    // Reset above invalidates pending publication tokens and
+                    // replaces the shared files; join already submitted work.
+                    await systemSpotlightTask?.value
+                    await systemExposureTask?.value
+                }
+
+                try await acquireCancellableUserDataOperation()
+                ownsWriteGate = true
+                try cancellation.check()
+                let intent = cloudSyncIntent
+                if let approval {
+                    guard intent.requested, case .confirmed(let current) = await lookup(), current == approval else {
+                        throw ReaderError.CloudAccountChanged
+                    }
+                    try cancellation.check()
+                    guard intent.requested else { throw CancellationError() }
+                }
+
+                if rebind {
+                    // Seal only this installation's known active segments
+                    // in the OLD file, after its reader/worker tasks finish.
+                    let installation = try session.readingInstallationID()
+                    try session.writeUsers(old.lease) {
+                        try ReadingSegmentRows.sealOwned($0, owner: installation, scope: old.lease.scope)
+                    }
+                    try cancellation.check()
+                    userCloudConfigurationRevision = UUID()
+                    resetUserScopeMemory()
+                    // On errors/cancel, retain the same session owner for
+                    // D1 recovery; never hand out the old invalidated index.
+                    core = nil
+                }
+                if let claim {
+                    _ = try session.activate(.confirmed(claim, syncRequested: false))
+                    try session.claimLocal(for: claim) {
+                        try cancellation.check()
+                        guard intent.requested, approval?.scope == claim else { throw CancellationError() }
+                    }
+                    // A legal commit must finish its original owner's
+                    // interrupted-move recovery. No other target can inherit it.
+                }
+                try cancellation.check()
+                let (lease, selected) = try session.activate(status)
+                if rebind {
+                    let index = ReaderIndex(session: session, lease: lease)
+                    try session.prepareIndex(dataDirectoryURL().appending(path: "reader.sqlite3"), token: lease)
+                    try prepareUserIndex(index)
+                    try session.prepareReadingHistory(lease, owner: session.readingInstallationID())
+                    try cancellation.check()
+                    core = index
+                    installed = true
+                }
+                if let approval, selected.scope == approval.scope, selected.maySync {
+                    try cancellation.check()
+                    guard intent.requested else { throw CancellationError() }
+                    intent.approve(approval.scope)
+                }
+                updateReadingScopePublication(status, selected)
+                releaseUserDataOperation()
+                ownsWriteGate = false
+                if handoffStarted {
+                    finishReadingScopeHandoff(invalidate: true)
+                    await finishPresentation?(true)
+                }
+                return selected
+            } catch {
+                if handoffStarted {
+                    if changingUserScope && (installed || core == nil) {
+                        // This also finishes an already committed D1 move;
+                        // it never retries or publishes an uncommitted claim.
+                        core = nil
+                        if let (lease, _) = try? session.activate(.unknown),
+                           (try? session.prepareIndex(dataDirectoryURL().appending(path: "reader.sqlite3"), token: lease)) != nil {
+                            let index = ReaderIndex(session: session, lease: lease)
+                            if (try? prepareUserIndex(index)) != nil { core = index }
+                        }
+                    }
+                }
+                if ownsWriteGate { releaseUserDataOperation() }
+                if handoffStarted {
+                    let rebound = installed || core?.lease != old.lease
+                    // A refusal at the presentation preflight did not
+                    // retire the old lease or any editor/observation.
+                    if changingUserScope { finishReadingScopeHandoff(invalidate: rebound) }
+                    await finishPresentation?(rebound)
+                }
+                throw error
+            }
+        } onCancel: { cancellation.cancel() }
+    }
+
+    private func resetUserScopeMemory() {
+        recoveredImports = false
+        pendingPromotionIDs.removeAll(); promotedUserKeys.removeAll(); importWriteAdmissions.removeAll()
+        readingSourceIDs.removeAll(); shownCandidates.removeAll(); undoCandidates.removeAll()
+        recentRestorationAttempts.removeAll(); readingWriteVersions = ReadingWriteVersions()
+        activeBackupImport = nil
+        automaticallyPaused.removeAll(); requestedResumes.removeAll()
+    }
+
+    private func finishReadingScopeHandoff(invalidate: Bool) {
+        changingUserScope = false
+        recentRestorationActive = appActive
+        if core != nil { startUserRecovery(); scheduleRecentRestoration() }
+        if invalidate { NotificationCenter.default.post(name: .readingContinuationInvalidated, object: self) }
+    }
+
+    private func updateReadingScopePublication(_ status: DataIdentityStatus, _ selected: DataScopeSelection) {
+        if case .paused = status { return }
+        let pending: Bool = if case .unknown = status { selected.scope != .local } else { false }
+        verifiedScopePublicationPending = pending
+        setSystemReadingAccountPending(pending)
+    }
+
     private func waitForGateChange() async throws {
         let id = UUID()
         try await withTaskCancellationHandler {
@@ -405,11 +588,13 @@ actor AppDataService {
                                          operation: @Sendable () async throws -> T) async throws -> T {
         while !foregroundHolds.isEmpty || backgroundReadCancellation != nil { try await waitForGateChange() }
         try Task.checkCancellation()
+        guard !changingUserScope else { throw CancellationError() }
         backgroundReadCancellation = cancel
         defer { backgroundReadCancellation = nil; wakeIdleWaiters() }
         return try await operation()
     }
     func withForegroundOpening<T: Sendable>(operation: @Sendable () async throws -> T) async throws -> T {
+        guard !changingUserScope else { throw CancellationError() }
         let key = "opening:" + UUID().uuidString
         holdForeground(key)
         defer { releaseForeground(key) }
@@ -444,14 +629,20 @@ actor AppDataService {
     // Internal text/file capability. UI-facing user data comes from domain
     // queries below; index tasks never build shared user projections.
     func indexStore() throws -> ReaderIndex {
+        guard !changingUserScope else { throw CancellationError() }
         if let core {
             return core
         }
         let directory = try dataDirectoryURL()
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let legacy = try publishedUserSource()
-        let session = try DataSession(layout: DataLayout(applicationSupport: directory),
+        let session: DataSession
+        if let dataSession { session = dataSession }
+        else {
+            let legacy = try publishedUserSource()
+            session = try DataSession(layout: DataLayout(applicationSupport: directory),
                                       confirmedLegacyOwner: legacy.scope == .local ? nil : legacy.scope)
+            dataSession = session
+        }
         let (lease, _) = try session.activate(.unknown)
         try session.prepareIndex(directory.appending(path: "reader.sqlite3"), token: lease)
         let value = ReaderIndex(session: session, lease: lease)
@@ -891,6 +1082,7 @@ actor AppDataService {
     }
     func resumePausedImports() {
         appActive = true
+        guard !changingUserScope else { return }
         recentRestorationActive = true; scheduleRecentRestoration()
         for id in Array(automaticallyPaused) where imports[id] == nil {
             automaticallyPaused.remove(id)
@@ -899,6 +1091,7 @@ actor AppDataService {
     }
 
     func resumeImport(_ id: String) throws {
+        guard !changingUserScope else { throw CancellationError() }
         guard imports[id] == nil else {
             // File-provider cancellation can outlive a resume request. Keep the
             // request until that accessor releases its scope and worker exits.

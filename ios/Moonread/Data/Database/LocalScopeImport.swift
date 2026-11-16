@@ -62,7 +62,8 @@ enum LocalScopeImport {
                           arguments: [stateKey,move.uuidString]) == true
     }
 
-    static func copy(_ db: Database, move: UUID, scope: DataScope = .local) throws {
+    static func copy(_ db: Database, move: UUID, scope: DataScope = .local,
+                     authorizeCommit: () throws -> Void = {}) throws {
         try db.inTransaction {
             guard try Bool.fetchOne(db, sql: """
                 SELECT EXISTS(SELECT 1 FROM move_source.cover_asset WHERE availability<>'available'
@@ -120,6 +121,10 @@ enum LocalScopeImport {
                 throw DataV2Error.migrationNotVerified
             }
             try db.execute(sql: "INSERT OR REPLACE INTO usr.local_data_state VALUES (?, ?)", arguments: [stateKey,move.uuidString])
+            // The authorization belongs to the transition, not to this
+            // writer thread's Swift Task. A stale approval rolls back the
+            // copied rows and completion marker together.
+            try authorizeCommit()
             return .commit
         }
     }

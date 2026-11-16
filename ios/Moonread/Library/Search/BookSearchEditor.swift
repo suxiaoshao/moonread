@@ -100,6 +100,7 @@ struct BookSearchEditor: View {
         .onChange(of: draft.value) { _, _ in error = nil }
         .presentationSizing(.form)
         .presentationDetents([.large])
+        .userScopeEditor(draft) { $0.changed }
         .background(BookSearchDismissalGuard(changed: draft.changed) { discard = true })
         .alert("放弃筛选更改？", isPresented: $discard) {
             Button("放弃更改", role: .destructive) { dismiss() }

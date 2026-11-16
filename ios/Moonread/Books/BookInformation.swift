@@ -52,6 +52,7 @@ final class BookInformationModel {
             else if case .editing = preparation { preparation = .idle }
         }
     }
+    var blocksUserScopeChange: Bool { preparing || draft?.blocksUserScopeChange == true }
     var canEdit: Bool { !preparing && (details != nil || entry != nil || readableBook != nil) }
 
     private(set) var loadedIdentity: Identity?
@@ -175,7 +176,7 @@ final class BookInformationModel {
 
     func edit(_ route: StatisticsRoute) {
         guard matches(route), canEdit else { return }
-        if let details { preparation = .editing(BookMetadataDraft(base: details.metadata)) }
+        if let details { preparation = .editing(BookMetadataDraft(base: details.metadata, service: service)) }
         else if entry?.needsDownload == true { preparation = .confirmingDownload(route) }
         else { prepareEditing(route) }
     }
@@ -208,7 +209,7 @@ final class BookInformationModel {
                         let details = try result.requireIdentified()
                         guard isPreparing(context), !Task.isCancelled else { return }
                         resolution = result
-                        preparation = .editing(BookMetadataDraft(base: details.metadata))
+                        preparation = .editing(BookMetadataDraft(base: details.metadata, service: service))
                         break
                     }
                     if snapshot.preparation.isFailed { throw CocoaError(.fileReadCorruptFile) }
@@ -256,28 +257,57 @@ final class BookMetadataDraft: Identifiable {
     let id = UUID()
     let base: BookMetadata
     var value: BookMetadata
+    var newTag = ""
     var error: String?
     var saving = false
-    var choosingImage = false
+    private(set) var choosingImage = false
+    var presentsPhotoPicker = false
+    var presentsFilePicker = false
+    let service: AppDataService
     private var imageRequest = UUID()
+    @ObservationIgnored private var imageTask: Task<Void, Never>?
     private var closed = false
-    init(base: BookMetadata) { self.base = base; value = base }
-    var changed: Bool { value != base }
-    func image(_ data: Data) async {
-        guard !closed else { return }
+    init(base: BookMetadata, service: AppDataService = .shared) {
+        self.base = base; value = base; self.service = service
+    }
+    var changed: Bool { value != base || !newTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    var blocksUserScopeChange: Bool {
+        !closed && (changed || saving || choosingImage || presentsPhotoPicker || presentsFilePicker)
+    }
+    enum LeaveAction { case close, confirmDiscard }
+    func requestLeave() -> LeaveAction { changed ? .confirmDiscard : .close }
+
+    @discardableResult
+    func chooseImage(_ read: @escaping @Sendable () async throws -> Data?) -> Task<Void, Never>? {
+        guard !closed, !saving else { return nil }
+        imageTask?.cancel()
         let request = UUID(); imageRequest = request; choosingImage = true
-        defer { if imageRequest == request { choosingImage = false } }
-        do {
-            let cover = try await AppDataService.shared.makeCover(data)
-            guard !closed, imageRequest == request, !Task.isCancelled else { await AppDataService.shared.discardCoverDraft(cover); return }
-            discardNewCover(); value.cover = cover
-        } catch { if imageRequest == request { self.error = ReaderMessages.error(error) } }
+        let task = Task {
+            defer { if imageRequest == request { choosingImage = false; imageTask = nil } }
+            do {
+                guard let data = try await read(), !closed, imageRequest == request, !Task.isCancelled else { return }
+                let cover = try await service.makeCover(data)
+                guard !closed, imageRequest == request, !Task.isCancelled else { await service.discardCoverDraft(cover); return }
+                discardNewCover(); value.cover = cover
+            } catch is CancellationError { }
+            catch { if imageRequest == request { self.error = ReaderMessages.error(error) } }
+        }
+        imageTask = task
+        return task
     }
-    func discardNewCover() {
-        if let cover = value.cover, cover != base.cover { Task { await AppDataService.shared.discardCoverDraft(cover) } }
+    @discardableResult private func discardNewCover() -> Task<Void, Never>? {
+        guard let cover = value.cover, cover != base.cover else { return nil }
+        return Task { [service] in await service.discardCoverDraft(cover) }
     }
-    func removeCover() { imageRequest = UUID(); choosingImage = false; discardNewCover(); value.cover = nil }
-    func cancel() { closed = true; imageRequest = UUID(); discardNewCover() }
+    private func stopChoosingImage() {
+        imageRequest = UUID(); imageTask?.cancel(); imageTask = nil; choosingImage = false
+    }
+    func removeCover() { stopChoosingImage(); discardNewCover(); value.cover = nil }
+    @discardableResult func cancel() -> Task<Void, Never>? {
+        guard !closed else { return nil }
+        closed = true; stopChoosingImage()
+        return discardNewCover()
+    }
 }
 
 struct BookMetadataEditor: View {
@@ -287,14 +317,12 @@ struct BookMetadataEditor: View {
     @Environment(\.theme) private var theme
     @FocusState private var focused: Bool
     @State private var photo: PhotosPickerItem?
-    @State private var filePicker = false
     @State private var discard = false
-    @State private var newTag = ""
     @State private var suggestions: [String] = []
     @ViewBuilder private var coverActions: some View {
-        PhotosPicker(selection: $photo, matching: .images) { Label("从照片选择", systemImage: "photo") }
+        Button("从照片选择", systemImage: "photo") { draft.presentsPhotoPicker = true }
             .buttonStyle(ThemedSecondaryButtonStyle()).disabled(draft.choosingImage)
-        Button("从文件选择", systemImage: "folder") { filePicker = true }
+        Button("从文件选择", systemImage: "folder") { draft.presentsFilePicker = true }
             .buttonStyle(ThemedSecondaryButtonStyle()).disabled(draft.choosingImage)
     }
     var body: some View {
@@ -330,10 +358,10 @@ struct BookMetadataEditor: View {
                         }
                     }
                     HStack {
-                        TextField("添加标签", text: $newTag).focused($focused).keyboardInputRegion().onSubmit(addTag)
+                        TextField("添加标签", text: $draft.newTag).focused($focused).keyboardInputRegion().onSubmit(addTag)
                             .accessibilityIdentifier("bookTagField")
                         Button("添加", systemImage: "plus", action: addTag).labelStyle(.iconOnly)
-                            .disabled(newTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .disabled(draft.newTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                     if !suggestions.isEmpty {
                         Menu("已有标签") {
@@ -351,7 +379,12 @@ struct BookMetadataEditor: View {
                 .navigationTitle("编辑小说信息").navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        SystemToolbarButton("取消", role: .cancel) { if draft.changed { discard = true } else { dismiss() } }
+                        SystemToolbarButton("取消", role: .cancel) {
+                            switch draft.requestLeave() {
+                            case .close: dismiss()
+                            case .confirmDiscard: discard = true
+                            }
+                        }
                             .disabled(draft.saving)
                     }
                     ToolbarItem(placement: .confirmationAction) {
@@ -359,42 +392,38 @@ struct BookMetadataEditor: View {
                             addTag(); focused = false; draft.saving = true
                             Task {
                                 defer { draft.saving = false }
-                                do { try await AppDataService.shared.saveMetadata(base: draft.base, edited: draft.value); dismiss() }
+                                do { try await draft.service.saveMetadata(base: draft.base, edited: draft.value); dismiss() }
                                 catch { draft.error = ReaderMessages.error(error) }
                             }
                         }.disabled(draft.saving || draft.choosingImage).accessibilityIdentifier("saveBookMetadata")
                     }
                 }
                 .alert("放弃未保存的修改？", isPresented: $discard) {
-                    Button("放弃修改", role: .destructive) { dismiss() }
+                    Button("放弃修改", role: .destructive) { draft.cancel(); dismiss() }
                     Button("取消", role: .cancel) {}
                 }
-                .fileImporter(isPresented: $filePicker, allowedContentTypes: [.image]) { result in
-                    Task {
-                        do {
-                            let url = try result.get(), scoped = url.startAccessingSecurityScopedResource()
-                            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-                            let data = try await Task.detached { try Data(contentsOf: url) }.value
-                            await draft.image(data)
-                        } catch { draft.error = ReaderMessages.error(error) }
+                .photosPicker(isPresented: $draft.presentsPhotoPicker, selection: Binding(get: { photo }, set: { item in
+                    photo = item
+                    if let item { draft.chooseImage { try await item.loadTransferable(type: Data.self) } }
+                }), matching: .images)
+                .fileImporter(isPresented: $draft.presentsFilePicker, allowedContentTypes: [.image]) { result in
+                    draft.chooseImage {
+                        let url = try result.get(), scoped = url.startAccessingSecurityScopedResource()
+                        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+                        return try await Task.detached { try Data(contentsOf: url) }.value
                     }
                 }
-                .task(id: photo) {
-                    guard let photo else { return }
-                    do { if let data = try await photo.loadTransferable(type: Data.self) { await draft.image(data) } }
-                    catch { draft.error = ReaderMessages.error(error) }
-                }
-                .task { suggestions = (try? await AppDataService.shared.metadataOptions(shelfID: nil).tags) ?? [] }
+                .task { suggestions = (try? await draft.service.metadataOptions(shelfID: nil).tags) ?? [] }
                 .alert("暂时无法完成", isPresented: Binding(get: { draft.error != nil }, set: { if !$0 { draft.error = nil } })) {
                     Button("知道了", role: .cancel) { draft.error = nil }
                 } message: { Text(draft.error ?? "") }
-        }.interactiveDismissDisabled(draft.changed || draft.saving || draft.choosingImage)
+        }.interactiveDismissDisabled(draft.blocksUserScopeChange)
             .onDisappear { draft.cancel() }
     }
     private func addTag() {
-        let value = newTag.trimmingCharacters(in: .whitespacesAndNewlines)
+        let value = draft.newTag.trimmingCharacters(in: .whitespacesAndNewlines)
         if !value.isEmpty, !draft.value.tags.contains(value) { draft.value.tags.append(value) }
-        newTag = ""
+        draft.newTag = ""
     }
 }
 

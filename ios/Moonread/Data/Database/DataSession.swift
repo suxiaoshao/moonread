@@ -50,6 +50,9 @@ enum DataIdentity {
 }
 
 enum DataIdentityStatus: Sendable {
+    /// Scene suspension stops network capability without asserting the
+    /// account became unknown or authorizing a different library.
+    case paused
     case unknown
     case signedOut
     case confirmed(DataScope, syncRequested: Bool)
@@ -179,14 +182,12 @@ final class DataSession: @unchecked Sendable {
         }
     }
 
-    func activate(_ status: DataIdentityStatus) throws -> (DataSessionLease, DataScopeSelection) {
-        lifecycle.lock(); defer { lifecycle.unlock() }
-        try recoverLocalMove()
+    private func plan(_ status: DataIdentityStatus) throws -> (DataScopeSelection, DataScope?, DataOwnerState) {
         let next: DataScopeSelection
         let verified: DataScope?
         var state = owner
         switch status {
-        case .unknown:
+        case .paused, .unknown:
             verified = nil
             next = .init(scope: owner.lastConfirmed ?? .local, maySync: false)
         case .signedOut:
@@ -205,6 +206,18 @@ final class DataSession: @unchecked Sendable {
                 next = .init(scope: scope, maySync: requested)
             }
         }
+        return (next, verified, state)
+    }
+
+    func destination(_ status: DataIdentityStatus) throws -> DataScopeSelection {
+        try lifecycle.withLock { try plan(status).0 }
+    }
+
+    func activate(_ status: DataIdentityStatus) throws -> (DataSessionLease, DataScopeSelection) {
+        lifecycle.lock(); defer { lifecycle.unlock() }
+        try recoverLocalMove()
+        let (next, verified, planned) = try plan(status)
+        var state = planned
         if let lease, lease.scope == next.scope {
             // An offline pause or a toggle must not tear down the reader,
             // outstanding local writes, or observations for this same file.
@@ -504,17 +517,19 @@ final class DataSession: @unchecked Sendable {
 
     /// Called only from the confirmed enable flow. Merely learning the current
     /// iCloud account does not transfer local records.
-    func claimLocal(for target: DataScope) throws {
+    func claimLocal(for target: DataScope, authorize: () throws -> Void = {}) throws {
         lifecycle.lock(); defer { lifecycle.unlock() }
         guard target.valid, target != .local, verifiedAccount == target else {
             throw DataV2Error.invalidOwnerState
         }
         try recoverLocalMove()
+        try authorize()
         let source = try layout.user(.local)
         guard FileManager.default.fileExists(atPath: source.path) else {
             try closeLocked()
             var state = owner
             state.current = target; state.lastConfirmed = target
+            try authorize()
             try saveOwner(state)
             return
         }
@@ -528,7 +543,7 @@ final class DataSession: @unchecked Sendable {
             guard let pool else { throw DataV2Error.sessionClosed }
             try pool.writeWithoutTransaction { db in
                 try LocalScopeImport.withSource(db, url: source, readOnly: true) {
-                    try LocalScopeImport.copy(db, move: move.id, scope: target)
+                    try LocalScopeImport.copy(db, move: move.id, scope: target, authorizeCommit: authorize)
                 }
             }
             try finishLocalMove(move)

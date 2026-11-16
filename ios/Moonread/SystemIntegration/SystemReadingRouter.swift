@@ -57,6 +57,52 @@ enum SystemReadingRouteError: LocalizedError, Equatable {
     }
 }
 
+/// Active draft owners remain the authority for their own leave rules. The
+/// router only asks whether the App may retire the current user scope.
+@MainActor final class UserScopeEditors {
+    private var checks: [ObjectIdentifier: () -> Bool?] = [:]
+
+    func track<Owner: AnyObject>(_ owner: Owner, blocks: @escaping @MainActor (Owner) -> Bool) {
+        checks = checks.filter { $0.value() != nil }
+        checks[ObjectIdentifier(owner)] = { [weak owner] in owner.map(blocks) }
+    }
+
+    func requireReady() throws {
+        if checks.values.contains(where: { $0() == true }) { throw CloudScopePresentationError.editing }
+    }
+}
+
+extension View {
+    /// Draft identity, rather than transient view visibility, determines when
+    /// the restriction ends (e.g. while another picker covers the editor).
+    func userScopeEditor<Owner: AnyObject>(_ owner: Owner, blocks: @escaping @MainActor (Owner) -> Bool) -> some View {
+        modifier(UserScopeEditorRegistration(owner: owner, blocks: blocks))
+    }
+
+    func userScopeEditingPresentation() -> some View { modifier(UserScopeEditingPresentation()) }
+}
+
+private struct UserScopeEditorRegistration<Owner: AnyObject>: ViewModifier {
+    @Environment(\.systemReadingRouter) private var router
+    let owner: Owner
+    let blocks: @MainActor (Owner) -> Bool
+    func body(content: Content) -> some View {
+        content.onAppear { router?.scopeEditors.track(owner, blocks: blocks) }
+    }
+}
+
+/// An editor without a separate in-memory draft can hold this for the life
+/// of its sheet. Closing it uses that sheet's existing controls.
+private struct UserScopeEditingPresentation: ViewModifier {
+    @MainActor private final class Presence { var active = false }
+    @State private var presence = Presence()
+    func body(content: Content) -> some View {
+        content.userScopeEditor(presence) { $0.active }
+            .onAppear { presence.active = true }
+            .onDisappear { presence.active = false }
+    }
+}
+
 @MainActor @Observable
 final class SystemReadingRouter {
     private weak var library: LibraryModel?
@@ -96,6 +142,8 @@ final class SystemReadingRouter {
     }
     private var task: Task<Void, Never>?
     private var resumeAfterCurrent = false
+    private var changingUserScope = false
+    let scopeEditors = UserScopeEditors()
     private weak var reader: ReaderSession?
     private var readerNavigationID: UUID?
     var sceneActive = false { didSet { if sceneActive { resume() } } }
@@ -149,6 +197,21 @@ final class SystemReadingRouter {
         // destination. A newer handoff's reader must not be popped by this task.
         if let navigationID { library.removeReaderDestination(navigationID) }
     }
+    func requireUserScopeEditorsReady() throws {
+        guard savingEdits?() != true, hasUnsavedEdits?() != true else { throw CloudScopePresentationError.editing }
+        try scopeEditors.requireReady()
+    }
+    func prepareForUserScopeChange() async throws {
+        try requireUserScopeEditorsReady()
+        changingUserScope = true
+        let oldTask = task
+        handoff = .idle(UUID()); task = nil; resumeAfterCurrent = false; requestError = nil
+        oldTask?.cancel()
+        await oldTask?.value
+        try Task.checkCancellation()
+        if let library { await finishReader(in: library) }
+    }
+    func finishUserScopeChange() { changingUserScope = false }
     private func beginOpening(_ entry: LibraryEntry, in library: LibraryModel, context: RequestContext) -> Bool {
         guard admit(title: entry.title, library: library) else { return false }
         handoff = .opening(context)
@@ -170,6 +233,7 @@ final class SystemReadingRouter {
         return true
     }
     private func replaceRequest(_ destination: Destination) {
+        guard !changingUserScope else { return }
         requestError = nil
         handoff = .resolving(.init(destination: destination))
         task?.cancel(); task = nil; resumeAfterCurrent = false
@@ -184,6 +248,7 @@ final class SystemReadingRouter {
                                   tap: ProcessInfo.processInfo.systemUptime))
     }
     func resume() {
+        guard !changingUserScope else { return }
         guard task == nil else { resumeAfterCurrent = true; return }
         guard confirmationTitle == nil, let context = handoff.context, let library, library.initialized,
               sceneActive, Onboarding.shared.completed else { return }

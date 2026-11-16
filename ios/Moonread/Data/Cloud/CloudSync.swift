@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 enum CloudConfiguration {
     struct VerifiedAccount: Equatable, Sendable { let recordName: String }
@@ -46,10 +47,24 @@ struct CloudSyncStatus: Sendable {
 /// Device-local intent is a tiny thread-safe UserDefaults write, independent of
 /// account lookup, store activation, and either service actor's work queue.
 final class CloudSyncIntent: @unchecked Sendable {
+    private static let scopeKey = "Moonread.readingCloudApprovedScope.v1"
     private let defaults: UserDefaults
     init(defaults: UserDefaults) { self.defaults = defaults }
     var requested: Bool { defaults.bool(forKey: "Moonread.userCloudEnabled") }
     func set(_ enabled: Bool) { defaults.set(enabled, forKey: "Moonread.userCloudEnabled") }
+    var approvedScopeKey: String? { defaults.string(forKey: Self.scopeKey) }
+    func approve(_ scope: DataScope) { defaults.set(scope.key, forKey: Self.scopeKey) }
+}
+
+/// GRDB executes the commit check on its writer queue. Cancellation has to
+/// reach it even when that queue doesn't inherit the Swift Task context.
+final class CloudScopeCancellation: Sendable {
+    private let cancelled = Mutex(false)
+    func cancel() { cancelled.withLock { $0 = true } }
+    func check() throws {
+        if cancelled.withLock({ $0 }) { throw CancellationError() }
+        try Task.checkCancellation()
+    }
 }
 
 protocol ReadingCloudTransport: Sendable {
@@ -57,6 +72,8 @@ protocol ReadingCloudTransport: Sendable {
     /// Must cancel and drain the transport, including any out-of-engine work.
     func close() async
 }
+
+enum CloudScopePresentationError: Error { case editing }
 
 /// The coordinator is the only App owner of a running reading-data transport.
 /// The cutover binding is supplied separately from iCloud Drive discovery.
@@ -77,6 +94,24 @@ actor CloudSyncCoordinator {
         /// which was re-verified for this transition.
         let select: @Sendable (DataIdentityStatus, Account?) async throws -> DataScopeSelection
         let open: @Sendable (Account) async throws -> any ReadingCloudTransport
+
+        static func relational(
+            service: AppDataService,
+            lookup: @escaping @Sendable () async -> Identity,
+            beforeRebind: (@MainActor @Sendable () async throws -> Void)? = nil,
+            afterRebind: (@MainActor @Sendable (Bool) -> Void)? = nil,
+            open: @escaping @Sendable (Account, ReaderIndex) async throws -> any ReadingCloudTransport
+        ) -> Self {
+            .init(lookup: lookup, isApproved: { await service.isReadingCloudApproved($0.scope) },
+                  select: { status, approved in
+                      try await service.selectReadingCloudScope(status, approval: approved, lookup: lookup,
+                                                               beforeRebind: beforeRebind, afterRebind: afterRebind)
+                  }, open: { account in
+                      let bound = try await service.relationalUserIndex()
+                      guard bound.lease.scope == account.scope else { throw DataV2Error.leaseExpired }
+                      return try await open(account, bound)
+                  })
+        }
     }
 
     private let service: AppDataService
@@ -90,6 +125,7 @@ actor CloudSyncCoordinator {
     private var draining: Task<Void, Never>?
     private var dirty = false
     private var restartPending = false
+    private var identityNeedsVerification = false
     private var confirmationCandidate: Account?
 
     // The App remains in trial mode until the account writer, old bridge
@@ -120,7 +156,10 @@ actor CloudSyncCoordinator {
         await enqueue(restart: !active)
     }
 
-    func identityChanged() async { await enqueue(restart: true) }
+    func identityChanged() async {
+        identityNeedsVerification = true
+        await enqueue(restart: true)
+    }
 
     func confirmAccount(_ target: String, revision displayed: UUID) async {
         guard foreground, service.cloudSyncIntent.requested,
@@ -181,9 +220,13 @@ actor CloudSyncCoordinator {
             case .unknown, .signedOut:
                 await stop()
                 guard current(token) else { return }
-                let input: DataIdentityStatus = if case .signedOut = identity { .signedOut } else { .unknown }
+                let input: DataIdentityStatus
+                if !foreground && !identityNeedsVerification { input = .paused }
+                else if case .signedOut = identity { input = .signedOut }
+                else { input = .unknown }
                 _ = try await runtime.select(input, nil)
                 guard current(token) else { return }
+                if case .signedOut = input { identityNeedsVerification = false }
                 status.activation = status.requested
                     ? .unavailable(String(localized: "暂时无法连接 iCloud，阅读数据同步未完成。")) : .local
             case .confirmed(let account):
@@ -197,6 +240,7 @@ actor CloudSyncCoordinator {
                 let selected = try await runtime.select(.confirmed(account.scope, syncRequested: enabled),
                                                         requested && explicitlyApproved ? account : nil)
                 guard current(token) else { return }
+                identityNeedsVerification = false
                 guard requested else { status.activation = .local; publish(); return }
                 guard enabled, selected.maySync, selected.scope == account.scope else {
                     confirmationCandidate = account
@@ -219,7 +263,11 @@ actor CloudSyncCoordinator {
             guard current(token) else { return }
             await stop()
             guard current(token) else { return }
-            status.activation = .unavailable(String(localized: "暂时无法连接 iCloud，阅读数据同步未完成。"))
+            if error is CloudScopePresentationError {
+                status.activation = .unavailable(String(localized: "请先保存或关闭当前编辑，再切换阅读数据账户。"))
+            } else {
+                status.activation = .unavailable(String(localized: "暂时无法连接 iCloud，阅读数据同步未完成。"))
+            }
             publish()
         }
     }
@@ -285,6 +333,13 @@ extension AppDataService {
     func cloudSyncRequested() -> Bool { cloudSyncIntent.requested }
     func setCloudSyncRequested(_ requested: Bool) { cloudSyncIntent.set(requested) }
     func userCloudOwner() -> String? { sourceDefaults.string(forKey: "Moonread.userOwner") }
+    func isReadingCloudApproved(_ scope: DataScope) -> Bool {
+        guard scope != .local else { return false }
+        if let approved = cloudSyncIntent.approvedScopeKey { return scope.key == approved }
+        // The previous owner proves consent for exactly its released scope.
+        // Keep that provenance key intact for migration and the old bridge.
+        return (try? publishedUserSource().scope) == scope
+    }
     func dataChanged() {
         NotificationCenter.default.post(name: .readingDataChanged, object: nil)
     }

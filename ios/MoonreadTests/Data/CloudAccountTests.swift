@@ -1,8 +1,10 @@
 import CryptoKit
+import GRDB
 import Observation
 import SQLite3
 import SwiftData
 import SwiftUI
+import Synchronization
 import UIKit
 import XCTest
 
@@ -126,12 +128,161 @@ final class CloudAccountCloudAccountTests: XCTestCase {
         try Self.require(await !events.entries.contains("approve-B"), "stale B approval must never merge B")
         await owner.scene(active: false)
         try Self.require(await events.entries.contains("drained-C"), "background drains foreground transport")
-        try Self.require(await events.entries.contains("unknown"), "background suspends current network authority")
+        try Self.require(await events.entries.contains("paused"), "ordinary background suspends only network authority")
+        try Self.require(await !events.entries.contains("unknown"), "ordinary background is not an identity failure")
+        await owner.identityChanged()
+        try Self.require(await events.entries.contains("unknown"), "an account event in background invalidates the confirmed scope")
         await backend.move(.signedOut)
         await owner.scene(active: true)
         let status = await owner.currentStatus()
         try Self.require(status.requested && !status.enabled, "sign-out must preserve explicit sync intent")
         try Self.require(await events.entries.contains("signout"), "explicit signout is distinct from unknown")
+    }
+
+    func testRelationalBindingRechecksD1AndSwitchesWithoutCopyingAccounts() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "SyncBinding-" + UUID().uuidString)
+        let suite = root.lastPathComponent
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite)
+        }
+        let layout = DataLayout(applicationSupport: root)
+        let session = try DataSession(layout: layout)
+        let local = try session.activate(.signedOut).0
+        try session.prepareIndex(root.appending(path: "unused"), token: local)
+        try session.prepareUsers(local) { nil }
+        try session.writeUsers(local) { try $0.execute(sql: "INSERT INTO usr.local_hidden_book VALUES ('fixture')") }
+        let index = ReaderIndex(session: session, lease: local)
+        let service = AppDataService(core: index, libraryDirectory: root, sourceDefaultsSuite: suite)
+        let activity = SyncLifecycleEvents()
+        let a = CloudSyncCoordinator.Account(identity: .init(recordName: "A"),
+            scope: try .confirmed(container: "fixture.invalid", environment: .development, recordName: "A"))
+        let b = CloudSyncCoordinator.Account(identity: .init(recordName: "B"),
+            scope: try .confirmed(container: "fixture.invalid", environment: .development, recordName: "B"))
+        service.cloudSyncIntent.set(true)
+
+        let stale = Task {
+            try await service.selectReadingCloudScope(.confirmed(a.scope, syncRequested: true), approval: a, lookup: {
+                await activity.add("inside-write-gate")
+                await activity.wait("release-stale-lookup")
+                return .confirmed(a)
+            })
+        }
+        await activity.wait("inside-write-gate")
+        try Self.require(await service.userDataOperationBusy, "identity is rechecked inside the user writer gate")
+        stale.cancel()
+        await activity.add("release-stale-lookup")
+        do { _ = try await stale.value; XCTFail("cancelled D1 selected") } catch is CancellationError { }
+        try Self.require(try await service.relationalUserIndex().lease == local, "cancelled D1 retains the local authority")
+        try Self.require(service.cloudSyncIntent.approvedScopeKey == nil, "cancelled D1 never persists consent")
+
+        do {
+            _ = try await service.selectReadingCloudScope(.confirmed(a.scope, syncRequested: true), approval: a,
+                lookup: { .confirmed(b) })
+            XCTFail("changed approval selected")
+        } catch ReaderError.CloudAccountChanged { }
+        let claimed = try await service.selectReadingCloudScope(.confirmed(a.scope, syncRequested: true),
+            approval: a, lookup: { .confirmed(a) })
+        let ownedA = try await service.relationalUserIndex()
+        try Self.require(claimed.scope == a.scope && claimed.maySync && ownedA.session === session, "approved D1 uses the same pool owner")
+        try Self.require(service.cloudSyncIntent.approvedScopeKey == a.scope.key, "persist only exact approved scope")
+        try Self.require(try session.readUsers(ownedA.lease) { try String.fetchOne($0, sql: "SELECT book_key FROM usr.local_hidden_book") } == "fixture",
+                    "D1 data belongs to A")
+
+        let switched = try await service.selectReadingCloudScope(.confirmed(b.scope, syncRequested: false),
+            approval: nil, lookup: { .confirmed(b) })
+        let ownedB = try await service.relationalUserIndex()
+        try Self.require(switched.scope == b.scope && !switched.maySync && ownedB.session === session, "B uses a distinct attached user file")
+        try Self.require(try session.readUsers(ownedB.lease) { try Int.fetchOne($0, sql: "SELECT count(*) FROM usr.local_hidden_book") } == 0,
+                    "A contents cannot be claimed by B")
+        _ = try await service.selectReadingCloudScope(.paused, approval: nil, lookup: { .unknown })
+        try Self.require(await service.verifiedScopePublicationPending == false, "ordinary background keeps the latest confirmed shared scope")
+        let offline = try await service.selectReadingCloudScope(.unknown, approval: nil, lookup: { .unknown })
+        try Self.require(offline.scope == b.scope && !offline.maySync, "temporarily unknown still uses B")
+        try Self.require(await service.verifiedScopePublicationPending == true, "unknown B stays out of shared snapshots")
+        try Self.require(try await service.relationalUserIndex().lease == ownedB.lease, "temporarily unknown does not retire local reads")
+        let signedOut = try await service.selectReadingCloudScope(.signedOut, approval: nil, lookup: { .signedOut })
+        let returnedLocal = try await service.relationalUserIndex()
+        try Self.require(signedOut.scope == .local, "confirmed sign-out selects local")
+        try Self.require(try session.readUsers(returnedLocal.lease) { try Int.fetchOne($0, sql: "SELECT count(*) FROM usr.local_hidden_book") } == 0,
+                    "the committed D1 source cannot be claimed again")
+    }
+
+    @MainActor func testRejectedAccountChangeKeepsDetailDraftUntilOriginalDiscardConfirmation() async throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: "ScopeDraft-" + UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let a = try DataScope.confirmed(container: "fixture.invalid", environment: .development, recordName: "A")
+        let b = try DataScope.confirmed(container: "fixture.invalid", environment: .development, recordName: "B")
+        let session = try DataSession(layout: .init(applicationSupport: root), confirmedLegacyOwner: a)
+        let old = try session.activate(.confirmed(a, syncRequested: false)).0
+        try session.prepareIndex(root.appending(path: "unused"), token: old)
+        try session.prepareUsers(old) { nil }
+        let suite = root.lastPathComponent
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let service = AppDataService(core: .init(session: session, lease: old), libraryDirectory: root, sourceDefaultsSuite: suite)
+        let info = BookInformationModel(service: service)
+        let editors = UserScopeEditors()
+        editors.track(info) { $0.blocksUserScopeChange }
+        let invalidations = Mutex(0)
+        let observer = NotificationCenter.default.addObserver(forName: .readingContinuationInvalidated, object: service, queue: nil) { _ in
+            invalidations.withLock { $0 += 1 }
+        }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        let sha = String(repeating: "a", count: 64)
+        let base = BookMetadata(sha: sha, author: "", synopsis: "", tags: [], cover: nil, status: .unread)
+        let cover = BookCoverAsset(id: UUID().uuidString, sha256: sha, extension: "jpg", width: 1, height: 1)
+        let coverFile = await service.coverDraftURL(cover)
+        try FileManager.default.createDirectory(at: coverFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: coverFile.deletingLastPathComponent()) }
+        let coverBytes = Data([1, 4, 9])
+        try coverBytes.write(to: coverFile)
+        let draft = BookMetadataDraft(base: base, service: service)
+        info.draft = draft
+        service.cloudSyncIntent.set(true)
+        let accountB = CloudSyncCoordinator.Account(identity: .init(recordName: "B"), scope: b)
+        let performHandoff: @MainActor () async throws -> DataScopeSelection = {
+            try await service.selectReadingCloudScope(.confirmed(b, syncRequested: true), approval: accountB,
+                lookup: { .confirmed(accountB) }, beforeRebind: { try editors.requireReady() })
+        }
+        func expectRefusal() async throws {
+            do { _ = try await performHandoff(); XCTFail("dirty editor allowed switch") }
+            catch CloudScopePresentationError.editing { }
+            try Self.require(try await service.relationalUserIndex().lease == old, "refusal cannot replace the lease")
+            try Self.require(invalidations.withLock { $0 } == 0 && info.draft === draft && info.requestRevision == 0,
+                             "refusal cannot invalidate the model, navigation or draft")
+            XCTAssertNil(service.cloudSyncIntent.approvedScopeKey)
+        }
+
+        let coverRead = SyncLifecycleEvents()
+        let preparation = draft.chooseImage { () async -> Data? in await coverRead.wait("release"); return nil }
+        try await expectRefusal()  // Includes loading from the picker, before decoding starts.
+        await coverRead.add("release")
+        await preparation?.value
+
+        draft.saving = true
+        try await expectRefusal()
+        draft.saving = false
+
+        draft.value.author = "fixture author"
+        try await expectRefusal()
+        XCTAssertEqual(draft.value.author, "fixture author")
+        draft.value.author = base.author
+        draft.value.cover = cover
+        try await expectRefusal()  // Cover-only changes are an independent blocker.
+        XCTAssertEqual(draft.value.cover, cover)
+        XCTAssertEqual(try Data(contentsOf: coverFile), coverBytes)
+
+        guard case .confirmDiscard = draft.requestLeave() else { return XCTFail("existing cancel must prompt before discarding") }
+        try await expectRefusal()  // Cancelling the existing alert has no effect.
+        XCTAssertEqual(try Data(contentsOf: coverFile), coverBytes)
+        let discard = draft.cancel()  // Same action as the alert's destructive button.
+        await discard?.value
+        info.draft = nil             // Sheet's binding releases the discarded draft.
+        let selected = try await performHandoff()
+        XCTAssertEqual(selected.scope, b)
+        XCTAssertTrue(selected.maySync)
+        XCTAssertEqual(invalidations.withLock { $0 }, 1)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: coverFile.path))
     }
 }
 
@@ -192,6 +343,8 @@ private actor SyncLifecycleBackend {
             approved.insert(name); await events.add("approve-" + name)
         }
         switch status {
+        case .paused:
+            await events.add("paused"); return .init(scope: a.scope, maySync: false)
         case .unknown:
             await events.add("unknown"); return .init(scope: a.scope, maySync: false)
         case .signedOut:

@@ -97,7 +97,7 @@ extension AppDataService {
             let scope = sourceDefaults.string(forKey: scopeKey) ?? UUID().uuidString
             sourceDefaults.set(scope, forKey: scopeKey)
             systemCatalog = SystemReadingCatalog(file: output, scope: scope,
-                accountPending: cloudSyncRequested() && userCloudOwner() != nil)
+                accountPending: verifiedScopePublicationPending ?? (cloudSyncRequested() && userCloudOwner() != nil))
             if systemCatalog?.accountPending == true { resetSystemReadingCatalog() }
             else { resumeSystemReadingPublication(); refreshSystemWidgetConfigurations() }
         } catch { publishSystemCatalogError(error) }

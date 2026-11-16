@@ -25,6 +25,7 @@ final class LibraryModel {
     var hasUserImportedBooks = false
     var showsImportTip: Bool { Onboarding.shared.enabled && !Onboarding.shared.imported && !hasUserImportedBooks && homeReady && (builtinDiscovery == .notRequired || adoptedDiscoveryRevision == discoveryRevision) }
     var homeRequest = UUID()
+    private(set) var changingUserScope = false
     var automaticRefreshDeferred = false
     var error: String?
     /// A reader that closed with an error reports it here, after its position is saved.
@@ -116,7 +117,7 @@ final class LibraryModel {
     var explicitFileWork: Bool { fileWork != nil }
     var runningFileBatch: Bool { fileWork?.kind == .commands }
     var processingFiles: Bool { if case .running = fileWork?.stage { true } else { false } }
-    var canAcceptFileWork: Bool { fileWork == nil }
+    var canAcceptFileWork: Bool { !changingUserScope && fileWork == nil }
     var afterSheetDismiss: (() -> Void)?
     var pendingDecision: LibraryPendingDecision? {
         if case .awaitingDecision(let decision) = fileWork?.stage { decision } else { nil }
@@ -234,6 +235,36 @@ final class LibraryModel {
     /// Bind before local publication. Account changes invalidate every in-flight snapshot.
     var refreshWork: Task<Void, Never>?
     var refreshAgain = false
+    func prepareUserScopeChange() async throws {
+        try systemReading.requireUserScopeEditorsReady()
+        switch sheet {
+        case .rename, .create: throw CloudScopePresentationError.editing
+        default: break
+        }
+        changingUserScope = true
+        try await systemReading.prepareForUserScopeChange()
+        try Task.checkCancellation()
+        for request in systemImports { request.files.forEach { $0.finish() } }
+        systemImports.removeAll()
+        cancelFilePicker(); cancelFileWork()
+        if fullIndex.shelfID != nil { fullIndex.cancel() }
+        await MetadataExchangeModel.shared.prepareUserScopeChange()
+        await waitForFileWork()
+        await fullIndex.waitForCompletion()
+        try systemReading.requireUserScopeEditorsReady()
+        homeRequest = UUID()
+    }
+
+    func finishUserScopeChange(rebound: Bool) {
+        if rebound {
+            libraryPath = []; statisticsPath = []; searchPath = []; settingsNavigation.path = []
+            sheet = nil; indexPrompt = nil; deferredIndexPrompt = nil
+            releaseImportFailures()
+            MetadataExchangeModel.shared.invalidateUserScope()
+        }
+        changingUserScope = false
+        systemReading.finishUserScopeChange()
+    }
     func chooseFiles(_ picker: LibraryFilePicker) {
         guard canAcceptFileWork else { _ = rejectFileWork(); return }
         filePicker = picker; filePickerPresented = true

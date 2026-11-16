@@ -42,6 +42,11 @@ extension AppDataService {
     /// The relational writer and fixed reads must use this prepared capability.
     func relationalUserIndex() throws -> ReaderIndex {
         let index = try indexStore()
+        try prepareUserIndex(index)
+        return index
+    }
+
+    func prepareUserIndex(_ index: ReaderIndex) throws {
         try index.session.prepareUsers(index.lease) {
             let source = try publishedUserSource()
             guard source.scope == index.lease.scope else { return nil }
@@ -62,7 +67,6 @@ extension AppDataService {
                deviceState.hidden.isEmpty, deviceState.preferred.isEmpty, deviceState.resume.isEmpty { return nil }
             return snapshot
         }
-        return index
     }
 
     /// The root cannot mount normal reading, settings or import views before
@@ -77,7 +81,7 @@ extension AppDataService {
     }
 
     func startUserRecovery() {
-        guard !recoveredImports, recoveryTask == nil else { return }
+        guard !changingUserScope, !recoveredImports, recoveryTask == nil else { return }
         recoveryTask = Task { [weak self] in await self?.recoverUserImports() }
     }
     func waitForUserRecovery() async { await recoveryTask?.value }

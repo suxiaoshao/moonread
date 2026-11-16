@@ -120,6 +120,7 @@ struct AIMetadataResultReview: View {
                 }.themeScope(theme)
             }
         }
+        .userScopeEditingPresentation()
     }
     private func renameContent(_ rename: AIMetadataRenameReview) -> some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -254,6 +255,7 @@ private struct AIMetadataTextEditor: View {
                     ToolbarItem(placement: .confirmationAction) { SystemToolbarButton("完成", role: .confirm) { save(text); dismiss() } }
                 }.onAppear { text = edit.text }
         }
+        .userScopeEditingPresentation()
     }
 }
 

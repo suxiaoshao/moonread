@@ -39,6 +39,7 @@ extension LibraryModel {
         for (file, _) in work.imports { file.finish() }; work.imports = []
         for command in work.commands { if case .receive(let file, _) = command { file.finish() } }
         work.commands = []; fileWork = nil
+        guard !changingUserScope else { return }
         if !systemImports.isEmpty {
             let next = systemImports.removeFirst()
             startImport(next.files, at: next.location, completion: next.files.count == 1 ? .openSingle : .showFolder)
