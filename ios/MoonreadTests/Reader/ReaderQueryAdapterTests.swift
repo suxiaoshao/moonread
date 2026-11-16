@@ -49,20 +49,25 @@ final class ReaderQueryAdapterRecentReadingRestorationTests: RecentReadingRestor
 final class LibraryFixedQueryAdapterTests: XCTestCase {
   private static let location = LibraryLocation(shelfID: "builtin")
 
-  private func withFolder(_ exercise: (ReaderIndex) throws -> Void) throws {
-    let root = FileManager.default.temporaryDirectory.appending(path: "FolderTests-\(UUID())")
-    defer { try? FileManager.default.removeItem(at: root) }
+  private func prepareFolder(at root: URL) throws -> ReaderIndex {
     let fixtureBundle = Bundle(for: Self.self)
     let resources: Bundle = fixtureBundle.url(forResource: "schema", withExtension: "sql") == nil ? .main : fixtureBundle
     let session = try DataSession(layout: .init(applicationSupport: root), bundle: resources)
     let lease = try session.activate(.unknown).0
-    defer { try? session.close() }
     try session.prepareIndex(root.appending(path: "reader.sqlite3"), token: lease)
     try session.prepareUsers(lease) { nil }
     let index = ReaderIndex(session: session, lease: lease)
     try session.writeIndex(lease) { db in
       try db.execute(sql: "INSERT INTO main.library_shelves VALUES('builtin','Fixture',X'','local',1,NULL)")
     }
+    return index
+  }
+
+  private func withFolder(_ exercise: (ReaderIndex) throws -> Void) throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "FolderTests-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let index = try prepareFolder(at: root)
+    defer { try? index.session.close() }
     try exercise(index)
   }
 
@@ -86,8 +91,8 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
       """, arguments: [id,path,parent,name ?? id,key == nil,key == nil ? 0 : text.utf8.count,bodyID])
   }
 
-  private static func chapterZero(_ db: Database, key: String, title: String) throws {
-    let value = ChapterValue(content_key: key, offset: 0, title: title, level: 0, excluded: false)
+  private static func chapterZero(_ db: Database, key: String, title: String, level: UInt32 = 0) throws {
+    let value = ChapterValue(content_key: key, offset: 0, title: title, level: level, excluded: false)
     try UserValueRows.put(db, key: .init("chapter/\(key)/0"), value: UserSyncJSON.encode(value), device: "fixture", now: 1)
   }
 
@@ -291,6 +296,157 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
     await old.value
     XCTAssertEqual(store.snapshot?.grouping, .tags)
     XCTAssertEqual(store.snapshot?.shelfID, "second", "A superseded read cannot publish over the new shelf")
+  }
+
+  func testFixedBookInformationKeepsPublishedSourceOrderAndPartialIdentity() throws {
+    try withFolder { index in
+      let sha = String(repeating: "a", count: 64), indexed = String(repeating: "b", count: 64)
+      let raw = String(repeating: "c", count: 64)
+      let target = BookTarget.record(key: .formal(sha256: sha))
+      try index.session.writeUsers(index.lease) { db in
+        try Self.addFile(db, id: "direct", path: "a.txt", key: sha, name: "a.txt")
+        try db.execute(sql: """
+          INSERT INTO main.library_files(id,shelf_id,relative_path,parent_path,name,directory,size,modified,needs_download,book_id)
+          VALUES('copy','builtin','z-copy.txt','','z-copy.txt',0,13,100,1,'body-direct'),
+                ('relinked','builtin','indexed.txt','','indexed.txt',0,13,200,0,'body-direct'),
+                ('loose','builtin','loose.txt','','loose.txt',0,12,0,0,NULL)
+          """)
+        try db.execute(sql: "INSERT INTO main.source_identities VALUES(?,'auto',?,'utf-8',42,40)",arguments:[raw,indexed])
+        try db.execute(sql: "INSERT INTO main.library_identities VALUES('relinked',?,'auto',13,200)",arguments:[raw])
+        try Self.metadata(db, book: sha, field: "synopsis", value: "\"Full details\"")
+        try Self.metadata(db, book: indexed, field: "author", value: "\"Index author\"")
+        try Self.chapterZero(db, key: sha, title: "Manual heading", level: 1)
+      }
+      let unread = try index.bookInformation(target, includeRecordSource: true).resolved()
+      XCTAssertEqual(unread.0?.id, "copy", "Unread copies sort by modified time; a mismatched cached body is excluded")
+      XCTAssertEqual(unread.0?.needsDownload, true)
+      XCTAssertEqual(try unread.1.requireIdentified().metadata.status, .unread)
+      try index.session.writeUsers(index.lease) { db in
+        _ = try ReadingPositionRows.recordPosition(db, book: sha, offset: 3, hint: nil,
+          file: "copy", device: "fixture", now: 20, token: "read")
+      }
+      let read = try index.bookInformation(target, includeRecordSource: true).resolved()
+      XCTAssertEqual(read.0?.id, "direct", "Copies share reading time; natural order wins over preference")
+      XCTAssertEqual(read.0?.positionUtf8, 3)
+      XCTAssertEqual(read.0?.byteCount, 13)
+      XCTAssertNil(read.0?.metadata)
+      XCTAssertNil(read.0?.chapterTitle)
+      let details = try read.1.requireIdentified()
+      XCTAssertEqual(details.metadata.synopsis, "Full details")
+      XCTAssertEqual(details.metadata.status, .reading)
+      XCTAssertEqual(details.body?.wordCount, 11)
+      XCTAssertEqual(details.body?.chapterCount, 1)
+      XCTAssertEqual(details.body?.currentChapter, "Manual heading")
+      let explicit = try index.bookInformation(target, fileID: "copy", includeRecordSource: true).resolved()
+      XCTAssertEqual(explicit.0?.id, "copy")
+      XCTAssertEqual(explicit.0?.preferred, true)
+      XCTAssertNil(try index.bookInformation(target).resolved().0, "Reader-origin detail does not choose a copy")
+      let relinked = try index.bookInformation(.file(fileId: "relinked"), fileID: "relinked").resolved()
+      let indexedDetails = try relinked.1.requireIdentified()
+      XCTAssertNil(indexedDetails.body)
+      XCTAssertEqual(indexedDetails.metadata.sha, indexed)
+      XCTAssertEqual(indexedDetails.metadata.author, "Index author")
+      XCTAssertEqual(relinked.0?.byteCount, 42)
+      let loose = try index.bookInformation(.file(fileId: "loose"), fileID: "loose").resolved()
+      XCTAssertEqual(loose.0?.id, "loose")
+      guard case .unidentified(let id) = loose.1 else { return XCTFail("A real unindexed file retains its action envelope") }
+      XCTAssertEqual(id, "loose")
+      assertMissingDetails(try index.bookInformation(.file(fileId: "vanished")).resolved().1)
+      XCTAssertThrowsError(try index.bookInformation(target, fileID: "vanished").resolved()) { error in
+        guard case ReaderError.NotFound = error else { return XCTFail("Missing explicit source: \(error)") }
+      }
+    }
+  }
+
+  private func assertMissingDetails(_ result: BookDetailsResult) {
+    guard case .missing = result else { return XCTFail("Expected missing identity") }
+  }
+
+  func testFixedBookInformationKeepsChosenMetadataAndFormalBarrier() throws {
+    try withFolder { index in
+      let sha = String(repeating: "a", count: 64)
+      let target = BookTarget.cached(bookId: "body-direct")
+      try index.session.writeUsers(index.lease) { db in
+        try Self.addFile(db, id: "direct", path: "a.txt", key: sha)
+        try Self.metadata(db, book: sha, field: "author", value: "\"Formal author\"")
+        try Self.metadata(db, book: sha, field: "tag-1", value: "\"Formal tag\"")
+        try db.execute(sql: """
+          INSERT INTO usr.metadata_text_candidate
+          VALUES(1,'detail-pending-synopsis',1,?,?,'synopsis','fixture',7,'pending','Pending synopsis')
+          """, arguments: [sha,"metadata/"+sha+"/synopsis"])
+        try CurrentUserRows.settleMetadata(db, book: sha)
+      }
+      let shown = try index.bookInformation(target).resolved().1.requireIdentified()
+      XCTAssertEqual(shown.metadata.synopsis, "Pending synopsis")
+      XCTAssertEqual(shown.metadata.author, "")
+      XCTAssertTrue(shown.metadata.tags.isEmpty)
+      try index.session.writeUsers(index.lease) { db in
+        try db.execute(sql: """
+          INSERT INTO usr.quarantined_record(partition,source,source_id,source_type,record_id,book_key,logical_key,
+              raw_format,raw_bytes,digest,reason,completeness)
+          VALUES(0,'fixture','formal','metadata_text_candidate','future',?,?,'fixture',X'00','opaque','future','complete')
+          """, arguments: [sha,"metadata/"+sha+"/author"])
+        try CurrentUserRows.settleMetadata(db, book: sha)
+      }
+      let barrier = try index.bookInformation(target)
+      guard case .incompatibleMetadata = barrier else { return XCTFail("Formal isolation also blocks a readable pending object") }
+      XCTAssertThrowsError(try barrier.resolved()) { XCTAssertTrue($0 is UserSyncCompatibilityError) }
+      try index.session.writeUsers(index.lease) { db in
+        try db.execute(sql: "DELETE FROM usr.quarantined_record WHERE record_id='future'")
+        try CurrentUserRows.settleMetadata(db, book: sha)
+      }
+      XCTAssertEqual(try index.bookInformation(target).resolved().1.requireIdentified().metadata.synopsis, "Pending synopsis")
+    }
+  }
+
+  @MainActor func testBookInformationObservationSurvivesFormalIsolation() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "InformationTests-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let index = try prepareFolder(at: root)
+    defer { try? index.session.close() }
+    let sha = String(repeating: "a", count: 64)
+    try index.session.writeUsers(index.lease) { db in
+      try Self.addFile(db, id: "direct", path: "a.txt", key: sha)
+      try Self.metadata(db, book: sha, field: "author", value: "\"Formal author\"")
+    }
+    let service = AppDataService(core: index)
+    let updates = try await service.bookInformationUpdates(.file(fileId: "direct"), fileID: "direct", includeRecordSource: true)
+    let initial = expectation(description: "detail snapshot")
+    let blocked = expectation(description: "formal isolation result")
+    let restored = expectation(description: "repaired snapshot from the same observation")
+    let observing = Task {
+      do {
+        var iterator = updates.makeAsyncIterator()
+        let firstValue = try await iterator.next()
+        let first = try XCTUnwrap(firstValue)
+        XCTAssertEqual(try first.resolved().1.requireIdentified().metadata.author, "Formal author")
+        initial.fulfill()
+        let isolatedValue = try await iterator.next()
+        let isolated = try XCTUnwrap(isolatedValue)
+        guard case .incompatibleMetadata = isolated else { return XCTFail("Formal isolation must hide prior editable data") }
+        blocked.fulfill()
+        let recoveredValue = try await iterator.next()
+        let recovered = try XCTUnwrap(recoveredValue)
+        XCTAssertEqual(try recovered.resolved().1.requireIdentified().metadata.author, "Restored author")
+        restored.fulfill()
+      } catch { XCTFail(String(describing: error)) }
+    }
+    defer { observing.cancel() }
+    await fulfillment(of: [initial], timeout: 2)
+    try index.session.writeUsers(index.lease) { db in
+      try db.execute(sql: """
+        INSERT INTO usr.quarantined_record(partition,source,source_id,source_type,record_id,book_key,logical_key,
+            raw_format,raw_bytes,digest,reason,completeness)
+        VALUES(0,'fixture','formal','metadata_text_candidate','future',?,?,'fixture',X'00','opaque','future','complete')
+        """, arguments: [sha,"metadata/"+sha+"/author"])
+      try CurrentUserRows.settleMetadata(db, book: sha)
+    }
+    await fulfillment(of: [blocked], timeout: 2)
+    try index.session.writeUsers(index.lease) { db in
+      try db.execute(sql: "DELETE FROM usr.quarantined_record WHERE record_id='future'")
+      try Self.metadata(db, book: sha, field: "author", value: "\"Restored author\"", now: 2)
+    }
+    await fulfillment(of: [restored], timeout: 2)
   }
 
 }
@@ -605,52 +761,6 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
     try core.linkLibraryFile(fileId: file.id, bookId: second.id)
     let after = try await service.recentLibrary(1)
     XCTAssertEqual(after.map(\.readingIdentity), [.formal(sha256: second.fixtureSHA256)])
-  }
-
-  @MainActor func testInformationSourceUsesDirectoryOrderAndHonorsExplicitFile() async throws {
-    let (root, service, core, formal, _, book, _, suite) = try singleBookFixture()
-    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
-    let key = ReadingKey.formal(sha256: book.fixtureSHA256)
-    let initial = try core.querySnapshot(json: "{}").allLibraryBooks(shelfId: "builtin")
-    try core.scanLibraryShelf(shelfId: "builtin", items: initial.map {
-      .init(relativePath: $0.relativePath, directory: false, size: $0.size, modified: $0.modified, needsDownload: $0.needsDownload)
-    } + [.init(relativePath: "z-copy.txt", directory: false, size: book.byteCount, modified: 100, needsDownload: true)])
-    let files = try core.sourceFiles(shelfId: "builtin")
-    let first = try XCTUnwrap(files.first { $0.relativePath == "a.txt" })
-    let copy = try XCTUnwrap(files.first { $0.relativePath == "z-copy.txt" })
-    try core.linkLibraryFile(fileId: copy.id, bookId: book.id)
-    try await formal.put("metadata/\(book.fixtureSHA256)/synopsis", value: "\"Full details remain available\"", device: "fixture")
-    let route = StatisticsRoute(target: .record(key: key), title: "Synthetic")
-    let model = BookInformationModel(service: service)
-    await model.load(route)
-    XCTAssertEqual(model.entry?.id, copy.id, "Unread copies follow modification time")
-    XCTAssertEqual(model.entry?.needsDownload, true)
-
-    try await service.savePosition(bookID: book.id, offset: 12)
-    UserDefaults(suiteName: suite)?.set(copy.id, forKey: "Moonread.preferredFile." + book.fixtureSHA256)
-    let old = try await service.libraryEntries(nil).first { $0.readingIdentity == key }
-    await model.load(route)
-    XCTAssertEqual(old?.id, first.id)
-    XCTAssertEqual(model.entry?.id, old?.id, "Details uses natural name after the shared reading time, not the preferred copy")
-    XCTAssertEqual(model.entry?.positionUtf8, old?.positionUtf8)
-    XCTAssertEqual(model.entry?.byteCount, old?.byteCount)
-    XCTAssertNil(model.entry?.metadata)
-    XCTAssertNil(model.entry?.chapterTitle)
-    XCTAssertEqual(model.details?.metadata.synopsis, "Full details remain available")
-    XCTAssertNotNil(model.details?.currentChapter)
-    XCTAssertFalse(model.chapters.isEmpty)
-    XCTAssertNil(model.error)
-
-    await model.load(.init(target: .file(fileId: copy.id), title: "Explicit"))
-    XCTAssertEqual(model.entry?.id, copy.id)
-    await model.load(.init(target: route.target, title: route.title, origin: .reader()))
-    XCTAssertNil(model.entry)
-    XCTAssertNotNil(model.details)
-
-    try await formal.receiveSyncFixture("value", key: "metadata/\(book.fixtureSHA256)/synopsis", payload: "{\"v\":2}")
-    await model.load(route)
-    XCTAssertNil(model.details)
-    XCTAssertNotNil(model.error, "The actual details read still enforces the formal metadata barrier")
   }
 
   @MainActor func testCancelledQueryDoesNotPublishCacheOrRestartAndSharedInitializationSurvives() async throws {

@@ -64,12 +64,7 @@ extension BookDetailsResult {
 
 extension AppDataService {
     func bookDetails(_ target: BookTarget) async throws -> BookDetailsResult {
-        let result = try await readingQuery(.book(target), options: .init(scope: "book-details", fields: [.position, .metadata, .chapter]))
-            .bookDetails(target: target)
-        if case .identified(_, let details) = result {
-            try await userStore().requireMetadataReadable(key: details.metadata.sha)
-        }
-        return result
+        try await bookInformation(target, fileID: nil, includeRecordSource: false).1
     }
     func details(bookID: String) async throws -> BookDetails {
         try await bookDetails(.cached(bookId: bookID)).requireIdentified()

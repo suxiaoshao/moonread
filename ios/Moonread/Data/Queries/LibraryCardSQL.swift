@@ -20,8 +20,13 @@ enum LibraryCardSQL {
     }
 
     static func currentFiles(scopeParameter: String, includeCardPosition: Bool) -> String {
+        fileIdentities(scopeParameter: scopeParameter, includeNames: includeCardPosition)
+            + ", " + currentPositions(scopeParameter: scopeParameter, includeCardPosition: includeCardPosition)
+    }
+
+    /// The caller declares identity_keys(book_key) for the fixed scope.
+    static func currentPositions(scopeParameter: String, includeCardPosition: Bool) -> String {
         """
-        \(fileIdentities(scopeParameter: scopeParameter, includeNames: includeCardPosition)),
         aliases AS MATERIALIZED (
             \(ReaderIndex.verifiedReadingAliasPairs(scopeParameter: scopeParameter))
             AND b.content_sha256 IN (SELECT book_key FROM identity_keys)

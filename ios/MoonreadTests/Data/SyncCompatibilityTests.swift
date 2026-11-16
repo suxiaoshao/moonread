@@ -1,4 +1,5 @@
 import CryptoKit
+import GRDB
 import SwiftData
 import SwiftUI
 import UIKit
@@ -458,7 +459,7 @@ final class SyncCompatibilityTests: UserDataFixture {
 
   // S493: 不兼容事实使对应编辑/统计只读且显式说明，不展示陈旧可写回退；阅读仍可继续，按作用域各一小输入。
   @MainActor func testSyncFutureMetadataIsNotOfferedAsAnEditableFallback() async throws {
-    let (root, service, book, store) = try await editorFixture()
+    let (root, service, book, _) = try await editorFixture()
     defer { try? FileManager.default.removeItem(at: root) }
     let model = BookInformationModel(
       readInformation: { _ in (nil, try await service.bookDetails(.cached(bookId: book.id))) },
@@ -469,8 +470,16 @@ final class SyncCompatibilityTests: UserDataFixture {
     let payload = try UserSyncJSON.encode(
       StoredValue(updated: 1, token: "future", value: "\"Future author\""), envelope: true)
     let future = try syncJSON(payload) { $0["v"] = 2 }
-    try await store.receiveSyncFixture(
-      "value", key: "metadata/" + book.fixtureSHA256 + "/author", payload: future)
+    let index = try await service.relationalUserIndex(), sha = book.fixtureSHA256
+    let raw = Data(future.utf8)
+    try index.session.writeUsers(index.lease) { db in
+      try db.execute(sql: """
+        INSERT INTO usr.quarantined_record(partition,source,source_id,source_type,record_id,book_key,logical_key,
+            raw_format,raw_bytes,digest,reason,completeness)
+        VALUES(0,'fixture','formal','metadata_text_candidate','future-book-author',?,?,'fixture',?,'future','future','complete')
+        """, arguments: [sha,"metadata/"+sha+"/author",raw])
+      try CurrentUserRows.settleMetadata(db, book: sha)
+    }
     await model.load(target)
     XCTAssertNil(model.details)
     XCTAssertNil(model.draft)

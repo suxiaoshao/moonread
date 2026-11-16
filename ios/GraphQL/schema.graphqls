@@ -2,6 +2,7 @@ scalar UInt64
 scalar Int64
 
 type Query {
+  bookInformation(target: InformationTarget!, sourceFileID: ID, includeRecordSource: Boolean!): BookInformation!
   shelfBookCards(shelfID: ID!): [ShelfBookCard!]!
   shelfTagGroups(shelfID: ID!): [ShelfTagGroup!]!
   folderPage(shelfID: ID!, path: String!): [FolderEntry!]!
@@ -142,4 +143,58 @@ type ShelfTagGroup {
   kind: ShelfTagKind!
   tag: String!
   fileIDs: [ID!]!
+}
+
+input InformationTarget {
+  fileID: ID
+  bookID: ID
+  readingKey: ID
+}
+
+enum BookInformationKind {
+  MISSING
+  UNIDENTIFIED
+  PENDING
+  IDENTIFIED
+}
+
+type BookInformation {
+  kind: BookInformationKind!
+  fileID: ID
+  readingKey: ID
+  aliases: [ID!]!
+  body: InformationBody
+  metadata: InformationMetadata
+  sources: [InformationSource!]!
+}
+
+type InformationBody {
+  id: ID!
+  title: String!
+  encoding: String!
+  byteCount: UInt64!
+  chunkCount: Int!
+  position: UInt64!
+  wordCount: UInt64!
+  chapterCount: UInt64!
+  currentChapter: String
+}
+
+type InformationMetadata {
+  author: String!
+  synopsis: String!
+  status: String
+  hasPosition: Boolean!
+  tags: [String!]!
+  cover: RecentReadingCover
+}
+
+type InformationSource {
+  file: RecentReadingFile!
+  readingKey: ID
+  bodyID: ID
+  position: UInt64!
+  lastRead: Int64!
+  byteCount: UInt64!
+  preferred: Boolean!
 }

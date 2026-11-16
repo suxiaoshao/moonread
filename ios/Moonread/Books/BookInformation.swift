@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import PhotosUI
 import UniformTypeIdentifiers
 
@@ -55,15 +56,26 @@ final class BookInformationModel {
     private(set) var loadedIdentity: Identity?
     private var requestedIdentity: Identity?
     private var loadRevision = UUID()
+    private var observingRevision: UUID?
+    private(set) var requestRevision = 0
+    @ObservationIgnored private var accountChange: AnyCancellable?
     @ObservationIgnored private let service: AppDataService
     @ObservationIgnored private let readInformation: @MainActor (StatisticsRoute) async throws -> (LibraryEntry?, BookDetailsResult)
-    @ObservationIgnored private let readChapters: @MainActor (String) async throws -> [ChapterEntry]
+    // Coverage is a separate §13.5 consumer. The boundary remains usable
+    // independently of the information read (including existing test fixtures).
+    @ObservationIgnored private let readChapters: (@MainActor (String) async throws -> [ChapterEntry])?
     init(service: AppDataService = .shared,
          readInformation: (@MainActor (StatisticsRoute) async throws -> (LibraryEntry?, BookDetailsResult))? = nil,
          readChapters: (@MainActor (String) async throws -> [ChapterEntry])? = nil) {
         self.service = service
         self.readInformation = readInformation ?? { try await Self.read($0, service: service) }
-        self.readChapters = readChapters ?? { try await service.chapters($0).items }
+        self.readChapters = readChapters
+        accountChange = MainActorNotifications.observe(.readingContinuationInvalidated, object: service) { [weak self] in
+            guard let self else { return }
+            loadRevision = UUID(); observingRevision = nil
+            clearInformation()
+            requestRevision &+= 1
+        }
     }
     private static func read(_ route: StatisticsRoute, service: AppDataService) async throws -> (LibraryEntry?, BookDetailsResult) {
         try await service.bookInformation(route.target, fileID: route.fileID, includeRecordSource: !route.fromReader)
@@ -74,29 +86,75 @@ final class BookInformationModel {
         return details?.metadata.sha
     }
     func matches(_ route: StatisticsRoute) -> Bool { loadedIdentity == Identity(route) }
-    func load(_ route: StatisticsRoute) async {
-        let identity = Identity(route), revision = UUID()
+    private func clearInformation() {
+        loadedIdentity = nil
+        task?.cancel(); task = nil
+        draft?.cancel()
+        preparation = .idle
+        entry = nil; resolution = nil; chapters = []; error = nil
+    }
+
+    private func begin(_ identity: Identity) -> UUID {
+        let revision = UUID()
         loadRevision = revision
         if requestedIdentity != identity {
-            requestedIdentity = identity; loadedIdentity = nil
-            task?.cancel(); task = nil; preparation = .idle
-            entry = nil; resolution = nil; chapters = []; error = nil
+            clearInformation()
+            requestedIdentity = identity
         }
+        return revision
+    }
+
+    private func accepts(_ identity: Identity, revision: UUID) -> Bool {
+        loadRevision == revision && requestedIdentity == identity && !Task.isCancelled
+    }
+
+    private func publish(_ value: (LibraryEntry?, BookDetailsResult), identity: Identity) {
+        entry = value.0; resolution = value.1; loadedIdentity = identity
+        if case .missing = value.1 { error = ReaderMessages.error(ReaderError.NotFound) }
+        else { error = nil }
+    }
+
+    private func publishError(_ failure: Error) {
+        if failure is UserSyncCompatibilityError {
+            clearInformation()
+        }
+        error = ReaderMessages.error(failure)
+    }
+
+    func retryInformation() { requestRevision &+= 1 }
+
+    func observe(_ route: StatisticsRoute) async {
+        let identity = Identity(route), revision = begin(identity)
+        observingRevision = revision
+        defer { if observingRevision == revision { observingRevision = nil } }
         do {
-            let (entry, details) = try await readInformation(route)
-            guard loadRevision == revision, requestedIdentity == identity, !Task.isCancelled else { return }
-            self.entry = entry; resolution = details; loadedIdentity = identity; error = nil
-            if case .missing = details { error = ReaderMessages.error(ReaderError.NotFound); return }
-            if let book = readableBook {
+            let updates = try await service.bookInformationUpdates(route.target, fileID: route.fileID,
+                                                                  includeRecordSource: !route.fromReader)
+            for try await update in updates {
+                guard accepts(identity, revision: revision) else { return }
+                do { publish(try update.resolved(), identity: identity) }
+                catch {
+                    if case .missingSource = update { clearInformation() }
+                    publishError(error)
+                }
+            }
+        } catch is CancellationError { }
+        catch { if accepts(identity, revision: revision) { publishError(error) } }
+    }
+
+    func load(_ route: StatisticsRoute) async {
+        let identity = Identity(route), revision = begin(identity)
+        do {
+            let value = try await readInformation(route)
+            guard accepts(identity, revision: revision) else { return }
+            publish(value, identity: identity)
+            if let readChapters, let book = readableBook {
                 let chapters = try await readChapters(book.id)
-                guard loadRevision == revision, requestedIdentity == identity, !Task.isCancelled else { return }
+                guard accepts(identity, revision: revision) else { return }
                 self.chapters = chapters
-            } else { self.chapters = [] }
-        } catch {
-            guard loadRevision == revision, requestedIdentity == identity, !Task.isCancelled else { return }
-            self.error = ReaderMessages.error(error)
-            if error is UserSyncCompatibilityError { resolution = nil; draft = nil }
-        }
+            } else { chapters = [] }
+        } catch is CancellationError { }
+        catch { if accepts(identity, revision: revision) { publishError(error) } }
     }
 
     func edit(_ route: StatisticsRoute) {
@@ -169,6 +227,7 @@ final class BookInformationModel {
         var edited = base; edited.status = status
         do {
             try await service.saveMetadata(base: base, edited: edited)
+            if observingRevision == loadRevision { return }
             let next = try await service.bookDetails(identity.target)
             guard loadedIdentity == identity, !Task.isCancelled else { return }
             resolution = next
@@ -439,7 +498,7 @@ struct BookInformationSections: View {
             }
             if let error = model.error, model.details == nil {
                 Label(error, systemImage: "exclamationmark.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.destructive))
-                Button("重试") { Task { await model.load(target) } }
+                Button("重试") { model.retryInformation() }
             } else if model.matches(target), model.contentSHA(for: target) == nil {
                 Label("正文身份尚未确定", systemImage: "info.circle").font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
             } else if model.details == nil { ProgressView() }

@@ -95,6 +95,15 @@ enum ReaderChapterRead {
             """, arguments: [body.id, body.sha, range.startUtf8, range.endUtf8]).map(heading)
     }
 
+    static func chapterCount(_ db: Database, body: ReaderIndex.Body) throws -> UInt64 {
+        try UInt64.fetchOne(db, sql: """
+            SELECT count(*) FROM (
+                \(detected(body: "?1", key: "?2"))
+                UNION ALL \(manual(body: "?1", key: "?2"))
+            ) WHERE level=1
+            """, arguments: [body.id,body.sha]) ?? 0
+    }
+
     static func fetchStructure(_ db: Database, body: ReaderIndex.Body) throws -> Structure {
         // A completed alias uses its canonical body's index and completeness.
         let complete = try Bool.fetchOne(db, sql: """

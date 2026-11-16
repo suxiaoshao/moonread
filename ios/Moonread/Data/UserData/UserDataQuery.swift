@@ -25,7 +25,6 @@ extension AppDataService {
         case fixed(records: RecordSelection, facts: FactsSelection)
         case book(BookTarget, facts: Bool = false)
         case catalogue(CatalogueScope)
-        case catalogueRecord(String)
         case directoryActivity(CatalogueScope)
         case directoryDetails(direct: [ReadingKey], covers: [ReadingKey])
 
@@ -102,52 +101,6 @@ extension AppDataService {
             return ([read], UserQueryOutput(query: read.query, statisticsIncomplete: read.statisticsIncomplete,
                 statisticsVersion: read.signature.statisticsVersion, resolution: read.signature.selection.resolution))
         }
-    }
-
-    func bookInformation(_ target: BookTarget, fileID: String?, includeRecordSource: Bool) async throws
-        -> (LibraryEntry?, BookDetailsResult) {
-        let (entry, details, blocked, missingSource): (LibraryEntry?, BookDetailsResult, Bool, Bool) =
-            try await withValidQueryInputs(scope: "book-information") {
-                guard let detail = try await queryAttempt(.book(target),
-                    options: .init(scope: "book-information", fields: [.position, .metadata, .chapter]),
-                    diagnostic: nil) else { return nil }
-                let details = try detail.query.bookDetails(target: target)
-                if case .missing = details { return ([detail], (nil, details, false, false)) }
-                if case .identified(_, let value) = details, detail.formalBlockedMetadata.contains(value.metadata.sha) {
-                    return ([detail], (nil, details, true, false))
-                }
-
-                let sourceTarget: BookTarget
-                let source: UserQuerySource
-                if let fileID {
-                    sourceTarget = .file(fileId: fileID)
-                    source = .book(sourceTarget)
-                } else if includeRecordSource,
-                          case .identified(let identity, _) = details,
-                          case .associated = identity.body,
-                          case .formal(let sha) = identity.key {
-                    sourceTarget = .record(key: identity.key)
-                    source = .catalogueRecord(sha)
-                } else {
-                    return ([detail], (nil, details, false, false))
-                }
-                let sourceRead: UserQueryRead
-                if sourceTarget == target, case .file = target {
-                    sourceRead = detail
-                } else {
-                    guard let scoped = try await queryAttempt(source,
-                        options: .init(scope: "book-information-source", fields: .position), diagnostic: nil)
-                    else { return nil }
-                    sourceRead = scoped
-                }
-                let entry = try sourceRead.query.bookInformationSource(target: sourceTarget)
-                let missingSource = fileID != nil && entry == nil
-                return (sourceRead.query === detail.query ? [detail] : [detail, sourceRead],
-                        (entry, details, false, missingSource))
-            }
-        if blocked { throw UserSyncCompatibilityError() }
-        if missingSource { throw ReaderError.NotFound }
-        return (entry, details)
     }
 
     func libraryCatalogueSearch(_ scope: CatalogueScope, spec: LibraryQueryRules.SearchSpec) async throws -> LibraryQueryRules.SearchOutcome {
@@ -264,8 +217,6 @@ extension AppDataService {
             return .init(records: .only(keys), facts: facts ? .only(keys) : .none, resolution: resolution)
         case let .catalogue(scope), let .directoryActivity(scope):
             return .init(records: .only(try sorted(core.catalogueContentKeys(scope: scope))), facts: .none)
-        case let .catalogueRecord(sha):
-            return .init(records: .only(try sorted(core.catalogueRecordKeys(sha: sha))), facts: .none)
         case let .directoryDetails(direct, covers):
             return .init(records: .only(sorted(direct + covers)), facts: .none,
                          coverOnly: Set(covers.map(\.storageKey)).subtracting(direct.map(\.storageKey)))

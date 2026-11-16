@@ -14,7 +14,6 @@ struct StatisticsView: View {
     @State private var showAllBooks = false
     @State private var openedDay: StatisticsDayRoute?
     @State private var deleteBook = false
-    @State private var visible = false
     @State private var information = BookInformationModel()
     @State private var positionedAtReading = false
     @State private var aiRequest: AIQuickTaskRequest?
@@ -60,10 +59,10 @@ struct StatisticsView: View {
                 withTransaction(transaction) { proxy.scrollTo("myReading", anchor: .top) }
             }
         }
-        .task(id: target.map(BookInformationModel.Identity.init)) {
-            if let target { await information.load(target) }
+        .task(id: InformationRequest(identity: target.map(BookInformationModel.Identity.init), revision: information.requestRevision)) {
+            if let target { await information.observe(target) }
         }
-        .sheet(item: $information.draft, onDismiss: { Task { if let target { await information.load(target) } } }) { draft in
+        .sheet(item: $information.draft) { draft in
             BookMetadataEditor(draft: draft, title: information.entry?.title ?? target?.title ?? "").themeScope(theme)
                 .readerToolPresentation()
         }
@@ -84,24 +83,15 @@ struct StatisticsView: View {
             Button("知道了", role: .cancel) { information.error = nil }
         } message: { Text(information.error ?? "") }
         .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { _ in
-            Task { if let target { await information.load(target) }; await library.reloadBooks() }
+            Task { await library.reloadBooks() }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in
-            Task {
-                if let target { await information.load(target) }
-            }
-        }
-        .onChange(of: library.revision) { _, _ in
-            if visible, let target { Task { await information.load(target) } }
-        }
-        .onAppear { visible = true }
-        .onDisappear { visible = false; information.cancelPreparation(); model.cancel() }
-        // A pull reloads everything this page shows: for one book that includes the
-        // file index (availability) and its information, then the statistics.
+        .onDisappear { information.cancelPreparation(); model.cancel() }
+        // The index refresh commits availability; the detail observation
+        // sees that commit. Retry also reconnects a failed observation.
         .refreshable {
-            if let target {
+            if target != nil {
+                information.retryInformation()
                 await library.refresh(showIndicator: false)
-                await information.load(target)
             }
             await model.reload(window, target: target)
         }
@@ -320,6 +310,11 @@ struct StatisticsView: View {
     }
     private var statisticsRequest: AIQuickTaskRequest? {
         AIQuickTaskRequest.statistics(window: window, target: target, information: information)
+    }
+
+    private struct InformationRequest: Hashable {
+        let identity: BookInformationModel.Identity?
+        let revision: Int
     }
 
     private var readingSectionReady: Bool {

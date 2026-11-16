@@ -120,13 +120,7 @@ enum MetadataExchangeRows {
                       let height = row["height"] as UInt32? else { return nil }
                 return .init(id: id, sha256: digest, extension: ext, width: width, height: height)
             }
-            let status: BookReadingStatus = switch row?["status"] as String? {
-            case nil, "Unread": hasPosition ? .reading : .unread
-            case "Reading": .reading
-            case "Finished": .finished
-            case "Paused": .paused
-            case .some(let value): .other(value: value)
-            }
+            let status = BookStatusRead.resolve(stored: row?["status"], hasPosition: hasPosition)
             let primary = position.flatMap { preferred[sha] ?? preferred[$0["book_key"] as String] }
             let first = requested == nil ? nil : byBook[sha]?.first { $0.value.id == primary } ?? byBook[sha]?.first
             return .init(metadata: .init(sha: sha, author: row?["author"] ?? "", synopsis: row?["synopsis"] ?? "",
@@ -144,7 +138,7 @@ enum MetadataExchangeRows {
         return .init(read: .init(exportFiles: exportFiles, books: books), formalBlockedMetadata: Set(affected))
     }
 
-    static func formalMetadataBarriers(_ db: Database, keys: String) throws -> Set<String> {
+    private static let formalMetadataBarrierSQL: String = {
         let scopedTables = ["metadata_text_candidate", "tag_candidate", "cover_candidate"]
         let typed = scopedTables.map { "SELECT book_key FROM usr.\($0) WHERE partition=0 AND schema_version<>1 AND book_key IN wanted" }
         let raw = """
@@ -155,9 +149,32 @@ enum MetadataExchangeRows {
                     q.source_type IN ('metadata_text_candidate','tag_candidate','cover_candidate')))
             WHERE q.partition=0
             """
-        return try Set(String.fetchAll(db, sql: """
+        return ([raw] + typed).joined(separator: " UNION ")
+    }()
+
+    static func formalMetadataBarriers(_ db: Database, keys: String) throws -> Set<String> {
+        try Set(String.fetchAll(db, sql: """
             WITH wanted AS (SELECT value FROM json_each(?))
-            \(([raw] + typed).joined(separator: " UNION "))
+            \(formalMetadataBarrierSQL)
             """, arguments: [keys]))
+    }
+
+    static func hasFormalMetadataBarrier(_ db: Database, key: String) throws -> Bool {
+        try Bool.fetchOne(db, sql: """
+            WITH wanted(value) AS (SELECT ?)
+            SELECT EXISTS(\(formalMetadataBarrierSQL))
+            """, arguments: [key]) == true
+    }
+}
+
+enum BookStatusRead {
+    static func resolve(stored: String?, hasPosition: Bool) -> BookReadingStatus {
+        switch stored {
+        case nil, "Unread": hasPosition ? .reading : .unread
+        case "Reading": .reading
+        case "Finished": .finished
+        case "Paused": .paused
+        case .some(let value): .other(value: value)
+        }
     }
 }

@@ -28,6 +28,7 @@ extension MoonreadQueries {
     static let configuration: any ApolloAPI.SchemaConfiguration.Type = SchemaConfiguration.self
 
     private static let objectTypeMap: [String: ApolloAPI.Object] = [
+      "BookInformation": MoonreadQueries.Objects.BookInformation,
       "ChapterHeading": MoonreadQueries.Objects.ChapterHeading,
       "ChapterStructure": MoonreadQueries.Objects.ChapterStructure,
       "ChapterStructureEntry": MoonreadQueries.Objects.ChapterStructureEntry,
@@ -36,6 +37,9 @@ extension MoonreadQueries {
       "FolderDestination": MoonreadQueries.Objects.FolderDestination,
       "FolderEntry": MoonreadQueries.Objects.FolderEntry,
       "FolderGroup": MoonreadQueries.Objects.FolderGroup,
+      "InformationBody": MoonreadQueries.Objects.InformationBody,
+      "InformationMetadata": MoonreadQueries.Objects.InformationMetadata,
+      "InformationSource": MoonreadQueries.Objects.InformationSource,
       "Query": MoonreadQueries.Objects.Query,
       "ReaderOpening": MoonreadQueries.Objects.ReaderOpening,
       "RecentReadingCard": MoonreadQueries.Objects.RecentReadingCard,
