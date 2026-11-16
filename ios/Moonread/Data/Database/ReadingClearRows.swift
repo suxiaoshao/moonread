@@ -191,6 +191,19 @@ enum ReadingHistoryTransport {
         try save(db, type: .clear, id: id, payload: payload, scope: scope)
     }
 
+    static func rebuildOutbox(_ db: Database, scope: DataScope) throws {
+        let clears = try String.fetchAll(db, sql: """
+            SELECT record_id FROM usr.statistics_clear WHERE partition=0 AND schema_version IN \(ReadingFactRows.knownClearVersions)
+            ORDER BY record_id
+            """)
+        for id in clears {
+            if let value = try ReadingClearRows.load(db, partition: 0, id: id) {
+                try enqueueClear(db, id: id, value: value, scope: scope)
+            }
+        }
+        try ReadingSegmentRows.enqueueSurvivingSealedForRebuild(db, scope: scope)
+    }
+
     private static func clearWire(_ db: Database, id: String, value: ReadingClearRows.Value) throws -> String? {
         if let book = value.book, case .pending = try parseReadingKey(value: book) { return nil }
         guard try Bool.fetchOne(db, sql: """

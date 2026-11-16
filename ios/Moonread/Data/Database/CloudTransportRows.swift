@@ -158,6 +158,135 @@ enum CloudTransportRows {
             ON CONFLICT(zone) DO UPDATE SET checkpoint=excluded.checkpoint
             """, arguments: [zone, bytes])
     }
+
+    enum ZoneStage: String, Sendable {
+        case unverified, ready, needsCreation, reset
+    }
+
+    private struct LostTransportEvidence: Encodable {
+        let zone, recordType, recordName, businessID: String
+        let intent, digest, afterType, afterName, afterDigest, serverState: String?
+        let generation: Int64?
+
+        init(_ row: Row) {
+            zone = row["zone"]; recordType = row["record_type"]; recordName = row["record_name"]; businessID = row["business_id"]
+            intent = row["intent"]; digest = row["content_digest"]; generation = row["generation"]
+            afterType = row["after_type"]; afterName = row["after_name"]; afterDigest = row["after_digest"]
+            serverState = row["server_state"]
+        }
+    }
+
+    static func isolateUnsupportedHistoryTransportAfterLoss(_ db: Database, zone: String) throws {
+        let rows = try Row.fetchCursor(db, sql: """
+            SELECT zone,record_type,record_name,business_id,intent,content_digest,generation,after_type,after_name,after_digest,
+                   NULL AS server_state
+              FROM usr.cloud_outbox WHERE zone=?1 AND record_type NOT IN (?2,?3)
+            UNION ALL
+            SELECT zone,record_type,record_name,business_id,NULL,NULL,NULL,NULL,NULL,NULL,server_state
+              FROM usr.cloud_record_state WHERE zone=?1 AND record_type NOT IN (?2,?3)
+            """, arguments: [zone, ReadingHistoryTransport.RecordType.segment.rawValue, ReadingHistoryTransport.RecordType.clear.rawValue])
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        while let row = try rows.next() {
+            let evidence = LostTransportEvidence(row)
+            let raw = try encoder.encode(evidence)
+            // Transport-only evidence is not a business payload. Keep its
+            // type in the archive without creating a known-domain barrier.
+            // Business rows and existing opaque payloads/assets remain in
+            // place; invalidated CK system fields cannot be a new send base.
+            try db.execute(sql: """
+                INSERT INTO usr.quarantined_record(partition,source,source_id,source_type,record_id,raw_format,raw_bytes,
+                    digest,reason,completeness)
+                VALUES(0,'cloud-zone-loss',?,'cloud-transport',?,'zone-loss-transport-v1',?,?,'unsupported-zone-rebuild','incomplete')
+                ON CONFLICT(partition,source,source_id,source_type,record_id,digest,reason) DO NOTHING
+                """, arguments: [evidence.recordName, evidence.businessID, raw, DataIdentity.sha(raw)])
+        }
+    }
+
+    static func zoneStage(_ db: Database, zone: String) throws -> ZoneStage {
+        guard let value = try String.fetchOne(db, sql: "SELECT region_state FROM usr.cloud_engine_state WHERE zone=?",
+                                             arguments: [zone]) else { return .unverified }
+        guard let stage = ZoneStage(rawValue: value) else { throw DataV2Error.incompatibleSource("cloud zone stage") }
+        return stage
+    }
+
+    static func changeZoneAfterLoss(_ db: Database, zone: String, to stage: ZoneStage) throws {
+        try db.execute(sql: "DELETE FROM usr.cloud_record_state WHERE zone=?", arguments: [zone])
+        try db.execute(sql: "DELETE FROM usr.cloud_outbox WHERE zone=?", arguments: [zone])
+        // Keep the account-level attempt sequence: old results must not
+        // match recreated pending work, even across an engine restart.
+        try db.execute(sql: """
+            INSERT INTO usr.cloud_engine_state(zone,checkpoint,region_state) VALUES(?,NULL,?)
+            ON CONFLICT(zone) DO UPDATE SET checkpoint=NULL,region_state=excluded.region_state
+            """, arguments: [zone, stage.rawValue])
+    }
+
+    static func confirmZoneCreation(_ db: Database, zone: String) throws -> Bool {
+        try db.execute(sql: """
+            UPDATE usr.cloud_engine_state SET region_state='ready' WHERE zone=? AND region_state='needsCreation'
+            """, arguments: [zone])
+        return db.changesCount == 1
+    }
+}
+
+/// W2-b changes the existing authority in its own transaction. It does not
+/// run legacy import, change source files, or open another SQLite pool.
+enum CloudAccountZoneRecovery {
+    enum Loss: Sendable {
+        case purged, encryptedDataReset
+        // A record operation's zoneNotFound is not this proof.
+        case confirmedUnexpectedAbsence
+    }
+
+    private static let syncEvidence = [
+        "metadata_text_candidate", "tag_candidate", "cover_candidate", "position_candidate",
+        "opened_candidate", "chapter_override_candidate", "annotation_candidate",
+        "reading_fact", "reading_segment", "statistics_clear", "quarantined_record",
+        "source_decoding_candidate", "palette_candidate", "shelf_reference_candidate",
+    ]
+
+    static func apply(_ db: Database, loss: Loss, scope: DataScope) throws -> CloudTransportRows.ZoneStage {
+        let zone = ReadingHistoryTransport.zone
+        let previous = try CloudTransportRows.zoneStage(db, zone: zone)
+        guard previous != .reset else { return .reset }
+        switch loss {
+        case .purged, .encryptedDataReset:
+            try removeSyncedEvidence(db, scope: scope)
+            try CloudTransportRows.changeZoneAfterLoss(db, zone: zone, to: .reset)
+            return .reset
+        case .confirmedUnexpectedAbsence:
+            guard previous != .needsCreation else { return .needsCreation }
+            try CloudTransportRows.isolateUnsupportedHistoryTransportAfterLoss(db, zone: zone)
+            try CloudTransportRows.changeZoneAfterLoss(db, zone: zone, to: .needsCreation)
+            try ReadingHistoryTransport.rebuildOutbox(db, scope: scope)
+            return .needsCreation
+        }
+    }
+
+    private static func removeSyncedEvidence(_ db: Database, scope: DataScope) throws {
+        // Include pending IDs in the re-settlement: their visibility can
+        // change when a conflicting formal candidate or barrier disappears.
+        var history = ReadingHistoryRows.Changed()
+        history.facts = try ReadingFactSettlement.affectedIDs(db)
+        history.segments = try ReadingSegmentRows.affected(db)
+        // v1.6 could write the same pending-key clear into both stores.
+        // The source partition, not the key spelling, defines cloud ownership.
+        let assets = try String.fetchAll(db, sql: """
+            SELECT DISTINCT asset_id FROM usr.cover_candidate WHERE partition=0 AND asset_id IS NOT NULL
+            """)
+        for table in syncEvidence {
+            try db.execute(sql: "DELETE FROM usr.\(table) WHERE partition=0")
+        }
+        try CurrentUserRows.settleImported(db)
+        try history.settle(db, scope: scope)
+        guard try UserValueRows.canReclaimCoverAssets(db) else { return }
+        for asset in assets {
+            try db.execute(sql: """
+                DELETE FROM usr.cover_asset WHERE asset_id=? AND NOT EXISTS(
+                    SELECT 1 FROM usr.cover_candidate c WHERE c.asset_id=cover_asset.asset_id)
+                """, arguments: [asset])
+        }
+    }
 }
 
 /// One journal per engine lifetime. CKSyncEngine delivers events in order;
@@ -191,12 +320,12 @@ actor CloudCallbackJournal {
     }
 
     func persistCheckpoint(_ bytes: Data) throws {
-        try commit { try CloudTransportRows.storeCheckpoint($0, zone: ReadingHistoryTransport.zone, bytes: bytes) }
+        try recordCallback(whileCreating: { () }) { try CloudTransportRows.storeCheckpoint($0, zone: ReadingHistoryTransport.zone, bytes: bytes) }
     }
 
     func prepareHistoryChange(type: ReadingHistoryTransport.RecordType, id: String) throws -> PreparedHistoryChange? {
         let key = ReadingHistoryTransport.key(type, id: id)
-        return try commit { db in
+        return try recordCallback(whileCreating: { nil }) { db in
             guard let attempt = try CloudTransportRows.pending(db, key), attempt.businessID == id else { return nil }
             let prepared: PreparedHistoryChange
             switch attempt.intent {
@@ -216,16 +345,48 @@ actor CloudCallbackJournal {
     // that applies the deletion, never from a snapshot taken before an await.
     func applyFetchedHistory(_ records: [ReadingHistoryTransport.Fetched]) throws {
         let scope = lease.scope
-        try commit { try ReadingHistoryTransport.applyFetched($0, records: records, scope: scope) }
+        try recordCallback(whileCreating: {
+            // Never let a later checkpoint skip records fetched before the
+            // new area's creation was confirmed.
+            if !records.isEmpty { throw Failure.restartRequired }
+        }) { try ReadingHistoryTransport.applyFetched($0, records: records, scope: scope) }
     }
 
     func acknowledge(_ results: [Sent]) throws -> Int {
-        try commit { db in
+        try recordCallback(whileCreating: { 0 }) { db in
             var accepted = 0
             for sent in results where sent.attempt.key.zone == ReadingHistoryTransport.zone {
                 if try CloudTransportRows.acknowledge(db, sent.attempt, systemFields: sent.systemFields) { accepted += 1 }
             }
             return accepted
+        }
+    }
+
+    func zoneStage() throws -> CloudTransportRows.ZoneStage {
+        guard !failed else { throw Failure.restartRequired }
+        return try session.readCloudChanges(lease) { try CloudTransportRows.zoneStage($0, zone: ReadingHistoryTransport.zone) }
+    }
+
+    /// The caller coordinates active App writers and passes only own-zone,
+    /// authenticated lifecycle events. Retire this journal after the commit.
+    func applyZoneLoss(_ loss: CloudAccountZoneRecovery.Loss) throws -> CloudTransportRows.ZoneStage {
+        let scope = lease.scope
+        let stage = try commit { try CloudAccountZoneRecovery.apply($0, loss: loss, scope: scope) }
+        failed = true
+        return stage
+    }
+
+    func confirmZoneCreation() throws -> Bool {
+        try commit { try CloudTransportRows.confirmZoneCreation($0, zone: ReadingHistoryTransport.zone) }
+    }
+
+    private func recordCallback<T: Sendable>(whileCreating fallback: () throws -> T, _ body: (Database) throws -> T) throws -> T {
+        try commit { db in
+            switch try CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone) {
+            case .reset: throw Failure.restartRequired
+            case .needsCreation: return try fallback()
+            case .unverified, .ready: return try body(db)
+            }
         }
     }
 

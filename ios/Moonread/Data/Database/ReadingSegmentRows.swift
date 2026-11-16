@@ -215,15 +215,15 @@ enum ReadingSegmentRows {
         }
     }
 
-    private static func select(_ db: Database, id: String) throws -> Head? {
+    private static func select(_ db: Database, id: String, partition: Int? = nil) throws -> Head? {
         guard try !blocked(db, id: id) else { return nil }
         // Keep exposure bytes off the uncut path. Only a surviving partial
         // intersection needs Rust's exact endpoint and first exposure.
         let rows = try Row.fetchAll(db, sql: """
             SELECT partition,book_key,session_id,visit_id,revision,started_ms,ended_ms,local_day,utc_offset_seconds,
                    preview,duration_ms,first_exposure_start FROM usr.reading_segment
-            WHERE segment_id=? AND \(known) ORDER BY revision DESC,partition
-            """, arguments: [id])
+            WHERE segment_id=?1 AND (?2 IS NULL OR partition=?2) AND \(known) ORDER BY revision DESC,partition
+            """, arguments: [id,partition])
         for row in rows {
             let partition: Int = row["partition"], book: String = row["book_key"], session: String = row["session_id"]
             do { try ReadingFactRows.requireReadableClears(db, partition: partition, book: book, session: session) }
@@ -288,6 +288,17 @@ enum ReadingSegmentRows {
         guard scope != .local else { return }
         for id in ids.sorted() {
             guard try !blocked(db, id: id), let raw = try load(db, partition: 0, id: id) else { continue }
+            try ReadingHistoryTransport.enqueueSegment(db, raw: raw, scope: scope)
+        }
+    }
+
+    static func enqueueSurvivingSealedForRebuild(_ db: Database, scope: DataScope) throws {
+        let ids = try String.fetchAll(db, sql: "SELECT segment_id FROM usr.reading_segment WHERE partition=0 AND sealed=1 ORDER BY segment_id")
+        for id in ids {
+            // A pending winner must not hide a surviving formal version.
+            // Use the same visibility/tail owner with only formal evidence.
+            guard try select(db, id: id, partition: 0) != nil,
+                  let raw = try load(db, partition: 0, id: id) else { continue }
             try ReadingHistoryTransport.enqueueSegment(db, raw: raw, scope: scope)
         }
     }

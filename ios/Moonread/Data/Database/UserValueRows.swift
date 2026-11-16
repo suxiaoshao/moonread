@@ -266,6 +266,18 @@ enum UserValueRows {
     }
 
     struct CoverWrite: Sendable { let id: String; let bytes: Data }
+
+    // An opaque surviving payload may still own an otherwise unreferenced
+    // asset. Reclaim only after checking every possible cover source.
+    static func canReclaimCoverAssets(_ db: Database) throws -> Bool {
+        try Bool.fetchOne(db, sql: """
+            SELECT NOT EXISTS(SELECT 1 FROM usr.quarantined_record
+                WHERE (source_type='UserValue' AND (logical_key IS NULL OR logical_key LIKE '%/cover'))
+                  OR source_type IN ('cover_candidate','CoverCandidate','UserCover'))
+            AND NOT EXISTS(SELECT 1 FROM usr.cover_candidate WHERE schema_version<>1)
+            """) == true
+    }
+
     struct MetadataWrite: Sendable {
         let plan: BookMetadataEditPlan
         let cover: CoverWrite?

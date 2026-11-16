@@ -413,12 +413,7 @@ extension ReaderIndex {
 
             // An unknown cover payload can still refer to an existing asset.
             // When in doubt retain the bytes, while deleting the owned facts.
-            let canReclaimCover = try Bool.fetchOne(db, sql: """
-                SELECT NOT EXISTS(SELECT 1 FROM usr.quarantined_record
-                    WHERE (source_type='UserValue' AND (logical_key IS NULL OR logical_key LIKE '%/cover'))
-                      OR source_type IN ('cover_candidate','CoverCandidate','UserCover'))
-                AND NOT EXISTS(SELECT 1 FROM usr.cover_candidate WHERE schema_version<>1)
-                """) == true
+            let canReclaimCover = try UserValueRows.canReclaimCoverAssets(db)
             var history = ReadingHistoryRows.Changed()
             for key in targets {
                 history.facts.formUnion(try ReadingFactSettlement.affectedIDs(db, book: key))
