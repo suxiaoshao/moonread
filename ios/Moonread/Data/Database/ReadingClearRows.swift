@@ -393,16 +393,20 @@ enum ReadingHistoryTransport {
     /// a stale engine intent cannot send an active or withdrawn snapshot.
     static func payload(_ db: Database, type: RecordType, id: String, digest: String) throws -> String? {
         guard try CloudTransportRows.pending(db, key(type, id: id))?.intent == .save(digest: digest) else { return nil }
-        let wire: String?
+        return try currentWire(db, type: type, id: id).flatMap { DataIdentity.sha(Data($0.utf8)) == digest ? $0 : nil }
+    }
+
+    // Verification must compare the current wire even when it no longer
+    // matches the queued digest, rather than conflating replacements as nil.
+    static func currentWire(_ db: Database, type: RecordType, id: String) throws -> String? {
         switch type {
         case .segment:
             guard try !ReadingSegmentRows.blocked(db, id: id), let raw = try ReadingSegmentRows.load(db, partition: 0, id: id) else { return nil }
-            wire = try segmentWire(raw)
+            return try segmentWire(raw)
         case .clear:
             guard let clear = try ReadingClearRows.load(db, partition: 0, id: id) else { return nil }
-            wire = try clearWire(db, id: id, value: clear)
+            return try clearWire(db, id: id, value: clear)
         }
-        return wire.flatMap { DataIdentity.sha(Data($0.utf8)) == digest ? $0 : nil }
     }
 
     static func withdrawSave(_ db: Database, type: RecordType, id: String) throws {

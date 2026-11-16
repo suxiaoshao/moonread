@@ -216,7 +216,7 @@ extension AppDataService {
     // All book-scoped mutations share the operation gate and re-resolve
     // the route within the writer. Admission never comes from the commit.
     private func editAnnotationRows<T: Sendable>(_ id: String, offered: ReadingWriteAdmission?,
-                                                 _ operation: (Database, String, ReadingWriteAdmission) throws -> T) async throws -> T {
+                                                 _ operation: (Database, String, ReadingWriteAdmission, DataScope) throws -> T) async throws -> T {
         let admission = try offered ?? readingWriteAdmission(indexStore().lease)
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
@@ -227,7 +227,7 @@ extension AppDataService {
         return try index.session.writeUsers(index.lease) { db in
             let key = try ReaderIndex.body(db, id: id, scope: index.lease.scope.key).sha
             try authorize(key)
-            return try operation(db, key, admission)
+            return try operation(db, key, admission, index.lease.scope)
         }
     }
 
@@ -323,8 +323,8 @@ extension AppDataService {
     func saveUserNote(_ edit: AnnotationEdit, text: String) async throws -> ReaderMark {
         guard text.utf8.count <= 64 * 1024, edit.startUtf8 < edit.endUtf8 else { throw ReaderError.InvalidRange }
         let content = AnnotationContent(start: edit.startUtf8, end: edit.endUtf8, excerpt: edit.excerpt, note: text)
-        let candidate = try await editAnnotationRows(edit.bookId, offered: edit.writeAdmission) { db, key, _ in
-            try AnnotationRows.edit(db, key: key, edit: edit, content: content)
+        let candidate = try await editAnnotationRows(edit.bookId, offered: edit.writeAdmission) { db, key, _, scope in
+            try AnnotationRows.edit(db, key: key, edit: edit, content: content, scope: scope)
         }
         dataChanged()
         return ReaderMark(id: edit.id, kind: .annotation, startUtf8: content.start, endUtf8: content.end,
@@ -337,8 +337,8 @@ extension AppDataService {
         if let content {
             guard content.note.utf8.count <= 64 * 1024, content.start < content.end else { throw ReaderError.InvalidRange }
         }
-        _ = try await editAnnotationRows(edit.bookId, offered: edit.writeAdmission) { db, key, _ in
-            try AnnotationRows.edit(db, key: key, edit: edit, content: content, resolving: expected)
+        _ = try await editAnnotationRows(edit.bookId, offered: edit.writeAdmission) { db, key, _, scope in
+            try AnnotationRows.edit(db, key: key, edit: edit, content: content, resolving: expected, scope: scope)
         }
         dataChanged()
     }
@@ -346,8 +346,8 @@ extension AppDataService {
     func changeBookmark(_ id: String, offset: UInt64, ensure: Bool, admission offered: ReadingWriteAdmission?) async throws -> ReaderMark? {
         let admission = try offered ?? readingWriteAdmission(indexStore().lease)
         let excerpt = try indexStore().paragraphRange(bookId: id, offsetUtf8: offset).text
-        let (mark, candidate) = try await editAnnotationRows(id, offered: admission) { db, key, _ in
-            try AnnotationRows.bookmark(db, key: key, offset: offset, excerpt: String(excerpt.prefix(160)), ensure: ensure)
+        let (mark, candidate) = try await editAnnotationRows(id, offered: admission) { db, key, _, scope in
+            try AnnotationRows.bookmark(db, key: key, offset: offset, excerpt: String(excerpt.prefix(160)), ensure: ensure, scope: scope)
         }
         dataChanged()
         guard let content = candidate.content else { return nil }
@@ -367,13 +367,13 @@ extension AppDataService {
     func deleteSelectedAnnotations(_ id: String, expected: NoteCandidates, ids: Set<String>) async throws {
         let groups = try expected.checked(ids)
         guard ids == Set(groups.keys) else { throw UserDataConflict(candidates: []) }
-        let receipts: [String: MarkUndo] = try await editAnnotationRows(id, offered: expected.admission) { db, key, admission in
+        let receipts: [String: MarkUndo] = try await editAnnotationRows(id, offered: expected.admission) { db, key, admission, scope in
             guard key == expected.key else { throw UserDataConflict(candidates: []) }
             let commands = ids.sorted().map { id in
                 let heads = groups[id] ?? []
                 return MarkDeletion(id: id, key: key, baseline: heads, content: heads.first(where: { $0.content != nil })?.content, deleted: true)
             }
-            let committed = try AnnotationRows.deletions(db, commands: commands, checkingBaseline: true)
+            let committed = try AnnotationRows.deletions(db, commands: commands, checkingBaseline: true, scope: scope)
             return deletionReceipts(commands, committed: committed, admission: admission, origins: commands.reduce(into: [:]) { $0[$1.id] = id })
         }
         undoCandidates.merge(receipts) { _, new in new }
@@ -425,7 +425,7 @@ extension AppDataService {
                 let content = deleted ? baseline.first(where: { $0.content != nil })?.content : undo[id]?.content
                 commands.append(.init(id: id, key: key, baseline: baseline, content: content, deleted: deleted))
             }
-            let committed = try AnnotationRows.deletions(db, commands: commands, checkingBaseline: false)
+            let committed = try AnnotationRows.deletions(db, commands: commands, checkingBaseline: false, scope: index.lease.scope)
             return deletionReceipts(commands, committed: committed, admission: admission, origins: origins)
         }
         if deleted { undoCandidates.merge(receipts) { _, new in new } }

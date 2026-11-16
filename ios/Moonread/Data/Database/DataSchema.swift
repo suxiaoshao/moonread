@@ -16,7 +16,7 @@ enum DataV2Error: Error, Equatable {
 
 enum DataV2Schema {
     static let indexVersion = 1
-    static let userVersion = 1
+    static let userVersion = 2
 
     static func sql(_ name: String, in bundle: Bundle = .main) throws -> String {
         guard let path = bundle.url(forResource: name, withExtension: "sql") else {
@@ -42,7 +42,7 @@ enum DataV2Schema {
             let index = try version(db, in: "main")
             let user = try version(db, in: "usr")
             guard [0, indexVersion].contains(index) else { throw DataV2Error.unsupportedSchema("main", index) }
-            guard [0, userVersion].contains(user) else { throw DataV2Error.unsupportedSchema("usr", user) }
+            guard (0...userVersion).contains(user) else { throw DataV2Error.unsupportedSchema("usr", user) }
             if index == 0 { try checkFresh(db, in: "main") }
             if user == 0 { try checkFresh(db, in: "usr") }
             guard try String.fetchOne(db, sql: "PRAGMA usr.journal_mode=WAL")?.lowercased() == "wal" else {
@@ -77,10 +77,17 @@ enum DataV2Schema {
                     """)
             }
         }
-        if user == 0 {
+        if user < userVersion {
             try writer.write { db in
-                try db.execute(sql: sql("UserSchemaV1", in: bundle))
-                try db.execute(sql: "PRAGMA usr.user_version=1")
+                if user == 0 { try db.execute(sql: sql("UserSchemaV1", in: bundle)) }
+                // Compacting a candidate may remove its last business row
+                // before CloudKit confirms deletion of the exact record.
+                try db.execute(sql: """
+                    ALTER TABLE usr.cloud_record_state ADD COLUMN book_key TEXT;
+                    CREATE INDEX usr.cloud_record_book ON cloud_record_state(zone,book_key,record_type)
+                      WHERE book_key IS NOT NULL;
+                    PRAGMA usr.user_version=2;
+                    """)
             }
         }
     }

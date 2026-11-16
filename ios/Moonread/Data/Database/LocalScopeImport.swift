@@ -42,7 +42,9 @@ enum LocalScopeImport {
                 throw DataV2Error.incompatibleSource("invalid attachment mode")
             }
             let version = try DataV2Schema.version(db, in: "move_source")
-            guard version == DataV2Schema.userVersion else {
+            // v2 only adds cloud transport metadata. A frozen v1 local
+            // source has the same business tables and copies no cloud rows.
+            guard [1, DataV2Schema.userVersion].contains(version) else {
                 throw DataV2Error.unsupportedSchema("move_source", version)
             }
             try body()

@@ -193,11 +193,15 @@ enum UserValueRows {
     }
 
     @discardableResult
-    static func merge(_ db: Database, key: Key, head: StoredValue, device: String) throws -> Bool {
+    static func merge(_ db: Database, key: Key, head: StoredValue, device: String,
+                      preserveSiblingIdentity: Bool = false) throws -> Bool {
         let state = try assess(db, key: key, head: head, requireAsset: true)
-        if state.duplicate { return false }
+        let canonical = DataIdentity.canonical(device)
+        if state.duplicate && (!preserveSiblingIdentity || state.known.contains(where: {
+            ($0["device_id"] as String) == canonical && ($0["token"] as String) == head.token
+        })) { return false }
         let known = state.known
-        if let row = known.first(where: { ($0["device_id"] as String) == DataIdentity.canonical(device) }),
+        if let row = known.first(where: { ($0["device_id"] as String) == canonical }),
            (row["updated_ms"] as Int64,row["token"] as String) > (head.updated,head.token) { return false }
         try persist(db, key: key, body: state.body, head: head, device: device)
         try key.settle(db)

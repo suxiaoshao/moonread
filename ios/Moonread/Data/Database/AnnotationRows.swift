@@ -17,28 +17,35 @@ enum AnnotationRows {
             """, arguments: [ReadingPositionRows.partition(for: key),DataIdentity.canonical(key),nil]) == true
     }
 
-    static func snapshot(_ db: Database, key: String, markID: String? = nil, partition supplied: Int? = nil, reducing: Bool = true, settled: Bool = false) throws -> NoteCandidates {
+    static func snapshot(_ db: Database, key: String, markID: String? = nil, partition supplied: Int? = nil,
+                         reducing: Bool = true, settled: Bool = false) throws -> NoteCandidates {
+        try snapshot(db, key: key, markID: markID, partition: supplied, reducing: reducing, settled: settled, rawID: nil)
+    }
+
+    private static func snapshot(_ db: Database, key: String, markID: String?, partition supplied: Int?,
+                                 reducing: Bool, settled: Bool, rawID: String?) throws -> NoteCandidates {
         let partition = try supplied ?? ReadingPositionRows.partition(for: key)
         let args: StatementArguments = [partition,DataIdentity.canonical(key),markID.map(DataIdentity.canonical)]
+        let selected: StatementArguments = rawID.map { args + [$0] } ?? args
         let scope = """
             WHERE c.partition=?1 AND c.book_key=?2 AND (?3 IS NULL OR c.mark_id=?3)
             """ + (settled ? """
                 AND EXISTS(SELECT 1 FROM usr.annotation_current_head h
                     WHERE h.partition=c.partition AND h.book_key=c.book_key
                       AND h.mark_id=c.mark_id AND h.candidate_id=c.record_id)
-                """ : "")
-        let rows = try Row.fetchAll(db, sql: "SELECT c.* FROM usr.annotation_candidate c " + scope, arguments: args)
+                """ : "") + (rawID == nil ? "" : " AND c.record_id=?4")
+        let rows = try Row.fetchAll(db, sql: "SELECT c.* FROM usr.annotation_candidate c " + scope, arguments: selected)
         func relations(table: String, field: String) throws -> [String: Set<String>] {
             let rows = try Row.fetchAll(db, sql: """
                 SELECT r.candidate_id,r.\(field) AS related_id FROM usr.\(table) r JOIN usr.annotation_candidate c
                   ON r.partition=c.partition AND r.candidate_id=c.record_id
                 \(scope)
-                """, arguments: args)
+                """, arguments: selected)
             return rows.reduce(into: [:]) { $0[$1["candidate_id"] as String, default: []].insert($1["related_id"]) }
         }
         let ancestors = try relations(table: "annotation_ancestor", field: "ancestor_id")
         let related = try relations(table: "annotation_related_mark", field: "related_mark_id")
-        let isolated = try Row.fetchAll(db, sql: """
+        let isolated = rawID != nil ? [] : try Row.fetchAll(db, sql: """
             SELECT mark_id FROM usr.quarantined_record WHERE partition=?1 AND source_type IN (\(quarantineTypes))
               AND \(quarantineScope)
               AND (?3 IS NULL OR mark_id IS NULL OR mark_id=?3)
@@ -135,7 +142,8 @@ enum AnnotationRows {
     }
 
     static func append(_ db: Database, key: String, markID: String, baseline: [AnnotationCandidate], content: AnnotationContent?,
-                       bookmark: Bool, related: Set<String> = [], mergedInto: String? = nil) throws -> AnnotationCandidate {
+                       bookmark: Bool, related: Set<String> = [], mergedInto: String? = nil,
+                       scope: DataScope = .local) throws -> AnnotationCandidate {
         let view = try snapshot(db, key: key, markID: markID)
         try requireReadable(view, ids: [markID])
         let value = AnnotationReduction.successor(baseline: baseline, content: content, bookmark: bookmark,
@@ -144,6 +152,13 @@ enum AnnotationRows {
         let book = DataIdentity.canonical(key), mark = DataIdentity.canonical(markID)
         try insertCandidate(db, book: book, mark: mark, partition: partition, value: value)
         // Keep siblings and causal IDs. Only superseded content is compacted.
+        if partition == 0 && scope != .local {
+            let compacted = try String.fetchAll(db, sql: """
+                SELECT record_id FROM usr.annotation_candidate WHERE partition=0 AND book_key=?1 AND mark_id=?2
+                  AND record_id IN (SELECT ancestor_id FROM usr.annotation_ancestor WHERE partition=0 AND candidate_id=?3)
+                """, arguments: [book,mark,record])
+            try CausalCloudRows.enqueueReplacement(db, .annotation, id: record, predecessors: compacted)
+        }
         try db.execute(sql: """
             DELETE FROM usr.annotation_candidate WHERE partition=?1 AND book_key=?2 AND mark_id=?3
               AND record_id IN (SELECT ancestor_id FROM usr.annotation_ancestor WHERE partition=?1 AND candidate_id=?4)
@@ -190,19 +205,37 @@ enum AnnotationRows {
         try settleHeads(db, key: book, markID: mark, partition: 0)
     }
 
+    /// An unreadable sibling blocks the mark's published heads, not intake
+    /// of another valid operation for that mark. Re-use the raw decoder for
+    /// same-ID identity before settling all surviving evidence.
+    static func mergeCloudCandidate(_ db: Database, book: String, mark: String, value: AnnotationCandidate) throws {
+        let id = DataIdentity.canonical(value.id)
+        if let route = try Row.fetchOne(db, sql: """
+            SELECT book_key,mark_id FROM usr.annotation_candidate WHERE partition=0 AND record_id=?
+            """, arguments: [id]) {
+            guard (route["book_key"] as String) == book, (route["mark_id"] as String) == mark,
+                  try snapshot(db, key: book, markID: mark, partition: 0, reducing: false, settled: false,
+                               rawID: id).groups[mark]?.first == value else { throw ReadingDataError.invalid }
+        } else {
+            try insertCandidate(db, book: book, mark: mark, partition: 0, value: value)
+        }
+        try settleHeads(db, key: book, markID: mark, partition: 0)
+    }
+
     static func edit(_ db: Database, key: String, edit: AnnotationEdit, content: AnnotationContent?,
-                     resolving: [String: [AnnotationCandidate]]? = nil) throws -> AnnotationCandidate {
+                     resolving: [String: [AnnotationCandidate]]? = nil, scope: DataScope = .local) throws -> AnnotationCandidate {
         let view = try snapshot(db, key: key)
         if let resolving { try requireReadable(view, ids: Set(resolving.keys)) }
         let changes = try AnnotationReduction.changes(edit, current: editingBundle(view, edit: edit), resolving: resolving, content: content)
         let committed = try changes.map { plan in
             try append(db, key: key, markID: plan.markID, baseline: plan.baseline, content: plan.content,
-                       bookmark: false, related: plan.related, mergedInto: plan.mergedInto)
+                       bookmark: false, related: plan.related, mergedInto: plan.mergedInto, scope: scope)
         }
         return committed[0]
     }
 
-    static func deletions(_ db: Database, commands: [MarkDeletion], checkingBaseline: Bool) throws -> [String: AnnotationCandidate] {
+    static func deletions(_ db: Database, commands: [MarkDeletion], checkingBaseline: Bool,
+                          scope: DataScope = .local) throws -> [String: AnnotationCandidate] {
         if checkingBaseline {
             for cmd in commands {
                 let view = try snapshot(db, key: cmd.key, markID: cmd.id)
@@ -215,12 +248,13 @@ enum AnnotationRows {
         var result: [String: AnnotationCandidate] = [:]
         for cmd in commands {
             result[cmd.id] = try append(db, key: cmd.key, markID: cmd.id, baseline: cmd.baseline,
-                                         content: cmd.deleted ? nil : cmd.content, bookmark: cmd.baseline.first?.bookmark ?? false)
+                                         content: cmd.deleted ? nil : cmd.content, bookmark: cmd.baseline.first?.bookmark ?? false, scope: scope)
         }
         return result
     }
 
-    static func bookmark(_ db: Database, key: String, offset: UInt64, excerpt: String, ensure: Bool) throws -> (String, AnnotationCandidate) {
+    static func bookmark(_ db: Database, key: String, offset: UInt64, excerpt: String, ensure: Bool,
+                         scope: DataScope = .local) throws -> (String, AnnotationCandidate) {
         let id = "bookmark/\(key)/\(offset)"
         let view = try snapshot(db, key: key, markID: id)
         try requireReadable(view, ids: [id])
@@ -228,6 +262,6 @@ enum AnnotationRows {
         if ensure, let existing = heads.first(where: { $0.bookmark && $0.content != nil }) { return (id,existing) }
         let content = AnnotationContent(start: offset, end: offset, excerpt: excerpt, note: "")
         let delete = !ensure && heads.contains { $0.content != nil }
-        return (id,try append(db, key: key, markID: id, baseline: heads, content: delete ? nil : content, bookmark: true))
+        return (id,try append(db, key: key, markID: id, baseline: heads, content: delete ? nil : content, bookmark: true, scope: scope))
     }
 }

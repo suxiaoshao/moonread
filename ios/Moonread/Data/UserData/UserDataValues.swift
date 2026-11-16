@@ -18,9 +18,9 @@ struct AnnotationCandidate: Codable, Equatable, Identifiable, Sendable {
     var mergedInto: String? = nil
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: UserSyncJSON.Key.self)
-        try c.encode(id, forKey: .init("id")); try c.encode(ancestors, forKey: .init("ancestors"))
+        try c.encode(id, forKey: .init("id")); try c.encode(ancestors.sorted(), forKey: .init("ancestors"))
         try c.encode(content, forKey: .init("content")); try c.encode(created, forKey: .init("created"))
-        try c.encode(bookmark, forKey: .init("bookmark")); try c.encode(relatedMarks, forKey: .init("relatedMarks"))
+        try c.encode(bookmark, forKey: .init("bookmark")); try c.encode(relatedMarks.sorted(), forKey: .init("relatedMarks"))
         try c.encode(mergedInto, forKey: .init("mergedInto"))
     }
 }

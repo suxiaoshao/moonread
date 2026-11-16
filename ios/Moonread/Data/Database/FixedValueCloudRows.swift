@@ -68,9 +68,15 @@ enum FixedValueCloudRows {
     private static let receiptPrefix = "x2-delete-acked:"
     private static let waitingPrefix = "x2-await-delete:"
     private static let freshPrefix = "x2-unpublished:"
-    private static let verifyStatus = "x2-verify-delete"
+    private static let verifyStatus = CloudTransportRows.missingSaveStatus
 
     enum DeleteDecision: Equatable, Sendable { case removed, keptLocalCreation, verify, ignored }
+
+    struct Remote: Sendable {
+        let family: Family
+        let name, id, logical, device, payload: String
+        let attachment, systemFields: Data?
+    }
 
     struct Prepared: Sendable {
         let attempt: CloudTransportRows.Attempt
@@ -88,6 +94,41 @@ enum FixedValueCloudRows {
 
     static func key(_ family: Family, id: String) -> CloudTransportRows.Key {
         .init(zone: ReadingHistoryTransport.zone, type: family.rawValue, name: family.rawValue + "-" + id)
+    }
+
+    static func applyRemote(_ db: Database, _ value: Remote, verifying: Bool = false) throws {
+        let key = try UserValueRows.Key(value.logical)
+        let transport = self.key(value.family, id: value.id)
+        guard Family(key.kind) == value.family, key.logical == value.logical,
+              transport.name == value.name, UserValueRows.recordID(logical: key.logical, device: value.device) == value.id else {
+            throw UserSyncCompatibilityError()
+        }
+        if let book = key.book, case .pending = try parseReadingKey(value: book) { throw UserSyncCompatibilityError() }
+        let head = try UserSyncJSON.storedValue(value.payload, key: key.logical)
+        if try CloudTransportRows.deletionPending(db, transport) { return }
+        if !verifying, try blocksSave(db, key: transport) { return }
+        if value.family == .cover {
+            if let cover = try JSONDecoder().decode(UserValueRows.Cover?.self, from: Data(head.value.utf8)) {
+                if let bytes = value.attachment { try UserValueRows.attach(db, id: cover.id, sha: cover.sha256, bytes: bytes) }
+                else { throw ReadingDataError.missingAsset }
+            }
+        }
+        try removeCloudIsolation(db, family: value.family, name: value.name, id: value.id)
+        if try !UserValueRows.merge(db, key: key, head: head, device: value.device, preserveSiblingIdentity: true) {
+            try key.settle(db)
+        }
+        try CloudTransportRows.recordPresent(db, transport, businessID: value.id, systemFields: value.systemFields)
+        if let pending = try CloudTransportRows.pending(db, transport), case .save(let digest) = pending.intent,
+           try currentDigest(db, value.family, id: value.id) != digest {
+            try CloudTransportRows.withdrawSave(db, transport)
+        }
+    }
+
+    private static func removeCloudIsolation(_ db: Database, family: Family, name: String, id: String) throws {
+        try db.execute(sql: """
+            DELETE FROM usr.quarantined_record WHERE partition=0 AND source='cloud' AND source_type=? AND source_id=?
+              AND (record_id=? OR (record_id=source_id AND raw_format IN ('ck-record-archive','ck-record-summary')))
+            """, arguments: [family.rawValue,name,id])
     }
 
     private static func material(_ db: Database, _ family: Family, id: String) throws -> Material? {
@@ -205,7 +246,7 @@ enum FixedValueCloudRows {
         return prepared
     }
 
-    static func applyDeletion(_ db: Database, _ family: Family, name: String) throws -> DeleteDecision {
+    static func applyDeletion(_ db: Database, _ family: Family, name: String, verifiedAbsent: Bool = false) throws -> DeleteDecision {
         guard name.hasPrefix(family.rawValue + "-") else { return .ignored }
         let id = String(name.dropFirst(family.rawValue.count + 1))
         guard (try? parseSha256(value: id)) == id else { return .ignored }
@@ -213,12 +254,12 @@ enum FixedValueCloudRows {
         let pending = try CloudTransportRows.pending(db, key)
         let status = try CloudTransportRows.recordStatus(db, key)
         let digest = try currentDigest(db, family, id: id)
-        if status == verifyStatus { return .verify }
-        if digest == nil && (status?.hasPrefix(freshPrefix) == true || status?.hasPrefix(waitingPrefix) == true) {
+        if !verifiedAbsent && status == verifyStatus { return .verify }
+        if !verifiedAbsent && digest == nil && (status?.hasPrefix(freshPrefix) == true || status?.hasPrefix(waitingPrefix) == true) {
             try setControl(db, key, id, verifyStatus)
             return .verify
         }
-        if let pending, let digest {
+        if !verifiedAbsent, let pending, let digest {
             if pending.intent == .delete, status == waitingPrefix + String(pending.generation) + ":" + digest {
                 return .keptLocalCreation
             }
@@ -239,9 +280,7 @@ enum FixedValueCloudRows {
         let asset = family == .cover ? try String.fetchOne(db, sql: "SELECT asset_id FROM usr.cover_candidate WHERE partition=0 AND record_id=?",
                                                             arguments: [id]) : nil
         try db.execute(sql: "DELETE FROM usr.\(family.table) WHERE partition=0 AND record_id=?\(family.predicate)", arguments: [id])
-        try db.execute(sql: """
-            DELETE FROM usr.quarantined_record WHERE partition=0 AND source='cloud' AND source_type=? AND source_id=? AND record_id=?
-            """, arguments: [family.rawValue,name,id])
+        try removeCloudIsolation(db, family: family, name: name, id: id)
         try CloudTransportRows.applyPeerDeletion(db, key)
         while let name = logical.popFirst() {
             if let kind = UserSyncJSON.kind(name), Family(kind) == family, let key = try? UserValueRows.Key(name) { try key.settle(db) }

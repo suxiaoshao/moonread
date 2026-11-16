@@ -192,7 +192,7 @@ enum ReadingPositionRows {
     }
 
     static func recordPosition(_ db: Database, book: String, offset: UInt64, hint: PositionSourceHint?, file: String?,
-                               device: String, now: Int64, token: String) throws -> Position {
+                               device: String, now: Int64, token: String, scope: DataScope = .local) throws -> Position {
         guard !token.isEmpty else { throw UserSyncCompatibilityError() }
         let part = try partition(for: book)
         let previous = try position(db, book: book, partition: part)
@@ -200,7 +200,14 @@ enum ReadingPositionRows {
         guard source?.isValid ?? true else { throw UserSyncCompatibilityError() }
         let saved = Position(value: .init(content_key: book, offset: offset, source_hint: source),
                              updated: try nextTime(now, after: previous?.updated), token: token, device: device)
+        let predecessors = part == 0 && scope != .local ? try String.fetchAll(db, sql: """
+            SELECT record_id FROM usr.position_candidate WHERE partition=0 AND book_key=?
+            """, arguments: [book]) : []
         try replacePosition(db, with: saved, book: book, partition: part)
+        if part == 0 && scope != .local {
+            let id = recordID(book: book, token: saved.token)
+            try CausalCloudRows.enqueueReplacement(db, .position, id: id, predecessors: predecessors)
+        }
         try recordLocalOpen(db, book: book, file: file)
         if part == 0 { try LocalReadingRows.setResume(db, book: book, offset: offset, token: token) }
         try settleCurrent(db, book: book)
@@ -208,7 +215,15 @@ enum ReadingPositionRows {
     }
 
     private static func replacePosition(_ db: Database, with position: Position, book: String, partition: Int) throws {
-        let id = DataIdentity.id("position", [book,position.token])
+        try insertPosition(db, position, book: book, partition: partition)
+        try db.execute(sql: "DELETE FROM usr.position_candidate WHERE partition=? AND book_key=? AND record_id<>?",
+                       arguments: [partition,DataIdentity.canonical(book),recordID(book: book, token: position.token)])
+    }
+
+    static func recordID(book: String, token: String) -> String { DataIdentity.id("position", [book,token]) }
+
+    private static func insertPosition(_ db: Database, _ position: Position, book: String, partition: Int) throws {
+        let id = recordID(book: book, token: position.token)
         let key = DataIdentity.canonical(book), hint = position.value.source_hint
         let byteSize = hint?.byte_size.flatMap { Int64(exactly: $0) }
         try db.execute(sql: """
@@ -218,8 +233,25 @@ enum ReadingPositionRows {
             VALUES (?,?,1,?,?,?,?,?,?,?,?,?,?)
             """, arguments: [partition,id,key,position.updated,position.token,DataIdentity.unsigned(position.value.offset),position.device,
                              hint?.source_kind.rawValue,hint?.relative_path,hint?.file_name,byteSize,hint?.decoding])
-        try db.execute(sql: "DELETE FROM usr.position_candidate WHERE partition=? AND book_key=? AND record_id<>?",
-                       arguments: [partition,key,id])
+    }
+
+    static func requireFormalPositionReadable(_ db: Database, book: String) throws {
+        try requireReadable(db, domain: .position, book: book, partition: 0)
+    }
+
+    /// Independent received token evidence must survive a different token's
+    /// arrival or deletion. A remote callback never writes the device baseline.
+    static func mergeCloudPosition(_ db: Database, book: String, value: Position) throws {
+        let id = recordID(book: book, token: value.token)
+        if let row = try Row.fetchOne(db, sql: "SELECT * FROM usr.position_candidate WHERE partition=0 AND record_id=?", arguments: [id]) {
+            guard (row["schema_version"] as Int) == 1 else { throw UserSyncCompatibilityError() }
+            let old = try decodedPosition(row)
+            guard old.value == value.value, old.updated == value.updated,
+                  (old.device == nil || value.device == nil || old.device == value.device) else { throw ReadingDataError.invalid }
+        } else {
+            try insertPosition(db, value, book: book, partition: 0)
+        }
+        try settleCurrent(db, book: book)
     }
 
     static func assessBackup(_ db: Database, book: String, incoming: Position) throws -> Bool {
@@ -366,7 +398,7 @@ extension ReaderIndex {
                 normalized = try Self.scalarOffset(chunk, at: offset, forward: false)
             }
             _ = try ReadingPositionRows.recordPosition(db, book: body.sha, offset: normalized, hint: hint, file: file,
-                                                        device: device, now: now, token: token)
+                                                        device: device, now: now, token: token, scope: lease.scope)
         }
     }
 
