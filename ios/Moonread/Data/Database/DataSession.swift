@@ -132,6 +132,7 @@ final class DataSession: @unchecked Sendable {
     private let lifecycle = NSLock()
     let layout: DataLayout
     private let bundle: Bundle
+    private let legacyBridgeScope: DataScope?
     private var owner: DataOwnerState
     private var pool: DatabasePool?
     private var lease: DataSessionLease?
@@ -147,8 +148,13 @@ final class DataSession: @unchecked Sendable {
     /// The optional bootstrap owner is accepted only before any v2 owner
     /// decision exists. It comes from a positively attributed legacy store,
     /// not simply from the system's current login.
-    init(layout: DataLayout, bundle: Bundle = .main, confirmedLegacyOwner: DataScope? = nil) throws {
+    init(layout: DataLayout, bundle: Bundle = .main, confirmedLegacyOwner: DataScope? = nil,
+         legacyBridgeScope: DataScope? = nil) throws {
         self.layout = layout; self.bundle = bundle
+        if let legacyBridgeScope {
+            guard legacyBridgeScope != .local, legacyBridgeScope.valid else { throw DataV2Error.invalidOwnerState }
+        }
+        self.legacyBridgeScope = legacyBridgeScope
         var state = try DataOwnerState.load(at: layout.ownerState)
         if let confirmedLegacyOwner, !FileManager.default.fileExists(atPath: layout.ownerState.path) {
             guard confirmedLegacyOwner.valid, confirmedLegacyOwner != .local else { throw DataV2Error.invalidOwnerState }
@@ -367,6 +373,14 @@ final class DataSession: @unchecked Sendable {
                     }
                 }
             }
+            // The cutover caller supplies the eligible scope when creating
+            // the session. Do not open the management writer before its
+            // first W1 obligation is durable, even in the offline account.
+            if token.scope == legacyBridgeScope {
+                try writer.write { db in
+                    if try LegacyBridgePolicy.phase(db) == nil { try LegacyBridgePolicy.require(db) }
+                }
+            }
             // Copy/absence is already durable in usr. If this publication
             // fails, a later startup can retry it without recopied user rows.
             if !owner.ownedIndex {
@@ -481,8 +495,8 @@ final class DataSession: @unchecked Sendable {
             guard account.scope == binding.user.scope, account.root == layout.root.resolvingSymlinksInPath() else {
                 throw DataV2Error.leaseExpired
             }
-            // Commit the obligation BEFORE opening the writable mirror.
-            try writer.write { try LegacyBridgePolicy.require($0) }
+            // This is not the first enrollment. The eligible scope must
+            // already have committed it before its app writer opened.
             try writer.read { try LegacyBridgePolicy.checkIntake($0) }
             let store = try LegacyMirrorStore.openProbe(layout: layout, account: account)
             legacyDeletionMirror = (binding, store)
@@ -512,10 +526,29 @@ final class DataSession: @unchecked Sendable {
 
     /// Called only after the user confirms all devices have upgraded. Old
     /// mirrors/data remain on disk; the obsolete container loses write access.
-    func finishLegacyBridgeAfterUpgrade(_ binding: DataCloudLease) throws {
+    func finishLegacyBridgeAfterUpgrade(_ binding: DataCloudLease, check: @Sendable () throws -> Void) throws {
         try lifecycle.withLock {
-            try activeCloud(binding).write { try LegacyBridgePolicy.finish($0) }
+            try activeCloud(binding).write {
+                try check()
+                try LegacyBridgePolicy.checkIntake($0)
+                try LegacyBridgePolicy.finish($0)
+                try check()
+            }
             legacyDeletionMirror = nil
+        }
+    }
+
+    func consumeLegacyMirrorPage(_ binding: DataCloudLease) throws -> Bool {
+        try lifecycle.withLock {
+            let writer = try activeCloud(binding)
+            return try writer.write { db in
+                guard try LegacyBridgePolicy.phase(db) == .required else { return false }
+                try LegacyBridgePolicy.checkIntake(db)
+                guard let mirror = self.legacyDeletionMirror, mirror.binding == binding else {
+                    throw LegacyBridgePolicy.Failure.notReady
+                }
+                return try LegacyUserImport.consumeMirrorPage(db, store: mirror.store)
+            }
         }
     }
 

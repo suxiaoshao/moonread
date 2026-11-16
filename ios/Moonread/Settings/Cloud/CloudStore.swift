@@ -84,6 +84,17 @@ final class CloudStore {
             await updateStatus()
         }
     }
+    func finishLegacyUpgrade(_ revision: UUID) {
+        guard !busy, status.legacyUpgradeRevision == revision else { return }
+        busy = true
+        Task {
+            defer { busy = false }
+            do { try await coordinator.confirmLegacyUpgrade(revision: revision) }
+            catch is CancellationError { }
+            catch { self.error = ReaderMessages.error(error) }
+            await updateReadingStatus()
+        }
+    }
     func retry() {
         guard !busy else { return }
         busy = true

@@ -145,6 +145,8 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     private let account: CKRecord.ID
     private let staging: URL
     private let zone: CKRecordZone.ID
+    private let legacyProbe: VerifiedProbeAccount?
+    private var legacyOpened = false
     private var engine: CKSyncEngine?
     private var active = true
     private var turn: Task<Void, any Error>?
@@ -156,25 +158,33 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     private var offered: [CKRecord.ID: Offered] = [:]
 
     private init(journal: CloudCallbackJournal, database: CKDatabase, account: CKRecord.ID, staging: URL,
-                 zone: CKRecordZone.ID, initialSignInAllowed: Bool) {
+                 zone: CKRecordZone.ID, initialSignInAllowed: Bool, legacyProbe: VerifiedProbeAccount?) {
         self.journal = journal; self.database = database; self.account = account; self.staging = staging
         self.zone = zone; self.initialSignInAllowed = initialSignInAllowed
+        self.legacyProbe = legacyProbe
     }
 
     /// Bind to a library prepared by the test host. The scope key includes
     /// this literal container and Development; a production lease cannot pass.
-    static func openTestContainer(session: DataSession, lease: DataSessionLease) async throws -> ReadingSyncEngineAdapter {
+    static func openTestContainer(session: DataSession, lease: DataSessionLease,
+                                  legacyMirror: Bool = false) async throws -> ReadingSyncEngineAdapter {
         let (container, account) = try await verifiedTestContainer(session: session, lease: lease)
         let database = container.privateCloudDatabase
         let root = try session.layout.staging(lease.scope).appending(path: "ck-sandbox-" + UUID().uuidString, directoryHint: .isDirectory)
         let journal = try CloudCallbackJournal(session: session, lease: lease)
         do {
+            let legacyProbe: VerifiedProbeAccount?
+            if legacyMirror {
+                guard let phase = try await journal.legacyBridgePhase() else { throw LegacyBridgePolicy.Failure.notReady }
+                legacyProbe = phase == .required
+                    ? .init(scope: lease.scope, root: session.layout.root.resolvingSymlinksInPath()) : nil
+            } else { legacyProbe = nil }
             let bytes = try await journal.checkpoint()
             try Task.checkCancellation()
             let state = try bytes.map { try JSONDecoder().decode(CKSyncEngine.State.Serialization.self, from: $0) }
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             let adapter = ReadingSyncEngineAdapter(journal: journal, database: database, account: account, staging: root,
-                                                   zone: ownZone, initialSignInAllowed: bytes == nil)
+                                                   zone: ownZone, initialSignInAllowed: bytes == nil, legacyProbe: legacyProbe)
             var configuration = CKSyncEngine.Configuration(database: database, stateSerialization: state, delegate: adapter)
             configuration.automaticallySync = false
             configuration.subscriptionID = "Moonread-SyncProbe-v2"
@@ -196,15 +206,6 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         } catch let error as CKError where error.code == .zoneNotFound || error.code == .unknownItem {
             return .absent
         }
-    }
-
-    /// Probe-only. The caller holds the coordinator turn and must let it
-    /// retire the journal on failure; no App production lifecycle calls this.
-    static func openTestLegacyMirror(session: DataSession, lease: DataSessionLease,
-                                     journal: CloudCallbackJournal) async throws {
-        _ = try await verifiedTestContainer(session: session, lease: lease)
-        try Task.checkCancellation()
-        try await journal.openLegacyProbe(.init(scope: lease.scope, root: session.layout.root.resolvingSymlinksInPath()))
     }
 
     private static func verifiedTestContainer(session: DataSession, lease: DataSessionLease) async throws -> (CKContainer, CKRecord.ID) {
@@ -252,11 +253,25 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         }
     }
 
+    func isLegacyBridgeActive() async throws -> Bool {
+        guard active, legacyProbe != nil else { return false }
+        return try await journal.isLegacyBridgeActive()
+    }
+
+    func finishLegacyBridgeAfterUpgrade(check: @Sendable () throws -> Void) async throws {
+        guard active, legacyProbe != nil else { throw LegacyBridgePolicy.Failure.notReady }
+        try await journal.finishLegacyBridgeAfterUpgrade(check: check)
+    }
+
     private func runTurn(_ engine: CKSyncEngine) async throws {
         defer { proof = nil }
         do {
             try await ready(engine)
-            try await ReadingSyncTurn.run(fetch: { try await self.fetchOwnZone(engine) },
+            try await ReadingSyncTurn.run(fetch: {
+                let covered = try await self.fetchOwnZone(engine)
+                if covered { try await self.consumeOldMirror(engine) }
+                return covered
+            },
                                           verify: { try await self.verifyRecords(engine) },
                                           send: { try await self.sendDurable(engine) },
                                           needsCatchUp: { try await self.journal.requiresOwnZoneCatchUp() })
@@ -265,6 +280,23 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
             try checkActive(engine)  // Prefer a recorded, more specific callback failure.
             if (error as? CKError)?.code == .zoneNotFound { throw CloudZoneRecoverySignal.verificationRequired }
             throw error
+        }
+    }
+
+    private func consumeOldMirror(_ engine: CKSyncEngine) async throws {
+        guard let legacyProbe else { return }
+        try checkActive(engine)
+        guard try await journal.legacyBridgePhase() == .required else { return }
+        try checkActive(engine)
+        if !legacyOpened {
+            try await journal.openLegacyProbe(legacyProbe)
+            legacyOpened = true
+        }
+        // The test host drives turns. Each page is a single old save and
+        // commits its own cursor; no unbounded writer transaction.
+        for _ in 0..<8 {
+            try checkActive(engine)
+            if try await !journal.consumeLegacyMirrorPage() { break }
         }
     }
 

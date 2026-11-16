@@ -734,9 +734,27 @@ actor CloudCallbackJournal {
     }
     #endif
 
-    func finishLegacyBridgeAfterUpgrade() throws {
+    func finishLegacyBridgeAfterUpgrade(check: @Sendable () throws -> Void = { try Task.checkCancellation() }) throws {
         guard !failed else { throw Failure.restartRequired }
-        try session.finishLegacyBridgeAfterUpgrade(binding)
+        try session.finishLegacyBridgeAfterUpgrade(binding, check: check)
+    }
+
+    func consumeLegacyMirrorPage() throws -> Bool {
+        guard !failed else { throw Failure.restartRequired }
+        return try session.consumeLegacyMirrorPage(binding)
+    }
+
+    func legacyBridgePhase() throws -> LegacyBridgePolicy.Phase? {
+        guard !failed else { throw Failure.restartRequired }
+        return try session.readCloudChanges(binding) { try LegacyBridgePolicy.phase($0) }
+    }
+
+    func isLegacyBridgeActive() throws -> Bool {
+        guard !failed else { throw Failure.restartRequired }
+        return try session.readCloudChanges(binding) { db in
+            try LegacyBridgePolicy.phase(db) == .required &&
+                CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone) == .ready
+        }
     }
 
     func checkpoint() throws -> Data? {

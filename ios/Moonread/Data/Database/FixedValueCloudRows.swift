@@ -149,6 +149,22 @@ enum FixedValueCloudRows {
         try material(db, family, id: id)?.digest
     }
 
+    /// Legacy intake is never evidence for the user's explicit creation
+    /// after a delete. Reuse normal payload/readability rules only.
+    static func enqueueBridgeSave(_ db: Database, _ family: Family, id: String) throws {
+        let key = key(family, id: id)
+        guard try !blocksSave(db, key: key),
+              let value = try material(db, family, id: id), try readable(db, value) else { return }
+        if let cover = value.cover, try matchingCoverBytes(db, cover) == nil { return }
+        try CloudTransportRows.enqueueSave(db, key, businessID: id, digest: value.digest)
+    }
+
+    private static func matchingCoverBytes(_ db: Database, _ cover: UserValueRows.Cover) throws -> Data? {
+        guard let bytes = try UserValueRows.coverBytes(db, id: cover.id, sha: cover.sha256),
+              DataIdentity.sha(bytes) == cover.sha256 else { return nil }
+        return bytes
+    }
+
     static func enqueueLocalEdit(_ db: Database, _ family: Family, id: String, previousDigest: String?) throws {
         guard let value = try material(db, family, id: id) else { return }
         let key = key(family, id: id), status = try CloudTransportRows.recordStatus(db, key)
@@ -235,8 +251,7 @@ enum FixedValueCloudRows {
                   try readable(db, value) else { return nil }
             var attachment: Data?
             if let cover = value.cover {
-                guard let bytes = try UserValueRows.coverBytes(db, id: cover.id, sha: cover.sha256),
-                      DataIdentity.sha(bytes) == cover.sha256 else { return nil }
+                guard let bytes = try matchingCoverBytes(db, cover) else { return nil }
                 attachment = bytes
             }
             prepared = .init(attempt: attempt, logical: value.logical, device: value.device, payload: value.payload,

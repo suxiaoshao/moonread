@@ -4,6 +4,7 @@ struct CloudSettingsView: View {
     @Environment(CloudStore.self) private var cloud
     @Environment(\.theme) private var theme
     @State private var replacing: String?
+    @State private var legacyUpgrade: UUID?
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
@@ -29,6 +30,22 @@ struct CloudSettingsView: View {
                                     .buttonStyle(ThemedProminentButtonStyle()).disabled(cloud.busy)
                             }
                         }
+                    }
+                    if let revision = cloud.status.legacyUpgradeRevision {
+                        Text("请把其他设备上的月读更新到最新版。更新前，那些设备看不到这台设备的新进度和批注。")
+                            .font(.footnote).foregroundStyle(Color(uiColor: theme.secondary))
+                        Button("其他设备都已更新") { legacyUpgrade = revision }
+                            .disabled(cloud.busy)
+                            .alert("其他设备都已更新？", isPresented: Binding(
+                                get: { legacyUpgrade == revision },
+                                set: { if !$0 { legacyUpgrade = nil } }
+                            ), presenting: legacyUpgrade) { confirmed in
+                                Button("确认更新完成") {
+                                    legacyUpgrade = nil
+                                    cloud.finishLegacyUpgrade(confirmed)
+                                }
+                                Button("取消", role: .cancel) { legacyUpgrade = nil }
+                            }
                     }
                 }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 22))
@@ -70,6 +87,7 @@ struct CloudSettingsView: View {
         }
         .themedPage().navigationTitle("iCloud").navigationBarTitleDisplayMode(.inline)
         .task { await cloud.updateStatus() }
+        .onChange(of: cloud.status.legacyUpgradeRevision) { _, _ in legacyUpgrade = nil }
         .alert("是否将本机阅读数据同步到此账户？",
                isPresented: Binding(get: { cloud.confirmationAccount != nil }, set: { if !$0 { cloud.confirmationAccount = nil } }),
                presenting: cloud.confirmationAccount) { account in
