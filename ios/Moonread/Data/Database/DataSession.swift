@@ -418,6 +418,23 @@ final class DataSession: @unchecked Sendable {
         }
     }
 
+    // A valid local reading lease alone cannot authorize a cloud callback.
+    // Identity-unknown and explicitly paused accounts still use read/writeUsers.
+    private func activeCloud(_ token: DataSessionLease) throws -> DatabasePool {
+        let pool = try active(token)
+        guard selection?.maySync == true, verifiedAccount == token.scope else { throw DataV2Error.leaseExpired }
+        guard usersReady else { throw DataV2Error.migrationNotVerified }
+        return pool
+    }
+
+    func readCloudChanges<T: Sendable>(_ token: DataSessionLease, _ body: @Sendable (Database) throws -> T) throws -> T {
+        try lifecycle.withLock { try activeCloud(token).read(body) }
+    }
+
+    func writeCloudChanges<T: Sendable>(_ token: DataSessionLease, _ body: (Database) throws -> T) throws -> T {
+        try lifecycle.withLock { try activeCloud(token).write(body) }
+    }
+
     /// The publication callback runs on the writer at commit. It only
     /// increments a stamp and signals a stream; it cannot reenter the session.
     func observePublicationCommits(_ token: DataSessionLease, _ observation: DatabaseRegionObservation,

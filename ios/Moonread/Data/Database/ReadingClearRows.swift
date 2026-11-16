@@ -164,8 +164,7 @@ enum ReadingClearRows {
     }
 }
 
-/// SQLite handoff for a later CKSyncEngine adapter. Names and ACK matching are
-/// stable across restarts; no network operation is performed here.
+/// History's wire and settlement rules. The shared outbox owns attempt identity.
 enum ReadingHistoryTransport {
     enum RecordType: String, Sendable { case segment = "ReadingSegment", clear = "StatisticsClear" }
     static let zone = "MoonreadReadingV2"
@@ -174,15 +173,17 @@ enum ReadingHistoryTransport {
         type.rawValue + "-" + DataIdentity.id("reading-history", [type.rawValue,id])
     }
 
+    static func key(_ type: RecordType, id: String) -> CloudTransportRows.Key {
+        .init(zone: zone, type: type.rawValue, name: name(type, id: id))
+    }
+
     static func segmentWire(_ row: ReadingSegmentRows.Raw) throws -> String? {
         guard row.partition == 0, row.value.header.sealed, case .formal = try parseReadingKey(value: row.book) else { return nil }
         return try encodeReadingSegment(bookKey: row.book, segment: row.value)
     }
 
     static func deletionPending(_ db: Database, type: RecordType, id: String) throws -> Bool {
-        try Bool.fetchOne(db, sql: """
-            SELECT EXISTS(SELECT 1 FROM usr.cloud_outbox WHERE zone=? AND record_type=? AND record_name=? AND intent='delete')
-            """, arguments: [zone,type.rawValue,name(type,id: id)]) == true
+        try CloudTransportRows.deletionPending(db, key(type, id: id))
     }
 
     static func enqueueClear(_ db: Database, id: String, value: ReadingClearRows.Value, scope: DataScope) throws {
@@ -206,12 +207,7 @@ enum ReadingHistoryTransport {
 
     private static func save(_ db: Database, type: RecordType, id: String, payload: String, scope: DataScope) throws {
         guard scope != .local else { return }
-        try db.execute(sql: """
-            INSERT INTO usr.cloud_outbox(zone,record_type,record_name,business_id,intent,content_digest,generation)
-            VALUES(?,?,?,?,'save',?,1)
-            ON CONFLICT(zone,record_type,record_name) DO UPDATE SET content_digest=excluded.content_digest,generation=generation+1
-              WHERE intent='save' AND content_digest IS NOT excluded.content_digest
-            """, arguments: [zone,type.rawValue,name(type,id: id),id,DataIdentity.sha(Data(payload.utf8))])
+        try CloudTransportRows.enqueueSave(db, key(type, id: id), businessID: id, digest: DataIdentity.sha(Data(payload.utf8)))
     }
 
     struct Fetched: Sendable {
@@ -221,6 +217,12 @@ enum ReadingHistoryTransport {
         // A separately validated outer route, not routing from unknown JSON.
         let trustedBook: String?
         let body: String? // nil: physical delete
+        let systemFields: Data?
+
+        init(type: RecordType, recordName: String, id: String?, trustedBook: String?, body: String?, systemFields: Data? = nil) {
+            self.type = type; self.recordName = recordName; self.id = id
+            self.trustedBook = trustedBook; self.body = body; self.systemFields = systemFields
+        }
     }
 
     /// Pure persistence ingress; the engine owner supplies only this zone,
@@ -229,9 +231,13 @@ enum ReadingHistoryTransport {
     static func applyFetched(_ db: Database, records: [Fetched], scope: DataScope) throws {
         guard scope != .local else { throw DataV2Error.leaseExpired }
         var changed = ReadingHistoryRows.Changed()
-        let deletions = Set(records.filter { $0.body == nil }.map(\.recordName))
+        let deletions = Set(records.filter { $0.body == nil }.map {
+            CloudTransportRows.Key(zone: zone, type: $0.type.rawValue, name: $0.recordName)
+        })
         for record in records {
-            let id = try record.id ?? businessID(db, type: record.type, recordName: record.recordName)
+            let key = CloudTransportRows.Key(zone: zone, type: record.type.rawValue, name: record.recordName)
+            if record.body != nil, deletions.contains(key) { continue }
+            let id = try record.id ?? CloudTransportRows.businessID(db, key)
             guard let id, !id.isEmpty, record.recordName == name(record.type, id: id) else {
                 if let payload = record.body {
                     let unbound = "unbound:" + DataIdentity.id("malformed-history-envelope", [record.recordName])
@@ -259,13 +265,8 @@ enum ReadingHistoryTransport {
                 continue
             }
             if let payload = record.body {
-                guard !deletions.contains(record.recordName),
-                      try !deletionPending(db, type: record.type, id: id) else { continue }
-                try db.execute(sql: """
-                    INSERT INTO usr.cloud_record_state(zone,record_type,record_name,business_id,server_state)
-                    VALUES(?,?,?,?,'present')
-                    ON CONFLICT(zone,record_type,record_name) DO NOTHING
-                    """, arguments: [zone,record.type.rawValue,record.recordName,id])
+                guard try !CloudTransportRows.deletionPending(db, key) else { continue }
+                try CloudTransportRows.recordPresent(db, key, businessID: id, systemFields: record.systemFields)
                 switch record.type {
                 case .segment:
                     try stageSegment(db, id: id, book: record.trustedBook, payload: payload,
@@ -287,25 +288,13 @@ enum ReadingHistoryTransport {
                     changed.clearFacts.formUnion(try ReadingFactSettlement.affectedIDs(db, partition: 0, book: record.trustedBook))
                     changed.clearSegments.formUnion(try ReadingSegmentRows.affected(db, partition: 0, book: record.trustedBook))
                 }
-                // A physical delete has precedence over an unsent update.
-                // The engine owner handles opaque state and X2 before ingress.
-                try db.execute(sql: "DELETE FROM usr.cloud_record_state WHERE zone=? AND record_type=? AND record_name=?",
-                               arguments: [zone,record.type.rawValue,record.recordName])
-                try withdrawSave(db, type: record.type, id: id)
+                try CloudTransportRows.applyPeerDeletion(db, key)
                 try db.execute(sql: "DELETE FROM usr.quarantined_record WHERE partition=0 AND source_type IN " +
                     (record.type == .segment ? "(" + ReadingSegmentRows.quarantineTypes + ")" : "(" + ReadingFactRows.quarantineClearTypes + ")") +
                     " AND record_id=?", arguments: [id])
             }
         }
         try changed.settle(db, scope: scope)
-    }
-
-    private static func businessID(_ db: Database, type: RecordType, recordName: String) throws -> String? {
-        try String.fetchOne(db, sql: """
-            SELECT business_id FROM usr.cloud_record_state WHERE zone=?1 AND record_type=?2 AND record_name=?3
-            UNION ALL SELECT business_id FROM usr.cloud_outbox WHERE zone=?1 AND record_type=?2 AND record_name=?3
-            LIMIT 1
-            """, arguments: [zone,type.rawValue,recordName])
     }
 
     private static func formalScope(_ book: String?) -> String? {
@@ -390,10 +379,7 @@ enum ReadingHistoryTransport {
     /// Resolve a save at send time from the actual row, checking its digest;
     /// a stale engine intent cannot send an active or withdrawn snapshot.
     static func payload(_ db: Database, type: RecordType, id: String, digest: String) throws -> String? {
-        guard try Bool.fetchOne(db, sql: """
-            SELECT EXISTS(SELECT 1 FROM usr.cloud_outbox WHERE zone=? AND record_type=? AND record_name=?
-                          AND intent='save' AND content_digest=?)
-            """, arguments: [zone,type.rawValue,name(type,id: id),digest]) == true else { return nil }
+        guard try CloudTransportRows.pending(db, key(type, id: id))?.intent == .save(digest: digest) else { return nil }
         let wire: String?
         switch type {
         case .segment:
@@ -406,26 +392,8 @@ enum ReadingHistoryTransport {
         return wire.flatMap { DataIdentity.sha(Data($0.utf8)) == digest ? $0 : nil }
     }
 
-    /// Only a matching save acknowledgement may consume an outstanding save.
-    /// The engine owner still checks the lease, zone lifecycle and system fields.
-    static func acknowledgeSave(_ db: Database, type: RecordType, id: String, generation: Int64,
-                                digest: String, systemFields: Data?) throws {
-        try db.execute(sql: """
-            DELETE FROM usr.cloud_outbox
-            WHERE zone=? AND record_type=? AND record_name=? AND intent='save' AND generation=? AND content_digest=?
-            """, arguments: [zone,type.rawValue,name(type,id: id),generation,digest])
-        guard db.changesCount != 0 else { return }
-        try db.execute(sql: """
-            INSERT INTO usr.cloud_record_state(zone,record_type,record_name,business_id,server_state,system_fields)
-            VALUES(?,?,?,?,'present',?)
-            ON CONFLICT(zone,record_type,record_name) DO UPDATE
-                SET server_state=excluded.server_state,system_fields=excluded.system_fields
-            """, arguments: [zone,type.rawValue,name(type,id: id),id,systemFields])
-    }
-
     static func withdrawSave(_ db: Database, type: RecordType, id: String) throws {
-        try db.execute(sql: "DELETE FROM usr.cloud_outbox WHERE zone=? AND record_type=? AND record_name=? AND intent='save'",
-                       arguments: [zone,type.rawValue,name(type,id: id)])
+        try CloudTransportRows.withdrawSave(db, key(type, id: id))
     }
 
     static func delete(_ db: Database, type: RecordType, id: String, scope: DataScope) throws {
@@ -452,11 +420,6 @@ enum ReadingHistoryTransport {
     }
 
     private static func queueDelete(_ db: Database, type: RecordType, id: String, recordName: String) throws {
-        try db.execute(sql: """
-            INSERT INTO usr.cloud_outbox(zone,record_type,record_name,business_id,intent,content_digest,generation)
-            VALUES(?,?,?,?,'delete',NULL,1)
-            ON CONFLICT(zone,record_type,record_name) DO UPDATE SET intent='delete',content_digest=NULL,generation=generation+1
-              WHERE intent<>'delete'
-            """, arguments: [zone,type.rawValue,recordName,id])
+        try CloudTransportRows.enqueueDelete(db, .init(zone: zone, type: type.rawValue, name: recordName), businessID: id)
     }
 }
