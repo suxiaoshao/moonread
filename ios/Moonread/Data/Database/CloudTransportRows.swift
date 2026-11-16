@@ -264,6 +264,37 @@ enum CloudTransportRows {
 
     enum ZoneStage: String, Sendable {
         case unverified, ready, needsCreation, reset
+        // Keep the engine checkpoint and the reason until the App owner can
+        // drain its writers. A blocked UI or process exit must not lose a purge.
+        case deletedPending, purgePending, encryptionResetPending
+
+        var recoverySignal: CloudZoneRecoverySignal? {
+            switch self {
+            case .deletedPending: .verificationRequired
+            case .purgePending, .encryptionResetPending: .resetPending
+            case .reset: .resetComplete
+            case .unverified, .ready, .needsCreation: nil
+            }
+        }
+
+        var requiresLocalClear: Bool { self == .purgePending || self == .encryptionResetPending }
+    }
+
+    enum ZoneDeletion: Sendable { case deleted, purged, encryptedDataReset }
+
+    static func holdZoneDeletion(_ db: Database, zone: String, _ deletion: ZoneDeletion) throws -> ZoneStage {
+        let current = try zoneStage(db, zone: zone)
+        guard current != .reset, !current.requiresLocalClear else { return current }
+        let next: ZoneStage = switch deletion {
+        case .deleted: .deletedPending
+        case .purged: .purgePending
+        case .encryptedDataReset: .encryptionResetPending
+        }
+        try db.execute(sql: """
+            INSERT INTO usr.cloud_engine_state(zone,checkpoint,region_state) VALUES(?,NULL,?)
+            ON CONFLICT(zone) DO UPDATE SET region_state=excluded.region_state
+            """, arguments: [zone,next.rawValue])
+        return next
     }
 
     private struct LostTransportEvidence: Encodable {
@@ -571,7 +602,13 @@ enum CloudSaveVerification {
 
 /// W2-b changes the existing authority in its own transaction. It does not
 /// run legacy import, change source files, or open another SQLite pool.
+enum CloudZoneRecoverySignal: Error, Equatable {
+    case verificationRequired, resetPending, resetComplete
+}
+
 enum CloudAccountZoneRecovery {
+    enum Presence: Equatable, Sendable { case present, absent }
+    enum Outcome: Equatable, Sendable { case resume, rebuild, reset, awaitingEvidence }
     enum Loss: Sendable {
         case purged, encryptedDataReset
         // A record operation's zoneNotFound is not this proof.
@@ -585,7 +622,26 @@ enum CloudAccountZoneRecovery {
         "source_decoding_candidate", "palette_candidate", "shelf_reference_candidate",
     ]
 
-    static func apply(_ db: Database, loss: Loss, scope: DataScope) throws -> CloudTransportRows.ZoneStage {
+    /// Only a recorded own-zone deletion event plus an exact absent-zone
+    /// lookup authorizes rebuilding. A single record error never does.
+    static func applyPending(_ db: Database, presence: Presence?, scope: DataScope) throws -> Outcome {
+        switch try CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone) {
+        case .purgePending:
+            _ = try apply(db, loss: .purged, scope: scope)
+            return .reset
+        case .encryptionResetPending:
+            _ = try apply(db, loss: .encryptedDataReset, scope: scope)
+            return .reset
+        case .deletedPending where presence == .absent:
+            _ = try apply(db, loss: .confirmedUnexpectedAbsence, scope: scope)
+            return .rebuild
+        case .ready where presence == .present: return .resume
+        case .reset: return .reset
+        default: return .awaitingEvidence
+        }
+    }
+
+    private static func apply(_ db: Database, loss: Loss, scope: DataScope) throws -> CloudTransportRows.ZoneStage {
         let zone = ReadingHistoryTransport.zone
         let previous = try CloudTransportRows.zoneStage(db, zone: zone)
         guard previous != .reset else { return .reset }
@@ -805,14 +861,10 @@ actor CloudCallbackJournal {
         return try session.readCloudChanges(binding) { try CloudTransportRows.zoneStage($0, zone: ReadingHistoryTransport.zone) }
     }
 
-    /// The caller coordinates active App writers and passes only own-zone,
-    /// authenticated lifecycle events. Retire this journal after the commit.
-    func applyZoneLoss(_ loss: CloudAccountZoneRecovery.Loss) throws -> CloudTransportRows.ZoneStage {
-        let scope = lease.scope
-        let stage = try commit { try CloudAccountZoneRecovery.apply($0, loss: loss, scope: scope) }
-        failed = true
-        retire()
-        return stage
+    func holdZoneDeletion(_ deletion: CloudTransportRows.ZoneDeletion) throws -> CloudZoneRecoverySignal {
+        let stage = try commit { try CloudTransportRows.holdZoneDeletion($0, zone: ReadingHistoryTransport.zone, deletion) }
+        guard let signal = stage.recoverySignal else { throw Failure.restartRequired }
+        return signal
     }
 
     func confirmZoneCreation() throws -> Bool {
@@ -822,7 +874,7 @@ actor CloudCallbackJournal {
     private func recordCallback<T: Sendable>(whileCreating fallback: () throws -> T, _ body: (Database) throws -> T) throws -> T {
         try commit { db in
             switch try CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone) {
-            case .reset: throw Failure.restartRequired
+            case .reset, .deletedPending, .purgePending, .encryptionResetPending: throw Failure.restartRequired
             case .needsCreation: return try fallback()
             case .unverified, .ready: return try body(db)
             }

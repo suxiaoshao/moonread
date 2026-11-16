@@ -284,6 +284,200 @@ final class CloudAccountCloudAccountTests: XCTestCase {
         XCTAssertEqual(invalidations.withLock { $0 }, 1)
         XCTAssertFalse(FileManager.default.fileExists(atPath: coverFile.path))
     }
+
+    func testZoneRecoveryRequiresDurableDeletionAndExactAbsence() async throws {
+        let fixture = try ZoneRecoveryFixture()
+        defer { fixture.remove() }
+        let (index, service) = try fixture.open()
+        let journal = try CloudCallbackJournal(session: index.session, lease: index.lease)
+        try await journal.initializeZone(exists: true)
+        try await journal.persistCheckpoint(Data([21]))
+        try fixture.seed(index)
+
+        do {
+            _ = try await service.recoverReadingCloudZone(fixture.account, presence: .absent, lookup: { .confirmed(fixture.account) })
+            XCTFail("a live engine must not share the recovery writer")
+        } catch DataV2Error.leaseExpired { }
+        journal.retire()
+        let before = try fixture.state(index)
+        let hint = try await service.recoverReadingCloudZone(fixture.account, presence: .absent, lookup: { .confirmed(fixture.account) })
+        XCTAssertEqual(hint, .awaitingEvidence)
+        XCTAssertEqual(try fixture.state(index), before)
+        let present = try await service.recoverReadingCloudZone(fixture.account, presence: .present, lookup: { .confirmed(fixture.account) })
+        XCTAssertEqual(present, .resume)
+        XCTAssertEqual(try fixture.state(index), before)
+
+        let events = try CloudCallbackJournal(session: index.session, lease: index.lease)
+        let event = try await events.holdZoneDeletion(.deleted)
+        XCTAssertEqual(event, .verificationRequired)
+        events.retire()
+        let conflict = try await service.recoverReadingCloudZone(fixture.account, presence: .present, lookup: { .confirmed(fixture.account) })
+        XCTAssertEqual(conflict, .awaitingEvidence)
+        let held = try fixture.state(index)
+        XCTAssertEqual(held.stage, .deletedPending)
+        XCTAssertEqual(held.checkpoint, before.checkpoint)
+        XCTAssertEqual(held.outbox, before.outbox)
+
+        let rebuilt = try await service.recoverReadingCloudZone(fixture.account, presence: .absent, lookup: { .confirmed(fixture.account) })
+        XCTAssertEqual(rebuilt, .rebuild)
+        let rebuiltState = try fixture.state(index)
+        XCTAssertEqual(rebuiltState.stage, .needsCreation)
+        XCTAssertNil(rebuiltState.checkpoint)
+        XCTAssertEqual(rebuiltState.formal, before.formal)
+        XCTAssertEqual(rebuiltState.pending, before.pending)
+        XCTAssertEqual(rebuiltState.outbox, before.outbox)
+        let newEngine = try CloudCallbackJournal(session: index.session, lease: index.lease)
+        let beforeCreation = try await newEngine.pendingInOwnZone()
+        XCTAssertTrue(beforeCreation.isEmpty)
+        let created = try await newEngine.confirmZoneCreation()
+        XCTAssertTrue(created)
+        let ready = try await newEngine.pendingInOwnZone()
+        XCTAssertEqual(ready.count, before.outbox)
+        newEngine.retire()
+        try index.session.close()
+    }
+
+    func testZoneResetSurvivesRefusalRestartAndWrongAccountWithoutResending() async throws {
+        for reason in [CloudTransportRows.ZoneDeletion.purged, .encryptedDataReset] {
+            let fixture = try ZoneRecoveryFixture()
+            defer { fixture.remove() }
+            let (index, service) = try fixture.open()
+            let journal = try CloudCallbackJournal(session: index.session, lease: index.lease)
+            try await journal.initializeZone(exists: true)
+            try await journal.persistCheckpoint(Data([22]))
+            try fixture.seed(index)
+            _ = try await journal.holdZoneDeletion(.deleted)
+            let resetSignal = try await journal.holdZoneDeletion(reason)
+            XCTAssertEqual(resetSignal, .resetPending)
+            _ = try await journal.holdZoneDeletion(.deleted)  // A later weaker reason cannot win.
+            do { try await journal.persistCheckpoint(Data([99])); XCTFail("advanced held checkpoint") }
+            catch CloudCallbackJournal.Failure.restartRequired { }
+            journal.retire()
+            do {
+                _ = try await service.recoverReadingCloudZone(fixture.account, presence: nil, lookup: { .confirmed(fixture.account) },
+                    beforeClear: { throw CloudScopePresentationError.editing })
+                XCTFail("purge bypassed the editor guard")
+            } catch CloudScopePresentationError.editing { }
+            let held = try fixture.state(index)
+            XCTAssertTrue(held.stage.requiresLocalClear)
+            XCTAssertEqual(held.checkpoint, Data([22]))
+            XCTAssertEqual(held.formal, 1)
+            XCTAssertGreaterThan(held.outbox, 0)
+            try index.session.close()
+
+            let (reopened, owner) = try fixture.open()
+            XCTAssertEqual(try fixture.state(reopened), held)
+            let other = CloudSyncCoordinator.Account(identity: .init(recordName: "fixture-B"),
+                scope: try .confirmed(container: "fixture.invalid", environment: .development, recordName: "fixture-B"))
+            do {
+                _ = try await owner.recoverReadingCloudZone(fixture.account, presence: nil, lookup: { .confirmed(other) })
+                XCTFail("old account evidence crossed the identity check")
+            } catch ReaderError.CloudAccountChanged { }
+            XCTAssertEqual(try fixture.state(reopened), held)
+            let reset = try await owner.recoverReadingCloudZone(fixture.account, presence: nil, lookup: { .confirmed(fixture.account) })
+            XCTAssertEqual(reset, .reset)
+            let after = try fixture.state(reopened)
+            XCTAssertEqual(after.stage, .reset)
+            XCTAssertNil(after.checkpoint)
+            XCTAssertEqual(after.formal, 0)
+            XCTAssertEqual(after.pending, held.pending)
+            XCTAssertEqual(after.outbox, 0)
+            try reopened.session.close()
+        }
+    }
+
+    func testZoneRecoveryStopsOldHandleBeforeProbeAndRestartsOnlyOnce() async throws {
+        let fixture = try ZoneRecoveryFixture()
+        defer { fixture.remove() }
+        let (_, service) = try fixture.open()
+        let trace = ZoneOwnerTrace()
+        let signals = AsyncStream<Void>.makeStream()
+        let observer = NotificationCenter.default.addObserver(forName: .readingCloudStatusChanged, object: nil, queue: nil) { _ in
+            signals.continuation.yield()
+        }
+        defer { NotificationCenter.default.removeObserver(observer); signals.continuation.finish() }
+        let account = fixture.account
+        let coordinator = CloudSyncCoordinator(service: service, runtime: .init(
+            lookup: { .confirmed(account) }, isApproved: { _ in true },
+            select: { _, _ in .init(scope: account.scope, maySync: true) },
+            open: { _ in await trace.open() },
+            zoneRecovery: .init(probe: { _ in await trace.record("probe"); return .absent },
+                                apply: { _, _ in await trace.record("apply"); return .rebuild })))
+        await coordinator.setEnabled(true)
+        for await _ in signals.stream {
+            if case .unavailable = await coordinator.currentStatus().activation { break }
+        }
+        let events = await trace.events
+        XCTAssertEqual(events, ["open-1","send-1","close-1","probe","apply","open-2","send-2","close-2"])
+    }
+}
+
+private actor ZoneOwnerTrace {
+    private(set) var events = [String]()
+    private var opened = 0
+    func record(_ event: String) { events.append(event) }
+    func open() -> ZoneRecoveryTestTransport {
+        opened += 1
+        record("open-\(opened)")
+        return .init(id: opened, trace: self)
+    }
+}
+private struct ZoneRecoveryTestTransport: ReadingCloudTransport {
+    let id: Int
+    let trace: ZoneOwnerTrace
+    func syncNow() async throws {
+        await trace.record("send-\(id)")
+        throw CloudZoneRecoverySignal.verificationRequired
+    }
+    func close() async { await trace.record("close-\(id)") }
+}
+
+private struct ZoneRecoveryFixture: Sendable {
+    struct State: Equatable, Sendable {
+        let stage: CloudTransportRows.ZoneStage
+        let checkpoint: Data?
+        let formal, pending, outbox: Int
+    }
+    let root = FileManager.default.temporaryDirectory.appending(path: "ScopeZone-" + UUID().uuidString)
+    let account: CloudSyncCoordinator.Account
+    private static let book = String(repeating: "a", count: 64)
+    init() throws {
+        account = .init(identity: .init(recordName: "fixture-A"),
+            scope: try .confirmed(container: "fixture.invalid", environment: .development, recordName: "fixture-A"))
+    }
+    func open() throws -> (ReaderIndex, AppDataService) {
+        let session = try DataSession(layout: .init(applicationSupport: root), confirmedLegacyOwner: account.scope)
+        let lease = try session.activate(.confirmed(account.scope, syncRequested: true)).0
+        try session.prepareIndex(root.appending(path: "unused"), token: lease)
+        try session.prepareUsers(lease) { nil }
+        let index = ReaderIndex(session: session, lease: lease)
+        let service = AppDataService(core: index, libraryDirectory: root, sourceDefaultsSuite: root.lastPathComponent)
+        service.cloudSyncIntent.set(true)
+        service.cloudSyncIntent.approve(account.scope)
+        return (index, service)
+    }
+    func remove() {
+        UserDefaults(suiteName: root.lastPathComponent)?.removePersistentDomain(forName: root.lastPathComponent)
+        try? FileManager.default.removeItem(at: root)
+    }
+    func seed(_ index: ReaderIndex) throws {
+        try index.session.writeUsers(index.lease) { db in
+            _ = try ReadingPositionRows.recordPosition(db, book: Self.book, offset: 12, hint: nil, file: nil,
+                device: "fixture", now: 1, token: "fixture-formal", scope: account.scope)
+            _ = try ReadingPositionRows.recordPosition(db, book: "pending:fixture", offset: 24, hint: nil, file: nil,
+                device: "fixture", now: 2, token: "fixture-pending", scope: account.scope)
+        }
+    }
+    func state(_ index: ReaderIndex) throws -> State {
+        try index.session.readUsers(index.lease) { db in
+            let zone = ReadingHistoryTransport.zone
+            return State(stage: try CloudTransportRows.zoneStage(db, zone: zone),
+                checkpoint: try CloudTransportRows.checkpoint(db, zone: zone),
+                formal: try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.position_candidate WHERE partition=0")!,
+                pending: try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.position_candidate WHERE partition=1")!,
+                outbox: try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.cloud_outbox WHERE zone=?", arguments: [zone])!)
+        }
+    }
 }
 
 private actor SyncLifecycleEvents {

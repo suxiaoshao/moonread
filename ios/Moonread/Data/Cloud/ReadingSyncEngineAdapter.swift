@@ -126,7 +126,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     nonisolated private static let attachmentLimit = 16 * 1024 * 1024
 
     enum Failure: Error {
-        case inactive, accountChanged, busy, wrongIdentity, invalidSystemFields, zoneNotReady, zoneVerificationRequired
+        case inactive, accountChanged, busy, wrongIdentity, invalidSystemFields, zoneNotReady
     }
 
     private struct Offered {
@@ -146,8 +146,8 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     private var shutdown: Task<Void, Never>?
     private var initialSignInAllowed: Bool
     private var fatal: (any Error)?
-    private var deferredZoneLoss: CloudAccountZoneRecovery.Loss?
     private var proof: OwnZoneFetchProof?
+    private var ownZoneMissingDuringFetch = false
     private var offered: [CKRecord.ID: Offered] = [:]
 
     private init(journal: CloudCallbackJournal, database: CKDatabase, account: CKRecord.ID, staging: URL,
@@ -159,13 +159,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     /// Bind to a library prepared by the test host. The scope key includes
     /// this literal container and Development; a production lease cannot pass.
     static func openTestContainer(session: DataSession, lease: DataSessionLease) async throws -> ReadingSyncEngineAdapter {
-        let temporary = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().path
-        let synthetic = session.layout.root.resolvingSymlinksInPath().path
-        guard synthetic.hasPrefix(temporary + "/Moonread-CKProbe-") else { throw Failure.wrongIdentity }
-        let container = CKContainer(identifier: testContainer)
-        let account = try await container.userRecordID()
-        let expected = try DataScope.confirmed(container: testContainer, environment: .development, recordName: account.recordName)
-        guard lease.scope == expected else { throw Failure.wrongIdentity }
+        let (container, account) = try await verifiedTestContainer(session: session, lease: lease)
         let database = container.privateCloudDatabase
         let root = try session.layout.staging(lease.scope).appending(path: "ck-sandbox-" + UUID().uuidString, directoryHint: .isDirectory)
         let journal = try CloudCallbackJournal(session: session, lease: lease)
@@ -188,7 +182,29 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         }
     }
 
-    var requestedZoneLoss: CloudAccountZoneRecovery.Loss? { deferredZoneLoss }
+    static func probeTestZone(session: DataSession, lease: DataSessionLease) async throws -> CloudAccountZoneRecovery.Presence {
+        let (container, _) = try await verifiedTestContainer(session: session, lease: lease)
+        do {
+            let found = try await fetchZone(database: container.privateCloudDatabase, id: ownZone)
+            guard found.zoneID == ownZone else { throw Failure.wrongIdentity }
+            return .present
+        } catch let error as CKError where error.code == .zoneNotFound || error.code == .unknownItem {
+            return .absent
+        }
+    }
+
+    private static func verifiedTestContainer(session: DataSession, lease: DataSessionLease) async throws -> (CKContainer, CKRecord.ID) {
+        let temporary = FileManager.default.temporaryDirectory.resolvingSymlinksInPath().path
+        let synthetic = session.layout.root.resolvingSymlinksInPath().path
+        guard synthetic.hasPrefix(temporary + "/Moonread-CKProbe-") else { throw Failure.wrongIdentity }
+        try Task.checkCancellation()
+        let container = CKContainer(identifier: testContainer)
+        let account = try await container.userRecordID()
+        try Task.checkCancellation()
+        let expected = try DataScope.confirmed(container: testContainer, environment: .development, recordName: account.recordName)
+        guard lease.scope == expected else { throw Failure.wrongIdentity }
+        return (container, account)
+    }
 
     func close() async {
         if let shutdown { await shutdown.value; return }
@@ -224,20 +240,27 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
 
     private func runTurn(_ engine: CKSyncEngine) async throws {
         defer { proof = nil }
-        try await ready(engine)
-        try await ReadingSyncTurn.run(fetch: { try await self.fetchOwnZone(engine) },
-                                      verify: { try await self.verifyRecords(engine) },
-                                      send: { try await self.sendDurable(engine) },
-                                      needsCatchUp: { try await self.journal.requiresOwnZoneCatchUp() })
-        try checkActive(engine)
+        do {
+            try await ready(engine)
+            try await ReadingSyncTurn.run(fetch: { try await self.fetchOwnZone(engine) },
+                                          verify: { try await self.verifyRecords(engine) },
+                                          send: { try await self.sendDurable(engine) },
+                                          needsCatchUp: { try await self.journal.requiresOwnZoneCatchUp() })
+            try checkActive(engine)
+        } catch {
+            try checkActive(engine)  // Prefer a recorded, more specific callback failure.
+            if (error as? CKError)?.code == .zoneNotFound { throw CloudZoneRecoverySignal.verificationRequired }
+            throw error
+        }
     }
 
     private func ready(_ engine: CKSyncEngine) async throws {
         let stage = try await journal.zoneStage()
         try checkActive(engine)
+        if let signal = stage.recoverySignal { throw signal }
         if stage == .unverified {
             do {
-                let found = try await fetchZone()
+                let found = try await Self.fetchZone(database: database, id: zone)
                 try checkActive(engine)
                 guard found.zoneID == zone else { throw Failure.wrongIdentity }
                 try await journal.initializeZone(exists: true)
@@ -261,9 +284,11 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         let floor = try await journal.ownZoneFetchFloor()
         try checkActive(engine)
         proof = OwnZoneFetchProof(floor: floor)
-        defer { proof = nil }
+        ownZoneMissingDuringFetch = false
+        defer { proof = nil; ownZoneMissingDuringFetch = false }
         try await engine.fetchChanges(.init(scope: .zoneIDs([zone])))
         try checkActive(engine)
+        if ownZoneMissingDuringFetch { throw CloudZoneRecoverySignal.verificationRequired }
         guard let proof, let state = proof.coverage(previousCheckpoint: previous,
             moreOwnChanges: engine.state.zoneIDsWithUnfetchedServerChanges.contains(zone)) else { return false }
         try await journal.persistCheckpoint(state, confirmedOwnZoneThrough: proof.floor)
@@ -311,7 +336,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
                 case .unknownItem:
                     return try await journal.resolve(ticket, record: nil)
                 case .zoneNotFound:
-                    throw Failure.zoneVerificationRequired
+                    throw CloudZoneRecoverySignal.verificationRequired
                 default:
                     // A transport error is not a proof of absence. Keep this
                     // ID's durable hold, and allow other IDs in the same turn.
@@ -326,9 +351,8 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         }
     }
 
-    private func fetchZone() async throws -> CKRecordZone {
-        let operation = CKFetchRecordZonesOperation(recordZoneIDs: [zone])
-        let id = zone
+    private static func fetchZone(database: CKDatabase, id: CKRecordZone.ID) async throws -> CKRecordZone {
+        let operation = CKFetchRecordZonesOperation(recordZoneIDs: [id])
         return try await ReadingCloudLookup.run(operation, bind: { complete in
             operation.perRecordZoneResultBlock = { @Sendable found, result in
                 if found == id { complete(result) }
@@ -371,7 +395,17 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     }
 
     func handleEvent(_ event: CKSyncEngine.Event, syncEngine: CKSyncEngine) async {
-        guard applies(syncEngine) else { return }
+        guard active, syncEngine === engine else { return }
+        if let fatal {
+            // Keep accepting zone-reason evidence and account invalidation
+            // from this still-running delegate turn after a weaker hint.
+            // No inbox, ACK, or checkpoint can run after a fatal signal.
+            guard fatal is CloudZoneRecoverySignal else { return }
+            switch event {
+            case .fetchedDatabaseChanges, .accountChange: break
+            default: return
+            }
+        }
         do {
             switch event {
             case .accountChange(let event):
@@ -385,6 +419,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
                 proof?.beganZone()
             case .didFetchRecordZoneChanges(let event) where event.zoneID == zone:
                 proof?.endedZone(success: event.error == nil)
+                if (event.error as? CKError)?.code == .zoneNotFound { ownZoneMissingDuringFetch = true }
             case .didFetchChanges:
                 initialSignInAllowed = false
                 proof?.finishedFetch()
@@ -407,16 +442,20 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
             case .sentDatabaseChanges(let event):
                 if event.savedZones.contains(where: { $0.zoneID == zone }) { _ = try await journal.confirmZoneCreation() }
             case .fetchedDatabaseChanges(let event):
+                var ownDeletion: CloudTransportRows.ZoneDeletion?
                 for deletion in event.deletions where deletion.zoneID == zone {
                     switch deletion.reason {
-                    case .purged: deferredZoneLoss = .purged
-                    case .encryptedDataReset: deferredZoneLoss = .encryptedDataReset
-                    case .deleted: deferredZoneLoss = .confirmedUnexpectedAbsence
+                    case .purged: ownDeletion = .purged
+                    case .encryptedDataReset: ownDeletion = .encryptedDataReset
+                    case .deleted: if ownDeletion == nil { ownDeletion = .deleted }
                     @unknown default: break
                     }
-                    // The lifecycle owner first fences App writers and then
-                    // runs the destructive transaction/reopens a new engine.
-                    if deferredZoneLoss != nil { fatal = Failure.zoneVerificationRequired }
+                }
+                if let ownDeletion {
+                    // Other SDK events cannot advance the checkpoint while
+                    // the App has yet to consume this durable reason.
+                    fatal = CloudZoneRecoverySignal.verificationRequired
+                    fatal = try await journal.holdZoneDeletion(ownDeletion)
                 }
             case .sentRecordZoneChanges(let event):
                 try await applySent(event, engine: syncEngine)
@@ -540,13 +579,13 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
                     try checkActive(engine)
                     try await journal.applyOwnInbox(records: records, deletions: [])
                 }
-            case .zoneNotFound: fatal = Failure.zoneVerificationRequired
+            case .zoneNotFound: fatal = CloudZoneRecoverySignal.verificationRequired
             default: break
             }
             removeOffer(id)
         }
         if event.failedRecordDeletes.contains(where: { $0.key.zoneID == zone && $0.value.code == .zoneNotFound }) {
-            fatal = Failure.zoneVerificationRequired
+            fatal = CloudZoneRecoverySignal.verificationRequired
         }
     }
 

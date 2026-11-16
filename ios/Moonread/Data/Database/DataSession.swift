@@ -480,6 +480,14 @@ final class DataSession: @unchecked Sendable {
         try lifecycle.withLock { try activeCloud(token).write(body) }
     }
 
+    /// Zone recovery requires a still-confirmed account and no live engine.
+    func writeCloudRecovery<T: Sendable>(_ token: DataSessionLease, _ body: (Database) throws -> T) throws -> T {
+        try lifecycle.withLock {
+            guard cloudLease == nil else { throw DataV2Error.leaseExpired }
+            return try permittedCloud(token).write(body)
+        }
+    }
+
     /// The publication callback runs on the writer at commit. It only
     /// increments a stamp and signals a stream; it cannot reenter the session.
     func observePublicationCommits(_ token: DataSessionLease, _ observation: DatabaseRegionObservation,

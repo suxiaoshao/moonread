@@ -445,22 +445,7 @@ actor AppDataService {
                     // statistics writes while they still have their old lease.
                     try await preparePresentation?()
                     try cancellation.check()
-                    changingUserScope = true
-                    recentRestorationActive = false
-                    cancelRecentRestoration()
-                    backgroundReadCancellation?()
-                    recoveryTask?.cancel()
-                    for id in Array(imports.keys) { pauseImport(id) }
-                    try await waitForImportsIdle()
-                    await waitForRecentRestoration()
-                    await waitForUserRecovery()
-                    while !foregroundHolds.isEmpty || backgroundReadCancellation != nil {
-                        try await waitForGateChange()
-                    }
-                    // Reset above invalidates pending publication tokens and
-                    // replaces the shared files; join already submitted work.
-                    await systemSpotlightTask?.value
-                    await systemExposureTask?.value
+                    try await drainReadingScopeWork()
                 }
 
                 try await acquireCancellableUserDataOperation()
@@ -546,6 +531,93 @@ actor AppDataService {
                 throw error
             }
         } onCancel: { cancellation.cancel() }
+    }
+
+    func recoverReadingCloudZone(
+        _ account: CloudSyncCoordinator.Account,
+        presence: CloudAccountZoneRecovery.Presence?,
+        lookup: @Sendable () async -> CloudSyncCoordinator.Identity,
+        beforeClear: (@MainActor @Sendable () async throws -> Void)? = nil,
+        afterClear: (@MainActor @Sendable (Bool) -> Void)? = nil
+    ) async throws -> CloudAccountZoneRecovery.Outcome {
+        let cancellation = CloudScopeCancellation()
+        return try await withTaskCancellationHandler {
+            try cancellation.check()
+            let index = try relationalUserIndex()
+            guard index.lease.scope == account.scope, account.scope != .local else { throw DataV2Error.leaseExpired }
+            let needsClear = try index.session.readUsers(index.lease) {
+                try CloudTransportRows.zoneStage($0, zone: ReadingHistoryTransport.zone).requiresLocalClear
+            }
+            let finish = afterClear ?? finishUserScopePresentation
+            let intent = cloudSyncIntent
+            do {
+                if needsClear {
+                    verifiedScopePublicationPending = true
+                    setSystemReadingAccountPending(true)
+                    let prepare = beforeClear ?? prepareUserScopePresentation
+                    try await prepare?()
+                    try cancellation.check()
+                    try await drainReadingScopeWork()
+                }
+                let result: CloudAccountZoneRecovery.Outcome
+                do {
+                    try await acquireCancellableUserDataOperation()
+                    defer { releaseUserDataOperation() }
+                    try cancellation.check()
+                    guard core === index, intent.requested, isReadingCloudApproved(account.scope),
+                          case .confirmed(let current) = await lookup(), current == account else {
+                        throw ReaderError.CloudAccountChanged
+                    }
+                    try cancellation.check()
+                    result = try index.session.writeCloudRecovery(index.lease) { db in
+                        try cancellation.check()
+                        guard intent.requested else { throw CancellationError() }
+                        // Read the evidence again inside the recovery writer.
+                        let stage = try CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone)
+                        guard !stage.requiresLocalClear || needsClear else { return .awaitingEvidence }
+                        let applied = try CloudAccountZoneRecovery.applyPending(db, presence: presence, scope: account.scope)
+                        try cancellation.check()
+                        guard intent.requested else { throw CancellationError() }
+                        return applied
+                    }
+                }
+                if needsClear {
+                    if result == .reset {
+                        userCloudConfigurationRevision = UUID()
+                        resetUserScopeMemory()
+                        verifiedScopePublicationPending = false
+                        setSystemReadingAccountPending(false)
+                    }
+                    finishReadingScopeHandoff(invalidate: result == .reset)
+                    await finish?(result == .reset)
+                }
+                return result
+            } catch {
+                if needsClear {
+                    if changingUserScope { finishReadingScopeHandoff(invalidate: false) }
+                    await finish?(false)
+                }
+                throw error
+            }
+        } onCancel: { cancellation.cancel() }
+    }
+
+    private func drainReadingScopeWork() async throws {
+        changingUserScope = true
+        recentRestorationActive = false
+        cancelRecentRestoration()
+        backgroundReadCancellation?()
+        recoveryTask?.cancel()
+        for id in Array(imports.keys) { pauseImport(id) }
+        try await waitForImportsIdle()
+        await waitForRecentRestoration()
+        await waitForUserRecovery()
+        while !foregroundHolds.isEmpty || backgroundReadCancellation != nil {
+            try await waitForGateChange()
+        }
+        // Publication tokens are already retired; join submitted work.
+        await systemSpotlightTask?.value
+        await systemExposureTask?.value
     }
 
     private func resetUserScopeMemory() {

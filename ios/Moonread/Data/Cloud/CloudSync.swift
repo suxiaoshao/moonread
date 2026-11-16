@@ -88,29 +88,59 @@ actor CloudSyncCoordinator {
         case unknown, signedOut, confirmed(Account)
     }
     struct Runtime: Sendable {
+        struct ZoneRecovery: Sendable {
+            let probe: @Sendable (Account) async throws -> CloudAccountZoneRecovery.Presence
+            let apply: @Sendable (Account, CloudAccountZoneRecovery.Presence?) async throws -> CloudAccountZoneRecovery.Outcome
+        }
         let lookup: @Sendable () async -> Identity
         let isApproved: @Sendable (Account) async -> Bool
         /// A non-nil approval is explicit, and bound to the exact account
         /// which was re-verified for this transition.
         let select: @Sendable (DataIdentityStatus, Account?) async throws -> DataScopeSelection
         let open: @Sendable (Account) async throws -> any ReadingCloudTransport
+        let zoneRecovery: ZoneRecovery?
+
+        init(lookup: @escaping @Sendable () async -> Identity,
+             isApproved: @escaping @Sendable (Account) async -> Bool,
+             select: @escaping @Sendable (DataIdentityStatus, Account?) async throws -> DataScopeSelection,
+             open: @escaping @Sendable (Account) async throws -> any ReadingCloudTransport,
+             zoneRecovery: ZoneRecovery? = nil) {
+            self.lookup = lookup; self.isApproved = isApproved; self.select = select
+            self.open = open; self.zoneRecovery = zoneRecovery
+        }
 
         static func relational(
             service: AppDataService,
             lookup: @escaping @Sendable () async -> Identity,
             beforeRebind: (@MainActor @Sendable () async throws -> Void)? = nil,
             afterRebind: (@MainActor @Sendable (Bool) -> Void)? = nil,
+            probeZone: (@Sendable (Account, ReaderIndex) async throws -> CloudAccountZoneRecovery.Presence)? = nil,
             open: @escaping @Sendable (Account, ReaderIndex) async throws -> any ReadingCloudTransport
         ) -> Self {
-            .init(lookup: lookup, isApproved: { await service.isReadingCloudApproved($0.scope) },
+            let recovery = probeZone.map { probe in
+                ZoneRecovery(probe: { account in
+                    let bound = try await service.relationalUserIndex()
+                    guard bound.lease.scope == account.scope else { throw DataV2Error.leaseExpired }
+                    return try await probe(account, bound)
+                }, apply: { account, presence in
+                    try await service.recoverReadingCloudZone(account, presence: presence, lookup: lookup,
+                                                               beforeClear: beforeRebind, afterClear: afterRebind)
+                })
+            }
+            return .init(lookup: lookup, isApproved: { await service.isReadingCloudApproved($0.scope) },
                   select: { status, approved in
                       try await service.selectReadingCloudScope(status, approval: approved, lookup: lookup,
                                                                beforeRebind: beforeRebind, afterRebind: afterRebind)
                   }, open: { account in
                       let bound = try await service.relationalUserIndex()
                       guard bound.lease.scope == account.scope else { throw DataV2Error.leaseExpired }
+                      try bound.session.readUsers(bound.lease) {
+                          if try CloudTransportRows.zoneStage($0, zone: ReadingHistoryTransport.zone) == .reset {
+                              throw CloudZoneRecoverySignal.resetComplete
+                          }
+                      }
                       return try await open(account, bound)
-                  })
+                  }, zoneRecovery: recovery)
         }
     }
 
@@ -127,6 +157,11 @@ actor CloudSyncCoordinator {
     private var restartPending = false
     private var identityNeedsVerification = false
     private var confirmationCandidate: Account?
+    private struct RecoveryRequest: Sendable {
+        let account: Account
+        let signal: CloudZoneRecoverySignal
+        let mayAttempt: Bool
+    }
 
     // The App remains in trial mode until the account writer, old bridge
     // and production cutover gates provide a runtime.
@@ -168,7 +203,7 @@ actor CloudSyncCoordinator {
         await enqueue(restart: true, approval: candidate)
     }
 
-    private func enqueue(restart: Bool, approval: Account? = nil) async {
+    private func enqueue(restart: Bool, approval: Account? = nil, recovery: RecoveryRequest? = nil) async {
         let token = UUID()
         revision = token
         confirmationCandidate = nil
@@ -184,7 +219,7 @@ actor CloudSyncCoordinator {
         let work = Task {
             await previous?.value
             guard current(token) else { return }
-            await reconcile(token, approval: approval)
+            await reconcile(token, approval: approval, recovery: recovery)
             if revision == token { transition = nil }
         }
         transition = work
@@ -193,7 +228,7 @@ actor CloudSyncCoordinator {
 
     private func current(_ token: UUID) -> Bool { revision == token && !Task.isCancelled }
 
-    private func reconcile(_ token: UUID, approval: Account?) async {
+    private func reconcile(_ token: UUID, approval: Account?, recovery: RecoveryRequest?) async {
         status.requested = service.cloudSyncIntent.requested
         guard let runtime else {
             restartPending = false
@@ -249,6 +284,16 @@ actor CloudSyncCoordinator {
                     publish()
                     return
                 }
+                let repair = recovery.flatMap { $0.account == account ? $0 : nil }
+                if let repair {
+                    guard repair.mayAttempt, repair.signal != .resetComplete,
+                          let zoneRecovery = runtime.zoneRecovery else { pauseForZone(); return }
+                    let presence = repair.signal == .verificationRequired ? try await zoneRecovery.probe(account) : nil
+                    guard current(token) else { return }
+                    let outcome = try await zoneRecovery.apply(account, presence)
+                    guard current(token) else { return }
+                    guard outcome == .resume || outcome == .rebuild else { pauseForZone(); return }
+                }
                 if transport == nil {
                     let handle = try await runtime.open(account)
                     guard current(token) else { await handle.close(); return }
@@ -256,14 +301,17 @@ actor CloudSyncCoordinator {
                 }
                 status.activation = .enabled(account.identity, revision: token)
                 status.transportMessage = nil
-                localDataChanged()
+                startTurn(allowRecovery: repair == nil)
             }
             publish()
         } catch {
             guard current(token) else { return }
             await stop()
             guard current(token) else { return }
-            if error is CloudScopePresentationError {
+            if (error as? CloudZoneRecoverySignal) == .resetComplete {
+                pauseForZone()
+                return
+            } else if error is CloudScopePresentationError {
                 status.activation = .unavailable(String(localized: "请先保存或关闭当前编辑，再切换阅读数据账户。"))
             } else {
                 status.activation = .unavailable(String(localized: "暂时无法连接 iCloud，阅读数据同步未完成。"))
@@ -273,14 +321,18 @@ actor CloudSyncCoordinator {
     }
 
     func localDataChanged() {
+        startTurn(allowRecovery: true)
+    }
+
+    private func startTurn(allowRecovery: Bool) {
         guard let transport, foreground, !restartPending, status.enabled, service.cloudSyncIntent.requested else { return }
         dirty = true
         guard turn == nil else { return }
         status.syncing = true; publish()
-        turn = Task { await drive(transport.handle) }
+        turn = Task { await drive(transport.handle, account: transport.account, allowRecovery: allowRecovery) }
     }
 
-    private func drive(_ handle: any ReadingCloudTransport) async {
+    private func drive(_ handle: any ReadingCloudTransport, account: Account, allowRecovery: Bool) async {
         while dirty, !Task.isCancelled {
             dirty = false
             do {
@@ -295,6 +347,13 @@ actor CloudSyncCoordinator {
                     await identityChanged()
                     return
                 }
+                if let signal = error as? CloudZoneRecoverySignal {
+                    turn = nil
+                    // One immediate retry only. Any newly recorded reason
+                    // remains on disk for a later foreground/retry event.
+                    await enqueue(restart: true, recovery: .init(account: account, signal: signal, mayAttempt: allowRecovery))
+                    return
+                }
                 status.transportMessage = String(localized: "暂时无法连接 iCloud，阅读数据同步未完成。")
                 break  // retry on a real foreground/write/identity event
             }
@@ -302,6 +361,11 @@ actor CloudSyncCoordinator {
         if !Task.isCancelled {
             turn = nil; status.syncing = false; publish()
         }
+    }
+
+    private func pauseForZone() {
+        status.activation = .unavailable(String(localized: "阅读数据同步已暂停"))
+        publish()
     }
 
     private func beginStop() {
