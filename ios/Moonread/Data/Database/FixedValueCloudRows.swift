@@ -148,8 +148,8 @@ enum FixedValueCloudRows {
     }
 
     static func currentDigest(_ db: Database, _ family: Family, id: String) throws -> String? {
-        if family == .cover, let missing = try missingCoverWire(db, id: id) {
-            return DataIdentity.sha(Data(missing.utf8))
+        if family == .cover, let missing = try missingCoverOffer(db, id: id) {
+            return missing.digest
         }
         return try material(db, family, id: id)?.digest
     }
@@ -158,6 +158,13 @@ enum FixedValueCloudRows {
         let missingCoverVersion: Int
         let reference: String
     }
+
+    // Only records that previously passed the explicit missing-cover
+    // receiver get this format. SDK capture errors use other formats.
+    static let retainedMissingCoverSQL = """
+        source='cloud' AND source_type='BookCover' AND raw_format='missing-cover-v1'
+          AND schema_version=1 AND reason='unavailable-attachment' AND completeness='incomplete'
+        """
 
     private static func missingCoverBarrier(_ db: Database, name: String, id: String, logical: String) throws -> StoredValue? {
         guard let raw = try Data.fetchOne(db, sql: """
@@ -174,17 +181,39 @@ enum FixedValueCloudRows {
 
     /// Only the relational missing-asset state from durable intake is a
     /// source of absence. An SDK capture with no asset is never this state.
-    private static func missingCoverWire(_ db: Database, id: String) throws -> String? {
-        guard try Bool.fetchOne(db, sql: """
+    private static func missingCoverOffer(_ db: Database, id: String) throws -> Material? {
+        if try Bool.fetchOne(db, sql: """
             SELECT EXISTS(SELECT 1 FROM usr.cover_candidate c JOIN usr.cover_asset a ON a.asset_id=c.asset_id
               WHERE c.partition=0 AND c.record_id=? AND c.schema_version=1 AND NOT c.is_empty
                 AND a.availability='missing' AND a.legacy_cover_id IS NOT NULL AND a.expected_sha=c.sha256)
             """, arguments: [id]) == true,
-            let value = try material(db, .cover, id: id), value.cover != nil, try readable(db, value)
-        else { return nil }
+           let value = try material(db, .cover, id: id), value.cover != nil, try readable(db, value) {
+            return try wrappedMissingCover(value.payload, logical: value.logical, device: value.device)
+        }
+        // A W2 winner may only have the missing evidence originally sent
+        // by a peer, with no typed candidate or local legacy asset row.
+        let rows = try Row.fetchAll(db, sql: """
+            SELECT raw_bytes,digest,logical_key,device_id,book_key FROM usr.quarantined_record
+            WHERE partition=0 AND record_id=? AND source_id=? AND \(retainedMissingCoverSQL)
+            """, arguments: [id,key(.cover, id: id).name])
+        guard rows.count == 1, let row = rows.first,
+              let logical = row["logical_key"] as String?, let device = row["device_id"] as String?,
+              let book = row["book_key"] as String?, let userKey = try? UserValueRows.Key(logical),
+              userKey.kind == .cover, userKey.logical == logical, userKey.book == book,
+              (try? parseSha256(value: book)) == book, UserValueRows.recordID(logical: logical, device: device) == id,
+              let raw = row["raw_bytes"] as Data?, DataIdentity.sha(raw) == (row["digest"] as String),
+              let reference = String(data: raw, encoding: .utf8),
+              let head = try? UserSyncJSON.storedValue(reference, key: logical),
+              let cover = try? JSONDecoder().decode(UserValueRows.Cover?.self, from: Data(head.value.utf8)),
+              (try? parseSha256(value: cover.sha256)) == cover.sha256 else { return nil }
+        return try wrappedMissingCover(reference, logical: logical, device: device)
+    }
+
+    private static func wrappedMissingCover(_ reference: String, logical: String, device: String) throws -> Material {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
-        return try String(decoding: encoder.encode(MissingCover(missingCoverVersion: 1, reference: value.payload)), as: UTF8.self)
+        let payload = try String(decoding: encoder.encode(MissingCover(missingCoverVersion: 1, reference: reference)), as: UTF8.self)
+        return .init(logical: logical, device: device, payload: payload, cover: nil, creationValue: false)
     }
 
     static func receiveMissingCover(_ db: Database, _ record: CloudInboxRows.Record,
@@ -233,8 +262,8 @@ enum FixedValueCloudRows {
     }
 
     static func initialCoverage(_ db: Database, _ family: Family, id: String) throws -> ReadingCloudInitialization.Coverage {
-        if family == .cover, let missing = try missingCoverWire(db, id: id) {
-            return .save(DataIdentity.sha(Data(missing.utf8)))
+        if family == .cover, let missing = try missingCoverOffer(db, id: id) {
+            return .save(missing.digest)
         }
         if family == .cover, try Bool.fetchOne(db, sql: """
             SELECT EXISTS(SELECT 1 FROM usr.cover_candidate c LEFT JOIN usr.cover_asset a ON a.asset_id=c.asset_id
@@ -287,6 +316,12 @@ enum FixedValueCloudRows {
                 """, arguments: [book])
             for id in ids { try CloudTransportRows.enqueueBookDelete(db, key(family, id: id), businessID: id) }
         }
+        // A retained explicit missing cover has no candidate row.
+        let missing = try String.fetchAll(db, sql: """
+            SELECT DISTINCT record_id FROM usr.quarantined_record
+            WHERE partition=0 AND book_key=? AND \(retainedMissingCoverSQL)
+            """, arguments: [book])
+        for id in missing { try CloudTransportRows.enqueueBookDelete(db, key(.cover, id: id), businessID: id) }
     }
 
     static func didConfirmDeletion(_ db: Database, _ family: Family, sent: CloudTransportRows.Attempt) throws {
@@ -338,10 +373,10 @@ enum FixedValueCloudRows {
         case .delete:
             prepared = .init(attempt: attempt, logical: nil, device: nil, payload: nil, systemFields: nil, attachment: nil)
         case .save(let digest):
-            if family == .cover, try !blocksSave(db, key: key), let missing = try missingCoverWire(db, id: id),
-               DataIdentity.sha(Data(missing.utf8)) == digest, let value = try material(db, family, id: id) {
+            if family == .cover, try !blocksSave(db, key: key), let missing = try missingCoverOffer(db, id: id),
+               missing.digest == digest {
                 try CloudTransportRows.reserveGenerationFloor(db, covering: attempt.generation)
-                return .init(attempt: attempt, logical: value.logical, device: value.device, payload: missing,
+                return .init(attempt: attempt, logical: missing.logical, device: missing.device, payload: missing.payload,
                              systemFields: try CloudTransportRows.systemFields(db, key), attachment: nil)
             }
             guard try !blocksSave(db, key: key), let value = try material(db, family, id: id), value.digest == digest,

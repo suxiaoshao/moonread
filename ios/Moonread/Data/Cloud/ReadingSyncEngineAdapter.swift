@@ -66,7 +66,12 @@ struct OwnZoneFetchProof {
     mutating func finishedFetch() { endedTurn = true }
 
     func coverage(previousCheckpoint: Data?, moreOwnChanges: Bool) -> Data? {
-        guard began, ended, endedTurn, !failed, !moreOwnChanges else { return nil }
+        guard !moreOwnChanges else { return nil }
+        return resumePoint(previousCheckpoint: previousCheckpoint)
+    }
+
+    func resumePoint(previousCheckpoint: Data?) -> Data? {
+        guard began, ended, endedTurn, !failed else { return nil }
         // A complete empty zone response with no new state has retained the
         // prior durable cursor. A committed page always needs newer state.
         return stateAfterPage ?? (deliveredPage ? nil : previousCheckpoint)
@@ -148,6 +153,8 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     private var initialSignInAllowed: Bool
     private var fatal: (any Error)?
     private var proof: OwnZoneFetchProof?
+    private var joiningControl: ReadingCloudInitialization.Control?
+    private var stagedJoiningRevision: Int64?
     private var ownZoneMissingDuringFetch = false
     private var offered: [CKRecord.ID: Offered] = [:]
 
@@ -165,7 +172,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         let root = try session.layout.staging(lease.scope).appending(path: "ck-sandbox-" + UUID().uuidString, directoryHint: .isDirectory)
         let journal = try CloudCallbackJournal(session: session, lease: lease)
         do {
-            let bytes = try await journal.checkpoint()
+            let bytes = try await journal.engineCheckpoint()
             try Task.checkCancellation()
             let state = try bytes.map { try JSONDecoder().decode(CKSyncEngine.State.Serialization.self, from: $0) }
             guard let installation = UUID(uuidString: try session.readingInstallationID()) else { throw Failure.wrongIdentity }
@@ -186,12 +193,26 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
 
     static func probeTestZone(session: DataSession, lease: DataSessionLease) async throws -> CloudAccountZoneRecovery.Presence {
         let (container, _) = try await verifiedTestContainer(session: session, lease: lease)
+        let database = container.privateCloudDatabase
         do {
-            let found = try await fetchZone(database: container.privateCloudDatabase, id: ownZone)
+            let found = try await fetchZone(database: database, id: ownZone)
             guard found.zoneID == ownZone else { throw Failure.wrongIdentity }
-            return .present
         } catch let error as CKError where error.code == .zoneNotFound || error.code == .unknownItem {
             return .absent
+        }
+        // A peer may already have made the replacement by the time this
+        // device checks presence. The writer compares its initialization ID
+        // with the old decision. Never infer zone absence from this point read.
+        let id = CKRecord.ID(recordName: ReadingCloudInitialization.recordName, zoneID: ownZone)
+        do {
+            let record = try await fetchRecord(database: database, id: id)
+            return .presentWithControl(try ReadingCloudInitialization.Control.decode(record, in: ownZone))
+        } catch let error as CKError where error.code == .unknownItem || error.code == .zoneNotFound {
+            return .present
+        } catch is ReadingCloudInitialization.Failure {
+            // If no deletion was recorded, zone presence is sufficient to
+            // resume the old path; a malformed control never proves replacement.
+            return .present
         }
     }
 
@@ -251,7 +272,9 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
                     try await uploadFirstInitialization(decision.control, engine: engine)
                     return
                 case .waitingExisting: throw ReadingCloudInitialization.Failure.awaitingExistingUpload
-                case .joiningExisting: throw ReadingCloudInitialization.Failure.awaitingExistingBaseline
+                case .joiningExisting:
+                    try await fetchJoiningBaseline(decision.control, engine: engine)
+                    throw ReadingCloudInitialization.Failure.awaitingExistingBaseline
                 case .claiming: throw ReadingCloudInitialization.Failure.inconsistentDecision
                 }
             }
@@ -293,6 +316,7 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
 
     private func ready(_ engine: CKSyncEngine) async throws {
         let stage = try await journal.zoneStage()
+        var sawAbsence = false
         try checkActive(engine)
         if let signal = stage.recoverySignal { throw signal }
         if stage == .unverified {
@@ -304,15 +328,37 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
             } catch let error as CKError where error.code == .zoneNotFound || error.code == .unknownItem {
                 try checkActive(engine)
                 try await journal.initializeZone(exists: false)
+                sawAbsence = true
             }
         }
         if try await journal.zoneStage() == .needsCreation {
-            try checkActive(engine)
-            engine.state.add(pendingDatabaseChanges: [.saveZone(CKRecordZone(zoneID: zone))])
-            try await engine.sendChanges(.init(scope: .zoneIDs([zone])))
+            let create = CKSyncEngine.PendingDatabaseChange.saveZone(CKRecordZone(zoneID: zone))
+            // A peer may have created the zone since our durable absence
+            // proof. Presence releases only zone creation, not first upload.
+            if !sawAbsence, try await confirmExistingCreation(engine) {
+                engine.state.remove(pendingDatabaseChanges: [create])
+            } else {
+                try checkActive(engine)
+                engine.state.add(pendingDatabaseChanges: [create])
+                try await engine.sendChanges(.init(scope: .zoneIDs([zone])))
+            }
         }
         try checkActive(engine)
         guard try await journal.zoneStage() == .ready else { throw Failure.zoneNotReady }
+    }
+
+    private func confirmExistingCreation(_ engine: CKSyncEngine) async throws -> Bool {
+        try checkActive(engine)
+        do {
+            let found = try await Self.fetchZone(database: database, id: zone)
+            try checkActive(engine)
+            guard found.zoneID == zone else { throw Failure.wrongIdentity }
+            _ = try await journal.confirmZoneCreation()
+            try checkActive(engine)
+            return true
+        } catch let error as CKError where error.code == .zoneNotFound || error.code == .unknownItem {
+            return false
+        }
     }
 
     private func fetchOwnZone(_ engine: CKSyncEngine) async throws -> Bool {
@@ -330,6 +376,35 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
             moreOwnChanges: engine.state.zoneIDsWithUnfetchedServerChanges.contains(zone)) else { return false }
         try await journal.persistCheckpoint(state, confirmedOwnZoneThrough: proof.floor)
         return true
+    }
+
+    private func fetchJoiningBaseline(_ ready: ReadingCloudInitialization.Control, engine: CKSyncEngine) async throws {
+        try checkActive(engine)
+        let original = try await journal.beginJoiningBaseline(ready)
+        if original.covered { return }
+        try checkActive(engine)
+        joiningControl = ready
+        stagedJoiningRevision = original.revision
+        proof = OwnZoneFetchProof(floor: 0)
+        ownZoneMissingDuringFetch = false
+        defer { proof = nil; ownZoneMissingDuringFetch = false; joiningControl = nil; stagedJoiningRevision = nil }
+        try await engine.fetchChanges(.init(scope: .zoneIDs([zone])))
+        try checkActive(engine)
+        if ownZoneMissingDuringFetch { throw CloudZoneRecoverySignal.verificationRequired }
+        guard let proof, let state = proof.resumePoint(previousCheckpoint: original.checkpoint),
+              let revision = stagedJoiningRevision else { return }
+        let covered = !engine.state.zoneIDsWithUnfetchedServerChanges.contains(zone)
+        if covered {
+            // A ready point lookup before the fetch only selects the route.
+            // Check the exact control again after the covered own-zone fetch.
+            let id = CKRecord.ID(recordName: ReadingCloudInitialization.recordName, zoneID: zone)
+            let record = try await fetchRecord(id)
+            try checkActive(engine)
+            guard try ReadingCloudInitialization.Control.decode(record, in: zone) == ready else {
+                throw ReadingCloudInitialization.Failure.inconsistentDecision
+            }
+        }
+        try await journal.checkpointJoining(ready, bytes: state, through: revision, covered: covered)
     }
 
     private func sendDurable(_ engine: CKSyncEngine) async throws {
@@ -405,6 +480,10 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
     }
 
     private func fetchRecord(_ id: CKRecord.ID) async throws -> CKRecord {
+        try await Self.fetchRecord(database: database, id: id)
+    }
+
+    private static func fetchRecord(database: CKDatabase, id: CKRecord.ID) async throws -> CKRecord {
         let operation = CKFetchRecordsOperation(recordIDs: [id])
         return try await ReadingCloudLookup.run(operation, bind: { complete in
             operation.perRecordResultBlock = { @Sendable found, result in
@@ -579,7 +658,10 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
                 }
                 let businessRecords = try ownRecords.filter { record in
                     guard record.recordID.recordName == ReadingCloudInitialization.recordName else { return true }
-                    _ = try ReadingCloudInitialization.Control.decode(record, in: zone)
+                    let decoded = try ReadingCloudInitialization.Control.decode(record, in: zone)
+                    if let joiningControl, decoded != joiningControl {
+                        throw ReadingCloudInitialization.Failure.inconsistentDecision
+                    }
                     return false
                 }
                 let ownDeletes = ownDeletions
@@ -625,17 +707,27 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
             if !ordinary.isEmpty {
                 let captured = try await Self.captureOffMain(ordinary)
                 try checkActive(engine)
-                try await journal.applyOwnInbox(records: captured, deletions: [])
+                try await applyCapturedPage(captured, deletions: [], engine: engine)
                 ordinary.removeAll(keepingCapacity: true)
             }
             let captured = try await Self.captureOffMain([record])
             try checkActive(engine)
-            try await journal.applyOwnInbox(records: captured, deletions: [])
+            try await applyCapturedPage(captured, deletions: [], engine: engine)
         }
         if !ordinary.isEmpty || !deletions.isEmpty {
             let captured = try await Self.captureOffMain(ordinary)
             try checkActive(engine)
-            try await journal.applyOwnInbox(records: captured, deletions: deletions)
+            try await applyCapturedPage(captured, deletions: deletions, engine: engine)
+        }
+    }
+
+    private func applyCapturedPage(_ records: [CloudInboxRows.Record], deletions: [CloudInboxRows.Deletion],
+                                   engine: CKSyncEngine) async throws {
+        try checkActive(engine)
+        if let joiningControl {
+            stagedJoiningRevision = try await journal.stageJoiningPage(joiningControl, records: records, deletions: deletions)
+        } else {
+            try await journal.applyOwnInbox(records: records, deletions: deletions)
         }
     }
 

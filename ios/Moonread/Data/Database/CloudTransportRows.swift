@@ -408,6 +408,11 @@ enum CloudTransportRows {
         }
     }
 
+    static let localZoneLossDiagnosticSQL = """
+        source='cloud-zone-loss' AND source_type='cloud-transport'
+          AND raw_format='zone-loss-transport-v1' AND reason='unsupported-zone-rebuild'
+        """
+
     static func zoneStage(_ db: Database, zone: String) throws -> ZoneStage {
         guard let value = try String.fetchOne(db, sql: "SELECT region_state FROM usr.cloud_engine_state WHERE zone=?",
                                              arguments: [zone]) else { return .unverified }
@@ -416,7 +421,10 @@ enum CloudTransportRows {
     }
 
     static func changeZoneAfterLoss(_ db: Database, zone: String, to stage: ZoneStage) throws {
-        if zone == ReadingHistoryTransport.zone { try ReadingCloudInitialization.notePriorZone(db) }
+        if zone == ReadingHistoryTransport.zone {
+            try ReadingCloudInitialization.notePriorZone(db)
+            try CloudBootstrapRows.clear(db)
+        }
         try db.execute(sql: "DELETE FROM usr.cloud_record_state WHERE zone=?", arguments: [zone])
         try db.execute(sql: "DELETE FROM usr.cloud_outbox WHERE zone=?", arguments: [zone])
         // Keep the account-level attempt sequence: old results must not
@@ -444,11 +452,11 @@ enum CloudTransportRows {
 }
 
 enum CloudInboxRows {
-    struct Asset: Sendable {
+    struct Asset: Codable, Sendable {
         let field: String
         let bytes: Data?
     }
-    struct Record: Sendable {
+    struct Record: Codable, Sendable {
         let type, name: String
         let id, logical, device, mark, payload: String?
         let systemFields, archive: Data
@@ -697,12 +705,14 @@ enum CloudZoneRecoverySignal: Error, Equatable {
 }
 
 enum CloudAccountZoneRecovery {
-    enum Presence: Equatable, Sendable { case present, absent }
+    enum Presence: Equatable, Sendable {
+        case present, absent, presentWithControl(ReadingCloudInitialization.Control)
+    }
     enum Outcome: Equatable, Sendable { case resume, rebuild, reset, awaitingEvidence }
     enum Loss: Sendable {
         case purged, encryptedDataReset
         // A record operation's zoneNotFound is not this proof.
-        case confirmedUnexpectedAbsence
+        case confirmedUnexpectedAbsence, confirmedReplacement(ReadingCloudInitialization.Control)
     }
 
     private static let syncEvidence = [
@@ -725,7 +735,27 @@ enum CloudAccountZoneRecovery {
         case .deletedPending where presence == .absent:
             _ = try apply(db, loss: .confirmedUnexpectedAbsence, scope: scope)
             return .rebuild
-        case .ready where presence == .present: return .resume
+        case .deletedPending:
+            guard case .presentWithControl(let control) = presence else { return .awaitingEvidence }
+            if try ReadingCloudInitialization.isCurrentReplacement(db, control) {
+                // A restarted engine can still replay a deletion for the
+                // preceding zone. Exact current control proves this cut is
+                // still live; don't wipe its already prepared/sent work.
+                try db.execute(sql: "UPDATE usr.cloud_engine_state SET region_state='ready' WHERE zone=?",
+                               arguments: [ReadingHistoryTransport.zone])
+                return .resume
+            }
+            guard try ReadingCloudInitialization.canFollowReplacement(db, control) else { return .awaitingEvidence }
+            _ = try apply(db, loss: .confirmedReplacement(control), scope: scope)
+            return .resume
+        case .ready where presence != nil && presence != .absent:
+            if case .presentWithControl(let control) = presence,
+               try ReadingCloudInitialization.canFollowReplacement(db, control) {
+                // Fence ordinary sending, but do not discard anything based
+                // on a record-level failure without the durable zone event.
+                return .awaitingEvidence
+            }
+            return .resume
         case .reset: return .reset
         default: return .awaitingEvidence
         }
@@ -739,16 +769,26 @@ enum CloudAccountZoneRecovery {
         case .purged, .encryptedDataReset:
             try removeSyncedEvidence(db, scope: scope)
             try CloudTransportRows.changeZoneAfterLoss(db, zone: zone, to: .reset)
+            try ReadingCloudInitialization.finishZoneRecovery(db)
             return .reset
         case .confirmedUnexpectedAbsence:
             guard previous != .needsCreation else { return .needsCreation }
-            try CloudTransportRows.isolateUnsupportedTransportAfterLoss(db, zone: zone)
-            try CloudTransportRows.changeZoneAfterLoss(db, zone: zone, to: .needsCreation)
-            try ReadingHistoryTransport.rebuildOutbox(db, scope: scope)
-            try FixedValueCloudRows.rebuildOutbox(db)
-            try CausalCloudRows.rebuild(db)
+            try resetForReplacement(db, stage: .needsCreation, keep: nil)
             return .needsCreation
+        case .confirmedReplacement(let control):
+            try resetForReplacement(db, stage: .ready, keep: control)
+            return .ready
         }
+    }
+
+    private static func resetForReplacement(_ db: Database, stage: CloudTransportRows.ZoneStage,
+                                            keep control: ReadingCloudInitialization.Control?) throws {
+        let zone = ReadingHistoryTransport.zone
+        try CloudTransportRows.isolateUnsupportedTransportAfterLoss(db, zone: zone)
+        try CloudTransportRows.changeZoneAfterLoss(db, zone: zone, to: stage)
+        // No business intent is replayed here. The same conditional control
+        // as first launch elects the one writer allowed to rebuild from raw.
+        try ReadingCloudInitialization.beginZoneRecovery(db, replacement: control)
     }
 
     private static func removeSyncedEvidence(_ db: Database, scope: DataScope) throws {
@@ -810,6 +850,24 @@ actor CloudCallbackJournal {
     func checkpoint() throws -> Data? {
         guard !failed else { throw Failure.restartRequired }
         return try session.readCloudChanges(binding) { try CloudTransportRows.checkpoint($0, zone: ReadingHistoryTransport.zone) }
+    }
+
+    func engineCheckpoint() throws -> Data? {
+        guard !failed else { throw Failure.restartRequired }
+        return try session.readCloudChanges(binding) { db in
+            if try ReadingCloudInitialization.requiresDecision(db) {
+                let known = try ReadingCloudInitialization.stored(db)
+                if let known, known.role == .joiningExisting {
+                    guard try CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone) == .ready
+                    else { return nil }
+                    return try CloudBootstrapRows.progress(db, for: known.control)?.checkpoint
+                }
+                // A joining candidate that has not yet seen a control starts
+                // at the beginning, never at an ordinary cursor.
+                guard known?.role == .selectedFirst else { return nil }
+            }
+            return try CloudTransportRows.checkpoint(db, zone: ReadingHistoryTransport.zone)
+        }
     }
 
     /// The future engine owner may supply a watermark only for a durable
@@ -878,6 +936,23 @@ actor CloudCallbackJournal {
             }
             try CloudInboxRows.apply(db, records: records, deletions: deletions, scope: scope)
         }
+    }
+
+    func beginJoiningBaseline(_ ready: ReadingCloudInitialization.Control) throws -> CloudBootstrapRows.Progress {
+        try commit { try CloudBootstrapRows.begin($0, for: ready) }
+    }
+
+    func stageJoiningPage(_ ready: ReadingCloudInitialization.Control, records: [CloudInboxRows.Record],
+                          deletions: [CloudInboxRows.Deletion]) throws -> Int64 {
+        try commit {
+            let revision = try CloudBootstrapRows.stage($0, for: ready, records: records, deletions: deletions)
+            try Task.checkCancellation()
+            return revision
+        }
+    }
+
+    func checkpointJoining(_ ready: ReadingCloudInitialization.Control, bytes: Data, through revision: Int64, covered: Bool) throws {
+        try commit { try CloudBootstrapRows.checkpoint($0, for: ready, bytes: bytes, through: revision, covered: covered) }
     }
 
     func verificationRequests(after: CloudTransportRows.Key? = nil, limit: Int) throws -> [CloudSaveVerification.Ticket] {

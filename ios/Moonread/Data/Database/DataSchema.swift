@@ -17,7 +17,7 @@ enum DataV2Error: Error, Equatable {
 enum DataV2Schema {
     static let indexVersion = 1
     // Version 3 belonged only to the removed, unpublished live bridge.
-    static let userVersion = 6
+    static let userVersion = 7
 
     static func sql(_ name: String, in bundle: Bundle = .main) throws -> String {
         guard let path = bundle.url(forResource: name, withExtension: "sql") else {
@@ -43,7 +43,7 @@ enum DataV2Schema {
             let index = try version(db, in: "main")
             let user = try version(db, in: "usr")
             guard [0, indexVersion].contains(index) else { throw DataV2Error.unsupportedSchema("main", index) }
-            guard [0, 1, 2, 4, 5, userVersion].contains(user) else { throw DataV2Error.unsupportedSchema("usr", user) }
+            guard [0, 1, 2, 4, 5, 6, userVersion].contains(user) else { throw DataV2Error.unsupportedSchema("usr", user) }
             if index == 0 { try checkFresh(db, in: "main") }
             if user == 0 { try checkFresh(db, in: "usr") }
             guard try String.fetchOne(db, sql: "PRAGMA usr.journal_mode=WAL")?.lowercased() == "wal" else {
@@ -153,6 +153,25 @@ enum DataV2Schema {
                     CREATE UNIQUE INDEX usr.quarantine_cloud_isolation ON quarantined_record(cloud_isolation_name)
                         WHERE cloud_isolation_name IS NOT NULL;
                     PRAGMA usr.user_version=6;
+                    """)
+            }
+        }
+        if user < 7 {
+            try writer.write { db in
+                try db.execute(sql: """
+                    CREATE TABLE usr.cloud_bootstrap_state(
+                        singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+                        initialization_id TEXT NOT NULL, installation_id TEXT NOT NULL,
+                        revision INTEGER NOT NULL CHECK(revision>=0),
+                        checkpoint BLOB, covered INTEGER NOT NULL CHECK(covered IN (0,1)),
+                        CHECK(covered=0 OR checkpoint IS NOT NULL)
+                    );
+                    CREATE TABLE usr.cloud_bootstrap_record(
+                        record_type TEXT NOT NULL, record_name TEXT NOT NULL, data BLOB,
+                        stage INTEGER NOT NULL DEFAULT 1 REFERENCES cloud_bootstrap_state(singleton) ON DELETE CASCADE,
+                        PRIMARY KEY(record_type,record_name)
+                    );
+                    PRAGMA usr.user_version=7;
                     """)
             }
         }

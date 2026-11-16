@@ -88,6 +88,24 @@ enum UpgradeOrigins {
                        arguments: [phaseKey, Phase.unresolved.rawValue])
     }
 
+    /// A replacement winner may be another installation. The known formal
+    /// state before the loss is its comparison baseline, not new offline
+    /// edits to replay into whatever zone first wins. Existing unresolved
+    /// upgrades already have provenance and must keep it.
+    static func beginZoneBaseline(_ db: Database) throws {
+        guard try phase(db) == nil else { return }
+        try begin(db)
+        let batch = "zone-recovery-" + UUID().uuidString
+        for domain in Domain.allCases {
+            let ids = try String.fetchCursor(db, sql: """
+                SELECT CAST(\(domain.idColumn) AS TEXT) FROM usr.\(domain.rawValue) WHERE partition=0
+                """)
+            while let id = try ids.next() {
+                try record(db, .init(partition: 0, domain: domain, id: id), as: .seed(batch: batch))
+            }
+        }
+    }
+
     static func finish(_ db: Database) throws {
         try db.execute(sql: """
             DELETE FROM usr.upgrade_local_version;

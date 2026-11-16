@@ -9,6 +9,7 @@ enum ReadingCloudInitialization {
     static let recordType = "DataInitialization"
     private static let localKey = "cloud-bootstrap-control-v1"
     private static let lostZoneKey = "cloud-bootstrap-prior-zone-v1"
+    private static let recoveryKey = "cloud-bootstrap-zone-recovery-v1"
     private static let uploadKey = "cloud-bootstrap-first-upload-v1"
 
     struct Control: Codable, Equatable, Sendable {
@@ -56,6 +57,7 @@ enum ReadingCloudInitialization {
         enum Role: String, Codable, Sendable { case claiming, selectedFirst, waitingExisting, joiningExisting }
         let role: Role
         let control: Control
+        var confirmedReplacement: Bool? = nil
     }
 
     enum Failure: Error {
@@ -65,8 +67,20 @@ enum ReadingCloudInitialization {
     }
 
     static func requiresDecision(_ db: Database) throws -> Bool {
-        try UpgradeOrigins.phase(db) == .unresolved
+        try isRecovering(db) || UpgradeOrigins.phase(db) == .unresolved
     }
+
+    private struct Recovery: Codable {
+        let previous: Control?
+        let mayCreate: Bool
+    }
+
+    private static func recovery(_ db: Database) throws -> Recovery? {
+        try String.fetchOne(db, sql: "SELECT value FROM usr.local_data_state WHERE state_key=?", arguments: [recoveryKey])
+            .map { try JSONDecoder().decode(Recovery.self, from: Data($0.utf8)) }
+    }
+
+    static func isRecovering(_ db: Database) throws -> Bool { try recovery(db) != nil }
 
     static func stored(_ db: Database) throws -> Decision? {
         guard let value = try String.fetchOne(db, sql: "SELECT value FROM usr.local_data_state WHERE state_key=?",
@@ -85,15 +99,60 @@ enum ReadingCloudInitialization {
         try db.execute(sql: "DELETE FROM usr.local_data_state WHERE state_key=?", arguments: [uploadKey])
     }
 
+    /// When another device already recreated the zone, the old decision
+    /// must identify a different incarnation. Existence of the zone alone
+    /// is not authorization to clear checkpoint or outbox.
+    static func canFollowReplacement(_ db: Database, _ control: Control) throws -> Bool {
+        guard let prior = try stored(db), prior.role != .claiming else { return false }
+        return prior.control.id != control.id
+    }
+
+    static func isCurrentReplacement(_ db: Database, _ control: Control) throws -> Bool {
+        guard let active = try stored(db), active.role != .claiming,
+              try active.confirmedReplacement == true || isRecovering(db) else { return false }
+        return active.control.matches(control) && (active.control.phase != .ready || control.phase == .ready)
+    }
+
+    /// Called by the same writer that invalidates the old transport, only
+    /// after a durable deletion with absence or a distinct replacement.
+    static func beginZoneRecovery(_ db: Database, replacement: Control?) throws {
+        let prior = try stored(db)
+        let previous = prior.flatMap { $0.role == .claiming ? nil : $0.control }
+        let stage = Recovery(previous: previous, mayCreate: replacement == nil)
+        try db.execute(sql: """
+            INSERT OR REPLACE INTO usr.local_data_state VALUES (?,?);
+            DELETE FROM usr.local_data_state WHERE state_key=?;
+            """, arguments: [recoveryKey,String(decoding: try JSONEncoder().encode(stage), as: UTF8.self),localKey])
+        try UpgradeOrigins.beginZoneBaseline(db)
+        if let replacement {
+            _ = try save(db, .init(role: replacement.phase == .preparing ? .waitingExisting : .joiningExisting,
+                                   control: replacement))
+        }
+    }
+
+    /// On successful upload or source fold, retain the identity of the
+    /// established replacement independently of the in-progress gate.
+    static func finishZoneRecovery(_ db: Database, confirmedReady: Control? = nil) throws {
+        if let confirmedReady, try isRecovering(db) {
+            guard var active = try stored(db), active.role != .claiming, active.control == confirmedReady,
+                  confirmedReady.phase == .ready else { throw Failure.inconsistentDecision }
+            active.confirmedReplacement = true
+            _ = try save(db, active)
+        }
+        try db.execute(sql: "DELETE FROM usr.local_data_state WHERE state_key=?", arguments: [recoveryKey])
+    }
+
     /// Called only after a point absence and an explicit empty-zone proof.
     /// The same proposal survives a lost conditional-create response.
     static func propose(_ db: Database, installation: UUID) throws -> Control {
         guard try requiresDecision(db) else { throw Failure.inconsistentDecision }
+        let repair = try recovery(db)
+        guard repair?.mayCreate != false else { throw Failure.accountAlreadyHadZone }
         guard try Bool.fetchOne(db, sql: """
-            SELECT NOT EXISTS(SELECT 1 FROM usr.local_data_state WHERE state_key=?1
+            SELECT NOT EXISTS(SELECT 1 FROM usr.local_data_state WHERE state_key=?1 AND NOT ?3
               UNION ALL SELECT 1 FROM usr.cloud_engine_state WHERE zone=?2 AND checkpoint IS NOT NULL
               UNION ALL SELECT 1 FROM usr.cloud_record_state WHERE zone=?2 AND (server_state='present' OR system_fields IS NOT NULL))
-            """, arguments: [lostZoneKey,ReadingHistoryTransport.zone]) == true else {
+            """, arguments: [lostZoneKey,ReadingHistoryTransport.zone,repair != nil]) == true else {
             throw Failure.accountAlreadyHadZone
         }
         if let prior = try stored(db) {
@@ -107,6 +166,7 @@ enum ReadingCloudInitialization {
 
     static func observe(_ db: Database, _ control: Control, installation: UUID) throws -> Decision {
         guard try requiresDecision(db) else { throw Failure.inconsistentDecision }
+        if let previous = try recovery(db)?.previous, previous.id == control.id { throw Failure.inconsistentDecision }
         let prior = try stored(db)
         if let prior, prior.role == .claiming, prior.control.matches(control), control.owner != installation {
             throw Failure.inconsistentDecision
@@ -176,6 +236,13 @@ extension ReadingCloudInitialization {
                 FixedValueCloudRows.key(family, id: $0)
             }
         }
+        let retainedMissing = try String.fetchCursor(db, sql: """
+            SELECT DISTINCT record_id FROM usr.quarantined_record
+            WHERE partition=0 AND \(FixedValueCloudRows.retainedMissingCoverSQL)
+            """)
+        while let id = try retainedMissing.next() {
+            try captureMember(db, key: FixedValueCloudRows.key(.cover, id: id), id: id)
+        }
         for family in CausalCloudRows.Family.allCases {
             try capture(db, table: family.table, id: "record_id") { CausalCloudRows.key(family, id: $0) }
         }
@@ -194,7 +261,10 @@ extension ReadingCloudInitialization {
             SELECT '',CAST(q.quarantine_id AS TEXT),q.record_id,
                    CASE WHEN q.reason='unavailable-attachment' AND q.completeness='incomplete'
                         THEN 'missingAttachment' ELSE 'unrepresented' END,q.quarantine_id
-            FROM usr.quarantined_record q WHERE q.partition=0 AND NOT (
+            FROM usr.quarantined_record q WHERE q.partition=0
+              AND NOT (\(CloudTransportRows.localZoneLossDiagnosticSQL))
+              AND NOT (COALESCE((\(FixedValueCloudRows.retainedMissingCoverSQL)),0))
+              AND NOT (
                 q.source='swiftdata' AND q.source_type='UserCover' AND q.reason='unavailable-attachment'
                 AND q.raw_format='legacy-cover-id' AND q.completeness='incomplete'
                 AND EXISTS(SELECT 1 FROM usr.cover_candidate c JOIN usr.cover_asset a ON a.asset_id=c.asset_id
@@ -217,13 +287,16 @@ extension ReadingCloudInitialization {
                                 key: (String) -> CloudTransportRows.Key) throws {
         let source = try String.fetchCursor(db, sql: "SELECT \(id) FROM usr.\(table) WHERE partition=0\(filter)")
         while let businessID = try source.next() {
-            let record = key(businessID)
-            try db.execute(sql: """
-                INSERT INTO usr.cloud_initial_member(record_type,record_name,business_id,blocked_reason)
-                VALUES(?,?,?,'unrepresented')
-                """, arguments: [record.type,record.name,businessID])
-            try refresh(db, record, id: businessID)
+            try captureMember(db, key: key(businessID), id: businessID)
         }
+    }
+
+    private static func captureMember(_ db: Database, key: CloudTransportRows.Key, id: String) throws {
+        try db.execute(sql: """
+            INSERT INTO usr.cloud_initial_member(record_type,record_name,business_id,blocked_reason)
+            VALUES(?,?,?,'unrepresented') ON CONFLICT(record_type,record_name) DO NOTHING
+            """, arguments: [key.type,key.name,id])
+        if db.changesCount > 0 { try refresh(db, key, id: id) }
     }
 
     private static func coverage(_ db: Database, _ key: CloudTransportRows.Key, id: String) throws -> Coverage {
@@ -231,7 +304,8 @@ extension ReadingCloudInitialization {
         // blocker even if its payload could not provide a trusted logical key.
         if try Bool.fetchOne(db, sql: """
             SELECT EXISTS(SELECT 1 FROM usr.quarantined_record
-              WHERE partition=0 AND source='cloud' AND source_type=? AND source_id=?)
+              WHERE partition=0 AND source='cloud' AND source_type=? AND source_id=?
+                AND NOT (COALESCE((\(FixedValueCloudRows.retainedMissingCoverSQL)),0)))
             """, arguments: [key.type,key.name]) == true { return .blocked(.unrepresented) }
         if let family = FixedValueCloudRows.Family(rawValue: key.type) {
             return try FixedValueCloudRows.initialCoverage(db, family, id: id)
@@ -325,9 +399,9 @@ extension ReadingCloudInitialization {
 
     static func traffic(_ db: Database) throws -> Traffic {
         switch try UpgradeOrigins.phase(db) {
-        case nil: return .ordinary
+        case nil where try !isRecovering(db): return .ordinary
         case .unverifiedTrial: return .blocked
-        case .unresolved:
+        case nil, .unresolved:
             guard let upload = try upload(db), !upload.sealed,
                   let decision = try stored(db), decision.role == .selectedFirst,
                   decision.control.phase == .preparing, decision.control.id == upload.initialization
@@ -361,6 +435,7 @@ extension ReadingCloudInitialization {
         else { throw Failure.inconsistentDecision }
         _ = try save(db, .init(role: .selectedFirst, control: ready))
         try UpgradeOrigins.finish(db)
+        try finishZoneRecovery(db, confirmedReady: ready)
         try db.execute(sql: "DELETE FROM usr.local_data_state WHERE state_key=?", arguments: [uploadKey])
     }
 }

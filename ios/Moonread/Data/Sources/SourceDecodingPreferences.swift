@@ -164,7 +164,7 @@ extension AppDataService {
             // This is released data, even if the raw identity was discovered
             // after upgrading. Once the source fold closes, a remaining index
             // entry is consumed without reintroducing its old choice.
-            guard try UpgradeOrigins.phase(db) != nil else { return }
+            guard try UpgradeOrigins.phase(db) != nil, try !ReadingCloudInitialization.isRecovering(db) else { return }
             let input = try sourceDecodingEpoch(rawSHA: rawSHA, decoding: decoding)
             let key = try UserValueRows.Key(input.key)
             let device = "source-decoding-v23"

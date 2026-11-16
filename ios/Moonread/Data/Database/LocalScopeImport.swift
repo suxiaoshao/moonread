@@ -44,7 +44,7 @@ enum LocalScopeImport {
             let version = try DataV2Schema.version(db, in: "move_source")
             // A frozen trial source can still have an earlier user schema.
             // Version 3 was the discarded bridge and is not accepted.
-            guard [1, 2, 4, 5, DataV2Schema.userVersion].contains(version) else {
+            guard [1, 2, 4, 5, 6, DataV2Schema.userVersion].contains(version) else {
                 throw DataV2Error.unsupportedSchema("move_source", version)
             }
             try body()
