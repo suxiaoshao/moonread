@@ -1,3 +1,4 @@
+import GRDB
 import Observation
 import SQLite3
 import SwiftData
@@ -304,6 +305,121 @@ final class StatisticsPresentationTests: ReaderIntegrationFixture {
         StatisticsDates.axisSteps(72), [0, 30, 60, 90], "Gridlines stay on round minutes")
       XCTAssertEqual(StatisticsDates.axisSteps(148), [0, 60, 120, 180])
 
+    }
+  }
+}
+
+final class StatisticsFixedReadTests: XCTestCase {
+  private func withHistory(_ run: (ReaderIndex) throws -> Void) throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "StatisticsReads-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let ownBundle = Bundle(for: Self.self)
+    let resources: Bundle = ownBundle.url(forResource: "schema", withExtension: "sql") == nil ? .main : ownBundle
+    let session = try DataSession(layout: .init(applicationSupport: root), bundle: resources)
+    defer { try? session.close() }
+    let lease = try session.activate(.unknown).0
+    try session.prepareIndex(root.appending(path: "reader.sqlite3"), token: lease)
+    try session.prepareUsers(lease) { nil }
+    try run(.init(session: session, lease: lease))
+  }
+
+  func testSettledDayCurrentHeadsAndWidgetUseTheirOwnRanges() throws {
+    try withHistory { index in
+      let a = String(repeating: "a", count: 64), b = String(repeating: "b", count: 64)
+      let scope = index.lease.scope, base: Int64 = 86_400_000
+      let shared = "f-109", start = 109 * base + 1000
+      try index.session.writeUsers(index.lease) { db in
+        var change = ReadingHistoryRows.Changed()
+        for day in Int64(100)...109 {
+          let duration = day == 100 ? 0 : 1000, key = day == 100 ? a : b, id = "f-\(day)"
+          let slice = ReadingSlice(id: id, sessionId: "legacy", visitId: "legacy", bookId: "missing",
+            startedMs: day * base, endedMs: day * base + Int64(duration), localDay: day, utcOffsetSeconds: 0,
+            preview: false, exposures: [])
+          let input = FactImportColumns(payloadContentKey: key, title: "Historical", device: "legacy",
+                                        slice: slice, durationMs: Int64(duration))
+          if try ReadingFactSettlement.ingest(db, input, book: key, partition: 0, scope: scope.key,
+                                             origin: .init(source: "fixture", id: id)) { change.facts.insert(id) }
+        }
+        let value = ReadingSegment(header: .init(id: shared,
+          author: .init(ownerInstanceId: "fixture", sessionId: "new", title: "Preview", device: "fixture"),
+          visitId: "new-visit", startedMs: start, endedMs: start + 3000, localDay: 109,
+          utcOffsetSeconds: 0, preview: true, revision: 1, durationMs: 3000, sealed: false),
+          firstExposureStart: 20, exposuresText: """
+            [{"start_utf8":20,"end_utf8":40,"duration_ms":1000},{"start_utf8":40,"end_utf8":60,"duration_ms":2000}]
+            """)
+        if try ReadingSegmentRows.ingest(db, value: value, book: b, partition: 0, scope: scope, intake: .local(owner: "fixture"),
+                                         origin: .init(source: "fixture", id: shared)) { change.segments.insert(shared) }
+        try change.settle(db, scope: scope)
+        var cleared = ReadingHistoryRows.Changed()
+        let prefix = ReadingClearRows.Value(v: 2, scopeKind: .captured, book: b, session: "new", throughMs: 0,
+          factIds: [], segments: [.init(segmentId: shared, observedRevision: 1, coveredThroughMs: start + 1000)])
+        XCTAssertTrue(try ReadingClearRows.insert(db, prefix, partition: 0))
+        try ReadingClearRows.recordAffected(db, prefix, partition: 0, changed: &cleared)
+        try cleared.settle(db, scope: scope)
+      }
+      let snapshot = try index.session.readUsers(index.lease) {
+        try StatisticsHistoryRead.overview($0, scope: scope, window: .init(100,109), target: .all)
+      }
+      guard case .value(let inputs, key: nil, incomplete: false) = snapshot else { return XCTFail("Expected complete overview") }
+      let overview = try StatisticsHistoryRead.summarize(inputs)
+      XCTAssertEqual(overview.totalDurationMs, "11000")
+      XCTAssertEqual(overview.days.first?.durationMs, "0")
+      XCTAssertEqual(overview.days.first?.bookCount, "1", "Legacy zero still counts as a recorded day")
+      XCTAssertEqual(overview.books.map(\.readingKey), [b,a])
+      XCTAssertEqual(overview.books.first?.title, "Historical", "Preview does not reorder formal reading")
+      XCTAssertEqual(overview.books.first?.readingDays, "9", "Two contributions on a day are still one reading day")
+
+      let detail = try index.session.readUsers(index.lease) {
+        try StatisticsHistoryRead.activities($0, scope: scope, window: .init(109,109), target: .book(.record(key: .formal(sha256: b))))
+      }
+      guard case .value(let rows, key: .formal(let key), incomplete: false) = detail else { return XCTFail("Expected single-book rows") }
+      XCTAssertEqual(key,b)
+      XCTAssertEqual(rows.map(\.recordID), [shared,shared])
+      XCTAssertEqual(rows.map(\.kind), ["fact","segment"])
+      XCTAssertEqual(rows.map(\.durationMs), ["1000","2000"])
+      XCTAssertEqual(rows.last?.firstExposureStart, "40", "Do not use the cleared prefix's original position")
+      XCTAssertEqual(rows.last?.startedMs, String(start + 1000))
+      XCTAssertEqual(rows.last?.title, "Preview")
+
+      let widget = try index.session.readUsers(index.lease) {
+        try StatisticsHistoryRead.widget($0, scope: scope, today: 110, weekStart: 107)
+      }
+      let summary = try StatisticsHistoryRead.summarizeWidget(XCTUnwrap(widget), today: 110, weekStart: 107)
+      XCTAssertEqual(summary.streakDays, "9")
+      XCTAssertEqual(summary.weekDurationMs, "5000")
+      XCTAssertEqual(summary.todayDurationMs, "0")
+      XCTAssertEqual(summary.days.count, 7)
+    }
+  }
+
+  func testScopedUnknownFactsMarkIncompleteAndUnknownClearBlocks() throws {
+    try withHistory { index in
+      let book = String(repeating: "a", count: 64), other = String(repeating: "b", count: 64), scope = index.lease.scope
+      try index.session.writeUsers(index.lease) { db in
+        try ReadingSegmentRows.quarantine(db, partition: 0, book: book, id: "future",
+          origin: .init(source: "fixture", id: "future"), reason: "future", raw: Data([0]))
+      }
+      let read = try index.session.readUsers(index.lease) { db in
+        let dates = try StatisticsHistoryRead.Window(100,100)
+        return (try StatisticsHistoryRead.overview(db, scope: scope, window: dates, target: .all),
+                try StatisticsHistoryRead.overview(db, scope: scope, window: dates, target: .book(.record(key: .formal(sha256: other)))),
+                try StatisticsHistoryRead.widget(db, scope: scope, today: 100, weekStart: 100))
+      }
+      guard case .value(_, _, true) = read.0, case .value(_, _, false) = read.1 else {
+        return XCTFail("An unknown segment poisons only its book and the all-books summary")
+      }
+      XCTAssertNil(read.2)
+      try index.session.writeUsers(index.lease) { db in
+        try db.execute(sql: """
+          INSERT INTO usr.quarantined_record(partition,source,source_id,source_type,record_id,book_key,
+            raw_format,raw_bytes,digest,reason,completeness)
+          VALUES(1,'fixture','clear','StatisticsClear','future-clear',?,'opaque',X'00','unknown','future','complete')
+          """, arguments: [other])
+      }
+      XCTAssertThrowsError(try index.session.readUsers(index.lease) {
+        try StatisticsHistoryRead.activities($0, scope: scope, window: .init(100,100),
+                                           target: .book(.record(key: .formal(sha256: other))))
+      }) { XCTAssertTrue($0 is UserSyncCompatibilityError) }
     }
   }
 }

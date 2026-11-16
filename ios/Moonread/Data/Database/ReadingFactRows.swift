@@ -46,16 +46,19 @@ enum ReadingFactRows {
         )
         """
 
+    static func unknownClearRows(matching predicate: String) -> String {
+        """
+            SELECT 1 FROM usr.quarantined_record WHERE (\(predicate))
+              AND source_type IN (\(quarantineClearTypes))
+            UNION ALL SELECT 1 FROM usr.statistics_clear WHERE (\(predicate)) AND schema_version NOT IN \(knownClearVersions)
+            """
+    }
+
     static func requireReadableClears(_ db: Database, partition: Int, book: String?, session: String? = nil) throws {
         // An absent or untrusted dimension intersects every request.
+        let matching = "partition=?1 AND (?2 IS NULL OR book_key IS NULL OR book_key=?2) AND (?3 IS NULL OR session_id IS NULL OR session_id=?3)"
         if try Bool.fetchOne(db, sql: """
-            SELECT EXISTS(SELECT 1 FROM usr.quarantined_record WHERE partition=?1
-              AND source_type IN (\(quarantineClearTypes))
-              AND (?2 IS NULL OR book_key IS NULL OR book_key=?2)
-              AND (?3 IS NULL OR session_id IS NULL OR session_id=?3)
-            UNION ALL SELECT 1 FROM usr.statistics_clear WHERE partition=?1 AND schema_version NOT IN \(knownClearVersions)
-              AND (?2 IS NULL OR book_key IS NULL OR book_key=?2)
-              AND (?3 IS NULL OR session_id IS NULL OR session_id=?3))
+            SELECT EXISTS(\(unknownClearRows(matching: matching)))
             """, arguments: [partition,book.map(DataIdentity.canonical),session.map(identity)]) == true {
             throw UserSyncCompatibilityError(statistics: true)
         }

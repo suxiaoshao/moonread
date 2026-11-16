@@ -91,6 +91,17 @@ enum BookInformationRead {
             readingKey: key, aliases: aliases, body: body, metadata: metadata, sources: sources)))
     }
 
+    static func resolveIdentity(_ db: Database, scope: DataScope, target: BookTarget) throws -> BookResolution {
+        let file: Row? = if case .file(let id) = target {
+            try Row.fetchOne(db, sql: """
+                WITH display_books AS (SELECT id FROM main.library_files WHERE id=?1 AND directory=0),
+                \(LibraryCardSQL.fileIdentities(scopeParameter: "?2", includeNames: false))
+                SELECT book_key,body_id FROM files
+                """, arguments: [id,scope.key])
+        } else { nil }
+        return try resolve(db, scope: scope, target: target, targetFile: file)
+    }
+
     private static func resolve(_ db: Database, scope: DataScope, target: BookTarget, targetFile: Row?) throws -> BookResolution {
         let key: ReadingKey
         var associated: String?

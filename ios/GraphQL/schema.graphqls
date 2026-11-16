@@ -2,6 +2,9 @@ scalar UInt64
 scalar Int64
 
 type Query {
+  statisticsOverview(firstDay: Int64!, lastDay: Int64!, target: InformationTarget): ReadingStatisticsOverview!
+  statisticsActivities(firstDay: Int64!, lastDay: Int64!, target: InformationTarget): [ReadingStatisticsActivity!]!
+  statisticsWidget(today: Int64!, weekStart: Int64!): ReadingStatisticsWidget!
   searchCandidates(shelfID: ID, path: String): [SearchFile!]!
   bookFilterOptions(shelfID: ID): SearchOptions!
   bookInformation(target: InformationTarget!, sourceFileID: ID, includeRecordSource: Boolean!): BookInformation!
@@ -218,4 +221,53 @@ type SearchFile {
 type SearchOptions {
   authors: [String!]!
   tags: [String!]!
+}
+
+type ReadingStatisticsOverview {
+  totalDurationMs: UInt64!
+  books: [ReadingStatisticsBook!]!
+  days: [ReadingStatisticsDay!]!
+}
+
+type ReadingStatisticsBook {
+  readingKey: ID!
+  bodyID: ID
+  title: String!
+  author: String
+  cover: RecentReadingCover
+  durationMs: UInt64!
+  firstReadMs: Int64!
+  lastReadMs: Int64!
+  lastFormalMs: Int64!
+  readingDays: UInt64!
+}
+
+type ReadingStatisticsDay {
+  day: Int64!
+  durationMs: UInt64!
+  bookCount: UInt64!
+}
+
+type ReadingStatisticsActivity {
+  kind: String!
+  recordID: ID!
+  readingKey: ID!
+  bodyID: ID
+  sessionID: ID!
+  title: String!
+  localDay: Int64!
+  utcOffsetSeconds: Int!
+  preview: Boolean!
+  startedMs: Int64!
+  endedMs: Int64!
+  durationMs: UInt64!
+  firstExposureStart: UInt64!
+}
+
+type ReadingStatisticsWidget {
+  hasReadingHistory: Boolean!
+  todayDurationMs: UInt64!
+  weekDurationMs: UInt64!
+  streakDays: UInt64!
+  days: [ReadingStatisticsDay!]!
 }
