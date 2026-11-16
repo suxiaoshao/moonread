@@ -471,7 +471,7 @@ final class ReaderSession {
         cancelNavigation()
         pendingChapterAnchor = nil
         error = nil
-        let task = Task { await openedTask?.value; await flush(); await StatisticsWriter.shared.drain(); await service.scheduleSystemReadingCatalog(immediate: true) }
+        let task = Task { await openedTask?.value; await flush(); await StatisticsWriter.shared.drain() }
         leaveTask = task
         return task
     }

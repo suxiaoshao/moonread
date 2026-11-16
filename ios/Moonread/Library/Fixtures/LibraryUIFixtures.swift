@@ -159,18 +159,17 @@ extension AppDataService {
             withExtendedLifetime(prepared) {}
             return
         }
-        let book = try core.createSampleBook()
         let file = root.appendingPathComponent("月读 · 排版示例.txt")
         if !FileManager.default.fileExists(atPath: file.path) {
-            var text = ""
-            for index in 0..<book.chunkCount { text += try core.readChunk(bookId: book.id, index: index).text }
-            try text.write(to: file, atomically: true, encoding: .utf8)
+            try ReaderIndex.sampleText().write(to: file, atomically: true, encoding: .utf8)
         }
         try refreshLibraryShelf("builtin")
         guard let entry = try await libraryEntries(LibraryLocation(shelfID: "builtin")).first(where: { $0.name == file.lastPathComponent }) else {
             throw CocoaError(.fileNoSuchFile)
         }
-        try core.linkLibraryFile(fileId: entry.id, bookId: book.id)
+        let prepared = try await aiPrepare(entry.source)
+        let book = try await snapshot(prepared.id).book
+        defer { withExtendedLifetime(prepared) {} }
         let conflictFixture = "Moonread.conflictFixture." + (testSession ?? "")
         if ProcessInfo.processInfo.arguments.contains("--ui-test-annotation-conflict"), !sourceDefaults.bool(forKey: conflictFixture) {
             let range = try core.paragraphRange(bookId: book.id, offsetUtf8: 0)
@@ -196,10 +195,9 @@ extension AppDataService {
         // Seed the actual synthetic file's identity, never an unrelated sample.
         let prepared = try await aiPrepare(entry.source)
         let actual = try await snapshot(prepared.id).book
-        let query = try indexStore().querySnapshot(json: "{}")
-        let local = try query.readingLocation(bookId: prepared.id, percentage: 10)
+        let local = try await location(prepared.id, percentage: 10)
         try await savePosition(bookID: prepared.id, offset: local.offsetUtf8)
-        let target = try query.readingLocation(bookId: prepared.id, percentage: 75)
+        let target = try await location(prepared.id, percentage: 75)
         let value = PositionValue(content_key: actual.readingKey.storageKey, offset: target.offsetUtf8)
         try await userStore().put("position/" + actual.readingKey.storageKey, value: UserSyncJSON.encode(value), device: "synthetic-remote")
         sourceDefaults.set(true, forKey: marker)
@@ -248,10 +246,10 @@ extension AppDataService {
         try refreshLibraryShelf(externalID)
         try refreshLibraryShelf("builtin")
         for entry in try await allLibraryBooks("builtin") {
-            let file = root.appendingPathComponent(entry.relativePath)
-            let book = try indexStore().importBook(filePath: file.path, title: entry.title)
-            try indexStore().linkLibraryFile(fileId: entry.id, bookId: book.id)
+            let prepared = try await aiPrepare(entry.source)
+            let book = try await snapshot(prepared.id).book
             try await writePosition(book.id, offset: min(160, book.byteCount))
+            withExtendedLifetime(prepared) {}
         }
     }
 }

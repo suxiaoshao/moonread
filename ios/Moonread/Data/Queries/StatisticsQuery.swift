@@ -2,6 +2,23 @@ import Foundation
 import GRDB
 import Synchronization
 
+enum HistoryCompatibility {
+    static func incomplete(_ db: Database, encodedKeys: String?) throws -> Bool {
+        // Quarantine has trusted book/session routing but no trusted day.
+        // A missing book dimension intersects every scope.
+        let relevant = "?1 IS NULL OR book_key IS NULL OR book_key IN (SELECT value FROM json_each(?1))"
+        if try Bool.fetchOne(db, sql: "SELECT EXISTS(" + ReadingFactRows.unknownClearRows(matching: relevant) + ")",
+                             arguments: [encodedKeys]) == true {
+            throw UserSyncCompatibilityError(statistics: true)
+        }
+        return try Bool.fetchOne(db, sql: """
+            SELECT EXISTS(SELECT 1 FROM usr.quarantined_record
+                WHERE source_type IN (\(ReadingFactRows.quarantineFactTypes),\(ReadingSegmentRows.quarantineTypes))
+                  AND (\(relevant)))
+            """, arguments: [encodedKeys]) == true
+    }
+}
+
 /// Fixed, read-only statistics input. Selection and clear/ID adjudication
 /// have already happened in the transaction that settled current and day.
 enum StatisticsHistoryRead {
@@ -67,18 +84,7 @@ enum StatisticsHistoryRead {
         }
 
         func completeness(_ db: Database) throws -> Bool {
-            // Quarantine has trusted book/session routing but no trusted day.
-            // A missing book dimension intersects every scope.
-            let relevant = "?1 IS NULL OR book_key IS NULL OR book_key IN (SELECT value FROM json_each(?1))"
-            if try Bool.fetchOne(db, sql: "SELECT EXISTS(" + ReadingFactRows.unknownClearRows(matching: relevant) + ")",
-                                 arguments: [requestedKeys]) == true {
-                throw UserSyncCompatibilityError(statistics: true)
-            }
-            return try Bool.fetchOne(db, sql: """
-                SELECT EXISTS(SELECT 1 FROM usr.quarantined_record
-                    WHERE source_type IN (\(ReadingFactRows.quarantineFactTypes),\(ReadingSegmentRows.quarantineTypes))
-                      AND (\(relevant)))
-                """, arguments: [requestedKeys]) == true
+            try HistoryCompatibility.incomplete(db, encodedKeys: requestedKeys)
         }
     }
 
@@ -570,10 +576,9 @@ extension AppDataService {
     /// Widget statistics do not depend on the system book catalogue or on
     /// streaming fact preparation. The publisher still owns its schedule.
     func fixedWidgetStatistics(today: Int64, weekStart: Int64) async throws -> StatisticsWidgetSummary? {
-        try await fixedReaderRead { index in
-            let input = try index.session.readUsers(index.lease) {
-                try StatisticsHistoryRead.widget($0, scope: index.lease.scope, today: today, weekStart: weekStart)
-            }
+        try await fixedPublicationRead({ db, scope in
+            try StatisticsHistoryRead.widget(db, scope: scope, today: today, weekStart: weekStart)
+        }, project: { input in
             guard let input else { return nil }
             let value = try StatisticsHistoryRead.summarizeWidget(input, today: today, weekStart: weekStart)
             guard let day = UInt64(value.todayDurationMs), let week = UInt64(value.weekDurationMs),
@@ -584,6 +589,6 @@ extension AppDataService {
                     else { throw ReaderError.InvalidRange }
                     return .init(day: day, durationMs: duration, bookCount: books)
                 })
-        }
+        })
     }
 }

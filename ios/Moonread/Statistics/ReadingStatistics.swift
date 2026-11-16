@@ -62,7 +62,6 @@ extension AppDataService {
             segmentAdmission($0, key: $1, index: index, preferences: preferences)
         }
         guard !keys.isEmpty else { return }
-        scheduleSystemReadingCatalog(statisticsChanged: true)
         NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["keys": Array(keys)])
     }
 
@@ -84,7 +83,6 @@ extension AppDataService {
                              keys: [ReadingKey.pending(bookId: id).storageKey,key])
         }
         guard !keys.isEmpty else { return }
-        scheduleSystemReadingCatalog(statisticsChanged: true)
         NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["keys": Array(keys)])
     }
     #endif
@@ -117,7 +115,7 @@ extension AppDataService {
                 next = .init(enabled: enabled ?? previous.enabled, generation: previous.generation + 1)
                 sourceDefaults.set(next.enabled, forKey: "Moonread.statisticsEnabled")
                 sourceDefaults.set(Int(next.generation), forKey: "Moonread.statisticsGeneration")
-                scheduleSystemReadingCatalog(statisticsChanged: true)
+                scheduleSystemWidgetStatistics(immediate: true)
                 NotificationCenter.default.post(name: .statisticsPreferencesChanged, object: nil)
                 NotificationCenter.default.post(name: .statisticsChanged, object: nil)
             }

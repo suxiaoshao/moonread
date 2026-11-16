@@ -24,6 +24,7 @@ final class BookInformationModel {
     private(set) var resolution: BookDetailsResult?
     private(set) var entry: LibraryEntry?
     private(set) var chapters: [ChapterEntry] = []
+    private(set) var coverageError: String?
     private(set) var preparation: EditPreparation = .idle
     private var actionError: String?
     private var task: Task<Void, Never>?
@@ -91,7 +92,7 @@ final class BookInformationModel {
         task?.cancel(); task = nil
         draft?.cancel()
         preparation = .idle
-        entry = nil; resolution = nil; chapters = []; error = nil
+        entry = nil; resolution = nil; releaseCoverage(); error = nil
     }
 
     private func begin(_ identity: Identity) -> UUID {
@@ -155,6 +156,21 @@ final class BookInformationModel {
             } else { chapters = [] }
         } catch is CancellationError { }
         catch { if accepts(identity, revision: revision) { publishError(error) } }
+    }
+
+    func releaseCoverage() { chapters = []; coverageError = nil }
+
+    func observeCoverage(bookID: String) async {
+        do {
+            try await service.observeChapterCoverage(bookID) { [weak self] result in
+                guard let self, readableBook?.id == bookID, !Task.isCancelled else { return }
+                switch result {
+                case .success(let outline): chapters = outline?.items ?? []; coverageError = nil
+                case .failure(let error): coverageError = ReaderMessages.error(error)
+                }
+            }
+        } catch is CancellationError { }
+        catch { if readableBook?.id == bookID && !Task.isCancelled { coverageError = ReaderMessages.error(error) } }
     }
 
     func edit(_ route: StatisticsRoute) {
@@ -504,6 +520,11 @@ struct BookInformationSections: View {
             } else if model.details == nil { ProgressView() }
         }.padding(16).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(uiColor: theme.surface), in: .rect(cornerRadius: 18))
+            .task(id: model.details == nil ? nil : model.readableBook?.id) {
+                model.releaseCoverage()
+                if model.details != nil, let id = model.readableBook?.id { await model.observeCoverage(bookID: id) }
+            }
+            .onDisappear { model.releaseCoverage() }
     }
     private func positionLabel(_ position: UInt64, _ bytes: UInt64) -> some View {
         Text("读到全书 \((Double(position) / Double(max(1, bytes))).formatted(.percent.precision(.fractionLength(0))))")
@@ -511,7 +532,8 @@ struct BookInformationSections: View {
     private func coverageLabel(_ position: UInt64) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("本章覆盖 \(model.chapters.last(where: { $0.startUtf8 <= position })?.coverageLabel(readingPrefix: false) ?? "—")")
-            if model.chapters.isEmpty { Text("本章覆盖尚未计算完成，不影响继续阅读。").font(.caption) }
+            if let error = model.coverageError { Text(verbatim: error).font(.caption) }
+            else if model.chapters.isEmpty { Text("本章覆盖尚未计算完成，不影响继续阅读。").font(.caption) }
         }
     }
 }

@@ -89,7 +89,7 @@ enum FullIndexSystemCallback {
 }
 
 /// Retry/admission deduplication only; validity and pending identity remain Rust-owned.
-struct IndexInput: Hashable {
+struct IndexSourceStamp: Hashable {
     let id: String
     let size: UInt64
     let modified: Int64
@@ -102,7 +102,7 @@ struct IndexFailure: Identifiable {
     let message: String
     var id: String { file.id }
     func matches(_ other: SourceFileSnapshot) -> Bool {
-        IndexInput(file) == IndexInput(other)
+        IndexSourceStamp(file) == IndexSourceStamp(other)
     }
 }
 
@@ -136,7 +136,7 @@ final class FullIndexController {
     @ObservationIgnored private var continuedID: String?
     @ObservationIgnored private var foreground = true
     @ObservationIgnored private var observers: [AnyCancellable] = []
-    @ObservationIgnored private var admissions: [String: [String: IndexInput]] = [:]
+    @ObservationIgnored private var admissions: [String: [String: IndexSourceStamp]] = [:]
     private enum Counts {
         case unknown
         case known(indexed: Int, total: Int)
@@ -260,7 +260,7 @@ final class FullIndexController {
     func start(_ shelf: String, includeCloud requestedCloud: Bool, userInitiated: Bool, scannedOnly: Bool = false, files: [SourceFileSnapshot]? = nil) {
         let includeCloud = !scannedOnly && requestedCloud
         if let files {
-            let inputs = Dictionary(uniqueKeysWithValues: files.filter { includeCloud || !$0.needsDownload }.map { ($0.id, IndexInput($0)) })
+            let inputs = Dictionary(uniqueKeysWithValues: files.filter { includeCloud || !$0.needsDownload }.map { ($0.id, IndexSourceStamp($0)) })
             if !userInitiated && !inputs.isEmpty && inputs.allSatisfy({ admissions[shelf]?[$0.key] == $0.value }) { return }
             admissions[shelf] = inputs
         }
@@ -326,9 +326,13 @@ final class FullIndexController {
         var progress = state.progress; progress.lastFile = nil
         state = .active(IndexRun(progress: progress))
         runner = Task {
+            let catalogueBatch = await service.beginSystemReadingBatch()
             var completed = false
             var finishedShelf = false
+            var committed = false
             defer {
+                let changed = committed
+                Task { await service.endSystemReadingBatch(catalogueBatch, committed: changed) }
                 work = nil; runner = nil
                 if case .active = state {
                     var progress = state.progress; progress.lastFile = nil
@@ -346,7 +350,7 @@ final class FullIndexController {
                 }
             }
             do {
-                var attempted = Set<IndexInput>()
+                var attempted = Set<IndexSourceStamp>()
                 while !Task.isCancelled {
                     if constrained { break }
                     updateStep(.inventory)
@@ -362,7 +366,7 @@ final class FullIndexController {
                         task.progress.totalUnitCount = Int64(max(total,1)); task.progress.completedUnitCount = Int64(indexed)
                     }
                     guard let next = inventory.admittedPending.first(where: { file in
-                        (request.includeCloud || !file.needsDownload) && !attempted.contains(IndexInput(file)) && !failures.contains { $0.matches(file) }
+                        (request.includeCloud || !file.needsDownload) && !attempted.contains(IndexSourceStamp(file)) && !failures.contains { $0.matches(file) }
                     }) else {
                         finishedShelf = true
                         completed = inventory.admittedPending.allSatisfy { !request.includeCloud && $0.needsDownload }
@@ -379,7 +383,7 @@ final class FullIndexController {
                         updateProgress { $0.lastFile = nil }
                         continue  // Foreground work may have changed this source.
                     }
-                    attempted.insert(IndexInput(next))
+                    attempted.insert(IndexSourceStamp(next))
                     let nextWork = IdentityFileWork(); work = nextWork
                     do {
                         let core = try await service.identityCore()
@@ -387,13 +391,14 @@ final class FullIndexController {
                             await MainActor.run { self.updateStep(.processing(next)) }
                             try await nextWork.run(file: next, shelf: inventory.shelf, core: core, includeCloud: request.includeCloud, service: service)
                         }
+                        committed = true
                         updateProgress { $0.failures.removeAll { $0.id == next.id } }
                         NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
                     } catch {
                         if Task.isCancelled { break }
                         if nextWork.isCancelled {
                             updateProgress { $0.lastFile = nil }
-                            attempted.remove(IndexInput(next))
+                            attempted.remove(IndexSourceStamp(next))
                         } else {
                             updateProgress {
                                 $0.failures.removeAll { $0.id == next.id }

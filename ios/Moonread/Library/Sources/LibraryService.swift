@@ -110,15 +110,6 @@ extension AppDataService {
     func catalogueScope(_ location: LibraryLocation?, recursive: Bool) -> CatalogueScope {
         location.map { .shelf(shelfId: $0.shelfID, parentPath: $0.path, recursive: recursive) } ?? .all
     }
-    #if DEBUG
-    // Historical baseline fixtures only; no live browsing fallback.
-    func catalogueQuery(_ location: LibraryLocation?, recursive: Bool) async throws -> ReaderQuery {
-        // Folder aggregates include descendants even when displaying only children.
-        try await readingQuery(.catalogue(catalogueScope(location, recursive: true)), options: .init(scope: "catalogue"))
-    }
-
-    #endif
-
     /// Deterministic latency for UI checks; release builds never delay queries.
     nonisolated static func libraryTestLatency() async throws {
         #if DEBUG
@@ -294,7 +285,7 @@ extension AppDataService {
         let key = if let parsed = try? parseReadingKey(value: value) { serializeReadingKey(key: parsed) }
             else { try index.resolveBookIdentity(bookId: value).key.storageKey }
         try index.session.writeUsers(index.lease) { try LocalReadingRows.setHidden($0, book: key, hidden: true) }
-        dataChanged(); scheduleSystemReadingCatalog(immediate: true)
+        dataChanged()
     }
 
     func registerLibraryShelf(_ url: URL, replacing shelfID: String? = nil) throws -> String {
@@ -322,7 +313,6 @@ extension AppDataService {
         libraryScans[id] = nil
         libraryObservers[id]?.stop()
         libraryObservers[id] = nil
-        scheduleSystemReadingCatalog(immediate: true)
     }
 
     func refreshLibrary() async throws {
@@ -524,7 +514,6 @@ extension AppDataService {
     /// The index is already committed. Consumers reread it without triggering
     /// filesystem scans or automatic-index admission for a source-only update.
     func publishLibraryIndexChange() {
-        scheduleSystemReadingCatalog(immediate: true)
         NotificationCenter.default.post(name: .libraryIndexChanged, object: self)
     }
 
@@ -662,7 +651,7 @@ extension AppDataService {
         let decoding = try await resolveSourceDecoding(rawSHA: hash)
         try Task.checkCancellation()
         guard configuration == userCloudConfigurationRevision,
-              deletionToken == localReadingWriteLeases[sha] else { throw ReadingDataError.changed }
+              deletionToken == localReadingWriteLease(sha) else { throw ReadingDataError.changed }
         let current: SourceFileLocation
         do { current = try indexStore().sourceFileLocation(fileId: entry.id) }
         catch ReaderError.NotFound { throw ReaderError.SourceChanged }

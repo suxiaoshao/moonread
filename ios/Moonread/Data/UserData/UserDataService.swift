@@ -163,7 +163,7 @@ extension AppDataService {
                 throw error
             }
             guard userCloudConfigurationRevision == revision else { return }
-            startUserRecovery(); scheduleRecentRestoration(); scheduleSystemReadingCatalog(immediate: true)
+            startUserRecovery(); scheduleRecentRestoration(); resumeSystemReadingPublication()
         } else if let afterCapture {
             await ReadingActivityRecorder.finishMutation(afterCapture.id, preferences: nil)
         }
@@ -200,7 +200,6 @@ extension AppDataService {
     }
     func receivedUserImport() async {
         defer { scheduleRecentRestoration() }
-        queryCache.removeAll()
         if let store = try? await userStore() { try? await store.importedChanges() }
         if let store = try? await userStore(pending: true) { try? await store.importedChanges() }
     }

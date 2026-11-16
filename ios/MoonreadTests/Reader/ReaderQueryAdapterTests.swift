@@ -567,6 +567,139 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
     await fulfillment(of: [searchChanged,optionsChanged], timeout: 2)
   }
 
+
+  func testSystemCatalogueAndPointSourcesShareThePreferredCopy() throws {
+    try withFolder { index in
+      let sha = String(repeating: "a", count: 64), scope = index.lease.scope
+      try index.session.writeUsers(index.lease) { db in
+        try Self.addFile(db, id: "a", path: "a.txt", key: sha, name: "Fixture 2.txt")
+        try Self.addFile(db, id: "z", path: "z.txt", name: "Fixture 10.txt")
+        try Self.addFile(db, id: "unidentified", path: "unidentified.txt")
+        try db.execute(sql: """
+          INSERT INTO main.library_shelves VALUES('other','Other',X'','local',0,'not-connected');
+          UPDATE main.library_files SET directory=0 WHERE id='unidentified';
+          UPDATE main.library_files SET directory=0,book_id='body-a',shelf_id='other',needs_download=1 WHERE id='z';
+          """)
+        _ = try ReadingPositionRows.recordPosition(db, book: sha, offset: 3, hint: nil, file: "z",
+          device: "fixture", now: 10, token: "position")
+        try Self.metadata(db, book: sha, field: "author", value: "\"Author\"")
+        try Self.metadata(db, book: sha, field: "tag-1", value: "\"Tag\"")
+        try Self.chapterZero(db, key: sha, title: "Changed chapter")
+      }
+      let input = try index.session.readUsers(index.lease) { try SystemReadingRead.catalogue($0, scope: scope) }
+      let cards = SystemReadingRead.project(input).systemBookCatalogue
+      XCTAssertEqual(cards.count, 1)
+      let first = try XCTUnwrap(cards.first)
+      XCTAssertEqual(first.title, "Fixture 10")
+      XCTAssertEqual(first.tags, ["Tag"])
+      XCTAssertEqual(first.author, "Author")
+      XCTAssertEqual(first.sourceShelfIDs, ["builtin","other"])
+      XCTAssertEqual(first.sourceCount, "2")
+      XCTAssertEqual(first.recentRank, 0)
+      XCTAssertEqual(first.chapterTitle, "Changed chapter")
+      XCTAssertNotNil(first.percentage)
+      XCTAssertFalse(first.reconnectRequired, "At least one copy is connected")
+      XCTAssertTrue(first.needsDownload, "The representative copy keeps its own state")
+      let sources = try index.session.readUsers(index.lease) { try SystemReadingRead.sources($0, scope: scope, sha: sha) }
+      XCTAssertEqual(sources.map { $0.entry.id }, ["z","a"])
+      XCTAssertEqual(sources.map(\.reconnect), [true,false])
+    }
+  }
+
+  func testSystemCommitStampsRespectTheTwoPublicationDomains() throws {
+    try withFolder { index in
+      let sha = String(repeating: "a", count: 64)
+      try index.session.writeUsers(index.lease) { try Self.addFile($0, id: "x", path: "x.txt", key: sha) }
+      let books = try SystemReadingRead.changes(index, statistics: false)
+      let stats = try SystemReadingRead.changes(index, statistics: true)
+      defer { withExtendedLifetime((books.events, stats.events)) {} }
+      try index.session.writeUsers(index.lease) { db in
+        try db.execute(sql: "INSERT INTO usr.reading_day VALUES(?,1,?,1,1000,1100,1100)",
+                       arguments: [sha,DataIdentity.unsigned(100)])
+      }
+      XCTAssertEqual(books.commits.value, 0)
+      XCTAssertEqual(stats.commits.value, 1)
+      try index.session.writeUsers(index.lease) { try Self.metadata($0, book: sha, field: "author", value: "\"Updated\"") }
+      XCTAssertEqual(books.commits.value, 1)
+      XCTAssertEqual(stats.commits.value, 1)
+      XCTAssertThrowsError(try index.session.writeUsers(index.lease) { db in
+        try db.execute(sql: "DELETE FROM usr.reading_day")
+        throw ReaderError.InvalidSettings
+      })
+      XCTAssertEqual(stats.commits.value, 1, "Rollback is not publication input")
+    }
+  }
+
+  @MainActor func testPublicationReadDoesNotHoldLifecycleLockForOpening() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "SystemReader-\(UUID())")
+    defer { try? FileManager.default.removeItem(at: root) }
+    let index = try prepareFolder(at: root)
+    defer { try? index.session.close() }
+    let sha = String(repeating: "a", count: 64), scope = index.lease.scope
+    try index.session.writeUsers(index.lease) { try Self.addFile($0, id: "x", path: "x.txt", key: sha) }
+    let entered = expectation(description: "Publication holds its own read transaction")
+    let opened = expectation(description: "Target lookup returns ahead of publisher")
+    let release = DispatchSemaphore(value: 0)
+    let publication = Task.detached {
+      try await index.session.readUsersForPublication(index.lease) { db in
+        _ = try Int.fetchOne(db, sql: "SELECT count(*) FROM usr.reading_current")
+        entered.fulfill()
+        guard release.wait(timeout: .now() + 5) == .success else { throw ReaderError.InvalidSettings }
+      }
+    }
+    await fulfillment(of: [entered], timeout: 2)
+    let pointRead = Task.detached {
+      let result = try index.session.readUsers(index.lease) { try SystemReadingRead.sources($0, scope: scope, sha: sha) }
+      XCTAssertEqual(result.first?.entry.id, "x")
+      opened.fulfill()
+    }
+    await fulfillment(of: [opened], timeout: 2)
+    release.signal()
+    try await pointRead.value
+    try await publication.value
+  }
+
+
+  @MainActor func testSystemBatchGateDefersBooksWithoutBlockingStatisticsOrOpening() async throws {
+    let root = FileManager.default.temporaryDirectory.appending(path: "SystemBatch-\(UUID())")
+    let suite = "SystemBatch.\(UUID())"
+    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
+    let index = try prepareFolder(at: root)
+    defer { try? index.session.close() }
+    let service = AppDataService(core: index, libraryDirectory: root, sourceDefaultsSuite: suite)
+    let sha = String(repeating: "a", count: 64)
+    try index.session.writeUsers(index.lease) { try Self.addFile($0, id: "file", path: "file.txt", key: sha) }
+    let output = SystemReadingSnapshotFile(directory: root.appending(path: "System"))
+    await service.installSystemReadingFixture(output)
+    let outer = await service.beginSystemReadingBatch()
+    let nested = await service.beginSystemReadingBatch()
+    await service.scheduleSystemReadingCatalog(immediate: true)
+    await service.scheduleSystemWidgetStatistics(immediate: true)
+    await service.waitForStatisticsFixture()
+    let direct = try await service.resolveSystemReadingBook(.init(sha: sha))
+    XCTAssertEqual(direct.id, "file")
+    XCTAssertFalse(FileManager.default.fileExists(atPath: output.url.path))
+    let stats = try output.readStatistics()
+
+    await service.endSystemReadingBatch(nested, committed: true)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: output.url.path))
+    await service.endSystemReadingBatch(outer, committed: false)
+    await service.waitForSystemReadingCatalog()
+    let books = try output.read()
+    XCTAssertEqual(books.books.map(\.id), [SystemReadingLink.bookIDPrefix + sha])
+    XCTAssertEqual(try output.readStatistics(), stats)
+
+    await service.resetSystemReadingCatalog()
+    XCTAssertTrue(try output.read().books.isEmpty)
+    XCTAssertNil(try output.readStatistics().statistics)
+    XCTAssertNotEqual(try output.readStatistics().storeScope, stats.storeScope)
+  }
+}
+
+private extension AppDataService {
+  func installSystemReadingFixture(_ file: SystemReadingSnapshotFile) { systemCatalog = .init(file: file) }
+  func waitForStatisticsFixture() async { await systemCatalog?[.statistics].task?.value }
+
 }
 
 final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
@@ -877,48 +1010,6 @@ final class ReaderQueryAdapterReaderIntegrationTests: ReaderIntegrationFixture {
       XCTAssertTrue(tools.chapters.isEmpty); XCTAssertFalse(tools.loadingChapters); XCTAssertNil(tools.error)
       XCTAssertNil(tools.notesLoadError)
     }
-    await service.queryFixture(nil)
-  }
-
-  @MainActor func testSystemStatisticsCancellationIsNotUnavailableAndRealFailureStillIs() async throws {
-    let (root, service, _, formal, _, book, _, suite) = try singleBookFixture()
-    defer { try? FileManager.default.removeItem(at: root); UserDefaults.standard.removePersistentDomain(forName: suite) }
-    let gate = RestorationGate()
-    await service.queryFixture { _, phase in if phase == .built { await gate.wait() } }
-    let work = Task { try await service.systemWidgetStatistics() }
-    await gate.waitForEntry(); work.cancel(); await gate.release()
-    do { _ = try await work.value; XCTFail("Cancellation cannot replace previous widget statistics") } catch is CancellationError { }
-    await service.queryFixture { _, phase in if phase == .built { throw CocoaError(.fileReadNoPermission) } }
-    let failed = try await service.systemWidgetStatistics()
-    XCTAssertEqual(failed.status, "unavailable")
-    let rounds = QueryAttemptCounter()
-    await service.queryFixture { scope, phase in
-      if scope == "system-catalogue", phase == .built, await rounds.next() <= 3 {
-        try await formal.put("metadata/" + book.fixtureSHA256 + "/author", value: "\"\(UUID().uuidString)\"", device: "fixture")
-      }
-    }
-    let file = SystemReadingSnapshotFile(directory: root.appendingPathComponent("system-snapshot"))
-    await service.startSystemReadingCatalog(file: file)
-    await service.waitForSystemReadingCatalog()
-    let before = try file.read()
-    XCTAssertEqual(before.books.count, 2)
-    let builds = await rounds.count
-    XCTAssertEqual(builds, 4)
-    let cancelling = RestorationGate()
-    await service.queryFixture { scope, phase in
-      if scope == "system-widget-statistics", phase == .built { await cancelling.wait() }
-    }
-    await service.scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
-    await cancelling.waitForEntry()
-    await service.cancelSystemQueryFixture()
-    await cancelling.release(); await service.waitForSystemReadingCatalog()
-    XCTAssertEqual(try file.read().generation, before.generation, "Cancelled refresh must preserve the previous published snapshot")
-    await service.queryFixture { scope, phase in
-      if scope == "system-widget-statistics", phase == .built { throw CocoaError(.fileReadNoPermission) }
-    }
-    await service.scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
-    await service.waitForSystemReadingCatalog()
-    XCTAssertEqual(try file.read().statistics?.status, "unavailable")
     await service.queryFixture(nil)
   }
 

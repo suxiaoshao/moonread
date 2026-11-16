@@ -320,10 +320,9 @@ extension AppDataService {
         var checkpoint = confirmed
         var result = MetadataBatchResult()
         var wroteThisRun = false
+        let catalogueBatch = beginSystemReadingBatch()
         defer {
-            if wroteThisRun, confirmed.session.configuration == userCloudConfigurationRevision {
-                scheduleSystemReadingCatalog(immediate: systemCatalog?.task == nil)
-            }
+            endSystemReadingBatch(catalogueBatch, committed: wroteThisRun && confirmed.session.configuration == userCloudConfigurationRevision)
         }
         let bookAt = confirmed.books
         let writes = confirmed.writeIndices
@@ -375,7 +374,7 @@ extension AppDataService {
                         checkpoint.outcomes[item.index] = .init(id: book.id, title: book.title, saved: true,
                             message: nil, cover: book.edited?.cover, savedFieldCount: book.changedMetadataFields.count)
                     }
-                    publishMetadataCommit(prepared.map(\.plan), deferCatalogRefresh: true)
+                    publishMetadataCommit(prepared.map(\.plan))
                 }
                 progress(.init(phase: .saving, completed: checkpoint.committed, total: writes.count))
             }
@@ -395,6 +394,7 @@ extension AppDataService {
                                                 configuration: confirmed.session.configuration,
                                                 deletionToken: confirmed.deletionTokens[book.id])
                     outcome.renamed = true
+                    wroteThisRun = true
                 } catch is CancellationError { throw CancellationError() }
                 catch let error as ReadingDataError { throw error }
                 catch let error as AIFileExecutionError {
@@ -433,7 +433,7 @@ extension AppDataService {
         guard confirmed.session.configuration == userCloudConfigurationRevision, try confirmed.lease == indexStore().lease,
               indices.allSatisfy({ index in
                   let key = confirmed.books[index].id
-                  return confirmed.deletionTokens[key] == localReadingWriteLeases[key]
+                  return confirmed.deletionTokens[key] == localReadingWriteLease(key)
               }) else { throw ReadingDataError.changed }
     }
     private nonisolated static func metadataRenameFailure(_ error: Error, saved: Bool) -> String {

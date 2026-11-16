@@ -2,6 +2,7 @@ scalar UInt64
 scalar Int64
 
 type Query {
+  systemBookCatalogue: [SystemCatalogueBook!]!
   statisticsOverview(firstDay: Int64!, lastDay: Int64!, target: InformationTarget): ReadingStatisticsOverview!
   statisticsActivities(firstDay: Int64!, lastDay: Int64!, target: InformationTarget): [ReadingStatisticsActivity!]!
   statisticsWidget(today: Int64!, weekStart: Int64!): ReadingStatisticsWidget!
@@ -270,4 +271,21 @@ type ReadingStatisticsWidget {
   weekDurationMs: UInt64!
   streakDays: UInt64!
   days: [ReadingStatisticsDay!]!
+}
+
+
+type SystemCatalogueBook {
+  readingKey: ID!
+  title: String!
+  author: String
+  tags: [String!]!
+  cover: RecentReadingCover
+  sourceShelfIDs: [ID!]!
+  sourceCount: UInt64!
+  reconnectRequired: Boolean!
+  needsDownload: Boolean!
+  percentage: Float
+  chapterTitle: String
+  recentRank: Int
+  naturalOrdinal: UInt64!
 }

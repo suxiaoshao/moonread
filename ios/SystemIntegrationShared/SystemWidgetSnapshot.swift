@@ -111,7 +111,7 @@ extension SystemReadingWidgetModel {
         if themeChanged || !statisticsDisplayEqual(previous.statistics, current.statistics) { kinds.append(statisticsKind) }
         return kinds
     }
-    private static func statisticsDisplayEqual(_ a: SystemReadingSnapshot.Statistics?, _ b: SystemReadingSnapshot.Statistics?) -> Bool {
+    static func statisticsDisplayEqual(_ a: SystemReadingSnapshot.Statistics?, _ b: SystemReadingSnapshot.Statistics?) -> Bool {
         guard let a, let b else { return a == nil && b == nil }
         return a.status == b.status && a.localDay == b.localDay && a.validUntil == b.validUntil
             && a.timeZoneID == b.timeZoneID && a.calendarID == b.calendarID && a.firstWeekday == b.firstWeekday

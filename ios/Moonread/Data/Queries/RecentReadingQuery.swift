@@ -36,7 +36,13 @@ enum RecentReadingRead {
     // Materialize identities and the rank before reading any card metadata.
     // Across verified aliases only the chosen current refs are compared; this
     // never reopens the per-device candidate collections.
-    private static let statement = """
+    static func rankedKeys(_ db: Database, scope: DataScope) throws -> [String] {
+        try String.fetchAll(db, sql: rankSQL + """
+            SELECT book_key FROM selected ORDER BY recent_order DESC,preferred DESC,id
+            """, arguments: [scope.key,1000])
+    }
+
+    private static let rankSQL = """
         WITH aliases AS MATERIALIZED (
             \(ReaderIndex.verifiedReadingAliasPairsSQL)
         ), alias_position_keys(k) AS MATERIALIZED (
@@ -96,13 +102,16 @@ enum RecentReadingRead {
             WHERE f.directory=0
         ), ranked AS (
             SELECT f.*,p.position,p.last_read,p.recent_order,coalesce(p.preferred_file=f.id,0) AS preferred,
-                row_number() OVER (PARTITION BY f.book_key ORDER BY coalesce(p.preferred_file=f.id,0) DESC,f.id) AS rank
+                row_number() OVER (PARTITION BY f.book_key ORDER BY \(LibraryCardSQL.preferredOrder("p.preferred_file", file: "f.id"))) AS rank
             FROM recency p JOIN files f ON f.book_key=p.book_key
         ), selected AS MATERIALIZED (
             SELECT id,shelf_id,shelf_name,relative_path,parent_path,name,size,modified,needs_download,
                    book_key,body_id,position,last_read,recent_order,preferred
             FROM ranked WHERE rank=1 ORDER BY recent_order DESC,preferred DESC,id LIMIT ?2
-        ), lengths AS (
+        )
+        """
+    private static let statement = rankSQL + """
+        , lengths AS (
             SELECT content_sha256,max(utf8_bytes) AS utf8_bytes FROM main.source_identities
             WHERE content_sha256 IN (SELECT book_key FROM selected) GROUP BY content_sha256
         )

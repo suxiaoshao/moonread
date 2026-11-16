@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import UIKit
 
 enum ReaderLibraryTab: Hashable { case chapters, bookmarks, notes }
@@ -52,8 +53,43 @@ final class ReaderToolsModel {
     }
     private var chapterStructure = StructureLoad.idle
     private var allChapters: [ChapterEntry] { chapterStructure.snapshot?.outline.items ?? [] }
-    // Structure has no coverage. Step 5 supplies it as a separate request.
-    var chapterCoverageReady: Bool { allChapters.contains { $0.coveredCharacters != nil } }
+    @ObservationIgnored private var accountChange: AnyCancellable?
+    private(set) var chapterAccountRevision: UUID?
+    private var coverage: ChapterOutline?
+    private(set) var chapterCoverageError: String?
+    var chapterCoverageReady: Bool { coverage?.items.contains { $0.coveredCharacters != nil } ?? false }
+    var chapterCoverageRequest: UUID? { chapterStructure.snapshot?.version }
+
+    func chapterWithCoverage(_ entry: ChapterEntry) -> ChapterEntry {
+        guard let coverage else { return entry }
+        var lo = 0, hi = coverage.items.count
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2
+            if coverage.items[mid].startUtf8 < entry.startUtf8 { lo = mid + 1 } else { hi = mid }
+        }
+        return lo < coverage.items.count && coverage.items[lo].startUtf8 == entry.startUtf8 ? coverage.items[lo] : entry
+    }
+
+    func releaseCoverage() { coverage = nil; chapterCoverageError = nil }
+
+    func observeCoverage(_ request: UUID) async {
+        guard let id = bookID, chapterCoverageRequest == request, !Task.isCancelled, tab == .chapters else { return }
+
+        do {
+            try await service.observeChapterCoverage(id) { [weak self] result in
+                guard let self, chapterCoverageRequest == request, !Task.isCancelled, tab == .chapters else { return }
+                switch result {
+                case .success(let value):
+                    guard let value else { coverage = nil; chapterCoverageError = nil; return }
+                    var structure = value
+                    for i in structure.items.indices { structure.items[i].coveredCharacters = nil }
+                    if structure == chapterStructure.snapshot?.outline { coverage = value }
+                case .failure(let error): chapterCoverageError = ReaderMessages.error(error)
+                }
+            }
+        } catch is CancellationError { }
+        catch { if chapterCoverageRequest == request, !Task.isCancelled { chapterCoverageError = ReaderMessages.error(error) } }
+    }
     var collapsedVolumes: Set<UInt64> = []
     var chapterComplete: Bool { chapterStructure.snapshot?.outline.isComplete ?? false }
     var chapterTarget: UInt64?
@@ -290,6 +326,13 @@ final class ReaderToolsModel {
          uptime: @escaping @Sendable () -> Duration = { .nanoseconds(Int64(DispatchTime.now().uptimeNanoseconds)) },
          sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.service = service; self.uptime = uptime; self.sleep = sleep
+        accountChange = MainActorNotifications.observe(.readingContinuationInvalidated, object: service) { [weak self] in
+            guard let self else { return }
+            cancelChapterLoads()
+            chapterStructure = .idle; chapters = []; collapsedVolumes = []
+            releaseCoverage()
+            chapterAccountRevision = UUID()
+        }
     }
 
     // Count only the time the reader can actually reach the undo capsule.
@@ -328,7 +371,7 @@ final class ReaderToolsModel {
         let changed = self.bookID != bookID
         if changed {
             cancelSearchJob(); cancelChapterLoads(); self.bookID = bookID
-            chapters = []; chapterStructure = .idle; collapsedVolumes = []; chapterFilter = ""
+            chapters = []; chapterStructure = .idle; releaseCoverage(); collapsedVolumes = []; chapterFilter = ""
             finishNoteSelection()
             notesGeneration += 1
             notesLoad = .idle
@@ -434,6 +477,7 @@ final class ReaderToolsModel {
             guard !isLeaving, !Task.isCancelled, id == bookID, generation == chapterGeneration else { return }
             let current = if let previous, previous.outline == result { previous }
                           else { ChapterStructure(outline: result) }
+            if current.version != previous?.version { releaseCoverage() }
             chapterStructure = .ready(current)
             if let offset { showChapter(offset) }
             else if current.version != previous?.version { updateChapterRows() }

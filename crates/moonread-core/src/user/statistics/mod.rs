@@ -2,7 +2,7 @@
 //! The platform supplies scene visibility, actual text interaction and a monotonic clock.
 mod coverage;
 mod segments;
-pub use coverage::{CoverageFact, visible_dwell_ranges};
+pub use coverage::*;
 pub use segments::*;
 
 use crate::reading::compute::StepState;

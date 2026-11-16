@@ -464,3 +464,32 @@ extension ReaderIndex {
         }
     }
 }
+
+extension ReaderIndex {
+    static func sampleText() -> String {
+        var text = "月读技术样机 · 示例文本\n\n这是一份程序生成的排版测试文本，不是小说作品。\n\n"
+        for index in 1...180 {
+            text += "第 \(index) 章 · 月下试读\n月光落在窗边，书页安静地展开。这一段用于检查中文标点、换行和阅读位置恢复。调整字号，切换滚动与分页，再返回同一处文字。\nMixed text: Moonread 123 — emoji 🌙📚👨‍👩‍👧‍👦 and café e\u{301}.\n\n"
+        }
+        return text
+    }
+
+    /// Settings previews use generated text and the same importer. No source
+    /// reference survives this operation or points into a managed bookshelf.
+    func prepareSample() throws -> ImportText {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".txt")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Self.sampleText().write(to: file, atomically: true, encoding: .utf8)
+        let title = "月读 · 排版示例"
+        let control = try createRestorationImport(title: title)
+        do {
+            let raw = try hashImportSource(control: control, filePath: file.path)
+            try streamImport(control: control, filePath: file.path, expectedRawSha256: raw, encodingOverride: nil)
+            let id = try finishImport(control: control)
+            return try read { db in try IndexImport.availableText(db, id: id, scope: self.lease.scope.key) }
+        } catch {
+            try? discardRestorationImport(control: control)
+            throw error
+        }
+    }
+}

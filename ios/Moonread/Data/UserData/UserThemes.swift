@@ -59,9 +59,15 @@ extension AppDataService {
         return snapshot
     }
     func saveThemes(_ value: ThemePreferences) async throws -> ThemeSnapshot {
-        var snapshot = try await themes(); snapshot.preferences = value
+        var snapshot = try await themes()
+        let prior = snapshot.preferences
+        snapshot.preferences = value
         _ = try resolveThemes(value: snapshot, system: .light, highContrast: false)
         sourceDefaults.set(try encodeThemePreferences(value: value), forKey: "Moonread.themePreferences")
+        if prior.appMode != value.appMode || prior.appLight != value.appLight || prior.appDark != value.appDark {
+            scheduleSystemReadingCatalog()
+            scheduleSystemWidgetStatistics()
+        }
         dataChanged(); return snapshot
     }
     func savePalette(_ value: ThemePalette, creating: Bool) async throws -> ThemePalette {

@@ -54,7 +54,8 @@ extension MoonreadQueries {
       "SearchFile": MoonreadQueries.Objects.SearchFile,
       "SearchOptions": MoonreadQueries.Objects.SearchOptions,
       "ShelfBookCard": MoonreadQueries.Objects.ShelfBookCard,
-      "ShelfTagGroup": MoonreadQueries.Objects.ShelfTagGroup
+      "ShelfTagGroup": MoonreadQueries.Objects.ShelfTagGroup,
+      "SystemCatalogueBook": MoonreadQueries.Objects.SystemCatalogueBook
     ]
 
     static func objectType(forTypename typename: String) -> ApolloAPI.Object? {

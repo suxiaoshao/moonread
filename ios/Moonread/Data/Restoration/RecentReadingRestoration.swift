@@ -265,7 +265,6 @@ extension AppDataService {
                           restorationFingerprint([fresh], position: position, decodings: decodings) == restorationFingerprint([candidate], position: position, decodings: decodings)
                     else { interrupted = true; break }
                     guard try core.linkRestoredLibraryFile(file: candidate.file, decoding: result.decoding, bookId: result.bookID, contentSha256: position.contentKey) else { interrupted = true; break }
-                    queryCache.removeAll()
                     NotificationCenter.default.post(name: .recentReadingRestored, object: nil)
                     break
                 } catch is CancellationError {

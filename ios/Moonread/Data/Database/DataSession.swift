@@ -388,11 +388,44 @@ final class DataSession: @unchecked Sendable {
         }
     }
 
+    /// Register the read while the capability and pool are protected. The
+    /// pool serves it on a reader of that same immutable attachment; waiting
+    /// for SQL does not hold the lifecycle lock across unrelated reads/writes.
+    func readUsersForPublication<T: Sendable>(_ token: DataSessionLease,
+        _ body: @escaping @Sendable (Database) throws -> T) async throws -> T {
+        try Task.checkCancellation()
+        let result: T = try await withCheckedThrowingContinuation { continuation in
+            do {
+                try lifecycle.withLock {
+                    let pool = try active(token)
+                    guard usersReady else { throw DataV2Error.migrationNotVerified }
+                    pool.asyncRead { input in
+                        continuation.resume(with: Result { try body(input.get()) })
+                    }
+                }
+            } catch { continuation.resume(throwing: error) }
+        }
+        try Task.checkCancellation()
+        try lifecycle.withLock { _ = try active(token) }
+        return result
+    }
+
     func writeUsers<T: Sendable>(_ token: DataSessionLease, _ body: (Database) throws -> T) throws -> T {
         try lifecycle.withLock {
             let writer = try active(token)
             guard usersReady else { throw DataV2Error.migrationNotVerified }
             return try writer.write(body)
+        }
+    }
+
+    /// The publication callback runs on the writer at commit. It only
+    /// increments a stamp and signals a stream; it cannot reenter the session.
+    func observePublicationCommits(_ token: DataSessionLease, _ observation: DatabaseRegionObservation,
+        changed: @escaping @Sendable () -> Void, failed: @escaping @Sendable (Error) -> Void) throws -> AnyDatabaseCancellable {
+        try lifecycle.withLock {
+            let writer = try active(token)
+            guard usersReady else { throw DataV2Error.migrationNotVerified }
+            return observation.start(in: writer, onError: failed, onChange: { _ in changed() })
         }
     }
 

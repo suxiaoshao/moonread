@@ -225,6 +225,11 @@ pub(crate) fn horizontal_indent(c: char) -> bool {
     )
 }
 
+#[uniffi::export]
+pub fn is_horizontal_indent(text: String) -> bool {
+    text.chars().all(horizontal_indent)
+}
+
 /// Runtime display omissions, not normalization or persisted source coordinates.
 #[uniffi::export]
 pub fn reading_indent_omissions(

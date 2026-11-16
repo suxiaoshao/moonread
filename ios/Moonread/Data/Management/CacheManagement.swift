@@ -84,7 +84,6 @@ extension AppDataService {
         }
         let thumbs = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).appendingPathComponent(dataDirectoryName).appendingPathComponent("Covers")
         if FileManager.default.fileExists(atPath: thumbs.path) { try FileManager.default.removeItem(at: thumbs) }
-        queryCache.removeAll()
         NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
         return result
     }
@@ -92,7 +91,6 @@ extension AppDataService {
     func clearDeletedReadingBodyCaches(_ selectedSHAs: Set<String>, index: ReaderIndex) throws -> Bool {
         guard !selectedSHAs.isEmpty else { return true }
         defer {
-            queryCache.removeAll()
             NotificationCenter.default.post(name: .libraryIdentityChanged, object: nil)
         }
         let protected = cacheProtectedBookIDs()

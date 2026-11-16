@@ -11,10 +11,6 @@ extension Notification.Name {
 }
 
 extension Notification {
-    var defersBookMetadataCatalogRefresh: Bool {
-        userInfo?[BookMetadataChange.catalogRefreshDeferredKey] as? Bool == true
-    }
-
     func affectsLibraryMetadata(_ domains: UserProjectionDomain, keys: @autoclosure () -> Set<String>? = nil) -> Bool {
         if let fields = userInfo?[BookMetadataChange.projectionFieldsKey] as? Int,
            !domains.contains(.metadata), domains.intersection(.init(rawValue: fields)).isEmpty { return false }
@@ -25,7 +21,6 @@ extension Notification {
 }
 
 private enum BookMetadataChange {
-    static let catalogRefreshDeferredKey = "catalogRefreshDeferred"
     static let projectionFieldsKey = "projectionFields"
 }
 
@@ -115,7 +110,7 @@ extension AppDataService {
         try index.session.writeUsers(index.lease) {
             try UserValueRows.putMetadata($0, [.init(plan: plan, cover: asset)], device: userDevice, now: userValueClock)
         }
-        publishMetadataCommit([plan], deferCatalogRefresh: false)
+        publishMetadataCommit([plan])
     }
     nonisolated static func readCoverDraft(_ cover: BookCoverAsset, url: URL, length: Int?) throws -> UserValueRows.CoverWrite {
         let values = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
@@ -129,10 +124,10 @@ extension AppDataService {
               coverDigestString(bytes) == cover.sha256 else { throw CocoaError(.fileReadCorruptFile) }
         return .init(id: cover.id, bytes: bytes)
     }
-    func publishMetadataCommit(_ plans: [BookMetadataEditPlan], deferCatalogRefresh: Bool) {
-        dataChanged(refreshSystemCatalog: !deferCatalogRefresh)
+    func publishMetadataCommit(_ plans: [BookMetadataEditPlan]) {
+        dataChanged()
         NotificationCenter.default.post(name: .bookMetadataChanged, object: nil, userInfo: [
-            "keys": plans.map(\.sha), BookMetadataChange.catalogRefreshDeferredKey: deferCatalogRefresh,
+            "keys": plans.map(\.sha),
             BookMetadataChange.projectionFieldsKey: plans.lazy.flatMap { $0.values.keys }.reduce(into: UserProjectionDomain()) { result, key in
                 if let field = key.split(separator: "/", maxSplits: 2).last {
                     result.formUnion(.metadataField(String(field)))

@@ -2,6 +2,21 @@
 /// rules. Callers supply only their file scope and whether card fields are
 /// needed. Bind parameters and predicate fragments are internal SQL constants.
 enum LibraryCardSQL {
+    /// Use verified identities and body links to narrow before resolving the
+    /// record; the caller rechecks the effective SHA after resolving.
+    static let recordFileIDs = """
+        SELECT file_id AS id FROM main.valid_indexed_identities WHERE content_sha256=?1
+        UNION SELECT f.id FROM main.books b JOIN main.library_files f ON f.book_id=b.id
+          WHERE b.content_sha256=?1 AND f.directory=0
+        UNION SELECT f.id FROM main.books b JOIN main.import_jobs j ON j.canonical_id=b.id
+          JOIN main.library_files f ON f.book_id=j.book_id
+          WHERE b.content_sha256=?1 AND f.directory=0
+        """
+
+    static func preferredOrder(_ candidate: String, file: String) -> String {
+        "coalesce(\(candidate)=\(file),0) DESC,\(file)"
+    }
+
     static func fileIdentities(scopeParameter: String, includeNames: Bool) -> String {
         """
         files AS MATERIALIZED (

@@ -74,10 +74,32 @@ extension AppDataService {
         systemCatalog?.configuredBooks = ids; scheduleSystemReadingCatalog()
     }
     func refreshSystemWidgetCalendarIfNeeded() {
-        if let statistics = systemCatalog?.displaySnapshot?.statistics, !statistics.isCurrent(at: Date()) {
-            scheduleSystemReadingCatalog(statisticsChanged: true)
+        if systemCatalog?.statisticsSnapshot?.statistics?.isCurrent(at: Date()) != true {
+            scheduleSystemWidgetStatistics(immediate: true)
         }
     }
+
+    func publishSystemWidgetStatistics(_ snapshot: SystemReadingStatisticsSnapshot, file: SystemReadingSnapshotFile) throws {
+        guard let current = systemCatalog, current.scope == snapshot.storeScope else { return }
+        let previous = current.statisticsSnapshot
+        let changed = previous == nil || previous?.appearance != snapshot.appearance
+            || !SystemReadingWidgetModel.statisticsDisplayEqual(previous?.statistics, snapshot.statistics)
+        // generatedAt alone isn't a display change, and needn't rewrite this file.
+        guard changed else { return }
+        try file.publishStatistics(snapshot)
+        systemCatalog?.statisticsSnapshot = snapshot
+        requestSystemStatisticsWidgetReload(scope: snapshot.storeScope)
+    }
+
+    func requestSystemStatisticsWidgetReload(scope: String) {
+        guard libraryDirectoryOverride == nil, testSession == nil else { return }
+        Task { @MainActor [weak self] in
+            guard await self?.systemStatisticsScopeIsCurrent(scope) == true else { return }
+            WidgetCenter.shared.reloadTimelines(ofKind: SystemReadingWidgetModel.statisticsKind)
+        }
+    }
+
+    private func systemStatisticsScopeIsCurrent(_ scope: String) -> Bool { systemCatalog?.scope == scope }
     func systemWidgetAppearance() async -> SystemReadingSnapshot.Appearance? {
         guard let value = try? await themes() else { return nil }
         let preferredDark: Bool? = switch value.preferences.appMode { case .system: nil; case .light: false; case .dark: true }

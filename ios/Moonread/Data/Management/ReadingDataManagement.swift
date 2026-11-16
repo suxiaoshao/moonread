@@ -184,7 +184,7 @@ extension AppDataService {
         // Stamp only successful, owned deletions, before any suspended work
         // can enter this gate and before publishing notifications.
         readingWriteVersions.didDelete(deleted)
-        queryCache.removeAll(); cancelRecentRestoration(); dataChanged(); scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
+        cancelRecentRestoration(); dataChanged()
         NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
         // User data is already committed. Only the original formal selection
         // authorizes offline cache eviction, never an expanded alias or SHA.
@@ -316,7 +316,7 @@ extension AppDataService {
         let index = try relationalUserIndex()
         guard index.lease == lease else { throw ReadingDataError.changed }
         try index.session.writeUsers(index.lease) { try plan.merge($0, scope: index.lease.scope) }
-        queryCache.removeAll(); dataChanged(); scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
+        dataChanged()
         NotificationCenter.default.post(name: .statisticsChanged, object: nil)
         // Reuse the existing received-data refresh (including ThemeStore.load).
         NotificationCenter.default.post(name: .cloudDataReceived, object: nil)

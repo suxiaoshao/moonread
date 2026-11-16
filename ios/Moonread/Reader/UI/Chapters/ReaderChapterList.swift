@@ -107,6 +107,20 @@ struct ReaderChapterList: View {
                     .padding(.vertical, LayoutTokens.compact)
                 }
             }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let error = model.chapterCoverageError, !editingOutline {
+                    Text(verbatim: error).font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
+                        .padding(.horizontal).padding(.vertical, 6)
+                }
+            }
+            .task(id: model.chapterAccountRevision) {
+                if model.chapterAccountRevision != nil { await model.refreshChapters() }
+            }
+            .task(id: editingOutline ? nil : model.chapterCoverageRequest) {
+                model.releaseCoverage()
+                if !editingOutline, let request = model.chapterCoverageRequest { await model.observeCoverage(request) }
+            }
+            .onDisappear { model.releaseCoverage() }
             .task(id: model.chapterJumpRevision) {
                 if session.showingCover && model.chapterFilter.isEmpty { proxy.scrollTo("reader-cover", anchor: .top) }
                 else if let target = model.chapterTarget {
@@ -169,7 +183,7 @@ struct ReaderChapterList: View {
     }
     private func chapterRow(_ chapter: ChapterEntry) -> some View {
         let current = isCurrent(chapter)
-        return ReaderChapterRow(chapter: chapter, current: current, showsCoverage: model.chapterCoverageReady, viewportHeight: viewportHeight) {
+        return ReaderChapterRow(chapter: model.chapterWithCoverage(chapter), current: current, showsCoverage: model.chapterCoverageReady, viewportHeight: viewportHeight) {
             chapterFilterFocused = false
             if editingOutline { editChapter(ChapterEditDraft(start: chapter.startUtf8, title: chapter.title, level: chapter.level)) }
             else if chapter.level == 0 { model.toggleVolume(chapter.startUtf8) }

@@ -359,6 +359,26 @@ import XCTest
     ready(app.switches["readerPaletteTexture"].switches.firstMatch).tap()
     XCTAssertEqual(app.switches["readerPaletteTexture"].switches.firstMatch.value as? String, "1")
   }
+  func testV2StatisticsReadsRecordedHistoryAndBookDetails() {
+    app.launchArguments = [
+      "--ui-testing", "--ui-test-session", UUID().uuidString, "--disable-tips",
+      "--ui-test-reader-fixture", "--ui-test-statistics-fixture",
+      "-Moonread.statisticsEnabled", "YES",
+      "-AppleLanguages", "(zh-Hans)", "-AppleLocale", "zh_CN",
+    ]
+    app.launchEnvironment["MOONREAD_TEST_CREDENTIALS"] = "memory"
+    app.launch()
+    ready(app.tabBars.buttons["统计"]).tap()
+    let book = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'statistics-book-'")).firstMatch
+    ready(book, timeout: 20)
+    XCTAssertFalse(element("statisticsEmpty").exists)
+    ready(element("statisticsPeriod")).buttons["全部"].tap()
+    ready(book).tap()
+    ready(element("statisticsSummary"))
+    ready(app.staticTexts["阅读时段"])
+    XCTAssertFalse(app.staticTexts["暂时无法读取统计"].exists)
+  }
+
   func testU13ManualEncodingRecovery() {
     launch(["--ui-test-encoding"])
     shelf()

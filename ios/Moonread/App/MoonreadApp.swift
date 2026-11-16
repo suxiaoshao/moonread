@@ -85,9 +85,6 @@ struct MoonreadApp: App {
                 if closed { library.systemReading.resume() }
                 if closed { Task { await library.coordinatePendingIndexes() } }
             }
-            .onChange(of: library.fullIndex.running) { _, running in
-                if !running { Task { await library.service.scheduleSystemReadingCatalog(immediate: true) } }
-            }
             .onChange(of: library.fullIndex.automatic) { _, enabled in
                 if enabled { Task { await library.coordinatePendingIndexes(all: true) } }
             }
@@ -100,7 +97,6 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: .libraryIdentityChanged).receive(on: DispatchQueue.main)) { note in
                 Task {
                     await library.reloadBooks()
-                    await library.service.scheduleSystemReadingCatalog(immediate: !library.fullIndex.running)
                     if let id = library.fullIndex.shelfID { await library.refreshIndexSummary(id) }
                     if let message = note.object as? String { library.error = message }
                 }
@@ -108,18 +104,14 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: SystemReadingIntentDelivery.notification).receive(on: DispatchQueue.main)) { _ in
                 library.systemReading.receiveIntent()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .bookMetadataChanged).receive(on: DispatchQueue.main)) { change in
-                guard !change.defersBookMetadataCatalogRefresh else { return }
-                Task { await library.service.scheduleSystemReadingCatalog(immediate: true) }
-            }
             .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in
                 Task { await CloudSyncCoordinator.shared.localDataChanged() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: DispatchQueue.main)) { _ in
-                Task { await library.service.scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true) }
+                Task { await library.service.scheduleSystemWidgetStatistics(immediate: true) }
             }
             .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name.NSSystemTimeZoneDidChange).receive(on: DispatchQueue.main)) { _ in
-                Task { await library.service.scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true) }
+                Task { await library.service.scheduleSystemWidgetStatistics(immediate: true) }
             }
             .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification).receive(on: DispatchQueue.main)) { _ in
                 // Calendar/region settings can change while the App stays active.
@@ -132,7 +124,7 @@ struct MoonreadApp: App {
                 Task { try? await library.reload() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .cloudDataReceived).receive(on: DispatchQueue.main)) { _ in
-                Task { await themes.load(); try? await library.reload(); await library.service.scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true) }
+                Task { await themes.load(); try? await library.reload() }
             }
             .onReceive(NotificationCenter.default.publisher(for: .NSUbiquityIdentityDidChange).receive(on: DispatchQueue.main)) { _ in
                 Task { library.startCloudDiscovery(reset: true); await cloud.identityChanged(); await library.refresh(); await cloud.refresh() }
@@ -148,7 +140,6 @@ struct MoonreadApp: App {
                 library.fullIndex.scene(active: phase == .active)
                 if phase == .background {
                     MetadataExchangeModel.shared.sceneDidEnterBackground()
-                    Task { await library.service.scheduleSystemReadingCatalog(immediate: true) }
                     BackgroundSave.perform(name: "保存显示偏好") { await themes.flushPreferences(); await readerSettings.flush() }
                     Task { await AppDataService.shared.pauseImports() }
                 }
@@ -157,7 +148,7 @@ struct MoonreadApp: App {
                     Task { await library.service.refreshSystemWidgetConfigurations() }
                     Task { if ai.providers.catalogActivated { await ai.providers.refreshCatalogsIfNeeded() } }
                     Task {
-                        await library.service.scheduleSystemReadingCatalog(immediate: true, statisticsChanged: true)
+                        await library.service.resumeSystemReadingPublication()
                         await AppDataService.shared.resumePausedImports(); await library.refresh()
                         if Onboarding.shared.completed { await library.receiveSharedInbox() }
                         await cloud.refresh()

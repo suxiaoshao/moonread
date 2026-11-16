@@ -120,7 +120,7 @@ enum ReaderOpeningRead {
             """, arguments: [body.id]) == true
     }
 
-    private static func percentage(_ offset: UInt64, of count: UInt64) -> Double {
+    static func percentage(_ offset: UInt64, of count: UInt64) -> Double {
         Double(min(offset, count)) / Double(max(1, count)) * 100
     }
 
@@ -160,5 +160,24 @@ extension ReaderIndex {
                 try read(db, ReaderOpeningRead.header(db, id: id, scope: self.lease.scope, task: task))
             }
         }
+    }
+}
+
+extension ReaderIndex {
+    static func normalizedLength(_ db: Database, sha: String) throws -> UInt64? {
+        guard (try? parseSha256(value: sha)) != nil else { return nil }
+        return try UInt64.fetchOne(db, sql: """
+            SELECT max(bytes) FROM (
+               SELECT utf8_bytes AS bytes FROM main.source_identities WHERE content_sha256=?1
+               UNION ALL
+               SELECT byte_count FROM main.books b WHERE content_sha256=?1
+               AND NOT EXISTS(SELECT 1 FROM main.import_jobs j WHERE j.book_id=b.id AND j.phase<>'complete')
+            )
+            """, arguments: [sha]).flatMap { $0 > 0 ? $0 : nil }
+    }
+
+    func readingDataPercentage(sha: String, offset: UInt64) throws -> Double? {
+        _ = try parseSha256(value: sha)
+        return try read { db in try Self.normalizedLength(db, sha: sha).map { ReaderOpeningRead.percentage(offset, of: $0) } }
     }
 }

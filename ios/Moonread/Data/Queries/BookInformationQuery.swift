@@ -1,3 +1,4 @@
+import Foundation
 import GRDB
 
 /// Only the selected identity's metadata and body summary, plus the
@@ -200,14 +201,7 @@ enum BookInformationRead {
     private static func files(_ db: Database, scope: DataScope, record: String) throws -> [Row] {
         // Index both ways to narrow before resolving identity. The final key
         // check rejects an older body link when the current file identity differs.
-        try files(db, scope: scope, value: record, selected: """
-            SELECT file_id AS id FROM main.valid_indexed_identities WHERE content_sha256=?1
-            UNION SELECT f.id FROM main.books b JOIN main.library_files f ON f.book_id=b.id
-              WHERE b.content_sha256=?1 AND f.directory=0
-            UNION SELECT f.id FROM main.books b JOIN main.import_jobs j ON j.canonical_id=b.id
-              JOIN main.library_files f ON f.book_id=j.book_id
-              WHERE b.content_sha256=?1 AND f.directory=0
-            """, matchingRecord: true)
+        try files(db, scope: scope, value: record, selected: LibraryCardSQL.recordFileIDs, matchingRecord: true)
     }
 
     private static func files(_ db: Database, scope: DataScope, value: String, selected: String, matchingRecord: Bool = false) throws -> [Row] {
@@ -341,4 +335,16 @@ extension AppDataService {
         sink.onTermination = { _ in token.cancel() }
         return stream
     }
+}
+
+extension AppDataService {
+    func metadataExchangeInputs(_ request: MetadataExchangeRequest, configuration: UUID) async throws -> MetadataExchangeRows.Result {
+        guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
+        try Task.checkCancellation()
+        let index = try relationalUserIndex()
+        return try index.session.readUsers(index.lease) { db in
+            try MetadataExchangeRows.read(db, request: request, scope: index.lease.scope.key)
+        }
+    }
+
 }

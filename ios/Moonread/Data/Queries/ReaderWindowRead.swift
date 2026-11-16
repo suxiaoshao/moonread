@@ -1,3 +1,4 @@
+import Foundation
 import GRDB
 
 /// One fixed WAL snapshot supplies the target header and a bounded window of
@@ -45,7 +46,7 @@ enum ReaderWindowRead {
     }
 
     /// Inclusive only when a source point lies inside an already proven gap.
-    private static func gap(_ db: Database, id: String, at offset: UInt64) throws -> SourceSpan? {
+    fileprivate static func gap(_ db: Database, id: String, at offset: UInt64) throws -> SourceSpan? {
         try Row.fetchOne(db, sql: """
             SELECT start_utf8,end_utf8 FROM (
                 SELECT start_utf8,end_utf8 FROM main.reading_blanks WHERE book_id=?1 AND start_utf8<=?2
@@ -54,7 +55,7 @@ enum ReaderWindowRead {
             """, arguments: [id, offset]).map { .init(startUtf8: $0["start_utf8"], endUtf8: $0["end_utf8"]) }
     }
 
-    private static func gaps(_ db: Database, id: String, from start: UInt64, to end: UInt64) throws -> [SourceSpan] {
+    fileprivate static func gaps(_ db: Database, id: String, from start: UInt64, to end: UInt64) throws -> [SourceSpan] {
         guard start < end else { return [] }
         return try Row.fetchAll(db, sql: """
             SELECT start_utf8,end_utf8 FROM main.reading_blanks WHERE book_id=?1 AND start_utf8>=?2 AND start_utf8<?3
@@ -274,5 +275,166 @@ extension ReaderIndex {
         }
         try Task.checkCancellation()
         return (snapshot, try input?.frame())
+    }
+}
+
+/// Bounded selection/context reads on the selected body's snapshot.
+extension ReaderIndex {
+    private static func range(_ db: Database, body: Body, from start: UInt64, to end: UInt64) throws -> TextRange {
+        guard start <= end, end <= body.bytes, end - start <= 1_048_576 else { throw ReaderError.InvalidRange }
+        var bytes = [UInt8]()
+        if start < end {
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT chunk_index,start_utf8,end_utf8,text FROM main.chunks
+                WHERE book_id=? AND end_utf8>? AND start_utf8<? ORDER BY chunk_index
+                """, arguments: [body.id,start,end])
+            for row in rows {
+                let chunk = try Self.chunk(row)
+                let raw = chunk.text.utf8
+                let first = raw.index(raw.startIndex, offsetBy: Int(max(start, chunk.startUtf8) - chunk.startUtf8))
+                let last = raw.index(raw.startIndex, offsetBy: Int(min(end, chunk.endUtf8) - chunk.startUtf8))
+                bytes.append(contentsOf: raw[first..<last])
+            }
+        }
+        guard bytes.count == end - start, let text = String(bytes: bytes, encoding: .utf8) else { throw ReaderError.InvalidRange }
+        return .init(startUtf8: start, endUtf8: end, text: text)
+    }
+
+    func textRange(bookId: String, startUtf8: UInt64, endUtf8: UInt64) throws -> TextRange {
+        try read { db in
+            try Self.range(db, body: Self.body(db, id: bookId, scope: self.lease.scope.key), from: startUtf8, to: endUtf8)
+        }
+    }
+
+    private static func paragraph(_ db: Database, body: Body, at offset: UInt64) throws -> TextRange {
+        guard body.bytes > 0 else { throw ReaderError.EmptyBook }
+        let point = min(offset, body.bytes - 1)
+        let current = try Self.chunk(db, id: body.id, at: point)
+        guard try scalarOffset(current, at: point, forward: false) == point else { throw ReaderError.InvalidRange }
+        var start = current.startUtf8, end = current.endUtf8
+        var bytes = Array(current.text.utf8), before = current.index, after = current.index + 1
+        while !bytes[..<Int(point - start)].contains(10), before > 0 {
+            before -= 1
+            guard let prior = try chunks(db, id: body.id, from: before, limit: 1).first,
+                  prior.index == before, prior.endUtf8 == start else { throw ReaderError.SourceChanged }
+            start = prior.startUtf8
+            bytes.insert(contentsOf: prior.text.utf8, at: 0)
+            guard bytes.count <= 1_048_576 else { throw ReaderError.InvalidRange }
+        }
+        while !bytes[Int(point - start)...].contains(10), end < body.bytes {
+            guard let next = try chunks(db, id: body.id, from: after, limit: 1).first,
+                  next.index == after, next.startUtf8 == end else { throw ReaderError.SourceChanged }
+            after += 1
+            end = next.endUtf8
+            bytes.append(contentsOf: next.text.utf8)
+            guard bytes.count <= 1_048_576 else { throw ReaderError.InvalidRange }
+        }
+        let relative = Int(point - start)
+        let left = bytes[..<relative].lastIndex(of: 10).map { $0 + 1 } ?? 0
+        let right = bytes[relative...].firstIndex(of: 10) ?? bytes.count
+        return .init(startUtf8: start + UInt64(left), endUtf8: start + UInt64(right),
+                     text: String(decoding: bytes[left..<right], as: UTF8.self))
+    }
+
+    func paragraphRange(bookId: String, offsetUtf8: UInt64) throws -> TextRange {
+        try read { db in
+            try Self.paragraph(db, body: Self.body(db, id: bookId, scope: self.lease.scope.key), at: offsetUtf8)
+        }
+    }
+
+    func textContext(bookId: String, offsetUtf8: UInt64, beforeParagraphs: UInt32, afterParagraphs: UInt32) throws -> TextRange {
+        try read { db in
+            let body = try Self.body(db, id: bookId, scope: self.lease.scope.key)
+            guard offsetUtf8 < body.bytes, beforeParagraphs <= 20, afterParagraphs <= 20 else { throw ReaderError.InvalidRange }
+            let anchor = try Self.paragraph(db, body: body, at: offsetUtf8)
+            var start = anchor.startUtf8, end = anchor.endUtf8
+            for (forward, count) in [(false,beforeParagraphs),(true,afterParagraphs)] {
+                var left = count
+                while left > 0 {
+                    guard forward ? end + 1 < body.bytes : start > 0 else { break }
+                    let paragraph = try Self.paragraph(db, body: body, at: forward ? end + 1 : start - 1)
+                    if forward { end = paragraph.endUtf8 } else { start = paragraph.startUtf8 }
+                    guard end - start <= 1_048_576 else { throw ReaderError.InvalidRange }
+                    if paragraph.text.unicodeScalars.contains(where: { !$0.properties.isWhitespace }) { left -= 1 }
+                }
+            }
+            return try Self.range(db, body: body, from: start, to: end)
+        }
+    }
+
+    func displayTextRange(bookId: String, startUtf8 start: UInt64, endUtf8 end: UInt64, indent: ReadingIndent) throws -> TextRange {
+        let input = try session.readUsers(lease) { db -> ([ReadingPayloadChunk], [SourceSpan], [ChapterInfo], UInt64) in
+            let body = try Self.body(db, id: bookId, scope: self.lease.scope.key)
+            guard start <= end, end <= body.bytes else { throw ReaderError.InvalidRange }
+            let confirmed = try UInt64.fetchOne(db, sql: "SELECT projection_end FROM main.books WHERE id=?", arguments: [body.id]) ?? 0
+            guard end <= confirmed else { throw ReaderError.ImportBusy }
+            for offset in [start,end] where offset < body.bytes {
+                guard try Self.scalarOffset(Self.chunk(db, id: body.id, at: offset), at: offset, forward: false) == offset
+                else { throw ReaderError.InvalidRange }
+            }
+            guard start < end else { return ([], [], [], confirmed) }
+            let gaps = try ReaderWindowRead.gaps(db, id: body.id, from: start, to: end)
+            let omitted = gaps.reduce(UInt64(0)) { $0 + min($1.endUtf8, end) - max($1.startUtf8, start) }
+            guard end - start - omitted <= 1_048_576 else { throw ReaderError.InvalidRange }
+            var chunks = try Row.fetchAll(db, sql: """
+                SELECT chunk_index,start_utf8,end_utf8,text FROM main.chunks c
+                WHERE book_id=?1 AND end_utf8>?2 AND start_utf8<?3 AND
+                  coalesce((SELECT b.end_utf8 FROM main.reading_blanks b
+                    WHERE b.book_id=c.book_id AND b.start_utf8<=c.start_utf8 ORDER BY b.start_utf8 DESC LIMIT 1),-1)<c.end_utf8
+                ORDER BY chunk_index
+                """, arguments: [body.id,start,end]).map(Self.chunk)
+            if indent == .smart, let first = chunks.first, first.startUtf8 <= start,
+               !(gaps.first.map { $0.startUtf8 <= first.startUtf8 } ?? false) {
+                // A selection may start inside an indent run spanning chunks.
+                // Collect bounded neighboring context only while it is needed.
+                let prefix = String(decoding: first.text.utf8.prefix(Int(start - first.startUtf8)), as: UTF8.self)
+                if isHorizontalIndent(text: prefix) {
+                    var history: [TextChunk] = [], idx = first.index, budget = 1_048_576
+                    while idx > 0, budget > 0 {
+                        idx -= 1
+                        guard let prior = try Self.chunks(db, id: body.id, from: idx, limit: 1).first, prior.index == idx
+                        else { throw ReaderError.SourceChanged }
+                        history.append(prior); budget -= prior.text.utf8.count
+                        if !isHorizontalIndent(text: prior.text) { break }
+                    }
+                    chunks.insert(contentsOf: history.reversed(), at: 0)
+                }
+            }
+            guard let first = chunks.first else { return ([], gaps, [], confirmed) }
+            let headings = try ReaderChapterRead.inRange(db, body: body, range: .init(startUtf8: first.startUtf8, endUtf8: min(confirmed, chunks.last?.endUtf8 ?? end)))
+            var last: TextChunk?
+            let source = try chunks.map { chunk -> ReadingPayloadChunk in
+                let previous = if let last, last.endUtf8 == chunk.startUtf8 { last }
+                    else if try (chunk.index == 0 || ReaderWindowRead.gap(db, id: body.id, at: chunk.startUtf8 - 1) != nil) { nil as TextChunk? }
+                    else { try Self.chunks(db, id: body.id, from: chunk.index - 1, limit: 1).first }
+                last = chunk
+                return .init(chunk: chunk, continued: previous?.text.utf8.last.map { $0 != 10 } ?? false)
+            }
+            return (source,gaps,headings,confirmed)
+        }
+        let payload = try projectReadingPayload(source: input.0, confirmed: input.3, omitted: input.1, headings: input.2)
+        let omissions = readingIndentOmissions(chunks: payload.chunks, paragraphs: payload.paragraphs, indent: indent)
+        var output = [UInt8]()
+        var omit = 0
+        for chunk in payload.chunks {
+            var cursor = max(start, chunk.startUtf8)
+            let limit = min(end, chunk.endUtf8)
+            guard cursor < limit else { continue }
+            func append(_ from: UInt64, _ to: UInt64) {
+                let text = chunk.text.utf8
+                let lo = text.index(text.startIndex, offsetBy: Int(from - chunk.startUtf8))
+                let hi = text.index(text.startIndex, offsetBy: Int(to - chunk.startUtf8))
+                output.append(contentsOf: text[lo..<hi])
+            }
+            while omit < omissions.count, omissions[omit].startUtf8 < limit {
+                let span = omissions[omit]
+                if span.startUtf8 > cursor { append(cursor, span.startUtf8) }
+                cursor = max(cursor, min(limit, span.endUtf8))
+                if span.endUtf8 > limit { break }
+                omit += 1
+            }
+            if cursor < limit { append(cursor,limit) }
+        }
+        return .init(startUtf8: start, endUtf8: end, text: String(decoding: output, as: UTF8.self))
     }
 }

@@ -209,6 +209,7 @@ actor AppDataService {
         return AppDataService()
     }()
     var systemCatalog: SystemReadingCatalog?
+    var systemReadingBatches = Set<UUID>()
     var systemReadingLastError: String?
     var systemExposureTask: Task<Void, Never>?
     var systemWidgetReloadSnapshot: SystemReadingSnapshot?
@@ -221,17 +222,6 @@ actor AppDataService {
     }()
     var systemSpotlightThumbnailFailures = Set<String>()
     private var core: ReaderIndex?
-    struct CachedQuery {
-        let signature: UserQuerySignature
-        let identities: [String: String]
-        let query: ReaderQuery
-        let statisticsIncomplete: Bool
-        let formalBlockedMetadata: Set<String>
-    }
-    #if DEBUG
-    var queryTestBoundary: (@Sendable (String, UserQueryTestPhase) async throws -> Void)?
-    #endif
-    var queryCache: [String: CachedQuery] = [:]
     var recoveryTask: Task<Void, Never>?
     var recentRestorationTask: Task<Void, Never>?
     var recentRestorationWork: RecentRestorationWork?
@@ -480,7 +470,7 @@ actor AppDataService {
     }
 
     func sample() async throws -> BookInfo {
-        let text = try indexStore().createSampleBook()
+        let text = try await fixedReaderRead { try $0.prepareSample() }
         return try await book(text.id)
     }
     func book(_ id: String) async throws -> BookInfo { try await snapshot(id).book }
@@ -604,19 +594,6 @@ actor AppDataService {
         try await fixedReaderRead { try $0.readerChapterStructure(id) }
     }
 
-    // The AI tool still asks for the full outline with coverage. That
-    // consumer is separate from the reader's structure and moves in §13.5.
-    func chapters(_ id: String) async throws -> ChapterOutline {
-        let query = try await readingQuery(.book(.cached(bookId: id), facts: true),
-                                           options: .init(scope: "chapters-" + id, fields: .chapter))
-        let work = Task.detached(priority: Task.currentPriority) {
-            try Task.checkCancellation()
-            return try query.chapterOutline(bookId: id)
-        }
-        let outline = try await withTaskCancellationHandler { try await work.value } onCancel: { work.cancel() }
-        try Task.checkCancellation()
-        return outline
-    }
     func marks(_ id: String, kind: MarkKind, offset: UInt32, snapshot: NoteCandidates? = nil) async throws -> MarkPage {
         let values = try await userMarks(id, kind: kind, snapshot: snapshot), start = min(Int(offset), values.count), end = min(start + 60, values.count)
         return MarkPage(items: Array(values[start..<end]), hasMore: end < values.count)
@@ -634,18 +611,7 @@ actor AppDataService {
     func hasBookmark(_ id: String, at offset: UInt64) async throws -> Bool { try await userMarks(id, kind: .bookmark).contains { $0.startUtf8 == offset } }
     func textRange(_ id: String, start: UInt64, end: UInt64) throws -> TextRange { try indexStore().textRange(bookId: id, startUtf8: start, endUtf8: end) }
     func displayTextRange(_ id: String, start: UInt64, end: UInt64, indent: ReadingIndent = .original) async throws -> TextRange {
-        let core = try await bookQuery(id)
-        let read = Task.detached {
-            try Task.checkCancellation()
-            let value = try core.displayTextRange(bookId: id, startUtf8: start, endUtf8: end, indent: indent)
-            try Task.checkCancellation()
-            return value
-        }
-        return try await withTaskCancellationHandler {
-            let value = try await read.value
-            try Task.checkCancellation()
-            return value
-        } onCancel: { read.cancel() }
+        try await fixedReaderRead { try $0.displayTextRange(bookId: id, startUtf8: start, endUtf8: end, indent: indent) }
     }
     func textContext(_ id: String, at offset: UInt64, before: UInt32, after: UInt32) throws -> TextRange {
         try indexStore().textContext(bookId: id, offsetUtf8: offset, beforeParagraphs: before, afterParagraphs: after)
@@ -809,7 +775,6 @@ actor AppDataService {
         if let bytes = sourceDefaults.data(forKey: importSourceKey(id)), let source = try? JSONDecoder().decode(ImportSource.self, from: bytes),
            let key = source.sourceKey, sourceDefaults.string(forKey: key) == id { sourceDefaults.removeObject(forKey: key) }
         sourceDefaults.removeObject(forKey: importSourceKey(id))
-        queryCache = queryCache.filter { !$0.key.hasPrefix("book-" + id + "-") }
         changeRevisions[id] = nil
     }
     func reclaimImports(_ core: ReaderIndex) throws {
