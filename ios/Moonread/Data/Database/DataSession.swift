@@ -454,7 +454,13 @@ final class DataSession: @unchecked Sendable {
 
     func issueCloudLease(_ token: DataSessionLease) throws -> DataCloudLease {
         try lifecycle.withLock {
-            _ = try permittedCloud(token)
+            let pool = try permittedCloud(token)
+            if try pool.read({ try UpgradeOrigins.phase($0) }) == .unverifiedTrial {
+                // There is no evidence that separates already-imported
+                // trial rows from subsequent edits. Keep the file available
+                // locally without starting any network work for it.
+                throw DataV2Error.migrationNotVerified
+            }
             let binding = DataCloudLease(user: token, identity: UUID())
             cloudLease = binding
             return binding

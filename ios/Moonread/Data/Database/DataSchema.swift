@@ -116,6 +116,15 @@ enum DataV2Schema {
                         FOREIGN KEY(seed_batch,seed_partition,seed_domain,seed_record)
                             REFERENCES upgrade_seed(batch_id,partition,domain,record_id) ON DELETE CASCADE
                     );
+                    CREATE TABLE usr.upgrade_local_group (
+                        partition INTEGER NOT NULL, domain TEXT NOT NULL, record_id TEXT NOT NULL, group_id TEXT NOT NULL,
+                        PRIMARY KEY(partition,domain,record_id,group_id),
+                        FOREIGN KEY(partition,domain,record_id)
+                            REFERENCES upgrade_local_version(partition,domain,record_id) ON DELETE CASCADE
+                    );
+                    CREATE INDEX usr.upgrade_group_members ON upgrade_local_group(group_id);
+                    CREATE TABLE usr.upgrade_book_deletion (book_key TEXT PRIMARY KEY NOT NULL);
+                    CREATE TABLE usr.upgrade_pending_book (pending_key TEXT PRIMARY KEY NOT NULL, formal_key TEXT NOT NULL);
                     PRAGMA usr.user_version=4;
                     """)
                 try UpgradeOrigins.retainUnverifiedTrial(db)

@@ -358,11 +358,20 @@ enum ReadingPositionRows {
             } else { sameToken[value.token] = value }
         }
         func older(_ a: Position, _ b: Position) -> Bool { (a.updated,a.token) < (b.updated,b.token) }
-        if let candidate = source.max(by: older), target.max(by: older).map({ older($0,candidate) }) ?? true {
-            try replacePosition(db, with: candidate, book: formal, partition: 0)
+        if let candidate = source.max(by: older) {
+            let present = target.max(by: older)
+            let sourceKey = UpgradeOrigins.Key(partition: 1, domain: .position, id: recordID(book: pending, token: candidate.token))
+            let targetKey = UpgradeOrigins.Key(partition: 0, domain: .position, id: recordID(book: formal, token: candidate.token))
+            if present.map({ older($0,candidate) }) ?? true {
+                try replacePosition(db, with: candidate, book: formal, partition: 0)
+                try UpgradeOrigins.carry(db, UpgradeOrigins.provenance(db, sourceKey), to: targetKey)
+            } else if present?.token == candidate.token {
+                try UpgradeOrigins.carry(db, UpgradeOrigins.provenance(db, sourceKey), to: targetKey, equivalent: true)
+            }
         }
 
         struct Opened {
+            let id: String
             let device: String
             let updated: Int64
             let token: String
@@ -370,12 +379,12 @@ enum ReadingPositionRows {
         }
         func opened(_ book: String, _ part: Int) throws -> [Opened] {
             try Row.fetchAll(db, sql: """
-                SELECT device_id,updated_ms,token,opened_ms FROM usr.opened_candidate
+                SELECT record_id,device_id,updated_ms,token,opened_ms FROM usr.opened_candidate
                 WHERE partition=? AND book_key=? ORDER BY record_id
                 """, arguments: [part,DataIdentity.canonical(book)]).map { row in
                     let token: String = row["token"]
                     guard !token.isEmpty else { throw UserSyncCompatibilityError() }
-                    return .init(device: row["device_id"], updated: row["updated_ms"], token: token, time: row["opened_ms"])
+                    return .init(id: row["record_id"], device: row["device_id"], updated: row["updated_ms"], token: token, time: row["opened_ms"])
                 }
         }
         if let winner = try opened(pending, 1).max(by: { ($0.updated,$0.token) < ($1.updated,$1.token) }) {
@@ -385,9 +394,15 @@ enum ReadingPositionRows {
             else { throw UserSyncCompatibilityError() }
             let slot = "pending-promotion" // The published pending-opened merge slot.
             let previous = existing.first { $0.device == slot }
-            if matching.isEmpty, previous.map({ ($0.updated,$0.token) < (winner.updated,winner.token) }) ?? true {
-                try putOpened(db, book: formal, partition: 0, device: slot,
-                              openedAt: winner.time, updated: winner.updated, token: winner.token)
+            let sourceKey = UpgradeOrigins.Key(partition: 1, domain: .opened, id: winner.id)
+            if let same = matching.first {
+                try UpgradeOrigins.carry(db, UpgradeOrigins.provenance(db, sourceKey),
+                    to: .init(partition: 0, domain: .opened, id: same.id), equivalent: true)
+            } else if previous.map({ ($0.updated,$0.token) < (winner.updated,winner.token) }) ?? true {
+                let id = try putOpened(db, book: formal, partition: 0, device: slot,
+                                       openedAt: winner.time, updated: winner.updated, token: winner.token)
+                try UpgradeOrigins.carry(db, UpgradeOrigins.provenance(db, sourceKey),
+                    to: .init(partition: 0, domain: .opened, id: id))
             }
         }
     }

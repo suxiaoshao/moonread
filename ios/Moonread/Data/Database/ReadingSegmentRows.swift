@@ -110,6 +110,8 @@ enum ReadingSegmentRows {
             VALUES (?,?,?,'reading_segment',?,?,?,'segment-wire',?,?,?,'complete')
             ON CONFLICT(partition,source,source_id,source_type,record_id,digest,reason) DO NOTHING
             """, arguments: [partition,origin.source,origin.id,id,book,session,raw,DataIdentity.sha(raw),reason])
+        let original = UpgradeOrigins.Key(partition: partition, domain: .segment, id: id)
+        try origin.recordIsolation(db, partition: partition, inheriting: origin.source == "relational" ? original : nil)
     }
 
     @discardableResult
@@ -136,6 +138,9 @@ enum ReadingSegmentRows {
             let relation = try match(db, old, input, scope: scope)
             switch relation {
             case .compared(.same):
+                if case .transfer = intake, let carried = origin.carried {
+                    try UpgradeOrigins.carry(db, carried, to: .init(partition: partition, domain: .segment, id: h.id), equivalent: true)
+                }
                 // Trusted same-device ownership may follow D1/promotion; an
                 // arbitrary identical backup/fetched input never sets it.
                 if case .transfer(let moved?) = intake, !h.sealed, old.localOwner == nil {
@@ -174,6 +179,7 @@ enum ReadingSegmentRows {
             """, arguments: [partition,h.id,h.author.ownerInstanceId,key,h.author.title,h.author.device,h.author.sessionId,h.visitId,
                             h.startedMs,h.endedMs,h.localDay,h.utcOffsetSeconds,h.preview,DataIdentity.unsigned(h.revision),
                             h.durationMs,h.sealed,DataIdentity.unsigned(value.firstExposureStart),value.exposuresText,localOwner])
+        try origin.record(db, .init(partition: partition, domain: .segment, id: h.id))
         return true
     }
 
@@ -315,8 +321,9 @@ enum ReadingSegmentRows {
             guard let raw = try load(db, partition: partition, id: id), raw.localOwner == owner,
                   try !blocked(db, id: id), try !ReadingHistoryTransport.deletionPending(db, type: .segment, id: id) else { continue }
             let sealed = try sealReadingSegment(segment: raw.value)
+            let source = try UpgradeOrigins.provenance(db, .init(partition: partition, domain: .segment, id: id))
             if try ingest(db, value: sealed, book: raw.book, partition: partition, scope: scope, intake: .local(owner: owner),
-                          origin: .init(source: "startup-seal", id: id)) { change.segments.insert(id) }
+                          origin: .init(source: "startup-seal", id: id, carried: source)) { change.segments.insert(id) }
         }
         try change.settle(db, scope: scope)
         try enqueueSealed(db, ids: change.segments, scope: scope)
@@ -360,7 +367,7 @@ extension ReaderIndex {
             let part = try ReadingPositionRows.partition(for: body.sha)
             for value in batch.values {
                 if try ReadingSegmentRows.ingest(db, value: value, book: body.sha, partition: part, scope: lease.scope,
-                    intake: .local(owner: owner), origin: .init(source: "capture", id: value.header.author.sessionId)) {
+                    intake: .local(owner: owner), origin: .init(source: "capture", id: value.header.author.sessionId, upgrade: .local)) {
                     changed.segments.insert(value.header.id); written.insert(body.sha)
                 }
             }
@@ -396,7 +403,7 @@ extension ReaderIndex {
             }
             for (part, target) in ranges {
                 let clear = try ReadingClearRows.captureRange(db, partition: part, book: target, session: sessionID, through: through)
-                if try ReadingClearRows.insert(db, clear, partition: part) {
+                if try ReadingClearRows.insert(db, clear, partition: part, upgrade: .local) {
                     try ReadingClearRows.recordAffected(db, clear, partition: part, changed: &changed)
                     if part == 0 { try ReadingHistoryTransport.enqueueClear(db, id: clear.stableID, value: clear, scope: lease.scope) }
                 }

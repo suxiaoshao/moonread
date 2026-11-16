@@ -231,10 +231,7 @@ enum LegacyUserImport {
                     identity.mark.map(DataIdentity.canonical),identity.key.map(DataIdentity.canonical),
                     identity.session.map(ReadingFactRows.identity),identity.device.map(DataIdentity.canonical),
                     format,data,DataIdentity.sha(data),reason,incomplete ? "incomplete" : "complete"])
-            if db.changesCount > 0 {
-                let key = UpgradeOrigins.Key(partition: partition, domain: .isolation, id: String(db.lastInsertedRowID))
-                try UpgradeOrigins.record(db, key, as: .seed(batch: batch))
-            }
+            try UpgradeOrigins.recordInsertedIsolation(db, partition: partition, as: .seed(batch: batch))
         }
 
         func decode(_ payload: String, model: String, identity: Identity, _ body: () throws -> Void) throws {

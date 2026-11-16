@@ -143,14 +143,18 @@ enum AnnotationRows {
 
     static func append(_ db: Database, key: String, markID: String, baseline: [AnnotationCandidate], content: AnnotationContent?,
                        bookmark: Bool, related: Set<String> = [], mergedInto: String? = nil,
-                       scope: DataScope = .local) throws -> AnnotationCandidate {
+                       scope: DataScope = .local, operationGroup: String? = nil) throws -> AnnotationCandidate {
         let view = try snapshot(db, key: key, markID: markID)
         try requireReadable(view, ids: [markID])
         let value = AnnotationReduction.successor(baseline: baseline, content: content, bookmark: bookmark,
                                                   related: related, mergedInto: mergedInto)
         let partition = try ReadingPositionRows.partition(for: key), record = DataIdentity.canonical(value.id)
         let book = DataIdentity.canonical(key), mark = DataIdentity.canonical(markID)
+        var lineage = try UpgradeOrigins.annotationLineage(db, partition: partition, book: book, ancestors: value.ancestors)
+        if let operationGroup { lineage.groups.insert(operationGroup) }
         try insertCandidate(db, book: book, mark: mark, partition: partition, value: value)
+        try UpgradeOrigins.record(db, .init(partition: partition, domain: .annotation, id: record), as: .local,
+                                  bases: lineage.bases, groups: lineage.groups)
         // Keep siblings and causal IDs. Only superseded content is compacted.
         if partition == 0 && scope != .local {
             let compacted = try String.fetchAll(db, sql: """
@@ -201,7 +205,10 @@ enum AnnotationRows {
 
     static func mergeBackup(_ db: Database, book: String, mark: String, value: AnnotationCandidate) throws {
         guard try !assessBackup(db, book: book, mark: mark, value: value) else { return }
+        let lineage = try UpgradeOrigins.annotationLineage(db, partition: 0, book: book, ancestors: value.ancestors)
         try insertCandidate(db, book: book, mark: mark, partition: 0, value: value)
+        try UpgradeOrigins.record(db, .init(partition: 0, domain: .annotation, id: DataIdentity.canonical(value.id)),
+                                  as: .local, bases: lineage.bases, groups: lineage.groups)
         try settleHeads(db, key: book, markID: mark, partition: 0)
     }
 
@@ -227,9 +234,10 @@ enum AnnotationRows {
         let view = try snapshot(db, key: key)
         if let resolving { try requireReadable(view, ids: Set(resolving.keys)) }
         let changes = try AnnotationReduction.changes(edit, current: editingBundle(view, edit: edit), resolving: resolving, content: content)
+        let group = changes.count > 1 ? UUID().uuidString : nil
         let committed = try changes.map { plan in
             try append(db, key: key, markID: plan.markID, baseline: plan.baseline, content: plan.content,
-                       bookmark: false, related: plan.related, mergedInto: plan.mergedInto, scope: scope)
+                       bookmark: false, related: plan.related, mergedInto: plan.mergedInto, scope: scope, operationGroup: group)
         }
         return committed[0]
     }
@@ -246,9 +254,11 @@ enum AnnotationRows {
             }
         }
         var result: [String: AnnotationCandidate] = [:]
+        let group = commands.count > 1 ? UUID().uuidString : nil
         for cmd in commands {
             result[cmd.id] = try append(db, key: cmd.key, markID: cmd.id, baseline: cmd.baseline,
-                                         content: cmd.deleted ? nil : cmd.content, bookmark: cmd.baseline.first?.bookmark ?? false, scope: scope)
+                                         content: cmd.deleted ? nil : cmd.content, bookmark: cmd.baseline.first?.bookmark ?? false,
+                                         scope: scope, operationGroup: group)
         }
         return result
     }

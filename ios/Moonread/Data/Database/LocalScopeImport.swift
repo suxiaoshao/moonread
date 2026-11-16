@@ -72,6 +72,7 @@ enum LocalScopeImport {
                     UNION ALL SELECT 1 FROM move_source.cloud_engine_state
                     UNION ALL SELECT 1 FROM move_source.cloud_outbox)
                 """) == false else { throw DataV2Error.migrationNotVerified }
+            try UpgradeOrigins.copyFromFrozenLocal(db)
             let assets = try Row.fetchCursor(db, sql: "SELECT * FROM move_source.cover_asset ORDER BY asset_id")
             while let row = try assets.next() {
                 let id: String = row["asset_id"]
@@ -92,8 +93,10 @@ enum LocalScopeImport {
             try CurrentUserRows.settleImported(db)
             let facts = try Row.fetchCursor(db, sql: "SELECT * FROM move_source.reading_fact")
             while let fact = try facts.next() {
+                let id: String = fact["fact_id"], partition: Int = fact["partition"]
+                let origin = try UpgradeOrigins.provenance(db, .init(partition: partition, domain: .fact, id: id), in: .frozenLocal)
                 try ReadingFactSettlement.ingestStored(db, fact, book: fact["book_key"], partition: fact["partition"], scope: scope.key,
-                                                       origin: .init(source: "local-transfer", id: fact["fact_id"]))
+                                                       origin: .init(source: "local-transfer", id: id, carried: origin))
             }
             guard try Bool.fetchOne(db, sql: """
                 SELECT NOT EXISTS(SELECT 1 FROM move_source.reading_segment WHERE schema_version<>1 OR exposure_version<>1)
@@ -102,9 +105,11 @@ enum LocalScopeImport {
             var movedSegments = Set<String>()
             while let row = try segments.next() {
                 let raw = try ReadingSegmentRows.Raw(row)
+                let id = raw.value.header.id
+                let origin = try UpgradeOrigins.provenance(db, .init(partition: raw.partition, domain: .segment, id: id), in: .frozenLocal)
                 try ReadingSegmentRows.ingest(db, value: raw.value, book: raw.book, partition: raw.partition, scope: scope,
-                    intake: .transfer(localOwner: raw.localOwner), origin: .init(source: "local-transfer", id: raw.value.header.id))
-                movedSegments.insert(raw.value.header.id)
+                    intake: .transfer(localOwner: raw.localOwner), origin: .init(source: "local-transfer", id: id, carried: origin))
+                movedSegments.insert(id)
             }
             var history = ReadingHistoryRows.Changed()
             history.facts = try ReadingFactSettlement.affectedIDs(db)
@@ -132,18 +137,29 @@ enum LocalScopeImport {
     private static func predicate(_ keys: [String]) -> String { keys.map { "\($0)=?" }.joined(separator: " AND ") }
 
     private static func copy(_ db: Database, table: Table) throws {
+        let domain = UpgradeOrigins.Domain(rawValue: table.name)
         let rows = try Row.fetchCursor(db, sql: "SELECT * FROM move_source.\(table.name) ORDER BY \(table.key.joined(separator: ","))")
         while let row = try rows.next() {
+            let key = domain.map { UpgradeOrigins.Key(partition: row["partition"], domain: $0, id: row[$0.idColumn]) }
+            func carry(to destination: UpgradeOrigins.Key?, equivalent: Bool = false) throws {
+                guard let key, let destination else { return }
+                let origin = try UpgradeOrigins.provenance(db, key, in: .frozenLocal)
+                try UpgradeOrigins.carry(db, origin, to: destination, equivalent: equivalent)
+            }
             let args = StatementArguments(table.key.map { key -> DatabaseValue in row[key] })
             let whereKey = predicate(table.key)
             let existing = try Row.fetchOne(db, sql: "SELECT * FROM usr.\(table.name) WHERE " + whereKey, arguments: args)
             if existing == nil {
                 try insert(db, into: table.name, row: row)
                 try copyChildren(db, table: table, args: args)
+                try carry(to: key)
                 continue
             }
             guard let existing else { continue }
-            if existing == row, try childrenEqual(db, table: table, args: args) { continue }
+            if existing == row, try childrenEqual(db, table: table, args: args) {
+                try carry(to: key, equivalent: true)
+                continue
+            }
             if table.mutable {
                 let old: (Int64, String) = (existing["updated_ms"], existing["token"])
                 let new: (Int64, String) = (row["updated_ms"], row["token"])
@@ -152,6 +168,7 @@ enum LocalScopeImport {
                     try db.execute(sql: "DELETE FROM usr.\(table.name) WHERE " + whereKey, arguments: args)
                     try insert(db, into: table.name, row: row)
                     try copyChildren(db, table: table, args: args)
+                    try carry(to: key)
                     continue
                 }
             }
@@ -171,6 +188,9 @@ enum LocalScopeImport {
                 """, arguments: [partition, table.name, id, optionalInt(row, "schema_version"), optional(row, "book_key"),
                                  optional(row, "mark_id"), optional(row, "logical_key"), optional(row, "session_id"),
                                  data, DataIdentity.sha(data)])
+            if db.changesCount > 0 {
+                try carry(to: .init(partition: partition, domain: .isolation, id: String(db.lastInsertedRowID)))
+            }
         }
     }
 
@@ -242,6 +262,13 @@ enum LocalScopeImport {
                         asset["bytes"] as Data?,asset["digest"] as String?,asset["missing_reason"] as String?])
                 }
             }
+            let partition: Int = row["partition"]
+            let source = UpgradeOrigins.Key(partition: partition, domain: .isolation, id: String(oldID))
+            let destination = UpgradeOrigins.Key(partition: partition, domain: .isolation, id: String(id))
+            if try UpgradeOrigins.sameVersion(db, frozen: source, destination: destination) {
+                try UpgradeOrigins.carry(db, UpgradeOrigins.provenance(db, source, in: .frozenLocal),
+                                         to: destination, equivalent: true)
+            }
         }
     }
 
@@ -263,6 +290,7 @@ enum LocalScopeImport {
             for table in (candidates + localTables).map(\.name) + ["cover_asset","quarantined_record","legacy_import_state"] {
                 try db.execute(sql: "DELETE FROM move_source.\(table)")
             }
+            try UpgradeOrigins.clearFrozenLocal(db)
             return .commit
         }
     }

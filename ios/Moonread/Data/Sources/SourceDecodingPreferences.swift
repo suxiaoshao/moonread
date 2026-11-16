@@ -159,9 +159,21 @@ extension AppDataService {
     }
 
     private func mergeSourceDecodingEpoch(rawSHA: String, decoding: String, index: ReaderIndex) throws {
-        let input = try sourceDecodingEpoch(rawSHA: rawSHA, decoding: decoding)
-        try index.session.writeUsers(index.lease) {
-            try UserValueRows.merge($0, key: .init(input.key), head: input.value, device: "source-decoding-v23")
+        try Task.checkCancellation()
+        try index.session.writeUsers(index.lease) { db in
+            // This is released data, even if the raw identity was discovered
+            // after upgrading. Once the source fold closes, a remaining index
+            // entry is consumed without reintroducing its old choice.
+            guard try UpgradeOrigins.phase(db) != nil else { return }
+            let input = try sourceDecodingEpoch(rawSHA: rawSHA, decoding: decoding)
+            let key = try UserValueRows.Key(input.key)
+            let device = "source-decoding-v23"
+            guard try UserValueRows.merge(db, key: key, head: input.value, device: device) else { return }
+            let id = UserValueRows.recordID(logical: key.logical, device: device)
+            // The same released raw SHA and normalized encoding keep their
+            // seed identity if interrupted between usr commit and index cleanup.
+            let batch = DataIdentity.id("legacy-index-v23-decoding", [input.value.token])
+            try UpgradeOrigins.record(db, .init(partition: 0, domain: .decoding, id: id), as: .seed(batch: batch))
         }
     }
 }

@@ -79,6 +79,7 @@ enum PendingUserPromotion {
         for (book, part) in [(pending,1),(formal,0)] {
             try requireFactsAndMarksReadable(db, book: book, partition: part)
         }
+        try UpgradeOrigins.notePromotion(db, from: pending, to: formal)
         try ReadingPositionRows.promote(db, from: pending, to: formal)
         let movedMarks = try promoteMarks(db, from: pending, to: formal)
         var history = ReadingHistoryRows.Changed()
@@ -184,6 +185,9 @@ enum PendingUserPromotion {
         }
         try mergeMarkRelation(db, table: "annotation_ancestor", field: "ancestor_id", id: id, exists: conflicting != nil)
         try mergeMarkRelation(db, table: "annotation_related_mark", field: "related_mark_id", id: id, exists: conflicting != nil)
+        let source = UpgradeOrigins.Key(partition: 1, domain: .annotation, id: id)
+        try UpgradeOrigins.carry(db, UpgradeOrigins.provenance(db, source),
+                                 to: .init(partition: 0, domain: .annotation, id: id), equivalent: conflicting != nil)
     }
 
     private static func mergeMarkRelation(_ db: Database, table: String, field: String, id: String, exists: Bool) throws {
@@ -216,8 +220,9 @@ enum PendingUserPromotion {
         let rows = try Row.fetchCursor(db, sql: visiblePendingFacts + "SELECT * FROM visible",
                                       arguments: [pending])
         while let row = try rows.next() {
+            let origin = try UpgradeOrigins.provenance(db, .init(partition: 1, domain: .fact, id: row["fact_id"]))
             try ReadingFactSettlement.ingestStored(db, row, book: formal, partition: 0, scope: scope.key,
-                                                    origin: .init(source: "pending-promotion", id: pending))
+                                                    origin: .init(source: "pending-promotion", id: pending, carried: origin))
         }
     }
 
@@ -228,17 +233,35 @@ enum PendingUserPromotion {
             let id = raw.value.header.id
             guard try !ReadingHistoryTransport.deletionPending(db, type: .segment, id: id) else { continue }
             try ReadingClearRows.transferPrefixes(db, from: pending, to: formal, raw: raw, scope: scope)
+            let origin = try UpgradeOrigins.provenance(db, .init(partition: 1, domain: .segment, id: id))
             try ReadingSegmentRows.ingest(db, value: raw.value, book: formal, partition: 0, scope: scope,
                                           intake: .transfer(localOwner: raw.localOwner),
-                                          origin: .init(source: "pending-promotion", id: pending))
+                                          origin: .init(source: "pending-promotion", id: pending, carried: origin))
         }
         // A verified alias can move its trusted isolation metadata without
         // interpreting the original bytes. An unrelated formal unknown ID
         // does not prevent this book's well-formed segments from moving.
-        try db.execute(sql: """
-            UPDATE OR IGNORE usr.quarantined_record SET partition=0,book_key=?
+        let ids = try Int64.fetchAll(db, sql: """
+            SELECT quarantine_id FROM usr.quarantined_record
             WHERE partition=1 AND book_key=? AND source_type IN (\(segmentTypes)) AND reason<>'unresolved-segment-route'
-            """, arguments: [formal,pending])
+            """, arguments: [pending])
+        for id in ids {
+            let from = UpgradeOrigins.Key(partition: 1, domain: .isolation, id: String(id))
+            let origin = try UpgradeOrigins.provenance(db, from)
+            try db.execute(sql: "UPDATE OR IGNORE usr.quarantined_record SET partition=0,book_key=? WHERE quarantine_id=?",
+                           arguments: [formal,id])
+            if db.changesCount > 0 {
+                try UpgradeOrigins.carry(db, origin, to: .init(partition: 0, domain: .isolation, id: String(id)))
+            } else if let match = try Int64.fetchOne(db, sql: """
+                SELECT dst.quarantine_id FROM usr.quarantined_record src JOIN usr.quarantined_record dst
+                  ON (src.source,src.source_id,src.source_type,src.record_id,src.digest,src.reason)=
+                     (dst.source,dst.source_id,dst.source_type,dst.record_id,dst.digest,dst.reason)
+                WHERE src.quarantine_id=? AND dst.partition=0 AND dst.book_key=?
+                """, arguments: [id,formal]) {
+                try UpgradeOrigins.carry(db, origin, to: .init(partition: 0, domain: .isolation, id: String(match)),
+                                         equivalent: true)
+            }
+        }
         try db.execute(sql: """
             DELETE FROM usr.quarantined_record WHERE partition=1 AND book_key=?
             AND source_type IN (\(segmentTypes)) AND reason<>'unresolved-segment-route'
@@ -388,6 +411,8 @@ extension ReaderIndex {
                       !busyKeys.contains(body.sha), !busyKeys.contains(serializeReadingKey(key: .pending(bookId: id)))
                 else { throw busyError() }
             }
+
+            try UpgradeOrigins.recordBookDeletion(db, formal: formal, erased: targets)
 
             if !formal.isEmpty {
                 // A task whose body is still unproven may produce pending

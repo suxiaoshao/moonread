@@ -8,6 +8,22 @@ enum ReadingFactSettlement {
         let source: String
         let id: String
         var upgrade: UpgradeOrigins.Write? = nil
+        var carried: UpgradeOrigins.Provenance? = nil
+
+        func record(_ db: Database, _ key: UpgradeOrigins.Key) throws {
+            if let carried { try UpgradeOrigins.carry(db, carried, to: key) }
+            else if let upgrade { try UpgradeOrigins.record(db, key, as: upgrade) }
+        }
+
+        func recordIsolation(_ db: Database, partition: Int, inheriting key: UpgradeOrigins.Key? = nil) throws {
+            guard db.changesCount > 0 else { return }
+            let target = UpgradeOrigins.Key(partition: partition, domain: .isolation, id: String(db.lastInsertedRowID))
+            if let key {
+                try UpgradeOrigins.record(db, target, as: .inherited(key))
+            } else {
+                try record(db, target)
+            }
+        }
     }
 
     struct Head: Codable, Equatable {
@@ -110,15 +126,8 @@ enum ReadingFactSettlement {
             VALUES (?,?,?,'reading_fact',?,1,?,?,?,'typed-reading-fact-v1',?,?,?,'complete')
             ON CONFLICT(partition,source,source_id,source_type,record_id,digest,reason) DO NOTHING
             """, arguments: [h.partition,origin.source,origin.id,h.id,h.book,h.session,evidence.device,bytes,DataIdentity.sha(bytes),reason])
-        if db.changesCount > 0 {
-            let provenance = origin.upgrade ?? (origin.source == "relational" ? .inherited(
-                .init(partition: h.partition, domain: .fact, id: h.id)
-            ) : nil)
-            if let provenance {
-                try UpgradeOrigins.record(db, .init(partition: h.partition, domain: .isolation, id: String(db.lastInsertedRowID)),
-                                          as: provenance)
-            }
-        }
+        let original = UpgradeOrigins.Key(partition: h.partition, domain: .fact, id: h.id)
+        try origin.recordIsolation(db, partition: h.partition, inheriting: origin.source == "relational" ? original : nil)
     }
 
     private static func evidence(_ db: Database, id: String, partitions: Int? = nil) throws -> [Evidence] {
@@ -159,9 +168,7 @@ enum ReadingFactSettlement {
         let params = Array(repeating: "?", count: fields.count).joined(separator: ",")
         try db.execute(sql: "INSERT INTO usr.reading_fact(\(columns)) VALUES(\(params))",
                        arguments: StatementArguments(fields.map { $0.1 }))
-        if let provenance = origin.upgrade {
-            try UpgradeOrigins.record(db, .init(partition: partition, domain: .fact, id: id), as: provenance)
-        }
+        try origin.record(db, .init(partition: partition, domain: .fact, id: id))
         return true
     }
 
@@ -177,7 +184,12 @@ enum ReadingFactSettlement {
                 return
             }
             let relation = try match(old, incoming, db: db, scope: scope)
-            guard relation != .same else { return }
+            guard relation != .same else {
+                if let carried = origin.carried {
+                    try UpgradeOrigins.carry(db, carried, to: .init(partition: partition, domain: .fact, id: id), equivalent: true)
+                }
+                return
+            }
             let reason = relation == .unresolved ? unresolvedSamePartition : conflict
             try archive(db, old, origin: .init(source: "relational", id: old.device), reason: reason)
             try archive(db, incoming, origin: origin, reason: reason)
@@ -188,6 +200,7 @@ enum ReadingFactSettlement {
             INSERT INTO usr.reading_fact(partition,book_key,\(fields.map(\.0).joined(separator: ",")))
             VALUES(?,?,\(Array(repeating: "?", count: fields.count).joined(separator: ",")))
             """, arguments: [partition,book] + StatementArguments(fields.map(\.1)))
+        try origin.record(db, .init(partition: partition, domain: .fact, id: id))
     }
 
     /// Entry for a regular bounded batch. Import/merge adapters that also

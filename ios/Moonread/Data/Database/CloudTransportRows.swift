@@ -725,6 +725,7 @@ actor CloudCallbackJournal {
     /// checkpoint covering a completed own-zone fetch begun at that floor.
     func persistCheckpoint(_ bytes: Data, confirmedOwnZoneThrough generation: Int64? = nil) throws {
         try recordCallback(whileCreating: { () }) { db in
+            guard try UpgradeOrigins.phase(db) == nil else { return }
             try CloudTransportRows.storeCheckpoint(db, zone: ReadingHistoryTransport.zone, bytes: bytes)
             if let generation { try FixedValueCloudRows.expireReceipts(db, through: generation) }
         }
@@ -755,7 +756,8 @@ actor CloudCallbackJournal {
         guard !failed else { throw Failure.restartRequired }
         let zone = ReadingHistoryTransport.zone
         return try session.readCloudChanges(binding) { db in
-            guard try CloudTransportRows.zoneStage(db, zone: zone) == .ready else { return [] }
+            guard try UpgradeOrigins.phase(db) == nil,
+                  try CloudTransportRows.zoneStage(db, zone: zone) == .ready else { return [] }
             return try Row.fetchAll(db, sql: """
                 SELECT record_type,record_name,business_id,intent FROM usr.cloud_outbox WHERE zone=? AND after_name IS NULL
                 ORDER BY intent='save',generation
@@ -774,12 +776,22 @@ actor CloudCallbackJournal {
         let scope = lease.scope
         try recordCallback(whileCreating: {
             if !records.isEmpty || !deletions.isEmpty { throw Failure.restartRequired }
-        }) { try CloudInboxRows.apply($0, records: records, deletions: deletions, scope: scope) }
+        }) { db in
+            if !records.isEmpty || !deletions.isEmpty {
+                // Must not advance the ordinary checkpoint over unclassified
+                // input. The bootstrap inbox will own it in the next batch.
+                guard try UpgradeOrigins.phase(db) == nil else { throw Failure.restartRequired }
+            }
+            try CloudInboxRows.apply(db, records: records, deletions: deletions, scope: scope)
+        }
     }
 
     func verificationRequests(after: CloudTransportRows.Key? = nil, limit: Int) throws -> [CloudSaveVerification.Ticket] {
         guard !failed else { throw Failure.restartRequired }
-        return try session.readCloudChanges(binding) { try CloudSaveVerification.requests($0, after: after, limit: limit) }
+        return try session.readCloudChanges(binding) { db in
+            guard try UpgradeOrigins.phase(db) == nil else { return [] }
+            return try CloudSaveVerification.requests(db, after: after, limit: limit)
+        }
     }
 
     func requireMissingSaveVerification(_ attempt: CloudTransportRows.Attempt) throws {
@@ -797,11 +809,17 @@ actor CloudCallbackJournal {
     }
 
     func prepareFixedValueChange(_ family: FixedValueCloudRows.Family, id: String) throws -> FixedValueCloudRows.Prepared? {
-        try recordCallback(whileCreating: { nil }) { try FixedValueCloudRows.prepare($0, family, id: id) }
+        try recordCallback(whileCreating: { nil }) { db in
+            guard try UpgradeOrigins.phase(db) == nil else { return nil }
+            return try FixedValueCloudRows.prepare(db, family, id: id)
+        }
     }
 
     func prepareCausalChange(_ family: CausalCloudRows.Family, id: String) throws -> CausalCloudRows.Prepared? {
-        try recordCallback(whileCreating: { nil }) { try CausalCloudRows.prepare($0, family, id: id) }
+        try recordCallback(whileCreating: { nil }) { db in
+            guard try UpgradeOrigins.phase(db) == nil else { return nil }
+            return try CausalCloudRows.prepare(db, family, id: id)
+        }
     }
 
     // Input contains only deletions whose complete zone ID SDK routing has
@@ -812,14 +830,16 @@ actor CloudCallbackJournal {
             guard names.isEmpty else { throw Failure.restartRequired }
             return []
         }) { db in
-            try names.map { try FixedValueCloudRows.applyDeletion(db, family, name: $0) }
+            if !names.isEmpty { guard try UpgradeOrigins.phase(db) == nil else { throw Failure.restartRequired } }
+            return try names.map { try FixedValueCloudRows.applyDeletion(db, family, name: $0) }
         }
     }
 
     func prepareHistoryChange(type: ReadingHistoryTransport.RecordType, id: String) throws -> PreparedHistoryChange? {
         let key = ReadingHistoryTransport.key(type, id: id)
         return try recordCallback(whileCreating: { nil }) { db in
-            guard let attempt = try CloudTransportRows.pending(db, key), attempt.businessID == id else { return nil }
+            guard try UpgradeOrigins.phase(db) == nil, let attempt = try CloudTransportRows.pending(db, key),
+                  attempt.businessID == id else { return nil }
             let prepared: PreparedHistoryChange
             switch attempt.intent {
             case .save(let digest):
@@ -843,7 +863,10 @@ actor CloudCallbackJournal {
             // Never let a later checkpoint skip records fetched before the
             // new area's creation was confirmed.
             if !records.isEmpty { throw Failure.restartRequired }
-        }) { try ReadingHistoryTransport.applyFetched($0, records: records, scope: scope) }
+        }) { db in
+            if !records.isEmpty { guard try UpgradeOrigins.phase(db) == nil else { throw Failure.restartRequired } }
+            try ReadingHistoryTransport.applyFetched(db, records: records, scope: scope)
+        }
     }
 
     func acknowledge(_ results: [Sent]) throws -> Int {

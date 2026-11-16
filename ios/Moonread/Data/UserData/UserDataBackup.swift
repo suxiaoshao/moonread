@@ -378,7 +378,7 @@ struct UserBackupRestore: Sendable {
                 exportSegments.insert(record.id)
             case let .clear(record):
                 try ReadingHistoryTransport.stageClear(db, id: record.id, book: record.key.isEmpty ? nil : record.key,
-                    payload: record.payload, source: "backup", sourceID: record.id, changed: &history)
+                    payload: record.payload, source: "backup", sourceID: record.id, changed: &history, upgrade: .local)
                 exportClears.insert(record.id)
             case let .isolation(value):
                 try value.restore(db, changed: &history)
@@ -423,6 +423,7 @@ enum ReadingHistoryBackup {
                 VALUES(0,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(partition,source,source_id,source_type,record_id,digest,reason) DO NOTHING
                 """, arguments: [source,sourceID,type,id,version,book,session,device,logicalKey,format,bytes,digest,reason,completeness])
+            try UpgradeOrigins.recordInsertedIsolation(db, partition: 0, as: .local)
             switch type {
             case "ReadingFact", "reading_fact": changed.clearFacts.insert(id)
             case "ReadingSegment", "reading_segment": changed.segments.insert(id)

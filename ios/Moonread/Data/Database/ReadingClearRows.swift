@@ -77,7 +77,8 @@ enum ReadingClearRows {
     }
 
     @discardableResult
-    static func insert(_ db: Database, _ value: Value, partition: Int, id: String? = nil) throws -> Bool {
+    static func insert(_ db: Database, _ value: Value, partition: Int, id: String? = nil,
+                       upgrade: UpgradeOrigins.Write? = nil) throws -> Bool {
         let id = id ?? value.stableID
         if let old = try load(db, partition: partition, id: id) {
             guard old == value else { throw ReadingDataError.invalid }
@@ -94,6 +95,7 @@ enum ReadingClearRows {
             try db.execute(sql: "INSERT INTO usr.statistics_clear_segment VALUES(?,?,?,?,?)", arguments: [partition,id,prefix.segmentId,
                            DataIdentity.unsigned(prefix.observedRevision),prefix.coveredThroughMs])
         }
+        if let upgrade { try UpgradeOrigins.record(db, .init(partition: partition, domain: .clear, id: id), as: upgrade) }
         return true
     }
 
@@ -151,13 +153,18 @@ enum ReadingClearRows {
             """, arguments: [1,pending,h.author.sessionId,h.id])
         for row in rows {
             guard let boundary = row["boundary"] as Int64?, boundary > h.startedMs else { continue }
-            let id = DataIdentity.id("promoted-clear-segment", [row["record_id"] as String,pending,formal,h.id])
+            let sourceID: String = row["record_id"]
+            let id = DataIdentity.id("promoted-clear-segment", [sourceID,pending,formal,h.id])
             // Keep the source clear's actual boundary, even when later than
             // this revision's end. Never rewrite the author's raw segment.
             let revision = (row["observed_revision"] as String?).flatMap(UInt64.init) ?? h.revision
             let value = Value(v: 2, scopeKind: .captured, book: formal, session: h.author.sessionId, throughMs: boundary,
                               factIds: [], segments: [.init(segmentId: h.id, observedRevision: revision, coveredThroughMs: boundary)])
-            if try insert(db, value, partition: 0, id: id) {
+            let inserted = try insert(db, value, partition: 0, id: id)
+            let source = UpgradeOrigins.Key(partition: 1, domain: .clear, id: sourceID)
+            try UpgradeOrigins.carry(db, UpgradeOrigins.provenance(db, source),
+                to: .init(partition: 0, domain: .clear, id: id), equivalent: !inserted)
+            if inserted {
                 try ReadingHistoryTransport.enqueueClear(db, id: id, value: value, scope: scope)
             }
         }
@@ -317,7 +324,8 @@ enum ReadingHistoryTransport {
 
     static func stageSegment(_ db: Database, id: String, book: String?, payload: String, fetched: Bool, sourceID: String,
                              scope: DataScope, changed: inout ReadingHistoryRows.Changed) throws {
-        let origin = ReadingFactSettlement.Origin(source: fetched ? "cloud" : "backup", id: sourceID)
+        let origin = ReadingFactSettlement.Origin(source: fetched ? "cloud" : "backup", id: sourceID,
+                                                  upgrade: fetched ? nil : .local)
         let wire = decodeReadingSegment(payload: payload)
         let route = formalScope(book)
         guard let value = wire.segment, let key = wire.bookKey, let parsed = try? parseReadingKey(value: key),
@@ -335,7 +343,7 @@ enum ReadingHistoryTransport {
     }
 
     static func stageClear(_ db: Database, id: String, book: String?, payload: String, source: String, sourceID: String,
-                           changed: inout ReadingHistoryRows.Changed) throws {
+                           changed: inout ReadingHistoryRows.Changed, upgrade: UpgradeOrigins.Write? = nil) throws {
         let clear = try? ReadingClearRows.decode(payload)
         let allowed = clear?.book.map { key in
             if case .formal? = try? parseReadingKey(value: key) { return true }
@@ -349,7 +357,7 @@ enum ReadingHistoryTransport {
                SELECT EXISTS(SELECT 1 FROM usr.statistics_clear WHERE partition=0 AND record_id=?
                AND schema_version NOT IN (1,2))
                """, arguments: [id]) == false {
-            if try ReadingClearRows.insert(db, clear, partition: 0, id: id) {
+            if try ReadingClearRows.insert(db, clear, partition: 0, id: id, upgrade: upgrade) {
                 try ReadingClearRows.recordAffected(db, clear, partition: 0, changed: &changed)
             }
             return
@@ -358,15 +366,17 @@ enum ReadingHistoryTransport {
             // A same-ID conflict blocks both prior and incoming scope.
             let priorBytes = try Data(ReadingClearRows.wire(prior).utf8)
             try isolateClear(db, id: id, book: prior.book, session: prior.session, bytes: priorBytes,
-                             source: "relational", sourceID: id)
+                             source: "relational", sourceID: id, upgrade: .inherited(.init(partition: 0, domain: .clear, id: id)))
             try ReadingClearRows.recordAffected(db, prior, partition: 0, changed: &changed)
         }
-        try blockClear(db, id: id, book: formalScope(book), payload: payload, source: source, sourceID: sourceID, changed: &changed)
+        try blockClear(db, id: id, book: formalScope(book), payload: payload, source: source, sourceID: sourceID,
+                       changed: &changed, upgrade: upgrade)
     }
 
     private static func blockClear(_ db: Database, id: String, book: String?, payload: String,
-                                   source: String, sourceID: String, changed: inout ReadingHistoryRows.Changed) throws {
-        try isolateClear(db, id: id, book: book, session: nil, bytes: Data(payload.utf8), source: source, sourceID: sourceID)
+                                   source: String, sourceID: String, changed: inout ReadingHistoryRows.Changed,
+                                   upgrade: UpgradeOrigins.Write? = nil) throws {
+        try isolateClear(db, id: id, book: book, session: nil, bytes: Data(payload.utf8), source: source, sourceID: sourceID, upgrade: upgrade)
         try didIsolateClear(db, id: id, book: book, session: nil, changed: &changed)
     }
 
@@ -380,13 +390,14 @@ enum ReadingHistoryTransport {
     }
 
     private static func isolateClear(_ db: Database, id: String, book: String?, session: String?, bytes: Data,
-                                     source: String, sourceID: String) throws {
+                                     source: String, sourceID: String, upgrade: UpgradeOrigins.Write?) throws {
         try db.execute(sql: """
             INSERT INTO usr.quarantined_record(partition,source,source_id,source_type,record_id,book_key,session_id,
                 raw_format,raw_bytes,digest,reason,completeness)
             VALUES(0,?,?,'statistics_clear',?,?,?,'clear-wire',?,?,'unreadable-clear','complete')
             ON CONFLICT(partition,source,source_id,source_type,record_id,digest,reason) DO NOTHING
             """, arguments: [source,sourceID,id,book,session,bytes,DataIdentity.sha(bytes)])
+        if let upgrade { try UpgradeOrigins.recordInsertedIsolation(db, partition: 0, as: upgrade) }
     }
 
     /// Resolve a save at send time from the actual row, checking its digest;
