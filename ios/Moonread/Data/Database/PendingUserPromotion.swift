@@ -430,6 +430,7 @@ extension ReaderIndex {
                     for id in segments { try ReadingHistoryTransport.delete(db, type: .segment, id: id, scope: lease.scope) }
                     for id in clears { try ReadingHistoryTransport.delete(db, type: .clear, id: id, scope: lease.scope) }
                     try ReadingHistoryTransport.deleteIsolatedBookRecords(db, book: key, scope: lease.scope)
+                    try FixedValueCloudRows.queueBookDeletion(db, book: key)
                 }
                 let assets = canReclaimCover ? try String.fetchAll(db, sql: """
                     SELECT DISTINCT asset_id FROM usr.cover_candidate WHERE book_key=? AND asset_id IS NOT NULL
@@ -442,10 +443,7 @@ extension ReaderIndex {
                     try PendingUserPromotion.clearIdentityFence(db, bookID: id)
                 }
                 for asset in assets {
-                    try db.execute(sql: """
-                        DELETE FROM usr.cover_asset WHERE asset_id=? AND NOT EXISTS(
-                            SELECT 1 FROM usr.cover_candidate c WHERE c.asset_id=cover_asset.asset_id)
-                        """, arguments: [asset])
+                    try UserValueRows.removeUnreferencedCover(db, id: asset)
                 }
             }
             try history.settle(db, scope: lease.scope)

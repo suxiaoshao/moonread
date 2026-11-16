@@ -80,7 +80,7 @@ extension AppDataService {
         let json = try encodeThemePalette(value: palette)
         let index = try relationalUserIndex()
         try index.session.writeUsers(index.lease) {
-            try UserValueRows.put($0, key: .init("palette/" + palette.id), value: json, device: userDevice, now: userValueClock)
+            try UserValueRows.put($0, key: .init("palette/" + palette.id), value: json, device: userDevice, now: userValueClock, scope: index.lease.scope)
         }
         dataChanged(); return palette
     }
@@ -91,7 +91,7 @@ extension AppDataService {
         guard try await themes().palettes.contains(where: { $0.custom && $0.id == id }) else { throw ReaderError.NotFound }
         let index = try relationalUserIndex()
         try index.session.writeUsers(index.lease) {
-            try UserValueRows.put($0, key: .init("palette/" + id), value: "null", device: userDevice, now: userValueClock)
+            try UserValueRows.put($0, key: .init("palette/" + id), value: "null", device: userDevice, now: userValueClock, scope: index.lease.scope)
         }
         dataChanged(); return try await themes()
     }

@@ -64,16 +64,21 @@ enum CloudTransportRows {
     }
 
     private static func enqueue(_ db: Database, _ key: Key, businessID: String, intent: String, digest: String?) throws {
-        let prior = try storedGeneration(db) ?? largestPendingGeneration(db)
-        guard prior < Int64.max else { throw DataV2Error.incompatibleSource("cloud outbox generation exhausted") }
-        let next = prior + 1
-        try storeGeneration(db, next)
+        let next = try allocateGeneration(db)
         try db.execute(sql: """
             INSERT INTO usr.cloud_outbox(zone,record_type,record_name,business_id,intent,content_digest,generation)
             VALUES(?,?,?,?,?,?,?)
             ON CONFLICT(zone,record_type,record_name) DO UPDATE SET intent=excluded.intent,content_digest=excluded.content_digest,
               generation=excluded.generation
             """, arguments: key.arguments + [businessID, intent, digest, next])
+    }
+
+    static func allocateGeneration(_ db: Database) throws -> Int64 {
+        let prior = try storedGeneration(db) ?? largestPendingGeneration(db)
+        guard prior < Int64.max else { throw DataV2Error.incompatibleSource("cloud outbox generation exhausted") }
+        let next = prior + 1
+        try storeGeneration(db, next)
+        return next
     }
 
     /// A trial build may have queued rows without the shared counter. Before
@@ -83,7 +88,7 @@ enum CloudTransportRows {
         try storeGeneration(db, max(generation, largestPendingGeneration(db)))
     }
 
-    private static func storedGeneration(_ db: Database) throws -> Int64? {
+    static func storedGeneration(_ db: Database) throws -> Int64? {
         guard let text = try String.fetchOne(db, sql: "SELECT value FROM usr.local_data_state WHERE state_key=?",
                                              arguments: [generationKey]) else { return nil }
         guard let generation = Int64(text), generation >= 0 else { throw DataV2Error.incompatibleSource("cloud outbox generation") }
@@ -115,6 +120,18 @@ enum CloudTransportRows {
             """, arguments: key.arguments + [businessID, systemFields])
     }
 
+    static func recordStatus(_ db: Database, _ key: Key) throws -> String? {
+        try String.fetchOne(db, sql: "SELECT server_state FROM usr.cloud_record_state WHERE \(keyFilter)", arguments: key.arguments)
+    }
+
+    static func setFixedValueControl(_ db: Database, _ key: Key, businessID: String, status: String) throws {
+        try db.execute(sql: """
+            INSERT INTO usr.cloud_record_state(zone,record_type,record_name,business_id,server_state,system_fields)
+            VALUES(?,?,?,?,?,NULL)
+            ON CONFLICT(zone,record_type,record_name) DO UPDATE SET server_state=excluded.server_state,system_fields=NULL
+            """, arguments: key.arguments + [businessID,status])
+    }
+
     static func systemFields(_ db: Database, _ key: Key) throws -> Data? {
         try Data.fetchOne(db, sql: "SELECT system_fields FROM usr.cloud_record_state WHERE \(keyFilter)", arguments: key.arguments)
     }
@@ -130,7 +147,7 @@ enum CloudTransportRows {
         try withdrawSave(db, key)
     }
 
-    private static func forgetServerRecord(_ db: Database, _ key: Key) throws {
+    static func forgetServerRecord(_ db: Database, _ key: Key) throws {
         try db.execute(sql: "DELETE FROM usr.cloud_record_state WHERE \(keyFilter)", arguments: key.arguments)
     }
 
@@ -139,11 +156,16 @@ enum CloudTransportRows {
         guard try pending(db, sent.key) == sent else { return false }
         switch sent.intent {
         case .save:
+            if FixedValueCloudRows.Family(rawValue: sent.key.type) != nil, try FixedValueCloudRows.blocksSave(db, key: sent.key) { return false }
             try recordPresent(db, sent.key, businessID: sent.businessID, systemFields: systemFields)
             try withdrawSave(db, sent.key)
         case .delete:
-            try forgetServerRecord(db, sent.key)
             try db.execute(sql: "DELETE FROM usr.cloud_outbox WHERE \(keyFilter)", arguments: sent.key.arguments)
+            if let family = FixedValueCloudRows.Family(rawValue: sent.key.type) {
+                try FixedValueCloudRows.didConfirmDeletion(db, family, sent: sent)
+            } else {
+                try forgetServerRecord(db, sent.key)
+            }
         }
         return true
     }
@@ -176,15 +198,18 @@ enum CloudTransportRows {
         }
     }
 
-    static func isolateUnsupportedHistoryTransportAfterLoss(_ db: Database, zone: String) throws {
+    static func isolateUnsupportedTransportAfterLoss(_ db: Database, zone: String) throws {
+        let known = [ReadingHistoryTransport.RecordType.segment.rawValue, ReadingHistoryTransport.RecordType.clear.rawValue] +
+            FixedValueCloudRows.Family.allCases.map(\.rawValue)
+        let predicate = "zone=? AND record_type NOT IN (" + known.map { _ in "?" }.joined(separator: ",") + ")"
         let rows = try Row.fetchCursor(db, sql: """
             SELECT zone,record_type,record_name,business_id,intent,content_digest,generation,after_type,after_name,after_digest,
                    NULL AS server_state
-              FROM usr.cloud_outbox WHERE zone=?1 AND record_type NOT IN (?2,?3)
+              FROM usr.cloud_outbox WHERE \(predicate)
             UNION ALL
             SELECT zone,record_type,record_name,business_id,NULL,NULL,NULL,NULL,NULL,NULL,server_state
-              FROM usr.cloud_record_state WHERE zone=?1 AND record_type NOT IN (?2,?3)
-            """, arguments: [zone, ReadingHistoryTransport.RecordType.segment.rawValue, ReadingHistoryTransport.RecordType.clear.rawValue])
+              FROM usr.cloud_record_state WHERE \(predicate)
+            """, arguments: StatementArguments(([zone] + known) + ([zone] + known)))
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         while let row = try rows.next() {
@@ -256,9 +281,10 @@ enum CloudAccountZoneRecovery {
             return .reset
         case .confirmedUnexpectedAbsence:
             guard previous != .needsCreation else { return .needsCreation }
-            try CloudTransportRows.isolateUnsupportedHistoryTransportAfterLoss(db, zone: zone)
+            try CloudTransportRows.isolateUnsupportedTransportAfterLoss(db, zone: zone)
             try CloudTransportRows.changeZoneAfterLoss(db, zone: zone, to: .needsCreation)
             try ReadingHistoryTransport.rebuildOutbox(db, scope: scope)
+            try FixedValueCloudRows.rebuildOutbox(db)
             return .needsCreation
         }
     }
@@ -281,10 +307,7 @@ enum CloudAccountZoneRecovery {
         try history.settle(db, scope: scope)
         guard try UserValueRows.canReclaimCoverAssets(db) else { return }
         for asset in assets {
-            try db.execute(sql: """
-                DELETE FROM usr.cover_asset WHERE asset_id=? AND NOT EXISTS(
-                    SELECT 1 FROM usr.cover_candidate c WHERE c.asset_id=cover_asset.asset_id)
-                """, arguments: [asset])
+            try UserValueRows.removeUnreferencedCover(db, id: asset)
         }
     }
 }
@@ -319,8 +342,34 @@ actor CloudCallbackJournal {
         return try session.readCloudChanges(lease) { try CloudTransportRows.checkpoint($0, zone: ReadingHistoryTransport.zone) }
     }
 
-    func persistCheckpoint(_ bytes: Data) throws {
-        try recordCallback(whileCreating: { () }) { try CloudTransportRows.storeCheckpoint($0, zone: ReadingHistoryTransport.zone, bytes: bytes) }
+    /// The future engine owner may supply a watermark only for a durable
+    /// checkpoint covering a completed own-zone fetch begun at that floor.
+    func persistCheckpoint(_ bytes: Data, confirmedOwnZoneThrough generation: Int64? = nil) throws {
+        try recordCallback(whileCreating: { () }) { db in
+            try CloudTransportRows.storeCheckpoint(db, zone: ReadingHistoryTransport.zone, bytes: bytes)
+            if let generation { try FixedValueCloudRows.expireReceipts(db, through: generation) }
+        }
+    }
+
+    func ownZoneFetchFloor() throws -> Int64 {
+        guard !failed else { throw Failure.restartRequired }
+        return try session.readCloudChanges(lease) { try CloudTransportRows.storedGeneration($0) ?? 0 }
+    }
+
+    func prepareFixedValueChange(_ family: FixedValueCloudRows.Family, id: String) throws -> FixedValueCloudRows.Prepared? {
+        try recordCallback(whileCreating: { nil }) { try FixedValueCloudRows.prepare($0, family, id: id) }
+    }
+
+    // Input contains only deletions whose complete zone ID SDK routing has
+    // already checked. The writer classifies X2, verifies current evidence
+    // and applies each removal without handing a decision back across await.
+    func applyFetchedFixedValueDeletions(_ family: FixedValueCloudRows.Family, names: [String]) throws -> [FixedValueCloudRows.DeleteDecision] {
+        try recordCallback(whileCreating: {
+            guard names.isEmpty else { throw Failure.restartRequired }
+            return []
+        }) { db in
+            try names.map { try FixedValueCloudRows.applyDeletion(db, family, name: $0) }
+        }
     }
 
     func prepareHistoryChange(type: ReadingHistoryTransport.RecordType, id: String) throws -> PreparedHistoryChange? {

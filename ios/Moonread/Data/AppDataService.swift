@@ -489,7 +489,8 @@ actor AppDataService {
             try authorization(body.sha)
             try ReaderIndex.validateChapterCorrection(db, body: body, offset: offset)
             let value = ChapterValue(content_key: body.sha, offset: offset, title: title.trimmingCharacters(in: .whitespaces), level: level, excluded: excluded)
-            try UserValueRows.put(db, key: .init("chapter/\(body.sha)/\(offset)"), value: UserSyncJSON.encode(value), device: userDevice, now: userValueClock)
+            try UserValueRows.put(db, key: .init("chapter/\(body.sha)/\(offset)"), value: UserSyncJSON.encode(value), device: userDevice, now: userValueClock,
+                                  scope: index.lease.scope)
         }
         dataChanged()
     }
@@ -502,7 +503,7 @@ actor AppDataService {
         try index.session.writeUsers(index.lease) { db in
             let body = try ReaderIndex.body(db, id: id, scope: index.lease.scope.key)
             try authorization(body.sha)
-            try UserValueRows.retractChapters(db, book: body.sha, device: userDevice, now: userValueClock)
+            try UserValueRows.retractChapters(db, book: body.sha, device: userDevice, now: userValueClock, scope: index.lease.scope)
         }
         dataChanged()
     }

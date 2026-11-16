@@ -133,7 +133,7 @@ extension AppDataService {
             let sha = try parseSha256(value: raw.sha), canonical = try normalizeSourceDecoding(decoding: selection)
             let value = try UserSyncJSON.encode(SourceDecodingValue(decoding: canonical))
             try core.session.writeUsers(core.lease) {
-                try UserValueRows.put($0, key: .init("source-decoding/" + sha), value: value, device: userDevice, now: userValueClock)
+                try UserValueRows.put($0, key: .init("source-decoding/" + sha), value: value, device: userDevice, now: userValueClock, scope: core.lease.scope)
             }
             dataChanged()
         }

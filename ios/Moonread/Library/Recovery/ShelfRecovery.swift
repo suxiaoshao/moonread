@@ -93,7 +93,8 @@ extension AppDataService {
                           try shelfBindings().scopes[scope]?.bindings[id] == shelf.id else { continue }
                     if try index.session.writeUsers(index.lease, { db in
                         guard try UserValueRows.shelfReferences(db, id: id).first?.value != value else { return false }
-                        try UserValueRows.put(db, key: .init(key), value: UserSyncJSON.encode(value), device: userDevice, now: userValueClock)
+                        try UserValueRows.put(db, key: .init(key), value: UserSyncJSON.encode(value), device: userDevice, now: userValueClock,
+                                              scope: index.lease.scope)
                         return true
                     }) {
                         changed = true

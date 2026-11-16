@@ -135,22 +135,27 @@ enum UserValueRows {
     }
 
     @discardableResult
-    static func put(_ db: Database, key: Key, value: String, device: String, now: Int64) throws -> StoredValue {
+    static func put(_ db: Database, key: Key, value: String, device: String, now: Int64, scope: DataScope = .local) throws -> StoredValue {
         try requireReadable(db, key)
         let candidates = try candidates(db, key)
         let latest = CurrentUserRows.winner(candidates).map { $0["updated_ms"] as Int64 } ?? 0
-        let head = try putLocal(db, key: key, value: value, device: device, now: now, latest: latest)
+        let head = try putLocal(db, key: key, value: value, device: device, now: now, latest: latest, scope: scope)
         try key.settle(db)
         return head
     }
 
     @discardableResult
-    private static func putLocal(_ db: Database, key: Key, value: String, device: String, now: Int64, latest: Int64) throws -> StoredValue {
+    private static func putLocal(_ db: Database, key: Key, value: String, device: String, now: Int64, latest: Int64,
+                                 scope: DataScope) throws -> StoredValue {
         guard latest < Int64.max else { throw UserSyncCompatibilityError() }
         try UserSyncJSON.validateValue(value, key: key.logical)
         let head = StoredValue(updated: max(now,latest + 1), token: UUID().uuidString, value: value)
         let fields = try body(key, value: value) { try assetReference(db, $0) }
+        let family = scope == .local ? nil : FixedValueCloudRows.Family(key.kind)
+        let id = recordID(logical: key.logical, device: device)
+        let previous = try family.flatMap { try FixedValueCloudRows.currentDigest(db, $0, id: id) }
         try persist(db, key: key, body: fields, head: head, device: device)
+        if let family { try FixedValueCloudRows.enqueueLocalEdit(db, family, id: id, previousDigest: previous) }
         return head
     }
 
@@ -205,7 +210,7 @@ enum UserValueRows {
             SELECT EXISTS(SELECT 1 FROM usr.shelf_reference_candidate WHERE partition=0 AND logical_key=? AND device_id=?
               AND (schema_version<>1 OR reference_version<>1))
             """, arguments: [key.logical,device]) == true { throw UserSyncCompatibilityError() }
-        let record = DataIdentity.id("value", [key.logical,device])
+        let record = recordID(logical: key.logical, device: device)
         let fields: [Field] = [("record_id",record),("partition",0),("schema_version",1),("logical_key",key.logical),
             ("device_id",device),("updated_ms",head.updated),("token",head.token)] + body.fields
         // Only replace this device's prior row, never the competing candidates.
@@ -216,6 +221,10 @@ enum UserValueRows {
         for color in body.colors {
             try insert(db, table: "palette_color", fields: [("partition",0),("candidate_id",record)] + color)
         }
+    }
+
+    static func recordID(logical: String, device: String) -> String {
+        DataIdentity.id("value", [logical, DataIdentity.canonical(device)])
     }
 
     private static func insert(_ db: Database, table: String, fields: [Field]) throws {
@@ -273,9 +282,16 @@ enum UserValueRows {
         try Bool.fetchOne(db, sql: """
             SELECT NOT EXISTS(SELECT 1 FROM usr.quarantined_record
                 WHERE (source_type='UserValue' AND (logical_key IS NULL OR logical_key LIKE '%/cover'))
-                  OR source_type IN ('cover_candidate','CoverCandidate','UserCover'))
+                  OR source_type IN ('cover_candidate','CoverCandidate','UserCover','\(FixedValueCloudRows.Family.cover.rawValue)'))
             AND NOT EXISTS(SELECT 1 FROM usr.cover_candidate WHERE schema_version<>1)
             """) == true
+    }
+
+    static func removeUnreferencedCover(_ db: Database, id: String) throws {
+        try db.execute(sql: """
+            DELETE FROM usr.cover_asset WHERE asset_id=? AND NOT EXISTS(
+               SELECT 1 FROM usr.cover_candidate c WHERE c.asset_id=cover_asset.asset_id)
+            """, arguments: [id])
     }
 
     struct MetadataWrite: Sendable {
@@ -283,7 +299,7 @@ enum UserValueRows {
         let cover: CoverWrite?
     }
 
-    static func putMetadata(_ db: Database, _ writes: [MetadataWrite], device: String, now: Int64) throws {
+    static func putMetadata(_ db: Database, _ writes: [MetadataWrite], device: String, now: Int64, scope: DataScope = .local) throws {
         var books = Set<String>(), keys = Set<String>()
         var fields: [(key: Key, value: String)] = []
         var attached = false
@@ -313,7 +329,7 @@ enum UserValueRows {
         }
         for field in fields {
             try Task.checkCancellation()
-            try putLocal(db, key: field.key, value: field.value, device: device, now: now, latest: clocks[field.key.logical] ?? 0)
+            try putLocal(db, key: field.key, value: field.value, device: device, now: now, latest: clocks[field.key.logical] ?? 0, scope: scope)
         }
         if attached { try LegacyUserImport.reconcileCoverCompleteness(db) }
         for book in books { try CurrentUserRows.settleMetadata(db, book: book) }
@@ -348,7 +364,7 @@ enum UserValueRows {
         return result
     }
 
-    static func retractChapters(_ db: Database, book: String, device: String, now: Int64) throws {
+    static func retractChapters(_ db: Database, book: String, device: String, now: Int64, scope: DataScope = .local) throws {
         let prefix = "chapter/\(DataIdentity.canonical(book))/"
         if try Bool.fetchOne(db, sql: """
             SELECT EXISTS(SELECT 1 FROM usr.quarantined_record WHERE partition=0 AND
@@ -357,7 +373,7 @@ enum UserValueRows {
             """, arguments: [prefix,book]) == true { throw UserSyncCompatibilityError() }
         let keys = try String.fetchAll(db, sql: "SELECT DISTINCT logical_key FROM usr.chapter_override_candidate WHERE partition=0 AND book_key=?",
                                       arguments: [book])
-        for logical in keys { try put(db, key: Key(logical), value: "null", device: device, now: now) }
+        for logical in keys { try put(db, key: Key(logical), value: "null", device: device, now: now, scope: scope) }
     }
 
     static func sourceDecodings(_ db: Database) throws -> SourceDecodingSnapshot {
@@ -416,40 +432,54 @@ enum UserValueRows {
     /// Inverse of the typed column mapping for the portable wire format.
     /// Use candidate clocks/devices and deletion values, never current pointers.
     static func backupValue(_ db: Database, row: Row) throws -> (BackupRecord, Cover?) {
+        try encodedCandidate(db, row: row, forSync: false)
+    }
+
+    static func encodedCandidate(_ db: Database, row: Row, forSync: Bool) throws -> (BackupRecord, Cover?) {
         guard (row["schema_version"] as Int) == 1,
               let kind = UserSyncJSON.kind(row["logical_key"] as String) else { throw ReadingDataError.updateRequired }
         let key: String = row["logical_key"]
+        func encode<T: Encodable>(_ value: T, envelope: Bool = false) throws -> String {
+            guard forSync else { return try UserSyncJSON.encode(value, envelope: envelope) }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.sortedKeys]
+            let json = try String(decoding: encoder.encode(value), as: UTF8.self)
+            return envelope ? try UserSyncJSON.envelope(json) : json
+        }
         var attachment: Cover?
         let value: String
         switch kind {
         case .author, .synopsis, .status:
-            value = try UserSyncJSON.encode(row["value_text"] as String)
+            value = try encode(row["value_text"] as String)
         case .tag:
-            value = try UserSyncJSON.encode(row["tag_text"] as String?)
+            value = try encode(row["tag_text"] as String?)
         case .cover:
             if !(row["is_empty"] as Bool) {
                 guard let id: String = try String.fetchOne(db, sql: "SELECT legacy_cover_id FROM usr.cover_asset WHERE asset_id=?",
                                                           arguments: [row["asset_id"] as String]) else { throw ReadingDataError.missingAsset }
                 attachment = .init(id: id, sha256: row["sha256"], format: row["format"], width: row["width"], height: row["height"])
             }
-            value = try UserSyncJSON.encode(attachment)
+            value = try encode(attachment)
         case .chapter:
             if row["is_retracted"] as Bool { value = "null" }
             else {
                 guard let offset = UInt64(row["offset"] as String) else { throw ReadingDataError.invalid }
-                value = try UserSyncJSON.encode(ChapterValue(content_key: row["book_key"], offset: offset,
+                value = try encode(ChapterValue(content_key: row["book_key"], offset: offset,
                     title: row["title"], level: row["level"], excluded: row["excluded"]))
             }
         case .opened:
-            value = try UserSyncJSON.encode(row["opened_ms"] as Int64)
+            value = try encode(row["opened_ms"] as Int64)
         case .sourceDecoding:
-            value = try UserSyncJSON.encode(SourceDecodingValue(decoding: row["decoding"]))
+            value = try encode(SourceDecodingValue(decoding: row["decoding"]))
         case .palette:
-            value = (row["is_deleted"] as Bool) ? "null" : try UserSyncJSON.encode(palette(db, row: row, partition: row["partition"]))
+            value = (row["is_deleted"] as Bool) ? "null" : try encode(palette(db, row: row, partition: row["partition"]))
+        case .shelfReference where forSync:
+            guard (row["reference_version"] as Int) == 1 else { throw ReadingDataError.updateRequired }
+            value = try encode(ShelfReferenceValue(name: row["name"], locationDescription: row["location_description"]))
         case .position, .shelfReference: throw ReadingDataError.invalid
         }
         let head = StoredValue(updated: row["updated_ms"], token: row["token"], value: value)
-        return try (.init(key: key, device: row["device_id"], payload: UserSyncJSON.encode(head, envelope: true)), attachment)
+        return try (.init(key: key, device: row["device_id"], payload: encode(head, envelope: true)), attachment)
     }
 
 }

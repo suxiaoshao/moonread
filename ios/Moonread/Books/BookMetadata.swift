@@ -108,7 +108,7 @@ extension AppDataService {
         guard readingWriteVersions.permits(admission, lease: index.lease, configuration: userCloudConfigurationRevision, keys: [plan.sha])
         else { throw ReadingDataError.changed }
         try index.session.writeUsers(index.lease) {
-            try UserValueRows.putMetadata($0, [.init(plan: plan, cover: asset)], device: userDevice, now: userValueClock)
+            try UserValueRows.putMetadata($0, [.init(plan: plan, cover: asset)], device: userDevice, now: userValueClock, scope: index.lease.scope)
         }
         publishMetadataCommit([plan])
     }

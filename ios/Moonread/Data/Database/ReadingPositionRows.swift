@@ -242,7 +242,8 @@ enum ReadingPositionRows {
         try settleCurrent(db, book: book)
     }
 
-    static func recordOpened(_ db: Database, book: String, openedAt: Int64, file: String?, device: String, now: Int64, token: String) throws {
+    static func recordOpened(_ db: Database, book: String, openedAt: Int64, file: String?, device: String, now: Int64, token: String,
+                             scope: DataScope = .local) throws {
         guard !token.isEmpty else { throw UserSyncCompatibilityError() }
         let part = try partition(for: book)
         let key = DataIdentity.canonical(book)
@@ -250,7 +251,14 @@ enum ReadingPositionRows {
         let latest = try Int64.fetchOne(db, sql: "SELECT MAX(updated_ms) FROM usr.opened_candidate WHERE partition=? AND book_key=?",
                                         arguments: [part,key])
         let updated = try nextTime(now, after: latest)
+        let syncID: String? = if part == 0 && scope != .local {
+            try String.fetchOne(db, sql: "SELECT record_id FROM usr.opened_candidate WHERE partition=0 AND book_key=? AND device_id=?",
+                                arguments: [key,DataIdentity.canonical(device)]) ??
+                UserValueRows.recordID(logical: "opened/" + key, device: device)
+        } else { nil }
+        let prior = try syncID.flatMap { try FixedValueCloudRows.currentDigest(db, .opened, id: $0) }
         try putOpened(db, book: book, partition: part, device: device, openedAt: openedAt, updated: updated, token: token)
+        if let syncID { try FixedValueCloudRows.enqueueLocalEdit(db, .opened, id: syncID, previousDigest: prior) }
         try recordLocalOpen(db, book: book, file: file)
         try settleCurrent(db, book: book)
     }
@@ -271,6 +279,10 @@ enum ReadingPositionRows {
     static func requirePromotionReadable(_ db: Database, book: String, partition: Int) throws {
         try requireReadable(db, domain: .position, book: book, partition: partition)
         try requireReadable(db, domain: .opened, book: book, partition: partition)
+    }
+
+    static func requireFormalOpenedReadable(_ db: Database, book: String) throws {
+        try requireReadable(db, domain: .opened, book: book, partition: 0)
     }
 
     static func promote(_ db: Database, from pending: String, to formal: String) throws {
@@ -336,7 +348,8 @@ extension ReaderIndex {
         try session.writeUsers(lease) { db in
             let body = try Self.body(db, id: bookID, scope: lease.scope.key)
             try authorize(body.sha)
-            try ReadingPositionRows.recordOpened(db, book: body.sha, openedAt: openedAt, file: file, device: device, now: now, token: token)
+            try ReadingPositionRows.recordOpened(db, book: body.sha, openedAt: openedAt, file: file, device: device, now: now, token: token,
+                                                scope: lease.scope)
         }
     }
 
