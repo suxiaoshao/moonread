@@ -17,10 +17,16 @@ enum AnnotationRows {
             """, arguments: [ReadingPositionRows.partition(for: key),DataIdentity.canonical(key),nil]) == true
     }
 
-    static func snapshot(_ db: Database, key: String, markID: String? = nil, partition supplied: Int? = nil, reducing: Bool = true) throws -> NoteCandidates {
+    static func snapshot(_ db: Database, key: String, markID: String? = nil, partition supplied: Int? = nil, reducing: Bool = true, settled: Bool = false) throws -> NoteCandidates {
         let partition = try supplied ?? ReadingPositionRows.partition(for: key)
         let args: StatementArguments = [partition,DataIdentity.canonical(key),markID.map(DataIdentity.canonical)]
-        let scope = "WHERE c.partition=?1 AND c.book_key=?2 AND (?3 IS NULL OR c.mark_id=?3)"
+        let scope = """
+            WHERE c.partition=?1 AND c.book_key=?2 AND (?3 IS NULL OR c.mark_id=?3)
+            """ + (settled ? """
+                AND EXISTS(SELECT 1 FROM usr.annotation_current_head h
+                    WHERE h.partition=c.partition AND h.book_key=c.book_key
+                      AND h.mark_id=c.mark_id AND h.candidate_id=c.record_id)
+                """ : "")
         let rows = try Row.fetchAll(db, sql: "SELECT c.* FROM usr.annotation_candidate c " + scope, arguments: args)
         func relations(table: String, field: String) throws -> [String: Set<String>] {
             let rows = try Row.fetchAll(db, sql: """

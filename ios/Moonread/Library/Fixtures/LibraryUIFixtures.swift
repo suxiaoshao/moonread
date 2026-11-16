@@ -19,6 +19,20 @@ enum ReaderSmokeFixture {
 
 #if DEBUG
 extension AppDataService {
+    /// Incoming fixtures use the new authority, never the released files.
+    func writeFixtureValue(_ logical: String, value: String, device: String) throws {
+        guard testSession != nil else { throw ReaderError.InvalidSettings }
+        let index = try relationalUserIndex(), now = userValueClock
+        try index.session.writeUsers(index.lease) { db in
+            if logical.hasPrefix("position/") {
+                let position = try UserSyncJSON.decode(PositionValue.self, value, as: UserSyncJSON.position)
+                try ReadingPositionRows.mergeBackup(db, book: position.content_key,
+                    incoming: .init(value: position, updated: now, token: UUID().uuidString, device: device))
+            } else {
+                try UserValueRows.put(db, key: .init(logical), value: value, device: device, now: now)
+            }
+        }
+    }
     /// The cloud scenarios exercise publication timing only, without a real account.
     func prepareOnboardingCloudFixture() async throws {
         guard testSession != nil else { throw LibraryFileError.invalidDestination }
@@ -44,7 +58,7 @@ extension AppDataService {
             file_name: file.lastPathComponent, byte_size: UInt64(text.utf8.count), decoding: "auto")
         let position = PositionValue(content_key: identity.contentSha256,
             offset: UInt64(heading.utf8.count + paragraph.utf8.count * 12), source_hint: hint)
-        try await userStore().put("position/" + identity.contentSha256, value: UserSyncJSON.encode(position), device: "ui-fixture")
+        try writeFixtureValue("position/" + identity.contentSha256, value: UserSyncJSON.encode(position), device: "ui-fixture")
         try refreshLibraryShelf("builtin")
     }
 
@@ -67,7 +81,6 @@ extension AppDataService {
         let file = root.appendingPathComponent("复原样本.txt")
         try ("第一話 星光来信\n" + String(repeating: "窗前的灯照着回家的路，这是原创的恢复验证正文。\n", count: 60)).write(to: file, atomically: true, encoding: .utf8)
         let identity = try SourceIdentityProbe().identify(filePath: file.path, decoding: "auto")
-        let store = try await userStore()
         let index = try relationalUserIndex()
         try index.session.writeUsers(index.lease) { db in
             try UserValueRows.put(db, key: .init("shelf-reference/" + testSession),
@@ -75,8 +88,8 @@ extension AppDataService {
                 device: "recovery-fixture", now: userValueClock)
         }
         let position = PositionValue(content_key: identity.contentSha256, offset: identity.utf8Bytes / 2, source_hint: nil)
-        try await store.put("position/" + identity.contentSha256, value: UserSyncJSON.encode(position), device: "recovery-fixture")
-        try await store.put("metadata/" + identity.contentSha256 + "/tag-restored", value: UserSyncJSON.encode("复原标签"), device: "recovery-fixture")
+        try writeFixtureValue("position/" + identity.contentSha256, value: UserSyncJSON.encode(position), device: "recovery-fixture")
+        try writeFixtureValue("metadata/" + identity.contentSha256 + "/tag-restored", value: UserSyncJSON.encode("复原标签"), device: "recovery-fixture")
         sourceDefaults.set(true, forKey: marker)
     }
     func shelfRecoveryFixtureURL(_ reference: String) -> URL? {
@@ -107,11 +120,11 @@ extension AppDataService {
             try await saveMetadata(base: base, edited: edited)
             if ProcessInfo.processInfo.arguments.contains("--ui-test-data-management") {
                 let chapter = ChapterValue(content_key: identity.contentSha256, offset: 0, title: "备份目录", level: 1, excluded: false)
-                try await userStore().put("chapter/" + identity.contentSha256 + "/0", value: UserSyncJSON.encode(chapter), device: "data-management-fixture")
+                try writeFixtureValue("chapter/" + identity.contentSha256 + "/0", value: UserSyncJSON.encode(chapter), device: "data-management-fixture")
             }
             if ProcessInfo.processInfo.arguments.contains("--ui-test-smoke-restored") || ProcessInfo.processInfo.arguments.contains("--ui-test-data-management") {
                 let position = PositionValue(content_key: identity.contentSha256, offset: ProcessInfo.processInfo.arguments.contains("--ui-test-data-management") ? identity.utf8Bytes / 2 : 120, source_hint: nil)
-                try await userStore().put("position/" + identity.contentSha256, value: UserSyncJSON.encode(position), device: "smoke-fixture")
+                try writeFixtureValue("position/" + identity.contentSha256, value: UserSyncJSON.encode(position), device: "smoke-fixture")
             }
         }
         let external = FileManager.default.temporaryDirectory.appendingPathComponent("Moonread-Smoke-External-" + testSession)
@@ -178,8 +191,12 @@ extension AppDataService {
             let baseline = try await prepareAnnotation(book.id, start: range.startUtf8, end: range.endUtf8)
             _ = try await saveNote(baseline, text: "设备甲的评论")
             if ProcessInfo.processInfo.arguments.contains("--ui-test-annotation-delete-conflict") {
-                let key = try userKey(book.id).storageKey
-                try await userStore(for: key).changeDeletion(baseline.id, baseline: baseline.baselines[baseline.id] ?? [], deleted: true, restoring: nil)
+                let key = try userKey(book.id).storageKey, index = try relationalUserIndex()
+                try index.session.writeUsers(index.lease) { db in
+                    let heads = baseline.baselines[baseline.id] ?? []
+                    _ = try AnnotationRows.append(db, key: key, markID: baseline.id, baseline: heads,
+                                                  content: nil, bookmark: false)
+                }
             } else {
                 _ = try await saveNote(baseline, text: "设备乙的评论")
             }
@@ -199,7 +216,7 @@ extension AppDataService {
         try await savePosition(bookID: prepared.id, offset: local.offsetUtf8)
         let target = try await location(prepared.id, percentage: 75)
         let value = PositionValue(content_key: actual.readingKey.storageKey, offset: target.offsetUtf8)
-        try await userStore().put("position/" + actual.readingKey.storageKey, value: UserSyncJSON.encode(value), device: "synthetic-remote")
+        try writeFixtureValue("position/" + actual.readingKey.storageKey, value: UserSyncJSON.encode(value), device: "synthetic-remote")
         sourceDefaults.set(true, forKey: marker)
         withExtendedLifetime(prepared) {}
     }

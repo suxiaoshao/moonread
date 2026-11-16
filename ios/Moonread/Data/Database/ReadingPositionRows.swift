@@ -166,7 +166,7 @@ enum ReadingPositionRows {
             }
     }
 
-    private static func decodedPosition(_ row: Row) throws -> Position {
+    static func decodedPosition(_ row: Row) throws -> Position {
         guard let offset = UInt64(row["offset"] as String) else { throw UserSyncCompatibilityError() }
         let token: String = row["token"]
         guard !token.isEmpty else { throw UserSyncCompatibilityError() }

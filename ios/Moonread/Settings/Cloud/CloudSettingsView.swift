@@ -1,5 +1,3 @@
-import CloudKit
-import CoreData
 import SwiftUI
 
 struct CloudSettingsView: View {
@@ -22,14 +20,7 @@ struct CloudSettingsView: View {
                                 HStack { Text("上次同步"); Text(date, style: .relative) }.font(.caption).foregroundStyle(Color(uiColor: theme.secondary))
                             }
                             if let message = cloud.status.message { Text(verbatim: message).font(.footnote).foregroundStyle(Color(uiColor: theme.secondary)) }
-                            if !cloud.status.enabled {
-                                if cloud.status.accountToConfirm != nil {
-                                    Button("确认同步到此账户") { cloud.requestConfirmation() }
-                                        .buttonStyle(ThemedProminentButtonStyle()).disabled(cloud.busy).accessibilityIdentifier("confirmCloudAccount")
-                                } else if cloud.status.requested {
-                                    Button("重试阅读数据同步") { cloud.retry() }.buttonStyle(ThemedProminentButtonStyle()).disabled(cloud.busy)
-                                }
-                            }
+
                         }
                     }
                 }.padding(18).frame(maxWidth: .infinity, alignment: .leading)
@@ -72,10 +63,6 @@ struct CloudSettingsView: View {
         }
         .themedPage().navigationTitle("iCloud").navigationBarTitleDisplayMode(.inline)
         .task { await cloud.updateStatus() }
-        .alert("是否将本机阅读数据同步到此账户？", isPresented: Binding(get: { cloud.confirmationAccount != nil }, set: { if !$0 { cloud.confirmationAccount = nil } }), presenting: cloud.confirmationAccount) { account in
-            Button("同步到此账户") { cloud.confirmAccount(account) }.accessibilityIdentifier("approveCloudAccount")
-            Button("取消", role: .cancel) { cloud.confirmationAccount = nil }
-        } message: { _ in Text("仅同步当前本机仍存在的阅读数据，不移动小说文件。退出账户后的数据保留遵循系统规则。") }
         .alert("替换同名文件？", isPresented: Binding(get: { replacing != nil }, set: { if !$0 { replacing = nil } }), presenting: replacing) { path in
             Button("替换", role: .destructive) { replacing = nil; cloud.replaceCloudFile(path) }
             Button("取消", role: .cancel) { replacing = nil }

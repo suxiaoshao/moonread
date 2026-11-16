@@ -3,12 +3,10 @@ import CryptoKit
 
 extension AppDataService {
     func metadataImportScope() -> String {
-        switch userCloudMode {
-        case .local: return "local"
-        case .cloud(let account):
-            let digest = SHA256.hash(data: Data(account.recordName.utf8))
-            return "cloud:" + digest.map { String(format: "%02x", $0) }.joined()
-        }
+        // Preserve the old per-owner draft namespace while the last
+        // confirmed account's relational store is used offline.
+        guard let owner = userCloudOwner() else { return "local" }
+        return "cloud:" + SHA256.hash(data: Data(owner.utf8)).map { String(format: "%02x", $0) }.joined()
     }
     func exportMetadata(shelfID: String?, format: MetadataFormat, progress: @escaping @Sendable (Int, Int) async -> Void = { _, _ in }) async throws -> MetadataExportResult {
         try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }

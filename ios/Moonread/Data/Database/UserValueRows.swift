@@ -6,7 +6,7 @@ import GRDB
 enum UserValueRows {
     typealias Field = (String, (any DatabaseValueConvertible)?)
 
-    struct Cover: Decodable {
+    struct Cover: Codable {
         let id, sha256, format: String
         let width, height: UInt32
         enum CodingKeys: String, CodingKey { case id, sha256, format = "extension", width, height }
@@ -384,19 +384,62 @@ enum UserValueRows {
               ON p.partition=v.source_partition AND p.record_id=v.candidate_id
             WHERE p.is_deleted=0
             """).map { row in
-                let colors = try Row.fetchAll(db, sql: """
-                    SELECT contrast_kind,color_role,rgb FROM usr.palette_color WHERE partition=0 AND candidate_id=?
-                    """, arguments: [row["record_id"] as String])
-                var normal: [String: UInt32] = [:], high: [String: UInt32] = [:]
-                for color in colors {
-                    let role: String = color["color_role"], rgb: UInt32 = color["rgb"]
-                    if (color["contrast_kind"] as Int) == 0 { normal[role] = rgb } else { high[role] = rgb }
-                }
-                let palette = Palette(id: row["payload_palette_id"], name: row["name"], appearance: row["appearance"],
-                                      custom: row["custom"], colors: normal, highContrast: high)
-                return try decodeThemePalette(json: UserSyncJSON.encode(palette))
+                try decodeThemePalette(json: UserSyncJSON.encode(palette(db, row: row, partition: 0)))
             }
+
     }
+    private static func palette(_ db: Database, row: Row, partition: Int) throws -> Palette {
+        let colors = try Row.fetchAll(db, sql: """
+            SELECT contrast_kind,color_role,rgb FROM usr.palette_color WHERE partition=? AND candidate_id=?
+            """, arguments: [partition, row["record_id"] as String])
+        var normal: [String: UInt32] = [:], high: [String: UInt32] = [:]
+        for color in colors {
+            let role: String = color["color_role"], rgb: UInt32 = color["rgb"]
+            if (color["contrast_kind"] as Int) == 0 { normal[role] = rgb } else { high[role] = rgb }
+        }
+        return Palette(id: row["payload_palette_id"], name: row["name"], appearance: row["appearance"],
+                       custom: row["custom"], colors: normal, highContrast: high)
+    }
+
+    /// Inverse of the typed column mapping for the portable wire format.
+    /// Use candidate clocks/devices and deletion values, never current pointers.
+    static func backupValue(_ db: Database, row: Row) throws -> (BackupRecord, Cover?) {
+        guard (row["schema_version"] as Int) == 1,
+              let kind = UserSyncJSON.kind(row["logical_key"] as String) else { throw ReadingDataError.updateRequired }
+        let key: String = row["logical_key"]
+        var attachment: Cover?
+        let value: String
+        switch kind {
+        case .author, .synopsis, .status:
+            value = try UserSyncJSON.encode(row["value_text"] as String)
+        case .tag:
+            value = try UserSyncJSON.encode(row["tag_text"] as String?)
+        case .cover:
+            if !(row["is_empty"] as Bool) {
+                guard let id: String = try String.fetchOne(db, sql: "SELECT legacy_cover_id FROM usr.cover_asset WHERE asset_id=?",
+                                                          arguments: [row["asset_id"] as String]) else { throw ReadingDataError.missingAsset }
+                attachment = .init(id: id, sha256: row["sha256"], format: row["format"], width: row["width"], height: row["height"])
+            }
+            value = try UserSyncJSON.encode(attachment)
+        case .chapter:
+            if row["is_retracted"] as Bool { value = "null" }
+            else {
+                guard let offset = UInt64(row["offset"] as String) else { throw ReadingDataError.invalid }
+                value = try UserSyncJSON.encode(ChapterValue(content_key: row["book_key"], offset: offset,
+                    title: row["title"], level: row["level"], excluded: row["excluded"]))
+            }
+        case .opened:
+            value = try UserSyncJSON.encode(row["opened_ms"] as Int64)
+        case .sourceDecoding:
+            value = try UserSyncJSON.encode(SourceDecodingValue(decoding: row["decoding"]))
+        case .palette:
+            value = (row["is_deleted"] as Bool) ? "null" : try UserSyncJSON.encode(palette(db, row: row, partition: row["partition"]))
+        case .position, .shelfReference: throw ReadingDataError.invalid
+        }
+        let head = StoredValue(updated: row["updated_ms"], token: row["token"], value: value)
+        return try (.init(key: key, device: row["device_id"], payload: UserSyncJSON.encode(head, envelope: true)), attachment)
+    }
+
 }
 
 extension ReaderIndex {

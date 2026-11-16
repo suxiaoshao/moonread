@@ -11,6 +11,18 @@ extension ReadingKey {
     }
 }
 
+enum UserAuthorityPreparationError: LocalizedError {
+    case ownership, unreadableSource, verification
+
+    var errorDescription: String? {
+        switch self {
+        case .ownership: String(localized: "无法确认旧阅读数据的归属。请保留原数据，并在恢复原有账户归属后重试。")
+        case .unreadableSource: String(localized: "暂时无法读取旧阅读数据。请确认本机数据可访问后重试。")
+        case .verification: String(localized: "未能完成阅读数据迁入或校验。请检查可用存储空间后重试。")
+        }
+    }
+}
+
 extension AppDataService {
     var userValueClock: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
     /// Attribute released stores using the owner's prior explicit consent;
@@ -30,18 +42,22 @@ extension AppDataService {
     /// The relational writer and fixed reads must use this prepared capability.
     func relationalUserIndex() throws -> ReaderIndex {
         let index = try indexStore()
-        if case .cloud(let account) = userCloudMode {
-            let confirmed = try DataScope.confirmed(container: CloudConfiguration.containerID, environment: .production,
-                                                    recordName: account.recordName)
-            guard index.lease.scope == confirmed else { throw DataV2Error.leaseExpired }
-        }
         try index.session.prepareUsers(index.lease) {
             let source = try publishedUserSource()
             guard source.scope == index.lease.scope else { return nil }
-            let deviceState = try LegacyUserSnapshot.DeviceState(defaults: sourceDefaults,
-                                                                confirmedLegacyResumeScope: source.resumeNamespace)
-            let snapshot = try LegacyUserSnapshot.open(directory: dataDirectoryURL(), scope: source.scope,
-                                                       deviceState: deviceState)
+            let deviceState: LegacyUserSnapshot.DeviceState
+            let snapshot: LegacyUserSnapshot
+            do {
+                #if DEBUG
+                if testSession != nil, ProcessInfo.processInfo.arguments.contains("--ui-test-migration-read-failure"),
+                   !injectedLegacyReadFailure {
+                    injectedLegacyReadFailure = true
+                    throw CocoaError(.fileReadNoPermission)
+                }
+                #endif
+                deviceState = try .init(defaults: sourceDefaults, confirmedLegacyResumeScope: source.resumeNamespace)
+                snapshot = try LegacyUserSnapshot.open(directory: dataDirectoryURL(), scope: source.scope, deviceState: deviceState)
+            } catch { throw UserAuthorityPreparationError.unreadableSource }
             if snapshot.formal == nil, snapshot.pending == nil,
                deviceState.hidden.isEmpty, deviceState.preferred.isEmpty, deviceState.resume.isEmpty { return nil }
             return snapshot
@@ -49,125 +65,17 @@ extension AppDataService {
         return index
     }
 
-    func userStore(pending: Bool = false, diagnostic: ReaderOpenTrace? = nil) async throws -> UserDataStore {
-        let label = pending ? "pendingStore" : "formalStore"
-        diagnostic?.mark(label + ".service.begin")
-        defer { diagnostic?.mark(label + ".service.return") }
-        let initialization: UserStoreInitialization
-        if let cached = pending ? pendingUserStoreTask : userStoreTask { initialization = cached }
-        else {
-            let name = userDirectoryName, factory = userStoreFactory
-            let cloud = !pending && userCloudMode.isCloud
-            let filename = pending ? "pending-users.store" : "user-data.store"
-            let task = Task.detached {
-                diagnostic?.mark(label + ".initialize.begin")
-                defer { diagnostic?.mark(label + ".initialize.return") }
-                if let factory { return try await factory(filename, cloud) }
-                let directory = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
-                    .appendingPathComponent(name, isDirectory: true)
-                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                let configuration = ModelConfiguration("UserData", schema: UserDataStore.schema,
-                    url: directory.appendingPathComponent(filename), cloudKitDatabase: cloud ? .private(CloudConfiguration.containerID) : .none)
-                let container = try ModelContainer(for: UserDataStore.schema, configurations: [configuration])
-                return UserDataStore(modelContainer: container)
-            }
-            initialization = UserStoreInitialization(task: task)
-            if pending { pendingUserStoreTask = initialization } else { userStoreTask = initialization }
-        }
-        do {
-            diagnostic?.mark(label + ".initialize.queued")
-            let value = try await initialization.task.value
-            diagnostic?.mark(label + ".initialize.resumed")
-            return value
-        }
-        catch {
-            // An old waiter may resume after configuration has replaced its task.
-            if pending, pendingUserStoreTask?.id == initialization.id { pendingUserStoreTask = nil }
-            if !pending, userStoreTask?.id == initialization.id { userStoreTask = nil }
-            throw error
-        }
-    }
-    func userStore(for key: String) async throws -> UserDataStore {
-        try await userStore(for: parseReadingKey(value: key))
-    }
-    func userStore(for key: ReadingKey) async throws -> UserDataStore {
-        switch key {
-        case .pending: try await userStore(pending: true)
-        case .formal: try await userStore()
-        }
-    }
-    func configureUserCloud(_ configuration: CloudConfiguration) async throws {
-        let next: UserCloudStoreMode
-        switch configuration {
-        case .local: next = .local
-        case .cloud(let account, _): next = .cloud(account)
-        }
-        if userCloudMode != next {
-            let capture = try await ReadingActivityRecorder.pauseForMutation(service: self)
-            do {
-                if let batch = capture.batch { try await saveReadingSegments(batch) }
-                try await applyUserCloudConfiguration(configuration, afterCapture: capture)
-            } catch {
-                await ReadingActivityRecorder.finishMutation(capture.id, preferences: nil)
-                throw error
-            }
-        } else {
-            try await applyUserCloudConfiguration(configuration, afterCapture: nil)
-        }
+    /// The root cannot mount normal reading, settings or import views before
+    /// both authorities have prepared successfully. Retrying reuses the
+    /// ordinary transaction and completion marker, never resets either store.
+    func prepareUserAuthorityForStartup() throws {
+        try Task.checkCancellation()
+        do { _ = try relationalUserIndex() }
+        catch let error as UserAuthorityPreparationError { throw error }
+        catch DataV2Error.invalidOwnerState { throw UserAuthorityPreparationError.ownership }
+        catch { throw UserAuthorityPreparationError.verification }
     }
 
-    private func applyUserCloudConfiguration(_ configuration: CloudConfiguration,
-                                             afterCapture: ReadingActivityRecorder.Mutation?) async throws {
-        await acquireUserDataOperation()
-        var holdsOperation = true
-        defer { if holdsOperation { releaseUserDataOperation() } }
-        let mode: UserCloudStoreMode
-        switch configuration {
-        case .local: mode = .local
-        case .cloud(let verified, let consent):
-            let account = verified.recordName
-            if let previous = sourceDefaults.string(forKey: "Moonread.userOwner"), previous != account,
-               case .currentOwner = consent { throw ReaderError.CloudAccountChanged }
-            // Verified user consent remains valid even if initialization fails.
-            if sourceDefaults.string(forKey: "Moonread.userOwner") == nil { try? adoptLocalShelfBindings(account: account) }
-            sourceDefaults.set(account, forKey: "Moonread.userOwner")
-            mode = .cloud(verified)
-        }
-        if userCloudMode != mode {
-            let prior = userCloudConfigurationRevision
-            cancelRecentRestoration()
-            userStoreTask = nil; userCloudMode = mode
-            userCloudConfigurationRevision = UUID()
-            promotedUserKeys.removeAll(); pendingPromotionIDs.removeAll(); recoveredImports = false
-            resetSystemReadingCatalog()
-            NotificationCenter.default.post(name: .readingContinuationInvalidated, object: self)
-            NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
-            let revision = userCloudConfigurationRevision
-            // The configuration switch is serialized with deletion, not store
-            // bootstrap: a newer configuration must be able to replace a stuck
-            // initialization (the existing revision guard rejects its late result).
-            var replacement: ReadingWriteAdmission?
-            if let capture = afterCapture, let admission = capture.admission, let book = capture.lease,
-               let index = try? relationalUserIndex(), let key = try? index.resolveBookIdentity(bookId: book.id).key,
-               readingWriteVersions.permits(admission, lease: index.lease, configuration: prior,
-                   keys: [ReadingKey.pending(bookId: book.id).storageKey,key.storageKey]) {
-                replacement = readingWriteAdmission(index.lease)
-            }
-            releaseUserDataOperation(); holdsOperation = false
-            if let afterCapture {
-                await ReadingActivityRecorder.finishMutation(afterCapture.id, preferences: nil, changedService: self, replacement: replacement)
-            }
-            do { _ = try await userStore() }
-            catch {
-                if userCloudConfigurationRevision == revision { userCloudMode = .local }
-                throw error
-            }
-            guard userCloudConfigurationRevision == revision else { return }
-            startUserRecovery(); scheduleRecentRestoration(); resumeSystemReadingPublication()
-        } else if let afterCapture {
-            await ReadingActivityRecorder.finishMutation(afterCapture.id, preferences: nil)
-        }
-    }
     func startUserRecovery() {
         guard !recoveredImports, recoveryTask == nil else { return }
         recoveryTask = Task { [weak self] in await self?.recoverUserImports() }
@@ -197,11 +105,6 @@ extension AppDataService {
             }
             try reclaimImports(index); recoveredImports = true
         } catch { /* No unverified completed reading alias is reclaimed. */ }
-    }
-    func receivedUserImport() async {
-        defer { scheduleRecentRestoration() }
-        if let store = try? await userStore() { try? await store.importedChanges() }
-        if let store = try? await userStore(pending: true) { try? await store.importedChanges() }
     }
     var userDevice: String {
         if let id = sourceDefaults.string(forKey: "Moonread.userDevice") { return id }
@@ -262,17 +165,11 @@ extension AppDataService {
     func readingCompatibilityNotice(_ id: String) async throws -> String? {
         let identity = try userKey(id)
         let index = try relationalUserIndex()
-        let isolatedAnnotation = try index.session.readUsers(index.lease) { db in
-            if try AnnotationRows.hasUnreadable(db, key: identity.storageKey) { return true }
-            if case .formal = identity {
-                return try AnnotationRows.hasUnreadable(db, key: ReadingKey.pending(bookId: id).storageKey)
-            }
-            return false
+        let keys = try UserSyncJSON.encode([identity.storageKey, ReadingKey.pending(bookId: id).storageKey])
+        let blocked = try index.session.readUsers(index.lease) { db in
+            try RelationalReadingData.requiresReaderNotice(db, keys: keys)
         }
-        if isolatedAnnotation { return UserSyncCompatibilityError().localizedDescription }
-        if let notice = try await userStore(for: identity).compatibilityNotice(key: identity.storageKey) { return notice }
-        if case .formal = identity { return try await userStore(pending: true).compatibilityNotice(key: serializeReadingKey(key: .pending(bookId: id))) }
-        return nil
+        return blocked ? UserSyncCompatibilityError().localizedDescription : nil
     }
     /// Separate LWW fact: never manufactures a reading position or activity.
     func recordBookOpened(_ id: String, at milliseconds: Int64, admission offered: ReadingWriteAdmission? = nil) async throws {

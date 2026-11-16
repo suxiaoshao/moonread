@@ -52,13 +52,8 @@ extension AppDataService {
     }
     func readingDataInventory() async throws -> ReadingDataInventory {
         let configuration = userCloudConfigurationRevision
-        let store = try await userStore()
-        var value = try await store.readingDataInventory()
-        let pending = try await userStore(pending: true).readingDataInventory()
-        value.pending += pending.pending
-        value.unsupported += pending.unsupported
-        value.diagnostics += pending.diagnostics
-        let core = try indexStore()
+        let core = try relationalUserIndex()
+        var value = try await core.session.readUsersForPublication(core.lease) { try RelationalReadingData.inventory($0) }
         for i in value.items.indices {
             let key = value.items[i].id
             do {
@@ -161,8 +156,8 @@ extension AppDataService {
     }
     func continuePendingReadingData(_ key: String) async throws {
         let item = try pendingReadingData(key)
-        try await userStore(pending: true).requirePendingReadable(key: key)
-        try await userStore().requirePendingReadable(key: key)
+        let index = try relationalUserIndex()
+        try index.session.readUsers(index.lease) { try RelationalReadingData.requirePendingReadable($0, key: key) }
         guard item.canResume else { throw ReadingDataError.changed }
         try resumeImport(item.bookID)
     }
@@ -219,17 +214,10 @@ extension AppDataService {
     private func snapshotReadingDataForBackup(directory: URL, writerVersion: String) async throws -> BackupManifest {
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
-        guard try await userStore(pending: true).pendingKeys().isEmpty else { throw ReadingDataError.pendingIdentity }
-        var manifest = try await userStore().snapshotForBackup(directory: directory, writerVersion: writerVersion, includingHistory: false)
         let index = try relationalUserIndex()
-        let history = try index.session.readUsers(index.lease) { try ReadingHistoryBackup.export($0, directory: directory) }
-        manifest.formatVersion = 2
-        manifest.requiredCapabilities.append("reading-segments-v1")
-        manifest.members += history
-        guard manifest.members.reduce(UInt64(0), { $0 + $1.size }) <= BackupRows.maxCommitBytes else {
-            throw ReadingDataError.tooLarge
+        return try await index.session.readUsersForPublication(index.lease) {
+            try RelationalReadingData.export($0, directory: directory, writerVersion: writerVersion)
         }
-        return manifest
     }
     func readingBackupShareCopy(_ url: URL) async throws -> LibraryExport {
         let source = url.deletingLastPathComponent()

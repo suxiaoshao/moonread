@@ -106,6 +106,9 @@ extension AppDataService {
         .init(systemSearchEnabled: sourceDefaults.object(forKey: "Moonread.systemSearch.v1") as? Bool ?? true,
               excludedShelfIDs: sourceDefaults.stringArray(forKey: "Moonread.systemSearchExcludedShelves.v1") ?? [])
     }
+    func refreshOfflineSystemReadingPolicy() {
+        setSystemReadingAccountPending(cloudSyncRequested() && userCloudOwner() != nil)
+    }
     func setSystemReadingAccountPending(_ pending: Bool) {
         guard systemCatalog?.accountPending != pending else { return }
         systemCatalog?.accountPending = pending

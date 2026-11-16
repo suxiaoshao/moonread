@@ -87,7 +87,7 @@ extension AppDataService {
                         // Same persisted candidate path as sync, without changing
                         // this device's just-written local resume baseline.
                         let json = String(decoding: try JSONEncoder().encode(winner), as: UTF8.self)
-                        try await userStore().put("position/" + book.readingKey.storageKey, value: json, device: "store-shot-other-device")
+                        try writeFixtureValue("position/" + book.readingKey.storageKey, value: json, device: "store-shot-other-device")
                         dataChanged()
                     }
                     if scene == .statistics { try await createStoreShotStatistics(bookID: book.id) }

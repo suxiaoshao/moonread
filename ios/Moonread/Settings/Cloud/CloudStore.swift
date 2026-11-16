@@ -1,12 +1,9 @@
-import CloudKit
-import CoreData
 import SwiftUI
 
 @MainActor @Observable
 final class CloudStore {
     private let coordinator: CloudSyncCoordinator
     var status = CloudSyncStatus()
-    var confirmationAccount: String?
     init(coordinator: CloudSyncCoordinator = .shared) { self.coordinator = coordinator }
     var busy = false
     var error: String?
@@ -31,7 +28,6 @@ final class CloudStore {
     func refresh() async { await coordinator.resume(); await updateStatus() }
     func updateStatus() async {
         status = await coordinator.currentStatus()
-        if let account = confirmationAccount, status.accountToConfirm != account { confirmationAccount = nil }
         libraryStatus = await AppDataService.shared.cloudLibraryStatus()
         conflictPath = await AppDataService.shared.cloudConflictPath()
     }
@@ -61,22 +57,7 @@ final class CloudStore {
             defer { busy = false }
             await coordinator.resume()
             await updateStatus()
-            if enabled { confirmationAccount = status.accountToConfirm }
         }
     }
     func identityChanged() async { await coordinator.identityChanged(); await updateStatus() }
-    func requestConfirmation() { confirmationAccount = status.accountToConfirm }
-    func confirmAccount(_ account: String) {
-        guard !busy else { return }; busy = true; confirmationAccount = nil
-        Task {
-            defer { busy = false }
-            await coordinator.confirmAccount(account)
-            await updateStatus()
-        }
-    }
-    func retry() {
-        guard !busy else { return }; busy = true
-        Task { defer { busy = false }; await coordinator.resume(); await updateStatus() }
-    }
-
 }

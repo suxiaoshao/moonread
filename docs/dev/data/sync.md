@@ -1,5 +1,7 @@
 # iCloud 文件与阅读数据同步
 
+#270 试用阶段：App 只读已发布的 SwiftData 源，旧 CloudKit 镜像断开，新的 CKSyncEngine 及旧区删除待第 6 步。已确认的本机作用域继续从新用户库读取和写入，保留原有同步意图但显示暂停；iCloud Drive 的小说目录照常独立工作。以下同步传输规则包含已发布行为和后续接入合同。
+
 更新：2026-10-02。用户数据已正式切换为 SwiftData + CloudKit 自动同步；正文和文件索引保留 Rust，文件交接规则不变，真实云容器和跨设备联调尚未完成，限制见[接入实施](sync.md)。原始 TXT 与真实目录使用 iCloud Documents，设置和 SHA 下的阅读数据使用 CloudKit；不把小说原件放入 CKAsset。统一书架模型见[数据与来源](README.md)。
 
 ## 两条同步边界

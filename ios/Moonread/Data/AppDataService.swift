@@ -233,19 +233,10 @@ actor AppDataService {
     var recentRestorationBeforeCommit: (@Sendable () async -> Void)?
 
     nonisolated let settingsCache: ReaderSettingsCache
-    struct UserStoreInitialization {
-        let id = UUID()
-        let task: Task<UserDataStore, Error>
-    }
-    var pendingUserStoreTask: UserStoreInitialization?
-    var userStoreTask: UserStoreInitialization?
-    var userCloudConfigurationRevision = UUID()
-    let userStoreFactory: (@Sendable (String, Bool) async throws -> UserDataStore)?
-    enum UserCloudStoreMode: Equatable {
-        case local, cloud(CloudConfiguration.VerifiedAccount)
-        var isCloud: Bool { if case .cloud = self { true } else { false } }
-    }
-    var userCloudMode = UserCloudStoreMode.local
+    let userCloudConfigurationRevision = UUID()
+    #if DEBUG
+    var injectedLegacyReadFailure = false
+    #endif
     let userDirectoryName: String
     var readingSourceIDs: [String: String] = [:]
     let dataManagementWriter: StatisticsWriter?
@@ -281,7 +272,7 @@ actor AppDataService {
     let libraryDirectoryOverride: URL?
     let libraryDeletion: @Sendable (URL, Bool) throws -> Void
     let libraryScan: (@Sendable (URL, [CloudDocumentItem]) throws -> [ScannedLibraryItem])?
-    init(core: ReaderIndex? = nil, libraryDirectory: URL? = nil, sourceDefaultsSuite: String? = nil, dataManagementWriter: StatisticsWriter? = nil, userStoreFactory: (@Sendable (String, Bool) async throws -> UserDataStore)? = nil,
+    init(core: ReaderIndex? = nil, libraryDirectory: URL? = nil, sourceDefaultsSuite: String? = nil, dataManagementWriter: StatisticsWriter? = nil,
          libraryDeletion: @escaping @Sendable (URL, Bool) throws -> Void = { url, permanently in
              if permanently { try FileManager.default.removeItem(at: url) }
              else { try FileManager.default.trashItem(at: url, resultingItemURL: nil) }
@@ -289,7 +280,6 @@ actor AppDataService {
          libraryScan: (@Sendable (URL, [CloudDocumentItem]) throws -> [ScannedLibraryItem])? = nil) {
         self.core = core; libraryDirectoryOverride = libraryDirectory
         self.libraryDeletion = libraryDeletion; self.libraryScan = libraryScan
-        self.userStoreFactory = userStoreFactory
         self.dataManagementWriter = dataManagementWriter
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments

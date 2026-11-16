@@ -22,7 +22,7 @@ final class OnboardingStateTests: ReaderIntegrationFixture {
       await service.setCloudSyncRequested(!choice)
       let onboarding = Onboarding(defaults: defaults, enabled: false, showIntroduction: true)
       let cloud = CloudStore(
-        coordinator: CloudSyncCoordinator(service: service, available: false, observeEvents: false))
+        coordinator: CloudSyncCoordinator(service: service))
       let published = expectation(
         description: "completion is published after the sync intent is persisted")
       withObservationTracking {

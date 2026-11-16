@@ -1,5 +1,4 @@
 import SwiftUI
-import CloudKit
 import CoreSpotlight
 import UIKit
 
@@ -12,27 +11,86 @@ struct MoonreadApp: App {
     @State private var cloud = CloudStore()
     @State private var ai = AIService()
     @State private var tipJar = TipJar()
+    private enum Startup {
+        case preparing, failed(String), ready
+    }
+    @State private var startup = Startup.preparing
+    @State private var startupAttempt = 0
+    @State private var startupFiles: [LibraryImportFile] = []
+    @State private var startupSystemRequest: SystemReadingRequest?
     @Environment(\.scenePhase) private var scenePhase
 
     init() { _ = Onboarding.shared }
 
     var body: some Scene {
         WindowGroup {
-            #if DEBUG
-            if CloudSchemaPreparation.requested { CloudSchemaPreparationScreen() }
-            else { configuredAppContent }
-            #else
             configuredAppContent
-            #endif
         }
     }
     @ViewBuilder private var configuredAppContent: some View {
         #if READER_OPEN_DIAGNOSTICS
         if ReaderOpenDiagnostics.benchmark { ReaderOpenBenchmarkView().environment(ai).environment(themes) }
-        else { appContent }
+        else { startupContent }
         #else
-        appContent
+        startupContent
         #endif
+    }
+    private var startupContent: some View {
+        Group {
+            switch startup {
+            case .preparing:
+                ProgressView("正在准备阅读数据…")
+            case .failed(let reason):
+                ContentUnavailableView {
+                    Label("暂时无法准备阅读数据", systemImage: "externaldrive.badge.exclamationmark")
+                } description: {
+                    VStack(spacing: 8) {
+                        Text(verbatim: reason)
+                        Text("原有数据已保留。")
+                    }
+                } actions: {
+                    Button("重试") { startup = .preparing; startupAttempt += 1 }
+                        .accessibilityIdentifier("retryUserMigration")
+                }
+            case .ready:
+                appContent
+            }
+        }
+        .task(id: startupAttempt) {
+            guard case .preparing = startup else { return }
+            do {
+                try await library.service.prepareUserAuthorityForStartup()
+                try Task.checkCancellation()
+                startup = .ready
+                if let request = startupSystemRequest {
+                    startupSystemRequest = nil
+                    library.systemReading.submit(request)
+                }
+                let files = startupFiles; startupFiles = []
+                for file in files { openURL(file) }
+            } catch is CancellationError { }
+            catch { startup = .failed(ReaderMessages.error(error)) }
+        }
+        .onOpenURL { url in
+            if url.scheme == "moonread" {
+                do { deliverSystemRequest(try SystemReadingRequest(url: url)) }
+                catch { library.error = ReaderMessages.error(error) }
+            } else {
+                let file = LibraryImportFile(url: url)
+                if case .ready = startup { openURL(file) }
+                else { startupFiles.append(file) }
+            }
+        }
+        .onContinueUserActivity(CSSearchableItemActionType) { activity in
+            guard let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return }
+            do { deliverSystemRequest(.openSearchBook(try SystemReadingBookID(rawValue: id))) }
+            catch { library.error = ReaderMessages.error(error) }
+        }
+    }
+
+    private func deliverSystemRequest(_ request: SystemReadingRequest) {
+        if case .ready = startup { library.systemReading.submit(request) }
+        else { startupSystemRequest = request }
     }
     private var indexedAppContent: some View {
         MoonreadRoot(library: library, themes: themes)
@@ -104,9 +162,6 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: SystemReadingIntentDelivery.notification).receive(on: DispatchQueue.main)) { _ in
                 library.systemReading.receiveIntent()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .readingDataChanged).receive(on: DispatchQueue.main)) { _ in
-                Task { await CloudSyncCoordinator.shared.localDataChanged() }
-            }
             .onReceive(NotificationCenter.default.publisher(for: .NSCalendarDayChanged).receive(on: DispatchQueue.main)) { _ in
                 Task { await library.service.scheduleSystemWidgetStatistics(immediate: true) }
             }
@@ -132,9 +187,6 @@ struct MoonreadApp: App {
             .onReceive(NotificationCenter.default.publisher(for: ReaderBuiltinFonts.changed).receive(on: DispatchQueue.main)) { _ in
                 readerSettings.refreshBuiltinFonts()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .CKAccountChanged).receive(on: DispatchQueue.main)) { _ in
-                Task { await cloud.identityChanged() }
-            }
             .onChange(of: scenePhase, initial: true) { _, phase in
                 library.systemReading.sceneActive = phase == .active
                 library.fullIndex.scene(active: phase == .active)
@@ -155,12 +207,6 @@ struct MoonreadApp: App {
                     }
                 }
             }
-            .onContinueUserActivity(CSSearchableItemActionType) { activity in
-                guard let id = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String else { return }
-                do { library.systemReading.submit(.openSearchBook(try SystemReadingBookID(rawValue: id))) }
-                catch { library.error = ReaderMessages.error(error) }
-            }
-            .onOpenURL(perform: openURL)
 
     }
 
@@ -205,13 +251,8 @@ struct MoonreadApp: App {
     }
     #endif
 
-    private func openURL(_ url: URL) {
-        if url.scheme == "moonread" {
-            do { library.systemReading.submit(try SystemReadingRequest(url: url)) }
-            catch { library.error = ReaderMessages.error(error) }
-            return
-        }
-        let access = LibraryImportFile(url: url)
+    private func openURL(_ access: LibraryImportFile) {
+        let url = access.url
         Task {
             defer { access.finish() }
             guard await library.load() else { return }

@@ -181,7 +181,6 @@ OS1000000000000000000001 = {isa = PBXBuildFile; fileRef = OS20000000000000000000
 		F01800000000000000000003 /* AIChatGPTTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F01800000000000000000004 /* AIChatGPTTestFixtures.swift */; };
 F01800000000000000000001 = {isa = PBXBuildFile; fileRef = F01800000000000000000002; };
 		785244D6C1DB4AF6B15A8AA0 /* CloudSchemaPreparationTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = F14BDB0397FE4C25963665F6 /* CloudSchemaPreparationTestFixtures.swift */; };
-0ADFA9A8F02748618B3B4BE9 = {isa = PBXBuildFile; fileRef = 34534F38185344C984C886C4; };
 		01800FD10FB1423B93ABB34E /* AIDataSharingConsentTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BE80CBCD8D744E1B33B2306 /* AIDataSharingConsentTestFixtures.swift */; };
 CAA8B00EBC8041F6A299A6A5 = {isa = PBXBuildFile; fileRef = AAE9AA532FE14842BCFEA016; };
 B792EA92E8204EEDB7AA1450 = {isa = PBXBuildFile; fileRef = EC14CE0E00934BB682B83B4D; };
@@ -690,7 +689,6 @@ OS2000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = text; pa
 		F01800000000000000000004 /* AIChatGPTTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatGPTTestFixtures.swift"; sourceTree = "<group>"; };
 F01800000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIChatGPTAuth.swift"; sourceTree = "<group>"; };
 		F14BDB0397FE4C25963665F6 /* CloudSchemaPreparationTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MoonreadTests/Fixtures/CloudSchemaPreparationTestFixtures.swift"; sourceTree = SOURCE_ROOT; };
-34534F38185344C984C886C4 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CloudSchemaPreparation.swift"; sourceTree = "<group>"; };
 		3BE80CBCD8D744E1B33B2306 /* AIDataSharingConsentTestFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIDataSharingConsentTestFixtures.swift"; sourceTree = "<group>"; };
 AAE9AA532FE14842BCFEA016 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Moonread/App/AppLinks.swift; sourceTree = SOURCE_ROOT; };
 EC14CE0E00934BB682B83B4D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AIDataSharingConsentView.swift"; sourceTree = "<group>"; };
@@ -1568,7 +1566,6 @@ D35000000000000000000001,
 			isa = PBXGroup;
 			children = (
 				B02000000000000000000001 /* CloudSync.swift */,
-				34534F38185344C984C886C4 /* CloudSchemaPreparation.swift */,
 			);
 			path = "Cloud";
 			sourceTree = "<group>";
@@ -2419,7 +2416,6 @@ E51000000000000000000009,D41000000000000000000001,
                 FD64F53149DE5DBFB6AA04F1,
                 344233D679E94ACDA4FA2A11,
                 FC1100000000000000000001,
-0ADFA9A8F02748618B3B4BE9,
 CAA8B00EBC8041F6A299A6A5,
 B792EA92E8204EEDB7AA1450,
 0D6DDD171D15456388258FB6, FE1000000000000000000001, FF1000000000000000000001,

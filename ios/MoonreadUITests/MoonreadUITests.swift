@@ -359,6 +359,18 @@ import XCTest
     ready(app.switches["readerPaletteTexture"].switches.firstMatch).tap()
     XCTAssertEqual(app.switches["readerPaletteTexture"].switches.firstMatch.value as? String, "1")
   }
+  func testV2MigrationFailureBlocksNormalAppAndRetryReleasesIt() {
+    launch(["--ui-test-migration-read-failure"])
+    ready(app.staticTexts["暂时无法准备阅读数据"])
+    XCTAssertTrue(app.staticTexts["原有数据已保留。"].exists)
+    XCTAssertTrue(app.staticTexts["暂时无法读取旧阅读数据。请确认本机数据可访问后重试。"].exists)
+    XCTAssertFalse(app.tabBars.buttons["书架"].exists)
+    XCTAssertFalse(app.buttons["shelf-builtin"].exists)
+    ready(app.buttons["retryUserMigration"]).tap()
+    ready(app.buttons["shelf-builtin"], timeout: 20)
+    XCTAssertFalse(app.buttons["retryUserMigration"].exists)
+  }
+
   func testV2StatisticsReadsRecordedHistoryAndBookDetails() {
     app.launchArguments = [
       "--ui-testing", "--ui-test-session", UUID().uuidString, "--disable-tips",
