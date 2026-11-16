@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import SwiftData
 
 /// The account's durable record intents and CloudKit concurrency metadata.
 /// Callers stage edits on the same `usr` transaction as their domain changes.
@@ -715,6 +716,11 @@ actor CloudCallbackJournal {
     /// on this actor must also fail at the writer, even after a same-account
     /// replacement engine or a pause/resume.
     nonisolated func retire() { session.retireCloudLease(binding) }
+
+    func bindLegacyDeletionMirror(_ container: ModelContainer) throws {
+        guard !failed else { throw Failure.restartRequired }
+        try session.bindLegacyDeletionMirror(container, to: binding)
+    }
 
     func checkpoint() throws -> Data? {
         guard !failed else { throw Failure.restartRequired }

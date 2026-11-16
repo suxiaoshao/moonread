@@ -285,6 +285,116 @@ final class CloudAccountCloudAccountTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: coverFile.path))
     }
 
+    @MainActor func testWholeBookDeletesPresentLegacyMirrorBeforeNewUserCommit() async throws {
+        let fixture = try ZoneRecoveryFixture()
+        defer { fixture.remove() }
+        let (index, service) = try fixture.open()
+        try fixture.seed(index)
+        let account = try CloudCallbackJournal(session: index.session, lease: index.lease)
+        try await account.initializeZone(exists: true)
+        let book = ZoneRecoveryFixture.book, other = String(repeating: "b", count: 64)
+        let schema = UserDataStore.schema
+        let location = fixture.root.appending(path: "synthetic-old.store")
+        let mirror = try ModelContainer(for: schema, configurations: [
+            ModelConfiguration("UserData", schema: schema, url: location, cloudKitDatabase: .none)
+        ])
+        let context = ModelContext(mirror)
+        let shared = Data("shared".utf8), exclusive = Data("exclusive".utf8)
+        func cover(_ key: String, device: String, id: String, bytes: Data) throws {
+            let ref = "{\"id\":\"\(id)\",\"sha256\":\"\(DataIdentity.sha(bytes))\",\"extension\":\"png\",\"width\":1,\"height\":1}"
+            let stored = StoredValue(updated: 1, token: device, value: ref)
+            context.insert(UserValue(key: "metadata/\(key)/cover", device: device, payload: try UserSyncJSON.encode(stored, envelope: true)))
+        }
+        context.insert(UserCover(id: "shared", bytes: shared))
+        context.insert(UserCover(id: "exclusive", bytes: exclusive))
+        try cover(book, device: "a", id: "shared", bytes: shared)
+        try cover(book, device: "b", id: "exclusive", bytes: exclusive)
+        try cover(other, device: "c", id: "shared", bytes: shared)
+        context.insert(UserValue(key: "metadata/\(book)/future", device: "a", payload: "{}"))
+        context.insert(UserValue(key: "metadata/pending:fixture/future", device: "a", payload: "{}"))
+        context.insert(UserValue(key: "future/\(book)/global", device: "a", payload: "{}"))
+        context.insert(UserPosition(contentKey: book, payload: "unreadable future position"))
+        context.insert(AnnotationOperation(id: "old", contentKey: book, markID: "old", payload: "{}"))
+        context.insert(ReadingFact(id: "old", contentKey: book, payload: "{}"))
+        context.insert(StatisticsClear(payload: "{\"v\":999,\"book\":\"\(book)\"}"))
+        context.insert(StatisticsClear(payload: "{\"v\":999,\"book\":42}"))
+        try context.save()
+
+        try await account.bindLegacyDeletionMirror(mirror)
+        do {
+            _ = try index.deleteUserBooks([book], activeReadingIDs: ["unavailable-active-book"]) { ReadingDataError.busy }
+            XCTFail("old mirror must never commit before the reading check")
+        } catch ReadingDataError.busy { }
+        XCTAssertEqual(try ModelContext(mirror).fetchCount(FetchDescriptor<UserPosition>()), 1)
+        _ = try await service.deleteReadingData(["pending:fixture"])
+        XCTAssertEqual(try ModelContext(mirror).fetchCount(FetchDescriptor<UserValue>()), 6)
+        account.retire()
+        do {
+            _ = try await service.deleteReadingData([book])
+            XCTFail("paused authority must not silently delete only the new side")
+        } catch ReadingDataError.legacyDeletionUnavailable { }
+        XCTAssertEqual(try fixture.state(index).formal, 1)
+        XCTAssertEqual(try ModelContext(mirror).fetchCount(FetchDescriptor<UserPosition>()), 1)
+
+        let replacement = try CloudCallbackJournal(session: index.session, lease: index.lease)
+        defer { replacement.retire() }
+        try await replacement.bindLegacyDeletionMirror(mirror)
+        _ = try await service.deleteReadingData([book])
+        let read = ModelContext(mirror)
+        XCTAssertEqual(Set(try read.fetch(FetchDescriptor<UserCover>()).map(\.id)), ["shared"])
+        XCTAssertEqual(Set(try read.fetch(FetchDescriptor<UserValue>()).map(\.key)), [
+            "metadata/\(other)/cover", "metadata/pending:fixture/future", "future/\(book)/global",
+        ])
+        XCTAssertEqual(try read.fetchCount(FetchDescriptor<UserPosition>()), 0)
+        XCTAssertEqual(try read.fetchCount(FetchDescriptor<AnnotationOperation>()), 0)
+        XCTAssertEqual(try read.fetchCount(FetchDescriptor<ReadingFact>()), 0)
+        XCTAssertEqual(try read.fetch(FetchDescriptor<StatisticsClear>()).map(\.payload), ["{\"v\":999,\"book\":42}"])
+        let deletes = try await replacement.pendingInOwnZone()
+        XCTAssertEqual(deletes.count, 1)
+        XCTAssertTrue(deletes.allSatisfy { !$0.isSave })
+        XCTAssertEqual(try fixture.state(index).formal, 0)
+    }
+
+    @MainActor func testWholeBookRetryAfterOnlyLegacyCommitNeverRestoresOldRows() async throws {
+        let fixture = try ZoneRecoveryFixture()
+        defer { fixture.remove() }
+        let (index, _) = try fixture.open()
+        try fixture.seed(index)
+        let book = ZoneRecoveryFixture.book
+        let schema = UserDataStore.schema
+        let file = fixture.root.appending(path: "synthetic-old.store")
+        let mirror = try ModelContainer(for: schema, configurations: [
+            ModelConfiguration("UserData", schema: schema, url: file, cloudKitDatabase: .none)
+        ])
+        do {
+            let context = ModelContext(mirror)
+            context.insert(UserPosition(contentKey: book, payload: "{}"))
+            try context.save()
+        }
+        let journal = try CloudCallbackJournal(session: index.session, lease: index.lease)
+        defer { journal.retire() }
+        try await journal.initializeZone(exists: true)
+        try await journal.bindLegacyDeletionMirror(mirror)
+        let before = try fixture.state(index)
+        try index.session.writeUsers(index.lease) { db in
+            try db.execute(sql: """
+                CREATE TRIGGER usr.fixture_deny_delete BEFORE DELETE ON position_candidate
+                BEGIN SELECT RAISE(ABORT, 'fixture denies new commit'); END
+                """)
+        }
+        do {
+            _ = try index.deleteUserBooks([book], activeReadingIDs: []) { ReadingDataError.busy }
+            XCTFail("new transaction was expected to fail after the old save")
+        } catch ReadingDataError.legacyDeletedTryAgain { }
+        XCTAssertEqual(try ModelContext(mirror).fetchCount(FetchDescriptor<UserPosition>()), 0)
+        XCTAssertEqual(try fixture.state(index), before, "the new candidate and outbox rolled back together")
+        try index.session.writeUsers(index.lease) { try $0.execute(sql: "DROP TRIGGER usr.fixture_deny_delete") }
+        _ = try index.deleteUserBooks([book], activeReadingIDs: []) { ReadingDataError.busy }
+        XCTAssertEqual(try ModelContext(mirror).fetchCount(FetchDescriptor<UserPosition>()), 0)
+        XCTAssertEqual(try fixture.state(index).formal, 0)
+        XCTAssertEqual(try fixture.state(index).pending, 1)
+    }
+
     func testZoneRecoveryRequiresDurableDeletionAndExactAbsence() async throws {
         let fixture = try ZoneRecoveryFixture()
         defer { fixture.remove() }
@@ -440,7 +550,7 @@ private struct ZoneRecoveryFixture: Sendable {
     }
     let root = FileManager.default.temporaryDirectory.appending(path: "ScopeZone-" + UUID().uuidString)
     let account: CloudSyncCoordinator.Account
-    private static let book = String(repeating: "a", count: 64)
+    static let book = String(repeating: "a", count: 64)
     init() throws {
         account = .init(identity: .init(recordName: "fixture-A"),
             scope: try .confirmed(container: "fixture.invalid", environment: .development, recordName: "fixture-A"))

@@ -1,6 +1,7 @@
 import CryptoKit
 import Foundation
 import GRDB
+import SwiftData
 
 enum DataScope: Codable, Equatable, Sendable {
     case local
@@ -135,6 +136,8 @@ final class DataSession: @unchecked Sendable {
     private var pool: DatabasePool?
     private var lease: DataSessionLease?
     private var cloudLease: DataCloudLease?
+    private var legacyDeletionScope: DataScope?
+    private var legacyDeletionMirror: (binding: DataCloudLease, container: ModelContainer)?
     private var selection: DataScopeSelection?
     private var verifiedAccount: DataScope?
     private var closeFailed = false
@@ -221,7 +224,7 @@ final class DataSession: @unchecked Sendable {
         if let lease, lease.scope == next.scope {
             // An offline pause or a toggle must not tear down the reader,
             // outstanding local writes, or observations for this same file.
-            if !next.maySync || verifiedAccount != verified { cloudLease = nil }
+            if !next.maySync || verifiedAccount != verified { invalidateCloudBinding() }
             if owner != state { try saveOwner(state) }
             verifiedAccount = verified
             selection = next
@@ -246,7 +249,7 @@ final class DataSession: @unchecked Sendable {
     }
 
     private func closeLocked() throws {
-        lease = nil; cloudLease = nil; selection = nil; indexReady = false; usersReady = false; historyReady = false
+        lease = nil; invalidateCloudBinding(); selection = nil; indexReady = false; usersReady = false; historyReady = false
         guard let pool else { return }
         do { try pool.close() }
         catch { closeFailed = true; throw error }
@@ -455,6 +458,7 @@ final class DataSession: @unchecked Sendable {
     func issueCloudLease(_ token: DataSessionLease) throws -> DataCloudLease {
         try lifecycle.withLock {
             _ = try permittedCloud(token)
+            invalidateCloudBinding()
             let binding = DataCloudLease(user: token, identity: UUID())
             cloudLease = binding
             return binding
@@ -463,7 +467,51 @@ final class DataSession: @unchecked Sendable {
 
     func retireCloudLease(_ binding: DataCloudLease) {
         lifecycle.withLock {
-            if cloudLease == binding { cloudLease = nil }
+            if cloudLease == binding { invalidateCloudBinding() }
+        }
+    }
+
+    private func invalidateCloudBinding() {
+        cloudLease = nil
+        legacyDeletionMirror = nil
+    }
+
+    /// The old mirror belongs to one confirmed account and engine instance.
+    /// Keep the requirement (but no writable container) when it retires.
+    func bindLegacyDeletionMirror(_ container: ModelContainer, to binding: DataCloudLease) throws {
+        try lifecycle.withLock {
+            _ = try activeCloud(binding)
+            guard legacyDeletionScope == nil || legacyDeletionScope == binding.user.scope else {
+                throw DataV2Error.leaseExpired
+            }
+            legacyDeletionScope = binding.user.scope
+            legacyDeletionMirror = (binding, container)
+        }
+    }
+
+    func writeUserBookDeletion<T: Sendable>(_ token: DataSessionLease,
+        _ body: (Database, (Set<String>) throws -> Void) throws -> T
+    ) throws -> T {
+        try lifecycle.withLock {
+            let writer = try active(token)
+            guard usersReady else { throw DataV2Error.migrationNotVerified }
+            var oldCommitted = false
+            do {
+                return try writer.write { db in
+                    try body(db) { keys in
+                        guard !keys.isEmpty, self.legacyDeletionScope == token.scope else { return }
+                        guard let mirror = self.legacyDeletionMirror else { throw ReadingDataError.legacyDeletionUnavailable }
+                        _ = try self.activeCloud(mirror.binding)
+                        guard try CloudTransportRows.zoneStage(db, zone: ReadingHistoryTransport.zone) == .ready else {
+                            throw ReadingDataError.legacyDeletionUnavailable
+                        }
+                        oldCommitted = try LegacyReadingDeletion.apply(ModelContext(mirror.container), keys: keys)
+                    }
+                }
+            } catch {
+                if oldCommitted { throw ReadingDataError.legacyDeletedTryAgain }
+                throw error
+            }
         }
     }
 
