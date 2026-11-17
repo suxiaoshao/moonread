@@ -141,10 +141,6 @@ struct LibraryFolderView: View {
                 model.error = ReaderMessages.error(error)
             }
         }
-        .onChange(of: model.revision) { folder.retryIfFailed() }
-        .onChange(of: model.nativeRefreshing) { _, active in
-            if active { folder.retryIfFailed() }
-        }
 
         .modifier(PageLoadingOverlay(request: model.processingFiles || model.nativeRefreshing ? nil : model.shelfScans[location.shelfID] ?? folder.loading.request ?? model.refreshing.request,
                                      hasContent: !entries.isEmpty, label: "正在加载书架", immediate: model.explicitRefresh || model.shelfScans[location.shelfID] != nil))
@@ -153,6 +149,7 @@ struct LibraryFolderView: View {
     private var browser: some View {
         LibraryCollection(ai: ai, model: model, location: location, entries: entries, shelf: shelf,
                           layout: model.layout, theme: theme, disabled: fileActionsDisabled,
+                          retryObservation: folder.retryIfFailed,
                           showsEmpty: (folder.snapshot != nil || (builtinRoot && folder.failed)) && !folder.loading.active && !model.refreshing.active && model.shelfScans[location.shelfID] == nil && entries.isEmpty && (shelf?.error == nil || (location.shelfID == "builtin" && location.path.isEmpty && model.builtinDiscovery == .unavailable)),
                           editing: $editing, selection: $selection)
             // UIKit applies the tab/toolbar safe inset to the scroll content.

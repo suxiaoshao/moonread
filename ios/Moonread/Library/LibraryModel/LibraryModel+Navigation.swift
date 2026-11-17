@@ -60,7 +60,8 @@ extension LibraryModel {
     }
     /// #287: capture the exact visible copy and identity before any await.
     func openRecent(_ entry: LibraryEntry) {
-        systemReading.openDisplayed(entry)
+        guard systemReading.cancelForLibraryOpen() else { return }
+        open(entry, expectedContentSHA: entry.readingIdentity?.formalSHA256)
     }
 
     func readerDestinationLocation(_ id: UUID) -> (tab: AppTab, depth: Int)? {

@@ -236,11 +236,6 @@ final class LibraryModel {
     var refreshWork: Task<Void, Never>?
     var refreshAgain = false
     func prepareUserScopeChange() async throws {
-        try systemReading.requireUserScopeEditorsReady()
-        switch sheet {
-        case .rename, .create: throw CloudScopePresentationError.editing
-        default: break
-        }
         changingUserScope = true
         try await systemReading.prepareForUserScopeChange()
         try Task.checkCancellation()
@@ -251,7 +246,6 @@ final class LibraryModel {
         await MetadataExchangeModel.shared.prepareUserScopeChange()
         await waitForFileWork()
         await fullIndex.waitForCompletion()
-        try systemReading.requireUserScopeEditorsReady()
         homeRequest = UUID()
     }
 

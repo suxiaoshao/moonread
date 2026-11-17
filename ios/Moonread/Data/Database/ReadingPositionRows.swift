@@ -28,14 +28,9 @@ enum ReadingPositionRows {
 
     private static func requireReadable(_ db: Database, domain: Domain, book: String, partition: Int) throws {
         let logicalKey = DataIdentity.canonical("\(domain.rawValue)/\(book)")
-        // Relational quarantine may only carry a domain table and a book
-        // (position_candidate has no logical_key column).
         guard try Bool.fetchOne(db, sql: """
-            SELECT NOT EXISTS(SELECT 1 FROM usr.quarantined_record
-                WHERE partition=? AND (logical_key=? OR (source_type=? AND book_key=?)))
-            """, arguments: [partition,logicalKey,domain.candidateType,DataIdentity.canonical(book)]) == true else {
-            throw UserSyncCompatibilityError()
-        }
+            SELECT NOT EXISTS(SELECT 1 FROM usr.quarantined_record WHERE partition=? AND logical_key=?)
+            """, arguments: [partition,logicalKey]) == true else { throw UserSyncCompatibilityError() }
         // candidateType is a fixed domain table, never a caller-supplied name.
         guard try Bool.fetchOne(db, sql: """
             SELECT NOT EXISTS(SELECT 1 FROM usr.\(domain.candidateType)
@@ -180,7 +175,7 @@ enum ReadingPositionRows {
         } else {
             source = nil
         }
-        guard source?.isValid ?? true else { throw UserSyncCompatibilityError() }
+        guard source?.hasValidShape ?? true else { throw UserSyncCompatibilityError() }
         return .init(value: .init(content_key: row["book_key"], offset: offset, source_hint: source),
                      updated: row["updated_ms"], token: token, device: row["device_id"])
     }
@@ -197,7 +192,7 @@ enum ReadingPositionRows {
         let part = try partition(for: book)
         let previous = try position(db, book: book, partition: part)
         let source = hint ?? previous?.value.source_hint
-        guard source?.isValid ?? true else { throw UserSyncCompatibilityError() }
+        guard source?.hasValidShape ?? true else { throw UserSyncCompatibilityError() }
         let saved = Position(value: .init(content_key: book, offset: offset, source_hint: source),
                              updated: try nextTime(now, after: previous?.updated), token: token, device: device)
         let bases = try previous.map { position in

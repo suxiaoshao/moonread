@@ -62,8 +62,7 @@ enum LocalScopeImport {
                           arguments: [stateKey,move.uuidString]) == true
     }
 
-    static func copy(_ db: Database, move: UUID, scope: DataScope = .local,
-                     authorizeCommit: () throws -> Void = {}) throws {
+    static func copy(_ db: Database, move: UUID, scope: DataScope = .local) throws {
         try db.inTransaction {
             guard try Bool.fetchOne(db, sql: """
                 SELECT EXISTS(SELECT 1 FROM move_source.cover_asset WHERE availability<>'available'
@@ -107,7 +106,7 @@ enum LocalScopeImport {
                 let raw = try ReadingSegmentRows.Raw(row)
                 let id = raw.value.header.id
                 let origin = try UpgradeOrigins.provenance(db, .init(partition: raw.partition, domain: .segment, id: id), in: .frozenLocal)
-                try ReadingSegmentRows.ingest(db, value: raw.value, book: raw.book, partition: raw.partition, scope: scope,
+                try ReadingSegmentRows.ingest(db, value: raw.value, book: raw.book, partition: raw.partition,
                     intake: .transfer(localOwner: raw.localOwner), origin: .init(source: "local-transfer", id: id, carried: origin))
                 movedSegments.insert(id)
             }
@@ -130,10 +129,6 @@ enum LocalScopeImport {
                 throw DataV2Error.migrationNotVerified
             }
             try db.execute(sql: "INSERT OR REPLACE INTO usr.local_data_state VALUES (?, ?)", arguments: [stateKey,move.uuidString])
-            // The authorization belongs to the transition, not to this
-            // writer thread's Swift Task. A stale approval rolls back the
-            // copied rows and completion marker together.
-            try authorizeCommit()
             return .commit
         }
     }

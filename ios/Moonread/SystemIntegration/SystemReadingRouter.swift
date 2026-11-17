@@ -57,63 +57,14 @@ enum SystemReadingRouteError: LocalizedError, Equatable {
     }
 }
 
-/// Active draft owners remain the authority for their own leave rules. The
-/// router only asks whether the App may retire the current user scope.
-@MainActor final class UserScopeEditors {
-    private var checks: [ObjectIdentifier: () -> Bool?] = [:]
-
-    func track<Owner: AnyObject>(_ owner: Owner, blocks: @escaping @MainActor (Owner) -> Bool) {
-        checks = checks.filter { $0.value() != nil }
-        checks[ObjectIdentifier(owner)] = { [weak owner] in owner.map(blocks) }
-    }
-
-    func requireReady() throws {
-        if checks.values.contains(where: { $0() == true }) { throw CloudScopePresentationError.editing }
-    }
-}
-
-extension View {
-    /// Draft identity, rather than transient view visibility, determines when
-    /// the restriction ends (e.g. while another picker covers the editor).
-    func userScopeEditor<Owner: AnyObject>(_ owner: Owner, blocks: @escaping @MainActor (Owner) -> Bool) -> some View {
-        modifier(UserScopeEditorRegistration(owner: owner, blocks: blocks))
-    }
-
-    func userScopeEditingPresentation() -> some View { modifier(UserScopeEditingPresentation()) }
-}
-
-private struct UserScopeEditorRegistration<Owner: AnyObject>: ViewModifier {
-    @Environment(\.systemReadingRouter) private var router
-    let owner: Owner
-    let blocks: @MainActor (Owner) -> Bool
-    func body(content: Content) -> some View {
-        content.onAppear { router?.scopeEditors.track(owner, blocks: blocks) }
-    }
-}
-
-/// An editor without a separate in-memory draft can hold this for the life
-/// of its sheet. Closing it uses that sheet's existing controls.
-private struct UserScopeEditingPresentation: ViewModifier {
-    @MainActor private final class Presence { var active = false }
-    @State private var presence = Presence()
-    func body(content: Content) -> some View {
-        content.userScopeEditor(presence) { $0.active }
-            .onAppear { presence.active = true }
-            .onDisappear { presence.active = false }
-    }
-}
 
 @MainActor @Observable
 final class SystemReadingRouter {
     private weak var library: LibraryModel?
     private let service: AppDataService
-    private enum Destination {
-        case system(SystemReadingRequest)
-        case displayed(entry: LibraryEntry, expectedSHA: String?, tap: TimeInterval)
-    }
     private struct RequestContext {
         let token = UUID()
-        let destination: Destination
+        let request: SystemReadingRequest
     }
     private enum Handoff {
         case idle(UUID)
@@ -136,14 +87,10 @@ final class SystemReadingRouter {
     }
 
     private var handoff: Handoff = .idle(UUID())
-    var pending: SystemReadingRequest? {
-        if case .system(let request)? = handoff.context?.destination { return request }
-        return nil
-    }
+    var pending: SystemReadingRequest? { handoff.context?.request }
     private var task: Task<Void, Never>?
     private var resumeAfterCurrent = false
     private var changingUserScope = false
-    let scopeEditors = UserScopeEditors()
     private weak var reader: ReaderSession?
     private var readerNavigationID: UUID?
     var sceneActive = false { didSet { if sceneActive { resume() } } }
@@ -197,18 +144,14 @@ final class SystemReadingRouter {
         // destination. A newer handoff's reader must not be popped by this task.
         if let navigationID { library.removeReaderDestination(navigationID) }
     }
-    func requireUserScopeEditorsReady() throws {
-        guard savingEdits?() != true, hasUnsavedEdits?() != true else { throw CloudScopePresentationError.editing }
-        try scopeEditors.requireReady()
-    }
     func prepareForUserScopeChange() async throws {
-        try requireUserScopeEditorsReady()
         changingUserScope = true
         let oldTask = task
         handoff = .idle(UUID()); task = nil; resumeAfterCurrent = false; requestError = nil
         oldTask?.cancel()
         await oldTask?.value
         try Task.checkCancellation()
+        discardEdits?()
         if let library { await finishReader(in: library) }
     }
     func finishUserScopeChange() { changingUserScope = false }
@@ -217,35 +160,33 @@ final class SystemReadingRouter {
         handoff = .opening(context)
         return true
     }
-    private func publishEntry(_ entry: LibraryEntry, expectedSHA: String?, tap: TimeInterval? = nil, in library: LibraryModel) {
+    private func publishEntry(_ entry: LibraryEntry, expectedSHA: String?, in library: LibraryModel) {
         library.selectedTab = .library
         library.libraryPath = Array(library.libraryPath.prefix { !$0.isReader })
-        library.open(entry, expectedContentSHA: expectedSHA, tap: tap ?? ProcessInfo.processInfo.systemUptime)
+        library.open(entry, expectedContentSHA: expectedSHA)
     }
-    private func openEntry(_ entry: LibraryEntry, expectedSHA: String?, tap: TimeInterval? = nil,
+    private func openEntry(_ entry: LibraryEntry, expectedSHA: String?,
                            in library: LibraryModel, context: RequestContext) async -> Bool {
         guard sceneActive, requestID == context.token, !Task.isCancelled else { return false }
-        if tap == nil, expectedSHA == nil, let id = entry.bookId, reader?.isLeaving == false, reader?.readingID == id { return true }
+        if expectedSHA == nil, let id = entry.bookId, reader?.isLeaving == false, reader?.readingID == id { return true }
         guard beginOpening(entry, in: library, context: context) else { return false }
         await finishReader(in: library)
         guard sceneActive, requestID == context.token, !Task.isCancelled else { return false }
-        publishEntry(entry, expectedSHA: expectedSHA, tap: tap, in: library)
+        publishEntry(entry, expectedSHA: expectedSHA, in: library)
         return true
     }
-    private func replaceRequest(_ destination: Destination) {
-        guard !changingUserScope else { return }
+    func submit(_ request: SystemReadingRequest) {
+        guard !changingUserScope, pending != request else { return }
         requestError = nil
-        handoff = .resolving(.init(destination: destination))
+        handoff = .resolving(.init(request: request))
         task?.cancel(); task = nil; resumeAfterCurrent = false
         resume()
     }
-    func submit(_ request: SystemReadingRequest) {
-        if pending == request { return }
-        replaceRequest(.system(request))
-    }
-    func openDisplayed(_ entry: LibraryEntry) {
-        replaceRequest(.displayed(entry: entry, expectedSHA: entry.readingIdentity?.formalSHA256,
-                                  tap: ProcessInfo.processInfo.systemUptime))
+    func cancelForLibraryOpen() -> Bool {
+        guard !changingUserScope else { return false }
+        handoff = .idle(UUID()); task?.cancel(); task = nil
+        resumeAfterCurrent = false; requestError = nil
+        return true
     }
     func resume() {
         guard !changingUserScope else { return }
@@ -254,14 +195,6 @@ final class SystemReadingRouter {
               sceneActive, Onboarding.shared.completed else { return }
         let current = context.token
         handoff = .resolving(context)
-        // The visible card already names the target. In the usual case
-        // there is no reader to close; admission and navigation stay synchronous.
-        if case let .displayed(entry, expectedSHA, tap) = context.destination, reader == nil {
-            guard beginOpening(entry, in: library, context: context) else { return }
-            publishEntry(entry, expectedSHA: expectedSHA, tap: tap, in: library)
-            handoff = .idle(current)
-            return
-        }
         task = Task { [weak self] in
             guard let self else { return }
             defer {
@@ -272,13 +205,7 @@ final class SystemReadingRouter {
             }
             do {
                 guard sceneActive, requestID == current, !Task.isCancelled else { return }
-                if case let .displayed(entry, expectedSHA, tap) = context.destination {
-                    if await openEntry(entry, expectedSHA: expectedSHA, tap: tap, in: library, context: context) {
-                        handoff = .idle(current)
-                    }
-                    return
-                }
-                guard case .system(let request) = context.destination else { return }
+                let request = context.request
                 let id: SystemReadingBookID
                 let automatic: Bool
                 switch request {

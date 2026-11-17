@@ -100,10 +100,6 @@ final class ReaderIndex: @unchecked Sendable {
     struct ImportTask: @unchecked Sendable {
         weak var control: ImportControl?
         let generation: Int64
-        // Retained even after the worker exits, only when saving the terminal
-        // phase failed. This map belongs to this index handle's lease.
-        var terminal: PreparationState?
-
         init(control: ImportControl) {
             self.control = control
             generation = control.generation

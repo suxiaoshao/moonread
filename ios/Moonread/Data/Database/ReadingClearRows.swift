@@ -205,7 +205,7 @@ enum ReadingHistoryTransport {
     }
 
     static func enqueueClear(_ db: Database, id: String, value: ReadingClearRows.Value, scope: DataScope) throws {
-        guard scope != .local, let payload = try clearWire(db, id: id, value: value) else { return }
+        guard scope != .local, let payload = try clearWire(value) else { return }
         try save(db, type: .clear, id: id, payload: payload, scope: scope)
     }
 
@@ -242,12 +242,8 @@ enum ReadingHistoryTransport {
         return try String.fetchOne(db, sql: "SELECT book_key FROM usr.reading_fact WHERE partition=0 AND fact_id=?", arguments: [id])
     }
 
-    private static func clearWire(_ db: Database, id: String, value: ReadingClearRows.Value) throws -> String? {
+    private static func clearWire(_ value: ReadingClearRows.Value) throws -> String? {
         if let book = value.book, case .pending = try parseReadingKey(value: book) { return nil }
-        guard try Bool.fetchOne(db, sql: """
-            SELECT NOT EXISTS(SELECT 1 FROM usr.quarantined_record
-               WHERE source_type IN (\(ReadingFactRows.quarantineClearTypes)) AND record_id=?)
-            """, arguments: [id]) == true else { return nil }
         return try ReadingClearRows.wire(value)
     }
 
@@ -436,7 +432,7 @@ enum ReadingHistoryTransport {
             changed.segments.insert(id)
             return
         }
-        if try ReadingSegmentRows.ingest(db, value: value, book: key, partition: 0, scope: scope,
+        if try ReadingSegmentRows.ingest(db, value: value, book: key, partition: 0,
              intake: fetched ? .fetched : .backup, origin: origin, originalPayload: payload) {
             changed.segments.insert(id)
         }
@@ -477,14 +473,12 @@ enum ReadingHistoryTransport {
                                    source: String, sourceID: String, changed: inout ReadingHistoryRows.Changed,
                                    upgrade: UpgradeOrigins.Write? = nil) throws {
         try isolateClear(db, id: id, book: book, session: nil, bytes: Data(payload.utf8), source: source, sourceID: sourceID, upgrade: upgrade)
-        try didIsolateClear(db, id: id, book: book, session: nil, changed: &changed)
+        if source == "cloud" { try withdrawSave(db, type: .clear, id: id) }
+        try recordIsolatedClearEffects(db, book: book, session: nil, changed: &changed)
     }
 
-    /// Both fetched and restored isolation revoke the old save, even if
-    /// that clear's readable raw row still exists. A DELETE stays pending.
-    static func didIsolateClear(_ db: Database, id: String, book: String?, session: String?,
-                                changed: inout ReadingHistoryRows.Changed) throws {
-        try withdrawSave(db, type: .clear, id: id)
+    static func recordIsolatedClearEffects(_ db: Database, book: String?, session: String?,
+                                          changed: inout ReadingHistoryRows.Changed) throws {
         changed.clearFacts.formUnion(try ReadingFactSettlement.affectedIDs(db, partition: 0, book: book, session: session))
         changed.clearSegments.formUnion(try ReadingSegmentRows.affected(db, partition: 0, book: book, session: session))
     }
@@ -518,7 +512,7 @@ enum ReadingHistoryTransport {
             return try segmentWire(raw)
         case .clear:
             guard let clear = try ReadingClearRows.load(db, partition: 0, id: id) else { return nil }
-            return try clearWire(db, id: id, value: clear)
+            return try clearWire(clear)
         }
     }
 
@@ -536,17 +530,14 @@ enum ReadingHistoryTransport {
     static func deleteIsolatedBookRecords(_ db: Database, book: String, scope: DataScope) throws {
         guard scope != .local, let book = formalScope(book) else { return }
         let records = try Row.fetchAll(db, sql: """
-            SELECT DISTINCT c.record_type,c.record_name,c.business_id
+            SELECT DISTINCT c.record_name,c.business_id
             FROM usr.quarantined_record q JOIN usr.cloud_record_state c
               ON c.record_name=q.source_id AND c.business_id=q.record_id
             WHERE q.partition=0 AND q.book_key=? AND q.source='cloud' AND c.zone=?
-              AND ((c.record_type=? AND q.source_type IN (\(ReadingSegmentRows.quarantineTypes)))
-                OR (c.record_type=? AND q.source_type IN (\(ReadingFactRows.quarantineClearTypes)))
-                OR (c.record_type=? AND q.source_type IN (\(ReadingFactRows.quarantineFactTypes))))
-            """, arguments: [book,zone,RecordType.segment.rawValue,RecordType.clear.rawValue,RecordType.fact.rawValue])
+              AND c.record_type=? AND q.source_type IN (\(ReadingFactRows.quarantineFactTypes))
+            """, arguments: [book,zone,RecordType.fact.rawValue])
         for record in records {
-            guard let type = RecordType(rawValue: record["record_type"]) else { continue }
-            try queueDelete(db, type: type, id: record["business_id"], recordName: record["record_name"])
+            try queueDelete(db, type: .fact, id: record["business_id"], recordName: record["record_name"])
         }
     }
 

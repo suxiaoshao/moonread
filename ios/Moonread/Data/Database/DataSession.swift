@@ -454,13 +454,7 @@ final class DataSession: @unchecked Sendable {
 
     func issueCloudLease(_ token: DataSessionLease) throws -> DataCloudLease {
         try lifecycle.withLock {
-            let pool = try permittedCloud(token)
-            if try pool.read({ try UpgradeOrigins.phase($0) }) == .unverifiedTrial {
-                // There is no evidence that separates already-imported
-                // trial rows from subsequent edits. Keep the file available
-                // locally without starting any network work for it.
-                throw DataV2Error.migrationNotVerified
-            }
+            _ = try permittedCloud(token)
             let binding = DataCloudLease(user: token, identity: UUID())
             cloudLease = binding
             return binding
@@ -531,19 +525,17 @@ final class DataSession: @unchecked Sendable {
 
     /// Called only from the confirmed enable flow. Merely learning the current
     /// iCloud account does not transfer local records.
-    func claimLocal(for target: DataScope, authorize: () throws -> Void = {}) throws {
+    func claimLocal(for target: DataScope) throws {
         lifecycle.lock(); defer { lifecycle.unlock() }
         guard target.valid, target != .local, verifiedAccount == target else {
             throw DataV2Error.invalidOwnerState
         }
         try recoverLocalMove()
-        try authorize()
         let source = try layout.user(.local)
         guard FileManager.default.fileExists(atPath: source.path) else {
             try closeLocked()
             var state = owner
             state.current = target; state.lastConfirmed = target
-            try authorize()
             try saveOwner(state)
             return
         }
@@ -557,7 +549,7 @@ final class DataSession: @unchecked Sendable {
             guard let pool else { throw DataV2Error.sessionClosed }
             try pool.writeWithoutTransaction { db in
                 try LocalScopeImport.withSource(db, url: source, readOnly: true) {
-                    try LocalScopeImport.copy(db, move: move.id, scope: target, authorizeCommit: authorize)
+                    try LocalScopeImport.copy(db, move: move.id, scope: target)
                 }
             }
             try finishLocalMove(move)

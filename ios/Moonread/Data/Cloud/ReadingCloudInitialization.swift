@@ -333,7 +333,6 @@ extension ReadingCloudInitialization {
     static func traffic(_ db: Database) throws -> Traffic {
         switch try UpgradeOrigins.phase(db) {
         case nil where try !isRecovering(db): return .ordinary
-        case .unverifiedTrial: return .blocked
         case nil, .unresolved:
             guard let upload = try upload(db), !upload.sealed,
                   let decision = try stored(db), decision.role == .selectedFirst,

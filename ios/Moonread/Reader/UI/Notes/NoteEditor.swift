@@ -104,7 +104,6 @@ struct NoteEditor: View {
     init(model: NoteEditorModel, close: @escaping () -> Void) { _model = State(initialValue: model); self.close = close }
     var body: some View {
         NavigationStack { NoteEditorContent(model: model, close: close) }
-            .userScopeEditor(model) { $0.saving || $0.hasUnsavedChanges }
     }
 }
 

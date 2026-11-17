@@ -94,7 +94,6 @@ struct StatisticsView: View {
         .task(id: InformationRequest(identity: target.map(BookInformationModel.Identity.init), revision: information.requestRevision)) {
             if let target { await information.observe(target) }
         }
-        .onAppear { library.systemReading.scopeEditors.track(information) { $0.blocksUserScopeChange } }
         .sheet(item: $information.draft) { draft in
             BookMetadataEditor(draft: draft, title: information.entry?.title ?? target?.title ?? "").themeScope(theme)
                 .readerToolPresentation()

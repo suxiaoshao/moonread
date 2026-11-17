@@ -52,7 +52,6 @@ final class BookInformationModel {
             else if case .editing = preparation { preparation = .idle }
         }
     }
-    var blocksUserScopeChange: Bool { preparing || draft?.blocksUserScopeChange == true }
     var canEdit: Bool { !preparing && (details != nil || entry != nil || readableBook != nil) }
 
     private(set) var loadedIdentity: Identity?
@@ -271,7 +270,7 @@ final class BookMetadataDraft: Identifiable {
         self.base = base; value = base; self.service = service
     }
     var changed: Bool { value != base || !newTag.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-    var blocksUserScopeChange: Bool {
+    var blocksInteractiveDismissal: Bool {
         !closed && (changed || saving || choosingImage || presentsPhotoPicker || presentsFilePicker)
     }
     enum LeaveAction { case close, confirmDiscard }
@@ -417,7 +416,7 @@ struct BookMetadataEditor: View {
                 .alert("暂时无法完成", isPresented: Binding(get: { draft.error != nil }, set: { if !$0 { draft.error = nil } })) {
                     Button("知道了", role: .cancel) { draft.error = nil }
                 } message: { Text(draft.error ?? "") }
-        }.interactiveDismissDisabled(draft.blocksUserScopeChange)
+        }.interactiveDismissDisabled(draft.blocksInteractiveDismissal)
             .onDisappear { draft.cancel() }
     }
     private func addTag() {

@@ -54,7 +54,6 @@ final class FolderStore {
     private(set) var requestRevision = 0
     let loading = LoadingState()
 
-    @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private let updates: Updates
     @ObservationIgnored private var accountChange: AnyCancellable?
 
@@ -62,7 +61,6 @@ final class FolderStore {
         updates = { try await service.folderUpdates($0, sort: $1) }
         accountChange = MainActorNotifications.observe(.readingContinuationInvalidated, object: service) { [weak self] in
             guard let self else { return }
-            generation = UUID()
             snapshot = nil
             failed = false
             requestRevision &+= 1
@@ -75,21 +73,21 @@ final class FolderStore {
 
     func observe(_ location: LibraryLocation, sort: LibrarySort = .reading,
                  didLoad: ([LibraryEntry]) -> Void, didFail: (Error) -> Void) async {
-        let ticket = UUID(); generation = ticket
+        let revision = requestRevision
         let request = loading.begin(); defer { loading.finish(request) }
         failed = false
         do {
             try await AppDataService.libraryTestLatency()
             let stream = try await updates(location, sort)
             for try await entries in stream {
-                guard !Task.isCancelled, generation == ticket else { return }
+                guard !Task.isCancelled, requestRevision == revision else { return }
                 if snapshot != entries { snapshot = entries }
                 loading.finish(request)
                 didLoad(entries)
             }
         } catch is CancellationError { }
         catch {
-            guard !Task.isCancelled, generation == ticket else { return }
+            guard !Task.isCancelled, requestRevision == revision else { return }
             failed = true
             didFail(error)
         }

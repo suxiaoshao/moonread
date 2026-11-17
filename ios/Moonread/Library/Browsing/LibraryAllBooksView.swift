@@ -137,7 +137,6 @@ struct LibraryAllBooksView: View {
         .overlay { if catalogue.snapshot != nil && !catalogue.loading.active && !model.refreshing.active && model.shelfScans[shelfID] == nil && bookCount == 0 { ContentUnavailableView("暂无小说", systemImage: "books.vertical") } }
         .modifier(PageLoadingOverlay(request: model.processingFiles || model.nativeRefreshing ? nil : model.shelfScans[shelfID] ?? catalogue.loading.request ?? model.refreshing.request,
                                      hasContent: bookCount > 0, label: "正在加载书架", immediate: model.explicitRefresh || model.shelfScans[shelfID] != nil))
-        .onChange(of: model.revision) { catalogue.retryIfFailed() }
         .task(id: request) {
             let input = request
             await catalogue.observe(shelfID: input.shelfID, grouping: input.grouping) { error in

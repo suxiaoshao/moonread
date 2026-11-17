@@ -69,11 +69,12 @@ final class CloudScopeCancellation: Sendable {
 
 protocol ReadingCloudTransport: Sendable {
     func syncNow() async throws
-    /// Must cancel and drain the transport, including any out-of-engine work.
+    /// Revoke the old writer before a different account can be selected.
+    func retire()
+    /// Cleanup can finish without holding up the new account.
     func close() async
 }
 
-enum CloudScopePresentationError: Error { case editing }
 
 /// The coordinator is the only App owner of a running reading-data transport.
 /// The cutover binding is supplied separately from iCloud Drive discovery.
@@ -152,7 +153,6 @@ actor CloudSyncCoordinator {
     private var transition: Task<Void, Never>?
     private var transport: (account: Account, handle: any ReadingCloudTransport)?
     private var turn: Task<Void, Never>?
-    private var draining: Task<Void, Never>?
     private var dirty = false
     private var restartPending = false
     private var identityNeedsVerification = false
@@ -213,7 +213,7 @@ actor CloudSyncCoordinator {
             restartPending = true
             // Cancel already-running I/O immediately, even when the previous
             // account lookup or other transition hasn't returned yet.
-            beginStop()
+            stop()
             if runtime != nil { status.activation = .checking(revision: token); publish() }
         }
         let work = Task {
@@ -243,7 +243,7 @@ actor CloudSyncCoordinator {
         status.activation = .checking(revision: token)
         publish()
         if restartPending || !foreground || !status.requested {
-            await stop()
+            stop()
             guard current(token) else { return }
             restartPending = false
         }
@@ -253,7 +253,7 @@ actor CloudSyncCoordinator {
             guard current(token) else { return }
             switch identity {
             case .unknown, .signedOut:
-                await stop()
+                stop()
                 guard current(token) else { return }
                 let input: DataIdentityStatus
                 if !foreground && !identityNeedsVerification { input = .paused }
@@ -270,7 +270,7 @@ actor CloudSyncCoordinator {
                 guard current(token) else { return }
                 let requested = service.cloudSyncIntent.requested
                 let enabled = requested && (explicitlyApproved || approvedBefore)
-                if !enabled || transport?.account != account { await stop() }
+                if !enabled || transport?.account != account { stop() }
                 guard current(token) else { return }
                 let selected = try await runtime.select(.confirmed(account.scope, syncRequested: enabled),
                                                         requested && explicitlyApproved ? account : nil)
@@ -296,7 +296,11 @@ actor CloudSyncCoordinator {
                 }
                 if transport == nil {
                     let handle = try await runtime.open(account)
-                    guard current(token) else { await handle.close(); return }
+                    guard current(token) else {
+                        handle.retire()
+                        Task { await handle.close() }
+                        return
+                    }
                     transport = (account, handle)
                 }
                 status.activation = .enabled(account.identity, revision: token)
@@ -306,13 +310,11 @@ actor CloudSyncCoordinator {
             publish()
         } catch {
             guard current(token) else { return }
-            await stop()
+            stop()
             guard current(token) else { return }
             if (error as? CloudZoneRecoverySignal) == .resetComplete {
                 pauseForZone()
                 return
-            } else if error is CloudScopePresentationError {
-                status.activation = .unavailable(String(localized: "请先保存或关闭当前编辑，再切换阅读数据账户。"))
             } else {
                 status.activation = .unavailable(String(localized: "暂时无法连接 iCloud，阅读数据同步未完成。"))
             }
@@ -368,27 +370,13 @@ actor CloudSyncCoordinator {
         publish()
     }
 
-    private func beginStop() {
-        guard draining == nil else { return }
+    private func stop() {
         let old = transport
-        let work = turn
+        old?.handle.retire()
+        turn?.cancel()
         transport = nil; turn = nil; dirty = false
-        work?.cancel()
         status.syncing = false; status.lastSync = nil; status.transportMessage = nil
-        if old != nil || work != nil {
-            draining = Task {
-                await old?.handle.close()
-                await work?.value
-            }
-        }
-    }
-
-    private func stop() async {
-        beginStop()
-        await draining?.value
-        // Account transitions are serialized. Only the current transition
-        // consumes the drain; enqueuing another one can only join it.
-        draining = nil
+        if let old { Task { await old.handle.close() } }
     }
 
     private func publish() { NotificationCenter.default.post(name: .readingCloudStatusChanged, object: nil) }

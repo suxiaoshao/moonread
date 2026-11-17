@@ -7,7 +7,7 @@ import GRDB
 /// write inside their existing usr transaction, never a derived current row.
 enum UpgradeOrigins {
     enum Phase: String {
-        case unresolved, unverifiedTrial
+        case unresolved
     }
 
     enum Domain: String, CaseIterable {
@@ -116,30 +116,9 @@ enum UpgradeOrigins {
             """, arguments: [phaseKey])
     }
 
-    /// Earlier trial versions sometimes already imported and then edited the
-    /// same ID. Preserve the current authority, but give it no claim about
-    /// what part originated in the released store.
-    static func retainUnverifiedTrial(_ db: Database) throws {
-        try db.execute(sql: """
-            INSERT INTO usr.local_data_state
-            SELECT ?,? WHERE EXISTS(SELECT 1 FROM usr.local_data_state
-               WHERE state_key IN ('legacy-user-import','last-completed-local-move'))
-            """, arguments: [phaseKey, Phase.unverifiedTrial.rawValue])
-    }
-
     static func copyFromFrozenLocal(_ db: Database) throws {
-        let source = try phase(db, in: .frozenLocal)
-        let unknownRows = source == nil
-            ? try Domain.allCases.contains { domain in
-                try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM move_source.\(domain.rawValue))") == true
-            } : false
-        if source == .unverifiedTrial || unknownRows {
-            try db.execute(sql: "INSERT OR REPLACE INTO usr.local_data_state VALUES (?,?)",
-                           arguments: [phaseKey, Phase.unverifiedTrial.rawValue])
-        } else if source == .unresolved {
-            try begin(db)
-        }
-        guard source != nil else { return }
+        guard try phase(db, in: .frozenLocal) == .unresolved else { return }
+        try begin(db)
         // The seed anchor may no longer have a raw row, but a surviving
         // edit can still depend on it. Copy anchors before any live version.
         guard try Bool.fetchOne(db, sql: """

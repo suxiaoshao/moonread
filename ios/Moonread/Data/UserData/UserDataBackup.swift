@@ -433,7 +433,7 @@ enum ReadingHistoryBackup {
                 changed.clearFacts.insert(id)
             case "ReadingSegment", "reading_segment": changed.segments.insert(id)
             default:
-                try ReadingHistoryTransport.didIsolateClear(db, id: id, book: book, session: session, changed: &changed)
+                try ReadingHistoryTransport.recordIsolatedClearEffects(db, book: book, session: session, changed: &changed)
             }
         }
     }

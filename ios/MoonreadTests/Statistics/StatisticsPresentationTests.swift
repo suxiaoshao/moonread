@@ -299,7 +299,7 @@ final class StatisticsFixedReadTests: XCTestCase {
           firstExposureStart: 20, exposuresText: """
             [{"start_utf8":20,"end_utf8":40,"duration_ms":1000},{"start_utf8":40,"end_utf8":60,"duration_ms":2000}]
             """)
-        if try ReadingSegmentRows.ingest(db, value: value, book: b, partition: 0, scope: scope, intake: .local(owner: "fixture"),
+        if try ReadingSegmentRows.ingest(db, value: value, book: b, partition: 0, intake: .local(owner: "fixture"),
                                          origin: .init(source: "fixture", id: shared)) { change.segments.insert(shared) }
         try change.settle(db, scope: scope)
         var cleared = ReadingHistoryRows.Changed()

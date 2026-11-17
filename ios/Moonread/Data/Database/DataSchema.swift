@@ -120,7 +120,6 @@ enum DataV2Schema {
                     CREATE TABLE usr.upgrade_pending_book (pending_key TEXT PRIMARY KEY NOT NULL, formal_key TEXT NOT NULL);
                     PRAGMA usr.user_version=4;
                     """)
-                try UpgradeOrigins.retainUnverifiedTrial(db)
             }
         }
         if user < 5 {

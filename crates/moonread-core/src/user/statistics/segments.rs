@@ -129,12 +129,7 @@ pub fn advance_reading_segment(
     let seed = Uuid::parse_str(&segment_seed)
         .map_err(|_| ReaderError::InvalidSettings)?
         .to_string();
-    if next_visit_id.is_empty()
-        || moment.unix_ms.unsigned_abs()
-            > (i64::MAX - i64::from(i32::MAX) * 1000 - 2 * DAY_MS) as u64
-        || state.timing.charged_for(&moment) > DAY_MS as u64
-        || (moment.readable && moment.start_utf8 >= moment.end_utf8)
-    {
+    if next_visit_id.is_empty() || (moment.readable && moment.start_utf8 >= moment.end_utf8) {
         return Err(ReaderError::InvalidRange);
     }
 
@@ -469,65 +464,6 @@ pub fn decode_reading_segment(payload: String) -> ReadingSegmentDecode {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, uniffi::Enum)]
-pub enum ReadingSegmentRelation {
-    Same,
-    IncomingExtends,
-    IncomingPrefix,
-    Diverged,
-}
-
-/// Book-route equivalence is proven by the database owner before calling
-/// this function. Revision alone cannot prove a legal version replacement.
-#[uniffi::export]
-pub fn compare_reading_segments(
-    known: ReadingSegment,
-    incoming: ReadingSegment,
-) -> Result<ReadingSegmentRelation> {
-    use ReadingSegmentRelation::*;
-    let (left, right) = (validated_exposure(&known)?, validated_exposure(&incoming)?);
-    let (a, b) = (&known.header, &incoming.header);
-    if a.id != b.id
-        || a.author != b.author
-        || a.visit_id != b.visit_id
-        || a.started_ms != b.started_ms
-        || a.local_day != b.local_day
-        || a.utc_offset_seconds != b.utc_offset_seconds
-        || a.preview != b.preview
-    {
-        return Ok(Diverged);
-    }
-    if a.revision == b.revision {
-        return Ok(if a == b && left == right {
-            Same
-        } else {
-            Diverged
-        });
-    }
-    let (old, old_evidence, new, new_evidence, relation) = if a.revision < b.revision {
-        (a, &left, b, &right, IncomingExtends)
-    } else {
-        (b, &right, a, &left, IncomingPrefix)
-    };
-    if old.sealed
-        || old.ended_ms > new.ended_ms
-        || (old.ended_ms == new.ended_ms && !new.sealed)
-        || old_evidence.len() > new_evidence.len()
-    {
-        return Ok(Diverged);
-    }
-    let last = old_evidence.len() - 1;
-    let (tail, extended) = (&old_evidence[last], &new_evidence[last]);
-    if old_evidence[..last] != new_evidence[..last]
-        || tail.start_utf8 != extended.start_utf8
-        || tail.end_utf8 != extended.end_utf8
-        || tail.duration_ms > extended.duration_ms
-    {
-        return Ok(Diverged);
-    }
-    Ok(relation)
-}
-
 #[derive(Debug, PartialEq, Eq, uniffi::Record)]
 pub struct ReadingSegmentTail {
     pub started_ms: i64,
@@ -838,8 +774,7 @@ mod tests {
     }
 
     #[test]
-    fn prefix_revisions_seal_and_clear_do_not_change_the_raw_evidence() -> Result<()> {
-        use ReadingSegmentRelation::*;
+    fn sealing_and_clearing_do_not_change_the_raw_exposure_evidence() -> Result<()> {
         let a = version(1, false, &[(1, 4, 2_000), (9, 11, 1_000)]);
         let b = version(
             3,
@@ -847,41 +782,6 @@ mod tests {
             &[(1, 4, 2_000), (9, 11, 2_000), (20, u64::MAX, 2_000)],
         );
         let c = seal_reading_segment(b.clone())?;
-        for (known, incoming, relation) in [
-            (&a, &a, Same),
-            (&a, &b, IncomingExtends),
-            (&b, &a, IncomingPrefix),
-            (&b, &c, IncomingExtends),
-            (&c, &b, IncomingPrefix),
-            (
-                &a,
-                &version(1, false, &[(2, 4, 2_000), (9, 11, 1_000)]),
-                Diverged,
-            ),
-            (
-                &a,
-                &version(4, false, &[(1, 4, 2_100), (9, 11, 2_000)]),
-                Diverged,
-            ),
-            (&seal_reading_segment(a.clone())?, &b, Diverged),
-            (
-                &c,
-                &version(
-                    5,
-                    true,
-                    &[(1, 4, 2_000), (9, 11, 2_000), (20, u64::MAX, 2_001)],
-                ),
-                Diverged,
-            ),
-        ] {
-            assert_eq!(
-                compare_reading_segments(known.clone(), incoming.clone())?,
-                relation
-            );
-        }
-        let mut changed = b.clone();
-        changed.header.author.title = "renamed".into();
-        assert_eq!(compare_reading_segments(a.clone(), changed)?, Diverged);
         assert_eq!(c.header.revision, b.header.revision + 1);
         assert_eq!(c.header.ended_ms, b.header.ended_ms);
         assert_eq!(c.exposures_text, b.exposures_text);

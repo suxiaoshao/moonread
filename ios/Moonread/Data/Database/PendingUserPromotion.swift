@@ -238,7 +238,7 @@ enum PendingUserPromotion {
             guard try !ReadingHistoryTransport.deletionPending(db, type: .segment, id: id) else { continue }
             try ReadingClearRows.transferPrefixes(db, from: pending, to: formal, raw: raw, scope: scope)
             let origin = try UpgradeOrigins.provenance(db, .init(partition: 1, domain: .segment, id: id))
-            try ReadingSegmentRows.ingest(db, value: raw.value, book: formal, partition: 0, scope: scope,
+            try ReadingSegmentRows.ingest(db, value: raw.value, book: formal, partition: 0,
                                           intake: .transfer(localOwner: raw.localOwner),
                                           origin: .init(source: "pending-promotion", id: pending, carried: origin))
         }
@@ -463,7 +463,6 @@ extension ReaderIndex {
             var history = ReadingHistoryRows.Changed()
             for key in targets {
                 history.facts.formUnion(try ReadingFactSettlement.affectedIDs(db, book: key))
-                history.facts.formUnion(try ReadingFactSettlement.affectedIsolation(db, book: key))
                 history.segments.formUnion(try ReadingSegmentRows.affected(db, book: key))
                 history.segments.formUnion(try ReadingSegmentRows.affectedIsolation(db, book: key))
                 if case .formal = try parseReadingKey(value: key), lease.scope != .local {

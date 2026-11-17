@@ -45,7 +45,6 @@ struct ChapterEditor: View {
         fields.navigationTitle("编辑目录项").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { saveButton } }
         .modifier(SystemReadingConfirmation(editor: true))
-        .userScopeEditor(draft) { $0.saving || $0.hasUnsavedChanges }
         .onAppear { focused = true }
         .alert("暂时无法完成", isPresented: Binding(get: { draft.error != nil }, set: { if !$0 { draft.error = nil } })) {
             Button("知道了", role: .cancel) { draft.error = nil }
@@ -197,7 +196,6 @@ struct ChapterRebuildView: View {
         fields.navigationTitle("目录预览").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .topBarTrailing) { applyButton } }
         .onAppear { model.startIfNeeded() }
-        .userScopeEditor(model) { $0.applying }
         .overlay { if model.applying { LoadingActivity(size: 32, waitingLabel: "正在应用目录") } }
     }
     private var applyButton: some View {

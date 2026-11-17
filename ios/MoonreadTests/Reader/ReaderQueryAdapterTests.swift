@@ -279,6 +279,7 @@ final class LibraryFixedQueryAdapterTests: XCTestCase {
     nameUpdates.yield(named)
     await fulfillment(of: [initial], timeout: 2)
     XCTAssertEqual(store.snapshot?.shelfID, "first")
+    old.cancel() // SwiftUI cancels the old .task(id:) before requesting new parameters.
     let replacement = Task { await store.observe(shelfID: "second", grouping: .tags) { XCTFail(String(describing: $0)) } }
     defer { replacement.cancel() }
     await fulfillment(of: [entered], timeout: 2)

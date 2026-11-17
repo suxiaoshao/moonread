@@ -87,10 +87,7 @@ struct MoonreadApp: App {
             guard case .preparing = startup else { return }
             do {
                 try await library.service.prepareUserAuthorityForStartup()
-                await library.service.installUserScopePresentation(prepare: { [weak library, weak ai, weak themes] in
-                    guard ai?.proposals.inFlight.isEmpty != false, themes?.saving != true else {
-                        throw CloudScopePresentationError.editing
-                    }
+                await library.service.installUserScopePresentation(prepare: { [weak library] in
                     try await library?.prepareUserScopeChange()
                 }, finish: { [weak library, weak themes] rebound in
                     library?.finishUserScopeChange(rebound: rebound)

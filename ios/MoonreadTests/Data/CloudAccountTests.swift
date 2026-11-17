@@ -84,7 +84,7 @@ final class CloudAccountCloudAccountTests: XCTestCase {
         try await query.value
     }
 
-    func testWaitsForDrainAndRejectsStaleAccountConsent() async throws {
+    func testSwitchDoesNotWaitForTransportAndRejectsStaleAccountConsent() async throws {
         let events = SyncLifecycleEvents(), backend = SyncLifecycleBackend(events)
         let suite = "SyncLifecycle-" + UUID().uuidString
         defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
@@ -102,17 +102,14 @@ final class CloudAccountCloudAccountTests: XCTestCase {
         await backend.move(.confirmed(backend.b))
         let switchB = Task { await owner.identityChanged() }
         await events.wait("close-A")
-        try Self.require(await !events.entries.contains("bind-b-off"), "must not switch while old transport closes")
         await events.add("allow-lookup")
         await passive.value
-        await events.add("allow-close-A")
-        await events.wait("drained-A")
-        try Self.require(await !events.entries.contains("bind-b-off"), "must not switch before old turn returns")
-        await events.add("allow-turn-A")
         await switchB.value
         let order = await events.entries
-        try Self.require(order.firstIndex(of: "turn-ended-A")! < order.firstIndex(of: "bind-b-off")!,
-                    "actual turn must finish before replacement scope binds")
+        try Self.require(order.contains("bind-b-off") && !order.contains("turn-ended-A"),
+                         "B must get its own data authority without waiting for A's old network round")
+        await events.add("allow-close-A")
+        await events.add("allow-turn-A")
         guard case .awaitingAccountConfirmation(let b, let old, _) = await owner.currentStatus().activation,
               b.recordName == "B" else { throw NSError(domain: "B consent not offered", code: 1) }
         try Self.require(!order.contains("open-B"), "B is locally selected without starting a transport")
@@ -127,7 +124,6 @@ final class CloudAccountCloudAccountTests: XCTestCase {
         try Self.require(await events.entries.contains("open-C"), "matching explicit approval starts C")
         try Self.require(await !events.entries.contains("approve-B"), "stale B approval must never merge B")
         await owner.scene(active: false)
-        try Self.require(await events.entries.contains("drained-C"), "background drains foreground transport")
         try Self.require(await events.entries.contains("paused"), "ordinary background suspends only network authority")
         try Self.require(await !events.entries.contains("unknown"), "ordinary background is not an identity failure")
         await owner.identityChanged()
@@ -208,83 +204,6 @@ final class CloudAccountCloudAccountTests: XCTestCase {
                     "the committed D1 source cannot be claimed again")
     }
 
-    @MainActor func testRejectedAccountChangeKeepsDetailDraftUntilOriginalDiscardConfirmation() async throws {
-        let root = FileManager.default.temporaryDirectory.appending(path: "ScopeDraft-" + UUID().uuidString)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let a = try DataScope.confirmed(container: "fixture.invalid", environment: .development, recordName: "A")
-        let b = try DataScope.confirmed(container: "fixture.invalid", environment: .development, recordName: "B")
-        let session = try DataSession(layout: .init(applicationSupport: root), confirmedLegacyOwner: a)
-        let old = try session.activate(.confirmed(a, syncRequested: false)).0
-        try session.prepareIndex(root.appending(path: "unused"), token: old)
-        try session.prepareUsers(old) { nil }
-        let suite = root.lastPathComponent
-        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
-        let service = AppDataService(core: .init(session: session, lease: old), libraryDirectory: root, sourceDefaultsSuite: suite)
-        let info = BookInformationModel(service: service)
-        let editors = UserScopeEditors()
-        editors.track(info) { $0.blocksUserScopeChange }
-        let invalidations = Mutex(0)
-        let observer = NotificationCenter.default.addObserver(forName: .readingContinuationInvalidated, object: service, queue: nil) { _ in
-            invalidations.withLock { $0 += 1 }
-        }
-        defer { NotificationCenter.default.removeObserver(observer) }
-        let sha = String(repeating: "a", count: 64)
-        let base = BookMetadata(sha: sha, author: "", synopsis: "", tags: [], cover: nil, status: .unread)
-        let cover = BookCoverAsset(id: UUID().uuidString, sha256: sha, extension: "jpg", width: 1, height: 1)
-        let coverFile = await service.coverDraftURL(cover)
-        try FileManager.default.createDirectory(at: coverFile.deletingLastPathComponent(), withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: coverFile.deletingLastPathComponent()) }
-        let coverBytes = Data([1, 4, 9])
-        try coverBytes.write(to: coverFile)
-        let draft = BookMetadataDraft(base: base, service: service)
-        info.draft = draft
-        service.cloudSyncIntent.set(true)
-        let accountB = CloudSyncCoordinator.Account(identity: .init(recordName: "B"), scope: b)
-        let performHandoff: @MainActor () async throws -> DataScopeSelection = {
-            try await service.selectReadingCloudScope(.confirmed(b, syncRequested: true), approval: accountB,
-                lookup: { .confirmed(accountB) }, beforeRebind: { try editors.requireReady() })
-        }
-        func expectRefusal() async throws {
-            do { _ = try await performHandoff(); XCTFail("dirty editor allowed switch") }
-            catch CloudScopePresentationError.editing { }
-            try Self.require(try await service.relationalUserIndex().lease == old, "refusal cannot replace the lease")
-            try Self.require(invalidations.withLock { $0 } == 0 && info.draft === draft && info.requestRevision == 0,
-                             "refusal cannot invalidate the model, navigation or draft")
-            XCTAssertNil(service.cloudSyncIntent.approvedScopeKey)
-        }
-
-        let coverRead = SyncLifecycleEvents()
-        let preparation = draft.chooseImage { () async -> Data? in await coverRead.wait("release"); return nil }
-        try await expectRefusal()  // Includes loading from the picker, before decoding starts.
-        await coverRead.add("release")
-        await preparation?.value
-
-        draft.saving = true
-        try await expectRefusal()
-        draft.saving = false
-
-        draft.value.author = "fixture author"
-        try await expectRefusal()
-        XCTAssertEqual(draft.value.author, "fixture author")
-        draft.value.author = base.author
-        draft.value.cover = cover
-        try await expectRefusal()  // Cover-only changes are an independent blocker.
-        XCTAssertEqual(draft.value.cover, cover)
-        XCTAssertEqual(try Data(contentsOf: coverFile), coverBytes)
-
-        guard case .confirmDiscard = draft.requestLeave() else { return XCTFail("existing cancel must prompt before discarding") }
-        try await expectRefusal()  // Cancelling the existing alert has no effect.
-        XCTAssertEqual(try Data(contentsOf: coverFile), coverBytes)
-        let discard = draft.cancel()  // Same action as the alert's destructive button.
-        await discard?.value
-        info.draft = nil             // Sheet's binding releases the discarded draft.
-        let selected = try await performHandoff()
-        XCTAssertEqual(selected.scope, b)
-        XCTAssertTrue(selected.maySync)
-        XCTAssertEqual(invalidations.withLock { $0 }, 1)
-        XCTAssertFalse(FileManager.default.fileExists(atPath: coverFile.path))
-    }
-
     func testZoneRecoveryRequiresDurableDeletionAndExactAbsence() async throws {
         let fixture = try ZoneRecoveryFixture()
         defer { fixture.remove() }
@@ -355,9 +274,9 @@ final class CloudAccountCloudAccountTests: XCTestCase {
             journal.retire()
             do {
                 _ = try await service.recoverReadingCloudZone(fixture.account, presence: nil, lookup: { .confirmed(fixture.account) },
-                    beforeClear: { throw CloudScopePresentationError.editing })
+                    beforeClear: { throw CancellationError() })
                 XCTFail("purge bypassed the editor guard")
-            } catch CloudScopePresentationError.editing { }
+            } catch is CancellationError { }
             let held = try fixture.state(index)
             XCTAssertTrue(held.stage.requiresLocalClear)
             XCTAssertEqual(held.checkpoint, Data([22]))
@@ -386,7 +305,7 @@ final class CloudAccountCloudAccountTests: XCTestCase {
         }
     }
 
-    func testZoneRecoveryStopsOldHandleBeforeProbeAndRestartsOnlyOnce() async throws {
+    func testZoneRecoveryRestartsOnlyOnce() async throws {
         let fixture = try ZoneRecoveryFixture()
         defer { fixture.remove() }
         let (_, service) = try fixture.open()
@@ -408,7 +327,7 @@ final class CloudAccountCloudAccountTests: XCTestCase {
             if case .unavailable = await coordinator.currentStatus().activation { break }
         }
         let events = await trace.events
-        XCTAssertEqual(events, ["open-1","send-1","close-1","probe","apply","open-2","send-2","close-2"])
+        XCTAssertEqual(events.filter { !$0.hasPrefix("close-") }, ["open-1","send-1","probe","apply","open-2","send-2"])
     }
 }
 
@@ -429,6 +348,7 @@ private struct ZoneRecoveryTestTransport: ReadingCloudTransport {
         await trace.record("send-\(id)")
         throw CloudZoneRecoverySignal.verificationRequired
     }
+    func retire() {}
     func close() async { await trace.record("close-\(id)") }
 }
 
@@ -501,6 +421,7 @@ private actor SyncLifecycleTransport: ReadingCloudTransport {
         await events.add("turn-ended-" + name)
         try Task.checkCancellation()
     }
+    nonisolated func retire() {}
     func close() async {
         await events.add("close-" + name)
         if name == "A" { await events.wait("allow-close-A") }

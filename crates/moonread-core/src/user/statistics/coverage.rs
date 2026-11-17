@@ -132,13 +132,13 @@ fn dwell_ranges(
     rows: impl IntoIterator<Item = Result<(String, CoverageFact)>>,
 ) -> Result<Option<Vec<SourceSpan>>> {
     let mut dwell = VisibleDwell::default();
-    let mut previous: Option<(String, String, i64)> = None;
+    let mut previous: Option<(String, i64)> = None;
     let mut observed = false;
     for row in rows {
-        let (session, fact) = row?;
+        let (_, fact) = row?;
         if previous
             .as_ref()
-            .is_none_or(|(s, v, at)| *s != session || *v != fact.visit_id || *at != fact.started_ms)
+            .is_none_or(|(v, at)| *v != fact.visit_id || *at != fact.started_ms)
         {
             dwell.active.clear();
         }
@@ -146,7 +146,7 @@ fn dwell_ranges(
             observed = true;
             dwell.observe(exposure.start_utf8, exposure.end_utf8, exposure.duration_ms);
         }
-        previous = Some((session, fact.visit_id, fact.ended_ms));
+        previous = Some((fact.visit_id, fact.ended_ms));
     }
     Ok(observed.then(|| {
         dwell
@@ -248,7 +248,7 @@ mod tests {
             short.is_empty(),
             "cleared prefix cannot qualify the segment"
         );
-        for (session, next, expected) in [("one", 4000, 1), ("two", 4000, 0), ("one", 4001, 0)] {
+        for (session, next, expected) in [("one", 4000, 1), ("two", 4000, 1), ("one", 4001, 0)] {
             let ranges = visible_dwell_from_text(vec![
                 exposure("one", 0, 4000, 1100),
                 exposure(session, next, next + 100, 0),

@@ -402,7 +402,7 @@ actor AppDataService {
     }
 
     /// Rebind the App's existing authority, never create a parallel GRDB
-    /// pool. The cloud owner has already drained the old transport.
+    /// pool. The cloud owner has already retired the old transport.
     func selectReadingCloudScope(
         _ status: DataIdentityStatus,
         approval: CloudSyncCoordinator.Account?,
@@ -476,10 +476,7 @@ actor AppDataService {
                 }
                 if let claim {
                     _ = try session.activate(.confirmed(claim, syncRequested: false))
-                    try session.claimLocal(for: claim) {
-                        try cancellation.check()
-                        guard intent.requested, approval?.scope == claim else { throw CancellationError() }
-                    }
+                    try session.claimLocal(for: claim)
                     // A legal commit must finish its original owner's
                     // interrupted-move recovery. No other target can inherit it.
                 }

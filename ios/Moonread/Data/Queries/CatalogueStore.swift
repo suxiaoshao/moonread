@@ -64,7 +64,6 @@ final class CatalogueStore {
     private(set) var requestRevision = 0
     let loading = LoadingState()
 
-    @ObservationIgnored private var generation = UUID()
     @ObservationIgnored private let updates: Updates
     @ObservationIgnored private var accountChange: AnyCancellable?
 
@@ -72,7 +71,6 @@ final class CatalogueStore {
         updates = { try await service.catalogueUpdates($0, grouping: $1) }
         accountChange = MainActorNotifications.observe(.readingContinuationInvalidated, object: service) { [weak self] in
             guard let self else { return }
-            generation = UUID()
             snapshot = nil
             failed = false
             requestRevision &+= 1
@@ -86,20 +84,20 @@ final class CatalogueStore {
     }
 
     func observe(shelfID: String, grouping: LibraryGrouping, didFail: (Error) -> Void) async {
-        let ticket = UUID(); generation = ticket
+        let revision = requestRevision
         let request = loading.begin(); defer { loading.finish(request) }
         failed = false
         do {
             try await AppDataService.libraryTestLatency()
             let stream = try await updates(shelfID, grouping)
             for try await value in stream {
-                guard !Task.isCancelled, generation == ticket else { return }
+                guard !Task.isCancelled, requestRevision == revision else { return }
                 snapshot = value
                 loading.finish(request)
             }
         } catch is CancellationError { }
         catch {
-            guard !Task.isCancelled, generation == ticket else { return }
+            guard !Task.isCancelled, requestRevision == revision else { return }
             failed = true
             didFail(error)
         }

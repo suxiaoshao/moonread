@@ -11,7 +11,6 @@ struct PaletteEditor: View {
         NavigationStack {
             PaletteEditorContent(draft: draft, showsAppPreview: showsAppPreview, close: { dismiss() })
         }
-        .userScopeEditor(draft) { $0.saving || $0.hasUnsavedChanges }
         .modifier(SystemReadingConfirmation(editor: true))
         .interactiveDismissDisabled(themes.saving || draft.saving).preferredColorScheme(theme.scheme)
     }

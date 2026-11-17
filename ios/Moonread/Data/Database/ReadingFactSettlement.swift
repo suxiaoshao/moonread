@@ -359,14 +359,6 @@ enum ReadingFactSettlement {
         return Set(rows)
     }
 
-    /// An isolated copy can block the same fact ID in another book.
-    static func affectedIsolation(_ db: Database, book: String) throws -> Set<String> {
-        try Set(String.fetchAll(db, sql: """
-            SELECT DISTINCT record_id FROM usr.quarantined_record
-            WHERE book_key=? AND source_type IN (\(ReadingFactRows.quarantineFactTypes))
-            """, arguments: [DataIdentity.canonical(book)]))
-    }
-
 }
 
 /// The same checked contribution replacement for immutable facts and mutable

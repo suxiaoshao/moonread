@@ -373,42 +373,6 @@ struct DataV2MigrationTests {
         try await restarted.close()
     }
 
-    @Test func cancelledD1CommitKeepsLocalAndLeavesTargetUnchanged() throws {
-        let root = try sandbox()
-        defer { try? FileManager.default.removeItem(at: root) }
-        let a = try scope("A")
-        let owner = try DataSession(layout: .init(applicationSupport: root))
-        let legacy = root.appending(path: "unused")
-        let local = try owner.activate(.signedOut).0
-        try owner.prepareIndex(legacy, token: local)
-        try owner.prepareUsers(local) { nil }
-        try owner.writeUsers(local) { try $0.execute(sql: "INSERT INTO usr.local_hidden_book VALUES ('fixture')") }
-        _ = try owner.activate(.confirmed(a, syncRequested: false))
-        var checks = 0
-        let cancellation = CloudScopeCancellation()
-        #expect(throws: CancellationError.self) {
-            try owner.claimLocal(for: a) {
-                checks += 1
-                if checks == 2 { cancellation.cancel() }
-                try cancellation.check()
-            }
-        }
-        #expect(checks == 2) // After all rows and the marker were written, before COMMIT.
-        let restored = try owner.activate(.unknown).0
-        try owner.prepareIndex(legacy, token: restored)
-        try owner.prepareUsers(restored) { nil }
-        #expect(restored.scope == .local)
-        #expect(try owner.readUsers(restored) { try String.fetchOne($0, sql: "SELECT book_key FROM usr.local_hidden_book") } == "fixture")
-        try owner.close()
-        let target = try DatabaseQueue(path: owner.layout.user(a).path)
-        try target.read { db in
-            let rows = try Int.fetchOne(db, sql: "SELECT count(*) FROM local_hidden_book")
-            let marks = try Int.fetchOne(db, sql: "SELECT count(*) FROM local_data_state WHERE state_key='last-completed-local-move'")
-            #expect(rows == 0)
-            #expect(marks == 0)
-        }
-    }
-
     @Test func retiresCloudCallbacksWithoutClosingSameAccountReaders() async throws {
         let root = try sandbox()
         defer { try? FileManager.default.removeItem(at: root) }

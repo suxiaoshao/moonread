@@ -138,10 +138,8 @@ extension ReaderIndex {
         switch storedPhase {
         case "preparing", "importing", "finalizing":
             let current = task.flatMap { $0.generation == generation ? $0 : nil }
-            if let terminal = current?.terminal {
-                preparation = terminal
-            } else if current?.control == nil {
-                preparation = .paused(detail: .noActiveWorker)
+            if current?.control == nil {
+                preparation = .failed(detail: .unavailable)
             } else {
                 switch storedPhase {
                 case "preparing": preparation = .preparing
@@ -335,7 +333,6 @@ extension ReaderIndex {
         try withTaskMap { active in
             guard active[control.id]?.control === control else { return }
             let paused = control.cancelled || error == .Paused
-            active[control.id]?.terminal = paused ? .paused(detail: .interrupted) : .failed(detail: .reported(error: error))
             let data = try encodeImportError(error: error)
             try write { db in
                 try db.execute(sql: """
@@ -343,7 +340,6 @@ extension ReaderIndex {
                     AND pending_owner=? AND phase!='complete'
                     """, arguments: [paused ? "paused":"failed",data,control.id,control.generation,lease.scope.key])
             }
-            active[control.id]?.terminal = nil
         }
     }
 
@@ -458,7 +454,7 @@ extension ReaderIndex {
             }
             let ids = Set(remaining)
             active = active.filter { id, entry in
-                (entry.control != nil || entry.terminal != nil) && ((only.map { $0 != id } ?? false) || ids.contains(id))
+                entry.control != nil && ((only.map { $0 != id } ?? false) || ids.contains(id))
             }
             return remaining
         }

@@ -6,7 +6,6 @@ import GRDB
 enum ReadingSegmentRows {
     static let quarantineTypes = "'ReadingSegment','reading_segment'"
     private static let version = 1
-    private static let unresolved = "unresolved-segment-route"
 
     enum Intake {
         case local(owner: String)
@@ -80,22 +79,6 @@ enum ReadingSegmentRows {
             """, arguments: [id]) == true
     }
 
-    private static func formal(_ db: Database, book: String, scope: DataScope, transferringLocal: Bool) throws -> String? {
-        switch try parseReadingKey(value: book) {
-        case .formal(let sha): return sha
-        case .pending(let id): return try ReaderIndex.verifiedReadingSHA(db, pendingID: id, scope: scope.key, transferringLocal: transferringLocal)
-        }
-    }
-
-    private enum Match { case compared(ReadingSegmentRelation), unresolved }
-    private static func match(_ db: Database, _ a: Raw, _ b: Raw, scope: DataScope, transferringLocal: Bool = false) throws -> Match {
-        let relation = try compareReadingSegments(known: a.value, incoming: b.value)
-        if relation == .diverged || a.book == b.book { return .compared(relation) }
-        guard let left = try formal(db, book: a.book, scope: scope, transferringLocal: transferringLocal), let right = try formal(db, book: b.book, scope: scope, transferringLocal: transferringLocal)
-        else { return .unresolved }
-        return .compared(left == right ? relation : .diverged)
-    }
-
     private static func archive(_ db: Database, _ evidence: Raw, origin: ReadingFactSettlement.Origin, reason: String, originalPayload: String? = nil) throws {
         try quarantine(db, partition: evidence.partition, book: evidence.book, id: evidence.value.header.id,
                        session: evidence.value.header.author.sessionId, origin: origin, reason: reason,
@@ -115,7 +98,7 @@ enum ReadingSegmentRows {
     }
 
     @discardableResult
-    static func ingest(_ db: Database, value: ReadingSegment, book: String, partition: Int, scope: DataScope,
+    static func ingest(_ db: Database, value: ReadingSegment, book: String, partition: Int,
                        intake: Intake, origin: ReadingFactSettlement.Origin, originalPayload: String? = nil) throws -> Bool {
         let key = serializeReadingKey(key: try parseReadingKey(value: book))
         let h = value.header
@@ -135,35 +118,29 @@ enum ReadingSegmentRows {
         let old = try load(db, partition: partition, id: h.id)
         if try ReadingHistoryTransport.deletionPending(db, type: .segment, id: h.id) { return false }
         if let old {
-            let relation = try match(db, old, input, scope: scope)
-            switch relation {
-            case .compared(.same):
+            let previous = old.value.header
+            guard old.book == key, previous.author == h.author else { return false }
+            if previous == h, old.value.exposuresText == value.exposuresText {
                 if case .transfer = intake, let carried = origin.carried {
                     try UpgradeOrigins.carry(db, carried, to: .init(partition: partition, domain: .segment, id: h.id), equivalent: true)
                 }
-                // Trusted same-device ownership may follow D1/promotion; an
-                // arbitrary identical backup/fetched input never sets it.
                 if case .transfer(let moved?) = intake, !h.sealed, old.localOwner == nil {
                     try db.execute(sql: "UPDATE usr.reading_segment SET local_unsealed_owner=? WHERE partition=? AND segment_id=?",
                                    arguments: [moved,partition,h.id])
                     return true
                 }
                 return false
-            case .compared(.incomingPrefix): return false
-            case .compared(.incomingExtends):
-                if case .local(let owner) = intake, old.localOwner != owner {
-                    // Historical snapshots (even from the same author) are
-                    // never promoted to active capture by ordinary writes.
-                    throw CancellationError()
-                }
-                break
-            case .compared(.diverged), .unresolved:
-                let reason: String
-                if case .unresolved = relation { reason = "unresolved-segment-slot" }
-                else { reason = "segment-fork" }
-                try archive(db, old, origin: .init(source: "relational", id: h.id), reason: reason)
-                try archive(db, input, origin: origin, reason: reason, originalPayload: originalPayload)
-                return true
+            }
+            guard !previous.sealed, h.revision > previous.revision else { return false }
+            switch intake {
+            case .local(let owner):
+                guard old.localOwner == owner else { throw CancellationError() }
+            case .transfer(let owner):
+                guard old.localOwner == nil || old.localOwner == owner else { return false }
+            case .backup, .fetched:
+                // A restored active segment is a static snapshot, never an
+                // active writer. It never replaces a locally owned checkpoint.
+                guard old.localOwner == nil else { return false }
             }
         } else if try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM usr.reading_segment WHERE partition=? AND segment_id=?)",
                                    arguments: [partition,h.id]) == true {
@@ -181,24 +158,6 @@ enum ReadingSegmentRows {
                             h.durationMs,h.sealed,DataIdentity.unsigned(value.firstExposureStart),value.exposuresText,localOwner])
         try origin.record(db, .init(partition: partition, domain: .segment, id: h.id))
         return true
-    }
-
-    /// Resolve two typed records before applying per-source clear. A bad
-    /// copy cannot hide behind the date/window or a clear of its own source.
-    private static func verifyIdentity(_ db: Database, id: String, scope: DataScope, transferringLocal: Bool) throws {
-        try db.execute(sql: """
-            DELETE FROM usr.quarantined_record WHERE source_type='reading_segment' AND source='relational' AND record_id=? AND reason=?
-            """, arguments: [id,unresolved])
-        guard let formal = try load(db, partition: 0, id: id), let pending = try load(db, partition: 1, id: id) else { return }
-        let reason: String
-        switch try match(db, formal, pending, scope: scope, transferringLocal: transferringLocal) {
-        case .compared(.diverged): reason = "segment-fork"
-        case .unresolved: reason = unresolved
-        default: return
-        }
-        for snapshot in [formal,pending] {
-            try archive(db, snapshot, origin: .init(source: "relational", id: id), reason: reason)
-        }
     }
 
     private struct Head {
@@ -249,9 +208,8 @@ enum ReadingSegmentRows {
         return nil
     }
 
-    static func settle(_ db: Database, ids: Set<String>, evidence: Set<String>, scope: DataScope,
-                       changes: inout ReadingDayRows.Changes, evidenceVerified: Bool = false, transferringLocal: Bool = false) throws {
-        if !evidenceVerified { try verifyChangedEvidence(db, ids: evidence, scope: scope, transferringLocal: transferringLocal) }
+    static func settle(_ db: Database, ids: Set<String>, evidence: Set<String>,
+                       changes: inout ReadingDayRows.Changes) throws {
         for id in ids.sorted() {
             let previous = try Row.fetchOne(db, sql: """
                 SELECT book_key,local_day,started_ms,ended_ms,duration_ms,preview
@@ -282,10 +240,6 @@ enum ReadingSegmentRows {
             if evidence.contains(id), try blocked(db, id: id) { try ReadingHistoryTransport.withdrawSave(db, type: .segment, id: id) }
             changes.replace(previous, with: selected?.contribution)
         }
-    }
-
-    static func verifyChangedEvidence(_ db: Database, ids: Set<String>, scope: DataScope, transferringLocal: Bool = false) throws {
-        for id in ids.sorted() { try verifyIdentity(db, id: id, scope: scope, transferringLocal: transferringLocal) }
     }
 
     /// All passed IDs refer to raw final evidence. Applicable even when all
@@ -322,7 +276,7 @@ enum ReadingSegmentRows {
                   try !blocked(db, id: id), try !ReadingHistoryTransport.deletionPending(db, type: .segment, id: id) else { continue }
             let sealed = try sealReadingSegment(segment: raw.value)
             let source = try UpgradeOrigins.provenance(db, .init(partition: partition, domain: .segment, id: id))
-            if try ingest(db, value: sealed, book: raw.book, partition: partition, scope: scope, intake: .local(owner: owner),
+            if try ingest(db, value: sealed, book: raw.book, partition: partition, intake: .local(owner: owner),
                           origin: .init(source: "startup-seal", id: id, carried: source)) { change.segments.insert(id) }
         }
         try change.settle(db, scope: scope)
@@ -337,11 +291,10 @@ enum ReadingHistoryRows {
         var clearFacts = Set<String>()
         var clearSegments = Set<String>()
 
-        func settle(_ db: Database, scope: DataScope, segmentEvidenceVerified: Bool = false, transferringLocal: Bool = false) throws {
+        func settle(_ db: Database, scope: DataScope, transferringLocal: Bool = false) throws {
             var day = ReadingDayRows.Changes()
             try ReadingFactSettlement.stageSettlement(db, ids: facts.union(clearFacts), evidence: facts, scope: scope.key, changes: &day, transferringLocal: transferringLocal)
-            try ReadingSegmentRows.settle(db, ids: segments.union(clearSegments), evidence: segments, scope: scope,
-                                         changes: &day, evidenceVerified: segmentEvidenceVerified, transferringLocal: transferringLocal)
+            try ReadingSegmentRows.settle(db, ids: segments.union(clearSegments), evidence: segments, changes: &day)
             try day.apply(db)
         }
     }
@@ -366,7 +319,7 @@ extension ReaderIndex {
             guard try authorize(batch,body.sha) else { continue }
             let part = try ReadingPositionRows.partition(for: body.sha)
             for value in batch.values {
-                if try ReadingSegmentRows.ingest(db, value: value, book: body.sha, partition: part, scope: lease.scope,
+                if try ReadingSegmentRows.ingest(db, value: value, book: body.sha, partition: part,
                     intake: .local(owner: owner), origin: .init(source: "capture", id: value.header.author.sessionId, upgrade: .local)) {
                     changed.segments.insert(value.header.id); written.insert(body.sha)
                 }
@@ -394,9 +347,6 @@ extension ReaderIndex {
         try session.writeUsers(lease) { db in
             var changed = ReadingHistoryRows.Changed()
             _ = try stageCapture(db, tail, owner: owner, authorize: authorize, changed: &changed)
-            // Verify final staged content before explicit ID capture. This
-            // changes only isolation evidence, not any current contribution.
-            try ReadingSegmentRows.verifyChangedEvidence(db, ids: changed.segments, scope: lease.scope)
             var ranges: [(Int, String?)] = [(0,book),(1,book)]
             if case let .formal(sha)? = key {
                 ranges += try verifiedReadingAliasIDs(db, sha: sha).map { (1,serializeReadingKey(key: .pending(bookId: $0))) }
@@ -408,7 +358,7 @@ extension ReaderIndex {
                     if part == 0 { try ReadingHistoryTransport.enqueueClear(db, id: clear.stableID, value: clear, scope: lease.scope) }
                 }
             }
-            try changed.settle(db, scope: lease.scope, segmentEvidenceVerified: true)
+            try changed.settle(db, scope: lease.scope)
             try ReadingSegmentRows.enqueueSealed(db, ids: changed.segments, scope: lease.scope)
         }
     }

@@ -147,10 +147,12 @@ final class ReadingSyncEngineAdapter: CKSyncEngineDelegate, ReadingCloudTranspor
         return (container, account)
     }
 
+    nonisolated func retire() { journal.retire() }
+
     func close() async {
         if let shutdown { await shutdown.value; return }
         active = false
-        journal.retire()
+        retire()
         let work = turn
         work?.cancel()
         let old = engine
