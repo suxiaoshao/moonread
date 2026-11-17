@@ -502,6 +502,14 @@ struct DataV2MigrationTests {
         try bytes.write(to: source)
         let sha = DataIdentity.sha(bytes)
         _ = try session.writeUsers(lease) {
+            try ReadingPositionRows.recordPosition($0, book: sha, offset: 1, hint: nil, file: nil,
+                                                   device: "device", now: 10, token: "old")
+        }
+        // This job was already running at deletion, but its SHA was unknown.
+        // Reading it after deletion creates new data that can still promote.
+        let deleted = try index.deleteUserBooks([sha], activeReadingIDs: []) { ReadingDataError.busy }
+        #expect(deleted == [sha])
+        _ = try session.writeUsers(lease) {
             try ReadingPositionRows.recordPosition($0, book: key, offset: 3, hint: nil, file: "fixture",
                                                    device: "device", now: 12, token: "pending")
         }

@@ -191,7 +191,6 @@ enum SystemReadingRead {
                 "SELECT content_sha256,utf8_bytes FROM main.source_identities",
                 "SELECT * FROM main.import_chapters",
                 "SELECT * FROM usr.reading_current",
-                "SELECT book_id,deleted_sha256 FROM usr.pending_identity_fence",
                 "SELECT partition,record_id,book_key,offset,token,schema_version FROM usr.position_candidate",
                 "SELECT partition,record_id,updated_ms,token FROM usr.opened_candidate",
                 "SELECT source_type,book_key,logical_key FROM usr.quarantined_record",

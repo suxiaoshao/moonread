@@ -89,10 +89,8 @@ enum ReadingFactRows {
 
 #if DEBUG
 extension ReaderIndex {
-    /// Index routing and authorizations are resolved inside the same writer
-    /// access as fact insertion. A late import cannot recreate pending rows
-    /// after its formal alias was authorized for reclaim.
-    func writeReadingFacts(_ slices: [ReadingSlice], device: String, authorize: (String, String) -> Bool) throws -> Set<String> {
+    /// Resolve index routing in the same writer access as fact insertion.
+    func writeReadingFacts(_ slices: [ReadingSlice], device: String) throws -> Set<String> {
         try session.writeUsers(lease) { db in
             var routes: [String: (key: String, title: String)] = [:]
             var written = Set<String>()
@@ -101,12 +99,7 @@ extension ReaderIndex {
                 let route: (key: String, title: String)
                 if let cached = routes[slice.bookId] { route = cached }
                 else {
-                    // Check the pending key before trying to resolve a stale,
-                    // possibly already reclaimed alias.
-                    let pending = serializeReadingKey(key: .pending(bookId: slice.bookId))
-                    guard authorize(slice.bookId, pending) else { continue }
                     let body = try Self.body(db, id: slice.bookId, scope: lease.scope.key)
-                    guard authorize(slice.bookId, body.sha) else { continue }
                     // The prior snapshot used the opened copy's title even
                     // when its position and reading key were canonical.
                     guard let title = try String.fetchOne(db, sql: "SELECT title FROM main.books WHERE id=?", arguments: [slice.bookId])

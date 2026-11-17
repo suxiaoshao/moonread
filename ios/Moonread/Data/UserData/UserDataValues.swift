@@ -33,7 +33,7 @@ struct AnnotationEdit: Sendable {
     var note: String
     var marks: [ReaderMark]
     var baselines: [String: [AnnotationCandidate]]
-    var writeAdmission: ReadingWriteAdmission? = nil
+    var writeAdmission: DataSessionLease? = nil
 }
 struct StoredValue: Codable, Sendable {
     var updated: Int64
@@ -151,8 +151,7 @@ struct MarkDeletion: Sendable {
 struct MarkBaseline: Sendable {
     let heads: [AnnotationCandidate]
     let key: String
-    let admission: ReadingWriteAdmission
-    var sourceBookID: String? = nil
+    let admission: DataSessionLease
 }
 
 struct MarkUndo: Sendable {

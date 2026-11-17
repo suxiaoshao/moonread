@@ -314,7 +314,7 @@ enum ChapterCoverageRead {
             "SELECT id,content_sha256,byte_count,chunk_count,projection_revision FROM main.books",
             "SELECT book_id,canonical_id,pending_owner,purpose,phase,final_sha,generation FROM main.import_jobs",
             "SELECT book_id,chunk_index,start_utf8,end_utf8,start_char_count,end_char_count FROM main.chunks",
-            "SELECT * FROM main.import_chapters", "SELECT * FROM usr.pending_identity_fence",
+            "SELECT * FROM main.import_chapters",
             "SELECT * FROM usr.chapter_override_current", "SELECT title,level,excluded FROM usr.chapter_override_candidate",
             "SELECT * FROM usr.reading_fact_current", "SELECT * FROM usr.reading_segment_current",
             "SELECT schema_version,book_key FROM usr.statistics_clear",

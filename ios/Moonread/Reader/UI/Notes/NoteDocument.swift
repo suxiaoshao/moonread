@@ -8,8 +8,7 @@ struct NoteCandidates: Sendable {
     let groups: [String: [AnnotationCandidate]]
     let blocked: Set<String>
     var unknownMarks = false
-    var admission: ReadingWriteAdmission? = nil
-    var sourceBookID: String? = nil
+    var admission: DataSessionLease? = nil
     func checked(_ ids: Set<String>?) throws -> [String: [AnnotationCandidate]] {
         let unreadable = ids.map { blocked.intersection($0) } ?? blocked
         guard unreadable.isEmpty, !unknownMarks else { throw NoteReadError(count: unreadable.count + (unknownMarks ? 1 : 0)) }

@@ -419,7 +419,6 @@ extension ReaderIndex {
             "SELECT raw_sha256,content_sha256 FROM main.source_identities",
             "SELECT book_id,canonical_id,pending_owner,phase,purpose,final_sha FROM main.import_jobs",
             "SELECT book_id,chunk_index,start_utf8,end_utf8 FROM main.chunks",
-            "SELECT book_id,deleted_sha256 FROM usr.pending_identity_fence",
         ]
         if overview {
             regions += [

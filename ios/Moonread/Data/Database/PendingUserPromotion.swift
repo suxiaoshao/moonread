@@ -1,54 +1,12 @@
 import Foundation
 import GRDB
 
-/// Process-local write admissions. A SHA may only become known after import,
-/// so an admission records an epoch rather than a list of known book keys.
-struct ReadingWriteAdmission: Equatable, Sendable {
-    let lease: DataSessionLease
-    let configuration: UUID
-    let epoch: UInt64
-}
-
-struct ReadingWriteVersions {
-    private(set) var epoch: UInt64 = 0
-    private var deletions: [String: UInt64] = [:]
-    private var tokens: [String: UUID] = [:]
-
-    mutating func token(for key: String) -> UUID {
-        let key = DataIdentity.canonical(key)
-        if let old = tokens[key] { return old }
-        let token = UUID(); tokens[key] = token; return token
-    }
-
-    mutating func didDelete(_ keys: Set<String>) {
-        guard !keys.isEmpty else { return }
-        epoch += 1
-        for key in keys {
-            let key = DataIdentity.canonical(key)
-            deletions[key] = epoch
-            tokens[key] = nil
-        }
-    }
-
-    func permits(_ admission: ReadingWriteAdmission, lease: DataSessionLease, configuration: UUID, keys: [String]) -> Bool {
-        admission.lease == lease && admission.configuration == configuration &&
-            keys.allSatisfy { deletions[DataIdentity.canonical($0), default: 0] <= admission.epoch }
-    }
-}
-
 /// Pending aliases become formal only after the index has verified the body.
 /// All candidate merges, clear effects and source removals are one usr commit.
 enum PendingUserPromotion {
-    enum Admission {
-        case merge
-        case finishEmpty
-    }
-
     enum Outcome: Equatable, Sendable {
         case notReady
         case committed(sha256: String)
-        case emptySource
-        case retainedRevokedSource
     }
 
     private static let pendingTables = ["position_candidate", "opened_candidate", "annotation_candidate", "reading_fact", "reading_segment"]
@@ -100,17 +58,6 @@ enum PendingUserPromotion {
         try ReadingPositionRows.settleCurrent(db, book: formal)
         try AnnotationRows.removeHeads(db, key: pending, partition: 1)
         for mark in movedMarks { try AnnotationRows.settleHeads(db, key: formal, markID: mark, partition: 0) }
-    }
-
-    fileprivate static func requireEmptySourceReadable(_ db: Database, from pending: String, to formal: String) throws {
-        for (book, part) in [(pending,1),(formal,0)] {
-            try requireFactsAndMarksReadable(db, book: book, partition: part)
-            try ReadingPositionRows.requirePromotionReadable(db, book: book, partition: part)
-        }
-    }
-
-    fileprivate static func clearIdentityFence(_ db: Database, bookID: String) throws {
-        try db.execute(sql: "DELETE FROM usr.pending_identity_fence WHERE book_id=?", arguments: [bookID])
     }
 
     private static func requireFactsAndMarksReadable(_ db: Database, book: String, partition: Int) throws {
@@ -278,35 +225,16 @@ extension ReaderIndex {
         try session.readUsers(lease) { try PendingUserPromotion.work($0) }
     }
 
-    /// Read the completed, scope-bound alias from main inside the same
-    /// writer access. Reclamation requires a successful merge or an empty
-    /// source proved in that writer, never a denied or retained source.
-    func promotePendingUserData(bookId: String, authorize: (String) throws -> PendingUserPromotion.Admission = { _ in .merge }) throws -> PendingUserPromotion.Outcome {
+    /// Only a completed, scope-bound alias can promote. Lookup, merge and
+    /// pending source removal use the same writer.
+    func promotePendingUserData(bookId: String) throws -> PendingUserPromotion.Outcome {
         try session.writeUsers(lease) { db in
             guard let sha = try String.fetchOne(db, sql: "SELECT b.content_sha256 " + Self.completedReadingIdentitySQL +
                                                " AND j.book_id=?", arguments: [lease.scope.key,bookId]),
-                (try? parseSha256(value: sha)) != nil else { return .notReady }
+                  (try? parseSha256(value: sha)) != nil else { return .notReady }
             let pending = serializeReadingKey(key: .pending(bookId: bookId))
-            let admission = try authorize(sha)
-            let fenced = try Bool.fetchOne(db, sql: """
-                SELECT EXISTS(SELECT 1 FROM usr.pending_identity_fence WHERE book_id=? AND deleted_sha256=?)
-                """, arguments: [bookId,sha]) == true
-            switch fenced ? .finishEmpty : admission {
-            case .merge:
-                try PendingUserPromotion.merge(db, from: pending, to: sha, scope: lease.scope)
-                try PendingUserPromotion.clearIdentityFence(db, bookID: bookId)
-                return .committed(sha256: sha)
-            case .finishEmpty:
-                // A revoked import cannot write, even on explicit retry.
-                // Known, local, and quarantined rows all retain this alias.
-                try PendingUserPromotion.requireEmptySourceReadable(db, from: pending, to: sha)
-                let owned = Self.bookOwnedUserTables.map { "SELECT 1 FROM usr.\($0) WHERE book_key=?1" }
-                let empty = try Bool.fetchOne(db, sql: "SELECT NOT EXISTS(" + owned.joined(separator: " UNION ALL ") + ")",
-                                              arguments: [DataIdentity.canonical(pending)]) == true
-                guard empty else { return .retainedRevokedSource }
-                try PendingUserPromotion.clearIdentityFence(db, bookID: bookId)
-                return .emptySource
-            }
+            try PendingUserPromotion.merge(db, from: pending, to: sha, scope: lease.scope)
+            return .committed(sha256: sha)
         }
     }
 
@@ -329,8 +257,6 @@ extension ReaderIndex {
         SELECT 'pending:'||j.book_id AS alias,b.content_sha256 AS book_key
         \(completedReadingIdentityClause(scopeParameter: scopeParameter))
         AND length(b.content_sha256)=64 AND b.content_sha256 NOT GLOB '*[^0-9a-f]*'
-        AND NOT EXISTS(SELECT 1 FROM usr.pending_identity_fence fence
-            WHERE fence.book_id=j.book_id AND fence.deleted_sha256=b.content_sha256)
         """
     }
 
@@ -435,28 +361,6 @@ extension ReaderIndex {
 
             try UpgradeOrigins.recordBookDeletion(db, formal: formal, erased: targets)
 
-            if !formal.isEmpty {
-                // A task whose body is still unproven may produce pending
-                // rows before the process exits. Fence precisely these jobs,
-                // never future imports or the whole SHA namespace.
-                let unresolved = try String.fetchAll(db, sql: """
-                    SELECT book_id FROM main.import_jobs
-                    WHERE pending_owner=? AND purpose='reading' AND book_id NOT IN (
-                      SELECT j.book_id \(Self.completedReadingIdentitySQL)
-                      AND length(b.content_sha256)=64 AND b.content_sha256 NOT GLOB '*[^0-9a-f]*'
-                    )
-                    """, arguments: [lease.scope.key,lease.scope.key])
-                if !unresolved.isEmpty {
-                    let insert = try db.makeStatement(sql: """
-                        INSERT INTO usr.pending_identity_fence(book_id,deleted_sha256) VALUES(?,?)
-                        ON CONFLICT(book_id,deleted_sha256) DO NOTHING
-                        """)
-                    for id in unresolved {
-                        for sha in formal { try insert.execute(arguments: [id,sha]) }
-                    }
-                }
-            }
-
             // An unknown cover payload can still refer to an existing asset.
             // When in doubt retain the bytes, while deleting the owned facts.
             let canReclaimCover = try UserValueRows.canReclaimCoverAssets(db)
@@ -474,9 +378,6 @@ extension ReaderIndex {
                 try CurrentUserRows.removeBook(db, key: key)
                 for table in Self.bookOwnedUserTables {
                     try db.execute(sql: "DELETE FROM usr.\(table) WHERE book_key=?", arguments: [key])
-                }
-                if case .pending(let id) = try parseReadingKey(value: key) {
-                    try PendingUserPromotion.clearIdentityFence(db, bookID: id)
                 }
                 for asset in assets {
                     try UserValueRows.removeUnreferencedCover(db, id: asset)

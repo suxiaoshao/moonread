@@ -415,21 +415,18 @@ enum ReadingPositionRows {
 }
 
 extension ReaderIndex {
-    func writeReadingOpened(bookID: String, openedAt: Int64, file: String?, device: String, now: Int64, token: String,
-                            authorize: (String) throws -> Void) throws {
+    func writeReadingOpened(bookID: String, openedAt: Int64, file: String?, device: String, now: Int64, token: String) throws {
         try session.writeUsers(lease) { db in
             let body = try Self.body(db, id: bookID, scope: lease.scope.key)
-            try authorize(body.sha)
             try ReadingPositionRows.recordOpened(db, book: body.sha, openedAt: openedAt, file: file, device: device, now: now, token: token,
                                                 scope: lease.scope)
         }
     }
 
     func writeReadingPosition(bookID: String, offset: UInt64, hint: PositionSourceHint?, file: String?, device: String,
-                              now: Int64, token: String, authorize: (String) throws -> Void) throws {
+                              now: Int64, token: String) throws {
         try session.writeUsers(lease) { db in
             let body = try Self.body(db, id: bookID, scope: lease.scope.key)
-            try authorize(body.sha)
             let offset = min(offset, body.bytes)
             let normalized: UInt64
             if body.bytes == 0 { normalized = 0 }

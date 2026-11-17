@@ -87,7 +87,7 @@ extension AppDataService {
         return BookMetadataEditPlan(sha: base.sha, values: changes)
     }
     func saveMetadata(base: BookMetadata, edited: BookMetadata) async throws {
-        let admission = try readingWriteAdmission(indexStore().lease)
+        let admission = try indexStore().lease
         var final = edited
         if let cover = edited.cover, cover != base.cover {
             let bytes = try Data(contentsOf: coverDraftURL(cover))
@@ -99,14 +99,13 @@ extension AppDataService {
         try await commitMetadata(plan, cover: final.cover != base.cover ? final.cover : nil, admission: admission)
         if let cover = edited.cover { discardCoverDraft(cover) }
     }
-    private func commitMetadata(_ plan: BookMetadataEditPlan, cover: BookCoverAsset?, admission: ReadingWriteAdmission) async throws {
+    private func commitMetadata(_ plan: BookMetadataEditPlan, cover: BookCoverAsset?, admission: DataSessionLease) async throws {
         guard !plan.values.isEmpty else { return }
         let asset = try cover.map { try Self.readCoverDraft($0, url: coverDraftURL($0), length: nil) }
         try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
         let index = try relationalUserIndex()
-        guard readingWriteVersions.permits(admission, lease: index.lease, configuration: userCloudConfigurationRevision, keys: [plan.sha])
-        else { throw ReadingDataError.changed }
+        guard admission == index.lease else { throw ReadingDataError.changed }
         try index.session.writeUsers(index.lease) {
             try UserValueRows.putMetadata($0, [.init(plan: plan, cover: asset)], device: userDevice, now: userValueClock, scope: index.lease.scope)
         }

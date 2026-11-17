@@ -91,10 +91,9 @@ extension AppDataService {
         defer { recoveryTask = nil; scheduleRecentRestoration() }
         do {
             try cleanupOldBackupExports()
-            let admission = try readingWriteAdmission(indexStore().lease)
+            let admission = try indexStore().lease
             await acquireUserDataOperation(); defer { releaseUserDataOperation() }
-            guard try admission.lease == indexStore().lease,
-                  admission.configuration == userCloudConfigurationRevision else { return }
+            guard try admission == indexStore().lease else { return }
             let index = try relationalUserIndex()
             try index.session.prepareReadingHistory(index.lease, owner: index.session.readingInstallationID())
             pendingPromotionIDs.formUnion(try index.pendingUserPromotionKeys().compactMap {
@@ -105,7 +104,7 @@ extension AppDataService {
             // the process exited. There is still a completed index job to prove.
             for id in try index.completedReadingImportIDs() {
                 // A blocked book cannot prevent another alias from recovering.
-                try? promoteUserDataLocked(id, admission: admission, index: index)
+                try? promoteUserDataLocked(id, index: index)
             }
             try reclaimImports(index); recoveredImports = true
         } catch { /* No unverified completed reading alias is reclaimed. */ }
@@ -117,55 +116,32 @@ extension AppDataService {
     func userKey(_ id: String) throws -> ReadingKey {
         try indexStore().resolveBookIdentity(bookId: id).key
     }
-    func readingWriteAdmission(_ lease: DataSessionLease) -> ReadingWriteAdmission {
-        .init(lease: lease, configuration: userCloudConfigurationRevision, epoch: readingWriteVersions.epoch)
-    }
-
     func promoteUserData(_ id: String, retry: Bool = false) async throws {
-        let admission = try readingWriteAdmission(indexStore().lease)
+        let admission = try indexStore().lease
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
-        guard try admission.lease == indexStore().lease,
-              admission.configuration == userCloudConfigurationRevision else { throw CancellationError() }
+        guard try admission == indexStore().lease else { throw CancellationError() }
         if retry { promotedUserKeys.remove(id) }
-        try promoteUserDataLocked(id, admission: admission)
+        try promoteUserDataLocked(id)
     }
 
-    func promoteUserDataLocked(_ id: String, admission: ReadingWriteAdmission, index prepared: ReaderIndex? = nil) throws {
+    private func promoteUserDataLocked(_ id: String, index prepared: ReaderIndex? = nil) throws {
         let index = try prepared ?? indexStore()
         guard !promotedUserKeys.contains(id), try !index.completedReadingImportIDs(bookId: id).isEmpty else { return }
-        let original = importWriteAdmissions[id] ?? admission
-        let pending = ReadingKey.pending(bookId: id).storageKey
-        let configuration = userCloudConfigurationRevision
-        guard original.lease == index.lease, original.configuration == configuration else { throw CancellationError() }
         do {
-            let versions = readingWriteVersions
             let writer = try prepared ?? relationalUserIndex()
-            switch try writer.promotePendingUserData(bookId: id, authorize: { sha in
-                let keys = [pending,sha]
-                // A caller queued before deletion may not proceed. A current
-                // caller may only finish an empty source, not renew the old
-                // import's permission to move any of its records.
-                guard versions.permits(admission, lease: writer.lease, configuration: configuration, keys: keys)
-                else { throw CancellationError() }
-                return versions.permits(original, lease: writer.lease, configuration: configuration, keys: keys)
-                    ? .merge : .finishEmpty
-            }) {
+            switch try writer.promotePendingUserData(bookId: id) {
             case .notReady:
                 pendingPromotionIDs.insert(id)
-                // Without verified identity there is no empty-source proof.
-                guard versions.permits(original, lease: writer.lease, configuration: configuration, keys: [pending])
-                else { throw CancellationError() }
-            case .committed, .emptySource:
+            case .committed:
                 pendingPromotionIDs.remove(id)
                 promotedUserKeys.insert(id)
-            case .retainedRevokedSource: throw ReadingDataError.changed
             }
         } catch {
-            // Keep the source identity/lease recovery path alive while raw pending data is protected.
             pendingPromotionIDs.insert(id); promotedUserKeys.remove(id)
             throw error
         }
     }
+
     func readingCompatibilityNotice(_ id: String) async throws -> String? {
         let identity = try userKey(id)
         let index = try relationalUserIndex()
@@ -176,81 +152,64 @@ extension AppDataService {
         return blocked ? UserSyncCompatibilityError().localizedDescription : nil
     }
     /// Separate LWW fact: never manufactures a reading position or activity.
-    func recordBookOpened(_ id: String, at milliseconds: Int64, admission offered: ReadingWriteAdmission? = nil) async throws {
-        let admission = try offered ?? readingWriteAdmission(indexStore().lease)
+    func recordBookOpened(_ id: String, at milliseconds: Int64, admission offered: DataSessionLease? = nil) async throws {
+        let admission = try offered ?? indexStore().lease
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
         let index = try relationalUserIndex()
+        guard admission == index.lease else { throw CancellationError() }
         try index.writeReadingOpened(bookID: id, openedAt: milliseconds, file: readingSourceIDs[id], device: userDevice,
-                                     now: readingClock, token: UUID().uuidString,
-                                     authorize: readingWriteAuthorization(id, admission: admission, index: index))
+                                     now: readingClock, token: UUID().uuidString)
         dataChanged()
     }
 
     func writePosition(_ id: String, offset: UInt64, expectedConfiguration: UUID? = nil,
-                       admission offered: ReadingWriteAdmission? = nil) async throws {
-        let admission = try offered ?? readingWriteAdmission(indexStore().lease)
+                       admission offered: DataSessionLease? = nil) async throws {
+        let admission = try offered ?? indexStore().lease
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
         if let expectedConfiguration, expectedConfiguration != userCloudConfigurationRevision { throw CancellationError() }
         let index = try relationalUserIndex()
-        let authorize = readingWriteAuthorization(id, admission: admission, index: index)
-        // Do not run promotion on behalf of a stale request. The writer
-        // repeats authorization against the actual commit-time key.
-        try authorize(index.resolveBookIdentity(bookId: id).key.storageKey)
-        try promoteUserDataLocked(id, admission: admission, index: index)
+        guard admission == index.lease else { throw CancellationError() }
+        try promoteUserDataLocked(id, index: index)
         try index.writeReadingPosition(bookID: id, offset: offset, hint: positionSourceHint(id), file: readingSourceIDs[id],
-                                       device: userDevice, now: readingClock, token: UUID().uuidString, authorize: authorize)
+                                       device: userDevice, now: readingClock, token: UUID().uuidString)
         dataChanged()
     }
 
     private var readingClock: Int64 { Int64(Date().timeIntervalSince1970 * 1000) }
 
-    func readingWriteAuthorization(_ id: String, admission: ReadingWriteAdmission, index: ReaderIndex) -> (String) throws -> Void {
-        let versions = readingWriteVersions, lease = index.lease, configuration = userCloudConfigurationRevision
-        let pending = ReadingKey.pending(bookId: id).storageKey
-        return { key in
-            guard versions.permits(admission, lease: lease, configuration: configuration, keys: [pending,key])
-            else { throw CancellationError() }
-        }
-    }
-
-    func annotationActionAdmission() throws -> ReadingWriteAdmission { try readingWriteAdmission(indexStore().lease) }
+    func annotationActionAdmission() throws -> DataSessionLease { try indexStore().lease }
 
     // All book-scoped mutations share the operation gate and re-resolve
     // the route within the writer. Admission never comes from the commit.
-    private func editAnnotationRows<T: Sendable>(_ id: String, offered: ReadingWriteAdmission?,
-                                                 _ operation: (Database, String, ReadingWriteAdmission, DataScope) throws -> T) async throws -> T {
-        let admission = try offered ?? readingWriteAdmission(indexStore().lease)
+    private func editAnnotationRows<T: Sendable>(_ id: String, offered: DataSessionLease?,
+                                                 _ operation: (Database, String, DataSessionLease, DataScope) throws -> T) async throws -> T {
+        let admission = try offered ?? indexStore().lease
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
         let index = try relationalUserIndex()
-        let authorize = readingWriteAuthorization(id, admission: admission, index: index)
-        try authorize(index.resolveBookIdentity(bookId: id).key.storageKey)
-        try promoteUserDataLocked(id, admission: admission, index: index)
+        guard admission == index.lease else { throw CancellationError() }
+        try promoteUserDataLocked(id, index: index)
         return try index.session.writeUsers(index.lease) { db in
             let key = try ReaderIndex.body(db, id: id, scope: index.lease.scope.key).sha
-            try authorize(key)
             return try operation(db, key, admission, index.lease.scope)
         }
     }
 
-    func annotationSnapshot(_ id: String, offered: ReadingWriteAdmission? = nil) async throws -> NoteCandidates {
-        let admission = try offered ?? readingWriteAdmission(indexStore().lease)
+    func annotationSnapshot(_ id: String, offered: DataSessionLease? = nil) async throws -> NoteCandidates {
+        let admission = try offered ?? indexStore().lease
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
         let index = try relationalUserIndex()
-        let authorize = readingWriteAuthorization(id, admission: admission, index: index)
-        try authorize(index.resolveBookIdentity(bookId: id).key.storageKey)
-        try promoteUserDataLocked(id, admission: admission, index: index)
+        guard admission == index.lease else { throw CancellationError() }
+        try promoteUserDataLocked(id, index: index)
         let result = try index.session.readUsers(index.lease) { db in
             let key = try ReaderIndex.body(db, id: id, scope: index.lease.scope.key).sha
             return try AnnotationRows.snapshot(db, key: key)
         }
-        try authorize(result.key)
         var stamped = result
         stamped.admission = admission
-        stamped.sourceBookID = id
         return stamped
     }
 
@@ -264,7 +223,7 @@ extension AppDataService {
                 guard kind == nil || kind == candidateKind else { continue }
                 if let range, !(content.start < range.upperBound && content.end > range.lowerBound) { continue }
                 if let admission = view.admission {
-                    shownCandidates[id] = .init(heads: heads, key: view.key, admission: admission, sourceBookID: view.sourceBookID)
+                    shownCandidates[id] = .init(heads: heads, key: view.key, admission: admission)
                 }
                 result.append(.init(id: id, kind: candidateKind, startUtf8: content.start, endUtf8: content.end,
                                     excerpt: content.excerpt, note: content.note, created: value.created))
@@ -277,7 +236,7 @@ extension AppDataService {
         if let snapshot {
             let index = try indexStore()
             guard snapshot.key == (try index.resolveBookIdentity(bookId: id).key.storageKey) else { throw UserDataConflict(candidates: []) }
-            if let admission = snapshot.admission { try readingWriteAuthorization(id, admission: admission, index: index)(snapshot.key) }
+            if let admission = snapshot.admission, admission != index.lease { throw CancellationError() }
             return marks(snapshot, kind: kind)
         }
         return try await marks(annotationSnapshot(id), kind: kind)
@@ -288,7 +247,7 @@ extension AppDataService {
         return try await marks(annotationSnapshot(id), kind: .annotation, range: start..<end)
     }
 
-    func removeAnnotationRange(_ id: String, start: UInt64, end: UInt64, offered: ReadingWriteAdmission?) async throws -> [String] {
+    func removeAnnotationRange(_ id: String, start: UInt64, end: UInt64, offered: DataSessionLease?) async throws -> [String] {
         guard start <= end else { throw ReaderError.InvalidRange }
         let view = try await annotationSnapshot(id, offered: offered)
         let ids = marks(view, kind: .annotation, range: start..<end).map(\.id)
@@ -297,7 +256,7 @@ extension AppDataService {
     }
 
     func prepareUserAnnotation(_ id: String, start: UInt64, end: UInt64,
-                               admission: ReadingWriteAdmission? = nil) async throws -> AnnotationEdit {
+                               admission: DataSessionLease? = nil) async throws -> AnnotationEdit {
         guard start < end else { throw ReaderError.InvalidRange }
         let view = try await annotationSnapshot(id, offered: admission)
         var marks = marks(view, kind: .annotation)
@@ -347,8 +306,8 @@ extension AppDataService {
         dataChanged()
     }
 
-    func changeBookmark(_ id: String, offset: UInt64, ensure: Bool, admission offered: ReadingWriteAdmission?) async throws -> ReaderMark? {
-        let admission = try offered ?? readingWriteAdmission(indexStore().lease)
+    func changeBookmark(_ id: String, offset: UInt64, ensure: Bool, admission offered: DataSessionLease?) async throws -> ReaderMark? {
+        let admission = try offered ?? indexStore().lease
         let excerpt = try indexStore().paragraphRange(bookId: id, offsetUtf8: offset).text
         let (mark, candidate) = try await editAnnotationRows(id, offered: admission) { db, key, _, scope in
             try AnnotationRows.bookmark(db, key: key, offset: offset, excerpt: String(excerpt.prefix(160)), ensure: ensure, scope: scope)
@@ -360,7 +319,7 @@ extension AppDataService {
     }
 
     func readAnnotationMark(_ id: String) throws -> ReaderMark {
-        let index = try relationalUserIndex(), admission = readingWriteAdmission(index.lease)
+        let index = try relationalUserIndex(), admission = index.lease
         let (key, heads) = try index.session.readUsers(index.lease) { try AnnotationRows.find($0, markID: id) }
         guard let value = heads.first(where: { $0.content != nil }), let content = value.content else { throw ReaderError.NotFound }
         shownCandidates[id] = .init(heads: heads, key: key, admission: admission)
@@ -378,59 +337,54 @@ extension AppDataService {
                 return MarkDeletion(id: id, key: key, baseline: heads, content: heads.first(where: { $0.content != nil })?.content, deleted: true)
             }
             let committed = try AnnotationRows.deletions(db, commands: commands, checkingBaseline: true, scope: scope)
-            return deletionReceipts(commands, committed: committed, admission: admission, origins: commands.reduce(into: [:]) { $0[$1.id] = id })
+            return deletionReceipts(commands, committed: committed, admission: admission)
         }
         undoCandidates.merge(receipts) { _, new in new }
         dataChanged()
     }
 
     private func deletionReceipts(_ commands: [MarkDeletion], committed: [String: AnnotationCandidate],
-                                  admission: ReadingWriteAdmission, origins: [String: String]) -> [String: MarkUndo] {
+                                  admission: DataSessionLease) -> [String: MarkUndo] {
         Dictionary(uniqueKeysWithValues: commands.compactMap { cmd in
             committed[cmd.id].map {
-                (cmd.id, MarkUndo(baseline: .init(heads: [$0], key: cmd.key, admission: admission, sourceBookID: origins[cmd.id]), content: cmd.content))
+                (cmd.id, MarkUndo(baseline: .init(heads: [$0], key: cmd.key, admission: admission), content: cmd.content))
             }
         })
     }
 
     func userDeleteMarks(_ ids: [String], deleted: Bool, expected: NoteCandidates? = nil,
-                         offered: ReadingWriteAdmission? = nil) async throws {
-        let admission = try offered ?? expected?.admission ?? readingWriteAdmission(indexStore().lease)
+                         offered: DataSessionLease? = nil) async throws {
+        let admission = try offered ?? expected?.admission ?? indexStore().lease
         // Capture what was shown / the original undo before waiting for the gate.
         var shown = shownCandidates
         let undo = undoCandidates
         if deleted, let expected, let receipt = expected.admission {
             for (id, heads) in try expected.checked(Set(ids)) {
-                shown[id] = .init(heads: heads, key: expected.key, admission: receipt, sourceBookID: expected.sourceBookID)
+                shown[id] = .init(heads: heads, key: expected.key, admission: receipt)
             }
         }
         await acquireUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
-        let index = try relationalUserIndex(), configuration = userCloudConfigurationRevision, versions = readingWriteVersions
+        let index = try relationalUserIndex()
+        guard admission == index.lease else { throw CancellationError() }
         let receipts: [String: MarkUndo] = try index.session.writeUsers(index.lease) { db in
             var commands: [MarkDeletion] = []
-            var origins: [String: String] = [:]
             for id in Set(ids).sorted() {
                 let prior = deleted ? shown[id] : undo[id]?.baseline
                 if !deleted && prior == nil { continue }
+                if let prior, prior.admission != index.lease { throw CancellationError() }
                 let (key, heads) = try AnnotationRows.find(db, markID: id)
-                let alias = prior?.sourceBookID.map { ReadingKey.pending(bookId: $0).storageKey }
-                let keys = [key] + (prior.map { [$0.key] } ?? []) + (alias.map { [$0] } ?? [])
-                guard versions.permits(admission, lease: index.lease, configuration: configuration, keys: keys),
-                      prior.map({ versions.permits($0.admission, lease: index.lease, configuration: configuration, keys: keys) }) ?? true
-                else { throw CancellationError() }
                 if let prior, prior.key != key {
                     guard case let .pending(source) = try parseReadingKey(value: prior.key),
                           try ReaderIndex.body(db, id: source, scope: index.lease.scope.key).sha == key
                     else { throw UserDataConflict(candidates: heads) }
                 }
-                origins[id] = prior?.sourceBookID
                 let baseline = prior?.heads ?? heads
                 let content = deleted ? baseline.first(where: { $0.content != nil })?.content : undo[id]?.content
                 commands.append(.init(id: id, key: key, baseline: baseline, content: content, deleted: deleted))
             }
             let committed = try AnnotationRows.deletions(db, commands: commands, checkingBaseline: false, scope: index.lease.scope)
-            return deletionReceipts(commands, committed: committed, admission: admission, origins: origins)
+            return deletionReceipts(commands, committed: committed, admission: admission)
         }
         if deleted { undoCandidates.merge(receipts) { _, new in new } }
         else { for id in receipts.keys { undoCandidates[id] = nil } }

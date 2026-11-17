@@ -299,7 +299,7 @@ extension ReaderIndex {
         // observer never selects table contents or runs matching on the writer.
         var tables = ["main.library_files", "main.library_shelves", "main.library_identities", "main.source_identities",
             "main.books", "main.import_jobs",
-            "usr.pending_identity_fence", "usr.reading_current", "usr.position_candidate",
+            "usr.reading_current", "usr.position_candidate",
             "usr.local_preferred_file", "usr.metadata_current",
             "usr.metadata_text_candidate", "usr.cover_candidate",
             "main.import_chapters", "usr.chapter_override_current", "usr.chapter_override_candidate"]

@@ -125,9 +125,9 @@ struct ReadingWindow: Equatable, Sendable {
 /// Merely hiding the view (for settings, for example) does not end this lease.
 final class ReadingLease: Sendable {
     let id: String
-    let writeAdmission: ReadingWriteAdmission?
+    let writeAdmission: DataSessionLease?
     let service: AppDataService
-    init(id: String, service: AppDataService, writeAdmission: ReadingWriteAdmission? = nil) {
+    init(id: String, service: AppDataService, writeAdmission: DataSessionLease? = nil) {
         self.id = id; self.service = service; self.writeAdmission = writeAdmission
     }
     deinit {
@@ -255,8 +255,7 @@ actor AppDataService {
         let resume: (Bool) -> Void
     }
     var userDataOperationWaiters: [UserDataOperationWaiter] = []
-    var readingWriteVersions = ReadingWriteVersions()
-    var importWriteAdmissions: [String: ReadingWriteAdmission] = [:]
+    var metadataImportDeletionTokens: [String: UUID] = [:]
     var promotedUserKeys = Set<String>()
     var shownCandidates: [String: MarkBaseline] = [:]
     var undoCandidates: [String: MarkUndo] = [:]
@@ -619,9 +618,9 @@ actor AppDataService {
 
     private func resetUserScopeMemory() {
         recoveredImports = false
-        pendingPromotionIDs.removeAll(); promotedUserKeys.removeAll(); importWriteAdmissions.removeAll()
+        pendingPromotionIDs.removeAll(); promotedUserKeys.removeAll()
         readingSourceIDs.removeAll(); shownCandidates.removeAll(); undoCandidates.removeAll()
-        recentRestorationAttempts.removeAll(); readingWriteVersions = ReadingWriteVersions()
+        recentRestorationAttempts.removeAll(); metadataImportDeletionTokens.removeAll()
         activeBackupImport = nil
         automaticallyPaused.removeAll(); requestedResumes.removeAll()
     }
@@ -738,15 +737,14 @@ actor AppDataService {
     func correctChapter(_ id: String, offset: UInt64, title: String, level: UInt32, excluded: Bool = false) async throws {
         guard level <= 1, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, title.count <= 80,
               !title.contains("\n"), !title.contains("\r") else { throw ReaderError.InvalidRange }
-        let admission = try readingWriteAdmission(indexStore().lease)
+        let admission = try indexStore().lease
         try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
         let index = try relationalUserIndex()
-        let authorization = readingWriteAuthorization(id, admission: admission, index: index)
+        guard admission == index.lease else { throw CancellationError() }
         try index.session.writeUsers(index.lease) { db in
             let body = try ReaderIndex.body(db, id: id, scope: index.lease.scope.key)
             guard (try? parseSha256(value: body.sha)) != nil else { throw ReaderError.ImportBusy }
-            try authorization(body.sha)
             try ReaderIndex.validateChapterCorrection(db, body: body, offset: offset)
             let value = ChapterValue(content_key: body.sha, offset: offset, title: title.trimmingCharacters(in: .whitespaces), level: level, excluded: excluded)
             try UserValueRows.put(db, key: .init("chapter/\(body.sha)/\(offset)"), value: UserSyncJSON.encode(value), device: userDevice, now: userValueClock,
@@ -755,14 +753,13 @@ actor AppDataService {
         dataChanged()
     }
     func restoreChapterCorrections(_ id: String) async throws {
-        let admission = try readingWriteAdmission(indexStore().lease)
+        let admission = try indexStore().lease
         try await acquireCancellableUserDataOperation(); defer { releaseUserDataOperation() }
         try Task.checkCancellation()
         let index = try relationalUserIndex()
-        let authorization = readingWriteAuthorization(id, admission: admission, index: index)
+        guard admission == index.lease else { throw CancellationError() }
         try index.session.writeUsers(index.lease) { db in
             let body = try ReaderIndex.body(db, id: id, scope: index.lease.scope.key)
-            try authorization(body.sha)
             try UserValueRows.retractChapters(db, book: body.sha, device: userDevice, now: userValueClock, scope: index.lease.scope)
         }
         dataChanged()
@@ -771,7 +768,7 @@ actor AppDataService {
     func advanceRebuild(_ job: ChapterRebuild) throws -> ChapterRebuildProgress { try job.nextBatch() }
     func rebuildPreview(_ job: ChapterRebuild, from offset: UInt64 = 0) throws -> [ChapterInfo] { try job.preview(fromUtf8: offset, limit: 80) }
     func applyRebuild(_ job: ChapterRebuild) throws { try job.apply(); dataChanged() }
-    func savePosition(bookID: String, offset: UInt64, admission: ReadingWriteAdmission? = nil) async throws {
+    func savePosition(bookID: String, offset: UInt64, admission: DataSessionLease? = nil) async throws {
         try await writePosition(bookID, offset: offset, admission: admission)
     }
 
@@ -851,10 +848,10 @@ actor AppDataService {
     }
     func annotations(_ id: String, start: UInt64, end: UInt64) async throws -> [ReaderMark] { try await userAnnotationRanges(id, start: start, end: end) }
     func bookmarkPositions(_ id: String, start: UInt64, end: UInt64) async throws -> [UInt64] { try await userMarks(id, kind: .bookmark).filter { $0.startUtf8 >= start && $0.startUtf8 < end }.map(\.startUtf8) }
-    func toggleBookmark(_ id: String, at offset: UInt64, admission: ReadingWriteAdmission? = nil) async throws -> Bool {
+    func toggleBookmark(_ id: String, at offset: UInt64, admission: DataSessionLease? = nil) async throws -> Bool {
         try await changeBookmark(id, offset: offset, ensure: false, admission: admission) != nil
     }
-    func ensureBookmark(_ id: String, at offset: UInt64, admission: ReadingWriteAdmission? = nil) async throws -> ReaderMark {
+    func ensureBookmark(_ id: String, at offset: UInt64, admission: DataSessionLease? = nil) async throws -> ReaderMark {
         guard let mark = try await changeBookmark(id, offset: offset, ensure: true, admission: admission)
         else { throw ReaderError.InvalidRange }
         return mark
@@ -868,17 +865,17 @@ actor AppDataService {
         try indexStore().textContext(bookId: id, offsetUtf8: offset, beforeParagraphs: before, afterParagraphs: after)
     }
     func paragraph(_ id: String, at offset: UInt64) throws -> TextRange { try indexStore().paragraphRange(bookId: id, offsetUtf8: offset) }
-    func annotate(_ id: String, start: UInt64, end: UInt64, admission: ReadingWriteAdmission? = nil) async throws -> ReaderMark {
+    func annotate(_ id: String, start: UInt64, end: UInt64, admission: DataSessionLease? = nil) async throws -> ReaderMark {
         let edit = try await prepareUserAnnotation(id, start: start, end: end, admission: admission)
         if edit.baselines.values.contains(where: AnnotationReduction.conflicts) { throw UserDataConflict(candidates: edit.baselines.values.flatMap { $0 }) }
         return try await saveUserNote(edit, text: edit.note)
     }
     func mark(_ id: String) async throws -> ReaderMark { try readAnnotationMark(id) }
-    func prepareAnnotation(_ id: String, start: UInt64, end: UInt64, admission: ReadingWriteAdmission? = nil) async throws -> AnnotationEdit {
+    func prepareAnnotation(_ id: String, start: UInt64, end: UInt64, admission: DataSessionLease? = nil) async throws -> AnnotationEdit {
         try await prepareUserAnnotation(id, start: start, end: end, admission: admission)
     }
     func saveNote(_ edit: AnnotationEdit, text: String) async throws -> ReaderMark { try await saveUserNote(edit, text: text) }
-    func removeAnnotations(_ id: String, start: UInt64, end: UInt64, admission: ReadingWriteAdmission? = nil) async throws -> [String] {
+    func removeAnnotations(_ id: String, start: UInt64, end: UInt64, admission: DataSessionLease? = nil) async throws -> [String] {
         try await removeAnnotationRange(id, start: start, end: end, offered: admission)
     }
     func deleteMarks(_ ids: [String], deleted: Bool, expected: NoteCandidates? = nil) async throws {
@@ -1003,7 +1000,7 @@ actor AppDataService {
 
     private func retainReading(_ id: String, index: ReaderIndex) -> ReadingLease {
         holdForeground("book:" + id)
-        return ReadingLease(id: id, service: self, writeAdmission: readingWriteAdmission(index.lease))
+        return ReadingLease(id: id, service: self, writeAdmission: index.lease)
     }
 
     fileprivate func releaseReading(_ id: String) {
@@ -1022,7 +1019,6 @@ actor AppDataService {
         guard (try? core.reclaimCompletedImport(bookId: id, userPromotionCommitted: true)) == true else { ReaderOpenDiagnostics.worker(id, "reclaim.skip.coreRetainedOrError"); return }
         ReaderOpenDiagnostics.worker(id, "reclaim.success")
         promotedUserKeys.remove(id)
-        importWriteAdmissions[id] = nil
         if let bytes = sourceDefaults.data(forKey: importSourceKey(id)), let source = try? JSONDecoder().decode(ImportSource.self, from: bytes),
            let key = source.sourceKey, sourceDefaults.string(forKey: key) == id { sourceDefaults.removeObject(forKey: key) }
         sourceDefaults.removeObject(forKey: importSourceKey(id))
@@ -1034,7 +1030,6 @@ actor AppDataService {
             retainedBookIds: Array(Set(readers.keys).union(imports.keys).union(pendingPromotionIDs)),
             promotedReadingBookIDs: promotedUserKeys))
         promotedUserKeys.formIntersection(remaining)
-        importWriteAdmissions = importWriteAdmissions.filter { remaining.contains($0.key) }
         for id in Array(changeRevisions.keys) where !remaining.contains(id) && readers[id] == nil && imports[id] == nil && changeWaiters[id] == nil { changeRevisions[id] = nil }
         let sourcePrefix = importSourceKey("")
         let draftPrefix = "Moonread.sourceDraft.\(testSession ?? "library")."
@@ -1066,7 +1061,6 @@ actor AppDataService {
     private func launchImport(core: ReaderIndex, control: ImportControl, descriptor: ImportSource, encoding: String?) {
         let work = SourceImportWork(core: core, control: control, source: descriptor, encoding: encoding)
         let id = control.bookId()
-        if importWriteAdmissions[id] == nil { importWriteAdmissions[id] = readingWriteAdmission(core.lease) }
         imports[id] = work
         work.start { [weak self] event in
             Task(priority: .userInitiated) { await self?.receiveImportEvent(id, token: work.token, event: event) }
@@ -1093,8 +1087,6 @@ actor AppDataService {
         }
         if let core, core === work.core {
             if (try? core.importStatus(bookId: id).phase) == .complete {
-                // Admission spans the worker, not just its finish callback.
-                // A later manual/read-triggered check uses that same admission.
                 let configuration = userCloudConfigurationRevision
                 try? await promoteUserData(id)
                 guard self.core === core, userCloudConfigurationRevision == configuration else { return }

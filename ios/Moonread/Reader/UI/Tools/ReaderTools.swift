@@ -223,8 +223,8 @@ final class ReaderToolsModel {
     }
     private(set) var notesLoad = NotesLoad.idle
     private enum SelectedMark {
-        case candidates(key: String, values: [AnnotationCandidate], admission: ReadingWriteAdmission?)
-        case blocked(key: String, admission: ReadingWriteAdmission?)
+        case candidates(key: String, values: [AnnotationCandidate], admission: DataSessionLease?)
+        case blocked(key: String, admission: DataSessionLease?)
         case unavailable
     }
     private enum NoteSelection {
@@ -272,22 +272,22 @@ final class ReaderToolsModel {
             guard let key = noteSnapshot?.key else { throw UserDataConflict(candidates: []) }
             var groups: [String: [AnnotationCandidate]] = [:]
             var blocked = Set<String>()
-            var oldest: ReadingWriteAdmission?
+            var selectedAccount: DataSessionLease?
             for (markID, mark) in marks {
-                let admission: ReadingWriteAdmission?
+                let admission: DataSessionLease?
                 switch mark {
                 case .candidates(let markKey, let values, let stamp) where markKey == key: groups[markID] = values; admission = stamp
                 case .blocked(let markKey, let stamp) where markKey == key: blocked.insert(markID); admission = stamp
                 default: throw UserDataConflict(candidates: [])
                 }
                 guard let admission else { throw UserDataConflict(candidates: []) }
-                if let oldest, oldest.lease != admission.lease || oldest.configuration != admission.configuration {
+                if let selectedAccount, selectedAccount != admission {
                     throw UserDataConflict(candidates: [])
                 }
-                if oldest.map({ admission.epoch < $0.epoch }) ?? true { oldest = admission }
+                selectedAccount = admission
             }
             let ids = Set(marks.keys)
-            try await service.deleteNoteSelection(id, expected: NoteCandidates(key: key, groups: groups, blocked: blocked, admission: oldest), ids: ids)
+            try await service.deleteNoteSelection(id, expected: NoteCandidates(key: key, groups: groups, blocked: blocked, admission: selectedAccount), ids: ids)
             guard !isLeaving, id == bookID else { return }
             deletedIDs = ids.sorted(); clearNoteSelection()
             await loadNotes(reset: true)
@@ -507,12 +507,10 @@ final class ReaderToolsModel {
         }
         do {
             let snapshot = try await service.noteCandidates(id)
-            let displayedAdmission: ReadingWriteAdmission?
             if !reset, let old = previous?.candidates {
-                guard old.key == snapshot.key, let before = old.admission, let now = snapshot.admission,
-                      before.lease == now.lease, before.configuration == now.configuration else { throw UserDataConflict(candidates: []) }
-                displayedAdmission = before.epoch <= now.epoch ? before : now
-            } else { displayedAdmission = snapshot.admission }
+                guard old.key == snapshot.key, let before = old.admission, before == snapshot.admission
+                else { throw UserDataConflict(candidates: []) }
+            }
             var items: [ReaderMark] = []
             var more = false
             repeat {
@@ -528,7 +526,7 @@ final class ReaderToolsModel {
                 displayedGroups[item.id] = snapshot.groups[item.id]
             }
             let displayed = NoteCandidates(key: snapshot.key, groups: displayedGroups, blocked: snapshot.blocked,
-                                           unknownMarks: snapshot.unknownMarks, admission: displayedAdmission, sourceBookID: id)
+                                           unknownMarks: snapshot.unknownMarks, admission: snapshot.admission)
             var page = NotePageSnapshot(kind: kind, items: reset ? items : (previous?.items ?? []) + items,
                                         hasMore: more, locations: previous?.locations ?? [:], candidates: displayed)
             notesLoad = .loading(kind, previous: page)
@@ -564,7 +562,7 @@ final class ReaderToolsModel {
         }
         catch { if !isLeaving { self.error = ReaderMessages.error(error) } }
     }
-    func removeAnnotations(bookID: String, start: UInt64, end: UInt64, admission: ReadingWriteAdmission? = nil) async {
+    func removeAnnotations(bookID: String, start: UInt64, end: UInt64, admission: DataSessionLease? = nil) async {
         guard !isLeaving else { return }
         error = nil
         do {

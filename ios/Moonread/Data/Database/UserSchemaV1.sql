@@ -207,12 +207,6 @@ CREATE TABLE usr.legacy_import_state (
 CREATE TABLE usr.local_data_state (
  state_key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL
 );
--- Only for reading imports unresolved when a formal book was deleted.
--- Lives until this alias is promoted, found empty, or explicitly discarded.
-CREATE TABLE usr.pending_identity_fence (
- book_id TEXT NOT NULL, deleted_sha256 TEXT NOT NULL,
- PRIMARY KEY(book_id,deleted_sha256)
-);
 CREATE TABLE usr.local_hidden_book (book_key TEXT PRIMARY KEY NOT NULL);
 CREATE TABLE usr.local_preferred_file (book_key TEXT PRIMARY KEY NOT NULL, file_id TEXT NOT NULL);
 CREATE TABLE usr.local_resume (

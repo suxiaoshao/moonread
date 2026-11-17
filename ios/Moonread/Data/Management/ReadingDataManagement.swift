@@ -48,7 +48,11 @@ extension AppDataService {
         else { userDataOperationBusy = false }
     }
     func localReadingWriteLease(_ key: String) -> UUID {
-        readingWriteVersions.token(for: key)
+        let key = DataIdentity.canonical(key)
+        if let token = metadataImportDeletionTokens[key] { return token }
+        let token = UUID()
+        metadataImportDeletionTokens[key] = token
+        return token
     }
     func readingDataInventory() async throws -> ReadingDataInventory {
         let configuration = userCloudConfigurationRevision
@@ -176,9 +180,7 @@ extension AppDataService {
         guard configuration == userCloudConfigurationRevision else { throw ReadingDataError.changed }
         let index = try relationalUserIndex()
         let deleted = try index.deleteUserBooks(keys, activeReadingIDs: activeReadingIDsForDeletion()) { ReadingDataError.busy }
-        // Stamp only successful, owned deletions, before any suspended work
-        // can enter this gate and before publishing notifications.
-        readingWriteVersions.didDelete(deleted)
+        for key in deleted { metadataImportDeletionTokens[key] = nil }
         cancelRecentRestoration(); dataChanged()
         NotificationCenter.default.post(name: .statisticsChanged, object: nil, userInfo: ["reset": true])
         // User data is already committed. Only the original formal selection

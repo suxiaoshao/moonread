@@ -304,19 +304,17 @@ struct ReadingSegmentBatch: Sendable {
     let bookID: String
     let values: [ReadingSegment]
     let generation: UInt64
-    let admission: ReadingWriteAdmission?
+    let admission: DataSessionLease?
 }
 
 extension ReaderIndex {
     private func stageCapture(_ db: Database, _ batches: [ReadingSegmentBatch], owner: String,
-                              authorize: (ReadingSegmentBatch, String) throws -> Bool,
+                              authorize: (ReadingSegmentBatch) -> Bool,
                               changed: inout ReadingHistoryRows.Changed) throws -> Set<String> {
         var written = Set<String>()
         for batch in batches {
-            let alias = serializeReadingKey(key: .pending(bookId: batch.bookID))
-            guard !batch.values.isEmpty, try authorize(batch,alias) else { continue }
+            guard !batch.values.isEmpty, authorize(batch) else { continue }
             let body = try Self.body(db, id: batch.bookID, scope: lease.scope.key)
-            guard try authorize(batch,body.sha) else { continue }
             let part = try ReadingPositionRows.partition(for: body.sha)
             for value in batch.values {
                 if try ReadingSegmentRows.ingest(db, value: value, book: body.sha, partition: part,
@@ -329,7 +327,7 @@ extension ReaderIndex {
     }
 
     func writeReadingSegments(_ batches: [ReadingSegmentBatch], owner: String,
-                              authorize: (ReadingSegmentBatch, String) throws -> Bool) throws -> Set<String> {
+                              authorize: (ReadingSegmentBatch) -> Bool) throws -> Set<String> {
         try session.writeUsers(lease) { db in
             var changed = ReadingHistoryRows.Changed()
             let books = try stageCapture(db, batches, owner: owner, authorize: authorize, changed: &changed)
@@ -342,7 +340,7 @@ extension ReaderIndex {
     /// Last observations/seals and the complete clear are one transaction.
     /// Read the raw final headers here, not previously published current.
     func clearReadingHistory(book: String?, session sessionID: String?, through: Int64, tail: [ReadingSegmentBatch],
-                             owner: String, authorize: (ReadingSegmentBatch, String) throws -> Bool) throws {
+                             owner: String, authorize: (ReadingSegmentBatch) -> Bool) throws {
         let key = try book.map { try parseReadingKey(value: $0) }
         try session.writeUsers(lease) { db in
             var changed = ReadingHistoryRows.Changed()
